@@ -312,8 +312,9 @@ void main() {
       String title,
       String type,
       int year,
-      List<MalRelation> relations,
-    ) => MalRelatedWorks(
+      List<MalRelation> relations, {
+      int? runtime,
+    }) => MalRelatedWorks(
       work: VideoMetadataWork(
         provider: VideoMetadataProviderKind.mal,
         kind: type == 'Movie'
@@ -321,6 +322,7 @@ void main() {
             : VideoMetadataMediaKind.tv,
         title: title,
         year: year,
+        runtimeMinutes: runtime,
         ids: <VideoMetadataId>[
           VideoMetadataId(type: 'mal', value: '$id', isDefault: true),
         ],
@@ -368,22 +370,203 @@ void main() {
       );
       expect(mal.fetched, isNot(contains(8)));
       expect(mal.fetched, isNot(contains(9)));
+      expect(franchise.truncated, isFalse);
     });
 
-    test('走到上限就停', () async {
+    // BUG-2937：一批走满不是「到此为止」——交出到目前为止的结果和续查入口，
+    // 接着走直到图走完。
+    test('BUG-2937 一批走满就交出，经 more 从断点接着走完', () async {
       final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
         for (int i = 1; i <= 10; i++)
           i: node(i, 'Movie $i', 'Movie', 1980 + i, <MalRelation>[
             MalRelation(relation: 'Sequel', malId: i + 1),
           ]),
       });
-      final VideoFranchise franchise = (await resolveMalFranchise(
+      final VideoFranchise first = (await resolveMalFranchise(
         mal,
         _item('1', 'Movie 1', provider: 'mal'),
-        maxWorks: 3,
+        batchSize: 3,
       ))!;
-      expect(franchise.movies, hasLength(3));
-      expect(mal.fetched, hasLength(3));
+      expect(first.movies, hasLength(3));
+      expect(mal.fetched, <int>[1, 2, 3]);
+      expect(first.more, isNotNull);
+      expect(first.truncated, isFalse, reason: '没走完但能接着走，不是失败');
+
+      final (:VideoFranchise last, :int batches) = await _drain(first);
+      // 每一批交的是到目前为止的全部，不只是新增的。
+      expect(last.movies, hasLength(10));
+      // 第 11 部不存在（404 → null）也要请求一次才知道。
+      expect(mal.fetched, <int>[for (int i = 1; i <= 11; i++) i]);
+      expect(batches, 4);
+      expect(last.more, isNull);
+      expect(last.truncated, isFalse);
+    });
+
+    // BUG-2935：MAL 上哆啦A梦的真实关系形状（2026-10-04 核对 MAL 页面）。2005 版
+    // 只挂 26 部剧场版 + 1 部 TV Special 的外传，没有指回 1979 版的前传；1979 版挂
+    // 26 部剧场版 + 11 部特别篇的外传、前作 1973 版。从 2005 版出发要经新剧场版的
+    // 「Alternative version」（重制）走到旧剧场版，再经「Parent story」回到 1979 版。
+    // 共 67 个节点——旧上限 60 会截掉最后 7 个，且不留任何标记。截掉的是剧场版还是
+    // 特别篇取决于 MAL 关联的返回顺序（这张图里恰好全是特别篇），所以只钉「必然没走完」。
+    Map<int, MalRelatedWorks> doraemonGraph() {
+      const int tv2005 = 8687, tv1979 = 2471, tv1973 = 1973;
+      List<int> range(int from, int count) => <int>[
+        for (int i = 0; i < count; i++) from + i,
+      ];
+      final List<int> newMovies = range(3001, 26);
+      final List<int> oldMovies = range(2001, 26);
+      final List<int> oldSpecials = range(2101, 11);
+      return <int, MalRelatedWorks>{
+        tv2005: node(tv2005, 'Doraemon (2005)', 'TV', 2005, <MalRelation>[
+          for (final int id in newMovies)
+            MalRelation(relation: 'Side story', malId: id),
+          const MalRelation(relation: 'Side story', malId: 3100),
+        ]),
+        3100: node(
+          3100,
+          'TV Special 2005',
+          'TV Special',
+          2007,
+          const <MalRelation>[],
+        ),
+        for (int i = 0; i < newMovies.length; i++)
+          newMovies[i]: node(
+            newMovies[i],
+            'New Movie $i',
+            'Movie',
+            2006 + i,
+            <MalRelation>[
+              const MalRelation(relation: 'Parent story', malId: tv2005),
+              // 前 10 部是旧片重制。
+              if (i < 10)
+                MalRelation(
+                  relation: 'Alternative version',
+                  malId: oldMovies[i],
+                ),
+            ],
+          ),
+        tv1979: node(tv1979, 'Doraemon (1979)', 'TV', 1979, <MalRelation>[
+          const MalRelation(relation: 'Prequel', malId: tv1973),
+          const MalRelation(relation: 'Sequel', malId: tv2005),
+          for (final int id in <int>[...oldMovies, ...oldSpecials])
+            MalRelation(relation: 'Side story', malId: id),
+        ]),
+        tv1973: node(tv1973, 'Doraemon (1973)', 'TV', 1973, const <MalRelation>[
+          MalRelation(relation: 'Sequel', malId: tv1979),
+        ]),
+        for (int i = 0; i < oldMovies.length; i++)
+          oldMovies[i]: node(oldMovies[i], 'Old Movie $i', 'Movie', 1980 + i, <
+            MalRelation
+          >[
+            const MalRelation(relation: 'Parent story', malId: tv1979),
+            if (i < 10)
+              MalRelation(relation: 'Alternative version', malId: newMovies[i]),
+          ]),
+        for (int i = 0; i < oldSpecials.length; i++)
+          oldSpecials[i]: node(
+            oldSpecials[i],
+            'Old Special $i',
+            'Special',
+            1981 + i,
+            const <MalRelation>[
+              MalRelation(relation: 'Parent story', malId: tv1979),
+            ],
+          ),
+      };
+    }
+
+    test('哆啦A梦（从 2005 版出发）：分批走完，收全 52 部剧场版与三部 TV', () async {
+      final _FakeMal mal = _FakeMal(doraemonGraph());
+      final VideoFranchise first = (await resolveMalFranchise(
+        mal,
+        _item(
+          '8687',
+          'Doraemon (2005)',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+      ))!;
+      expect(mal.fetched, hasLength(kVideoFranchiseMalBatch));
+      final (:VideoFranchise last, :int batches) = await _drain(first);
+      expect(batches, 2);
+      expect(last.movies, hasLength(52));
+      expect(
+        last.series.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['1973', '2471', '8687'],
+      );
+      expect(last.truncated, isFalse);
+      expect(mal.fetched, hasLength(67));
+    });
+
+    test('BUG-2937 哆啦A梦在第 60 个请求处分批：不标 truncated，续查后一部不少', () async {
+      // 旧做法：上限 60 撞上就停、标 truncated（BUG-2935），用户拿到半张清单。
+      final _FakeMal mal = _FakeMal(doraemonGraph());
+      final VideoFranchise first = (await resolveMalFranchise(
+        mal,
+        _item(
+          '8687',
+          'Doraemon (2005)',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+        batchSize: 60,
+      ))!;
+      expect(mal.fetched, hasLength(60));
+      expect(first.truncated, isFalse);
+      expect(first.more, isNotNull);
+      final (:VideoFranchise last, batches: _) = await _drain(first);
+      expect(last.movies, hasLength(52));
+      expect(mal.fetched, hasLength(67));
+      expect(mal.fetched.toSet(), hasLength(67), reason: '续查不重复请求');
+    });
+
+    test('合并：任一份 truncated，结果就是 truncated', () {
+      const VideoFranchise complete = VideoFranchise(
+        name: 'Doraemon',
+        series: <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[],
+      );
+      const VideoFranchise partial = VideoFranchise(
+        name: 'Doraemon',
+        series: <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[],
+        truncated: true,
+      );
+      expect(
+        mergeVideoFranchises(<VideoFranchise?>[complete, partial])!.truncated,
+        isTrue,
+      );
+      expect(
+        mergeVideoFranchises(<VideoFranchise?>[complete, null])!.truncated,
+        isFalse,
+      );
+    });
+
+    test('BUG-2937 合并保留续查入口：TMDB + MAL 第一批合并后仍能接着查', () {
+      Future<VideoFranchise> rest() async => const VideoFranchise(
+        name: 'Doraemon',
+        series: <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[],
+      );
+      const VideoFranchise tmdb = VideoFranchise(
+        name: 'Doraemon Collection',
+        series: <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[],
+      );
+      final VideoFranchise mal = VideoFranchise(
+        name: 'Doraemon',
+        series: const <VideoDiscoveryItem>[],
+        movies: const <VideoDiscoveryItem>[],
+        more: rest,
+      );
+      final VideoFranchise merged = mergeVideoFranchises(<VideoFranchise?>[
+        tmdb,
+        mal,
+      ])!;
+      expect(merged.more, same(rest));
+      expect(merged.name, 'Doraemon Collection');
+      expect(merged.withoutMore().more, isNull);
+      expect(mergeVideoFranchises(<VideoFranchise?>[tmdb, null])!.more, isNull);
     });
 
     test('锚点没有 MAL 身份：按标题搜，只认标题完全一致的', () async {
@@ -433,6 +616,70 @@ void main() {
         _item('1', 'Movie 1', provider: 'mal'),
       ))!;
       expect(franchise.movies, hasLength(2));
+      expect(franchise.truncated, isTrue);
+      expect(franchise.more, isNull, reason: '失败就停，不再续查');
+    });
+
+    test('BUG-2936 第一个请求就失败：空清单也要标没走完，而不是「没有同系列」', () async {
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        _FakeMal(const <int, MalRelatedWorks>{}, failOn: 1),
+        _item('1', 'Doraemon', provider: 'mal'),
+      ))!;
+      expect(franchise.length, 0);
+      expect(franchise.truncated, isTrue);
+    });
+
+    test('BUG-2936 短于长片下限的 Movie 是同映短片，不收；片长未知照收', () async {
+      // MAL 2471 的 Side story 里，剧场版之间夹着「Ken-chan no Bouken」
+      // 「Boku, Momotarou no Nanna no Sa」、The☆Doraemons 等 15–30 分钟短片，
+      // 类型同样是 Movie。
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        1: node(1, 'Doraemon (1979)', 'TV', 1979, const <MalRelation>[
+          MalRelation(relation: 'Side story', malId: 2),
+          MalRelation(relation: 'Side story', malId: 3),
+          MalRelation(relation: 'Side story', malId: 4),
+          MalRelation(relation: 'Side story', malId: 5),
+        ]),
+        2: node(
+          2,
+          'Doraemon Movie 01',
+          'Movie',
+          1980,
+          const <MalRelation>[],
+          runtime: 92,
+        ),
+        3: node(
+          3,
+          'Ken-chan no Bouken',
+          'Movie',
+          1981,
+          const <MalRelation>[],
+          runtime: 15,
+        ),
+        4: node(
+          4,
+          'Exactly forty minutes',
+          'Movie',
+          1982,
+          const <MalRelation>[],
+          runtime: kVideoFranchiseMinFeatureMinutes,
+        ),
+        5: node(5, 'Unknown runtime', 'Movie', 1983, const <MalRelation>[]),
+      });
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item(
+          '1',
+          'Doraemon (1979)',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+      ))!;
+      expect(
+        franchise.movies.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['2', '4', '5'],
+      );
+      expect(franchise.truncated, isFalse);
     });
 
     test('同名新旧版按年份选起点', () async {
@@ -476,6 +723,23 @@ void main() {
       );
     });
   });
+}
+
+/// 沿 [VideoFranchise.more] 一直续查到底；`batches` 含第一批。
+Future<({VideoFranchise last, int batches})> _drain(
+  VideoFranchise first,
+) async {
+  VideoFranchise current = first;
+  int batches = 1;
+  for (
+    Future<VideoFranchise> Function()? more = current.more;
+    more != null;
+    more = current.more
+  ) {
+    current = await more();
+    batches++;
+  }
+  return (last: current, batches: batches);
 }
 
 class _FakeMal implements VideoFranchiseRelationSource {

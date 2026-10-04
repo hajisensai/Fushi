@@ -486,58 +486,42 @@ extension _ReaderChrome on _ReaderFushiPageState {
         _audiobookController!.chapterCueCount > 0;
     final ThemeData theme = Theme.of(overlayContext);
 
-    Widget button(IconData icon, String label, String action) {
-      return InkWell(
-        onTap: () => _runSelectionAction(action),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12.0,
-            vertical: 10.0,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 18.0),
-              const SizedBox(width: 8.0),
-              Text(label, style: TextStyle(fontSize: 14.0)),
-            ],
-          ),
-        ),
-      );
-    }
+    ReaderSelectionActionItem item(
+      IconData icon,
+      String label,
+      String action,
+    ) =>
+        ReaderSelectionActionItem(
+          icon: icon,
+          label: label,
+          onPressed: () => unawaited(_runSelectionAction(action)),
+        );
 
+    // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
+    // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
+    // 宽度降级：带文字 → 只图标 + Tooltip → 前 3 颗常驻 + ⋮ 溢出菜单。
     return Positioned(
       left: gap,
       right: gap,
       top: top,
-      child: Align(
-        alignment: Alignment.center,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Material(
-            elevation: 6,
-            color: theme.popupMenuTheme.color ??
-                theme.colorScheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(8.0),
-            clipBehavior: Clip.antiAlias,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                button(Icons.search_outlined, t.search, 'search'),
-                button(Icons.copy_outlined, t.copy, 'copy'),
-                if (isAndroidPlatform)
-                  button(Icons.share_outlined, t.share, 'share'),
-                if (isAndroidPlatform)
-                  button(Icons.travel_explore, t.selection_web_search,
-                      'webSearch'),
-                button(Icons.star_border, t.action_favorite, 'favorite'),
-                if (hasAudio)
-                  button(Icons.movie_creation_outlined, t.audiobook_export_clip,
-                      'export'),
-              ],
+      child: ReaderSelectionActionBar(
+        color: theme.popupMenuTheme.color ??
+            theme.colorScheme.surfaceContainerHigh,
+        items: <ReaderSelectionActionItem>[
+          item(Icons.search_outlined, t.search, 'search'),
+          item(Icons.copy_outlined, t.copy, 'copy'),
+          if (isAndroidPlatform)
+            item(Icons.share_outlined, t.share, 'share'),
+          if (isAndroidPlatform)
+            item(Icons.travel_explore, t.selection_web_search, 'webSearch'),
+          item(Icons.star_border, t.action_favorite, 'favorite'),
+          if (hasAudio)
+            item(
+              Icons.movie_creation_outlined,
+              t.audiobook_export_clip,
+              'export',
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -1918,11 +1902,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
   }
 
   Widget? _buildAudiobookBarTrailing() {
+    // 2026-10 体验优化：播放条自带 上一句 / 播放暂停 / 下一句 / 跟随 四颗键，
+    // 底栏槽位里同语义的传输键再并进来就是同一行两份（窄屏还会挤爆）。这里滤掉
+    // 与播放条重复的那几颗；±10s 播放条没有，用户拖进底栏就照常保留。
     final List<Widget> buttons = <Widget>[
       for (final ReaderControlSlot slot in ReaderControlSlot.values)
         if (slot.isBottom)
-          for (final ReaderHeaderAction a in _readerControlActionsIn(slot))
-            _readerControlButton(a),
+          for (final ReaderControlItem item in _renderableControlsIn(slot))
+            if (item != ReaderControlItem.title &&
+                !_isDuplicatedByAudiobookPlayBar(item))
+              _readerControlButton(_readerControlAction(item)),
     ];
     final Widget? status = _playbackStatusInline ? _buildBarStatusText() : null;
     if (buttons.isEmpty) return status;
@@ -1934,6 +1923,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
       ],
     );
   }
+
+  /// 2026-10 体验优化：[AudiobookPlayBar] 自带的传输键（上一句 / 播放暂停 /
+  /// 下一句 / 跟随）。语义与 [_readerControlAction] 的同名分支逐颗对齐，所以
+  /// 播放条在场时底栏槽位里的这几颗是纯重复。
+  bool _isDuplicatedByAudiobookPlayBar(ReaderControlItem item) =>
+      item.isAudiobookTransport &&
+      item != ReaderControlItem.audiobookSeekBack &&
+      item != ReaderControlItem.audiobookSeekForward;
 
   /// 悬浮球的阅读器场景按钮（docs/specs/2026-09-28-floating-ball.md）：按钮布局
   /// 里的每颗按钮（书名除外）都能放进球，放哪几颗由 设置 → 悬浮球 → 阅读器 决定
@@ -3491,5 +3488,171 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
     if (fraction == null) return null;
     return '${(fraction * 100).toStringAsFixed(1)}%';
+  }
+}
+
+/// 移动端选区操作条的一项（2026-10 体验优化）。
+class ReaderSelectionActionItem {
+  const ReaderSelectionActionItem({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+}
+
+/// 移动端选区操作条（2026-10 体验优化）。
+///
+/// 不再用 FittedBox 等比缩小，而是按可用宽度三级降级，每颗按钮的命中区都不小于
+/// [kMinInteractiveDimension]（48×48）：
+/// 1. 放得下「图标 + 文字」就整排带文字；
+/// 2. 放不下则只显示图标，文字进 Tooltip；
+/// 3. 只图标也放不下时前 [pinnedCount] 颗常驻，其余折进 ⋮ 弹出菜单。
+class ReaderSelectionActionBar extends StatelessWidget {
+  const ReaderSelectionActionBar({
+    required this.items,
+    this.color,
+    super.key,
+  });
+
+  final List<ReaderSelectionActionItem> items;
+  final Color? color;
+
+  /// 溢出时常驻的按钮数。
+  static const int pinnedCount = 3;
+
+  static const double _labelFontSize = 14;
+  static const double _labelHorizontalPadding = 12;
+  static const double _iconSize = 18;
+  static const double _iconLabelGap = 8;
+
+  double _labeledWidth(BuildContext context) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    double total = 0;
+    for (final ReaderSelectionActionItem item in items) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(
+          text: item.label,
+          style: const TextStyle(fontSize: _labelFontSize),
+        ),
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double w = painter.width +
+          _iconSize +
+          _iconLabelGap +
+          _labelHorizontalPadding * 2;
+      painter.dispose();
+      total += w < kMinInteractiveDimension ? kMinInteractiveDimension : w;
+    }
+    return total;
+  }
+
+  Widget _labeledButton(ReaderSelectionActionItem item) {
+    return InkWell(
+      onTap: item.onPressed,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: kMinInteractiveDimension,
+          minHeight: kMinInteractiveDimension,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: _labelHorizontalPadding,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(item.icon, size: _iconSize),
+              const SizedBox(width: _iconLabelGap),
+              Text(
+                item.label,
+                maxLines: 1,
+                style: const TextStyle(fontSize: _labelFontSize),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _iconButton(ReaderSelectionActionItem item) {
+    return IconButton(
+      icon: Icon(item.icon, size: 20),
+      tooltip: item.label,
+      constraints: const BoxConstraints(
+        minWidth: kMinInteractiveDimension,
+        minHeight: kMinInteractiveDimension,
+      ),
+      onPressed: item.onPressed,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double maxWidth = constraints.maxWidth;
+        final List<Widget> children;
+        if (_labeledWidth(context) <= maxWidth) {
+          children = <Widget>[
+            for (final ReaderSelectionActionItem i in items) _labeledButton(i),
+          ];
+        } else if (items.length * kMinInteractiveDimension <= maxWidth ||
+            items.length <= pinnedCount) {
+          children = <Widget>[
+            for (final ReaderSelectionActionItem i in items) _iconButton(i),
+          ];
+        } else {
+          final List<ReaderSelectionActionItem> overflow =
+              items.sublist(pinnedCount);
+          children = <Widget>[
+            for (final ReaderSelectionActionItem i
+                in items.take(pinnedCount))
+              _iconButton(i),
+            PopupMenuButton<int>(
+              key: const ValueKey<String>('reader_selection_action_more'),
+              icon: const Icon(Icons.more_vert),
+              tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+              onSelected: (int index) => overflow[index].onPressed(),
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
+                for (int index = 0; index < overflow.length; index++)
+                  PopupMenuItem<int>(
+                    value: index,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(overflow[index].icon, size: 20),
+                        const SizedBox(width: 12),
+                        Flexible(child: Text(overflow[index].label)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ];
+        }
+        return Align(
+          alignment: Alignment.center,
+          child: Material(
+            elevation: 6,
+            color: color ??
+                theme.popupMenuTheme.color ??
+                theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(8.0),
+            clipBehavior: Clip.antiAlias,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: children,
+            ),
+          ),
+        );
+      },
+    );
   }
 }

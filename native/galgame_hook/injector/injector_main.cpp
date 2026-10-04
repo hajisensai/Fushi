@@ -30,6 +30,7 @@
 #include "kirikiri_launch_profile.h"
 #include "kirikiri_launch_signature.h"
 #include "loader_init_gate.h"
+#include "launch_engine_signature.h"
 #include "launcher_layout.h"
 #include "launcher_wait.h"
 #include "siglus_launch_win32.h"
@@ -2625,14 +2626,6 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
-// 目录是否带引擎数据签名。Siglus（Gameexe[语言].dat + Scene[语言].pck）与 UE IoStore
-// （Content\Paks\*.utoc 的 16 字节 TOC 魔数）各出一条；再加引擎时在这里多写一个 ||
-// 即可，判据本身不用动。两条都要求数据文件真实存在/魔数成立，不认裸目录名。
-bool DirectoryHasEngineSignature(const std::wstring& dir) {
-  return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(dir) ||
-         fushi_voice_hook::DirectoryLooksLikeUnrealIostore(dir);
-}
-
 // 直接子目录全路径。不跟 reparse point：符号链接/联接点能把搜索绕成环。
 std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
   std::vector<std::wstring> result;
@@ -2657,7 +2650,7 @@ std::vector<std::wstring> ListSubdirectories(const std::wstring& dir) {
 bool LooksLikeLauncherForEngine(const std::wstring& exe) {
   return fushi_voice_hook::LooksLikeLauncherLayout(
       ExecutableDirectory(exe), fushi_voice_hook::kLauncherLayoutMaxDepth,
-      DirectoryHasEngineSignature, ListSubdirectories);
+      fushi_voice_hook::DirectoryHasEngineSignature, ListSubdirectories);
 }
 
 // 子进程镜像所在目录带引擎签名 -> 它就是真游戏。启动器链里的游戏进程一个 ffmpeg 模块
@@ -2671,7 +2664,7 @@ void InspectEngineSignature(DWORD pid,
   CloseHandle(process);
   if (image.empty()) return;
   candidate->has_engine_signature =
-      DirectoryHasEngineSignature(ExecutableDirectory(image));
+      fushi_voice_hook::DirectoryHasEngineSignature(ExecutableDirectory(image));
 }
 
 void InspectFfmpegModules(DWORD pid,

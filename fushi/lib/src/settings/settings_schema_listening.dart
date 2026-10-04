@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -65,6 +66,23 @@ List<SettingsSection> buildListeningSections() {
               builder: (_) => AudiobookMaterialLibraryDialog(
                 appModel: settingsContext.appModel,
               ),
+            );
+            settingsContext.refresh();
+          },
+        ),
+        // 只有音频的有声书下载完成后自动转录入库（默认开）。本机没有设备端
+        // ASR 的平台这条开关没有意义，不显示。
+        SettingsSwitchItem(
+          id: 'listening.audiobook_auto_transcribe',
+          title: t.audiobook_auto_transcribe,
+          subtitle: t.audiobook_auto_transcribe_hint,
+          icon: Icons.record_voice_over_outlined,
+          visible: (_) => isAsrSupported,
+          value: (SettingsContext settingsContext) =>
+              settingsContext.appModel.audiobookAutoTranscribe,
+          onChanged: (SettingsContext settingsContext, bool value) async {
+            await settingsContext.appModel.setAudiobookAutoTranscribe(
+              value: value,
             );
             settingsContext.refresh();
           },
