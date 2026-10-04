@@ -40,7 +40,7 @@ void main() {
       );
       // The image is a single still frame looped; the clip length bounds it.
       expect(args, containsAllInOrder(<String>['-loop', '1', '-i', '/i.png']));
-      // BUG-2938: FFmpeg 6.0 (mobile ffmpeg-kit) fails to stop the looped image
+      // BUG-2940: FFmpeg 6.0 (mobile ffmpeg-kit) fails to stop the looped image
       // under -shortest with a raw ADTS input (~12.5 s of extra silent video).
       expect(args, isNot(contains('-shortest')));
       expect(args, containsAllInOrder(<String>['-t', '2.500', '/o.mov']));
@@ -258,7 +258,7 @@ void main() {
         width: 720,
         height: 1280,
       );
-      // BUG-2938: FFmpeg 6.0 drops every frame of the ADTS audio under -shortest.
+      // BUG-2940: FFmpeg 6.0 drops every frame of the ADTS audio under -shortest.
       expect(args, isNot(contains('-shortest')));
       expect(args, containsAllInOrder(<String>['-t', '2.500', '/out.mov']));
       expect(args.last, '/out.mov');

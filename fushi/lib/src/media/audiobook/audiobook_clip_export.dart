@@ -483,7 +483,7 @@ class AudiobookClipSynthResult {
 ///   无限 loop，必须有终点；**不用 `-shortest`**：移动端 ffmpeg-kit 是 FFmpeg 6.0，
 ///   它的 `-shortest` 同步队列遇到裸 ADTS 输入会坏——单图路径截不住无限图（实测固定
 ///   多出约 12.5 秒静音画面），序列帧路径整条音频被吞（0 个音频包、退出码 0，同
-///   BUG-2938）。时长也不从 ADTS 文件反推：裸 ADTS 的时长是按码率估的。
+///   BUG-2940）。时长也不从 ADTS 文件反推：裸 ADTS 的时长是按码率估的。
 /// - `-r [fps]`：低帧率（静态画面无需高帧率，省体积/编码时间）。
 /// - `-vf scale=...:force_original_aspect_ratio=decrease,pad=...`：把图缩放进
 ///   [width]×[height] 并居中黑边填充，保证输出维度恒定且为偶数（yuv420p 要求）。
@@ -635,7 +635,7 @@ Future<Uint8List?> encodeClipTextFrameAsJpgAsync(
 /// - `-c:a aac`：捆绑包唯一音频编码器。
 /// - `-t [durationMs]`：输出时长 = 片段时长（帧计划与音频裁剪用的同一对毫秒值）。
 ///   不用 `-shortest`，理由同 [buildFfmpegImageAudioToVideoArgs]（FFmpeg 6.0 下序列帧
-///   路径整条音频被吞，BUG-2938）。
+///   路径整条音频被吞，BUG-2940）。
 /// - `-vf scale=...:pad=...`：缩放+黑边填充到精确偶数维度（yuv420p 要求偶数维度）。
 ///
 /// **天花板守卫**：两端产物都必须走 libx264（TODO-2357 起移动端亦然，绝不得再出现
@@ -698,7 +698,7 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
   ];
 }
 
-/// BUG-2938：退出码 0 + 文件非空不代表有声音——FFmpeg 6.0（移动端 ffmpeg-kit）在
+/// BUG-2940：退出码 0 + 文件非空不代表有声音——FFmpeg 6.0（移动端 ffmpeg-kit）在
 /// 序列帧路径上曾把整条 ADTS 音频吞掉、照样退出 0。按这次 ffmpeg 自己的收尾统计行
 /// 核对画面与声音两路都真的写进了数据；缺一路就删掉半成品、记日志、判失败。
 AudiobookClipSynthResult? _rejectWithoutMuxedStreams(
