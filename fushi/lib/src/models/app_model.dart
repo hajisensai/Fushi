@@ -170,7 +170,15 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
-    show createAsrTranscriptionService;
+    show createAsrTranscriptionService, isAsrSupported;
+import 'package:fushi/src/media/audiobook/audiobook_auto_transcribe.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_transcribe_import_queue.dart';
+import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart'
+    show
+        importDiscoveryAudiobook,
+        importDiscoverySubtitleAudiobook,
+        importTranscribedAudiobook;
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
 import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
 import 'package:fushi/src/sync/backup_service.dart';
@@ -5345,6 +5353,10 @@ class AppModel with ChangeNotifier {
       // 按域入库；.torrent 元数据落 app 目录随任务持久化。
       discoveryImporter: (DiscoveryMediaKind kind, List<String> paths) =>
           discoveryImportExecutor.importPaths(kind, paths),
+      // 「只下载」有声书（CoreAudio/TMW 合集单卷）下完：同样交执行器分类——
+      // 只有音频 → 转录后入库队列（开关关 / 本机无 ASR 时什么也不做，任务
+      // 面板的「配对」入口照旧）。
+      onDownloadOnlyCompleted: _onDownloadOnlyCompleted,
       manualTorrentDirectory:
           Directory(path.join(appDirectory.path, 'manual_torrents')),
       updateFeed: updateFeedService,
@@ -5352,6 +5364,9 @@ class AppModel with ChangeNotifier {
       defaultTargetSourceId: _defaultVideoDownloadSourceId,
     )..start();
     _videoDownloadPipelineService = pipeline;
+    // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
+    // 任务目录里）。没有 ASR 的平台不建队列。
+    if (isAsrSupported) unawaited(audiobookTranscribeImportQueue.load());
     _videoDownloadKeepAlive =
         VideoDownloadJobsKeepAliveBinding(database.watchVideoDownloadJobs());
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(
@@ -5571,9 +5586,94 @@ class AppModel with ChangeNotifier {
           srtBookRepo: SrtBookRepository(database),
           audiobookRepo: AudiobookRepository(database),
           galgameRepo: galgameRepo,
+          transcribeAudiobook: _transcribeDiscoveryAudiobook,
         ),
       );
   DiscoveryImportExecutor? _discoveryImportExecutor;
+
+  /// 本机是否在有声书下载后自动转录：用户开关 + 设备端 ASR 可用。
+  bool get audiobookAutoTranscribeActive =>
+      prefsRepo.audiobookAutoTranscribe && isAsrSupported;
+
+  /// 有声书「转录后入库」队列（懒建，app 生命周期常驻；落盘在数据库目录旁，
+  /// 重启后未完成的任务从断点续跑）。
+  AudiobookTranscribeImportQueue get audiobookTranscribeImportQueue =>
+      _audiobookTranscribeImportQueue ??= AudiobookTranscribeImportQueue(
+        store: File(
+          path.join(databaseDirectory.path, 'audiobook_transcribe_jobs.json'),
+        ),
+        transcriber: AppAudiobookTranscriber(
+          serviceFactory: createAsrTranscriptionService,
+          preferredLanguageTag: () => prefsRepo.asrTranscribeLanguage,
+        ),
+        importer: (AudiobookTranscribeJob job, String subtitlePath) =>
+            importTranscribedAudiobook(
+          db: database,
+          srtBookRepo: SrtBookRepository(database),
+          audiobookRepo: AudiobookRepository(database),
+          subtitlePath: subtitlePath,
+          audioPaths: job.audioPaths,
+          contentPath: job.contentPath,
+          title: job.title,
+        ),
+      );
+  AudiobookTranscribeImportQueue? _audiobookTranscribeImportQueue;
+
+  /// 导入执行器的 `transcribeAudiobook` 端口：素材库 → 转录队列 → 挡下。
+  Future<DiscoveryImportOutcome> _transcribeDiscoveryAudiobook(
+    TranscribeAudiobookPlan plan,
+  ) {
+    final SrtBookRepository srtBookRepo = SrtBookRepository(database);
+    return routeTranscribeAudiobookPlan(
+      plan,
+      autoTranscribeEnabled: audiobookAutoTranscribeActive,
+      matchMaterials: (List<String> audioPaths, String title) =>
+          matchAudiobookMaterialsForAudio(
+        audiobookMaterialService,
+        audioPaths,
+        title,
+      ),
+      importNow: (DiscoveryImportPlan matched) => switch (matched) {
+        AlignAudiobookPlan() => importDiscoveryAudiobook(
+            db: database,
+            srtBookRepo: srtBookRepo,
+            audiobookRepo: AudiobookRepository(database),
+            plan: matched,
+          ),
+        SubtitleAudiobookPlan() => importDiscoverySubtitleAudiobook(
+            db: database,
+            srtBookRepo: srtBookRepo,
+            plan: matched,
+          ),
+        _ => throw ArgumentError.value(matched, 'matched'),
+      },
+      enqueue: ({
+        required List<String> audioPaths,
+        String? contentPath,
+        required String title,
+      }) =>
+          audiobookTranscribeImportQueue.enqueue(
+        audioPaths: audioPaths,
+        contentPath: contentPath,
+        title: title,
+      ),
+    );
+  }
+
+  Future<void> _onDownloadOnlyCompleted(
+    DiscoveryMediaKind kind,
+    List<String> paths,
+  ) async {
+    if (kind != DiscoveryMediaKind.audiobook) return;
+    try {
+      await discoveryImportExecutor.importPaths(kind, paths);
+    } on DiscoveryImportBlockedException catch (blocked) {
+      // 预期结果而非故障：不自动转录（开关关 / 无 ASR）且素材库也配不到字幕。
+      // 任务已正常完成，面板对这类任务给「配对」入口，与改前一致。
+      debugPrint('[audiobook-auto] download-only job left for pairing: '
+          '${blocked.blocker.name}');
+    }
+  }
 
   /// 有声书素材库（懒建）。目录由用户在设置里指定，扫描结果缓存在服务内；
   /// 改目录后调 [AudiobookMaterialService.refresh] 重扫。

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
@@ -71,6 +72,10 @@ void main() {
       srtBookRepo: SrtBookRepository(db),
       audiobookRepo: AudiobookRepository(db),
       galgameRepo: GalgameRepository(db),
+      transcribeAudiobook: (TranscribeAudiobookPlan plan) async =>
+          throw const DiscoveryImportBlockedException(
+        DiscoveryImportBlocker.audiobookMissingSubtitle,
+      ),
     );
   });
 
@@ -106,5 +111,59 @@ void main() {
         ),
       ),
     );
+  });
+
+  group('独立字幕书(字幕 + 音频、无正文)', () {
+    late EnginePaths previousPaths;
+    late Future<Directory> Function()? previousDocsRoot;
+
+    setUp(() {
+      previousPaths = enginePaths;
+      previousDocsRoot = AudiobookStorage.documentsRootResolver;
+      enginePaths = FixedEnginePaths(
+        documents: tempRoot,
+        support: tempRoot,
+        temp: tempRoot,
+      );
+      AudiobookStorage.documentsRootResolver = () async => tempRoot;
+    });
+
+    tearDown(() {
+      enginePaths = previousPaths;
+      AudiobookStorage.documentsRootResolver = previousDocsRoot;
+    });
+
+    test('落一条带音频与 cue 的字幕书;同名再来一次被跳过', () async {
+      final File srt = File(p.join(tempRoot.path, 'src', '銀河鉄道の夜.srt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '1\n00:00:00,000 --> 00:00:02,000\nジョバンニは走った。\n\n'
+          '2\n00:00:02,000 --> 00:00:04,000\nカムパネルラもいた。\n',
+        );
+      final File mp3 = File(p.join(tempRoot.path, 'src', '01.mp3'))
+        ..writeAsBytesSync(<int>[0, 1, 2, 3]);
+      final SubtitleAudiobookPlan plan = SubtitleAudiobookPlan(
+        subtitlePath: srt.path,
+        audioPaths: <String>[mp3.path],
+      );
+
+      final String? key = await importers.importSubtitleAudiobook(plan);
+      expect(key, isNotNull);
+
+      final SrtBookRepository repo = SrtBookRepository(db);
+      final List<SrtBook> books = await repo.listAll();
+      expect(books, hasLength(1));
+      final SrtBook book = books.single;
+      expect(book.title, '銀河鉄道の夜');
+      expect(book.bookKey, key);
+      expect(book.audioPaths, hasLength(1));
+      expect(File(book.audioPaths!.single).existsSync(), isTrue);
+      expect(await repo.cuesFor(book.uid), hasLength(2));
+      expect(await db.getEpubBook(key!), isNotNull);
+
+      // 同一份字幕再下一次：正文 EPUB 同名 → skip，不落第二条壳行。
+      expect(await importers.importSubtitleAudiobook(plan), isNull);
+      expect(await repo.listAll(), hasLength(1));
+    });
   });
 }

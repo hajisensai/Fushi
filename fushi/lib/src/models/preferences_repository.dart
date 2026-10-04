@@ -3566,6 +3566,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 只有音频的有声书下载完成后是否自动转录入库（默认开）。
+  bool get audiobookAutoTranscribe =>
+      getPref('audiobook_auto_transcribe', defaultValue: true) as bool;
+
+  Future<void> setAudiobookAutoTranscribe({required bool value}) async {
+    await setPref('audiobook_auto_transcribe', value);
+    notifyListeners();
+  }
+
   String get mangaSpreadPreference =>
       getPref('manga_spread_preference', defaultValue: 'auto') as String;
 

@@ -54,6 +54,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'asr_transcribe_language',
   'audio_source_configs',
   'audio_sources',
+  // bool：只有音频（没有字幕）的有声书下载完成后，自动用设备端语音模型转录
+  // 并入库（有正文对齐、没有成独立字幕书）。默认开；关掉 = 改前行为（任务
+  // 停在「缺字幕」，用户手动配对）。见 media/audiobook/audiobook_auto_transcribe.dart。
+  'audiobook_auto_transcribe',
   'audiobook_background_play',
   // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
