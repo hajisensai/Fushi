@@ -517,3 +517,28 @@ test('点释义里的交叉引用 a[href]：popup.js 必须走 onLinkClick，不
   assert.ok(world.sent.some((m) => m.type === 'lookup' && m.term === '言語'),
       '点交叉引用必须发出对该词的 lookup（嵌套查词真的查了）');
 });
+
+// 2026-10-04 22:56 录屏：新开弹窗在 popup.js 尾批仍在途（首词条刚渲染完）时就显示，用户先看到
+// 一条矮卡，尾批建完再「啪」地长高。新开时等终发 popupRendered（bridge-shim → __fushiOnRendered）
+// 再显示；兜底计时器另有上限。
+test('新开弹窗等尾批建完再显示，不先以首词条矮卡入场', () => {
+  const many = { '日本語': { entries: [{ expression: '日本語' }, { expression: '日本' }, { expression: '日' }], bestLength: 3 } };
+  const world = loadWorld({ respond: lookupResponder(many) });
+  const src = makeSourceTextNode('日本語を勉強する', { left: 300, top: 400 });
+  installSelection(world.windowObj, src, 0, src.textContent.length);
+  shiftHover(world, '日本語', src, 320, 410);
+  // 测试沙箱的 setTimeout 不执行：popup.js 的尾批宏任务停在途中，正是录屏里的窗口期。
+  world.windowObj._renderInProgress = true;
+  world.flushRaf();
+  const root = world.windowObj.__fushiRoot;
+  const container = root.children.find((c) => c.id === 'entries-container');
+  assert.ok(container, '弹窗容器已建');
+  // 样式表落地（沙箱里 <link> 不会自己 load）：放开既有的样式门，只剩尾批门。
+  const link = root.children.find((c) => c.__fushiCssGate);
+  if (link) for (const l of (link.listeners.load || [])) l.fn();
+  assert.notStrictEqual(container.style.visibility, 'visible', '样式已落地但尾批在途：先不显示');
+  // 尾批建完：popup.js 清掉 _renderInProgress 后发终高。
+  world.windowObj._renderInProgress = false;
+  world.windowObj.flutter_inappwebview.callHandler('popupRendered', 520, 1, 800);
+  assert.strictEqual(container.style.visibility, 'visible', '终发到达即显示');
+});

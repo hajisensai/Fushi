@@ -41,7 +41,13 @@ function harness(handler = () => null) {
       callHandler: (name, ...args) => { calls.push({ name, args }); return handler(name, ...args); },
     },
   };
+  // 可控计时器：子层「尾批在途先不显示、最多等 REVEAL_WAIT_MS」的兜底显示。
+  const timers = [];
+  const setTimeoutFake = (fn, ms) => { const t = { fn, ms, cleared: false }; timers.push(t); return t; };
+  const clearTimeoutFake = t => { if (t) t.cleared = true; };
+  const runTimers = () => { for (const t of timers.splice(0)) if (!t.cleared) t.fn(); };
   const context = vm.createContext({
+    setTimeout: setTimeoutFake, clearTimeout: clearTimeoutFake,
     window, URL, Promise, console, MessageChannel: MockMessageChannel,
     chrome: { runtime: {
       id: 'test-extension',
@@ -105,7 +111,7 @@ function harness(handler = () => null) {
   const portEvent = (frame, message) => frame.port.postMessage({ __fushiPopupFrame: true, ...message });
   const call = (frame, name, args = [], id = 1) => portEvent(frame, { type: 'call', name, args, id });
   const live = () => frames.filter(frame => !frame.removed);
-  return { context, root, window, frames, lookups, calls, live, event, portEvent, call, replyLookup,
+  return { context, root, window, frames, lookups, calls, live, event, portEvent, call, replyLookup, runTimers, timers,
     api: window.fushiNestedPopups,
     counts: () => ({ focusCount, renderCount, resumeCount }) };
 }
@@ -235,17 +241,54 @@ test('nested layer picks its side by the final height and locks it once revealed
   const child = h.frames[0];
   const animations = [];
   child.box.animate = (keyframes, options) => { animations.push({ keyframes, options }); return {}; };
-  // 首发：首词条 120px，尾批仍在途。
+  // 首发：首词条 120px，尾批仍在途——先不显示（不再以一条矮条入场再「啪」地长高）。
   h.call(child, 'popupRendered', [120, 1, 900, true]);
-  assert.equal(child.box.style.visibility, 'visible');
+  assert.equal(child.box.style.visibility, undefined, '尾批在途时先不显示');
   assert.equal(child.box.style.top, '100px', '按最终可能的高度选边：直接落上方，不先落下方');
+  assert.equal(animations.length, 0);
+  // 终高到：显示、播一次入场。
+  h.call(child, 'popupRendered', [480, 1, 900, false], 2);
+  assert.equal(child.box.style.visibility, 'visible');
   assert.equal(animations.length, 1, '显示时播一次入场动画');
   assert.equal(child.box.style.transformOrigin, '50% 100%', '落上方时从贴词的底边长出');
-  // 终高：长高后仍在同一侧，不翻边、不重播动画。
-  h.call(child, 'popupRendered', [480, 1, 900, false], 2);
   assert.equal(child.box.style.top, '100px');
   assert.equal(plans.at(-1).side, 'above', '显示后复算锁在已选一侧');
+  assert.match(child.box.style.transition, /height 180ms/, '显示后的长高 / 夹高走过渡');
+  // 计时器兜底在终高已到后不得二次显示 / 重播。
+  h.runTimers();
   assert.equal(animations.length, 1);
+  // 之后的复报（masonry 重排）只重算落点，不重播。
+  h.call(child, 'popupRendered', [500, 1, 900, false], 3);
+  assert.equal(plans.at(-1).side, 'above');
+  assert.equal(animations.length, 1);
+});
+
+test('slow tail batch: the layer is revealed after a bounded wait and later growth is transitioned', () => {
+  const h = harness();
+  h.api.open('子', { x: 80, y: 100 }); h.replyLookup(0);
+  const child = h.frames[0];
+  const animations = [];
+  child.box.animate = () => { animations.push(1); return {}; };
+  h.call(child, 'popupRendered', [120, 1, 900, true]);
+  h.call(child, 'popupRendered', [130, 1, 900, true], 2);
+  assert.equal(h.timers.filter(t => !t.cleared).length, 1, '在途重复首发只挂一个兜底计时器');
+  assert.equal(h.timers[0].ms, 260);
+  assert.equal(child.box.style.visibility, undefined);
+  h.runTimers();
+  assert.equal(child.box.style.visibility, 'visible', '尾批迟迟不来：最多等一下就先显示');
+  assert.equal(animations.length, 1);
+  assert.match(child.box.style.transition, /height 180ms/);
+  h.call(child, 'popupRendered', [480, 1, 900, false], 3);
+  assert.equal(animations.length, 1, '终高晚到只走高度过渡，不重播入场');
+});
+
+test('closing a layer before its tail batch arrives cancels the pending reveal', () => {
+  const h = harness();
+  h.api.open('子'); h.replyLookup(0);
+  const child = h.frames[0];
+  h.call(child, 'popupRendered', [120, 1, 900, true]);
+  h.api.clear();
+  assert.equal(h.timers[0].cleared, true);
 });
 
 test('nested layer whose first render is final keeps the measured side', () => {

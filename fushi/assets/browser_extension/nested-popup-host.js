@@ -22,6 +22,7 @@
     if (parent && !keep) return;
     for (const layer of layers.splice(keep)) {
       requests.delete(layer);
+      if (layer.revealTimer) { clearTimeout(layer.revealTimer); layer.revealTimer = null; }
       if (layer.port) {
         layer.port.onmessage = null;
         layer.port.close();
@@ -135,6 +136,27 @@
       });
     } catch (_) { /* WAAPI 不可用：直接显示 */ }
   }
+  // 尾批在途时最多等这么久再显示（首词条已渲染、终高未到）。典型尾批在一两帧到几百毫秒内
+  // 建完；超过这个时间先显示，避免慢词典把子层卡成「点了没反应」。
+  const REVEAL_WAIT_MS = 260;
+  const RESIZE_MS = 180;
+  function reveal(layer) {
+    if (layer.revealed || !layers.includes(layer)) return;
+    if (layer.revealTimer) { clearTimeout(layer.revealTimer); layer.revealTimer = null; }
+    layer.revealed = true;
+    layer.side = layer.placedSide; // 显示即锁边（BUG-2773 同款）
+    layer.box.style.visibility = 'visible';
+    playEnter(layer.box, layer.side);
+    // 显示之后的长高 / 夹高走短过渡（落词上方时底边贴词、长高改的是 top，一并过渡）。
+    // 显示前的落点不过渡：入场时外框已在终点。
+    if (!prefersReducedMotion()) {
+      // 先把「本次落点」提交成已计算样式再装过渡：否则终高与过渡在同一次样式计算里生效，
+      // 外框会从隐藏期间的首词条高度一路过渡到终高（CfT 实测 187→360px 拉长 170ms）。
+      void layer.box.offsetHeight;
+      layer.box.style.transition = 'height ' + RESIZE_MS + 'ms cubic-bezier(0.2, 0, 0, 1), top ' +
+        RESIZE_MS + 'ms cubic-bezier(0.2, 0, 0, 1)';
+    }
+  }
   function open(query, anchor, parent, highlight) {
     const term = typeof query === 'string' ? query.trim() : '';
     if (!term || !fushiHost || (parent && !layers.includes(parent))) return;
@@ -212,12 +234,17 @@
     else if (message.name === 'tapOutside') dismissAfter(layer);
     else if (message.name === 'popupRendered') {
       // args[3]：nested-popup.js 附上的「尾批仍在途」（popup.js _renderInProgress）。
-      place(layer, args[0], args[3] === true);
-      if (!layer.revealed) {
-        layer.revealed = true;
-        layer.side = layer.placedSide; // 显示即锁边（BUG-2773 同款）
-        layer.box.style.visibility = 'visible';
-        playEnter(layer.box, layer.side);
+      const stillRendering = args[3] === true;
+      place(layer, args[0], stillRendering);
+      // 2026-10-04 22:56 录屏：首发只有首词条（两三行）时就显示，子层先以一条矮条入场、
+      // 约半秒后尾批建完又「啪」地一下长到全高。尾批在途时先不显示，等终高那一发再入场；
+      // 尾批迟迟不来（大词典慢）时最多等 REVEAL_WAIT_MS 就先显示，此后长高走高度过渡。
+      if (layer.revealed) {
+        // 已显示：高度变化由外框的 height/top 过渡接住（reveal 里装上），不再跳。
+      } else if (stillRendering) {
+        if (!layer.revealTimer) layer.revealTimer = setTimeout(() => reveal(layer), REVEAL_WAIT_MS);
+      } else {
+        reveal(layer);
       }
     } else if (message.name === 'openSentenceContextModal') {
       const oldCue = fushiPendingCueWindow, oldDraft = fushiSentenceCtx;

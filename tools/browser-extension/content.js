@@ -2035,6 +2035,7 @@ function fushiRemoveContainer() {
   window._renderInProgress = false;
   fushiLookupPerfContext = null;
   fushiBindPopupPerfContext(null);
+  fushiCancelPendingReveal();
   fushiHost = null;
   fushiContainer = null;
   fushiShownTerm = '';
@@ -3012,10 +3013,43 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
     // 落点已按当前布局尽力算过，settle 里还会按最终样式再复算一次。同步 <style> 路径
     // fushiCssLink 恒为 null，直接放行，不多等一帧。
     const gate = fushiCssLink && fushiCssLink.__fushiCssGate;
-    if (!(gate && gate.add(reveal))) reveal();
+    const revealWhenComplete = () => fushiRevealWhenRenderComplete(freshOpen, reveal);
+    if (!(gate && gate.add(revealWhenComplete))) revealWhenComplete();
   };
   requestAnimationFrame(place);
 }
+
+// 2026-10-04 22:56 录屏（子层同款，见 nested-popup-host.js reveal）：popup.js 首词条同步渲染、
+// 尾批在宏任务里补建（_renderInProgress=true）。新开的弹窗若此刻就显示，用户先看到一条只有
+// 首词条的矮卡，尾批建完再「啪」地长到全高。新开时等尾批完成（popupRendered 终发经
+// bridge-shim 调 window.__fushiOnRendered）再显示，最多等 FUSHI_REVEAL_WAIT_MS；弹窗已开着
+// 换词（悬停扫词）不等，保持即时。
+const FUSHI_REVEAL_WAIT_MS = 260;
+let fushiPendingReveal = null;
+function fushiCancelPendingReveal() {
+  if (!fushiPendingReveal) return;
+  clearTimeout(fushiPendingReveal.timer);
+  fushiPendingReveal = null;
+}
+function fushiRevealWhenRenderComplete(freshOpen, reveal) {
+  fushiCancelPendingReveal();
+  if (!freshOpen || window._renderInProgress !== true) { reveal(); return; }
+  const pending = { reveal, timer: 0 };
+  const fire = () => {
+    if (fushiPendingReveal !== pending) return;
+    fushiPendingReveal = null;
+    clearTimeout(pending.timer);
+    // 尾批期间高度在变：显示前按终高再落一次点（同一锚点、同一纯函数）。
+    fushiApplyPlacement();
+    reveal();
+  };
+  pending.fire = fire;
+  pending.timer = setTimeout(fire, FUSHI_REVEAL_WAIT_MS);
+  fushiPendingReveal = pending;
+}
+window.__fushiOnRendered = function () {
+  if (fushiPendingReveal && window._renderInProgress !== true) fushiPendingReveal.fire();
+};
 
 // 查词弹窗入场：落点已算好、锁边之后才播，只动 opacity + 轻微位移/缩放（合成器线程），
 // 原点在贴词的那条边上——像从被查词处长出来。玻璃（宿主的 backdrop-filter）第一帧就在；
