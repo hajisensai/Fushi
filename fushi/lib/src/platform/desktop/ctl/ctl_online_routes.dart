@@ -1184,7 +1184,7 @@ class _OnlineCtl {
         return DiscoveryMediaKind.game;
       case 'video' || 'anime':
         throw const CtlFailure.unsupported(
-          '视频域的发现走「AI 下视频」作品识别 + 资源索引管线，CLI 暂未接入',
+          '视频域的发现请用 fushi_cli video discover / video resources / video get',
         );
     }
     throw CtlFailure.badRequest(
