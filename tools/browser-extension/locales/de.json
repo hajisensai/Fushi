@@ -425,5 +425,5 @@
   "pc_style_more": "Alle Einstellungen",
   "pc_hint_site_track": "Dieses Video spielt den Untertitel-Track der Website ab, daher bleibt die Fushi-Ebene ausgeblendet. Tippen, um stattdessen Fushi-Untertitel anzuzeigen.",
   "opt_playerControls_title": "Untertitel-Schaltfläche im Player",
-  "opt_playerControls_desc": "Setzt eine Fushi-Schaltfläche in die Steuerleiste des Players (YouTube und Netflix; auf anderen Seiten erscheint eine runde Schaltfläche unten rechts im Video, solange der Zeiger darüber liegt). Ihr Menü schaltet dieselben Einstellungen wie diese Seite – Fushi-Untertitel, Untertitel der Website ersetzen, ausblenden, Zeitversatz und Untertitel-Aussehen – ohne das Video zu verlassen."
+  "opt_playerControls_desc": "Setzt eine Fushi-Schaltfläche in die Steuerleiste des Players (YouTube und Netflix; auf anderen Seiten erscheint eine runde Schaltfläche oben rechts im Video, solange der Zeiger darüber liegt). Ihr Menü schaltet dieselben Einstellungen wie diese Seite – Fushi-Untertitel, Untertitel der Website ersetzen, ausblenden, Zeitversatz und Untertitel-Aussehen – ohne das Video zu verlassen."
 }

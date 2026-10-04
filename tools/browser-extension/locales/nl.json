@@ -425,5 +425,5 @@
   "pc_style_more": "Alle instellingen",
   "pc_hint_site_track": "Deze video speelt het ondertitelspoor van de site zelf af, dus de Fushi-laag blijft verborgen. Tik om in plaats daarvan Fushi-ondertitels te tonen.",
   "opt_playerControls_title": "Ondertitelknop in de speler",
-  "opt_playerControls_desc": "Zet een Fushi-knop in de bedieningsbalk van de speler (YouTube en Netflix; op andere sites verschijnt een ronde knop rechtsonder in de video zolang de aanwijzer erboven staat). Het menu schakelt dezelfde instellingen als deze pagina — Fushi-ondertitels, de ondertitels van de site vervangen, verbergen, de tijdverschuiving en het uiterlijk — zonder de video te verlaten."
+  "opt_playerControls_desc": "Zet een Fushi-knop in de bedieningsbalk van de speler (YouTube en Netflix; op andere sites verschijnt een ronde knop rechtsboven in de video zolang de aanwijzer erboven staat). Het menu schakelt dezelfde instellingen als deze pagina — Fushi-ondertitels, de ondertitels van de site vervangen, verbergen, de tijdverschuiving en het uiterlijk — zonder de video te verlaten."
 }

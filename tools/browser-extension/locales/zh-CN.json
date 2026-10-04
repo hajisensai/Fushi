@@ -425,5 +425,5 @@
   "pc_style_more": "全部设置",
   "pc_hint_site_track": "这个视频放的是站点自带字幕轨，所以 Fushi 覆盖层不出画。点这里改用 Fushi 字幕。",
   "opt_playerControls_title": "播放器内的字幕按钮",
-  "opt_playerControls_desc": "在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在视频上时于右下角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。"
+  "opt_playerControls_desc": "在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在视频上时于右上角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。"
 }

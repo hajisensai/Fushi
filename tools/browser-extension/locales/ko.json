@@ -425,5 +425,5 @@
   "pc_style_more": "전체 설정",
   "pc_hint_site_track": "이 영상은 사이트 자체 자막 트랙을 재생하고 있어 Fushi 자막은 표시되지 않습니다. 눌러서 Fushi 자막으로 바꾸세요.",
   "opt_playerControls_title": "플레이어 안의 자막 버튼",
-  "opt_playerControls_desc": "플레이어의 컨트롤 바에 Fushi 버튼을 넣습니다(YouTube와 Netflix. 다른 사이트에서는 포인터를 올린 동안 영상 오른쪽 아래에 둥근 버튼이 나타납니다). 메뉴에서 이 페이지와 같은 설정 — Fushi 자막, 사이트 자막 대체, 숨기기, 싱크 조절, 자막 모양 — 을 영상을 벗어나지 않고 바꿀 수 있습니다."
+  "opt_playerControls_desc": "플레이어의 컨트롤 바에 Fushi 버튼을 넣습니다(YouTube와 Netflix. 다른 사이트에서는 포인터를 올린 동안 영상 오른쪽 위에 둥근 버튼이 나타납니다). 메뉴에서 이 페이지와 같은 설정 — Fushi 자막, 사이트 자막 대체, 숨기기, 싱크 조절, 자막 모양 — 을 영상을 벗어나지 않고 바꿀 수 있습니다."
 }
