@@ -6251,10 +6251,12 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "「$name」シリーズは大きすぎて関連作品を一部しか調べられませんでした。下のリストは不完全な可能性があります。",
+  "ai_video_acquire_franchise_truncated": "「$name」の関連作品をすべては調べられませんでした。下のリストは不完全な可能性があります。",
   "video_subtitle_graphic_ocr_track": "テキスト字幕に変換（OCR）",
   "video_subtitle_graphic_ocr_track_hint": "トラック全体を一度認識すれば、再生中に文字をタップして辞書引きできます",
   "video_subtitle_graphic_ocr_extracting": "画像字幕トラックを抽出中…",
   "video_subtitle_graphic_ocr_progress": "字幕を認識中 $done/$total",
-  "video_subtitle_graphic_ocr_empty": "この字幕トラックから文字を認識できませんでした"
+  "video_subtitle_graphic_ocr_empty": "この字幕トラックから文字を認識できませんでした",
+  "ai_video_acquire_franchise_unavailable": "Couldn’t get the full series list for “$title” (the metadata source failed or is unavailable).",
+  "ai_video_acquire_ask_franchise_fallback": "No other matching works were found. Download only “$title”?"
 }

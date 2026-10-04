@@ -6251,10 +6251,12 @@
   "ai_video_acquire_recommend_preference_switch": "Ranked by your quality, source and bitrate preferences and then search relevance, version $index is the top pick. Switched to it.",
   "ai_video_acquire_recommend_criteria_current": "By what you asked for, the current one (version $index) fits best.",
   "ai_video_acquire_recommend_criteria_switch": "By what you asked for, version $index fits best. Switched to it.",
-  "ai_video_acquire_franchise_truncated": "「$name」系列太大，關聯作品只查了一部分，下面的清單可能不全。",
+  "ai_video_acquire_franchise_truncated": "「$name」的關聯作品沒能全部查到，下面的清單可能不全。",
   "video_subtitle_graphic_ocr_track": "轉成文字字幕（OCR）",
   "video_subtitle_graphic_ocr_track_hint": "整軌辨識一次，之後播放中直接點字查詞",
   "video_subtitle_graphic_ocr_extracting": "正在抽取圖形字幕軌…",
   "video_subtitle_graphic_ocr_progress": "正在辨識字幕 $done/$total",
-  "video_subtitle_graphic_ocr_empty": "這條字幕軌沒有辨識出文字"
+  "video_subtitle_graphic_ocr_empty": "這條字幕軌沒有辨識出文字",
+  "ai_video_acquire_franchise_unavailable": "沒能取到「$title」的完整系列清單（資料源出錯或不可用）。",
+  "ai_video_acquire_ask_franchise_fallback": "沒找到符合要求的其它作品。只下載「$title」這一部嗎？"
 }

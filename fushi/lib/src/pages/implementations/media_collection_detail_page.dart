@@ -58,6 +58,7 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_lock_dialog.dart';
@@ -1762,8 +1763,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           onActivateItem: (int i) => _openSlot(visible[i]),
           onContextMenu: (int i, Offset globalPosition) =>
               _showEpisodeMenu(visible[i], globalPosition),
-          itemBuilder: (BuildContext context, int i) =>
-              _buildEpisodeCard(context, visible[i], i),
+          // 2026-10 动效重做：集卡首屏错峰进场（窗口在页级
+          // [FushiEntranceScope]，换季时重开）。只包装卡，不改网格几何。
+          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+            index: i,
+            child: _buildEpisodeCard(context, visible[i], i),
+          ),
         );
       },
     );
@@ -2264,51 +2269,57 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     message: t.collection_empty,
                   ),
                 )
-              : CustomScrollView(
-                  slivers: <Widget>[
-                    SliverToBoxAdapter(
-                      child: _buildHero(),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _centeredContent(buildDetailTagChips()),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _centeredContent(
-                        _buildWorkDetailsSection(),
+              // 2026-10 动效重做：成员集卡的进场窗口。replayKey 带当前季——
+              // 换季整段集列表重建，新一季也有一次错峰进场；窗口外（数据刷新、
+              // 拖拽重排）挂载的卡瞬间出现。
+              : FushiEntranceScope(
+                  replayKey: _selectedSection?.groupKey,
+                  child: CustomScrollView(
+                    slivers: <Widget>[
+                      SliverToBoxAdapter(
+                        child: _buildHero(),
                       ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _centeredContent(_buildCreditsSection(tokens)),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _centeredContent(_buildExtrasSection(tokens)),
-                    ),
-                    // 相关作品横滚（TODO-2484）：hero 之下、剧集区之上；无关系边
-                    // 整块不渲染（区块内部判空）。
-                    SliverToBoxAdapter(
-                      child: _centeredContent(
-                        CollectionRelationsSection(
-                          database: widget.database,
-                          collectionId: widget.collection.id,
-                          onOpenCollection: (int id) =>
-                              _openRelatedCollection(id),
-                          onDownload:
-                              _downloadsAvailable ? _downloadRelation : null,
+                      SliverToBoxAdapter(
+                        child: _centeredContent(buildDetailTagChips()),
+                      ),
+                      SliverToBoxAdapter(
+                        child: _centeredContent(
+                          _buildWorkDetailsSection(),
                         ),
                       ),
-                    ),
-                    SliverToBoxAdapter(
-                      child: _centeredContent(
-                        _buildEpisodeSection(tokens),
+                      SliverToBoxAdapter(
+                        child: _centeredContent(_buildCreditsSection(tokens)),
                       ),
-                    ),
-                    SliverSafeArea(
-                      top: false,
-                      sliver: SliverToBoxAdapter(
-                        child: SizedBox(height: tokens.spacing.page),
+                      SliverToBoxAdapter(
+                        child: _centeredContent(_buildExtrasSection(tokens)),
                       ),
-                    ),
-                  ],
+                      // 相关作品横滚（TODO-2484）：hero 之下、剧集区之上；无关系边
+                      // 整块不渲染（区块内部判空）。
+                      SliverToBoxAdapter(
+                        child: _centeredContent(
+                          CollectionRelationsSection(
+                            database: widget.database,
+                            collectionId: widget.collection.id,
+                            onOpenCollection: (int id) =>
+                                _openRelatedCollection(id),
+                            onDownload:
+                                _downloadsAvailable ? _downloadRelation : null,
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(
+                        child: _centeredContent(
+                          _buildEpisodeSection(tokens),
+                        ),
+                      ),
+                      SliverSafeArea(
+                        top: false,
+                        sliver: SliverToBoxAdapter(
+                          child: SizedBox(height: tokens.spacing.page),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
     );
     // 整页（含空合集占位）都是拖放落点：把视频文件拖进来即导入并归入本合集。
