@@ -1930,34 +1930,43 @@ VideoAcquisitionReduction _onFranchiseLoaded(
         for (final VideoDiscoveryItem item in members)
           VideoAcquisitionFranchiseEntry(item: item),
       ];
-  final VideoAcquisitionState next = state
-      .say(
-        VideoAcquisitionSay(
-          VideoAcquisitionSayKind.franchiseFound,
-          args: <String, Object?>{
-            'name': franchise!.name,
-            'series': entries
-                .where(
-                  (VideoAcquisitionFranchiseEntry e) =>
-                      e.item.reference.mediaKind == VideoMetadataMediaKind.tv,
+  final VideoAcquisitionState found = state.say(
+    VideoAcquisitionSay(
+      VideoAcquisitionSayKind.franchiseFound,
+      args: <String, Object?>{
+        'name': franchise!.name,
+        'series': entries
+            .where(
+              (VideoAcquisitionFranchiseEntry e) =>
+                  e.item.reference.mediaKind == VideoMetadataMediaKind.tv,
+            )
+            .length,
+        'movies': entries
+            .where(
+              (VideoAcquisitionFranchiseEntry e) =>
+                  e.item.reference.mediaKind == VideoMetadataMediaKind.movie,
+            )
+            .length,
+      },
+    ),
+  );
+  // 清单是解析走到一半的结果：照常往下走（已收到的照样要下），但不能让用户把它
+  // 当成「全部」（BUG-2935）。
+  final VideoAcquisitionState next =
+      (franchise.truncated
+              ? found.say(
+                  VideoAcquisitionSay(
+                    VideoAcquisitionSayKind.franchiseTruncated,
+                    args: <String, Object?>{'name': franchise.name},
+                  ),
                 )
-                .length,
-            'movies': entries
-                .where(
-                  (VideoAcquisitionFranchiseEntry e) =>
-                      e.item.reference.mediaKind ==
-                      VideoMetadataMediaKind.movie,
-                )
-                .length,
-          },
-        ),
-      )
-      .copyWith(
-        stage: VideoAcquisitionStage.planningFranchise,
-        franchiseName: franchise.name,
-        franchiseEntries: entries,
-        busy: true,
-      );
+              : found)
+          .copyWith(
+            stage: VideoAcquisitionStage.planningFranchise,
+            franchiseName: franchise.name,
+            franchiseEntries: entries,
+            busy: true,
+          );
   return (
     next,
     <VideoAcquisitionEffect>[
