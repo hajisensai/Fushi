@@ -4317,8 +4317,8 @@
   "video_subtitle_filter_all": "Alle",
   "video_subtitle_filter_favorites": "Favoriten",
   "video_subtitle_filter_favorites_empty": "Noch keine favorisierten Zeilen",
-  "video_subtitle_graphic_hint": "Grafikuntertitel · im Bild angezeigt · kein Nachschlagen",
-  "video_subtitle_graphic_shown": "Grafikuntertitel im Bild angezeigt (kein Nachschlagen): $label",
+  "video_subtitle_graphic_hint": "Grafikuntertitel · im Bild angezeigt · Nachschlagen nach Pause (OCR)",
+  "video_subtitle_graphic_shown": "Grafikuntertitel im Bild angezeigt (nach Pause per OCR nachschlagbar): $label",
   "video_subtitle_import_failed": "Untertitel-Import fehlgeschlagen",
   "video_subtitle_import_file": "Untertiteldatei importieren…",
   "video_subtitle_import_unsupported": "Nicht unterstütztes Untertitelformat",
@@ -6170,7 +6170,7 @@
   "anki_dedup_progress_indexing": "Reading notes to find media references… ($done / $total)",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "video_subtitle_graphic_learning_hint": "Bilduntertitel werden bei Pause per OCR erkannt; tippe auf ein Wort, um es nachzuschlagen. Mit „In Textuntertitel umwandeln“ unten kannst du auch während der Wiedergabe nachschlagen.",
   "ai_feature_video_identify_assist_summary": "Wenn das Scraping mehrere Kandidaten oder gar nichts findet, wählt die KI das passende Werk aus oder schlägt Suchtitel vor",
   "ai_feature_video_search_subtitle_summary": "Die KI sortiert Untertitel-Suchergebnisse neu, wenn Untertitel automatisch im Hintergrund ergänzt werden",
   "video_scrape_ai_declined": "AI not adopted",
@@ -6246,5 +6246,10 @@
   "ocr_system_model_play_services_resolvable": "System OCR needs Google Play services, which is missing, disabled or outdated on this device.",
   "ocr_system_model_play_services_fix": "Fix Google Play services",
   "ocr_system_model_play_services_unavailable": "This device has no usable Google Play services, so system OCR can't run here.",
-  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text."
+  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
+  "video_subtitle_graphic_ocr_track": "In Textuntertitel umwandeln (OCR)",
+  "video_subtitle_graphic_ocr_track_hint": "Die ganze Spur einmal erkennen, danach während der Wiedergabe Wörter antippen und nachschlagen",
+  "video_subtitle_graphic_ocr_extracting": "Bilduntertitelspur wird extrahiert…",
+  "video_subtitle_graphic_ocr_progress": "Untertitel werden erkannt $done/$total",
+  "video_subtitle_graphic_ocr_empty": "In dieser Untertitelspur wurde kein Text erkannt"
 }

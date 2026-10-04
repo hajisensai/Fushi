@@ -4317,8 +4317,8 @@
   "video_subtitle_filter_all": "Todas",
   "video_subtitle_filter_favorites": "Favoritas",
   "video_subtitle_filter_favorites_empty": "Nenhuma linha favoritada ainda",
-  "video_subtitle_graphic_hint": "Legenda gráfica · exibida no vídeo · sem consulta de palavras",
-  "video_subtitle_graphic_shown": "Legenda gráfica exibida no vídeo (sem consulta de palavras): $label",
+  "video_subtitle_graphic_hint": "Legenda gráfica · exibida no vídeo · consulta ao pausar (OCR)",
+  "video_subtitle_graphic_shown": "Legenda gráfica exibida no vídeo (pause para consultar palavras via OCR): $label",
   "video_subtitle_import_failed": "Falha ao importar legenda",
   "video_subtitle_import_file": "Importar arquivo de legenda…",
   "video_subtitle_import_unsupported": "Formato de legenda não suportado",
@@ -6170,7 +6170,7 @@
   "anki_dedup_progress_indexing": "Reading notes to find media references… ($done / $total)",
   "video_subtitle_asr_generate": "Generate subtitles with speech recognition",
   "video_subtitle_asr_generate_hint": "Create text subtitles for word lookup and flashcards",
-  "video_subtitle_graphic_learning_hint": "Image subtitles cannot be used for word lookup. Import text subtitles or generate them with speech recognition.",
+  "video_subtitle_graphic_learning_hint": "Legendas de imagem são reconhecidas por OCR ao pausar; toque em uma palavra para consultá-la. Use \"Converter em legendas de texto\" abaixo para consultar durante a reprodução.",
   "ai_feature_video_identify_assist_summary": "Quando a coleta encontra vários candidatos ou nenhum, a IA escolhe a obra correspondente ou sugere títulos para pesquisar",
   "ai_feature_video_search_subtitle_summary": "A IA reordena os resultados de legendas quando as legendas são preenchidas automaticamente em segundo plano",
   "video_scrape_ai_declined": "AI not adopted",
@@ -6246,5 +6246,10 @@
   "ocr_system_model_play_services_resolvable": "System OCR needs Google Play services, which is missing, disabled or outdated on this device.",
   "ocr_system_model_play_services_fix": "Fix Google Play services",
   "ocr_system_model_play_services_unavailable": "This device has no usable Google Play services, so system OCR can't run here.",
-  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text."
+  "manga_ocr_ai_mode_low_confidence_legacy": "Volumes recognized before this option existed carry no confidence scores, so this mode leaves them untouched. Re-run OCR on such a volume (with an on-device model) to let the AI re-read its uncertain text.",
+  "video_subtitle_graphic_ocr_track": "Converter em legendas de texto (OCR)",
+  "video_subtitle_graphic_ocr_track_hint": "Reconheça a faixa inteira uma vez; depois toque nas palavras para consultá-las durante a reprodução",
+  "video_subtitle_graphic_ocr_extracting": "Extraindo a faixa de legendas de imagem…",
+  "video_subtitle_graphic_ocr_progress": "Reconhecendo legendas $done/$total",
+  "video_subtitle_graphic_ocr_empty": "Nenhum texto reconhecido nesta faixa de legendas"
 }
