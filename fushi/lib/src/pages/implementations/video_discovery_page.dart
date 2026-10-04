@@ -12,6 +12,7 @@ import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
 /// request out to TMDB and AniList, but the UI receives one redacted
@@ -974,22 +975,30 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 // Text does not shrink with the cover width. Reserve its
                 // measured space instead of squeezing it into an aspect ratio.
                 final double textHeight = _cardTextHeight(tokens);
-                return SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    mainAxisSpacing: tokens.spacing.gap,
-                    crossAxisSpacing: tokens.spacing.gap,
-                    mainAxisExtent:
-                        coverWidth * 1.5 + tokens.spacing.gap * 2 + textHeight,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (BuildContext context, int index) => _DiscoveryMediaCard(
-                      item: _works[index],
-                      landscape: false,
-                      imageResolver: widget.imageResolver,
-                      onTap: () => _openItem(_works[index]),
+                // 2026-10 动效重做：首屏结果卡错峰淡入，翻页补进来的卡瞬间出现。
+                return FushiEntranceScope(
+                  child: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: tokens.spacing.gap,
+                      crossAxisSpacing: tokens.spacing.gap,
+                      mainAxisExtent: coverWidth * 1.5 +
+                          tokens.spacing.gap * 2 +
+                          textHeight,
                     ),
-                    childCount: _works.length,
+                    delegate: SliverChildBuilderDelegate(
+                      (BuildContext context, int index) =>
+                          FushiStaggeredEntrance(
+                        index: index,
+                        child: _DiscoveryMediaCard(
+                          item: _works[index],
+                          landscape: false,
+                          imageResolver: widget.imageResolver,
+                          onTap: () => _openItem(_works[index]),
+                        ),
+                      ),
+                      childCount: _works.length,
+                    ),
                   ),
                 );
               },

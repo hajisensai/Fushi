@@ -19,6 +19,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 一个浏览列表（「热门」「最新」或源声明的 listing）。
 @immutable
@@ -442,51 +443,58 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
         return NotificationListener<ScrollNotification>(
           onNotification: _onScroll,
-          child: GridView.builder(
-            // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
-            // 补出手势条那一段；有 footer 时上面已摘掉，这里自动退回纯 16。
-            padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              childAspectRatio: 0.62,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: _items.length + (_hasNextPage ? 1 : 0),
-            itemBuilder: (BuildContext context, int index) {
-              if (index == _items.length) {
-                return Center(
-                  child: _loading
-                      ? adaptiveIndicator(context: context)
-                      : IconButton(
-                          key: ValueKey<String>('${prefix}_more'),
-                          onPressed: () => unawaited(_load(reset: false)),
-                          icon: const Icon(Icons.add_circle_outline),
+          child: FushiEntranceScope(
+            child: GridView.builder(
+              // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
+              // 补出手势条那一段；有 footer 时上面已摘掉，这里自动退回纯 16。
+              padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                childAspectRatio: 0.62,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: _items.length + (_hasNextPage ? 1 : 0),
+              itemBuilder: fushiStaggeredItemBuilder((
+                BuildContext context,
+                int index,
+              ) {
+                if (index == _items.length) {
+                  return Center(
+                    child: _loading
+                        ? adaptiveIndicator(context: context)
+                        : IconButton(
+                            key: ValueKey<String>('${prefix}_more'),
+                            onPressed: () => unawaited(_load(reset: false)),
+                            icon: const Icon(Icons.add_circle_outline),
+                          ),
+                  );
+                }
+                final T item = _items[index];
+                return FushiCard(
+                  key: ValueKey<String>(
+                    '${prefix}_item_${_catalog.keyOf(item)}',
+                  ),
+                  padding: EdgeInsets.zero,
+                  onTap: open == null ? null : () => open(context, item),
+                  // FushiCard 内部已按同一圆角 token 裁剪，这里不再多包 ClipRRect。
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: _catalog.buildCover(context, item)),
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Text(
+                          _catalog.titleOf(item),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                );
-              }
-              final T item = _items[index];
-              return FushiCard(
-                key: ValueKey<String>('${prefix}_item_${_catalog.keyOf(item)}'),
-                padding: EdgeInsets.zero,
-                onTap: open == null ? null : () => open(context, item),
-                // FushiCard 内部已按同一圆角 token 裁剪，这里不再多包 ClipRRect。
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: _catalog.buildCover(context, item)),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(
-                        _catalog.titleOf(item),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                    ],
+                  ),
+                );
+              }),
+            ),
           ),
         );
       },

@@ -13,6 +13,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 浏览**已配对互联对端**的漫画库，与浏览一个扩展源同构。
 ///
@@ -172,7 +173,8 @@ class _InterconnectMangaBrowsePageState
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
         return RefreshIndicator(
           onRefresh: _load,
-          child: GridView.builder(
+          child: FushiEntranceScope(
+            child: GridView.builder(
             padding: const EdgeInsets.all(16),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
@@ -181,7 +183,10 @@ class _InterconnectMangaBrowsePageState
               mainAxisSpacing: 12,
             ),
             itemCount: visible.length,
-            itemBuilder: (BuildContext context, int index) {
+            itemBuilder: fushiStaggeredItemBuilder((
+              BuildContext context,
+              int index,
+            ) {
               final RemoteBookInfo book = visible[index];
               return FushiCard(
                 padding: EdgeInsets.zero,
@@ -203,7 +208,8 @@ class _InterconnectMangaBrowsePageState
                   ],
                 ),
               );
-            },
+            }),
+          ),
           ),
         );
       },
