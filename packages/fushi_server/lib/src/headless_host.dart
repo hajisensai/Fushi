@@ -101,6 +101,9 @@ class HeadlessHost {
   final ServerIdentity identity;
 
   FushiSyncServer? _server;
+
+  /// 运行中的互联 server（未启动为 null）；admin API 经它进程内代调互联接口。
+  FushiSyncServer? get syncServer => _server;
   LanAdvertiser? _advertiser;
   InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;

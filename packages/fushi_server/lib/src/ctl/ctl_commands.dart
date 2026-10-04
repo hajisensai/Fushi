@@ -38,9 +38,16 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
+import 'package:fushi_server/src/ctl/ctl_host_commands.dart';
 
 /// `ctl` 子命令的参数表；所有动作的选项平铺在这一层（动词在 rest 里）。
-ArgParser buildCtlParser() => ArgParser()
+ArgParser buildCtlParser() {
+  final ArgParser parser = _buildBaseCtlParser();
+  addCtlHostOptions(parser);
+  return parser;
+}
+
+ArgParser _buildBaseCtlParser() => ArgParser()
   ..addOption('url', help: 'admin API 地址（缺省按配置推本机地址）')
   ..addOption('token', help: 'admin_token（缺省读配置）')
   ..addOption('fingerprint', help: 'TLS 证书 SHA-256 指纹（缺省读本机服务端证书）')
@@ -71,7 +78,8 @@ const Map<String, String> _aliases = <String, String>{
 };
 
 /// `ctl` 的用法说明。
-const String kCtlUsage = '''
+const String kCtlUsage =
+    '''
 fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--json]
 
   status                                   运行状态
@@ -92,6 +100,7 @@ fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--jso
   p2p                                      P2P 隧道状态
   upload <文件…> --lib <id> [--path <目录>] 分块断点续传到库根（传完记得 scan）
   raw <METHOD> </api/admin/...> ['<json>'] 直接调任意 admin 接口
+$kCtlHostUsage
 
   别名：pair=pairing lib=libraries dl=downloads sub=subscriptions
         indexers=resource-indexers profile=profiles config=settings''';
@@ -164,10 +173,16 @@ Future<int> runCtlAction(
   if (rest.first == 'upload') {
     return _upload(client, command, out: out, err: err, chunkBytes: uploadChunkBytes);
   }
+  if (rest.first == 'jobs') {
+    final Future<int>? jobs = runCtlJobsAction(client, command, out: out, err: err, exitCodeFor: _exitCodeFor);
+    if (jobs != null) return jobs;
+  }
   if (rest.first == 'logs' && command['follow'] as bool) {
     return _followLogs(client, out: out, err: err, interval: followInterval, keepGoing: keepFollowing ?? () => true);
   }
-  final _CtlRequest? request = _parseAction(rest, command, err, readSecret ?? _readSecretDefault);
+  final _CtlRequest? request = kCtlHostActions.contains(rest.first)
+      ? _fromHost(parseCtlHostAction(rest, command, err))
+      : _parseAction(rest, command, err, readSecret ?? _readSecretDefault);
   if (request == null) return 64;
   final Object? response;
   try {
@@ -184,6 +199,23 @@ Future<int> runCtlAction(
   }
   if (response is Map && response['ok'] == false) return 1;
   return 0;
+}
+
+_CtlRequest? _fromHost(CtlHostRequest? r) {
+  if (r == null) return null;
+  final String? key = r.listKey;
+  return _CtlRequest(
+    r.method,
+    r.path,
+    body: r.body,
+    query: r.query == null || r.query!.isEmpty ? null : r.query,
+    render: key == null
+        ? null
+        : key.isEmpty
+        ? (Object? response, StringSink out) =>
+              response is List ? _renderRows(response, out) : _renderGeneric(response, out)
+        : _listRenderer(key),
+  );
 }
 
 int _exitCodeFor(AdminApiException ex) => switch (ex.status) {

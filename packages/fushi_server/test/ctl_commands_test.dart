@@ -45,7 +45,9 @@ class _FakeAdmin {
 
   void _listen() {
     _server.listen((HttpRequest request) async {
-      final String text = await utf8.decoder.bind(request).join();
+      final List<int> raw = <int>[for (final List<int> c in await request.toList()) ...c];
+      final bool isJson = request.headers.contentType?.mimeType == 'application/json';
+      final String text = isJson ? utf8.decode(raw) : '';
       seen.add(
         _Seen(
           request.method,
@@ -336,6 +338,106 @@ void main() {
     expect(admin.seen.single.auth, 'Bearer cfg-token');
     // 不经 _withRuntime：ctl 不得建数据目录 / 开数据库。
     expect(Directory('${dir.path}/data').existsSync(), isFalse);
+  });
+
+  group('经互联代理的动作', () {
+    final Map<List<String>, (String, String)> cases = <List<String>, (String, String)>{
+      <String>['books']: ('GET', '/api/admin/host/library/books'),
+      <String>['books', 'progress', 'k 1']: ('GET', '/api/admin/host/library/books/k%201/progress'),
+      <String>['videos', 'rm', 'v1']: ('DELETE', '/api/admin/host/library/videos/v1'),
+      <String>['videos', 'playback', 'v1']: ('GET', '/api/admin/host/library/videos/v1/playback'),
+      <String>['audiobooks', 'delay', 'a1']: ('GET', '/api/admin/host/library/audiobooks/a1/delay'),
+      <String>['manga', 'manifest', 'm1']: ('GET', '/api/admin/host/library/manga/m1/manifest'),
+      <String>['dict']: ('GET', '/api/admin/host/library/dictionaries'),
+      <String>['metadata']: ('GET', '/api/admin/host/library/metadata'),
+      <String>['activity']: ('GET', '/api/admin/host/library/activity'),
+      <String>['tombstones']: ('GET', '/api/admin/host/tombstones'),
+      <String>['scrape', 'pending']: ('GET', '/api/admin/scrape/pending'),
+      <String>['assistant', 'stop', 's1']: ('DELETE', '/api/admin/host/assistant/sessions/s1'),
+      <String>['host', 'get', '/api/library/tags']: ('GET', '/api/admin/host/library/tags'),
+    };
+    cases.forEach((List<String> args, (String, String) expected) {
+      test(args.join(' '), () async {
+        expect(await ctl(args), 0, reason: err.toString());
+        expect('${admin.seen.single.method} ${admin.seen.single.path}', '${expected.$1} ${expected.$2}');
+      });
+    });
+
+    test('--set 把读变成写', () async {
+      expect(await ctl(<String>['videos', 'position', 'v1', '--set', '{"positionMs":5}']), 0);
+      expect(admin.seen.single.method, 'PUT');
+      expect(admin.seen.single.body, <String, Object?>{'positionMs': 5});
+    });
+
+    test('scrape search / identify 的作品键与 lookup', () async {
+      expect(await ctl(<String>['scrape', 'search', 'uid1', '-q', '葬送']), 0);
+      expect(admin.seen.last.body, <String, Object?>{
+        'key': <String, Object?>{'bookUid': 'uid1'},
+        'query': '葬送',
+      });
+      expect(
+        await ctl(<String>[
+          'scrape', 'identify', '--collection', 'Frieren', '--collection-type', 'series', //
+          '--provider', 'anidb', '--external-id', '17617',
+        ]),
+        0,
+      );
+      expect(admin.seen.last.path, '/api/admin/host/library/metadata/scrape');
+      expect(admin.seen.last.body, <String, Object?>{
+        'key': <String, Object?>{
+          'collection': <String, Object?>{'name': 'Frieren', 'collectionType': 'series'},
+        },
+        'lookup': <String, Object?>{'provider': 'anidb', 'externalId': '17617', 'mediaKind': 'tv'},
+      });
+    });
+
+    test('scrape 缺参数 = 64 不发请求（合集键缺 collectionType 也算缺）', () async {
+      expect(await ctl(<String>['scrape', 'search', 'uid1']), 64);
+      expect(await ctl(<String>['scrape', 'identify', 'uid1', '--provider', 'anidb']), 64);
+      expect(await ctl(<String>['scrape', 'episode-groups', '--collection', 'X']), 64);
+      expect(admin.seen, isEmpty);
+    });
+
+    test('顶层列表响应一行一条', () async {
+      admin.nextBody = <Object?>[
+        <String, Object?>{'id': 'b1', 'title': '本好きの下剋上'},
+      ];
+      expect(await ctl(<String>['books']), 0);
+      expect(out.toString(), contains('b1  本好きの下剋上'));
+    });
+  });
+
+  group('jobs submit asr', () {
+    late Directory tmp;
+    setUp(() async => tmp = await Directory.systemTemp.createTemp('fushi_ctl_jobs_'));
+    tearDown(() => tmp.delete(recursive: true));
+
+    test('创建 → 上传输入 → 启动，不等则打印 jobId', () async {
+      final File audio = File('${tmp.path}/a.mp3')..writeAsBytesSync(<int>[1, 2, 3]);
+      admin.nextBody = <String, Object?>{'jobId': 'j9', 'state': 'pending'};
+      expect(await ctl(<String>['jobs', 'submit', 'asr', audio.path, '-l', 'en']), 0, reason: '$err');
+      expect(admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(), <String>[
+        'POST /api/admin/host/jobs',
+        'PUT /api/admin/host/jobs/j9/input/audio',
+        'POST /api/admin/host/jobs/j9/start',
+      ]);
+      expect(admin.seen.first.body, <String, Object?>{
+        'kind': 'asr',
+        'params': <String, Object?>{'language': 'en', 'input': 'audio'},
+      });
+      expect(out.toString().trim(), 'j9');
+    });
+
+    test('音频不存在 = 66', () async {
+      expect(await ctl(<String>['jobs', 'submit', 'asr', '${tmp.path}/none.mp3']), 66);
+      expect(admin.seen, isEmpty);
+    });
+
+    test('jobs ls / rm 仍走 admin 自己的接口', () async {
+      await ctl(<String>['jobs']);
+      await ctl(<String>['jobs', 'rm', 'j1']);
+      expect(admin.seen.map((_Seen s) => s.path).toList(), <String>['/api/admin/jobs', '/api/admin/jobs/j1']);
+    });
   });
 
   group('upload', () {

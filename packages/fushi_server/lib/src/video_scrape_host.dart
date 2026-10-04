@@ -96,6 +96,28 @@ class ServerVideoScrape {
   /// 仍待人工指定身份的作品数（查无 / 歧义；客户端经互联的「待确认」处理）。
   Future<int> pendingCount() async => (await _sweep.pendingWorks()).length;
 
+  /// 待人工指定身份的作品清单（带最近一次没认出来的原因）。`key` 与互联
+  /// `/api/library/metadata/*` 的作品键同形，可直接喂给 `ctl scrape search|identify`。
+  Future<List<Map<String, Object?>>> pendingWorks() async => <Map<String, Object?>>[
+        for (final VideoPendingScrapeWork entry in await _sweep.pendingWorksWithReasons())
+          <String, Object?>{
+            'id': entry.work.stableKey,
+            'title': entry.work.title,
+            'source': entry.source.id,
+            'members': entry.work.members.length,
+            'key': entry.work.collection == null
+                ? <String, Object?>{'bookUid': entry.work.members.single.bookUid}
+                : <String, Object?>{
+                    'collection': <String, Object?>{
+                      'name': entry.work.collection!.name,
+                      'collectionType': entry.work.collection!.collectionType,
+                    },
+                  },
+            if (entry.pendingNote != null) 'status': entry.pendingNote!.cause.name,
+            if (entry.pendingNote != null) 'reason': entry.pendingNote!.reason,
+          },
+      ];
+
   /// 给 WebUI / admin status 的刮削状态。
   Map<String, Object?> status() {
     final VideoSourceScrapeProgress progress = controller.progress;
