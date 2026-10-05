@@ -1235,6 +1235,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Color _videoChromeAccent(ColorScheme cs) =>
       _appleChrome ? videoChromeNeutralForeground : videoChromeAccentColor(cs);
 
+  /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、画面上的单钮、media_kit 自带
+  /// 按钮）：两套设计系统都是中性近白——Apple 恒白；M3E 取播放器深色方案的
+  /// onSurface，与 [VideoM3eIconButton] 同一前景。强调色只留给播放键、进度已播段 /
+  /// 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点怪」：传输簇的绿字
+  /// 绿图标与两侧白字胶囊不统一）。
+  Color _videoChromeButtonForeground(ColorScheme cs) => _appleChrome
+      ? videoChromeNeutralForeground
+      : videoM3eChromeScheme(cs).onSurface;
+
   /// 顶栏标题字号，随界面大小缩放（TODO-067），与图标按钮同口径。
   double get _videoControlTitleFontSize =>
       _videoControlTitleFontSizeBase * _videoUiScale;
@@ -7716,7 +7725,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           icon: Icons.fast_rewind_rounded,
           label: t.video_bottom_seek_back_label,
           tooltip: t.video_bottom_seek_back,
-          color: _videoChromeAccent(Theme.of(context).colorScheme),
+          color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
           onPressed: () => _seekRelative(-10000),
         );
       case VideoControlItem.seekForward:
@@ -7726,7 +7735,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           icon: Icons.fast_forward_rounded,
           label: t.video_bottom_seek_forward_label,
           tooltip: t.video_bottom_seek_forward,
-          color: _videoChromeAccent(Theme.of(context).colorScheme),
+          color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
           onPressed: () => _seekRelative(10000),
         );
       case VideoControlItem.frameBackward:
@@ -8374,7 +8383,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
   }) {
     return VideoControlBar(
-      // MD3 Expressive 浮动工具栏：三簇各是一枚悬浮胶囊（传输簇 vibrant），贴按钮行
+      // MD3 Expressive 浮动工具栏：三簇各是一枚同色中性悬浮胶囊，贴按钮行
       // 底边，上方让给悬浮进度条；画面在胶囊之外不被任何实体栏遮挡。Apple 走自己的
       // 玻璃胶囊（[VideoAppleChromeBackdrop]），这里不画。
       clusterStyle: _m3eFloatingBarStyle(),
@@ -8577,7 +8586,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             child: FushiIcon(
               icon,
               size: _videoControlIconSize * 0.9,
-              color: _videoChromeAccent(Theme.of(context).colorScheme),
+              color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
             ),
           ),
         ),

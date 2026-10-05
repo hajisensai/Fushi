@@ -960,7 +960,8 @@ extension _VideoLayout on _VideoFushiPageState {
           // TODO-604：与底栏 / 顶栏按钮的 buttonBarButtonColor 同源。UI 巡检 PR-4：
           // 同源改为 chrome 固定亮色强调色 [_videoChromeAccent]（裸图标浮在画面 /
           // 固定深色 scrim 上，跟随 cs.primary 在浅色 / eink 主题下黑压黑）。
-          color: _videoChromeAccent(cs),
+          // 2026-10-06：字形改中性前景，强调色只留给主操作与进度。
+          color: _videoChromeButtonForeground(cs),
           onPressed: () => _activateVideoControlItem(
             item,
             controller,

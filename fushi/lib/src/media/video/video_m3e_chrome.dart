@@ -33,9 +33,12 @@ import 'package:media_kit_video/media_kit_video.dart';
 //   驱动（叠在 fork 的淡入淡出上）；
 // - 浮动工具栏（2026-10-05）：控制条不再是贴边的整条实体栏 + 整屏暗化，而是悬浮
 //   胶囊——底栏每簇一枚胶囊（[videoM3eFloatingBarStyle] → [VideoBarClusterStyle]），
-//   传输簇是 vibrant 主色容器；顶栏返回 / 标题 / 右侧按钮组各是一枚胶囊
-//   （[VideoM3eFloatingSurface]）；进度条是胶囊上方一条悬浮的轨道槽
-//   （[VideoM3eSeekTrack.lane]）。控件隐藏后画面上什么都不剩；
+//   顶栏返回 / 标题 / 右侧按钮组各是一枚胶囊（[VideoM3eFloatingSurface]）；进度条是
+//   胶囊上方一条悬浮的轨道槽（[VideoM3eSeekTrack.lane]）。控件隐藏后画面上什么都
+//   不剩。2026-10-06（shishamo「悬浮色彩有点怪」）：所有胶囊统一同一枚中性深色
+//   半透明表面、前景统一 onSurface（近白）；强调色只给播放键、进度已播段 / 手柄与
+//   开关的「开」态——传输簇不再是饱和的 primaryContainer 色块（压在画面上突兀、
+//   与画面色调冲突，且让同一层控件出现三种配色）；
 // - [VideoM3eTimeText]：等宽数字时间（点按切「已播 / 剩余」）。
 //
 // 播放器 chrome 永远压在画面（深色）上，所以前景 / 容器色一律取**深色**方案
@@ -63,13 +66,18 @@ ColorScheme videoM3eChromeScheme(ColorScheme cs) {
 Color videoM3eTonalContainer(ColorScheme chrome) =>
     chrome.secondaryContainer.withValues(alpha: 0.72);
 
-/// 浮动工具栏胶囊的底色：standard = 深色方案 surfaceContainerHigh，vibrant =
-/// primaryContainer（M3E floating toolbar 的两种配色）。半透明一点点，画面颜色能
-/// 透出来，但白字始终压在实色上可读。
-Color videoM3eFloatingColor(ColorScheme chrome, {bool vibrant = false}) =>
-    vibrant
-    ? chrome.primaryContainer.withValues(alpha: 0.94)
-    : chrome.surfaceContainerHigh.withValues(alpha: 0.9);
+/// 浮动工具栏胶囊的底色：深色方案的 surfaceContainerHigh（中性深灰，只带一丝主色
+/// 色相），约 86% 不透明——画面颜色能隐约透出来，白字始终压在近实色上可读。
+///
+/// 播放器上所有悬浮胶囊（底栏三簇、顶栏返回 / 标题 / 按钮组）共用这一个颜色：浮在
+/// 画面上的控件是一层统一的中性表面，强调色只留给主操作与进度（M3E 视频播放器）。
+Color videoM3eFloatingColor(ColorScheme chrome) =>
+    chrome.surfaceContainerHigh.withValues(alpha: 0.86);
+
+/// 悬浮进度条轨道槽的底色：与胶囊同一中性表面，但更透明一档——它只是把轨道从画面里
+/// 托出来的一道浅槽，不该像一条横贯全宽的实体深色条那样压住画面。
+Color videoM3eSeekLaneColor(ColorScheme chrome) =>
+    chrome.surfaceContainerHigh.withValues(alpha: 0.5);
 
 /// 底栏三簇的浮动胶囊外形（[VideoControlBar.clusterStyle]）。[scale] = 界面缩放
 /// × 密度档；墨水屏：纯黑 + 白描边、无阴影。胶囊贴条高底部（[verticalAlignment]
@@ -94,8 +102,8 @@ VideoBarClusterStyle videoM3eFloatingBarStyle(
   }
   final Color standard = videoM3eFloatingColor(chrome);
   return VideoBarClusterStyle(
+    // 三簇同一表面（传输簇不再单独上 primaryContainer 色块）。
     color: standard,
-    centerColor: videoM3eFloatingColor(chrome, vibrant: true),
     padding: 4 * scale,
     verticalPadding: 2 * scale,
     gap: 8 * scale,
@@ -118,13 +126,11 @@ class VideoM3eFloatingSurface extends StatelessWidget {
     required this.enabled,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.vibrant = false,
   });
 
   final bool enabled;
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final bool vibrant;
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +155,7 @@ class VideoM3eFloatingSurface extends StatelessWidget {
           )
         : fushiFloatingPillDecoration(
             context,
-            color: videoM3eFloatingColor(chrome, vibrant: vibrant),
+            color: videoM3eFloatingColor(chrome),
           );
     return GestureDetector(
       behavior: HitTestBehavior.deferToChild,
@@ -940,13 +946,16 @@ class _VideoM3eSeekTrackState extends State<VideoM3eSeekTrack>
                   position: v.position.clamp(0.0, 1.0),
                   buffer: v.buffer.clamp(0.0, 1.0),
                   color: widget.color,
+                  // 未播 / 缓冲段是中性半透明白（与胶囊的中性表面同一层级），
+                  // 强调色只留给已播段与手柄。
                   trackColor: eink
                       ? Colors.white.withValues(alpha: 0.5)
-                      : Colors.white.withValues(alpha: 0.24),
+                      : Colors.white.withValues(alpha: 0.2),
                   bufferColor: eink
                       ? Colors.white.withValues(alpha: 0.75)
-                      : Colors.white.withValues(alpha: 0.42),
-                  cueColor: Colors.white.withValues(alpha: 0.38),
+                      : Colors.white.withValues(alpha: 0.36),
+                  // 字幕密度刻度只是背景信息：更淡、更短、更稀（见 painter）。
+                  cueColor: Colors.white.withValues(alpha: 0.22),
                   cueDensity: widget.cueDensity,
                   scale: s,
                   centerY: centerY,
@@ -1075,10 +1084,12 @@ class _M3eTrackPainter extends CustomPainter {
     final double amplitude = 3 * s * amp.value;
     final double wavelength = 32 * s;
 
-    // 悬浮轨道槽：一条胶囊，左右各探出 12，竖直包住波浪与手柄的静止高度。
+    // 悬浮轨道槽：一条浅槽，左右各探出 12（外缘与底栏胶囊外缘对齐），竖直包住
+    // 波浪与手柄的静止高度。只带一层很轻的投影——它是托住轨道的浅底，不是一条压在
+    // 画面上的实体深色条。
     final Color? laneColor = lane;
     if (laneColor != null) {
-      final double laneHalf = (7 + 2 * a) * s;
+      final double laneHalf = (6 + 2 * a) * s;
       final RRect laneRect = RRect.fromRectAndRadius(
         Rect.fromLTRB(-12 * s, y - laneHalf, w + 12 * s, y + laneHalf),
         Radius.circular(laneHalf),
@@ -1086,29 +1097,36 @@ class _M3eTrackPainter extends CustomPainter {
       canvas
         ..drawShadow(
           Path()..addRRect(laneRect),
-          const Color(0x73000000),
-          2,
+          const Color(0x40000000),
+          1,
           false,
         )
         ..drawRRect(laneRect, Paint()..color = laneColor);
     }
 
-    // 字幕密度刻度：轨道上方一排细竖线，高度与透明度随密度。
+    // 字幕密度刻度：轨道上方一排细竖线，高度与透明度随密度。相邻刻度至少隔
+    // 5 * scale（按组取最大密度合并），极稀的桶不画——刻度是背景信息，不该密成
+    // 一排栅栏。
     if (cueDensity.isNotEmpty) {
       final Paint cue = Paint()
-        ..strokeWidth = math.max(1, 1.5 * s)
+        ..strokeWidth = math.max(1, 1.2 * s)
         ..strokeCap = StrokeCap.round;
-      final double step = w / cueDensity.length;
-      for (int i = 0; i < cueDensity.length; i++) {
-        final double d = cueDensity[i];
-        if (d <= 0.02) continue;
-        final double cx = step * (i + 0.5);
+      final double bucket = w / cueDensity.length;
+      final int stride = math.max(1, (5 * s / bucket).ceil());
+      final double step = bucket * stride;
+      for (int i = 0; i < cueDensity.length; i += stride) {
+        double d = 0;
+        for (int j = i; j < math.min(i + stride, cueDensity.length); j++) {
+          d = math.max(d, cueDensity[j]);
+        }
+        if (d <= 0.08) continue;
+        final double cx = bucket * i + math.min(step, w - bucket * i) / 2;
         if ((cx - x).abs() < handleW + gap) continue;
-        cue.color = cueColor.withValues(alpha: cueColor.a * (0.25 + 0.75 * d));
-        final double top = y - stroke / 2 - 3 * s - 3 * s * d - amplitude;
+        cue.color = cueColor.withValues(alpha: cueColor.a * (0.3 + 0.7 * d));
+        final double base = y - stroke / 2 - 3 * s - amplitude;
         canvas.drawLine(
-          Offset(cx, top),
-          Offset(cx, y - stroke / 2 - 3 * s - amplitude),
+          Offset(cx, base - 1.5 * s - 2 * s * d),
+          Offset(cx, base),
           cue,
         );
       }

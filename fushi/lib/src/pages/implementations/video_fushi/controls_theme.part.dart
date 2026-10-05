@@ -145,7 +145,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // [_videoChromeAccent] 恒取亮 tone primary，深色主题取值与旧实现一致。
       seekBarPositionColor: _videoChromeAccent(cs),
       seekBarThumbColor: _videoChromeAccent(cs),
-      buttonBarButtonColor: _videoChromeAccent(cs),
+      buttonBarButtonColor: _videoChromeButtonForeground(cs),
       // Apple（iOS / macOS 26，见 video_apple_chrome.dart）：fork 的 38% 黑渐变换成
       // 透明——很淡的顶 / 底暗化与底栏玻璃胶囊由 [VideoAppleChromeBackdrop] 在控制条
       // 下面画；进度条是 AVKit 的圆头细轨（4，悬停 / 拖动加粗到 10，无滑块），已播放
@@ -468,7 +468,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // （material.dart 0x66000000），不随 colorScheme。
       seekBarPositionColor: _videoChromeAccent(cs),
       seekBarThumbColor: _videoChromeAccent(cs),
-      buttonBarButtonColor: _videoChromeAccent(cs),
+      buttonBarButtonColor: _videoChromeButtonForeground(cs),
       // Apple（同桌面 theme）：整屏 40% 黑 backdrop 换成透明（很淡的暗化与胶囊玻璃
       // 由 [VideoAppleChromeBackdrop] 画）；圆头细轨，按住加粗（iOS 26 scrubber），
       // 已播放白、缓冲浅白、未播灰。
@@ -659,10 +659,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       scale: _videoUiScale * _controlsDensityScale,
       hoverBubble: _thumbnailPreview == null,
       cueDensity: _m3eCueDensity(controller, visual.duration),
-      // 浮动工具栏上方的悬浮轨道槽（与底栏胶囊同色）；墨水屏不画（轨道本就高对比）。
+      // 浮动工具栏上方的悬浮轨道槽（与底栏胶囊同一中性表面、更透明一档）；墨水屏
+      // 不画（轨道本就高对比）。
       lane: isEinkTheme(context)
           ? null
-          : videoM3eFloatingColor(videoM3eChromeScheme(cs)),
+          : videoM3eSeekLaneColor(videoM3eChromeScheme(cs)),
     );
   }
 
