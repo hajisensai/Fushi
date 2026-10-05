@@ -296,7 +296,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
     final Object? error = _librariesError;
     if (error != null) {
       return FushiPlaceholderMessage(
-        key: const ValueKey<String>('media-server-home-error'),
+        key: ValueKey<String>('media-server-home-error-$_generation'),
         icon: FushiIcons.cloudOff,
         tone: FushiPlaceholderTone.error,
         message: t.jellyfin_libraries_load_failed,
@@ -314,7 +314,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
     final String prefix = widget.session.serverId;
     final double cardHeight = mediaServerRowCardHeight(context);
     return FushiEntranceScope(
-      key: const ValueKey<String>('media-server-home-content'),
+      key: ValueKey<String>('media-server-home-content-$_generation'),
       replayKey: _generation,
       child: CustomScrollView(
         key: PageStorageKey<String>('$prefix-home'),
@@ -384,7 +384,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       ),
     );
     return FushiSkeletonShimmer(
-      key: const ValueKey<String>('media-server-home-skeleton'),
+      key: ValueKey<String>('media-server-home-skeleton-$_generation'),
       child: ListView(
         physics: const NeverScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(

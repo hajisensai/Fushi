@@ -67,8 +67,14 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   /// 最近一次取回的服务器清单：首页页头的「切换服务器」菜单从这里取。
   List<MediaServerEntry> _servers = const <MediaServerEntry>[];
 
+  /// 每次重取 +1：状态块（骨架 / 列表 / 空态 / 错误）的 key 带上它，交叉淡入时
+  /// 上一轮还在淡出的同态块与新一块不会撞 key（[AnimatedSwitcher] 按子 key 包
+  /// 过渡层）。
+  int _epoch = 0;
+
   void _reload() {
     setState(() {
+      _epoch += 1;
       _future = widget.loadServers();
     });
   }
@@ -157,7 +163,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
                 child = _buildSkeleton();
               } else if (snapshot.hasError) {
                 child = FushiPlaceholderMessage(
-                  key: const ValueKey<String>('media-server-list-error'),
+                  key: ValueKey<String>('media-server-list-error-$_epoch'),
                   icon: FushiIcons.cloudOff,
                   tone: FushiPlaceholderTone.error,
                   message: t.media_server_items_load_failed,
@@ -194,7 +200,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   Widget _buildSkeleton() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiSkeletonShimmer(
-      key: const ValueKey<String>('media-server-list-skeleton'),
+      key: ValueKey<String>('media-server-list-skeleton-$_epoch'),
       child: ListView(
         padding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.page,
@@ -220,7 +226,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
 
   Widget _buildEmpty() {
     return FushiPlaceholderMessage(
-      key: const ValueKey<String>('media-server-list-empty'),
+      key: ValueKey<String>('media-server-list-empty-$_epoch'),
       icon: FushiIcons.server,
       message: t.media_server_servers_empty_hint,
       action: FushiFilledButton.tonalIcon(
@@ -236,7 +242,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int count = servers.length;
     return FushiEntranceScope(
-      key: const ValueKey<String>('media-server-list-body'),
+      key: ValueKey<String>('media-server-list-body-$_epoch'),
       child: ListView(
         key: const PageStorageKey<String>('media-server-list'),
         padding: EdgeInsets.symmetric(
