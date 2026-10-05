@@ -93,17 +93,7 @@ class _TagHost {
   Future<List<BookTagRow>> tags(FushiDatabase db) {
     final int? cid = collectionId;
     if (cid != null) return db.getTagsForCollection(cid);
-    final MediaRef m = media!;
-    switch (m.kind) {
-      case MediaKind.epub:
-        return db.getTagsForBook(m.entryKey);
-      case MediaKind.srt:
-        return db.getTagsForSrtBook(m.entryKey);
-      case MediaKind.video:
-        return db.getTagsForVideoBook(m.entryKey);
-      case MediaKind.game:
-        return db.getTagsForGame(m.entryKey);
-    }
+    return tagsForMediaRef(db, media!);
   }
 
   Future<void> add(FushiDatabase db, int tagId) =>
@@ -117,6 +107,20 @@ class _TagHost {
 
   @override
   int get hashCode => key.hashCode;
+}
+
+/// 一个条目当前挂的标签：按 [MediaKind] 穷尽分派到各域的 typed 查询。
+Future<List<BookTagRow>> tagsForMediaRef(FushiDatabase db, MediaRef media) {
+  switch (media.kind) {
+    case MediaKind.epub:
+      return db.getTagsForBook(media.entryKey);
+    case MediaKind.srt:
+      return db.getTagsForSrtBook(media.entryKey);
+    case MediaKind.video:
+      return db.getTagsForVideoBook(media.entryKey);
+    case MediaKind.game:
+      return db.getTagsForGame(media.entryKey);
+  }
 }
 
 /// 给一个宿主（[media] 或 [collectionId] 二选一）挂标签：按 [MediaKind] 穷尽分派到
