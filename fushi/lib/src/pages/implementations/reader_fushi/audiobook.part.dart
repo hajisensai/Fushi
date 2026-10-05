@@ -263,6 +263,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (old != null) {
       // 旧引用是 session 控制器：先 detach（不 dispose）。reader 字段清掉等下面重接。
       session.detachReader(this);
+      // 歌词层在场时本页给旧控制器挂的强制跟随随解绑一起撤（会话可能比本页活得
+      // 久）；新控制器接上后由 [_reapplyLyricsFollowOverride] 补挂。
+      if (_lyricsMode) old.setReaderFollowOverride(false);
       _audiobookController = null;
       _syncChromePlaybackListener();
       _audiobookBookKey = null;
@@ -303,6 +306,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
   }
 
+  /// 歌词层在场时换接了控制器（重导入强制重载等）：把覆盖层期间的正文强制跟随
+  /// 挂到新控制器上，与 [_toggleLyricsMode] 进入分支同一不变式——歌词层在场 ⇔
+  /// 当前控制器带强制跟随。
+  void _reapplyLyricsFollowOverride() {
+    if (_lyricsMode) _audiobookController?.setReaderFollowOverride(true);
+  }
+
   /// 复用 session 已持有的控制器：装 reader WebView 侧回调 + 监听 cue（经 session 转发）。
   Future<void> _attachExistingSession(AudiobookSession session) async {
     final AudiobookPlayerController? controller = session.controller;
@@ -322,6 +332,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
+    _reapplyLyricsFollowOverride();
     // 同步一次当前 cue 到 WebView（暂停态也即时高亮）。
     _onCueChanged();
   }
@@ -421,6 +432,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
+    _reapplyLyricsFollowOverride();
   }
 
   /// 独立 SRT 书的正文语言：`SrtBooks.language`（用户在卡菜单里指定）> 全局默认。
@@ -2110,7 +2122,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         msg: t.srt_book_reimport_body_rebuilt,
         severity: ToastSeverity.info,
       );
-      Navigator.of(context).maybePop();
+      // 经 [_exitReaderBook]：歌词模式下 PopScope 不得把它截成「关歌词层」，
+      // 否则会留在解析树已作废的阅读器里。
+      unawaited(_exitReaderBook());
       return;
     }
 

@@ -879,13 +879,32 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onConsoleMessage:
           (InAppWebViewController controller, ConsoleMessage msg) =>
               debugPrint('[LyricsWebView] ${msg.message}'),
+      // 非 null 本身就是救命动作（Android renderer 被回收时不传 = 连坐杀 app；
+      // WKWebView 内容进程被 jetsam 不接 = 永久白屏）。处置见
+      // [_lyricsWebViewDeathGuard]：歌词文档无状态，换代重建后由
+      // onWebViewCreated 重新装载。
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_lyricsWebViewDeathGuard.handleWebContentTerminated()),
+      onRenderProcessGone:
+          (InAppWebViewController _, RenderProcessGoneDetail detail) =>
+              unawaited(
+                _lyricsWebViewDeathGuard.handleDeath(
+                  didCrash: detail.didCrash,
+                  rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                ),
+              ),
     );
     // 文档就绪前保持透明（WebView 首帧是白底，Windows fork 不完全尊重
     // transparentBackground），就绪后淡入。
     final Widget faded = AnimatedOpacity(
       opacity: _lyricsPageReady ? 1 : 0,
       duration: const Duration(milliseconds: 180),
-      child: webView,
+      // renderer 死亡后换代重建（[_lyricsWebViewDeathGuard.rebuildKey]），挂在
+      // WebView 之上，不动 `fushi_lyrics_webview` 这个 finder 锚点。
+      child: KeyedSubtree(
+        key: _lyricsWebViewDeathGuard.rebuildKey,
+        child: webView,
+      ),
     );
     // 与正文同款：宿主腿悬停查词平台（macOS）紧包 MouseRegion。
     final Widget keyed = KeyedSubtree(

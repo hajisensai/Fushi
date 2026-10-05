@@ -2095,6 +2095,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
     await navigator.maybePop();
   }
 
+  /// 程序化「退出书籍」：面板「退出」按钮、重导入后正文作废等**明确要离开本书**
+  /// 的路径一律走这里，而不是裸 `maybePop()`。
+  ///
+  /// 仍然走 `maybePop()`（不绕过 PopScope → onWillPop 的 flush / closeMedia /
+  /// 关书同步，BUG-782），只是在途期间挂上 [_exitBookRequested]，让 PopScope 里
+  /// 「歌词层在场 → 先掀开歌词层」那一级只拦用户的系统返回手势、不把显式退书截
+  /// 成「关歌词层」。旗标在 `maybePop()` 完成后立即撤下：PopScope 回调是在
+  /// `maybePop()` 内部同一调用链里被调用的；若顶上压着别的路由（`maybePop` 弹的是
+  /// 它），旗标也不会残留去影响之后的系统返回。
+  ///
+  /// 退出时**不**先关歌词层：那会把持久化的 lyrics_mode 写成 false，重开书就不再
+  /// 恢复歌词模式（BUG-785）。覆盖层期间的强制跟随由 dispose 撤销。
+  Future<void> _exitReaderBook() async {
+    final NavigatorState navigator = Navigator.of(context);
+    _exitBookRequested = true;
+    try {
+      await navigator.maybePop();
+    } finally {
+      _exitBookRequested = false;
+    }
+  }
+
   /// 进页时把底栏全屏按钮的图标镜像对到 native 真值一次。
   ///
   /// 没有这一次读取，「在别处（漫画页 / 视频页 / 上一本书）进的全屏里打开本书」会让图标
@@ -2310,9 +2332,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // triggerAutoSyncAfterClose 关书自动同步都不会触发。maybePop() 触发
       // PopScope 回调 → onWillPop() → nav.pop()，与「退出书籍」快捷键分支
       // （caret.part.dart 的 readerExitBook，schema v6 从 readerDismissDict
-      // 拆出）走的是同一条退出路径。
+      // 拆出）走的是同一条退出路径。经 [_exitReaderBook]：歌词层在场时 PopScope
+      // 不得把这次显式退书截成「关歌词层」。
       onExitReader: () {
-        unawaited(Navigator.of(context).maybePop());
+        unawaited(_exitReaderBook());
       },
       webViewController: _controller!,
       appModel: appModel,

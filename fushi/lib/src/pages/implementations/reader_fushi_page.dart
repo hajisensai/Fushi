@@ -1865,6 +1865,35 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       await _flushPosition();
     },
   );
+
+  /// 歌词覆盖层 WebView 的 renderer 死亡处置（救命动作同上：传非 null 的
+  /// `onRenderProcessGone` / `onWebContentProcessDidTerminate`）。
+  ///
+  /// 与正文不同，这里**重建**：歌词文档无状态（不落进度、不记统计，窗口每次按
+  /// 播放器当前句重新锚定），换 epoch key 后新 WebView 的 `onWebViewCreated` 会
+  /// 走 [_loadLyricsPage] 重新装载，不存在恢复锚回退的风险。flush 侧只作废报废的
+  /// controller 与就绪标志，避免新 WebView 起来前旧引用被当成活的。
+  late final WebViewDeathGuard _lyricsWebViewDeathGuard = WebViewDeathGuard(
+    surface: 'reader_fushi_lyrics',
+    flushBeforeRebuild: () async {
+      ++_lyricsLoadGeneration;
+      _lyricsReadyFinalizingGeneration = null;
+      _lyricsDocumentLoadGeneration = null;
+      _lyricsController = null;
+      _lyricsPageReady = false;
+      if (_caretSurface == CaretSurface.lyrics) {
+        _caretSurface = CaretSurface.none;
+      }
+    },
+    afterRebuild: () {
+      if (mounted) _rebuild(() {});
+    },
+  );
+
+  /// 程序化「退出书籍」在途（[_exitReaderBook]）。PopScope 的歌词层拦截只针对
+  /// 用户的系统返回手势（Android 返回键 / 手势）——那是「退一级」；面板「退出」、
+  /// 重导入后正文作废这类显式退书路径不能被它截成「关歌词层」。
+  bool _exitBookRequested = false;
   // BUG-380: 滚动进度刷新的「在飞 + 待重跑」守卫。rAF 节流后滚动回传可能高频到来，
   // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 fushiProgressDetails（遍历全章
   // TextNode + caretRangeFromPoint），未加守卫会让多次调用堆积。_scrollProgressInFlight
@@ -3105,6 +3134,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
+    // 歌词覆盖层期间本页给控制器挂的「强制跟随」（[_toggleLyricsMode] 进入分支）
+    // 必须随页面一起撤：控制器是会话对象，开着后台播放时会比页面活得久，不撤的话
+    // 再开书时用户的「跟随音频=关」会被这个残留覆盖成强制跟随。只在本页确实还在
+    // 歌词层时撤——覆盖层关掉时 [_exitLyricsMode] 已经撤过。
+    if (_lyricsMode) _audiobookController?.setReaderFollowOverride(false);
     // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
     _audiobookController = null;
     _syncChromePlaybackListener();
@@ -3537,8 +3571,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
                   // 歌词覆盖层在场：系统返回（Android 返回键 / 手势）先掀开覆盖层回到
-                  // 正文，与 Esc 同一阶梯；正文从未离开，不需要任何落库。
-                  if (_lyricsMode) {
+                  // 正文，与 Esc 同一阶梯；正文从未离开，不需要任何落库。程序化退书
+                  // （[_exitReaderBook]：面板「退出」、重导入后正文作废）带着
+                  // [_exitBookRequested] 进来，不拦、直接走下面的退出链。
+                  if (_lyricsMode && !_exitBookRequested) {
                     unawaited(_toggleLyricsMode());
                     return;
                   }
