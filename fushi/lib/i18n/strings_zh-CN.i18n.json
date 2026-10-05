@@ -6379,5 +6379,20 @@
   "video_skip_opening": "跳过片头",
   "video_skip_ending": "跳过片尾",
   "download_network_fake_ip_udp_blocked": "当前代理（fake-ip / TUN 模式）不转发 UDP：DHT 与 UDP tracker 找不到 peer，任务可能一直 0 连接。请在代理里换支持 UDP 的节点，或让 Fushi 走直连（DIRECT 规则）。",
-  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。"
+  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。",
+  "stat_overview_today_time": "今日时长",
+  "stat_overview_week_time": "本周时长",
+  "stat_overview_today_chars": "今日字数",
+  "stat_overview_vs_last_week": "较上周 $delta",
+  "stat_overview_week_chars": "本周 $value",
+  "stat_overview_active_days": "近 7 日活跃 $n 天",
+  "stat_overview_goal_unset": "还没有设定每日目标",
+  "stat_overview_goal_unset_hint": "设定目标后，这里会显示每天的完成进度。",
+  "stat_overview_goal_remaining": "还差 $value",
+  "stat_overview_periods": "时段明细",
+  "stat_overview_empty": "还没有学习记录。阅读、观看或游玩之后，统计会出现在这里。",
+  "stat_center_media_filter": "媒体类型",
+  "stat_axis_hours": "${n}小时",
+  "stat_axis_minutes": "${n}分",
+  "stat_axis_seconds": "${n}秒"
 }

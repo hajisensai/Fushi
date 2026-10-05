@@ -107,7 +107,7 @@ Widget buildStatSessionSection(
             Expanded(
               child: Text(
                 t.stat_sessions_recent,
-                style: Theme.of(context).textTheme.titleMedium,
+                style: statSectionTitleStyle(context),
               ),
             ),
             if (sessions.length > shown.length)
