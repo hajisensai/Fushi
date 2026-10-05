@@ -182,9 +182,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
               _floatingChromeBottomLift,
             )
           : EdgeInsets.fromLTRB(
-              _VideoFushiPageState._videoM3eFloatingSideInset,
+              _videoM3eBottomBarSideInset,
               0,
-              _VideoFushiPageState._videoM3eFloatingSideInset,
+              _videoM3eBottomBarSideInset,
               _floatingChromeBottomLift,
             ),
       // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
@@ -283,9 +283,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 即系统画中画那种观感）；系统画中画下连三键也不画（系统自带控件）。
         if (_controlsDensity.showBottomButtonBar)
           Expanded(
-            // MD3 Expressive：显隐时底栏下滑。
+            // 底栏按钮收进底部面板（[VideoM3eBottomPanel]）：面板与进度条只淡入淡出，
+            // 按钮行若单独下滑会滑出面板，故 M3E 下也不滑（随控制条同速淡入淡出）。
             child: VideoM3eChromeSlide(
-              enabled: !apple,
+              enabled: false,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
               child: _centeredBottomControlBar(controller, desktop: true),
@@ -444,14 +445,14 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       ),
       // 底部按钮条留在系统栏上方基线（沿用 media_kit 默认的左右 16/8）。Apple 下
       // 按钮行收进玻璃胶囊，左右对称内缩。
-      // M3E 浮动工具栏左右对称（胶囊外缘 = [_videoM3eFloatingSideInset]）。
+      // M3E 按钮行收进底部面板（面板外缘 = [_videoM3eFloatingSideInset]），左右对称内缩。
       bottomButtonBarMargin: EdgeInsets.only(
         left: apple
             ? _videoAppleButtonBarSideInset
-            : _VideoFushiPageState._videoM3eFloatingSideInset,
+            : _videoM3eBottomBarSideInset,
         right: apple
             ? _videoAppleButtonBarSideInset
-            : _VideoFushiPageState._videoM3eFloatingSideInset,
+            : _videoM3eBottomBarSideInset,
         bottom: bottomChromeInset,
       ),
       // 进度条触摸热区 / 滑块 / 轨道整体抬高（TODO-157/BUG-218）：media_kit 默认
@@ -556,9 +557,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 同桌面：mini 档整行让位给自绘居中三键。
         if (_controlsDensity.showBottomButtonBar)
           Expanded(
-            // MD3 Expressive：显隐时底栏下滑。
+            // 底栏按钮收进底部面板（[VideoM3eBottomPanel]）：面板与进度条只淡入淡出，
+            // 按钮行若单独下滑会滑出面板，故 M3E 下也不滑（随控制条同速淡入淡出）。
             child: VideoM3eChromeSlide(
-              enabled: !apple,
+              enabled: false,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
               child: _centeredBottomControlBar(controller, desktop: false),
@@ -659,11 +661,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       scale: _videoUiScale * _controlsDensityScale,
       hoverBubble: _thumbnailPreview == null,
       cueDensity: _m3eCueDensity(controller, visual.duration),
-      // 浮动工具栏上方的悬浮轨道槽（与底栏胶囊同一中性表面、更透明一档）；墨水屏
-      // 不画（轨道本就高对比）。
-      lane: isEinkTheme(context)
-          ? null
-          : videoM3eSeekLaneColor(videoM3eChromeScheme(cs)),
+      // 不画独立轨道槽：轨道已收进底部面板（[VideoM3eBottomPanel]）的上半部。
     );
   }
 

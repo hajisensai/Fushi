@@ -486,6 +486,18 @@ extension _VideoLayout on _VideoFushiPageState {
                             ),
                           ),
                         ),
+                        // M3E：进度条 + 底栏三簇共用的底部大圆角中性面板（同样排在控制条
+                        // 之前、IgnorePointer、与控制条同速淡入淡出）。Apple / mini 档为空。
+                        Positioned.fill(
+                          child: Padding(
+                            padding: _videoControlsChromeInsets(),
+                            child: VideoM3eBottomPanel(
+                              visible: _videoControlsVisible,
+                              duration: _videoControlsTransitionDuration,
+                              geometry: _m3eBottomPanelGeometry(),
+                            ),
+                          ),
+                        ),
                         // Builder 捕获 media_kit controls 子树内的 context（[_videoControlsContext]），
                         // 供覆盖后的键盘快捷键调用全屏 helper（isFullscreen/toggle/exitFullscreen）——
                         // 本页 build context 是它们的祖先，找不到 media_kit 的 Fullscreen/VideoState
