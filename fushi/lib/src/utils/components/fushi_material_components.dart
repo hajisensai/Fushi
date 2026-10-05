@@ -4009,15 +4009,22 @@ class _FushiPopupMenuItemState<T>
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    const BorderRadius radius = BorderRadius.all(Radius.circular(8));
+    const BorderRadius radius = BorderRadius.all(Radius.circular(12));
+    // M3E 菜单（2026-10-05 浮层统一）：选中项常驻 secondaryContainer 圆角块
+    // （内缩、不横贯容器），其上的悬停 / 焦点 / 按下叠 onSurface 状态层。
+    final bool selected = widget.selected && !isEinkTheme(context);
+    final Color hover = selected
+        ? cs.onSecondaryContainer.withValues(alpha: 0.08)
+        : cs.secondaryContainer;
     // 与 PopupMenuItemState.build 同一套语义 / 焦点 / 点击（handleTap：先
     // onTap 再带值关菜单），只把整行高亮换成内缩的圆角块。
     return MergeSemantics(
       child: Semantics(
         enabled: widget.enabled,
+        selected: widget.selected,
         button: true,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
@@ -4025,14 +4032,22 @@ class _FushiPopupMenuItemState<T>
               canRequestFocus: widget.enabled,
               mouseCursor: widget.mouseCursor,
               borderRadius: radius,
-              hoverColor: cs.secondaryContainer,
-              focusColor: cs.secondaryContainer,
-              highlightColor: cs.secondaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Opacity(
-                  opacity: widget.enabled ? 1 : 0.38,
-                  child: buildChild(),
+              hoverColor: hover,
+              focusColor: selected
+                  ? cs.onSecondaryContainer.withValues(alpha: 0.12)
+                  : cs.secondaryContainer,
+              highlightColor: hover,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: selected ? cs.secondaryContainer : null,
+                  borderRadius: radius,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Opacity(
+                    opacity: widget.enabled ? 1 : 0.38,
+                    child: buildChild(),
+                  ),
                 ),
               ),
             ),
