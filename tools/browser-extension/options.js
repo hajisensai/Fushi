@@ -1036,3 +1036,42 @@ function bindSectionNav() {
   mark(links[0].getAttribute('href').slice(1));
 }
 bindSectionNav();
+
+// ── 外观风格（extensionStyle：液态玻璃 / M3E；theme.js 读同一把键写根 data-style）──
+// 两张单选卡（原生 radio，键盘方向键切换）；与配色正交，切换只换形状 / 材质 / 动效。
+function bindStyleChoice() {
+  if (typeof document.querySelectorAll !== 'function') return;
+  const radios = Array.from(document.querySelectorAll('input[name="extensionStyle"]'));
+  if (!radios.length) return;
+  const sync = (v) => {
+    const value = v === 'm3e' ? 'm3e' : 'glass';
+    for (const r of radios) r.checked = r.value === value;
+  };
+  chrome.storage.local.get(['extensionStyle']).then((s) => sync(s && s.extensionStyle), () => sync(null));
+  for (const r of radios) {
+    r.addEventListener('change', async () => {
+      if (!r.checked) return;
+      await chrome.storage.local.set({ extensionStyle: r.value });
+      const card = r.closest('.style-card');
+      const name = card && card.querySelector('strong');
+      toast(tr('opt_toast_updated', { name: name ? name.textContent : r.value }));
+    });
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.extensionStyle) sync(changes.extensionStyle.newValue);
+  });
+}
+bindStyleChoice();
+
+// ── 「更多选项」折叠：记住每个折叠的展开状态（只是本机浏览器里的阅读便利，读写失败按收起）──
+function bindMoreToggles() {
+  if (typeof document.querySelectorAll !== 'function') return;
+  for (const d of document.querySelectorAll('details.more[id]')) {
+    const key = 'fushiOptMore:' + d.id;
+    try { if (localStorage.getItem(key) === '1') d.open = true; } catch (_) { /* 存储不可用：保持收起 */ }
+    d.addEventListener('toggle', () => {
+      try { localStorage.setItem(key, d.open ? '1' : '0'); } catch (_) { /* 忽略 */ }
+    });
+  }
+}
+bindMoreToggles();

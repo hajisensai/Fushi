@@ -1,4 +1,4 @@
-// 扩展主题的唯一决议点：明暗 + 调色板。
+// 扩展主题的唯一决议点：明暗 + 调色板 + 外观风格。
 //
 // 明暗：chrome.storage.local.extensionTheme = 'auto' | 'light' | 'dark'（缺省 auto = 跟随系统）。
 // 所有表面都问这里，不再各自 matchMedia：options 页、字幕侧边栏、工具栏菜单、嵌套查词壳
@@ -16,10 +16,12 @@
 //   绝不碰宿主页 :root。查词弹窗的 --md-* 由 popupVars() 给三处弹窗壳覆盖，弹窗与其它表面
 //   同一款主题。
 //
-// 材质：液态玻璃是扩展唯一的材质（用户 2026-10-04 拍板，实心样式与「材质」设置一并删除），
-//   glass.css 无条件生效，不再由这里决议；只有系统「减少透明度」/ 内核不支持 backdrop-filter
-//   时由 glass.css 自身的兼容层回落实心。旧版本存下的 extensionMaterial / appGlassMirror
-//   读到也忽略，启动时顺手清掉。
+// 外观风格（与调色板正交；用户 2026-10-05「两套样式 M3E 和液态玻璃」）：
+//   extensionStyle = 'glass'（液态玻璃，缺省）| 'm3e'（Material 3 Expressive）。风格只决定形状 /
+//   表面材质 / 层次 / 动效，token 全在 theme.css（:root 为玻璃，:root[data-style="m3e"] 覆盖），
+//   material.css 按 token 落到各页控件。扩展页面写根 data-style；宿主网页里只有 Fushi 自己的浮层
+//   跟风格走——查词弹窗问 usesGlass()（M3E 下弹窗是实色卡），toast / 拖放提示由创建它们的脚本写
+//   data-style。2026-10-04 退役的「材质」设置（extensionMaterial / appGlassMirror）仍只做清理。
 //
 // content script / 扩展页面共用一份；没有 chrome.storage 的环境（纯 vm 测试）退化为
 // 跟随系统、setPreference 仍可用。
@@ -31,13 +33,17 @@
   var PALETTE_KEY = 'extensionPalette';
   var CUSTOM_KEY = 'extensionCustomThemes';
   var APP_MIRROR_KEY = 'appThemeMirror';
+  var STYLE_KEY = 'extensionStyle';
   // 已退役的材质设置键（只用于清理旧存储）。
   var RETIRED_KEYS = ['extensionMaterial', 'appGlassMirror'];
   var STYLE_ID = 'fushi-theme-palette';
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
   var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
   var VALID = { auto: true, light: true, dark: true };
+  var VALID_STYLE = { glass: true, m3e: true };
+  var DEFAULT_STYLE = 'glass';
   var pref = 'auto';
+  var style = DEFAULT_STYLE;
   var paletteId = 'fushi';
   var customThemes = [];
   var appMirror = null;
@@ -53,6 +59,15 @@
       return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
         ? 'dark' : 'light';
     } catch (_) { return 'light'; }
+  }
+
+  function normalizeStyle(v) {
+    return typeof v === 'string' && VALID_STYLE[v] === true ? v : DEFAULT_STYLE;
+  }
+
+  // 当前风格是否液态玻璃（查词弹窗 / 嵌套层决定要不要上模糊与半透明填充）。
+  function usesGlass() {
+    return style === 'glass';
   }
 
   // 显式明暗（'light' / 'dark'），auto 时为 null。
@@ -163,6 +178,13 @@
     notify();
   }
 
+  function setStyle(v) {
+    var n = normalizeStyle(v);
+    if (n === style) return;
+    style = n;
+    notify();
+  }
+
   function setPalette(v) {
     var n = palette ? palette.normalizePaletteId(v) : 'fushi';
     if (n === paletteId) return;
@@ -195,6 +217,7 @@
         if (!root) return;
         if (e) root.setAttribute('data-theme', e);
         else root.removeAttribute('data-theme');
+        root.setAttribute('data-style', style);
       } catch (_) {}
       applyPaletteStyle(doc);
     }
@@ -213,6 +236,7 @@
   function readAll(c) {
     if (!c) return;
     pref = normalize(c[KEY]);
+    style = normalizeStyle(c[STYLE_KEY]);
     paletteId = palette ? palette.normalizePaletteId(c[PALETTE_KEY]) : 'fushi';
     customThemes = palette ? palette.normalizeCustomThemes(c[CUSTOM_KEY]) : [];
     appMirror = (c[APP_MIRROR_KEY] && typeof c[APP_MIRROR_KEY] === 'object') ? c[APP_MIRROR_KEY] : null;
@@ -220,7 +244,7 @@
   }
 
   try {
-    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY];
+    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY, STYLE_KEY];
     var p = chrome.storage.local.get(keys, readAll);
     if (p && typeof p.then === 'function') p.then(readAll, function () {});
   } catch (_) {}
@@ -235,6 +259,7 @@
     chrome.storage.onChanged.addListener(function (changes, area) {
       if (area !== 'local' || !changes) return;
       if (changes[KEY]) setPreference(changes[KEY].newValue);
+      if (changes[STYLE_KEY]) setStyle(changes[STYLE_KEY].newValue);
       if (changes[PALETTE_KEY]) setPalette(changes[PALETTE_KEY].newValue);
       if (changes[CUSTOM_KEY]) setCustomThemes(changes[CUSTOM_KEY].newValue);
       if (changes[APP_MIRROR_KEY]) setAppMirror(changes[APP_MIRROR_KEY].newValue);
@@ -259,11 +284,14 @@
     PALETTE_KEY: PALETTE_KEY,
     CUSTOM_KEY: CUSTOM_KEY,
     APP_MIRROR_KEY: APP_MIRROR_KEY,
+    STYLE_KEY: STYLE_KEY,
     get preference() { return pref; },
+    get style() { return style; },
     get palette() { return paletteId; },
     get customThemes() { return customThemes.slice(); },
     get appMirror() { return appMirror; },
     explicit: explicit,
+    usesGlass: usesGlass,
     resolve: resolve,
     tokens: tokens,
     popupVars: popupVars,
@@ -273,6 +301,7 @@
     applyToDocument: applyToDocument,
     applyToHostPage: applyToHostPage,
     setPreference: setPreference,
+    setStyle: setStyle,
     setPalette: setPalette,
     setCustomThemes: setCustomThemes,
     setAppMirror: setAppMirror,

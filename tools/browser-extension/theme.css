@@ -1,5 +1,5 @@
 /*
- *  theme.css — 扩展自有界面的**唯一**调色板（options 页 / 字幕侧边栏 / 工具栏菜单 /
+ *  theme.css — 扩展自有界面的**唯一**调色板与风格 token 源（options 页 / 字幕侧边栏 / 工具栏菜单 /
  *  嵌套查词壳 / 页内抽屉与字幕覆盖层）。
  *
  *  此前四个表面各画各的（options 绿 oklch、侧边栏暖米色、工具栏菜单墨绿、抽屉硬编码
@@ -78,4 +78,155 @@
   --fushi-warn: oklch(0.77 0.12 78);
   --fushi-danger: oklch(0.72 0.15 28);
   --fushi-focus: oklch(0.78 0.11 155);
+}
+
+/*
+ *  ── 外观风格（extensionStyle）：形状 / 表面 / 层次 / 动效 token ──
+ *
+ *  与配色正交：配色（上面几块 + theme.js extensionPalette）只决定颜色，风格只决定「东西长什么
+ *  形状、表面是什么材质、靠什么分层、怎么动」。两套风格：
+ *    · glass（液态玻璃，默认）：半透明填充 + backdrop-filter 模糊增饱和 + 顶缘高光 + 柔和投影，
+ *      页面背后铺一层随主色变化的光斑给玻璃「有东西可透」。数值与 app 侧同源
+ *      （fushi_glass_surface.dart：模糊 sigma 20、填充亮 0.72 / 暗 0.62、描边黑白 8%）。
+ *    · m3e（Material 3 Expressive）：实色色调表面（tonal elevation，不靠阴影和描边分层）、更大的
+ *      圆角与按压形变、弹簧缓动；页面是平的底色，设置行是分段的色块。
+ *  theme.js 把 data-style 写到扩展页面根（缺省按 glass）；页内浮层宿主（content.css 里本文件重根
+ *  后的 #fushi-*）由创建它们的脚本写同名属性。material.css 只消费这里的 token，不另立数值。
+ */
+:root {
+  /* 形状 */
+  --fushi-shape-card: 20px;
+  --fushi-shape-item: 10px;
+  --fushi-shape-control: 999px;
+  --fushi-shape-control-pressed: 999px;
+  --fushi-shape-field: 999px;
+  --fushi-shape-menu: 14px;
+  --fushi-shape-segment: 0px;
+  /* 动效：标准缓动 / 空间（位移、形变）缓动 / 三档时长 */
+  --fushi-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fushi-ease-spatial: cubic-bezier(0.22, 1, 0.36, 1);
+  --fushi-dur-short: 160ms;
+  --fushi-dur-medium: 240ms;
+  --fushi-dur-long: 420ms;
+  /* 表面材质（液态玻璃） */
+  --fushi-mat-fill: color-mix(in oklch, var(--fushi-surface) 54%, transparent);
+  --fushi-mat-fill-strong: color-mix(in oklch, var(--fushi-surface) 70%, transparent);
+  --fushi-mat-fill-subtle: color-mix(in oklch, var(--fushi-surface) 32%, transparent);
+  --fushi-mat-stroke: rgba(255, 255, 255, 0.62);
+  --fushi-mat-edge: color-mix(in oklch, var(--fushi-text) 9%, transparent);
+  --fushi-mat-highlight: rgba(255, 255, 255, 0.7);
+  --fushi-mat-shadow:
+    0 1px 2px color-mix(in oklch, var(--fushi-text) 6%, transparent),
+    0 14px 36px -14px color-mix(in oklch, var(--fushi-text) 30%, transparent);
+  --fushi-mat-filter: blur(20px) saturate(1.8);
+  --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 55%, oklch(0.8 0.13 300));
+  --fushi-mat-orb-2: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.84 0.11 215));
+  --fushi-mat-orb-3: color-mix(in oklch, var(--fushi-primary-soft) 50%, oklch(0.88 0.1 70));
+  --fushi-mat-orb-strength: 62%;
+  /* 输入框填充：玻璃面里的一层正文色薄染（亮色下比卡片略深），悬停 / 聚焦时换成更实的表面。 */
+  --fushi-mat-field: color-mix(in oklch, var(--fushi-text) 5.5%, transparent);
+  --fushi-mat-field-hover: color-mix(in oklch, var(--fushi-text) 8%, transparent);
+  --fushi-mat-field-focus: color-mix(in oklch, var(--fushi-surface) 86%, transparent);
+  /* 开关拇指：玻璃下是一颗带投影的白色水滴 */
+  --fushi-mat-thumb: #fff;
+  --fushi-mat-thumb-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --fushi-mat-fill: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 34%, transparent);
+    --fushi-mat-fill-strong: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 65%, black) 50%, transparent);
+    --fushi-mat-fill-subtle: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 22%, transparent);
+    --fushi-mat-stroke: rgba(255, 255, 255, 0.22);
+    --fushi-mat-highlight: rgba(255, 255, 255, 0.2);
+    --fushi-mat-edge: rgba(255, 255, 255, 0.12);
+    --fushi-mat-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+    --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.5 0.17 300));
+    --fushi-mat-orb-2: color-mix(in oklch, var(--fushi-primary) 40%, oklch(0.52 0.13 220));
+    --fushi-mat-orb-3: color-mix(in oklch, var(--fushi-primary-soft) 50%, oklch(0.48 0.11 60));
+    --fushi-mat-orb-strength: 72%;
+    --fushi-mat-field: color-mix(in oklch, var(--fushi-text) 9%, transparent);
+    --fushi-mat-field-hover: color-mix(in oklch, var(--fushi-text) 13%, transparent);
+    --fushi-mat-field-focus: color-mix(in oklch, var(--fushi-surface) 78%, transparent);
+    --fushi-mat-thumb: #f4f4f4;
+  }
+}
+
+:root[data-theme="dark"] {
+  --fushi-mat-fill: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 34%, transparent);
+  --fushi-mat-fill-strong: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 65%, black) 50%, transparent);
+  --fushi-mat-fill-subtle: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 22%, transparent);
+  --fushi-mat-stroke: rgba(255, 255, 255, 0.22);
+  --fushi-mat-highlight: rgba(255, 255, 255, 0.2);
+  --fushi-mat-edge: rgba(255, 255, 255, 0.12);
+  --fushi-mat-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
+  --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.5 0.17 300));
+  --fushi-mat-orb-2: color-mix(in oklch, var(--fushi-primary) 40%, oklch(0.52 0.13 220));
+  --fushi-mat-orb-3: color-mix(in oklch, var(--fushi-primary-soft) 50%, oklch(0.48 0.11 60));
+  --fushi-mat-orb-strength: 72%;
+  --fushi-mat-field: color-mix(in oklch, var(--fushi-text) 9%, transparent);
+  --fushi-mat-field-hover: color-mix(in oklch, var(--fushi-text) 13%, transparent);
+  --fushi-mat-field-focus: color-mix(in oklch, var(--fushi-surface) 78%, transparent);
+  --fushi-mat-thumb: #f4f4f4;
+}
+
+/* 玻璃的兼容层：内核不支持 backdrop-filter，或用户要求减少透明度 → 实心填充、不模糊（层次靠
+   描边与投影还在）。特异性 (0,2,0)、又排在明暗两块之后：暗色块不会把实心填充盖回半透明。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:is([data-theme], :not([data-theme])) {
+    --fushi-mat-fill: var(--fushi-surface);
+    --fushi-mat-fill-strong: var(--fushi-surface);
+    --fushi-mat-fill-subtle: var(--fushi-surface-muted);
+    --fushi-mat-field: var(--fushi-surface-muted);
+    --fushi-mat-field-hover: var(--fushi-surface-strong);
+    --fushi-mat-field-focus: var(--fushi-surface);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root:is([data-theme], :not([data-theme])) {
+    --fushi-mat-fill: var(--fushi-surface);
+    --fushi-mat-fill-strong: var(--fushi-surface);
+    --fushi-mat-fill-subtle: var(--fushi-surface-muted);
+    --fushi-mat-field: var(--fushi-surface-muted);
+    --fushi-mat-field-hover: var(--fushi-surface-strong);
+    --fushi-mat-field-focus: var(--fushi-surface);
+    --fushi-mat-filter: none;
+  }
+}
+
+/* M3E：实色色调表面 + 大圆角 + 按压形变 + 弹簧缓动。只覆盖 token，颜色仍全部来自调色板，所以
+   任何预设 / 自定义主题、亮暗两态都自动成立。排在玻璃的明暗块与兼容层之后（同为 (0,2,0)），
+   暗色下也不会被玻璃的半透明值盖回去。 */
+:root[data-style="m3e"] {
+  --fushi-shape-card: 28px;
+  --fushi-shape-item: 16px;
+  --fushi-shape-control: 999px;
+  --fushi-shape-control-pressed: 12px;
+  --fushi-shape-field: 14px;
+  --fushi-shape-menu: 18px;
+  --fushi-shape-segment: 6px;
+  /* M3 Expressive 动效：标准缓动 + 「快速空间」弹簧（有一点过冲） */
+  --fushi-ease: cubic-bezier(0.2, 0, 0, 1);
+  --fushi-ease-spatial: cubic-bezier(0.38, 1.21, 0.22, 1);
+  --fushi-dur-short: 200ms;
+  --fushi-dur-medium: 350ms;
+  --fushi-dur-long: 500ms;
+  --fushi-mat-fill: var(--fushi-surface);
+  --fushi-mat-fill-strong: var(--fushi-surface-muted);
+  --fushi-mat-fill-subtle: color-mix(in oklch, var(--fushi-surface-muted) 70%, transparent);
+  --fushi-mat-stroke: transparent;
+  --fushi-mat-edge: transparent;
+  --fushi-mat-highlight: transparent;
+  /* 浮层（菜单 / toast）才用阴影：MD3 elevation level 2 */
+  --fushi-mat-shadow:
+    0 1px 2px color-mix(in oklch, black 30%, transparent),
+    0 2px 6px 2px color-mix(in oklch, black 15%, transparent);
+  --fushi-mat-filter: none;
+  --fushi-mat-orb-strength: 0%;
+  --fushi-mat-field: var(--fushi-surface-muted);
+  --fushi-mat-field-hover: var(--fushi-surface-strong);
+  --fushi-mat-field-focus: var(--fushi-surface-muted);
+  --fushi-mat-thumb: var(--fushi-on-primary);
+  --fushi-mat-thumb-shadow: none;
 }

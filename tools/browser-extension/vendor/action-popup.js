@@ -157,12 +157,24 @@ function fushiOverlayToggleWrite(currentlyOn) {
     : { subtitleOverlayEnabled: true, netflixSubtitlePanel: true };
 }
 
+// 工具栏菜单的其余快捷开关（只放最高频的几个；其余设置一律进设置页）：直接读写设置页同一把
+// 存储键，缺省值与 options.js settingDefaults 逐项一致（守卫 action-popup.test.js 交叉比对）。
+const FUSHI_AP_QUICK_DEFAULTS = Object.freeze({ subtitleHidden: false, shiftHoverLookup: true });
+
+// 某个快捷开关当前是否开（纯函数）：只认显式布尔，缺省回落到设置页同一个默认值。
+function fushiQuickToggleOn(key, stored) {
+  const v = stored ? stored[key] : undefined;
+  if (typeof v === 'boolean') return v;
+  return FUSHI_AP_QUICK_DEFAULTS[key] === true;
+}
+
 // node 单测导出（浏览器里 module 未定义，直接跳过）。
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     fushiFilterQueue, fushiQueueItemLabel, fushiQueueItemContext, fushiReadPanelEnabled,
     fushiQueueItemUrl, fushiTabSite, fushiGenButtonState, fushiUpdateNotice,
-    fushiOverlayToggleState, fushiOverlayToggleWrite,
+    fushiOverlayToggleState, fushiOverlayToggleWrite, fushiQuickToggleOn,
+    FUSHI_AP_QUICK_DEFAULTS,
   };
 }
 
@@ -474,6 +486,48 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
       renderOverlayToggle(write); // 先按目标态画（点击即反馈），落盘后 onChanged 再对一次
       try { chrome.storage.local.set(write); } catch (_) {}
     });
+  }
+
+  // 其余快捷开关（隐藏字幕 / Shift 悬停查词）：翻转即写设置页同一把键，popup 不关——用户要看到
+  // 状态翻过去；渲染只认 storage 的真值（点击先按目标态画，落盘后 onChanged 再对一次）。
+  const quickEls = typeof document.querySelectorAll === 'function'
+    ? Array.prototype.slice.call(document.querySelectorAll('.hp-quick-toggle[data-key]'))
+    : [];
+  const quickState = {};
+  function renderQuick(stored) {
+    for (const el of quickEls) {
+      const key = el.dataset.key;
+      if (!(key in FUSHI_AP_QUICK_DEFAULTS)) continue;
+      if (stored && !(key in stored) && key in quickState) continue;
+      const on = fushiQuickToggleOn(key, stored);
+      quickState[key] = on;
+      el.dataset.on = on ? '1' : '';
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+  }
+  if (quickEls.length) {
+    try {
+      chrome.storage.local.get(Object.keys(FUSHI_AP_QUICK_DEFAULTS), (r) => renderQuick(r || {}));
+    } catch (_) { renderQuick({}); }
+    for (const el of quickEls) {
+      el.addEventListener('click', () => {
+        const key = el.dataset.key;
+        if (!(key in FUSHI_AP_QUICK_DEFAULTS)) return;
+        const patch = { [key]: !quickState[key] };
+        renderQuick(patch);
+        try { chrome.storage.local.set(patch); } catch (_) {}
+      });
+    }
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'local') return;
+        const patch = {};
+        for (const key of Object.keys(FUSHI_AP_QUICK_DEFAULTS)) {
+          if (changes[key]) patch[key] = changes[key].newValue;
+        }
+        if (Object.keys(patch).length) renderQuick(patch);
+      });
+    } catch (_) {}
   }
 
   // 队列在别处（content 入队 / 生成出队 / 别的标签）变化时，popup 若还开着就实时刷新。

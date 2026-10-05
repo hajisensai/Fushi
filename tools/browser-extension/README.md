@@ -15,7 +15,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `nested-popup.html/js` | 扩展 iframe | 每层独立的共享词典 renderer、选区、制卡和滚动状态；经专用 MessageChannel 与宿主通信 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；右下角把手拖拽改底板大小、双击回随内容；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
-| `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗/调色板唯一决议点 + 扩展自有界面的默认调色板（见「主题与颜色」） |
+| `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗 / 调色板 / 外观风格唯一决议点 + 扩展自有界面的唯一 token 源（颜色 + 风格；见「主题与颜色」） |
 | `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
@@ -34,7 +34,8 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 文案（纯函数，文案经 i18n 键） |
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
-| `options.html/css/js` | options | 设置页：配色主题（跟随 Fushi / 预设 / 自定义编辑器）与明暗、语言、连接、字幕偏好、字幕外观（实时预览）、沉浸时间、查词框大小、逐动作视频快捷键、版本与更新卡片 |
+| `options.html/css/js` | options | 设置页，按任务分六组：查词 / 字幕 / 字幕外观（实时预览）/ 外观（界面风格 · 配色主题 · 明暗 · 语言）/ 快捷键 / 高级（沉浸时间 · 连接与诊断 · 版本与更新）；每组常用项在前、次要项收进「更多选项」折叠，每项一行说明 |
+| `material.css` | 扩展页 | 表面材质层（options / 工具栏菜单 / 字幕侧边栏）：两套外观风格 `extensionStyle`——液态玻璃（缺省）与 M3E——共用一份规则，形状 / 材质 / 动效全取 `theme.css` 的风格 token；与配色正交 |
 | `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |

@@ -32,7 +32,8 @@
     zoom: var(--fushi-popup-zoom, 1);
 }
 
-/* 玻璃材质（扩展唯一的材质；只有 app 开墨水屏时随查词响应 theme 下发 --fushi-glass: '0' 关掉）。
+/* 液态玻璃（扩展外观风格 = glass 时；风格 = M3E 或 app 开墨水屏——随查词响应 theme 下发
+   --fushi-glass: '0'——时不挂钩子，见文件后面的 M3E 段）。
    为什么只在扩展这里写、不进共享的 popup.css：backdrop-filter 只能模糊**同一文档**里画在
    它后面的东西。扩展弹窗挂在网页文档的 shadow root 里，背后就是网页本身，能真模糊；
    app 内查词弹窗是独立 WebView（热槽）浮在 Flutter 画面上，WebView 文档里卡片背后
@@ -72,15 +73,15 @@
 
     /* 页内 toast（content.js fushiToast）与拖放提示（subtitle-panel.js）：玻璃胶囊。不支持
        backdrop-filter 时保持段外的实色底（见下方 #fushi-toast / #fushi-subtitle-drop-hint）。 */
-    html #fushi-toast,
-    html #fushi-subtitle-drop-hint {
+    html #fushi-toast:not([data-style="m3e"]),
+    html #fushi-subtitle-drop-hint:not([data-style="m3e"]) {
         background-color: color-mix(in oklch, var(--fushi-surface) 74%, transparent);
         -webkit-backdrop-filter: blur(24px) saturate(1.8);
         backdrop-filter: blur(24px) saturate(1.8);
     }
 
-    html #fushi-toast[data-theme="dark"],
-    html #fushi-subtitle-drop-hint[data-theme="dark"] {
+    html #fushi-toast:not([data-style="m3e"])[data-theme="dark"],
+    html #fushi-subtitle-drop-hint:not([data-style="m3e"])[data-theme="dark"] {
         background-color: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 60%, black) 62%, transparent);
     }
 
@@ -95,18 +96,18 @@
             background-color: rgb(var(--fushi-card-bg-rgb, 255, 255, 255));
         }
 
-        html #fushi-toast,
-        html #fushi-toast[data-theme="dark"],
-        html #fushi-subtitle-drop-hint,
-        html #fushi-subtitle-drop-hint[data-theme="dark"] {
+        html #fushi-toast:not([data-style="m3e"]),
+        html #fushi-toast:not([data-style="m3e"])[data-theme="dark"],
+        html #fushi-subtitle-drop-hint:not([data-style="m3e"]),
+        html #fushi-subtitle-drop-hint:not([data-style="m3e"])[data-theme="dark"] {
             -webkit-backdrop-filter: none;
             backdrop-filter: none;
         }
 
-        html #fushi-toast,
-        html #fushi-toast[data-theme="dark"],
-        html #fushi-subtitle-drop-hint,
-        html #fushi-subtitle-drop-hint[data-theme="dark"] {
+        html #fushi-toast:not([data-style="m3e"]),
+        html #fushi-toast:not([data-style="m3e"])[data-theme="dark"],
+        html #fushi-subtitle-drop-hint:not([data-style="m3e"]),
+        html #fushi-subtitle-drop-hint:not([data-style="m3e"])[data-theme="dark"] {
             background-color: var(--fushi-surface);
         }
     }
@@ -127,6 +128,32 @@
     background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 50%);
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* M3E（扩展外观风格 = Material 3 Expressive；content.js / subtitle-panel.js 在宿主上写 data-style）：
+   查词弹窗是实色卡（不挂玻璃钩子，填充就是 app 下发的不透明 --md-* 底）+ 大圆角 + MD3 投影，
+   圆角 / 投影与 nested-popup-host.js 的 FUSHI_M3E_LAYER_* 逐字相同（嵌套子层一样）；toast 是
+   inverse-surface 实色 snackbar；拖放提示是主色色调胶囊。阴影 / 颜色取 theme.css 重根到宿主上的
+   token（M3E 块随 data-style 生效）。 */
+:host([data-style="m3e"]) {
+    border-radius: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.18),0 8px 24px 4px rgba(0,0,0,0.16);
+}
+
+html #fushi-toast[data-style="m3e"] {
+    border: 0;
+    border-radius: 16px;
+    color: var(--fushi-bg);
+    background-color: var(--fushi-text);
+    background-image: none;
+    box-shadow: var(--fushi-mat-shadow);
+}
+
+html #fushi-subtitle-drop-hint[data-style="m3e"] {
+    border-color: transparent;
+    color: var(--fushi-text);
+    background-color: var(--fushi-primary-soft);
+    box-shadow: var(--fushi-mat-shadow);
 }
 
 /* 制卡队列浮动 chip（TODO-1184）：头部 pill（计数 + 生成）+ 可展开列表（逐项删除）。

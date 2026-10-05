@@ -1,0 +1,730 @@
+/*
+ *  material.css — 扩展自有页面的表面材质层（options 页 / 工具栏菜单 / 字幕侧边栏），两套外观风格
+ *  共用一份规则：
+ *    · 液态玻璃（缺省，:root 无 data-style 或 data-style="glass"）：半透明填充 + backdrop-filter
+ *      模糊 + 顶缘高光 + 柔和投影，页面背后铺一层随主色变化的光斑；
+ *    · M3E（:root[data-style="m3e"]）：实色色调表面、无描边、分段列表、大圆角 + 按压形变、弹簧缓动。
+ *  所有数值（填充 / 描边 / 模糊 / 阴影 / 圆角 / 缓动 / 时长）都是 theme.css 的 token——两套风格
+ *  只在那里分叉；本文件绝不写死颜色或风格数值。风格与配色正交：任何预设 / 自定义主题、亮暗两态都
+ *  同一套规则。网页里的查词弹窗不走这里：它在 content-css-overlay.css（玻璃 data-fushi-glass /
+ *  M3E data-style 两个变体）。
+ *
+ *  兼容：不支持 backdrop-filter / 用户要求减少透明度时，theme.css 的兼容层把玻璃填充换回实心、
+ *  不模糊；减少动态效果时本文件末尾把过渡与入场动画全部归零。
+ *  SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+/* ── 页面背景：三团柔和光斑 + 底色（M3E 下光斑强度为 0 = 平的底色）。fixed 让长页面滚动时
+   玻璃卡片在光斑上「滑过」。 ── */
+:root body {
+  background:
+    radial-gradient(60vmax 46vmax at 4% -6%, color-mix(in oklch, var(--fushi-mat-orb-1) var(--fushi-mat-orb-strength), transparent), transparent 68%),
+    radial-gradient(52vmax 42vmax at 104% 22%, color-mix(in oklch, var(--fushi-mat-orb-2) var(--fushi-mat-orb-strength), transparent), transparent 66%),
+    radial-gradient(58vmax 44vmax at 40% 108%, color-mix(in oklch, var(--fushi-mat-orb-3) var(--fushi-mat-orb-strength), transparent), transparent 70%),
+    var(--fushi-bg);
+  background-attachment: fixed;
+}
+
+/* ── 一级表面（三页共用一份选择器清单）：卡片 / 节导航 / 连接卡 / 折叠卡 / 侧栏页眉 / 菜单分组。
+   描边分两层：border 是贴边的半透明暗边（在亮背景上勾出轮廓），inset 阴影的第一道是顶缘
+   1px 高光（液态玻璃的「边缘反光」），外阴影给浮起感。M3E 下这些 token 全是透明 / none，
+   只剩实色填充。 ── */
+:root :where(
+  .section, .connection, .advanced, .section-nav, .custom-theme-editor,
+  .hp-connection, .hp-update, .hp-group, .hp-queue,
+  .panel-header, .subs-item, .subtitle-row.is-current
+) {
+  border: 1px solid var(--fushi-mat-edge);
+  background-color: var(--fushi-mat-fill);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 40%, transparent), transparent 42%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), inset 0 0 0 1px color-mix(in oklch, var(--fushi-mat-stroke) 35%, transparent), var(--fushi-mat-shadow);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+/* 两份清单都用 :where() 包：特异性只算 :root 这一截 (0,1,0) 加后代，压得过各页 CSS 的
+   单类规则，又不会因为清单里混了 #track 这种 id 而盖掉页面自己的状态规则（开关选中态等）。 */
+
+/* 次级表面（卡片里的代码块 / 选轨）：更薄的一层，不再叠阴影和模糊（它们本来就在卡片里，
+   二次模糊没有可采样的东西，只是白耗）。 */
+:root :where(.select-input, .connection code, .lookup-perf-output, .track-select) {
+  border-color: var(--fushi-mat-edge);
+  background-color: var(--fushi-mat-fill-strong);
+}
+
+:root :where(.section, .connection, .advanced, .section-nav, .custom-theme-editor, .hp-queue) {
+  border-radius: var(--fushi-shape-card);
+}
+
+:root .hp-group {
+  overflow: hidden;
+  border-radius: var(--fushi-shape-card);
+}
+
+:root .subtitle-row.is-current {
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 62%, transparent);
+  border-color: color-mix(in oklch, var(--fushi-primary) 45%, transparent);
+}
+
+:root .subtitle-row:hover {
+  background-color: var(--fushi-mat-fill-subtle);
+}
+
+/* 主按钮：实心主色上加一道顶缘高光（玻璃下像一滴有厚度的色块；M3E 下高光透明 = 纯实色）。 */
+:root :where(.primary-button, .hp-gen:not(:disabled)) {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--fushi-mat-highlight) 50%, transparent), 0 6px 18px -8px color-mix(in oklch, var(--fushi-primary) 70%, transparent);
+}
+
+/* 侧边栏页眉本来就半透明 + 模糊，这里换成同一套材质参数、去掉直角底边。 */
+:root .panel-header {
+  border-width: 0 0 1px;
+  border-radius: 0 0 16px 16px;
+}
+
+/* 底部 toast：材质底 + 正文色，不再是实心主色胶囊。 */
+:root .save-toast,
+:root .toast {
+  color: var(--fushi-text);
+  background-color: var(--fushi-mat-fill-strong);
+  border: 1px solid var(--fushi-mat-edge);
+  box-shadow: var(--fushi-mat-shadow);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+/* ── 开关（设置页 .switch input + 工具栏菜单 .hp-toggle 里的假开关）：两套风格同一结构，形状全取
+   token。玻璃：胶囊槽 + 带投影的白色水滴拇指；M3E：描边槽 + 小拇指，选中时拇指长大成满高圆、
+   按下时再大一圈（MD3 开关），弹簧过渡。 ── */
+:root .switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 28px;
+}
+
+:root .switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+:root .switch > span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: 999px;
+  background-color: color-mix(in oklch, var(--fushi-text) 14%, transparent);
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .switch > span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fushi-mat-thumb);
+  box-shadow: var(--fushi-mat-thumb-shadow);
+  transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial), width var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    height var(--fushi-dur-medium) var(--fushi-ease-spatial), top var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    left var(--fushi-dur-medium) var(--fushi-ease-spatial), background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span) {
+  border-color: var(--fushi-primary);
+  background-color: var(--fushi-primary);
+}
+
+:root :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span)::after {
+  transform: translateX(18px);
+}
+
+:root .switch input:focus-visible + span {
+  outline: 3px solid color-mix(in oklch, var(--fushi-focus) 54%, transparent);
+  outline-offset: 3px;
+}
+
+:root .switch input:disabled + span { opacity: 0.45; }
+
+/* ── 设置行 / 菜单开关行：玻璃下是卡片里以细线分隔的行；M3E 下见文件后部的分段样式。 ── */
+:root :where(.setting-list > .setting-row, .hp-group > .hp-toggle) {
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .hp-group > .hp-toggle + .hp-toggle {
+  border-top: 1px solid color-mix(in oklch, var(--fushi-outline) 40%, transparent);
+}
+
+:root .hp-group > .hp-toggle:hover {
+  background-color: color-mix(in oklch, var(--fushi-text) 6%, transparent);
+}
+
+:root .hp-group > .hp-toggle:focus-visible {
+  outline: 2px solid var(--fushi-focus);
+  outline-offset: -2px;
+}
+
+/* ── 统一输入框（设置页 / 字幕侧边栏 / 工具栏菜单的全部文本、数字、搜索、密码输入与 textarea）：
+   玻璃面里的一枚无描边填充胶囊，高度与相邻按钮 / 下拉同档（38；抽屉嵌入 32）。焦点是一圈主色
+   光晕——不再是浏览器默认 outline 叠出来的粗黑双圈，但焦点仍然清楚可见；减少透明度 / 不支持
+   模糊时填充回落成实色（见文件末尾兼容层）。勾选框 / 开关 / 滑块 / 取色器不在这份清单里。
+   (0,2,0) 起步：压得过各页的 `.field input`、`.subs-row input`、`input:focus-visible` 这类
+   (0,1,1) 规则；抽屉嵌入的 32 高度规则 (0,2,2) 仍然生效。 ── */
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+) {
+  box-sizing: border-box;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--fushi-shape-field);
+  background-color: var(--fushi-mat-field);
+  background-image: none;
+  box-shadow: inset 0 1px 2px color-mix(in oklch, var(--fushi-text) 7%, transparent);
+  color: var(--fushi-text);
+  font: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-color var(--fushi-dur-short) var(--fushi-ease), box-shadow var(--fushi-dur-short) var(--fushi-ease);
+}
+
+/* 设置页的字段标签是 12px 粗体，输入框不跟着它走：正文字号、常规字重。 */
+:root:root .field :where(input, textarea) {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+:root:root textarea {
+  min-height: 76px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+:root:root :where(input, textarea)::placeholder {
+  color: var(--fushi-muted);
+  opacity: 1;
+}
+
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):hover:not(:disabled) {
+  background-color: var(--fushi-mat-field-hover);
+}
+
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--fushi-primary) 55%, transparent);
+  background-color: var(--fushi-mat-field-focus);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 26%, transparent);
+}
+
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 数字框去掉原生上下箭头（在胶囊里又小又糊）；键盘上下键 / 滚轮照常改值。 */
+:root:root input[type="number"] { -moz-appearance: textfield; }
+
+:root:root input[type="number"]::-webkit-inner-spin-button,
+:root:root input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 搜索框：去掉原生放大镜装饰；清除钮保留（Esc 也能清），只是改成跟随正文色的小圆钮。 */
+:root:root input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
+
+:root:root input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background:
+    linear-gradient(45deg, transparent 44%, var(--fushi-surface) 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, var(--fushi-surface) 44% 56%, transparent 56%),
+    var(--fushi-muted);
+  cursor: pointer;
+}
+
+/* 设置页 Token：输入框与「显示」按钮连成一枚胶囊（左半输入、右半按钮）。 */
+:root:root .token-field input { border-radius: var(--fushi-shape-field) 0 0 var(--fushi-shape-field); }
+
+:root .token-field button {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-left: 1px solid var(--fushi-mat-edge);
+  border-radius: 0 var(--fushi-shape-field) var(--fushi-shape-field) 0;
+  background-color: var(--fushi-mat-field-hover);
+  color: var(--fushi-primary-strong);
+  font-weight: 600;
+  outline: none;
+}
+
+:root .token-field button:hover { background-color: var(--fushi-mat-field-focus); }
+
+:root .token-field button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 26%, transparent);
+}
+
+/* 字幕侧边栏查字幕：搜索词 / 集数 / 搜 三件一组——等高、对齐、统一的全圆角胶囊。 */
+:root .subs-row {
+  grid-template-columns: minmax(0, 1fr) 64px 38px;
+  align-items: center;
+  gap: 6px;
+}
+
+:root:root .subs-row input { min-width: 0; height: 38px; }
+
+:root:root .subs-row input[type="number"] {
+  padding: 0 8px;
+  text-align: center;
+}
+
+:root .subs-row button {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+:root.fushi-embed .subs-row { grid-template-columns: minmax(0, 1fr) 52px 32px; }
+
+:root:root.fushi-embed .subs-row input { height: 32px; min-height: 32px; }
+
+:root.fushi-embed .subs-row button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
+/* ── 统一下拉（glass-select.js）：原生 <select> 视觉隐藏留作真相源，触发器是玻璃胶囊 + 右侧
+   chevron，展开面板是挂在 <body> 上的玻璃菜单。外壳 .fgs 会带上 select 的布局类
+   （.select-input / .track-select），这里先把那些类给的边框 / 内边距 / 底色在外壳上清掉，
+   视觉全交给触发器。 ── */
+:root .fgs {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  vertical-align: middle;
+}
+
+:root .fgs[hidden] { display: none; }
+
+:root .fgs .fgs-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+:root .fgs-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 10px 0 14px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-field);
+  background-color: var(--fushi-mat-fill-strong);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 45%, transparent), transparent 60%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 1px 2px color-mix(in oklch, var(--fushi-text) 6%, transparent);
+  color: var(--fushi-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+  transition: border-color var(--fushi-dur-short) var(--fushi-ease), background-color var(--fushi-dur-short) var(--fushi-ease), box-shadow var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .fgs-trigger:hover {
+  border-color: color-mix(in oklch, var(--fushi-primary) 35%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-surface) 84%, transparent);
+}
+
+/* 焦点环：一圈柔和的主色光晕，不再是 outline + offset 叠出来的粗双圈。 */
+:root .fgs-trigger:focus-visible,
+:root .fgs.is-open .fgs-trigger {
+  border-color: color-mix(in oklch, var(--fushi-primary) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 24%, transparent);
+}
+
+:root .fgs-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+:root .fgs-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root .fgs-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fushi-muted);
+  transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root .fgs.is-open .fgs-chevron { transform: rotate(180deg); }
+
+:root .fgs-menu {
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 5px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-menu);
+  background-color: var(--fushi-mat-fill-strong);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 40%, transparent), transparent 40%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), inset 0 0 0 1px color-mix(in oklch, var(--fushi-mat-stroke) 35%, transparent), var(--fushi-mat-shadow);
+  color: var(--fushi-text);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:root .fgs-menu[hidden] { display: none; }
+
+:root .fgs-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  border-radius: calc(var(--fushi-shape-menu) - 5px);
+  cursor: pointer;
+  user-select: none;
+}
+
+:root .fgs-option + .fgs-option { margin-top: 1px; }
+
+:root .fgs-option-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root .fgs-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fushi-primary);
+  visibility: hidden;
+}
+
+:root .fgs-option.is-active { background-color: color-mix(in oklch, var(--fushi-text) 8%, transparent); }
+
+:root .fgs-option.is-selected {
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 72%, transparent);
+  font-weight: 600;
+}
+
+:root .fgs-option.is-selected.is-active { background-color: color-mix(in oklch, var(--fushi-primary-soft) 92%, transparent); }
+
+:root .fgs-option.is-selected .fgs-check { visibility: visible; }
+
+:root .fgs-option[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 抽屉嵌入（html.fushi-embed）的选轨行压到 32 高，与按钮行同档。 */
+:root.fushi-embed .fgs-trigger {
+  min-height: 32px;
+  font-size: 13px;
+}
+
+/* ── 字幕侧边栏的按钮：工具排（＋ 字 A− A＋ AS ⚙）、时轴偏移排、查字幕排、抽屉折叠钮、
+   每行时间戳，统一成玻璃胶囊 / 小圆钮，去掉页面 CSS 的实线描边；选中态（AS 等 .is-on）是
+   主色染色的玻璃。特异性 (0,2,1) 压得过侧边栏的 button / button:hover / button.is-on。 ── */
+:root :is(.toolbar, .offset-row, .subs-row) button,
+:root .hdr-fold,
+:root .timestamp {
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-control);
+  background-color: var(--fushi-mat-fill-strong);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 45%, transparent), transparent 60%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 1px 2px color-mix(in oklch, var(--fushi-text) 6%, transparent);
+  outline: none;
+  transition: border-color var(--fushi-dur-short) var(--fushi-ease), background-color var(--fushi-dur-short) var(--fushi-ease), box-shadow var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), transform var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .toolbar button {
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+:root .offset-row button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+:root :is(.toolbar, .offset-row, .subs-row) button:hover,
+:root .hdr-fold:hover,
+:root .timestamp:hover {
+  border-color: color-mix(in oklch, var(--fushi-primary) 35%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-surface) 84%, transparent);
+}
+
+:root :is(.toolbar, .offset-row, .subs-row) button:active,
+:root .hdr-fold:active,
+:root .timestamp:active {
+  border-radius: var(--fushi-shape-control-pressed);
+  transform: scale(0.96);
+}
+
+:root :is(.toolbar, .offset-row, .subs-row) button:focus-visible,
+:root .hdr-fold:focus-visible,
+:root .timestamp:focus-visible {
+  border-color: color-mix(in oklch, var(--fushi-primary) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 24%, transparent);
+}
+
+:root .toolbar button.is-on,
+:root .toolbar button.is-on:hover {
+  border-color: color-mix(in oklch, var(--fushi-primary) 50%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 75%, transparent);
+  color: var(--fushi-primary);
+}
+
+/* 时间戳：更薄的一枚小胶囊（行里的次级控件），当前句的那枚染主色。 */
+:root .timestamp {
+  padding: 2px 8px;
+  background-color: var(--fushi-mat-fill-subtle);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight);
+}
+
+:root .subtitle-row.is-current .timestamp {
+  border-color: color-mix(in oklch, var(--fushi-primary) 40%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-primary) 14%, transparent);
+}
+
+/* ══ M3E（:root[data-style="m3e"]）结构差异 ══
+   token 已经把填充换成实色、描边 / 高光 / 模糊 / 光斑清零；这里只补「形状语言」上与玻璃不同的地方：
+   ① 设置行与菜单开关行是分段色块——卡片退成透明容器，每行一块实色 surface，组内首尾大圆角、
+      中间小圆角、行间 2px 缝（M3 Expressive 的分段列表）；
+   ② 开关是 MD3 形态：描边槽 + 小拇指，选中拇指长成满高圆（弹簧过渡）；
+   ③ 节导航是胶囊指示器的导航栏，选中项主色色调；
+   ④ 主按钮 / 胶囊按压时形变（token --fushi-shape-control-pressed）。 */
+:root[data-style="m3e"] .section {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* 常驻卡片靠色调分层、不投影（M3E 的阴影只留给菜单 / toast 这类浮层）。 */
+:root[data-style="m3e"] :where(.connection, .advanced, .custom-theme-editor, .hp-connection, .hp-update, .hp-queue, .panel-header, .subs-item, .subtitle-row.is-current) {
+  box-shadow: none;
+}
+
+:root[data-style="m3e"] .section-heading { padding: 6px 6px 14px; }
+
+:root[data-style="m3e"] .section-icon {
+  border-radius: 14px;
+  color: var(--fushi-on-primary);
+  background: var(--fushi-primary);
+}
+
+:root[data-style="m3e"] .subtitle-preview { margin-bottom: 10px; border-radius: var(--fushi-shape-card); }
+
+:root[data-style="m3e"] :is(.setting-list, .hp-group) {
+  gap: 2px;
+}
+
+:root[data-style="m3e"] .hp-group {
+  overflow: visible;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root[data-style="m3e"] :is(.setting-list > .setting-row, .hp-group > .hp-toggle) {
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--fushi-shape-segment);
+  background-color: var(--fushi-surface);
+}
+
+:root[data-style="m3e"] .hp-group > .hp-toggle { padding: 10px 16px; }
+
+:root[data-style="m3e"] :is(.setting-list > :first-child, .hp-group > :first-child) {
+  border-top-left-radius: calc(var(--fushi-shape-card) - 8px);
+  border-top-right-radius: calc(var(--fushi-shape-card) - 8px);
+}
+
+:root[data-style="m3e"] :is(.setting-list > :last-child, .hp-group > :last-child) {
+  border-bottom-left-radius: calc(var(--fushi-shape-card) - 8px);
+  border-bottom-right-radius: calc(var(--fushi-shape-card) - 8px);
+}
+
+:root[data-style="m3e"] :is(.setting-list > .setting-row:not(.setting-row-static), .hp-group > .hp-toggle):hover {
+  background-color: color-mix(in oklch, var(--fushi-surface) 90%, var(--fushi-primary));
+}
+
+/* 快捷键网格：每格是一枚独立的圆角色块（网格里没有「组首尾」可言）。 */
+:root[data-style="m3e"] .shortcut-grid { gap: 4px; }
+
+:root[data-style="m3e"] .shortcut-grid > .shortcut-row {
+  padding: 8px 14px 8px 12px;
+  border-radius: var(--fushi-shape-item);
+}
+
+/* 「更多选项」：一枚整宽的色调胶囊，展开后列表接在下方。 */
+:root[data-style="m3e"] .more { margin: 10px 0 0; }
+
+:root[data-style="m3e"] .more > summary {
+  background: color-mix(in oklch, var(--fushi-primary-soft) 60%, transparent);
+}
+
+:root[data-style="m3e"] .more[open] > summary { margin-bottom: 8px; }
+
+:root[data-style="m3e"] .more-count {
+  color: var(--fushi-on-primary);
+  background: var(--fushi-primary);
+}
+
+:root[data-style="m3e"] .subgroup-heading { margin: 18px 6px 8px; }
+
+:root[data-style="m3e"] .advanced { border-radius: calc(var(--fushi-shape-card) - 8px); }
+
+:root[data-style="m3e"] .diagnostics-stack { gap: 4px; padding-top: 0; }
+
+:root[data-style="m3e"] .tip {
+  padding: 14px 20px;
+  border-radius: calc(var(--fushi-shape-card) - 8px);
+  background: var(--fushi-surface);
+}
+
+/* 自定义主题编辑器、风格卡、主题卡：同为实色色调块。 */
+:root[data-style="m3e"] .style-card {
+  border-width: 2px;
+  border-color: transparent;
+  background: var(--fushi-surface-muted);
+}
+
+:root[data-style="m3e"] .style-card:has(input:checked) {
+  border-color: var(--fushi-primary);
+  background: var(--fushi-primary-soft);
+}
+
+:root[data-style="m3e"] .palette-swatch { border-radius: var(--fushi-shape-item); }
+
+/* 节导航：透明容器 + 胶囊指示器。 */
+:root[data-style="m3e"] .section-nav {
+  padding: 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root[data-style="m3e"] .section-link { padding: 12px 16px; font-weight: 650; }
+
+:root[data-style="m3e"] .section-link[aria-current="true"] {
+  color: var(--fushi-text);
+  background: var(--fushi-primary-soft);
+}
+
+:root[data-style="m3e"] .section-link[aria-current="true"] .nav-icon { color: var(--fushi-primary-strong); }
+
+/* 窄屏的吸顶导航条：M3E 下是一条实色的底，不透明不模糊。 */
+@media (max-width: 900px) {
+  :root[data-style="m3e"] .section-nav { background: var(--fushi-bg); }
+}
+
+/* 连接卡：实色卡，状态好时整卡染一层主色色调。 */
+:root[data-style="m3e"] .connection[data-tone="good"],
+:root[data-style="m3e"] .hp-connection[data-tone="good"] {
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 55%, var(--fushi-surface));
+}
+
+:root[data-style="m3e"] .hp-connection { border-radius: calc(var(--fushi-shape-card) - 8px); }
+
+/* MD3 开关：52×32 描边槽；关时拇指 16、取描边色，开时拇指长成 24、取 on-primary。 */
+:root[data-style="m3e"] .switch {
+  width: 52px;
+  height: 32px;
+}
+
+:root[data-style="m3e"] .switch > span {
+  border: 2px solid var(--fushi-outline);
+  background-color: var(--fushi-surface-strong);
+}
+
+:root[data-style="m3e"] .switch > span::after {
+  top: 6px;
+  left: 6px;
+  width: 16px;
+  height: 16px;
+  background: var(--fushi-outline);
+}
+
+:root[data-style="m3e"] :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span)::after {
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  background: var(--fushi-on-primary);
+  transform: translateX(20px);
+}
+
+/* 工具栏菜单：制卡队列是一张实色大圆角卡，侧边栏按钮是色调胶囊。 */
+:root[data-style="m3e"] .hp-queue { padding: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :root *,
+  :root *::before,
+  :root *::after {
+    transition-duration: 0.01ms !important;
+    animation: none !important;
+  }
+}
