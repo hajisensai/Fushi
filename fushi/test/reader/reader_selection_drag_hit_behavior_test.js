@@ -636,7 +636,7 @@ function buildDocument(spec) {
 
 function loadSelection(dom, realHandles = false) {
   const literal = selectionObjectLiteral(selectionSource());
-  const factory = new Function(
+  const factory = new Function(  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
     'window',
     'document',
     'Node',
@@ -644,7 +644,7 @@ function loadSelection(dom, realHandles = false) {
     'JAPANESE_RANGES', 'CSS', 'Highlight',
     `return (${literal});`,
   );
-  const sel = factory(dom.win, dom.doc, NodeStub, NodeFilterStub, [
+  const sel = factory(dom.win, dom.doc, NodeStub, NodeFilterStub, [  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
     [0x3040, 0x309f],
     [0x30a0, 0x30ff],
     [0x4e00, 0x9fff],
@@ -1215,7 +1215,7 @@ function gestureDriver(dom) {
   let id = 0;
   dom.doc.addEventListener = (name, fn) => { listeners[name] = fn; };
   dom.win.matchMedia = () => ({ matches: true });
-  new Function('window', 'document', 'setTimeout', 'clearTimeout', script)(dom.win, dom.doc,
+  new Function('window', 'document', 'setTimeout', 'clearTimeout', script)(dom.win, dom.doc,  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
     (fn) => { timers.set(++id, fn); return id; }, (key) => timers.delete(key));
   return {
     fire(name, x, y) {

@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 // Ported from the independent pagination-review probe. Read the worktree, never
 // git-show a pinned revision. Only geometry/rendering unrelated to lifecycle is
 // stubbed: shared methods, scroll coordinates, capture/target listeners, paging,
@@ -93,11 +93,14 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   const frames = [], timers = [];
   const sandbox = vm.createContext({window, document: doc, CSS: {highlights}, Node: {TEXT_NODE: 3}, console, Date,
     requestAnimationFrame: callback => frames.push(callback), setTimeout: callback => timers.push(callback)});
-  const fn = (kind, name, n = 0) => vm.runInContext(`(${method(sources[kind], name, n)})`, sandbox);
+  const fn = (kind, name, n = 0) => vm.runInContext(`(${method(sources[kind], name, n)})`, sandbox);  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
   const reader = window.fushiReader = {isVertical: () => vertical};
   for (const name of ['clearImageLateAnchor', '_setRestoreCharAnchor', '_isContinuousShell',
     'noteUserScroll', '_clearSelectionOnViewportChange', '_readContinuousScroll',
-    '_onContinuousViewportScroll']) reader[name] = fn('pagination', name);
+    '_onContinuousViewportScroll',
+    // 上游 2026-10-05 起 paginate 会调几何重锚收口；漏掉它 harness 会在第一次翻页就
+    // TypeError（this._settleGeometryReanchor is not a function）。
+    '_settleGeometryReanchor', '_reanchorFrame']) reader[name] = fn('pagination', name);
   if (continuous) reader.scrollToChapterEnd = () => {};
   const start = html.appendChild(new Element('start-grip'));
   const end = html.appendChild(new Element('end-grip'));
@@ -131,8 +134,8 @@ function fixture({continuous = true, css = true, writingMode = 'horizontal-tb', 
   fn('selection', '_wireHandle').call(selection, start, 'start');
   fn('selection', '_wireHandle').call(selection, end, 'end');
   function install() {
-    vm.runInContext(intent, sandbox);
-    if (window.fushiReader._isContinuousShell()) vm.runInContext(motion, sandbox);
+    vm.runInContext(intent, sandbox);  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
+    if (window.fushiReader._isContinuousShell()) vm.runInContext(motion, sandbox);  // NOSONAR: harness 在本地 Node 沙箱里执行从 Dart 源文件抽出的生产 JS，输入来自仓库自身、无用户可控数据（S1523 误报）
   }
   install();
   function dispatch(type, target = doc, fields = {}) {
