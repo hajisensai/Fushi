@@ -370,6 +370,8 @@
       var el = document.createElement('div');
       el.id = 'fushi-subtitle-overlay';
       el.setAttribute('data-theme', resolveTheme());
+      // 外观风格（M3E / 液态玻璃）只管拖柄 / 缩放把手这些外框件；字幕文字本身全走 --fushi-sub-*。
+      if (window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(el);
       // 文字层与拖柄分开：fushiRenderCueText 会先清空目标节点再写，若直接写在根节点上，
       // 拖柄每次换句都被抹掉。拖柄用 CSS ::before 画图形，不带文本节点——content.js 的
       // fushiSubtitleCaretAtPoint 会遍历覆盖层下的所有文本节点取词，拖柄不能混进正文。
@@ -379,6 +381,10 @@
       grip.className = 'fushi-subtitle-overlay-grip';
       grip.setAttribute('title', tr('overlay_grip_title'));
       grip.setAttribute('aria-hidden', 'true');
+      // M3E 拖柄图标 drag_indicator（icons.js 内联 SVG：只有 <path>，没有文本节点，取词遍历碰不到）。
+      if (typeof window.fushiIcon === 'function') {
+        try { grip.appendChild(window.fushiIcon('drag_indicator', { size: 20 })); } catch (_) {}
+      }
       // 右下角缩放把手：与拖柄同构（::before 画图形、不带文本节点，取词遍历不会碰到它）。
       var resize = document.createElement('span');
       resize.className = 'fushi-subtitle-overlay-resize';
@@ -1028,11 +1034,12 @@
       st.dropHint = document.createElement('div');
       st.dropHint.id = 'fushi-subtitle-drop-hint';
       st.dropHint.textContent = tr('subtitle_drop_hint');
+      if (window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(st.dropHint);
     }
     if (typeof st.dropHint.setAttribute === 'function') {
       st.dropHint.setAttribute('data-theme', resolveTheme());
       // 外观风格（液态玻璃 / M3E），与 content.js toast 同一判据。
-      st.dropHint.setAttribute('data-style', window.fushiTheme && window.fushiTheme.style === 'm3e' ? 'm3e' : 'glass');
+      st.dropHint.setAttribute('data-style', window.fushiTheme && window.fushiTheme.style === 'glass' ? 'glass' : 'm3e');
     }
     var parent = parentForOverlay();
     if (st.dropHint.parentNode !== parent) parent.appendChild(st.dropHint);

@@ -35,7 +35,8 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
 | `options.html/css/js` | options | 设置页，按任务分六组：查词 / 字幕 / 字幕外观（实时预览）/ 外观（界面风格 · 配色主题 · 明暗 · 语言）/ 快捷键 / 高级（沉浸时间 · 连接与诊断 · 版本与更新）；每组常用项在前、次要项收进「更多选项」折叠，每项一行说明 |
-| `material.css` | 扩展页 | 表面材质层（options / 工具栏菜单 / 字幕侧边栏）：两套外观风格 `extensionStyle`——液态玻璃（缺省）与 M3E——共用一份规则，形状 / 材质 / 动效全取 `theme.css` 的风格 token；与配色正交 |
+| `material.css` | 扩展页 | 表面材质层（options / 工具栏菜单 / 字幕侧边栏）：两套外观风格 `extensionStyle`——M3E（缺省，与 Fushi 本体同一套 Material 3 Expressive）与液态玻璃——共用一份规则，形状 / 材质 / 动效全取 `theme.css` 的风格 token；与配色正交 |
+| `icons.js` | 隔离 + 扩展页 | Material Symbols Rounded 图标子集（内联 SVG 路径表，不加载图标字体）：`fushiIcon(name)` / 静态页 `data-fushi-icon` 槽位；只收录界面真用到的字形 |
 | `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
@@ -220,6 +221,13 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `fushiTheme.applyPopupPalette` 把 `--md-*` / `--text-color` / `--background-color` /
   `--fushi-card-bg-rgb` 等颜色项按同一款调色板覆盖，弹窗与设置页 / 侧边栏 / 字幕底板同色；
   `fushi` / `app` 下不动。
+
+- **M3E 系统 token**：`theme.css` 第 ② 段定义 `--md-sys-color-*`（只别名 `--fushi-*` 调色板）与
+  形状 / 字阶 / 状态层 / 高度 / 动效 `--md-sys-*`，与 app 查词弹窗 `fushi/assets/popup/m3e-tokens.css`
+  同名同值（`extension-style.test.js` 逐项比对）。调色板新增 M3 容器 / tertiary 角色
+  （`--fushi-on-primary-soft` / `--fushi-secondary-soft` / `--fushi-tertiary*` / `--fushi-on-danger`），
+  跟随 Fushi 时直接取 app ColorScheme 的对应值。查词弹窗 M3E 下由 `fushiTheme.applyPopupStyle` 挂
+  `.fushi-m3e`，吃 popup.css 的「M3E 视觉层」，与 app 内弹窗一致。
 
 守卫：`theme-and-study.test.js`（决议、根属性、CSS 单一真相源、请求提示）、
 `theme-palette.test.js`（预设/派生/自定义/注入范围/弹窗覆盖）。

@@ -48,6 +48,8 @@ function loadSandbox() {
     storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener: noop } },
   };
   sandbox.window = {
+    // 本文件钉的是液态玻璃风格；缺省风格已是 M3E（theme.js），这里显式选玻璃。
+    fushiTheme: { style: 'glass' },
     addEventListener: noop, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: false, addEventListener: noop }),
     flutter_inappwebview: { callHandler: noop },

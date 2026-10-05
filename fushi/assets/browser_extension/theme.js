@@ -16,12 +16,14 @@
 //   绝不碰宿主页 :root。查词弹窗的 --md-* 由 popupVars() 给三处弹窗壳覆盖，弹窗与其它表面
 //   同一款主题。
 //
-// 外观风格（与调色板正交；用户 2026-10-05「两套样式 M3E 和液态玻璃」）：
-//   extensionStyle = 'glass'（液态玻璃，缺省）| 'm3e'（Material 3 Expressive）。风格只决定形状 /
-//   表面材质 / 层次 / 动效，token 全在 theme.css（:root 为玻璃，:root[data-style="m3e"] 覆盖），
-//   material.css 按 token 落到各页控件。扩展页面写根 data-style；宿主网页里只有 Fushi 自己的浮层
-//   跟风格走——查词弹窗问 usesGlass()（M3E 下弹窗是实色卡），toast / 拖放提示由创建它们的脚本写
-//   data-style。2026-10-04 退役的「材质」设置（extensionMaterial / appGlassMirror）仍只做清理。
+// 外观风格（与调色板正交；用户 2026-10-05「两套样式 M3E 和液态玻璃」，2026-10-06「浏览器扩展也
+//   统一成 m3e」）：extensionStyle = 'm3e'（Material 3 Expressive，缺省）| 'glass'（液态玻璃，第二套）。
+//   风格只决定形状 / 表面材质 / 层次 / 动效，token 全在 theme.css（:root 为 M3E，
+//   :root[data-style="glass"] 覆盖），material.css 按 token 落到各页控件。扩展页面写根 data-style；
+//   宿主网页里只有 Fushi 自己的浮层跟风格走——页内宿主（IN_PAGE_HOST_IDS）由 stampStyle 写
+//   data-style（创建时调一次，设置变化时 applyToHostPage 重盖已存在的宿主）；查词弹窗问
+//   usesGlass()，M3E 下由 applyPopupStyle 给弹窗根挂 .fushi-m3e（popup.css 的「M3E 视觉层」，与
+//   app 内弹窗同一套）。2026-10-04 退役的「材质」设置（extensionMaterial / appGlassMirror）仍只做清理。
 //
 // content script / 扩展页面共用一份；没有 chrome.storage 的环境（纯 vm 测试）退化为
 // 跟随系统、setPreference 仍可用。
@@ -40,8 +42,11 @@
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
   var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
   var VALID = { auto: true, light: true, dark: true };
+  // 页内宿主 id（与 IN_PAGE_HOSTS 同一份清单）：设置变化时按 id 重盖 data-style。
+  var IN_PAGE_HOST_IDS = ['fushi-drawer', 'fushi-subtitle-overlay', 'fushi-subtitle-drop-hint', 'fushi-queue-chip',
+    'fushi-toast', 'fushi-player-btn', 'fushi-player-controls', 'fushi-ctx-modal-host'];
   var VALID_STYLE = { glass: true, m3e: true };
-  var DEFAULT_STYLE = 'glass';
+  var DEFAULT_STYLE = 'm3e';
   var pref = 'auto';
   var style = DEFAULT_STYLE;
   var paletteId = 'fushi';
@@ -68,6 +73,34 @@
   // 当前风格是否液态玻璃（查词弹窗 / 嵌套层决定要不要上模糊与半透明填充）。
   function usesGlass() {
     return style === 'glass';
+  }
+
+  // 系统「减弱动态效果」。CSS 侧各自有 @media；这里给不能写 @media 的弹窗（popup.css 生成器不处理
+  // 嵌套 at-rule）挂 .fushi-reduced-motion 用。
+  function reducedMotion() {
+    try {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (_) { return false; }
+  }
+
+  // 给一个 Fushi 自有浮层元素盖上当前风格（content.css 里重根后的 theme.css 按它切 M3E / 玻璃）。
+  function stampStyle(el) {
+    if (!el || typeof el.setAttribute !== 'function') return;
+    try { el.setAttribute('data-style', style); } catch (_) {}
+  }
+
+  // 查词弹窗根（#entries-container）：M3E 下挂 .fushi-m3e = popup.css「M3E 视觉层」（卡片 / 标签 /
+  // 动作按钮 / 菜单换成 M3E 色块与形状，与 app 内弹窗 popup_settings_injection 同一个开关）；墨水屏
+  // （.eink）不挂。减弱动态效果挂 .fushi-reduced-motion。content.js / side-panel.js / nested-popup.js
+  // 三处共用。eink = app 开了墨水屏（随 theme 下发 --fushi-glass: '0'）。
+  function applyPopupStyle(container, eink) {
+    if (!container || !container.classList) return;
+    eink = eink === true;
+    try { eink = eink || container.classList.contains('eink'); } catch (_) {}
+    try {
+      container.classList.toggle('fushi-m3e', style === 'm3e' && !eink);
+      container.classList.toggle('fushi-reduced-motion', reducedMotion());
+    } catch (_) {}
   }
 
   // 显式明暗（'light' / 'dark'），auto 时为 null。
@@ -225,10 +258,16 @@
     onChange(apply);
   }
 
-  // 宿主网页里：只维护 #fushi-* 浮层宿主的调色板 style，绝不动宿主的 <html>。
+  // 宿主网页里：只维护 #fushi-* 浮层宿主的调色板 style 与 data-style，绝不动宿主的 <html>。
   function applyToHostPage(doc) {
     doc = doc || document;
-    function apply() { applyPaletteStyle(doc); }
+    function apply() {
+      applyPaletteStyle(doc);
+      if (!doc.getElementById) return;
+      for (var i = 0; i < IN_PAGE_HOST_IDS.length; i++) {
+        try { stampStyle(doc.getElementById(IN_PAGE_HOST_IDS[i])); } catch (_) {}
+      }
+    }
     apply();
     onChange(apply);
   }
@@ -292,6 +331,9 @@
     get appMirror() { return appMirror; },
     explicit: explicit,
     usesGlass: usesGlass,
+    reducedMotion: reducedMotion,
+    stampStyle: stampStyle,
+    applyPopupStyle: applyPopupStyle,
     resolve: resolve,
     tokens: tokens,
     popupVars: popupVars,

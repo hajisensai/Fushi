@@ -232,6 +232,7 @@
     var outlineL = dark ? 0.39 : 0.79;
 
     var primary = dark ? oklchHex(0.78, Math.min(pc, 0.12), h) : oklchHex(0.46, pc, h);
+    var th3 = (h + 60) % 360; // tertiary 色相
     var primarySoft = dark ? oklchHex(0.31, Math.min(0.065, pc * 0.8), h) : oklchHex(0.89, Math.min(0.055, pc * 0.65), h);
     var tokens = {
       '--fushi-bg': oklchHex(bg, sC, sh),
@@ -245,10 +246,20 @@
       '--fushi-primary-strong': dark ? oklchHex(0.84, Math.min(pc, 0.1), h) : oklchHex(0.37, pc, h),
       '--fushi-primary-soft': primarySoft,
       '--fushi-on-primary': dark ? oklchHex(0.19, Math.min(0.03, pc), h) : oklchHex(0.985, 0.008, h),
+      // M3 容器色角色（theme.css ② 段把它们别名成 --md-sys-color-*）：primaryContainer 上的字、
+      // 低彩度的 secondaryContainer、色相 +60° 的 tertiary 一族（M3 tonal palette 的同一取向）。
+      '--fushi-on-primary-soft': dark ? oklchHex(0.9, Math.min(0.06, pc * 0.75), h) : oklchHex(0.3, Math.min(0.07, pc * 0.85), h),
+      '--fushi-secondary-soft': dark ? oklchHex(0.33, Math.min(0.03, pc * 0.35), h) : oklchHex(0.905, Math.min(0.03, pc * 0.35), h),
+      '--fushi-on-secondary-soft': dark ? oklchHex(0.9, Math.min(0.03, pc * 0.35), h) : oklchHex(0.28, Math.min(0.03, pc * 0.35), h),
+      '--fushi-tertiary': dark ? oklchHex(0.8, Math.min(0.07, pc * 0.85), th3) : oklchHex(0.48, Math.min(0.07, pc * 0.85), th3),
+      '--fushi-on-tertiary': dark ? oklchHex(0.25, Math.min(0.05, pc * 0.6), th3) : oklchHex(0.985, 0.008, th3),
+      '--fushi-tertiary-soft': dark ? oklchHex(0.36, Math.min(0.06, pc * 0.7), th3) : oklchHex(0.9, Math.min(0.045, pc * 0.55), th3),
+      '--fushi-on-tertiary-soft': dark ? oklchHex(0.9, Math.min(0.045, pc * 0.55), th3) : oklchHex(0.3, Math.min(0.06, pc * 0.7), th3),
       '--fushi-focus': dark ? oklchHex(0.78, Math.min(0.11, pc), h) : oklchHex(0.61, Math.min(0.13, pc * 1.3), h),
       // 警示/危险色不跟主题色相走（红黄语义固定），与 theme.css 同值。
       '--fushi-warn': dark ? oklchHex(0.77, 0.12, 78) : oklchHex(0.62, 0.135, 78),
       '--fushi-danger': dark ? oklchHex(0.72, 0.15, 28) : oklchHex(0.55, 0.18, 28),
+      '--fushi-on-danger': dark ? oklchHex(0.25, 0.08, 28) : oklchHex(0.985, 0.01, 28),
     };
     return tokens;
   }
@@ -268,21 +279,34 @@
     var onPrimary = normalizeHexOrNull(mirror['--md-on-primary']) || surface;
     var p = rgbToOklch(parseHex(primary));
     var dark = rgbToOklch(parseHex(surface)).L < 0.5;
+    // M3 容器 / tertiary 角色：新 app（sh-misc-m3e 起）随 theme 下发 ColorScheme 原值，扩展页面与
+    // app 同色；旧 app 缺这些键时按主色派生（与 derive 同一取向）。
+    function role(key, fallback) { return normalizeHexOrNull(mirror[key]) || fallback; }
+    var ph3 = (p.h + 60) % 360;
+    var primarySoft = role('--md-primary-container', oklchHex(dark ? 0.31 : 0.89, Math.min(0.065, p.C * 0.7), p.h));
     return {
       '--fushi-bg': sc,
       '--fushi-surface': surface,
       '--fushi-surface-muted': sc,
-      '--fushi-surface-strong': sch,
+      '--fushi-surface-strong': role('--md-surface-container-highest', sch),
       '--fushi-text': text,
       '--fushi-muted': mutedText,
       '--fushi-outline': outline,
       '--fushi-primary': primary,
       '--fushi-primary-strong': oklchHex(dark ? Math.min(0.95, p.L + 0.06) : Math.max(0.2, p.L - 0.09), p.C, p.h),
-      '--fushi-primary-soft': oklchHex(dark ? 0.31 : 0.89, Math.min(0.065, p.C * 0.7), p.h),
+      '--fushi-primary-soft': primarySoft,
       '--fushi-on-primary': onPrimary,
+      '--fushi-on-primary-soft': role('--md-on-primary-container', text),
+      '--fushi-secondary-soft': role('--md-secondary-container', oklchHex(dark ? 0.33 : 0.905, Math.min(0.03, p.C * 0.35), p.h)),
+      '--fushi-on-secondary-soft': role('--md-on-secondary-container', text),
+      '--fushi-tertiary': role('--md-tertiary', oklchHex(dark ? 0.8 : 0.48, Math.min(0.07, p.C * 0.85), ph3)),
+      '--fushi-on-tertiary': role('--md-on-tertiary', dark ? oklchHex(0.25, 0.05, ph3) : oklchHex(0.985, 0.008, ph3)),
+      '--fushi-tertiary-soft': role('--md-tertiary-container', oklchHex(dark ? 0.36 : 0.9, Math.min(0.05, p.C * 0.6), ph3)),
+      '--fushi-on-tertiary-soft': role('--md-on-tertiary-container', text),
       '--fushi-focus': primary,
       '--fushi-warn': dark ? oklchHex(0.77, 0.12, 78) : oklchHex(0.62, 0.135, 78),
-      '--fushi-danger': dark ? oklchHex(0.72, 0.15, 28) : oklchHex(0.55, 0.18, 28),
+      '--fushi-danger': role('--md-error', dark ? oklchHex(0.72, 0.15, 28) : oklchHex(0.55, 0.18, 28)),
+      '--fushi-on-danger': dark ? oklchHex(0.25, 0.08, 28) : oklchHex(0.985, 0.01, 28),
     };
   }
 
@@ -304,6 +328,22 @@
       '--md-outline-variant': tokens['--fushi-outline'],
       '--md-primary': primary,
       '--md-on-primary': tokens['--fushi-on-primary'],
+      // M3E 视觉层（popup.css html.fushi-m3e / m3e-tokens.css）读的容器与 tertiary 角色：同一款调色板，
+      // 弹窗的色块与设置页 / 侧边栏一致（键名同 popup_theme_css.dart buildPopupThemeCssVars）。
+      '--md-primary-container': tokens['--fushi-primary-soft'],
+      '--md-on-primary-container': tokens['--fushi-on-primary-soft'],
+      '--md-secondary-container': tokens['--fushi-secondary-soft'],
+      '--md-on-secondary-container': tokens['--fushi-on-secondary-soft'],
+      '--md-tertiary': tokens['--fushi-tertiary'],
+      '--md-on-tertiary': tokens['--fushi-on-tertiary'],
+      '--md-tertiary-container': tokens['--fushi-tertiary-soft'],
+      '--md-on-tertiary-container': tokens['--fushi-on-tertiary-soft'],
+      '--md-surface-container-low': tokens['--fushi-bg'],
+      '--md-surface-container-highest': tokens['--fushi-surface-strong'],
+      '--md-outline': tokens['--fushi-muted'],
+      '--md-inverse-surface': tokens['--fushi-text'],
+      '--md-inverse-on-surface': tokens['--fushi-surface'],
+      '--md-error': tokens['--fushi-danger'],
     };
   }
 

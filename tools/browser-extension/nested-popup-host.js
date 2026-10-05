@@ -60,7 +60,7 @@
   // 外观风格（theme.js extensionStyle）：M3E 下子层与第一层一样是实色卡，不上玻璃。
   function fushiNestedStyle() {
     const t = window.fushiTheme;
-    return t && t.style === 'm3e' ? 'm3e' : 'glass';
+    return t && t.style === 'glass' ? 'glass' : 'm3e';
   }
   function fushiNestedGlass(theme) {
     if (fushiNestedStyle() !== 'glass') return false;
