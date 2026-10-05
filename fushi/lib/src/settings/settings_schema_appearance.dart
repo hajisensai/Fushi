@@ -95,6 +95,7 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
       await settingsContext.appModel.setModuleEnabled(module, enabled);
       settingsContext.refresh();
     },
+    defaultValue: true,
   );
 }
 
@@ -145,6 +146,7 @@ SettingsDestination buildAppearanceDestination() {
               // einkMode），开着书切换必须重注入，否则正文要退出重进才变黑白。
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: false,
           ),
           // 玻璃材质档位：只在设计系统选「玻璃」时出现（设计系统行负责开关玻璃，
           // 这里只在毛玻璃 / 液态之间选）。正文、视频画面不变；墨水屏、系统增强
@@ -172,6 +174,7 @@ SettingsDestination buildAppearanceDestination() {
             onChanged:
                 (SettingsContext settingsContext, FushiGlassMaterial value) =>
                     settingsContext.appModel.setGlassMaterial(value),
+            defaultValue: FushiGlassMaterial.liquid,
           ),
           // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
           // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
@@ -317,6 +320,7 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.appModel.toggleReverseNavigationBar();
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；
