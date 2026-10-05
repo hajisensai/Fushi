@@ -5,13 +5,15 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
+import 'package:fushi/src/settings/settings_search_sheet.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
@@ -139,7 +141,13 @@ class MaterialSettingsRenderer implements SettingsRenderer {
                       in group.destinations)
                     FushiListItem(
                       key: ValueKey<SettingsDestinationId>(destination.id),
-                      leading: FushiIcon(destination.icon),
+                      // M3E：分类图标坐在按分组着色的形状色块里（饱和
+                      // container 分区），首页一眼能分出「内容 / 学习 / 连接」。
+                      leading: SettingsShapeIcon(
+                        icon: destination.icon,
+                        tone: settingsIconToneFor(destination.id),
+                        size: 36,
+                      ),
                       title: Text(destination.title),
                       titleMaxLines: 2,
                       onTap: () {
@@ -165,35 +173,55 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required SettingsContext settingsContext,
     required SettingsDestination destination,
   }) {
-    if (destination.fillsViewport(settingsContext)) {
-      // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平内边距与
-      // 顶部一点呼吸，正文占满剩余视口——吸顶工具区 / 两栏导航 / 粘性分组标题
-      // 都要靠这一点。底部安全区由正文自己的滚动视图负责。
-      final FushiDesignTokens tokens = FushiDesignTokens.of(
-        settingsContext.context,
-      );
-      final EdgeInsets horizontal = detailHorizontalInsets(tokens);
-      return FushiPageScaffold(
-        title: destination.title,
-        subtitle: destination.summary,
-        body: Padding(
-          padding: EdgeInsets.fromLTRB(
-            horizontal.left,
-            tokens.spacing.gap,
-            horizontal.right,
-            0,
-          ),
-          child: destination.body!(settingsContext),
-        ),
-      );
-    }
-    return FushiPageScaffold(
+    return _kitDetail(settingsContext, destination, showBack: true);
+  }
+
+  /// 设置子页整页壳（settings kit）：浮动页头（返回 + 分类图标块 + 标题胶囊 +
+  /// 搜索）、≥ 3 个分组时的分组跳转条（当前分组粘在标题下）、错峰进场的正文。
+  /// 宽屏主从的右窗格同一个壳，只是不画返回钮——左右两种入口长得一样。
+  Widget _kitDetail(
+    SettingsContext settingsContext,
+    SettingsDestination destination, {
+    required bool showBack,
+  }) {
+    return SettingsKitScaffold(
+      key: ValueKey<String>('settings-detail.${destination.id.name}'),
       title: destination.title,
-      subtitle: destination.summary,
-      body: buildDetailContent(
-        settingsContext: settingsContext,
-        destination: destination,
+      leadingIcon: destination.icon,
+      leadingTone: settingsIconToneFor(destination.id),
+      showBack: showBack,
+      sections: settingsJumpSections(
+        destination.visibleSections(settingsContext),
       ),
+      actions: showBack
+          ? const <Widget>[SettingsSearchAction()]
+          : const <Widget>[],
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => destination.fillsViewport(settingsContext)
+          // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平
+          // 内边距与顶部一点呼吸，正文占满剩余视口（吸顶工具区 / 两栏导航 /
+          // 粘性分组标题都靠这一点）；底部安全区由正文自己的滚动视图负责。
+          ? Padding(
+              padding: EdgeInsets.fromLTRB(
+                detailHorizontalInsets(FushiDesignTokens.of(context)).left,
+                FushiDesignTokens.of(context).spacing.gap,
+                detailHorizontalInsets(FushiDesignTokens.of(context)).right,
+                0,
+              ),
+              child: destination.body!(settingsContext),
+            ) : _detailBody(
+            settingsContext: settingsContext,
+            destination: destination,
+            scrollController: controller,
+            sectionSpy: spy,
+            inlineHeader: false,
+            shrinkWrap: false,
+            insetHorizontally: true,
+          ),
     );
   }
 
@@ -204,6 +232,30 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     ScrollController? scrollController,
     bool shrinkWrap = false,
     bool insetHorizontally = true,
+  }) {
+    // 宽屏主从右窗格：与 push 出来的子页同一个 kit 壳（不画返回钮）。
+    if (showDetailHeader && !shrinkWrap && scrollController == null) {
+      return _kitDetail(settingsContext, destination, showBack: false);
+    }
+    return _detailBody(
+      settingsContext: settingsContext,
+      destination: destination,
+      scrollController: scrollController,
+      sectionSpy: null,
+      inlineHeader: showDetailHeader,
+      shrinkWrap: shrinkWrap,
+      insetHorizontally: insetHorizontally,
+    );
+  }
+
+  Widget _detailBody({
+    required SettingsContext settingsContext,
+    required SettingsDestination destination,
+    required ScrollController? scrollController,
+    required SettingsSectionSpy? sectionSpy,
+    required bool inlineHeader,
+    required bool shrinkWrap,
+    required bool insetHorizontally,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -233,19 +285,23 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       tokens.spacing.page + mediaPadding.bottom,
     );
 
-    Widget section(int index) => SettingsSchemaSection(
-      key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),
-      scopeId: destination.id.name,
+    Widget section(int index) => settingsSectionAnchor(
+      spy: sectionSpy,
       section: sections[index],
-      settingsContext: settingsContext,
-      showIcons: true,
-      routeBuilder: (BuildContext context, WidgetBuilder builder) {
-        return MaterialPageRoute<void>(builder: builder);
-      },
-      footerStyle: (BuildContext context) => Theme.of(context)
-          .textTheme
-          .bodySmall
-          ?.copyWith(color: FushiDesignTokens.of(context).surfaces.onVariant),
+      child: SettingsSchemaSection(
+        key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),
+        scopeId: destination.id.name,
+        section: sections[index],
+        settingsContext: settingsContext,
+        showIcons: true,
+        routeBuilder: (BuildContext context, WidgetBuilder builder) {
+          return MaterialPageRoute<void>(builder: builder);
+        },
+        footerStyle: (BuildContext context) => Theme.of(context)
+            .textTheme
+            .bodySmall
+            ?.copyWith(color: FushiDesignTokens.of(context).surfaces.onVariant),
+      ),
     );
 
     // 整页正文逃生口（见 SettingsDestination.body）：接在所有 schema section 之后，
@@ -254,7 +310,8 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     final ThemeData theme = Theme.of(context);
     final List<Widget> rawContent = <Widget>[
       // 宽屏详情窗格的分类大标题（Android 16 设置的详情标题）+ 一行说明。
-      if (showDetailHeader)
+      // kit 壳里由浮动页头承担标题，这里不再重复。
+      if (inlineHeader)
         Padding(
           padding: EdgeInsets.fromLTRB(
             tokens.spacing.rowHorizontal,
@@ -434,6 +491,7 @@ class Md3SettingsNavList extends StatelessWidget {
                   Md3SettingsNavRow(
                     key: ValueKey<SettingsDestinationId>(destination.id),
                     icon: destination.icon,
+                    tone: settingsIconToneFor(destination.id),
                     title: destination.title,
                     selected: destination.id == selectedDestinationId,
                     onTap: () => onDestinationSelected(destination.id),
@@ -461,9 +519,13 @@ class Md3SettingsNavRow extends StatefulWidget {
     required this.onTap,
     super.key,
     this.selected = false,
+    this.tone = SettingsIconTone.blue,
   });
 
   final IconData icon;
+
+  /// 图标色块的色调（按分类，见 settingsIconToneFor）。
+  final SettingsIconTone tone;
   final String title;
   final bool selected;
   final VoidCallback onTap;
@@ -512,12 +574,13 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
               ),
               child: Row(
                 children: <Widget>[
-                  FushiIcon(
-                    widget.icon,
-                    size: 24,
-                    color: selected
-                        ? scheme.onSecondaryContainer
-                        : scheme.onSurfaceVariant,
+                  // M3E「当前项」形状对比：图标坐在分组着色的方圆角色块里，
+                  // 选中时弹簧变形成 primary 实底圆（SettingsShapeIcon）。
+                  SettingsShapeIcon(
+                    icon: widget.icon,
+                    tone: widget.tone,
+                    selected: selected,
+                    size: 32,
                   ),
                   SizedBox(width: tokens.spacing.gap + 4),
                   Expanded(
@@ -543,7 +606,9 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
         ),
       ),
     );
-    if (!hasFocusRoot) return row;
+    // 按压回弹（M3E）：只旁观指针，不参与手势竞技。
+    final Widget pressable = FushiPressScale(child: row);
+    if (!hasFocusRoot) return pressable;
     return Actions(
       actions: <Type, Action<Intent>>{
         ActivateIntent: CallbackAction<ActivateIntent>(
@@ -553,7 +618,7 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
           },
         ),
       },
-      child: FushiFocusTarget(id: _focusId, child: row),
+      child: FushiFocusTarget(id: _focusId, child: pressable),
     );
   }
 }

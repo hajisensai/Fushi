@@ -38,6 +38,7 @@ SettingsDestination buildFloatingBallDestination() {
               await _prefs(c).setFloatingBallInApp(value);
               c.refresh();
             },
+            defaultValue: true,
           ),
           SettingsSwitchItem(
             id: 'floating_ball.system',
@@ -69,6 +70,7 @@ SettingsDestination buildFloatingBallDestination() {
                 await FloatingBallChannel.requestOverlayPermission();
               }
             },
+            defaultValue: false,
           ),
           SettingsSegmentedItem<FloatingBallAutoRestore>(
             id: 'floating_ball.auto_restore',
@@ -100,6 +102,7 @@ SettingsDestination buildFloatingBallDestination() {
                   await _prefs(c).setFloatingBallAutoRestore(value);
                   c.refresh();
                 },
+            defaultValue: FloatingBallAutoRestore.fallback,
           ),
         ],
       ),

@@ -171,6 +171,7 @@ SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
       await settingsContext.appModel.setPopupBottomDockedIn(module, value);
       settingsContext.refresh();
     },
+    defaultValue: true,
   );
 }
 
@@ -274,6 +275,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleAutoSearchEnabled();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // TODO-861②（移植 Hoshi `07b5c09`）：扫描非日文文本。关闭后选区/查词遇非
           // 日文码点即停（不吃相邻拉丁词/数字）。默认 true = 现状，向后兼容。开着的
@@ -292,6 +294,7 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel.setScanNonJapaneseText(value);
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // TODO-756b：“鼠标悬停即自动查词”。开启后无需按住 Shift，鼠标悬停在字幕/正文
           // 字符上即查词（与 TODO-756a 的 Shift-悬停同链路）；关闭退回 756a 的 Shift+悬停。
@@ -317,6 +320,7 @@ SettingsDestination buildLookupDestination() {
                   .applyHoverAutoLookupFromPreferences();
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: false,
           ),
           // 悬停查词的收尾动作：鼠标离开字幕与查词浮层即自动关浮层 + 恢复播放，免去
           // 「再点一下空白」。只作用于悬停发起的查词会话（点击查词不受影响），故与上面
@@ -338,6 +342,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
           // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
@@ -393,6 +398,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
           // 授权；未授权时旧行为会退化为只查当前剪贴板文本。设置页和第一次
@@ -493,6 +499,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleCollapseDictionaries();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // TODO-845: how many leading *rows* of dictionary blocks the popup
           // auto-expands even when "collapse dictionaries" is on. The unit is
@@ -524,6 +531,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: 1,
           ),
           // TODO-776: dictionaries-per-row grid (experimental). int preference
           // surfaced through a double slider, so value/onChanged bridge int↔double.
@@ -564,6 +572,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupWheelSpeed(value);
               settingsContext.refresh();
             },
+            defaultValue: 1.0,
           ),
           // AI 按句意挑词条（✨）：关着时顶栏按钮仍可手动点，开了每次查词都问一次。
           SettingsSwitchItem(
@@ -577,6 +586,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setLookupAiContextAuto(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'lookup.show_expression_tags',
@@ -588,6 +598,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleShowExpressionTags();
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'lookup.deduplicate_pitch_accents',
@@ -599,6 +610,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleDeduplicatePitchAccents();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           SettingsSwitchItem(
             id: 'lookup.harmonic_frequency',
@@ -610,6 +622,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleHarmonicFrequency();
               settingsContext.refresh();
             },
+            defaultValue: true,
           ),
           // 对齐 Hoshi Reader Android 的 "Compact Glossaries"。popup.js 的
           // createDictionaryBlock 一直按 window.compactGlossaries 产出紧凑释义 CSS，
@@ -626,6 +639,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.toggleCompactGlossaries();
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           // 词典字体原本只能去「外观 · 字体库」里给某款字体勾「词典」用途，词典设置
           // 里找不到入口。这里以词典作用域打开同一个字体库：新加的字体挂到词典、
@@ -686,6 +700,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.readerSource.toggleAutoReadOnLookup();
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           SettingsSliderItem(
             id: 'lookup.audio_volume',
@@ -710,6 +725,7 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.readerSource.setLookupAudioVolume(value);
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: 100,
           ),
           SettingsSwitchItem(
             id: 'lookup.pause_on_lookup',
@@ -722,6 +738,7 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.readerSource.setPauseOnLookup(value: value);
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
         ],
       ),
@@ -752,6 +769,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxWidth(value);
               settingsContext.refresh();
             },
+            defaultValue: 400,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_max_height',
@@ -772,6 +790,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupMaxHeight(value);
               settingsContext.refresh();
             },
+            defaultValue: 360,
           ),
           // 宽高滑杆写的是「上限」，实际尺寸还要按当前屏幕 / 停靠 / 竖排夹一次：
           // 预览用宿主同一个 resolvePopupRect 画出小说里弹窗的真实落点与尺寸。
@@ -806,6 +825,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_width',
@@ -824,6 +844,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxWidth(value);
               settingsContext.refresh();
             },
+            defaultValue: 400,
           ),
           SettingsSliderItem(
             id: 'lookup.overlay_lookup_max_height',
@@ -842,6 +863,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setOverlayLookupMaxHeight(value);
               settingsContext.refresh();
             },
+            defaultValue: 360,
           ),
           // 弹窗尺寸精细化：浏览器扩展弹窗独立尺寸开关 + 仅在开启时展示的宽/高滑杆。
           // 关闭时跟随 app 内最大宽高（extensionPopupEffectiveSize 解析，经 theme 下发）。
@@ -858,6 +880,7 @@ SettingsDestination buildLookupDestination() {
               );
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_width',
@@ -876,6 +899,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxWidth(value);
               settingsContext.refresh();
             },
+            defaultValue: 400,
           ),
           SettingsSliderItem(
             id: 'lookup.extension_popup_max_height',
@@ -894,6 +918,7 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setExtensionPopupMaxHeight(value);
               settingsContext.refresh();
             },
+            defaultValue: 360,
           ),
           // 墨水屏「瞬时滚动」+ 两个步长旋钮。同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段（墨水屏用户是在书里查词时才发现步长不合手，不该为此退出阅读器
@@ -911,6 +936,7 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel.setPopupInstantScroll(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_instant_scroll_wheel_step',
@@ -934,6 +960,8 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupInstantScrollWheelStep(value);
               settingsContext.refresh();
             },
+            defaultValue:
+                PreferencesRepository.kPopupInstantScrollWheelStepDefault,
           ),
           SettingsSliderItem(
             id: 'lookup.popup_instant_scroll_touch_step',
@@ -957,6 +985,8 @@ SettingsDestination buildLookupDestination() {
               settingsContext.appModel.setPopupInstantScrollTouchStep(value);
               settingsContext.refresh();
             },
+            defaultValue:
+                PreferencesRepository.kPopupInstantScrollTouchStepDefault,
           ),
           SettingsSwitchItem(
             id: 'lookup.popup_bottom_docked',
@@ -969,6 +999,7 @@ SettingsDestination buildLookupDestination() {
               await settingsContext.appModel.setPopupBottomDocked(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
           // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
           // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
@@ -1018,6 +1049,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: 0.6,
           ),
           // 用户诉求（2026-09-10）：滑动关闭弹窗那段滑出/弹回动画要能**单独**关掉。
           // 此前唯一的关闭途径是开墨水屏模式（externally 顺带归零），想要瞬时关闭
@@ -1037,6 +1069,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
           // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
@@ -1057,6 +1090,7 @@ SettingsDestination buildLookupDestination() {
               );
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: true,
           ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
@@ -1078,6 +1112,7 @@ SettingsDestination buildLookupDestination() {
               await GlobalLookupController.instance.applyBlockCapture(value);
               settingsContext.refresh();
             },
+            defaultValue: false,
           ),
         ],
       ),
@@ -1311,6 +1346,7 @@ SettingsItem buildRemoteDictionaryLookupItem() {
       await settingsContext.appModel.setRemoteLookupEnabled(value);
       settingsContext.refresh();
     },
+    defaultValue: false,
   );
 }
 

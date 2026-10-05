@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi/src/utils/misc/log_uploader.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 
 class DebugLogPage extends StatefulWidget {
   const DebugLogPage({super.key});
@@ -29,7 +30,10 @@ class _DebugLogPageState extends State<DebugLogPage> {
   Widget build(BuildContext context) {
     final int count = DebugLogService.instance.entries.length;
 
-    return FushiPageScaffold(
+    // 设置子页统一壳（settings kit）：浮动页头 + 动作组胶囊，与 schema 详情页一致。
+    return SettingsKitScaffold(
+      leadingIcon: Icons.article_outlined,
+      leadingTone: SettingsIconTone.gray,
       title: t.debug_log_title(count: count),
       actions: <Widget>[
         FushiIconButton(
@@ -96,7 +100,12 @@ class _DebugLogPageState extends State<DebugLogPage> {
           },
         ),
       ],
-      body: FushiLogPanel(
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => FushiLogPanel(
         log: _log,
         shareAction: (text) => FushiShare.shareText(text),
       ),

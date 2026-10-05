@@ -14,6 +14,7 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -35,8 +36,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 // - [SettingsKitStyle.expressive]：Material 3 Expressive（Material 设计系统一律
 //   如此，不再保留普通 MD3 分支）。饱和的 container 色块分区、形状对比（选中图标
 //   底在方圆角与圆之间弹簧变形、页头胶囊）、Emphasized 字阶、spring 动效。
-// - [SettingsKitStyle.apple]：「玻璃」设计系统（iOS / macOS 26「设置」）。彩色
-//   圆角方图标块、液态玻璃胶囊搜索框、大标题收成行内标题。
+// - [SettingsKitStyle.apple]：「玻璃」设计系统（iOS / macOS 26「设置」）。系统色
+//   着色的图标字形（不垫底）、液态玻璃胶囊搜索框、大标题收成行内标题。
 //
 // 墨水屏与系统「减弱动态效果」下所有装饰性动效归零（[fushiExpressiveMotionEnabled]
 // / [fushiMotionDuration]），状态变化仍然发生、只是瞬间到位。
@@ -114,11 +115,19 @@ class SettingsSpringValue extends StatefulWidget {
 
 class _SettingsSpringValueState extends State<SettingsSpringValue>
     with SingleTickerProviderStateMixin {
-  late final FushiSpring _spring = FushiSpring(
-    vsync: this,
-    initial: widget.value,
-    spring: widget.spring ?? fushiExpressiveDefaultSpatial,
-  );
+  // initState 里建（不懒建）：从没 build 过就被 dispose 时，懒建会在已失活的
+  // element 上查 TickerMode 而抛异常（FushiPressScale 同款坑）。
+  late final FushiSpring _spring;
+
+  @override
+  void initState() {
+    super.initState();
+    _spring = FushiSpring(
+      vsync: this,
+      initial: widget.value,
+      spring: widget.spring ?? fushiExpressiveDefaultSpatial,
+    );
+  }
 
   @override
   void didUpdateWidget(SettingsSpringValue oldWidget) {
@@ -606,7 +615,6 @@ class SettingsHighlightedText extends StatelessWidget {
 /// 首屏错峰进场。没有结果时是 [SettingsEmptyState]。
 ///
 /// [onOpen] 由宿主决定怎么跳（宽屏切分类、窄屏 push），视图只负责呈现。
-/// [firstResultFocusNode] 挂在第一条结果上，供搜索栏 ↓ 键把焦点交下来。
 class SettingsSearchResultsView extends StatelessWidget {
   const SettingsSearchResultsView({
     required this.results,
@@ -1059,32 +1067,28 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final bool apple = style == SettingsKitStyle.apple;
-    final bool eink = isEinkTheme(context);
-    final Color capsuleColor = apple
-        ? appleColorsOf(context).secondaryGroupedBackground
-        : scheme.surfaceContainerHigh;
-
+    // 与共享悬浮工具栏（fushi_floating_toolbar.dart 的 FushiFloatingTopBar）
+    // 同一套胶囊：同色板、同阴影 / 发丝描边；展开态胶囊淡出成纯文字标题。
+    final Color pillColor = fushiFloatingToolbarPalette(context).container;
     Widget capsule({required Widget child, required double t}) {
       final double c = t.clamp(0.0, 1.0);
-      return DecoratedBox(
-        decoration: ShapeDecoration(
-          color: Color.lerp(capsuleColor.withValues(alpha: 0), capsuleColor, c),
-          shape: StadiumBorder(
-            side: eink && c > 0.5
-                ? BorderSide(color: tokens.surfaces.outline)
-                : BorderSide.none,
-          ),
-          shadows: eink || apple
-              ? null
-              : <BoxShadow>[
-                  BoxShadow(
-                    color: scheme.shadow.withValues(alpha: 0.14 * c),
-                    blurRadius: 12 * c,
-                    offset: Offset(0, 3 * c),
+      return Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: c,
+                child: DecoratedBox(
+                  decoration: fushiFloatingPillDecoration(
+                    context,
+                    color: pillColor,
                   ),
-                ],
-        ),
-        child: child,
+                ),
+              ),
+            ),
+          ),
+          child,
+        ],
       );
     }
 
@@ -1186,17 +1190,25 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
           child: Row(
             children: <Widget>[
               if (widget.onBack != null) ...<Widget>[
-                FushiIconButtonControl.filledTonal(
-                  icon: const FushiIcon(Icons.arrow_back),
-                  tooltip: t.back,
-                  onPressed: widget.onBack,
+                capsule(
+                  t: 1,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: FushiIconButtonControl(
+                      icon: const FushiIcon(Icons.arrow_back),
+                      tooltip: t.back,
+                      onPressed: widget.onBack,
+                    ),
+                  ),
                 ),
                 SizedBox(width: tokens.spacing.gap),
               ],
-              Flexible(
-                child: capsule(t: t, child: titleBlock),
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: capsule(t: t, child: titleBlock),
+                ),
               ),
-              const Spacer(),
               if (widget.actions.isNotEmpty)
                 capsule(
                   t: math.max(t, 0.6),
@@ -1238,10 +1250,11 @@ class SettingsSectionSpy extends ChangeNotifier {
 
   /// 分组 [id] 的锚点 key（同一 id 恒返回同一个 key）。按调用顺序记录分组顺序。
   GlobalKey anchor(String id) {
-    return _anchors.putIfAbsent(id, () {
-      _order.add(id);
-      return GlobalKey(debugLabel: 'settings-section.$id');
-    });
+    if (!_order.contains(id)) _order.add(id);
+    return _anchors.putIfAbsent(
+      id,
+      () => GlobalKey(debugLabel: 'settings-section.$id'),
+    );
   }
 
   /// 本帧重建前调用：清掉顺序表（锚点 key 保留，State 不丢）。
@@ -1274,6 +1287,7 @@ class SettingsSectionSpy extends ChangeNotifier {
     if (controller != null &&
         controller.hasClients &&
         _order.isNotEmpty &&
+        controller.positions.first.pixels > 0 &&
         controller.positions.first.extentAfter < 1) {
       active = _order.last;
     }
@@ -1679,43 +1693,54 @@ SettingsResetSpec? settingsResetSpecFor(
   SettingsItem item,
   SettingsContext context,
 ) {
-  switch (item) {
-    case SettingsSwitchItem(:final bool defaultValue?):
-      return SettingsResetSpec(
-        modified: item.value(context) != defaultValue,
-        reset: () async {
-          await item.onChanged(context, defaultValue);
-          context.refresh();
-        },
-      );
-    case SettingsSliderItem(:final double defaultValue?):
-      return SettingsResetSpec(
-        modified: (item.value(context) - defaultValue).abs() > 1e-6,
-        reset: () async {
-          await item.onChanged(context, defaultValue);
-          await item.onChangeEnd?.call(context, defaultValue);
-          context.refresh();
-        },
-      );
-    case SettingsStepperItem(:final double defaultValue?):
-      return SettingsResetSpec(
-        modified: (item.value(context) - defaultValue).abs() > 1e-6,
-        reset: () async {
-          await item.onChanged(context, defaultValue);
-          context.refresh();
-        },
-      );
-    case SettingsSegmentedItem<Object>(:final Object defaultValue?):
-      return SettingsResetSpec(
-        modified: item.selected(context) != defaultValue,
-        reset: () async {
-          await item.dispatchChange(context, defaultValue);
-          context.refresh();
-        },
-      );
-    default:
-      return null;
+  if (item is SettingsSwitchItem) {
+    final bool? defaultValue = item.defaultValue;
+    if (defaultValue == null) return null;
+    return SettingsResetSpec(
+      modified: item.value(context) != defaultValue,
+      reset: () async {
+        await item.onChanged(context, defaultValue);
+        context.refresh();
+      },
+    );
   }
+  if (item is SettingsSliderItem) {
+    final double? defaultValue = item.defaultValue;
+    if (defaultValue == null) return null;
+    return SettingsResetSpec(
+      modified: (item.value(context) - defaultValue).abs() > 1e-6,
+      reset: () async {
+        await item.onChanged(context, defaultValue);
+        await item.onChangeEnd?.call(context, defaultValue);
+        context.refresh();
+      },
+    );
+  }
+  if (item is SettingsStepperItem) {
+    final double? defaultValue = item.defaultValue;
+    if (defaultValue == null) return null;
+    return SettingsResetSpec(
+      modified: (item.value(context) - defaultValue).abs() > 1e-6,
+      reset: () async {
+        await item.onChanged(context, defaultValue);
+        context.refresh();
+      },
+    );
+  }
+  if (item is SettingsSegmentedItem) {
+    final SettingsSegmentedItem<Object> segmented =
+        item as SettingsSegmentedItem<Object>;
+    final Object? defaultValue = segmented.defaultValue;
+    if (defaultValue == null) return null;
+    return SettingsResetSpec(
+      modified: segmented.selected(context) != defaultValue,
+      reset: () async {
+        await segmented.dispatchChange(context, defaultValue);
+        context.refresh();
+      },
+    );
+  }
+  return null;
 }
 
 /// 详情页分组跳转条的条目：只收带标题的分组，id 与渲染层锚点同一口径

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
@@ -144,7 +145,22 @@ class SettingsSchemaItem extends StatelessWidget
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
     // 闪烁高亮（见 SettingsSearchReveal）。消费即清除，后续 rebuild 不再包装。
-    return SettingsSearchTarget(id: item.id, child: row);
+    // 改过默认值的项：行首小圆点 + 行尾「恢复默认」（只对声明了 defaultValue
+    // 的项生效，见 settings_kit 的 settingsResetSpecFor）。
+    final SettingsResetSpec? reset = settingsResetSpecFor(
+      item,
+      settingsContext,
+    );
+    return SettingsSearchTarget(
+      id: item.id,
+      child: reset == null
+          ? row
+          : SettingsModifiedRow(
+              modified: reset.modified,
+              onReset: reset.reset,
+              child: row,
+            ),
+    );
   }
 
   Widget _routeRow(BuildContext context, SettingsNavigationItem navigation) {
@@ -463,6 +479,14 @@ class _SettingsActionRowState extends State<_SettingsActionRow> {
   @override
   Widget build(BuildContext context) {
     final SettingsActionItem action = widget.action;
+    if (action.destructive) {
+      return SettingsDangerRow(
+        title: action.title,
+        subtitle: action.resolveSubtitle(widget.settingsContext),
+        icon: widget.showIcons ? action.icon : null,
+        onTap: _run,
+      );
+    }
     return AdaptiveSettingsRow(
       title: action.title,
       // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。

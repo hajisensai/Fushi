@@ -66,6 +66,7 @@ SettingsDestination buildAiDestination() {
                     site.id,
                     enabled: value,
                   ),
+              defaultValue: true,
             ),
           // 自定义站点是可增删的记录：每条一行，与上面内置站的开关行同组并列。
           SettingsCustomItem.rows(
@@ -124,6 +125,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.aiVideoDownloadQuality,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadQuality(value),
+            defaultValue: '',
           ),
           SettingsSegmentedItem<VideoAcquisitionSourcePref>(
             id: 'ai.video_download_source',
@@ -152,6 +154,7 @@ SettingsDestination buildAiDestination() {
             ),
             onChanged: (SettingsContext c, VideoAcquisitionSourcePref value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadSource(value.storageKey),
+            defaultValue: VideoAcquisitionSourcePref.any,
           ),
           SettingsSegmentedItem<VideoAcquisitionBitratePref>(
             id: 'ai.video_download_bitrate',
@@ -180,6 +183,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.setAiVideoDownloadBitrate(
                   value.storageKey,
                 ),
+            defaultValue: VideoAcquisitionBitratePref.any,
           ),
           // 跳过特典：对所有下载进视频来源的任务生效（管线现读偏好），放在这一段是
           // 因为「带不带 PV」是用户在配 AI 下视频时提的；键是全局下载偏好。
@@ -192,6 +196,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.videoDownloadSkipExtras,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.prefsRepo.setVideoDownloadSkipExtras(value),
+            defaultValue: false,
           ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_subtitle_language',
@@ -226,6 +231,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.aiVideoDownloadSubtitleLanguage,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadSubtitleLanguage(value),
+            defaultValue: '',
           ),
         ],
       ),
