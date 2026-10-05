@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/game_stat_aggregates.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
@@ -250,17 +251,9 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     final Widget body = buildStatPageBody(
       loading: _loading,
       error: _error,
-      // counters 也算有数据（与视频页 review4-6 同一个坑）：只在游戏域查过词 /
-      // 制过卡而还没玩满一次会话时，四个计数明明有数却显示空状态。
-      isEmpty: _aggregate.allSessions == 0 &&
-          _lookup.all == 0 &&
-          _mined.all == 0 &&
-          _favorited.all == 0 &&
-          _favoritedSentences.all == 0,
       loadingBuilder: () =>
           buildLoading(size: 25, color: theme.colorScheme.primary),
       errorBuilder: (String error) => buildError(error: error),
-      emptyMessage: t.game_stat_no_sessions,
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
@@ -271,102 +264,100 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     );
   }
 
+  /// 骨架与总览 / 阅读 / 观看 tab 同一套（2026-10 统计中心重设计，
+  /// [StatDashboardBody]）：关键指标区（四张指标卡）→ 趋势栏（时间窗口分段 +
+  /// 日期翻页 → 范围时长图 → 所选范围卡 → 学习日历）→ 明细栏（时段卡 → 最近
+  /// 会话 → 按游戏列表）。宽屏两栏，窄屏单栏。
   Widget _buildContent() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget hero = StatHero(
+      tiles: buildStatKpiTiles(context, computeStatKpis(_gameFacts, _window)),
+    );
+    // counters 也算有数据（与视频页 review4-6 同一个坑）：只在游戏域查过词 /
+    // 制过卡而还没玩满一次会话时，四个计数明明有数却显示空状态。
+    final bool empty = _aggregate.allSessions == 0 &&
+        _lookup.all == 0 &&
+        _mined.all == 0 &&
+        _favorited.all == 0 &&
+        _favoritedSentences.all == 0;
+    if (empty) {
+      return StatDashboardBody(
+        hero: hero,
+        emptyState: StatDashboardEmpty(message: t.game_stat_no_sessions),
+        tail: buildStatTailSliver(context),
+      );
+    }
     final List<_RangeGame> games = _rangeGames();
-    // 横屏时会话与按游戏列表拆到右栏（[buildStatAdaptiveScrollView]）。
-    return buildStatAdaptiveScrollView(
-      context,
-      sections: (double _) => <StatPaneSliver>[
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildSummaryCards()),
+    return StatDashboardBody(
+      hero: hero,
+      tail: buildStatTailSliver(context),
+      trend: _buildRangeSection(),
+      details: <Widget>[
+        StatSectionHeader(title: t.stat_overview_periods),
+        _buildSummaryCards(),
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: _sessionTitle,
+          collectionOf: _sessionCollectionName,
+          coverOf: _sessionCover,
+          onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildRangeSection()),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: buildStatSessionSection(
-              context,
-              sessions: _sessions,
-              titleOf: _sessionTitle,
-              collectionOf: _sessionCollectionName,
-              coverOf: _sessionCover,
-              onDelete: _deleteSession,
-              onEdit: _editSession,
-              onClearAll: _clearSessions,
-            ),
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: FushiDesignTokens.of(context).spacing.gap,
+          ),
+          child: StatSectionHeader(
+            title: t.game_stat_by_game,
+            subtitle: formatStatRange(_range),
           ),
         ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.card + tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              child: Text(
-                '${t.game_stat_by_game} · ${formatStatRange(_range)}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (BuildContext context, int index) => _buildGameRow(games[index]),
-              childCount: games.length,
-            ),
+      ],
+      detailSlivers: <Widget>[
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (BuildContext context, int index) => _buildGameRow(games[index]),
+            childCount: games.length,
           ),
         ),
       ],
     );
   }
 
-  /// 范围区块：范围条 → 学习日历 → 范围时长图 → 所选范围卡（与阅读 / 观看 /
-  /// 总览 tab 同形）。
-  Widget _buildRangeSection() {
+  /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡 →
+  /// 学习日历（与总览 / 阅读 / 观看 tab 同序）。
+  List<Widget> _buildRangeSection() {
     final StatRange range = _range;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        StatRangeBar(
-          range: range,
-          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        ),
-        buildStatRangeCalendarSection(
-          context,
-          byDay: _byDay,
-          now: _window.now,
-          onDaySelected: (String dateKey) => _rangeSelection.value =
-              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
-        ),
-        buildStatRangeChartSection(context, range, _byDay),
-        buildStatRangeSummary(
-          context,
-          range,
-          _byDay,
-          extraLines: <StatSummaryLine>[
-            StatSummaryLine(
-              label: t.stat_lookup,
-              value: '${sumStatEventsInRange(_lookupEvents, range)}',
-            ),
-            StatSummaryLine(
-              label: t.stat_mined,
-              value: '${sumStatEventsInRange(_minedEvents, range)}',
-            ),
-          ],
-        ),
-      ],
-    );
+    return <Widget>[
+      StatRangeBar(
+        range: range,
+        onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+      ),
+      buildStatRangeChartSection(context, range, _byDay),
+      buildStatRangeSummary(
+        context,
+        range,
+        _byDay,
+        extraLines: <StatSummaryLine>[
+          StatSummaryLine(
+            label: t.stat_lookup,
+            value: '${sumStatEventsInRange(_lookupEvents, range)}',
+          ),
+          StatSummaryLine(
+            label: t.stat_mined,
+            value: '${sumStatEventsInRange(_minedEvents, range)}',
+          ),
+        ],
+      ),
+      buildStatRangeCalendarSection(
+        context,
+        byDay: _byDay,
+        now: _window.now,
+        onDaySelected: (String dateKey) => _rangeSelection.value =
+            StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+      ),
+    ];
   }
 
   Widget _buildSummaryCards() {

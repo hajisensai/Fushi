@@ -6,7 +6,6 @@ import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
@@ -247,28 +246,20 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
 
 /// 阅读、视频与游戏统计页共用的聚合 / 格式化 / 页面状态 / 卡片与图表辅助。
 
-/// 统一统计页的加载、错误、空态分派。
+/// 统一统计页的加载、错误分派。
 ///
-/// 三个页面只提供自己的数据判据和内容；状态优先级与空态视觉不再各复制一份三元表达式。
+/// 空数据不在这里分派（2026-10 统计中心重设计）：各页在内容里画
+/// `StatDashboardEmpty`——指标区照常显示，版式与有数据时一致，而不是整页换成
+/// 一行居中的占位文案。
 Widget buildStatPageBody({
   required bool loading,
   required String? error,
   required Widget Function() loadingBuilder,
   required Widget Function(String error) errorBuilder,
   required Widget Function() contentBuilder,
-  bool isEmpty = false,
-  String emptyMessage = '',
 }) {
   if (loading) return loadingBuilder();
   if (error != null) return errorBuilder(error);
-  if (isEmpty) {
-    return Center(
-      child: FushiPlaceholderMessage(
-        icon: Icons.bar_chart_outlined,
-        message: emptyMessage,
-      ),
-    );
-  }
   return contentBuilder();
 }
 
@@ -449,133 +440,6 @@ Widget buildStatTailSliver(BuildContext context) {
     padding: EdgeInsets.only(
       bottom: tokens.spacing.card * 2 + bottomSafeInsetOf(context),
     ),
-  );
-}
-
-/// 横屏双栏的最小内容区宽度（dp）。两栏各分一半、再扣掉左右 [FushiSpacingTokens.card]
-/// 后，每栏仍刚好能让时段卡排两列（见 [kStatPeriodSummaryMinColumnWidth]）；再窄
-/// 就是把竖排布局硬劈两半，每栏都挤，不如单列。
-const double kStatLandscapeMinWidth = 720;
-
-/// 纯函数：统计 tab 的内容区该不该走横屏双栏。
-///
-/// 判的是**内容区**（tab 内扣掉页头 / TabBar / 动作行之后）的形状，不是屏幕朝向：
-/// 手机横过来、平板横放、桌面宽窗口都落在这里；桌面窄高窗口与竖屏仍是单列。
-/// 高度无界（放进外层滚动容器）时没有「横」可言，按单列。
-bool useStatLandscapeLayout(Size size) =>
-    size.width.isFinite &&
-    size.height.isFinite &&
-    size.width > size.height &&
-    size.width >= kStatLandscapeMinWidth;
-
-/// 横屏双栏里一个区块归哪一栏。
-enum StatPane {
-  /// 左栏「概览」：目标、时段卡、图表、分析——回答「多少」。
-  overview,
-
-  /// 右栏「明细」：最近会话、按媒体列表——回答「是什么」。
-  detail,
-}
-
-/// 统计 tab 的一个区块：一条 sliver + 它在横屏下归哪一栏。
-class StatPaneSliver {
-  const StatPaneSliver(this.pane, this.sliver);
-
-  final StatPane pane;
-  final Widget sliver;
-}
-
-/// 统计 tab 的自适应滚动主体：竖屏 = 一条 [CustomScrollView]，区块按 [sections]
-/// 给出的顺序原样排（竖排布局一处不改）；横屏（[useStatLandscapeLayout]）= 按
-/// [StatPaneSliver.pane] 拆成左「概览」右「明细」两栏、各自独立滚动，栏内保持
-/// 原相对顺序。
-///
-/// 横屏下竖排布局只是被拉宽：时段卡、图表铺满一屏高度后，最近会话与按媒体列表
-/// 全被挤到折线以下，要看数字对应哪本书 / 哪次会话得来回滚。双栏让「多少」和
-/// 「是什么」同屏——左栏数字、右栏条目，任一栏滚动不影响另一栏。
-///
-/// [sections] 收到区块所在栏的宽度（竖屏即整宽），供区块自己决定是否并排。
-Widget buildStatAdaptiveScrollView(
-  BuildContext context, {
-  required List<StatPaneSliver> Function(double columnWidth) sections,
-}) {
-  // 2026-10 统计中心重设计：区块错峰进场（一屏一次，见 [FushiEntranceScope]）。
-  // 横屏两栏各自从 0 数，两栏同时落位而不是右栏等左栏播完。
-  return FushiEntranceScope(
-    child: LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        if (!useStatLandscapeLayout(constraints.biggest)) {
-          final List<StatPaneSliver> all = sections(constraints.maxWidth);
-          return CustomScrollView(
-            slivers: <Widget>[
-              for (int i = 0; i < all.length; i++)
-                statStaggeredSliver(all[i].sliver, i),
-              buildStatTailSliver(context),
-            ],
-          );
-        }
-        return _buildStatLandscapePanes(
-          context,
-          sections((constraints.maxWidth - 1) / 2),
-        );
-      },
-    ),
-  );
-}
-
-/// 给一个统计区块套上错峰进场：[SliverToBoxAdapter] 包的区块（统计页的绝大
-/// 多数区块）把盒子包进 [FushiStaggeredEntrance]；列表类 sliver（按媒体列表）
-/// 原样返回——长列表的行在滚动中出现，不该逐行淡入。
-Widget statStaggeredSliver(Widget sliver, int index) {
-  if (sliver is SliverToBoxAdapter && sliver.child != null) {
-    return SliverToBoxAdapter(
-      key: sliver.key,
-      child: FushiStaggeredEntrance(index: index, child: sliver.child!),
-    );
-  }
-  return sliver;
-}
-
-/// 横屏双栏（见 [buildStatAdaptiveScrollView]）。
-Widget _buildStatLandscapePanes(
-  BuildContext context,
-  List<StatPaneSliver> all,
-) {
-  List<Widget> paneSlivers(StatPane pane) {
-    final List<Widget> out = <Widget>[];
-    for (final StatPaneSliver s in all) {
-      if (s.pane == pane) {
-        out.add(statStaggeredSliver(s.sliver, out.length));
-      }
-    }
-    out.add(buildStatTailSliver(context));
-    return out;
-  }
-
-  return Row(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: <Widget>[
-      Expanded(
-        child: CustomScrollView(
-          key: const ValueKey<String>('stat-landscape-overview'),
-          slivers: paneSlivers(StatPane.overview),
-        ),
-      ),
-      FushiVerticalDivider(
-        width: 1,
-        thickness: 1,
-        color: Theme.of(context).colorScheme.outlineVariant,
-      ),
-      Expanded(
-        // 两栏都挂 PrimaryScrollController 时（移动端默认继承），状态栏点按回顶
-        // 会撞「一个控制器挂两个视图」；主栏留给左侧概览。
-        child: CustomScrollView(
-          key: const ValueKey<String>('stat-landscape-detail'),
-          primary: false,
-          slivers: paneSlivers(StatPane.detail),
-        ),
-      ),
-    ],
   );
 }
 
