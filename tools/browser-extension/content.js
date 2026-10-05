@@ -513,9 +513,10 @@ window.fushiToast = function (text, sticky, openSettings) {
       t.id = 'fushi-toast';
       t.style.cssText =
         'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:2147483647;' +
-        'max-width:70vw;padding:12px 20px;font:14px/1.5 system-ui,"Hiragino Sans",sans-serif;' +
-        'pointer-events:none;white-space:pre-line;text-align:center;transition:opacity .2s;';
-      // 外观（液态玻璃胶囊 + 减少透明度 / 不支持模糊时的实色回落）在 content.css 的 #fushi-toast。
+        'max-width:70vw;pointer-events:none;white-space:pre-line;text-align:center;';
+      // 外观全在 content.css 的 #fushi-toast：缺省 M3E snackbar（inverse-surface 实色 + 弹簧入场），
+      // 液态玻璃（data-style="glass"）是玻璃胶囊 + 减少透明度 / 不支持模糊时的实色回落。字号 / 内边距 /
+      // 淡入淡出也交给 CSS（两套风格各自的字阶与动效），这里只留定位与可点态。
       (document.fullscreenElement || document.body).appendChild(t);
     } else if (t.parentNode !== (document.fullscreenElement || document.body)) {
       (document.fullscreenElement || document.body).appendChild(t); // 全屏切换时迁到正确父节点
@@ -523,6 +524,7 @@ window.fushiToast = function (text, sticky, openSettings) {
     if (typeof t.setAttribute === 'function') {
       t.setAttribute('data-theme', fushiResolveTheme());
       t.setAttribute('data-style', fushiExtensionStyle());
+      if (window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(t);
     }
     t.textContent = openSettings ? text + '\n' + fushiTr('toast_open_settings_hint') : text;
     // toast 是复用的同一个节点：每次都要把可点态显式设成本次该有的值，否则上一条可点的报错
@@ -533,8 +535,16 @@ window.fushiToast = function (text, sticky, openSettings) {
       ? function () { try { chrome.runtime.sendMessage({ type: 'openOptions' }); } catch (_) {} }
       : null;
     t.style.opacity = '1';
+    // data-visible 驱动 CSS 的入场 / 退场（M3E 弹簧上浮；减弱动态效果时只剩瞬时显隐）。
+    if (typeof t.setAttribute === 'function') t.setAttribute('data-visible', '1');
     if (fushiToastTimer) clearTimeout(fushiToastTimer);
-    if (!sticky) fushiToastTimer = setTimeout(() => { if (t) t.style.opacity = '0'; }, 5000);
+    if (!sticky) {
+      fushiToastTimer = setTimeout(() => {
+        if (!t) return;
+        t.style.opacity = '0';
+        if (typeof t.setAttribute === 'function') t.setAttribute('data-visible', '0');
+      }, 5000);
+    }
   } catch (_) { /* DOM 不可用：忽略 */ }
 };
 
@@ -736,6 +746,85 @@ window.fushiSentenceContextPreview = function (args) {
 // 的快照）/ 确认制卡（回点该词条的制卡按钮 fushiPopupMineEntryByIndex，复用全部制卡逻辑）。
 let fushiCtxModalHost = null;
 let fushiCtxModalOnClose = null;
+// M3E 版「调整上下文」对话框（扩展缺省风格；用户 2026-10-06「浏览器扩展也统一成 m3e」）：
+// surface-container-high 实色面 + extra-large(28px) 圆角 + level3 投影，headline-small 标题；
+// 四个 ± 是一条 M3E 连体按钮组（内侧小圆角、两端全圆、按下形变），取消 = 文字按钮、确认 = 填充按钮；
+// 入场是 M3E 弹簧（缩放 + 淡入），系统「减弱动态效果」时一律关掉。颜色 / 形状 / 字阶 / 动效全读
+// content.css 重根到 #fushi-ctx-modal-host 上的 --md-sys-*（经 shadow 继承），缺席时用 c 里的
+// --fushi-* 同色系兜底。
+function fushiCtxModalM3eCss(dark, c) {
+  const sys = function (name, fallback) { return 'var(--md-sys-' + name + ',' + fallback + ')'; };
+  const mix = function (col, pct) { return 'color-mix(in oklch,' + col + ' ' + pct + ',transparent)'; };
+  const surfaceHigh = sys('color-surface-container-high', c.surface);
+  const surfaceHighest = sys('color-surface-container-highest', mix(c.text, dark ? '12%' : '8%'));
+  const onSurface = sys('color-on-surface', c.text);
+  const onVariant = sys('color-on-surface-variant', c.muted);
+  const primary = sys('color-primary', c.primary);
+  const onPrimary = sys('color-on-primary', c.onPrimary);
+  const primaryC = sys('color-primary-container', c.primarySoft);
+  const onPrimaryC = sys('color-on-primary-container', c.text);
+  const secondaryC = sys('color-secondary-container', c.primarySoft);
+  const onSecondaryC = sys('color-on-secondary-container', c.text);
+  const full = sys('shape-corner-full', '999px');
+  const small = sys('shape-corner-small', '8px');
+  const xsmall = sys('shape-corner-extra-small', '4px');
+  const springSpatial = sys('motion-spring-default-spatial-duration', '500ms') + ' ' +
+    sys('motion-spring-default-spatial', 'cubic-bezier(0.38,1.21,0.22,1)');
+  const springFast = sys('motion-spring-fast-spatial-duration', '350ms') + ' ' +
+    sys('motion-spring-fast-spatial', 'cubic-bezier(0.42,1.67,0.21,0.9)');
+  const effects = sys('motion-spring-default-effects-duration', '200ms') + ' ' +
+    sys('motion-spring-default-effects', 'cubic-bezier(0.34,0.8,0.34,1)');
+  const labelLarge = 'font-size:' + sys('typescale-label-large-size', '14px') + ';line-height:' +
+    sys('typescale-label-large-line-height', '20px') + ';font-weight:' + sys('typescale-weight-medium', '500') + ';';
+  return ':host{all:initial}' +
+    '*{box-sizing:border-box}' +
+    '@keyframes fushi-ctx-scrim-in{from{opacity:0}}' +
+    '@keyframes fushi-ctx-dialog-in{from{opacity:0;transform:scale(.86)}}' +
+    '.bg{position:fixed;inset:0;padding:16px;background:rgba(0,0,0,' + (dark ? '.5' : '.32') + ');' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font-family:' + sys('typescale-font', 'system-ui,"Hiragino Sans","Yu Gothic UI",sans-serif') + ';' +
+      'font-size:14px;line-height:20px;color-scheme:' + (dark ? 'dark' : 'light') + ';' +
+      'animation:fushi-ctx-scrim-in ' + effects + ' both}' +
+    '.card{width:min(560px,100%);max-height:88vh;overflow:auto;padding:24px;' +
+      'border-radius:' + sys('shape-corner-extra-large', '28px') + ';color:' + onSurface + ';background:' + surfaceHigh + ';' +
+      'box-shadow:' + sys('elevation-level3', '0 1px 3px rgba(0,0,0,.2),0 4px 8px 3px rgba(0,0,0,.1)') + ';' +
+      'animation:fushi-ctx-dialog-in ' + springSpatial + ' both}' +
+    '.eyebrow{' + labelLarge + 'color:' + primary + '}' +
+    '.title{font-size:' + sys('typescale-headline-small-size', '24px') + ';line-height:' +
+      sys('typescale-headline-small-line-height', '32px') + ';font-weight:' + sys('typescale-weight-regular', '400') + ';margin:4px 0}' +
+    '.count{font-size:' + sys('typescale-body-medium-size', '14px') + ';color:' + onVariant + ';margin-bottom:8px}' +
+    '.label{' + labelLarge + 'color:' + onVariant + ';margin:16px 4px 6px}' +
+    '.box{margin:0;padding:12px 16px;border-radius:' + sys('shape-corner-large', '16px') + ';min-height:48px;' +
+      'font-size:' + sys('typescale-body-large-size', '16px') + ';line-height:' + sys('typescale-body-large-line-height', '24px') + ';' +
+      'white-space:pre-wrap;word-break:break-word;background:' + surfaceHighest + '}' +
+    '.box.cur{background:' + primaryC + ';color:' + onPrimaryC + '}' +
+    '.box.empty{color:' + onVariant + ';font-style:italic}' +
+    'mark{background:' + primary + ';color:' + onPrimary + ';border-radius:' + xsmall + ';padding:0 3px}' +
+    'button{font:inherit;' + labelLarge + 'min-height:40px;padding:0 24px;border:0;border-radius:' + full + ';' +
+      'color:inherit;background:transparent;cursor:pointer;outline:none;' +
+      'transition:background-color ' + effects + ',box-shadow ' + effects + ',border-radius ' + springFast + '}' +
+    'button:focus-visible{outline:3px solid ' + primary + ';outline-offset:2px}' +
+    'button:disabled{cursor:default;color:' + mix(onSurface, '38%') + ';background:' + mix(onSurface, '12%') + ';box-shadow:none}' +
+    // M3E 连体按钮组：四段 tonal 按钮，内侧小圆角、两端全圆；按下时这一段圆角收紧（形变反馈）。
+    '.row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;margin-top:16px}' +
+    '.row button{padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+      'color:' + onSecondaryC + ';background:' + secondaryC + ';border-radius:' + small + '}' +
+    '.row button:first-child{border-radius:' + full + ' ' + small + ' ' + small + ' ' + full + '}' +
+    '.row button:last-child{border-radius:' + small + ' ' + full + ' ' + full + ' ' + small + '}' +
+    '.row button:hover:not(:disabled){background:color-mix(in oklch,' + onSecondaryC + ' 8%,' + secondaryC + ')}' +
+    '.row button:active:not(:disabled){border-radius:' + xsmall + ';background:color-mix(in oklch,' + onSecondaryC + ' 10%,' + secondaryC + ')}' +
+    '.row button:disabled{background:' + mix(onSurface, '12%') + '}' +
+    '.foot{display:flex;justify-content:flex-end;gap:8px;margin-top:24px}' +
+    // 文字按钮（取消）/ 填充按钮（确认）。
+    '.ghost{color:' + primary + ';padding:0 12px}' +
+    '.ghost:hover:not(:disabled){background:' + mix(primary, '8%') + '}' +
+    '.ghost:active:not(:disabled){background:' + mix(primary, '10%') + ';border-radius:' + small + '}' +
+    '.primary{color:' + onPrimary + ';background:' + primary + '}' +
+    '.primary:hover:not(:disabled){background:color-mix(in oklch,' + onPrimary + ' 8%,' + primary + ');' +
+      'box-shadow:' + sys('elevation-level1', '0 1px 2px rgba(0,0,0,.18),0 1px 3px 1px rgba(0,0,0,.08)') + '}' +
+    '.primary:active:not(:disabled){background:color-mix(in oklch,' + onPrimary + ' 10%,' + primary + ');border-radius:' + small + '}' +
+    '@media (prefers-reduced-motion:reduce){.bg,.card{animation:none}button{transition:none}}';
+}
 function fushiCloseSentenceContextModal() {
   if (fushiCtxModalHost) {
     try { fushiCtxModalHost.remove(); } catch (_) {}
@@ -759,6 +848,10 @@ window.fushiOpenSentenceContextModal = function (args) {
   // 明暗跟扩展主题；--fushi-* token 由 content.css 重根到本宿主（theme.js IN_PAGE_HOSTS 同一份
   // 清单，预设 / 自定义调色板也落到这里），shadow 内经继承读到；缺席时用下面的同色系兜底。
   host.setAttribute('data-theme', dark ? 'dark' : 'light');
+  // 外观风格：缺省 M3E 对话框，液态玻璃保留原来的玻璃面板（content.css 重根的 token 按 data-style 分流）。
+  const glass = fushiExtensionStyle() === 'glass';
+  host.setAttribute('data-style', glass ? 'glass' : 'm3e');
+  if (window.fushiTheme && typeof window.fushiTheme.stampStyle === 'function') window.fushiTheme.stampStyle(host);
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   // 液态玻璃（与查词弹窗 glass 变体、扩展设置页同一套材质）：面板 = 半透明填充 + 背景模糊 +
@@ -776,7 +869,7 @@ window.fushiOpenSentenceContextModal = function (args) {
   const primarySoft = tok('primary-soft', '#d3ecdc', '#21402f');
   const mix = function (c, pct) { return 'color-mix(in oklch,' + c + ' ' + pct + ',transparent)'; };
   const ring = mix(primary, '34%');
-  style.textContent =
+  style.textContent = !glass ? fushiCtxModalM3eCss(dark, { surface, text, muted, primary, onPrimary, primarySoft }) : (
     ':host{all:initial}' +
     '*{box-sizing:border-box}' +
     '.bg{position:fixed;inset:0;padding:16px;background:rgba(0,0,0,' + (dark ? '.42' : '.26') + ');' +
@@ -825,7 +918,8 @@ window.fushiOpenSentenceContextModal = function (args) {
     '@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.card{background-color:' + surface + '}}' +
     '@media (prefers-reduced-transparency:reduce){.card{background-color:' + surface + ';background-image:none;' +
       '-webkit-backdrop-filter:none;backdrop-filter:none}.bg{background:rgba(0,0,0,.55)}}' +
-    '@media (prefers-reduced-motion:reduce){button{transition:none}button:active:not(:disabled){transform:none}}';
+    '@media (prefers-reduced-motion:reduce){button{transition:none}button:active:not(:disabled){transform:none}}'
+  );
   shadow.appendChild(style);
   const bg = document.createElement('div');
   bg.className = 'bg';

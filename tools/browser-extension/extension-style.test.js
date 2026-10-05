@@ -236,11 +236,12 @@ test('M3E 查词卡：嵌套子层外框的圆角 / 投影与第一层 content.c
   assert.strictEqual(/box-shadow:\s*([^;]+);/.exec(rule[1])[1].trim(), shadow);
   // 子层也按风格决定玻璃：M3E 下 fushiNestedGlass 直接 false。
   assert.match(host, /function fushiNestedGlass\(theme\) \{\s*if \(fushiNestedStyle\(\) !== 'glass'\) return false;/);
-  // toast / 拖放提示：创建它们的脚本写 data-style，玻璃段只认非 M3E。
+  // toast / 拖放提示：创建它们的脚本写 data-style；缺省（无属性 / m3e）= M3E，玻璃段只认 data-style="glass"。
   assert.match(fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8'), /t\.setAttribute\('data-style', fushiExtensionStyle\(\)\)/);
   assert.match(fs.readFileSync(path.join(__dirname, 'subtitle-panel.js'), 'utf8'), /st\.dropHint\.setAttribute\('data-style'/);
-  assert.match(overlay, /html #fushi-toast:not\(\[data-style="m3e"\]\)/);
-  assert.match(overlay, /html #fushi-toast\[data-style="m3e"\]\s*\{/);
+  assert.match(overlay, /html #fushi-toast\[data-style="glass"\]/);
+  assert.doesNotMatch(overlay, /#fushi-toast:not\(\[data-style="m3e"\]\)/, '玻璃不能再是「非 M3E」的缺省分支');
+  assert.match(overlay, /^#fushi-toast \{[^}]*background-color:\s*var\(--md-sys-color-inverse-surface\)/m, 'M3E snackbar 是不带属性的缺省规则');
 });
 
 // ───────── ③ token：theme.css 是唯一来源 ─────────

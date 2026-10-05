@@ -9,6 +9,13 @@
  *  directly onto the host page. Every selector is a concrete #id / descendant so
  *  nothing leaks to the host page (TODO-1090).
  *
+ *  外观风格（用户 2026-10-06「浏览器扩展也统一成 m3e」）：页内宿主（#fushi-toast / 拖放提示 /
+ *  排队 chip / 抽屉 / 字幕覆盖层 / 播放器按钮与菜单 / 上下文模态）由 theme.js stampStyle 写
+ *  data-style。**缺省（无属性或 m3e）= Material 3 Expressive**，所有 M3E 外观写在不带属性的基础
+ *  规则里，读 theme.css 重根到这些宿主上的 --md-sys-*（色角色 / 形状 / 字阶 / 状态层 / 高度 / 弹簧）；
+ *  液态玻璃只认 `[data-style="glass"]`。backdrop-filter 一律只出现在下面的 @supports 段里
+ *  （popup-glass.test.js 钉）。动效全部在文件末尾的 prefers-reduced-motion 段里关掉。
+ *
  *  Edit extension-specific styling here; edit shared dictionary-popup styling in
  *  the in-app popup.css and re-run generate-content-css.mjs.
  *  SPDX-License-Identifier: GPL-3.0-or-later
@@ -72,17 +79,27 @@
     }
 
     /* 页内 toast（content.js fushiToast）与拖放提示（subtitle-panel.js）：玻璃胶囊。不支持
-       backdrop-filter 时保持段外的实色底（见下方 #fushi-toast / #fushi-subtitle-drop-hint）。 */
-    html #fushi-toast:not([data-style="m3e"]),
-    html #fushi-subtitle-drop-hint:not([data-style="m3e"]) {
+       backdrop-filter 时保持段外的玻璃实色版（见下方 #fushi-toast[data-style="glass"] /
+       #fushi-subtitle-drop-hint[data-style="glass"]）。特异性 (1,1,1) 压过段外 (1,1,0)。 */
+    html #fushi-toast[data-style="glass"],
+    html #fushi-subtitle-drop-hint[data-style="glass"] {
         background-color: color-mix(in oklch, var(--fushi-surface) 74%, transparent);
         -webkit-backdrop-filter: blur(24px) saturate(1.8);
         backdrop-filter: blur(24px) saturate(1.8);
     }
 
-    html #fushi-toast:not([data-style="m3e"])[data-theme="dark"],
-    html #fushi-subtitle-drop-hint:not([data-style="m3e"])[data-theme="dark"] {
+    html #fushi-toast[data-style="glass"][data-theme="dark"],
+    html #fushi-subtitle-drop-hint[data-style="glass"][data-theme="dark"] {
         background-color: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 60%, black) 62%, transparent);
+    }
+
+    /* 播放器菜单 / 排队 chip / 抽屉开合钮的玻璃版：填充与描边走 --fushi-mat-*（玻璃宿主上是半透明，
+       theme.css 的兼容层在不支持模糊 / 减少透明度时自动回实心），这里只补模糊本身。 */
+    html #fushi-player-controls[data-style="glass"],
+    html #fushi-queue-chip[data-style="glass"] .fushi-queue-header,
+    html #fushi-queue-chip[data-style="glass"] .fushi-queue-list {
+        -webkit-backdrop-filter: var(--fushi-mat-filter);
+        backdrop-filter: var(--fushi-mat-filter);
     }
 
     @media (prefers-reduced-transparency: reduce) {
@@ -96,89 +113,143 @@
             background-color: rgb(var(--fushi-card-bg-rgb, 255, 255, 255));
         }
 
-        html #fushi-toast:not([data-style="m3e"]),
-        html #fushi-toast:not([data-style="m3e"])[data-theme="dark"],
-        html #fushi-subtitle-drop-hint:not([data-style="m3e"]),
-        html #fushi-subtitle-drop-hint:not([data-style="m3e"])[data-theme="dark"] {
+        html #fushi-toast[data-style="glass"],
+        html #fushi-toast[data-style="glass"][data-theme="dark"],
+        html #fushi-subtitle-drop-hint[data-style="glass"],
+        html #fushi-subtitle-drop-hint[data-style="glass"][data-theme="dark"],
+        html #fushi-player-controls[data-style="glass"],
+        html #fushi-queue-chip[data-style="glass"] .fushi-queue-header,
+        html #fushi-queue-chip[data-style="glass"] .fushi-queue-list {
             -webkit-backdrop-filter: none;
             backdrop-filter: none;
         }
 
-        html #fushi-toast:not([data-style="m3e"]),
-        html #fushi-toast:not([data-style="m3e"])[data-theme="dark"],
-        html #fushi-subtitle-drop-hint:not([data-style="m3e"]),
-        html #fushi-subtitle-drop-hint:not([data-style="m3e"])[data-theme="dark"] {
+        html #fushi-toast[data-style="glass"],
+        html #fushi-toast[data-style="glass"][data-theme="dark"],
+        html #fushi-subtitle-drop-hint[data-style="glass"],
+        html #fushi-subtitle-drop-hint[data-style="glass"][data-theme="dark"] {
             background-color: var(--fushi-surface);
         }
     }
 }
 
-/* toast 的实色外观（玻璃版在上面的 @supports 段里覆盖填充与模糊）。定位 / 显隐 / 可点态是 JS
-   的行内样式；#fushi-toast 在 theme.css 重根宿主清单里，data-theme 由 JS 按扩展主题写。 */
+/* M3E 入场动效（弹簧近似曲线来自 theme.css 的 --md-sys-motion-spring-*；减弱动态效果时文件末尾统一关）。
+   只动 opacity / 独立的 translate、scale 属性，不碰 transform——toast 的 translateX(-50%) 居中、
+   覆盖层的 translate(-50%, -100%) 锚点都在 transform 上。 */
+@keyframes fushi-m3e-snackbar-in {
+    from {
+        opacity: 0;
+        translate: 0 16px;
+        scale: 0.94;
+    }
+}
+
+@keyframes fushi-m3e-pop-in {
+    from {
+        opacity: 0;
+        scale: 0.86;
+    }
+}
+
+@keyframes fushi-m3e-menu-in {
+    from {
+        opacity: 0;
+        scale: 0.92;
+        translate: 0 6px;
+    }
+}
+
+/* ── toast（content.js fushiToast）：M3E snackbar ──
+   inverse-surface 实色 + 大圆角（expressive）+ level3 投影 + body-medium 字阶，弹簧上浮入场。
+   定位 / 显隐 opacity / 可点态是 JS 的行内样式；data-visible 由 JS 写（1 = 出现，0 = 淡出）。
+   #fushi-toast 在 theme.css 重根宿主清单里，data-theme / data-style 由 JS 按扩展主题写。 */
 #fushi-toast {
+    box-sizing: border-box;
+    min-height: 48px;
+    padding: 14px 16px;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-inverse-on-surface);
+    background-color: var(--md-sys-color-inverse-surface);
+    background-image: none;
+    box-shadow: var(--md-sys-elevation-level3);
+    font-family: var(--md-sys-typescale-font);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+    font-weight: var(--md-sys-typescale-weight-regular);
+    font-style: normal;
+    letter-spacing: 0.01em;
+    transition:
+        opacity var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects),
+        translate var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+#fushi-toast[data-visible="1"] {
+    animation: fushi-m3e-snackbar-in var(--fushi-dur-medium) var(--fushi-ease-spatial) both;
+}
+
+#fushi-toast[data-visible="0"] {
+    translate: 0 8px;
+}
+
+/* 液态玻璃 toast 的实色版（玻璃胶囊的半透明填充 + 模糊在文件开头的 @supports 段里覆盖）。 */
+#fushi-toast[data-style="glass"] {
+    min-height: 0;
+    padding: 12px 20px;
+    border: 1px solid rgba(0, 0, 0, 0.07);
     border-radius: 20px;
     color: var(--fushi-text);
     background-color: var(--fushi-surface);
     background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 50%);
-    border: 1px solid rgba(0, 0, 0, 0.07);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 16px 40px -12px rgba(0, 0, 0, 0.45);
+    font: 14px/1.5 system-ui, "Hiragino Sans", sans-serif;
+    animation: none;
 }
 
-#fushi-toast[data-theme="dark"] {
+#fushi-toast[data-style="glass"][data-theme="dark"] {
     background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 50%);
     border-color: rgba(255, 255, 255, 0.12);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 }
 
-/* M3E（扩展外观风格 = Material 3 Expressive；content.js / subtitle-panel.js 在宿主上写 data-style）：
-   查词弹窗是实色卡（不挂玻璃钩子，填充就是 app 下发的不透明 --md-* 底）+ 大圆角 + MD3 投影，
-   圆角 / 投影与 nested-popup-host.js 的 FUSHI_M3E_LAYER_* 逐字相同（嵌套子层一样）；toast 是
-   inverse-surface 实色 snackbar；拖放提示是主色色调胶囊。阴影 / 颜色取 theme.css 重根到宿主上的
-   token（M3E 块随 data-style 生效）。 */
+/* M3E 查词弹窗宿主（content.js 在 shadow 宿主上写 data-style="m3e"）：实色卡（不挂玻璃钩子，填充
+   就是 app 下发的不透明 --md-* 底）+ 大圆角 + MD3 投影，圆角 / 投影与 nested-popup-host.js 的
+   FUSHI_M3E_LAYER_* 逐字相同（嵌套子层一样；extension-style.test.js 比对）。 */
 :host([data-style="m3e"]) {
     border-radius: 20px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.18),0 8px 24px 4px rgba(0,0,0,0.16);
 }
 
-html #fushi-toast[data-style="m3e"] {
-    border: 0;
-    border-radius: 16px;
-    color: var(--fushi-bg);
-    background-color: var(--fushi-text);
-    background-image: none;
-    box-shadow: var(--fushi-mat-shadow);
-}
-
-html #fushi-subtitle-drop-hint[data-style="m3e"] {
-    border-color: transparent;
-    color: var(--fushi-text);
-    background-color: var(--fushi-primary-soft);
-    box-shadow: var(--fushi-mat-shadow);
-}
-
-/* 制卡队列浮动 chip（TODO-1184）：头部 pill（计数 + 生成）+ 可展开列表（逐项删除）。
-   #fushi-queue-chip 是 content.js 挂在宿主页 body 上的独立元素（不在 #entries-container 内），
-   用具体 ID 选择器，绝不污染宿主页其它节点。 */
+/* 制卡队列浮动 chip（TODO-1184）：M3E 浮动工具栏——头部是 primary-container 全圆胶囊（计数 + 生成
+   填充按钮，48px 高）、展开列表是 surface-container-high 大圆角面板（逐项删除图标按钮）。
+   #fushi-queue-chip 是挂在宿主页 body 上的独立元素（不在 #entries-container 内），用具体 ID
+   选择器，绝不污染宿主页其它节点。玻璃风格走 --fushi-mat-*。 */
 #fushi-queue-chip {
     position: fixed;
     right: 16px;
     bottom: 16px;
     z-index: 2147483647;
     max-width: 320px;
-    font: 13px/1.4 sans-serif;
-    color: #fff;
+    font-family: var(--md-sys-typescale-font);
+    font-size: var(--md-sys-typescale-label-large-size);
+    line-height: var(--md-sys-typescale-label-large-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    color: var(--md-sys-color-on-primary-container);
     -webkit-user-select: none;
     user-select: none;
+    animation: fushi-m3e-pop-in var(--fushi-dur-medium) var(--fushi-ease-spatial) both;
 }
 
 #fushi-queue-chip .fushi-queue-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 12px;
-    border-radius: 20px;
-    background: rgba(20, 20, 22, 0.92);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-sizing: border-box;
+    min-height: 48px;
+    padding: 4px 4px 4px 20px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-primary-container);
+    box-shadow: var(--md-sys-elevation-level3);
     cursor: pointer;
 }
 
@@ -189,38 +260,48 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
 
 #fushi-queue-chip .fushi-queue-gen {
     flex-shrink: 0;
+    min-height: 40px;
     border: none;
-    border-radius: 12px;
-    padding: 2px 10px;
-    background: rgba(255, 255, 255, 0.18);
-    color: #fff;
+    border-radius: var(--md-sys-shape-corner-full);
+    padding: 0 16px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
     font: inherit;
     cursor: pointer;
+    transition: border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
 
+#fushi-queue-chip .fushi-queue-gen:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-primary) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary));
+}
+
+/* M3E 按压形变：全圆收成中圆角。 */
 #fushi-queue-chip .fushi-queue-gen:active {
-    opacity: 0.6;
+    border-radius: var(--md-sys-shape-corner-medium);
 }
 
 #fushi-queue-chip .fushi-queue-list {
-    margin-top: 6px;
+    margin-top: 8px;
     max-height: 240px;
     overflow-y: auto;
-    border-radius: 12px;
-    background: rgba(20, 20, 22, 0.96);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level2);
 }
 
 #fushi-queue-chip .fushi-queue-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    min-height: 48px;
+    padding: 0 4px 0 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
 }
 
-#fushi-queue-chip .fushi-queue-row:last-child {
-    border-bottom: none;
+#fushi-queue-chip .fushi-queue-row:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
 }
 
 #fushi-queue-chip .fushi-queue-row-text {
@@ -229,25 +310,38 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: var(--md-sys-typescale-weight-regular);
 }
 
 #fushi-queue-chip .fushi-queue-row-del {
     flex-shrink: 0;
-    width: 20px;
-    height: 20px;
+    width: 40px;
+    height: 40px;
     padding: 0;
-    line-height: 18px;
-    text-align: center;
+    display: grid;
+    place-items: center;
     border: none;
-    border-radius: 50%;
-    background: rgba(255, 90, 90, 0.85);
-    color: #fff;
-    font-size: 14px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: transparent;
+    color: var(--md-sys-color-error);
+    font-size: 18px;
+    line-height: 1;
     cursor: pointer;
 }
 
-#fushi-queue-chip .fushi-queue-row-del:active {
-    opacity: 0.6;
+#fushi-queue-chip .fushi-queue-row-del:hover {
+    background: color-mix(in oklch, var(--md-sys-color-error) var(--md-sys-state-hover-opacity), transparent);
+}
+
+#fushi-queue-chip[data-style="glass"] {
+    color: var(--fushi-text);
+}
+
+#fushi-queue-chip[data-style="glass"] .fushi-queue-header,
+#fushi-queue-chip[data-style="glass"] .fushi-queue-list {
+    border: 1px solid var(--fushi-mat-stroke);
+    background: var(--fushi-mat-fill-strong);
+    box-shadow: var(--fushi-mat-shadow);
 }
 
 /* 用户外挂字幕：只显示当前外挂轨，不复制站点原生字幕。按 video rect 动态定位，文本仍可点击查词；
@@ -324,21 +418,29 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     user-select: none;
 }
 
-/* 拖柄：贴在字幕左缘外侧的小抓手，悬停覆盖层时才显出来；用 ::before 画点阵，不带文本节点
-   （content.js 取词兜底会遍历覆盖层下所有文本节点）。 */
+/* 拖柄（M3E）：浮在字幕左缘外侧 4px 的全圆小胶囊，里面是 drag_indicator 图标（subtitle-panel.js
+   用 icons.js 插入内联 SVG——只有 <path>，没有文本节点：content.js 取词兜底会遍历覆盖层下所有
+   文本节点，拖柄不能混进正文）。悬停覆盖层时才显出来；::before 是 M3 状态层（悬停 / 拖动加深）。
+   深底浅字跟字幕底板同一组 scrim token，压在任何画面上都读得清。 */
 #fushi-subtitle-overlay .fushi-subtitle-overlay-grip {
     position: absolute;
     top: 50%;
     left: 0;
-    transform: translate(-100%, -50%);
-    width: 22px;
-    height: 34px;
+    transform: translate(calc(-100% - 4px), -50%);
+    box-sizing: border-box;
+    width: 24px;
+    height: 40px;
     display: grid;
     place-items: center;
-    border-radius: 6px 0 0 6px;
-    background: var(--fushi-scrim);
+    overflow: hidden;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--fushi-on-scrim);
+    background: var(--fushi-scrim-strong);
+    box-shadow: var(--md-sys-elevation-level1);
     opacity: 0;
-    transition: opacity 120ms ease;
+    transition:
+        opacity var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects),
+        border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
     cursor: grab;
     user-select: none;
     -webkit-user-select: none;
@@ -347,11 +449,24 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
 
 #fushi-subtitle-overlay .fushi-subtitle-overlay-grip::before {
     content: '';
-    width: 8px;
-    height: 16px;
-    background-image: radial-gradient(circle, currentColor 1.4px, transparent 1.6px);
-    background-size: 4px 5px;
-    opacity: 0.85;
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+    pointer-events: none;
+}
+
+#fushi-subtitle-overlay .fushi-subtitle-overlay-grip:hover::before {
+    opacity: var(--md-sys-state-hover-opacity);
+}
+
+#fushi-subtitle-overlay .fushi-subtitle-overlay-grip svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+    pointer-events: none;
 }
 
 #fushi-subtitle-overlay:hover .fushi-subtitle-overlay-grip,
@@ -359,8 +474,24 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     opacity: 1;
 }
 
+/* 拖动中：抓手光标 + M3E 形变（全圆收成中圆角）+ 拖动态状态层。 */
 #fushi-subtitle-overlay[data-dragging] .fushi-subtitle-overlay-grip {
     cursor: grabbing;
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+#fushi-subtitle-overlay[data-dragging] .fushi-subtitle-overlay-grip::before {
+    opacity: var(--md-sys-state-dragged-opacity);
+}
+
+/* 液态玻璃：贴边的半透明小抓手（旧外观）。 */
+#fushi-subtitle-overlay[data-style="glass"] .fushi-subtitle-overlay-grip {
+    transform: translate(-100%, -50%);
+    width: 22px;
+    height: 34px;
+    border-radius: 6px 0 0 6px;
+    background: var(--fushi-scrim);
+    box-shadow: none;
 }
 
 /* 缩放把手：贴在底板右下角内侧的小三角，与查词弹窗右下角把手同一手势（拖拽改大小、
@@ -370,13 +501,13 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     position: absolute;
     right: 0;
     bottom: 0;
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     display: grid;
     place-items: center;
     border-radius: 0 0 var(--fushi-sub-radius) 0;
     opacity: 0;
-    transition: opacity 120ms ease;
+    transition: opacity var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
     cursor: nwse-resize;
     user-select: none;
     -webkit-user-select: none;
@@ -436,7 +567,8 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
 
 /* 拖字幕文件时的单一全局提示；pointer-events:none，绝不抢宿主页 drop。
    只在**这一页确实有 <video>** 时才挂（subtitle-panel.js 的 dragDropActive），且只占右上角
-   一枚小角标——早先是 inset:24px 的整屏虚线框，任何网页拖文件上传都被它糊住半个屏幕。 */
+   一枚小角标——早先是 inset:24px 的整屏虚线框，任何网页拖文件上传都被它糊住半个屏幕。
+   M3E：primary-container 全圆胶囊 + level2 投影 + label-large，弹簧弹出；液态玻璃版在下面。 */
 #fushi-subtitle-drop-hint {
     position: fixed;
     top: 16px;
@@ -445,18 +577,35 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     z-index: 2147483646;
     display: flex;
     align-items: center;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 10px 20px;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-primary-container);
+    background-color: var(--md-sys-color-primary-container);
+    box-shadow: var(--md-sys-elevation-level2);
+    font-family: var(--md-sys-typescale-font);
+    font-size: var(--md-sys-typescale-label-large-size);
+    line-height: var(--md-sys-typescale-label-large-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+    pointer-events: none;
+    transform-origin: top right;
+    animation: fushi-m3e-pop-in var(--fushi-dur-medium) var(--fushi-ease-spatial) both;
+}
+
+/* 液态玻璃拖放提示的实色版（半透明 + 模糊在文件开头的 @supports 段里覆盖）。 */
+#fushi-subtitle-drop-hint[data-style="glass"] {
     padding: 9px 16px;
-    /* 胶囊外观跟扩展明暗 / 调色板（data-theme 由 subtitle-panel.js 写）；这里是实色版，
-       玻璃版（半透明 + 模糊）在文件开头的 @supports 段里覆盖。 */
     border: 1px solid color-mix(in oklch, var(--fushi-primary) 35%, transparent);
-    border-radius: 999px;
     color: var(--fushi-text);
     background-color: var(--fushi-surface);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 10px 28px -10px rgba(0, 0, 0, 0.45);
     font: 600 13px/1.3 "Hiragino Sans", "Yu Gothic UI", sans-serif;
     letter-spacing: 0.02em;
-    white-space: nowrap;
-    pointer-events: none;
+    animation: none;
 }
 
 /* ── 移动端字幕列表抽屉（mobile-drawer.js）：贴边面板 + 边缘细条拉手 ──
@@ -479,7 +628,7 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     pointer-events: none;
 }
 
-/* 开态：拉手槽涂成面板同色（cream），与 iframe 无缝拼成一块面板边——
+/* 开态：拉手槽涂成面板同色，与 iframe 无缝拼成一块面板边——
    旧的 #1e1b18 根底会在面板左缘留一条黑缝，收起态阴影渗边也是黑边元凶，一并禁掉。 */
 #fushi-drawer.is-open .fushi-drawer-strip {
     background: var(--fushi-bg);
@@ -496,9 +645,10 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     flex-direction: column;
 }
 
-/* 拖拽期（.is-dragging）关补间跟手；松手后的开/关吸附走 220ms 缓出。 */
+/* 拖拽期（.is-dragging）关补间跟手；松手后的开/关吸附走 M3E 强调缓动（不用带过冲的弹簧：
+   面板贴边，过冲会在屏幕边缘先露出一条缝再弹回）。 */
 #fushi-drawer:not(.is-dragging) {
-    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: transform var(--fushi-dur-medium) var(--md-sys-motion-easing-emphasized);
 }
 
 /* 拉手：**隐形边缘手势区**——细条本体不再画任何东西（视觉零占位），
@@ -540,27 +690,66 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     right: -14px;
 }
 
-/* 开合按钮：骑在屏幕/抽屉边缘的小圆钮，一眼可见、一点开合；按住它同样可以拖。 */
+/* 开合按钮（M3E 浮动工具栏钮）：骑在屏幕/抽屉边缘的 48px primary-container 圆角方钮 + level3 投影，
+   收起态 menu 图标、展开态 close 图标（mobile-drawer.js 两枚都插，这里按 .is-open 切）；
+   按下时圆角收紧（M3E 形变）。按住它同样可以拖。 */
 .fushi-drawer-btn {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
+    box-sizing: border-box;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--md-sys-shape-corner-large);
     display: grid;
     place-items: center;
     font: 700 15px/1 system-ui, sans-serif;
-    color: var(--fushi-on-scrim);
-    background: var(--fushi-scrim-strong);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+    box-shadow: var(--md-sys-elevation-level3);
     cursor: pointer;
     touch-action: none;
     pointer-events: auto;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
+    transition:
+        border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+.fushi-drawer-btn:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-primary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary-container));
+}
+
+.fushi-drawer-btn:active {
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+.fushi-drawer-btn svg {
+    display: block;
+    grid-area: 1 / 1;
+    pointer-events: none;
+}
+
+#fushi-drawer .fushi-drawer-btn .fushi-drawer-ic-close,
+#fushi-drawer.is-open .fushi-drawer-btn .fushi-drawer-ic-open {
+    display: none;
+}
+
+#fushi-drawer.is-open .fushi-drawer-btn .fushi-drawer-ic-close {
+    display: block;
+}
+
+/* 液态玻璃：旧的深色小圆钮。 */
+#fushi-drawer[data-style="glass"] .fushi-drawer-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: var(--fushi-on-scrim);
+    background: var(--fushi-scrim-strong);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
 }
 
 #fushi-drawer.is-port .fushi-drawer-btn {
@@ -612,7 +801,9 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
    transform 都会砸到它身上。因此这里逐项显式归零，而不是指望继承——`all: unset` 不用，
    那会连焦点轮廓这些可访问性默认一起抹掉。
    #fushi-player-controls 是 fixed 浮层，挂 fullscreenElement||body，绝不进控制栏（那里
-   overflow 会把菜单裁掉）。两个 id 都在 theme.js IN_PAGE_HOSTS 清单里，故能读 --fushi-* token。 */
+   overflow 会把菜单裁掉）。两个 id 都在 theme.js IN_PAGE_HOSTS 清单里，故能读 --fushi-* /
+   --md-sys-* token。按钮面保留 Fushi 品牌图（icon-32.png）；菜单是 M3E 菜单：surface-container
+   （玻璃时是 --fushi-mat-* 半透明）+ 大圆角 + level2 投影，48px 菜单项带 Material Symbols 前置图标。 */
 
 #fushi-player-btn {
     display: inline-flex;
@@ -627,7 +818,7 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     margin: 0;
     padding: 0 2px;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
     color: var(--fushi-on-scrim);
     font: inherit;
@@ -641,12 +832,22 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     vertical-align: middle;
     -webkit-appearance: none;
     appearance: none;
+    transition:
+        opacity var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects),
+        background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects),
+        scale var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
 
 #fushi-player-btn:hover,
 #fushi-player-btn:focus-visible {
     opacity: 1;
     background: rgba(255, 255, 255, 0.12);
+}
+
+#fushi-player-btn:focus-visible {
+    outline: 2px solid var(--fushi-on-scrim);
+    outline-offset: -2px;
 }
 
 #fushi-player-btn .fushi-pc-btn-icon {
@@ -681,24 +882,62 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
 }
 
 /* 通用站点（没有已知控制栏锚点）：按钮自己浮在画面右上角（右下角会压住站点的进度条/音量/全屏），鼠标离开视频即淡出——
-   常驻一颗不透明按钮压在画面上，比没有按钮更烦人。 */
+   常驻一颗不透明按钮压在画面上，比没有按钮更烦人。M3E：primary-container 圆角方钮（FAB 形）+
+   level3 投影，出现时弹簧放大，按下时圆角收紧。边长与 player-controls.js FLOAT_BTN_SIZE 同值。 */
 #fushi-player-btn.is-floating {
     position: fixed;
     z-index: 2147483639;
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     min-height: 0;
-    border-radius: 999px;
-    background: var(--fushi-scrim);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+    box-shadow: var(--md-sys-elevation-level3);
     opacity: 0;
+    scale: 0.8;
     pointer-events: none;
-    transition: opacity 0.15s ease;
 }
 
 #fushi-player-btn.is-floating[data-visible="1"] {
-    opacity: 0.92;
+    opacity: 1;
+    scale: 1;
     pointer-events: auto;
+}
+
+#fushi-player-btn.is-floating:hover,
+#fushi-player-btn.is-floating:focus-visible {
+    background: color-mix(in oklch, var(--md-sys-color-on-primary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary-container));
+}
+
+#fushi-player-btn.is-floating:active {
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+#fushi-player-btn.is-floating .fushi-pc-btn-state,
+#fushi-player-btn.is-floating[data-on="1"] .fushi-pc-btn-state {
+    color: var(--md-sys-color-on-primary-container);
+}
+
+/* 液态玻璃：旧的半透明深色圆钮。 */
+#fushi-player-btn.is-floating[data-style="glass"] {
+    border-radius: 999px;
+    color: var(--fushi-on-scrim);
+    background: var(--fushi-scrim);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    scale: 1;
+}
+
+#fushi-player-btn.is-floating[data-style="glass"][data-visible="1"] {
+    opacity: 0.92;
+}
+
+#fushi-player-btn.is-floating[data-style="glass"] .fushi-pc-btn-state {
+    color: var(--fushi-on-scrim);
+}
+
+#fushi-player-btn.is-floating[data-style="glass"][data-on="1"] .fushi-pc-btn-state {
+    color: var(--fushi-primary);
 }
 
 #fushi-player-controls {
@@ -706,40 +945,47 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
     z-index: 2147483640;
     box-sizing: border-box;
     display: none;
-    width: 288px;
+    width: 296px;
     max-width: calc(100vw - 16px);
     max-height: calc(100vh - 16px);
     overflow-y: auto;
-    padding: 6px;
-    border: 1px solid var(--fushi-outline);
-    border-radius: 12px;
-    background: var(--fushi-surface);
-    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-    color: var(--fushi-text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 13px;
-    line-height: 1.35;
+    padding: 4px;
+    border: 1px solid var(--fushi-mat-stroke);
+    border-radius: var(--fushi-shape-menu);
+    background: var(--fushi-mat-fill-strong);
+    box-shadow: var(--fushi-mat-shadow);
+    color: var(--md-sys-color-on-surface);
+    font-family: var(--md-sys-typescale-font);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+    font-style: normal;
     text-align: left;
     direction: ltr;
+    transform-origin: bottom right;
 }
 
 #fushi-player-controls[data-open="1"] {
     display: block;
+    animation: fushi-m3e-menu-in var(--fushi-dur-medium) var(--fushi-ease-spatial) both;
 }
 
 #fushi-player-controls .fushi-pc-page[hidden] {
     display: none;
 }
 
+/* 菜单项（M3E）：48px 高、中圆角选中块、label-large 文案；前置图标 on-surface-variant。 */
 #fushi-player-controls .fushi-pc-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     box-sizing: border-box;
     width: 100%;
-    padding: 7px 8px;
-    border-radius: 8px;
+    min-height: 48px;
+    padding: 4px 12px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: transparent;
+    outline: none;
+    transition: background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
 }
 
 #fushi-player-controls .fushi-pc-row.is-switch,
@@ -750,15 +996,36 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
 
 #fushi-player-controls .fushi-pc-row.is-switch:hover,
 #fushi-player-controls .fushi-pc-row.is-action:hover,
-#fushi-player-controls .fushi-pc-row.is-submenu:hover,
+#fushi-player-controls .fushi-pc-row.is-submenu:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
 #fushi-player-controls .fushi-pc-row:focus-visible {
-    background: var(--fushi-surface-muted);
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-focus-opacity), transparent);
+    box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+#fushi-player-controls .fushi-pc-row.is-switch:active,
+#fushi-player-controls .fushi-pc-row.is-action:active,
+#fushi-player-controls .fushi-pc-row.is-submenu:active {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), transparent);
 }
 
 /* 置灰的从属开关仍然可读（不是 display:none）：用户要看得见「还有这么一项，只是现在没意义」。 */
 #fushi-player-controls .fushi-pc-row[data-disabled="1"] {
-    opacity: 0.45;
+    opacity: var(--md-sys-state-disabled-content-opacity);
     cursor: default;
+}
+
+#fushi-player-controls .fushi-pc-row[data-disabled="1"]:hover {
+    background: transparent;
+}
+
+#fushi-player-controls .fushi-pc-lead,
+#fushi-player-controls .fushi-pc-trail {
+    flex: 0 0 auto;
+    display: block;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
 #fushi-player-controls .fushi-pc-copy {
@@ -770,216 +1037,452 @@ html #fushi-subtitle-drop-hint[data-style="m3e"] {
 }
 
 #fushi-player-controls .fushi-pc-copy strong {
-    font-weight: 600;
-    color: var(--fushi-text);
+    font-size: var(--md-sys-typescale-label-large-size);
+    line-height: var(--md-sys-typescale-label-large-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    color: var(--md-sys-color-on-surface);
 }
 
 #fushi-player-controls .fushi-pc-copy small {
-    font-size: 11px;
-    line-height: 1.3;
-    color: var(--fushi-muted);
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+    color: var(--md-sys-color-on-surface-variant);
 }
 
+/* M3E 开关：52×32 轨道。关态 = surface-container-highest 底 + 2px outline 描边 + 16px outline 拇指；
+   开态 = primary 轨道 + 24px on-primary 拇指（里面 primary-container 色的 check 图标）；按住整行时
+   拇指涨到 28px。拇指的位移与涨缩走弹簧。 */
 #fushi-player-controls .fushi-pc-switch {
     position: relative;
     flex: 0 0 auto;
-    width: 34px;
-    height: 20px;
-    border-radius: 999px;
-    background: var(--fushi-outline);
-    transition: background 0.15s ease;
+    box-sizing: border-box;
+    width: 52px;
+    height: 32px;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-surface-container-highest);
+    transition:
+        background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects),
+        border-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
 }
 
 #fushi-player-controls .fushi-pc-switch::after {
     content: "";
     position: absolute;
-    top: 2px;
-    left: 2px;
+    top: 6px;
+    left: 6px;
     width: 16px;
     height: 16px;
-    border-radius: 50%;
-    background: var(--fushi-surface);
-    transition: transform 0.15s ease;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-outline);
+    transition:
+        top var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        left var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        width var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        height var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
 }
 
 #fushi-player-controls .fushi-pc-switch[data-on="1"] {
-    background: var(--fushi-primary);
+    border-color: var(--md-sys-color-primary);
+    background: var(--md-sys-color-primary);
 }
 
 #fushi-player-controls .fushi-pc-switch[data-on="1"]::after {
-    transform: translateX(14px);
+    top: 2px;
+    left: 22px;
+    width: 24px;
+    height: 24px;
+    background: var(--md-sys-color-on-primary);
 }
 
-#fushi-player-controls .fushi-pc-row.is-submenu::after {
+#fushi-player-controls .fushi-pc-row.is-switch:active:not([data-disabled="1"]) .fushi-pc-switch::after {
+    top: 0;
+    left: 0;
+    width: 28px;
+    height: 28px;
+}
+
+#fushi-player-controls .fushi-pc-row.is-switch:active:not([data-disabled="1"]) .fushi-pc-switch[data-on="1"]::after {
+    left: 20px;
+}
+
+#fushi-player-controls .fushi-pc-switch .fushi-pc-switch-icon {
+    position: absolute;
+    z-index: 1;
+    top: 6px;
+    left: 26px;
+    color: var(--md-sys-color-on-primary-container);
+    opacity: 0;
+    transition: opacity var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+    pointer-events: none;
+}
+
+#fushi-player-controls .fushi-pc-switch[data-on="1"] .fushi-pc-switch-icon {
+    opacity: 1;
+}
+
+/* 子菜单入口的尾标：有 chevron_right 图标时用图标，缺图标（icons.js 未装）才退回 › 字符。 */
+#fushi-player-controls .fushi-pc-row.is-submenu:not(.has-trail)::after {
     content: "\203A";
     flex: 0 0 auto;
-    font-size: 16px;
-    color: var(--fushi-muted);
+    font-size: 20px;
+    color: var(--md-sys-color-on-surface-variant);
 }
 
+/* M3E 连体按钮组（时轴偏移 / 对齐 / 描边）：段之间 2px 缝，内侧小圆角、两端全圆；选中段整颗
+   变全圆的 primary 胶囊，按下时那一段圆角收紧（形变反馈）。 */
 #fushi-player-controls .fushi-pc-seg {
     display: inline-flex;
     flex: 0 0 auto;
     gap: 2px;
-    padding: 2px;
-    border-radius: 8px;
-    background: var(--fushi-surface-muted);
 }
 
 #fushi-player-controls .fushi-pc-seg button {
     box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    min-height: 32px;
     margin: 0;
-    padding: 3px 7px;
+    padding: 0 10px;
     border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--fushi-text);
+    border-radius: var(--md-sys-shape-corner-small);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
     font: inherit;
-    font-size: 11px;
-    line-height: 1.2;
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: var(--md-sys-typescale-label-medium-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
     cursor: pointer;
+    transition:
+        border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+#fushi-player-controls .fushi-pc-seg button:first-child {
+    border-radius: var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-full);
+}
+
+#fushi-player-controls .fushi-pc-seg button:last-child {
+    border-radius: var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-small);
 }
 
 #fushi-player-controls .fushi-pc-seg button:hover {
-    background: var(--fushi-surface-strong);
+    background: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
 }
 
 #fushi-player-controls .fushi-pc-seg button[data-on="1"] {
-    background: var(--fushi-primary);
-    color: var(--fushi-on-primary);
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
 }
 
+#fushi-player-controls .fushi-pc-seg button:active {
+    border-radius: var(--md-sys-shape-corner-extra-small);
+}
+
+#fushi-player-controls .fushi-pc-seg button:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+/* 「站点自带轨」提示：tertiary-container 色调卡 + info 前置图标，整块可点（一键改成替换原生字幕）。 */
 #fushi-player-controls .fushi-pc-hint {
-    display: block;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
     box-sizing: border-box;
     width: 100%;
-    margin: 2px 0 4px;
-    padding: 7px 8px;
-    border: 1px solid var(--fushi-outline);
-    border-radius: 8px;
-    background: var(--fushi-surface-muted);
-    color: var(--fushi-muted);
+    margin: 4px 0;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-tertiary-container);
+    color: var(--md-sys-color-on-tertiary-container);
     font: inherit;
-    font-size: 11px;
-    line-height: 1.35;
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
     text-align: left;
     cursor: pointer;
+    transition: background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+#fushi-player-controls .fushi-pc-hint .fushi-pc-hint-icon {
+    flex: 0 0 auto;
 }
 
 #fushi-player-controls .fushi-pc-hint:hover {
-    border-color: var(--fushi-primary);
-    color: var(--fushi-text);
+    background: color-mix(in oklch, var(--md-sys-color-on-tertiary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-tertiary-container));
 }
 
+/* 样式子页的返回行：arrow_back + title-small，整行 48px。 */
 #fushi-player-controls .fushi-pc-back {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     box-sizing: border-box;
+    width: 100%;
+    min-height: 48px;
     margin: 0 0 4px;
-    padding: 6px 8px;
+    padding: 0 12px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--md-sys-shape-corner-medium);
     background: transparent;
-    color: var(--fushi-muted);
+    color: var(--md-sys-color-on-surface);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--md-sys-typescale-title-small-size);
+    line-height: var(--md-sys-typescale-title-small-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
     cursor: pointer;
 }
 
 #fushi-player-controls .fushi-pc-back:hover {
-    background: var(--fushi-surface-muted);
-    color: var(--fushi-text);
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
 }
 
 #fushi-player-controls .fushi-pc-style-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 5px 8px;
+    gap: 12px;
+    min-height: 48px;
+    padding: 4px 12px;
 }
 
 #fushi-player-controls .fushi-pc-style-label {
     flex: 1 1 auto;
     min-width: 0;
-    color: var(--fushi-text);
+    font-size: var(--md-sys-typescale-label-large-size);
+    line-height: var(--md-sys-typescale-label-large-line-height);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    color: var(--md-sys-color-on-surface);
 }
 
 #fushi-player-controls .fushi-pc-range {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
+/* M3E 滑杆：16px 高全圆轨道（已选段 primary、未选段 secondary-container，分界由 player-controls.js
+   写的 --fushi-pc-fill 决定），把手是 4×32 的竖条，靠一圈菜单底色的 box-shadow 在两侧切出缝。 */
 #fushi-player-controls .fushi-pc-range input[type="range"] {
-    width: 108px;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 112px;
+    height: 32px;
     margin: 0;
-    accent-color: var(--fushi-primary);
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]::-webkit-slider-runnable-track {
+    height: 16px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: linear-gradient(to right,
+        var(--md-sys-color-primary) 0 var(--fushi-pc-fill, 50%),
+        var(--md-sys-color-secondary-container) var(--fushi-pc-fill, 50%) 100%);
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 4px;
+    height: 32px;
+    margin-top: -8px;
+    border: 0;
+    border-radius: 2px;
+    background: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 4px var(--md-sys-color-surface-container);
+    transition: width var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]:active::-webkit-slider-thumb {
+    width: 2px;
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]::-moz-range-track {
+    height: 16px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-secondary-container);
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]::-moz-range-progress {
+    height: 16px;
+    border-radius: var(--md-sys-shape-corner-full);
+    background: var(--md-sys-color-primary);
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]::-moz-range-thumb {
+    width: 4px;
+    height: 32px;
+    border: 0;
+    border-radius: 2px;
+    background: var(--md-sys-color-primary);
+    box-shadow: 0 0 0 4px var(--md-sys-color-surface-container);
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"]:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+    border-radius: var(--md-sys-shape-corner-small);
 }
 
 #fushi-player-controls .fushi-pc-range output {
     min-width: 28px;
-    font-size: 11px;
-    color: var(--fushi-muted);
+    font-size: var(--md-sys-typescale-label-medium-size);
+    color: var(--md-sys-color-on-surface-variant);
     text-align: right;
+    font-variant-numeric: tabular-nums;
 }
 
 #fushi-player-controls .fushi-pc-color {
     display: inline-flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 
+/* 取色：全圆色块（M3 色板样）。 */
 #fushi-player-controls .fushi-pc-color input[type="color"] {
     box-sizing: border-box;
-    width: 30px;
-    height: 22px;
+    width: 32px;
+    height: 32px;
     padding: 0;
-    border: 1px solid var(--fushi-outline);
-    border-radius: 6px;
+    border: 2px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
     cursor: pointer;
+    overflow: hidden;
 }
 
+#fushi-player-controls .fushi-pc-color input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+#fushi-player-controls .fushi-pc-color input[type="color"]::-webkit-color-swatch {
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+}
+
+#fushi-player-controls .fushi-pc-color input[type="color"]::-moz-color-swatch {
+    border: 0;
+    border-radius: var(--md-sys-shape-corner-full);
+}
+
+/* 「跟随主题」：M3E 筛选 chip（32px、小圆角；选中 = secondary-container + 前置 check）。 */
 #fushi-player-controls .fushi-pc-color-auto {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    min-height: 32px;
     margin: 0;
-    padding: 3px 7px;
-    border: 1px solid var(--fushi-outline);
-    border-radius: 6px;
+    padding: 0 12px;
+    border: 1px solid var(--md-sys-color-outline);
+    border-radius: var(--md-sys-shape-corner-small);
     background: transparent;
-    color: var(--fushi-muted);
+    color: var(--md-sys-color-on-surface-variant);
     font: inherit;
-    font-size: 11px;
+    font-size: var(--md-sys-typescale-label-large-size);
+    font-weight: var(--md-sys-typescale-weight-medium);
     cursor: pointer;
 }
 
 #fushi-player-controls .fushi-pc-color-auto[data-on="1"] {
-    border-color: var(--fushi-primary);
-    background: var(--fushi-primary);
-    color: var(--fushi-on-primary);
+    padding-left: 8px;
+    border-color: transparent;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
 }
 
 #fushi-player-controls .fushi-pc-foot {
     display: flex;
-    gap: 6px;
-    margin-top: 6px;
-    padding-top: 6px;
-    border-top: 1px solid var(--fushi-outline);
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 4px 4px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
+/* 底栏两颗：恢复默认 = 描边按钮，全部设置 = tonal 按钮；40px 全圆，按下圆角收紧。 */
 #fushi-player-controls .fushi-pc-foot button {
     flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     box-sizing: border-box;
-    padding: 6px 8px;
-    border: 1px solid var(--fushi-outline);
-    border-radius: 8px;
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
-    color: var(--fushi-text);
+    color: var(--md-sys-color-primary);
     font: inherit;
-    font-size: 12px;
+    font-size: var(--md-sys-typescale-label-large-size);
+    font-weight: var(--md-sys-typescale-weight-medium);
     cursor: pointer;
+    transition:
+        border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+        background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
 }
 
 #fushi-player-controls .fushi-pc-foot button:hover {
-    border-color: var(--fushi-primary);
-    background: var(--fushi-surface-muted);
+    background: color-mix(in oklch, var(--md-sys-color-primary) var(--md-sys-state-hover-opacity), transparent);
+}
+
+#fushi-player-controls .fushi-pc-foot button.fushi-pc-foot-more {
+    border-color: transparent;
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
+}
+
+#fushi-player-controls .fushi-pc-foot button.fushi-pc-foot-more:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+#fushi-player-controls .fushi-pc-foot button:active {
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+/* 系统「减弱动态效果」：页内浮层的入场动画 / 弹簧过渡一律关掉（theme.css 已把 --fushi-dur-* 压到
+   1ms，这里再把直接引用 --md-sys-motion 的动画与过渡归零，两套风格都适用）。 */
+@media (prefers-reduced-motion: reduce) {
+    #fushi-toast,
+    #fushi-toast[data-visible="1"],
+    #fushi-subtitle-drop-hint,
+    #fushi-queue-chip,
+    #fushi-player-controls[data-open="1"] {
+        animation: none;
+    }
+
+    #fushi-toast,
+    #fushi-queue-chip *,
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-grip,
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-grip::before,
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-resize,
+    #fushi-drawer,
+    #fushi-drawer:not(.is-dragging),
+    .fushi-drawer-btn,
+    #fushi-player-btn,
+    #fushi-player-controls *,
+    #fushi-player-controls *::after {
+        transition: none;
+    }
+
+    /* 厂商前缀伪元素单独成规则：放进上面的选择器列表里，不认识它的内核会把整条规则丢掉。 */
+    #fushi-player-controls .fushi-pc-range input[type="range"]::-webkit-slider-thumb {
+        transition: none;
+    }
+
+    #fushi-toast[data-visible="0"] {
+        translate: none;
+    }
+
+    #fushi-player-btn.is-floating {
+        scale: 1;
+    }
 }
