@@ -208,9 +208,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // （`material_desktop.dart`），给 null 会把 media_kit 自己那套默认键装回来，
       // 与注册表打架。
       keyboardShortcuts: const <ShortcutActivator, VoidCallback>{},
-      // MD3 Expressive：画面中央 ±10s + 96dp 大播放键（fork 在缓冲时自动淡掉这一行，
-      // 换成居中的缓冲指示）。Apple 与 mini 档（自绘居中三键）不挂。
-      primaryButtonBar: _m3eCenterControlsBar(controller),
+      // 画面中央不挂任何键（shishamo 反馈「中间这个太挡视野」）：桌面底栏已有完全
+      // 相同的 −10s / 播放暂停 / +10s，键盘（空格 / Enter / 方向键）走整页快捷键表，
+      // 桌面触屏有单击切控制栏 + 双击暂停 / 快退快进。fork 默认值本就是空表，这里
+      // 显式传空是为了让「桌面中央无键」成为一处可见的决定。缓冲指示不受影响。
+      primaryButtonBar: _m3eCenterControlsBar(controller, desktop: true),
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[
@@ -475,8 +477,8 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
       buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
       buttonBarButtonSize: _videoControlIconSize * _controlsDensityScale,
-      // MD3 Expressive 中央 ±10s + 大播放键（同桌面 theme）。
-      primaryButtonBar: _m3eCenterControlsBar(controller),
+      // 触屏中央只在暂停时留一个无底板的小播放图标（[_m3eCenterControlsBar]）。
+      primaryButtonBar: _m3eCenterControlsBar(controller, desktop: false),
       // 视频内顶栏抬离状态栏 / 刘海（BUG-463）：移动端视频永不进 media_kit 全屏路由
       // （BUG-221），fork 只在全屏分支给顶栏套 `MediaQuery.padding` 顶部内缩、窗口分支恒
       // `EdgeInsets.zero` → 顶栏按钮永远贴 y=0 被系统栏 / 刘海盖住。这里把系统顶部 / 左 / 右
@@ -644,57 +646,41 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     );
   }
 
-  /// MD3 Expressive 画面中央控制行（fork `primaryButtonBar`）：`[−10s] [▶ 96dp] [+10s]`。
-  /// Apple、mini 档（底栏整行让位给自绘居中三键）与系统画中画下为空。
-  List<Widget> _m3eCenterControlsBar(VideoPlayerController controller) {
-    if (_appleChrome || !_controlsDensity.showBottomButtonBar) {
+  /// 画面中央控制行（fork `primaryButtonBar`）。原先是 `[−10s] [▶ 96dp] [+10s]`
+  /// 半透明大圆块，正压在画面中心（shishamo 反馈「太挡视野」），现收成：
+  ///
+  /// - 桌面（[desktop]，含桌面触屏模式）：空。底栏已有同一组传输键，触屏有单击切
+  ///   控制栏 + 双击暂停 / 快退快进。
+  /// - 移动端：只在**暂停时**画一个无底板、低不透明度的小播放图标（点它续播），播放
+  ///   中什么都不画——暂停 / 快退快进交给双击与底栏，和单击切控制栏的口径一致。
+  /// - Apple、mini 档（底栏整行让位给自绘居中三键）与系统画中画下恒为空。
+  List<Widget> _m3eCenterControlsBar(
+    VideoPlayerController controller, {
+    required bool desktop,
+  }) {
+    if (desktop ||
+        _appleChrome ||
+        !_controlsDensity.showBottomButtonBar) {
       return const <Widget>[];
     }
-    // compact 档（窄窗 / 小屏）整组缩到 0.72。
+    // compact 档（窄窗 / 小屏）缩到 0.72，与底栏同一密度口径。
     final double k =
         _videoUiScale *
         (_controlsDensity.density == VideoControlsDensity.full ? 1 : 0.72);
-    final double play = 96 * k;
-    final double seek = 56 * k;
-    final double gap = 28 * k;
     return <Widget>[
-      FushiTooltip(
-        message: t.video_bottom_seek_back,
-        child: VideoM3eSeekButton(
-          forward: false,
-          seconds: 10,
-          extent: seek,
-          semanticLabel: t.video_bottom_seek_back,
-          onPressed: () => unawaited(_seekRelative(-10000)),
-        ),
-      ),
-      SizedBox(width: gap),
-      FushiTooltip(
-        message: t.video_bottom_play_pause,
-        child: ListenableBuilder(
-          listenable: controller,
-          builder: (BuildContext _, Widget? __) => VideoM3ePlayPauseButton(
-            playing: controller.isPlaying,
-            extent: play,
-            style: VideoM3ePlayButtonStyle.translucent,
+      ListenableBuilder(
+        listenable: controller,
+        builder: (BuildContext _, Widget? __) {
+          if (controller.isPlaying) return const SizedBox.shrink();
+          return VideoCenterPausedHint(
+            extent: 44 * k,
             semanticLabel: t.video_bottom_play_pause,
             onPressed: () {
               _pokeControlsVisible();
               unawaited(controller.playOrPause());
             },
-          ),
-        ),
-      ),
-      SizedBox(width: gap),
-      FushiTooltip(
-        message: t.video_bottom_seek_forward,
-        child: VideoM3eSeekButton(
-          forward: true,
-          seconds: 10,
-          extent: seek,
-          semanticLabel: t.video_bottom_seek_forward,
-          onPressed: () => unawaited(_seekRelative(10000)),
-        ),
+          );
+        },
       ),
     ];
   }

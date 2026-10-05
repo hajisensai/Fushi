@@ -361,6 +361,52 @@ class _M3eInk extends StatelessWidget {
   }
 }
 
+/// 触屏暂停时画面中央的最小续播提示：无底板、低不透明度的小号播放图标（只靠一圈
+/// 柔和阴影在亮画面上可辨），点它续播。刻意不做大圆块——中央控件以不遮挡画面为
+/// 原则，暂停 / 快退快进的主力入口是双击与底栏。
+class VideoCenterPausedHint extends StatelessWidget {
+  const VideoCenterPausedHint({
+    super.key,
+    required this.extent,
+    required this.onPressed,
+    this.semanticLabel,
+  });
+
+  /// 图标边长（逻辑像素）；命中区按 [extent] 外扩到不小于 48dp。
+  final double extent;
+  final VoidCallback onPressed;
+  final String? semanticLabel;
+
+  /// 图标不透明度：够看清「已暂停」，又不和画面抢眼。
+  static const double opacity = 0.72;
+
+  @override
+  Widget build(BuildContext context) {
+    final double hit = math.max(48, extent);
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: SizedBox.square(
+          dimension: hit,
+          child: Center(
+            child: Icon(
+              Icons.play_arrow_rounded,
+              size: extent,
+              color: Colors.white.withValues(alpha: opacity),
+              shadows: const <Shadow>[
+                Shadow(color: Color(0x66000000), blurRadius: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 画面中央的 ±N 秒键：圆形半透明底，弧形箭头 + 秒数；按下时箭头沿跳转方向
 /// 转 40°（弹簧回位），手感上「拧」了一下。
 class VideoM3eSeekButton extends StatefulWidget {
