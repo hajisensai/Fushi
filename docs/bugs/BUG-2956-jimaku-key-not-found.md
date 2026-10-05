@@ -19,5 +19,12 @@
   - `fushi/test/media/video/jimaku_subtitle_provider_auth_test.dart`：按 Jimaku 真实响应形状伪造 HTTP，钉住 Authorization 头、`anilist_id` + `anime=true`、`episode=7`，以及 401 → unauthorized。
 - **备注**：
   - 本机没有 Jimaku key，没有真打 Jimaku 拿 Mirai Nikki 的文件列表。
-  - 遗留风险：Jimaku provider 只收 srt / ass / ssa / vtt，`jimaku_subtitle_provider.dart:67` 的 `if (!file.isTextSubtitle) continue;` 会丢掉 zip / rar / 7z 整季包，Jimaku 这条路径上也没有解包逻辑（只有 SubDL 会解 zip）。如果 Mirai Nikki 在 Jimaku 上只有压缩包，修复后搜索会真的发出去，但结果仍可能为空。合集页「整季打包字幕自动拆分」这句提示对 Jimaku 的压缩包并不成立。这一项没有在本单修，要用户真机确认后再决定是否补解包。
+  - 跟进（同分支第二个提交）：Jimaku 整季压缩包。原先 `jimaku_subtitle_provider.dart` 的 `if (!file.isTextSubtitle) continue;` 把 zip / rar / 7z 一律丢掉，带集号查文件时 Jimaku 服务端也会把 `(01-26).zip` 这类包滤掉——老番只有整季包时，结果必然是「找不到字幕」。修复：
+    - SubDL 里原有的解包（`extractSubdlSubtitles` / `pickSubdlSubtitle`）抽成共享的 `packages/fushi_engine/lib/media/video/subtitle/subtitle_archive.dart`，SubDL 与 Jimaku 共用，不另写一套。
+    - Jimaku 搜索把压缩包列成整季包候选（`VideoSubtitleCandidate.archiveFormat`，不带单集集号）。带集号查时，再列一次不带集号的全表，补回被服务端滤掉的包；认不出语言的包不被语言过滤丢掉。
+    - 单集：下载后按请求集号从包内挑文件，挑不出就明确报「包里没有这一集」，不拿第 1 集顶替。
+    - 合集：`runSubtitleBatch` 在没有单集文件时，把整包下载一次（`VideoSubtitleDownload.archiveEntries` 带回包内全部字幕），再按集号逐集拆分。
+    - 只能解 zip：`archive` 3.x 不支持 RAR / 7z。这两种照样列出，并标注「暂不支持解包，请到网站下载后手动解压」；下载时报同一句话，不静默丢弃。
+    - 列表里标「整季包（ZIP）」；合集预览显示「第 N 集：将从整季包（ZIP）中拆出」。
+    - 测试：`fushi/test/media/video/jimaku_archive_pack_test.dart`，用伪造的 Jimaku files 响应加内存 zip，覆盖搜索补包、标注、单集挑集、缺集报错、RAR 不支持、合集只下一次并逐集拆分。
   - 另一个已知差异：用户在设置里关掉 Jimaku（`jimaku_enabled=false`）却在工作台填了 key 时，Jimaku 仍不参与搜索，这一点没有改。

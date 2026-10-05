@@ -6385,5 +6385,10 @@
   "video_cover_online_no_image": "この結果にはカバー画像がありません。別の結果を選んでください。",
   "video_subtitle_sources_all_disabled": "オンライン字幕ソースがすべてオフになっています。字幕設定で少なくとも 1 つをオンにしてください。",
   "video_subtitle_error_key_rejected": "${provider} が API キーを拒否しました。字幕設定のキーを確認してください",
-  "video_subtitle_error_network": "${provider} に接続できません。ネットワークまたはプロキシを確認してください"
+  "video_subtitle_error_network": "${provider} に接続できません。ネットワークまたはプロキシを確認してください",
+  "video_subtitle_archive_pack": "シーズンパック（${format}）",
+  "video_subtitle_archive_pack_unsupported": "シーズンパック（${format}）· まだ展開できません。サイトからダウンロードして手動で展開してください",
+  "video_subtitle_episode_from_pack": "第 ${episode} 話：シーズンパック（${format}）から取り出します",
+  "video_subtitle_error_archive_unsupported": "RAR / 7z のシーズンパックはまだ展開できません。サイトからダウンロードして手動で展開してください",
+  "video_subtitle_error_archive_episode_missing": "このシーズンパックにはこの話の字幕がありません"
 }

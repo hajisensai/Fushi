@@ -6385,5 +6385,10 @@
   "video_cover_online_no_image": "這個條目沒有封面圖，請換一個。",
   "video_subtitle_sources_all_disabled": "線上字幕來源都已關閉，請先在字幕設定裡打開至少一個。",
   "video_subtitle_error_key_rejected": "${provider} 拒絕了 API key，請檢查字幕設定裡填的 key",
-  "video_subtitle_error_network": "連不上 ${provider}，請檢查網絡或代理"
+  "video_subtitle_error_network": "連不上 ${provider}，請檢查網絡或代理",
+  "video_subtitle_archive_pack": "整季包（${format}）",
+  "video_subtitle_archive_pack_unsupported": "整季包（${format}）· 暫不支援解包，請到網站下載後手動解壓",
+  "video_subtitle_episode_from_pack": "第 ${episode} 集：將從整季包（${format}）中拆出",
+  "video_subtitle_error_archive_unsupported": "暫不支援解包 RAR / 7z 整季包，請到網站下載後手動解壓",
+  "video_subtitle_error_archive_episode_missing": "這個整季包裡沒有這一集的字幕"
 }

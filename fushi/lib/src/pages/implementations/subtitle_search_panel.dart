@@ -26,12 +26,15 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart'
+    show kSubtitleArchiveOperation;
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
@@ -76,7 +79,10 @@ class JimakuCandidate {
   }
 
   /// 从文件名解析出的集号（认不出为 null），用于按集升序排列。
-  int? get episode => source?.episode ?? parseSubtitleEpisode(name);
+  /// 整季压缩包没有单集集号（`(01-26).zip` 会被解析成第 1 集）。
+  int? get episode => source?.isArchivePack ?? false
+      ? null
+      : source?.episode ?? parseSubtitleEpisode(name);
 
   /// 字幕文件类型（扩展名小写不含点，如 `ass`/`srt`）。候选在入列前已过文本字幕
   /// 过滤，故这里恒是四种可解析文本格式之一。
@@ -241,6 +247,17 @@ int? subtitleFailureStatusCode(Object? error) =>
 String describeSubtitleFailure(String baseMessage, Object? error) {
   final int? status = subtitleFailureStatusCode(error);
   final String message = switch (error) {
+    // 整季压缩包（BUG-2956 跟进）：解不开的格式 / 包里没有这一集。
+    ExternalProviderFailure(
+      operation: kSubtitleArchiveOperation,
+      kind: ExternalProviderFailureKind.unsupported,
+    ) =>
+      t.video_subtitle_error_archive_unsupported,
+    ExternalProviderFailure(
+      operation: kSubtitleArchiveOperation,
+      kind: ExternalProviderFailureKind.notFound,
+    ) =>
+      t.video_subtitle_error_archive_episode_missing,
     ExternalProviderFailure(
       kind: ExternalProviderFailureKind.unauthorized ||
           ExternalProviderFailureKind.forbidden,
@@ -1677,7 +1694,12 @@ class JimakuCandidateList extends StatelessWidget {
             overflow: TextOverflow.fade,
           ),
           subtitle: Text(
-            c.entryName,
+            switch (c.source) {
+              final VideoSubtitleCandidate source
+                  when source.isArchivePack =>
+                '${subtitleArchivePackLabel(source)} · ${c.entryName}',
+              _ => c.entryName,
+            },
             maxLines: 2,
             softWrap: true,
             overflow: TextOverflow.fade,

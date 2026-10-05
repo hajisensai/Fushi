@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sy
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -72,6 +73,26 @@ class SubtitleCollectionSource {
 
   /// 认得出集号的集数。
   int get episodeCount => index.byEpisode.length;
+
+  /// 能解开的整季压缩包格式（来源里第一个 zip 包）；没有为 null。批量下载时这些
+  /// 包按集号拆分（[runSubtitleBatch]），所以没有单集文件的集照样能配上。
+  SubtitleArchiveFormat? get unpackablePackFormat {
+    for (final VideoSubtitleCandidate c in candidates) {
+      final SubtitleArchiveFormat? f = c.archiveFormat;
+      if (f != null && f.isSupported) return f;
+    }
+    return null;
+  }
+
+  /// 只有解不开的整季包（RAR / 7z）时的格式；有可解的包或没有包为 null。
+  SubtitleArchiveFormat? get unsupportedPackFormat {
+    if (unpackablePackFormat != null) return null;
+    for (final VideoSubtitleCandidate c in candidates) {
+      final SubtitleArchiveFormat? f = c.archiveFormat;
+      if (f != null) return f;
+    }
+    return null;
+  }
 
   /// 来源里出现过的语言（去重，稳定顺序）。
   List<String> get languages => <String>{
@@ -761,7 +782,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final SubtitleCollectionSource? source = _selectedSource;
     if (source == null) return const FushiIcon(Icons.remove, size: 18);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
-    return (source.index.byEpisode[episode]?.isEmpty ?? true)
+    return (source.index.byEpisode[episode]?.isEmpty ?? true) &&
+            source.unpackablePackFormat == null
         ? const FushiIcon(Icons.search_off, size: 18)
         : FushiIcon(
             Icons.check_circle_outline,
@@ -782,7 +804,15 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       '${jimakuLanguageLabel(item.language!)}',
           );
         case SubtitleBatchStatus.noMatch:
-          return Text(t.video_jimaku_no_results);
+          final SubtitleArchiveFormat? unsupported =
+              _selectedSource?.unsupportedPackFormat;
+          return Text(
+            unsupported == null
+                ? t.video_jimaku_no_results
+                : t.video_subtitle_archive_pack_unsupported(
+                    format: unsupported.label,
+                  ),
+          );
         case SubtitleBatchStatus.failed:
           return Text(t.video_jimaku_download_failed);
         case SubtitleBatchStatus.downloading:
@@ -797,6 +827,22 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final List<VideoSubtitleCandidate> matches =
         source.index.byEpisode[episode] ?? const <VideoSubtitleCandidate>[];
     if (matches.isEmpty) {
+      // 整季包（BUG-2956 跟进）：没有单集文件的集，下载时从包里按集号拆。
+      final SubtitleArchiveFormat? pack = source.unpackablePackFormat;
+      if (pack != null) {
+        return Text(
+          t.video_subtitle_episode_from_pack(
+            episode: episode,
+            format: pack.label,
+          ),
+        );
+      }
+      final SubtitleArchiveFormat? unsupported = source.unsupportedPackFormat;
+      if (unsupported != null && source.index.unnumbered.isEmpty) {
+        return Text(
+          t.video_subtitle_archive_pack_unsupported(format: unsupported.label),
+        );
+      }
       if (source.index.unnumbered.isNotEmpty) {
         return Text(
           t.video_jimaku_episode_unlabeled(

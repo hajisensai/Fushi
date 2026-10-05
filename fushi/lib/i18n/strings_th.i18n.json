@@ -6385,5 +6385,10 @@
   "video_cover_online_no_image": "This result has no cover image. Try another one.",
   "video_subtitle_sources_all_disabled": "All online subtitle sources are turned off. Turn one on in subtitle settings.",
   "video_subtitle_error_key_rejected": "${provider} rejected the API key. Check the key in subtitle settings",
-  "video_subtitle_error_network": "Could not reach ${provider}. Check your network or proxy"
+  "video_subtitle_error_network": "Could not reach ${provider}. Check your network or proxy",
+  "video_subtitle_archive_pack": "Season pack (${format})",
+  "video_subtitle_archive_pack_unsupported": "Season pack (${format}) · cannot be unpacked yet; download it from the site and extract it manually",
+  "video_subtitle_episode_from_pack": "Episode ${episode}: will be taken from the season pack (${format})",
+  "video_subtitle_error_archive_unsupported": "RAR / 7z season packs cannot be unpacked yet. Download it from the site and extract it manually",
+  "video_subtitle_error_archive_episode_missing": "This season pack has no subtitle for this episode"
 }
