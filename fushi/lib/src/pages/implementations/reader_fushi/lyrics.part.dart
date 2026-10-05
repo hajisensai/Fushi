@@ -232,6 +232,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       fontFaceCss: bodyFont?.fontFaces ?? '',
       theme: _lyricsHtmlTheme,
       textColorOverride: _lyricsCustomTextColor(),
+      currentColorOverride: _lyricsCustomHighlightColor(),
       followLabel: t.audiobook_follow_audio,
     );
 
@@ -267,6 +268,15 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 它覆盖非当前行颜色；未设时跟随设计系统（Apple 白 / MD3 onSurfaceVariant）。
   Color? _lyricsCustomTextColor() {
     final int custom = ReaderFushiSource.instance.lyricsTextColor;
+    return custom != 0 ? Color(custom) : null;
+  }
+
+  /// 用户自定义的歌词当前行高亮色（设置「当前行高亮色」，哨兵 0 = 未设 → null，
+  /// 跟随播放器设计系统）。覆盖层主题下当前行色只认 `--ly-current`，所以每个
+  /// 生成 / 热更歌词主题的调用点都必须带上它（源码守卫
+  /// lyrics_highlight_color_test.dart）。
+  Color? _lyricsCustomHighlightColor() {
+    final int custom = ReaderFushiSource.instance.lyricsHighlightColor;
     return custom != 0 ? Color(custom) : null;
   }
 
@@ -333,6 +343,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           source: LyricsModeHtml.applyThemeInvocation(
             theme,
             textColorOverride: _lyricsCustomTextColor(),
+            currentColorOverride: _lyricsCustomHighlightColor(),
           ),
         );
       }
@@ -546,6 +557,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       LyricsModeHtml.applyThemeInvocation(
         theme,
         textColorOverride: _lyricsCustomTextColor(),
+        currentColorOverride: _lyricsCustomHighlightColor(),
       ),
       'applyTheme',
     );
@@ -657,7 +669,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final LyricsHtmlTheme? theme = _lyricsHtmlTheme;
     await controller.evaluateJavascript(
       source: 'window.__lyricsReduceMotion = $reduceMotion;'
-          '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor())}',
+          '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor(), currentColorOverride: _lyricsCustomHighlightColor())}',
     );
     if (!currentLyricsLoad()) return;
     // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 fushiCaret 注入。

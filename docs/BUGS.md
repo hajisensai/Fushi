@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2727 条。点号进各自文件。
+> 共 2728 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2972](bugs/BUG-2972-lyrics-highlight-color.md) | ✅ | ✅ | 歌词模式高亮颜色无法修改 |
 | [BUG-2963](bugs/BUG-2963-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
 | [BUG-2960](bugs/BUG-2960-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |
