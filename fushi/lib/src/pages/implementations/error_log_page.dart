@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/misc/log_exporter.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi/src/utils/misc/log_uploader.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 
 class ErrorLogPage extends StatefulWidget {
   const ErrorLogPage({super.key});
@@ -47,7 +48,10 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
   Widget build(BuildContext context) {
     final int count = ErrorLogService.instance.entries.length;
 
-    return FushiPageScaffold(
+    // 设置子页统一壳（settings kit）：浮动页头 + 动作组胶囊，与 schema 详情页一致。
+    return SettingsKitScaffold(
+      leadingIcon: Icons.error_outline,
+      leadingTone: SettingsIconTone.gray,
       title: t.error_log_label(n: count),
       actions: <Widget>[
         FushiIconButton(
@@ -105,7 +109,12 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           },
         ),
       ],
-      body: FushiLogPanel(
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => FushiLogPanel(
         log: _log,
         shareAction: (text) => FushiShare.shareText(text),
       ),

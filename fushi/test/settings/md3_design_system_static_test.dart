@@ -160,11 +160,11 @@ void main() {
       'FushiDesignTokens',
     ],
     'lib/src/pages/implementations/debug_log_page.dart': <String>[
-      'FushiPageScaffold',
+      'SettingsKitScaffold',
       'FushiLogPanel',
     ],
     'lib/src/pages/implementations/error_log_page.dart': <String>[
-      'FushiPageScaffold',
+      'SettingsKitScaffold',
       'FushiLogPanel',
     ],
     'lib/src/pages/implementations/popup_dictionary_page.dart': <String>[

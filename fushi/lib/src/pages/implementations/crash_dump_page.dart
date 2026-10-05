@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 
 /// TODO-607 P0-3：「诊断区 → 崩溃转储」页（Windows-only）。
 ///
@@ -74,7 +75,10 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FushiPageScaffold(
+    // 设置子页统一壳（settings kit）：浮动页头 + 动作组胶囊，与 schema 详情页一致。
+    return SettingsKitScaffold(
+      leadingIcon: Icons.bug_report_outlined,
+      leadingTone: SettingsIconTone.gray,
       title: t.crash_dump_label(n: _dumps.length),
       actions: <Widget>[
         FushiIconButton(
@@ -88,7 +92,12 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
           onTap: _refresh,
         ),
       ],
-      body: Column(
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           // 隐私提示（常驻）：.dmp 含进程内存快照。
