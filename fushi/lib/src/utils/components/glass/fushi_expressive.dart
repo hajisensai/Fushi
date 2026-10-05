@@ -37,8 +37,8 @@ bool fushiExpressiveMotionEnabled(BuildContext context) {
   return !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
 }
 
-/// M3 Expressive 图标按钮尺寸档：XS 32 / S 40（默认）/ M 56。
-enum FushiIconButtonSize { xs, s, m }
+/// M3 Expressive 图标按钮尺寸档：XS 32 / S 40（默认）/ M 56 / L 96 / XL 136。
+enum FushiIconButtonSize { xs, s, m, l, xl }
 
 /// M3 Expressive 图标按钮宽度变体：窄 / 默认（正方）/ 宽。
 enum FushiIconButtonWidth { narrow, standard, wide }
@@ -47,7 +47,7 @@ enum FushiIconButtonWidth { narrow, standard, wide }
 enum FushiIconButtonShape { round, square }
 
 /// 图标按钮的容器尺寸（M3 Expressive 规格表：XS 28/32/40×32、S 32/40/52×40、
-/// M 48/56/72×56，依次为窄 / 默认 / 宽）。
+/// M 48/56/72×56、L 64/96/128×96、XL 104/136/184×136，依次为窄 / 默认 / 宽）。
 Size fushiExpressiveIconButtonExtent(
   FushiIconButtonSize size,
   FushiIconButtonWidth width,
@@ -61,6 +61,8 @@ Size fushiExpressiveIconButtonExtent(
     FushiIconButtonSize.xs => (28, 32, 40, 32),
     FushiIconButtonSize.s => (32, 40, 52, 40),
     FushiIconButtonSize.m => (48, 56, 72, 56),
+    FushiIconButtonSize.l => (64, 96, 128, 96),
+    FushiIconButtonSize.xl => (104, 136, 184, 136),
   };
   return Size(switch (width) {
     FushiIconButtonWidth.narrow => narrow,
@@ -69,9 +71,23 @@ Size fushiExpressiveIconButtonExtent(
   }, height);
 }
 
-/// 图标按钮的图标尺寸：XS 20，S / M 24。
-double fushiExpressiveIconSize(FushiIconButtonSize size) =>
-    size == FushiIconButtonSize.xs ? 20 : 24;
+/// 图标按钮的图标尺寸：XS 20，S / M 24，L 32，XL 40。
+double fushiExpressiveIconSize(FushiIconButtonSize size) => switch (size) {
+  FushiIconButtonSize.xs => 20,
+  FushiIconButtonSize.s || FushiIconButtonSize.m => 24,
+  FushiIconButtonSize.l => 32,
+  FushiIconButtonSize.xl => 40,
+};
+
+/// 图标按钮方形 / 选中态的圆角与按下圆角（Compose `IconButton*Tokens`：
+/// XS / S 12→8，M 16→12，L / XL 28→16）。
+({double square, double pressed}) fushiExpressiveIconButtonRadii(
+  FushiIconButtonSize size,
+) => switch (size) {
+  FushiIconButtonSize.xs || FushiIconButtonSize.s => (square: 12, pressed: 8),
+  FushiIconButtonSize.m => (square: 16, pressed: 12),
+  FushiIconButtonSize.l || FushiIconButtonSize.xl => (square: 28, pressed: 16),
+};
 
 /// 一个由弹簧驱动的标量（0 = 静止，1 = 目标态）。重定向时带着当前速度续上，
 /// 快速连点不会「跳帧回零」——这是弹簧比定时曲线更顺的原因。
