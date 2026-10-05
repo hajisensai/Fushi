@@ -33,6 +33,7 @@ import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -310,24 +311,29 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (rows == null || interconnectEnabled == null) {
       return buildLoading(padding: const EdgeInsets.all(24));
     }
+    // M3E 分段列表：互联一行自成一组；扫描根是另一组（可拖拽重排）。
     final List<Widget> sourceRows = <Widget>[
       _buildVirtualSourceRow(
         tokens,
-        icon: Icons.devices_outlined,
+        icon: FushiIcons.devices,
         title: t.audio_source_fushi_interconnect,
         subtitle: t.interconnect_enable_hint,
         value: interconnectEnabled,
         onChanged: _setInterconnectEnabled,
       ),
-      if (rows.isNotEmpty) ...<Widget>[
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-          child: const FushiDividerControl(height: 1),
-        ),
+      SizedBox(height: tokens.spacing.gap + 4),
+      if (rows.isEmpty)
+        FushiPlaceholderMessage(
+          icon: FushiIcons.folderOpen,
+          message: t.media_source_list_empty,
+        )
+      else
         _buildFolderRows(tokens, rows),
-      ],
     ];
-    return Column(children: sourceRows);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: sourceRows,
+    );
   }
 
   Widget _buildFolderRows(
@@ -336,8 +342,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   ) {
     // 自实现的 FushiReorderableColumn（局部坐标长按拖拽，消祖先 FushiAppUiScale
     // 缩放），与 LocalAudioSourcesDialog 同款，而非 SDK ReorderableListView。
+    // 行间缝由列表插（分段行不自带缝），拖拽浮层只包住行本身。
     return FushiReorderableColumn(
       itemCount: rows.length,
+      spacing: fushiGroupedListGap(context),
+      feedbackBorderRadius: FushiM3eShape.cardRadius,
       keyForIndex: (int index) =>
           ValueKey<String>('media_source_${rows[index].id}'),
       onReorder: (int from, int to) {
@@ -347,8 +356,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
         });
         _persistOrder();
       },
-      itemBuilder: (BuildContext context, int index) =>
-          _buildRow(tokens, rows[index]),
+      itemBuilder: (BuildContext context, int index) => FushiGroupedListItem(
+        index: index,
+        count: rows.length,
+        includeGap: false,
+        separatorIndent: tokens.spacing.rowHorizontal + 40 + 12,
+        child: _buildRow(tokens, rows[index]),
+      ),
     );
   }
 
@@ -360,38 +374,48 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-      child: Row(
-        children: <Widget>[
-          FushiIcon(icon, color: cs.onSurfaceVariant),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(title, style: theme.textTheme.titleSmall),
-                Text(
-                  subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return FushiGroupedListItem(
+      index: 0,
+      count: 1,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal,
+          vertical: tokens.spacing.gap + 4,
+        ),
+        child: Row(
+          children: <Widget>[
+            FushiListLeadingIcon(
+              icon,
+              shape: FushiLeadingShape.cookie,
+              tone: value ? FushiCardTone.primary : FushiCardTone.neutral,
             ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          adaptiveSwitch(
-            context: context,
-            value: value,
-            onChanged: onChanged,
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(title, style: context.fushiType.titleSmallEmphasized),
+                  Text(
+                    subtitle,
+                    style: context.fushiType.bodySmall.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            adaptiveSwitch(
+              context: context,
+              value: value,
+              onChanged: onChanged,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -406,55 +430,97 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     }
   }
 
+  /// 一个扫描根的分段行（M3E）：行首形状图标、名称 / 位置 / 状态三行，行尾只留
+  /// 高频动作（重新扫描；视频另有刮削与刮削设置）+「⋯」菜单（改名、诊断包、
+  /// 打开文件夹、移除）。扫描 / 刮削进行中行底亮波浪进度。
   Widget _buildRow(FushiDesignTokens tokens, SourceLibraryRow row) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
-    final TextStyle? subStyle =
-        theme.textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant);
+    final TextStyle subStyle =
+        context.fushiType.bodySmall.copyWith(color: cs.onSurfaceVariant);
     final bool isLocal = row.transport == 'local';
     final bool isVideo = widget.mediaKind == 'video';
     final bool scanning = _scanning.contains(row.id);
     final bool scraping = _isScrapingSource(row.id);
     final bool exporting = _exportingDiagnostics.contains(row.id);
     final bool busy = scanning || scraping || exporting || isBusy;
-
+    final bool working = scanning || scraping || exporting;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final List<_SourceRowMenuAction> menu = <_SourceRowMenuAction>[
+      _SourceRowMenuAction(
+        key: ValueKey<String>('media_source_rename_${row.id}'),
+        label: t.media_source_rename,
+        icon: FushiIcons.rename,
+        onTap: busy ? null : () => _rename(row),
+      ),
+      if (isVideo && isLocal)
+        _SourceRowMenuAction(
+          key: ValueKey<String>('video_scrape_diagnostic_export_${row.id}'),
+          label: t.video_scrape_diagnostic_export,
+          icon: FushiIcons.backup,
+          onTap: busy ? null : () => _exportVideoScrapeDiagnostics(row),
+        ),
+      _SourceRowMenuAction(
+        label: t.media_source_open_folder,
+        icon: FushiIcons.folderOpen,
+        // 打开文件夹只在桌面（有文件管理器契约）+ 本地来源可用；网络来源
+        // 无本地目录可开。
+        onTap: isLocal && currentRevealHost() != null
+            ? () => _openFolder(row)
+            : null,
+      ),
+      _SourceRowMenuAction(
+        key: ValueKey<String>('media_source_remove_${row.id}'),
+        label: t.media_source_remove,
+        icon: FushiIcons.delete,
+        destructive: true,
+        onTap: busy ? null : () => _remove(row),
+      ),
+    ];
     return Padding(
-      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      padding: EdgeInsetsDirectional.fromSTEB(
+        tokens.spacing.rowHorizontal,
+        tokens.spacing.gap + 2,
+        tokens.spacing.gap,
+        tokens.spacing.gap + 2,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiIcon(
-            isLocal ? Icons.folder_outlined : Icons.cloud_outlined,
-            color: cs.onSurfaceVariant,
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  row.label,
-                  style: theme.textTheme.titleSmall,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  _rowLocation(row),
-                  style: subStyle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                _buildStatusLine(theme, cs, subStyle, row),
-              ],
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
           Row(
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
+              FushiListLeadingIcon(
+                isLocal ? FushiIcons.folder : FushiIcons.cloud,
+                shape: FushiLeadingShape.square,
+                tone: working ? FushiCardTone.primary : FushiCardTone.secondary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      row.label,
+                      style: context.fushiType.titleSmallEmphasized,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      _rowLocation(row),
+                      style: subStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    _buildStatusLine(theme, cs, subStyle, row),
+                  ],
+                ),
+              ),
+              SizedBox(width: tokens.spacing.gap),
               FushiIconButton(
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 size: 18,
                 tooltip: t.media_source_rescan,
                 busy: scanning,
@@ -462,18 +528,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                 padding: EdgeInsets.all(tokens.spacing.gap / 2),
                 onTap: () => _rescan(row),
               ),
-              FushiIconButton(
-                key: ValueKey<String>('media_source_rename_${row.id}'),
-                icon: Icons.drive_file_rename_outline,
-                size: 18,
-                tooltip: t.media_source_rename,
-                enabled: !busy,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => _rename(row),
-              ),
               if (isVideo && widget.onScrapeSource != null)
                 FushiIconButton(
-                  icon: Icons.manage_search_outlined,
+                  icon: FushiIcons.manageSearch,
                   size: 18,
                   tooltip: row.videoGroupingMode == 'folder'
                       ? t.video_source_grouping_folder_hint
@@ -483,47 +540,66 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => _scrapeSource(row),
                 ),
-              if (isVideo && isLocal)
-                FushiIconButton(
-                  key: ValueKey<String>(
-                    'video_scrape_diagnostic_export_${row.id}',
-                  ),
-                  icon: Icons.archive_outlined,
-                  size: 18,
-                  tooltip: t.video_scrape_diagnostic_export,
-                  busy: exporting,
-                  enabled: !busy,
-                  padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: () => _exportVideoScrapeDiagnostics(row),
-                ),
               if (isVideo)
                 FushiIconButton(
-                  icon: Icons.tune,
+                  icon: FushiIcons.settings,
                   size: 18,
                   tooltip: t.video_source_scrape_settings,
                   enabled: !busy,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
                   onTap: () => _openVideoScrapeSettings(row),
                 ),
-              FushiIconButton(
-                icon: Icons.folder_open,
-                size: 18,
-                tooltip: t.media_source_open_folder,
-                // 打开文件夹只在桌面（有文件管理器契约）+ 本地来源可用；网络来源
-                // 无本地目录可开。
-                enabled: isLocal && currentRevealHost() != null,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => _openFolder(row),
-              ),
-              FushiIconButton(
-                icon: Icons.remove_circle_outline,
-                size: 18,
-                tooltip: t.media_source_remove,
-                enabled: !busy,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => _remove(row),
+              FushiPopupMenuButton<_SourceRowMenuAction>(
+                key: ValueKey<String>('media_source_menu_${row.id}'),
+                tooltip: t.common_more_actions,
+                icon: const FushiIcon(FushiIcons.more, size: 20),
+                onSelected: (_SourceRowMenuAction action) =>
+                    action.onTap?.call(),
+                itemBuilder: (BuildContext context) =>
+                    <PopupMenuEntry<_SourceRowMenuAction>>[
+                  for (final _SourceRowMenuAction action in menu)
+                    PopupMenuItem<_SourceRowMenuAction>(
+                      key: action.key,
+                      value: action,
+                      enabled: action.onTap != null,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          FushiIcon(
+                            action.icon,
+                            size: 20,
+                            color: action.destructive ? cs.error : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Flexible(
+                            child: Text(
+                              action.label,
+                              style: action.destructive
+                                  ? TextStyle(color: cs.error)
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ],
+          ),
+          // 扫描 / 刮削 / 导出进行中：行底波浪进度（spring 展开收起）。
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: working
+                ? Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      top: tokens.spacing.gap,
+                      end: tokens.spacing.gap,
+                    ),
+                    child: const FushiLinearProgressIndicator(),
+                  )
+                : const SizedBox(width: double.infinity),
           ),
         ],
       ),
@@ -1304,6 +1380,25 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
 }
 
 /// 移除来源确认框的结果；[migrateVideoDownloadsTo] 为 null = 不迁移下载引用。
+/// 扫描根行「⋯」菜单里的一个动作（[onTap] 为 null = 当前不可用）。
+class _SourceRowMenuAction {
+  const _SourceRowMenuAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.key,
+    this.destructive = false,
+  });
+
+  final Key? key;
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  /// 破坏性动作（移除）：菜单里用 error 色；确认框由 `_remove` 弹。
+  final bool destructive;
+}
+
 class _SourceRemovalChoice {
   const _SourceRemovalChoice(this.migrateVideoDownloadsTo);
 
