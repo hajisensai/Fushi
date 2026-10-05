@@ -253,11 +253,11 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
 Widget buildStatPageBody({
   required bool loading,
   required String? error,
-  required bool isEmpty,
   required Widget Function() loadingBuilder,
   required Widget Function(String error) errorBuilder,
-  required String emptyMessage,
   required Widget Function() contentBuilder,
+  bool isEmpty = false,
+  String emptyMessage = '',
 }) {
   if (loading) return loadingBuilder();
   if (error != null) return errorBuilder(error);
@@ -366,7 +366,8 @@ class StatSectionCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (trailing != null) trailing!,
+                  // 行尾控件可收窄（窄屏时自身换行 / 省略），不把卡头撑出界。
+                  if (trailing != null) Flexible(child: trailing!),
                 ],
               ),
             ),
