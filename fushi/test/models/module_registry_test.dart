@@ -47,7 +47,7 @@ void main() {
       );
     });
 
-    test('平台判据只有 games / browserExtension / downloads 三条', () {
+    test('平台判据只有 browserExtension / downloads 两条', () {
       for (final ModuleId id in ModuleId.values) {
         final bool onWindowsDesktop = id.availableOn(
           isWindows: true,
@@ -74,8 +74,8 @@ void main() {
           );
         }
       }
-      // galgame hook 只做 Windows、串流接收端只做 Android：macOS/Linux 与 iOS
-      // 都没有 games。
+      // games 处处可用，只是形态不同：Windows 本机库，其余平台串流接收端
+      // （形态断言见下面「games 的两种形态」）。
       expect(
         ModuleId.games.availableOn(
           isWindows: false,
@@ -83,7 +83,7 @@ void main() {
           isIOS: false,
           isAndroid: false,
         ),
-        isFalse,
+        isTrue,
       );
       expect(
         ModuleId.games.availableOn(
@@ -92,7 +92,7 @@ void main() {
           isIOS: true,
           isAndroid: false,
         ),
-        isFalse,
+        isTrue,
       );
       // 浏览器扩展是「电脑才有」，非 Windows 桌面照样有。
       expect(
@@ -150,7 +150,6 @@ void main() {
         isIOS: true,
         isAndroid: false,
       );
-      expect(ios.isEnabled(ModuleId.games), isFalse);
       expect(ios.isEnabled(ModuleId.browserExtension), isFalse);
       expect(ios.isEnabled(ModuleId.books), isTrue);
 
