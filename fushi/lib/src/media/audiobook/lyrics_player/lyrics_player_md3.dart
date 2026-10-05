@@ -7,14 +7,12 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart'
-    show FushiPopupMenuItem;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
-    show fushiMenuAnchorPosition, showFushiMenu;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // MD3（Material 3 Expressive）歌词播放页。
@@ -46,6 +44,12 @@ const double _kNarrowTopBarHeight = 56;
 
 /// 背景流动一周的时长：几十秒一圈，慢到不抢歌词的注意力。
 const Duration _kMeshPeriod = Duration(seconds: 48);
+
+/// mesh 重画间隔（≈30fps）。
+const int _kMeshFrameMicros = 33000;
+
+/// 所有 mesh 实例共用的相位时钟（页面与标题栏里的两份背景同相位）。
+final Stopwatch _meshClock = Stopwatch()..start();
 
 // ---------------------------------------------------------------------------
 // 几何
@@ -132,8 +136,11 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
   }
 
   @override
-  Widget buildBackground(BuildContext context, LyricsPlayerData data) =>
-      const _Md3Backdrop();
+  Widget buildBackground(
+    BuildContext context,
+    LyricsPlayerData data, {
+    double bleedTop = 0,
+  }) => _Md3Backdrop(bleedTop: bleedTop);
 
   @override
   Widget buildChrome(
@@ -213,7 +220,10 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
 /// secondary 容器色 + 一团低透明 primary），宽屏再垫歌词底板。动效关闭（减少
 /// 动态效果 / 墨水屏）时静止在相位 0。
 class _Md3Backdrop extends StatefulWidget {
-  const _Md3Backdrop();
+  const _Md3Backdrop({required this.bleedTop});
+
+  /// 画布顶上延伸到标题栏底下的高度（见 [LyricsPlayerDesign.buildBackground]）。
+  final double bleedTop;
 
   @override
   State<_Md3Backdrop> createState() => _Md3BackdropState();
@@ -225,14 +235,14 @@ class _Md3BackdropState extends State<_Md3Backdrop>
 
   /// 流动相位（0–1，一周 [_kMeshPeriod]）。只驱动画家重绘，不重建。
   final ValueNotifier<double> _phase = ValueNotifier<double>(0);
-  Duration _lastPaint = Duration.zero;
+  int _lastFrame = -1;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final bool motion = fushiExpressiveMotionEnabled(context);
     if (motion && !_ticker.isActive) {
-      _lastPaint = Duration.zero;
+      _lastFrame = -1;
       _ticker.start();
     } else if (!motion && _ticker.isActive) {
       _ticker.stop();
@@ -240,11 +250,16 @@ class _Md3BackdropState extends State<_Md3Backdrop>
     }
   }
 
-  void _onTick(Duration elapsed) {
-    // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。
-    if (elapsed - _lastPaint < const Duration(milliseconds: 33)) return;
-    _lastPaint = elapsed;
-    _phase.value = (elapsed.inMicroseconds / _kMeshPeriod.inMicroseconds) % 1.0;
+  void _onTick(Duration _) {
+    // 漂移极慢，30fps 足够顺；整屏渐变每帧重画是白花 GPU。相位取全局共享时钟
+    // 并量化到 33ms 一档（不取本 ticker 的 elapsed）：桌面标题栏里画的是同一张
+    // 背景的另一个实例（[LyricsPlayerDesign.buildBackground] 的 bleedTop），两个
+    // 实例同一帧必须是同一相位，接缝处才连续。
+    final int frame = _meshClock.elapsedMicroseconds ~/ _kMeshFrameMicros;
+    if (frame == _lastFrame) return;
+    _lastFrame = frame;
+    _phase.value =
+        (frame * _kMeshFrameMicros / _kMeshPeriod.inMicroseconds) % 1.0;
   }
 
   @override
@@ -264,8 +279,11 @@ class _Md3BackdropState extends State<_Md3Backdrop>
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final Size size = constraints.biggest;
-          final Rect? plate = lyricsPlayerIsWide(size)
-              ? _WideGeometry.of(size, padding).plate
+          // 底板按页面尺寸（画布去掉顶上延伸的一截）算，再整体下移回画布坐标。
+          final double bleed = widget.bleedTop;
+          final Size page = Size(size.width, math.max(0, size.height - bleed));
+          final Rect? plate = lyricsPlayerIsWide(page)
+              ? _WideGeometry.of(page, padding).plate.translate(0, bleed)
               : null;
           return CustomPaint(
             size: size,
@@ -1427,38 +1445,13 @@ class _ExpressivePlayButtonState extends State<_ExpressivePlayButton>
 // 次要操作
 // ---------------------------------------------------------------------------
 
-/// 倍速文案：1.0× / 1.25× / 0.75×（至少一位小数）。
-String _formatSpeed(double speed) {
-  String s = speed.toStringAsFixed(2);
-  while (s.endsWith('0') && !s.endsWith('.0')) {
-    s = s.substring(0, s.length - 1);
-  }
-  return '$s×';
-}
-
-/// tonal 倍速键：显示当前倍速，点开菜单选 [kLyricsPlayerSpeeds]。
+/// tonal 倍速键：显示当前倍速，点开含拖动条的倍速面板（与普通阅读模式快捷
+/// 设置同一条 `AudiobookSpeedSlider`），拖动实时生效。
 class _SpeedButton extends StatelessWidget {
   const _SpeedButton({required this.speed, required this.onSpeedChanged});
 
   final double speed;
   final ValueChanged<double> onSpeedChanged;
-
-  Future<void> _open(BuildContext anchor) async {
-    final double? picked = await showFushiMenu<double>(
-      context: anchor,
-      positionBuilder: fushiMenuAnchorPosition(anchor),
-      initialValue: speed,
-      items: <PopupMenuEntry<double>>[
-        for (final double s in kLyricsPlayerSpeeds)
-          FushiPopupMenuItem<double>(
-            label: _formatSpeed(s),
-            value: s,
-            selected: (s - speed).abs() < 0.001,
-          ),
-      ],
-    );
-    if (picked != null) onSpeedChanged(picked);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1468,9 +1461,15 @@ class _SpeedButton extends StatelessWidget {
     return Tooltip(
       message: t.playback_speed,
       child: Builder(
-        builder: (BuildContext anchor) => FushiFilledButton.tonal(
-          onPressed: () => _open(anchor),
-          child: Text(_formatSpeed(speed), style: style),
+        builder: (BuildContext anchor) => FushiPressScale(
+          child: FushiFilledButton.tonal(
+            onPressed: () => showLyricsSpeedPanel(
+              anchorContext: anchor,
+              speed: speed,
+              onChanged: onSpeedChanged,
+            ),
+            child: Text(formatLyricsSpeed(speed), style: style),
+          ),
         ),
       ),
     );
@@ -1496,11 +1495,11 @@ class _MaskButton extends StatelessWidget {
   }
 }
 
-/// ⋯ 更多：把按钮自己的全局矩形交给页面锚定菜单。
+/// ⋯ 更多：把按钮的全局矩形与 context 交给页面锚定菜单（菜单从它取主题）。
 class _MoreButton extends StatelessWidget {
   const _MoreButton({required this.onMore});
 
-  final ValueChanged<Rect> onMore;
+  final ValueChanged<LyricsMenuAnchor> onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -1510,7 +1509,12 @@ class _MoreButton extends StatelessWidget {
         onPressed: () {
           final RenderObject? box = anchor.findRenderObject();
           if (box is! RenderBox || !box.hasSize) return;
-          onMore(box.localToGlobal(Offset.zero) & box.size);
+          onMore(
+            LyricsMenuAnchor(
+              rect: box.localToGlobal(Offset.zero) & box.size,
+              context: anchor,
+            ),
+          );
         },
         icon: const FushiIcon(Icons.more_horiz_rounded),
       ),

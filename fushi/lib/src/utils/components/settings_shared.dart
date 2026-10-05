@@ -3093,10 +3093,14 @@ class _GamepadAdjustableValue extends StatefulWidget {
     required this.onDecrement,
     required this.child,
     this.focusId,
+    this.autofocus = false,
   });
 
   final String focusIdPrefix;
   final FushiFocusId? focusId;
+
+  /// 挂载即抢焦点（弹出面板里唯一的调值控件用）。
+  final bool autofocus;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
   final Widget child;
@@ -3156,6 +3160,7 @@ class _GamepadAdjustableValueState extends State<_GamepadAdjustableValue> {
         },
         child: FushiFocusTarget(
           id: widget.focusId ?? _fallbackFocusId,
+          autofocus: widget.autofocus,
           child: ExcludeFocus(child: widget.child),
         ),
       ),
@@ -3321,6 +3326,7 @@ class _KeyboardSlider extends StatelessWidget {
     this.label,
     this.onChangeEnd,
     this.step,
+    this.autofocus = false,
   });
 
   final double value;
@@ -3331,6 +3337,7 @@ class _KeyboardSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
   final ValueChanged<double>? onChangeEnd;
   final double? step;
+  final bool autofocus;
 
   /// One D-pad/arrow nudge: an explicit [step], else one division, else 1/20 of
   /// the range (a sensible default for continuous sliders).
@@ -3347,6 +3354,7 @@ class _KeyboardSlider extends StatelessWidget {
   Widget build(BuildContext context) {
     return _GamepadAdjustableValue(
       focusIdPrefix: 'settings-slider',
+      autofocus: autofocus,
       onIncrement: () => _adjust(_step),
       onDecrement: () => _adjust(-_step),
       child: Semantics(
@@ -3384,6 +3392,7 @@ Widget gamepadSeekableSlider({
   String? label,
   ValueChanged<double>? onChangeEnd,
   double? step,
+  bool autofocus = false,
 }) {
   return _KeyboardSlider(
     value: value,
@@ -3394,6 +3403,7 @@ Widget gamepadSeekableSlider({
     onChanged: onChanged,
     onChangeEnd: onChangeEnd,
     step: step,
+    autofocus: autofocus,
   );
 }
 
