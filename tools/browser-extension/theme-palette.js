@@ -107,8 +107,9 @@
   function rgba(hex, a) { var c = parseHex(hex); return c ? ('rgba(' + c.r + ', ' + c.g + ', ' + c.b + ', ' + a + ')') : 'transparent'; }
 
   // ── 预设（与 app theme_notifier.dart themePresets 同名同种子）────────────────
-  // brightness 是预设的「出厂明暗」（app 未显式选 brightness 时的回落值）；这里同义：选预设
-  // 时 options 页把它写进 extensionTheme。'fushi' 是扩展自己的默认绿（theme.css 原样），无
+  // brightness 是预设名义上的「出厂明暗」，只作资料保留：**不参与任何决议**——选预设不改明暗，
+  // 每款预设都按当前明暗由种子派生亮暗两套（derive 对 surface 覆盖也会折到本明暗区间，纯黑预设在
+  // 浅色下是近白底）。'fushi' 是扩展自己的默认绿（theme.css 原样），无
   // 出厂明暗（跟随系统）。
   var FUSHI_SEED = '#3f7a5a'; // oklch(0.46 0.085 155)：theme.css 浅色 --fushi-primary 的 hex
   var PRESETS = [

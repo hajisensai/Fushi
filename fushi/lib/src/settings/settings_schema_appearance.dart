@@ -133,6 +133,22 @@ SettingsDestination buildAppearanceDestination() {
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
           ),
+          // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
+          // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题
+          // 一律生效，只在深色下起作用。
+          SettingsSwitchItem(
+            id: 'appearance.pure_black_dark',
+            title: t.theme_pure_black,
+            subtitle: t.theme_pure_black_hint,
+            icon: FushiIcons.darkMode,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.pureBlackDark,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPureBlackDark(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: false,
+          ),
           // 墨水屏模式：全局单开关（设备属性，不随 Profile 快照），叠加在主题/
           // 明暗机制之上——开=纯黑白+无动画+线式高亮，关=还原原主题。
           SettingsSwitchItem(

@@ -419,10 +419,9 @@ function paletteLabel(id) {
 // 一张主题卡的预览色：页面底 / 顶栏 / 文字 / 强调色（当前明暗下）。
 function swatchColors(id) {
   if (!PALETTE || !THEME) return null;
-  // 自带明暗的预设（灰暗 / 深邃 / 纯黑…）按它自己的明暗预览——选中它时页面也会切过去。
-  const preset = PALETTE.presetFor(id);
-  const scheme = (preset && (preset.brightness === 'light' || preset.brightness === 'dark'))
-    ? preset.brightness : THEME.resolve();
+  // 按当前明暗预览：预设只决定配色家族，不决定明暗（用户 2026-10-06「切换主题时如果我是深色就要
+  // 继续保持深色」），选中哪款页面明暗都不变。
+  const scheme = THEME.resolve();
   let tokens = null;
   if (id === 'app') {
     tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme]);
@@ -592,10 +591,9 @@ function renderPaletteGrid() {
 
 async function selectPalette(id) {
   if (!PALETTE) return;
+  // 只写调色板，绝不碰 extensionTheme：明暗由明暗设置单独决定（以前选「深邃 / 纯黑 / 灰暗」会把
+  // 明暗强改成深色、选「米色 / 水色…」强改成浅色）。
   const patch = { extensionPalette: PALETTE.normalizePaletteId(id) };
-  // 自带明暗的预设（app 里选预设时 brightness 回落到预设的出厂明暗）：一并切明暗。
-  const preset = PALETTE.presetFor(id);
-  if (preset && preset.brightness) patch.extensionTheme = preset.brightness;
   await chrome.storage.local.set(patch);
   toast(tr('opt_toast_updated', { name: paletteLabel(patch.extensionPalette) }));
 }

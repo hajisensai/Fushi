@@ -397,6 +397,26 @@ ReaderThemeColors resolveReaderThemeColors({
   );
 }
 
+/// 主题 key 命中的手调纸色预设——**仅当它的明暗与 app 当前明暗一致时**才生效。
+///
+/// 2026-10-06 用户「深色模式阅读器还是浅色的」：选了米色（ecru，浅色纸）后又把
+/// 全局明暗切到「跟随系统」、系统是深色。app 外壳按米色 seed 派生出暖棕深色方案，
+/// 阅读器却仍铺 `#F7F6EB` 浅纸、黑字、浅绿当前句——整页与 app 明暗相反。全局明暗
+/// 选择器对内置预设与自定义主题一视同仁（TODO-928），预设只是 seed + 一张手调纸，
+/// 纸色就不能比 app 明暗优先。明暗不符时返回 null，调用方回落到按该预设 seed 的
+/// 真实 ColorScheme 派生的 M3E 阅读配色（米色 → 暖深纸 #18120B），与外壳同家族。
+/// 反向同理：深色预设（gray/dark/black）在浅色 app 下也不再铺深纸。
+ReaderThemeColors? readerPresetFor({
+  required String themeKey,
+  required Map<String, ReaderThemeColors> presetMap,
+  required ColorScheme scheme,
+}) {
+  final ReaderThemeColors? preset = presetMap[themeKey];
+  if (preset == null) return null;
+  if (preset.dark != (scheme.brightness == Brightness.dark)) return null;
+  return preset;
+}
+
 /// [FushiReaderPalette] 落成阅读器五角色：当前句 = tertiaryContainer 一族、
 /// 查词高亮（selection 角色）= primaryContainer 一族，色相错开不混淆。
 ReaderThemeColors readerThemeColorsFromPalette(FushiReaderPalette palette) {
@@ -420,7 +440,14 @@ FushiReaderPalette? readerFollowThemePalette({
   required ColorScheme scheme,
   ReaderThemeOverrides? customOverrides,
 }) {
-  if (presetMap.containsKey(themeKey)) return null;
+  if (readerPresetFor(
+        themeKey: themeKey,
+        presetMap: presetMap,
+        scheme: scheme,
+      ) !=
+      null) {
+    return null;
+  }
   if (customOverrides?.bg != null && ThemeNotifier.isCustomThemeKey(themeKey)) {
     return null;
   }
@@ -453,7 +480,11 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   required ColorScheme scheme,
   ReaderThemeOverrides? customOverrides,
 }) {
-  final ReaderThemeColors? preset = presetMap[themeKey];
+  final ReaderThemeColors? preset = readerPresetFor(
+    themeKey: themeKey,
+    presetMap: presetMap,
+    scheme: scheme,
+  );
   if (preset != null) {
     return preset;
   }
@@ -1495,6 +1526,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     with WidgetsBindingObserver
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
+
+  /// 订阅中的 app 主题通知器（dispose 时按同一实例退订）。
+  ThemeNotifier? _observedThemeNotifier;
+
+  /// 上次生成正文 CSS 时的配色指纹；app 主题变化后指纹不同才重注入。
+  Object? _cssThemeSignature;
 
   /// GlobalKey on the reader [InAppWebView] so its [RenderBox] can map a global
   /// pointer position into the WebView's local (== CSS viewport) coordinate
@@ -2546,6 +2583,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
+    // app 明暗 / 主题在阅读器外变化（系统切深色、桌面设置窗、同步恢复）时，正文
+    // CSS 必须即时重注入——旧实现只在阅读器内的主题选择器回调里重注入。
+    _observedThemeNotifier = appModelNoUpdate.themeNotifier
+      ..addListener(_onAppThemeMaybeChanged);
     // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
     // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
     // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
@@ -3248,6 +3289,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _exitFlushCallback = null;
     }
     WidgetsBinding.instance.removeObserver(this);
+    _observedThemeNotifier?.removeListener(_onAppThemeMaybeChanged);
+    _observedThemeNotifier = null;
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _revealProgressRefreshTimer?.cancel();
@@ -3407,6 +3450,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   void _resumePopupCaretForHardwareNav() =>
       _caret.resumePopupCaretForHardwareNav();
+
+  /// 「跟随系统」明暗下系统切深 / 浅色：ThemeNotifier 不一定通知，这里兜住。
+  @override
+  void didChangePlatformBrightness() {
+    _onAppThemeMaybeChanged();
+  }
 
   @override
   void didChangeMetrics() {
@@ -3932,9 +3981,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   String _currentReaderCss() {
     final ReaderThemeColors rc = _readerThemeColors;
     final FushiReaderPalette? palette = _followThemePalette;
+    _cssThemeSignature = _readerThemeSignature();
     return ReaderContentStyles.css(
       settings: _settings!,
-      themeOverride: appModel.appThemeKey,
+      // CSS 的 `_themeColors` 对预设 key 用写死纸色、忽略 customBg：预设明暗与 app
+      // 不符（[readerPresetFor] 返回 null）时不能再把预设 key 传进去，否则 Dart 侧
+      // 已回落到派生深色、正文却仍是浅纸。走 default 分支吃 customBg/customFg。
+      themeOverride: _readerPresetApplies ? appModel.readerThemeKey : 'system-theme',
       // 正文字体按**书自己的语言**选链（与界面语言无关）：中文界面下打开日文书，
       // 界面该是中文字形、正文该是日文字形，两个独立的正确答案。
       contentLanguage: _contentLanguage,

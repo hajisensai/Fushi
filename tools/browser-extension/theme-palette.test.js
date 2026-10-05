@@ -339,3 +339,34 @@ test('IN_PAGE_HOSTS 与 generate-content-css.mjs 的重根宿主清单一致', (
   const b = /IN_PAGE_HOSTS = '([^']+)'/.exec(THEME_SRC)[1];
   assert.strictEqual(b, a);
 });
+
+// 用户 2026-10-06「切换主题时如果我是深色就要继续保持深色」：调色板只决定配色家族，不决定明暗。
+test('切调色板不改明暗：options 选主题只写 extensionPalette；预览按当前明暗；预设都能派生亮暗两套', () => {
+  const opts = fs.readFileSync(path.join(__dirname, 'options.js'), 'utf8');
+  const select = /async function selectPalette\(id\) \{([\s\S]*?)\n\}/.exec(opts)[1];
+  assert.doesNotMatch(select, /extensionTheme/, '选主题绝不能顺手改明暗');
+  assert.doesNotMatch(opts, /preset\.brightness/, '预设的名义明暗不参与任何决议');
+  const P = loadPalette();
+  const L = (hex) => P.rgbToOklch(P.parseHex(hex)).L;
+  for (const p of P.PRESETS) {
+    assert.ok(L(P.derive(P.specFor(p.key), 'light')['--fushi-bg']) > 0.8, p.key + ' 浅色要是浅底');
+    assert.ok(L(P.derive(P.specFor(p.key), 'dark')['--fushi-bg']) < 0.35, p.key + ' 深色要是深底');
+  }
+});
+
+test('明暗决议：跟随 Fushi + 自动 → 跟 app 的明暗（弹窗与扩展页面一致）；其它调色板 + 自动 → 跟系统、不吃 app 的明暗', () => {
+  const h = loadTheme({ protocol: 'chrome-extension:', stored: { appThemeMirror: { current: 'dark' } } });
+  assert.strictEqual(h.theme.palette, 'app');
+  assert.strictEqual(h.theme.resolve(), 'dark', '扩展页面跟 app 当前明暗');
+  assert.strictEqual(h.theme.resolve('light'), 'light', '查词弹窗传入的 app 明暗优先');
+  assert.strictEqual(h.theme.documentScheme(), 'dark');
+  h.set({ extensionPalette: 'dark-theme' });
+  assert.strictEqual(h.theme.resolve('dark'), 'light', '非跟随 Fushi 时自动 = 系统（测试壳系统为浅色）');
+  assert.strictEqual(h.theme.documentScheme(), null);
+  h.set({ extensionTheme: 'dark' });
+  h.set({ extensionPalette: 'ecru-theme' });
+  assert.strictEqual(h.theme.preference, 'dark', '切到「浅色出厂」预设也保持深色');
+  assert.strictEqual(h.theme.resolve(), 'dark');
+  const bg = fs.readFileSync(path.join(__dirname, 'background.js'), 'utf8');
+  assert.match(bg, /\[scheme\]: colors, current: scheme/, 'background 镜像 app 当前明暗');
+});
