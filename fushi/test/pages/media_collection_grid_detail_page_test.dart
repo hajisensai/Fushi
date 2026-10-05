@@ -2,6 +2,8 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
+    show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -26,6 +28,9 @@ void main() {
     await db.addToCollection(cid, MediaKind.epub, 'k1');
     await db.addToCollection(cid, MediaKind.epub, 'k2');
     await db.addToCollection(cid, MediaKind.epub, 'k3');
+    // 默认排序是卷号；拖排只在手动序下开放——模拟「用户保存过手动顺序」。
+    await db.setPref(
+        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
     final MediaCollectionRow col = (await db.getMediaCollectionById(cid))!;
     return (db: db, col: col);
   }

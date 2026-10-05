@@ -37,6 +37,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -3435,9 +3437,22 @@ class FushiPageHeader extends StatelessWidget {
             (titleWidget != null || shellShowsTitle)
         ? FushiShellTitleScope.maybeActionsSlotOf(context)
         : null;
+    // 库页外壳里的页头：主位是外壳给的零尺寸占位（页签由外壳浮动工具栏画），
+    // 动作也登记进外壳的悬浮动作组——这一行什么都不画。此时不再留页头的上下
+    // 内边距，否则页签胶囊与下面的搜索行 / 列表之间平白多一段空白（用户
+    // 2026-10-06 截图「页签行→搜索框间距过大」「标题下方一条空白带」）。
+    final Widget? slotTitle = titleWidget;
+    final bool emptyRow = padding == null &&
+        leading == null &&
+        bottom == null &&
+        slotTitle is SizedBox &&
+        slotTitle.child == null &&
+        slotTitle.width == 0 &&
+        slotTitle.height == 0 &&
+        (actions.isEmpty || shellActions != null);
 
     return Padding(
-      padding: resolvedPadding,
+      padding: emptyRow ? EdgeInsets.zero : resolvedPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -3708,8 +3723,9 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
                     child: FushiHeaderLabelScope(
                       expandLabels: expandLabels,
                       child: widget.floatingActions
-                          ? FushiPageChromeCapsule(
-                              child: _buildActionRow(resolvedItems),
+                          ? fushiFloatingHeaderActionGroups(
+                              resolvedItems,
+                              _buildActionRow,
                             )
                           : _buildActionRow(resolvedItems),
                     ),
@@ -3760,6 +3776,116 @@ double _estimateHeaderActionsWidth(
     }
   }
   return total;
+}
+
+/// 页头动作里自带一枚按钮胶囊的「文字动作」（图标 + 文字的 outlined / text /
+/// filled / split 按钮）。它们本身就是胶囊，再包进按钮组胶囊就是「胶囊包胶囊」
+/// （2026-10-06 用户截图：游戏库「开始串流」）。
+bool fushiIsStandaloneHeaderAction(Widget item) =>
+    item is FushiOutlinedButton ||
+    item is FushiTextButton ||
+    item is FushiFilledButton ||
+    item is FushiSplitButton;
+
+/// M3E 悬浮页头的动作区：连续的图标动作收进一枚按钮组胶囊
+/// （[FushiPageChromeCapsule]，56 高），文字动作（[fushiIsStandaloneHeaderAction]）
+/// 不进组胶囊，自身渲染成一枚同高的 tonal 胶囊按钮（[FushiFloatingTextAction]），
+/// 与按钮组并排、间距 8。原顺序保留：动作被切成「图标段 / 文字动作」交替的几段。
+Widget fushiFloatingHeaderActionGroups(
+  List<Widget> items,
+  Widget Function(List<Widget> icons) iconGroup,
+) {
+  final List<Widget> segments = <Widget>[];
+  List<Widget> run = <Widget>[];
+  void flushRun() {
+    if (run.isEmpty) return;
+    segments.add(FushiPageChromeCapsule(child: iconGroup(run)));
+    run = <Widget>[];
+  }
+
+  for (final Widget item in items) {
+    if (fushiIsStandaloneHeaderAction(item)) {
+      flushRun();
+      segments.add(FushiFloatingTextAction(child: item));
+    } else {
+      run.add(item);
+    }
+  }
+  flushRun();
+  if (segments.length == 1) return segments.single;
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: <Widget>[
+      for (int i = 0; i < segments.length; i++) ...<Widget>[
+        if (i > 0) const SizedBox(width: 8),
+        segments[i],
+      ],
+    ],
+  );
+}
+
+/// 悬浮页头里的文字动作：把 outlined / text / filled 按钮统一成 M3E 悬浮
+/// tonal 胶囊按钮——secondaryContainer 底、无描边、与按钮组胶囊同高
+/// （[kFushiPageChromeExtent]）、带悬浮投影。经按钮主题下发，调用方的按钮
+/// 组件（key / 焦点 / 语义 / 菜单锚点）原样保留；调用方显式给的 style 仍优先。
+class FushiFloatingTextAction extends StatelessWidget {
+  const FushiFloatingTextAction({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final ButtonStyle floating = ButtonStyle(
+      minimumSize: const WidgetStatePropertyAll<Size>(
+        Size(kFushiPageChromeExtent, kFushiPageChromeExtent),
+      ),
+      padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+        EdgeInsets.symmetric(horizontal: 20),
+      ),
+      shape: const WidgetStatePropertyAll<OutlinedBorder>(StadiumBorder()),
+      backgroundColor: WidgetStateProperty.resolveWith<Color?>(
+        (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+            ? cs.onSurface.withValues(alpha: 0.12)
+            : cs.secondaryContainer,
+      ),
+      foregroundColor: WidgetStateProperty.resolveWith<Color?>(
+        (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+            ? cs.onSurface.withValues(alpha: 0.38)
+            : cs.onSecondaryContainer,
+      ),
+      iconColor: WidgetStateProperty.resolveWith<Color?>(
+        (Set<WidgetState> states) => states.contains(WidgetState.disabled)
+            ? cs.onSurface.withValues(alpha: 0.38)
+            : cs.onSecondaryContainer,
+      ),
+      side: WidgetStatePropertyAll<BorderSide?>(
+        eink ? BorderSide(color: cs.outline) : BorderSide.none,
+      ),
+      elevation: WidgetStatePropertyAll<double>(eink ? 0 : 3),
+      shadowColor: WidgetStatePropertyAll<Color>(cs.shadow),
+      surfaceTintColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+    );
+    ButtonStyle over(ButtonStyle? base) =>
+        floating.merge(base ?? const ButtonStyle());
+    return Theme(
+      data: theme.copyWith(
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: over(theme.outlinedButtonTheme.style),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: over(theme.textButtonTheme.style),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: over(theme.filledButtonTheme.style),
+        ),
+      ),
+      child: child,
+    );
+  }
 }
 
 /// ⋯ 溢出按钮：菜单项由被收纳的 [FushiIconButton] 的图标 + 文案（label 优先、
@@ -3847,10 +3973,15 @@ class FushiShellHeaderActions extends StatelessWidget {
             _headerOverflowMenuButton(collapsible),
           ];
         }
-        // MD3（M3E）：动作收进一枚悬浮按钮组胶囊，与页头 / 顶栏同一形态。
+        // MD3（M3E）：图标动作收进一枚悬浮按钮组胶囊，与页头 / 顶栏同一形态；
+        // 带文字的动作自身就是一枚同高胶囊按钮，排在组旁（见
+        // [fushiFloatingHeaderActionGroups]），不再被包进组胶囊。
         final Widget toolbar = isGlassDesign(context)
             ? FushiToolbar(children: items)
-            : FushiPageChromeCapsule(child: FushiToolbar(children: items));
+            : fushiFloatingHeaderActionGroups(
+                items,
+                (List<Widget> icons) => FushiToolbar(children: icons),
+              );
         return FushiHeaderLabelScope(
           expandLabels: false,
           child: HorizontalDragScrollable(
@@ -4012,11 +4143,38 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                 ),
               ),
               Expanded(
-                child: NotificationListener<Notification>(
-                  onNotification: (Notification notification) =>
-                      floatingChrome &&
-                      _chrome.handleNotification(notification),
-                  child: widget.body,
+                // 页头收起只上移淡出、占位高度不变（不改正文视口，BUG-2975），
+                // 正文顶边因此停在一段空白下沿；收起时在正文顶边加一道渐隐，
+                // 内容柔和淡出而不是被硬切。正文是任意组件、无法统一加滚动
+                // 内边距，所以页头不叠放到正文上。
+                child: Stack(
+                  fit: StackFit.passthrough,
+                  children: <Widget>[
+                    NotificationListener<Notification>(
+                      onNotification: (Notification notification) =>
+                          floatingChrome &&
+                          _chrome.handleNotification(notification),
+                      child: widget.body,
+                    ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: ListenableBuilder(
+                        listenable: _chrome,
+                        builder: (BuildContext context, Widget? scrim) =>
+                            AnimatedOpacity(
+                          opacity: floatingChrome && _chrome.hidden ? 1 : 0,
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          child: scrim,
+                        ),
+                        child: const FushiTopFadeScrim(solidHeight: 0),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

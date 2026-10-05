@@ -360,8 +360,10 @@ class _HeroActionChip extends StatelessWidget {
   }
 }
 
-/// 堆叠封面：首本在最前，后两本微旋错开垫在后面（合集「一摞书」的意象）。没有
-/// 封面时是 tonal 色块 + 合集图标。
+/// 堆叠封面：与书架合集卡（`SeriesShelfCard`）同一个 [ShelfCoverFrame] 叠层——
+/// 首本封面在前，顶上露出两层「后面还有」（同一套 [kShelfCoverStackLift] 偏移、
+/// 左右内缩与阴影）。此前这里自绘「后两本左右错开 + 旋转」，后排封面的书名字与
+/// 角标从左上 / 右侧露出半截，看着像重影。没有封面时是 tonal 色块 + 合集图标。
 class _StackedCovers extends StatelessWidget {
   const _StackedCovers({required this.covers, required this.width});
 
@@ -371,69 +373,25 @@ class _StackedCovers extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    final double height = width * 1.5;
-    final BorderRadius radius = BorderRadius.circular(16);
-    Widget card(Widget child) => DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: radius,
-            color: scheme.surfaceContainerHighest,
-            boxShadow: eink
-                ? const <BoxShadow>[]
-                : <BoxShadow>[
-                    BoxShadow(
-                      color: scheme.shadow.withValues(alpha: 0.22),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-          ),
-          child: ClipRRect(
-            borderRadius: radius,
-            child: SizedBox(width: width, height: height, child: child),
-          ),
-        );
-    if (covers.isEmpty) {
-      return card(
-        ColoredBox(
-          color: scheme.secondaryContainer,
-          child: Center(
-            child: FushiIcon(
-              Icons.collections_bookmark_outlined,
-              size: width * 0.32,
-              color: scheme.onSecondaryContainer,
-            ),
-          ),
-        ),
-      );
-    }
-    final List<Widget> shown = covers.take(3).toList();
-    // 后排两张：左右错开、轻微旋转、略缩小（墨水屏不旋转，避免锯齿）。
-    const List<({double dx, double angle, double scale})> back =
-        <({double dx, double angle, double scale})>[
-      (dx: 0.16, angle: 0.07, scale: 0.92),
-      (dx: -0.16, angle: -0.07, scale: 0.88),
-    ];
-    return SizedBox(
-      width: width * 1.3,
-      height: height + 12,
-      child: Stack(
-        alignment: Alignment.center,
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          for (int i = shown.length - 1; i >= 1; i--)
-            Transform.translate(
-              offset: Offset(width * back[i - 1].dx, 6),
-              child: Transform.rotate(
-                angle: eink ? 0 : back[i - 1].angle,
-                child: Transform.scale(
-                  scale: back[i - 1].scale,
-                  child: card(shown[i]),
-                ),
+    final Widget front = covers.isEmpty
+        ? ColoredBox(
+            color: scheme.secondaryContainer,
+            child: Center(
+              child: FushiIcon(
+                Icons.collections_bookmark_outlined,
+                size: width * 0.32,
+                color: scheme.onSecondaryContainer,
               ),
             ),
-          card(shown.first),
-        ],
+          )
+        : covers.first;
+    return SizedBox(
+      width: width,
+      height: width * 1.5 + kShelfCoverStackLift,
+      child: ShelfCoverFrame(
+        // Apple 叠层用「下一本」的模糊封面；MD3 / 墨水屏只画色块层。
+        stackedBehind: covers.length > 1 ? covers[1] : const SizedBox.shrink(),
+        child: front,
       ),
     );
   }

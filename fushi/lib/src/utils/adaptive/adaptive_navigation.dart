@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
@@ -14,6 +15,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show FushiSpring, fushiExpressiveDefaultSpatial, fushiExpressiveMotionEnabled;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
@@ -240,6 +242,8 @@ Widget adaptiveBottomBar({
   VoidCallback? onGlassExpand,
   bool glassContentUnder = false,
   int? glassSearchIndex,
+  bool showLabels = true,
+  AdaptiveNavFab? materialFab,
 }) {
   if (isCupertinoPlatform(context)) {
     // Cupertino keeps the stock tab bar as a single whole-bar gamepad stop. iOS
@@ -276,6 +280,8 @@ Widget adaptiveBottomBar({
     onGlassExpand: onGlassExpand,
     glassContentUnder: glassContentUnder,
     glassSearchIndex: glassSearchIndex,
+    showLabels: showLabels,
+    materialFab: materialFab,
   );
 }
 
@@ -298,6 +304,8 @@ class _MaterialNavCluster extends StatelessWidget {
     this.onGlassExpand,
     this.glassContentUnder = false,
     this.glassSearchIndex,
+    this.showLabels = true,
+    this.materialFab,
   });
 
   /// [Axis.horizontal] = bottom bar; [Axis.vertical] = side rail.
@@ -326,7 +334,16 @@ class _MaterialNavCluster extends StatelessWidget {
   final bool glassMinimized;
   final VoidCallback? onGlassExpand;
   final bool glassContentUnder;
+
+  /// 查词 / 搜索目的地：Apple 拆成胶囊右侧的圆形玻璃钮，MD3 拆成悬浮胶囊右侧
+  /// 的大号 FAB（[materialFab] 非空时它留在胶囊里）。
   final int? glassSearchIndex;
+
+  /// MD3 悬浮底栏是否在图标下显示标签（用户偏好，默认显示）。
+  final bool showLabels;
+
+  /// MD3 悬浮底栏右侧 FAB 的覆盖（当前页自己的主操作）；null = 用查词目的地。
+  final AdaptiveNavFab? materialFab;
 
   Widget _cell(
     BuildContext context,
@@ -480,19 +497,89 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
-  /// MD3 悬浮底栏的一排目的地。标签恒显示、不截断：
+  /// MD3 悬浮底栏（M3E floating toolbar 形态）：vibrant 饱和容器色的大胶囊 +
+  /// 右侧一颗独立的大号圆角方 FAB（[AdaptiveNavFab]；默认是「查词」目的地本身，
+  /// 与 Apple 胶囊把搜索拆成右侧圆钮同一个 [glassSearchIndex] 判据），随滚动
+  /// 弹簧收起成当前项小胶囊（[_MaterialFloatingBar]）。
+  Widget _buildMaterialFloatingBar(BuildContext context) {
+    final int? rawSearch = glassSearchIndex;
+    int? search;
+    if (materialFab == null &&
+        rawSearch != null &&
+        rawSearch >= 0 &&
+        rawSearch < items.length &&
+        items.length > 1) {
+      search = rawSearch;
+    }
+    final List<int> capsuleIndices = <int>[
+      for (int i = 0; i < items.length; i++)
+        if (i != search) i,
+    ];
+    AdaptiveNavFab? fab = materialFab;
+    final int? searchIndex = search;
+    if (fab == null && searchIndex != null) {
+      final AdaptiveNavItem searchItem = items[searchIndex];
+      fab = AdaptiveNavFab(
+        icon: searchItem.icon,
+        selectedIcon: searchItem.selectedIcon,
+        label: searchItem.label,
+        experimentalBadge: searchItem.experimentalBadge,
+        selected: currentIndex == searchIndex,
+        onPressed: () {
+          if (currentIndex != searchIndex) fushiSelectionHaptic(context);
+          onTap(searchIndex);
+        },
+      );
+    }
+    final bool currentValid = currentIndex >= 0 && currentIndex < items.length;
+    // FAB 那一项（查词）选中时不收起：收起胶囊只装得下胶囊里的当前项。
+    final bool minimized =
+        glassMinimized && currentValid && currentIndex != searchIndex;
+    return _MaterialFloatingBar(
+      minimized: minimized,
+      onExpand: onGlassExpand,
+      showLabels: showLabels,
+      currentItem: currentValid ? items[currentIndex] : null,
+      expandFocusIds: <FushiFocusId>[
+        FushiFocusId('$idPrefix-$currentIndex'),
+        _NavMoreCell.focusId,
+      ],
+      fab: fab,
+      capsule: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minHeight: kAdaptiveNavBarContentHeight,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: kAdaptiveNavBarCapsulePadding,
+            vertical: kAdaptiveNavBarContentPadding,
+          ),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) =>
+                _buildMaterialFloatingRow(context, box, capsuleIndices),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// MD3 悬浮底栏胶囊里的一排目的地（[indices] 是进胶囊的那些，按视觉序）。
+  /// 标签显示时恒显示、不截断：
   /// 1. 每格要的宽 = max([_kMinNavCellWidth], 标签实宽（12 号 w600、跟随
-  ///    文字缩放）+ [_kNavCellLabelSlack])；
+  ///    文字缩放）+ [_kNavCellLabelSlack])；标签隐藏时每格就是最窄宽；
   /// 2. 全部放得下 → 全部出现，最宽一格乘以格数也放得下就等分，否则按所需宽
   ///    比例分（窄格自动走紧凑形态：药丸收窄、标签小一号）；
   /// 3. 放不下 → 按用户的模块顺序从前往后放，剩下的收进最右的「更多」。
-  Widget _buildMaterialFloatingRow(BuildContext context, BoxConstraints box) {
-    if (!box.hasBoundedWidth || items.isEmpty) {
+  Widget _buildMaterialFloatingRow(
+    BuildContext context,
+    BoxConstraints box,
+    List<int> indices,
+  ) {
+    if (!box.hasBoundedWidth || indices.isEmpty) {
       return IntrinsicHeight(
         child: Row(
           children: <Widget>[
-            for (int i = 0; i < items.length; i++)
-              Expanded(child: _cell(context, i)),
+            for (final int i in indices) Expanded(child: _cell(context, i)),
           ],
         ),
       );
@@ -504,6 +591,7 @@ class _MaterialNavCluster extends StatelessWidget {
     final TextScaler scaler = MediaQuery.textScalerOf(context);
     final TextDirection direction = Directionality.of(context);
     double need(String label) {
+      if (!showLabels) return _kMinNavCellWidth;
       final TextPainter painter = TextPainter(
         text: TextSpan(text: label, style: style),
         textDirection: direction,
@@ -515,35 +603,38 @@ class _MaterialNavCluster extends StatelessWidget {
       return math.max(_kMinNavCellWidth, labelWidth + _kNavCellLabelSlack);
     }
 
-    final List<double> needs = <double>[
-      for (final AdaptiveNavItem item in items) need(item.label),
-    ];
-    final double total = needs.fold(0, (double a, double b) => a + b);
+    final Map<int, double> needs = <int, double>{
+      for (final int i in indices) i: need(items[i].label),
+    };
+    final double total = needs.values.fold(0, (double a, double b) => a + b);
     final List<int> visible = <int>[];
     double? moreNeed;
     if (total <= width) {
-      visible.addAll(<int>[for (int i = 0; i < items.length; i++) i]);
+      visible.addAll(indices);
     } else {
       final double more = need(t.home_nav_more);
       moreNeed = more;
       double used = more;
-      for (int i = 0; i < items.length; i++) {
-        if (used + needs[i] > width) break;
+      for (final int i in indices) {
+        if (used + needs[i]! > width) break;
         visible.add(i);
-        used += needs[i];
+        used += needs[i]!;
       }
     }
     final List<int> overflow = <int>[
-      for (int i = 0; i < items.length; i++)
+      for (final int i in indices)
         if (!visible.contains(i)) i,
     ];
     final double? moreSlot = moreNeed;
     final List<double> slotNeeds = <double>[
-      for (final int i in visible) needs[i],
+      for (final int i in visible) needs[i]!,
       if (moreSlot != null) moreSlot,
     ];
     final double slotTotal = slotNeeds.fold(0, (double a, double b) => a + b);
-    final double maxNeed = slotNeeds.fold(0, math.max);
+    final double maxNeed = slotNeeds.fold(
+      0,
+      (double a, double b) => math.max(a, b),
+    );
     final bool equal = maxNeed * slotNeeds.length <= width;
     double cellWidthOf(double slotNeed) =>
         equal ? width / slotNeeds.length : width * slotNeed / slotTotal;
@@ -553,8 +644,8 @@ class _MaterialNavCluster extends StatelessWidget {
         children: <Widget>[
           for (final int i in visible)
             Expanded(
-              flex: flexOf(needs[i]),
-              child: _cell(context, i, cellWidth: cellWidthOf(needs[i])),
+              flex: flexOf(needs[i]!),
+              child: _cell(context, i, cellWidth: cellWidthOf(needs[i]!)),
             ),
           if (moreSlot != null)
             Expanded(
@@ -680,29 +771,7 @@ class _MaterialNavCluster extends StatelessWidget {
                         ),
                   child: glassDesign
                       ? _buildGlassTabBar(context)
-                      : _FloatingNavSurface(
-                          borderRadius: BorderRadius.circular(
-                            kAdaptiveNavBarContentHeight / 2,
-                          ),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              minHeight: kAdaptiveNavBarContentHeight,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: kAdaptiveNavBarCapsulePadding,
-                                vertical: kAdaptiveNavBarContentPadding,
-                              ),
-                              child: LayoutBuilder(
-                                builder: (
-                                  BuildContext context,
-                                  BoxConstraints box,
-                                ) =>
-                                    _buildMaterialFloatingRow(context, box),
-                              ),
-                            ),
-                          ),
-                        ),
+                      : _buildMaterialFloatingBar(context),
                 ),
               ),
             ),
@@ -851,6 +920,470 @@ class _MaterialNavCluster extends StatelessWidget {
   }
 }
 
+/// MD3 悬浮底栏右侧那颗独立 FAB 的内容（应用级主操作）。默认由
+/// [adaptiveBottomBar] 用「查词」目的地生成；调用方可以换成当前页自己的主操作
+/// （例如视频源后台补刮任务），保证同一时刻屏幕上只有这一颗。
+@immutable
+class AdaptiveNavFab {
+  const AdaptiveNavFab({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.selectedIcon,
+    this.selected = false,
+    this.experimentalBadge = false,
+  });
+
+  final IconData icon;
+  final IconData? selectedIcon;
+
+  /// tooltip / 读屏名（FAB 本身不画字）。
+  final String label;
+  final VoidCallback onPressed;
+
+  /// 它代表的目的地正是当前页（实心图标）。
+  final bool selected;
+  final bool experimentalBadge;
+}
+
+/// MD3 悬浮底栏胶囊内的配色与标签开关，由 [_MaterialFloatingBar] 提供给
+/// 里面的目的地（[_FushiNavTile]）：vibrant 胶囊上的前景、选中指示器与其前景。
+/// 侧轨不挂它，目的地照旧 surface 配色。
+class _FloatingBarStyle extends InheritedWidget {
+  const _FloatingBarStyle({
+    required this.showLabels,
+    required this.content,
+    required this.indicator,
+    required this.onIndicator,
+    required super.child,
+  });
+
+  final bool showLabels;
+
+  /// 胶囊上未选中的图标 / 标签色。
+  final Color content;
+
+  /// 选中项指示器药丸色（比胶囊更深一阶）与其上的图标色。
+  final Color indicator;
+  final Color onIndicator;
+
+  static _FloatingBarStyle? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_FloatingBarStyle>();
+
+  @override
+  bool updateShouldNotify(_FloatingBarStyle oldWidget) =>
+      oldWidget.showLabels != showLabels ||
+      oldWidget.content != content ||
+      oldWidget.indicator != indicator ||
+      oldWidget.onIndicator != onIndicator;
+}
+
+/// MD3 悬浮底栏本体（2026-10-06 用户参考 M3E 官方 floating toolbar 示例）：
+///
+/// - 左：vibrant 饱和容器色（tertiaryContainer，随主题）的大胶囊，装目的地；
+///   选中项是更深一阶的 tertiary 指示器药丸 + onTertiary 图标；
+/// - 右：一颗与胶囊同高的大号圆角方 FAB（primaryContainer，[_NavBarFab]）；
+/// - 随滚动收起（与 Apple 胶囊共用 [FushiAppleScrollChrome] 的最小化状态机：
+///   下滑累计 20 收起、上滑 12 展开，只认用户滚动、到顶 / 到底的回弹不触发）：
+///   胶囊按 expressive spatial 弹簧缩成只装当前项图标 + 标签的小胶囊（指示器
+///   色），FAB 原地保留；点小胶囊、向上滚或焦点进入底栏都弹簧展开。
+///
+/// 收起只改胶囊的**绘制宽度**与两层内容的透明度：底栏占的高度不变，页面的
+/// 滚动视口与 MediaQuery padding 都不随之变化，不会引起内容跳动 / 回弹。
+/// 隐藏的那一层同时移出命中测试与焦点遍历，手柄不会落到看不见的格子上。
+/// 墨水屏 / 减弱动态效果下直接切换。
+class _MaterialFloatingBar extends StatefulWidget {
+  const _MaterialFloatingBar({
+    required this.minimized,
+    required this.onExpand,
+    required this.showLabels,
+    required this.currentItem,
+    required this.expandFocusIds,
+    required this.fab,
+    required this.capsule,
+  });
+
+  final bool minimized;
+  final VoidCallback? onExpand;
+  final bool showLabels;
+  final AdaptiveNavItem? currentItem;
+
+  /// 从收起小胶囊展开后焦点挪去的目标，按顺序试（当前项格 / 「更多」）。
+  final List<FushiFocusId> expandFocusIds;
+  final AdaptiveNavFab? fab;
+
+  /// 展开态的胶囊内容（目的地一排）。
+  final Widget capsule;
+
+  @override
+  State<_MaterialFloatingBar> createState() => _MaterialFloatingBarState();
+}
+
+class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
+    with SingleTickerProviderStateMixin {
+  /// 收起小胶囊里指示器药丸的高与左右内边距、胶囊内留白。
+  static const double _kMiniPillHeight = 48;
+  static const double _kMiniPillPadding = 16;
+  static const double _kMiniInset = 8;
+
+  late final FushiSpring _min = FushiSpring(
+    vsync: this,
+    initial: widget.minimized ? 1 : 0,
+    spring: _kNavExpressiveSpatial,
+  );
+
+  @override
+  void didUpdateWidget(covariant _MaterialFloatingBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.minimized != widget.minimized) {
+      _min.animateTo(
+        widget.minimized ? 1 : 0,
+        animate: fushiExpressiveMotionEnabled(context),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _min.dispose();
+    super.dispose();
+  }
+
+  void _expand() => widget.onExpand?.call();
+
+  /// 焦点进入底栏（任一目的地 / FAB）：收起态就展开。
+  void _onBarFocusChange(bool hasFocus) {
+    if (hasFocus && widget.minimized) _expand();
+  }
+
+  /// 焦点落在收起小胶囊上：展开，并在新一帧把焦点交给展开后的当前项格
+  /// （小胶囊随即移出焦点遍历，不挪走焦点就丢了）。
+  void _onMiniFocusChange(bool hasFocus) {
+    if (!hasFocus || !widget.minimized) return;
+    _expand();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final FushiFocusController? controller =
+          FushiFocusRoot.maybeControllerOf(context);
+      if (controller == null) return;
+      for (final FushiFocusId id in widget.expandFocusIds) {
+        if (controller.requestById(id)) return;
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  double _miniWidth(BuildContext context, TextStyle labelStyle) {
+    final AdaptiveNavItem? item = widget.currentItem;
+    double content = 24;
+    if (item != null && widget.showLabels) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: item.label, style: labelStyle),
+        textDirection: Directionality.of(context),
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      content += 8 + painter.width;
+      painter.dispose();
+    }
+    return content + 2 * _kMiniPillPadding + 2 * _kMiniInset;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final bool eink = isEinkTheme(context);
+    final Color capsuleColor =
+        eink ? colors.surfaceContainer : colors.tertiaryContainer;
+    final Color content =
+        eink ? colors.onSurface : colors.onTertiaryContainer;
+    final Color indicator = eink ? colors.onSurface : colors.tertiary;
+    final Color onIndicator = eink ? colors.surface : colors.onTertiary;
+    final TextStyle miniLabelStyle =
+        (textTheme.labelLarge ?? const TextStyle()).copyWith(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: onIndicator,
+    );
+    final AdaptiveNavItem? current = widget.currentItem;
+    final Widget mini = current == null
+        ? const SizedBox.shrink()
+        : Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onFocusChange: _onMiniFocusChange,
+            child: _NavMiniCapsule(
+              item: current,
+              showLabel: widget.showLabels,
+              color: indicator,
+              foreground: onIndicator,
+              labelStyle: miniLabelStyle,
+              height: _kMiniPillHeight,
+              horizontalPadding: _kMiniPillPadding,
+              onPressed: _expand,
+            ),
+          );
+    final AdaptiveNavFab? fab = widget.fab;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: _onBarFocusChange,
+      child: _FloatingBarStyle(
+        showLabels: widget.showLabels,
+        content: content,
+        indicator: indicator,
+        onIndicator: onIndicator,
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints box) {
+                  final double full = box.maxWidth;
+                  final double miniWidth = math.min(
+                    full,
+                    _miniWidth(context, miniLabelStyle),
+                  );
+                  return AnimatedBuilder(
+                    animation: _min.animation,
+                    builder: (BuildContext context, Widget? _) {
+                      final double target = _min.target;
+                      final double raw = _min.value;
+                      final double t =
+                          (raw - target).abs() < 0.001 ? target : raw;
+                      final double shown = t.clamp(0.0, 1.0);
+                      final double width = (full + (miniWidth - full) * t)
+                          .clamp(miniWidth * 0.9, full);
+                      final bool minimized = widget.minimized;
+                      return Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        heightFactor: 1,
+                        child: SizedBox(
+                          width: width,
+                          child: _FloatingNavSurface(
+                            color: capsuleColor,
+                            borderRadius: BorderRadius.circular(
+                              kAdaptiveNavBarContentHeight / 2,
+                            ),
+                            child: Stack(
+                              fit: StackFit.passthrough,
+                              children: <Widget>[
+                                IgnorePointer(
+                                  ignoring: minimized,
+                                  child: ExcludeFocus(
+                                    excluding: minimized,
+                                    child: Opacity(
+                                      opacity: 1 - shown,
+                                      child: OverflowBox(
+                                        alignment:
+                                            AlignmentDirectional.centerStart,
+                                        minWidth: full,
+                                        maxWidth: full,
+                                        fit: OverflowBoxFit.deferToChild,
+                                        child: widget.capsule,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    ignoring: !minimized,
+                                    child: ExcludeFocus(
+                                      excluding: !minimized,
+                                      child: Opacity(
+                                        opacity: shown,
+                                        child: Align(
+                                          alignment:
+                                              AlignmentDirectional.centerStart,
+                                          child: Padding(
+                                            padding:
+                                                const EdgeInsetsDirectional.only(
+                                              start: _kMiniInset,
+                                            ),
+                                            child: mini,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            if (fab != null) ...<Widget>[
+              const SizedBox(width: kAdaptiveNavFloatingMargin),
+              _NavBarFab(fab: fab),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 收起态的小胶囊：当前目的地的图标（+ 标签），M3E 活动指示器色的全圆角
+/// 药丸。点按 / A / 回车展开整条胶囊（不切 tab）。焦点 id `nav-mini-bar`
+/// （与 Apple 胶囊最小化圆同名，两套设计系统不会同时挂载）。
+class _NavMiniCapsule extends StatelessWidget {
+  const _NavMiniCapsule({
+    required this.item,
+    required this.showLabel,
+    required this.color,
+    required this.foreground,
+    required this.labelStyle,
+    required this.height,
+    required this.horizontalPadding,
+    required this.onPressed,
+  });
+
+  final AdaptiveNavItem item;
+  final bool showLabel;
+  final Color color;
+  final Color foreground;
+  final TextStyle labelStyle;
+  final double height;
+  final double horizontalPadding;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final BorderRadius radius = BorderRadius.circular(height / 2);
+    return Tooltip(
+      message: item.label,
+      child: Semantics(
+        button: true,
+        selected: true,
+        label: item.label,
+        excludeSemantics: true,
+        child: Material(
+          color: color,
+          shape: RoundedRectangleBorder(borderRadius: radius),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            canRequestFocus: false,
+            child: FushiFocusTarget(
+              id: const FushiFocusId('nav-mini-bar'),
+              child: SizedBox(
+                height: height,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      _maybeBadge(
+                        item: item,
+                        child: FushiIcon(
+                          item.selectedIcon ?? item.icon,
+                          size: 24,
+                          color: foreground,
+                        ),
+                      ),
+                      if (showLabel) ...<Widget>[
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            item.label,
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: labelStyle,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// MD3 悬浮底栏右侧的大号圆角方 FAB（M3E floating toolbar 旁的 FAB）：与胶囊
+/// 同高 64、圆角 20、primaryContainer 饱和色、轻阴影；按下按 M3E 弹簧缩放
+/// （[FushiPressScale]）。独立焦点目标 `nav-bar-fab`，A / 回车触发。墨水屏
+/// 无阴影、描边。
+class _NavBarFab extends StatelessWidget {
+  const _NavBarFab({required this.fab});
+
+  static const FushiFocusId focusId = FushiFocusId('nav-bar-fab');
+  static const double _kRadius = 20;
+
+  final AdaptiveNavFab fab;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Color color = eink ? colors.surfaceContainer : colors.primaryContainer;
+    final Color foreground =
+        eink ? colors.onSurface : colors.onPrimaryContainer;
+    final IconData icon =
+        fab.selected ? (fab.selectedIcon ?? fab.icon) : fab.icon;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final Widget glyph = FushiIcon(
+      icon,
+      key: ValueKey<(IconData, bool)>((icon, fab.selected)),
+      size: 28,
+      color: foreground,
+    );
+    return Tooltip(
+      message: fab.label,
+      child: Semantics(
+        button: true,
+        selected: fab.selected,
+        label: fab.label,
+        excludeSemantics: true,
+        child: FushiPressScale(
+          scale: 0.92,
+          child: Material(
+            color: color,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: colors.shadow,
+            elevation: eink ? 0 : 3,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_kRadius),
+              side: eink ? BorderSide(color: colors.outline) : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: fab.onPressed,
+              canRequestFocus: false,
+              child: FushiFocusTarget(
+                id: focusId,
+                child: SizedBox.square(
+                  dimension: kAdaptiveNavBarContentHeight,
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: duration,
+                      switchInCurve: FushiMotion.enter,
+                      switchOutCurve: FushiMotion.exit,
+                      child: fab.experimentalBadge
+                          ? Badge(key: glyph.key, child: glyph)
+                          : glyph,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// MD3 悬浮导航的表面（底部胶囊 / 侧边面板）：surfaceContainer 实底 + 轻阴影
 /// （elevation 3），全圆角裁剪；系统毛玻璃材质开着时换成同色阶的
 /// [FushiGlassSurface]；eink 不画阴影（灰阶下糊成脏边），改一圈前景色描边。
@@ -863,11 +1396,15 @@ class _FloatingNavSurface extends StatelessWidget {
     required this.borderRadius,
     required this.child,
     this.paint = true,
+    this.color,
   });
 
   final BorderRadius borderRadius;
   final bool paint;
   final Widget child;
+
+  /// 表面色；null = surfaceContainer（侧轨面板）。底栏胶囊传 vibrant 容器色。
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -875,8 +1412,9 @@ class _FloatingNavSurface extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool frosted =
         paint && glassMaterialOf(context) != FushiGlassMaterial.off;
+    final Color base = color ?? colors.surfaceContainer;
     return Material(
-      color: paint && !frosted ? colors.surfaceContainer : Colors.transparent,
+      color: paint && !frosted ? base : Colors.transparent,
       surfaceTintColor: Colors.transparent,
       shadowColor: colors.shadow,
       elevation: paint && !eink ? 3 : 0,
@@ -894,7 +1432,7 @@ class _FloatingNavSurface extends StatelessWidget {
             child: IgnorePointer(
               child: frosted
                   ? FushiGlassSurface(
-                      baseColor: colors.surfaceContainer,
+                      baseColor: base,
                       borderRadius: borderRadius,
                       showBorder: false,
                       grouped: true,
@@ -1567,8 +2105,11 @@ class _NavFocusCellState extends State<_NavFocusCell> {
       compactLabel: metrics.compact,
       indicatorKey: _indicatorKey,
     );
-    if (metrics.compact) {
-      // 窄格里的标签可能被省略，用 tooltip 补出完整名称（长按 / 悬停可见）。
+    final bool labelsHidden =
+        !(_FloatingBarStyle.maybeOf(context)?.showLabels ?? true);
+    if (metrics.compact || labelsHidden) {
+      // 窄格里的标签可能被省略 / 用户关了底栏标签，用 tooltip 补出完整名称
+      // （长按 / 悬停可见）。
       tile = Tooltip(message: item.label, child: tile);
     }
     // MD3 展开 rail 的行靠起始边（药丸包住图标 + 文字），其余居中。
@@ -1961,12 +2502,19 @@ class _FushiNavTile extends StatelessWidget {
     if (!horizontal && extended) return _buildMaterialRailRow(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
+    // MD3 悬浮底栏的 vibrant 胶囊（[_FloatingBarStyle]）：指示器 / 前景取胶囊
+    // 给的配色（eink 已在那里换成反色）；侧轨照旧 surface 配色。
+    final _FloatingBarStyle? bar = _FloatingBarStyle.maybeOf(context);
+    final bool showLabel = bar?.showLabels ?? true;
     // eink：选中药丸的 secondaryContainer == 页面底色，选中项只剩图标实心/线框
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
-    final Color pillColor = eink ? colors.onSurface : colors.secondaryContainer;
-    final Color pillIconColor =
-        eink ? colors.surface : colors.onSecondaryContainer;
+    final Color pillColor = bar?.indicator ??
+        (eink ? colors.onSurface : colors.secondaryContainer);
+    final Color pillIconColor = bar?.onIndicator ??
+        (eink ? colors.surface : colors.onSecondaryContainer);
+    final Color idleColor = bar?.content ?? colors.onSurfaceVariant;
+    final Color selectedLabelColor = bar?.content ?? colors.onSurface;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     final IconData icon =
         selected ? (item.selectedIcon ?? item.icon) : item.icon;
@@ -1990,7 +2538,7 @@ class _FushiNavTile extends StatelessWidget {
         child: FushiIcon(
           icon,
           size: 24,
-          color: selected ? pillIconColor : colors.onSurfaceVariant,
+          color: selected ? pillIconColor : idleColor,
         ),
       ),
     );
@@ -2001,7 +2549,7 @@ class _FushiNavTile extends StatelessWidget {
       curve: FushiMotion.standard,
       style: (textTheme.labelMedium ?? const TextStyle()).copyWith(
         fontSize: compactLabel ? 11 : 12,
-        color: selected ? colors.onSurface : colors.onSurfaceVariant,
+        color: selected ? selectedLabelColor : idleColor,
         fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
       ),
       child: Text(
@@ -2023,8 +2571,7 @@ class _FushiNavTile extends StatelessWidget {
           height: _pillHeight,
           child: glyph,
         ),
-        const SizedBox(height: 4),
-        label,
+        if (showLabel) ...<Widget>[const SizedBox(height: 4), label],
       ],
     );
   }

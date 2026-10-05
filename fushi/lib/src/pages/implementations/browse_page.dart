@@ -40,6 +40,8 @@ import 'package:fushi/src/pages/implementations/video_download_subscriptions_pan
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeBar;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoDownloadJobFileRow, VideoDownloadJobRow;
@@ -161,6 +163,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
 
+  /// 页头动作（下载页签的「添加任务」+ 下载设置）登记的槽：由页签行右侧的
+  /// 悬浮按钮组胶囊画出（与库页壳 [MediaLibraryShell] 同构）。
+  final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
+
   @override
   void initState() {
     super.initState();
@@ -196,6 +202,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   @override
   void dispose() {
+    _actionsSlot.release(this);
+    _actionsSlot.dispose();
     _tabController?.dispose();
     super.dispose();
   }
@@ -590,49 +598,70 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     );
   }
 
-  /// 统一门头：页签导航作页头主位 + 页头动作，与其余顶层库页同构；独立 push 进来
-  /// （无 home 壳）时在 leading 位保留返回按钮。
+  /// 统一门头：与四个库页（[MediaLibraryShell]）同一套 M3E 浮动工具栏行
+  /// （[FushiFloatingChromeBar]）——外壳大标题下面一行，左边是贴合内容宽的
+  /// 一级页签单层浮动胶囊（摆不下在胶囊里横滑渐隐），右边是同高的悬浮按钮组
+  /// 胶囊；整行左右缘与大标题、页面内容同一条页边。独立 push 进来（无 home
+  /// 壳）时页签胶囊左边多一枚返回键圆胶囊。
   ///
-  /// 走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动
-  /// [TabBarView]，横滑时指示条跟手连续滑动。
+  /// 页签走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动
+  /// [TabBarView]，横滑时指示器跟手连续滑动。
   ///
   /// 页头动作只在「下载」页签出现（「添加任务」+ 下载设置）：它们不是来源 / 扩展 /
-  /// 发现的动作。
+  /// 发现的动作。动作登记进本页自己的 [_actionsSlot]，由按钮组胶囊画出。
   Widget _buildHeader(TabController controller, List<BrowseTab> tabs) {
     // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
     // 左上角凭空出现返回键。
     final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
+    // 不在首页外壳里（没有外壳大标题）时，工具栏行顶上留一点呼吸位。
+    final bool shellTitle = FushiShellTitleScope.maybeTitleOf(context) != null;
+    final double page = FushiDesignTokens.of(context).spacing.page;
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? child) {
         final bool onDownloads =
             tabs[controller.index.clamp(0, tabs.length - 1)] ==
             BrowseTab.downloads;
-        return FushiPageHeader.customTitle(
+        final List<Widget> actions = <Widget>[
+          if (onDownloads) ...<Widget>[
+            FushiIconButton(
+              icon: Icons.add,
+              tooltip: t.download_task_add,
+              label: t.download_task_add,
+              onTap: _openManualTaskDialog,
+            ),
+            FushiIconButton(
+              key: const ValueKey<String>('browse-download-settings'),
+              icon: Icons.settings_outlined,
+              tooltip: t.download_settings,
+              onTap: _openDownloadSettings,
+            ),
+          ],
+        ];
+        if (actions.isEmpty) {
+          _actionsSlot.release(this);
+        } else {
+          _actionsSlot.claim(
+            this,
+            visible: true,
+            actions: FushiShellHeaderActions(actions: actions),
+          );
+        }
+        return FushiFloatingChromeBar(
+          slot: _actionsSlot,
+          padding: shellTitle
+              ? null
+              : EdgeInsets.fromLTRB(page, page / 2, page, 4),
           leading: showBackButton
-              ? FushiIconButton(
-                  icon: Icons.arrow_back,
-                  tooltip: t.back,
-                  onTap: () => Navigator.of(context).maybePop(),
+              ? fushiFloatingLeading(
+                  FushiIconButton(
+                    icon: Icons.arrow_back,
+                    tooltip: t.back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
                 )
               : null,
-          title: child!,
-          actions: <Widget>[
-            if (onDownloads) ...<Widget>[
-              FushiIconButton(
-                icon: Icons.add,
-                tooltip: t.download_task_add,
-                label: t.download_task_add,
-                onTap: _openManualTaskDialog,
-              ),
-              FushiIconButton(
-                key: const ValueKey<String>('browse-download-settings'),
-                icon: Icons.settings_outlined,
-                tooltip: t.download_settings,
-                onTap: _openDownloadSettings,
-              ),
-            ],
-          ],
+          tabs: child!,
         );
       },
       child: LibrarySectionTabs<BrowseTab>.controlled(
@@ -642,6 +671,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         ],
         controller: controller,
         focusIdPrefix: 'browse-tab',
+        floating: true,
       ),
     );
   }
@@ -935,7 +965,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 /// 页面内一排二级标签 + 可横滑的对应页面（MD3 secondary tabs + [TabBarView]），
 /// 「浏览」四个页签共用：来源 / 扩展的内容域、发现的内容域、下载的任务 / 订阅。
 ///
-/// * 标签条铺满整行（[LibrarySectionTabs.fill]），摆不下时退回可滚动。
+/// * 标签条是贴合内容宽的紧凑分段胶囊（`floating` + `secondary`），摆不下时
+///   在胶囊里横滑。
 /// * 页面可左右横滑（移动端触屏；桌面鼠标不拖页，走标签 / 方向键），首次滑到 /
 ///   点到的页面保活，来回切不丢搜索词、结果与滚动位置。
 /// * 横滑越过首 / 尾段时经 [onEdgeOverscroll] 把手势交给宿主切顶层页签：内层
@@ -1073,9 +1104,11 @@ class _BrowseSwipeSectionsState<T extends Object>
       children: <Widget>[
         if (showTabs || widget.trailing != null)
           Padding(
+            // 与上面的一级页签浮动胶囊、页面内容同一条页边（左缘对齐）；
+            // 顶上 8 + 浮动工具栏底边 4 = 两级页签之间 12。
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.page,
-              0,
+              tokens.spacing.gap,
               tokens.spacing.page,
               tokens.spacing.gap,
             ),
@@ -1083,13 +1116,15 @@ class _BrowseSwipeSectionsState<T extends Object>
               children: <Widget>[
                 if (showTabs)
                   Expanded(
+                    // 二级内容域：贴合内容宽的紧凑扁平分段胶囊（比一级悬浮
+                    // 页签胶囊矮一档、不浮），摆不下在胶囊里横滑。
                     child: LibrarySectionTabs<T>.controlled(
                       key: widget.pickerKey,
                       tabs: widget.tabs,
                       controller: controller,
                       focusIdPrefix: widget.focusIdPrefix,
                       secondary: true,
-                      fill: true,
+                      floating: true,
                     ),
                   )
                 else

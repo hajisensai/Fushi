@@ -35,6 +35,10 @@ const double kCoarseWheelMinPhysicalDelta = 30;
 
 const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
 
+/// 见 [SmoothWheelScrollScope.isRewinding]。全 app 只有一个根部补间层、且拉回
+/// 是同步完成的，一个全局标志足够。
+bool _rewinding = false;
+
 /// 全 app 唯一的鼠标滚轮「无极滚动」层（BUG-2834，接替 BUG-1959/1960 的
 /// `FushiScrollController`）。
 ///
@@ -59,6 +63,13 @@ class SmoothWheelScrollScope extends StatefulWidget {
   const SmoothWheelScrollScope({required this.child, super.key});
 
   final Widget child;
+
+  /// 是否正处在补间的「拉回起点」那一步（同步 `jumpTo`，期间同步发出一组
+  /// start / update / end 通知，update 的 delta 与用户这一档**反向**）。
+  ///
+  /// 按滚动**方向**做判断的监听者必须忽略这段通知：它不是用户输入，紧接着的
+  /// 补间会把位置带回目标。只读位置 / 尺寸的监听者不受影响。
+  static bool get isRewinding => _rewinding;
 
   @override
   State<SmoothWheelScrollScope> createState() => _SmoothWheelScrollScopeState();
@@ -199,7 +210,16 @@ class _SmoothWheelScrollScopeState extends State<SmoothWheelScrollScope> {
     final double target = atEdge
         ? step.to
         : (base + delta).clamp(p.minScrollExtent, p.maxScrollExtent).toDouble();
-    p.jumpTo(step.from);
+    // 拉回起点只是补间的内部步骤：发出的那条反向 ScrollUpdate 不是用户在往回
+    // 滚。按滚动方向收放 chrome 的监听者（浮动工具栏 / 大标题）据
+    // [SmoothWheelScrollScope.isRewinding] 忽略它，否则每拨一档都会「收起 →
+    // 弹回 → 收起」（BUG-2975 的闪烁 / 回弹）。
+    _rewinding = true;
+    try {
+      p.jumpTo(step.from);
+    } finally {
+      _rewinding = false;
+    }
     if (target == step.from) {
       _eases.remove(p);
       return;

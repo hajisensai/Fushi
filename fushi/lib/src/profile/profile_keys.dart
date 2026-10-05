@@ -139,6 +139,9 @@ class ProfileKeys {
     // not a reading preference. Snapshotting it per profile would restore
     // stale schedules on profile switch for zero benefit.
     'airing_calendar_',
+    // 合集详情页每合集排序偏好：键里是本机合集自增 id（设备本地状态），换
+    // Profile 不该剪掉或串到别的合集上。
+    'collection_detail_sort_',
   ];
 
   /// BUG-1018 (A4): per-item display-name overrides are CONTENT tied to a

@@ -161,12 +161,15 @@
     return 't' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
   }
 
-  // 'fushi' / 'app' / 预设 key / 'custom:<id>'；坏值回 'fushi'。
+  // 'fushi' / 'app' / 预设 key / 'custom:<id>'；缺省与坏值回 'app'（跟随 Fushi）。
+  // 用户 2026-10-06「浏览器查词框和浏览器插件的主题色不一致」：查词弹窗吃 app 下发的配色，扩展自己的
+  // 页面却默认 theme.css 的扩展绿，于是 app 选了别的主题时两边永远不同色。缺省改成跟随 Fushi，两边同源。
+  var DEFAULT_PALETTE = 'app';
   function normalizePaletteId(v) {
-    if (typeof v !== 'string') return 'fushi';
+    if (typeof v !== 'string') return DEFAULT_PALETTE;
     if (v === 'app' || PRESET_BY_KEY[v]) return v;
     if (/^custom:[A-Za-z0-9_-]{1,40}$/.test(v)) return v;
-    return 'fushi';
+    return DEFAULT_PALETTE;
   }
 
   // 把 palette id 解析成规格 {seed, surface, text, neutral}；'app' 与找不到的自定义 id 回 null
@@ -351,6 +354,7 @@
 
   g.fushiThemePalette = {
     PRESETS: PRESETS,
+    DEFAULT_PALETTE: DEFAULT_PALETTE,
     DEFAULT_SEED: DEFAULT_SEED,
     TOKEN_NAMES: TOKEN_NAMES,
     parseHex: parseHex,

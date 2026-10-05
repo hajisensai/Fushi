@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:fushi/src/media/video/video_m3e_chrome.dart'
+    show videoM3eFloatingColor;
 import 'package:fushi/src/media/video/video_side_panel.dart';
 
 void main() {
@@ -29,10 +31,12 @@ void main() {
           )
           .first,
     );
-    // MD3：浮动面板是实色 surfaceContainerLow（设置面板满是小字，压在跳动的
-    // 画面上不再半透明）；画面靠面板四周的留白与面板宽度露出。
+    // M3E：浮动面板与播放器悬浮胶囊同一层无色相中性深色表面
+    // （videoM3eFloatingColor，#2D2D2D @86%）；画面靠面板四周的留白与面板宽度露出。
+    expect(material.color, videoM3eFloatingColor());
+    // 面板内容读中性主题：浅色 app 主题下标题也是白字（不是黑压黑）。
     final BuildContext ctx = tester.element(find.text('Speed'));
-    expect(material.color, Theme.of(ctx).colorScheme.surfaceContainerLow);
+    expect(Theme.of(ctx).colorScheme.onSurface, Colors.white);
     expect(find.text('Speed'), findsOneWidget);
     expect(find.text('1.5x'), findsOneWidget);
     // BUG-254：右上角 X 关闭按钮已删除（关闭改由页面层全屏 barrier 点面板外承载）。

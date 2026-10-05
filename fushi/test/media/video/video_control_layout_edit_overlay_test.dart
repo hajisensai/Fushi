@@ -310,9 +310,10 @@ void main() {
       _placedChip(VideoControlItem.subtitleTrack, VideoControlSlot.bottomRight),
       findsOneWidget,
     );
+    // 2026-10-06 遮挡最小化：音轨默认移出播放器（进右上「⋯」），只在面板里。
     expect(
       _placedChip(VideoControlItem.audioTrack, VideoControlSlot.topRight),
-      findsOneWidget,
+      findsNothing,
     );
   });
 

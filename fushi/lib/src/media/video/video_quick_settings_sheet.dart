@@ -7,6 +7,8 @@ import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart'
     show videoQuickSettingsHostOf;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
@@ -24,8 +26,9 @@ import 'package:fushi/utils.dart';
 /// 并独立滚动，分类条固定在顶部），窄窗降级单列 push。书籍设置面板仍保持左右
 /// master-detail，互不影响。
 ///
-/// 配色用标准浅色 MD3（与阅读器一致），由 `FushiModalSheetFrame` 提供 sheet 外壳，
-/// 桌面经 `FushiDialogFrame(maxWidth: 900)` 进入分栏、移动端走 bottom sheet。
+/// 外壳是播放器的浮动侧板（[VideoTranslucentSidePanel]）：M3 Expressive 下面板是
+/// 无色相中性深色表面，内部控件读面板中性主题（灰阶分组卡、白字、开关 / 选中态
+/// 仍是 app 主色，见 video_m3e_panel_theme.dart）；Apple 是液态玻璃厚档。
 class VideoQuickSettingsSheet extends StatefulWidget {
   const VideoQuickSettingsSheet({
     required this.appModel,
@@ -313,13 +316,13 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
             height: 1.2,
             color: appleColorsOf(context).label,
           )
-        : theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600);
+        : theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700);
     final TextStyle? hintStyle = glass
         ? FushiAppleMetrics.of(context).footnoteStyle(context)
         : theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           );
-    return Column(
+    final Widget texts = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
         Text(_subPageTitle(selectedId), style: titleStyle),
@@ -328,6 +331,33 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
             padding: const EdgeInsets.only(top: 4),
             child: Text(hint, style: hintStyle),
           ),
+      ],
+    );
+    if (glass || group == null || isEinkTheme(context)) return texts;
+    // M3E：分类页头 = 饼干形图标徽标（tertiaryContainer，与面板页头的
+    // primaryContainer 徽标区分层级）+ 加粗标题 + 一行说明。切分类时徽标
+    // 带一点缩放回弹（减弱动效 / 墨水屏下瞬间到位）。
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        TweenAnimationBuilder<double>(
+          key: ValueKey<String>('video-settings-detail-badge-$selectedId'),
+          tween: Tween<double>(begin: 0.7, end: 1),
+          duration: fushiMotionDuration(context, FushiMotion.long),
+          curve: FushiMotion.release,
+          builder: (BuildContext context, double s, Widget? child) =>
+              Transform.scale(scale: s, child: child),
+          child: ReaderShapeBadge(
+            icon: _groupIcon(group),
+            size: 44,
+            shape: ReaderBadgeShape.cookie4,
+            color: theme.colorScheme.tertiaryContainer,
+            iconColor: theme.colorScheme.onTertiaryContainer,
+            iconSize: 24,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(child: texts),
       ],
     );
   }
@@ -658,15 +688,19 @@ class _VideoSettingsCategoryTab extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: radius,
-          splashFactory: glass ? NoSplash.splashFactory : null,
-          hoverColor: glass ? apple.tertiaryFill : null,
-          highlightColor: glass ? apple.tertiaryFill : null,
-          child: body,
+      // M3E：按下整段轻微回弹缩小（Apple / 墨水屏不缩放）。
+      child: FushiPressScale(
+        enabled: !glass && !eink,
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: radius,
+            splashFactory: glass ? NoSplash.splashFactory : null,
+            hoverColor: glass ? apple.tertiaryFill : null,
+            highlightColor: glass ? apple.tertiaryFill : null,
+            child: body,
+          ),
         ),
       ),
     );

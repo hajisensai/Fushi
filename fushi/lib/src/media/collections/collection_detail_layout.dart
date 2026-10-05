@@ -697,12 +697,19 @@ class CollectionSeasonTabBar extends StatelessWidget {
     assert(labels.length == tabKeys.length);
     return Padding(
       key: const ValueKey<String>('collection-season-tabs'),
-      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      // 轨道左右缘与「选集」标题、集列表同一条页边（trackInset: 0，轨道
+      // 不再自己多缩 12）。
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
       child: FushiTabBar(
         controller: controller,
+        trackInset: 0,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
-        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
         labelColor: cs.primary,
         unselectedLabelColor: cs.onSurfaceVariant,
         indicatorColor: cs.primary,

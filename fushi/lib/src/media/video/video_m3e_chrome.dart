@@ -109,49 +109,27 @@ ColorScheme videoM3eNeutralChromeScheme(ColorScheme cs) {
   );
 }
 
-/// 底部面板圆角上限（M3E extra-large 28）。
-const double kVideoM3eBottomPanelRadius = 28;
-
-/// M3E 底部面板（桌面 / full 与 compact 档）：进度条与底栏三簇按钮收进**同一块**
-/// 大圆角中性面板——上半部是进度条，下半部是三组按钮；三簇不再各自画胶囊。
+/// M3E 控件显示时的底部暗角（2026-10-06 遮挡最小化重做）：画面最下方一条很矮的
+/// 渐变，只为压住高亮画面让细进度条与白字不发虚；**不是**实体面板。高度由页面按
+/// 进度条几何给出（恒在字幕避让线以下），0 = 不画（Apple / mini 档）。
 ///
-/// 只是背景：排在 media_kit 控制条**之前**（画在进度条 / 按钮下面、画面上面），
-/// [IgnorePointer]——点击穿透规则与 Apple 玻璃胶囊同口径（按钮簇自身仍是实体，见
-/// [VideoBarClusterStyle]；面板留白交还画面）。显隐跟控制条同一个 notifier、同速
-/// 淡入淡出。[geometry] 为 null（mini 档 / Apple）时不画。墨水屏：纯黑 + 白描边。
-class VideoM3eBottomPanel extends StatelessWidget {
-  const VideoM3eBottomPanel({
+/// 排在 media_kit 控制条之前（画在控件下面、画面上面），[IgnorePointer]，显隐跟控制条
+/// 同一个 notifier、同速淡入淡出。墨水屏不画（不做渐变）。
+class VideoM3eBottomScrim extends StatelessWidget {
+  const VideoM3eBottomScrim({
     super.key,
     required this.visible,
     required this.duration,
-    required this.geometry,
+    required this.height,
   });
 
   final ValueListenable<bool> visible;
   final Duration duration;
-  final VideoAppleCapsuleGeometry? geometry;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
-    final VideoAppleCapsuleGeometry? g = geometry;
-    if (g == null || g.height <= 0) return const SizedBox.shrink();
-    final bool eink = isEinkTheme(context);
-    final double radius = math.min(g.height / 2, kVideoM3eBottomPanelRadius);
-    final RoundedRectangleBorder shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(radius),
-    );
-    final ShapeDecoration decoration = eink
-        ? ShapeDecoration(
-            color: Colors.black,
-            shape: shape.copyWith(
-              side: const BorderSide(color: Colors.white, width: 1.5),
-            ),
-          )
-        : fushiFloatingPillDecoration(
-            context,
-            color: videoM3eFloatingColor(),
-            shape: shape,
-          );
+    if (height <= 0 || isEinkTheme(context)) return const SizedBox.shrink();
     return IgnorePointer(
       child: ValueListenableBuilder<bool>(
         valueListenable: visible,
@@ -163,17 +141,21 @@ class VideoM3eBottomPanel extends StatelessWidget {
             child: child,
           );
         },
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            Positioned(
-              left: g.left,
-              right: g.right,
-              bottom: g.bottom,
-              height: g.height,
-              child: DecoratedBox(decoration: decoration),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            height: height,
+            width: double.infinity,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[Color(0x00000000), Color(0x52000000)],
+                ),
+              ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -184,28 +166,17 @@ class VideoM3eBottomPanel extends StatelessWidget {
 /// × 密度档；墨水屏：纯黑 + 白描边、无阴影。胶囊贴条高底部（[verticalAlignment]
 /// 1），让出上方给进度条。
 ///
-/// [inPanel] = 底栏三簇已收进 [VideoM3eBottomPanel]：簇的几何（内边距 / 间距 / 实体
-/// 命中区）照旧，但不再各自画底色与投影——面板就是它们共同的表面。
+/// 2026-10-06 遮挡最小化：40 的按钮 + 上下各 4 = 48 高的紧凑小胶囊。
 VideoBarClusterStyle videoM3eFloatingBarStyle(
   BuildContext context, {
   required double scale,
   double verticalAlignment = 1,
-  bool inPanel = false,
 }) {
-  if (inPanel) {
-    return VideoBarClusterStyle(
-      color: Colors.transparent,
-      padding: 4 * scale,
-      verticalPadding: 2 * scale,
-      gap: 8 * scale,
-      verticalAlignment: verticalAlignment,
-    );
-  }
   if (isEinkTheme(context)) {
     return VideoBarClusterStyle(
       color: Colors.black,
       padding: 4 * scale,
-      verticalPadding: 2 * scale,
+      verticalPadding: 4 * scale,
       gap: 8 * scale,
       border: const BorderSide(color: Colors.white, width: 1.5),
       verticalAlignment: verticalAlignment,
@@ -216,7 +187,7 @@ VideoBarClusterStyle videoM3eFloatingBarStyle(
     // 各簇同一中性表面（传输簇不再单独上 primaryContainer 色块）。
     color: standard,
     padding: 4 * scale,
-    verticalPadding: 2 * scale,
+    verticalPadding: 4 * scale,
     gap: 8 * scale,
     // 投影与阅读器 / 漫画的浮动工具栏同一组（共享 fushiFloatingPillDecoration）。
     shadows:
@@ -929,9 +900,14 @@ class VideoM3eSeekTrack extends StatefulWidget {
     this.hoverBubble = false,
     this.cueDensity = const <double>[],
     this.lane,
+    this.trackBottomInset,
   });
 
   final VideoSeekBarVisual visual;
+
+  /// 轨道中线离热区底缘的距离；null = 按 [VideoSeekBarVisual.alignment] 摆（底对齐
+  /// 时底缘之上 10 × 缩放、否则竖直居中）。桌面 M3E 用它把细轨抬到底栏小胶囊上方。
+  final double? trackBottomInset;
 
   /// 悬浮轨道槽的底色（浮动工具栏上方那条胶囊槽，左右探出轨道一点）；null = 不画，
   /// 轨道直接压在画面上。槽只是装饰，seek 命中与落点仍归 fork 的整条热区。
@@ -1033,7 +1009,10 @@ class _VideoM3eSeekTrackState extends State<VideoM3eSeekTrack>
         final double w = constraints.maxWidth;
         final double h = constraints.maxHeight;
         final double s = widget.scale;
-        final double centerY = v.alignment.y >= 0.5
+        final double? bottomInset = widget.trackBottomInset;
+        final double centerY = bottomInset != null
+            ? h - bottomInset
+            : v.alignment.y >= 0.5
             ? h - (6 + 4) * s
             : h * (v.alignment.y + 1) / 2;
         return Stack(
@@ -1177,10 +1156,11 @@ class _M3eTrackPainter extends CustomPainter {
     }
     final double a = active.value;
     final double s = scale;
-    final double stroke = (4 + 2 * a) * s;
+    // 细轨：静止 3、悬停 / 拖动加粗到 6（遮挡最小化，2026-10-06）。
+    final double stroke = (3 + 3 * a) * s;
     final double gap = 4 * s;
     final double handleW = 4 * s;
-    final double handleH = (16 + 8 * a) * s;
+    final double handleH = (12 + 10 * a) * s;
     final double y = centerY;
     final double x = w * position;
     final double amplitude = 3 * s * amp.value;

@@ -3,9 +3,9 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/cupertino.dart' show CupertinoSearchTextField;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -26,6 +26,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/settings_section_anchor.dart';
+
+export 'package:fushi/src/utils/components/settings_section_anchor.dart'
+    show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
 
 // =============================================================================
 // 设置模块统一设计系统（settings kit，2026-10-05）
@@ -506,7 +510,7 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
               end: tokens.spacing.gap,
             ),
             child: FushiIcon(
-              Icons.search,
+              FushiIcons.search,
               color: focused ? scheme.primary : scheme.onSurfaceVariant,
             ),
           ),
@@ -518,7 +522,7 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
               return Transform.scale(scale: v.clamp(0.0, 1.2), child: child);
             },
             child: FushiIconButtonControl(
-              icon: const FushiIcon(Icons.close),
+              icon: const FushiIcon(FushiIcons.close),
               tooltip: t.clear,
               onPressed: _clear,
             ),
@@ -637,7 +641,7 @@ class SettingsSearchResultsView extends StatelessWidget {
   Widget build(BuildContext context) {
     if (results.isEmpty) {
       final Widget empty = SettingsEmptyState(
-        icon: Icons.search_off_rounded,
+        icon: FushiIcons.searchOff,
         title: t.settings_search_empty_title,
         message: t.settings_search_empty_hint,
       );
@@ -824,7 +828,7 @@ class _ResultRow extends StatelessWidget {
           ],
         ),
         subtitleMaxLines: 3,
-        trailing: const FushiIcon(Icons.arrow_forward_rounded),
+        trailing: const FushiIcon(FushiIcons.forward),
         onTap: () => onOpen(entry),
       ),
     );
@@ -1195,9 +1199,10 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: FushiIconButtonControl(
-                      icon: const FushiIcon(Icons.arrow_back),
-                      tooltip: MaterialLocalizations.of(context)
-                          .backButtonTooltip,
+                      icon: const FushiIcon(FushiIcons.back),
+                      tooltip: MaterialLocalizations.of(
+                        context,
+                      ).backButtonTooltip,
                       onPressed: widget.onBack,
                     ),
                   ),
@@ -1232,88 +1237,6 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
 // -----------------------------------------------------------------------------
 // 页内分组跳转
 // -----------------------------------------------------------------------------
-
-/// 一页内的分组锚点 + 滚动高亮（scroll spy）。
-///
-/// 每个带标题的分组用 [anchor] 取一个 GlobalKey 包在分组外层；[attach] 滚动
-/// 控制器后，滚动时把「顶边已越过视口顶 + [activationOffset] 的最后一个分组」
-/// 记为 [activeId]，供页头粘性标题与 [SettingsSectionJumpBar] 高亮。
-class SettingsSectionSpy extends ChangeNotifier {
-  SettingsSectionSpy({this.activationOffset = 96});
-
-  final double activationOffset;
-  final Map<String, GlobalKey> _anchors = <String, GlobalKey>{};
-  final List<String> _order = <String>[];
-  ScrollController? _controller;
-  String? _activeId;
-
-  String? get activeId => _activeId;
-
-  /// 分组 [id] 的锚点 key（同一 id 恒返回同一个 key）。按调用顺序记录分组顺序。
-  GlobalKey anchor(String id) {
-    if (!_order.contains(id)) _order.add(id);
-    return _anchors.putIfAbsent(
-      id,
-      () => GlobalKey(debugLabel: 'settings-section.$id'),
-    );
-  }
-
-  /// 本帧重建前调用：清掉顺序表（锚点 key 保留，State 不丢）。
-  void beginFrame() => _order.clear();
-
-  void attach(ScrollController controller) {
-    if (identical(_controller, controller)) return;
-    _controller?.removeListener(_recompute);
-    _controller = controller..addListener(_recompute);
-  }
-
-  void _recompute() {
-    String? active;
-    for (final String id in _order) {
-      final BuildContext? ctx = _anchors[id]?.currentContext;
-      final RenderObject? box = ctx?.findRenderObject();
-      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
-      final ScrollableState? scrollable = Scrollable.maybeOf(ctx!);
-      final RenderObject? viewport = scrollable?.context.findRenderObject();
-      if (viewport is! RenderBox) continue;
-      final double top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
-      if (top <= activationOffset) {
-        active = id;
-      } else {
-        break;
-      }
-    }
-    // 滚到底时最后一个分组可能永远到不了顶，此时把它记为当前。
-    final ScrollController? controller = _controller;
-    if (controller != null &&
-        controller.hasClients &&
-        _order.isNotEmpty &&
-        controller.positions.first.pixels > 0 &&
-        controller.positions.first.extentAfter < 1) {
-      active = _order.last;
-    }
-    if (active != _activeId) {
-      _activeId = active;
-      notifyListeners();
-    }
-  }
-
-  /// 把分组 [id] 滚到视口顶（经 [FushiFocusScroll]，eink / 减弱动态效果下
-  /// 由调用方传零时长）。
-  void jumpTo(String id, {required Duration duration}) {
-    final BuildContext? ctx = _anchors[id]?.currentContext;
-    if (ctx == null) return;
-    FushiFocusScroll.ensureVisible(ctx, alignment: 0, duration: duration);
-    _activeId = id;
-    notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _controller?.removeListener(_recompute);
-    super.dispose();
-  }
-}
 
 /// 页内分组跳转条：一排胶囊（分组名），当前分组胶囊弹簧变宽 + 填色
 /// （M3E secondaryContainer / Apple 强调色）。可横向滚动；键盘 Tab 可达、
@@ -1465,7 +1388,7 @@ class SettingsModifiedRow extends StatelessWidget {
                       padding: const EdgeInsetsDirectional.only(end: 4),
                       child: FushiIconButtonControl(
                         key: const ValueKey<String>('settings-reset-default'),
-                        icon: const FushiIcon(Icons.settings_backup_restore),
+                        icon: const FushiIcon(FushiIcons.undo),
                         tooltip: t.settings_reset_to_default,
                         onPressed: onReset,
                       ),
@@ -1582,7 +1505,8 @@ class SettingsKitScaffold extends StatefulWidget {
   /// true = 能 pop 时画返回钮（根页 / 嵌入宿主传 false）。
   final bool showBack;
 
-  /// (分组 id, 分组标题)；≥ 3 个时画分组跳转条，并把当前分组粘在页头标题下。
+  /// 旧接口保留（不再使用）：分组表现在由页内带标题的共享分组组件自动登记
+  /// （见 settings_section_anchor.dart），≥ 2 个分组即画跳转条。
   final List<(String, String)> sections;
 
   /// 页面主操作（如字体库的「导入字体」扩展 FAB）。独立路由页交给 Scaffold
@@ -1636,12 +1560,13 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
         : tokens.surfaces.page;
     final bool canPop =
         widget.showBack && (ModalRoute.of(context)?.canPop ?? false);
-    final bool jump = widget.sections.length >= 3;
+    // 分组跳转条：页内只要有 ≥ 2 个带标题的分组就出现（单组页不画）。
+    final List<(String, String)> sections = _spy.sections;
+    final bool jump = sections.length >= 2;
     String? activeTitle;
-    for (final (String id, String title) in widget.sections) {
+    for (final (String id, String title) in sections) {
       if (id == _spy.activeId) activeTitle = title;
     }
-    _spy.beginFrame();
     final Widget body = widget.bodyBuilder(context, _controller, _spy);
     final Widget column = SafeArea(
       bottom: false,
@@ -1657,20 +1582,38 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
             onBack: canPop ? () => Navigator.of(context).maybePop() : null,
             actions: widget.actions,
           ),
-          if (jump)
-            SettingsSectionJumpBar(
-              sections: widget.sections,
-              activeId: _spy.activeId,
-              onSelected: (String id) => _spy.jumpTo(
-                id,
-                duration: fushiMotionDuration(context, FushiMotion.long),
-              ),
-            ),
+          // 跳转条吸在页头下方（不随正文滚动），出现 / 消失走尺寸 + 淡入过渡。
+          // 与下方第一个分组标题之间留一档 gap：此前胶囊底紧贴分组标题，两排
+          // 文字读成一行。
+          AnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.enter,
+            alignment: Alignment.topCenter,
+            child: jump
+                ? Padding(
+                    padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                    child: SettingsSectionJumpBar(
+                      sections: sections,
+                      activeId: _spy.activeId,
+                      onSelected: (String id) => _spy.jumpTo(
+                        id,
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.long,
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
           Expanded(
-            child: PrimaryScrollController(
-              controller: _controller,
-              automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-              child: body,
+            child: SettingsSectionSpyScope(
+              spy: _spy,
+              child: PrimaryScrollController(
+                controller: _controller,
+                automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+                child: body,
+              ),
             ),
           ),
         ],
@@ -1782,16 +1725,10 @@ List<(String, String)> settingsJumpSections(List<SettingsSection> sections) {
 String settingsSectionAnchorId(SettingsSection section) =>
     section.id ?? section.items.first.id;
 
-/// 给分组挂上 [spy] 的锚点（无 spy 或无标题分组时原样返回）。
+/// 旧接口保留：分组锚点现在由共享分组组件（AdaptiveSettingsSection /
+/// SettingsSectionHeader）自动挂，schema 分组也走那条路，这里原样返回。
 Widget settingsSectionAnchor({
   required SettingsSectionSpy? spy,
   required SettingsSection section,
   required Widget child,
-}) {
-  if (spy == null || !(section.title?.isNotEmpty ?? false)) return child;
-  if (section.items.isEmpty) return child;
-  return KeyedSubtree(
-    key: spy.anchor(settingsSectionAnchorId(section)),
-    child: child,
-  );
-}
+}) => child;

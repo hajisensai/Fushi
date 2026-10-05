@@ -697,21 +697,18 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   /// 横滑（四个域的发现页同一口径）。
   Widget? _buildHeaderLeading() {
     final List<List<Widget>> groups = <List<Widget>>[
+      // 媒体域（小说 / 有声书）：单选 chip，与同一行的筛选 chip 同一形态。
+      // 曾是分段按钮：放进横滑筛选行（无界宽）后分段按等分宽排，长标签那段
+      // 右半被裁掉（2026-10-06 用户截图「有声书」被切）；chip 按各自内容取宽。
       if (widget.kinds.length > 1)
         <Widget>[
-          adaptiveSegmentedButton<DiscoveryMediaKind>(
-            context: context,
-            segments: <ButtonSegment<DiscoveryMediaKind>>[
-              for (final DiscoveryMediaKind kind in widget.kinds)
-                ButtonSegment<DiscoveryMediaKind>(
-                  value: kind,
-                  label: Text(_kindLabel(kind)),
-                ),
-            ],
-            selected: <DiscoveryMediaKind>{_kind},
-            onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
-                _selectKind(selection.first),
-          ),
+          for (final DiscoveryMediaKind kind in widget.kinds)
+            FushiSelectableChip(
+              key: ValueKey<String>('discovery_kind_${kind.name}'),
+              label: _kindLabel(kind),
+              selected: _kind == kind,
+              onSelected: (_) => _selectKind(kind),
+            ),
         ],
       // BUG-1910：只有当前结果里确实有带分类的条目才出这组 chip——否则视频/书域，
       // 或搜的是不给分类的源时，凭空多一组没用的控件。

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
+    show SmoothWheelScrollScope;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
         GlassBarMinimizeBehavior,
@@ -154,6 +156,7 @@ class FushiAppleScrollChrome extends ChangeNotifier {
   /// 喂一条冒泡上来的通知；恒返回 false（让它继续冒泡）。横向滚动（轮播、
   /// 横向书架行）不参与。
   bool handleNotification(Notification notification) {
+    if (SmoothWheelScrollScope.isRewinding) return false;
     final ScrollMetrics metrics;
     if (notification is ScrollNotification) {
       metrics = notification.metrics;
@@ -243,6 +246,9 @@ class FushiLargeTitleCollapse extends ChangeNotifier {
 
   /// 喂一条冒泡上来的通知；恒返回 false（让它继续冒泡）。横向滚动不参与。
   bool handleNotification(Notification notification) {
+    // 平滑滚轮补间的「拉回起点」不是用户滚动（[SmoothWheelScrollScope.isRewinding]）：
+    // 第一档离顶时会先拉回 0 再补间，按它展开会让大标题每档闪一次。
+    if (SmoothWheelScrollScope.isRewinding) return false;
     final ScrollMetrics metrics;
     final BuildContext? source;
     bool userScroll = false;

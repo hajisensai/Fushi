@@ -458,8 +458,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             ),
             // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
             actions: <Widget>[
+              // 主操作：M3E tonal 胶囊按钮，页头把它画在按钮组胶囊旁（不再
+              // 被包进组胶囊，见 fushiFloatingHeaderActionGroups）。
               if (Platform.isWindows)
-                FushiOutlinedButton.icon(
+                FushiFilledButton.tonalIcon(
                   onPressed: _gameStreamBusy ? null : _toggleGameStream,
                   icon: FushiIcon(
                     _gameStreamStarted

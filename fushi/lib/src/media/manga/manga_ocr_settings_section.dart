@@ -14,15 +14,22 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
+
+/// [MangaOcrSettingsSection] 的版式：设置页（行内下拉，沿用设置页的行）或阅读器
+/// 设置侧板（M3E 分组：引擎单选卡片组、选项分段 / 选择行、模型下载强调卡）。
+/// 只换呈现，读写的偏好与回调完全相同。
+enum MangaOcrSettingsPresentation { settingsPage, readerPanel }
 
 /// 设置区「漫画 OCR」组的正文（隶属**漫画**设置分类）。
 ///
@@ -62,8 +69,12 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.aiModeSetter,
     this.aiProviderReady,
     this.openAiSettings,
+    this.presentation = MangaOcrSettingsPresentation.settingsPage,
     super.key,
   });
+
+  /// 版式（见 [MangaOcrSettingsPresentation]）。
+  final MangaOcrSettingsPresentation presentation;
 
   /// 内置 OCR 服务（接口；测试注 fake）。
   final MangaOcrService service;
@@ -557,19 +568,33 @@ class _MangaOcrSettingsSectionState
   }
 
   /// 「导入本地模型」按钮：下载中/导入中禁用（两条路径会动同一批文件）。
-  Widget _importButton() {
+  ///
+  /// [outlined]：阅读器侧板版式与主按钮成组时用描边按钮（设置页版式仍是文字按钮）。
+  Widget _importButton({bool outlined = false}) {
+    final VoidCallback? onPressed = (_importing || _downloading)
+        ? null
+        : () => unawaited(_showImportDialog());
+    final Widget icon = _importing
+        ? const SizedBox.square(
+            dimension: 16,
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
+          )
+        : const FushiIcon(FushiIcons.importFile, size: 18);
+    final Widget label =
+        Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import);
+    if (outlined) {
+      return FushiOutlinedButton.icon(
+        key: const ValueKey<String>('manga_ocr_import_button'),
+        onPressed: onPressed,
+        icon: icon,
+        label: label,
+      );
+    }
     return FushiTextButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
-      onPressed: (_importing || _downloading)
-          ? null
-          : () => unawaited(_showImportDialog()),
-      icon: _importing
-          ? const SizedBox.square(
-              dimension: 16,
-              child: FushiCircularProgressIndicator(strokeWidth: 2),
-            )
-          : const FushiIcon(Icons.drive_folder_upload_outlined, size: 18),
-      label: Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import),
+      onPressed: onPressed,
+      icon: icon,
+      label: label,
     );
   }
 
@@ -607,7 +632,13 @@ class _MangaOcrSettingsSectionState
     // Material 透明层：cupertino 桌面嵌入渲染（BUG-009 R2 路径）下设置正文没有
     // Material 祖先，而本组含 TextField/InkWell 系控件——透明 Material 只补墨水
     // 与文本编辑依赖，不改视觉。
-    return Material(type: MaterialType.transparency, child: _buildBody(theme));
+    return Material(
+      type: MaterialType.transparency,
+      child:
+          widget.presentation == MangaOcrSettingsPresentation.readerPanel
+              ? _buildPanelBody(theme)
+              : _buildBody(theme),
+    );
   }
 
   /// 补齐标准设置行的水平内边距。
@@ -1384,6 +1415,496 @@ class _MangaOcrSettingsSectionState
                 ),
               ),
             ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  // ── 阅读器设置侧板版式（M3E）─────────────────────────────────────────
+  //
+  // 与设置页版式读写同一批偏好、走同一组回调，只换呈现：引擎是带图标的单选卡片组
+  // （说明随卡片给出，不再藏在下拉里）、选项是分段 / 选择行（长说明收进 info）、
+  // 本机模型是一张强调卡（状态 + 体积 + 波浪进度 + 下载 / 导入按钮组）。
+
+  static IconData _engineIcon(MangaOcrEnginePreference preference) =>
+      switch (preference) {
+        MangaOcrEnginePreference.auto => FushiIcons.brightnessAuto,
+        MangaOcrEnginePreference.localOnnx => FushiIcons.modelTraining,
+        MangaOcrEnginePreference.systemOcr => FushiIcons.devices,
+        MangaOcrEnginePreference.googleLens => FushiIcons.travelExplore,
+        MangaOcrEnginePreference.externalMokuro => FushiIcons.system,
+        MangaOcrEnginePreference.pairedHost => FushiIcons.hub,
+      };
+
+  Widget _panelTitle(String text) => FushiSectionTitle.group(
+    text,
+    padding: const EdgeInsets.only(top: 4, bottom: 8),
+  );
+
+  Widget _buildPanelBody(ThemeData theme) {
+    final List<Widget> options = <Widget>[
+      if (isDesktopPlatform && widget.parallelTasksGetter != null)
+        _buildPanelParallelTasks(),
+      if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
+      if (widget.aiModeGetter != null) _buildPanelAiMode(theme),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _panelTitle(t.manga_reader_group_ocr_engine),
+        _buildPanelEngines(),
+        const SizedBox(height: 16),
+        MangaPanelGroup(
+          title: t.manga_reader_group_ocr_options,
+          children: options,
+        ),
+        _panelTitle(t.manga_reader_group_ocr_model),
+        _buildPanelModelArea(theme),
+        // 外部 mokuro CLI 是桌面工具，仅桌面显示。
+        if (isDesktopPlatform) ...<Widget>[
+          const SizedBox(height: 16),
+          MangaPanelGroup(
+            title: t.manga_reader_group_ocr_external,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                child: _buildPanelExternal(theme),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPanelEngines() {
+    final List<_EngineOption> engines = _engineOptions();
+    return KeyedSubtree(
+      key: const ValueKey<String>('manga_ocr_default_engine'),
+      child: MangaPanelRadioCards<_EngineChoice>(
+        options: <MangaPanelOption<_EngineChoice>>[
+          for (final _EngineOption option in engines)
+            MangaPanelOption<_EngineChoice>(
+              value: option.choice,
+              label: option.label,
+              description: option.description,
+              icon: _engineIcon(option.preference),
+              enabled: option.enabled,
+              key: ValueKey<String>(
+                'manga_ocr_engine_${option.preference.name}'
+                '_${option.localModel?.key ?? ''}_${option.hostModel ?? ''}',
+              ),
+            ),
+        ],
+        selected: _currentChoice,
+        // 导入 / 删除期间锁住：两者都按当前模型的目录动文件（同设置页版式）。
+        onChanged: _importing || _deleting
+            ? null
+            : (_EngineChoice value) {
+                if (value == _currentChoice) return;
+                unawaited(_selectEngine(value));
+              },
+      ),
+    );
+  }
+
+  Widget _buildPanelParallelTasks() {
+    return MangaPanelChoiceRow<int>(
+      key: const ValueKey<String>('manga_ocr_parallel_tasks'),
+      title: t.manga_ocr_parallel_tasks,
+      icon: FushiIcons.speed,
+      info: t.manga_ocr_parallel_tasks_desc,
+      options: <MangaPanelOption<int>>[
+        MangaPanelOption<int>(value: 0, label: t.manga_ocr_parallel_auto),
+        for (int count = 1; count <= 4; count++)
+          MangaPanelOption<int>(value: count, label: '$count'),
+      ],
+      selected: _parallelTasks,
+      onChanged: widget.parallelTasksSetter == null
+          ? null
+          : (int value) async {
+              await widget.parallelTasksSetter!(value);
+              if (mounted) setState(() => _parallelTasks = value);
+            },
+    );
+  }
+
+  Widget _buildPanelLensLanguage() {
+    return MangaPanelChoiceRow<String>(
+      key: const ValueKey<String>('manga_ocr_lens_language'),
+      title: t.manga_ocr_lens_language_label,
+      icon: FushiIcons.language,
+      options: <MangaPanelOption<String>>[
+        for (final (String tag, String label) in kGoogleLensLanguageOptions)
+          MangaPanelOption<String>(value: tag, label: label),
+        if (!kGoogleLensLanguageOptions.any(
+          ((String, String) option) => option.$1 == _lensLanguage,
+        ))
+          MangaPanelOption<String>(value: _lensLanguage, label: _lensLanguage),
+      ],
+      selected: _lensLanguage,
+      onChanged: (String value) {
+        setState(() => _lensLanguage = value);
+        unawaited(_writeLensLanguage(value));
+      },
+    );
+  }
+
+  /// 大模型识别：关 / 低置信度 / 全部 三段；当前档位的完整说法作副标题，取舍
+  /// 说明收进 info。开着却没指派提供商时明说「不会发送」并给入口。
+  Widget _buildPanelAiMode(ThemeData theme) {
+    final bool missingProvider =
+        _aiMode != MangaAiOcrMode.off &&
+        !(widget.aiProviderReady?.call() ?? false);
+    final Future<void> Function(BuildContext context)? openAiSettings =
+        widget.openAiSettings;
+    final List<Widget> notes = <Widget>[
+      if (_aiMode == MangaAiOcrMode.lowConfidence)
+        Text(
+          t.manga_ocr_ai_mode_low_confidence_legacy,
+          key: const ValueKey<String>(
+            'manga_ocr_ai_mode_low_confidence_legacy',
+          ),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: fushiNeutralSecondaryForeground(context),
+          ),
+        ),
+      if (missingProvider) ...<Widget>[
+        Text(
+          t.manga_ocr_ai_mode_no_provider,
+          key: const ValueKey<String>('manga_ocr_ai_mode_no_provider'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.error,
+          ),
+        ),
+        if (openAiSettings != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FushiFilledButton.tonalIcon(
+              onPressed: () async {
+                await openAiSettings(context);
+                // build 里现算 missingProvider：回来后重建一次即刷新。
+                if (mounted) setState(() {});
+              },
+              icon: const FushiIcon(FushiIcons.ai, size: 18),
+              label: Text(t.manga_ocr_ai_mode_open_settings),
+            ),
+          ),
+      ],
+    ];
+    return MangaPanelSegmentedRow<MangaAiOcrMode>(
+      key: const ValueKey<String>('manga_ocr_ai_mode'),
+      title: t.manga_ocr_ai_mode_label,
+      subtitle: switch (_aiMode) {
+        MangaAiOcrMode.off => null,
+        MangaAiOcrMode.lowConfidence => t.manga_ocr_ai_mode_low_confidence,
+        MangaAiOcrMode.all => t.manga_ocr_ai_mode_all,
+      },
+      icon: FushiIcons.ai,
+      info: t.manga_ocr_ai_mode_desc,
+      options: <MangaPanelOption<MangaAiOcrMode>>[
+        MangaPanelOption<MangaAiOcrMode>(
+          value: MangaAiOcrMode.off,
+          label: t.manga_ocr_ai_mode_off,
+        ),
+        MangaPanelOption<MangaAiOcrMode>(
+          value: MangaAiOcrMode.lowConfidence,
+          label: t.manga_ocr_ai_mode_low_confidence_short,
+        ),
+        MangaPanelOption<MangaAiOcrMode>(
+          value: MangaAiOcrMode.all,
+          label: t.manga_ocr_ai_mode_all_short,
+        ),
+      ],
+      selected: _aiMode,
+      onChanged: widget.aiModeSetter == null
+          ? null
+          : (MangaAiOcrMode value) async {
+              if (value == _aiMode) return;
+              setState(() => _aiMode = value);
+              await widget.aiModeSetter!(value.storageKey);
+            },
+      footer: notes.isEmpty
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (final (int i, Widget note) in notes.indexed) ...<Widget>[
+                  if (i > 0) const SizedBox(height: 6),
+                  note,
+                ],
+              ],
+            ),
+    );
+  }
+
+  /// 本机模型强调卡：与设置页版式同一套三态（见 [_buildLocalModelArea]），
+  /// 只换呈现。
+  Widget _buildPanelModelArea(ThemeData theme) {
+    if (!widget.service.isSupportedPlatform) {
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.block,
+        title: t.manga_ocr_unsupported,
+      );
+    }
+    if (_downloading) return _panelActiveModelCard(theme);
+    if (_loadingStatus) {
+      return FushiCard(
+        padding: const EdgeInsets.all(20),
+        child: FushiLinearProgressIndicator(),
+      );
+    }
+    if (_localModelsUsedByEngine) return _panelActiveModelCard(theme);
+    final MangaOcrModelStatus? status = _status;
+    if (status == null || !status.hasAnyFiles) {
+      // 引擎用不到、磁盘也干净：不劝，但也不藏（BUG-1780）。
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.download,
+        title: t.manga_ocr_model_unused_by_engine,
+        subtitle: _modelSizeSubtitle(_status),
+        actions: <Widget>[
+          FushiFilledButton.tonalIcon(
+            onPressed: _importing ? null : _startDownload,
+            icon: const FushiIcon(FushiIcons.download, size: 18),
+            label: Text(t.manga_ocr_download),
+          ),
+          _importButton(outlined: true),
+        ],
+      );
+    }
+    // 引擎用不到、但磁盘上还占着：说清楚 + 删除 + 继续导入。
+    return _panelModelCard(
+      theme,
+      tone: FushiCardTone.neutral,
+      icon: FushiIcons.folder,
+      title: t.manga_ocr_model_unused_by_engine,
+      subtitle: t.manga_ocr_model_disk_usage(
+        size: _formatBytes(status.diskBytes),
+      ),
+      actions: <Widget>[_deleteButton(), _importButton(outlined: true)],
+    );
+  }
+
+  /// 引擎用得到本机模型（或正在下载）时的强调卡。
+  Widget _panelActiveModelCard(ThemeData theme) {
+    final MangaOcrModelStatus? status = _status;
+    final bool ready = status?.allReady ?? false;
+    if (_downloading) {
+      final double? value = _downloadProgressValue;
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.secondary,
+        icon: FushiIcons.downloading,
+        title: t.manga_ocr_model_status_missing,
+        subtitle: _withModelName(null),
+        trailing: value == null
+            ? null
+            : Text(
+                '${(value * 100).round()}%',
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+        progress: FushiLinearProgressIndicator(value: value),
+        notes: <String>[
+          if (_downloadingFile != null)
+            t.manga_ocr_downloading_file(file: _downloadingFile!),
+          if (_downloadTotalBytes > 0)
+            t.manga_ocr_download_total_progress(
+              done: _formatBytes(_downloadReceivedBytes),
+              total: _formatBytes(_downloadTotalBytes),
+            ),
+          t.manga_ocr_download_background_hint,
+        ],
+        actions: <Widget>[
+          FushiOutlinedButton.icon(
+            onPressed: _cancelDownload,
+            icon: const FushiIcon(FushiIcons.close, size: 18),
+            label: Text(t.dialog_cancel),
+          ),
+        ],
+      );
+    }
+    if (ready) {
+      final bool acceleratorMissing = status?.acceleratorMissing ?? false;
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.downloadDone,
+        title: t.manga_ocr_model_status_ready,
+        subtitle: _withModelName(_modelSizeSubtitle(status)),
+        notes: <String>[if (acceleratorMissing) t.manga_ocr_accelerator_desc],
+        actions: <Widget>[
+          // 经典模型的提速组件（KV cache decoder）：结果不变、识别约快一倍。
+          if (acceleratorMissing)
+            FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('manga_ocr_accelerator_download'),
+              onPressed: _importing ? null : _startDownload,
+              icon: const FushiIcon(FushiIcons.speed, size: 18),
+              label: Text(
+                t.manga_ocr_accelerator_download(
+                  size: _formatBytes(status!.acceleratorMissingBytes),
+                ),
+              ),
+            ),
+          _deleteButton(),
+        ],
+      );
+    }
+    return _panelModelCard(
+      theme,
+      tone: FushiCardTone.secondary,
+      icon: FushiIcons.download,
+      title: t.manga_ocr_model_status_missing,
+      subtitle: _withModelName(_modelSizeSubtitle(status)),
+      actions: <Widget>[
+        FushiFilledButton.icon(
+          onPressed: _importing ? null : _startDownload,
+          icon: const FushiIcon(FushiIcons.download, size: 18),
+          // 「继续下载」只是把已有的 Range 续传说出来。
+          label: Text(
+            (status?.hasResumableDownload ?? false)
+                ? t.manga_ocr_download_resume
+                : t.manga_ocr_download,
+          ),
+        ),
+        _importButton(outlined: true),
+        // 模型不全但磁盘上有残留时也得能直接清掉。
+        if (status?.hasAnyFiles ?? false) _deleteButton(),
+      ],
+    );
+  }
+
+  /// 模型卡骨架：形状底图标 + 标题 / 副标题（+ 尾部大数字）+ 波浪进度 + 说明 +
+  /// 按钮组。[tone] 为 secondary 时是饱和强调色块（需要用户动手的状态）。
+  Widget _panelModelCard(
+    ThemeData theme, {
+    required FushiCardTone tone,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    Widget? progress,
+    List<String> notes = const <String>[],
+    List<Widget> actions = const <Widget>[],
+  }) {
+    final bool emphasis = tone != FushiCardTone.neutral;
+    return FushiCard(
+      key: const ValueKey<String>('manga_ocr_model_card'),
+      tone: tone,
+      padding: const EdgeInsets.all(16),
+      child: AnimatedSize(
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiListLeadingIcon(
+                  icon,
+                  size: 48,
+                  shape: emphasis
+                      ? FushiLeadingShape.cookie
+                      : FushiLeadingShape.circle,
+                  tone: emphasis ? FushiCardTone.primary : FushiCardTone.secondary,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        title,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            subtitle,
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: 12),
+                  trailing,
+                ],
+              ],
+            ),
+            if (progress != null) ...<Widget>[
+              const SizedBox(height: 16),
+              progress,
+            ],
+            for (final String note in notes) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(note, style: theme.textTheme.bodySmall),
+            ],
+            if (actions.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 16),
+              Wrap(spacing: 8, runSpacing: 8, children: actions),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPanelExternal(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiTextField(
+          controller: _pathCtrl,
+          size: FushiInputSize.large,
+          labelText: t.manga_ocr_external_cli_label,
+          helperText: t.manga_ocr_external_cli_hint,
+          prefixIcon: const FushiIcon(FushiIcons.system, size: 20),
+          onChanged: (String v) => unawaited(_writePath(v.trim())),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            FushiOutlinedButton.icon(
+              onPressed: _probing ? null : _detectExternal,
+              icon: _probing
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const FushiIcon(FushiIcons.search, size: 18),
+              label: Text(t.manga_ocr_external_detect),
+            ),
+            if (_probeResult != null)
+              Text(
+                _probeResult!,
+                style: theme.textTheme.bodySmall,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
           ],
         ),
       ],

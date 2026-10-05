@@ -204,7 +204,7 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   扩展自己的页面装入即把显式值写成根 `data-theme`（auto 摘掉属性交给媒体查询）；页内浮层按
   `fushiTheme.resolve(fallback)`；抽屉根写 `data-theme`。
 - **调色板选择与 Fushi 本体同一套模型**（`theme-palette.js` + `theme.js`）：`extensionPalette` =
-  `fushi`（默认，`theme.css` 原样）/ `app`（跟随 Fushi：`background.js` 把查词响应的 app 配色按
+  `app`（跟随 Fushi，**缺省**——2026-10-06 起，查词弹窗本来就吃 app 下发的配色，扩展页面缺省也跟它，两边同源；首次查词前没有镜像时回落 `theme.css`）/ `fushi`（扩展绿，`theme.css` 原样，弹窗也按它覆盖）/ `app` 镜像：`background.js` 把查词响应的 app 配色按
   明暗镜像进 `appThemeMirror`）/ 七款预设（与 app `theme_notifier.dart` 同名同种子：
   `light-theme` … `black-theme`，自带出厂明暗，选中时一并写 `extensionTheme`）/ `custom:<id>`
   （`extensionCustomThemes` 列表，每项 `{id, name, seed, surface?, text?, neutral}`，对应 app
@@ -220,7 +220,7 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   时，三处弹窗壳（`content.js` / `side-panel.js` / `nested-popup.js`）再经
   `fushiTheme.applyPopupPalette` 把 `--md-*` / `--text-color` / `--background-color` /
   `--fushi-card-bg-rgb` 等颜色项按同一款调色板覆盖，弹窗与设置页 / 侧边栏 / 字幕底板同色；
-  `fushi` / `app` 下不动。
+  只有 `app` 下不动。
 
 - **M3E 系统 token**：`theme.css` 第 ② 段定义 `--md-sys-color-*`（只别名 `--fushi-*` 调色板）与
   形状 / 字阶 / 状态层 / 高度 / 动效 `--md-sys-*`，与 app 查词弹窗 `fushi/assets/popup/m3e-tokens.css`

@@ -283,10 +283,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 即系统画中画那种观感）；系统画中画下连三键也不画（系统自带控件）。
         if (_controlsDensity.showBottomButtonBar)
           Expanded(
-            // 底栏按钮收进底部面板（[VideoM3eBottomPanel]）：面板与进度条只淡入淡出，
-            // 按钮行若单独下滑会滑出面板，故 M3E 下也不滑（随控制条同速淡入淡出）。
+            // MD3 Expressive：显隐时底栏小胶囊 spring 下滑。
             child: VideoM3eChromeSlide(
-              enabled: false,
+              enabled: !apple,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
               child: _centeredBottomControlBar(controller, desktop: true),
@@ -557,10 +556,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 同桌面：mini 档整行让位给自绘居中三键。
         if (_controlsDensity.showBottomButtonBar)
           Expanded(
-            // 底栏按钮收进底部面板（[VideoM3eBottomPanel]）：面板与进度条只淡入淡出，
-            // 按钮行若单独下滑会滑出面板，故 M3E 下也不滑（随控制条同速淡入淡出）。
+            // MD3 Expressive：显隐时底栏小胶囊 spring 下滑。
             child: VideoM3eChromeSlide(
-              enabled: false,
+              enabled: !apple,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
               child: _centeredBottomControlBar(controller, desktop: false),
@@ -661,7 +659,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       scale: _videoUiScale * _controlsDensityScale,
       hoverBubble: _thumbnailPreview == null,
       cueDensity: _m3eCueDensity(controller, visual.duration),
-      // 不画独立轨道槽：轨道已收进底部面板（[VideoM3eBottomPanel]）的上半部。
+      // 不画轨道槽：细轨直接压在画面上（底部只有一条很矮的暗角垫着）。桌面把轨道
+      // 抬到底栏小胶囊上方（热区容器骑按钮行上沿，轨道离容器底缘 overlap + 10）。
+      trackBottomInset:
+          _isDesktopVideoControls ? _videoM3eDesktopTrackBottomInset : null,
     );
   }
 

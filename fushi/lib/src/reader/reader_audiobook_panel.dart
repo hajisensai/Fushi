@@ -15,7 +15,6 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
     show AudiobookFollowAudioButton, AudiobookPlayFab;
@@ -51,11 +50,7 @@ bool readerAudiobookPanelPinsHero(double availableHeight) =>
     availableHeight >= kReaderAudiobookPanelPinnedMinHeight;
 
 /// 标签页顺序（也是 [ReaderAudiobookPanel.initialTab] 的取值域）。
-const List<String> kReaderAudiobookPanelTabs = <String>[
-  'sentences',
-  'chapters',
-  'settings',
-];
+const List<String> kReaderAudiobookPanelTabs = <String>['chapters', 'settings'];
 
 class ReaderAudiobookPanel extends StatefulWidget {
   const ReaderAudiobookPanel({
@@ -72,7 +67,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
     this.onAudioImport,
     this.onPickAlignment,
     this.onTranscribe,
-    this.initialTab = 'sentences',
+    this.initialTab = 'chapters',
     this.tick = const Duration(seconds: 1),
   });
 
@@ -99,7 +94,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
   final VoidCallback? onPickAlignment;
   final VoidCallback? onTranscribe;
 
-  /// sentences / chapters / settings（见 [kReaderAudiobookPanelTabs]）。
+  /// chapters / settings（见 [kReaderAudiobookPanelTabs]）。
   final String initialTab;
 
   /// 进度条刷新周期（控制器只在 cue 切换 / 播放暂停时 notify，拖动条需要秒级 tick）。
@@ -119,17 +114,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   /// 后拇指先跳回旧位置再追上。位置追上（±1.5s）或超过 2s 自动放手。
   int? _scrubTargetMs;
   DateTime? _scrubSetAt;
-
-  /// 句子页：用户最近一次手动滚动的时刻；5 秒内不自动跟随到当前句。
-  DateTime? _userScrolledAt;
-  final ScrollController _sentenceScroll = ScrollController();
-
-  /// 句子页上一次自动定位到的句子（同一句不重复滚）。
-  AudioCue? _lastRevealedCue;
-
-  /// 句子行的估算高度（引文卡两行正文 + 元信息 + 间距）：懒加载列表里不可见行
-  /// 没有布局，按它先跳到附近，再对可见行 ensureVisible 精修。
-  static const double _kSentenceExtent = 92;
 
   int? _effectiveScrubMs(Duration livePos) {
     final int? target = _scrubTargetMs;
@@ -151,62 +135,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     _ticker = Timer.periodic(widget.tick, (_) {
       if (mounted) setState(() {});
     });
-    widget.controller?.addListener(_onController);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _revealCurrent());
-  }
-
-  @override
-  void didUpdateWidget(ReaderAudiobookPanel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.controller, widget.controller)) {
-      oldWidget.controller?.removeListener(_onController);
-      widget.controller?.addListener(_onController);
-    }
   }
 
   @override
   void dispose() {
-    widget.controller?.removeListener(_onController);
     _ticker?.cancel();
-    _sentenceScroll.dispose();
     super.dispose();
-  }
-
-  void _onController() {
-    if (!mounted) return;
-    final AudioCue? cue = widget.controller?.currentCue;
-    if (_tab == 'sentences' && !identical(cue, _lastRevealedCue)) {
-      final DateTime? at = _userScrolledAt;
-      if (at == null || DateTime.now().difference(at).inSeconds >= 5) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _revealCurrent());
-      }
-    }
-  }
-
-  /// 把句子列表滚到当前句（居中偏上）。
-  void _revealCurrent({bool force = false}) {
-    if (!mounted || _tab != 'sentences') return;
-    final AudiobookPlayerController? ctrl = widget.controller;
-    if (ctrl == null || !_sentenceScroll.hasClients) return;
-    final List<AudioCue> cues = ctrl.chapterCuesSnapshot;
-    final AudioCue? cue = ctrl.currentCue;
-    final int index = cue == null ? -1 : cues.indexOf(cue);
-    if (index < 0) return;
-    _lastRevealedCue = cue;
-    final ScrollPosition pos = _sentenceScroll.position;
-    final double target =
-        (index * _kSentenceExtent - pos.viewportDimension * 0.3)
-            .clamp(0.0, pos.maxScrollExtent);
-    final Duration d = fushiMotionDuration(context, FushiMotion.medium);
-    if (d == Duration.zero || (pos.pixels - target).abs() > 2400) {
-      _sentenceScroll.jumpTo(target);
-    } else {
-      unawaited(
-        _sentenceScroll.animateTo(target,
-            duration: d, curve: FushiMotion.standard),
-      );
-    }
-    if (force) _userScrolledAt = null;
   }
 
   static String _formatDuration(Duration d) => FushiTimeFormat.clockPadded(d);
@@ -217,8 +151,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     final AudiobookPlayerController? ctrl = widget.controller;
     final Widget tabContent = switch (_tab) {
       'settings' => _buildSettingsTab(theme, ctrl),
-      'chapters' => _buildChaptersTab(theme, ctrl),
-      _ => _buildSentencesTab(theme, ctrl),
+      _ => _buildChaptersTab(theme, ctrl),
     };
     final List<Widget> head = <Widget>[
       _buildHero(theme, ctrl),
@@ -226,12 +159,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       ReaderPanelTabs<String>(
         padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
         tabs: <ReaderPanelTab<String>>[
-          ReaderPanelTab<String>(
-            value: 'sentences',
-            label: t.reader_audiobook_tab_sentences,
-            icon: Icons.format_quote_rounded,
-            key: const ValueKey<String>('fushi_audiobook_tab_button_sentences'),
-          ),
           ReaderPanelTab<String>(
             value: 'chapters',
             label: t.reader_audiobook_tab_chapters,
@@ -246,14 +173,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           ),
         ],
         selected: _tab,
-        onChanged: (String id) {
-          setState(() => _tab = id);
-          if (id == 'sentences') {
-            _lastRevealedCue = null;
-            WidgetsBinding.instance
-                .addPostFrameCallback((_) => _revealCurrent(force: true));
-          }
-        },
+        onChanged: (String id) => setState(() => _tab = id),
       ),
     ];
     final Widget body = AnimatedSwitcher(
@@ -639,66 +559,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     );
   }
 
-  /// 「句子」页：当前章的句子，当前句高亮并自动滚到视野里；点句跳过去（不关面板）。
-  Widget _buildSentencesTab(ThemeData theme, AudiobookPlayerController? ctrl) {
-    final List<AudioCue> cues = ctrl?.chapterCuesSnapshot ?? const <AudioCue>[];
-    if (ctrl == null || cues.isEmpty) {
-      return ReaderPanelEmpty(
-        icon: Icons.format_quote_rounded,
-        message: t.reader_audiobook_no_sentences,
-      );
-    }
-    final AudioCue? current = ctrl.currentCue;
-    return Stack(
-      children: <Widget>[
-        NotificationListener<UserScrollNotification>(
-          onNotification: (UserScrollNotification n) {
-            if (n.direction != ScrollDirection.idle) {
-              _userScrolledAt = DateTime.now();
-            }
-            return false;
-          },
-          child: ListView.builder(
-            key: const ValueKey<String>('fushi_audiobook_sentences'),
-            controller: _sentenceScroll,
-            padding: const EdgeInsets.only(bottom: 64),
-            itemCount: cues.length,
-            itemBuilder: fushiStaggeredItemBuilder(
-              (BuildContext context, int i) {
-                final AudioCue cue = cues[i];
-                final bool isCurrent = identical(cue, current);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: ReaderQuoteCard(
-                    key: ValueKey<String>('fushi_audiobook_sentence_$i'),
-                    text: cue.text.trim(),
-                    meta: _formatDuration(Duration(milliseconds: cue.startMs)),
-                    current: isCurrent,
-                    maxLines: 3,
-                    trailing: isCurrent
-                        ? _SoundWaveIcon(playing: ctrl.isPlaying)
-                        : null,
-                    onTap: () => unawaited(ctrl.skipToCue(cue)),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-        PositionedDirectional(
-          end: 4,
-          bottom: 8,
-          child: FushiFilledButton.tonalIcon(
-            key: const ValueKey<String>('fushi_audiobook_jump_current'),
-            icon: const FushiIcon(Icons.my_location_rounded),
-            label: Text(t.reader_audiobook_jump_to_current),
-            onPressed: () => _revealCurrent(force: true),
-          ),
-        ),
-      ],
-    );
-  }
-
   /// 「设置」页：音量 / 速度 / 延迟等（调用方提供），底部次级分组收低频的资源操作
   /// （音频文件、对齐文件、转录、导入音频）。
   Widget _buildSettingsTab(ThemeData theme, AudiobookPlayerController? ctrl) {
@@ -1033,87 +893,6 @@ class _SleepTimerChip extends StatelessWidget {
           if (choice == null) return;
           timer.start(choice == 0 ? null : choice);
           // 面板每秒 tick 重建，chip 读数随之刷新。
-        },
-      ),
-    );
-  }
-}
-
-/// 当前句的小音波图标：三根竖条随播放起伏（暂停静止），弹簧般的错相正弦。
-class _SoundWaveIcon extends StatefulWidget {
-  const _SoundWaveIcon({required this.playing});
-
-  final bool playing;
-
-  @override
-  State<_SoundWaveIcon> createState() => _SoundWaveIconState();
-}
-
-class _SoundWaveIconState extends State<_SoundWaveIcon>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  );
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _sync();
-  }
-
-  @override
-  void didUpdateWidget(_SoundWaveIcon oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _sync();
-  }
-
-  void _sync() {
-    if (widget.playing && fushiMotionEnabled(context)) {
-      if (!_c.isAnimating) _c.repeat();
-    } else {
-      _c.stop();
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color color = isGlassDesign(context)
-        ? appleColorsOf(context).accent
-        : Theme.of(context).colorScheme.onSecondaryContainer;
-    return SizedBox(
-      width: 20,
-      height: 18,
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (BuildContext context, Widget? _) {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              for (int i = 0; i < 3; i++)
-                Container(
-                  width: 4,
-                  height: 6 +
-                      12 *
-                          (0.5 +
-                              0.5 *
-                                  math.sin(
-                                    (_c.value + i / 3) * 2 * math.pi,
-                                  )),
-                  decoration: ShapeDecoration(
-                    color: color,
-                    shape: const StadiumBorder(),
-                  ),
-                ),
-            ],
-          );
         },
       ),
     );

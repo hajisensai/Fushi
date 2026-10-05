@@ -1702,8 +1702,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         (width >= 600 ? FontLibraryLayout.grid : FontLibraryLayout.list);
     final List<FontLibraryFilter> filters = _availableFilters;
 
-    final Widget toolbar = KeyedSubtree(
-      key: spy.anchor('fonts'),
+    final Widget toolbar = SettingsSectionAnchor(
+      title: t.font_library_section_fonts,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: pad),
         child: Column(
@@ -1756,8 +1756,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       ),
     );
 
-    final Widget preview = KeyedSubtree(
-      key: spy.anchor('preview'),
+    final Widget preview = SettingsSectionAnchor(
+      title: t.font_preview_title,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: pad),
         child: Column(
@@ -1773,8 +1773,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       ),
     );
 
-    final Widget sources = KeyedSubtree(
-      key: spy.anchor('sources'),
+    final Widget sources = SettingsSectionAnchor(
+      title: t.font_library_section_sources,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: pad),
         child: Column(
@@ -1849,11 +1849,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                 '${fontTargetLabel(widget.target)}',
       leadingIcon: FushiIcons.font,
       leadingTone: SettingsIconTone.purple,
-      sections: <(String, String)>[
-        ('fonts', t.font_library_section_fonts),
-        ('preview', t.font_preview_title),
-        ('sources', t.font_library_section_sources),
-      ],
       actions: <Widget>[
         Builder(
           builder: (BuildContext context) {

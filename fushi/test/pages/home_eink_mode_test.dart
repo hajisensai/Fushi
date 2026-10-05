@@ -189,7 +189,7 @@ void main() {
       );
     });
 
-    testWidgets('非 eink 主题原样：secondaryContainer 药丸、无边线', (
+    testWidgets('非 eink 主题原样：悬浮胶囊 tertiary 指示器药丸、无边线', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(
@@ -208,7 +208,8 @@ void main() {
       await tester.pumpAndSettle();
       final BoxDecoration pill =
           selectedPill(tester).decoration! as BoxDecoration;
-      expect(pill.color, ThemeData().colorScheme.secondaryContainer);
+      // M3E 悬浮底栏是 vibrant tertiaryContainer 胶囊，选中指示器深一阶 tertiary。
+      expect(pill.color, ThemeData().colorScheme.tertiary);
       expect(
         tester.widget<Material>(find.byKey(fushiMaterialNavKey)).shape,
         isNull,
