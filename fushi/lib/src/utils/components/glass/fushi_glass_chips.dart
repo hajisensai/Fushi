@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -573,6 +574,7 @@ class FushiChoiceChip extends StatelessWidget {
     this.avatarBoxConstraints,
     this.chipAnimationStyle,
     this.mouseCursor,
+    this.accentColor,
   }) : _elevated = false;
 
   const FushiChoiceChip.elevated({
@@ -608,6 +610,7 @@ class FushiChoiceChip extends StatelessWidget {
     this.avatarBoxConstraints,
     this.chipAnimationStyle,
     this.mouseCursor,
+    this.accentColor,
   }) : _elevated = true;
 
   final Widget? avatar;
@@ -641,10 +644,26 @@ class FushiChoiceChip extends StatelessWidget {
   final BoxConstraints? avatarBoxConstraints;
   final ChipAnimationStyle? chipAnimationStyle;
   final MouseCursor? mouseCursor;
+  /// 强调色（标签 / 合集等彩色 chip）：MD3 选中铺满该色、未选淡色块
+  /// （[fushiAccentChipColors]）；Apple 选中用该色作胶囊底。显式给的
+  /// selectedColor / backgroundColor / labelStyle 仍优先。
+  final Color? accentColor;
+
   final bool _elevated;
 
   @override
   Widget build(BuildContext context) {
+    final Color? accent = accentColor;
+    if (accent == null || isGlassDesign(context) || isEinkTheme(context)) {
+      return _build(context);
+    }
+    return ChipTheme(
+      data: fushiAccentChipTheme(context, accent),
+      child: Builder(builder: _build),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     if (isGlassDesign(context)) {
       final ValueChanged<bool>? select = onSelected;
       return _glassChip(
@@ -662,7 +681,7 @@ class FushiChoiceChip extends StatelessWidget {
         // iOS 的单选胶囊靠强调色实底表达选中，默认不画对勾（M3 默认画）。
         showCheckmark: showCheckmark ?? false,
         checkmarkColor: checkmarkColor,
-        selectedColor: selectedColor,
+        selectedColor: selectedColor ?? accentColor,
         backgroundColor: backgroundColor,
         disabledColor: disabledColor,
         color: color,
@@ -795,6 +814,7 @@ class FushiFilterChip extends StatelessWidget {
     this.chipAnimationStyle,
     this.mouseCursor,
     this.tone = FushiFilterChipTone.include,
+    this.accentColor,
   }) : _elevated = false;
 
   const FushiFilterChip.elevated({
@@ -836,6 +856,7 @@ class FushiFilterChip extends StatelessWidget {
     this.chipAnimationStyle,
     this.mouseCursor,
     this.tone = FushiFilterChipTone.include,
+    this.accentColor,
   }) : _elevated = true;
 
   final Widget? avatar;
@@ -877,10 +898,26 @@ class FushiFilterChip extends StatelessWidget {
 
   /// 语义色调，默认 [FushiFilterChipTone.include]（与原 FilterChip 完全一致）。
   final FushiFilterChipTone tone;
+  /// 强调色（标签 / 合集等彩色 chip）：MD3 选中铺满该色、未选淡色块
+  /// （[fushiAccentChipColors]）；Apple 选中用该色作胶囊底。显式给的
+  /// selectedColor / backgroundColor / labelStyle 仍优先。
+  final Color? accentColor;
+
   final bool _elevated;
 
   @override
   Widget build(BuildContext context) {
+    final Color? accent = accentColor;
+    if (accent == null || isGlassDesign(context) || isEinkTheme(context)) {
+      return _build(context);
+    }
+    return ChipTheme(
+      data: fushiAccentChipTheme(context, accent),
+      child: Builder(builder: _build),
+    );
+  }
+
+  Widget _build(BuildContext context) {
     final bool exclude = tone == FushiFilterChipTone.exclude;
     if (isGlassDesign(context)) {
       final ValueChanged<bool>? select = onSelected;
@@ -908,7 +945,7 @@ class FushiFilterChip extends StatelessWidget {
         selected: selected && !exclude,
         showCheckmark: exclude ? false : (showCheckmark ?? true),
         checkmarkColor: checkmarkColor,
-        selectedColor: selectedColor,
+        selectedColor: selectedColor ?? accentColor,
         backgroundColor: apple != null
             ? (backgroundColor ?? apple.secondaryFill)
             : backgroundColor,
