@@ -9,7 +9,7 @@
 /// 域模型——想让新的域接进来只需把自己的来源映射成一串 (id, label)。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/utils.dart';

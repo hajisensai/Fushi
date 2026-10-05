@@ -14,7 +14,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show Navigator, NavigatorState;
+import 'package:material_ui/material_ui.dart' show Navigator, NavigatorState;
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/test_app_launcher.dart';

@@ -10,7 +10,7 @@
 // 本文件：widget 测试断言两阶段 UI（导入期遮罩 / 退出前确认按钮）+ 源码守卫锁住接线。
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;

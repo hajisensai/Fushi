@@ -11,7 +11,7 @@
 /// 类型展示（纯文本 / 标签）、主操作的位置都各不相同。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/utils.dart';
 

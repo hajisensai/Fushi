@@ -13,7 +13,7 @@
 // 它们同时服务 MD3 与玻璃两套设计系统；MD3 路径必须像素不变，所以不能把源码
 // 里的 IconData 换掉，只能在渲染时（[FushiIcon.build]）按设计系统查表替换字形。
 // IconData 重写了 `==`，不能当 const Map 的 key，故用 codePoint int。
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
 /// Material codePoint → CupertinoIcons。注释是对应的 Material 名（同 codePoint 的别名用 / 分隔）。
 const Map<int, IconData> kFushiAppleIconMap = <int, IconData>{

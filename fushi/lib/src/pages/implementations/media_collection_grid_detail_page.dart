@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show pickTargetCollectionForMembers;

@@ -8,7 +8,7 @@
 // 规格取自 m3.material.io 对应组件页，M3E 的取舍写在各函数注释里。Apple 设计
 // 系统（appleDesign）只在会被 Material 原生控件直接吃到的地方给 Apple 口径，其余
 // 交回各 Fushi* 包装自绘；墨水屏（eink）不画阴影、不靠颜色区分状态。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 

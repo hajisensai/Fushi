@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/utils.dart';
 
 void showSyncMessage(BuildContext context, String message) {

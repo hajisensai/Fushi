@@ -9,7 +9,7 @@
 //   并压暗少许，回到中心弹回原尺寸。
 //
 // 墨水屏 / 减弱动态效果下三者都原样返回 child（静止、无位移）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 

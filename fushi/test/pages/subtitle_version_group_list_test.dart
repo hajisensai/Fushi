@@ -1,7 +1,7 @@
 // B1 字幕搜索重做：版本卡列表 widget + 对话框版本视图集成。
 // 锁住四条契约：① 聚类后一版本一卡；② 指定集数点卡直接命中该集文件；
 // ③ 解析不出唯一文件时点卡展开文件行；④ 对话框默认版本视图、可切文件视图。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';

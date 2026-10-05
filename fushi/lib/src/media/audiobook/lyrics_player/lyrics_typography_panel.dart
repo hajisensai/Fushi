@@ -15,7 +15,7 @@
 // 焦点回到「Aa」键（路由出栈时 Flutter 还原原焦点）。
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';

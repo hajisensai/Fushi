@@ -8,7 +8,7 @@
 // 提示条 / toast / 空状态 / 加载各有既有的唯一实现，这里不重复。
 // 三档降级与全仓一致：墨水屏与「减弱动态效果」经 [fushiMotionEnabled] 关动效，
 // Apple 设计系统给 iOS 口径。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';

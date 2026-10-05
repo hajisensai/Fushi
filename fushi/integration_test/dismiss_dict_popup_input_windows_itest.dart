@@ -18,7 +18,7 @@
 //   .\fushi\tool\run_windows_itest.ps1 integration_test\dismiss_dict_popup_input_windows_itest.dart
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kBackMouseButton;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 // `show` 限定：services 自己也有一个同名 ModifierKey，全量导入会与注册表的
 // ModifierKey（input_binding.dart）撞名。
 import 'package:flutter/services.dart'

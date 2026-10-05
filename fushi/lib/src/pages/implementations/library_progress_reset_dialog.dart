@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart'

@@ -14,7 +14,7 @@
 /// 会让那些测试全部抛。注入让依赖显式，也让「不传就不显示」成为测试宿主的默认行为。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';

@@ -5,7 +5,7 @@
 // 都不写；「撤销 AI 改动」把草稿（含全局音频高亮色）整份拉回生成前。
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';

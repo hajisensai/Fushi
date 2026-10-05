@@ -7,7 +7,7 @@
 /// （面板文件）。播放页、媒体库右键、合集详情页三处入口都推这一页。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 

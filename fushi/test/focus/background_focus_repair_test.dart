@@ -12,7 +12,7 @@
 //
 // 挡下之后要记账，主窗回到前台再补一次，否则用户切回来整页没有焦点、键盘 /
 // 手柄快捷键全死（TODO-900 当初要修的正是这个症状）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';

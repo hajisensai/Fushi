@@ -4,7 +4,7 @@
 /// 而不是加完目录一片沉默、只能等下一次下载才知道配没配上。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';

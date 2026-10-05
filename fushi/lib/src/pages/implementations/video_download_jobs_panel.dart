@@ -3,7 +3,7 @@ import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_browser.dart';
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart'

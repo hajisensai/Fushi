@@ -10,7 +10,7 @@
 //   fushi/lib/src/pages/implementations/home_video_page.dart      `_buildVideoSearchBar`
 //   fushi/lib/src/pages/implementations/reader_fushi_history_page.dart `_buildSearchBar`
 //   fushi/lib/src/pages/implementations/games_library_page.dart   `_buildToolbar`
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';

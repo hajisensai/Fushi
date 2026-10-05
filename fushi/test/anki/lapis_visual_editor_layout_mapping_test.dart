@@ -3,7 +3,7 @@
 // 都走真实页面：装载 → 交互 → 点保存 → 断言弹回的 [LapisVisualEditorResult]。
 // 纯函数层（位置 CSS 生成 / 字段来源真相源）的守卫在
 // packages/fushi_anki/test/lapis_styling_test.dart。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';

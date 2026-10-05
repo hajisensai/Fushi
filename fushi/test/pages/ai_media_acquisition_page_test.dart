@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
 import 'package:fushi/src/media/acquisition/media_acquisition_backends.dart';

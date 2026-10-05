@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart' show GalgameSourceRow;
 
 import 'package:fushi/src/mining/galgame_cover_download.dart';

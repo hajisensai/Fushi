@@ -10,7 +10,7 @@
 /// 真实排版仍以正文 WebView 为准。纯展示，不进焦点遍历。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 

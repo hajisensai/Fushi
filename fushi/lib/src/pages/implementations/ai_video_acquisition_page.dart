@@ -14,8 +14,8 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:material_ui/material_ui.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassTextField, LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';

@@ -8,7 +8,7 @@
 // 本文件收敛「颜色→CSS 字符串」的格式化 helper 与核心变量的取值公式；变量名字面量
 // 仍保留在各调用点（多份源码扫描守卫钉死了那些字面量，见
 // browser_extension_theme_var_parity_guard_test / popup_dictionary_columns_test 等）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
