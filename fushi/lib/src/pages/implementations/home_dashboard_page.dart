@@ -34,6 +34,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
+import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
@@ -411,6 +413,16 @@ class _HomeDashboardPageState
   /// 统一处理（BUG-2834），这里不再需要特制控制器。
   final ScrollController _dashboardScrollController = ScrollController();
 
+  /// 浮动工具栏 / 「继续」FAB 的滚动驱动状态（见 [HomeToolbarScrollState]）。
+  final HomeToolbarScrollState _toolbarScroll = HomeToolbarScrollState();
+
+  /// 工具栏「更新中心」按钮的未读角标（[initState] 建，[dispose] 释放）。
+  HomeUpdateCount? _updateCount;
+
+  /// 本帧「继续」区的主角条目（[_buildContinueSection] 写入，FAB 续开它）；
+  /// null = 没有可继续的条目，FAB 不出现。
+  _ContinueEntry? _resumeEntry;
+
   /// 「继续」横滑行：三类条目统一竖版海报槽（BUG-1299）。视频封面可能是刮削
   /// 落地的 2:3 竖版海报，旧「书竖 5:7 / 视频横 16:9」混排会把海报裁成中间一条；
   /// 现在与视频库主网格同源走 [PortraitCoverImage]——竖图铺满、横版截帧模糊
@@ -615,6 +627,7 @@ class _HomeDashboardPageState
     // 翻开 → 立即补拉远端；关掉 → 立即清掉已混排进「继续」/时间轴的远端条目。
     _prefsRepoForRemoteGate = ref.read(appProvider).prefsRepo
       ..addListener(_onPrefsChangedForRemoteGate);
+    _updateCount = HomeUpdateCount(ref.read(appProvider).updateFeedService);
   }
 
   /// prefsRepo 变更回调：只关心「显示远端条目」门控是否翻转，其余偏好变动一概
@@ -659,6 +672,8 @@ class _HomeDashboardPageState
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
     _dashboardScrollController.dispose();
+    _toolbarScroll.dispose();
+    _updateCount?.dispose();
     super.dispose();
   }
 
@@ -1175,10 +1190,18 @@ class _HomeDashboardPageState
         // 2026-10 动效重做：仪表盘首屏错峰进场——分区按视觉顺序、横滚行内条目
         // 按行内 index 起播；窗口外（滚动 / 横滑带出、数据晚到补进来的卡）瞬间
         // 出现，不拖影。
-        return FushiEntranceScope(
-          child: ListView(
+        // 2026-10 首页统一浮动工具栏：顶部不再是贴边实体条，栏与「继续」FAB
+        // 悬浮在列表之上（Stack），列表顶部让出栏高、底部让出 FAB 与外壳
+        // 底栏（Apple 悬浮标签栏经 extendBody 并进 MediaQuery 底部内边距）。
+        final double bottomInset = MediaQuery.paddingOf(context).bottom;
+        final Widget list = ListView(
             controller: _dashboardScrollController,
-            padding: EdgeInsets.all(tokens.spacing.card),
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              kHomeToolbarExtent + tokens.spacing.card,
+              tokens.spacing.card,
+              tokens.spacing.card + bottomInset + kHomeFabClearance,
+            ),
             children: <Widget>[
               // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
               // SizedBox.shrink），没有更新的日子首页不多一块空卡。
@@ -1198,10 +1221,108 @@ class _HomeDashboardPageState
               ],
               body,
             ],
+        );
+        return FushiEntranceScope(
+          // 一个遍历组：Tab 先走顶部浮动栏（几何上在最上方），再进列表，
+          // 最后是 FAB。
+          child: FocusTraversalGroup(
+            child: Stack(
+              children: <Widget>[
+                NotificationListener<ScrollNotification>(
+                  onNotification: _toolbarScroll.handle,
+                  child: list,
+                ),
+                Positioned(
+                  top: 0,
+                  left: tokens.spacing.card,
+                  right: tokens.spacing.card,
+                  child: _buildFloatingToolbar(),
+                ),
+                PositionedDirectional(
+                  end: kHomeFabMargin,
+                  bottom: kHomeFabMargin + bottomInset,
+                  child: _buildResumeFab(appModel),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
+  }
+
+  // ── 浮动工具栏 + 「继续」FAB（2026-10 首页统一浮动工具栏） ───────────────────
+
+  /// 顶部浮动工具栏：标题胶囊（页面名）+ 动作按钮组（更新中心 · 统计中心 ·
+  /// 排行榜）。首页此前没有页头，这三个入口分散在更新横幅（只在有未读时出现）
+  /// 与学习卡标题行尾；收进一条与阅读器 / 视频同款的 M3E 浮动工具栏后，常驻
+  /// 可达、滚动时让位。
+  Widget _buildFloatingToolbar() {
+    final AppModel appModel = ref.read(appProvider);
+    final AdaptiveNavItem home = homeNavItemFor(HomeTab.home);
+    return ListenableBuilder(
+      listenable: _toolbarScroll,
+      builder: (BuildContext context, Widget? _) => HomeFloatingToolbar(
+        title: home.label,
+        icon: home.selectedIcon ?? home.icon,
+        visible: _toolbarScroll.visible,
+        compact: _toolbarScroll.compact,
+        actions: <HomeToolbarAction>[
+          HomeToolbarAction(
+            key: const ValueKey<String>('home-toolbar-updates'),
+            icon: Icons.notifications_outlined,
+            label: t.updates_center_title,
+            badgeCount: _updateCount,
+            onPressed: () => unawaited(_openUpdates(appModel)),
+          ),
+          HomeToolbarAction(
+            key: const ValueKey<String>('home-toolbar-stats'),
+            icon: Icons.bar_chart_outlined,
+            label: t.stat_center_title,
+            onPressed: _openStatisticsCenter,
+          ),
+          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
+          HomeToolbarAction(
+            key: const ValueKey<String>('home-toolbar-leaderboard'),
+            icon: Icons.emoji_events_outlined,
+            label: t.leaderboard_title,
+            onPressed: _openLeaderboard,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 「继续」FAB：主角卡滚出视野后出现，续开同一条目（与主角卡主按钮同一
+  /// 出口 [_openContinueEntry]）。为什么要 FAB：首页的首要动作就是「接着读 /
+  /// 接着看」，M3 用 FAB 承载页面唯一主操作；首屏主角卡自带这颗按钮，所以
+  /// 只在它滚出视野后补位，不在首屏出现两颗同义主按钮。
+  Widget _buildResumeFab(AppModel appModel) {
+    final _ContinueEntry? entry = _resumeEntry;
+    return ListenableBuilder(
+      listenable: _toolbarScroll,
+      builder: (BuildContext context, Widget? _) => HomeResumeFab(
+        key: const ValueKey<String>('home-resume-fab'),
+        visible: entry != null && _toolbarScroll.pastHero,
+        extended: _toolbarScroll.visible,
+        icon: entry == null
+            ? Icons.play_arrow_rounded
+            : _resumeActionIcon(entry),
+        label: entry == null ? t.home_continue : _resumeActionLabel(entry),
+        onPressed: () {
+          final _ContinueEntry? current = _resumeEntry;
+          if (current != null) {
+            unawaited(_openContinueEntry(appModel, current));
+          }
+        },
+      ),
+    );
+  }
+
+  /// 工具栏「更新中心」：打开后回来刷新角标（看过的条目不再算未读）。
+  Future<void> _openUpdates(AppModel appModel) async {
+    await openUpdatesCenter(context, appModel.updateFeedService);
+    await _updateCount?.reload();
   }
 
   // ── 区块 2：继续（书 + 视频统一列表） ─────────────────────────────────────
@@ -1376,6 +1497,7 @@ class _HomeDashboardPageState
         })
         .take(10)
         .toList();
+    _resumeEntry = filtered.isEmpty ? null : filtered.first;
 
     return _sectionCard(
       tokens,
@@ -1436,21 +1558,27 @@ class _HomeDashboardPageState
       title: title,
       subtitle: subtitle,
       progress: entry.progress,
-      actionLabel: switch (entry.kind) {
+      actionLabel: _resumeActionLabel(entry),
+      actionIcon: _resumeActionIcon(entry),
+      onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
+    );
+  }
+
+  /// 主角卡主按钮与「继续」FAB 共用的动作文案。
+  String _resumeActionLabel(_ContinueEntry entry) => switch (entry.kind) {
         MediaKind.video => t.video_continue_watching,
         MediaKind.epub || MediaKind.srt => t.book_continue_reading,
         // 游戏卡落地是切到游戏库（启动走那边的确认链），文案说「打开」；
         // 不用「继续」——会与分区标题撞成同一个词。
         MediaKind.game => t.collection_open,
-      },
-      actionIcon: switch (entry.kind) {
+      };
+
+  /// 主角卡主按钮与「继续」FAB 共用的动作图标。
+  IconData _resumeActionIcon(_ContinueEntry entry) => switch (entry.kind) {
         MediaKind.video => Icons.play_arrow_rounded,
         MediaKind.epub || MediaKind.srt => Icons.menu_book_rounded,
         MediaKind.game => Icons.sports_esports_outlined,
-      },
-      onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
-    );
-  }
+      };
 
   /// 横滑卡片行本体（「继续」与「最近添加」共用）：定高横向 ListView。
   ///
@@ -2141,28 +2269,12 @@ class _HomeDashboardPageState
     final Widget card = _sectionCard(
       tokens,
       title: t.reading_activity,
-      // 统计入口的唯一落点（用户定案 2026-09-01：各媒体页头的「xx统计」全部
-      // 撤掉，统一从首页热力图卡右上进统计中心总览）。
+      // 统计入口（用户定案 2026-09-01：各媒体页头的「xx统计」全部撤掉，统一
+      // 从首页进统计中心总览）与排行榜：2026-10 首页统一浮动工具栏后，两颗
+      // 按钮从本卡标题行尾挪进顶部浮动工具栏的按钮组（见
+      // [_buildFloatingToolbar]），仍是首页唯一入口。
       // 2026-10 重设计：学习进度与每日目标合并成一张紧凑卡——顶部「目标环 +
-      // 今日字数 + 统计入口」一行，筛选条与热力图在下。
-      // 统计入口挂在标题行尾，目标行独占一整行（窄屏下与入口挤一行会把
-      // 今日字数截成省略号）。
-      trailing: <Widget>[
-          FushiIconButton(
-            tooltip: t.stat_center_title,
-            label: t.stat_center_title,
-            icon: Icons.bar_chart_outlined,
-            onTap: _openStatisticsCenter,
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
-          FushiIconButton(
-            tooltip: t.leaderboard_title,
-            label: t.leaderboard_title,
-            icon: Icons.emoji_events_outlined,
-            onTap: _openLeaderboard,
-          ),
-      ],
+      // 今日字数」一行，筛选条与热力图在下。
       header: _initialLoadDone
           ? _buildDailyGoalRow(tokens)
           : const HomeGoalSkeleton(),
