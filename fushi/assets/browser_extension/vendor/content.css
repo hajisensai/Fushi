@@ -2373,6 +2373,7 @@
     background-color: var(--md-sys-color-surface-container);
     box-shadow: none;
     padding: 0 16px 12px;
+    transition: padding-bottom var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
 }
 
 :where(#entries-container).fushi-m3e .glossary-section > .category-body > .glossary-group {
@@ -2487,6 +2488,9 @@
 
 :where(#entries-container).fushi-m3e .entry-header {
     --fushi-m3e-headword-size: clamp(28px, 7vw, var(--md-sys-typescale-display-small-size));
+    /* 按钮组单钮尺寸：宽屏 40（M3 标准图标按钮），阅读器 / 视频里的窄弹窗收到 32，
+       四五颗按钮不至于把词头挤成横向滚动。 */
+    --fushi-m3e-action-size: clamp(32px, 9vw, 40px);
     gap: 12px;
     padding-top: 0;
     min-height: 48px;
@@ -2515,13 +2519,13 @@
     margin-left: 0;
     gap: 4px;
     align-self: flex-end;
-    margin-bottom: max(0px, calc((var(--fushi-m3e-headword-size) * 1.2 - 40px) / 2));
+    margin-bottom: max(0px, calc((var(--fushi-m3e-headword-size) * 1.2 - var(--fushi-m3e-action-size)) / 2));
 }
 
 :where(#entries-container).fushi-m3e .header-buttons > .inline-action-button {
     box-sizing: border-box;
-    width: 40px;
-    height: 40px;
+    width: var(--fushi-m3e-action-size);
+    height: var(--fushi-m3e-action-size);
     padding: 0;
     border: none;
     border-radius: var(--md-sys-shape-corner-full);
@@ -2955,6 +2959,10 @@
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .kanji-card-char,
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .mined-action-btn,
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group > summary::before {
+    transition: none;
+}
+
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group {
     transition: none;
 }
 
