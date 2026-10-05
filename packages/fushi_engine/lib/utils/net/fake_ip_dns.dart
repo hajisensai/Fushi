@@ -1,4 +1,4 @@
-/// BUG-2938：fake-ip DNS（Clash / mihomo / FlClash 的 TUN + fake-ip 模式）下给内置
+/// BUG-2950：fake-ip DNS（Clash / mihomo / FlClash 的 TUN + fake-ip 模式）下给内置
 /// torrent 引擎找回真实 IP。
 ///
 /// ## 为什么需要它

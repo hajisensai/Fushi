@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
-/// BUG-2938：fake-ip DNS 下给内置 torrent 引擎找回真实 IP + 会话级网络诊断。
+/// BUG-2950：fake-ip DNS 下给内置 torrent 引擎找回真实 IP + 会话级网络诊断。
 void main() {
   group('isFakeIpAddress', () {
     test('198.18.0.0/15 is fake-ip, neighbours are not', () {

@@ -1749,7 +1749,7 @@ HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
   }
 }
 
-// BUG-2938：运行期补 DHT 节点。fake-ip DNS（Clash TUN 等）下建号时的引导点
+// BUG-2950：运行期补 DHT 节点。fake-ip DNS（Clash TUN 等）下建号时的引导点
 // 主机名全被解析成 198.18.x.x 假地址，路由表永远 0 节点；Dart 侧经 DoH 拿到
 // 真实 IP 后从这里直接喂给 DHT（lt::session::add_dht_node，不改建号时的
 // 引导点设置）。[nodes] 以 \n 分隔，每行 "host:port"（IPv4 / 主机名，IPv6

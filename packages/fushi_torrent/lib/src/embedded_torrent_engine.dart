@@ -1212,7 +1212,7 @@ class EmbeddedTorrentSession {
   /// 已加载的库是否支持运行期补 DHT 节点（[addDhtNodes]）。
   bool get supportsAddDhtNodes => _b.hasAddDhtNodes;
 
-  /// BUG-2938：运行期向 DHT 补节点（每项 "host:port"，IPv6 写 "[addr]:port"）。
+  /// BUG-2950：运行期向 DHT 补节点（每项 "host:port"，IPv6 写 "[addr]:port"）。
   /// 返回 native 成功添加的条数；库不支持 / session 已关 / 列表为空 / native
   /// 失败一律返回 -1。
   int addDhtNodes(List<String> hostPorts) {

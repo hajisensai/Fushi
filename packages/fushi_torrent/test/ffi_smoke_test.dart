@@ -63,7 +63,7 @@ void main() {
         reason: 'host:port 拆不开必须显式失败，不假装成功');
   }, skip: engine == null ? 'fushi_torrent_ffi native lib not built' : null);
 
-  test('addDhtNodes（BUG-2938）：合法行计数，非法行跳过，空列表 -1', () {
+  test('addDhtNodes（BUG-2950）：合法行计数，非法行跳过，空列表 -1', () {
     final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine!);
     expect(session, isNotNull);
     addTearDown(session!.close);

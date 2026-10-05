@@ -545,7 +545,7 @@ class EmbeddedTorrentHost {
     return ok;
   }
 
-  /// BUG-2938：宿主级附加 tracker（plain 字符串，通常是 fake-ip DNS 下由 DoH
+  /// BUG-2950：宿主级附加 tracker（plain 字符串，通常是 fake-ip DNS 下由 DoH
   /// 解析出的 `udp://<真实IP>:<port>/announce`）。由 AppModel 经
   /// [setExtraTrackers] 下发；新任务由 [backendView] 派发的后端在 add 后追加。
   List<String> _extraTrackers = const <String>[];
@@ -572,7 +572,7 @@ class EmbeddedTorrentHost {
     }
   }
 
-  /// BUG-2938：运行期向 DHT 补节点（每项 "host:port"）。返回 native 添加的
+  /// BUG-2950：运行期向 DHT 补节点（每项 "host:port"）。返回 native 添加的
   /// 条数；库不支持 / session 已关 / 列表为空返回 -1。
   int addDhtNodes(List<String> hostPorts) {
     if (!_session.supportsAddDhtNodes) {

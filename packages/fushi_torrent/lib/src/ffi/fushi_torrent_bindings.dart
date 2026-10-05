@@ -711,7 +711,7 @@ class FushiTorrentBindings {
     }
   }
 
-  /// BUG-2938：运行期向 DHT 补节点（换行分隔的 "host:port"）。返回成功添加的
+  /// BUG-2950：运行期向 DHT 补节点（换行分隔的 "host:port"）。返回成功添加的
   /// 条数，-1 失败。调用前必须先看 [hasAddDhtNodes]——比本文件旧的预编译库
   /// 里没有这个符号。
   int ht_add_dht_nodes(
