@@ -22,7 +22,7 @@ ReaderAudiobookPanel _panel({
   VoidCallback? onImport,
   VoidCallback? onPickAlignment,
   VoidCallback? onTranscribe,
-  String initialTab = 'sentences',
+  String initialTab = 'chapters',
 }) => ReaderAudiobookPanel(
   controller: null,
   toc: toc,
@@ -41,19 +41,20 @@ ReaderAudiobookPanel _panel({
 void main() {
   setUpAll(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  test('页签顺序：句子 / 章节 / 设置，默认句子', () {
-    expect(kReaderAudiobookPanelTabs, <String>[
-      'sentences',
-      'chapters',
-      'settings',
-    ]);
+  test('页签顺序：章节 / 设置，默认章节（句子页签已移除）', () {
+    expect(kReaderAudiobookPanelTabs, <String>['chapters', 'settings']);
   });
 
-  testWidgets('无控制器：句子页给空态，正在播放卡给导入入口', (tester) async {
+  testWidgets('无控制器：正在播放卡给导入入口，没有句子页签', (tester) async {
     await tester.pumpWidget(_host(_panel(onImport: () {})));
     await tester.pump();
-    expect(find.text(t.reader_audiobook_no_sentences), findsOneWidget);
     expect(find.text(t.audio_import), findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('fushi_audiobook_tab_button_sentences'),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('章节页列目录并标当前章，点击跳章', (tester) async {
