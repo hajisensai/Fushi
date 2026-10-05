@@ -71,6 +71,13 @@ class MaterialDesktopVideoControlsThemeData {
   /// Whether to toggle play and pause on tap.
   final bool playAndPauseOnTap;
 
+  /// Hibiki patch (touch on desktop): when true, a tap from a touch / stylus
+  /// pointer toggles the controls (like the mobile controls' `onTap`) instead
+  /// of play / pause — fingers never hover, so hover is not available to reveal
+  /// the bar. Mouse clicks keep [playAndPauseOnTap]. Default false = upstream
+  /// behaviour. See [MaterialDesktopTapRouter] and PATCHES.md.
+  final bool touchTapTogglesControls;
+
   /// Keyboards shortcuts.
   final Map<ShortcutActivator, VoidCallback>? keyboardShortcuts;
 
@@ -296,6 +303,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.automaticallyImplySkipPreviousButton = true,
     this.toggleFullscreenOnDoublePress = true,
     this.playAndPauseOnTap = false,
+    this.touchTapTogglesControls = false,
     this.modifyVolumeOnScroll = true,
     this.keyboardShortcuts,
     this.visibleOnMount = false,
@@ -358,6 +366,7 @@ class MaterialDesktopVideoControlsThemeData {
     bool? automaticallyImplySkipPreviousButton,
     bool? toggleFullscreenOnDoublePress,
     bool? playAndPauseOnTap,
+    bool? touchTapTogglesControls,
     bool? modifyVolumeOnScroll,
     Map<ShortcutActivator, VoidCallback>? keyboardShortcuts,
     bool? visibleOnMount,
@@ -411,6 +420,8 @@ class MaterialDesktopVideoControlsThemeData {
       toggleFullscreenOnDoublePress:
           toggleFullscreenOnDoublePress ?? this.toggleFullscreenOnDoublePress,
       playAndPauseOnTap: playAndPauseOnTap ?? this.playAndPauseOnTap,
+      touchTapTogglesControls:
+          touchTapTogglesControls ?? this.touchTapTogglesControls,
       modifyVolumeOnScroll: modifyVolumeOnScroll ?? this.modifyVolumeOnScroll,
       keyboardShortcuts: keyboardShortcuts ?? this.keyboardShortcuts,
       visibleOnMount: visibleOnMount ?? this.visibleOnMount,
@@ -530,19 +541,6 @@ class _MaterialDesktopVideoControlsState
   late bool buffering = controller(context).player.state.buffering;
 
   DateTime last = DateTime.now();
-
-  // BUG-374 (Hibiki vendored patch): whether the pointer-down that started the
-  // current tap landed in the play/pause-eligible region (above the bottom seek
-  // bar). Recorded in onTapDown, consumed in onTap. Play/pause is now executed in
-  // `onTap` (which only fires when THIS GestureDetector WINS the gesture arena)
-  // instead of `onTapDown` (which fires immediately on pointer-down regardless of
-  // arena resolution). Firing on onTapDown made the edge/padding of overlaid
-  // control buttons leak through to play/pause: the parent onTapDown ran before
-  // the child button's tap recognizer could claim the arena, so a button-edge tap
-  // both pressed the button AND toggled play/pause. onTap defers to the winner, so
-  // a button (or any descendant tap recognizer) claiming the tap suppresses the
-  // spurious play/pause.
-  bool _playPauseTapEligible = false;
 
   final List<StreamSubscription> subscriptions = [];
 
@@ -829,38 +827,48 @@ class _MaterialDesktopVideoControlsState
                         }
                       }
                     : null,
-                child: GestureDetector(
-                  // BUG-374 (Hibiki vendored patch): record whether this tap is
-                  // eligible for play/pause (outside the bottom seek bar region),
-                  // but DO NOT toggle here. onTapDown fires on pointer-down before
-                  // the gesture arena resolves, so toggling here makes the edge of
-                  // overlaid control buttons leak through to play/pause. The actual
-                  // toggle runs in `onTap`, which only fires when this detector wins
-                  // the arena (no descendant button claimed the tap).
-                  onTapDown: !_theme(context).playAndPauseOnTap
-                      ? null
-                      : (TapDownDetails details) {
-                          final RenderBox box =
-                              context.findRenderObject() as RenderBox;
-                          final Offset localPosition =
-                              box.globalToLocal(details.globalPosition);
-                          const double tapPadding = 10.0;
-                          // Only play and pause when the bottom seek bar is visible
-                          // and when clicking outside of the bottom seek bar region.
-                          _playPauseTapEligible = !mount ||
-                              localPosition.dy <
-                                  box.size.height -
-                                      subtitleVerticalShiftOffset -
-                                      tapPadding;
-                        },
-                  onTap: !_theme(context).playAndPauseOnTap
-                      ? null
-                      : () {
-                          if (_playPauseTapEligible) {
-                            controller(context).player.playOrPause();
-                          }
-                          _playPauseTapEligible = false;
-                        },
+                child: MaterialDesktopTapRouter(
+                  // BUG-374 (Hibiki vendored patch): the router records in
+                  // onTapDown whether this tap is eligible for play/pause
+                  // (outside the bottom seek bar region) and only acts in
+                  // onTap, which fires when this detector wins the gesture
+                  // arena (no descendant button claimed the tap).
+                  // Hibiki patch (touch on desktop): a touch / stylus tap
+                  // toggles the controls instead (fingers cannot hover-reveal
+                  // them); mouse clicks keep play/pause. See
+                  // [MaterialDesktopTapRouter].
+                  playAndPauseOnTap: _theme(context).playAndPauseOnTap,
+                  touchTapTogglesControls:
+                      _theme(context).touchTapTogglesControls,
+                  controlsVisible: visible,
+                  isInPlayPauseRegion: (Offset globalPosition) {
+                    final RenderBox box =
+                        context.findRenderObject() as RenderBox;
+                    final Offset localPosition =
+                        box.globalToLocal(globalPosition);
+                    const double tapPadding = 10.0;
+                    // Only play and pause when the bottom seek bar is visible
+                    // and when clicking outside of the bottom seek bar region.
+                    return !mount ||
+                        localPosition.dy <
+                            box.size.height -
+                                subtitleVerticalShiftOffset -
+                                tapPadding;
+                  },
+                  onAction: (DesktopControlsTapAction action) {
+                    // (if-chain, not a switch: this package's language
+                    // version predates implicit case break.)
+                    if (action == DesktopControlsTapAction.playOrPause) {
+                      controller(context).player.playOrPause();
+                    } else if (action ==
+                        DesktopControlsTapAction.hideControls) {
+                      onExit();
+                    } else if (action ==
+                            DesktopControlsTapAction.showControls ||
+                        action == DesktopControlsTapAction.keepControlsAlive) {
+                      onHover();
+                    }
+                  },
                   onTapUp: !_theme(context).toggleFullscreenOnDoublePress
                       ? null
                       : (e) {

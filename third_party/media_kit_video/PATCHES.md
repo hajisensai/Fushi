@@ -725,3 +725,40 @@ box (`seekBarContainerHeight`). `null` = upstream track, pixel for pixel.
 
 Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
 (MD3 branch only; the Apple branch keeps the theme-field scrubber above).
+
+## Touch on desktop (Surface): touch / stylus tap toggles the controls (`touchTapTogglesControls`)
+
+`lib/media_kit_video_controls/src/controls/widgets/desktop_tap_router.dart`
+(new, exported from `media_kit_video_controls.dart`) and the desktop theme data
+class / tap layer in `material_desktop.dart`.
+
+The desktop controls reveal the bar on mouse hover and (with
+`playAndPauseOnTap`) toggle play / pause on a click. Flutter's `MouseTracker`
+ignores touch pointers, so on a Windows touch screen a finger could never
+reveal the bar — every tap paused instead, and the only way to see the chrome
+was double-tapping into fullscreen (which remounts the controls).
+
+The patch moves the tap `GestureDetector` into `MaterialDesktopTapRouter`, which
+records the `TapDownDetails.kind` alongside the BUG-374 play/pause eligibility
+and resolves the action in `onTap` (arena-respecting, as before) through the
+pure `resolveDesktopControlsTap`:
+
+- mouse / trackpad: unchanged — `playOrPause` when `playAndPauseOnTap` and the
+  tap is outside the bottom bar strip, otherwise nothing;
+- touch / stylus with `touchTapTogglesControls: true` (new theme field, default
+  `false`): like the mobile controls' `onTap` — show the bar (and arm the
+  auto-hide timer) when hidden, hide it when visible; a tap on the bottom bar
+  strip (between buttons / around the seek bar) only keeps the visible bar
+  alive.
+
+Show / keep-alive reuse the State's `onHover()` and hide reuses `onExit()`, so
+`visibilityNotifier`, subtitle shifting and the auto-hide timer behave exactly
+as for mouse hover. With the field left `false` the behaviour is identical to
+before.
+
+Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
+(`touchTapTogglesControls: true` in `_desktopControlsTheme`).
+
+Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart` (widget
+test of the router with real touch / mouse taps) and
+`fushi/test/pages/video_play_pause_tap_arena_guard_test.dart` (BUG-374 shape).

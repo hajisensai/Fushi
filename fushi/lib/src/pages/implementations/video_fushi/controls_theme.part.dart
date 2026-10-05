@@ -104,6 +104,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 只唤醒/收起控制条，不改播放态。theme 在 [_setAsbConfig] 的 setState 后重建，
       // 改完立即生效。
       playAndPauseOnTap: _asbConfig.tapTogglesPlayback,
+      // Windows 触屏（Surface 等）：手指不会 hover，桌面控制条原本只能靠鼠标悬停唤出，
+      // 单击又被上面的 playAndPauseOnTap 吃成暂停——触屏用户只能双击进全屏「顺带」看到
+      // 控制条。按指针类型分流：touch / stylus 单击走移动端口径（切换控制条显隐、
+      // 底栏带内点按只续命、自动隐藏计时照常），鼠标单击行为不变。双击左 / 右区快退 /
+      // 快进与中带双击由页面外层 Listener（[_handleVideoPointerUp]）处理，本就不分指针
+      // 类型；这里让单击不再改播放态，双击 seek 才不会顺带暂停又恢复。
+      touchTapTogglesControls: true,
       toggleFullscreenOnDoublePress: false,
       // 播放器 chrome 前景固定亮色（UI 巡检 PR-4 P1）：控制条压在 fork 固定深色
       // scrim（material_desktop.dart 0x61000000）上，表面固定深色 OSD 体系不随
