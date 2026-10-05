@@ -12,7 +12,7 @@
 //   - 页面代码改 select.value / selectedIndex → 实例上的访问器拦到后同步触发器文字；
 //   - 页面代码重建 <option>（侧边栏换字幕轨）、i18n 改文案、改 hidden / disabled / aria-label →
 //     MutationObserver 同步；菜单打开期间选项变了就按新选项重画。
-// 选项样式在 glass.css（.fgs-*）。脚本缺席时原生 select 照常可用（样式同样在页面 CSS 里）。
+// 选项样式在 material.css（.fgs-*）。脚本缺席时原生 select 照常可用（样式同样在页面 CSS 里）。
 //
 // 菜单挂在 <body> 上、position: fixed：触发器所在的侧边栏页眉有 backdrop-filter，会把
 // fixed 后代的包含块变成页眉自己，菜单留在里面会被裁掉。

@@ -520,7 +520,10 @@ window.fushiToast = function (text, sticky, openSettings) {
     } else if (t.parentNode !== (document.fullscreenElement || document.body)) {
       (document.fullscreenElement || document.body).appendChild(t); // 全屏切换时迁到正确父节点
     }
-    if (typeof t.setAttribute === 'function') t.setAttribute('data-theme', fushiResolveTheme());
+    if (typeof t.setAttribute === 'function') {
+      t.setAttribute('data-theme', fushiResolveTheme());
+      t.setAttribute('data-style', fushiExtensionStyle());
+    }
     t.textContent = openSettings ? text + '\n' + fushiTr('toast_open_settings_hint') : text;
     // toast 是复用的同一个节点：每次都要把可点态显式设成本次该有的值，否则上一条可点的报错
     // 会把 pointer-events 留给下一条普通提示，让它凭空吞掉页面点击。
@@ -1072,6 +1075,13 @@ function fushiResolveTheme(fallback) {
   return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)
     ? 'dark'
     : 'light';
+}
+
+// 外观风格（theme.js extensionStyle：液态玻璃 / M3E）。theme.js 缺席（vm 测试、旧注入顺序）按玻璃。
+// 页内 Fushi 浮层（查词弹窗宿主 / toast）据此写 data-style，content.css 里两套外观按它分流。
+function fushiExtensionStyle() {
+  const t = window.fushiTheme;
+  return t && t.style === 'm3e' ? 'm3e' : 'glass';
 }
 
 // ── Netflix 回放录制（DRM）：由 content 驱动，capture 经 background/offscreen（beginClip/endClip）──
@@ -2846,11 +2856,13 @@ function fushiMirrorPopupSize(width, height) {
 
 // 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
 // 尺寸盒**（width/maxWidth/maxHeight/zoom），保留当前落点计算出来的 maxHeight。
-// 玻璃材质开关（样式在 content-css-overlay.css 的 @supports 段，取不到 backdrop-filter 的内核
-// 整段不生效、卡片保持不透明）。弹窗根 c 挂 .fushi-glass = 半透明填充；c 所在 shadow root 的
-// 宿主（#hibiki-popup-host，固定尺寸、内部滚动的那只卡）挂 data-fushi-glass="light|dark" =
-// 背景模糊 + 圆角 + 细描边。圆角变量 --fushi-radius-card 原本只 setProperty 在 c 上，宿主是 c 的
-// 父级读不到，这里同值补到宿主。关时（墨水屏）两个钩子一并摘掉（同一宿主上即时复原）。
+// 查词弹窗外观（样式在 content-css-overlay.css）。风格 = 扩展设置 extensionStyle：
+// · 液态玻璃（@supports 段，取不到 backdrop-filter 的内核整段不生效、卡片保持不透明）：弹窗根 c 挂
+//   .fushi-glass = 半透明填充；c 所在 shadow root 的宿主（#hibiki-popup-host，固定尺寸、内部滚动的
+//   那只卡）挂 data-fushi-glass="light|dark" = 背景模糊 + 圆角 + 细描边。
+// · M3E：不挂玻璃钩子，宿主挂 data-style="m3e" = 实色卡 + 大圆角 + MD3 投影。
+// 圆角变量 --fushi-radius-card 原本只 setProperty 在 c 上，宿主是 c 的父级读不到，这里同值补到
+// 宿主。玻璃关时（墨水屏 / M3E）两个玻璃钩子一并摘掉（同一宿主上即时复原）。
 function fushiApplyGlass(c, enabled, radius) {
   if (!c) return;
   const root = typeof c.getRootNode === 'function' ? c.getRootNode() : null;
@@ -2860,12 +2872,13 @@ function fushiApplyGlass(c, enabled, radius) {
     else c.classList.remove('fushi-glass');
   }
   if (!host) return;
+  host.setAttribute('data-style', fushiExtensionStyle());
+  if (typeof radius === 'string' && radius) {
+    host.style.setProperty('--fushi-radius-card', radius);
+  }
   if (enabled) {
     const dark = c.getAttribute && c.getAttribute('data-theme') === 'dark';
     host.setAttribute('data-fushi-glass', dark ? 'dark' : 'light');
-    if (typeof radius === 'string' && radius) {
-      host.style.setProperty('--fushi-radius-card', radius);
-    }
   } else {
     host.removeAttribute('data-fushi-glass');
   }
@@ -2929,10 +2942,11 @@ function fushiApplyTheme(c, theme, applyBox) {
   // 浏览器弹窗的音调去重永远是关的（同一个词的同一个调型被每本词典各画一行）。
   // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
   window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
-  // 液态玻璃是扩展唯一的材质（与 app 设计系统选什么无关）。唯一的例外是墨水屏：app 开墨水屏时
-  // 随 theme 下发 --fushi-glass: '0'，弹窗保持不透明；缺该 key（旧 app）同样按玻璃。减少透明度 /
+  // 玻璃只在扩展风格 = 液态玻璃时上（与 app 设计系统选什么无关）；app 开墨水屏时随 theme 下发
+  // --fushi-glass: '0'，两种风格都保持不透明；缺该 key（旧 app）按风格走。减少透明度 /
   // 不支持 backdrop-filter 的回落由 content.css 自己的 @media / @supports 负责。
-  fushiApplyGlass(c, theme['--fushi-glass'] !== '0', theme['--fushi-radius-card']);
+  fushiApplyGlass(c, theme['--fushi-glass'] !== '0' && fushiExtensionStyle() === 'glass',
+    theme['--fushi-radius-card']);
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经

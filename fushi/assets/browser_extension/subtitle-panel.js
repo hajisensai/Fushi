@@ -1029,7 +1029,11 @@
       st.dropHint.id = 'fushi-subtitle-drop-hint';
       st.dropHint.textContent = tr('subtitle_drop_hint');
     }
-    if (typeof st.dropHint.setAttribute === 'function') st.dropHint.setAttribute('data-theme', resolveTheme());
+    if (typeof st.dropHint.setAttribute === 'function') {
+      st.dropHint.setAttribute('data-theme', resolveTheme());
+      // 外观风格（液态玻璃 / M3E），与 content.js toast 同一判据。
+      st.dropHint.setAttribute('data-style', window.fushiTheme && window.fushiTheme.style === 'm3e' ? 'm3e' : 'glass');
+    }
     var parent = parentForOverlay();
     if (st.dropHint.parentNode !== parent) parent.appendChild(st.dropHint);
   }
