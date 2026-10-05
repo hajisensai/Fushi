@@ -473,8 +473,17 @@ function paletteCheckBadge() {
   const b = document.createElement('span');
   b.className = 'palette-check';
   b.setAttribute('aria-hidden', 'true');
-  b.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.4l3 3 6-6.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  appendIcon(b, 'check', 14);
   return b;
+}
+
+// Material Symbols Rounded 图标（icons.js）；脚本缺席时退回一个文字字形，不崩。
+function appendIcon(parent, name, size, fallbackText) {
+  if (typeof self.fushiIcon === 'function') {
+    const svg = self.fushiIcon(name, { size });
+    if (svg) { parent.appendChild(svg); return; }
+  }
+  if (fallbackText) parent.textContent = fallbackText;
 }
 
 // 主题卡网格的键盘：roving tabindex（Tab 只进出一次，落在选中项上），方向键移动焦点（上下按
@@ -559,7 +568,7 @@ function renderPaletteGrid() {
   const plus = document.createElement('span');
   plus.className = 'palette-preview';
   plus.setAttribute('aria-hidden', 'true');
-  plus.textContent = '+';
+  appendIcon(plus, 'add', 28, '+');
   const label = document.createElement('span');
   label.className = 'palette-name';
   label.textContent = tr('theme_custom_new');
@@ -748,7 +757,17 @@ const subtitleColorDefaults = SUB ? {
 } : {};
 let subtitleStyleCurrent = SUB ? SUB.normalize(null) : null;
 
+// M3E 滑杆的活动段：--fill = 当前值在 [min, max] 里的百分比（material.css 用它画轨道渐变）。
+function paintRangeFill(el) {
+  if (!el || !el.style || typeof el.style.setProperty !== 'function') return;
+  const min = Number(el.min || 0);
+  const max = Number(el.max || 100);
+  const pct = max > min ? Math.min(100, Math.max(0, ((Number(el.value) - min) / (max - min)) * 100)) : 0;
+  el.style.setProperty('--fill', pct.toFixed(2) + '%');
+}
+
 function formatRangeOutput(id, value) {
+  paintRangeFill($(id));
   const out = document.querySelector('output[for="' + id + '"]');
   if (!out) return;
   const unit = out.dataset.unit || '';
@@ -976,7 +995,10 @@ async function loadSubtitleStyle() {
       on(id + 'Reset', 'click', () => { el.dataset.auto = '1'; writeSubtitleStyle(true); });
       continue;
     }
-    el.addEventListener('input', () => writeSubtitleStyle(false));
+    el.addEventListener('input', () => {
+      if (spec.kind === 'range') paintRangeFill(el);
+      writeSubtitleStyle(false);
+    });
     el.addEventListener('change', () => {
       writeSubtitleStyle(true);
       // 松手后把滑杆对齐到夹过的值：拖动中 fill 不碰有焦点的控件，底板宽 / 高有「非 0 下限」

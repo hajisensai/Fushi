@@ -26,21 +26,19 @@
           <div class="connection-top">
             <span class="status-dot" id="connDot" aria-hidden="true"></span>
             <span class="connection-label" data-i18n="opt_connection_label">本机服务</span>
-            <button class="icon-button" id="check" type="button" title="重新检测" data-i18n-title="opt_check_title" aria-label="重新检测连接" data-i18n-aria-label="opt_check_aria_label">
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-            </button>
+            <button class="icon-button" id="check" type="button" title="重新检测" data-i18n-title="opt_check_title" aria-label="重新检测连接" data-i18n-aria-label="opt_check_aria_label"><span class="msr-slot" data-fushi-icon="refresh" data-fushi-icon-size="20" aria-hidden="true"></span></button>
           </div>
           <h2 id="connTitle" data-i18n="opt_connTitle_heading">正在检测…</h2>
           <p id="connDetail" data-i18n="opt_connDetail_text">确认 Fushi 的查词与字幕服务状态。</p>
           <code id="connEndpoint">127.0.0.1:19633</code>
         </section>
         <nav class="section-nav" id="sectionNav" aria-label="设置分区" data-i18n-aria-label="opt_section_nav_aria_label">
-          <a class="section-link" href="#sec-lookup"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span data-i18n="opt_group_lookup">查词</span></a>
-          <a class="section-link" href="#sec-subtitle"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z"/></svg><span data-i18n="opt_group_subtitle">字幕</span></a>
-          <a class="section-link" href="#sec-subtitle-style"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 17v2h14v-2H5zm4.5-4.2h5l.9 2.2h2.1L12.75 4h-1.5L6.5 15h2.1l.9-2.2zM12 5.98 13.87 11h-3.74L12 5.98z"/></svg><span data-i18n="opt_group_subtitle_style">字幕外观</span></a>
-          <a class="section-link" href="#sec-appearance"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg><span data-i18n="opt_group_appearance">外观</span></a>
-          <a class="section-link" href="#sec-shortcut"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg><span data-i18n="opt_group_shortcut">快捷键</span></a>
-          <a class="section-link" href="#sec-advanced"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg><span data-i18n="opt_group_advanced">高级</span></a>
+          <a class="section-link" href="#sec-lookup"><span class="nav-icon msr-slot" data-fushi-icon="search" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_lookup">查词</span></a>
+          <a class="section-link" href="#sec-subtitle"><span class="nav-icon msr-slot" data-fushi-icon="subtitles" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_subtitle">字幕</span></a>
+          <a class="section-link" href="#sec-subtitle-style"><span class="nav-icon msr-slot" data-fushi-icon="text_fields" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_subtitle_style">字幕外观</span></a>
+          <a class="section-link" href="#sec-appearance"><span class="nav-icon msr-slot" data-fushi-icon="palette" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_appearance">外观</span></a>
+          <a class="section-link" href="#sec-shortcut"><span class="nav-icon msr-slot" data-fushi-icon="keyboard" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_shortcut">快捷键</span></a>
+          <a class="section-link" href="#sec-advanced"><span class="nav-icon msr-slot" data-fushi-icon="tune" data-fushi-icon-size="24" aria-hidden="true"></span><span data-i18n="opt_group_advanced">高级</span></a>
         </nav>
       </aside>
       <main class="main-column" id="main">
@@ -48,7 +46,7 @@
         <!-- ── 1. 查词 ── -->
         <section class="section" id="sec-lookup" aria-labelledby="lookup-heading">
           <header class="section-heading">
-            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></span>
+            <span class="section-icon msr-slot" data-fushi-icon="search" data-fushi-icon-size="24" aria-hidden="true"></span>
             <div class="section-title">
               <h2 id="lookup-heading" data-i18n="opt_group_lookup">查词</h2>
               <p data-i18n="opt_group_lookup_desc">在网页和视频里怎样查词。</p>
@@ -92,7 +90,7 @@
             </label>
           </div>
           <details class="more" id="moreLookup">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">4</span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">4</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
               <label class="setting-row" for="touchLookupHold">
                 <span class="setting-copy">
@@ -131,7 +129,7 @@
         <!-- ── 2. 字幕 ── -->
         <section class="section" id="sec-subtitle" aria-labelledby="subtitle-heading">
           <header class="section-heading">
-            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z"/></svg></span>
+            <span class="section-icon msr-slot" data-fushi-icon="subtitles" data-fushi-icon-size="24" aria-hidden="true"></span>
             <div class="section-title">
               <h2 id="subtitle-heading" data-i18n="opt_group_subtitle">字幕</h2>
               <p data-i18n="opt_group_subtitle_desc">视频网站上的 Fushi 字幕。</p>
@@ -175,7 +173,7 @@
             </label>
           </div>
           <details class="more" id="moreSubtitle">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">8</span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">8</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
               <label class="setting-row" for="subtitleOverlayBlur">
                 <span class="setting-copy">
@@ -239,7 +237,7 @@
         <!-- ── 3. 字幕外观 ── -->
         <section class="section" id="sec-subtitle-style" aria-labelledby="subtitle-style-heading">
           <header class="section-heading">
-            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 17v2h14v-2H5zm4.5-4.2h5l.9 2.2h2.1L12.75 4h-1.5L6.5 15h2.1l.9-2.2zM12 5.98 13.87 11h-3.74L12 5.98z"/></svg></span>
+            <span class="section-icon msr-slot" data-fushi-icon="text_fields" data-fushi-icon-size="24" aria-hidden="true"></span>
             <div class="section-title">
               <h2 id="subtitle-style-heading" data-i18n="opt_group_subtitle_style">字幕外观</h2>
               <p data-i18n="opt_group_subtitle_style_desc">视频上字幕的样子。</p>
@@ -290,7 +288,7 @@
             </label>
           </div>
           <details class="more" id="moreSubtitleStyle">
-            <summary><span class="more-label" data-i18n="opt_more_subtitle_style">排版与底板</span><span class="more-count">14</span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_subtitle_style">排版与底板</span><span class="more-count">14</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
               <div class="setting-row setting-row-static font-library" id="subtitleFontLibrary">
                 <span class="setting-copy">
@@ -410,7 +408,7 @@
         <!-- ── 4. 外观（扩展自身界面：风格 / 配色 / 明暗 / 语言） ── -->
         <section class="section" id="sec-appearance" aria-labelledby="appearance-heading">
           <header class="section-heading">
-            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg></span>
+            <span class="section-icon msr-slot" data-fushi-icon="palette" data-fushi-icon-size="24" aria-hidden="true"></span>
             <div class="section-title">
               <h2 id="appearance-heading" data-i18n="opt_group_appearance">外观</h2>
               <p data-i18n="opt_group_appearance_desc">扩展界面的风格、配色和语言。</p>
@@ -545,7 +543,7 @@
         <!-- ── 5. 快捷键（紧凑网格：键帽 + 动作 + 开关） ── -->
         <section class="section" id="sec-shortcut" aria-labelledby="shortcut-heading">
           <header class="section-heading">
-            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z"/></svg></span>
+            <span class="section-icon msr-slot" data-fushi-icon="keyboard" data-fushi-icon-size="24" aria-hidden="true"></span>
             <div class="section-title">
               <h2 id="shortcut-heading" data-i18n="opt_group_shortcut">快捷键</h2>
               <p data-i18n="opt_group_shortcut_desc">视频页的按键；与网站冲突的可单独关闭。</p>
@@ -613,7 +611,7 @@
         <!-- ── 6. 高级：沉浸时间 / 连接与诊断 / 版本与更新 ── -->
         <section class="section section-diagnostics" id="sec-advanced" aria-labelledby="advanced-heading">
           <header class="section-heading">
-            <span class="section-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z"/></svg></span>
+            <span class="section-icon msr-slot" data-fushi-icon="tune" data-fushi-icon-size="24" aria-hidden="true"></span>
             <div class="section-title">
               <h2 id="advanced-heading" data-i18n="opt_group_advanced">高级</h2>
               <p data-i18n="opt_group_advanced_desc">沉浸时间、连接、诊断与更新。</p>
@@ -646,6 +644,7 @@
               <summary>
                 <span data-i18n="opt_advancedConnection_label">高级连接设置</span>
                 <small data-i18n="opt_advancedConnection_desc">自动配置失效时使用</small>
+                <span class="advanced-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span>
               </summary>
               <form id="connectionForm">
                 <label class="field">
@@ -675,6 +674,7 @@
               <summary>
                 <span data-i18n="opt_lookupPerfPanel_label">查词性能日志</span>
                 <small id="lookupPerfSummary" data-i18n="opt_lookupPerfSummary_desc">复现慢查询后在这里查看</small>
+                <span class="advanced-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span>
               </summary>
               <div class="lookup-perf-body">
                 <p data-i18n="opt_lookupPerf_intro">只存在本机，不记录原词。记录每次查词的等待、读取、解析和首显耗时。</p>

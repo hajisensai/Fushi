@@ -1,6 +1,8 @@
 /* 颜色与风格 token 只来自 theme.css（扩展所有自有界面同一套调色板 + 外观风格；明暗 / 风格由
-   theme.js 按扩展设置写根 data-theme / data-style）。这里只保留局部别名与布局；表面材质（玻璃 /
-   M3E 实色分段）在 material.css。 */
+   theme.js 按扩展设置写根 data-theme / data-style）。这里只保留局部别名与布局；表面材质（M3E
+   实色分段 / 玻璃）与控件形态在 material.css。字体与字阶一律取 theme.css 的 M3 type scale
+   （--md-sys-typescale-*）：页标题 headline-small、组标题 title-large、行标题 body-large、
+   行说明 body-medium、按钮 label-large（M3E 强调字重）。 */
 :root {
   --bg: var(--fushi-bg);
   --surface: var(--fushi-surface);
@@ -17,7 +19,7 @@
   --focus: var(--fushi-focus);
   --radius: var(--fushi-shape-card);
   --ease: var(--fushi-ease);
-  font-family: "Aptos", "Hiragino Sans", "Yu Gothic UI", "Segoe UI", sans-serif;
+  font-family: var(--md-sys-typescale-font);
   /* 「更多选项」折叠的展开高度动画（height: auto 可插值；不支持的内核直接瞬时展开）。 */
   interpolate-size: allow-keywords;
 }
@@ -31,6 +33,8 @@ body {
   min-height: 100vh;
   color: var(--text);
   background: var(--bg);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
 }
 
 button,
@@ -68,7 +72,7 @@ summary:focus-visible {
   flex: 0 0 auto;
   width: 40px;
   height: 40px;
-  border-radius: 11px;
+  border-radius: var(--md-sys-shape-corner-medium);
   box-shadow: 0 2px 10px color-mix(in oklch, var(--text) 16%, transparent);
 }
 
@@ -76,16 +80,16 @@ summary:focus-visible {
 
 .page-title h1 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.25;
-  letter-spacing: -.01em;
+  font-size: var(--md-sys-typescale-headline-small-size);
+  line-height: var(--md-sys-typescale-headline-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
 }
 
 .page-title p {
   margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
 }
 
 .layout {
@@ -105,7 +109,7 @@ summary:focus-visible {
   border-radius: var(--radius);
   background: var(--surface);
   scroll-margin-top: 20px;
-  /* 进场：各组错峰浮起（时长 / 缓动随风格：玻璃柔和、M3E 带一点弹簧过冲）。 */
+  /* 进场：各组错峰浮起（时长 / 缓动随风格：玻璃柔和；M3E 在 material.css 换成 default spatial 弹簧）。 */
   animation: fushi-rise var(--fushi-dur-long) var(--fushi-ease-spatial) both;
 }
 
@@ -139,31 +143,31 @@ summary:focus-visible {
   background: color-mix(in oklch, var(--primary-soft) 80%, transparent);
 }
 
-.section-icon svg { width: 22px; height: 22px; fill: currentColor; }
+.section-icon svg { display: block; width: 24px; height: 24px; fill: currentColor; }
 
 .section-title { min-width: 0; }
 
 .section h2,
 .connection h2 {
   margin: 0;
-  font-size: 19px;
-  line-height: 1.25;
-  letter-spacing: -.01em;
+  font-size: var(--md-sys-typescale-title-large-size);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
 }
 
 .section-title p {
   margin: 2px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.45;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
 }
 
 .subgroup-heading {
   margin: 14px 0 4px;
-  color: var(--primary-strong);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .06em;
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-title-small-size);
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
 }
 
 .setting-list { display: grid; }
@@ -196,16 +200,17 @@ summary:focus-visible {
 }
 
 .setting-copy strong {
-  font-size: 14.5px;
-  font-weight: 650;
+  font-size: var(--md-sys-typescale-body-large-size);
+  line-height: var(--md-sys-typescale-body-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
   transition: color var(--fushi-dur-short) var(--ease);
 }
 
 .setting-copy small {
   max-width: 62ch;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
 }
 
 .setting-copy kbd,
@@ -254,8 +259,9 @@ summary:focus-visible {
   padding: 8px 12px;
   border-radius: var(--fushi-shape-control);
   color: var(--primary-strong);
-  font-size: 13.5px;
-  font-weight: 650;
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
   list-style: none;
   cursor: pointer;
   transition: background-color var(--fushi-dur-short) var(--ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
@@ -267,18 +273,22 @@ summary:focus-visible {
 
 .more > summary:active { border-radius: var(--fushi-shape-control-pressed); }
 
-.more > summary::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  margin-left: auto;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: translateY(-2px) rotate(45deg);
+/* 展开箭头：Material Symbols expand_more，展开时翻转（弹簧）。 */
+.more-chevron,
+.advanced-chevron {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
   transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
 
-.more[open] > summary::after { transform: translateY(2px) rotate(-135deg); }
+.more-chevron { margin-left: auto; }
+
+.more-chevron svg,
+.advanced-chevron svg { display: block; width: 20px; height: 20px; }
+
+.more[open] > summary .more-chevron,
+.advanced[open] > summary .advanced-chevron { transform: rotate(180deg); }
 
 .more-count {
   min-width: 22px;
@@ -286,9 +296,9 @@ summary:focus-visible {
   border-radius: 999px;
   color: var(--muted);
   background: color-mix(in oklch, var(--text) 8%, transparent);
-  font-size: 11.5px;
-  font-weight: 650;
-  line-height: 1.7;
+  font-size: var(--md-sys-typescale-label-small-size);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+  line-height: var(--md-sys-typescale-label-small-line-height);
   text-align: center;
 }
 
@@ -299,6 +309,14 @@ summary:focus-visible {
 }
 
 .more[open]::details-content { block-size: auto; }
+
+.advanced::details-content {
+  block-size: 0;
+  overflow: clip;
+  transition: block-size var(--fushi-dur-medium) var(--ease), content-visibility var(--fushi-dur-medium) allow-discrete;
+}
+
+.advanced[open]::details-content { block-size: auto; }
 
 .more > .setting-list { padding-top: 2px; }
 
@@ -326,7 +344,11 @@ summary:focus-visible {
 
 .shortcut-row .setting-copy { flex: 1 1 auto; }
 
-.shortcut-row .setting-copy strong { font-size: 13.5px; font-weight: 600; }
+.shortcut-row .setting-copy strong {
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
 
 /* ── 外观风格选择：两张单选卡（原生 radio，方向键切换），各带一张风格示意图。 ── */
 .style-choice {
@@ -427,14 +449,14 @@ summary:focus-visible {
 .style-preview-m3e { background: var(--bg); }
 
 .style-preview-m3e .sp-card {
-  border-radius: 20px;
-  background: var(--surface);
+  border-radius: var(--md-sys-shape-corner-large-increased);
+  background: var(--md-sys-color-surface-container-lowest);
 }
 
 .sp-line { display: block; height: 6px; width: 70%; border-radius: 3px; background: var(--text); opacity: 0.8; }
 .sp-line-short { width: 46%; opacity: 0.4; }
 .sp-pill { display: block; width: 44%; height: 14px; margin-top: 2px; border-radius: 999px; background: var(--primary); }
-.style-preview-m3e .sp-pill { border-radius: 8px; }
+.style-preview-m3e .sp-pill { border-radius: var(--md-sys-shape-corner-full); }
 
 .sp-fab {
   position: absolute;
@@ -442,14 +464,23 @@ summary:focus-visible {
   bottom: 10px;
   width: 30px;
   height: 30px;
-  border-radius: 10px;
-  background: var(--primary-soft);
-  box-shadow: inset 0 0 0 9px var(--primary-soft), inset 0 0 0 30px var(--primary-strong);
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-primary-container);
+  box-shadow: inset 0 0 0 9px var(--md-sys-color-primary-container), inset 0 0 0 30px var(--md-sys-color-on-primary-container);
 }
 
 .style-name { display: grid; gap: 1px; padding: 0 4px 2px; }
-.style-name strong { font-size: 14px; font-weight: 650; }
-.style-name small { color: var(--muted); font-size: 12px; }
+.style-name strong {
+  font-size: var(--md-sys-typescale-title-small-size);
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+.style-name small {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-small-size);
+  line-height: var(--md-sys-typescale-body-small-line-height);
+}
 
 .side-column {
   position: sticky;
@@ -476,14 +507,16 @@ summary:focus-visible {
   padding: 9px 12px;
   border-radius: var(--fushi-shape-control);
   color: var(--muted);
-  font-size: 14px;
-  font-weight: 620;
-  line-height: 1.35;
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
   text-decoration: none;
   transition: background-color var(--fushi-dur-short) var(--ease), color var(--fushi-dur-short) var(--ease);
 }
 
-.nav-icon { flex: 0 0 auto; width: 20px; height: 20px; fill: currentColor; }
+.nav-icon { display: inline-grid; place-items: center; flex: 0 0 auto; width: 24px; height: 24px; }
+
+.nav-icon svg { display: block; width: 100%; height: 100%; fill: currentColor; }
 
 .section-link:hover { color: var(--text); background: color-mix(in oklch, var(--primary-soft) 55%, transparent); }
 
@@ -508,10 +541,11 @@ summary:focus-visible {
 
 .connection-label {
   flex: 1 1 auto;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .06em;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+  letter-spacing: .04em;
 }
 
 .status-dot {
@@ -537,13 +571,16 @@ summary:focus-visible {
   box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
-.connection h2 { font-size: 16px; }
+.connection h2 {
+  font-size: var(--md-sys-typescale-title-medium-size);
+  line-height: var(--md-sys-typescale-title-medium-line-height);
+}
 
 .connection p {
   margin: 4px 0 10px;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-small-size);
+  line-height: var(--md-sys-typescale-body-small-line-height);
 }
 
 .connection code {
@@ -558,21 +595,29 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
+/* 标准图标按钮（M3 standard icon button：40 触控区、24 图标、悬停状态层）；按下时图标转一下。 */
 .icon-button {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 40px;
+  height: 40px;
+  margin: -4px -6px -4px 0;
   border: 0;
-  border-radius: 50%;
-  color: var(--primary-strong);
+  border-radius: var(--fushi-shape-control);
+  color: var(--md-sys-color-on-surface-variant);
   background: transparent;
   cursor: pointer;
-  transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial), background-color var(--fushi-dur-short) var(--ease);
+  transition: border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), background-color var(--fushi-dur-short) var(--ease);
 }
 
-.icon-button:hover { background: var(--primary-soft); }
-.icon-button:active { transform: rotate(90deg); }
+.icon-button svg {
+  display: block;
+  transition: transform var(--fushi-dur-long) var(--fushi-ease-spatial);
+}
+
+.icon-button:hover { background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent); }
+.icon-button:active { border-radius: var(--fushi-shape-control-pressed); }
+.icon-button:active svg { transform: rotate(180deg); }
 
 /* 「连接与诊断」：高级连接 / 性能日志是两张可展开的小卡，版本信息在其下。 */
 .diagnostics-stack {
@@ -599,23 +644,25 @@ summary:focus-visible {
 
 .advanced summary::-webkit-details-marker { display: none; }
 
-.advanced summary::after {
-  content: "";
+.advanced summary .advanced-chevron {
   position: absolute;
-  top: 20px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid var(--primary-strong);
-  border-bottom: 2px solid var(--primary-strong);
-  transform: rotate(45deg);
-  transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+  top: 50%;
+  right: 0;
+  margin-top: -10px;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
-.advanced[open] summary::after { transform: translateY(3px) rotate(-135deg); }
+.advanced summary > span:first-child {
+  font-size: var(--md-sys-typescale-title-small-size);
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
 
-.advanced summary span { font-size: 14px; font-weight: 650; }
-.advanced summary small { color: var(--muted); font-size: 12px; }
+.advanced summary small {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-small-size);
+  line-height: var(--md-sys-typescale-body-small-line-height);
+}
 
 .advanced form {
   display: grid;
@@ -668,9 +715,10 @@ summary:focus-visible {
 .field {
   display: grid;
   gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 650;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
 }
 
 .field input { width: 100%; }
@@ -691,13 +739,15 @@ summary:focus-visible {
 
 .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
-/* 按钮：两套风格同一结构；形状取 token（M3E 下按住时从胶囊收成圆角方，弹簧回弹）。 */
+/* 按钮：两套风格同一结构；形状取 token。M3E 的 filled / tonal / text 形态与按压形变在 material.css。 */
 .primary-button,
 .text-button {
-  min-height: 38px;
+  min-height: 40px;
   border-radius: var(--fushi-shape-control);
   padding: 8px 16px;
-  font-weight: 650;
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
   cursor: pointer;
   transition: background-color var(--fushi-dur-short) var(--ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
@@ -728,7 +778,12 @@ summary:focus-visible {
   line-height: 1.6;
 }
 
-.tip strong { color: var(--text); font-size: 13px; }
+.tip strong {
+  color: var(--text);
+  font-size: var(--md-sys-typescale-title-small-size);
+  line-height: var(--md-sys-typescale-title-small-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
 .tip p { margin: 4px 0 0; }
 
 .tip code {
@@ -745,6 +800,8 @@ summary:focus-visible {
   max-width: min(420px, calc(100vw - 32px));
   padding: 10px 18px;
   border-radius: 999px;
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
   color: var(--on-primary);
   background: var(--primary-strong);
   opacity: 0;
@@ -777,8 +834,8 @@ summary:focus-visible {
     scrollbar-width: none;
   }
   .section-nav::-webkit-scrollbar { display: none; }
-  .section-link { flex: 0 0 auto; white-space: nowrap; padding: 7px 12px; font-size: 13px; gap: 8px; }
-  .nav-icon { width: 18px; height: 18px; }
+  .section-link { flex: 0 0 auto; white-space: nowrap; padding: 7px 12px; gap: 8px; }
+  .nav-icon { width: 20px; height: 20px; }
   .section { scroll-margin-top: 64px; }
 }
 
@@ -787,7 +844,8 @@ summary:focus-visible {
   .section { padding-inline: 14px; }
   .setting-row { gap: 10px 16px; }
   .setting-copy { flex-basis: 200px; }
-  .section-icon { width: 34px; height: 34px; }
+  .section-icon { width: 36px; height: 36px; }
+  .section-icon svg { width: 20px; height: 20px; }
   .shortcut-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -918,12 +976,12 @@ summary:focus-visible {
 
 .palette-check {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 4px;
+  right: 4px;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   color: var(--on-primary, #fff);
   background: var(--primary);
@@ -938,7 +996,7 @@ summary:focus-visible {
   transform: scale(1);
 }
 
-/* 新建：同尺寸的虚线预览 + 居中 ＋。 */
+/* 新建：同尺寸的虚线预览 + 居中 add 图标。 */
 .palette-add .palette-preview {
   display: grid;
   place-items: center;
@@ -951,6 +1009,8 @@ summary:focus-visible {
   line-height: 1;
 }
 
+.palette-add .palette-preview svg { display: block; }
+
 .palette-add:hover .palette-preview {
   border-color: var(--primary);
   color: var(--primary);
@@ -961,12 +1021,12 @@ summary:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  line-height: 1.3;
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
   color: var(--muted);
 }
 
-.palette-swatch.is-selected .palette-name { color: var(--primary-strong); font-weight: 690; }
+.palette-swatch.is-selected .palette-name { color: var(--primary-strong); font-weight: var(--md-sys-typescale-weight-emphasized); }
 
 @media (prefers-reduced-motion: reduce) {
   .palette-swatch:hover,
@@ -1160,7 +1220,11 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   min-width: 0;
 }
 
-.font-library-copy strong { font-size: 13.5px; font-weight: 650; }
+.font-library-copy strong {
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
 
 .font-library-copy small { font-size: 12px; }
 
@@ -1179,8 +1243,9 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   min-width: 58px;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .range-input {

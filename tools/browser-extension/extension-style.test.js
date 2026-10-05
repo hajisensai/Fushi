@@ -335,7 +335,8 @@ test('material.css：全部从 :root 起、只消费 token（不写风格数值�
   assert.doesNotMatch(css, /backdrop-filter:\s*blur\(/, '模糊数值只在 theme.css');
   assert.match(css, /-webkit-backdrop-filter:\s*var\(--fushi-mat-filter\)/);
   assert.match(css, /[^-]backdrop-filter:\s*var\(--fushi-mat-filter\)/);
-  assert.match(css, /:root\[data-style="m3e"\] :is\(\.setting-list > \.setting-row, \.hp-group > \.hp-toggle\)/, 'M3E 分段列表');
+  assert.match(css, /:root:not\(\[data-style="glass"\]\) :is\(\.setting-list > \.setting-row, \.hp-group > \.hp-toggle\)/, 'M3E（缺省）分段列表');
+  assert.doesNotMatch(css, /:root\[data-style="m3e"\]/, 'M3E 是缺省：规则挂 :not([data-style="glass"])，不再只认显式 m3e');
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
