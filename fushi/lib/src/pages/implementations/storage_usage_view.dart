@@ -199,24 +199,15 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   // ── 删除动作 ────────────────────────────────────────────────────────
 
   Future<bool> _confirmDelete(String name, String body) async {
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        title: Text(t.storage_entry_delete_confirm_title(name: name)),
-        content: Text(body),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
+      title: t.storage_entry_delete_confirm_title(name: name),
+      message: body,
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
     );
-    return ok == true && mounted;
+    return ok && mounted;
   }
 
   /// 条目显示名：快照聚合条目按文件数翻译，其余用服务层给的 label。

@@ -1164,26 +1164,14 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 绝对路径。原始 NFO 与文件名仍可能含个人信息，因此分享前必须二次确认。
   Future<void> _exportVideoScrapeDiagnostics(SourceLibraryRow row) async {
     if (row.transport != 'local' || row.mediaKind != 'video') return;
-    final bool? confirmed = await showAppDialog<bool>(
+    final bool confirmed = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog.adaptive(
-        title: Text(t.video_scrape_diagnostic_confirm_title),
-        content: Text(t.video_scrape_diagnostic_confirm_body),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.dialog_export),
-          ),
-        ],
-      ),
+      title: t.video_scrape_diagnostic_confirm_title,
+      message: t.video_scrape_diagnostic_confirm_body,
+      icon: Icons.ios_share,
+      confirmLabel: t.dialog_export,
     );
-    if (!mounted || confirmed != true) return;
+    if (!mounted || !confirmed) return;
 
     setState(() => _exportingDiagnostics.add(row.id));
     final bool isDesktop =

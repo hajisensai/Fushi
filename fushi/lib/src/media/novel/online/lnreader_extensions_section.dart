@@ -130,28 +130,15 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     }
   }
 
-  Future<bool> _confirm(String title, String message, String action) async =>
-      await showAppDialog<bool>(
+  Future<bool> _confirm(String title, String message, String action) =>
+      showFushiConfirmDialog(
         context: context,
-        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-          title: Text(title),
-          content: Text(message),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: dialogContext,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(action),
-            ),
-          ],
-        ),
-      ) ==
-      true;
+        title: title,
+        message: message,
+        icon: Icons.delete_outline,
+        confirmLabel: action,
+        destructive: true,
+      );
 
   Future<void> _removeStore(LnReaderStore store) async {
     if (!await _confirm(

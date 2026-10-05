@@ -1402,24 +1402,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           FushiSnackBar(content: Text(t.anki_lapis_up_to_date)),
         );
       case LapisApplyResult.needsConfirm:
-        final bool? ok = await showAppDialog<bool>(
+        final bool ok = await showFushiConfirmDialog(
           context: context,
-          builder: (BuildContext context) => FushiAlertDialog(
-            title: Text(t.anki_lapis_foreign_edit_title),
-            content: Text(t.anki_lapis_foreign_edit_body),
-            actions: [
-              FushiTextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: Text(t.dialog_cancel),
-              ),
-              FushiTextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: Text(t.dialog_ok),
-              ),
-            ],
-          ),
+          title: t.anki_lapis_foreign_edit_title,
+          message: t.anki_lapis_foreign_edit_body,
+          icon: Icons.warning_amber_rounded,
         );
-        if (ok == true && mounted) await _applyLapisStyling(vm, force: true);
+        if (ok && mounted) await _applyLapisStyling(vm, force: true);
       case LapisApplyResult.notFound:
         messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_lapis_not_found)));
       case LapisApplyResult.unsupported:
@@ -1431,24 +1420,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 恢复出厂 Lapis。破坏性动作，必须二次确认；确认后备份门在服务层强制走。
   Future<void> _restoreLapisFactory(AnkiViewModel vm) async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(t.anki_lapis_restore_factory),
-        content: Text(t.anki_lapis_restore_factory_confirm),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_ok),
-          ),
-        ],
-      ),
+      title: t.anki_lapis_restore_factory,
+      message: t.anki_lapis_restore_factory_confirm,
+      icon: Icons.restart_alt,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => _lapisBusy = true);
     try {
       final LapisRestoreFactoryResult result = await vm.lapisTemplateService
@@ -1755,24 +1733,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (chosen == null || !mounted) return;
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext context) => FushiAlertDialog(
-        title: Text(t.anki_lapis_restore),
-        content: Text(t.anki_lapis_restore_confirm),
-        actions: [
-          FushiTextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(t.dialog_ok),
-          ),
-        ],
-      ),
+      title: t.anki_lapis_restore,
+      message: t.anki_lapis_restore_confirm,
+      icon: Icons.restore,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     // 两步都可能失败，两步的失败都必须让用户看见：把「第一个失败」收进
     // failure，最后统一出一条 snackbar。刷新**不能**放 finally——finally 里的
     // await 抛出就成了没人接的异步异常（页面继续显示恢复前的值，用户只看到

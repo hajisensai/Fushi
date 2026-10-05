@@ -494,24 +494,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       _pop();
       return;
     }
-    final bool? discard = await showAppDialog<bool>(
+    final bool discard = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext context) => FushiAlertDialog(
-        title: Text(t.book_css_editor_unsaved_changes),
-        content: Text(t.book_css_editor_unsaved_changes_message),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(t.book_css_editor_discard),
-          ),
-        ],
-      ),
+      title: t.book_css_editor_unsaved_changes,
+      message: t.book_css_editor_unsaved_changes_message,
+      icon: Icons.delete_outline,
+      confirmLabel: t.book_css_editor_discard,
+      destructive: true,
     );
-    if (discard == true) _pop();
+    if (discard) _pop();
   }
 
   void _save() => _pop(
