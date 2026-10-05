@@ -692,8 +692,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     if (animate) {
       _scrollController.animateTo(
         target,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
+        duration: FushiMotion.medium,
+        curve: FushiSpringCurve.effects,
       );
     } else {
       _scrollController.jumpTo(target);

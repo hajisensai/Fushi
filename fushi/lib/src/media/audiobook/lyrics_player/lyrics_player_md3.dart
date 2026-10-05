@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -647,13 +648,13 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
         child: Center(
           child: TweenAnimationBuilder<Offset>(
             tween: Tween<Offset>(end: tilt),
-            duration: const Duration(milliseconds: 220),
-            curve: Curves.easeOutCubic,
+            duration: FushiMotion.medium,
+            curve: FushiSpringCurve.spatial,
             builder: (BuildContext context, Offset tiltValue, Widget? _) {
               return TweenAnimationBuilder<double>(
                 tween: Tween<double>(end: liftTarget),
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOutCubic,
+                duration: FushiMotion.medium,
+                curve: FushiSpringCurve.spatial,
                 builder: (BuildContext context, double lift, Widget? _) {
                   return AnimatedBuilder(
                     animation: _playScale.animation,
@@ -1096,8 +1097,8 @@ class _WavySeekBarState extends State<_WavySeekBar>
                     child: AnimatedScale(
                       scale: _dragFraction == null ? 0.6 : 1,
                       alignment: Alignment.bottomCenter,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutBack,
+                      duration: FushiMotion.medium,
+                      curve: FushiSpringCurve.spatialFast,
                       child: DecoratedBox(
                         decoration: ShapeDecoration(
                           color: cs.inverseSurface,
@@ -1382,8 +1383,8 @@ class _ExpressivePlayButtonState extends State<_ExpressivePlayButton>
     final bool motion = fushiExpressiveMotionEnabled(context);
     final Widget icon = AnimatedSwitcher(
       duration: Duration(milliseconds: motion ? 220 : 0),
-      switchInCurve: Curves.easeOutBack,
-      switchOutCurve: Curves.easeIn,
+      switchInCurve: FushiSpringCurve.spatialFast,
+      switchOutCurve: FushiMotion.exit,
       transitionBuilder: (Widget child, Animation<double> animation) =>
           RotationTransition(
             turns: Tween<double>(begin: -0.08, end: 0).animate(animation),

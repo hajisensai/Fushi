@@ -69,34 +69,22 @@ void main() {
 
 /// 2026-10-05 存量：`Curves.` 每文件出现次数（只许减少）。
 const Map<String, int> _curveBudget = <String, int>{
-  'lib/src/controls/control_layout_editor.dart': 4,
   'lib/src/focus/fushi_focus_scroll.dart': 3,
   'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart': 2,
-  'lib/src/media/audiobook/lyrics_player/lyrics_player_md3.dart': 5,
-  'lib/src/media/video/subtitle_waveform_align_panel.dart': 2,
   'lib/src/media/video/video_apple_chrome.dart': 1,
-  'lib/src/media/video/video_episode_rail.dart': 2,
   'lib/src/media/video/video_m3e_chrome.dart': 1,
-  'lib/src/media/video/video_panel_auto_scroll.dart': 1,
   'lib/src/media/video/video_subtitle_jump_panel.dart': 1,
   'lib/src/media/video/video_subtitle_overlay.dart': 1,
-  'lib/src/pages/implementations/dictionary_popup_layer.dart': 3,
-  'lib/src/pages/implementations/library_filter_dropdown.dart': 1,
   'lib/src/pages/implementations/reader_fushi_page.dart': 1,
   'lib/src/pages/implementations/updates_dashboard_banner.dart': 1,
   'lib/src/pages/implementations/video_fushi/episode.part.dart': 2,
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart': 1,
   'lib/src/reader/reader_desktop_chrome.dart': 1,
-  'lib/src/reader/reader_floating_ball.dart': 2,
-  'lib/src/reader/reader_gallery_page.dart': 1,
   'lib/src/settings/settings_search.dart': 1,
   'lib/src/startup/startup_splash_mark.dart': 1,
   'lib/src/utils/adaptive/adaptive_widgets.dart': 3,
   'lib/src/utils/components/fading_chrome_gate.dart': 1,
-  'lib/src/utils/components/fushi_deferred_loading.dart': 2,
-  'lib/src/utils/components/fushi_download_progress.dart': 1,
   'lib/src/utils/components/fushi_expressive_progress.dart': 5,
-  'lib/src/utils/components/fushi_hover_lift.dart': 1,
   'lib/src/utils/components/fushi_marquee.dart': 4,
   'lib/src/utils/components/fushi_material_components.dart': 1,
   'lib/src/utils/components/glass/fushi_glass_feedback.dart': 3,
@@ -107,7 +95,6 @@ const Map<String, int> _curveBudget = <String, int>{
   'lib/src/utils/components/settings_shared.dart': 3,
   'lib/src/utils/misc/fushi_toast.dart': 2,
   'lib/src/utils/misc/smooth_wheel_scroll.dart': 1,
-  'lib/src/utils/misc/swipe_dismiss_wrapper.dart': 2,
 };
 
 /// 2026-10-05 存量：裸数字 `fontSize:` 每文件出现次数（只许减少）。
