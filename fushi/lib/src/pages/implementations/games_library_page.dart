@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -63,6 +62,8 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -2344,21 +2345,12 @@ class _ContinuePlayCard extends StatelessWidget {
       children: <Widget>[
         // key art 背景：同一张封面放大模糊（竖版包装图裁成横版只剩局部，模糊后
         // 只取色调与氛围）。无封面时透出封面框衬底（MD3 中性容器 / Apple 填充）。
-        Opacity(
-          opacity: eink || !hasCover ? 0 : 1,
-          child: ImageFiltered(
-            imageFilter: ui.ImageFilter.blur(
-              sigmaX: eink ? 0.01 : 22,
-              sigmaY: eink ? 0.01 : 22,
-            ),
-            child: hasCover
-                ? ShelfFileCover(
-                    path: cover,
-                    placeholder: const SizedBox.shrink(),
-                  )
-                : const SizedBox.shrink(),
-          ),
-        ),
+        // 模糊预烘焙成小纹理（PrebakedBlurImage）：渲染期 ImageFiltered 每帧重算
+        // sigma 22 的卷积，滚动 / 悬停缩放时游戏库掉到 ~23 fps（2026-10-05 录屏）。
+        if (!eink && hasCover)
+          PrebakedBlurImage(image: resizedFileImage(File(cover)), sigma: 22)
+        else
+          const SizedBox.shrink(),
         DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(

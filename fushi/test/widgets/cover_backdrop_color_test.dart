@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_backdrop_color.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// 封面「模糊垫底」在图源自带透明区时的底色补全。
 ///
@@ -167,7 +168,13 @@ void main() {
       await pumpCover(tester, provider);
 
       // 方图不合竖槽 → 走垫底路径。
-      expect(find.byType(ImageFiltered), findsOneWidget);
+      expect(find.byType(PrebakedBlurImage), findsOneWidget);
+      expect(
+        tester.widget<PrebakedBlurImage>(find.byType(PrebakedBlurImage))
+            .colorFilter,
+        const ColorFilter.mode(kCoverBackdropDimColor, BlendMode.srcATop),
+        reason: '压暗只能作用在图自身 alpha 上（srcATop），随图一起烘焙进模糊',
+      );
       expect(
         flatDimLayer(),
         findsNothing,
@@ -192,7 +199,7 @@ void main() {
 
       await pumpCover(tester, provider);
 
-      expect(find.byType(ImageFiltered), findsOneWidget);
+      expect(find.byType(PrebakedBlurImage), findsOneWidget);
       expect(tintedLayers(tester), isEmpty);
     });
   });

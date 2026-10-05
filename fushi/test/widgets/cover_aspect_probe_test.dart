@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_aspect_probe.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 import '../helpers/source_guard.dart';
 
@@ -154,12 +155,12 @@ void main() {
 
       await pumpWith(tester, MemoryImage(portraitBytes), decode: true);
       expect(fitOf(tester), BoxFit.cover);
-      expect(find.byType(ImageFiltered), findsNothing);
+      expect(find.byType(PrebakedBlurImage), findsNothing);
 
       await pumpWith(tester, MemoryImage(landscapeBytes), decode: true);
       expect(fitOf(tester), BoxFit.contain,
           reason: '换成横图后竖槽必须切到垫底 + contain（监听要重新挂到新 stream）');
-      expect(find.byType(ImageFiltered), findsOneWidget);
+      expect(find.byType(PrebakedBlurImage), findsOneWidget);
     });
 
     testWidgets('换 provider 的那一帧必须先丢掉旧宽高比，不能拿上一张图的朝向渲染',
@@ -178,7 +179,7 @@ void main() {
       await pumpWith(tester, MemoryImage(otherBytes), decode: false);
       expect(fitOf(tester), BoxFit.cover,
           reason: '换图未解码完的过渡帧必须回到「尺寸未知 = 合槽 cover」');
-      expect(find.byType(ImageFiltered), findsNothing);
+      expect(find.byType(PrebakedBlurImage), findsNothing);
     });
   });
 }

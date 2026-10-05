@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +31,7 @@ import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// 游戏模块的默认首屏（游戏首页 / 仪表盘），布局对齐 ReinaManager `HomePage`
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。
@@ -673,16 +673,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         children: <Widget>[
           // 封面出血背景：放大模糊当 key art 氛围底（游戏封面多为竖版包装图，
           // 直接横铺只剩中间一条，模糊后只取色调）。
-          Positioned.fill(
-            child: ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(
-                sigmaX: blur,
-                sigmaY: blur,
-                tileMode: TileMode.clamp,
-              ),
-              child: _coverImage(context, game),
-            ),
-          ),
+          // 模糊预烘焙成小纹理（[PrebakedBlurImage]）：渲染期 ImageFiltered 在
+          // 首页滚动时每帧对整张大卡重算 sigma 28 的卷积。
+          Positioned.fill(child: _blurredCoverBackdrop(context, game, blur)),
           // 左→右深色渐变蒙版（蒙版内容色，非 surface 语义角色，允许字面深色）。
           const Positioned.fill(
             child: DecoratedBox(
@@ -1133,6 +1126,28 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
 
   /// 封面 widget：来源解析与首页 Activity / 游戏库共用；文件缺失或解码失败由渲染层
   /// 回退默认手柄图标，不在 build 里做同步文件探测。
+  /// 大卡的模糊封面底。无封面时只铺占位色（原先把占位图标也糊进去，模糊后
+  /// 只剩同色块），墨水屏（[blur] 为 0）直接画清晰封面。
+  Widget _blurredCoverBackdrop(
+    BuildContext context,
+    GalgameEntry game,
+    double blur,
+  ) {
+    if (blur <= 0) return _coverImage(context, game);
+    final ImageProvider? provider = resolveMediaCoverImage(
+      kind: MediaKind.game,
+      localPath: game.coverPath,
+    );
+    if (provider == null) {
+      return ColoredBox(color: FushiDesignTokens.of(context).surfaces.overlay);
+    }
+    return PrebakedBlurImage(
+      image: provider,
+      sigma: blur,
+      tileMode: TileMode.clamp,
+    );
+  }
+
   Widget _coverImage(BuildContext context, GalgameEntry game) {
     final ImageProvider? provider = resolveMediaCoverImage(
       kind: MediaKind.game,
