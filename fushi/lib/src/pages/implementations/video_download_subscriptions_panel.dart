@@ -193,28 +193,16 @@ class _VideoDownloadSubscriptionsPanelState
   Future<void> _delete(
     VideoDownloadSubscriptionRow subscription,
   ) async {
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog(
-            title: Text(t.download_subscription_delete),
-            content: Text(
-              t.download_subscription_delete_confirm(
-                title: subscription.title,
-              ),
-            ),
-            actions: <Widget>[
-              FushiTextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              FushiFilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.download_subscription_delete,
+      message: t.download_subscription_delete_confirm(
+        title: subscription.title,
+      ),
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed) return;
     await ref
         .read(appProvider)

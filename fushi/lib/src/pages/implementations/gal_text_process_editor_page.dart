@@ -195,24 +195,15 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
       _pop();
       return;
     }
-    final bool? discard = await showAppDialog<bool>(
+    final bool discard = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(t.book_css_editor_unsaved_changes),
-        content: Text(t.book_css_editor_unsaved_changes_message),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.book_css_editor_discard),
-          ),
-        ],
-      ),
+      title: t.book_css_editor_unsaved_changes,
+      message: t.book_css_editor_unsaved_changes_message,
+      icon: Icons.delete_outline,
+      confirmLabel: t.book_css_editor_discard,
+      destructive: true,
     );
-    if (discard == true) _pop();
+    if (discard) _pop();
   }
 
   // ── AI 生成 ──────────────────────────────────────────────────────────────
