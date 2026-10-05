@@ -9,6 +9,7 @@ import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 小说在线源列表：书的「导入」视图「在线源」段正文。
 ///
@@ -102,24 +103,11 @@ class _LnReaderInstalledSourcesSectionState
     }
   }
 
-  Widget _buildSearchField() => FushiTextFieldControl(
-    key: const ValueKey<String>('novel_sources_search_field'),
+  Widget _buildSearchField() => FushiSearchBar(
+    fieldKey: const ValueKey<String>('novel_sources_search_field'),
     controller: _searchController,
-    decoration: InputDecoration(
-      prefixIcon: const FushiIcon(Icons.search),
-      hintText: t.mihon_sources_search_hint,
-      border: const OutlineInputBorder(),
-      suffixIcon: _searchQuery.isEmpty
-          ? null
-          : FushiIconButtonControl(
-              icon: const FushiIcon(Icons.close),
-              onPressed: () {
-                _searchController.clear();
-                setState(() => _searchQuery = '');
-              },
-            ),
-    ),
-    onChanged: (String value) => setState(() => _searchQuery = value),
+    hintText: t.mihon_sources_search_hint,
+    onQueryChanged: (String value) => setState(() => _searchQuery = value),
   );
 
   @override

@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 扩展提供的在线源列表：「导入」视图「在线源」段的正文，漫画与视频共用。
 ///
@@ -202,24 +203,11 @@ class _MihonInstalledSourcesSectionState
         ],
       );
 
-  Widget _buildSearchField() => FushiTextFieldControl(
-    key: const ValueKey<String>('mihon_sources_search_field'),
+  Widget _buildSearchField() => FushiSearchBar(
+    fieldKey: const ValueKey<String>('mihon_sources_search_field'),
     controller: _searchController,
-    decoration: InputDecoration(
-      prefixIcon: const FushiIcon(Icons.search),
-      hintText: t.mihon_sources_search_hint,
-      border: const OutlineInputBorder(),
-      suffixIcon: _searchQuery.isEmpty
-          ? null
-          : FushiIconButtonControl(
-              icon: const FushiIcon(Icons.close),
-              onPressed: () {
-                _searchController.clear();
-                setState(() => _searchQuery = '');
-              },
-            ),
-    ),
-    onChanged: (String value) => setState(() => _searchQuery = value),
+    hintText: t.mihon_sources_search_hint,
+    onQueryChanged: (String value) => setState(() => _searchQuery = value),
   );
 
   @override

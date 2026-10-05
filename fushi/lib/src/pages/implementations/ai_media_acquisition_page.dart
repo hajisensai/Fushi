@@ -19,6 +19,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 按域组装后端。[includeOnlineSources] 由浏览页按「来源」页签同一门
 /// （模块开关 + 平台 / 合规）算好传入；漫画在线源另需 Mihon 运行时。
@@ -289,18 +290,15 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: FushiTextFieldControl(
-                      key: const ValueKey<String>('ai-media-acquire-input'),
+                    // 共享 M3E 搜索栏——这一栏就是「说一句话去搜」。
+                    child: FushiSearchBar(
+                      fieldKey: const ValueKey<String>(
+                        'ai-media-acquire-input',
+                      ),
                       controller: _input,
                       autofocus: widget.initialQuery?.trim().isEmpty ?? true,
-                      textInputAction: TextInputAction.search,
+                      hintText: t.ai_media_acquire_hint,
                       onSubmitted: (String _) => unawaited(_submit()),
-                      // 搜索胶囊（前缀放大镜）：MD3 填充式全圆角 / Apple 无色
-                      // 透明玻璃胶囊——这一栏就是「说一句话去搜」。
-                      decoration: InputDecoration(
-                        hintText: t.ai_media_acquire_hint,
-                        prefixIcon: const FushiIcon(Icons.search),
-                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
