@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -624,6 +625,63 @@ class _FushiPlainButtonState extends State<FushiPlainButton> {
   }
 }
 
+/// MD3 按钮族的 M3 Expressive 形变包装：尺寸档 / 形状参数折算成
+/// [FushiPressMorph] 的样式与圆角（见 fushi_expressive_controls.dart）。
+/// 两者都是默认值（size == null、圆形）时与改造前逐像素一致。
+Widget _md3MorphButton(
+  BuildContext context, {
+  required FushiButtonSize? size,
+  required FushiButtonShape shape,
+  required bool outlined,
+  required bool enabled,
+  required ButtonStyle? style,
+  required WidgetStatesController? statesController,
+  required FushiPressMorphBuilder builder,
+}) {
+  if (size == null && shape == FushiButtonShape.round) {
+    return FushiPressMorph(
+      enabled: enabled,
+      style: style,
+      statesController: statesController,
+      builder: builder,
+    );
+  }
+  final FushiButtonSize effective = size ?? FushiButtonSize.s;
+  ButtonStyle? merged = style;
+  if (size != null) {
+    final ButtonStyle sized = fushiButtonSizeStyle(
+      context,
+      size,
+      outlined: outlined,
+    );
+    merged = style?.merge(sized) ?? sized;
+  }
+  final ({double pressedRadius, bool squared, double squareRadius}) spec =
+      fushiButtonMorphSpec(effective, shape);
+  return FushiPressMorph(
+    enabled: enabled,
+    style: merged,
+    statesController: statesController,
+    pressedRadius: spec.pressedRadius,
+    selected: spec.squared,
+    selectedRadius: spec.squareRadius,
+    builder:
+        (
+          BuildContext context,
+          ButtonStyle? morphStyle,
+          WidgetStatesController? controller,
+        ) => builder(
+          context,
+          fushiStaticSquareShape(
+            morphStyle,
+            squared: spec.squared && !fushiExpressiveMotionEnabled(context),
+            radius: spec.squareRadius,
+          ),
+          controller,
+        ),
+  );
+}
+
 /// [TextButton] 的设计系统分派版。
 class FushiTextButton extends StatelessWidget {
   const FushiTextButton({
@@ -637,6 +695,8 @@ class FushiTextButton extends StatelessWidget {
     this.autofocus = false,
     this.clipBehavior,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.destructive = false,
     this.isSemanticButton = true,
     required this.child,
@@ -656,6 +716,8 @@ class FushiTextButton extends StatelessWidget {
     this.autofocus = false,
     this.clipBehavior,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.destructive = false,
     this.icon,
     required this.label,
@@ -673,6 +735,13 @@ class FushiTextButton extends StatelessWidget {
   final bool autofocus;
   final Clip? clipBehavior;
   final WidgetStatesController? statesController;
+
+  /// M3 Expressive 尺寸档（XS 32 / S 40 / M 56 / L 96 / XL 136，只影响 MD3）。
+  /// null = 主题默认（40 高胶囊，与改造前一致）。
+  final FushiButtonSize? size;
+
+  /// M3 Expressive 形状（只影响 MD3）：方形 = 按尺寸档常驻圆角矩形。
+  final FushiButtonShape shape;
   final bool? isSemanticButton;
   final Widget? child;
   final Widget? icon;
@@ -703,7 +772,11 @@ class FushiTextButton extends StatelessWidget {
       );
     }
     // MD3：M3 Expressive 按压变形（胶囊 → 圆角 10，见 [FushiPressMorph]）。
-    return FushiPressMorph(
+    return _md3MorphButton(
+      context,
+      size: size,
+      shape: shape,
+      outlined: false,
       enabled: onPressed != null || onLongPress != null,
       style: destructive
           ? _md3DestructiveStyle(context, style, outlined: false)
@@ -764,6 +837,8 @@ class FushiFilledButton extends StatelessWidget {
     this.autofocus = false,
     this.clipBehavior = Clip.none,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.overImage = false,
     required this.child,
   }) : icon = null,
@@ -783,6 +858,8 @@ class FushiFilledButton extends StatelessWidget {
     this.autofocus = false,
     this.clipBehavior = Clip.none,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.overImage = false,
     this.icon,
     required this.label,
@@ -802,6 +879,8 @@ class FushiFilledButton extends StatelessWidget {
     this.autofocus = false,
     this.clipBehavior = Clip.none,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.overImage = false,
     required this.child,
   }) : icon = null,
@@ -821,6 +900,8 @@ class FushiFilledButton extends StatelessWidget {
     this.autofocus = false,
     this.clipBehavior = Clip.none,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.overImage = false,
     required Widget this.icon,
     required this.label,
@@ -838,6 +919,13 @@ class FushiFilledButton extends StatelessWidget {
   final bool autofocus;
   final Clip clipBehavior;
   final WidgetStatesController? statesController;
+
+  /// M3 Expressive 尺寸档（XS 32 / S 40 / M 56 / L 96 / XL 136，只影响 MD3）。
+  /// null = 主题默认（40 高胶囊，与改造前一致）。
+  final FushiButtonSize? size;
+
+  /// M3 Expressive 形状（只影响 MD3）：方形 = 按尺寸档常驻圆角矩形。
+  final FushiButtonShape shape;
   final Widget? child;
   final Widget? icon;
   final Widget? label;
@@ -870,7 +958,11 @@ class FushiFilledButton extends StatelessWidget {
       );
     }
     // MD3：M3 Expressive 按压变形（胶囊 → 圆角 10，见 [FushiPressMorph]）。
-    return FushiPressMorph(
+    return _md3MorphButton(
+      context,
+      size: size,
+      shape: shape,
+      outlined: false,
       enabled: onPressed != null || onLongPress != null,
       style: style,
       statesController: statesController,
@@ -976,6 +1068,8 @@ class FushiOutlinedButton extends StatelessWidget
     this.autofocus = false,
     this.clipBehavior,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.destructive = false,
     required this.child,
   }) : icon = null,
@@ -994,6 +1088,8 @@ class FushiOutlinedButton extends StatelessWidget
     this.autofocus = false,
     this.clipBehavior,
     this.statesController,
+    this.size,
+    this.shape = FushiButtonShape.round,
     this.destructive = false,
     this.icon,
     required this.label,
@@ -1010,6 +1106,13 @@ class FushiOutlinedButton extends StatelessWidget
   final bool autofocus;
   final Clip? clipBehavior;
   final WidgetStatesController? statesController;
+
+  /// M3 Expressive 尺寸档（XS 32 / S 40 / M 56 / L 96 / XL 136，只影响 MD3）。
+  /// null = 主题默认（40 高胶囊，与改造前一致）。
+  final FushiButtonSize? size;
+
+  /// M3 Expressive 形状（只影响 MD3）：方形 = 按尺寸档常驻圆角矩形。
+  final FushiButtonShape shape;
   final Widget? child;
   final Widget? icon;
   final Widget? label;
@@ -1049,7 +1152,11 @@ class FushiOutlinedButton extends StatelessWidget
       );
     }
     // MD3：M3 Expressive 按压变形（胶囊 → 圆角 10，见 [FushiPressMorph]）。
-    return FushiPressMorph(
+    return _md3MorphButton(
+      context,
+      size: size,
+      shape: shape,
+      outlined: true,
       enabled: onPressed != null || onLongPress != null,
       style: destructive
           ? _md3DestructiveStyle(context, style, outlined: true)
@@ -1252,6 +1359,13 @@ class FushiIconButtonControl extends StatelessWidget {
   /// compact → XS 32，其余 → S 40。
   final FushiIconButtonSize? size;
 
+  /// 实际尺寸档：显式 [size]，否则 compact 密度 → XS，其余 → S。
+  FushiIconButtonSize get _effectiveSize =>
+      size ??
+      (visualDensity == VisualDensity.compact
+          ? FushiIconButtonSize.xs
+          : FushiIconButtonSize.s);
+
   /// M3 Expressive 宽度变体（只影响 MD3）。
   final FushiIconButtonWidth width;
 
@@ -1272,13 +1386,17 @@ class FushiIconButtonControl extends StatelessWidget {
         ? style
         : (style?.merge(_expressiveDefaults(context)) ??
               _expressiveDefaults(context));
+    // 圆角按尺寸档（XS / S 12→8、M 16→12、L / XL 28→16）；圆形未选按下收到
+    // 方形圆角，方形 / 选中按下再收到 pressed 圆角。
+    final ({double square, double pressed}) radii =
+        fushiExpressiveIconButtonRadii(_effectiveSize);
     return FushiPressMorph(
       enabled: onPressed != null || onLongPress != null,
       style: base,
       trackPointer: true,
-      pressedRadius: (square || selected) ? 8 : 12,
+      pressedRadius: (square || selected) ? radii.pressed : radii.square,
       selected: selected || square,
-      selectedRadius: 12,
+      selectedRadius: radii.square,
       builder:
           (
             BuildContext context,
@@ -1289,9 +1407,11 @@ class FushiIconButtonControl extends StatelessWidget {
             // 不做动效（减少动画）时形变包装原样透传：方形 / 选中态仍要静态方圆角。
             if (!einkMode && effective?.shape == null && (square || selected)) {
               effective = (effective ?? const ButtonStyle()).copyWith(
-                shape: const WidgetStatePropertyAll<OutlinedBorder>(
+                shape: WidgetStatePropertyAll<OutlinedBorder>(
                   RoundedRectangleBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(radii.square),
+                    ),
                   ),
                 ),
               );
@@ -1312,11 +1432,7 @@ class FushiIconButtonControl extends StatelessWidget {
   /// secondaryContainer、outlined 选中 inverseSurface）。
   ButtonStyle _expressiveDefaults(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiIconButtonSize effectiveSize =
-        size ??
-        (visualDensity == VisualDensity.compact
-            ? FushiIconButtonSize.xs
-            : FushiIconButtonSize.s);
+    final FushiIconButtonSize effectiveSize = _effectiveSize;
     final Size extent = fushiExpressiveIconButtonExtent(effectiveSize, width);
     final bool toggle = isSelected != null;
 
