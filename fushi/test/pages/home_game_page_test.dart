@@ -303,6 +303,35 @@ void main() {
       expect(find.byKey(HomeGamePage.libraryKey), findsOneWidget);
     });
   }
+
+  testWidgets('Windows reaches the stream receiver from its own tab, lazily', (
+    WidgetTester tester,
+  ) async {
+    _streamBuilds = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: HomeGamePage(
+            monitorBuilder: _testMonitorWithSections,
+            libraryBuilder: _testLibrary,
+            dashboardBuilder: _stubDashboard,
+            settingsBuilder: _stubSettings,
+            discoverBuilder: _stubDiscover,
+            streamBuilder: _stubStream,
+          ),
+        ),
+      ),
+    );
+    await _settleOnLibrary(tester);
+    // Building it would reach out to every paired host.
+    expect(_streamBuilds, 0);
+    expect(kGameSectionTabOrder, contains(GameSection.stream));
+
+    gameSectionNotifier.value = GameSection.stream;
+    await tester.pumpAndSettle();
+    expect(_streamBuilds, greaterThan(0));
+    expect(find.text('game-stream'), findsOneWidget);
+  });
 }
 
 class _TestMonitor extends StatefulWidget {
@@ -349,32 +378,4 @@ class _TestMonitorState extends State<_TestMonitor> {
     );
   }
 
-  testWidgets('Windows reaches the stream receiver from its own tab, lazily', (
-    WidgetTester tester,
-  ) async {
-    _streamBuilds = 0;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: FushiFocusRoot(
-          child: HomeGamePage(
-            monitorBuilder: _testMonitorWithSections,
-            libraryBuilder: _testLibrary,
-            dashboardBuilder: _stubDashboard,
-            settingsBuilder: _stubSettings,
-            discoverBuilder: _stubDiscover,
-            streamBuilder: _stubStream,
-          ),
-        ),
-      ),
-    );
-    await _settleOnLibrary(tester);
-    // Building it would reach out to every paired host.
-    expect(_streamBuilds, 0);
-    expect(kGameSectionTabOrder, contains(GameSection.stream));
-
-    gameSectionNotifier.value = GameSection.stream;
-    await tester.pumpAndSettle();
-    expect(_streamBuilds, greaterThan(0));
-    expect(find.text('game-stream'), findsOneWidget);
-  });
 }

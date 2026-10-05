@@ -118,10 +118,7 @@ void main() {
     });
 
     test('games 的两种形态：Windows 本机库，其余平台都是串流接收端', () {
-      expect(
-        GamesModuleForm.on(isWindows: true),
-        GamesModuleForm.localLibrary,
-      );
+      expect(GamesModuleForm.on(isWindows: true), GamesModuleForm.localLibrary);
       expect(
         GamesModuleForm.on(isWindows: false),
         GamesModuleForm.streamClient,

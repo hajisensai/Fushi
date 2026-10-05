@@ -287,8 +287,8 @@ void main() {
   });
 
   test('iOS plays the stream as media, not as a call', () {
-    final Map<String, dynamic> session =
-        kGameStreamAppleAudioConfiguration.toMap();
+    final Map<String, dynamic> session = kGameStreamAppleAudioConfiguration
+        .toMap();
     expect(session['appleAudioCategory'], 'playback');
     expect(session['appleAudioMode'], 'moviePlayback');
     expect(

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -771,9 +773,9 @@ class _GameStreamPageState extends State<GameStreamPage>
       // Resolution/fps can only go down from the host's capture ceiling;
       // tell the user when their request was capped.
       if (applied.maxHeight < next.maxHeight || applied.maxFps < next.maxFps) {
-        ScaffoldMessenger.maybeOf(
-          context,
-        )?.showSnackBar(FushiSnackBar(content: Text(t.game_stream_settings_capped)));
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          FushiSnackBar(content: Text(t.game_stream_settings_capped)),
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -981,8 +983,9 @@ class _GameStreamPageState extends State<GameStreamPage>
                                   ? Icons.menu_book
                                   : Icons.menu_book_outlined,
                             ),
-                            onPressed: () =>
-                                setState(() => _lookupVisible = !_lookupVisible),
+                            onPressed: () => setState(
+                              () => _lookupVisible = !_lookupVisible,
+                            ),
                           ),
                           FushiIconButtonControl(
                             tooltip: t.game_stream_controls_toggle,

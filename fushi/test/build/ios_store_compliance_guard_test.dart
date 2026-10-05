@@ -247,7 +247,7 @@ void main() {
       expectAllGated(
         video,
         'LibrarySectionTab<VideoLibrarySection>('
-            'value:VideoLibrarySection.discover,',
+        'value:VideoLibrarySection.discover,',
         discoverGate,
       );
       for (final String kind in <String>['onlineSources', 'extensions']) {
@@ -336,10 +336,11 @@ void main() {
         final int calls = 'VideoDiscoveryService.production('
             .allMatches(wiring)
             .length;
-        final int gated = 'discoveryAvailable:'
-                'StoreRestrictedCapability.externalDiscovery.isAvailable,'
-            .allMatches(wiring)
-            .length;
+        final int gated =
+            'discoveryAvailable:'
+                    'StoreRestrictedCapability.externalDiscovery.isAvailable,'
+                .allMatches(wiring)
+                .length;
         expect(calls, greaterThan(0), reason: caller);
         expect(gated, calls, reason: '$caller 的每个发现服务装配点都要过门');
       }
@@ -691,7 +692,8 @@ void main() {
           expect(
             job.value,
             contains('native/fushi_p2p'),
-            reason: '$path 的 job ${job.key} 装了 Apple Rust target，却不是在构建 '
+            reason:
+                '$path 的 job ${job.key} 装了 Apple Rust target，却不是在构建 '
                 'fushi_p2p——Apple 上唯一允许的 Rust 构建就是它。',
           );
         }
