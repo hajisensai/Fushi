@@ -126,12 +126,10 @@ class OnlineWorkHeader extends StatelessWidget {
           )
         : actions.isEmpty
         ? null
-        : Wrap(
+        : MediaDetailActionBar(
             key: const ValueKey<String>('online_work_actions'),
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: actions,
+            primary: actions.first,
+            secondary: actions.sublist(1),
           );
     final List<String> tags = genres.take(8).toList(growable: false);
     final Widget? extra = this.extra;

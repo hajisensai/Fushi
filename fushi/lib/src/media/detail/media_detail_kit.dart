@@ -560,7 +560,13 @@ class MediaDetailHero extends StatelessWidget {
         ),
         if (actions != null) ...<Widget>[
           const SizedBox(height: 20),
-          FushiStaggeredEntrance(index: 2, child: actions!),
+          FushiStaggeredEntrance(
+            index: 2,
+            child: _MediaDetailHeroAlignScope(
+              centered: centered,
+              child: actions!,
+            ),
+          ),
         ],
         if (footer != null) ...<Widget>[
           const SizedBox(height: 20),
@@ -598,32 +604,45 @@ class MediaDetailActionBar extends StatelessWidget {
   final List<Widget> secondary;
   final Widget? more;
 
-  /// null = 跟随 hero（窄式居中、宽式起始侧）。
+  /// null = 跟随所在 hero（窄式居中、宽式起始侧；不在 hero 里时起始侧）。
   final WrapAlignment? alignment;
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        // 由 hero 的对齐推断：在居中的 Column 里拿到的是 loose 约束，统一按
-        // 「父级要求居中」处理不可靠，所以只认显式参数；缺省时窄宽居中。
-        final WrapAlignment resolved =
-            alignment ??
-            (constraints.maxWidth * FushiAppUiScale.of(context) <
-                    kMediaDetailHeroWideMinWidth
-                ? WrapAlignment.center
-                : WrapAlignment.start);
-        return Wrap(
-          key: const ValueKey<String>('media-detail-actions'),
-          alignment: resolved,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
-          children: <Widget>[primary, ...secondary, ?more],
-        );
-      },
+    final WrapAlignment resolved =
+        alignment ??
+        (_MediaDetailHeroAlignScope.centeredOf(context)
+            ? WrapAlignment.center
+            : WrapAlignment.start);
+    return Wrap(
+      key: const ValueKey<String>('media-detail-actions'),
+      alignment: resolved,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: <Widget>[primary, ...secondary, ?more],
     );
   }
+}
+
+/// hero 信息区的对齐（窄式居中 / 宽式起始侧），让操作区跟着对齐。
+class _MediaDetailHeroAlignScope extends InheritedWidget {
+  const _MediaDetailHeroAlignScope({
+    required this.centered,
+    required super.child,
+  });
+
+  final bool centered;
+
+  static bool centeredOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_MediaDetailHeroAlignScope>()
+          ?.centered ??
+      false;
+
+  @override
+  bool updateShouldNotify(_MediaDetailHeroAlignScope oldWidget) =>
+      centered != oldWidget.centered;
 }
 
 /// 主按钮（「继续观看」「开始阅读」「在线阅读」）：M3E filled M 档（56 高）+
