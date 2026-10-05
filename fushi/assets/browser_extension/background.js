@@ -332,8 +332,10 @@ function rememberAppTheme(theme) {
   }
   appThemeMirrorLoaded.then(() => {
     const prev = appThemeMirror && appThemeMirror[scheme];
-    if (prev && JSON.stringify(prev) === JSON.stringify(colors)) return;
-    appThemeMirror = Object.assign({}, appThemeMirror || {}, { [scheme]: colors });
+    // current = app 此刻的明暗：扩展「跟随 Fushi」+ 明暗「自动」时，侧边栏 / 设置页 / 页内浮层与
+    // 查词弹窗一起跟它（theme.js resolve），不再一边跟 app、一边跟系统。
+    if (prev && JSON.stringify(prev) === JSON.stringify(colors) && appThemeMirror.current === scheme) return;
+    appThemeMirror = Object.assign({}, appThemeMirror || {}, { [scheme]: colors, current: scheme });
     try { chrome.storage.local.set({ appThemeMirror }); } catch (_) {}
   });
 }
