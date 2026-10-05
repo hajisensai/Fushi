@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import '../helpers/glass_unwrap.dart';
@@ -732,7 +733,17 @@ void main() {
     );
     final double headerTop =
         tester.getTopLeft(find.byType(FushiPageHeader)).dy;
-    final double titleTop = tester.getTopLeft(find.text('书架')).dy;
+    // M3E 悬浮页头：标题装在悬浮标题胶囊里，顶距量的是胶囊上沿（胶囊就是
+    // 页头标题带本身）；Apple / 无胶囊时仍量文字。
+    final Finder capsule = find.ancestor(
+      of: find.text('书架'),
+      matching: find.byType(FushiPageChromeTitle),
+    );
+    final double titleTop = tester
+        .getTopLeft(
+          capsule.evaluate().isEmpty ? find.text('书架') : capsule.first,
+        )
+        .dy;
     return titleTop - headerTop;
   }
 

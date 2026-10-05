@@ -613,8 +613,10 @@ class _FushiSectionTabBarState<T extends Object>
       return const _SectionTabLayout(fit: _SectionTabFit.scroll);
     }
     final bool apple = isGlassDesign(context);
-    // Apple 页签条自带左右各 8 的外边距（_FushiGlassTabBar 的 padding 默认值）。
-    final double available = maxWidth - (apple ? 16.0 : 0.0);
+    // Apple 页签条自带左右各 8 的外边距（_FushiGlassTabBar 的 padding 默认值）；
+    // M3E 分段胶囊轨道两侧各吃 [kFushiM3eTabTrackInset]。
+    final double available =
+        maxWidth - (apple ? 16.0 : kFushiM3eTabTrackInset * 2);
     final double basePadding = apple
         ? _kSectionTabAppleLabelPadding
         : _kSectionTabHorizontalPadding;
