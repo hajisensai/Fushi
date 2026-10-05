@@ -74,7 +74,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
   /// can refer to another qBittorrent instance.
   final bool resolveBackendFromAppModel;
 
-  /// BUG-2938：内置引擎会话级网络诊断（通常是 `AppModel.torrentNetworkIssue`）。
+  /// BUG-2950：内置引擎会话级网络诊断（通常是 `AppModel.torrentNetworkIssue`）。
   /// 只在本任务走内置引擎时展示在「网络」区顶部；null = 不展示。
   final ValueListenable<TorrentNetworkIssue>? networkIssue;
 
@@ -670,7 +670,7 @@ class _TorrentTaskDetailDialogState
     final ValueListenable<TorrentNetworkIssue>? networkIssue =
         widget.networkIssue;
     return <Widget>[
-      // BUG-2938：诊断是内置引擎会话级的结论，qBittorrent 任务不套用。
+      // BUG-2950：诊断是内置引擎会话级的结论，qBittorrent 任务不套用。
       if (networkIssue != null && _backend is EmbeddedTorrentBackend)
         ValueListenableBuilder<TorrentNetworkIssue>(
           valueListenable: networkIssue,

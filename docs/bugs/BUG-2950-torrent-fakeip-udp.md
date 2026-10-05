@@ -1,4 +1,4 @@
-## BUG-2938 · 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示
+## BUG-2950 · 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示
 - **报告**：2026-10-04（用户：重新下载有声书合集里的一卷时任务一直 0 连接；问「fushi 为什么一定要 UDP 支持的节点，fushi 这边不能适应吗」→「那你改进一下」）
 - **真实性**：✅ 真 bug（可规避的那一半）。本机 Clash Verge TUN + fake-ip 实测：
   - 系统 DNS 把 `router.bittorrent.com` / `dht.transmissionbt.com` 等全部解析成 `198.18.1.x`；libtorrent 会话的 DHT 引导点（`native/fushi_torrent/fushi_torrent_ffi.cpp` `ht_session_create` 的 `dht_bootstrap_nodes`，只有域名）走假地址进了不转发 UDP 的代理节点，**路由表 30 分钟恒 0 节点**；

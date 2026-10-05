@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -219,6 +220,29 @@ void main() {
       reason: '年份 chip 在搜索框下面一行',
     );
     expect(field.width, greaterThan(300), reason: '搜索框独占整行');
+
+    final Finder searchChips = find.descendant(
+      of: find.byKey(const ValueKey<String>('video_search_bar_stacked')),
+      matching: find.byWidgetPredicate(
+        (Widget widget) =>
+            widget is SingleChildScrollView &&
+            widget.scrollDirection == Axis.horizontal,
+      ),
+    );
+    for (final Finder filterRow in <Finder>[
+      searchChips,
+      find.byKey(const ValueKey<String>('home_video_all_videos_filter_row')),
+    ]) {
+      expect(filterRow, findsOneWidget);
+      final ScrollableState scrollable = tester.state<ScrollableState>(
+        find.descendant(of: filterRow, matching: find.byType(Scrollable)),
+      );
+      expect(
+        ScrollConfiguration.of(scrollable.context).dragDevices,
+        contains(PointerDeviceKind.mouse),
+        reason: '两个筛选横滚区域都须继承鼠标拖动接线',
+      );
+    }
   });
 
   testWidgets('2026-10 宽屏：搜索框与 chip 仍同一行', (WidgetTester tester) async {

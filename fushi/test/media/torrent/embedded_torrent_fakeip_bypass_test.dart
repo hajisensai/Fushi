@@ -1,4 +1,4 @@
-// BUG-2938：fake-ip DNS（Clash TUN 等）下内置 libtorrent 的 DHT 引导点与 UDP
+// BUG-2950：fake-ip DNS（Clash TUN 等）下内置 libtorrent 的 DHT 引导点与 UDP
 // tracker 主机名全被解析成 198.18.x.x 假地址。修法是 AppModel 用 DoH 拿到真实
 // IP 后经宿主下发两样东西：
 // - DHT 节点 → EmbeddedTorrentHost.addDhtNodes → native ht_add_dht_nodes；

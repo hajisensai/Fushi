@@ -4,7 +4,7 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
-/// BUG-2938：会话级网络问题对应的用户文案；[TorrentNetworkIssue.none] 返回 null。
+/// BUG-2950：会话级网络问题对应的用户文案；[TorrentNetworkIssue.none] 返回 null。
 String? torrentNetworkIssueMessage(TorrentNetworkIssue issue) {
   return switch (issue) {
     TorrentNetworkIssue.none => null,
@@ -14,7 +14,7 @@ String? torrentNetworkIssueMessage(TorrentNetworkIssue issue) {
   };
 }
 
-/// BUG-2938：内置 torrent 引擎网络异常的警告条（下载页任务区、种子详情网络区共用）。
+/// BUG-2950：内置 torrent 引擎网络异常的警告条（下载页任务区、种子详情网络区共用）。
 ///
 /// [TorrentNetworkIssue.none] 时不占任何高度；其余情况照诊断结论展示原因与
 /// 用户能照着做的处理办法——任务 0 peer 时不再让用户猜是种子死了还是网络被掐。

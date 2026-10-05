@@ -661,7 +661,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
           _buildTaskSources(transcribe),
     );
-    // BUG-2938：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
+    // BUG-2950：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
     // 顶部说明原因；无问题时横幅零高度，任务列表布局不变。
     return Column(
       children: <Widget>[

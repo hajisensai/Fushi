@@ -4831,7 +4831,7 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
-  /// BUG-2938：内置引擎会话级网络诊断（fake-ip 掐断 UDP / DHT 不可达）。
+  /// BUG-2950：内置引擎会话级网络诊断（fake-ip 掐断 UDP / DHT 不可达）。
   /// 下载页横幅与种子详情的网络行照此展示；host 未建时恒为 none。
   final ValueNotifier<TorrentNetworkIssue> torrentNetworkIssue =
       ValueNotifier<TorrentNetworkIssue>(TorrentNetworkIssue.none);
@@ -4909,7 +4909,7 @@ class AppModel with ChangeNotifier {
     return host;
   }
 
-  // ── BUG-2938：fake-ip 绕行 + 会话级网络诊断 ──────────────────────────────
+  // ── BUG-2950：fake-ip 绕行 + 会话级网络诊断 ──────────────────────────────
   //
   // DHT 每次从停到跑（host 按有无下载/做种任务启停 DHT）时：重新判一次系统 DNS
   // 是否 fake-ip；是就经 DoH 拿 DHT 引导点与公共 UDP tracker 的真实 IP，节点灌进

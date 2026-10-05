@@ -16,7 +16,7 @@ void main() {
     );
   }
 
-  testWidgets('BUG-2938：none 不渲染任何内容、不占高度', (WidgetTester tester) async {
+  testWidgets('BUG-2950：none 不渲染任何内容、不占高度', (WidgetTester tester) async {
     await tester.pumpWidget(
       buildApp(
         const TorrentNetworkIssueBanner(
@@ -36,7 +36,7 @@ void main() {
     expect(torrentNetworkIssueMessage(TorrentNetworkIssue.none), isNull);
   });
 
-  testWidgets('BUG-2938：fake-ip 掐 UDP 显示代理不转发 UDP 的说明', (
+  testWidgets('BUG-2950：fake-ip 掐 UDP 显示代理不转发 UDP 的说明', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -52,7 +52,7 @@ void main() {
     expect(find.text(t.download_network_dht_unreachable), findsNothing);
   });
 
-  testWidgets('BUG-2938：DHT 不可达显示出站 UDP 被拦的说明', (
+  testWidgets('BUG-2950：DHT 不可达显示出站 UDP 被拦的说明', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -68,7 +68,7 @@ void main() {
     expect(find.text(t.download_network_fake_ip_udp_blocked), findsNothing);
   });
 
-  testWidgets('BUG-2938：随 ValueListenable 切换', (WidgetTester tester) async {
+  testWidgets('BUG-2950：随 ValueListenable 切换', (WidgetTester tester) async {
     final ValueNotifier<TorrentNetworkIssue> issue =
         ValueNotifier<TorrentNetworkIssue>(TorrentNetworkIssue.none);
     addTearDown(issue.dispose);
