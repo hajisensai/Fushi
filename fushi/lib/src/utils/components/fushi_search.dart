@@ -28,7 +28,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 //   24→12 外边距）。
 // - [showFushiSearchView] / [FushiSearchAnchor]：M3E search view——窄屏展开为
 //   全屏搜索页、宽屏为挂在搜索栏下的 docked 面板，含最近搜索 / 建议 / 结果分区；
-//   展开收起是从搜索栏出发的弹簧容器变换（[FushiSpringCurve]），减弱动态效果 /
+//   展开收起是从搜索栏出发的弹簧容器变换（[_FushiSearchSpringCurve]），减弱动态效果 /
 //   墨水屏下退化为淡入淡出。
 //
 // 规范依据：m3.material.io/components/search（full-screen：container-low 底、
@@ -370,8 +370,8 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
 /// 0..1 时间轴上（时长 = [duration]），末端强制落在 1。阻尼比 < 1 时带一点
 /// 过冲回弹——M3 Expressive 的 spatial spring 观感，而 route / 隐式动画仍可
 /// 按固定时长驱动。
-class FushiSpringCurve extends Curve {
-  FushiSpringCurve({
+class _FushiSearchSpringCurve extends Curve {
+  _FushiSearchSpringCurve({
     SpringDescription? spring,
     this.duration = _defaultDuration,
   }) : _simulation = SpringSimulation(spring ?? fushiSearchViewSpring, 0, 1, 0);
@@ -575,7 +575,7 @@ class _FushiSearchViewFrame extends StatefulWidget {
 class _FushiSearchViewFrameState extends State<_FushiSearchViewFrame> {
   late final CurvedAnimation _curve = CurvedAnimation(
     parent: widget.animation,
-    curve: FushiSpringCurve(),
+    curve: _FushiSearchSpringCurve(),
     reverseCurve: FushiMotion.exit,
   );
 
