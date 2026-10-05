@@ -6462,5 +6462,12 @@
   "reading_stats_clock_start_manual": "Manual",
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
-  "home_updates_dismiss": "Ignora"
+  "home_updates_dismiss": "Ignora",
+  "shelf_collection_layout_title": "Collections",
+  "shelf_collection_layout_rows": "Expanded rows",
+  "shelf_collection_layout_cards": "One tile each",
+  "shelf_sort_and_view": "Sort & view",
+  "shelf_collection_volume_count": "$n vols",
+  "shelf_collection_series_label": "Series",
+  "collection_name_taken_other_library": "Another library already has a collection named \"$name\". Pick a different name."
 }

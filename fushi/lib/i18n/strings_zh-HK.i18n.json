@@ -6462,5 +6462,12 @@
   "reading_stats_clock_start_manual": "Manual",
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
-  "home_updates_dismiss": "關閉"
+  "home_updates_dismiss": "關閉",
+  "shelf_collection_layout_title": "合集顯示",
+  "shelf_collection_layout_rows": "整行展開",
+  "shelf_collection_layout_cards": "單個格子",
+  "shelf_sort_and_view": "排序與顯示",
+  "shelf_collection_volume_count": "$n 冊",
+  "shelf_collection_series_label": "系列",
+  "collection_name_taken_other_library": "其他媒體庫已有名為「$name」的合集，請換個名字。"
 }

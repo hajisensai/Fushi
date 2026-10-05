@@ -35,6 +35,8 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     this.sortMode,
     this.sortModeLabel,
     this.onSortModeChanged,
+    this.viewOptionsTitle,
+    this.viewOptions = const <LibraryViewOption>[],
     this.onTagsChanged,
     super.key,
   });
@@ -66,6 +68,13 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
 
   /// 用户选中新排序方式（页面负责 setState + 偏好持久化）。
   final ValueChanged<ShelfSortMode>? onSortModeChanged;
+
+  /// 「显示」单选组的小标题（书架：「合集显示」）；与 [viewOptions] 同时非空时，
+  /// 排序按钮升级成「排序与显示」菜单，排序项下面接这一组。
+  final String? viewOptionsTitle;
+
+  /// 「显示」单选组（书架：合集整行展开 / 单个格子）。空 = 纯排序菜单（视频库等）。
+  final List<LibraryViewOption> viewOptions;
 
   /// 管理标签返回后，调用方据此刷新自身的标签映射 provider（book / video）。
   final VoidCallback? onTagsChanged;
@@ -286,18 +295,42 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   Widget _sortMenuAction(FushiDesignTokens tokens) {
     final t = Translations.of(context);
     final ShelfSortMode selectedMode = widget.sortMode!;
+    final String? viewTitle = widget.viewOptionsTitle;
+    final bool hasView = viewTitle != null && widget.viewOptions.isNotEmpty;
     // 菜单面板样式交给 FushiMenuAnchor（MD3 走全局 menuTheme，Apple 走玻璃
-    // 菜单面板），不再手拼 MenuStyle。
+    // 菜单面板），不再手拼 MenuStyle。有「显示」组时升级成「排序与显示」：
+    // 两组各带小标题、中间分隔（Files / 照片的 View options 同形）。
     return FushiMenuAnchor(
       controller: _sortMenu,
       menuChildren: <Widget>[
+        if (hasView) _menuSectionLabel(tokens, t.sort_by),
         for (final ShelfSortMode mode in ShelfSortMode.values)
-          _sortMenuItem(tokens, mode, selectedMode),
+          _choiceMenuItem(
+            tokens,
+            label: widget.sortModeLabel!(mode),
+            selected: mode == selectedMode,
+            onPressed: () => widget.onSortModeChanged!(mode),
+          ),
+        if (hasView) ...<Widget>[
+          const FushiDivider(),
+          _menuSectionLabel(tokens, viewTitle),
+          for (final LibraryViewOption option in widget.viewOptions)
+            _choiceMenuItem(
+              tokens,
+              key: option.key,
+              label: option.label,
+              icon: option.icon,
+              selected: option.selected,
+              // 排序组已有 autofocus 落点（选中的排序项），这组不抢。
+              autofocus: false,
+              onPressed: option.onSelected,
+            ),
+        ],
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) {
         return _tagBarAction(
-          icon: Icons.sort,
-          tooltip: t.sort_by,
+          icon: hasView ? Icons.tune : Icons.sort,
+          tooltip: hasView ? t.shelf_sort_and_view : t.sort_by,
           onTap: () =>
               controller.isOpen ? controller.close() : controller.open(),
         );
@@ -305,12 +338,30 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     );
   }
 
-  Widget _sortMenuItem(
-    FushiDesignTokens tokens,
-    ShelfSortMode mode,
-    ShelfSortMode selectedMode,
-  ) {
-    final bool selected = mode == selectedMode;
+  /// 菜单里一组单选项的小标题（不可聚焦，方向键直接跳过）。
+  Widget _menuSectionLabel(FushiDesignTokens tokens, String text) {
+    return ExcludeFocus(
+      child: Padding(
+        padding: EdgeInsetsDirectional.fromSTEB(
+          tokens.spacing.rowHorizontal,
+          tokens.spacing.gap,
+          tokens.spacing.rowHorizontal,
+          tokens.spacing.gap / 2,
+        ),
+        child: Text(text, style: tokens.type.sectionLabel),
+      ),
+    );
+  }
+
+  Widget _choiceMenuItem(
+    FushiDesignTokens tokens, {
+    required String label,
+    required bool selected,
+    required VoidCallback onPressed,
+    Key? key,
+    IconData? icon,
+    bool? autofocus,
+  }) {
     // Apple：行样式交给玻璃菜单的 MenuButtonTheme（悬停 / 焦点强调色块 +
     // onAccent 字），选中只靠行尾对勾；MD3 保留选中底 + 主色字。
     final bool glass = isGlassDesign(context);
@@ -333,10 +384,11 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         ),
       },
       child: MenuItemButton(
-        autofocus: selected,
+        key: key,
+        autofocus: autofocus ?? selected,
         onPressed: () {
           _sortMenu.close();
-          widget.onSortModeChanged!(mode);
+          onPressed();
         },
         style: glass
             ? null
@@ -352,8 +404,13 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (icon != null)
+              Padding(
+                padding: EdgeInsetsDirectional.only(end: tokens.spacing.gap),
+                child: FushiIcon(icon, size: 20, color: foreground),
+              ),
             Text(
-              widget.sortModeLabel!(mode),
+              label,
               style: glass
                   ? null
                   : tokens.type.listTitle.copyWith(
@@ -387,6 +444,28 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       onTap: onTap,
     );
   }
+}
+
+/// 「排序与显示」菜单「显示」组里的一个单选项（[FushiTagFilterBar.viewOptions]）。
+@immutable
+class LibraryViewOption {
+  const LibraryViewOption({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+    this.icon,
+    this.key,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  /// 行首图标（如横排行 / 网格），null = 纯文字。
+  final IconData? icon;
+
+  /// 挂在菜单项上的 key（测试按它点选）。
+  final Key? key;
 }
 
 /// [FushiTagFilterBar] 渲染哪一段。

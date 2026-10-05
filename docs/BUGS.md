@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2732 条。点号进各自文件。
+> 共 2735 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2974](bugs/BUG-2974-collection-picker-cross-domain.md) | ✅ | ✅ | 书的加入合集列表里出现视频合集（合集未按媒体库隔离） |
 | [BUG-2970](bugs/BUG-2970-emby-short-query-search.md) | ✅ | ✅ | Emby 媒体服务器搜索少于四个字搜不到 |
+| [BUG-2969](bugs/BUG-2969-collection-member-menu-mismatch.md) | ✅ | ✅ | 合集详情页成员右键菜单与书架不一致且没有标签 |
+| [BUG-2968](bugs/BUG-2968-tag-filter-hides-collection-members.md) | ✅ | ✅ | 标签筛选时合集内打了标签的书找不到 |
 | [BUG-2967](bugs/BUG-2967-android-first-lookup-after-idle-anki-main-thread.md) | ✅ | ✅ | Android 空闲后首次查词卡顿：AnkiDroid 制卡态探测在主线程冷启动 AnkiDroid |
 | [BUG-2966](bugs/BUG-2966-home-ja-untranslated.md) | ✅ | ✅ | 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译 |
 | [BUG-2965](bugs/BUG-2965-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |

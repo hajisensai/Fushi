@@ -9,13 +9,13 @@ import 'package:fushi/utils.dart';
 /// first volume, count badge = members, name footer). Same slot aspect ratio as
 /// a normal book card so it mixes inline with loose books. Tap -> series detail.
 ///
-/// Generic over the cover widgets so both the book shelf and the video library
-/// reuse it (each passes its own member-cover widget list; this card adds only
-/// the stacked-pile affordance + count badge + name, never re-renders a cover).
-///
-/// TODO-1125 A：堆叠样式——[covers] 传前 N 张成员封面（首卷在 first，最前层），
-/// 后 1~2 张真实成员封面偏移 + 缩小 + 描边/阴影铺在后层，读作「一摞书」（苹果式）。
-/// 成员不足 2 张优雅降级为单封面（无堆叠）。
+/// 2026-10 书架重设计：形态改成与视频库「系列」卡同一套**叠层封面**——共享
+/// [ShelfCoverFrame] 的 `stackedBehind`（MD3 两层色块 / Apple 两层模糊封面 /
+/// 墨水屏描边空层），左上角「N 册」、右上角「系列」角标（共享 [CoverBadge]），
+/// 标签 chip 接在册数下面，底边可选合集阅读进度条（共享 [CoverProgressStrip]）。
+/// 不再自绘 2x2 文件夹拼图（那份 [SeriesFolderCover] 仍给「组合成系列」命名弹窗
+/// 预览用）。悬停抬升 / 按压下沉走共享 [FushiHoverLift]（内含 [FushiPressScale]），
+/// 多选勾选圈与选中罩由 [ShelfCoverSelection] 画在封面上，与散书卡逐像素同规格。
 class SeriesShelfCard extends StatelessWidget {
   const SeriesShelfCard({
     required this.name,
@@ -30,14 +30,18 @@ class SeriesShelfCard extends StatelessWidget {
     this.onSelectionToggle,
     this.onLongPress,
     this.onSecondaryTap,
+    this.countLabel,
+    this.kindLabel,
+    this.tagLabels,
+    this.progress,
     super.key,
   });
 
   final String name;
   final int itemCount;
 
-  /// 系列前 N 张成员封面（N≤3），[covers].first 为主封面（首卷，最前层），其余
-  /// 作为后层「露出后面几本书」的堆叠视觉。为空则不渲染封面（防御性，调用方保证非空）。
+  /// 合集封面（[covers].first 为最前层主封面，也作 Apple 叠层的模糊底图）。
+  /// 为空则不渲染封面（防御性，调用方保证非空）。
   final List<Widget> covers;
   final VoidCallback onTap;
   final double slotAspectRatio;
@@ -61,13 +65,79 @@ class SeriesShelfCard extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onSecondaryTap;
 
+  /// 左上角成员数文案；null = `series_item_count`（「N 项」）。书架传「N 册」。
+  final String? countLabel;
+
+  /// 右上角类型角标文案（书架「系列」）；null = 不画。
+  final String? kindLabel;
+
+  /// 合集标签 chip 列（接在册数角标下面）；null = 无标签。
+  final Widget? tagLabels;
+
+  /// 合集阅读进度 0–1（封面底边进度条）；null / 0 = 不画。
+  final double? progress;
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
     final double overlayInset = tokens.spacing.gap * 0.75;
     final VoidCallback effectiveTap =
         selectionMode && onSelectionToggle != null ? onSelectionToggle! : onTap;
+    final Widget? front = covers.isEmpty ? null : covers.first;
+    final double? progressValue = progress;
+
+    final Widget coverStack = Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        if (front != null) ClipRect(child: front),
+        if (progressValue != null && progressValue > 0)
+          PositionedDirectional(
+            start: 0,
+            end: 0,
+            bottom: 0,
+            child: CoverProgressStrip(value: progressValue.clamp(0.0, 1.0)),
+          ),
+        // 多选态左上让位给勾选圈（[ShelfCoverFrame] 画），册数挪到左下。
+        if (!selectionMode)
+          PositionedDirectional(
+            start: overlayInset,
+            top: overlayInset,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _countBadge(),
+                if (tagLabels != null) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: tokens.spacing.gap * 9,
+                      maxHeight: tokens.spacing.gap * 3.5,
+                    ),
+                    child: ClipRect(child: tagLabels),
+                  ),
+                ],
+              ],
+            ),
+          )
+        else
+          PositionedDirectional(
+            start: overlayInset,
+            bottom: overlayInset + 4,
+            child: _countBadge(),
+          ),
+        if (kindLabel != null)
+          PositionedDirectional(
+            end: overlayInset,
+            top: overlayInset,
+            child: CoverBadge(
+              icon: Icons.collections_bookmark_outlined,
+              iconSize: 13,
+              label: kindLabel,
+            ),
+          ),
+      ],
+    );
 
     final Widget card = ContextMenuTrigger(
       onInvoke: contextMenuInvoker(selectionMode ? null : onSecondaryTap),
@@ -77,50 +147,31 @@ class SeriesShelfCard extends StatelessWidget {
           type: MaterialType.transparency,
           child: InkWell(
             canRequestFocus: false,
-            borderRadius: tokens.radii.cardRadius,
+            borderRadius: shelfCoverRadius(context),
             onTap: effectiveTap,
             onLongPress: selectionMode ? null : onLongPress,
             child: AspectRatio(
               aspectRatio: slotAspectRatio,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: <Widget>[
-                        Positioned.fill(
-                          child: FushiCard(
-                            padding: EdgeInsets.zero,
-                            margin: EdgeInsets.zero,
-                            child: ClipRRect(
-                              borderRadius: tokens.radii.cardRadius,
-                              child: SeriesFolderCover(covers: covers),
-                            ),
-                          ),
-                        ),
-                        PositionedDirectional(
-                          end: overlayInset + 6,
-                          top: overlayInset + 4,
-                          child: _countBadge(theme, tokens),
-                        ),
-                        if (selectionMode && selectionKey != null)
-                          Positioned(
-                            top: tokens.spacing.gap / 2,
-                            left: tokens.spacing.gap / 2,
-                            child: ShelfSelectionCheck(selected: selected),
-                          ),
-                        if (selected)
-                          const Positioned.fill(child: ShelfSelectedOverlay()),
-                      ],
+              child: ShelfCoverSelection(
+                selectionMode: selectionMode && selectionKey != null,
+                selected: selected,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(
+                      child: ShelfCoverFrame(
+                        // 与视频库「系列」卡同一个叠层：后面露出两层「下一本」。
+                        stackedBehind: front ?? const SizedBox.shrink(),
+                        child: coverStack,
+                      ),
                     ),
-                  ),
-                  SizedBox(
-                    // BUG-1184：与散书卡同步，随文字缩放变高，防止系列名第二行被裁。
-                    height: ShelfCardFooter.heightFor(context),
-                    child: ShelfCardFooter(title: name),
-                  ),
-                ],
+                    SizedBox(
+                      // BUG-1184：与散书卡同步，随文字缩放变高，防止系列名第二行被裁。
+                      height: ShelfCardFooter.heightFor(context),
+                      child: ShelfCardFooter(title: name),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -134,8 +185,9 @@ class SeriesShelfCard extends StatelessWidget {
     // (plain tests / no-controller contexts keep the bare InkWell). Enter /
     // gamepad A activate the same tap as a mouse; in selection mode that tap
     // toggles selection (effectiveTap), matching the InkWell.
+    Widget result = card;
     if (focusId != null && FushiFocusRoot.maybeControllerOf(context) != null) {
-      return Actions(
+      result = Actions(
         actions: <Type, Action<Intent>>{
           ActivateIntent: CallbackAction<ActivateIntent>(
             onInvoke: (_) {
@@ -147,18 +199,18 @@ class SeriesShelfCard extends StatelessWidget {
         child: FushiFocusTarget(id: focusId!, child: card),
       );
     }
-    return card;
+    // 悬停抬升 + 按压下沉（与散书卡同一个壳；多选态关掉，卡片此时是勾选目标）。
+    final Widget lifted = result;
+    return FushiHoverLift(
+      enabled: !selectionMode,
+      builder: (BuildContext _, bool __) => lifted,
+    );
   }
 
-  /// 封面右上角的成员数角标：走共享 [CoverBadge]（2026-10-04 角标统一——
-  /// MD3 inverseSurface@0.85 / Apple 磨砂黑，圆角 6），不再是 secondaryContainer
-  /// 彩色小块。
-  Widget _countBadge(ThemeData theme, FushiDesignTokens tokens) {
-    return CoverBadge(
-      icon: Icons.collections_bookmark_outlined,
-      iconSize: 13,
-      label: t.series_item_count(n: itemCount),
-    );
+  /// 成员数角标：走共享 [CoverBadge]（2026-10-04 角标统一——MD3
+  /// inverseSurface@0.85 / Apple 磨砂黑，圆角 6）。
+  Widget _countBadge() {
+    return CoverBadge(label: countLabel ?? t.series_item_count(n: itemCount));
   }
 }
 

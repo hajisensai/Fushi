@@ -7,7 +7,7 @@ import 'package:fushi/utils.dart';
 
 /// 单卡「加入合集」的共享弹窗（书架 / 视频库 / 游戏库共用）。
 ///
-/// 列出全部现有合集（名称 + 成员数，已含本条目的合集置灰打勾），首项「新建
+/// 列出与条目同一库页域的现有合集（名称 + 成员数，已含本条目的合集置灰打勾），首项「新建
 /// 合集」走 [showCollectionNameDialog] 命名后创建。落库统一走
 /// [FushiDatabase.createMediaCollection] / [FushiDatabase.addToCollection]
 /// （后者自带成员墓碑清理——重加回被移出的成员不会被同步复活逻辑吞掉），与
@@ -21,8 +21,10 @@ Future<bool> showAddToCollectionDialog({
   required String entryKey,
   String defaultNewName = '',
 }) async {
+  // BUG-2974：只列与本条目同一库页域的合集（书不见视频合集、漫画不见书合集），
+  // 域判据收口在数据层 [FushiDatabase.getMediaCollectionsForEntryDomain]。
   final List<MediaCollectionRow> collections =
-      await database.getAllMediaCollections();
+      await database.getMediaCollectionsForEntryDomain(mediaType, entryKey);
   final List<MediaCollectionItemRow> allItems =
       await database.getAllCollectionItems();
   final Map<int, int> memberCounts = <int, int>{};
@@ -59,6 +61,20 @@ Future<bool> showAddToCollectionDialog({
       initialName: defaultNewName,
     );
     if (name == null || !context.mounted) return false;
+    // BUG-2974：createMediaCollection 按 (名称, 类型) 自然键复用已有行。同名合集若
+    // 属于别的库页（如视频合集），复用就等于把书塞进视频合集——两域又混在一起。
+    // 本域里已有的同名合集照常复用；别的域占着这个名字就拒绝，让用户换名。
+    final MediaCollectionRow? sameName =
+        await database.getMediaCollectionByNaturalKey(name, 'collection');
+    if (sameName != null &&
+        !collections.any((MediaCollectionRow c) => c.id == sameName.id)) {
+      FushiToast.show(
+        msg: t.collection_name_taken_other_library(name: name),
+        severity: ToastSeverity.warning,
+      );
+      return false;
+    }
+    if (!context.mounted) return false;
     collectionId = await database.createMediaCollection(name);
   } else {
     collectionId = picked;

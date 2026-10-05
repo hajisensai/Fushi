@@ -6462,5 +6462,12 @@
   "reading_stats_clock_start_manual": "Manual",
   "reading_stats_clock_start_on_open": "On open",
   "reading_stats_clock_start_on_page_turn": "After page turn",
-  "home_updates_dismiss": "閉じる"
+  "home_updates_dismiss": "閉じる",
+  "shelf_collection_layout_title": "コレクションの表示",
+  "shelf_collection_layout_rows": "行で展開",
+  "shelf_collection_layout_cards": "1 マスにまとめる",
+  "shelf_sort_and_view": "並べ替えと表示",
+  "shelf_collection_volume_count": "$n 冊",
+  "shelf_collection_series_label": "シリーズ",
+  "collection_name_taken_other_library": "別のライブラリに「$name」という名前のコレクションがあります。別の名前にしてください。"
 }
