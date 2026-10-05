@@ -1215,13 +1215,14 @@ void main() {
     },
   );
 
-  // BUG-2959：底部导航直达的 MD3 根设置页没有返回出口，大标题栏 64 高的
-  // 工具栏行整行空着，「设置」被压到一大片空白下面。根页标题进工具栏行；带
-  // 返回出口的设置仍是大标题栏。
+  // BUG-2959：底部导航直达的根设置页没有返回出口，标题上方不能空一整行。
+  // 2026-10 settings kit：窄屏页头换成 M3E 浮动页头（返回 + 标题胶囊，随滚动
+  // 收缩）。根页标题直接在页头一行里、无返回钮；带返回出口的设置在同一行左侧
+  // 出返回钮。
   for (final bool root in <bool>[true, false]) {
     testWidgets(
-      'MD3 narrow settings home: ${root ? 'root tab puts the title in the '
-                'toolbar row' : 'page with a back exit keeps the large app bar'}',
+      'M3E narrow settings home: floating header ${root ? 'without' : 'with'} '
+      'a back button',
       (WidgetTester tester) async {
         await tester.binding.setSurfaceSize(const Size(400, 800));
         addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1238,27 +1239,21 @@ void main() {
         );
         await tester.pump();
 
-        final Finder rootBar = find.byKey(
-          const ValueKey<String>('settings_home_root_app_bar'),
+        expect(
+          find.byKey(const ValueKey<String>('settings_home_header')),
+          findsOneWidget,
         );
-        expect(rootBar, root ? findsOneWidget : findsNothing);
         final Finder title = find.text(t.settings);
         expect(title, findsWidgets);
-        final double titleTop = tester.getTopLeft(title.first).dy;
-        if (root) {
-          expect(
-            titleTop,
-            lessThan(kToolbarHeight),
-            reason: '根页标题在工具栏行里，上方没有空行',
-          );
-        } else {
-          expect(
-            titleTop,
-            greaterThan(kToolbarHeight),
-            reason: '大标题栏：工具栏行放返回箭头，大标题在其下',
-          );
-          expect(find.byIcon(Icons.arrow_back), findsOneWidget);
-        }
+        expect(
+          tester.getTopLeft(title.first).dy,
+          lessThan(kToolbarHeight),
+          reason: '标题就在页头这一行，上方没有空行',
+        );
+        expect(
+          find.byIcon(Icons.arrow_back),
+          root ? findsNothing : findsOneWidget,
+        );
       },
     );
   }

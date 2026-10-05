@@ -283,9 +283,11 @@ void main() {
   });
 
   test('home page wires search field, results and reveal hook', () {
-    final String home = File(
-      'lib/src/settings/settings_home_page.dart',
-    ).readAsStringSync();
+    // 跳转（登记定位挂点 + push 详情页 / 子页）收进 settings_search_sheet 的
+    // openSettingsSearchEntry，设置主页与全局搜索页共用。
+    final String home =
+        File('lib/src/settings/settings_home_page.dart').readAsStringSync() +
+        File('lib/src/settings/settings_search_sheet.dart').readAsStringSync();
     expect(home, contains('t.settings_search_hint'));
     expect(home, contains('filterSettingsEntries('));
     expect(home, contains('flattenVisibleSettings('));
