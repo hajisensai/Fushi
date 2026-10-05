@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_overview.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
@@ -373,7 +374,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   }
 
   /// 总览主体：数据切片 + 各区块的装配；排布（宽 / 窄、错峰进场、空数据态）
-  /// 由 [StatOverviewBody] 一处决定，信息架构见那里的文档。
+  /// 由 [StatDashboardBody] 一处决定（与三个域 tab 同一套），信息架构见那里的文档。
   Widget _buildOverviewBody(FushiDesignTokens tokens) {
     final StatWindow w = _window;
     final StatRange range = _range;
@@ -382,24 +383,29 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       selected: _filter,
       onChanged: _selectFilter,
     );
-    final Widget hero = StatOverviewHero(
-      kpis: computeStatOverviewKpis(_daily, w),
-      goalChars: ref.read(appProvider).readingGoalDailyChars,
-      goalProgressChars: studyGoalCharsForDay(_allDaily, w.todayKey),
-      onEditGoal: _loading ? null : () => unawaited(_editGoals()),
+    final AppModel appModel = ref.read(appProvider);
+    final Widget hero = StatHero(
+      lead: StatGoalPanel(
+        goalChars: appModel.readingGoalDailyChars,
+        progressChars: studyGoalCharsForDay(_allDaily, w.todayKey),
+        weeklyGoalChars: appModel.readingGoalWeeklyChars,
+        weeklyProgressChars: studyGoalCharsForWeek(_allDaily, w),
+        onTap: _loading ? null : () => unawaited(_editGoals()),
+      ),
+      tiles: buildStatKpiTiles(context, computeStatKpis(_daily, w)),
     );
     if (empty) {
-      return StatOverviewBody(
+      return StatDashboardBody(
         replayKey: _filter,
-        filterBar: filterBar,
+        header: filterBar,
         hero: hero,
-        emptyState: const StatOverviewEmpty(),
+        emptyState: StatDashboardEmpty(message: t.stat_overview_empty),
         tail: buildStatTailSliver(context),
       );
     }
-    return StatOverviewBody(
+    return StatDashboardBody(
       replayKey: _filter,
-      filterBar: filterBar,
+      header: filterBar,
       hero: hero,
       tail: buildStatTailSliver(context),
       trend: <Widget>[
@@ -430,7 +436,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         ),
       ],
       details: <Widget>[
-        StatOverviewSectionHeader(title: t.stat_overview_periods),
+        StatSectionHeader(title: t.stat_overview_periods),
         _buildSummaryCards(w),
         buildStatSessionSection(
           context,

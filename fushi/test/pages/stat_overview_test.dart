@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_overview.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
@@ -58,6 +59,7 @@ Future<void> _pump(
   Widget child, {
   Size size = const Size(420, 900),
   ThemeData? theme,
+  bool settle = true,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -70,14 +72,19 @@ Future<void> _pump(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  // M3 Expressive 的波浪进度条（周目标条）相位常动，等不到 settle：只推过进场。
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump(const Duration(seconds: 2));
+  }
 }
 
-StatOverviewBody _body({bool empty = false}) => StatOverviewBody(
-  filterBar: const Text('FILTER'),
+StatDashboardBody _body({bool empty = false}) => StatDashboardBody(
+  header: const Text('FILTER'),
   hero: const SizedBox(height: 40, child: Text('HERO')),
   tail: const SliverToBoxAdapter(child: SizedBox(height: 8)),
-  emptyState: empty ? const StatOverviewEmpty() : null,
+  emptyState: empty ? StatDashboardEmpty(message: t.stat_overview_empty) : null,
   trend: const <Widget>[
     SizedBox(height: 60, child: Text('TREND-A')),
     SizedBox(height: 60, child: Text('TREND-B')),
@@ -86,6 +93,46 @@ StatOverviewBody _body({bool empty = false}) => StatOverviewBody(
     SizedBox(height: 60, child: Text('DETAIL-A')),
     SizedBox(height: 60, child: Text('DETAIL-B')),
   ],
+  detailSlivers: <Widget>[
+    SliverList(
+      delegate: SliverChildListDelegate(const <Widget>[
+        SizedBox(height: 40, child: Text('ROW-1')),
+        SizedBox(height: 40, child: Text('ROW-2')),
+      ]),
+    ),
+  ],
+);
+
+const StatKpis _kpis = StatKpis(
+  todayMs: 3600000,
+  weekMs: 7200000,
+  prevWeekMs: 3600000,
+  todayChars: 1200,
+  weekChars: 5000,
+  streak: 4,
+  activeDaysLast7: 5,
+);
+
+Widget _hero({
+  bool lead = true,
+  int goal = 2000,
+  int progress = 1200,
+  int weekly = 0,
+  int weeklyProgress = 0,
+  VoidCallback? onTap,
+}) => Builder(
+  builder: (BuildContext context) => StatHero(
+    lead: lead
+        ? StatGoalPanel(
+            goalChars: goal,
+            progressChars: progress,
+            weeklyGoalChars: weekly,
+            weeklyProgressChars: weeklyProgress,
+            onTap: onTap,
+          )
+        : null,
+    tiles: buildStatKpiTiles(context, _kpis),
+  ),
 );
 
 void main() {
@@ -139,7 +186,7 @@ void main() {
   test('关键指标按唯一窗口取今日 / 本周 / 上周 / 近 7 日活跃', () {
     // 2026-10-05 是周一。
     final StatWindow w = StatWindow(DateTime(2026, 10, 5, 12));
-    final StatOverviewKpis k = computeStatOverviewKpis(<StatFact>[
+    final StatKpis k = computeStatKpis(<StatFact>[
       _fact(kActivityMediaBook, w.todayKey, ms: 600000, chars: 500),
       _fact(kActivityMediaVideo, w.todayKey, ms: 300000),
       _fact(kActivityMediaBook, w.lastDayKeys(7)[3], ms: 60000, chars: 10),
@@ -159,19 +206,22 @@ void main() {
     testWidgets('宽屏：趋势与明细左右两栏并排', (WidgetTester tester) async {
       await _pump(tester, _body(), size: const Size(1600, 900));
       expect(
-        find.byKey(const ValueKey<String>('stat-overview-wide-columns')),
+        find.byKey(const ValueKey<String>('stat-dashboard-wide-columns')),
         findsOneWidget,
       );
       final Offset trend = tester.getTopLeft(find.text('TREND-A'));
       final Offset detail = tester.getTopLeft(find.text('DETAIL-A'));
       expect(detail.dx, greaterThan(trend.dx), reason: '明细在右栏');
       expect(detail.dy, trend.dy, reason: '两栏顶对齐');
+      final Offset row = tester.getTopLeft(find.text('ROW-1'));
+      expect(row.dx, detail.dx, reason: '按作品长列表接在明细栏');
+      expect(row.dy, greaterThan(tester.getTopLeft(find.text('DETAIL-B')).dy));
     });
 
     testWidgets('窄屏：单栏，趋势在前、明细在后', (WidgetTester tester) async {
       await _pump(tester, _body());
       expect(
-        find.byKey(const ValueKey<String>('stat-overview-wide-columns')),
+        find.byKey(const ValueKey<String>('stat-dashboard-wide-columns')),
         findsNothing,
       );
       final List<double> ys = <String>[
@@ -181,6 +231,8 @@ void main() {
         'TREND-B',
         'DETAIL-A',
         'DETAIL-B',
+        'ROW-1',
+        'ROW-2',
       ].map((String s) => tester.getTopLeft(find.text(s)).dy).toList();
       for (int i = 1; i < ys.length; i++) {
         expect(ys[i], greaterThan(ys[i - 1]), reason: '第 $i 块');
@@ -195,70 +247,73 @@ void main() {
         expect(find.text(t.stat_overview_empty), findsOneWidget);
         expect(find.text('TREND-A'), findsNothing);
         expect(find.text('DETAIL-A'), findsNothing);
+        expect(find.text('ROW-1'), findsNothing);
       }
     });
   });
 
-  group('关键指标区', () {
-    const StatOverviewKpis kpis = StatOverviewKpis(
-      todayMs: 3600000,
-      weekMs: 7200000,
-      prevWeekMs: 3600000,
-      todayChars: 1200,
-      weekChars: 5000,
-      streak: 4,
-      activeDaysLast7: 5,
+  test('本周目标分子 = 本周学习域字数和（与阅读页周目标同口径）', () {
+    final StatWindow w = StatWindow(DateTime(2026, 10, 7, 12));
+    expect(
+      studyGoalCharsForWeek(<StatFact>[
+        _fact(kActivityMediaBook, w.todayKey, chars: 300),
+        _fact(kActivityMediaGame, w.weekFromKey, chars: 200),
+        _fact(kActivityMediaBook, w.prevWeekFromKey, chars: 999),
+      ], w),
+      500,
     );
+  });
 
+  group('关键指标区', () {
     testWidgets('未设目标显示引导、可点进目标编辑；设了显示进度', (WidgetTester tester) async {
       int edits = 0;
-      await _pump(
-        tester,
-        StatOverviewHero(
-          kpis: kpis,
-          goalChars: 0,
-          goalProgressChars: 0,
-          onEditGoal: () => edits++,
-        ),
-      );
+      await _pump(tester, _hero(goal: 0, progress: 0, onTap: () => edits++));
       expect(find.text(t.stat_overview_goal_unset), findsOneWidget);
       await tester.tap(find.text(t.stat_overview_goal_unset));
       await tester.pumpAndSettle();
       expect(edits, 1);
 
-      await _pump(
-        tester,
-        const StatOverviewHero(
-          kpis: kpis,
-          goalChars: 2000,
-          goalProgressChars: 1200,
-        ),
-      );
+      await _pump(tester, _hero());
       expect(find.text(t.stat_overview_goal_unset), findsNothing);
       expect(find.text(t.stat_goal_progress(read: 1200, goal: 2000)), findsOne);
       expect(find.text('60%'), findsOneWidget, reason: '进场动画结束后环停在真实比例');
     });
 
+    testWidgets('每周目标：日 + 周都设时环画日、下挂周进度；只设周时环画周', (WidgetTester tester) async {
+      await _pump(
+        tester,
+        _hero(weekly: 10000, weeklyProgress: 2500),
+        settle: false,
+      );
+      expect(find.text('60%'), findsOneWidget);
+      expect(
+        find.text(
+          '${t.stat_goal_weekly} · ${t.stat_goal_progress(read: 2500, goal: 10000)}',
+        ),
+        findsOneWidget,
+      );
+
+      await _pump(tester, _hero(goal: 0, weekly: 10000, weeklyProgress: 2500));
+      expect(find.text(t.stat_overview_goal_unset), findsNothing);
+      expect(find.text('25%'), findsOneWidget);
+      expect(
+        find.text(t.stat_goal_progress(read: 2500, goal: 10000)),
+        findsOne,
+      );
+    });
+
     testWidgets('宽屏目标与指标卡并排，窄屏上下叠；两套设计系统都能渲染', (WidgetTester tester) async {
+      final Finder goal = find.byKey(const ValueKey<String>('stat-goal-panel'));
+      final Finder today = find.byKey(
+        const ValueKey<String>('stat-kpi-today-time'),
+      );
       for (final bool apple in <bool>[false, true]) {
         for (final Brightness b in Brightness.values) {
           await _pump(
             tester,
-            const SingleChildScrollView(
-              child: StatOverviewHero(
-                kpis: kpis,
-                goalChars: 2000,
-                goalProgressChars: 1200,
-              ),
-            ),
+            SingleChildScrollView(child: _hero()),
             size: const Size(1600, 900),
             theme: _theme(apple: apple, b: b),
-          );
-          final Finder goal = find.byKey(
-            const ValueKey<String>('stat-overview-goal'),
-          );
-          final Finder today = find.byKey(
-            const ValueKey<String>('stat-kpi-today-time'),
           );
           expect(
             tester.getTopLeft(today).dx,
@@ -268,13 +323,7 @@ void main() {
 
           await _pump(
             tester,
-            const SingleChildScrollView(
-              child: StatOverviewHero(
-                kpis: kpis,
-                goalChars: 2000,
-                goalProgressChars: 1200,
-              ),
-            ),
+            SingleChildScrollView(child: _hero()),
             theme: _theme(apple: apple, b: b),
           );
           expect(
@@ -285,6 +334,33 @@ void main() {
           expect(tester.takeException(), isNull);
         }
       }
+    });
+
+    testWidgets('无目标面板（观看 / 游戏页）：宽屏四卡一排，窄屏 2×2', (WidgetTester tester) async {
+      const List<String> keys = <String>[
+        'stat-kpi-today-time',
+        'stat-kpi-week-time',
+        'stat-kpi-today-chars',
+        'stat-kpi-streak',
+      ];
+      double yOf(String k) =>
+          tester.getTopLeft(find.byKey(ValueKey<String>(k))).dy;
+      await _pump(
+        tester,
+        SingleChildScrollView(child: _hero(lead: false)),
+        size: const Size(1600, 900),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('stat-goal-panel')),
+        findsNothing,
+      );
+      for (final String k in keys) {
+        expect(yOf(k), yOf(keys.first), reason: '$k 同一排');
+      }
+      await _pump(tester, SingleChildScrollView(child: _hero(lead: false)));
+      expect(yOf(keys[1]), yOf(keys[0]));
+      expect(yOf(keys[2]), greaterThan(yOf(keys[0])));
+      expect(yOf(keys[3]), yOf(keys[2]));
     });
   });
 
