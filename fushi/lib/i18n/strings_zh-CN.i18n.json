@@ -6636,5 +6636,6 @@
   "manga_reader_more_info": "说明",
   "manga_reader_custom_color": "自定义颜色",
   "manga_ocr_ai_mode_low_confidence_short": "低置信度",
-  "manga_ocr_ai_mode_all_short": "全部"
+  "manga_ocr_ai_mode_all_short": "全部",
+  "home_nav_bar_labels": "底栏显示文字"
 }

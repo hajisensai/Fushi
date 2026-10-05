@@ -1410,7 +1410,11 @@ class _HomePageState extends BasePageState<HomePage>
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
         if (!fushiNotificationFromVisibleSubtree(notification)) return false;
         _largeTitle.handleNotification(notification);
-        return apple && _appleChrome.handleNotification(notification);
+        // 底栏随滚动收起（Apple 胶囊 / MD3 悬浮胶囊共用同一台状态机：只认
+        // 用户滚动、到顶到底的回弹不触发，见 GlassTabBarMinimizeController）。
+        // 顶部 scroll edge 带仍只有 Apple 画。
+        _appleChrome.handleNotification(notification);
+        return false;
       },
       // 外壳大标题条在内容之上（库页的分区页签行之上）；条与内容的父层两套
       // 设计系统、有无标题都恒定，只靠条的高度 / 透明度变化。
@@ -1491,6 +1495,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// back button). Tab identity is [HomeTab]-driven — the dynamic [_activeTabs]
   /// list (video/games toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
+    _shellFabHostedByBar = false;
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
     // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
     // route.canPop 时生成返回键；home（含 settings）是顶层 route、tab 是 IndexedStack
@@ -1532,6 +1537,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
+    _shellFabHostedByBar = false;
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
     // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
@@ -1669,6 +1675,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildMobileLayout() {
+    _shellFabHostedByBar = !isGlassDesign(context);
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -1694,8 +1701,8 @@ class _HomePageState extends BasePageState<HomePage>
     // Apple（iOS 26）：「查词」是搜索类目的地，拆成胶囊右侧的独立圆形搜索钮
     // （`Tab(role: .search)`）；下滑时胶囊最小化成只剩当前项的小圆，内容压在
     // 胶囊下面时底部有一段 scroll edge 渐隐（状态都在 [_appleChrome]）。
-    final int? glassSearchIndex =
-        glassDesign && tabs.contains(HomeTab.dictionaries)
+    // MD3：同一项拆成悬浮胶囊右侧的大号 FAB（M3E floating toolbar + FAB）。
+    final int? glassSearchIndex = tabs.contains(HomeTab.dictionaries)
             ? homeVisualIndexForTab(
                 tabs: tabs,
                 tab: HomeTab.dictionaries,
@@ -1733,11 +1740,37 @@ class _HomePageState extends BasePageState<HomePage>
             onGlassExpand: _appleChrome.expand,
             glassContentUnder: _appleChrome.contentUnderBottom,
             glassSearchIndex: glassSearchIndex,
+            showLabels: appModel.navBarLabelsVisible,
+            materialFab: _shellPageFab(),
           ),
         ),
       ),
     );
   }
+
+  /// MD3 移动布局里，外壳内容自己的页面 FAB 并进悬浮底栏右侧那颗 FAB，屏幕上
+  /// 不出现两颗（2026-10-06 用户）。目前外壳里唯一的页面 FAB 是视频源后台补刮
+  /// 任务面板；没有时返回 null，底栏 FAB 用默认的「查词」。
+  AdaptiveNavFab? _shellPageFab() {
+    if (isGlassDesign(context)) return null;
+    final VideoSourceScrapeTaskController? controller =
+        _videoSourceScrapeTaskController;
+    if (controller == null || !controller.isBusy) return null;
+    return AdaptiveNavFab(
+      icon: _scrapeTaskIcon(controller),
+      label: t.video_source_scrape_tasks_open,
+      onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+    );
+  }
+
+  /// 视频源后台补刮任务面板的图标：进行中 = 同步，等用户确认 = 待处理。
+  IconData _scrapeTaskIcon(VideoSourceScrapeTaskController controller) =>
+      controller.pendingConfirmation == null
+          ? FushiIcons.sync
+          : FushiIcons.pending;
+
+  /// 当前是不是 MD3 手机布局（页面 FAB 已经并进悬浮底栏，body 不再自己画）。
+  bool _shellFabHostedByBar = false;
 
   /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
   ///
@@ -3160,7 +3193,7 @@ class _HomePageState extends BasePageState<HomePage>
             child: _buildTabContent(visible),
           ),
         if (_videoSourceScrapeTaskController case final controller?)
-          if (controller.isBusy)
+          if (controller.isBusy && !_shellFabHostedByBar)
             Positioned(
               right: 20,
               bottom: 20,
@@ -3172,11 +3205,7 @@ class _HomePageState extends BasePageState<HomePage>
                     ),
                     tooltip: t.video_source_scrape_tasks_open,
                     onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-                    child: FushiIcon(
-                      controller.pendingConfirmation == null
-                          ? Icons.sync
-                          : Icons.rule_folder_outlined,
-                    ),
+                    child: FushiIcon(_scrapeTaskIcon(controller)),
                   ),
                 ),
               ),
