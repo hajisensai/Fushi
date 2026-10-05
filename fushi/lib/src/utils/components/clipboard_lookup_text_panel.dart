@@ -99,6 +99,21 @@ SourceLookupHighlight resolveSourceLookupHighlight({
   );
 }
 
+/// 源文本条是否只是在重复结果卡的词头：整段源文本恰好被一次扫描高亮从头到尾框住
+/// （搜索框直接查一个词的常态）。此时条上没有可供 Yomitan 式扫描的余文，而结果卡
+/// 词头又把同一个词带注音大字画了一遍，宿主应收起这条。[highlight] 为 null（还没
+/// 有命中跨度）时不判重复。
+bool isSourceStripRedundant({
+  required String text,
+  required SourceLookupHighlight? highlight,
+}) {
+  if (highlight == null) return false;
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  return highlight.start == 0 &&
+      highlight.length >= trimmed.characters.length;
+}
+
 /// 一次「扫描查词」的发起点：交给引擎的那段串，以及它在源文本条上的起始字素簇。
 ///
 /// 源文本条上点第 n 个字，查的是「从该字到串尾」的后缀（[SourceLookupTextPanel]
