@@ -44,7 +44,7 @@ class IllustrationZoomViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final Widget viewer = GestureDetector(
       onTap: () => Navigator.pop(context),
       onLongPress: onLongPress,
       child: InteractiveViewer(
@@ -65,6 +65,51 @@ class IllustrationZoomViewer extends StatelessWidget {
           ),
         ),
       ),
+    );
+    // M3E 图片查看器：图从 0.92 弹到原尺寸（expressive spatial），右上角一枚
+    // 浮在 scrim 上的 tonal 关闭圆钮（点图 / 点遮罩关闭照旧，这枚给鼠标与
+    // 不知道「点图关闭」的人一个明确出口）。减弱动态效果 / 墨水屏不弹。
+    final Duration enter = fushiMotionDuration(
+      context,
+      const Duration(milliseconds: 420),
+    );
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: enter == Duration.zero ? 1 : 0, end: 1),
+          duration: enter,
+          builder: (BuildContext context, double t, Widget? child) {
+            final double pop = const Cubic(0.42, 1.67, 0.21, 0.90).transform(t);
+            return Opacity(
+              opacity: Curves.easeOut.transform(t),
+              child: Transform.scale(scale: 0.92 + 0.08 * pop, child: child),
+            );
+          },
+          child: viewer,
+        ),
+        PositionedDirectional(
+          top: 0,
+          end: 0,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: FushiIconButton(
+                icon: Icons.close_rounded,
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                backgroundColor: isGlassDesign(context)
+                    ? null
+                    : cs.secondaryContainer.withValues(alpha: 0.92),
+                enabledColor: isGlassDesign(context)
+                    ? null
+                    : cs.onSecondaryContainer,
+                onTap: () => Navigator.pop(context),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
