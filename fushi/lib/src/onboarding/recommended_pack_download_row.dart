@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 推荐包下载的**常驻**可见入口（设置 → 系统 → 通用）。
@@ -55,13 +56,15 @@ class RecommendedPackDownloadRow extends StatelessWidget {
                 progress: controller.progress.value,
                 receivedBytes: controller.receivedBytes.value,
               ),
-              icon: Icons.downloading_outlined,
+              icon: FushiIcons.downloading,
               showIcon: true,
               controlBelow: true,
               trailing: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
+                  // M3E 波浪进度（Apple 细线）；数字进度在副标题里。
                   FushiLinearProgressIndicator(
+                    minHeight: 4,
                     value: controller.progress.value > 0
                         ? controller.progress.value
                         : null,
@@ -86,7 +89,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
               subtitle: failure == null
                   ? '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · ${t.onboarding_pack_paused_desc}'
                   : '${recommendedPackProgressLabel(progress: controller.progress.value, receivedBytes: controller.receivedBytes.value)} · $failure',
-              icon: Icons.pause_circle_outline,
+              icon: FushiIcons.pause,
               showIcon: true,
               // 「放弃」在左、「继续」在右：主动作靠右，误触代价（重下几 GB）落在
               // 次动作上。两颗按钮挤不下时整体下移，不做省略。
@@ -113,7 +116,7 @@ class RecommendedPackDownloadRow extends StatelessWidget {
             return AdaptiveSettingsRow(
               title: t.onboarding_pack_status_ready,
               subtitle: t.onboarding_pack_action_import_existing_desc,
-              icon: Icons.inventory_2_outlined,
+              icon: FushiIcons.downloadDone,
               showIcon: true,
               trailing: FushiFilledButton(
                 onPressed: controller.isDeleting.value ? null : onImport,

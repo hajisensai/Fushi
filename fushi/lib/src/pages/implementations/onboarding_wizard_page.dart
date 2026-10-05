@@ -887,15 +887,30 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingStepId.anki:
         return _buildAnkiStep();
       case OnboardingStepId.onlineServices:
-        return OnlineServicesOnboardingView(
-          items: onlineServiceOnboardingItems(),
-          onOpenLink: (Uri url) => launchUrl(
-            url,
-            mode: LaunchMode.externalApplication,
-          ),
-          onConfigure: () => _pushPage(
-            (_) => SettingsDetailPage(destination: buildServicesDestination()),
-          ),
+        // 总览本身是不滚动的 Column：放进步骤列表里滚动，标题换成向导统一的
+        // hero（总览自带的标题在这里关掉）。
+        return _OnboardingStepList(
+          children: <Widget>[
+            OnboardingStepHero(
+              icon: FushiIcons.cloud,
+              title: t.onboarding_online_services_title,
+              body: t.onboarding_online_services_body,
+            ),
+            SizedBox(height: FushiDesignTokens.of(context).spacing.card),
+            OnlineServicesOnboardingView(
+              showHeader: false,
+              items: onlineServiceOnboardingItems(),
+              onOpenLink: (Uri url) => launchUrl(
+                url,
+                mode: LaunchMode.externalApplication,
+              ),
+              onConfigure: () => _pushPage(
+                (_) => SettingsDetailPage(
+                  destination: buildServicesDestination(),
+                ),
+              ),
+            ),
+          ],
         );
       case OnboardingStepId.backup:
         return OnboardingStepView(
