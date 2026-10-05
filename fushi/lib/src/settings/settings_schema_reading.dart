@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/utils.dart';
 
 SettingsDestination buildReadingDestination() {
@@ -900,6 +901,39 @@ SettingsDestination buildReadingDestination() {
             format: (double value) => '${value.round()} min',
             onChanged: (SettingsContext c, double value) async {
               await c.appModel.setReadingIdleTimeoutMinutes(value.round());
+              c.refresh();
+            },
+          ),
+          // 阅读计时开始方式（2026-10-05）：手动 / 打开即开始（默认）/ 翻页后开始。
+          // 下次打开书生效；判据见 reader_study_clock_start_mode.dart。
+          SettingsSegmentedItem<ReaderStudyClockStartMode>(
+            id: 'reading.stats_clock_start_mode',
+            title: t.reading_stats_clock_start_mode,
+            subtitle: t.reading_stats_clock_start_mode_hint,
+            icon: Icons.play_circle_outline,
+            controlBelow: true,
+            options: <SettingsSegmentOption<ReaderStudyClockStartMode>>[
+              SettingsSegmentOption<ReaderStudyClockStartMode>(
+                value: ReaderStudyClockStartMode.manual,
+                label: t.reading_stats_clock_start_manual,
+                tooltip: t.reading_stats_clock_start_manual,
+              ),
+              SettingsSegmentOption<ReaderStudyClockStartMode>(
+                value: ReaderStudyClockStartMode.onOpen,
+                label: t.reading_stats_clock_start_on_open,
+                tooltip: t.reading_stats_clock_start_on_open,
+              ),
+              SettingsSegmentOption<ReaderStudyClockStartMode>(
+                value: ReaderStudyClockStartMode.onPageTurn,
+                label: t.reading_stats_clock_start_on_page_turn,
+                tooltip: t.reading_stats_clock_start_on_page_turn,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.readerStudyClockStartMode,
+            onChanged:
+                (SettingsContext c, ReaderStudyClockStartMode mode) async {
+              await c.appModel.setReaderStudyClockStartMode(mode);
               c.refresh();
             },
           ),
