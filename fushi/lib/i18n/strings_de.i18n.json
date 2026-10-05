@@ -6602,5 +6602,6 @@
   "reader_control_move_earlier": "Move earlier",
   "reader_control_move_later": "Move later",
   "reader_control_show_title": "Show book title",
-  "reader_control_editor_drag_hint": "Drag a button (long-press on touch) to reorder it or move it to another area. With a keyboard, press Enter on a button to choose where it goes. Changes apply right away."
+  "reader_control_editor_drag_hint": "Drag a button (long-press on touch) to reorder it or move it to another area. With a keyboard, press Enter on a button to choose where it goes. Changes apply right away.",
+  "home_nav_more": "More"
 }

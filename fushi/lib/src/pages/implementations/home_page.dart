@@ -1685,8 +1685,9 @@ class _HomePageState extends BasePageState<HomePage>
     // an edge tab up into a content focus target. Mirrors the desktop layout,
     // which already isolates the rail and content panes (TODO-713: 移动端底栏
     // 边缘 tab 按左/右焦点跑到上部).
-    // 玻璃设计系统（iOS 26）：底栏是悬浮在内容上的玻璃胶囊，内容从它下面滚过
-    // ——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
+    // 两套设计系统的底栏都悬浮在内容上（Apple：iOS 26 玻璃胶囊；MD3：2026-10-06
+    // 用户「底部栏改为 m3e 悬浮的」，离边 12 的 surfaceContainer 胶囊），内容从
+    // 它下面滚过——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
     // body 的 SafeArea 不再吃掉它，列表（ListView / GridView 的默认 padding）
     // 自己把末尾垫到胶囊之上。
     final bool glassDesign = isGlassDesign(context);
@@ -1703,10 +1704,10 @@ class _HomePageState extends BasePageState<HomePage>
             : null;
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      extendBody: glassDesign,
+      extendBody: true,
       body: _GlassContentSurface(
         child: SafeArea(
-          bottom: !glassDesign,
+          bottom: false,
           child: _withAppleScrollChrome(
             FocusTraversalGroup(child: _bodyWithMiniBar()),
           ),

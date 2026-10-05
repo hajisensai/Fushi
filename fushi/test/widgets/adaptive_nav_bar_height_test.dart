@@ -3,7 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 
-// 移动端底栏几何守卫。自绘的 Material 底栏曾用固定 SizedBox(height: 80)，叠上
+// 移动端底栏几何守卫。2026-10-06 起 MD3 底栏是悬浮胶囊（离左右 12、离底
+// max(12, 手势区)，上沿留 kAdaptiveNavBarFloatingTopGap），胶囊内高仍是
+// kAdaptiveNavBarContentHeight(64)。以下为原始背景：
+//
+// 自绘的 Material 底栏曾用固定 SizedBox(height: 80)，叠上
 // Android 手势条的 24dp bottom inset 后总高 104dp，标签底边离屏幕底 38dp —— 比
 // MD3 标称的 80dp 容器还高，视觉上「浮」在底部而不是贴住底部。
 //
@@ -52,13 +56,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('bottom bar content is 64dp tall without system inset', (
+  testWidgets('floating capsule is 64dp tall, 12dp off the bottom edge', (
     WidgetTester tester,
   ) async {
     await pumpBar(tester);
 
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    expect(bar.height, kAdaptiveNavBarContentHeight);
+    expect(
+      bar.height,
+      kAdaptiveNavBarContentHeight +
+          kAdaptiveNavBarFloatingTopGap +
+          kAdaptiveNavFloatingMargin,
+    );
   });
 
   testWidgets('system inset only adds gesture padding below the content', (
@@ -68,10 +77,13 @@ void main() {
     await pumpBar(tester, bottomInset: inset);
 
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    // 总高 = 内容 64 + 手势区 24 = 88；旧实现是 80 + 24 = 104。
-    expect(bar.height, kAdaptiveNavBarContentHeight + inset);
+    // 悬浮胶囊浮在手势区之上：总高 = 上缝 4 + 胶囊 64 + max(12, 手势区 24)。
+    expect(
+      bar.height,
+      kAdaptiveNavBarFloatingTopGap + kAdaptiveNavBarContentHeight + inset,
+    );
 
-    // 标签底边只隔着内容内边距 + 手势区，不再多出 14dp 的空白。
+    // 标签底边只隔着胶囊内边距 + 胶囊离底距离。
     final Rect label = tester.getRect(find.text('Books'));
     expect(
       bar.bottom - label.bottom,
@@ -87,8 +99,12 @@ void main() {
     // 文字缩放被 clamp 到 1.3（与 stock NavigationBar 一致），高度按内容自适应
     // 增长；任何 RenderFlex 溢出都会让 pumpAndSettle 抛异常。
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    expect(bar.height, greaterThanOrEqualTo(kAdaptiveNavBarContentHeight + 24));
-    expect(bar.height, lessThan(kAdaptiveNavBarContentHeight + 24 + 20));
+    const double chrome = kAdaptiveNavBarFloatingTopGap + 24;
+    expect(
+      bar.height,
+      greaterThanOrEqualTo(kAdaptiveNavBarContentHeight + chrome),
+    );
+    expect(bar.height, lessThan(kAdaptiveNavBarContentHeight + chrome + 20));
     expect(tester.takeException(), isNull);
   });
 }

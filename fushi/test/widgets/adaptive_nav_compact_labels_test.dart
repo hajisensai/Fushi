@@ -99,20 +99,71 @@ void main() {
     });
   });
 
-  testWidgets('360dp 宽 8 个入口：所有入口都显示标签（小一号），并有 tooltip', (
+  /// 标签完整画出（没有被省略号截断）。
+  bool labelUntruncated(WidgetTester tester, String label) {
+    final RenderParagraph p = tester.renderObject<RenderParagraph>(
+      find.text(label),
+    );
+    return !p.didExceedMaxLines;
+  }
+
+  // 2026-10-06 悬浮底栏：放不下时不再把标签压成「浏览…」，而是按模块顺序
+  // 从前往后放，剩下的收进最右的「更多」。出现在栏上的入口标签都完整显示。
+  testWidgets('360dp 宽 8 个入口：栏上入口标签完整显示，其余收进「更多」', (
     WidgetTester tester,
   ) async {
-    await pumpBar(tester, width: 360, count: 8, currentIndex: 2);
+    int tapped = -1;
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: Builder(
+              builder: (BuildContext context) => adaptiveBottomBar(
+                context: context,
+                currentIndex: 0,
+                onTap: (int i) => tapped = i,
+                items: itemsOf(8),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    for (int i = 0; i < 8; i++) {
+    final List<int> shown = <int>[
+      for (int i = 0; i < 8; i++)
+        if (find.text('Tab$i').evaluate().isNotEmpty) i,
+    ];
+    expect(shown, isNotEmpty);
+    expect(find.text('More'), findsOneWidget, reason: '放不下时出现「更多」');
+    // 按模块顺序从前往后放：栏上的是前缀。
+    expect(shown, <int>[for (int i = 0; i < shown.length; i++) i]);
+    for (final int i in shown) {
       expect(labelVisible(tester, 'Tab$i'), isTrue, reason: 'Tab$i');
-      expect(labelFontSize(tester, 'Tab$i'), 11, reason: 'Tab$i');
-      expect(find.byTooltip('Tab$i'), findsOneWidget);
+      expect(labelUntruncated(tester, 'Tab$i'), isTrue, reason: 'Tab$i');
     }
+    expect(labelUntruncated(tester, 'More'), isTrue);
+
+    // 「更多」菜单列出其余入口，选中即切过去。
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    for (int i = shown.length; i < 8; i++) {
+      expect(find.text('Tab$i'), findsOneWidget, reason: '菜单里有 Tab$i');
+    }
+    await tester.tap(find.text('Tab7'));
+    await tester.pumpAndSettle();
+    expect(tapped, 7);
   });
 
-  testWidgets('窄格长标签按格宽省略而不是溢出或隐藏', (WidgetTester tester) async {
+  testWidgets('长标签放不下时整条收进「更多」而不是省略或溢出', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -142,10 +193,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     for (int i = 0; i < 8; i++) {
-      final String label = 'Browser extension $i';
-      expect(labelVisible(tester, label), isTrue, reason: label);
-      expect(tester.getSize(find.text(label)).width, lessThanOrEqualTo(40));
+      final Finder label = find.text('Browser extension $i');
+      if (label.evaluate().isEmpty) continue;
+      expect(labelUntruncated(tester, 'Browser extension $i'), isTrue);
     }
+    expect(find.text('More'), findsOneWidget);
   });
 
   testWidgets('宽屏 3 个入口：全部显示标签、无 tooltip', (WidgetTester tester) async {

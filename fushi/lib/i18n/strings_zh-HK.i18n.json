@@ -6602,5 +6602,6 @@
   "reader_control_move_earlier": "前移",
   "reader_control_move_later": "後移",
   "reader_control_show_title": "顯示書名",
-  "reader_control_editor_drag_hint": "拖動按鈕（觸控長按）即可排序或換區；用鍵盤時在按鈕上按 Enter 選擇位置。改動立即生效。"
+  "reader_control_editor_drag_hint": "拖動按鈕（觸控長按）即可排序或換區；用鍵盤時在按鈕上按 Enter 選擇位置。改動立即生效。",
+  "home_nav_more": "More"
 }

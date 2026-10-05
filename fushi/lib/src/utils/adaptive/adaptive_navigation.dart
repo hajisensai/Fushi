@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -34,6 +35,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 class AdaptiveNavItem {
   final IconData icon;
@@ -128,6 +130,37 @@ const double kMaterialNavRailExpandedWidth = 220;
 /// Apple 设计系统的窄条仍是 [kAdaptiveNavRailWidth]。
 const double kMaterialNavRailCollapsedWidth = 96;
 
+/// MD3 悬浮导航（底部胶囊 / 侧边面板）离屏幕边的留白。
+const double kAdaptiveNavFloatingMargin = 12;
+
+/// MD3 悬浮底栏胶囊上沿与内容（或其上方迷你播放条）之间的缝。迷你条自带
+/// 离边 12 的左右留白，与胶囊同宽对齐，底下再留 8，两者叠起来间距一致。
+const double kAdaptiveNavBarFloatingTopGap = 4;
+
+/// MD3 悬浮底栏胶囊内左右留白（目的地格从这里开始排）。
+const double kAdaptiveNavBarCapsulePadding = 4;
+
+/// MD3 悬浮底栏一格的最窄宽度：再窄标签就要截断，改收进「更多」。
+const double _kMinNavCellWidth = 44;
+
+/// 一格除标签外的横向余量（格内左右 4 的内边距）。
+const double _kNavCellLabelSlack = 8;
+
+/// MD3 悬浮 rail 面板离窗口左 / 上 / 下的留白，与面板右侧给阴影的缝。
+const double _kMaterialRailFloatingStart = 12;
+const double _kMaterialRailFloatingEnd = 6;
+
+/// MD3 悬浮 rail 占位宽比面板宽多出的量。
+const double kMaterialNavRailFloatingInset =
+    _kMaterialRailFloatingStart + _kMaterialRailFloatingEnd;
+
+/// MD3 悬浮 rail 面板圆角（M3E 大容器 28）。
+const double _kMaterialRailPanelRadius = 28;
+
+/// MD3 悬浮底栏离屏幕底边的距离：浮在手势区之上，最少 12。
+double _materialNavBarBottomMargin(BuildContext context) =>
+    math.max(kAdaptiveNavFloatingMargin, MediaQuery.paddingOf(context).bottom);
+
 /// M3E rail 菜单钮的胶囊高度（与导航药丸同为全圆角）。
 const double _kMaterialMenuPillHeight = 40;
 
@@ -146,10 +179,12 @@ const double _kMaterialPillHeight = 32;
 /// 当前设计系统下导航 rail / 侧栏实际占的宽（标题栏按它缩进标题）。
 double adaptiveNavRailWidthFor(BuildContext context, {required bool extended}) {
   final bool glass = isGlassDesign(context);
-  if (!extended) {
-    return glass ? kAdaptiveNavRailWidth : kMaterialNavRailCollapsedWidth;
-  }
-  return glass ? kGlassNavSidebarWidth : kMaterialNavRailExpandedWidth;
+  if (glass) return extended ? kGlassNavSidebarWidth : kAdaptiveNavRailWidth;
+  // MD3 是悬浮面板：占位宽含面板左右的留白。
+  return (extended
+          ? kMaterialNavRailExpandedWidth
+          : kMaterialNavRailCollapsedWidth) +
+      kMaterialNavRailFloatingInset;
 }
 
 /// 宽屏主导航此刻是否展开。默认按窗口尺寸档：expanded（≥840）展开、medium
@@ -445,6 +480,98 @@ class _MaterialNavCluster extends StatelessWidget {
     );
   }
 
+  /// MD3 悬浮底栏的一排目的地。标签恒显示、不截断：
+  /// 1. 每格要的宽 = max([_kMinNavCellWidth], 标签实宽（12 号 w600、跟随
+  ///    文字缩放）+ [_kNavCellLabelSlack])；
+  /// 2. 全部放得下 → 全部出现，最宽一格乘以格数也放得下就等分，否则按所需宽
+  ///    比例分（窄格自动走紧凑形态：药丸收窄、标签小一号）；
+  /// 3. 放不下 → 按用户的模块顺序从前往后放，剩下的收进最右的「更多」。
+  Widget _buildMaterialFloatingRow(BuildContext context, BoxConstraints box) {
+    if (!box.hasBoundedWidth || items.isEmpty) {
+      return IntrinsicHeight(
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < items.length; i++)
+              Expanded(child: _cell(context, i)),
+          ],
+        ),
+      );
+    }
+    final double width = box.maxWidth;
+    final TextStyle style =
+        (Theme.of(context).textTheme.labelMedium ?? const TextStyle())
+            .copyWith(fontSize: 12, fontWeight: FontWeight.w600);
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextDirection direction = Directionality.of(context);
+    double need(String label) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double labelWidth = painter.width;
+      painter.dispose();
+      return math.max(_kMinNavCellWidth, labelWidth + _kNavCellLabelSlack);
+    }
+
+    final List<double> needs = <double>[
+      for (final AdaptiveNavItem item in items) need(item.label),
+    ];
+    final double total = needs.fold(0, (double a, double b) => a + b);
+    final List<int> visible = <int>[];
+    double? moreNeed;
+    if (total <= width) {
+      visible.addAll(<int>[for (int i = 0; i < items.length; i++) i]);
+    } else {
+      final double more = need(t.home_nav_more);
+      moreNeed = more;
+      double used = more;
+      for (int i = 0; i < items.length; i++) {
+        if (used + needs[i] > width) break;
+        visible.add(i);
+        used += needs[i];
+      }
+    }
+    final List<int> overflow = <int>[
+      for (int i = 0; i < items.length; i++)
+        if (!visible.contains(i)) i,
+    ];
+    final double? moreSlot = moreNeed;
+    final List<double> slotNeeds = <double>[
+      for (final int i in visible) needs[i],
+      if (moreSlot != null) moreSlot,
+    ];
+    final double slotTotal = slotNeeds.fold(0, (double a, double b) => a + b);
+    final double maxNeed = slotNeeds.fold(0, math.max);
+    final bool equal = maxNeed * slotNeeds.length <= width;
+    double cellWidthOf(double slotNeed) =>
+        equal ? width / slotNeeds.length : width * slotNeed / slotTotal;
+    int flexOf(double slotNeed) => equal ? 1 : (slotNeed * 10).round();
+    return IntrinsicHeight(
+      child: Row(
+        children: <Widget>[
+          for (final int i in visible)
+            Expanded(
+              flex: flexOf(needs[i]),
+              child: _cell(context, i, cellWidth: cellWidthOf(needs[i])),
+            ),
+          if (moreSlot != null)
+            Expanded(
+              flex: flexOf(moreSlot),
+              child: _NavMoreCell(
+                items: items,
+                overflow: overflow,
+                currentIndex: currentIndex,
+                onTap: onTap,
+                cellWidth: cellWidthOf(moreSlot),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
@@ -462,32 +589,29 @@ class _MaterialNavCluster extends StatelessWidget {
             _cell(context, i, cellWidth: cellWidth),
         ];
 
-    // eink：surfaceContainer / surface 都塌成页面底色，底栏 / 侧栏与内容面连成
-    // 一整块白（黑）；靠一条前景色边线把导航区切出来。
-    final bool eink = isEinkTheme(context);
-    // 毛玻璃 / 玻璃设计系统：Material 底色让位给背后的玻璃层（见
-    // [_NavSurfaceBackdrop]）；贴屏幕边，不画描边。
-    //
     // 结构恒定：无论 MD3 / 毛玻璃 / 液态 / 玻璃设计系统，外层永远是同一个
     // [_NavSurfaceBackdrop]，带 [fushiMaterialNavKey] 的 Material 永远在它的
     // 同一个槽位里，切换时只换背景槽与几何参数。旧实现按「是否玻璃」把 Material
     // 包进 / 拆出 FushiGlassSurface，设计系统一切换整条导航（含各目的地的焦点
     // 目标）就在同一帧里被重挂，Mac 调试版触发 `_elements.contains(element)`
-    // 断言。
-    final bool glass =
-        glassDesign || glassMaterialOf(context) != FushiGlassMaterial.off;
+    // 断言。MD3 的底色 / 毛玻璃 / eink 描边都画在悬浮胶囊 / 面板
+    // （[_FloatingNavSurface]）上。
     if (horizontal) {
       // 玻璃设计系统（iOS 26）：底栏是离左右 16、离底 ≥16 的悬浮玻璃胶囊
       // （+ 右侧搜索圆钮），胶囊本体在前景里画（随最小化变宽窄，见
       // [_buildGlassTabBar]）；背景槽只画底部 scroll edge 带——从导航区上沿
       // 再往上伸 24，内容在胶囊上方就开始化开。手势区不再整条让出
       // （SafeArea 不吃 bottom）。
-      // MD3（M3 Expressive flexible navigation bar）：surfaceContainer 底、
-      // 64 高（旧 M3 是 80），选中项是 56×32 的全圆角 secondaryContainer 药丸
-      // （选中时按 expressive spatial 弹簧带回弹地展开），12 号 w500 标签恒显示；
-      // M3E 的横排目的地（medium 窗口）不在这里做：首页在 ≥600 时用 rail。
-      final double glassBottom =
-          glassDesign ? _glassNavBarBottomMargin(context) : 0;
+      // MD3（M3 Expressive，2026-10-06 用户「底部栏改为 m3e 悬浮的」）：离左右
+      // 12、离底 ≥12 的悬浮全胶囊（surfaceContainer + 阴影，不贴边、不占满宽），
+      // 内高 64；选中项是 56×32 的全圆角 secondaryContainer 药丸（expressive
+      // spatial 弹簧带回弹地展开），12 号 w500 标签恒显示；目的地太多放不下时
+      // 先收窄格宽 / 小一号字，再放不下就把超出的收进最右的「更多」（见
+      // [_buildMaterialFloatingRow]），标签不截断。手势区不整条让出：胶囊浮在
+      // 它上面（与 Apple 胶囊同一套 extendBody 让内容从下面滚过）。
+      final double glassBottom = glassDesign
+          ? _glassNavBarBottomMargin(context)
+          : _materialNavBarBottomMargin(context);
       return _NavSurfaceBackdrop(
         baseColor: colors.surfaceContainer,
         glassBackground: glassDesign
@@ -513,8 +637,9 @@ class _MaterialNavCluster extends StatelessWidget {
             : null,
         child: Material(
           key: fushiMaterialNavKey,
-          color: glass ? Colors.transparent : colors.surfaceContainer,
-          shape: eink ? Border(top: BorderSide(color: colors.outline)) : null,
+          // 悬浮胶囊之外完全透明，内容从下面滚过；底色 / 阴影 / eink 描边都画在
+          // 胶囊（[_FloatingNavSurface]）上。
+          type: MaterialType.transparency,
           // Clamp text scaling exactly like the stock NavigationBar: at the
           // system's largest font sizes an unclamped label would push the bar to
           // a third of the screen.
@@ -522,7 +647,7 @@ class _MaterialNavCluster extends StatelessWidget {
             maxScaleFactor: 1.3,
             child: SafeArea(
               top: false,
-              bottom: !glassDesign,
+              bottom: false,
               // minHeight, not a fixed height: even clamped, a scaled label can
               // outgrow the content box, and a fixed box would overflow instead
               // of growing (the old 80 only hid this behind spare room).
@@ -535,7 +660,9 @@ class _MaterialNavCluster extends StatelessWidget {
                       ? kGlassNavBarCapsuleHeight +
                           _kGlassNavBarTopGap +
                           glassBottom
-                      : kAdaptiveNavBarContentHeight,
+                      : kAdaptiveNavBarContentHeight +
+                          kAdaptiveNavBarFloatingTopGap +
+                          glassBottom,
                 ),
                 child: Padding(
                   padding: glassDesign
@@ -545,27 +672,36 @@ class _MaterialNavCluster extends StatelessWidget {
                           kGlassNavBarSideMargin,
                           glassBottom,
                         )
-                      : const EdgeInsets.symmetric(
-                          vertical: kAdaptiveNavBarContentPadding,
+                      : EdgeInsets.fromLTRB(
+                          kAdaptiveNavFloatingMargin,
+                          kAdaptiveNavBarFloatingTopGap,
+                          kAdaptiveNavFloatingMargin,
+                          glassBottom,
                         ),
                   child: glassDesign
                       ? _buildGlassTabBar(context)
-                      : LayoutBuilder(
-                          builder: (BuildContext context, BoxConstraints box) {
-                            final double? cellWidth =
-                                box.hasBoundedWidth && items.isNotEmpty
-                                    ? box.maxWidth / items.length
-                                    : null;
-                            return IntrinsicHeight(
-                              child: Row(
-                                children: <Widget>[
-                                  for (final Widget tile
-                                      in buildTiles(cellWidth: cellWidth))
-                                    Expanded(child: tile),
-                                ],
+                      : _FloatingNavSurface(
+                          borderRadius: BorderRadius.circular(
+                            kAdaptiveNavBarContentHeight / 2,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: kAdaptiveNavBarContentHeight,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: kAdaptiveNavBarCapsulePadding,
+                                vertical: kAdaptiveNavBarContentPadding,
                               ),
-                            );
-                          },
+                              child: LayoutBuilder(
+                                builder: (
+                                  BuildContext context,
+                                  BoxConstraints box,
+                                ) =>
+                                    _buildMaterialFloatingRow(context, box),
+                              ),
+                            ),
+                          ),
                         ),
                 ),
               ),
@@ -580,7 +716,10 @@ class _MaterialNavCluster extends StatelessWidget {
     // rail）：展开态 220 宽（行高 56、图标 + 文字横排、选中药丸撑满整行，取代
     // 旧 navigation drawer），收起态 96 宽（56×32 药丸 + 下方 12 号标签）；
     // 顶部是切换两态的菜单钮（[onToggleExtended]）+ 品牌位，宽度变化走
-    // spatial 弹簧（[_AnimatedRailWidth]）；底直接是 surface，不画边。
+    // spatial 弹簧（[_AnimatedRailWidth]）。2026-10-06 用户「横屏也改为 m3e
+    // 悬浮的」：MD3 rail 不再是贴边整列，而是离窗口左 / 上 / 下 12 的悬浮
+    // 圆角面板（surfaceContainer + 阴影，[_FloatingNavSurface]），面板右侧留 6
+    // 给阴影；占位宽 = 面板宽 + [kMaterialNavRailFloatingInset]。
     // 两套的行都从上往下排（品牌位在顶），不再在剩余高度里居中。
     final double railWidth = railExtended
         ? (glassDesign ? kGlassNavSidebarWidth : kMaterialNavRailExpandedWidth)
@@ -640,60 +779,237 @@ class _MaterialNavCluster extends StatelessWidget {
       glassRadius: _kGlassSidebarRadius,
       child: Material(
         key: fushiMaterialNavKey,
-        color: glass ? Colors.transparent : colors.surface,
-        shape: eink
-            ? BorderDirectional(end: BorderSide(color: colors.outline))
-            : null,
+        // 悬浮面板之外透明；底色 / 阴影 / eink 描边画在 [_FloatingNavSurface]。
+        type: MaterialType.transparency,
         child: _AnimatedRailWidth(
-          width: railWidth,
+          width: glassDesign
+              ? railWidth
+              : railWidth + kMaterialNavRailFloatingInset,
           child: SafeArea(
             right: false,
             child: Padding(
               padding: glassDesign
-                  ? EdgeInsets.symmetric(
-                      horizontal: railExtended
-                          ? glassInset
-                          : (kAdaptiveNavRailWidth -
-                                  2 * _kGlassSidebarMargin -
-                                  _kGlassSidebarCollapsedCellWidth) /
-                              2,
-                      vertical: glassInset,
-                    )
-                  : EdgeInsets.symmetric(
-                      horizontal: railExtended ? 12 : 0,
-                      vertical: 8,
+                  ? EdgeInsets.zero
+                  : const EdgeInsetsDirectional.fromSTEB(
+                      _kMaterialRailFloatingStart,
+                      _kMaterialRailFloatingStart,
+                      _kMaterialRailFloatingEnd,
+                      _kMaterialRailFloatingStart,
                     ),
-              child: Column(
-                children: <Widget>[
-                  if (menu != null || brand != null) header,
-                  // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
-                  // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
-                  // 过矮时滚动。
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: <Widget>[
-                          const SizedBox(height: 8),
-                          for (final Widget tile
-                              in buildTiles(cellWidth: null))
-                            Padding(
-                              padding: EdgeInsets.symmetric(
-                                vertical: glassDesign
-                                    ? 1
-                                    : (railExtended ? 0 : 6),
-                              ),
-                              child: tile,
-                            ),
-                        ],
+              child: _FloatingNavSurface(
+                paint: !glassDesign,
+                borderRadius: BorderRadius.circular(_kMaterialRailPanelRadius),
+                child: Padding(
+                  padding: glassDesign
+                      ? EdgeInsets.symmetric(
+                          horizontal: railExtended
+                              ? glassInset
+                              : (kAdaptiveNavRailWidth -
+                                      2 * _kGlassSidebarMargin -
+                                      _kGlassSidebarCollapsedCellWidth) /
+                                  2,
+                          vertical: glassInset,
+                        )
+                      : EdgeInsets.symmetric(
+                          horizontal: railExtended ? 12 : 0,
+                          vertical: 8,
+                        ),
+                  child: Column(
+                    children: <Widget>[
+                      if (menu != null || brand != null) header,
+                      // 矮窗口下所有 tile 的总高可能超过可用高度：直接放进 Column 会 RenderFlex
+                      // 溢出（左侧导航底部 overflow）。改用 SingleChildScrollView 让 tile 在窗口
+                      // 过矮时滚动。
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: <Widget>[
+                              const SizedBox(height: 8),
+                              for (final Widget tile
+                                  in buildTiles(cellWidth: null))
+                                Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: glassDesign
+                                        ? 1
+                                        : (railExtended ? 0 : 6),
+                                  ),
+                                  child: tile,
+                                ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// MD3 悬浮导航的表面（底部胶囊 / 侧边面板）：surfaceContainer 实底 + 轻阴影
+/// （elevation 3），全圆角裁剪；系统毛玻璃材质开着时换成同色阶的
+/// [FushiGlassSurface]；eink 不画阴影（灰阶下糊成脏边），改一圈前景色描边。
+/// 目的地的水波画在这块 Material 上。
+///
+/// [paint] 为 false（Apple 设计系统，玻璃另画）时只是透明直通，结构不变——
+/// 设计系统切换不重挂目的地。
+class _FloatingNavSurface extends StatelessWidget {
+  const _FloatingNavSurface({
+    required this.borderRadius,
+    required this.child,
+    this.paint = true,
+  });
+
+  final BorderRadius borderRadius;
+  final bool paint;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool frosted =
+        paint && glassMaterialOf(context) != FushiGlassMaterial.off;
+    return Material(
+      color: paint && !frosted ? colors.surfaceContainer : Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: colors.shadow,
+      elevation: paint && !eink ? 3 : 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: paint ? borderRadius : BorderRadius.zero,
+        side: paint && eink
+            ? BorderSide(color: colors.outline)
+            : BorderSide.none,
+      ),
+      clipBehavior: paint ? Clip.antiAlias : Clip.none,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          Positioned.fill(
+            child: IgnorePointer(
+              child: frosted
+                  ? FushiGlassSurface(
+                      baseColor: colors.surfaceContainer,
+                      borderRadius: borderRadius,
+                      showBorder: false,
+                      grouped: true,
+                      child: const SizedBox.expand(),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// MD3 悬浮底栏「更多」格：目的地多到格宽放不下标签时，超出的（按用户的模块
+/// 顺序排在后面的那些）收进这里，点开是列出它们的菜单。当前页在其中时这一格
+/// 显示为选中（药丸实底），菜单里当前项加粗带勾。独立焦点目标
+/// `nav-bar-more`，A / 回车打开菜单。
+class _NavMoreCell extends StatefulWidget {
+  const _NavMoreCell({
+    required this.items,
+    required this.overflow,
+    required this.currentIndex,
+    required this.onTap,
+    required this.cellWidth,
+  });
+
+  final List<AdaptiveNavItem> items;
+
+  /// 收进菜单的目的地序号（与 [items] 同一视觉序）。
+  final List<int> overflow;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final double? cellWidth;
+
+  static const FushiFocusId focusId = FushiFocusId('nav-bar-more');
+
+  @override
+  State<_NavMoreCell> createState() => _NavMoreCellState();
+}
+
+class _NavMoreCellState extends State<_NavMoreCell> {
+  Future<void> _open() async {
+    final RenderObject? cell = context.findRenderObject();
+    final RenderObject? overlay =
+        Overlay.of(context).context.findRenderObject();
+    if (cell is! RenderBox || overlay is! RenderBox) return;
+    final Rect rect =
+        cell.localToGlobal(Offset.zero, ancestor: overlay) & cell.size;
+    final RelativeRect position = RelativeRect.fromRect(
+      rect,
+      Offset.zero & overlay.size,
+    );
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final int? picked = await showMenu<int>(
+      context: context,
+      position: position,
+      items: <PopupMenuEntry<int>>[
+        for (final int i in widget.overflow)
+          PopupMenuItem<int>(
+            value: i,
+            child: Row(
+              children: <Widget>[
+                _maybeBadge(
+                  item: widget.items[i],
+                  child: FushiIcon(
+                    i == widget.currentIndex
+                        ? (widget.items[i].selectedIcon ?? widget.items[i].icon)
+                        : widget.items[i].icon,
+                    size: 24,
+                    color: i == widget.currentIndex
+                        ? colors.primary
+                        : colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Flexible(
+                  child: Text(
+                    widget.items[i].label,
+                    style: i == widget.currentIndex
+                        ? const TextStyle(fontWeight: FontWeight.w600)
+                        : null,
+                  ),
+                ),
+                if (i == widget.currentIndex) ...<Widget>[
+                  const SizedBox(width: 12),
+                  FushiIcon(FushiIcons.check, size: 20, color: colors.primary),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    if (picked != widget.currentIndex) fushiSelectionHaptic(context);
+    widget.onTap(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool selected = widget.overflow.contains(widget.currentIndex);
+    return _NavFocusCell(
+      id: _NavMoreCell.focusId,
+      item: AdaptiveNavItem(
+        icon: FushiIcons.moreHoriz,
+        label: t.home_nav_more,
+        experimentalBadge: widget.overflow.any(
+          (int i) => widget.items[i].experimentalBadge,
+        ),
+      ),
+      selected: selected,
+      horizontal: true,
+      cellWidth: widget.cellWidth,
+      onSelect: () => unawaited(_open()),
     );
   }
 }
@@ -785,7 +1101,7 @@ class _NavRailMenuButton extends StatelessWidget {
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     final String tooltip =
         extended ? t.home_nav_rail_collapse : t.home_nav_rail_expand;
-    final IconData icon = extended ? Icons.menu_open : Icons.menu;
+    final IconData icon = extended ? FushiIcons.chevronLeft : FushiIcons.menu;
     const BorderRadius radius = BorderRadius.all(
       Radius.circular(_kMaterialMenuPillHeight / 2),
     );
@@ -1165,14 +1481,9 @@ class _NavSurfaceBackdrop extends StatelessWidget {
           child: const SizedBox.expand(),
         ),
       );
-    } else if (glassMaterialOf(context) != FushiGlassMaterial.off) {
-      background = FushiGlassSurface(
-        baseColor: baseColor,
-        showBorder: false,
-        grouped: true,
-        child: const SizedBox.expand(),
-      );
     } else {
+      // MD3 导航是悬浮胶囊 / 面板，毛玻璃画在 [_FloatingNavSurface] 里，
+      // 胶囊之外不铺底。
       background = const SizedBox.shrink();
     }
     // 不裁剪：底栏的 scroll edge 带要伸出导航区上沿画到内容上（Scaffold 先画
