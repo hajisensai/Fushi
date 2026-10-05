@@ -6495,5 +6495,10 @@
   "reader_nav_search_empty_hint": "搜尋全書，或跳到指定字數位置",
   "reader_nav_favorites_empty": "這本書還沒有收藏的句子",
   "reader_stats_last_7_days": "近 7 天",
-  "reader_stats_session_title": "本次閱讀"
+  "reader_stats_session_title": "本次閱讀",
+  "text_field_password_show": "Show password",
+  "text_field_password_hide": "Hide password",
+  "search_view_suggestions_title": "Suggestions",
+  "search_view_recent_title": "Recent searches",
+  "search_view_recent_remove": "Remove from history"
 }
