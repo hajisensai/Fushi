@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -462,22 +463,21 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       onPopInvokedWithResult: (bool didPop, Object? _) {
         if (!didPop) unawaited(_onBackInvoked());
       },
-      child: Scaffold(
-        appBar: FushiAppBar(
-          title: Text(widget.sourceName),
-          leading: FushiIconButtonControl(
-            icon: const FushiIcon(Icons.close),
-            tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            onPressed: () => Navigator.of(context).pop(false),
-          ),
-          actions: <Widget>[
-            FushiTextButton(
-              key: const ValueKey<String>('mihon_login_done'),
-              onPressed: _saving ? null : () => unawaited(_finish()),
-              child: Text(t.mihon_source_login_done),
-            ),
-          ],
+      // M3E 浮动页头（FushiPageScaffold）：关闭 + 标题胶囊 + 「完成」动作。
+      child: FushiPageScaffold(
+        title: widget.sourceName,
+        leading: FushiIconButtonControl(
+          icon: const FushiIcon(FushiIcons.close),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          onPressed: () => Navigator.of(context).pop(false),
         ),
+        actions: <Widget>[
+          FushiTextButton(
+            key: const ValueKey<String>('mihon_login_done'),
+            onPressed: _saving ? null : () => unawaited(_finish()),
+            child: Text(t.mihon_source_login_done),
+          ),
+        ],
         body: Column(
           children: <Widget>[
             Padding(
@@ -517,7 +517,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
             onPressed: _import == null
                 ? () => unawaited(_beginBrowserImport(jar))
                 : null,
-            icon: const FushiIcon(Icons.extension_outlined),
+            icon: const FushiIcon(FushiIcons.browserExtension),
             label: Text(t.mihon_source_login_import_browser),
           ),
           if (_import != null) ...<Widget>[
@@ -555,7 +555,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
               onPressed: controller != null && _canGoBack
                   ? () => unawaited(controller.goBack())
                   : null,
-              icon: const FushiIcon(Icons.arrow_back),
+              icon: const FushiIcon(FushiIcons.back),
             ),
             FushiIconButtonControl(
               key: const ValueKey<String>('mihon_login_forward'),
@@ -563,7 +563,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
               onPressed: controller != null && _canGoForward
                   ? () => unawaited(controller.goForward())
                   : null,
-              icon: const FushiIcon(Icons.arrow_forward),
+              icon: const FushiIcon(FushiIcons.forward),
             ),
             FushiIconButtonControl(
               key: const ValueKey<String>('mihon_login_reload'),
@@ -571,7 +571,7 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
               onPressed: controller != null
                   ? () => unawaited(controller.reload())
                   : null,
-              icon: const FushiIcon(Icons.refresh),
+              icon: const FushiIcon(FushiIcons.refresh),
             ),
           ]),
           const SizedBox(width: 8),
