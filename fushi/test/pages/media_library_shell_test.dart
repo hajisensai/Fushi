@@ -163,16 +163,19 @@ void main() {
     expect(initCount[1], 1, reason: '切回不得重建——重建就丢滚动位置与搜索词');
   });
 
-  testWidgets('导航条只交给当前视图（同一 focusIdPrefix 注册两次会互相打架）',
+  testWidgets('导航条由壳的浮动工具栏画一份（同一 focusIdPrefix 注册两次会互相打架）',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
       spec(0, MediaLibraryViewKind.library, '书架'),
       spec(1, MediaLibraryViewKind.browse, '浏览'),
     ]));
-    expect(probe.gotRealNavigation[0], isTrue);
+    // 2026-10-06 库页顶部与视频库统一：页签画在壳的 [FushiFloatingChromeBar]
+    // 里，视图页头主位一律空占位。
+    expect(probe.gotRealNavigation[0], isFalse);
 
     await selectVia(tester, MediaLibraryViewKind.browse);
-    expect(probe.gotRealNavigation[1], isTrue, reason: '当前视图拿真导航条');
+    expect(probe.gotRealNavigation[1], isFalse,
+        reason: '视图拿空占位，页签由壳画出');
     expect(probe.gotRealNavigation[0], isFalse,
         reason: '隐藏视图必须拿空占位，否则同一 focusIdPrefix 被注册两次');
     // 全树自始至终只有一个分段条。
@@ -200,7 +203,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
 
     expect(tester.state(stripFinder), same(before),
-        reason: '导航条只交给当前视图，但必须是同一个 State 挪过去');
+        reason: '壳画的同一份导航条，切视图不重建 State');
     final TabController controller =
         tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
     expect(controller.index, 2);
