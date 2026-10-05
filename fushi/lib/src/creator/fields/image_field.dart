@@ -159,20 +159,20 @@ class ImageField extends ImageExportField {
           ),
           itemBuilder: (context, index, realIndex) {
             if (index == itemCount) {
-              // 「不使用图片」页：M3E 中性色块卡 + 居中图标，而不是一块淡灰。
+              // 「不使用图片」页：M3E secondaryContainer 色块卡 + 居中图标，而不是一块淡灰。
               final ColorScheme scheme = Theme.of(context).colorScheme;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHigh,
+                    color: scheme.secondaryContainer,
                     borderRadius: FushiM3eShape.cardRadius,
                   ),
                   child: Center(
                     child: FushiIcon(
                       FushiIcons.visibilityOff,
                       size: 32,
-                      color: scheme.onSurfaceVariant,
+                      color: scheme.onSecondaryContainer,
                     ),
                   ),
                 ),

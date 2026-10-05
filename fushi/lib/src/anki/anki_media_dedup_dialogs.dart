@@ -149,10 +149,10 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
             Text(line, style: context.fushiType.titleSmallEmphasized.tabular),
             if (p?.currentFile != null) ...[
               const SizedBox(height: 8),
-              // 当前文件：小件 12 圆角的中性色块，与阶段行分层。
+              // 当前文件：小件 12 圆角的 secondaryContainer 色块，与阶段行分层。
               DecoratedBox(
                 decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHigh,
+                  color: scheme.secondaryContainer,
                   borderRadius: FushiM3eShape.smallRadius,
                 ),
                 child: Padding(
@@ -163,7 +163,7 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
                       FushiIcon(
                         FushiIcons.file,
                         size: 18,
-                        color: scheme.onSurfaceVariant,
+                        color: scheme.onSecondaryContainer,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -172,7 +172,7 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: context.fushiType.bodySmall
-                              .copyWith(color: scheme.onSurfaceVariant),
+                              .copyWith(color: scheme.onSecondaryContainer),
                         ),
                       ),
                     ],
