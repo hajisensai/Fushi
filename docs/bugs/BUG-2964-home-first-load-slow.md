@@ -13,4 +13,15 @@
   - `fushi/test/database/media_collections_dao_test.dart`「BUG-2964 getLocalPrimaryCollectionMembership」：与旧两步逐键一致、本机不存在的成员被挡掉、EPUB 旧 bookKey 行照收；
   - `fushi/test/tools/load_paths_perf_guard_test.dart`「_loadDashboardDataUnsafe fans out its reads」：钉住新查询、禁回两次全表物化、游戏 / 追踪进同一批、追踪只查一次、快照写入；
   - `fushi/test/pages/home_dashboard_page_test.dart`「BUG-2964 · 切回首页（页面重建）首帧直接用上一轮快照」：同一 ProviderScope 卸载再挂页面，第一帧无骨架、内容已在。
-- **备注**：修前修后分阶段数据见下（`test/_perf_tmp` 临时计时脚手架，不入库）。
+- **备注**：修前修后分阶段数据（开发数据根 DB 拷贝，本机 Windows，`test/_perf_tmp` 临时计时脚手架不入库，两轮取冷 / 热）：
+  | 阶段 | 冷 | 热 |
+  |---|---|---|
+  | `getPrimaryCollectionIdByEntry`（旧） | 348 ms | 237 ms |
+  | `getAllCollectionItems`（旧） | 209 ms | 192 ms |
+  | `getLocalPrimaryCollectionMembership`（新） | 16 ms | 18 ms |
+  | `loadStatFacts` | 83 ms | 39 ms |
+  | 其余（视频 / 合集名 / 附加图 / 游戏）各 | ≤ 21 ms | ≤ 21 ms |
+  | **首页整批并发读：修前** | **437 ms** | **468 ms** |
+  | **首页整批并发读：修后** | **69 ms** | **69 ms** |
+
+  统计聚合（`loadStatFacts` 39–83 ms，几乎全是 DB 读；Dart 侧逐日累加微秒级）不是瓶颈，没有挪 isolate。封面解码已有 `kLocalCoverDecodePixelWidth`（720px）上限 + `ResizeImage`，不是瓶颈。切回首页（重建）走快照，首帧零等待。
