@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2715 条。点号进各自文件。
+> 共 2716 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
 | [BUG-2951](bugs/BUG-2951-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
+| [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |
 | [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
 | [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |
 | [BUG-2948](bugs/BUG-2948-macos-shortcut-key-identity.md) | ✅ | ✅ | macOS 上 Shift+符号键与系统保留默认键导致快捷键无法识别 |

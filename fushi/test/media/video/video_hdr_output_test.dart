@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -321,6 +322,97 @@ void main() {
     });
   });
 
+  group('HDR 图形白归一（字幕 / 弹幕层）', () {
+    const HdrDisplayInfo hdr280 = HdrDisplayInfo(
+      colorSpace: kDxgiColorSpaceHdr10,
+      maxLuminance: 1000,
+      bitsPerColor: 10,
+      sdrWhiteNits: 280,
+    );
+
+    test('直通 + HDR 显示器：压到 203 / SDR 白（用户机实测 280 尼特）', () {
+      expect(
+        hdrGraphicsWhiteScale(hostActive: true, display: hdr280),
+        closeTo(203 / 280, 1e-9),
+      );
+    });
+
+    test('未直通 / SDR 显示器 / SDR 白未知：恒 1（视频与 Flutter 同在 SDR 基准）', () {
+      expect(hdrGraphicsWhiteScale(hostActive: false, display: hdr280), 1);
+      expect(
+        hdrGraphicsWhiteScale(
+          hostActive: true,
+          display: const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceSdr,
+            maxLuminance: 400,
+            bitsPerColor: 8,
+            sdrWhiteNits: 280,
+          ),
+        ),
+        1,
+      );
+      expect(
+        hdrGraphicsWhiteScale(
+          hostActive: true,
+          display: const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceHdr10,
+            maxLuminance: 1000,
+            bitsPerColor: 10,
+          ),
+        ),
+        1,
+      );
+    });
+
+    test('SDR 白低于 203：8-bit SDR 窗口无法更亮，取 1', () {
+      expect(
+        hdrGraphicsWhiteScale(
+          hostActive: true,
+          display: const HdrDisplayInfo(
+            colorSpace: kDxgiColorSpaceHdr10,
+            maxLuminance: 1000,
+            bitsPerColor: 10,
+            sdrWhiteNits: 120,
+          ),
+        ),
+        1,
+      );
+    });
+
+    test('编码域乘数 = sRGB OETF(线性系数)：白经 sRGB EOTF 解回恰为该系数', () {
+      double eotf(double v) =>
+          v <= 0.04045 ? v / 12.92 : _pow((v + 0.055) / 1.055, 2.4);
+      for (final double k in <double>[0.725, 0.5, 0.2, 0.002]) {
+        expect(eotf(hdrGraphicsEncodedGain(k)), closeTo(k, 1e-9), reason: '$k');
+      }
+      expect(hdrGraphicsEncodedGain(1), 1);
+      expect(hdrGraphicsEncodedGain(1.4), 1);
+    });
+
+    testWidgets('系数 < 1 才套 ColorFiltered；进出直通子树 State 不重建', (
+      WidgetTester tester,
+    ) async {
+      Widget host(double scale) => Directionality(
+        textDirection: TextDirection.ltr,
+        child: HdrGraphicsWhiteLevel(
+          linearScale: scale,
+          child: const _StatefulProbe(),
+        ),
+      );
+      await tester.pumpWidget(host(1));
+      expect(find.byType(ColorFiltered), findsNothing);
+      final State probe = tester.state(find.byType(_StatefulProbe));
+
+      await tester.pumpWidget(host(203 / 280));
+      expect(find.byType(ColorFiltered), findsOneWidget);
+      expect(tester.state(find.byType(_StatefulProbe)), same(probe));
+
+      await tester.pumpWidget(host(1));
+      expect(find.byType(ColorFiltered), findsNothing);
+      expect(tester.state(find.byType(_StatefulProbe)), same(probe));
+    });
+  });
+
   group('HdrVideoHostChannel', () {
     const MethodChannel channel = MethodChannel('test/hdr_video_host');
     final List<MethodCall> calls = <MethodCall>[];
@@ -339,6 +431,7 @@ void main() {
                   'colorSpace': 12,
                   'maxLuminance': 1015.0,
                   'bitsPerColor': 10,
+                  'sdrWhiteNits': 280.0,
                 };
               default:
                 return null;
@@ -362,6 +455,7 @@ void main() {
       expect(info.isHdr, isTrue);
       expect(info.maxLuminance, 1015.0);
       expect(info.bitsPerColor, 10);
+      expect(info.sdrWhiteNits, 280.0);
       await host.destroy();
       expect(calls.map((MethodCall c) => c.method).toList(), <String>[
         'create',
@@ -444,4 +538,19 @@ void main() {
       expect(reported.length, 2);
     });
   });
+}
+
+double _pow(double base, double exponent) =>
+    math.pow(base, exponent).toDouble();
+
+class _StatefulProbe extends StatefulWidget {
+  const _StatefulProbe();
+
+  @override
+  State<_StatefulProbe> createState() => _StatefulProbeState();
+}
+
+class _StatefulProbeState extends State<_StatefulProbe> {
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 10, height: 10);
 }
