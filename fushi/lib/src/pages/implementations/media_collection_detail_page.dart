@@ -85,6 +85,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
+    this.onPickOnlineCover,
     super.key,
   });
 
@@ -141,6 +142,11 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 库页注入（要刮削 controller 重刮）。null = 菜单项不渲染。
   final Future<void> Function(MediaCollectionRow collection)?
       onChooseTmdbOrdering;
+
+  /// 「在线搜索封面」（BUG-2955）：在资料源里搜作品、取它的封面图，返回下载好的
+  /// 临时文件（取消 / 失败返回 null，失败提示由回调自己给）。由库页注入——候选
+  /// 搜索要刮削 controller，详情页不自造。null = 菜单项不渲染。
+  final Future<File?> Function(String workTitle)? onPickOnlineCover;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -769,6 +775,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _setCover() async {
     final File? picked = await MediaCoverService.pickCoverImage();
     if (picked == null) return;
+    await _applyCoverFile(picked);
+  }
+
+  /// AppBar「在线搜索封面」：回调给出临时文件后与本地选图走同一条落盘。
+  Future<void> _setCoverOnline() async {
+    final File? picked = await widget.onPickOnlineCover?.call(_collection.name);
+    if (picked == null || !mounted) return;
+    await _applyCoverFile(picked);
+  }
+
+  Future<void> _applyCoverFile(File picked) async {
     try {
       await MediaCoverService.applyCollectionCover(
         database: widget.database,
@@ -2049,6 +2066,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.setCover:
         await _setCover();
         return;
+      case _CollectionManageAction.setCoverOnline:
+        await _setCoverOnline();
+        return;
       case _CollectionManageAction.resetCover:
         await _resetCover();
         return;
@@ -2176,6 +2196,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               Icons.image_outlined,
               t.collection_cover_set,
             ),
+            if (widget.onPickOnlineCover != null)
+              _manageMenuItem(
+                _CollectionManageAction.setCoverOnline,
+                Icons.image_search_outlined,
+                t.video_cover_online_search,
+              ),
             if (_collection.coverPath?.isNotEmpty ?? false)
               _manageMenuItem(
                 _CollectionManageAction.resetCover,
@@ -2382,6 +2408,7 @@ enum _EpisodeMenuAction {
 
 enum _CollectionManageAction {
   setCover,
+  setCoverOnline,
   resetCover,
   rescrape,
   tmdbOrdering,

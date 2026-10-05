@@ -29,6 +29,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/cover_ui/video_online_cover_picker.dart';
 import 'package:fushi/src/media/video/cover_ui/video_scrape_actions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
@@ -3204,6 +3205,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _pickCover(book);
             },
           ),
+          // 在线搜索封面（BUG-2955）：2026-08-23 把旧 Bangumi/TMDB 刮削链整条换成
+          // canonical 资料源时，单集菜单的「在线匹配海报」随旧弹窗一起删了、没有
+          // 接到新资料源上，设置封面从此只剩本地文件。这里接回到 AniDB / MAL /
+          // TMDB 的同一条候选搜索。
+          if (_onlineCoverController != null)
+            DialogQuickAction(
+              label: t.video_cover_online_search,
+              icon: Icons.image_search_outlined,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_pickOnlineCover(book));
+              },
+            ),
           DialogQuickAction(
             label: t.video_import_pick_subtitle,
             icon: Icons.subtitles_outlined,
@@ -3513,6 +3527,57 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       pickedPath: picked.path,
     );
     if (mounted) _refresh();
+  }
+
+  /// 「在线搜索封面」用的候选搜索：与「手动指定作品」同一条
+  /// [VideoSourceScrapeTaskController.searchManualCandidates]（AniDB / MAL / TMDB）。null = 当前装配没有
+  /// 刮削 controller、它不支持手动搜索，或用户关掉了「在线服务」模块——此时
+  /// 菜单项整条不渲染，而不是画一个点了必然失败的按钮。
+  VideoSourceScrapeTaskController? get _onlineCoverController {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null || !controller.supportsManualBinding) return null;
+    if (!ref.read(appProvider).moduleVisibility.isEnabled(ModuleId.services)) {
+      return null;
+    }
+    return controller;
+  }
+
+  /// 在线搜索封面 → 下载成临时文件 → 走与 [_pickCover] 同一条
+  /// [MediaCoverService.applyVideoCoverManual]（手选保护标记照记，批量刮削不覆盖）。
+  Future<void> _pickOnlineCover(VideoBookRow book) async {
+    final VideoSourceScrapeTaskController? controller = _onlineCoverController;
+    if (controller == null) return;
+    final File? picked = await pickVideoOnlineCoverFile(
+      context: context,
+      workTitle: book.title,
+      controller: controller,
+    );
+    if (picked == null || !mounted) return;
+    await MediaCoverService.applyVideoCoverManual(
+      repo: widget.repo,
+      bookUid: book.bookUid,
+      pickedPath: picked.path,
+    );
+    if (mounted) _refresh();
+  }
+
+  /// 合集「在线搜索封面」：同上，只是落盘走 [_applyCollectionCoverFile]。
+  Future<void> _setCollectionCoverOnline(MediaCollectionRow collection) async {
+    final File? picked = await _pickOnlineCollectionCoverFile(collection.name);
+    if (picked == null || !mounted) return;
+    await _applyCollectionCoverFile(collection, picked);
+  }
+
+  /// 给合集详情页注入的在线选图回调（详情页不持刮削 controller）。
+  Future<File?> _pickOnlineCollectionCoverFile(String workTitle) async {
+    final VideoSourceScrapeTaskController? controller = _onlineCoverController;
+    if (controller == null) return null;
+    return pickVideoOnlineCoverFile(
+      context: context,
+      workTitle: workTitle,
+      controller: controller,
+    );
   }
 
   /// 旧封面流水线只组装 sidecar / 本地封面能力，不装配在线 metadata client。
@@ -6934,6 +6999,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           icon: Icons.image_outlined,
           onPressed: () => _setCollectionCover(collection),
         ),
+        if (_onlineCoverController != null)
+          DialogListAction(
+            label: t.video_cover_online_search,
+            icon: Icons.image_search_outlined,
+            onPressed: () => _setCollectionCoverOnline(collection),
+          ),
         if (collection.coverPath?.isNotEmpty ?? false)
           DialogListAction(
             label: t.collection_cover_reset,
@@ -6989,6 +7060,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<void> _setCollectionCover(MediaCollectionRow collection) async {
     final File? picked = await MediaCoverService.pickCoverImage();
     if (picked == null) return;
+    await _applyCollectionCoverFile(collection, picked);
+  }
+
+  /// 本地选图与在线搜图共用的合集封面落盘 + 反馈。
+  Future<void> _applyCollectionCoverFile(
+    MediaCollectionRow collection,
+    File picked,
+  ) async {
     try {
       await MediaCoverService.applyCollectionCover(
         database: ref.read(appProvider).database,
@@ -7641,6 +7720,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               widget.scrapeTaskController == null ? null : _rescrapeCollection,
           onChooseTmdbOrdering:
               widget.scrapeTaskController == null ? null : _chooseTmdbOrdering,
+          onPickOnlineCover: _onlineCoverController == null
+              ? null
+              : _pickOnlineCollectionCoverFile,
         ),
       ),
     );

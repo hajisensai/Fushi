@@ -6379,5 +6379,8 @@
   "video_skip_opening": "Skip opening",
   "video_skip_ending": "Skip ending",
   "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
-  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers."
+  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
+  "video_cover_online_search": "Search cover online",
+  "video_cover_online_hint": "Search the metadata provider by title, or switch to ID. Picking a result only uses its cover; the work's identity is not changed.",
+  "video_cover_online_no_image": "This result has no cover image. Try another one."
 }

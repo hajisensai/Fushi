@@ -45,6 +45,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
+    this.onPickOnlineCover,
     super.key,
   });
 
@@ -82,6 +83,9 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 透传给合集详情页的「TMDB 集编排」（备选排序）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
       onChooseTmdbOrdering;
+
+  /// 透传给合集详情页的「在线搜索封面」（BUG-2955）。null = 不渲染该菜单项。
+  final Future<File?> Function(String workTitle)? onPickOnlineCover;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -178,6 +182,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                 widget.deleteMembersStatisticsSubtitle,
             onRescrapeCollection: widget.onRescrapeCollection,
             onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
+            onPickOnlineCover: widget.onPickOnlineCover,
           );
         },
       );
