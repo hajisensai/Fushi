@@ -541,18 +541,16 @@ Future<void> deletePersistedVideoDownloadJob({
         .map(normalizeVideoPath)
         .toSet();
     final VideoBookRepository repository = VideoBookRepository(database);
-    bool deletedVideoBook = false;
-    for (final VideoBookRow book in await repository.listAll()) {
-      if (removedNormalized.contains(normalizeVideoPath(book.videoPath))) {
-        final bool deleted = await repository.deleteVideoBookAndReclaimAssets(
+    final List<String> deletedBookUids = <String>[
+      for (final VideoBookRow book in await repository.listAll())
+        if (removedNormalized.contains(normalizeVideoPath(book.videoPath)))
           book.bookUid,
-          compactDatabase: false,
-        );
-        deletedVideoBook = deletedVideoBook || deleted;
-      }
-    }
-    if (deletedVideoBook) {
-      await repository.compactAfterVideoDeleteBestEffort();
+    ];
+    // 整个任务的入库行一次批量删（BUG-2949）：逐行调单条入口时，每集都要
+    // 各读一遍 media_images / video_books 全表、各开一个事务、各排一次封面互斥
+    // 锁——一季 24 集的种子就是 48 次全表扫描，删除按「集数 × 库大小」变慢。
+    if (deletedBookUids.isNotEmpty) {
+      await repository.deleteVideoBooksAndReclaimAssets(deletedBookUids);
     }
     database.notifyVideoLibraryChanged();
   }
