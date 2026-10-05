@@ -3,8 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/utils.dart';
 
 /// 阅读器侧板共享组件（导航 / 有声书 / 阅读设置 / 统计四类侧板一套视觉语言）。
@@ -42,6 +40,32 @@ Color readerPanelCardColor(BuildContext context) {
     return appleColorsOf(context).secondaryGroupedBackground;
   }
   return Theme.of(context).colorScheme.surfaceContainerHigh;
+}
+
+/// 面板内卡：高一档表面色 + 内卡圆角（M3E 20 / Apple 14），墨水屏加描边。
+class ReaderPanelCard extends StatelessWidget {
+  const ReaderPanelCard({
+    required this.child,
+    this.padding = const EdgeInsets.all(12),
+    super.key,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: readerPanelCardColor(context),
+        borderRadius: BorderRadius.circular(readerPanelCardRadius(context)),
+        border: isEinkTheme(context)
+            ? Border.all(color: Theme.of(context).colorScheme.outline)
+            : null,
+      ),
+      child: Padding(padding: padding, child: child),
+    );
+  }
 }
 
 /// 一页签：标签 + 可选图标。
@@ -226,7 +250,7 @@ class ReaderStaticWavyPainter extends CustomPainter {
     final double head = (value / 0.08).clamp(0.0, 1.0);
     final double tail = ((1 - value) / 0.04).clamp(0.0, 1.0);
     final double amp =
-        math.min(amplitude, math.max(0, (size.height - strokeWidth) / 2)) *
+        math.min(amplitude, math.max(0.0, (size.height - strokeWidth) / 2)) *
         Curves.easeInOut.transform(math.min(head, tail));
     final double end = left + usable * value;
     if (value > 0) {
@@ -541,77 +565,70 @@ class ReaderQuoteCard extends StatelessWidget {
     final Color secondary = glass
         ? apple!.secondaryLabel
         : theme.colorScheme.onSurfaceVariant;
-    final Widget content = Padding(
-      padding: EdgeInsetsDirectional.fromSTEB(
-        14,
-        14,
-        actions.isEmpty ? 16 : 6,
-        actions.isEmpty ? 14 : 4,
+    final double bottomInset = actions.isEmpty ? 14 : 4;
+    // 左侧细色条画在 CustomPaint 里（随卡高伸缩），不用 IntrinsicHeight：
+    // 动作按钮 / Tooltip 一类子树不一定支持固有尺寸查询。
+    final Widget content = CustomPaint(
+      key: const ValueKey<String>('reader_quote_card_rail'),
+      painter: _QuoteRailPainter(
+        color: rail,
+        start: 14,
+        top: 14,
+        bottom: bottomInset,
+        textDirection: Directionality.of(context),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Padding(
+        padding: EdgeInsetsDirectional.fromSTEB(
+          30,
+          14,
+          actions.isEmpty ? 16 : 6,
+          bottomInset,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Container(
-              key: const ValueKey<String>('reader_quote_card_rail'),
-              width: 4,
-              decoration: BoxDecoration(
-                color: rail,
-                borderRadius: BorderRadius.circular(2),
+            if (overline != null && overline!.isNotEmpty) ...<Widget>[
+              Text(
+                overline!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: glass ? apple!.accent : theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              const SizedBox(height: 4),
+            ],
+            DefaultTextStyle.merge(
+              style: theme.textTheme.bodyLarge?.copyWith(
+                height: 1.55,
+                color: glass ? apple!.label : theme.colorScheme.onSurface,
+              ),
+              child: quote,
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  if (overline != null && overline!.isNotEmpty) ...<Widget>[
-                    Text(
-                      overline!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: glass
-                            ? apple!.accent
-                            : theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
+            if ((meta != null && meta!.isNotEmpty) || actions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(
+                        meta ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: secondary,
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    ...actions,
                   ],
-                  DefaultTextStyle.merge(
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      height: 1.55,
-                      color: glass ? apple!.label : theme.colorScheme.onSurface,
-                    ),
-                    child: quote,
-                  ),
-                  if ((meta != null && meta!.isNotEmpty) || actions.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              meta ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: secondary,
-                                fontFeatures: const <FontFeature>[
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                            ),
-                          ),
-                          ...actions,
-                        ],
-                      ),
-                    ),
-                ],
+                ),
               ),
-            ),
           ],
         ),
       ),
@@ -649,6 +666,48 @@ class ReaderQuoteCard extends StatelessWidget {
       child: card,
     );
   }
+}
+
+class _QuoteRailPainter extends CustomPainter {
+  _QuoteRailPainter({
+    required this.color,
+    required this.start,
+    required this.top,
+    required this.bottom,
+    required this.textDirection,
+  });
+
+  final Color color;
+  final double start;
+  final double top;
+  final double bottom;
+  final TextDirection textDirection;
+
+  static const double width = 4;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double h = size.height - top - bottom;
+    if (h <= 0) return;
+    final double left = textDirection == TextDirection.rtl
+        ? size.width - start - width
+        : start;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, top, width, h),
+        const Radius.circular(width / 2),
+      ),
+      Paint()..color = color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_QuoteRailPainter old) =>
+      old.color != color ||
+      old.start != start ||
+      old.top != top ||
+      old.bottom != bottom ||
+      old.textDirection != textDirection;
 }
 
 /// 把 [text] 里 [start, end) 的命中段做成高亮 span（M3E：tertiaryContainer 底

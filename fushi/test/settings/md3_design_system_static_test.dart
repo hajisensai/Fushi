@@ -1150,10 +1150,23 @@ void main() {
           'Reading-settings live preview renders sample BOOK TEXT at the '
           "reader's own (scaled) font size — reader content, not page chrome; "
           'same reviewed exception class as reader_fushi/chrome.part.dart.',
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
-          'In-book quick settings sheet packs reader controls at reader '
-          'density — same reviewed exception class as '
-          'reader_fushi/chrome.part.dart.',
+      // 2026-10 阅读器侧板整合（M3 Expressive）：共享侧板件与导航侧板专用件。
+      // 本身就是侧板的共享原语（与 fushi_material_components 同类），页面经它们
+      // 拿到分级圆角（大容器 28 / 内卡 20 / 小件 12，Apple 14 / 10）与内卡面色。
+      // 原先 reader_quick_settings_sheet.dart 唯一的豁免 token（目录行折叠钮的
+      // VisualDensity.compact）随目录行迁到 ReaderTocRow 后已不再命中，按「不留
+      // 死豁免」纪律删除。
+      'lib/src/reader/reader_panel_kit.dart':
+          'Reader side-panel shared primitives (tabs / progress / quote card / '
+          'empty state / panel card): they ARE the graded M3 Expressive corner '
+          'radii and the one-step-up inner card surface the four reader panels '
+          'route through — same reviewed exception class as '
+          'fushi_material_components.',
+      'lib/src/reader/reader_navigation_widgets.dart':
+          'Navigation panel parts (progress hero, TOC row, cover thumb) draw '
+          'the M3 Expressive shape contrast (28 hero / 20 current-row pill / '
+          '10 cover) on the reading surface — same reviewed exception class as '
+          'reader_audiobook_panel.',
       // Apple 玻璃设计系统 + MD3 Expressive 重设计（PR glass-material）。
       // 1) 设计系统实现层：glass/ 下的 Fushi* 组件与新增 / 改写的共享组件——
       //    与 fushi_design_tokens / fushi_material_components 同一「共享原语本身」类，
@@ -1489,8 +1502,12 @@ void main() {
         'surfaceContainerHighest',
         'BorderRadius.circular(',
       },
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
-        'VisualDensity.compact',
+      'lib/src/reader/reader_panel_kit.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+      },
+      'lib/src/reader/reader_navigation_widgets.dart': <String>{
+        'BorderRadius.circular(',
       },
       'lib/src/reader/reader_settings_preview.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{

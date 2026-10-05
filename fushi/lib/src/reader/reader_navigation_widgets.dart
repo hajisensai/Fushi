@@ -5,7 +5,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 阅读器「导航」侧板（目录 / 收藏 / 搜索）的专用视觉件。共享件（页签、进度条、
@@ -346,11 +346,11 @@ class ReaderNavProgressHero extends StatelessWidget {
         : chapter!;
     final double? f = fraction?.clamp(0.0, 1.0);
     final String? pct = f == null ? null : (f * 100).toStringAsFixed(1);
-    final List<FontFeature> tabular = const <FontFeature>[
+    const List<FontFeature> tabular = <FontFeature>[
       FontFeature.tabularFigures(),
     ];
 
-    Widget percent(TextStyle? big) => pct == null
+    Widget percent(TextStyle? big, TextStyle? small) => pct == null
         ? const SizedBox.shrink()
         : Text.rich(
             key: const ValueKey<String>('reader_nav_progress_percent'),
@@ -359,9 +359,10 @@ class ReaderNavProgressHero extends StatelessWidget {
                 TextSpan(text: pct),
                 TextSpan(
                   text: '%',
-                  style: TextStyle(
-                    fontSize: (big?.fontSize ?? 36) * 0.5,
+                  style: small?.copyWith(
                     fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                    height: 1.0,
                   ),
                 ),
               ],
@@ -406,6 +407,7 @@ class ReaderNavProgressHero extends StatelessWidget {
               glass
                   ? theme.textTheme.headlineSmall
                   : theme.textTheme.headlineMedium,
+              glass ? theme.textTheme.titleSmall : theme.textTheme.titleMedium,
             ),
             const SizedBox(width: 14),
           ],
@@ -465,6 +467,9 @@ class ReaderNavProgressHero extends StatelessWidget {
                   glass
                       ? theme.textTheme.headlineLarge
                       : theme.textTheme.displaySmall,
+                  glass
+                      ? theme.textTheme.titleMedium
+                      : theme.textTheme.titleLarge,
                 ),
                 if (caption != null) ...<Widget>[
                   const SizedBox(width: 8),
@@ -572,7 +577,7 @@ class _HeroCover extends StatelessWidget {
             cacheWidth: 156,
             errorBuilder: (BuildContext context, Object _, StackTrace? __) =>
                 ColoredBox(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  color: Theme.of(context).colorScheme.secondaryContainer,
                 ),
           ),
         ),
