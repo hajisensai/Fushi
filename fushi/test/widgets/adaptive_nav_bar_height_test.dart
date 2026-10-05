@@ -56,7 +56,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('floating capsule is 64dp tall, 12dp off the bottom edge', (
+  // 胶囊高按「药丸 + 标签实际行高 + 上下留白」算（≥ 64），标签不会被圆角
+  // 裁掉（2026-10-06 用户截图：Windows 上标签下半截被裁）。
+  testWidgets('floating capsule fits icon + label, 12dp off the bottom edge', (
     WidgetTester tester,
   ) async {
     await pumpBar(tester);
@@ -64,9 +66,17 @@ void main() {
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
     expect(
       bar.height,
-      kAdaptiveNavBarContentHeight +
-          kAdaptiveNavBarFloatingTopGap +
-          kAdaptiveNavFloatingMargin,
+      greaterThanOrEqualTo(
+        kAdaptiveNavBarContentHeight +
+            kAdaptiveNavBarFloatingTopGap +
+            kAdaptiveNavFloatingMargin,
+      ),
+    );
+    final Rect label = tester.getRect(find.text('Books'));
+    expect(
+      label.bottom,
+      lessThanOrEqualTo(bar.bottom - kAdaptiveNavFloatingMargin),
+      reason: '标签完整落在胶囊里',
     );
   });
 
@@ -77,18 +87,17 @@ void main() {
     await pumpBar(tester, bottomInset: inset);
 
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    // 悬浮胶囊浮在手势区之上：总高 = 上缝 4 + 胶囊 64 + max(12, 手势区 24)。
+    // 悬浮胶囊浮在手势区之上：总高 = 上缝 4 + 胶囊 + max(12, 手势区 24)。
     expect(
       bar.height,
-      kAdaptiveNavBarFloatingTopGap + kAdaptiveNavBarContentHeight + inset,
+      greaterThanOrEqualTo(
+        kAdaptiveNavBarFloatingTopGap + kAdaptiveNavBarContentHeight + inset,
+      ),
     );
 
-    // 标签底边只隔着胶囊内边距 + 胶囊离底距离。
+    // 标签完整落在胶囊里（胶囊离底 = 手势区）。
     final Rect label = tester.getRect(find.text('Books'));
-    expect(
-      bar.bottom - label.bottom,
-      kAdaptiveNavBarContentPadding + inset,
-    );
+    expect(label.bottom, lessThanOrEqualTo(bar.bottom - inset));
   });
 
   testWidgets('bar grows instead of overflowing at large text scale', (
@@ -104,7 +113,7 @@ void main() {
       bar.height,
       greaterThanOrEqualTo(kAdaptiveNavBarContentHeight + chrome),
     );
-    expect(bar.height, lessThan(kAdaptiveNavBarContentHeight + chrome + 20));
+    expect(bar.height, lessThan(kAdaptiveNavBarContentHeight + chrome + 40));
     expect(tester.takeException(), isNull);
   });
 }

@@ -142,6 +142,9 @@ const double kAdaptiveNavBarFloatingTopGap = 4;
 /// MD3 悬浮底栏胶囊内左右留白（目的地格从这里开始排）。
 const double kAdaptiveNavBarCapsulePadding = 4;
 
+/// MD3 悬浮胶囊里目的地上下的留白（标签可见时胶囊高按它算，约 72–80）。
+const double _kCapsuleVerticalPadding = 10;
+
 /// MD3 悬浮底栏一格的最窄宽度：再窄标签就要截断，改收进「更多」。
 const double _kMinNavCellWidth = 44;
 
@@ -532,6 +535,7 @@ class _MaterialNavCluster extends StatelessWidget {
       );
     }
     final bool currentValid = currentIndex >= 0 && currentIndex < items.length;
+    final double capsuleHeight = _materialCapsuleHeight(context);
     // FAB 那一项（查词）选中时不收起：收起胶囊只装得下胶囊里的当前项。
     final bool minimized =
         glassMinimized && currentValid && currentIndex != searchIndex;
@@ -545,14 +549,12 @@ class _MaterialNavCluster extends StatelessWidget {
         _NavMoreCell.focusId,
       ],
       fab: fab,
-      capsule: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minHeight: kAdaptiveNavBarContentHeight,
-        ),
+      height: capsuleHeight,
+      capsule: SizedBox(
+        height: capsuleHeight,
         child: Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: kAdaptiveNavBarCapsulePadding,
-            vertical: kAdaptiveNavBarContentPadding,
           ),
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints box) =>
@@ -560,6 +562,34 @@ class _MaterialNavCluster extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// MD3 悬浮胶囊的高度：按「指示器药丸 32 + 缝 4 + 标签实际行高」加上下各
+  /// [_kCapsuleVerticalPadding] 算，跟随（钳到 1.3 的）文字缩放；标签隐藏时只
+  /// 剩药丸，取 [kAdaptiveNavBarContentHeight]（64）。此前用 64 的最小高 +
+  /// IntrinsicHeight，Windows 上标签字体行高偏大时下半截被胶囊圆角裁掉
+  /// （2026-10-06 用户截图）。
+  double _materialCapsuleHeight(BuildContext context) {
+    if (!showLabels) return kAdaptiveNavBarContentHeight;
+    final TextStyle style =
+        (Theme.of(context).textTheme.labelMedium ?? const TextStyle())
+            .copyWith(fontSize: 12, fontWeight: FontWeight.w600);
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: 'Ag国', style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3),
+      maxLines: 1,
+    )..layout();
+    final double labelHeight = painter.height;
+    painter.dispose();
+    return math.max(
+      kAdaptiveNavBarContentHeight,
+      (2 * _kCapsuleVerticalPadding +
+              AdaptiveNavTileMetrics.pillHeight +
+              4 +
+              labelHeight)
+          .ceilToDouble(),
     );
   }
 
@@ -576,12 +606,10 @@ class _MaterialNavCluster extends StatelessWidget {
     List<int> indices,
   ) {
     if (!box.hasBoundedWidth || indices.isEmpty) {
-      return IntrinsicHeight(
-        child: Row(
-          children: <Widget>[
-            for (final int i in indices) Expanded(child: _cell(context, i)),
-          ],
-        ),
+      return Row(
+        children: <Widget>[
+          for (final int i in indices) Expanded(child: _cell(context, i)),
+        ],
       );
     }
     final double width = box.maxWidth;
@@ -639,7 +667,15 @@ class _MaterialNavCluster extends StatelessWidget {
     double cellWidthOf(double slotNeed) =>
         equal ? width / slotNeeds.length : width * slotNeed / slotTotal;
     int flexOf(double slotNeed) => equal ? 1 : (slotNeed * 10).round();
-    return IntrinsicHeight(
+    // 唯一一枚在项间滑动的指示器（[_SlidingIndicatorScope]）：当前页在「更多」
+    // 里时滑到「更多」那格，是 FAB 那一项（查词）时不画。
+    final FushiFocusId? selectedId = visible.contains(currentIndex)
+        ? FushiFocusId('$idPrefix-$currentIndex')
+        : (overflow.contains(currentIndex) ? _NavMoreCell.focusId : null);
+    final _FloatingBarStyle? barStyle = _FloatingBarStyle.maybeOf(context);
+    return _SlidingIndicatorScope(
+      selectedId: selectedId,
+      color: barStyle?.indicator ?? Theme.of(context).colorScheme.tertiary,
       child: Row(
         children: <Widget>[
           for (final int i in visible)
@@ -1001,7 +1037,11 @@ class _MaterialFloatingBar extends StatefulWidget {
     required this.expandFocusIds,
     required this.fab,
     required this.capsule,
+    required this.height,
   });
+
+  /// 胶囊高（[_MaterialNavCluster._materialCapsuleHeight]）；FAB 与之同高。
+  final double height;
 
   final bool minimized;
   final VoidCallback? onExpand;
@@ -1219,7 +1259,7 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
             ),
             if (fab != null) ...<Widget>[
               const SizedBox(width: kAdaptiveNavFloatingMargin),
-              _NavBarFab(fab: fab),
+              _NavBarFab(fab: fab, height: widget.height),
             ],
           ],
         ),
@@ -1315,7 +1355,10 @@ class _NavMiniCapsule extends StatelessWidget {
 /// （[FushiPressScale]）。独立焦点目标 `nav-bar-fab`，A / 回车触发。墨水屏
 /// 无阴影、描边。
 class _NavBarFab extends StatelessWidget {
-  const _NavBarFab({required this.fab});
+  const _NavBarFab({required this.fab, required this.height});
+
+  /// 与胶囊同高（正方形）。
+  final double height;
 
   static const FushiFocusId focusId = FushiFocusId('nav-bar-fab');
   static const double _kRadius = 20;
@@ -1363,7 +1406,7 @@ class _NavBarFab extends StatelessWidget {
               child: FushiFocusTarget(
                 id: focusId,
                 child: SizedBox.square(
-                  dimension: kAdaptiveNavBarContentHeight,
+                  dimension: height,
                   child: Center(
                     child: AnimatedSwitcher(
                       duration: duration,
@@ -1379,6 +1422,244 @@ class _NavBarFab extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// MD3 悬浮底栏的**滑动**活动指示器（2026-10-06 用户「底部栏切换做个滚动
+/// 动画」）：胶囊里只有这一枚指示器药丸，切换目的地时按 M3E expressive
+/// spatial 弹簧从旧项滑到新项（位置 + 宽度一起插值），而不是旧项淡出、新项原地
+/// 展开。各目的地仍保留自己的药丸槽（几何不变，状态层照旧裁到它）；滑动进行中
+/// 目的地自己的填充置透明、只画这一枚滑块，落定后滑块消失、交回选中项自己的
+/// 药丸（两者同色同矩形，交接处看不出来）。
+///
+/// 目标位置在 paint 时直接取被选中目的地药丸槽的真实矩形（目的地在 build 时向
+/// 本 scope 登记自己的槽 key），不靠估算的格宽 / 字高，任何文字缩放下都严丝合缝。
+/// 墨水屏 / 减弱动态效果下直接跳到新位置。
+class _SlidingIndicatorScope extends StatefulWidget {
+  const _SlidingIndicatorScope({
+    required this.selectedId,
+    required this.color,
+    required this.child,
+  });
+
+  /// 选中目的地的焦点 id（`nav-bar-<序号>`，当前页在「更多」里时是
+  /// `nav-bar-more`）。
+  final FushiFocusId? selectedId;
+  final Color color;
+  final Widget child;
+
+  static _SlidingIndicatorRegistry? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SlidingIndicatorRegistry>();
+
+  @override
+  State<_SlidingIndicatorScope> createState() => _SlidingIndicatorScopeState();
+}
+
+class _SlidingIndicatorRegistry extends InheritedWidget {
+  const _SlidingIndicatorRegistry({
+    required this.state,
+    required this.sliding,
+    required super.child,
+  });
+
+  final _SlidingIndicatorScopeState state;
+
+  /// 滑块正在滑：目的地自己的药丸先不填色。
+  final bool sliding;
+
+  @override
+  bool updateShouldNotify(_SlidingIndicatorRegistry oldWidget) =>
+      !identical(oldWidget.state, state) || oldWidget.sliding != sliding;
+}
+
+class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
+    with SingleTickerProviderStateMixin {
+  final Map<FushiFocusId, GlobalKey> _slots = <FushiFocusId, GlobalKey>{};
+
+  late final FushiSpring _progress = FushiSpring(
+    vsync: this,
+    initial: 1,
+    spring: _kNavExpressiveSpatial,
+  );
+
+  /// 本次滑动的起点（上一帧画出来的矩形）；null = 没有在滑。
+  Rect? _from;
+
+  /// 最近一次画出来的矩形，切换时作为新一段滑动的起点。
+  Rect? _painted;
+
+  bool _sliding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _progress.animation.addStatusListener(_onStatus);
+  }
+
+  /// 滑动落定：交回选中项自己的药丸。状态回调可能在 build 中途（重置进度时）
+  /// 触发，推到帧后再复核、再 setState。
+  void _onStatus(AnimationStatus status) {
+    if (status.isAnimating || !_sliding) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_sliding || _progress.animation.isAnimating) return;
+      setState(() {
+        _sliding = false;
+        _from = null;
+      });
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// 目的地在 build 时登记自己的药丸槽。
+  void register(FushiFocusId id, GlobalKey slot) => _slots[id] = slot;
+
+  void unregister(FushiFocusId id, GlobalKey slot) {
+    if (identical(_slots[id], slot)) _slots.remove(id);
+  }
+
+  @override
+  void didUpdateWidget(covariant _SlidingIndicatorScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedId != widget.selectedId) {
+      final Rect? from = _painted ?? _rectOf(oldWidget.selectedId);
+      final bool animate = fushiExpressiveMotionEnabled(context) &&
+          from != null &&
+          oldWidget.selectedId != null;
+      _progress.animateTo(0, animate: false);
+      _progress.animateTo(1, animate: animate);
+      // build 内直接改字段：紧接着的 build 就用新值（不能 setState）。
+      _from = animate ? from : null;
+      _sliding = animate;
+    }
+  }
+
+  @override
+  void dispose() {
+    _progress.animation.removeStatusListener(_onStatus);
+    _progress.dispose();
+    super.dispose();
+  }
+
+  /// [id] 那一格药丸槽相对本 scope 的矩形（取上一帧的布局）。
+  Rect? _rectOf(FushiFocusId? id) {
+    final RenderObject? scope = context.findRenderObject();
+    if (id == null || scope is! RenderBox || !scope.hasSize) return null;
+    final RenderObject? slot = _slots[id]?.currentContext?.findRenderObject();
+    if (slot is! RenderBox || !slot.attached || !slot.hasSize) return null;
+    return slot.localToGlobal(Offset.zero, ancestor: scope) & slot.size;
+  }
+
+  /// 选中目的地药丸槽相对 [scope] 的矩形；还没布局 / 没登记时 null。
+  Rect? _targetIn(RenderBox scope) {
+    final FushiFocusId? id = widget.selectedId;
+    if (id == null) return null;
+    final RenderObject? slot = _slots[id]?.currentContext?.findRenderObject();
+    if (slot is! RenderBox || !slot.attached || !slot.hasSize) return null;
+    return slot.localToGlobal(Offset.zero, ancestor: scope) & slot.size;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _SlidingIndicatorRegistry(
+      state: this,
+      sliding: _sliding,
+      child: CustomPaint(
+        painter: _SlidingIndicatorPainter(this),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _SlidingIndicatorPainter extends CustomPainter {
+  _SlidingIndicatorPainter(this.state) : super(repaint: state._progress.animation);
+
+  final _SlidingIndicatorScopeState state;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final RenderObject? scope = state.context.findRenderObject();
+    if (scope is! RenderBox || !scope.hasSize) return;
+    final Rect? target = state._targetIn(scope);
+    if (target == null) {
+      state._painted = null;
+      return;
+    }
+    final double t = state._progress.value;
+    final Rect? from = state._from;
+    final Rect rect = from == null || !state._sliding
+        ? target
+        : Rect.lerp(from, target, t)!;
+    state._painted = rect;
+    // 静止时选中项自己的药丸在画（同色同矩形），滑块不重复画。
+    if (!state._sliding) return;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(rect.height / 2)),
+      Paint()..color = state.widget.color,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SlidingIndicatorPainter oldDelegate) => true;
+}
+
+/// 「更多」菜单的圆角（M3E 大容器）。
+const double _kNavMenuRadius = 28;
+
+/// 「更多」菜单里的一行：图标 + 标签；当前页整行是与底栏同款的 tertiary
+/// 指示器胶囊（onTertiary 前景），其余是胶囊上的 onTertiaryContainer 色。
+class _NavMenuRow extends StatelessWidget {
+  const _NavMenuRow({
+    required this.item,
+    required this.selected,
+    required this.content,
+    required this.indicator,
+    required this.onIndicator,
+    required this.labelStyle,
+  });
+
+  final AdaptiveNavItem item;
+  final bool selected;
+  final Color content;
+  final Color indicator;
+  final Color onIndicator;
+  final TextStyle labelStyle;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color foreground = selected ? onIndicator : content;
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: selected ? indicator : indicator.withValues(alpha: 0),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: <Widget>[
+          _maybeBadge(
+            item: item,
+            child: FushiIcon(
+              selected ? (item.selectedIcon ?? item.icon) : item.icon,
+              size: 24,
+              color: foreground,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              item.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: labelStyle.copyWith(
+                color: foreground,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1487,42 +1768,51 @@ class _NavMoreCellState extends State<_NavMoreCell> {
       rect,
       Offset.zero & overlay.size,
     );
+    // 菜单与底栏胶囊同一套配色（2026-10-06 用户「颜色要和底部栏一致」）：
+    // tertiaryContainer 底 + onTertiaryContainer 字 / 图标，当前项是同款 tertiary
+    // 指示器胶囊（不打勾）；大圆角，从「更多」处按带回弹的曲线展开。墨水屏
+    // 换成 surface 底 + 反色指示器。
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Color menuColor =
+        eink ? colors.surfaceContainer : colors.tertiaryContainer;
+    final Color content = eink ? colors.onSurface : colors.onTertiaryContainer;
+    final Color indicator = eink ? colors.onSurface : colors.tertiary;
+    final Color onIndicator = eink ? colors.surface : colors.onTertiary;
+    final TextStyle labelStyle =
+        (Theme.of(context).textTheme.labelLarge ?? const TextStyle())
+            .copyWith(fontSize: 14);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
     final int? picked = await showMenu<int>(
       context: context,
       position: position,
+      color: menuColor,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: colors.shadow,
+      elevation: eink ? 0 : 3,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_kNavMenuRadius),
+        side: eink ? BorderSide(color: colors.outline) : BorderSide.none,
+      ),
+      menuPadding: const EdgeInsets.symmetric(vertical: 8),
+      popUpAnimationStyle: AnimationStyle(
+        curve: FushiMotion.release,
+        duration: duration,
+        reverseCurve: FushiMotion.exit,
+        reverseDuration: fushiMotionDuration(context, FushiMotion.short),
+      ),
       items: <PopupMenuEntry<int>>[
         for (final int i in widget.overflow)
           PopupMenuItem<int>(
             value: i,
-            child: Row(
-              children: <Widget>[
-                _maybeBadge(
-                  item: widget.items[i],
-                  child: FushiIcon(
-                    i == widget.currentIndex
-                        ? (widget.items[i].selectedIcon ?? widget.items[i].icon)
-                        : widget.items[i].icon,
-                    size: 24,
-                    color: i == widget.currentIndex
-                        ? colors.primary
-                        : colors.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    widget.items[i].label,
-                    style: i == widget.currentIndex
-                        ? const TextStyle(fontWeight: FontWeight.w600)
-                        : null,
-                  ),
-                ),
-                if (i == widget.currentIndex) ...<Widget>[
-                  const SizedBox(width: 12),
-                  FushiIcon(FushiIcons.check, size: 20, color: colors.primary),
-                ],
-              ],
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: _NavMenuRow(
+              item: widget.items[i],
+              selected: i == widget.currentIndex,
+              content: content,
+              indicator: indicator,
+              onIndicator: onIndicator,
+              labelStyle: labelStyle,
             ),
           ),
       ],
@@ -2078,6 +2368,15 @@ class _NavFocusCellState extends State<_NavFocusCell> {
   /// 的矩形裁剪，见 [_NavIndicatorInkWell]。
   final GlobalKey _indicatorKey = GlobalKey(debugLabel: 'nav-indicator');
 
+  /// 所在 MD3 悬浮胶囊的滑动指示器（登记本格药丸槽，供它取目标矩形）。
+  _SlidingIndicatorScopeState? _slider;
+
+  @override
+  void dispose() {
+    _slider?.unregister(widget.id, _indicatorKey);
+    super.dispose();
+  }
+
   FushiFocusId get id => widget.id;
   AdaptiveNavItem get item => widget.item;
   bool get selected => widget.selected;
@@ -2089,6 +2388,13 @@ class _NavFocusCellState extends State<_NavFocusCell> {
 
   @override
   Widget build(BuildContext context) {
+    final _SlidingIndicatorScopeState? slider =
+        _SlidingIndicatorScope.maybeOf(context)?.state;
+    if (!identical(slider, _slider)) {
+      _slider?.unregister(id, _indicatorKey);
+      _slider = slider;
+    }
+    slider?.register(id, _indicatorKey);
     final bool glassDesign = isGlassDesign(context);
     // 窄格适配只作用于 MD3 底栏：格宽不足时药丸按格宽收窄、标签缩小一号，
     // 标签恒显示。玻璃胶囊（iOS 26）与侧栏恒为完整形态。
@@ -2509,8 +2815,12 @@ class _FushiNavTile extends StatelessWidget {
     // eink：选中药丸的 secondaryContainer == 页面底色，选中项只剩图标实心/线框
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
-    final Color pillColor = bar?.indicator ??
-        (eink ? colors.onSurface : colors.secondaryContainer);
+    // 滑动指示器正在项间滑：本格药丸先不填色，只留那一枚滑块。
+    final bool sliding = _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
+    final Color pillColor = sliding
+        ? Colors.transparent
+        : bar?.indicator ??
+            (eink ? colors.onSurface : colors.secondaryContainer);
     final Color pillIconColor = bar?.onIndicator ??
         (eink ? colors.surface : colors.onSecondaryContainer);
     final Color idleColor = bar?.content ?? colors.onSurfaceVariant;
