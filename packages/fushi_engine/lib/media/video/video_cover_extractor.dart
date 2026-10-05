@@ -12,7 +12,8 @@
 /// `<documents>/video_covers/<sanitize(bookUid)>.jpg`，与手动/刮削封面同目录
 /// 同命名，红线：目录名与文件名派生冻结不动）：
 ///   1. 容器内嵌封面（mkv `cover.*` 附件 / mp4 attached_pic 海报）；
-///   2. ffmpeg 抽帧（默认 10s 避开黑场片头；播放列表遍历到首个可用集）；
+///   2. ffmpeg 抽帧（默认 10s 起按候选时刻跳过黑场帧，BUG-2965；播放列表遍历到
+///      首个可用集）；
 ///   3. 远端缩略图 URL 下载（流媒体书，如 YouTube hqdefault）。
 ///
 /// 与 `MediaCoverService` 的分工：本文件的 **ffmpeg 两条路**（内嵌封面 / 抽帧）
@@ -25,6 +26,9 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
@@ -43,6 +47,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -328,7 +333,8 @@ Future<String?> _downloadVideoCoverToPathUnlocked({
 /// 优先级：**① 视频自带封面**（mkv 的 `cover.*` 附件 / mp4 的 attached_pic 海报，
 /// 见 [extractEmbeddedVideoCoverViaFfmpeg]）；自带封面通常是制作方/刮削器精挑的
 /// 海报，比随机帧更具代表性。**② 无自带封面再退回抽帧**（[atSeconds] 处一帧，
-/// 默认 10s 避开黑场片头）。两路输出同一 outputPath，书架显示逻辑不变。
+/// 默认 10s 起，抽到黑场帧再往后换时刻，见 [grabFirstNonBlackCoverFrame]）。两路输出
+/// 同一 outputPath，书架显示逻辑不变。
 Future<String?> extractVideoCover({
   required String videoPath,
   required String bookUid,
@@ -410,14 +416,163 @@ Future<String?> _extractVideoCoverUnlocked({
       outputPath: outputPath,
     );
   }
-  // ② 无自带封面：退回抽帧。
-  return extractVideoFrameViaFfmpeg(
-    inputPath: videoPath,
+  // ② 无自带封面：退回抽帧。BUG-2965：固定时刻常落在片头 logo 淡出 / 场间黑场，
+  // 按候选时刻依次抽，取第一张非黑帧。
+  return grabFirstNonBlackCoverFrame(
     outputPath: outputPath,
-    atSeconds: atSeconds,
-    tlsPinSha256: tlsPinSha256,
+    candidateSeconds: coverFrameCandidateSeconds(atSeconds),
     diagnosticOnly: diagnosticOnly,
+    grab: ({
+      required String outputPath,
+      required double atSeconds,
+      required bool diagnosticOnly,
+    }) =>
+        extractVideoFrameViaFfmpeg(
+      inputPath: videoPath,
+      outputPath: outputPath,
+      atSeconds: atSeconds,
+      tlsPinSha256: tlsPinSha256,
+      diagnosticOnly: diagnosticOnly,
+    ),
   );
+}
+
+/// BUG-2965：判「近全黑帧」的平均亮度上限（0–255）。保守：只拦真正的黑场 / 淡出
+/// 末段，暗场戏（夜景、室内）的均值通常远高于它。
+const double kNearlyBlackMeanLuma = 16;
+
+/// BUG-2965：判「近全黑帧」的亮度标准差上限。黑底上有一块亮 logo / 字幕的帧标准差
+/// 很大，不算黑帧（它至少有可辨认的内容）。
+const double kNearlyBlackLumaStdDev = 10;
+
+/// 纯函数：[bytes]（一张编码后的图片）是否是近全黑帧——平均亮度 <
+/// [kNearlyBlackMeanLuma] **且**亮度标准差 < [kNearlyBlackLumaStdDev]。
+///
+/// 解码后先缩到 64px 宽（均值插值）再统计，1080p 帧也只算几千个像素。解码不出的
+/// 字节返回 false：这里只回答「是不是黑」，坏图由发布时的完整性校验拦。
+bool isNearlyBlackFrame(Uint8List bytes) {
+  final img.Image? decoded = img.decodeImage(bytes);
+  if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+    return false;
+  }
+  final img.Image sample = decoded.width > 64
+      ? img.copyResize(
+          decoded,
+          width: 64,
+          interpolation: img.Interpolation.average,
+        )
+      : decoded;
+  double sum = 0;
+  double sumSquares = 0;
+  int count = 0;
+  for (final img.Pixel pixel in sample) {
+    final double luma = 255 *
+        (0.299 * pixel.rNormalized +
+            0.587 * pixel.gNormalized +
+            0.114 * pixel.bNormalized);
+    sum += luma;
+    sumSquares += luma * luma;
+    count++;
+  }
+  if (count == 0) return false;
+  final double mean = sum / count;
+  final double variance = sumSquares / count - mean * mean;
+  final double stdDev = variance <= 0 ? 0 : math.sqrt(variance);
+  return mean < kNearlyBlackMeanLuma && stdDev < kNearlyBlackLumaStdDev;
+}
+
+/// BUG-2965：[atSeconds] 抽到黑帧后依次再试的更晚时刻（秒）。只取严格晚于
+/// [atSeconds] 的项；总候选数因此有界（≤ 1 + 本表长度）。
+const List<double> kCoverFrameFallbackSeconds = <double>[30, 90, 240];
+
+/// 纯函数：封面抽帧的候选时刻序列——先 [atSeconds]，再 [kCoverFrameFallbackSeconds]
+/// 里更晚的时刻（升序）。
+List<double> coverFrameCandidateSeconds(double atSeconds) => <double>[
+      atSeconds,
+      ...kCoverFrameFallbackSeconds.where((double s) => s > atSeconds),
+    ];
+
+/// 单帧抓取函数：把 [atSeconds] 处的一帧写到 [outputPath]，成功返回 [outputPath]、
+/// 拿不到帧（seek 越界 / ffmpeg 失败）返回 null，绝不抛。生产实现是
+/// [extractVideoFrameViaFfmpeg]；测试注入替身。
+typedef CoverFrameGrabber = Future<String?> Function({
+  required String outputPath,
+  required double atSeconds,
+  required bool diagnosticOnly,
+});
+
+/// 黑帧判定函数（生产实现在后台 isolate 跑 [isNearlyBlackFrame]）。
+typedef CoverBlackFrameDetector = Future<bool> Function(Uint8List bytes);
+
+Future<bool> _isNearlyBlackFrameOffThread(Uint8List bytes) =>
+    Isolate.run(() => isNearlyBlackFrame(bytes));
+
+/// BUG-2965：按 [candidateSeconds] 依次抽帧，把**第一张非黑帧**发布为 [outputPath]。
+///
+/// - 每个候选先抽到独立的 staged 路径（[stagedCoverPath]），判过黑帧才经
+///   [publishStagedCoverFile] 原子发布——中间的黑帧**从不**落到 [outputPath]，已有的
+///   好封面不会被它覆盖；
+/// - 某个候选拿不到帧（seek 越过片尾 / 失败）就停，不再试更晚的时刻；
+/// - 全部候选都是黑帧：发布**第一张**（有封面总比占位好，且与旧行为一致）；
+/// - 第一个候选沿用调用方的 [diagnosticOnly]（它就是旧行为里那一次抽帧）；之后的
+///   候选是机会性的补救，失败一律只记诊断，不进用户可见错误计数。
+///
+/// 未被选中的候选在返回前删除。从不抛：读候选 / 发布失败返回 null。
+@visibleForTesting
+Future<String?> grabFirstNonBlackCoverFrame({
+  required String outputPath,
+  required List<double> candidateSeconds,
+  required bool diagnosticOnly,
+  required CoverFrameGrabber grab,
+  CoverBlackFrameDetector isBlack = _isNearlyBlackFrameOffThread,
+}) async {
+  final List<File> produced = <File>[];
+  File? firstBlack;
+  try {
+    for (int i = 0; i < candidateSeconds.length; i++) {
+      final String? grabbed = await grab(
+        outputPath: stagedCoverPath(outputPath),
+        atSeconds: candidateSeconds[i],
+        diagnosticOnly: i == 0 ? diagnosticOnly : true,
+      );
+      if (grabbed == null) break;
+      final File candidate = File(grabbed);
+      produced.add(candidate);
+      if (!await isBlack(await candidate.readAsBytes())) {
+        await publishStagedCoverFile(staged: candidate, destPath: outputPath);
+        return outputPath;
+      }
+      firstBlack ??= candidate;
+    }
+    if (firstBlack == null) return null;
+    await publishStagedCoverFile(staged: firstBlack, destPath: outputPath);
+    return outputPath;
+  } on CoverImageInvalidException catch (e, stack) {
+    _logCoverFrameFailure(e, stack, diagnosticOnly: diagnosticOnly);
+    return null;
+  } on FileSystemException catch (e, stack) {
+    _logCoverFrameFailure(e, stack, diagnosticOnly: diagnosticOnly);
+    return null;
+  } finally {
+    // 已发布的候选已被改名到 outputPath，这里只清掉没被选中的。
+    for (final File file in produced) {
+      try {
+        if (file.existsSync()) file.deleteSync();
+      } catch (_) {}
+    }
+  }
+}
+
+void _logCoverFrameFailure(
+  Object error,
+  StackTrace stack, {
+  required bool diagnosticOnly,
+}) {
+  if (diagnosticOnly) {
+    engineLog.logDiagnostic('grabFirstNonBlackCoverFrame', error);
+  } else {
+    engineLog.log('grabFirstNonBlackCoverFrame', error, stack);
+  }
 }
 
 /// 纯音频（专辑曲目）的封面兜底：把 [audioPath] 同目录的 sidecar 海报
