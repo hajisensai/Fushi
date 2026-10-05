@@ -404,7 +404,7 @@ refreshUpdateCard();
 // 重着色，所见即所得；不设「保存」按钮（与 app 的自定义主题页一致）。
 const PALETTE = self.fushiThemePalette || null;
 const THEME = self.fushiTheme || null;
-let paletteState = { palette: 'fushi', customThemes: [], appMirror: null };
+let paletteState = { palette: (PALETTE && PALETTE.DEFAULT_PALETTE) || 'app', customThemes: [], appMirror: null };
 
 function paletteLabel(id) {
   if (id === 'app') return tr('theme_palette_app');
@@ -428,7 +428,8 @@ function swatchColors(id) {
     tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme]);
     if (!tokens) return null;
   } else if (id === 'fushi') {
-    tokens = null;
+    // 扩展绿按预设派生（与弹窗覆盖同一份）；不能读页面计算样式——当前若是别的调色板，根上已是那套色。
+    tokens = PALETTE.derive(PALETTE.specFor('fushi'), scheme);
   } else {
     const spec = PALETTE.specFor(id, paletteState.customThemes);
     tokens = spec ? PALETTE.derive(spec, scheme) : null;
@@ -628,7 +629,7 @@ async function deleteCustomTheme() {
   if (!cur) return;
   if (!confirm(tr('theme_custom_delete_confirm', { name: cur.name || tr('theme_custom_untitled') }))) return;
   const list = paletteState.customThemes.filter((t) => t.id !== cur.id);
-  await chrome.storage.local.set({ extensionCustomThemes: list, extensionPalette: 'fushi' });
+  await chrome.storage.local.set({ extensionCustomThemes: list, extensionPalette: PALETTE.DEFAULT_PALETTE });
   toast(tr('theme_custom_deleted'));
 }
 

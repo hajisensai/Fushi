@@ -78,7 +78,7 @@ function loadTheme(opts) {
   vm.createContext(sandbox);
   vm.runInContext(PALETTE_SRC, sandbox, { filename: 'theme-palette.js' });
   vm.runInContext(THEME_SRC, sandbox, { filename: 'theme.js' });
-  return { theme: sandbox.fushiTheme, doc, set: (p) => sandbox.chrome.storage.local.set(p) };
+  return { theme: sandbox.fushiTheme, doc, sandbox, set: (p) => sandbox.chrome.storage.local.set(p) };
 }
 
 const HEX = /^#[0-9a-f]{6}$/;
@@ -134,7 +134,7 @@ test('纯黑预设：深色底 #000000，卡片阶梯仍与底可辨；neutral �
   assert.ok(Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b) <= 2, 'neutral 的底应是灰阶');
 });
 
-test('自定义条目规范化：坏 hex 回默认种子、id 去重、id 只留安全字符；palette id 坏值回 fushi', () => {
+test('自定义条目规范化：坏 hex 回默认种子、id 去重、id 只留安全字符；palette id 坏值回 app（跟随 Fushi）', () => {
   const P = loadPalette();
   const list = P.normalizeCustomThemes([
     { id: 'a1', name: '  My theme  ', seed: 'not-a-color', surface: '#FFF', text: null, neutral: 'yes' },
@@ -146,8 +146,9 @@ test('自定义条目规范化：坏 hex 回默认种子、id 去重、id 只留
   assert.deepEqual(list[0], { id: 'a1', name: 'My theme', seed: P.DEFAULT_SEED, surface: '#ffffff', text: null, neutral: false });
   assert.strictEqual(list[1].id, 'evil', 'id 里的路径字符被剥掉');
   assert.strictEqual(P.normalizePaletteId('custom:a1'), 'custom:a1');
-  assert.strictEqual(P.normalizePaletteId('custom:../x'), 'fushi');
-  assert.strictEqual(P.normalizePaletteId('nope'), 'fushi');
+  assert.strictEqual(P.normalizePaletteId('custom:../x'), 'app');
+  assert.strictEqual(P.normalizePaletteId('nope'), 'app');
+  assert.strictEqual(P.normalizePaletteId(undefined), 'app', '缺省跟随 Fushi，与查词弹窗同源');
   assert.strictEqual(P.normalizePaletteId('app'), 'app');
   assert.strictEqual(P.specFor('custom:missing', list), null, '找不到的自定义 id 回 null（调用方按 fushi 兜底）');
   const spec = P.specFor('custom:a1', list);
@@ -222,12 +223,22 @@ test('格式契约：app 侧 popup_theme_css.dart 的 cssRgb 仍产出 rgb(r, g,
 
 // ───────── ② theme.js ─────────
 
-test('默认 fushi 调色板：不注入 style、tokens/popupVars 为 null，theme.css 原样接管', () => {
+test('缺省调色板 = 跟随 Fushi：还没镜像到 app 配色时不注入 style（theme.css 接管）、弹窗不覆盖', () => {
   const h = loadTheme({ protocol: 'chrome-extension:' });
-  assert.strictEqual(h.theme.palette, 'fushi');
+  assert.strictEqual(h.theme.palette, 'app');
   assert.strictEqual(h.theme.tokens('light'), null);
   assert.strictEqual(h.theme.popupVars('dark'), null);
   assert.strictEqual(h.doc.getElementById('fushi-theme-palette'), null);
+});
+
+test('扩展绿（fushi）：页面走 theme.css，查词弹窗也按扩展绿覆盖——不再是弹窗吃 app 配色、侧栏是绿（用户截图）', () => {
+  const h = loadTheme({ protocol: 'chrome-extension:', stored: { extensionPalette: 'fushi' } });
+  assert.strictEqual(h.theme.tokens('light'), null);
+  assert.strictEqual(h.doc.getElementById('fushi-theme-palette'), null);
+  const pv = h.theme.popupVars('light');
+  assert.ok(pv, '弹窗必须拿到扩展绿');
+  const P = h.sandbox.fushiThemePalette;
+  assert.strictEqual(pv['--md-primary'], P.derive(P.specFor('fushi'), 'light')['--fushi-primary']);
 });
 
 test('扩展页面选预设：写 :root 明暗两块（显式属性 + prefers-color-scheme）；切回 fushi 摘掉 style', () => {
@@ -239,7 +250,7 @@ test('扩展页面选预设：写 :root 明暗两块（显式属性 + prefers-co
   assert.match(style.textContent, /@media \(prefers-color-scheme: dark\) \{ :root:not\(\[data-theme="light"\]\)/);
   assert.doesNotMatch(style.textContent, /#fushi-drawer/, '扩展页面不用宿主清单');
   h.set({ extensionPalette: 'fushi' });
-  assert.strictEqual(h.doc.getElementById('fushi-theme-palette'), null, '默认调色板要把 style 摘掉');
+  assert.strictEqual(h.doc.getElementById('fushi-theme-palette'), null, '扩展绿调色板要把 style 摘掉');
 });
 
 test('宿主网页：只写 #fushi-* 浮层宿主，绝不写 :root，也不动宿主 <html> 的 data-theme', () => {
@@ -276,21 +287,24 @@ test('跟随 Fushi：有哪一侧镜像就给哪一侧；popupVars 为 null（�
   assert.strictEqual(h.theme.tokens('light'), null, '还没镜像到 app 配色时回默认');
   h.set({ appThemeMirror: { light: mirrorLight } });
   assert.strictEqual(h.theme.tokens('light')['--fushi-surface'], '#f7f9f4');
-  assert.strictEqual(h.theme.tokens('dark'), null, '深色侧还没镜像');
+  const dark = h.theme.tokens('dark');
+  assert.ok(dark, '深色侧还没镜像时按 app 主色色相派生，不退回扩展绿');
+  const P = h.sandbox.fushiThemePalette;
+  const hue = (hex) => P.rgbToOklch(P.parseHex(hex)).h;
+  assert.ok(Math.abs(hue(dark['--fushi-primary']) - hue('#386a58')) < 12);
   assert.strictEqual(h.theme.popupVars('light'), null);
   const style = h.doc.getElementById('fushi-theme-palette');
   assert.match(style.textContent, /:root:not\(\[data-theme="dark"\]\) \{ --fushi-bg: #eceee9;/);
-  assert.doesNotMatch(style.textContent, /data-theme="dark"\] \{/, '没有深色镜像就不写深色块');
 });
 
-test('applyPopupPalette：预设/自定义下把 --md-* 等覆盖到弹窗容器；fushi/app 下不动', () => {
+test('applyPopupPalette：预设/自定义/扩展绿下把 --md-* 等覆盖到弹窗容器；跟随 Fushi 下不动', () => {
   const h = loadTheme({ protocol: 'https:', stored: { extensionPalette: 'dark-theme' } });
   const c = { style: { props: {}, setProperty(k, v) { this.props[k] = v; } } };
   assert.strictEqual(h.theme.applyPopupPalette(c, 'dark'), true);
   assert.match(c.style.props['--md-primary'], HEX);
   assert.match(c.style.props['--background-color'], HEX);
   assert.match(c.style.props['--fushi-card-bg-rgb'], /^\d+, \d+, \d+$/);
-  h.set({ extensionPalette: 'fushi' });
+  h.set({ extensionPalette: 'app' });
   const c2 = { style: { props: {}, setProperty(k, v) { this.props[k] = v; } } };
   assert.strictEqual(h.theme.applyPopupPalette(c2, 'dark'), false);
   assert.deepStrictEqual(c2.style.props, {});
