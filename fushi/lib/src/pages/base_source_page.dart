@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -404,6 +405,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _pendingSelectionRect = selectionRect;
     _deferredPopupItem = null;
 
+    // 诊断：阅读器 / 有声书家族此前不开查词流水，`searchDictionary` 与弹窗各段在
+    // 诊断日志里没有归属（「空闲后首查慢」无从拆段）。与 mixin 宿主同一把尺：
+    // begin → search → warm → fill → shown → push → rendered。嵌套层不开新流水
+    // （父层仍在屏上，游标被覆盖只会让父层余段串台）。
+    final LookupPerfTrace? trace = origin == LookupOrigin.nested
+        ? null
+        : LookupPerfTrace.begin(
+            term: searchTerm,
+            host: 'reader',
+            lowMemory: _popup.lowMemory,
+          );
     try {
       if (!deferDisplay) {
         _isSearchingNotifier.value = true;
@@ -414,8 +426,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         searchWithWildcards: false,
         overrideMaximumTerms: overrideMaximumTerms,
       );
+      trace?.mark(
+        'search',
+        detail: 'entries=${dictionaryResult.entries.length} '
+            'kanji=${dictionaryResult.kanjiResults.length}',
+      );
 
-      if (_searchGeneration != gen) return 0;
+      if (_searchGeneration != gen) {
+        trace?.finish('superseded');
+        return 0;
+      }
 
       appModel.addToDictionaryHistory(result: dictionaryResult);
 
@@ -442,6 +462,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         result: dictionaryResult,
         allLoaded: !dictionaryResult.truncated,
       );
+      trace?.mark('fill', detail: 'warm-reuse=$reuse defer=$deferDisplay');
       // 这一层查词时的原句（✨ 与自动挑词条只认它，不再回头读页面「当前句」——
       // 嵌套层的词来自释义，外层阅读器的句子与它无关）。
       item.lookupSentence = origin == LookupOrigin.nested
@@ -835,10 +856,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       }
       // item 已在栈内（beginTop 时加入，隐藏）。需要 WebView 渲染的结果先带盖板
       // 翻可见，等当前结果 popupRendered 后再撤盖板，避免 macOS 隐藏热槽漏注入后露白。
+      LookupPerfTrace.current?.mark('shown');
       if (_itemNeedsWebViewRender(item)) {
         _showPopupWaitingForRender(item, gen);
       } else {
         _popup.show(item);
+        // 空结果走 Flutter 占位、不经 WebView，没有 rendered / reveal 两段。
+        LookupPerfTrace.current?.finish('empty');
       }
     }
     if (_searchGeneration == gen && _visibleRenderPendingItem == null) {
@@ -1459,6 +1483,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   void _onPopupLayerRendered(int index, DictionaryPopupEntry item) {
     if (!mounted) return;
     _popup.revealRendered(item);
+    // 阅读器路径先带盖板翻可见（[showDeferredPopup]），revealRendered 不再收尾；
+    // 渲染完成即这次查词的终点，在这里收（已收尾时幂等）。
+    LookupPerfTrace.current?.finish('revealed');
     _clearVisibleRenderPending(item: item);
     onDictionaryPopupRendered(index);
   }
