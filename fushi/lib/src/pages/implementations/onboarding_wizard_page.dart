@@ -1551,11 +1551,9 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.video:
         return t.onboarding_feature_video_hint;
       case OnboardingFeature.games:
-        // Android 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」不适用。
-        return GamesModuleForm.on(
-                  isWindows: Platform.isWindows,
-                  isAndroid: Platform.isAndroid,
-                ) ==
+        // 非 Windows 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」
+        // 不适用。
+        return GamesModuleForm.on(isWindows: Platform.isWindows) ==
                 GamesModuleForm.streamClient
             ? t.game_stream_module_hint
             : t.onboarding_feature_games_hint;

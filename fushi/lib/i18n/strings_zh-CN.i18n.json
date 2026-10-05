@@ -5303,7 +5303,6 @@
   "game_stream_line": "当前台词",
   "game_stream_line_empty": "尚无 Hook 台词",
   "game_stream_lookup_hint": "选中台词或释义中的文字查词",
-  "game_stream_android_only": "游戏串流接收端仅支持 Android。",
   "game_stream_unreachable": "无法连接主机",
   "game_stream_none": "没有已开启串流的已配对主机。请先在 Windows 游戏页开始串流。",
   "game_stream_join_failed": "无法加入串流",
@@ -6383,5 +6382,6 @@
   "game_stream_host_https_required": "主机未开启 HTTPS。请在 Windows 端 Fushi 的互联设置里开启加密连接。",
   "game_stream_host_stream_off": "该主机未提供游戏串流。",
   "game_stream_host_library_off": "主机没有开启游戏库。请在 Windows 端 Fushi 启用「游戏」模块后重启。",
-  "game_stream_host_unauthorized": "主机拒绝了本设备，请重新配对。"
+  "game_stream_host_unauthorized": "主机拒绝了本设备，请重新配对。",
+  "game_stream_tab": "串流"
 }

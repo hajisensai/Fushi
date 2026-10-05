@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -136,5 +137,68 @@ void main() {
       sent.map((GameStreamInputEvent e) => '${e.action.name}:${e.button}'),
       <String>['down:null', 'up:null', 'down:right', 'up:right'],
     );
+  });
+
+  testWidgets('a desktop mouse sends its own buttons, drags and wheel', (
+    WidgetTester tester,
+  ) async {
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    final GameStreamInputComposer composer = GameStreamInputComposer(
+      sessionId: 's1',
+      clientId: 'c1',
+      sender: (GameStreamInputEvent event) async {
+        sent.add(event);
+        return GameStreamInputAck(sequence: event.sequence, accepted: true);
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameStreamPage(
+          sessionId: 's1',
+          clientId: 'c1',
+          inputComposer: composer,
+          videoPlaceholder: const Text('remote frame'),
+          session: GameStreamSession.create(
+            sessionId: 's1',
+            now: DateTime.utc(2026, 9, 23),
+            features: GameStreamFeature.all,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
+    final Offset at = video.topLeft + Offset(video.width / 2, 100);
+    String describe(GameStreamInputEvent e) =>
+        '${e.action.name}:${e.button ?? e.dy ?? ''}';
+
+    // A right press is a right press -- not the touch path's left tap.
+    final TestGesture right = await tester.startGesture(
+      at,
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await right.up();
+    await tester.pump();
+    expect(sent.map(describe), <String>['down:right', 'up:right']);
+
+    // A left drag presses, moves, releases.
+    sent.clear();
+    final TestGesture left = await tester.startGesture(
+      at,
+      kind: PointerDeviceKind.mouse,
+    );
+    await left.moveBy(const Offset(30, 0));
+    await left.up();
+    await tester.pump();
+    expect(sent.map(describe), <String>['down:', 'move:', 'up:']);
+
+    // Two wheel notches down.
+    sent.clear();
+    final TestPointer wheel = TestPointer(9, PointerDeviceKind.mouse);
+    await tester.sendEventToBinding(wheel.hover(at));
+    await tester.sendEventToBinding(wheel.scroll(const Offset(0, 100)));
+    await tester.pump();
+    expect(sent.map(describe), <String>['wheel:2.0']);
   });
 }

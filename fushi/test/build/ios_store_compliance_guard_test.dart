@@ -72,13 +72,9 @@ void main() {
       );
     });
 
-    test('iOS 与 Android 的模块集合只差下载中心（外加 games 这一条技术例外）', () {
+    test('iOS 与 Android 的模块集合只差下载中心', () {
       for (final ModuleId module in ModuleId.values) {
         if (module == ModuleId.browse) continue;
-        // games 是**技术**例外，不是合规边界：Android 的 games 模块是串流接收端
-        // （WebRTC 接收入口只接了 Android），iOS 没有这个接收端，所以两端结论
-        // 不同。它不属于 StoreRestrictedCapability，别据此把它登记进合规边界。
-        if (module == ModuleId.games) continue;
         expect(
           module.availableOn(
             isWindows: false,
@@ -95,25 +91,11 @@ void main() {
           reason: '${module.name} 的可用性不该随 iOS 与否改变。',
         );
       }
+      // 串流接收（从自己的电脑串流游戏，同类如 Steam Link / Moonlight）不在
+      // 合规边界里：iOS 与 Android 的 games 同为串流接收端。
       expect(
-        ModuleId.games.availableOn(
-          isWindows: false,
-          isDesktop: false,
-          isIOS: true,
-          isAndroid: false,
-        ),
-        isFalse,
-        reason: 'iOS 没有串流接收端，也没有 galgame hook。',
-      );
-      expect(
-        ModuleId.games.availableOn(
-          isWindows: false,
-          isDesktop: false,
-          isIOS: false,
-          isAndroid: true,
-        ),
-        isTrue,
-        reason: 'Android 的 games 是串流接收端的远端游戏库。',
+        GamesModuleForm.on(isWindows: false),
+        GamesModuleForm.streamClient,
       );
     });
 

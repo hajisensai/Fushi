@@ -20,7 +20,8 @@ class GameStreamLeaveError implements Exception {
 /// Stable receiver id for this app process: one phone rejoining its own
 /// session keeps the same id, so the host does not see a second client.
 final String gameStreamReceiverClientId =
-    'android-${Platform.localHostname}-${DateTime.now().microsecondsSinceEpoch}';
+    '${defaultTargetPlatform.name}-${Platform.localHostname}-'
+    '${DateTime.now().microsecondsSinceEpoch}';
 
 /// Joins [session] on [client]'s bound [peer], shows [GameStreamPage] until
 /// the user leaves, then disconnects and tells the host to stop.

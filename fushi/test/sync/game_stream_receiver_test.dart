@@ -201,15 +201,52 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  test('rejects non-Android before allocating native resources', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    await expectLater(
-      receiver.connect(sessionId: 'session', clientId: 'phone'),
-      throwsUnsupportedError,
-    );
-    expect(renderer.initializeCount, 0);
-    expect(peer.closeCount, 0);
-    expect(audioPreparedAtRendererInits, isEmpty);
+  test('desktop platforms receive too', () async {
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.windows,
+      TargetPlatform.macOS,
+      TargetPlatform.linux,
+      TargetPlatform.iOS,
+    ]) {
+      debugDefaultTargetPlatformOverride = platform;
+      await receiver.connect(sessionId: 'session-$platform', clientId: 'pc');
+      expect(receiver.state, isNot(GameStreamReceiverState.failed));
+    }
+    expect(audioPreparedAtRendererInits.first, 0);
+  });
+
+  test('a desktop window losing focus keeps signalling, a phone does not', () {
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.windows,
+      TargetPlatform.macOS,
+      TargetPlatform.linux,
+    ]) {
+      expect(
+        gameStreamSignalsPaused(AppLifecycleState.inactive, platform),
+        isFalse,
+        reason: '$platform: inactive only means another window has focus',
+      );
+      expect(
+        gameStreamSignalsPaused(AppLifecycleState.hidden, platform),
+        isTrue,
+      );
+    }
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
+      expect(
+        gameStreamSignalsPaused(AppLifecycleState.inactive, platform),
+        isTrue,
+        reason: '$platform: inactive is on the way to suspension',
+      );
+    }
+    for (final TargetPlatform platform in TargetPlatform.values) {
+      expect(
+        gameStreamSignalsPaused(AppLifecycleState.resumed, platform),
+        isFalse,
+      );
+    }
   });
 
   test('routes audio as media before the first WebRTC call', () async {
@@ -246,6 +283,19 @@ void main() {
     expect(audio['androidAudioAttributesUsageType'], 'media');
     expect(audio['androidAudioMode'], 'normal');
     expect(audio['androidAudioStreamType'], 'music');
+    expect(options['bypassVoiceProcessing'], isTrue);
+  });
+
+  test('iOS plays the stream as media, not as a call', () {
+    final Map<String, dynamic> session =
+        kGameStreamAppleAudioConfiguration.toMap();
+    expect(session['appleAudioCategory'], 'playback');
+    expect(session['appleAudioMode'], 'moviePlayback');
+    expect(
+      session['appleAudioCategoryOptions'],
+      isNot(contains('defaultToSpeaker')),
+      reason: 'defaultToSpeaker only exists to undo PlayAndRecord earpiece',
+    );
   });
 
   test('ready requires the first rendered video frame', () async {

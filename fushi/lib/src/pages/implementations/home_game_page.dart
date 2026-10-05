@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -55,6 +56,13 @@ typedef GameDiscoverBuilder = Widget Function(
   Widget navigation,
 );
 
+/// 「串流」子区构造器；测试可注入桩，绕开 [GameStreamLibraryPage] 对已配对
+/// 主机与网络的依赖。
+typedef GameStreamSectionBuilder = Widget Function(
+  BuildContext context,
+  Widget navigation,
+);
+
 /// 首页一级「游戏」模块。
 ///
 /// 集成持久化游戏库、Hook 监控工作台与兼容性诊断。内部使用 [IndexedStack]，
@@ -68,6 +76,7 @@ class HomeGamePage extends StatefulWidget {
     this.dashboardBuilder,
     this.settingsBuilder,
     this.discoverBuilder,
+    this.streamBuilder,
     this.controller,
   });
 
@@ -76,6 +85,7 @@ class HomeGamePage extends StatefulWidget {
   final GameDashboardBuilder? dashboardBuilder;
   final GameSettingsBuilder? settingsBuilder;
   final GameDiscoverBuilder? discoverBuilder;
+  final GameStreamSectionBuilder? streamBuilder;
   final GalHookSessionController? controller;
 
   static const Key dashboardKey = ValueKey<String>('game-dashboard');
@@ -85,6 +95,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
   static const Key discoverKey = ValueKey<String>('game-discover');
+  static const Key streamKey = ValueKey<String>('game-stream');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -99,6 +110,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
   /// 「发现」子区访问过才构建：[IndexedStack] 会急切构建全部子区，而发现页一挂载
   /// 就向资源站发请求——不能因为打开游戏 tab 就联网。
   late bool _discoverVisited = _section == GameSection.discover;
+
+  /// 「串流」子区同理：一挂载就去连已配对主机，访问过才构建。
+  late bool _streamVisited = _section == GameSection.stream;
   late final GalHookSessionController _controller =
       widget.controller ?? GalHookSessionController.instance;
 
@@ -124,6 +138,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     setState(() {
       _section = requested;
       if (requested == GameSection.discover) _discoverVisited = true;
+      if (requested == GameSection.stream) _streamVisited = true;
     });
   }
 
@@ -218,6 +233,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
             ? _buildDiscover()
             : const SizedBox.shrink(),
       ),
+      GameSection.stream: KeyedSubtree(
+        key: HomeGamePage.streamKey,
+        child: _streamVisited ? _buildStream() : const SizedBox.shrink(),
+      ),
     };
     return Material(
       type: MaterialType.transparency,
@@ -249,6 +268,34 @@ class _HomeGamePageState extends State<HomeGamePage> {
         ],
         ),
       ),
+      ),
+    );
+  }
+
+  /// 「串流」视图：与其它平台 games 模块同一个串流游戏库页，页头主位放本模块的
+  /// 分段页签。
+  Widget _buildStream() {
+    final Widget navigation = GameSectionTabs(
+      selected: GameSection.stream,
+      focusIdPrefix: 'game-stream-tab',
+      onSelectDashboard: _showDashboard,
+      onSelectLibrary: _showLibrary,
+      onSelectMonitor: _showMonitor,
+      onSelectSettings: _showSettings,
+    );
+    final GameStreamSectionBuilder? builder = widget.streamBuilder;
+    if (builder != null) {
+      return Builder(
+        builder: (BuildContext context) => builder(context, navigation),
+      );
+    }
+    return Consumer(
+      builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+          GameStreamLibraryPage(
+        services: GameStreamLibraryServices.interconnect(
+          appModel: ref.read(appProvider),
+        ),
+        navigation: navigation,
       ),
     );
   }

@@ -26,6 +26,10 @@ enum GameSection {
   /// 「浏览」模块整体搬走，2026-10-01 用户拍板加回库页子标签；追加在尾部，不移动
   /// 其它子区的 IndexedStack 索引。
   discover,
+
+  /// 把另一台主机上的游戏串流到本机（与其它平台 games 模块同一个
+  /// `GameStreamLibraryPage`）。追加在尾部，理由同上。
+  stream,
 }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
@@ -142,6 +146,7 @@ final List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.dashboard,
   GameSection.library,
   GameSection.monitor,
+  GameSection.stream,
   if (StoreRestrictedCapability.externalDiscovery.isAvailable)
     GameSection.discover,
   GameSection.importGames,
@@ -192,6 +197,7 @@ class GameSectionTabs extends StatelessWidget {
         // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
         GameSection.importGames => t.library_view_import,
         GameSection.discover => t.library_view_discover,
+        GameSection.stream => t.game_stream_tab,
         GameSection.settings => t.settings,
         // 不设页签（从「设置」进入）；防御性给全称，正常不会上屏。
         GameSection.diagnostics => t.settings,
@@ -213,6 +219,9 @@ class GameSectionTabs extends StatelessWidget {
           return;
         case GameSection.discover:
           gameSectionNotifier.value = GameSection.discover;
+          return;
+        case GameSection.stream:
+          gameSectionNotifier.value = GameSection.stream;
           return;
         case GameSection.monitor:
           onSelectMonitor();

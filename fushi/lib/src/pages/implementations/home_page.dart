@@ -3231,7 +3231,7 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.dictionaries => HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
         ),
-      // Android 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
+      // 非 Windows 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
       // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
       HomeTab.games => appModelNoUpdate.gamesModuleForm ==
               GamesModuleForm.streamClient

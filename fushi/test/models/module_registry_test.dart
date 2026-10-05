@@ -117,16 +117,30 @@ void main() {
       );
     });
 
-    test('games 的两种形态：Windows 本机库、Android 串流接收端，其余平台没有', () {
+    test('games 的两种形态：Windows 本机库，其余平台都是串流接收端', () {
       expect(
-        GamesModuleForm.on(isWindows: true, isAndroid: false),
+        GamesModuleForm.on(isWindows: true),
         GamesModuleForm.localLibrary,
       );
       expect(
-        GamesModuleForm.on(isWindows: false, isAndroid: true),
+        GamesModuleForm.on(isWindows: false),
         GamesModuleForm.streamClient,
       );
-      expect(GamesModuleForm.on(isWindows: false, isAndroid: false), isNull);
+      for (final (bool desktop, bool ios, bool android) in <(bool, bool, bool)>[
+        (true, false, false), // macOS / Linux
+        (false, true, false), // iOS
+        (false, false, true), // Android
+      ]) {
+        expect(
+          ModuleId.games.availableOn(
+            isWindows: false,
+            isDesktop: desktop,
+            isIOS: ios,
+            isAndroid: android,
+          ),
+          isTrue,
+        );
+      }
     });
   });
 
