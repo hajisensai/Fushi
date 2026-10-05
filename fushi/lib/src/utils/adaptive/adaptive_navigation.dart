@@ -1178,7 +1178,6 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                                             AlignmentDirectional.centerStart,
                                         minWidth: full,
                                         maxWidth: full,
-                                        fit: OverflowBoxFit.deferToChild,
                                         child: widget.capsule,
                                       ),
                                     ),
