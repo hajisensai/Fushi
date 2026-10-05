@@ -43,6 +43,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
@@ -4074,6 +4075,18 @@ class PreferencesRepository extends ChangeNotifier
       kStudyIdleTimeoutPrefKey,
       value.clamp(readingIdleTimeoutMinutesMin, readingIdleTimeoutMinutesMax),
     );
+    notifyListeners();
+  }
+
+  /// 小说阅读器阅读计时的开始方式（手动 / 打开即开始 / 翻页后开始），默认打开即
+  /// 开始。普通偏好（随 Profile 快照）；下次打开书生效。
+  ReaderStudyClockStartMode get readerStudyClockStartMode =>
+      ReaderStudyClockStartMode.parse(
+          getPref(kReaderStudyClockStartModePrefKey) as String?);
+
+  Future<void> setReaderStudyClockStartMode(
+      ReaderStudyClockStartMode mode) async {
+    await setPref(kReaderStudyClockStartModePrefKey, mode.storageValue);
     notifyListeners();
   }
 

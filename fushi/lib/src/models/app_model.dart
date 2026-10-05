@@ -266,6 +266,7 @@ import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 
 export 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry, InvalidLocalAudioDbException;
@@ -8033,6 +8034,14 @@ class AppModel with ChangeNotifier {
       Duration(minutes: readingIdleTimeoutMinutes);
   Future<void> setReadingIdleTimeoutMinutes(int value) =>
       prefsRepo.setReadingIdleTimeoutMinutes(value);
+
+  /// 小说阅读器阅读计时的开始方式。偏好层未就绪（精简初始化 / 测试 harness）时
+  /// 回落默认「打开即开始」，与改造前行为一致。
+  ReaderStudyClockStartMode get readerStudyClockStartMode =>
+      _prefsRepo?.readerStudyClockStartMode ??
+      kDefaultReaderStudyClockStartMode;
+  Future<void> setReaderStudyClockStartMode(ReaderStudyClockStartMode mode) =>
+      prefsRepo.setReaderStudyClockStartMode(mode);
 
   /// 统计「今日」重置时刻（整点）。偏好层未就绪时回落 0（本地午夜）。
   int get statDayResetHour => _prefsRepo?.statDayResetHour ?? 0;
