@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiCookieBorder;
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
+    show FushiButtonGroup;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -389,6 +394,8 @@ class AudiobookMiniPlayer extends StatefulWidget {
     this.showPlayButton = false,
     this.colors,
     this.tick = const Duration(milliseconds: 500),
+    this.coverPath,
+    this.chapterLabel,
     super.key,
   });
 
@@ -398,6 +405,12 @@ class AudiobookMiniPlayer extends StatefulWidget {
   final bool invertSkip;
   final bool showPlayButton;
   final FushiFloatingToolbarColors? colors;
+
+  /// 封面文件（M3E 形态下裁成四瓣 cookie 放在条左端）；null 画书本图标。
+  final String? coverPath;
+
+  /// 当前章名（当前句下面一行小字）。
+  final String? chapterLabel;
 
   /// 播放中进度刷新周期（控制器只在 cue / 播放态变化时 notify）。
   final Duration tick;
@@ -486,8 +499,168 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
     );
   }
 
+  /// M3 Expressive 形态（Material 设计系统）：整条是饱和 primaryContainer 大圆角
+  /// 胶囊——左端四瓣 cookie 裁切的封面，中间当前句 + 章名小字（可点 = 展开侧板），
+  /// 右端连接式按钮组「上一句 / 播放（形状变形 FAB，按下回弹）/ 下一句」，按下的
+  /// 键变宽、邻键让出（[FushiButtonGroup]，弹簧）；全书进度是一条贴着胶囊底边的
+  /// 波浪线（播放中流动、暂停收平）。
+  Widget _buildExpressive(BuildContext context) {
+    final AudiobookPlayerController c = widget.controller;
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final Color bg = cs.primaryContainer;
+    final Color fg = cs.onPrimaryContainer;
+    final ButtonStyle flat = IconButton.styleFrom(foregroundColor: fg);
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) left =
+        _key(forward: widget.invertSkip);
+    final ({IconData icon, String tooltip, VoidCallback onPressed}) right =
+        _key(forward: !widget.invertSkip);
+    final int totalMs = c.totalDuration.inMilliseconds;
+    final double fraction = totalMs > 0
+        ? (c.globalPosition.inMilliseconds / totalMs).clamp(0.0, 1.0)
+        : 0.0;
+    final String cue = c.currentCue?.text.trim() ?? '';
+    final String label = cue.isEmpty ? t.reader_audiobook_now_playing : cue;
+    final String chapter = widget.chapterLabel?.trim() ?? '';
+    final String? coverPath = widget.coverPath;
+    const OutlinedBorder coverShape = FushiCookieBorder(lobes: 4, depth: 0.1);
+    final Widget cover = SizedBox.square(
+      dimension: 44,
+      child: coverPath == null
+          ? DecoratedBox(
+              decoration: ShapeDecoration(color: cs.primary, shape: coverShape),
+              child: Center(
+                child: FushiIcon(
+                  Icons.headphones_rounded,
+                  color: cs.onPrimary,
+                  size: 22,
+                ),
+              ),
+            )
+          : ClipPath(
+              clipper: ShapeBorderClipper(shape: coverShape),
+              child: Image.file(
+                File(coverPath),
+                key: const ValueKey<String>('audiobook_mini_player_cover'),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => ColoredBox(color: cs.primary),
+              ),
+            ),
+    );
+    final Widget info = Expanded(
+      child: Semantics(
+        button: widget.onOpenPanel != null,
+        label: t.reader_mini_player_open,
+        child: InkWell(
+          key: const ValueKey<String>('audiobook_mini_player_open'),
+          borderRadius: const BorderRadius.all(Radius.circular(20)),
+          onTap: widget.onOpenPanel,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  switchInCurve: FushiMotion.enter,
+                  switchOutCurve: FushiMotion.exit,
+                  layoutBuilder: (Widget? current, List<Widget> previous) =>
+                      Stack(
+                    alignment: AlignmentDirectional.centerStart,
+                    children: <Widget>[
+                      ...previous,
+                      if (current != null) current,
+                    ],
+                  ),
+                  child: Text(
+                    label,
+                    key: ValueKey<String>('mini_cue_$label'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (chapter.isNotEmpty)
+                  Text(
+                    chapter,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: fg.withValues(alpha: 0.72),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final Widget group = FushiButtonGroup(
+      spacing: 2,
+      children: <Widget>[
+        _FocusableBarButton(
+          id: const FushiFocusId('audiobook_prev'),
+          icon: FushiIcon(left.icon),
+          iconSize: 26,
+          style: flat,
+          tooltip: left.tooltip,
+          onPressed: left.onPressed,
+        ),
+        AudiobookPlayFab(controller: c, size: 52),
+        _FocusableBarButton(
+          id: const FushiFocusId('audiobook_next'),
+          icon: FushiIcon(right.icon),
+          iconSize: 26,
+          style: flat,
+          tooltip: right.tooltip,
+          onPressed: right.onPressed,
+        ),
+      ],
+    );
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 72),
+      child: FushiFloatingPill(
+        key: const ValueKey<String>('audiobook_mini_player'),
+        color: bg,
+        padding: EdgeInsets.zero,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(28)),
+        ),
+        child: Stack(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 8, 14),
+              child: Row(children: <Widget>[cover, info, group]),
+            ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 2,
+              child: FushiWavyLinearProgress(
+                key: const ValueKey<String>('audiobook_mini_player_progress'),
+                value: fraction,
+                waving: c.isPlaying,
+                strokeWidth: 3,
+                color: fg,
+                trackColor: fg.withValues(alpha: 0.18),
+                stopIndicatorColor: Colors.transparent,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!isGlassDesign(context) && !isEinkTheme(context)) {
+      return _buildExpressive(context);
+    }
     final AudiobookPlayerController c = widget.controller;
     final ThemeData theme = Theme.of(context);
     final bool glass = isGlassDesign(context);
