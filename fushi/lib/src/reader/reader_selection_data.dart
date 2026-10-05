@@ -4,6 +4,7 @@ class ReaderSelectionData {
     required this.sentence,
     this.rect,
     this.handlesRect,
+    this.handlesBoxes,
     this.normalizedOffset,
     this.normalizedLength,
     this.sentenceOffset = 0,
@@ -35,6 +36,7 @@ class ReaderSelectionData {
       sentence: json['sentence'] as String? ?? '',
       rect: rect,
       handlesRect: _readHandlesRect(json['handlesRect']),
+      handlesBoxes: _readHandlesBoxes(json['handlesBoxes']),
       normalizedOffset: (json['normalizedOffset'] as num?)?.toInt(),
       normalizedLength: (json['normalizedLength'] as num?)?.toInt(),
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt() ?? 0,
@@ -65,6 +67,13 @@ class ReaderSelectionData {
   /// Union of the two grip touch targets in WebView viewport CSS pixels.
   /// Separate from the glyph anchor used by dictionary lookup.
   final Map<String, double>? handlesRect;
+
+  /// 两个手柄触控盒**各自**的矩形（顺序 start, end），WebView 视口 CSS 像素。
+  ///
+  /// 宿主避让操作条要按单个盒子算：[handlesRect] 是并集 bbox，两球之间那段正文空白也被
+  /// 算进障碍里；竖排长选区的 bbox 会一路延伸到末字球，于是"放在 bbox 上方"根本放不下，
+  /// 操作条被翻到 bbox 底端 = 掉到选区尾部下方。任一端不合法时整体为 null（宿主退回并集）。
+  final List<Map<String, double>>? handlesBoxes;
 
   /// Chapter learning-unit coordinates for navigation and persisted favorites.
   final int? normalizedOffset;
@@ -111,4 +120,15 @@ Map<String, double>? _readHandlesRect(Object? raw) {
   }
   if (result['width']! <= 0 || result['height']! <= 0) return null;
   return result;
+}
+
+List<Map<String, double>>? _readHandlesBoxes(Object? raw) {
+  if (raw is! List) return null;
+  final List<Map<String, double>> boxes = <Map<String, double>>[];
+  for (final Object? item in raw) {
+    final Map<String, double>? box = _readHandlesRect(item);
+    if (box == null) return null;
+    boxes.add(box);
+  }
+  return boxes.isEmpty ? null : boxes;
 }

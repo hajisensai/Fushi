@@ -455,22 +455,42 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // _readerImageMenuScale（那是给中和层内 chrome 用的），否则视觉尺寸是 scale²。
     final RenderBox? webBox =
         _webViewKey.currentContext?.findRenderObject() as RenderBox?;
-    // Protect the full grip hit boxes, not merely the first selected glyph.
-    // Both corners go through the transform chain so app UI scaling is absorbed.
-    final Map<String, double>? r = data.handlesRect ?? data.rect;
-    Rect protectedRect = Rect.fromLTWH(0, overlaySize.height / 2, 0, 0);
-    if (r != null && webBox != null) {
+    // 本操作条要同时避开两样东西，所以两个矩形分开传：
+    //   data.rect        —— 选区**正文**（首字 rect），面板的锚点（与原实现同源）；
+    //   data.handlesRect —— 两端 32px 手柄触控盒的并集，只是**要避开的障碍**。
+    // 合并成一个矩形传（此前 `handlesRect ?? rect`）会把锚点也换成手柄并集：横排两球挂在
+    // 字下方、并集 top 落在正文里；竖排起球在字上方、页顶放不下时会翻到并集底端 —— 面板
+    // 于是从选区头部掉到选区尾部下方。
+    // 两个矩形的角都过同一条变换链（WebView local -> global -> Overlay local），吸收界面缩放。
+    Rect? mapToOverlay(Map<String, double>? r) {
+      if (r == null || webBox == null) return null;
       final double rx = r['x'] ?? 0;
       final double ry = r['y'] ?? 0;
       final Offset topGlobal = webBox.localToGlobal(Offset(rx, ry));
       final Offset bottomGlobal = webBox.localToGlobal(
         Offset(rx + (r['width'] ?? 0), ry + (r['height'] ?? 0)),
       );
-      protectedRect = Rect.fromPoints(
+      return Rect.fromPoints(
         overlayBox.globalToLocal(topGlobal),
         overlayBox.globalToLocal(bottomGlobal),
       );
     }
+
+    final Rect? gripsRect = mapToOverlay(data.handlesRect);
+    // 按**单个球**避让（data.handlesBoxes）；只有并集时退回并集，两者都没有就不避让。
+    final List<Rect> gripBoxes = <Rect>[];
+    final List<Map<String, double>>? rawGripBoxes = data.handlesBoxes;
+    if (rawGripBoxes != null) {
+      for (final Map<String, double> box in rawGripBoxes) {
+        final Rect? mapped = mapToOverlay(box);
+        if (mapped != null) gripBoxes.add(mapped);
+      }
+    } else if (gripsRect != null) {
+      gripBoxes.add(gripsRect);
+    }
+    final Rect selectionRect = mapToOverlay(data.rect) ??
+        gripsRect ??
+        Rect.fromLTWH(0, overlaySize.height / 2, 0, 0);
 
     final bool hasAudio = _audiobookController != null &&
         _audiobookController!.chapterCueCount > 0;
@@ -493,7 +513,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return Positioned.fill(
       child: CustomSingleChildLayout(
         delegate: ReaderSelectionToolbarLayout(
-          protectedRect: protectedRect,
+          selectionRect: selectionRect,
+          gripBoxes: gripBoxes,
           safeInsets: MediaQuery.paddingOf(overlayContext),
         ),
         child: ReaderSelectionActionBar(

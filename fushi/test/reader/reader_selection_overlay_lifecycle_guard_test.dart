@@ -132,11 +132,20 @@ void main() {
     },
   );
 
-  test('toolbar protects full grip rectangles in overlay coordinates', () {
+  test('toolbar anchors on the text rect and dodges each grip box', () {
     final String bar = maskComments(
       methodBody(chrome, 'Widget _buildSelectionActionBar('),
     );
-    expect(bar, contains('data.handlesRect ?? data.rect'));
+    // 锚点是选区正文（data.rect）；手柄盒只是**要避开的障碍**。两者不能合并成一个矩形：
+    // 合并（`handlesRect ?? rect`）会让横排把手柄并集的 top（落在正文里）当锚点、竖排
+    // 页顶翻到并集底端 —— 面板从选区头部掉到选区尾部下方。
+    expect(bar, contains('mapToOverlay(data.rect)'));
+    expect(bar, contains('mapToOverlay(data.handlesRect)'));
+    expect(bar, isNot(contains('handlesRect ?? data.rect')));
+    // 两个球的盒子各自映射后交给布局器（并集 bbox 会把两球之间的正文空白也算成障碍）。
+    expect(bar, contains('data.handlesBoxes'));
+    expect(bar, contains('gripBoxes: gripBoxes'));
+    expect(bar, contains('selectionRect: selectionRect'));
     expect(bar, contains('webBox.localToGlobal('));
     expect(bar, contains('overlayBox.globalToLocal(topGlobal)'));
     expect(bar, contains('overlayBox.globalToLocal(bottomGlobal)'));
