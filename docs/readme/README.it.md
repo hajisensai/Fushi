@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | **Italiano** | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -49,14 +49,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` racchiudono `flutter pub get` e `ci/apply-patches.sh` in un unico comando. Questo progetto è bloccato su Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`); alcune dipendenze upstream sono incluse in `third_party/` o sottoposte a patch da `ci/apply-patches.sh` — vedi [docs/agent/build.md](../agent/build.md) per i dettagli.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` racchiudono `flutter pub get` e `ci/apply-patches.sh` in un unico comando. Questo progetto è bloccato su Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`); alcune dipendenze upstream sono incluse in `third_party/` o sottoposte a patch da `ci/apply-patches.sh` — vedi [docs/agent/build.md](../agent/build.md) per i dettagli.
 
 <details>
 <summary><b>Stack tecnologico</b></summary>
 
 | Livello | Tecnologia |
 |---|---|
-| Framework | Flutter 3.44.0 (Dart SDK `>=3.5.0 <4.0.0`) |
+| Framework | Flutter 3.47.6 (Dart SDK `>=3.5.0 <4.0.0`) |
 | Piattaforme | Android / Windows / macOS / iOS (Material Design 3) |
 | Lettore | Motore di impaginazione WebView (derivato dalla famiglia Hoshi Reader) |
 | Video | media_kit (libmpv core) |
