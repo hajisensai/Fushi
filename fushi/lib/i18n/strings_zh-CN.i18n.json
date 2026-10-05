@@ -6606,5 +6606,6 @@
   "reader_audiobook_sleep_timer": "睡眠定时",
   "reader_audiobook_sleep_off": "关闭",
   "reader_audiobook_sleep_remaining": "$n 分钟后停止",
-  "home_nav_more": "更多"
+  "home_nav_more": "更多",
+  "home_nav_bar_labels": "底栏显示文字"
 }

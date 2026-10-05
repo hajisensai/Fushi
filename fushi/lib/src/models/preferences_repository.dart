@@ -1289,6 +1289,16 @@ class PreferencesRepository extends ChangeNotifier
     await setPref('nav_rail_expanded', expanded ? 'expanded' : 'collapsed');
   }
 
+  /// MD3 悬浮底栏是否在图标下显示标签（默认显示；关掉即 M3E floating toolbar
+  /// 的纯图标形态）。
+  bool get navBarLabelsVisible =>
+      getPref('nav_bar_labels_visible', defaultValue: true) as bool;
+
+  Future<void> setNavBarLabelsVisible(bool value) async {
+    await setPref('nav_bar_labels_visible', value);
+    notifyListeners();
+  }
+
   bool get reverseReaderBottomBar =>
       getPref('reverse_reader_bottom_bar', defaultValue: false) as bool;
 

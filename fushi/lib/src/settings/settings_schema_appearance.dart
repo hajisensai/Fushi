@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -322,6 +323,23 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.refresh();
             },
             defaultValue: false,
+          ),
+          // MD3 悬浮底栏（手机竖屏）图标下的标签；关掉即 M3E floating toolbar
+          // 的纯图标形态（标签进 tooltip）。Apple 设计系统的标签栏不读它。
+          SettingsSwitchItem(
+            id: 'appearance.nav_bar_labels',
+            title: t.home_nav_bar_labels,
+            icon: FushiIcons.textFields,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.navBarLabelsVisible,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              unawaited(
+                settingsContext.appModel
+                    .setNavBarLabelsVisible(value)
+                    .then((_) => settingsContext.refresh()),
+              );
+            },
+            defaultValue: true,
           ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；

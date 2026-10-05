@@ -6268,6 +6268,11 @@ class AppModel with ChangeNotifier {
   // fushi_library_host_service.dart，页面直用 prefsRepo.getPref/setPref）。
 
   bool get reverseNavigationBar => prefsRepo.reverseNavigationBar;
+
+  /// MD3 悬浮底栏图标下是否显示标签（设置 · 外观，默认显示）。
+  bool get navBarLabelsVisible => prefsRepo.navBarLabelsVisible;
+  Future<void> setNavBarLabelsVisible(bool value) =>
+      prefsRepo.setNavBarLabelsVisible(value);
   void toggleReverseNavigationBar() => prefsRepo.toggleReverseNavigationBar();
 
   bool get reverseReaderBottomBar => prefsRepo.reverseReaderBottomBar;
