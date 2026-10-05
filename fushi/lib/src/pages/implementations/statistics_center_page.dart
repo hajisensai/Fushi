@@ -15,7 +15,6 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_overview.dart';
-import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
@@ -370,51 +369,18 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         ),
       );
     }
-    return FushiEntranceScope(
-      // 换媒体筛选 = 新的一屏内容，重放一次错峰进场。
-      replayKey: _filter,
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) =>
-            CustomScrollView(
-              key: const ValueKey<String>('stat-overview-scroll'),
-              slivers: _buildOverviewSlivers(
-                tokens,
-                wide: constraints.maxWidth >= kStatOverviewWideMinWidth,
-              ),
-            ),
-      ),
-    );
+    return _buildOverviewBody(tokens);
   }
 
-  /// 总览信息架构（2026-10 统计中心重设计）：
-  ///
-  ///  1. 媒体类型筛选（全部 / 阅读 / 观看 / 游戏）——作用于下面所有区块；
-  ///  2. 关键指标区：每日目标环 + 今日 / 本周时长、今日字数、连续天数；
-  ///  3. 趋势：时间窗口分段控件 → 范围时长图 → 所选范围卡 → 学习日历；
-  ///  4. 明细：四张时段卡（点开 = 该时段按作品的明细 sheet）→ 最近会话
-  ///     （点开 = 该作品的会话 sheet / 全部会话）。
-  ///
-  /// 宽屏（内容 ≥ [kStatOverviewWideMinWidth]）1、2 通栏，3 / 4 左右两栏；
-  /// 窄屏单栏自上而下。每块按顺序错峰进场（[FushiStaggeredEntrance]）。
-  List<Widget> _buildOverviewSlivers(
-    FushiDesignTokens tokens, {
-    required bool wide,
-  }) {
+  /// 总览主体：数据切片 + 各区块的装配；排布（宽 / 窄、错峰进场、空数据态）
+  /// 由 [StatOverviewBody] 一处决定，信息架构见那里的文档。
+  Widget _buildOverviewBody(FushiDesignTokens tokens) {
     final StatWindow w = _window;
     final StatRange range = _range;
-    int order = 0;
-    SliverToBoxAdapter box(Widget child) => SliverToBoxAdapter(
-      child: FushiStaggeredEntrance(index: order++, child: child),
-    );
-
-    final Widget filterBar = Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.gap,
-        tokens.spacing.card,
-        0,
-      ),
-      child: StatMediaFilterBar(selected: _filter, onChanged: _selectFilter),
+    final bool empty = _daily.isEmpty && _sessions.isEmpty;
+    final Widget filterBar = StatMediaFilterBar(
+      selected: _filter,
+      onChanged: _selectFilter,
     );
     final Widget hero = StatOverviewHero(
       kpis: computeStatOverviewKpis(_daily, w),
@@ -422,118 +388,62 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       goalProgressChars: studyGoalCharsForDay(_allDaily, w.todayKey),
       onEditGoal: _loading ? null : () => unawaited(_editGoals()),
     );
-    final List<Widget> slivers = <Widget>[box(filterBar), box(hero)];
-    if (_daily.isEmpty && _sessions.isEmpty) {
-      slivers
-        ..add(box(const StatOverviewEmpty()))
-        ..add(buildStatTailSliver(context));
-      return slivers;
+    if (empty) {
+      return StatOverviewBody(
+        replayKey: _filter,
+        filterBar: filterBar,
+        hero: hero,
+        emptyState: const StatOverviewEmpty(),
+        tail: buildStatTailSliver(context),
+      );
     }
-
-    Widget rangeBar() => StatRangeBar(range: range, onChanged: _selectRange);
-    Widget chart() => buildStatRangeChartSection(context, range, _byDay);
-    Widget summary() => buildStatRangeSummary(
-      context,
-      range,
-      _byDay,
-      extraLines: <StatSummaryLine>[
-        if (statBookCphOf(_daily, range.contains) case final String cph)
-          StatSummaryLine(label: t.stat_reading_speed, value: cph),
-        StatSummaryLine(
-          label: t.stat_lookup,
-          value: '${sumStatEventsInRange(_lookupEvents, range)}',
-        ),
-        StatSummaryLine(
-          label: t.stat_mined,
-          value: '${sumStatEventsInRange(_minedEvents, range)}',
-        ),
-      ],
-    );
-    Widget calendar() => buildStatRangeCalendarSection(
-      context,
-      byDay: _byDay,
-      now: w.now,
-      onDaySelected: _selectDay,
-    );
-    Widget periods() => Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            tokens.spacing.card,
-            tokens.spacing.card,
-            0,
-          ),
-          child: Semantics(
-            header: true,
-            child: Text(
-              t.stat_overview_periods,
-              style: statSectionTitleStyle(context),
+    return StatOverviewBody(
+      replayKey: _filter,
+      filterBar: filterBar,
+      hero: hero,
+      tail: buildStatTailSliver(context),
+      trend: <Widget>[
+        StatRangeBar(range: range, onChanged: _selectRange),
+        buildStatRangeChartSection(context, range, _byDay),
+        buildStatRangeSummary(
+          context,
+          range,
+          _byDay,
+          extraLines: <StatSummaryLine>[
+            if (statBookCphOf(_daily, range.contains) case final String cph)
+              StatSummaryLine(label: t.stat_reading_speed, value: cph),
+            StatSummaryLine(
+              label: t.stat_lookup,
+              value: '${sumStatEventsInRange(_lookupEvents, range)}',
             ),
-          ),
+            StatSummaryLine(
+              label: t.stat_mined,
+              value: '${sumStatEventsInRange(_minedEvents, range)}',
+            ),
+          ],
         ),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: w.now,
+          onDaySelected: _selectDay,
+        ),
+      ],
+      details: <Widget>[
+        StatOverviewSectionHeader(title: t.stat_overview_periods),
         _buildSummaryCards(w),
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: _sessionTitle,
+          collectionOf: _sessionCollectionName,
+          coverOf: _sessionCover,
+          onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
+        ),
       ],
     );
-    Widget sessions() => buildStatSessionSection(
-      context,
-      sessions: _sessions,
-      titleOf: _sessionTitle,
-      collectionOf: _sessionCollectionName,
-      coverOf: _sessionCover,
-      onDelete: _deleteSession,
-      onEdit: _editSession,
-      onClearAll: _clearSessions,
-    );
-
-    if (wide) {
-      // 两栏同时落位：两栏都从同一个序号起数，而不是右栏等左栏播完。
-      final int base = order;
-      Widget column(List<Widget> children) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (int i = 0; i < children.length; i++)
-            FushiStaggeredEntrance(index: base + i, child: children[i]),
-        ],
-      );
-      slivers.add(
-        SliverToBoxAdapter(
-          child: Row(
-            key: const ValueKey<String>('stat-overview-wide-columns'),
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                flex: 3,
-                child: column(<Widget>[
-                  rangeBar(),
-                  chart(),
-                  summary(),
-                  calendar(),
-                ]),
-              ),
-              Expanded(
-                flex: 2,
-                child: column(<Widget>[periods(), sessions()]),
-              ),
-            ],
-          ),
-        ),
-      );
-    } else {
-      slivers.addAll(<Widget>[
-        box(rangeBar()),
-        box(chart()),
-        box(summary()),
-        box(periods()),
-        box(calendar()),
-        box(sessions()),
-      ]);
-    }
-    slivers.add(buildStatTailSliver(context));
-    return slivers;
   }
 
   /// 目标编辑：与阅读统计 tab 同一份表单、同一个持久化目标。

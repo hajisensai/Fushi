@@ -3,6 +3,7 @@ import 'package:fushi/src/pages/implementations/stat_ring.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -174,6 +175,132 @@ const double kStatOverviewWideMinWidth = 840;
 
 /// 关键指标区的宽屏判据（内容宽度）：目标卡与 2×2 指标卡并排；更窄时上下叠。
 const double kStatOverviewHeroWideMinWidth = 720;
+
+/// 总览主体的排布（2026-10 统计中心重设计）。信息架构自上而下：
+///
+///  1. [filterBar] 媒体类型筛选（全部 / 阅读 / 观看 / 游戏）——作用于下面所有区块；
+///  2. [hero] 关键指标区：每日目标环 + 今日 / 本周时长、今日字数、连续天数；
+///  3. [trend] 趋势：时间窗口分段控件 → 范围时长图 → 所选范围卡 → 学习日历；
+///  4. [details] 明细：时段卡（点开 = 该时段按作品的明细 sheet）→ 最近会话。
+///
+/// 宽屏（内容 ≥ [kStatOverviewWideMinWidth]）1、2 通栏，3 / 4 左右两栏（3:2）；
+/// 窄屏单栏自上而下。每块按顺序错峰进场（[FushiStaggeredEntrance]），两栏都从
+/// 同一个序号起数——同时落位，而不是右栏等左栏播完；[replayKey] 变化（换媒体
+/// 筛选）时重播一次。[emptyState] 非空时取代 3 / 4。
+class StatOverviewBody extends StatelessWidget {
+  const StatOverviewBody({
+    required this.filterBar,
+    required this.hero,
+    required this.tail,
+    super.key,
+    this.replayKey,
+    this.trend = const <Widget>[],
+    this.details = const <Widget>[],
+    this.emptyState,
+  });
+
+  final Widget filterBar;
+  final Widget hero;
+  final List<Widget> trend;
+  final List<Widget> details;
+  final Widget? emptyState;
+
+  /// 滚动视图末尾的 sliver（底部安全区留白，见 `buildStatTailSliver`）。
+  final Widget tail;
+  final Object? replayKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiEntranceScope(
+      replayKey: replayKey,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool wide = constraints.maxWidth >= kStatOverviewWideMinWidth;
+          int order = 0;
+          Widget staggered(Widget child) =>
+              FushiStaggeredEntrance(index: order++, child: child);
+          final List<Widget> slivers = <Widget>[
+            SliverToBoxAdapter(
+              child: staggered(
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.card,
+                    tokens.spacing.gap,
+                    tokens.spacing.card,
+                    0,
+                  ),
+                  child: filterBar,
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(child: staggered(hero)),
+          ];
+          final Widget? empty = emptyState;
+          if (empty != null) {
+            slivers.add(SliverToBoxAdapter(child: staggered(empty)));
+          } else if (wide) {
+            final int base = order;
+            Widget column(List<Widget> children) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int i = 0; i < children.length; i++)
+                  FushiStaggeredEntrance(index: base + i, child: children[i]),
+              ],
+            );
+            slivers.add(
+              SliverToBoxAdapter(
+                child: Row(
+                  key: const ValueKey<String>('stat-overview-wide-columns'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(flex: 3, child: column(trend)),
+                    Expanded(flex: 2, child: column(details)),
+                  ],
+                ),
+              ),
+            );
+          } else {
+            for (final Widget section in <Widget>[...trend, ...details]) {
+              slivers.add(SliverToBoxAdapter(child: staggered(section)));
+            }
+          }
+          slivers.add(tail);
+          return CustomScrollView(
+            key: const ValueKey<String>('stat-overview-scroll'),
+            slivers: slivers,
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 卡外的区块小标题（如「时段明细」）：与 [StatSectionCard] 卡头同一字重，
+/// 左右与卡片对齐。
+class StatOverviewSectionHeader extends StatelessWidget {
+  const StatOverviewSectionHeader({required this.title, super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.card,
+        tokens.spacing.card,
+        0,
+      ),
+      child: Semantics(
+        header: true,
+        child: Text(title, style: statSectionTitleStyle(context)),
+      ),
+    );
+  }
+}
 
 /// 总览关键指标区：每日目标（环形进度，可点进目标编辑）+ 四张指标卡。
 ///
