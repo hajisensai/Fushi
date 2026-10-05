@@ -581,6 +581,42 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             ]))
           .get();
 
+  /// 「加入合集」候选：只列与条目 ([kind], [entryKey]) **同一库页域**的合集
+  /// （[CollectionShelfDomain]：书架 / 漫画库 / 视频库 / 游戏库），排序同
+  /// [getAllMediaCollections]。
+  ///
+  /// BUG-2974：合集表不带种类列，「加入合集」弹窗此前直接取全部合集，书的列表里
+  /// 混着视频的合集。合集的域由成员推导（任一成员在本域即算本域合集）；epub 成员按
+  /// `epub_books.format` 再分书 / 漫画（成员键是 uid，旧行可能仍是 bookKey，两种
+  /// 都认）。空合集（无成员、无从归属）不列出。
+  Future<List<MediaCollectionRow>> getMediaCollectionsForEntryDomain(
+    MediaKind kind,
+    String entryKey,
+  ) async {
+    final Set<String> mangaKeys = <String>{};
+    for (final EpubBookRow row in await (select(epubBooks)
+          ..where((t) => t.format.equals(BookFormat.manga.dbValue)))
+        .get()) {
+      if (row.uid.isNotEmpty) mangaKeys.add(row.uid);
+      mangaKeys.add(row.bookKey);
+    }
+    CollectionShelfDomain domainOf(MediaKind k, String key) =>
+        collectionShelfDomainOf(k, isManga: mangaKeys.contains(key));
+    final CollectionShelfDomain target = domainOf(kind, entryKey);
+    final Set<int> inDomain = <int>{};
+    for (final MediaCollectionItemRow item in await getAllCollectionItems()) {
+      final MediaKind? memberKind = MediaKind.tryParse(item.mediaType);
+      if (memberKind == null) continue;
+      if (domainOf(memberKind, item.entryKey) == target) {
+        inDomain.add(item.collectionId);
+      }
+    }
+    return <MediaCollectionRow>[
+      for (final MediaCollectionRow c in await getAllMediaCollections())
+        if (inDomain.contains(c.id)) c,
+    ];
+  }
+
   Future<MediaCollectionRow?> getMediaCollectionById(int id) =>
       (select(mediaCollections)..where((t) => t.id.equals(id)))
           .getSingleOrNull();
