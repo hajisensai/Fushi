@@ -10,9 +10,13 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
+import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 bool _sameSourceViewport(WindowCaptureMetadata? a, WindowCaptureMetadata? b) {
   List<double>? normalizedViewport(WindowCaptureMetadata? value) {
@@ -1025,27 +1029,27 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   }
 
   Widget _statusBanner() {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
-    // 中性信息块；失败语义只上在单色图标上，正文仍是 onSurface 可读色，
-    // 不再整块 errorContainer。
-    final Color foreground = _failed
-        ? fushiNeutralBlockForeground(context)
-        : colors.onSurfaceVariant;
-    return Container(
-      width: double.infinity,
+    // M3E 饱和信息卡：失败 = errorContainer、其余 secondaryContainer；前景取色块
+    // 的 on 色（主题字阶自带 onSurface，要显式覆盖）。
+    final FushiCardTone tone = _failed
+        ? FushiCardTone.error
+        : FushiCardTone.secondary;
+    final Color? foreground = fushiCardToneColors(context, tone)?.onContainer;
+    return FushiCard(
+      tone: tone,
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: fushiNeutralBlockDecoration(context),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           FushiIcon(
-            _failed ? Icons.error_outline : Icons.info_outline,
-            size: 18,
-            color: _failed
-                ? fushiStatusColor(context, FushiStatusTone.error)
-                : foreground,
+            _failed ? FushiIcons.error : FushiIcons.info,
+            size: 20,
+            color: foreground ??
+                (_failed
+                    ? fushiStatusColor(context, FushiStatusTone.error)
+                    : null),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1078,41 +1082,22 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   }
 
   Widget _emptySamples() {
-    final TextTheme text = Theme.of(context).textTheme;
-    final Color secondary = fushiNeutralSecondaryForeground(context);
-    // 空态区：中性信息块底（MD3 surfaceContainerHigh / Apple tertiaryFill，
-    // 墨水屏补描边），不再是细描边方框。
+    // 空态区：中性信息块底（MD3 / Apple / 墨水屏各自的分层底），里面是工作台
+    // 同一套 M3E 空态（色块图标弹入 + 错峰进场 + 可滚动）。
     return DecoratedBox(
       decoration: fushiNeutralBlockDecoration(context),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiIcon(
-                Icons.add_photo_alternate_outlined,
-                size: 48,
-                color: secondary,
-              ),
-              const SizedBox(height: 12),
-              Text(t.game_lookup_samples_empty, style: text.titleMedium),
-              const SizedBox(height: 6),
-              Text(
-                t.game_lookup_samples_hint,
-                textAlign: TextAlign.center,
-                style: text.bodySmall?.copyWith(color: secondary),
-              ),
-              const SizedBox(height: 16),
-              FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('calibration-empty-capture'),
-                onPressed: _busy ? null : _capture,
-                icon: const FushiIcon(Icons.add_photo_alternate_outlined),
-                label: Text(t.game_lookup_samples_capture),
-              ),
-            ],
+      child: GalWorkbenchEmptyState(
+        icon: Icons.add_photo_alternate_outlined,
+        title: t.game_lookup_samples_empty,
+        body: t.game_lookup_samples_hint,
+        actions: <Widget>[
+          FushiFilledButton.icon(
+            key: const ValueKey<String>('calibration-empty-capture'),
+            onPressed: _busy ? null : _capture,
+            icon: const FushiIcon(Icons.add_photo_alternate_outlined),
+            label: Text(t.game_lookup_samples_capture),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -1124,7 +1109,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         FushiStepNumberBadge(number: step, size: 22),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+          child: Text(title, style: context.fushiType.titleSmallEmphasized),
         ),
       ],
     );
@@ -1516,10 +1501,28 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           _secondaryText(t.game_lookup_samples_narration_hint),
           const SizedBox(height: 20),
         ],
-        _stepHeader(1, t.game_lookup_samples_search_title),
-        const SizedBox(height: 6),
-        _secondaryText(t.game_lookup_samples_search_hint),
-        const SizedBox(height: 20),
+        // 两步各成一张 M3E 卡（分段卡：上下两段一组，第 2 步是主操作所在）。
+        FushiCard(
+          grouped: true,
+          borderRadius: fushiGroupedItemRadius(context, 0, 2),
+          margin: EdgeInsets.only(bottom: fushiGroupedListGap(context)),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _stepHeader(1, t.game_lookup_samples_search_title),
+              const SizedBox(height: 6),
+              _secondaryText(t.game_lookup_samples_search_hint),
+            ],
+          ),
+        ),
+        FushiCard(
+          grouped: true,
+          borderRadius: fushiGroupedItemRadius(context, 1, 2),
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
         _stepHeader(2, t.game_lookup_samples_auto_align),
         const SizedBox(height: 6),
         _secondaryText(
@@ -1580,6 +1583,9 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                 : t.game_lookup_samples_auto_align_current,
           ),
         ),
+            ],
+          ),
+        ),
         const SizedBox(height: 16),
         const FushiDividerControl(height: 1),
         FushiExpansionTile(
@@ -1590,7 +1596,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           collapsedShape: const Border(),
           title: Text(
             t.game_lookup_samples_advanced,
-            style: Theme.of(context).textTheme.titleSmall,
+            style: context.fushiType.titleSmallEmphasized,
           ),
           subtitle: _secondaryText(t.game_lookup_samples_advanced_hint),
           onExpansionChanged: (bool value) =>
