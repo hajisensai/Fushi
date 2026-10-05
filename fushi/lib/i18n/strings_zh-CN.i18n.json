@@ -6684,5 +6684,10 @@
   "font_target_app_ui_short": "界面",
   "font_target_dictionary_short": "查词",
   "font_target_video_subtitle_short": "字幕",
-  "font_target_game_lookup_short": "游戏"
+  "font_target_game_lookup_short": "游戏",
+  "lookup_history_remove": "从历史中移除",
+  "lookup_history_favorite": "加入收藏",
+  "lookup_history_more": "更多",
+  "lookup_idle_title": "查一个词",
+  "lookup_idle_hint": "在上方输入、粘贴剪贴板，或从最近查过的词里挑一个。"
 }

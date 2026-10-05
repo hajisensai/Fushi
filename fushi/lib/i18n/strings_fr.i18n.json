@@ -6684,5 +6684,10 @@
   "font_target_app_ui_short": "Interface",
   "font_target_dictionary_short": "Dictionary",
   "font_target_video_subtitle_short": "Subtitles",
-  "font_target_game_lookup_short": "Game"
+  "font_target_game_lookup_short": "Game",
+  "lookup_history_remove": "Remove from history",
+  "lookup_history_favorite": "Add to favorites",
+  "lookup_history_more": "More",
+  "lookup_idle_title": "Look up a word",
+  "lookup_idle_hint": "Type above, paste from the clipboard, or pick a recent word."
 }
