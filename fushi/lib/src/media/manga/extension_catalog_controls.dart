@@ -187,29 +187,14 @@ Future<bool> confirmExtensionBulk(
   required String message,
   required String actionLabel,
   required bool destructive,
-}) async =>
-    await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-        title: Text(title),
-        content: Text(message),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: destructive,
-            isDefaultAction: !destructive,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(actionLabel),
-          ),
-        ],
-      ),
-    ) ==
-    true;
+}) => showFushiConfirmDialog(
+  context: context,
+  title: title,
+  message: message,
+  icon: destructive ? Icons.warning_amber_rounded : null,
+  confirmLabel: actionLabel,
+  destructive: destructive,
+);
 
 /// 批量动作执行体：进度框 → [run] → 关进度框。
 ///

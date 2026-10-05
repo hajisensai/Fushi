@@ -401,24 +401,14 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     String proposedTitle,
   ) async {
     if (!mounted) return DuplicateChoice.cancel;
-    final bool? keep = await showAppDialog<bool>(
+    final bool keep = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        title: Text(t.book_import_duplicate_title),
-        content: Text(t.book_import_duplicate_message(name: proposedTitle)),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.book_import_duplicate_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.book_import_duplicate_keep),
-          ),
-        ],
-      ),
+      title: t.book_import_duplicate_title,
+      message: t.book_import_duplicate_message(name: proposedTitle),
+      cancelLabel: t.book_import_duplicate_cancel,
+      confirmLabel: t.book_import_duplicate_keep,
     );
-    return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
+    return keep ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
   /// 逐卷导入一个整卷文件目录，返回给用户看的汇总文案。

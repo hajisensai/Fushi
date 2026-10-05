@@ -164,28 +164,12 @@ class _MangaOnlineSourcesViewState
 
   Future<void> _importAidoku() async {
     if (!AidokuRuntimeFactory.isSupported || _aidokuBusy) return;
-    final bool acceptedRisk =
-        await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-            title: Text(t.aidoku_extension_import),
-            content: Text(t.aidoku_extension_warning),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_select),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool acceptedRisk = await showFushiConfirmDialog(
+      context: context,
+      title: t.aidoku_extension_import,
+      message: t.aidoku_extension_warning,
+      confirmLabel: t.dialog_select,
+    );
     if (!acceptedRisk || !mounted) return;
 
     final String? path = await pickSystemFilePath(
@@ -209,31 +193,14 @@ class _MangaOnlineSourcesViewState
         );
       }
       final Map<String, Object?> info = inspection.sourceInfo;
-      final bool confirmed =
-          await showAppDialog<bool>(
-            context: context,
-            builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-              title: Text(t.aidoku_extension_confirm_title),
-              content: Text(
-                '${info['name']}\n${info['id']}\n'
-                '${t.aidoku_extension_version}: ${info['version']}',
-              ),
-              actions: <Widget>[
-                adaptiveDialogAction(
-                  context: dialogContext,
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: dialogContext,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  child: Text(t.dialog_import),
-                ),
-              ],
-            ),
-          ) ??
-          false;
+      final bool confirmed = await showFushiConfirmDialog(
+        context: context,
+        title: t.aidoku_extension_confirm_title,
+        message:
+            '${info['name']}\n${info['id']}\n'
+            '${t.aidoku_extension_version}: ${info['version']}',
+        confirmLabel: t.dialog_import,
+      );
       if (!confirmed || !mounted) return;
       final AidokuPackageStore store =
           _aidokuStore ?? await AidokuPackageStore.open();
@@ -392,28 +359,14 @@ class _MangaOnlineSourcesViewState
   }
 
   Future<void> _removeAidokuRepository(AidokuSavedRepository repository) async {
-    final bool confirmed =
-        await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-            title: Text(t.aidoku_repository_remove),
-            content: Text('${repository.name}\n${repository.indexUrl}'),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.aidoku_repository_remove,
+      message: '${repository.name}\n${repository.indexUrl}',
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed || !mounted) return;
     try {
       final List<AidokuSavedRepository> repositories =
@@ -440,28 +393,14 @@ class _MangaOnlineSourcesViewState
   }
 
   Future<void> _removeAidoku(AidokuInstalledPackage package) async {
-    final bool confirmed =
-        await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-            title: Text(t.aidoku_extension_remove),
-            content: Text(package.name),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.aidoku_extension_remove,
+      message: package.name,
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed || !mounted) return;
     try {
       await _aidokuStore!.remove(package);
@@ -500,28 +439,12 @@ class _MangaOnlineSourcesViewState
 
   Future<void> _installAidokuSource(AidokuRepositorySource source) async {
     if (_aidokuInstallingSourceId != null) return;
-    final bool confirmed =
-        await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-            title: Text('${t.aidoku_repository_install}: ${source.name}'),
-            content: Text(t.aidoku_extension_warning),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_import),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: '${t.aidoku_repository_install}: ${source.name}',
+      message: t.aidoku_extension_warning,
+      confirmLabel: t.dialog_import,
+    );
     if (!confirmed || !mounted) return;
     setState(() {
       _aidokuInstallingSourceId = source.id;
@@ -1038,28 +961,12 @@ class _AidokuRepositorySourcesDialogState
 
   Future<void> _install(AidokuRepositorySource source) async {
     if (_installingSourceId != null) return;
-    final bool confirmed =
-        await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-            title: Text('${t.aidoku_repository_install}: ${source.name}'),
-            content: Text(t.aidoku_extension_warning),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDefaultAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_import),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: '${t.aidoku_repository_install}: ${source.name}',
+      message: t.aidoku_extension_warning,
+      confirmLabel: t.dialog_import,
+    );
     if (!confirmed || !mounted) return;
 
     setState(() {

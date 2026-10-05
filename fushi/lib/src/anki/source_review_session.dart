@@ -8,7 +8,7 @@ import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/anki/source_review_draft_store.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/anki/source_review_controls.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Reading state and note edits have independent lifetimes. Continuing reading
@@ -274,23 +274,15 @@ class SourceReviewSession extends ChangeNotifier {
     _busy = true;
     _notify();
     try {
-      final bool? discard = await showAppDialog<bool>(
+      final bool discard = await showFushiConfirmDialog(
         context: ui,
-        builder: (BuildContext context) => FushiAlertDialog(
-          title: Text(t.card_source_review_draft_discard),
-          actions: <Widget>[
-            FushiTextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
-            ),
-            FushiFilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.card_source_review_draft_discard),
-            ),
-          ],
-        ),
+        title: t.card_source_review_draft_discard,
+        icon: Icons.delete_outline,
+        cancelLabel: MaterialLocalizations.of(ui).cancelButtonLabel,
+        confirmLabel: t.card_source_review_draft_discard,
+        destructive: true,
       );
-      if (discard == true) {
+      if (discard) {
         await draftStore.delete(link.sourceId);
         _hasDraft = false;
       }

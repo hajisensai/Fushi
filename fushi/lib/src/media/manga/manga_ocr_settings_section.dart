@@ -334,24 +334,15 @@ class _MangaOcrSettingsSectionState
   Future<void> _cancelDownload() => _downloads.cancel(_localModel);
 
   Future<void> _confirmDelete() async {
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        title: Text(t.manga_ocr_delete_confirm_title),
-        content: Text(t.manga_ocr_delete_confirm_message),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.manga_ocr_delete),
-          ),
-        ],
-      ),
+      title: t.manga_ocr_delete_confirm_title,
+      message: t.manga_ocr_delete_confirm_message,
+      icon: Icons.delete_outline,
+      confirmLabel: t.manga_ocr_delete,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => _deleting = true);
     int freed = 0;
     try {

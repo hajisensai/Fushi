@@ -223,27 +223,13 @@ Future<bool> promptCreateLapisIfCannotMine({
   if (settings.canMineCards) return false;
 
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-  final bool confirmed = await showAppDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-          title: Text(t.anki_lapis_suggest_title),
-          content: Text(t.anki_lapis_suggest_body),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(t.anki_lapis_suggest_dismiss),
-            ),
-            adaptiveDialogAction(
-              context: dialogContext,
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(t.anki_create_lapis),
-            ),
-          ],
-        ),
-      ) ??
-      false;
+  final bool confirmed = await showFushiConfirmDialog(
+    context: context,
+    title: t.anki_lapis_suggest_title,
+    message: t.anki_lapis_suggest_body,
+    cancelLabel: t.anki_lapis_suggest_dismiss,
+    confirmLabel: t.anki_create_lapis,
+  );
   if (!confirmed) return false;
 
   final LapisSetupResult result = await viewModel.createLapisSetup();

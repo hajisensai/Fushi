@@ -297,26 +297,13 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     return ok == true;
   }
 
-  Future<bool> _confirmAnkiWeb() async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        title: Text(t.anki_sync_client_ankiweb_title),
-        content: Text(t.anki_sync_client_ankiweb_body),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.anki_sync_client_ankiweb_confirm),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
+  Future<bool> _confirmAnkiWeb() => showFushiConfirmDialog(
+        context: context,
+        title: t.anki_sync_client_ankiweb_title,
+        message: t.anki_sync_client_ankiweb_body,
+        cancelLabel: t.cancel,
+        confirmLabel: t.anki_sync_client_ankiweb_confirm,
+      );
 
   void _toast(String msg) {
     if (!mounted) return;

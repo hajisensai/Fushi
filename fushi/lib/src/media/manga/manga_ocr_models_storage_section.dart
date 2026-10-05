@@ -107,27 +107,17 @@ class _MangaOcrModelsStorageSectionState
   }
 
   Future<void> _confirmDelete(_ModelRow row) async {
-    final bool? ok = await showAppDialog<bool>(
+    final bool ok = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        title: Text(t.manga_ocr_delete_confirm_title),
-        content: Text(
+      title: t.manga_ocr_delete_confirm_title,
+      message:
           '${localModelLabel(row.model)}\n\n'
           '${t.manga_ocr_delete_confirm_message}',
-        ),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.manga_ocr_delete),
-          ),
-        ],
-      ),
+      icon: Icons.delete_outline,
+      confirmLabel: t.manga_ocr_delete,
+      destructive: true,
     );
-    if (ok != true || !mounted) return;
+    if (!ok || !mounted) return;
     setState(() => row.deleting = true);
     int freed = 0;
     try {
