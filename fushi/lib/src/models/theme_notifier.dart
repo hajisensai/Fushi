@@ -2600,7 +2600,9 @@ ThemeData buildFushiThemeData({
       color: cs.outlineVariant,
       // E-ink panels can't render a crisp half-pixel hairline; use a full
       // pixel so dividers stay solid black/white lines.
-      thickness: eink ? 1 : 0.5,
+      // M3 / M3E 分隔线规格 1dp outlineVariant（此前 0.5 的发丝线在 1x 屏上
+      // 被抗锯齿成半透明灰，与 M3E 色块分层的力度不匹配）。
+      thickness: 1,
     ),
   );
 }
