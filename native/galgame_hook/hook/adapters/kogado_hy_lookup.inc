@@ -9,11 +9,12 @@
 //     glyphs on the message panel (the panel chain's offsets, read live) and
 //     on the client, offers / retires the provider, publishes the model for
 //     the game thread and turns claimed presses into registry hits.
-//   * window thread — the game window's procedure, replaced once by the worker
-//     (SetWindowLongPtr, chained to the previous procedure with
-//     CallWindowProc; the window thread is not the script thread that renders
-//     the rows).  The engine reads clicks only as window messages, for mouse
-//     and promoted touch alike.  A left press on exactly one glyph of the
+//   * window thread — the game window's procedure, replaced by the worker for
+//     each game HWND it binds (SetWindowLongPtr, chained to the previous
+//     procedure with CallWindowProc; restored at shutdown while still ours;
+//     the window thread is not the script thread that renders the rows).
+//     The engine reads clicks only as window messages, for mouse and promoted
+//     touch alike.  A left press on exactly one glyph of the
 //     current model, with every gate passing, is swallowed together with its
 //     own UP and queued for the worker; anything else reaches the engine
 //     unchanged.
@@ -77,7 +78,12 @@ struct KogadoHyLookupRuntime {
   kogado_hy::LookupSiteResult site_result =
       kogado_hy::LookupSiteResult::kNoPanelExports;
   bool provider_offered = false;
+  // The bound game window: set only once our procedure is in its chain, so a
+  // destroyed / recreated window (a new HWND) is bound and subclassed afresh.
   HWND window = nullptr;
+  // A window whose procedure refused the replacement: not retried while that
+  // HWND lives, and never offered (its clicks always reach the engine).
+  HWND failed_window = nullptr;
   uint64_t window_retry_tick = 0u;
   uint64_t next_generation = 0u;
   uint64_t processed_submit = 0u;
@@ -91,9 +97,6 @@ struct KogadoHyLookupRuntime {
 
   // ── resolved once ──
   kogado_hy::LookupSites layout;
-
-  bool procedure_replaced = false;
-  bool procedure_failed = false;
 
   // ── window-thread-owned ──
   bool up_pending = false;
@@ -112,10 +115,12 @@ struct KogadoHyLookupRuntime {
 
 KogadoHyLookupRuntime g_kogado_hy_lookup;
 
-// The game window's previous procedure (whoever subclassed it before us) and
-// whether the window is Unicode; set once before the replacement is visible.
+// The bound window's previous procedure (whoever subclassed it before us) and
+// whether that window is Unicode; published before each replacement is
+// visible.  Never cleared: a call already in flight on the window thread may
+// still chain through it after a restore.
 std::atomic<WNDPROC> g_kogado_hy_previous_proc{nullptr};
-bool g_kogado_hy_window_unicode = false;
+std::atomic<bool> g_kogado_hy_window_unicode{false};
 
 template <typename T>
 bool ReadKogadoHyValue(uintptr_t address, T* out) {
@@ -172,7 +177,7 @@ bool ReadKogadoHyUnitPanel(uintptr_t window_object, uintptr_t rows,
 
 // ── HookWorker: units and the model ────────────────────────────────────────
 
-void ReplaceKogadoHyWindowProcedure(HWND window);
+bool ReplaceKogadoHyWindowProcedure(HWND window);
 
 // Called by the text lane for every published unit (kogado_hy_text.inc).
 void NoteKogadoHyPublishedUnit(const KogadoHyPageEvent& event,
@@ -245,7 +250,11 @@ void RetireKogadoHyLookup(uint32_t reason) {
 void FindKogadoHyWindow() {
   auto& rt = g_kogado_hy_lookup;
   if (rt.window != nullptr && IsWindow(rt.window)) return;
+  // Destroyed: its procedure chain went with it, nothing to restore.
   rt.window = nullptr;
+  if (rt.failed_window != nullptr && !IsWindow(rt.failed_window)) {
+    rt.failed_window = nullptr;
+  }
   const uint64_t now = GetTickCount64();
   if (rt.window_retry_tick != 0u &&
       now - rt.window_retry_tick < kKogadoHyWindowRetryMs) {
@@ -282,9 +291,12 @@ void FindKogadoHyWindow() {
         return TRUE;
       },
       reinterpret_cast<LPARAM>(&search));
-  if (search.matches != 1u) return;
+  if (search.matches != 1u || search.window == rt.failed_window) return;
+  if (!ReplaceKogadoHyWindowProcedure(search.window)) {
+    rt.failed_window = search.window;
+    return;
+  }
   rt.window = search.window;
-  ReplaceKogadoHyWindowProcedure(rt.window);
 }
 
 struct KogadoHyDpiScope {
@@ -665,46 +677,77 @@ LRESULT CALLBACK KogadoHyWindowProc(HWND hwnd, UINT message, WPARAM wparam,
   }
   const WNDPROC previous =
       g_kogado_hy_previous_proc.load(std::memory_order_acquire);
-  return g_kogado_hy_window_unicode
-             ? CallWindowProcW(previous, hwnd, message, wparam, lparam)
-             : CallWindowProcA(previous, hwnd, message, wparam, lparam);
+  const bool unicode =
+      g_kogado_hy_window_unicode.load(std::memory_order_acquire);
+  if (previous == nullptr) {
+    return unicode ? DefWindowProcW(hwnd, message, wparam, lparam)
+                   : DefWindowProcA(hwnd, message, wparam, lparam);
+  }
+  return unicode ? CallWindowProcW(previous, hwnd, message, wparam, lparam)
+                 : CallWindowProcA(previous, hwnd, message, wparam, lparam);
 }
 
-// Worker: replace the game window's procedure once, chaining to whatever was
-// there (the engine's VCL procedure or another component's subclass).  Never
-// restored: a later subclass may chain to ours; when the lookup is off the
-// procedure passes everything through.
-void ReplaceKogadoHyWindowProcedure(HWND window) {
-  auto& rt = g_kogado_hy_lookup;
-  if (rt.procedure_replaced || rt.procedure_failed || window == nullptr) return;
-  g_kogado_hy_window_unicode = IsWindowUnicode(window) != FALSE;
-  const LONG_PTR current = g_kogado_hy_window_unicode
-                               ? GetWindowLongPtrW(window, GWLP_WNDPROC)
-                               : GetWindowLongPtrA(window, GWLP_WNDPROC);
-  if (current == 0) {
-    rt.procedure_failed = true;
-    return;
-  }
+LONG_PTR ReadKogadoHyWindowProcedure(HWND window, bool unicode) {
+  return unicode ? GetWindowLongPtrW(window, GWLP_WNDPROC)
+                 : GetWindowLongPtrA(window, GWLP_WNDPROC);
+}
+
+LONG_PTR WriteKogadoHyWindowProcedure(HWND window, bool unicode,
+                                      LONG_PTR procedure) {
+  return unicode ? SetWindowLongPtrW(window, GWLP_WNDPROC, procedure)
+                 : SetWindowLongPtrA(window, GWLP_WNDPROC, procedure);
+}
+
+// Worker: put our procedure into a newly bound game window's chain, chaining
+// to whatever was there (the engine's VCL procedure or another component's
+// subclass).  Called once per HWND; false leaves the window untouched.
+bool ReplaceKogadoHyWindowProcedure(HWND window) {
+  if (window == nullptr) return false;
+  const bool unicode = IsWindowUnicode(window) != FALSE;
+  const LONG_PTR ours = reinterpret_cast<LONG_PTR>(&KogadoHyWindowProc);
+  const LONG_PTR current = ReadKogadoHyWindowProcedure(window, unicode);
+  // Ours already (lost track of it): chaining to ourselves would loop.
+  if (current == 0 || current == ours) return false;
+  // The window thread can enter our procedure the instant the swap lands, so
+  // what it reads is published first.
+  g_kogado_hy_window_unicode.store(unicode, std::memory_order_release);
   g_kogado_hy_previous_proc.store(reinterpret_cast<WNDPROC>(current),
                                   std::memory_order_release);
-  const LONG_PTR replaced =
-      g_kogado_hy_window_unicode
-          ? SetWindowLongPtrW(window, GWLP_WNDPROC,
-                              reinterpret_cast<LONG_PTR>(&KogadoHyWindowProc))
-          : SetWindowLongPtrA(window, GWLP_WNDPROC,
-                              reinterpret_cast<LONG_PTR>(&KogadoHyWindowProc));
+  SetLastError(0);
+  const LONG_PTR replaced = WriteKogadoHyWindowProcedure(window, unicode, ours);
+  const bool ok = replaced != 0 || GetLastError() == 0;
   // The procedure the window really had at the swap is the one to chain to
   // (another component may have subclassed it since we read it; until this
   // store the earlier one, still a valid procedure of the chain, is used).
-  rt.procedure_replaced = replaced != 0;
-  if (rt.procedure_replaced) {
+  if (ok && replaced != 0 && replaced != current) {
     g_kogado_hy_previous_proc.store(reinterpret_cast<WNDPROC>(replaced),
                                     std::memory_order_release);
-  } else {
-    rt.procedure_failed = true;
   }
-  KogadoHyLog(L"kogado-hy-lookup: window procedure replaced=%d unicode=%d",
-              rt.procedure_replaced ? 1 : 0, g_kogado_hy_window_unicode ? 1 : 0);
+  KogadoHyLog(L"kogado-hy-lookup: window=%p procedure replaced=%d unicode=%d",
+              window, ok ? 1 : 0, unicode ? 1 : 0);
+  return ok;
+}
+
+// Worker, shutdown: hand the bound window its previous procedure back, but
+// only while ours is still the head of its chain.  If a later subclass chains
+// to ours, unhooking would cut it off; ours stays and passes everything
+// through (the lookup is retired, so no press is claimed any more).
+void RestoreKogadoHyWindowProcedure() {
+  auto& rt = g_kogado_hy_lookup;
+  const HWND window = rt.window;
+  rt.window = nullptr;
+  if (window == nullptr || !IsWindow(window)) return;
+  const bool unicode =
+      g_kogado_hy_window_unicode.load(std::memory_order_acquire);
+  const WNDPROC previous =
+      g_kogado_hy_previous_proc.load(std::memory_order_acquire);
+  if (previous == nullptr ||
+      ReadKogadoHyWindowProcedure(window, unicode) !=
+          reinterpret_cast<LONG_PTR>(&KogadoHyWindowProc)) {
+    return;
+  }
+  WriteKogadoHyWindowProcedure(window, unicode,
+                               reinterpret_cast<LONG_PTR>(previous));
 }
 
 bool InstallKogadoHyLookup() {
@@ -729,6 +772,8 @@ bool InstallKogadoHyLookup() {
 void ShutdownKogadoHyLookup() {
   auto& rt = g_kogado_hy_lookup;
   RetireKogadoHyLookup(0u);
+  RestoreKogadoHyWindowProcedure();
+  rt.failed_window = nullptr;
   rt.installed = false;
 }
 

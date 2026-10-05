@@ -91,6 +91,35 @@ class GalhookWorkflowTest(unittest.TestCase):
         )
         self.assertTrue(report["session_clean"])
 
+    def test_kogado_hy_replay_pairs_pcm_and_matches_dart_copy(self) -> None:
+        fixture = ROOT / "tests" / "fixtures" / "kogado_hy_replay.json"
+        completed = subprocess.run(
+            [sys.executable, str(TOOL), "replay", str(fixture)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        report = json.loads(completed.stdout)
+        # Hy 没有逐句资源通道：有声页只能配到通用 DirectSound PCM（不掉到 loopback），
+        # 无声旁白页不配任何音频。
+        self.assertEqual(
+            [card["audio_backend"] for card in report["cards"]], ["pcm", None]
+        )
+        self.assertEqual(report["duplicate_text_events"], 1)
+        self.assertEqual(report["thread_filtered_events"], 1)
+        self.assertTrue(report["session_clean"])
+        data = json.loads(fixture.read_text(encoding="utf-8"))
+        self.assertNotIn(
+            "resource_audio", {event["kind"] for event in data["events"]}
+        )
+        dart_copy = (
+            ROOT.parent.parent / "fushi" / "test" / "fixtures" / "galhook"
+            / "kogado_hy_replay.json"
+        )
+        self.assertEqual(
+            json.loads(dart_copy.read_text(encoding="utf-8")), data
+        )
+
     def test_leaf_aquaplus_replay_uses_only_synthetic_text_and_pcm_metadata(
         self,
     ) -> None:
