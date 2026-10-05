@@ -13,6 +13,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// [IptvPlaylistImportDialog] 关窗时交回的结果。
@@ -149,7 +150,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
   @override
   Widget build(BuildContext context) {
     return ImportDialogFrame(
-      leadingIcon: Icons.live_tv_outlined,
+      leadingIcon: FushiIcons.tv,
       title: t.video_iptv_import_title,
       body: Column(
         mainAxisSize: MainAxisSize.min,
@@ -163,18 +164,17 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
             decoration: InputDecoration(
               labelText: t.video_iptv_url_field,
               hintText: 'https://.../playlist.m3u',
-              prefixIcon: const FushiIcon(Icons.link),
-              isDense: true,
+              prefixIcon: const FushiIcon(FushiIcons.link),
             ),
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) {
               if (_canImport) _doImport();
             },
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           FushiOutlinedButton.icon(
             onPressed: importing ? null : _pickFile,
-            icon: const FushiIcon(Icons.playlist_play_outlined),
+            icon: const FushiIcon(FushiIcons.file),
             label: Text(
               _localPath == null
                   ? t.video_iptv_pick_file
@@ -182,10 +182,10 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            t.video_iptv_import_hint,
-            style: Theme.of(context).textTheme.bodySmall,
+          const SizedBox(height: 12),
+          FushiInlineNotice(
+            message: t.video_iptv_import_hint,
+            icon: FushiIcons.info,
           ),
         ],
       ),
