@@ -2,6 +2,8 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -284,6 +286,12 @@ class LibrarySearchField extends StatelessWidget {
 ///
 /// 焦点顺序固定为 搜索 → 筛选 → 工具（[OrderedTraversalPolicy]），与布局无关。
 /// 与下方内容的分隔靠留白，不画分隔线。
+///
+/// 对齐（2026-10-06 用户截图「顶部标签页和搜索栏没对齐」）：左右边距取页面
+/// 统一页边（[FushiSpacingTokens.page]），与外壳大标题、浮动页签胶囊、内容卡片
+/// 同一条左缘 / 右缘。Material（M3E）下行尾工具收进一枚与搜索框同高的悬浮
+/// 按钮组胶囊（[FushiFloatingToolbarSurface]），不再是一排裸图标；Apple 下
+/// [FushiToolbar] 自带分组玻璃胶囊，原样放。
 class LibraryToolbar extends StatelessWidget {
   const LibraryToolbar({
     required this.search,
@@ -296,7 +304,6 @@ class LibraryToolbar extends StatelessWidget {
   });
 
   static const double wideBreakpoint = 640;
-  static const double _hPad = 12;
   static const double _gap = 8;
 
   final Widget search;
@@ -312,14 +319,24 @@ class LibraryToolbar extends StatelessWidget {
   /// 窄屏布局时挂在整块工具条上的 key（测试按它判定走了窄屏两行布局）。
   final Key? compactKey;
 
-  Widget _filterStrip({required bool wide}) {
+  /// 行尾工具的容器：Material 下是与搜索框同高的悬浮按钮组胶囊。
+  static Widget _trailingPill(BuildContext context, Widget child) {
+    if (isGlassDesign(context)) return child;
+    return FushiFloatingToolbarSurface(
+      height: librarySearchFieldHeight(context),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: child,
+    );
+  }
+
+  Widget _filterStrip({required bool wide, required double hPad}) {
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         key: filtersKey,
         scrollDirection: Axis.horizontal,
         // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
         padding: EdgeInsets.symmetric(
-          horizontal: wide ? 0 : _hPad,
+          horizontal: wide ? 0 : hPad,
           vertical: 4,
         ),
         child: Row(
@@ -340,6 +357,7 @@ class LibraryToolbar extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
         final bool wide = width >= wideBreakpoint;
+        final double hPad = FushiDesignTokens.of(context).spacing.page;
         final Widget searchSlot = FocusTraversalOrder(
           order: const NumericFocusOrder(1),
           child: search,
@@ -348,7 +366,7 @@ class LibraryToolbar extends StatelessWidget {
             ? null
             : FocusTraversalOrder(
                 order: const NumericFocusOrder(2),
-                child: _filterStrip(wide: wide),
+                child: _filterStrip(wide: wide, hPad: hPad),
               );
         final Widget? trailingWidget =
             !wide && compactTrailing != null ? compactTrailing : trailing;
@@ -356,13 +374,13 @@ class LibraryToolbar extends StatelessWidget {
             ? null
             : FocusTraversalOrder(
                 order: const NumericFocusOrder(3),
-                child: trailingWidget,
+                child: _trailingPill(context, trailingWidget),
               );
         final Widget body;
         if (wide) {
           final double searchWidth = (width * 0.32).clamp(240.0, 420.0);
           body = Padding(
-            padding: const EdgeInsets.fromLTRB(_hPad, 4, _hPad, 4),
+            padding: EdgeInsets.fromLTRB(hPad, 4, hPad, 4),
             child: Row(
               children: <Widget>[
                 SizedBox(width: searchWidth, child: searchSlot),
@@ -387,12 +405,12 @@ class LibraryToolbar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                  padding: EdgeInsets.symmetric(horizontal: hPad),
                   child: searchSlot,
                 ),
                 const SizedBox(height: 4),
                 Padding(
-                  padding: const EdgeInsetsDirectional.only(end: _hPad),
+                  padding: EdgeInsetsDirectional.only(end: hPad),
                   child: Row(
                     children: <Widget>[
                       Expanded(
@@ -414,7 +432,7 @@ class LibraryToolbar extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: _hPad),
+                  padding: EdgeInsets.symmetric(horizontal: hPad),
                   child: Row(
                     children: <Widget>[
                       Expanded(child: searchSlot),

@@ -169,9 +169,10 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final Widget tags = HorizontalDragScrollable(
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        // 拆段形态与库页工具行（`LibraryToolbar`，左右 12）左缘对齐。
+        // 拆段形态与库页工具行（`LibraryToolbar`，左右取页边）左缘对齐。
         padding: EdgeInsets.symmetric(
-          horizontal: tagsOnly ? 12 : tokens.spacing.rowHorizontal,
+          horizontal:
+              tagsOnly ? tokens.spacing.page : tokens.spacing.rowHorizontal,
           vertical: tokens.spacing.gap * 0.75,
         ),
         // 非钉住形态：整组动作作为**一个**工具栏项跟在标签后面滚动。

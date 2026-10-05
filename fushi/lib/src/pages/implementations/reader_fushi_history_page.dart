@@ -55,6 +55,8 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeReveal, FushiSpringReveal;
 import 'package:fushi_core/fushi_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
 // hibiki_core 未再导出它）。
@@ -685,11 +687,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             kind: DesktopContentKind.readerShelf,
             child: Column(
               children: [
-                if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行（2026-10-04），
-                // 标签 chip 只在有标签时另起一行。
-                _buildSearchBar(allTags.valueOrNull ?? const []),
-                _buildTagBar(allTags.valueOrNull ?? const []),
+                // 页头 / 搜索筛选行 / 标签行与库页外壳的浮动工具栏是同一组工具区：
+                // 往下滚一起收起、往上滚一起弹回（同一个
+                // [FushiFloatingChromeController]，与视频库同构）；不在外壳里时
+                // 原样常驻。
+                FushiFloatingChromeReveal(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                      // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行
+                      // （2026-10-04），标签 chip 只在有标签时另起一行。
+                      _buildSearchBar(allTags.valueOrNull ?? const []),
+                      _buildTagBar(allTags.valueOrNull ?? const []),
+                    ],
+                  ),
+                ),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 SyncProgressBanner(compact: _compactLibraryToolbar),
                 Expanded(
@@ -789,7 +802,18 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                     ),
                   ),
                 ),
-                if (_selectionMode) _buildBatchActionBar(),
+                // 批量栏是多选态的底部浮动工具栏：弹簧从底边浮起 / 沉下（与视频库
+                // 同一形态）。
+                FushiSpringReveal(
+                  visible: _selectionMode,
+                  edge: VerticalDirection.down,
+                  maintainState: false,
+                  // 退出多选后沉下去的那一程还画着上一帧的批量栏（只是不再接
+                  // 指针），沉到底才卸掉。
+                  child: _selectionMode
+                      ? (_lastBatchActionBar = _buildBatchActionBar())
+                      : (_lastBatchActionBar ?? const SizedBox.shrink()),
+                ),
               ],
             ),
           ),
@@ -797,6 +821,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       ),
     );
   }
+
+  /// 最近一次画出的批量栏：退出多选后沉下动画期间继续画它。
+  Widget? _lastBatchActionBar;
 
   bool get _compactLibraryToolbar =>
       windowSizeClassReal(
