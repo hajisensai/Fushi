@@ -24,7 +24,7 @@
 |---|---|---|
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
-| macOS | ✅ | Material Design 3 |
+| macOS | ✅（仅 Apple Silicon） | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
@@ -36,7 +36,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## 安装
 
-从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包与 macOS 构建；iOS 通过 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安装。Linux 暂无预编译包，需自行从源码构建。
+从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包与 macOS 构建（仅 Apple Silicon，不支持 Intel Mac）；iOS 通过 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安装。Linux 暂无预编译包，需自行从源码构建。
 
 > 最低 Android 7.0（API 24）。
 

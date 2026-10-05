@@ -1,35 +1,21 @@
-// 守卫：入库的 macOS 精简 ffmpeg/ffprobe 必须是 **universal**（x86_64 + arm64）。
+// 守卫：入库的 macOS 精简 ffmpeg/ffprobe 的架构必须与 app 本体一致——**恰好 arm64**。
 //
-// 背景（BUG-1668）：`flutter build macos --release` 产出的 app 本体是 universal，
-// 而 `tool/ffmpeg-min/build-ffmpeg-min.sh` 历来只编**构建机自己的架构**，
-// `.github/workflows/ffmpeg-min.yml` 的 macOS job 又跑在 Apple Silicon runner 上。
-// 于是 2.1.1 发出去的包里：
+// 2026-10 起 macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac：Runner 工程
+// `EXCLUDED_ARCHS = x86_64`，release-desktop.yml 有「Verify macOS app is arm64-only」门。
+// 随包 helper 因此也只要 arm64；多出来的 x86_64 切片是 ~21 MB/个的死重。
 //
-//   fushi.app/Contents/MacOS/fushi    universal: x86_64 + arm64
-//   fushi.app/Contents/MacOS/ffmpeg   arm64 only
-//   fushi.app/Contents/MacOS/ffprobe  arm64 only
+// 背景（BUG-1668）：当年 app 本体是 universal、helper 却是 arm64-only，Intel Mac 上
+// app 照常启动、每次 `Process.start('…/Contents/MacOS/ffmpeg')` 却被内核以 EBADARCH
+// 拒掉，制卡音频/封面、内封字幕、片段导出全线静默失效。那条不变式（helper 架构覆盖
+// app 本体架构）现在由 release-desktop.yml 的装配步按 `lipo -archs` 逐个核对；本守卫
+// 不依赖 `lipo`/`file`（Windows、Linux CI 上同样有效），纯字节解析 Mach-O / FAT header，
+// 钉住入库二进制恰好是 arm64：
+//   - 缺 arm64 → 所有受支持的 Mac 上 helper 都跑不起来；
+//   - 多出 x86_64 → 有人 vendor 回了旧的 universal 产物（死重，也说明 ffmpeg-min.yml
+//     又在出双架构）。
 //
-// 在 Intel Mac 上，app 本体照常启动、查词照常可用，但每次
-// `Process.start('…/Contents/MacOS/ffmpeg')` 都被内核以 `Bad CPU type in executable`
-// (EBADARCH) 拒掉 → 音频与首帧抽取全灭 → `requireAudio` → 整卡 abort。用户看到的
-// 就是「生成完成：已处理 0 · 失败 N」。同链路一起哑掉的还有内封字幕抽取与字体、
-// cue 动图、片段导出、音频容器元数据。
-//
-// 为什么既有门禁全部免疫：
-//   - ffmpeg-min.yml 的 smoke-test 跑**刚编出来的**二进制，在 arm64 runner 上跑
-//     arm64 产物，必然通过；
-//   - release-desktop.yml 装配后的 `ffmpeg -version` 同样跑在 arm64 runner 上；
-//   - ffmpeg_min_vendored_recipe_guard 只比对**内嵌 configure 串**的组件清单，
-//     架构不在它的语义里；
-//   - ffmpeg_min_vendored_self_contained_guard 只查有没有外部 dylib 依赖。
-// 上面几道验的都是「能跑 / 编了什么 / 依赖谁」，没有一道验「能在**哪些架构**上跑」。
-//
-// 本守卫补上那条不变式，且不依赖 `lipo`/`file`（Windows、Linux CI 上同样有效）：
-// Mach-O 的 FAT header 与 cputype 都是定长大端/小端整数，纯字节解析即可。
-//
-// 失败即意味着：入库二进制不是 universal —— 重跑 ffmpeg-min.yml（macOS job 现在会
-// 按架构各构建一次再 lipo 合并），把 artifact 重新 vendor 到
-// third_party/ffmpeg-min/macos/，并记得 `git update-index --chmod=+x`。
+// 失败修法：重跑 .github/workflows/ffmpeg-min.yml（macOS job 只出 arm64），把 artifact
+// 重新 vendor 到 third_party/ffmpeg-min/macos/，并记得 `git update-index --chmod=+x`。
 
 import 'dart:io';
 import 'dart:typed_data';
@@ -53,9 +39,9 @@ const Map<int, String> _cpuNames = <int, String>{
   0x0000000C: 'arm',
 };
 
-/// app 本体（`flutter build macos --release`）覆盖的架构。捆绑 helper 必须至少覆盖
-/// 同样这些，否则在少掉的那种 Mac 上 helper 无法执行。
-const List<int> _requiredCpuTypes = <int>[_kCpuTypeX8664, _kCpuTypeArm64];
+/// app 本体（`flutter build macos --release`，Runner `EXCLUDED_ARCHS = x86_64`）的架构。
+/// 捆绑 helper 必须恰好是这些：少了跑不起来，多了是死重。
+const List<int> _requiredCpuTypes = <int>[_kCpuTypeArm64];
 
 Directory _repoRoot() {
   Directory dir = Directory.current;
@@ -108,25 +94,23 @@ void main() {
   final Directory root = _repoRoot();
 
   for (final String tool in <String>['ffmpeg', 'ffprobe']) {
-    test('vendored macOS $tool 必须是 universal（x86_64 + arm64）', () {
+    test('vendored macOS $tool 必须恰好是 arm64', () {
       final File file = File('${root.path}/third_party/ffmpeg-min/macos/$tool');
       expect(file.existsSync(), isTrue,
           reason: '缺 ${file.path}——macOS 发布包靠它，见 release-desktop.yml 的装配步。');
 
       final List<int> types = machoCpuTypes(file.readAsBytesSync());
-      for (final int want in _requiredCpuTypes) {
-        expect(
-          types,
-          contains(want),
-          reason: 'third_party/ffmpeg-min/macos/$tool 缺 ${_cpuNames[want]} 切片'
-              '（实际: ${_describe(types)}）。app 本体是 universal(x86_64+arm64)，'
-              'helper 少哪个架构，那种 Mac 上它就无法执行（Bad CPU type / EBADARCH）：'
-              '制卡音频与封面、内封字幕抽取、片段导出会全线静默失效（BUG-1668）。'
-              '修法：重跑 .github/workflows/ffmpeg-min.yml（macOS job 已改为双架构 '
-              'lipo 合并），把 artifact 重新 vendor 到 third_party/ffmpeg-min/macos/，'
-              '并 `git update-index --chmod=+x`。',
-        );
-      }
+      expect(
+        types,
+        unorderedEquals(_requiredCpuTypes),
+        reason: 'third_party/ffmpeg-min/macos/$tool 的架构是 ${_describe(types)}，'
+            '期望恰好 ${_describe(_requiredCpuTypes)}。macOS 版只出 Apple Silicon，'
+            '缺 arm64 时 helper 在所有 Mac 上都无法执行（制卡音频与封面、内封字幕抽取、'
+            '片段导出全线静默失效，BUG-1668）；多出 x86_64 是旧 universal 产物的死重。'
+            '修法：重跑 .github/workflows/ffmpeg-min.yml（macOS job 只出 arm64），'
+            '把 artifact 重新 vendor 到 third_party/ffmpeg-min/macos/，'
+            '并 `git update-index --chmod=+x`。',
+      );
     });
   }
 
