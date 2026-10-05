@@ -396,14 +396,92 @@ class StatPeriodSummary {
   final VoidCallback? onTap;
 }
 
-/// 统计中心 tab 嵌入态外壳（阶段 2）：右对齐动作行 + 内容。三域统计页在
-/// TabBarView 里不再套各自的 FushiPageScaffold——那会叠出双 Scaffold / 双顶栏，
-/// 且每个 scaffold 都往 PageScrollRegistry 注册滚动控制器互踩手柄翻页目标。
+/// 统计中心各 tab 的页头动作登记处（2026-10-06）：每个 tab 的「目标 / 刷新 /
+/// 清空」不再在页签下方自起一排孤立的图标行，而是登记到这里，由统计中心页头
+/// 右侧的按钮组胶囊画出——只画**当前 tab** 的那一份。
+///
+/// 登记发生在 tab 的 build 期，通知延到帧末（build 期不能让树上更早的页头
+/// 重建）；只有页头本身重建，tab 内容不随之重建，不会形成循环。
+class StatCenterTabActions extends ChangeNotifier {
+  final Map<int, List<Widget>> _byTab = <int, List<Widget>>{};
+  bool _notifyScheduled = false;
+  bool _disposed = false;
+
+  /// 第 [index] 个 tab 当前登记的动作；没登记过（还没建出来）为空。
+  List<Widget> actionsFor(int index) => _byTab[index] ?? const <Widget>[];
+
+  /// 第 [index] 个 tab 登记 / 更新自己的动作。
+  void claim(int index, List<Widget> actions) {
+    _byTab[index] = actions;
+    _scheduleNotify();
+  }
+
+  /// 第 [index] 个 tab 撤回登记（被 TabBarView 卸载时）。
+  void release(int index, List<Widget> actions) {
+    if (!identical(_byTab[index], actions)) return;
+    _byTab.remove(index);
+    _scheduleNotify();
+  }
+
+  void _scheduleNotify() {
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _notifyScheduled = false;
+      if (!_disposed) notifyListeners();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _byTab.clear();
+    super.dispose();
+  }
+}
+
+/// 告诉统计中心里的某个 tab：它是第几个 tab、动作登记到哪里。
+class StatCenterTabScope extends InheritedWidget {
+  const StatCenterTabScope({
+    required this.registry,
+    required this.index,
+    required super.child,
+    super.key,
+  });
+
+  final StatCenterTabActions registry;
+  final int index;
+
+  static StatCenterTabScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<StatCenterTabScope>();
+
+  @override
+  bool updateShouldNotify(StatCenterTabScope oldWidget) =>
+      registry != oldWidget.registry || index != oldWidget.index;
+}
+
+/// 统计中心 tab 嵌入态外壳（阶段 2）。三域统计页在 TabBarView 里不再套各自的
+/// FushiPageScaffold——那会叠出双 Scaffold / 双顶栏，且每个 scaffold 都往
+/// PageScrollRegistry 注册滚动控制器互踩手柄翻页目标。
+///
+/// 在统计中心里（有 [StatCenterTabScope]）：[actions] 登记进页头右侧的按钮组
+/// 胶囊，本层只剩内容。不在统计中心（独立嵌入）时回退旧形态：右对齐动作行 +
+/// 内容。
 Widget buildEmbeddedStatTab(
   BuildContext context,
   List<Widget> actions,
   Widget body,
 ) {
+  final StatCenterTabScope? scope = StatCenterTabScope.maybeOf(context);
+  if (scope != null) {
+    return _StatTabActionsClaim(
+      registry: scope.registry,
+      index: scope.index,
+      actions: actions,
+      child: body,
+    );
+  }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   return Column(
     children: <Widget>[
@@ -417,6 +495,42 @@ Widget buildEmbeddedStatTab(
       Expanded(child: body),
     ],
   );
+}
+
+/// 把一个 tab 的动作登记进 [StatCenterTabActions]，卸载时撤回。
+class _StatTabActionsClaim extends StatefulWidget {
+  const _StatTabActionsClaim({
+    required this.registry,
+    required this.index,
+    required this.actions,
+    required this.child,
+  });
+
+  final StatCenterTabActions registry;
+  final int index;
+  final List<Widget> actions;
+  final Widget child;
+
+  @override
+  State<_StatTabActionsClaim> createState() => _StatTabActionsClaimState();
+}
+
+class _StatTabActionsClaimState extends State<_StatTabActionsClaim> {
+  List<Widget>? _claimed;
+
+  @override
+  void dispose() {
+    final List<Widget>? claimed = _claimed;
+    if (claimed != null) widget.registry.release(widget.index, claimed);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _claimed = widget.actions;
+    widget.registry.claim(widget.index, widget.actions);
+    return widget.child;
+  }
 }
 
 /// 汇总卡两列布局的最小列宽（dp）。低于此宽度时「1234 小时 56 分钟」这类长主值
