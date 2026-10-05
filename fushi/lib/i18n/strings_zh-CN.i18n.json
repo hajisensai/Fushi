@@ -6534,5 +6534,13 @@
   "shortcut_conflict_swap": "交换",
   "shortcut_no_results": "没有匹配的快捷键",
   "shortcut_edit_all_inputs": "完整编辑",
-  "shortcut_read_only": "由系统管理，不可修改"
+  "shortcut_read_only": "由系统管理，不可修改",
+  "settings_reset_to_default": "恢复默认",
+  "settings_modified_hint": "已改过默认值",
+  "settings_search_result_count": "${n} 个结果",
+  "settings_search_open": "搜索设置",
+  "settings_search_empty_title": "没有匹配的设置",
+  "settings_search_empty_hint": "换个更短的词或同义词试试",
+  "settings_jump_to_section": "跳到分组",
+  "settings_section_modified_count": "${n} 项已修改"
 }
