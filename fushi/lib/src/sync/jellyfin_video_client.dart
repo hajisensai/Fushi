@@ -2629,11 +2629,16 @@ class JellyfinVideoClient
         roundTotal = page.totalCount;
         if (enough || localStart >= roundTotal || page.items.isEmpty) break;
         scanned += page.items.length;
-        hits.addAll(
-          mediaServerItemsFrom(page.items)
-              .where((MediaServerItem it) => mediaServerSearchMatches(tokens, it)),
-        );
+        final List<MediaServerItem> pageHits = mediaServerItemsFrom(page.items)
+            .where((MediaServerItem it) => mediaServerSearchMatches(tokens, it))
+            .toList();
+        hits.addAll(pageHits);
         localStart += page.items.length;
+        // BUG-2970：结果按服务器相关度排，一整页都过不了把关 = 本轮后面只剩
+        // 按字模糊的沾边行（兼容层对 1~3 字短查询能回几千行）。直接跳到本轮末尾
+        // 去问下一轮，否则电影轮的沾边尾巴会吃光 [kSearchScanLimit]，剧轮的真命中
+        // 永远扫不到。子串 / 词首前缀语义的服务器每行都命中，不会触发。
+        if (pageHits.isEmpty) localStart = roundTotal;
       }
       total += roundTotal;
       if (inRound) cursor = roundBase + localStart;

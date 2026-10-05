@@ -936,11 +936,50 @@ void main() {
         ]);
       });
 
+      test('相关度序下一整页都不命中就跳过本轮剩余沾边行（BUG-2970），剧轮的真命中第一页就出来', () async {
+        // 全是沾边的电影 900 条 + 精确命中的剧 1 条。
+        http.Response hugeServe(http.Request req) {
+          final Map<String, String> q = req.url.queryParameters;
+          final String type = q['IncludeItemTypes']!;
+          final int start = int.parse(q['StartIndex']!);
+          final int limit = int.parse(q['Limit']!);
+          final int total = type == 'Movie' ? 900 : 1;
+          return _page(<Map<String, Object?>>[
+            for (int i = start; i < total && i < start + limit; i++)
+              if (type == 'Movie')
+                _item('junk$i', 'Movie', name: '怪形 $i')
+              else
+                _item('st', 'Series', name: '怪奇物语', isFolder: true),
+          ], total: total);
+        }
+
+        final _Router r = _Router(hugeServe);
+        final JellyfinVideoClient c = _client(r.client);
+        final MediaServerPage first = await c.search('怪奇物语');
+        expect(first.items.map((MediaServerItem i) => i.id).toList(), <String>[
+          'st',
+        ]);
+        expect(first.totalCount, 901);
+        expect(first.nextStartIndex, 901);
+        expect(first.hasMore, isFalse);
+        expect(
+          r.seen
+              .map(
+                (http.Request q) =>
+                    '${q.url.queryParameters['IncludeItemTypes']}'
+                    '@${q.url.queryParameters['StartIndex']}',
+              )
+              .toList(),
+          <String>['Movie@0', 'Series@0'],
+          reason: '电影轮第一页 100 行全是沾边，不再往下扫剩余 800 行',
+        );
+      });
+
       test(
-        '扫满 kSearchScanLimit 行就先返回：命中可为 0 而 hasMore 仍 true，偏移落在电影轮中段',
+        '扫满 kSearchScanLimit 行就先返回：命中仍在继续时 hasMore 为 true，偏移落在电影轮中段',
         () async {
-          // 全是沾边的电影 900 条 + 精确命中的剧 1 条。
-          http.Response hugeServe(http.Request req) {
+          // 900 部电影每条都真含查询词（子串语义服务器）：一次只扫 500 行。
+          http.Response manyHits(http.Request req) {
             final Map<String, String> q = req.url.queryParameters;
             final String type = q['IncludeItemTypes']!;
             final int start = int.parse(q['StartIndex']!);
@@ -949,16 +988,16 @@ void main() {
             return _page(<Map<String, Object?>>[
               for (int i = start; i < total && i < start + limit; i++)
                 if (type == 'Movie')
-                  _item('junk$i', 'Movie', name: '怪形 $i')
+                  _item('m$i', 'Movie', name: '怪奇物语 $i')
                 else
                   _item('st', 'Series', name: '怪奇物语', isFolder: true),
             ], total: total);
           }
 
-          final _Router r = _Router(hugeServe);
+          final _Router r = _Router(manyHits);
           final JellyfinVideoClient c = _client(r.client);
-          final MediaServerPage first = await c.search('怪奇物语');
-          expect(first.items, isEmpty);
+          final MediaServerPage first = await c.search('怪奇物语', limit: 10000);
+          expect(first.items, hasLength(JellyfinVideoClient.kSearchScanLimit));
           expect(first.totalCount, 901);
           expect(first.nextStartIndex, JellyfinVideoClient.kSearchScanLimit);
           expect(first.hasMore, isTrue);
@@ -969,15 +1008,13 @@ void main() {
           );
           expect(r.seen.last.url.queryParameters['Limit'], '1');
 
-          // 页面按 nextStartIndex 接着扫：剩下 400 条电影 + 剧轮命中。
           final MediaServerPage second = await c.search(
             '怪奇物语',
             startIndex: first.nextStartIndex,
+            limit: 10000,
           );
-          expect(
-            second.items.map((MediaServerItem i) => i.id).toList(),
-            <String>['st'],
-          );
+          expect(second.items, hasLength(401));
+          expect(second.items.first.id, 'st', reason: '精确同名置顶');
           expect(second.nextStartIndex, 901);
           expect(second.hasMore, isFalse);
         },
