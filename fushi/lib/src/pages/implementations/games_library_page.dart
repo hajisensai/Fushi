@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
 
@@ -56,7 +57,6 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
@@ -938,15 +938,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   }
 
   Future<void> _openTagPicker(GalgameEntry game) async {
-    await Navigator.push(
+    await showTagPicker(
       context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => TagPickerPage(
-          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
-        ),
+      targets: TagTargets(
+        media: <MediaRef>[MediaRef(kind: MediaKind.game, entryKey: game.id)],
       ),
     );
+    if (!mounted) return;
     ref.invalidate(allTagsProvider);
     ref.invalidate(gameTagMapProvider);
     ref.invalidate(filteredGameIdsProvider);

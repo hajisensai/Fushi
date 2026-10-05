@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 // Material 3 Expressive（Google 2025-05，Android 16）的按钮动效：Flutter 3.44
@@ -18,17 +19,20 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 //   2px 缝、外端全圆角、内侧小圆角，选中段弹成全胶囊，按下的段变宽、邻段让出。
 // - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居被挤窄。
 //
-// 弹簧取 M3 Expressive 的 motion scheme：按压用「fast spatial」（刚度 1400、
-// 阻尼比 0.9），选中形变用「default spatial」（刚度 700、阻尼比 0.9）。墨水屏与
-// 系统「减少动画」下不做任何形变（保持原有胶囊），见 [fushiExpressiveMotionEnabled]。
+// 弹簧取 M3 Expressive 的 motion scheme（[FushiSprings]，唯一真相源在
+// fushi_motion_tokens.dart）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
+// 形变用 spatial default（刚度 380、阻尼比 0.8）。2026-10-05 前这里写的是
+// 0.9 / 1400 与 0.9 / 700——那是 M3 **standard** motion scheme 的数值，不是
+// Expressive。墨水屏与系统「减少动画」下不做任何形变（保持原有胶囊），见
+// [fushiExpressiveMotionEnabled]。
 
 /// M3 Expressive「fast spatial」弹簧：按压形变 / 宽度挤压。
 final SpringDescription fushiExpressiveFastSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 1400, ratio: 0.9);
+    FushiSprings.spatialFast.description;
 
 /// M3 Expressive「default spatial」弹簧：选中态形变（比按压慢半拍）。
 final SpringDescription fushiExpressiveDefaultSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 700, ratio: 0.9);
+    FushiSprings.spatialDefault.description;
 
 /// 是否做 Expressive 形变动效：墨水屏（残影 + 刷新慢）与系统「减少动画」下
 /// 一律不做——两者都要求界面静止，形变只是装饰，不承载信息。
@@ -37,8 +41,8 @@ bool fushiExpressiveMotionEnabled(BuildContext context) {
   return !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
 }
 
-/// M3 Expressive 图标按钮尺寸档：XS 32 / S 40（默认）/ M 56。
-enum FushiIconButtonSize { xs, s, m }
+/// M3 Expressive 图标按钮尺寸档：XS 32 / S 40（默认）/ M 56 / L 96 / XL 136。
+enum FushiIconButtonSize { xs, s, m, l, xl }
 
 /// M3 Expressive 图标按钮宽度变体：窄 / 默认（正方）/ 宽。
 enum FushiIconButtonWidth { narrow, standard, wide }
@@ -47,7 +51,7 @@ enum FushiIconButtonWidth { narrow, standard, wide }
 enum FushiIconButtonShape { round, square }
 
 /// 图标按钮的容器尺寸（M3 Expressive 规格表：XS 28/32/40×32、S 32/40/52×40、
-/// M 48/56/72×56，依次为窄 / 默认 / 宽）。
+/// M 48/56/72×56、L 64/96/128×96、XL 104/136/184×136，依次为窄 / 默认 / 宽）。
 Size fushiExpressiveIconButtonExtent(
   FushiIconButtonSize size,
   FushiIconButtonWidth width,
@@ -61,6 +65,8 @@ Size fushiExpressiveIconButtonExtent(
     FushiIconButtonSize.xs => (28, 32, 40, 32),
     FushiIconButtonSize.s => (32, 40, 52, 40),
     FushiIconButtonSize.m => (48, 56, 72, 56),
+    FushiIconButtonSize.l => (64, 96, 128, 96),
+    FushiIconButtonSize.xl => (104, 136, 184, 136),
   };
   return Size(switch (width) {
     FushiIconButtonWidth.narrow => narrow,
@@ -69,9 +75,23 @@ Size fushiExpressiveIconButtonExtent(
   }, height);
 }
 
-/// 图标按钮的图标尺寸：XS 20，S / M 24。
-double fushiExpressiveIconSize(FushiIconButtonSize size) =>
-    size == FushiIconButtonSize.xs ? 20 : 24;
+/// 图标按钮的图标尺寸：XS 20，S / M 24，L 32，XL 40。
+double fushiExpressiveIconSize(FushiIconButtonSize size) => switch (size) {
+  FushiIconButtonSize.xs => 20,
+  FushiIconButtonSize.s || FushiIconButtonSize.m => 24,
+  FushiIconButtonSize.l => 32,
+  FushiIconButtonSize.xl => 40,
+};
+
+/// 图标按钮方形 / 选中态的圆角与按下圆角（Compose `IconButton*Tokens`：
+/// XS / S 12→8，M 16→12，L / XL 28→16）。
+({double square, double pressed}) fushiExpressiveIconButtonRadii(
+  FushiIconButtonSize size,
+) => switch (size) {
+  FushiIconButtonSize.xs || FushiIconButtonSize.s => (square: 12, pressed: 8),
+  FushiIconButtonSize.m => (square: 16, pressed: 12),
+  FushiIconButtonSize.l || FushiIconButtonSize.xl => (square: 28, pressed: 16),
+};
 
 /// 一个由弹簧驱动的标量（0 = 静止，1 = 目标态）。重定向时带着当前速度续上，
 /// 快速连点不会「跳帧回零」——这是弹簧比定时曲线更顺的原因。

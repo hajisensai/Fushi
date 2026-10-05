@@ -193,15 +193,28 @@ class GlassSettingsRenderer implements SettingsRenderer {
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => _detailBody(
-            settingsContext: settingsContext,
-            destination: destination,
-            scrollController: controller,
-            sectionSpy: spy,
-            inlineHeader: false,
-            shrinkWrap: false,
-            insetHorizontally: true,
-          ),
+          ) => destination.fillsViewport(settingsContext)
+          // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平
+          // 内边距与顶部一点呼吸，正文占满剩余视口（吸顶工具区 / 两栏导航 /
+          // 粘性分组标题都靠这一点）；底部安全区由正文自己的滚动视图负责。
+          ? Padding(
+              padding: EdgeInsets.fromLTRB(
+                detailHorizontalInset(context),
+                12,
+                detailHorizontalInset(context),
+                0,
+              ),
+              child: destination.body!(settingsContext),
+            )
+          : _detailBody(
+              settingsContext: settingsContext,
+              destination: destination,
+              scrollController: controller,
+              sectionSpy: spy,
+              inlineHeader: false,
+              shrinkWrap: false,
+              insetHorizontally: true,
+            ),
     );
   }
 

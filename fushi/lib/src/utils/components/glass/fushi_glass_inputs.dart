@@ -61,6 +61,8 @@ bool _isSearchDecoration(InputDecoration decoration) {
   while (prefix is Padding) {
     prefix = prefix.child;
   }
+  // 自定义 leading（M3E search bar 的返回箭头 / 菜单钮）显式声明自己是搜索框。
+  if (prefix is FushiSearchLeading) return true;
   // 调用点的图标经全局替换是 FushiIcon（玻璃下映射成 SF 字形），原生 Icon
   // 也认——只认 Icon 会让全部搜索框失去胶囊形态。
   final IconData? icon = switch (prefix) {
@@ -74,6 +76,42 @@ bool _isSearchDecoration(InputDecoration decoration) {
       icon == Icons.search_outlined ||
       icon == CupertinoIcons.search;
 }
+
+/// 搜索框的自定义 leading 包装：把返回箭头 / 菜单钮等放进搜索框前缀位时，
+/// 用它包一层，[fushiMd3FieldDecoration] 与 Apple 分支仍按「搜索框」给全胶囊
+/// （否则前缀不是放大镜就认不出，会退成圆角 12 的普通输入框）。
+class FushiSearchLeading extends StatelessWidget {
+  const FushiSearchLeading({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
+/// M3E outlined 文本框的边框标记：调用方给 `border: const FushiOutlinedFieldBorder()`
+/// 即选 outlined 变体——[fushiMd3FieldDecoration] 认出它后给透明底 + 1px outline
+/// 描边（聚焦 2px 主色、错误 error），标题骑在描边线上（M3
+/// outlined text field）。其余调用默认是 filled 变体。
+class FushiOutlinedFieldBorder extends OutlineInputBorder {
+  const FushiOutlinedFieldBorder({
+    super.borderSide,
+    super.borderRadius = const BorderRadius.all(Radius.circular(12)),
+  });
+
+  @override
+  FushiOutlinedFieldBorder copyWith({
+    BorderSide? borderSide,
+    BorderRadius? borderRadius,
+    double? gapPadding,
+  }) => FushiOutlinedFieldBorder(
+    borderSide: borderSide ?? this.borderSide,
+    borderRadius: borderRadius ?? this.borderRadius,
+  );
+}
+
+/// M3E 文本框状态层：悬停在填充色上叠 8% onSurface（M3 hover state layer）。
+const double kFushiFieldHoverStateOpacity = 0.08;
 
 /// MD3 设计系统下的输入框外观（用户 2026-10-04：「所有输入框都很丑」）。
 ///
@@ -90,6 +128,9 @@ InputDecoration? fushiMd3FieldDecoration(
   if (decoration == null || isEinkTheme(context)) return decoration;
   final InputBorder? border = decoration.border;
   if (border == InputBorder.none) return decoration;
+  if (border is FushiOutlinedFieldBorder) {
+    return _fushiMd3OutlinedDecoration(context, decoration, border);
+  }
   if (border != null &&
       border is! OutlineInputBorder &&
       border is! UnderlineInputBorder) {
@@ -120,7 +161,11 @@ InputDecoration? fushiMd3FieldDecoration(
   return decoration.copyWith(
     filled: true,
     fillColor: decoration.fillColor ?? cs.surfaceContainerHigh,
-    hoverColor: Colors.transparent,
+    // M3E 状态层：悬停 8% onSurface 叠在填充上（InputDecorator 把 hoverColor
+    // 混进 fillColor），鼠标指上去看得见可输入。
+    hoverColor:
+        decoration.hoverColor ??
+        cs.onSurface.withValues(alpha: kFushiFieldHoverStateOpacity),
     border: outline(),
     enabledBorder: outline(),
     disabledBorder: outline(),
@@ -131,6 +176,32 @@ InputDecoration? fushiMd3FieldDecoration(
     prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
     suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
     contentPadding: padding,
+  );
+}
+
+/// M3E outlined 变体（见 [FushiOutlinedFieldBorder]）：透明底、1px outline 描边，
+/// 聚焦 2px 主色、错误 error、禁用 12% onSurface；圆角跟调用方给的边框走。
+InputDecoration _fushiMd3OutlinedDecoration(
+  BuildContext context,
+  InputDecoration decoration,
+  FushiOutlinedFieldBorder border,
+) {
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  InputBorder side(Color color, double width) => border.copyWith(
+    borderSide: BorderSide(color: color, width: width),
+  );
+  return decoration.copyWith(
+    filled: false,
+    hoverColor: Colors.transparent,
+    border: side(cs.outline, 1),
+    enabledBorder: side(cs.outline, 1),
+    disabledBorder: side(cs.onSurface.withValues(alpha: 0.12), 1),
+    focusedBorder: side(cs.primary, 2),
+    errorBorder: side(cs.error, 1),
+    focusedErrorBorder: side(cs.error, 2),
+    hintStyle: decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
+    prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
+    suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
   );
 }
 

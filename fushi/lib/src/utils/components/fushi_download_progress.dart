@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi_engine/media/discovery/discovery_format.dart'
     show formatDiscoveryBytes;
@@ -235,8 +236,8 @@ class FushiDownloadCoverOverlay extends StatelessWidget {
             opacity: v != null && v >= 1 ? 0 : 1,
             duration: reduceMotion
                 ? Duration.zero
-                : const Duration(milliseconds: 280),
-            curve: Curves.easeOut,
+                : FushiMotion.longReverse,
+            curve: FushiSpringCurve.effects,
             child: SizedBox.expand(
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints box) {

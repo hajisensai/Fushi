@@ -60,6 +60,20 @@ Future<void> showLyricsSpeedPanel({
   required double speed,
   required ValueChanged<double> onChanged,
 }) {
+  return showLyricsAnchoredPanel(
+    anchorContext: anchorContext,
+    builder: (BuildContext context) =>
+        LyricsSpeedPanel(speed: speed, onChanged: onChanged),
+  );
+}
+
+/// 从 [anchorContext]（覆盖层控件条上的按钮）弹出一块锚定小面板：优先在按钮
+/// 上方，放不下翻到下方；主题沿用按钮所在的歌词模式主题。倍速面板与「Aa」文字
+/// 面板共用。面板关闭时 Future 完成。
+Future<void> showLyricsAnchoredPanel({
+  required BuildContext anchorContext,
+  required WidgetBuilder builder,
+}) {
   final NavigatorState navigator = Navigator.of(anchorContext);
   final RenderObject? button = anchorContext.findRenderObject();
   final RenderObject? overlay = navigator.overlay?.context.findRenderObject();
@@ -83,8 +97,7 @@ Future<void> showLyricsSpeedPanel({
     _LyricsSpeedPanelRoute(
       anchor: anchor,
       themes: themes,
-      speed: speed,
-      onChanged: onChanged,
+      builder: builder,
       barrierLabel: MaterialLocalizations.of(
         anchorContext,
       ).modalBarrierDismissLabel,
@@ -98,8 +111,7 @@ class _LyricsSpeedPanelRoute extends PopupRoute<void> {
   _LyricsSpeedPanelRoute({
     required this.anchor,
     required this.themes,
-    required this.speed,
-    required this.onChanged,
+    required this.builder,
     required this.barrierLabel,
     required this.enterDuration,
     required this.exitDuration,
@@ -107,8 +119,7 @@ class _LyricsSpeedPanelRoute extends PopupRoute<void> {
 
   final Rect anchor;
   final CapturedThemes themes;
-  final double speed;
-  final ValueChanged<double> onChanged;
+  final WidgetBuilder builder;
   final Duration enterDuration;
   final Duration exitDuration;
 
@@ -140,7 +151,7 @@ class _LyricsSpeedPanelRoute extends PopupRoute<void> {
         child: _AnimatedPanel(
           animation: animation,
           anchor: anchor,
-          child: LyricsSpeedPanel(speed: speed, onChanged: onChanged),
+          child: Builder(builder: builder),
         ),
       ),
     );

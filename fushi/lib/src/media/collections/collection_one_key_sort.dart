@@ -82,37 +82,8 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
   required List<MediaCollectionItemRow> rows,
   required bool byTitle,
 }) async {
-  final List<EpubBookMeta> epubs = await db.getEpubBookMetas();
-  final List<SrtBookRow> srts = await db.getAllSrtBooks();
-  final List<GalgameRow> games = await db.getAllGalgames();
-  final List<VideoBookRow> videos = await db.allVideoBooks();
   final Map<String, ({String title, int importedAt})> meta =
-      <String, ({String title, int importedAt})>{
-    // v83：成员表 epub entryKey = `epub_books.uid`，meta 直接按行内 uid 建键
-    // （uid 为空的异常行回退 bookKey）。透传成员行（远端-only 书，entryKey =
-    // 对端 bookKey）本地无行可查，落 metaOf 的 `(entryKey, 0)` 兜底——刻意如此。
-    for (final EpubBookMeta r in epubs)
-      MediaKind.epub.compositeKey(r.uid.isNotEmpty ? r.uid : r.bookKey): (
-        title: r.title,
-        importedAt: r.importedAt,
-      ),
-    for (final SrtBookRow r in srts)
-      MediaKind.srt.compositeKey(r.uid): (
-        title: r.title,
-        importedAt: r.importedAt,
-      ),
-    for (final GalgameRow r in games)
-      MediaKind.game.compositeKey(r.id): (
-        title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
-        importedAt: r.addedAt,
-      ),
-    for (final VideoBookRow r in videos)
-      MediaKind.video.compositeKey(r.bookUid): (
-        title: r.title,
-        // v57 起 importedAt 才有真值；旧数据 null 按 0（最旧）兜底。
-        importedAt: r.importedAt ?? 0,
-      ),
-  };
+      await loadCollectionMemberMeta(db);
   ({String title, int importedAt}) metaOf(MediaCollectionItemRow r) =>
       meta['${r.mediaType}|${r.entryKey}'] ??
       (title: r.entryKey, importedAt: 0);
@@ -155,4 +126,42 @@ Future<void> applyCollectionOneKeySort({
         (mediaType: r.mediaType, entryKey: r.entryKey),
     ],
   );
+}
+
+/// 合集成员的标题 / 导入时刻（键 = `'<mediaType>|<entryKey>'`），从 epub / srt /
+/// galgames / videoBooks 四表现查。一键整理与合集详情页（搜索 / 卷号 / 添加时间
+/// 排序）共用这一份，两处同口径。
+Future<Map<String, ({String title, int importedAt})>> loadCollectionMemberMeta(
+  FushiDatabase db,
+) async {
+  final List<EpubBookMeta> epubs = await db.getEpubBookMetas();
+  final List<SrtBookRow> srts = await db.getAllSrtBooks();
+  final List<GalgameRow> games = await db.getAllGalgames();
+  final List<VideoBookRow> videos = await db.allVideoBooks();
+  return <String, ({String title, int importedAt})>{
+    // v83：成员表 epub entryKey = `epub_books.uid`，meta 直接按行内 uid 建键
+    // （uid 为空的异常行回退 bookKey）。透传成员行（远端-only 书，entryKey =
+    // 对端 bookKey）本地无行可查，落调用方的 `(entryKey, 0)` 兜底——刻意如此。
+    for (final EpubBookMeta r in epubs)
+      MediaKind.epub.compositeKey(r.uid.isNotEmpty ? r.uid : r.bookKey): (
+        title: r.title,
+        importedAt: r.importedAt,
+      ),
+    for (final SrtBookRow r in srts)
+      MediaKind.srt.compositeKey(r.uid): (
+        title: r.title,
+        importedAt: r.importedAt,
+      ),
+    for (final GalgameRow r in games)
+      MediaKind.game.compositeKey(r.id): (
+        title: GalgameCustomData.decode(r.customDataJson).name ?? r.name,
+        importedAt: r.addedAt,
+      ),
+    for (final VideoBookRow r in videos)
+      MediaKind.video.compositeKey(r.bookUid): (
+        title: r.title,
+        // v57 起 importedAt 才有真值；旧数据 null 按 0（最旧）兜底。
+        importedAt: r.importedAt ?? 0,
+      ),
+  };
 }

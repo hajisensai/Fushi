@@ -489,8 +489,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           tooltip: t.combine_into_series,
         ),
         FushiIconButton(
-          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
-          enabled: localKeys.isNotEmpty,
+          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+          key: const ValueKey<String>('reader_shelf_batch_tag'),
+          enabled: hasLocalSelection,
           onTap: _batchShowTagPicker,
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
@@ -915,21 +916,26 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 幽灵键会让 bookTags 外键插入抛异常，弹窗把落库 await 在 loading 态里，
     // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
     if (!await _pruneStaleSelection() || !mounted) return;
-    final allTags = ref.read(allTagsProvider).valueOrNull;
-    if (allTags == null || allTags.isEmpty) {
-      FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
-      return;
-    }
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => _BatchTagPickerDialog(
-        allTags: allTags,
-        selectedKeys: _selectedLocalKeys,
-        database: appModel.database,
-        parseBookKey: _parseBookKey,
-      ),
+    // 共享标签选择器（搜索 / 一键新建 / 三态）。散卡按 epub=bookKey、srt=uid 成
+    // MediaRef；选中的合集交给选择器的「合集本身 / 合集内全部条目」二选一（单个格子
+    // 模式下选中合集也能批量打标签，不再只作用于散卡）。
+    final List<MediaRef> media = <MediaRef>[
+      for (final String key in _selectedLocalKeys)
+        if (key.startsWith('srt_'))
+          MediaRef(kind: MediaKind.srt, entryKey: key.substring(4))
+        else if (_parseBookKey(key) case final String bookKey)
+          MediaRef(kind: MediaKind.epub, entryKey: bookKey),
+    ];
+    final TagTargets targets = TagTargets(
+      media: media,
+      collectionIds: _selectedCollectionIds.toList()..sort(),
     );
+    if (targets.isEmpty) return;
+    await showTagPicker(context, targets: targets);
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(srtBookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);

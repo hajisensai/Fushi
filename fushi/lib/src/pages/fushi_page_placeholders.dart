@@ -53,6 +53,7 @@ mixin FushiPagePlaceholders<T extends StatefulWidget> on State<T> {
     return Center(
       child: FushiPlaceholderMessage(
         icon: Icons.error_outline,
+        tone: FushiPlaceholderTone.error,
         message: t.error_load_failed,
         detail: error != null ? '$error' : null,
         action: refresh != null

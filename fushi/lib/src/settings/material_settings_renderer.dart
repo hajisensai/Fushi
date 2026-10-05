@@ -201,7 +201,19 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => _detailBody(
+          ) => destination.fillsViewport(settingsContext)
+          // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平
+          // 内边距与顶部一点呼吸，正文占满剩余视口（吸顶工具区 / 两栏导航 /
+          // 粘性分组标题都靠这一点）；底部安全区由正文自己的滚动视图负责。
+          ? Padding(
+              padding: EdgeInsets.fromLTRB(
+                detailHorizontalInsets(FushiDesignTokens.of(context)).left,
+                FushiDesignTokens.of(context).spacing.gap,
+                detailHorizontalInsets(FushiDesignTokens.of(context)).right,
+                0,
+              ),
+              child: destination.body!(settingsContext),
+            ) : _detailBody(
             settingsContext: settingsContext,
             destination: destination,
             scrollController: controller,

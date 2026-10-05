@@ -24,6 +24,7 @@ import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 「浏览」模块里漫画域的在线来源面：扩展仓库 / 扩展目录 / 在线源三节之一
 /// （由 [section] 选）。
@@ -1144,13 +1145,10 @@ class _AidokuRepositorySourcesDialogState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            FushiTextFieldControl(
-              key: const ValueKey<String>('aidoku_repository_search'),
-              decoration: InputDecoration(
-                labelText: t.aidoku_repository_search,
-                prefixIcon: const FushiIcon(Icons.search),
-              ),
-              onChanged: (String value) => setState(() => _query = value),
+            FushiSearchBar(
+              fieldKey: const ValueKey<String>('aidoku_repository_search'),
+              hintText: t.aidoku_repository_search,
+              onQueryChanged: (String value) => setState(() => _query = value),
             ),
             if (_error != null)
               Padding(

@@ -16,16 +16,26 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/fushi_m3e_misc_themes.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
+/// 钉死色上的文字色：黑 / 白里取 WCAG 对比度更高的那个。
+///
+/// 以前用 `ThemeData.estimateBrightnessForColor`（相对亮度阈值 0.15）：亮度落在
+/// 0.15..0.179 之间的中灰（如 #6E6E6E）会被判「亮」配黑字，对比度只有 ~4.1，
+/// 不到 WCAG AA 的 4.5；黑白对比度相等的分界其实是 0.179。直接比对比度，任何
+/// 钉死色都至少 4.58:1。
 Color _readableOnColor(Color color) {
-  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
+  final double l = color.computeLuminance();
+  final double onBlack = (l + 0.05) / 0.05;
+  final double onWhite = 1.05 / (l + 0.05);
+  return onWhite >= onBlack ? Colors.white : Colors.black;
 }
 
 Color _deriveContainer(Color role, Brightness brightness) {
@@ -54,11 +64,28 @@ ColorScheme buildSystemThemeColorScheme({
   if (palette != null) {
     return palette.toColorScheme(brightness: brightness);
   }
+  final Color seed = accent ?? fallbackSeed;
   return ColorScheme.fromSeed(
-    seedColor: accent ?? fallbackSeed,
+    seedColor: seed,
     brightness: brightness,
+    // 灰色系统强调色（Windows「自动」灰 / 石墨）没有可信色相，vibrant 会把量化色相
+    // 拉成鲜蓝；这类 seed 维持 tonalSpot 的低彩度结果。
+    dynamicSchemeVariant: isAchromaticSeed(seed)
+        ? DynamicSchemeVariant.tonalSpot
+        : kFushiDefaultSchemeVariant,
   );
 }
+
+/// M3 Expressive 的默认方案变体：vibrant。
+///
+/// M3E 要「饱和的 container 色块」：tonalSpot 的 primary 彩度只有 36、容器偏灰，
+/// vibrant 把 primary 调色板彩度拉满（同色相，品牌色不跑偏），secondary / tertiary
+/// 容器也更鲜明；expressive 变体会把 primary 色相整体旋转（青色 seed 出紫粉主色），
+/// 预设之间的色相区分与品牌色都会丢，所以不用作默认。角色色调（tone）与 tonalSpot
+/// 同一套，on-色对比度由 DynamicScheme 保证（见 theme_contrast_test.dart）。
+/// 中性灰预设仍用 neutral，无彩度 seed 仍走 monochrome，墨水屏不受影响。
+const DynamicSchemeVariant kFushiDefaultSchemeVariant =
+    DynamicSchemeVariant.vibrant;
 
 /// [buildFushiColorScheme] 的纯函数 memo：`ColorScheme.fromSeed` 走 HCT 色调板
 /// 生成、单次非平凡；阅读设置抽屉的主题选择器每次 rebuild 会对每张色卡各调一次
@@ -91,7 +118,7 @@ const int _hibikiSchemeCacheLimit = 64;
 ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
-  DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
+  DynamicSchemeVariant variant = kFushiDefaultSchemeVariant,
   Color? primary,
   Color? secondary,
   Color? tertiary,
@@ -134,7 +161,13 @@ ColorScheme buildFushiColorScheme({
           ? ColorScheme.fromSeed(
               seedColor: seedColor,
               brightness: brightness,
-              dynamicSchemeVariant: variant,
+              // 无彩度 seed（白 / 灰 / 黑）只有 HCT 量化出的随机色相：vibrant 会把它
+              // 拉成满彩度的蓝，选白色主题却得到鲜蓝强调色。这类 seed 的强调色沿用
+              // tonalSpot 的低彩度版本（与 M3E 前一致）。
+              dynamicSchemeVariant: isAchromaticSeed(seedColor) &&
+                      variant == DynamicSchemeVariant.vibrant
+                  ? DynamicSchemeVariant.tonalSpot
+                  : variant,
             )
           : null;
   final Color? accent = neutral ? (primary ?? accentBase!.primary) : primary;
@@ -930,19 +963,20 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme presets ──────────────────────────────────────────────────
 
-  // 全部走 M3 默认的 tonalSpot（中性灰例外，用 neutral），靠 seed 色相区分——
-  // vibrant 这类高彩度变体会把亮色 primary 推到彩度 80+，不像正常 M3 应用。
+  // 全部走 M3E 默认的 vibrant（[kFushiDefaultSchemeVariant]；中性灰例外，用
+  // neutral），靠 seed 色相区分。2026-10-05 用户「配色统一成 m3e」：此前为「像普通
+  // M3」压回 tonalSpot，M3E 恰恰要饱和的容器色块。
   static const Map<String, ThemePreset> themePresets = {
     'light-theme': (
       seed: Color(0xFF1F4959),
       brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      variant: kFushiDefaultSchemeVariant,
       pureBlack: false,
     ),
     'ecru-theme': (
       seed: Color(0xFF8B7355),
       brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      variant: kFushiDefaultSchemeVariant,
       pureBlack: false,
     ),
     // 水蓝：原 seed #4A7C8F 与品牌青 #1F4959 的 HCT 色相只差 2°，生成的方案逐色
@@ -951,7 +985,7 @@ class ThemeNotifier extends ChangeNotifier {
     'water-theme': (
       seed: Color(0xFF3A6EA5),
       brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      variant: kFushiDefaultSchemeVariant,
       pureBlack: false,
     ),
     // Eye-care (护眼): a warm, low-blue-light sage-green light theme. The seed is a
@@ -962,7 +996,7 @@ class ThemeNotifier extends ChangeNotifier {
     'eyecare-theme': (
       seed: Color(0xFF5E8C63),
       brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      variant: kFushiDefaultSchemeVariant,
       pureBlack: false,
     ),
     // The three dark presets must stay visibly apart (TODO-100): gray by its
@@ -976,19 +1010,19 @@ class ThemeNotifier extends ChangeNotifier {
       pureBlack: false,
     ),
     'dark-theme': (
-      // TonalSpot: the teal Hibiki brand colour (~#8ad0ee).
+      // M3E vibrant: the teal Hibiki brand colour (~#60d4ff).
       seed: Color(0xFF1F4959),
       brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.tonalSpot,
+      variant: kFushiDefaultSchemeVariant,
       pureBlack: false,
     ),
     'black-theme': (
       // 「纯黑」：页面底真黑 #000（与阅读器同名主题的 `#000`、浏览器扩展镜像的
-      // `surface: '#000000'` 一致），强调色是 tonalSpot 靛蓝 (~#bac3ff)。原先的
-      // vibrant 变体给的是藏青底 #0f101a，名不副实。
+      // `surface: '#000000'` 一致），强调色是靛蓝 (~#bac3ff)。底色由 pureBlack
+      // 真黑阶梯钉死，不受变体影响（早年 vibrant 不带真黑阶梯时是藏青底 #0f101a）。
       seed: Color(0xFF3F51B5),
       brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.tonalSpot,
+      variant: kFushiDefaultSchemeVariant,
       pureBlack: true,
     ),
   };
@@ -1321,10 +1355,10 @@ class ThemeNotifier extends ChangeNotifier {
 
   // The M3 scheme variant for the active preset. Presets differ here so the
   // three dark presets (gray/dark/black) stay visually distinct (TODO-100);
-  // custom / system fall back to tonalSpot (their own seed/role overrides /
-  // OS palette already differentiate them).
+  // custom / system fall back to the M3E default variant (their own seed/role
+  // overrides / OS palette already differentiate them).
   DynamicSchemeVariant get _variant {
-    return themePresets[appThemeKey]?.variant ?? DynamicSchemeVariant.tonalSpot;
+    return themePresets[appThemeKey]?.variant ?? kFushiDefaultSchemeVariant;
   }
 
   ThemeData get theme => _buildThemeData(Brightness.light);
@@ -1939,7 +1973,7 @@ ThemeData buildFushiThemeData({
     }),
     foregroundColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       if (states.contains(WidgetState.disabled)) {
-        return cs.onSurface.withValues(alpha: 0.38);
+        return cs.disabledContent;
       }
       if (states.contains(WidgetState.hovered) ||
           states.contains(WidgetState.focused) ||
@@ -1950,7 +1984,7 @@ ThemeData buildFushiThemeData({
     }),
     iconColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       if (states.contains(WidgetState.disabled)) {
-        return cs.onSurface.withValues(alpha: 0.38);
+        return cs.disabledContent;
       }
       return cs.onSurfaceVariant;
     }),
@@ -1964,6 +1998,17 @@ ThemeData buildFushiThemeData({
     useMaterial3: true,
     colorScheme: cs,
     textTheme: tt,
+    // M3E 语义图标（FushiIcons，Material Symbols 可变字体）的全局轴默认：opsz 24
+    // 对应常规 24dp 图标（框架兜底是 48，24dp 下笔画发细）；深色主题 GRAD -25 抵消
+    // 浅色图标的光晕。颜色沿用框架默认（black87 / white），旧 MaterialIcons 与
+    // CupertinoIcons 不是可变字体，这些轴对它们无效、像素不变。
+    iconTheme: IconThemeData(
+      color: cs.brightness == Brightness.dark
+          ? kDefaultIconLightColor
+          : kDefaultIconDarkColor,
+      opticalSize: 24,
+      grade: fushiSymbolGrade(cs.brightness),
+    ),
     // E-ink: swap pages in one frame (single panel refresh, no smearing) and
     // drop ink ripples — a spreading translucent overlay is exactly the kind
     // of repeated partial refresh slow panels render worst.
@@ -2185,7 +2230,7 @@ ThemeData buildFushiThemeData({
         return tt.bodyMedium?.copyWith(
           fontSize: 14,
           color: states.contains(WidgetState.disabled)
-              ? cs.onSurface.withValues(alpha: 0.38)
+              ? cs.disabledContent
               : cs.onSurface,
         );
       }),
@@ -2254,10 +2299,8 @@ ThemeData buildFushiThemeData({
     // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
     // **常驻**覆盖在每个列表右侧的，压住并吞掉最右一列的操作按钮。仓库里 9 处
     // RawScrollbar 都硬写 3，说明 3 才是设计意图，深色只是漏钉。
-    scrollbarTheme: ScrollbarThemeData(
-      thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
-      thumbVisibility: WidgetStateProperty.all(true),
-    ),
+    // M3E：粗细不变、全圆头 + onSurfaceVariant 状态递进拇指（fushi_m3e_misc_themes）。
+    scrollbarTheme: fushiM3eScrollbarTheme(cs: cs, eink: eink),
     // 2026-10：M3 2024 版滑块（16 粗轨道 + 竖条拇指 + 拇指两侧留缝 + 尾端停止
     // 点），与下面的 2024 版进度条同一代视觉；RangeSlider 吃同一份主题。墨水屏
     // 保留 2023 版细轨圆钮与原配色（缝与停止点在低分辨率面板上会糊成灰点）。
@@ -2289,36 +2332,36 @@ ThemeData buildFushiThemeData({
               color: cs.onInverseSurface,
             ),
           ),
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.card,
-      ),
-      insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
-      // 玻璃设计系统：FushiSnackBar 自己把内容画进玻璃胶囊，SnackBar 本体
-      // 必须透明无阴影，否则胶囊外再多一层底。
-      backgroundColor: glassDesign && !eink
-          ? Colors.transparent
-          : glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
-      elevation: glassDesign && !eink ? 0 : null,
+    // M3 Expressive 其余组件（2026-10-05 用户「所有组件都是 m3e」）：提示条 /
+    // tooltip / 徽标 / 日期时间选择器 / 轮播的主题统一在 fushi_m3e_misc_themes.dart，
+    // 这里只调用。提示条与 toast、plain tooltip 同一套「反色浮层」语言。
+    snackBarTheme: fushiM3eSnackBarTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      glassDesign: glassDesign,
+      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
-    // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
-    // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路
-    // 闪），离开 100ms 收起。
-    tooltipTheme: TooltipThemeData(
-      waitDuration: const Duration(milliseconds: 400),
-      exitDuration: const Duration(milliseconds: 100),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity) ??
-            cs.inverseSurface,
-        borderRadius: FushiBorderRadius.chip,
-      ),
-      textStyle: (tt.labelMedium ?? const TextStyle()).copyWith(
-        color: cs.onInverseSurface,
-      ),
+    tooltipTheme: fushiM3eTooltipTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
+    badgeTheme: fushiM3eBadgeTheme(cs: cs, tt: tt, eink: eink),
+    datePickerTheme: fushiM3eDatePickerTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      appleDesign: appleDesign,
+    ),
+    timePickerTheme: fushiM3eTimePickerTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      appleDesign: appleDesign,
+    ),
+    carouselViewTheme: fushiM3eCarouselTheme(cs: cs, eink: eink),
     // 2026-10：M3 2024 版进度条——圆头、轨道与指示器之间留缝、确定态尾端有
     // 停止点，读数比 2023 版的一整条色带清楚。墨水屏保留 2023 版（缝与停止点在
     // 低分辨率面板上会糊成灰点）。
@@ -2368,7 +2411,7 @@ ThemeData buildFushiThemeData({
       dragHandleColor: cs.onSurfaceVariant.withValues(alpha: 0.4),
       dragHandleSize: const Size(32, 4),
       constraints: const BoxConstraints(maxWidth: 640),
-      modalBarrierColor: eink ? null : cs.scrim.withValues(alpha: 0.32),
+      modalBarrierColor: eink ? null : cs.modalScrim,
       surfaceTintColor: Colors.transparent,
       backgroundColor: glassTint(
         cs.surfaceContainerLow,
@@ -2608,13 +2651,7 @@ WidgetStateProperty<Color?> _fushiSoftStateLayer(ColorScheme cs) {
   return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
     final Color base =
         states.contains(WidgetState.selected) ? cs.primary : cs.onSurface;
-    if (states.contains(WidgetState.pressed) ||
-        states.contains(WidgetState.focused)) {
-      return base.withValues(alpha: 0.10);
-    }
-    if (states.contains(WidgetState.hovered)) {
-      return base.withValues(alpha: 0.05);
-    }
-    return null;
+    final double opacity = FushiStateLayer.opacityFor(states, soft: true);
+    return opacity == 0 ? null : base.withValues(alpha: opacity);
   });
 }

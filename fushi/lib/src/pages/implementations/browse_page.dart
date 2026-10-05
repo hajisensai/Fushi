@@ -1151,9 +1151,14 @@ class _BrowseTabKeepAliveState extends State<_BrowseTabKeepAlive>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // 保活页签同时挂在树上：各给一份主滚动控制器，否则多个页签的主滚动视图
+    // 附着同一个外壳控制器、Scrollbar 断言。
     return TickerMode(
       enabled: widget.active,
-      child: ExcludeFocus(excluding: !widget.active, child: widget.child),
+      child: ExcludeFocus(
+        excluding: !widget.active,
+        child: SectionPrimaryScrollScope(child: widget.child),
+      ),
     );
   }
 }

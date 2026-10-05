@@ -87,6 +87,64 @@ Future<bool> showAddToCollectionDialog({
   return true;
 }
 
+/// 合集详情页「移到其他合集」：给一批成员挑目标合集（同库域，BUG-2974 同口径：
+/// 按 [domainKind] / [domainEntryKey] 这个代表成员的媒体库取候选），可新建。
+/// [currentCollectionId] 显示为已在（不可选）。返回目标合集 id；取消 null。
+Future<int?> pickTargetCollectionForMembers({
+  required BuildContext context,
+  required FushiDatabase database,
+  required MediaKind domainKind,
+  required String domainEntryKey,
+  required int currentCollectionId,
+  String defaultNewName = '',
+}) async {
+  final List<MediaCollectionRow> collections =
+      await database.getMediaCollectionsForEntryDomain(
+    domainKind,
+    domainEntryKey,
+  );
+  final List<MediaCollectionItemRow> allItems =
+      await database.getAllCollectionItems();
+  final Map<int, int> memberCounts = <int, int>{};
+  for (final MediaCollectionItemRow item in allItems) {
+    memberCounts[item.collectionId] =
+        (memberCounts[item.collectionId] ?? 0) + 1;
+  }
+  collections.sort(
+    (MediaCollectionRow a, MediaCollectionRow b) => a.name.compareTo(b.name),
+  );
+  if (!context.mounted) return null;
+  const int kCreateNewSentinel = -1;
+  final int? picked = await showAppDialog<int>(
+    context: context,
+    builder: (BuildContext dialogContext) => _AddToCollectionDialog(
+      collections: collections,
+      memberCounts: memberCounts,
+      alreadyIn: <int>{currentCollectionId},
+      createNewSentinel: kCreateNewSentinel,
+    ),
+  );
+  if (picked == null || !context.mounted) return null;
+  if (picked != kCreateNewSentinel) return picked;
+  final String? name = await showCollectionNameDialog(
+    context: context,
+    title: t.create_series,
+    initialName: defaultNewName,
+  );
+  if (name == null || !context.mounted) return null;
+  final MediaCollectionRow? sameName =
+      await database.getMediaCollectionByNaturalKey(name, 'collection');
+  if (sameName != null &&
+      !collections.any((MediaCollectionRow c) => c.id == sameName.id)) {
+    FushiToast.show(
+      msg: t.collection_name_taken_other_library(name: name),
+      severity: ToastSeverity.warning,
+    );
+    return null;
+  }
+  return database.createMediaCollection(name);
+}
+
 class _AddToCollectionDialog extends StatelessWidget {
   const _AddToCollectionDialog({
     required this.collections,
@@ -120,14 +178,21 @@ class _AddToCollectionDialog extends StatelessWidget {
           children: <Widget>[
             FushiListItem(
               key: const ValueKey<String>('add_to_collection_create_new'),
-              leading: const FushiIcon(Icons.add),
+              // M3E 行首形状底：新建 = primary 饱和色块，与已有合集区分。
+              leading: const FushiListLeadingIcon(
+                Icons.add,
+                tone: FushiCardTone.primary,
+              ),
               title: Text(t.create_series),
               onTap: () => Navigator.pop(context, createNewSentinel),
             ),
             for (final MediaCollectionRow collection in collections)
               FushiListItem(
                 key: ValueKey<String>('add_to_collection_${collection.id}'),
-                leading: const FushiIcon(Icons.collections_bookmark_outlined),
+                leading: const FushiListLeadingIcon(
+                  Icons.collections_bookmark_outlined,
+                  shape: FushiLeadingShape.square,
+                ),
                 title: Text(collection.name),
                 subtitle: Text(
                   t.series_item_count(n: memberCounts[collection.id] ?? 0),

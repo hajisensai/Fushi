@@ -79,7 +79,7 @@ class FushiTag extends StatelessWidget {
         foregroundColor ??
         scheme.onSecondaryContainer;
     final TextStyle baseStyle = (textTheme.labelSmall ?? const TextStyle())
-        .copyWith(fontSize: 11, fontWeight: FontWeight.w500, height: 1.2);
+        .copyWith(fontWeight: FontWeight.w500, height: 1.2);
     final TextStyle effectiveStyle = appleColors != null
         ? baseStyle.copyWith(color: effectiveForeground)
         : (style ?? baseStyle.copyWith(color: effectiveForeground));

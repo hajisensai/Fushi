@@ -1150,10 +1150,23 @@ void main() {
           'Reading-settings live preview renders sample BOOK TEXT at the '
           "reader's own (scaled) font size — reader content, not page chrome; "
           'same reviewed exception class as reader_fushi/chrome.part.dart.',
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
-          'In-book quick settings sheet packs reader controls at reader '
-          'density — same reviewed exception class as '
-          'reader_fushi/chrome.part.dart.',
+      // 2026-10 阅读器侧板整合（M3 Expressive）：共享侧板件与导航侧板专用件。
+      // 本身就是侧板的共享原语（与 fushi_material_components 同类），页面经它们
+      // 拿到分级圆角（大容器 28 / 内卡 20 / 小件 12，Apple 14 / 10）与内卡面色。
+      // 原先 reader_quick_settings_sheet.dart 唯一的豁免 token（目录行折叠钮的
+      // VisualDensity.compact）随目录行迁到 ReaderTocRow 后已不再命中，按「不留
+      // 死豁免」纪律删除。
+      'lib/src/reader/reader_panel_kit.dart':
+          'Reader side-panel shared primitives (tabs / progress / quote card / '
+          'empty state / panel card): they ARE the graded M3 Expressive corner '
+          'radii and the one-step-up inner card surface the four reader panels '
+          'route through — same reviewed exception class as '
+          'fushi_material_components.',
+      'lib/src/reader/reader_navigation_widgets.dart':
+          'Navigation panel parts (progress hero, TOC row, cover thumb) draw '
+          'the M3 Expressive shape contrast (28 hero / 20 current-row pill / '
+          '10 cover) on the reading surface — same reviewed exception class as '
+          'reader_audiobook_panel.',
       // Apple 玻璃设计系统 + MD3 Expressive 重设计（PR glass-material）。
       // 1) 设计系统实现层：glass/ 下的 Fushi* 组件与新增 / 改写的共享组件——
       //    与 fushi_design_tokens / fushi_material_components 同一「共享原语本身」类，
@@ -1492,8 +1505,12 @@ void main() {
         'surfaceContainerHighest',
         'BorderRadius.circular(',
       },
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
-        'VisualDensity.compact',
+      'lib/src/reader/reader_panel_kit.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+      },
+      'lib/src/reader/reader_navigation_widgets.dart': <String>{
+        'BorderRadius.circular(',
       },
       'lib/src/reader/reader_settings_preview.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
@@ -2372,11 +2389,10 @@ void main() {
       'Widget buildPlaceholder()',
       'Widget buildMediaItemContent(MediaItem item)',
     );
-    final String batchTagIntentRow = _sectionSource(
-      source,
-      'class _BatchTagIntentRow',
-      source.length,
-    );
+    // 批量打标签已收敛到共享标签选择器（tag_picker_sheet.dart），间距令牌在那里断言。
+    final String batchTagIntentRow = File(
+      'lib/src/media/tags/tag_picker_sheet.dart',
+    ).readAsStringSync();
 
     // 批量操作栏的 chrome（含全部间距）已收敛到共享 [BatchActionBar]，所以令牌
     // 用法要到那份实现里断言；调用点只剩动作按钮，仍不得出现硬编码间距。
@@ -2458,23 +2474,17 @@ void main() {
       'class ReaderHistoryDeleteDialog',
       'class _BookProfileDialog',
     );
-    final String batchTagDialog = _sectionSource(
-      source,
-      'class _BatchTagPickerDialog',
-      'enum _BatchTagIntent',
-    );
+    // 批量 / 单条打标签统一走共享标签选择器 [TagPickerPanel]：窄屏 sheet、宽屏
+    // FushiDialogFrame 弹层，主体是 FushiModalSheetFrame（MD3 chrome 闭环）。
+    final String batchTagDialog = File(
+      'lib/src/media/tags/tag_picker_sheet.dart',
+    ).readAsStringSync();
 
     expect(deleteDialog, contains('FushiDialogFrame('));
     expect(deleteDialog, contains('FushiModalSheetFrame('));
-    // 批量标签对话框的 MD3 chrome 已抽到与视频 tab 共用的
-    // BatchTagPickerDialogFrame；切片断言走共享外壳，再对共享外壳文件
-    // 断言真实 chrome，保证 MD3 保证传递闭环。
-    expect(batchTagDialog, contains('BatchTagPickerDialogFrame('));
-    final String sharedBatchTagFrame = File(
-      'lib/src/utils/components/batch_tag_dialog_frame.dart',
-    ).readAsStringSync();
-    expect(sharedBatchTagFrame, contains('FushiDialogFrame('));
-    expect(sharedBatchTagFrame, contains('FushiModalSheetFrame('));
+    expect(batchTagDialog, contains('FushiDialogFrame('));
+    expect(batchTagDialog, contains('FushiModalSheetFrame('));
+    expect(source, isNot(contains('class _BatchTagPickerDialog')));
     for (final String dialogSource in <String>[deleteDialog, batchTagDialog]) {
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }
@@ -2972,7 +2982,9 @@ void main() {
       'lib/src/sync/sync_compare_dialog.dart',
     ).readAsStringSync();
 
-    expect(dialog, contains('animationStyle: fushiMd3DialogAnimationStyle'));
+    // 2026-10-05 浮层统一成 M3E：三个浮层动效换成弹簧 token（定义在
+    // fushi_m3e_overlays.dart），旧 fushiMd3*AnimationStyle 仍留在 motion 文件里。
+    expect(dialog, contains('animationStyle: fushiM3eDialogAnimationStyle'));
     // adaptiveModalSheet 先按系统「减少动态效果」把共享 sheet 动效收成一个局部
     // sheetMotion（关动效 = AnimationStyle.noAnimation，否则恒为
     // fushiMd3SheetAnimationStyle），三条 showModalBottomSheet 分支（Apple 液态
@@ -2988,7 +3000,7 @@ void main() {
       contains(
         RegExp(
           r'AnimationStyle sheetMotion = noMotion\s*\?\s*'
-          r'AnimationStyle\.noAnimation\s*:\s*fushiMd3SheetAnimationStyle;',
+          r'AnimationStyle\.noAnimation\s*:\s*fushiM3eSheetAnimationStyle;',
         ),
       ),
     );
@@ -3005,7 +3017,7 @@ void main() {
       RegExp(r'sheetAnimationStyle:\s*AnimationStyle\(').hasMatch(modalSheet),
       isFalse,
     );
-    expect(menu, contains('popUpAnimationStyle: fushiMd3MenuAnimationStyle'));
+    expect(menu, contains('popUpAnimationStyle: fushiM3eMenuAnimationStyle'));
     expect(home, contains('showAppDialog<bool>('));
     expect(sync, contains('showAppDialog<int>('));
     expect(home, isNot(contains('showDialog<bool>(')));
@@ -3384,7 +3396,9 @@ void main() {
     );
 
     expect(tileSource, contains('FushiListItem('));
-    expect(tileSource, contains('FushiTagChip('));
+    // 2026-10 重设计：绑定渲染成键帽胶囊（_BindingKeycap，键盘拆成单枚键帽、
+    // 手柄用品牌按钮图标、鼠标 / 滚轮复用 _InputIconChip），不再是文字 tag chip。
+    expect(tileSource, contains('_BindingKeycap('));
     expect(tileSource, isNot(contains('ListTile(')));
     expect(tileSource, isNot(contains('=> Chip(')));
     expect(tileSource, isNot(contains('child: Chip(')));
@@ -3396,20 +3410,30 @@ void main() {
     // through the unified settings detail shell — the bespoke primary-coloured
     // _ScopeSectionHeader and the standalone FushiPageScaffold/ListView are
     // gone. Reset is an in-card AdaptiveSettingsRow action.
+    // 2026-10 单页重设计：分组卡仍是 AdaptiveSettingsSection，分组标题改成吸顶的
+    // _GroupHeader（scope.label + 计数 + 恢复默认），由浏览器 part 渲染。
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
     ).readAsStringSync();
-    final String scopeSections = _functionSource(
-      source,
-      'Widget _buildScopeSections(BuildContext context)',
-      '  @override',
+    final String browser = File(
+      'lib/src/pages/implementations/shortcut_settings/'
+      'shortcut_browser.part.dart',
+    ).readAsStringSync();
+    final String scopeSections = _sectionSource(
+      browser,
+      'Widget _buildResults(',
+      'Widget _buildRow(',
     );
 
     expect(scopeSections, contains('AdaptiveSettingsSection('));
-    expect(scopeSections, contains('title: scope.label'));
-    expect(scopeSections, contains('AdaptiveSettingsRow('));
-    expect(scopeSections, contains('t.shortcut_reset_defaults'));
-    expect(scopeSections, contains('_ActionTile('));
+    expect(scopeSections, contains('PinnedHeaderSliver('));
+    expect(scopeSections, contains('_GroupHeader('));
+    expect(scopeSections, contains('_buildRow('));
+    expect(browser, contains('scope.label'));
+    expect(browser, contains('t.shortcut_reset_defaults'));
+    expect(browser, contains('_ActionTile('));
+    expect(source, contains('AdaptiveSettingsRow('));
+    expect(source, contains('bodyFillsViewport: true'));
 
     // Converged: no bespoke section-header class, no standalone scaffold/list.
     expect(source, isNot(contains('class _ScopeSectionHeader')));

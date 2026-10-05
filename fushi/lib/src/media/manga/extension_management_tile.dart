@@ -480,12 +480,12 @@ class _ExtensionIcon extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: tokens.surfaces.group,
-          borderRadius: tokens.radii.chipRadius,
+          borderRadius: FushiM3eShape.smallRadius,
         ),
         child: url.isEmpty
             ? fallback
             : ClipRRect(
-                borderRadius: tokens.radii.chipRadius,
+                borderRadius: FushiM3eShape.smallRadius,
                 // 🔴 不要换回 Image.network（BUG-1715）：NetworkImage 走 Flutter
                 // 内部 HttpClient，接不进应用代理出口；桌面上索引经代理能拉到、
                 // 图标直连 raw.githubusercontent.com 却失败，列表就全是占位图标。

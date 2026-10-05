@@ -18,6 +18,11 @@ import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationFromVisibleSubtree;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/utils.dart';
 
 /// 视频专用分区壳。
@@ -28,6 +33,17 @@ import 'package:fushi/utils.dart';
 ///
 /// 发现 / 来源 / 扩展与顶层「浏览」模块是同一组组件（2026-10-01 用户拍板加回库页
 /// 子标签），各自过 iOS 合规门 / 视频源宿主门。
+///
+/// 顶部是 M3 Expressive 浮动工具栏（2026-10-05「视频库页面也用浮动工具栏统一」，
+/// [FushiFloatingChromeBar]）：左边分区页签胶囊，右边是当前分区页头动作的悬浮
+/// 按钮组。各分区页面照旧用 [FushiPageHeader] 声明自己的动作，壳在这里挂一个
+/// 自己的 [FushiShellActionsSlot]，页头把动作登记进来、由浮动动作组画出（于是
+/// 首页外壳大标题条右侧不再收视频库的动作）。往下滚收起、往上滚 / 回顶 / 切分区 /
+/// 焦点走进工具栏时弹回（[FushiFloatingChromeController]）。
+///
+/// 不放 FAB：视频库没有「一屏只此一个」的主创建动作——导入是独立分区（还有拖放），
+/// 「继续观看」是首页 hero 内容本身而不是动作；而手机底部已有应用导航栏与多选
+/// 批量栏，再叠一枚 FAB 只会互相遮挡。M3E 规范里 FAB 只给屏幕唯一的主动作。
 class VideoLibraryShell extends StatefulWidget {
   const VideoLibraryShell({
     required this.repository,
@@ -108,17 +124,29 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   /// 发现 / 在线来源 / 扩展三个分区的已访问集合（惰性构建 + 保活）。
   final Set<VideoLibrarySection> _onlineVisited = <VideoLibrarySection>{};
 
-  /// 分区页签的唯一身份。页签同一时刻只交给看得见的那个分区（[_navigationFor]），
-  /// 切分区时它从旧分区的页头挪到新分区的页头；给它一个壳持有的 [GlobalKey]，
-  /// 挪位置就是**同一个** State 换父节点，[TabController] 还停在旧下标、随后
-  /// 滑到新下标。没有这把 key，每个分区都挂一份全新的页签、以目标下标起步，指示条
-  /// 就只剩首页 / 系列 / 全部视图之间（它们共用一个 [HomeVideoPage]）会滑动。
-  final GlobalKey _navigationKey = GlobalKey(
-    debugLabel: 'video-library-sections',
-  );
+  /// 浮动工具栏的显隐（滚动驱动）。
+  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+
+  /// 分区页头登记动作的槽：由浮动动作组画出（见类注释）。
+  final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
+
+  @override
+  void dispose() {
+    _chrome.dispose();
+    _actionsSlot.dispose();
+    super.dispose();
+  }
+
+  bool _onScroll(ScrollNotification notification) {
+    // 隐藏的保活分区后台加载 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
+    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    return _chrome.handleScrollNotification(notification);
+  }
 
   void _select(VideoLibrarySection value) {
     if (value == _section) return;
+    // 换了分区，新页面从顶部开始：工具栏回来。
+    _chrome.show();
     setState(() {
       _section = value;
       if (value == VideoLibrarySection.home ||
@@ -153,8 +181,11 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           false,
       };
 
+  /// 分区页面页头的标题位：页签已在壳顶部的浮动工具栏里（整个壳只有这一份，
+  /// 切分区时指示条在同一个 [TabController] 上从旧分区滑到新分区），页面页头只
+  /// 留一个空标题位来登记自己的动作。
   Widget _navigationFor(bool active, Widget navigation) =>
-      active ? navigation : const SizedBox.shrink();
+      const SizedBox.shrink();
 
   /// 给一个保活子视图套上拖放作用域。
   ///
@@ -168,8 +199,14 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   /// [visible] 是回调而不是 bool：拖放判定只发生在事件到达的瞬间，判据与上面
   /// `offstage:` 用的是同一个表达式，保证「看得见的那个」与「接拖放的那个」
   /// 永远是同一个。
+  ///
+  /// 同时给分区一份自己的主滚动控制器（[SectionPrimaryScrollScope]）：保活分区
+  /// 同时挂在树上，共用外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
   Widget _dropScoped(bool Function() visible, Widget child) =>
-      DropSurfaceScope(isActive: visible, child: child);
+      DropSurfaceScope(
+        isActive: visible,
+        child: SectionPrimaryScrollScope(child: child),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -222,20 +259,41 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         ),
       ];
     final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
-      key: _navigationKey,
       tabs: tabs,
       selected: _section,
       onChanged: _select,
       focusIdPrefix: 'video-library-view',
+      floating: true,
     );
-    return SectionSwipeNavigator<VideoLibrarySection>(
-      sections: <VideoLibrarySection>[
-        for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-          tab.value,
-      ],
-      selected: _section,
-      onSelect: _select,
-      child: _buildSections(navigation),
+    // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
+    // 换成壳自己的，动作改由浮动动作组画。
+    return FushiShellTitleScope(
+      title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
+      actionsSlot: _actionsSlot,
+      child: FushiFloatingChromeScope(
+        controller: _chrome,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            Expanded(
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
+                child: SectionSwipeNavigator<VideoLibrarySection>(
+                  sections: <VideoLibrarySection>[
+                    for (final LibrarySectionTab<VideoLibrarySection> tab
+                        in tabs)
+                      tab.value,
+                  ],
+                  selected: _section,
+                  onSelect: _select,
+                  child: _buildSections(navigation),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

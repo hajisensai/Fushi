@@ -680,7 +680,10 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade>
   void initState() {
     super.initState();
     _progress = AnimationController(vsync: this, duration: _kSlideDuration);
-    _opacity = CurvedAnimation(parent: _progress, curve: Curves.easeOut);
+    _opacity = CurvedAnimation(
+      parent: _progress,
+      curve: FushiSpringCurve.effects,
+    );
     if (widget.visible) _enterVisible();
   }
 
@@ -1560,7 +1563,7 @@ class DictionaryPopupLayer extends StatelessWidget {
           child: pick != null && pick.busy
               ? const SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.more_horiz, size: 20),
         ),
@@ -2005,7 +2008,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
       _dismissing = true;
       _controller
         ..reset()
-        ..animateTo(1.0, curve: Curves.easeOut);
+        ..animateTo(1.0, curve: FushiSpringCurve.effects);
     } else {
       _springBack();
     }
@@ -2023,7 +2026,7 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector>
     _dismissing = false;
     _controller
       ..reset()
-      ..animateTo(1.0, curve: Curves.easeOut);
+      ..animateTo(1.0, curve: FushiSpringCurve.effects);
   }
 
   @override

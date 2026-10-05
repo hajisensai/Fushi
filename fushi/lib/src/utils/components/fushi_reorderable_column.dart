@@ -2,13 +2,18 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show fushiMotionEnabled;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 /// 拖拽重排中「被抬起的那一项」的统一浮层（[FushiReorderableColumn] /
 /// `FushiReorderableGrid` 的自绘浮层；页面里自写的拖拽代理也应套它）。
 ///
 /// - MD3 Expressive：拖拽态 = 浮起面（tokens.surfaces.search）+ elevation 6 投影、无
-///   surface tint，圆角默认 12（行本身无圆角时也给一个，抬起的项像一张卡片）。
+///   surface tint，圆角默认 16（M3E 列表行的「按下 / 拖拽」形变档
+///   [FushiM3eShape.listActive]），并轻微放大 1.02（与 Apple 抬起同一手感）。
 /// - Apple（iOS 26 / macOS 26）：抬起的行是实色二级分组底（不是玻璃）+ 一圈
 ///   柔和的大半径阴影 + 轻微放大 1.02（UITableView 拖拽 lift 的观感），圆角默认 10。
 /// - 墨水屏：无阴影（灰阶抖动），改一圈实描边标出抬起项。
@@ -24,7 +29,7 @@ class FushiReorderDragProxy extends StatelessWidget {
 
   final Widget child;
 
-  /// 浮层圆角；null 走设计系统默认（MD3 12 / Apple 10）。
+  /// 浮层圆角；null 走设计系统默认（MD3 16 / Apple 10）。
   final BorderRadius? borderRadius;
 
   /// 行内容自带背景（封面网格单元等）时传 true：浮层只画阴影不涂底色。
@@ -36,7 +41,9 @@ class FushiReorderDragProxy extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context);
     final BorderRadius radius = borderRadius ??
-        BorderRadius.all(Radius.circular(apple ? 10 : 12));
+        BorderRadius.all(
+          Radius.circular(apple ? 10 : FushiM3eShape.listActive),
+        );
     final Color fill;
     final double elevation;
     final Color shadowColor;
@@ -54,7 +61,7 @@ class FushiReorderDragProxy extends StatelessWidget {
       shadowColor = cs.shadow;
     }
     return Transform.scale(
-      scale: apple && !eink ? 1.02 : 1.0,
+      scale: fushiMotionEnabled(context) ? 1.02 : 1.0,
       child: Material(
         type: MaterialType.canvas,
         color: transparent ? Colors.transparent : fill,

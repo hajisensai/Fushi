@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
-/// 按压反馈：手指 / 鼠标按下时内容轻微缩小，松手带一点回弹放回。
+/// 按压反馈：手指 / 鼠标按下时内容轻微缩小，松手以 M3E spatial fast 弹簧
+/// 回弹放回（[FushiMotionScheme.spatialFast]；Apple 设计系统映射到 SwiftUI 弹簧）。
 ///
 /// 为什么不用 `GestureDetector.onTapDown`：那会把这一层拉进手势竞技场，和内层
 /// `InkWell` / 外层横滑翻页、长按多选抢判定。这里只挂 [Listener]，只**旁观**原始
@@ -40,24 +41,16 @@ class _FushiPressScaleState extends State<FushiPressScale>
   // 访问 controller，那时 element 已 deactivate，AnimationController 查
   // TickerMode 祖先会抛「Looking up a deactivated widget's ancestor is unsafe」
   // （FushiHoverLift 踩过同一个坑）。
+  //
+  // M3E 弹簧（2026-10-05）：按下与松手都走 spatial fast 真实弹簧，控制器值
+  // 直接就是缩放倍数（unbounded：回弹会短暂越过 1，有界控制器会把过冲截掉）。
+  // 松手打断按下动画时沿用当前速度，不会「急停再弹」。
   late final AnimationController _press;
-  late final Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
-    _press = AnimationController(
-      vsync: this,
-      duration: FushiMotion.micro,
-      reverseDuration: FushiMotion.short,
-    );
-    _scale = Tween<double>(begin: 1, end: widget.scale).animate(
-      CurvedAnimation(
-        parent: _press,
-        curve: FushiMotion.standard,
-        reverseCurve: FushiMotion.release.flipped,
-      ),
-    );
+    _press = AnimationController.unbounded(vsync: this, value: 1);
   }
 
   Offset? _downPosition;
@@ -72,7 +65,7 @@ class _FushiPressScaleState extends State<FushiPressScale>
     // 只认主键：右键 / 中键是菜单与平移，不是「按下这张卡」。
     if (event.buttons != kPrimaryButton) return;
     _downPosition = event.position;
-    _press.forward();
+    _press.fushiSpringTo(widget.scale, context.fushiMotion.spatialFast);
   }
 
   void _onMove(PointerMoveEvent event) {
@@ -83,8 +76,8 @@ class _FushiPressScaleState extends State<FushiPressScale>
 
   void _release() {
     _downPosition = null;
-    if (_press.status == AnimationStatus.dismissed) return;
-    _press.reverse();
+    if (!_press.isAnimating && (_press.value - 1).abs() < 1e-3) return;
+    _press.fushiSpringTo(1, context.fushiMotion.spatialFast);
   }
 
   @override
@@ -95,7 +88,7 @@ class _FushiPressScaleState extends State<FushiPressScale>
       onPointerMove: _onMove,
       onPointerUp: (_) => _release(),
       onPointerCancel: (_) => _release(),
-      child: ScaleTransition(scale: _scale, child: widget.child),
+      child: ScaleTransition(scale: _press, child: widget.child),
     );
   }
 }

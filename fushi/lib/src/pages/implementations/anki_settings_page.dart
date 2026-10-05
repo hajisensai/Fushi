@@ -1555,13 +1555,13 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (_supportsAnkiExecutableDetect)
-                IconButton(
+                FushiIconButtonControl(
                   icon: const Icon(Icons.manage_search_outlined),
                   tooltip: t.anki_desktop_executable_detect,
                   onPressed: () => _detectAnkiExecutable(vm),
                 ),
               if (executable.isNotEmpty)
-                IconButton(
+                FushiIconButtonControl(
                   icon: const Icon(Icons.clear),
                   tooltip: t.clear,
                   onPressed: () => vm.setAnkiDesktopExecutable(''),

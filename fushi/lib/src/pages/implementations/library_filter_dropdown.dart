@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
@@ -179,8 +180,8 @@ class LibraryFilterChip extends StatelessWidget
       );
     }
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+      duration: FushiMotion.short,
+      curve: FushiSpringCurve.effects,
       height: height,
       padding: EdgeInsetsDirectional.only(start: active ? 8 : 12, end: 8),
       alignment: Alignment.center,
@@ -228,8 +229,8 @@ class LibraryFilterChip extends StatelessWidget
   }
 }
 
-/// 库页搜索框（书架 / 漫画库 / 视频库 / 游戏库共用一个形态）：MD3 填充胶囊、
-/// Apple 透明玻璃搜索胶囊（都由 [FushiTextFieldControl] 认出前缀放大镜后给出），
+/// 库页搜索框（书架 / 漫画库 / 视频库 / 游戏库共用一个形态）：共享 M3E 搜索栏
+/// [FushiSearchBar]（MD3 填充胶囊、Apple 搜索胶囊），
 /// 高度见 [librarySearchFieldHeight]。有搜索词时尾部出清除钮。搜索词只影响本次
 /// 会话、不落库，由调用方持有 [controller]。
 class LibrarySearchField extends StatelessWidget {
@@ -253,40 +254,17 @@ class LibrarySearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 共享 M3E 搜索栏（FushiSearchBar）：形态与其它搜索框同一实现（MD3 填充
+    // 胶囊 / Apple 搜索胶囊、紧凑清除钮），行为上补齐 IME 组字期间不过滤、
+    // Esc 清空。高度仍按库页工具条的行内控件高。
     return SizedBox(
       height: librarySearchFieldHeight(context),
-      child: ValueListenableBuilder<TextEditingValue>(
-        valueListenable: controller,
-        builder: (BuildContext context, TextEditingValue value, Widget? _) {
-          return FushiTextFieldControl(
-            key: fieldKey,
-            controller: controller,
-            decoration: InputDecoration(
-              isDense: true,
-              prefixIcon: const FushiIcon(Icons.search, size: 18),
-              hintText: hintText,
-              border: const OutlineInputBorder(),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 4,
-              ),
-              // 清除钮必须是紧凑尺寸（与 [FushiSearchField] 同一套 18 + 4）：
-              // 标准图标按钮 40–44 高，比 36 / 40 的定高搜索框还高，Apple 下
-              // 会把输入行撑溢出、文字被挤得偏下（用户 2026-10-04「搜索框文字
-              // 没有垂直居中」）。
-              suffixIcon: value.text.isEmpty
-                  ? null
-                  : FushiIconButton(
-                      icon: Icons.close,
-                      tooltip: t.clear,
-                      size: kFushiSearchFieldIconSize,
-                      padding: const EdgeInsets.all(4),
-                      onTap: onClear,
-                    ),
-            ),
-            onChanged: onChanged,
-          );
-        },
+      child: FushiSearchBar(
+        fieldKey: fieldKey,
+        controller: controller,
+        hintText: hintText,
+        onQueryChanged: onChanged,
+        onClear: onClear,
       ),
     );
   }

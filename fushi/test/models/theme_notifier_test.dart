@@ -135,28 +135,30 @@ void main() {
       );
       expect(
         ThemeNotifier.themePresets['dark-theme']!.variant,
-        DynamicSchemeVariant.tonalSpot,
+        kFushiDefaultSchemeVariant,
       );
-      // 纯黑靠真黑表面区分，强调色走 M3 默认 tonalSpot（不再用高彩度 vibrant）。
+      // 纯黑靠真黑表面区分，强调色走 M3E 默认变体（vibrant）。
       expect(
         ThemeNotifier.themePresets['black-theme']!.variant,
-        DynamicSchemeVariant.tonalSpot,
+        kFushiDefaultSchemeVariant,
       );
       expect(ThemeNotifier.themePresets['black-theme']!.pureBlack, isTrue);
     });
 
-    test('presets stay on M3 default-chroma variants (no vibrant/expressive)',
-        () {
+    // 2026-10-05 用户「配色统一成 m3e」：彩色预设走 M3E 默认 vibrant（饱和容器
+    // 色块、同色相）；不用 expressive——它会旋转 primary 色相，品牌色与预设区分都丢。
+    test('presets use the M3E default variant (gray stays neutral)', () {
+      expect(kFushiDefaultSchemeVariant, DynamicSchemeVariant.vibrant);
       for (final MapEntry<String, ThemePreset> entry
           in ThemeNotifier.themePresets.entries) {
         expect(
-          <DynamicSchemeVariant>[
-            DynamicSchemeVariant.tonalSpot,
-            DynamicSchemeVariant.neutral,
-          ],
-          contains(entry.value.variant),
-          reason: '${entry.key} 用了高彩度变体，亮色 primary 会远超 M3 常规彩度',
+          entry.value.variant,
+          entry.key == 'gray-theme'
+              ? DynamicSchemeVariant.neutral
+              : kFushiDefaultSchemeVariant,
+          reason: '${entry.key} 没走 M3E 默认变体',
         );
+        expect(entry.value.variant, isNot(DynamicSchemeVariant.expressive));
       }
     });
 

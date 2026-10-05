@@ -349,7 +349,7 @@ final pipSearchPositionProvider = StateProvider<int>((ref) => 0);
 ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
-  DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
+  DynamicSchemeVariant variant = theme_notifier.kFushiDefaultSchemeVariant,
   Color? primary,
   Color? secondary,
   Color? tertiary,
@@ -1362,6 +1362,19 @@ class AppModel with ChangeNotifier {
   /// 退出媒体必然重建并恢复 sidebar（单一真值源 + 保证通知），且不触发全局根重建。
   /// 非 macOS 平台不读它（阅读器是盖满的整页路由，与壳 sidebar 无关），纯 no-op。
   final ValueNotifier<bool> mediaOpenNotifier = ValueNotifier<bool>(false);
+
+  /// 宽屏主导航 rail 用户手动选的展开（true）/ 收起（false）；null = 没选过，
+  /// 按窗口尺寸档走默认（见 `adaptiveNavRailExtended`）。首页 rail 与桌面自绘
+  /// 标题栏（按 rail 宽缩进标题）都听它，偏好装载后在 [initialise] 里同步。
+  final ValueNotifier<bool?> navRailExpandedNotifier = ValueNotifier<bool?>(
+    null,
+  );
+
+  /// rail 顶部菜单钮：记住并立即应用新的展开态。
+  Future<void> setNavRailExpanded(bool expanded) async {
+    navRailExpandedNotifier.value = expanded;
+    await prefsRepo.setNavRailExpanded(expanded);
+  }
 
   /// Polls physical game controllers and dispatches them into the shortcut /
   /// focus pipeline on platforms where the Flutter engine does not deliver
@@ -3037,6 +3050,7 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
       // 封面模式默认是音画同步片段：2026-09-28 被钉成 GIF 的存量安装在这里迁一次。
       await prefsRepo.settleMiningImageModeInstallDefault();
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
@@ -3568,6 +3582,7 @@ class AppModel with ChangeNotifier {
   /// switch has written new values.
   Future<void> refreshPrefCache() async {
     await prefsRepo.refreshFromDb();
+    navRailExpandedNotifier.value = prefsRepo.navRailExpanded;
     for (final sourceMap in mediaSources.values) {
       for (final source in sourceMap.values) {
         await source.refreshPreferencesFromDb();
@@ -3779,6 +3794,21 @@ class AppModel with ChangeNotifier {
       '--md-primary': vars['--md-primary']!,
       // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
       '--md-on-primary': vars['--md-on-primary']!,
+      // M3E 视觉层 / m3e-tokens.css 的色角色（与 in-app 注入同源，扩展对齐同一套令牌）。
+      '--md-primary-container': vars['--md-primary-container']!,
+      '--md-on-primary-container': vars['--md-on-primary-container']!,
+      '--md-secondary-container': vars['--md-secondary-container']!,
+      '--md-on-secondary-container': vars['--md-on-secondary-container']!,
+      '--md-tertiary': vars['--md-tertiary']!,
+      '--md-on-tertiary': vars['--md-on-tertiary']!,
+      '--md-tertiary-container': vars['--md-tertiary-container']!,
+      '--md-on-tertiary-container': vars['--md-on-tertiary-container']!,
+      '--md-surface-container-low': vars['--md-surface-container-low']!,
+      '--md-surface-container-highest': vars['--md-surface-container-highest']!,
+      '--md-outline': vars['--md-outline']!,
+      '--md-inverse-surface': vars['--md-inverse-surface']!,
+      '--md-inverse-on-surface': vars['--md-inverse-on-surface']!,
+      '--md-error': vars['--md-error']!,
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
       '--fushi-radius-card': vars['--fushi-radius-card']!,
@@ -4258,6 +4288,23 @@ class AppModel with ChangeNotifier {
 
   Future<void> setReaderControlLayout(ReaderControlLayout layout) =>
       prefsRepo.setReaderControlLayout(layout);
+
+  /// 窄窗（手机竖屏）按钮布局；没存过时沿用存量宽窗自定义（见 prefsRepo）。
+  ReaderControlLayout get readerCompactControlLayout =>
+      prefsRepo.readerCompactControlLayout;
+
+  Future<void> setReaderCompactControlLayout(ReaderControlLayout layout) =>
+      prefsRepo.setReaderCompactControlLayout(layout);
+
+  /// 按窗口宽度取当前生效的按钮布局（< [kReaderControlCompactWidth] 用窄窗那份）。
+  ReaderControlLayout readerControlLayoutFor({required bool compact}) =>
+      compact ? readerCompactControlLayout : readerControlLayout;
+
+  /// 阅读器工具栏样式：`floating`（默认）/ `docked`。
+  String get readerToolbarStyle => prefsRepo.readerToolbarStyle;
+
+  Future<void> setReaderToolbarStyle(String style) =>
+      prefsRepo.setReaderToolbarStyle(style);
 
   /// 视频「快捷键 1..4」自定义动作按钮的绑定（槽位 → 视频动作）。
   VideoCustomActionBindings get videoCustomActionBindings =>

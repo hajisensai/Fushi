@@ -10,6 +10,9 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -456,6 +459,7 @@ bool _isPlainTextContent(Widget? content) =>
 /// 动作是不是按钮：全部是按钮时才按 iOS 26 alert 排成撑满的胶囊（两个并排、
 /// 其余竖排）；夹了 Spacer / 复选框等自定义控件就保留调用方的横排布局。
 bool _isAlertButton(Widget w) =>
+    w is FushiDialogAction ||
     w is FushiTextButton ||
     w is FushiFilledButton ||
     w is FushiOutlinedButton ||
@@ -603,7 +607,7 @@ class FushiAlertDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!isGlassDesign(context) && _adaptive) {
       return AlertDialog.adaptive(
-        icon: icon,
+        icon: _md3HeroIcon(),
         iconPadding: iconPadding,
         iconColor: iconColor,
         title: title,
@@ -640,7 +644,7 @@ class FushiAlertDialog extends StatelessWidget {
     }
     if (!isGlassDesign(context)) {
       return AlertDialog(
-        icon: icon,
+        icon: _md3HeroIcon(),
         iconPadding: iconPadding,
         iconColor: iconColor,
         title: title,
@@ -670,6 +674,14 @@ class FushiAlertDialog extends StatelessWidget {
       );
     }
     return _buildGlass(context);
+  }
+
+  /// M3E：调用方给的图标包进形状库装饰底（[FushiDialogHeroIcon]，9 瓣饼干 +
+  /// secondaryContainer；给了 [iconColor] 时按该色淡染）。已经是 hero 的原样用。
+  Widget? _md3HeroIcon() {
+    final Widget? raw = icon;
+    if (raw == null || raw is FushiDialogHeroIcon) return raw;
+    return FushiDialogHeroIcon(color: iconColor, child: raw);
   }
 
   /// Apple 形态，按内容分两种：
@@ -1069,10 +1081,24 @@ class FushiSimpleDialogOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!isGlassDesign(context)) {
-      return SimpleDialogOption(
-        onPressed: onPressed,
-        padding: padding,
-        child: child,
+      // M3E：选项行左右内缩 12、圆角 16 的状态层（不再横贯整个对话框），
+      // 文字起点与默认 SimpleDialogOption（左 24）对齐。
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Material(
+          type: MaterialType.transparency,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: SimpleDialogOption(
+            onPressed: onPressed,
+            padding:
+                padding ??
+                const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            child: child,
+          ),
+        ),
       );
     }
     final FushiAppleColors apple = appleColorsOf(context);
@@ -1364,9 +1390,11 @@ const double _kMenuPointAnchorExtent = 2;
 const Duration _kAppleMenuOpenDuration = Duration(milliseconds: 480);
 const Duration _kAppleMenuCloseDuration = Duration(milliseconds: 220);
 
-/// MD3 菜单默认时长（调用方给了 popUpAnimationStyle 就用调用方的）。
-const Duration _kMd3MenuOpenDuration = Duration(milliseconds: 250);
-const Duration _kMd3MenuCloseDuration = Duration(milliseconds: 150);
+/// MD3 菜单默认时长（调用方给了 popUpAnimationStyle 就用调用方的）：M3E
+/// fast spatial 弹簧展开（[fushiM3eMenuAnimationStyle]）。
+final Duration _kMd3MenuOpenDuration = fushiM3eMenuAnimationStyle.duration!;
+final Duration _kMd3MenuCloseDuration =
+    fushiM3eMenuAnimationStyle.reverseDuration!;
 
 /// MD3 菜单默认宽度（与 Material 弹出菜单一致：112–280）。
 const BoxConstraints _kMd3MenuConstraints = BoxConstraints(
@@ -1663,9 +1691,10 @@ class _FushiMenuRoute<T> extends PopupRoute<T> {
     } else {
       _progress = CurvedAnimation(
         parent: animation,
-        curve: popUpAnimationStyle?.curve ?? Easing.emphasizedDecelerate,
+        curve: popUpAnimationStyle?.curve ?? fushiM3eMenuAnimationStyle.curve!,
         reverseCurve:
-            popUpAnimationStyle?.reverseCurve ?? Easing.emphasizedAccelerate,
+            popUpAnimationStyle?.reverseCurve ??
+            fushiM3eMenuAnimationStyle.reverseCurve!,
       );
       // 与 Material 弹出菜单同节奏：前 1/3 淡入，关闭时前 2/3 淡出。
       _opacity = CurvedAnimation(
@@ -2263,15 +2292,45 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
     );
   }
 
-  /// MD3 菜单项：调用方的 [PopupMenuEntry] 原样放，initialValue 对应项铺
-  /// highlightColor（与 Material 弹出菜单一致）。
+  /// MD3（M3 Expressive）菜单项：调用方的 [PopupMenuEntry] 原样放；
+  /// initialValue 对应项铺 secondaryContainer 圆角块（左右内缩 4、圆角 12——
+  /// M3E 菜单的当前项不再横贯整个容器）；[PopupMenuDivider] 画成左右内缩 12
+  /// 的分组线（M3E 的分隔线同样不贯穿容器）。
   Widget _md3Entry(
     BuildContext context,
     PopupMenuEntry<T> entry, {
     required bool highlighted,
   }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    if (entry is PopupMenuDivider) {
+      return SizedBox(
+        height: entry.height,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Divider(
+              height: 1,
+              thickness: entry.thickness ?? 1,
+              color: entry.color ?? cs.outlineVariant,
+            ),
+          ),
+        ),
+      );
+    }
     if (!highlighted) return entry;
-    return ColoredBox(color: Theme.of(context).highlightColor, child: entry);
+    if (isEinkTheme(context)) {
+      return ColoredBox(color: Theme.of(context).highlightColor, child: entry);
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: cs.secondaryContainer,
+          borderRadius: const BorderRadius.all(Radius.circular(12)),
+        ),
+        child: entry,
+      ),
+    );
   }
 
   @override
@@ -2322,9 +2381,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         shape:
             route.shape ??
             popupTheme.shape ??
-            const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(4)),
-            ),
+            const RoundedRectangleBorder(borderRadius: FushiBorderRadius.menu),
         color: route.color ?? popupTheme.color ?? cs.surfaceContainer,
         clipBehavior: route.clipBehavior,
         type: MaterialType.card,

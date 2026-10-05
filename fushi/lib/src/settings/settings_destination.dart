@@ -139,6 +139,7 @@ class SettingsDestination {
     this.body,
     this.bodyBeforeSections = false,
     this.bodySearchEntries = const <SettingsBodySearchEntry>[],
+    this.bodyFillsViewport = false,
   });
 
   final SettingsDestinationId id;
@@ -162,6 +163,19 @@ class SettingsDestination {
   /// 自绘正文的搜索元数据。索引器沿子页路径递归收集；声明 hasRevealTarget 的
   /// 行使用真实 SettingsSearchTarget 定位，其余兼容条目只导航到所在页。
   final List<SettingsBodySearchEntry> bodySearchEntries;
+
+  /// 正文自己管滚动、要占满详情视口（吸顶的工具区 / 两栏左侧导航 / 粘性分组
+  /// 标题都依赖这一点——装进外层 SingleChildScrollView 就只能整页一起滚）。
+  ///
+  /// 只对**推入的独立详情页**（[buildDetailPage]）且没有 schema [sections] 的
+  /// destination 生效：此时渲染器保留页头与水平内边距，把 [body] 直接放进剩余
+  /// 视口，不再套外层滚动容器。嵌进父级可滚动宿主（shrinkWrap）的场合仍按旧
+  /// 契约平铺，因为那里本来就没有可占满的视口。
+  final bool bodyFillsViewport;
+
+  /// [bodyFillsViewport] 真正生效的判据（三个渲染器共用，免得各写一份）。
+  bool fillsViewport(SettingsContext context) =>
+      bodyFillsViewport && body != null && visibleSections(context).isEmpty;
 
   bool isVisible(SettingsContext context) => visible?.call(context) ?? true;
 

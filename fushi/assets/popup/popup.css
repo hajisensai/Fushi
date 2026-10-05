@@ -47,6 +47,101 @@ html {
     --on-surface-variant: #44483F;
 }
 
+/* M3 Expressive 设计令牌：以下区块是 fushi/assets/popup/m3e-tokens.css 的逐字副本
+   （改令牌先改那份，再原样拷回；守卫 popup_m3e_tokens_parity_guard_test.dart）。 */
+/* @m3e-tokens:begin */
+html {
+    /* ── 颜色角色（M3 color roles）── */
+    --md-sys-color-primary: var(--md-primary, var(--primary-color, #386A58));
+    --md-sys-color-on-primary: var(--md-on-primary, #ffffff);
+    --md-sys-color-primary-container: var(--md-primary-container, color-mix(in srgb, var(--md-sys-color-primary) 24%, var(--background-color, #ffffff)));
+    --md-sys-color-on-primary-container: var(--md-on-primary-container, var(--text-color, #1a1c19));
+    --md-sys-color-secondary-container: var(--md-secondary-container, color-mix(in srgb, var(--md-sys-color-primary) 14%, var(--background-color, #ffffff)));
+    --md-sys-color-on-secondary-container: var(--md-on-secondary-container, var(--text-color, #1a1c19));
+    --md-sys-color-tertiary: var(--md-tertiary, var(--md-sys-color-primary));
+    --md-sys-color-on-tertiary: var(--md-on-tertiary, var(--md-sys-color-on-primary));
+    --md-sys-color-tertiary-container: var(--md-tertiary-container, var(--md-sys-color-secondary-container));
+    --md-sys-color-on-tertiary-container: var(--md-on-tertiary-container, var(--md-sys-color-on-secondary-container));
+    --md-sys-color-error: var(--md-error, #ba1a1a);
+    --md-sys-color-surface: var(--background-color, #ffffff);
+    --md-sys-color-on-surface: var(--md-on-surface, var(--text-color, #1a1c19));
+    --md-sys-color-on-surface-variant: var(--md-on-surface-variant, var(--on-surface-variant, #44483f));
+    --md-sys-color-surface-container-low: var(--md-surface-container-low, color-mix(in srgb, var(--md-sys-color-on-surface) 3%, var(--md-sys-color-surface)));
+    --md-sys-color-surface-container: var(--md-surface-container, color-mix(in srgb, var(--md-sys-color-on-surface) 5%, var(--md-sys-color-surface)));
+    --md-sys-color-surface-container-high: var(--md-surface-container-high, color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface)));
+    --md-sys-color-surface-container-highest: var(--md-surface-container-highest, color-mix(in srgb, var(--md-sys-color-on-surface) 11%, var(--md-sys-color-surface)));
+    --md-sys-color-outline: var(--md-outline, color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent));
+    --md-sys-color-outline-variant: var(--md-outline-variant, var(--outline-variant, color-mix(in srgb, var(--md-sys-color-on-surface) 18%, transparent)));
+    --md-sys-color-inverse-surface: var(--md-inverse-surface, var(--md-sys-color-on-surface));
+    --md-sys-color-inverse-on-surface: var(--md-inverse-on-surface, var(--md-sys-color-surface));
+
+    /* ── 形状（M3E shape scale）── */
+    --md-sys-shape-corner-none: 0px;
+    --md-sys-shape-corner-extra-small: 4px;
+    --md-sys-shape-corner-small: 8px;
+    --md-sys-shape-corner-medium: 12px;
+    --md-sys-shape-corner-large: 16px;
+    --md-sys-shape-corner-large-increased: 20px;
+    --md-sys-shape-corner-extra-large: 28px;
+    --md-sys-shape-corner-extra-large-increased: 32px;
+    --md-sys-shape-corner-extra-extra-large: 48px;
+    --md-sys-shape-corner-full: 999px;
+
+    /* ── 字阶（px；size / line-height / weight）。emphasized = M3E 强调字重 ── */
+    --md-sys-typescale-display-small-size: 36px;
+    --md-sys-typescale-display-small-line-height: 44px;
+    --md-sys-typescale-headline-small-size: 24px;
+    --md-sys-typescale-headline-small-line-height: 32px;
+    --md-sys-typescale-title-large-size: 22px;
+    --md-sys-typescale-title-large-line-height: 28px;
+    --md-sys-typescale-title-medium-size: 16px;
+    --md-sys-typescale-title-medium-line-height: 24px;
+    --md-sys-typescale-title-small-size: 14px;
+    --md-sys-typescale-title-small-line-height: 20px;
+    --md-sys-typescale-body-large-size: 16px;
+    --md-sys-typescale-body-large-line-height: 24px;
+    --md-sys-typescale-body-medium-size: 14px;
+    --md-sys-typescale-body-medium-line-height: 20px;
+    --md-sys-typescale-body-small-size: 12px;
+    --md-sys-typescale-body-small-line-height: 16px;
+    --md-sys-typescale-label-large-size: 14px;
+    --md-sys-typescale-label-large-line-height: 20px;
+    --md-sys-typescale-label-medium-size: 12px;
+    --md-sys-typescale-label-medium-line-height: 16px;
+    --md-sys-typescale-label-small-size: 11px;
+    --md-sys-typescale-label-small-line-height: 16px;
+    --md-sys-typescale-weight-regular: 400;
+    --md-sys-typescale-weight-medium: 500;
+    --md-sys-typescale-weight-emphasized: 600;
+
+    /* ── 状态层不透明度 ── */
+    --md-sys-state-hover-opacity: 8%;
+    --md-sys-state-focus-opacity: 10%;
+    --md-sys-state-pressed-opacity: 10%;
+    --md-sys-state-dragged-opacity: 16%;
+    --md-sys-state-disabled-content-opacity: 0.38;
+    --md-sys-state-disabled-container-opacity: 12%;
+
+    /* ── 高度（投影）── */
+    --md-sys-elevation-level1: 0 1px 2px rgba(0, 0, 0, 0.18), 0 1px 3px 1px rgba(0, 0, 0, 0.08);
+    --md-sys-elevation-level2: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 6px 2px rgba(0, 0, 0, 0.1);
+    --md-sys-elevation-level3: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 8px 3px rgba(0, 0, 0, 0.1);
+
+    /* ── 动效：M3E 弹簧的 cubic-bezier 近似（spatial 带过冲，effects 不过冲）── */
+    --md-sys-motion-spring-fast-spatial: cubic-bezier(0.42, 1.67, 0.21, 0.90);
+    --md-sys-motion-spring-fast-spatial-duration: 350ms;
+    --md-sys-motion-spring-default-spatial: cubic-bezier(0.38, 1.21, 0.22, 1.00);
+    --md-sys-motion-spring-default-spatial-duration: 500ms;
+    --md-sys-motion-spring-slow-spatial: cubic-bezier(0.39, 1.29, 0.35, 0.98);
+    --md-sys-motion-spring-slow-spatial-duration: 650ms;
+    --md-sys-motion-spring-fast-effects: cubic-bezier(0.31, 0.94, 0.34, 1.00);
+    --md-sys-motion-spring-fast-effects-duration: 150ms;
+    --md-sys-motion-spring-default-effects: cubic-bezier(0.34, 0.80, 0.34, 1.00);
+    --md-sys-motion-spring-default-effects-duration: 200ms;
+    --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+}
+/* @m3e-tokens:end */
+
 html,
 body {
     color: var(--text-color);
@@ -2410,6 +2505,345 @@ html.fushi-glass-host[data-theme] {
        (0,2,0) 的状态规则照旧压得过这里。 */
     color: var(--primary-color);
     opacity: 0.8;
+}
+
+/* =====================================================================
+ * M3 Expressive 视觉层（html.fushi-m3e）。
+ *
+ * 用户 2026-10-05：Material 设计系统一律 M3 Expressive。class 由
+ * popup_settings_injection.dart 的 _themeVariablesJs 在「Material 设计系统 + 非墨水屏」
+ * 时 toggle 上来（Apple 设计系统 / 墨水屏不挂，上面的基础规则与下面的 eink 覆盖照旧）。
+ * 只改观感（色角色 / 圆角 / 字重 / 状态层 / 按压动效），**不动任何会改变标题行高、
+ * 振假名预留、masonry 量高口径的几何**：动作按钮的状态层用 box-shadow 外扩画在盒外，
+ * 不加 padding；卡片只换填充与圆角。
+ *
+ * 全部取 m3e-tokens.css 同源令牌（--md-sys-*）。生成器把 `html.fushi-m3e` 重根为
+ * `:where(#entries-container).fushi-m3e`——浏览器扩展给容器挂同名 class 即可复用整层。
+ * 减弱动态效果：宿主挂 html.fushi-reduced-motion，本层的过渡 / 按压位移在末尾归零。
+ * ===================================================================== */
+
+/* ── 词典结果卡：surfaceContainer 色块分层、16 圆角、无描边无投影 ── */
+html.fushi-m3e .glossary-group {
+    border-color: transparent;
+    border-radius: var(--md-sys-shape-corner-large);
+    background-color: var(--md-sys-color-surface-container);
+    box-shadow: none;
+    padding: 8px 12px;
+}
+
+/* 词典名（卡头）：label-medium、onSurfaceVariant；当前选中词典 = primary 强调。 */
+html.fushi-m3e .dict-label {
+    font-size: var(--md-sys-typescale-label-small-size);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    letter-spacing: 0.02em;
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 1;
+}
+
+html.fushi-m3e .dict-label.selected {
+    color: var(--md-sys-color-primary);
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+/* ── 词头：Emphasized 字重 ── */
+html.fushi-m3e .expression {
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+/* 当前词条指示三角跟主题主色（原为固定 #1a73e8）。 */
+html.fushi-m3e .entry-current .entry-header::before {
+    border-left-color: var(--md-sys-color-primary);
+}
+
+/* ── 标签 chip：小号 8 圆角色块。词性 / 变形 = secondaryContainer；词典内义项标签同族 ── */
+html.fushi-m3e .expr-tag,
+html.fushi-m3e .deinflection-tag,
+html.fushi-m3e .glossary-group > div[data-dictionary] .glossary-tag {
+    border-radius: var(--md-sys-shape-corner-small);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+}
+
+html.fushi-m3e .expr-tag,
+html.fushi-m3e .deinflection-tag {
+    padding: 2px 6px;
+}
+
+/* 频率：tertiary 双段胶囊（词典名实心段 + 数值 container 段）。 */
+html.fushi-m3e .frequency-group {
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    background-color: var(--md-sys-color-tertiary-container);
+    color: var(--md-sys-color-on-tertiary-container);
+}
+
+html.fushi-m3e .frequency-dict-label {
+    background-color: var(--md-sys-color-tertiary);
+    color: var(--md-sys-color-on-tertiary);
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+    padding: 2px 6px;
+}
+
+html.fushi-m3e .frequency-values {
+    padding: 2px 8px 2px 6px;
+    font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+/* 音调来源药丸：primaryContainer 饱和色块。 */
+html.fushi-m3e .pitch-dict-label {
+    background-color: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-on-primary-container);
+}
+
+/* ── 词条头动作按钮（♪ / ☆ / + / 在 Anki 打开）：M3E 标准图标按钮 ──
+   静息 onSurfaceVariant、制卡 + 用 primary 强调；悬停 / 聚焦画一圈 8% / 10% 状态层圆，
+   按下收成圆角方块并回弹（spring）。状态层用 box-shadow 外扩画在盒外，不改按钮盒尺寸。
+   :where() 包住否定条件：保持 (0,2,1) 低于 / 等于既有 :disabled 等状态规则的意图。 */
+html.fushi-m3e .audio-button,
+html.fushi-m3e .open-anki-button,
+html.fushi-m3e .favorite-button:where(:not(.favorited)),
+html.fushi-m3e .clear-draft-button {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 0.9;
+}
+
+html.fushi-m3e .mine-button:where(:not(.latest):not(.duplicate)) {
+    color: var(--md-sys-color-primary);
+    opacity: 1;
+}
+
+html.fushi-m3e .inline-action-button {
+    border-radius: var(--md-sys-shape-corner-full);
+    transition: opacity var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+        background-color var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+        box-shadow var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+        border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+html.fushi-m3e .inline-action-button:where(:not(:disabled)):hover {
+    opacity: 1;
+    background-color: color-mix(in srgb, currentColor var(--md-sys-state-hover-opacity), transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, currentColor var(--md-sys-state-hover-opacity), transparent);
+}
+
+html.fushi-m3e .inline-action-button:where(:not(:disabled)):focus-visible {
+    opacity: 1;
+    outline: none;
+    background-color: color-mix(in srgb, currentColor var(--md-sys-state-focus-opacity), transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, currentColor var(--md-sys-state-focus-opacity), transparent),
+        0 0 0 7px var(--md-sys-color-primary);
+}
+
+html.fushi-m3e .inline-action-button:where(:not(:disabled)):active {
+    opacity: 1;
+    border-radius: var(--md-sys-shape-corner-small);
+    transform: scale(0.86);
+    background-color: color-mix(in srgb, currentColor 14%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 14%, transparent);
+    transition-duration: 90ms;
+    transition-timing-function: var(--md-sys-motion-easing-emphasized);
+}
+
+/* ── 句子上下文步进器：计数选中 = primary 强调（原固定绿）。 ── */
+html.fushi-m3e .sentence-context-picker .context-count.selected {
+    color: var(--md-sys-color-primary);
+}
+
+html.fushi-m3e .sentence-context-picker .context-stepper-btn {
+    border-radius: var(--md-sys-shape-corner-full);
+}
+
+/* ── plain tooltip（按钮悬停提示 / 无音频提示）：反色小块，4 圆角 ── */
+html.fushi-m3e .audio-hint,
+html.fushi-m3e .inline-hint,
+html.fushi-m3e .fushi-btn-tip {
+    border: none;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    padding: 4px 8px;
+    font-size: var(--md-sys-typescale-body-small-size);
+    color: var(--md-sys-color-inverse-on-surface);
+    background: var(--md-sys-color-inverse-surface);
+    box-shadow: none;
+}
+
+/* ── rich tooltip（语法说明）：surfaceContainer 卡、12 圆角、level2；钉住态 16 圆角 ── */
+html.fushi-m3e .grammar-tooltip {
+    border: none;
+    border-radius: var(--md-sys-shape-corner-medium);
+    padding: 12px 16px;
+    color: var(--md-sys-color-on-surface-variant);
+    background: var(--md-sys-color-surface-container);
+    box-shadow: var(--md-sys-elevation-level2);
+}
+
+html.fushi-m3e .grammar-tooltip.is-pinned {
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level3);
+}
+
+html.fushi-m3e .grammar-tooltip.is-pinned .grammar-tooltip-title {
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+/* ── 音频源菜单：M3E 菜单（16 圆角容器、12 圆角项、无描边、level2）── */
+html.fushi-m3e .fushi-audio-menu {
+    border: none;
+    border-radius: var(--md-sys-shape-corner-large);
+    padding: 4px;
+    background: var(--md-sys-color-surface-container);
+    box-shadow: var(--md-sys-elevation-level2);
+}
+
+html.fushi-m3e .fushi-audio-menu-item {
+    border-radius: var(--md-sys-shape-corner-medium);
+}
+
+html.fushi-m3e .fushi-audio-menu-item:hover,
+html.fushi-m3e .fushi-audio-menu-item:focus-visible {
+    color: var(--md-sys-color-on-tertiary-container);
+    background: var(--md-sys-color-tertiary-container);
+}
+
+html.fushi-m3e .fushi-audio-menu-item[aria-disabled="true"] {
+    color: inherit;
+    background: transparent;
+}
+
+/* ── 汉字卡：surfaceContainerHigh 卡（20 圆角）+ 大字落在 primaryContainer 圆角方块里 ── */
+html.fushi-m3e .kanji-card {
+    border: none;
+    border-radius: var(--md-sys-shape-corner-large-increased);
+    padding: 12px 14px;
+    background: var(--md-sys-color-surface-container-high);
+}
+
+html.fushi-m3e .kanji-card-char {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    min-height: 56px;
+    padding: 6px;
+    border-radius: var(--md-sys-shape-corner-large);
+    color: var(--md-sys-color-on-primary-container);
+    background: var(--md-sys-color-primary-container);
+    transition: border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+html.fushi-m3e .kanji-card-char:active {
+    opacity: 1;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    transform: scale(0.94);
+}
+
+html.fushi-m3e .kanji-card-label {
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+    color: var(--md-sys-color-primary);
+}
+
+/* ── 空状态：图标落在 secondaryContainer 色块里，文案 body-medium ── */
+html.fushi-m3e .no-results {
+    opacity: 1;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    gap: 12px;
+}
+
+html.fushi-m3e .no-results-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    font-size: 26px;
+    opacity: 1;
+    border-radius: var(--md-sys-shape-corner-large-increased);
+    background: var(--md-sys-color-secondary-container);
+}
+
+/* ── 加载指示器：形状落在 primaryContainer 圆底上（M3E contained loading indicator）── */
+html.fushi-m3e .popup-loading-shape {
+    box-shadow: 0 0 0 5px var(--md-sys-color-primary-container);
+}
+
+/* ── 链接 / 分隔线 ── */
+html.fushi-m3e a {
+    color: var(--md-sys-color-primary);
+}
+
+html.fushi-m3e hr {
+    border-top-color: var(--md-sys-color-outline-variant);
+}
+
+/* ── 「卡片已在 Anki 中」面板：M3E 对话框（28 圆角、surfaceContainerHigh、24 内边距）── */
+html.fushi-m3e .mined-action-panel {
+    gap: 12px;
+    padding: 24px;
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: var(--md-sys-elevation-level3);
+}
+
+html.fushi-m3e .mined-action-title {
+    font-size: var(--md-sys-typescale-title-large-size);
+    line-height: var(--md-sys-typescale-title-large-line-height);
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+html.fushi-m3e .mined-action-subtitle {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 1;
+}
+
+html.fushi-m3e .mined-action-row {
+    padding: 12px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container);
+}
+
+html.fushi-m3e .mined-action-btn {
+    min-height: 40px;
+    padding: 0 20px;
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+    transition: border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+html.fushi-m3e .mined-action-btn:where(:not(:disabled)):active {
+    border-radius: var(--md-sys-shape-corner-medium);
+    transform: scale(0.96);
+}
+
+html.fushi-m3e .mined-action-btn.ghost {
+    color: var(--md-sys-color-primary);
+    border-color: var(--md-sys-color-outline-variant);
+}
+
+html.fushi-m3e .mined-action-btn.filled {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+}
+
+html.fushi-m3e .mined-action-error {
+    color: var(--md-sys-color-error);
+}
+
+/* ── 减弱动态效果：过渡与按压位移归零（颜色状态层保留，瞬时切换）── */
+html.fushi-m3e.fushi-reduced-motion .inline-action-button,
+html.fushi-m3e.fushi-reduced-motion .kanji-card-char,
+html.fushi-m3e.fushi-reduced-motion .mined-action-btn {
+    transition: none;
+}
+
+html.fushi-m3e.fushi-reduced-motion .inline-action-button:active,
+html.fushi-m3e.fushi-reduced-motion .kanji-card-char:active,
+html.fushi-m3e.fushi-reduced-motion .mined-action-btn:active {
+    transform: none;
 }
 
 /* =====================================================================

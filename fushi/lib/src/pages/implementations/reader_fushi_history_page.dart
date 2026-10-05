@@ -28,6 +28,9 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:fushi/src/media/collections/collection_member_view.dart'
+    show CollectionMemberInfo;
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -117,7 +120,6 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 
@@ -212,6 +214,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   MediaType get mediaType => mediaSource.mediaType;
+
+  /// 本页自己的滚动控制器。书架与漫画库是同一个页面类、取同一个
+  /// `ReaderFushiSource.instance.mediaType`，两个 tab 保活并存；共用
+  /// `mediaType.scrollController` 会让一个控制器附着两个位置，`thumbVisibility`
+  /// 常显的 [RawScrollbar] 每次依赖变化都断言（BUG-1181 遗留）。
+  final ScrollController _shelfScrollController = ScrollController();
 
   @override
   ReaderFushiSource get mediaSource => ReaderFushiSource.instance;
@@ -607,6 +615,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   void dispose() {
     _searchController.dispose();
+    _shelfScrollController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _collectionTablesSub?.cancel();
     _collectionsReloadDebounce?.cancel();
@@ -1772,13 +1781,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       child: RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
-        controller: mediaType.scrollController,
+        controller: _shelfScrollController,
         child: LayoutBuilder(
           // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
           builder: (context, constraints) => RefreshIndicator(
             onRefresh: _pullToRefreshBooks,
             child: CustomScrollView(
-              controller: mediaType.scrollController,
+              controller: _shelfScrollController,
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
@@ -2245,9 +2254,99 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           },
           onDeleteMembersMedia: _deleteCollectionMembersMedia,
           deleteMembersStatisticsSubtitle: _statisticsSubtitle,
+          // 2026-10-06 合集详情重设计：hero 进度 / 继续阅读 / 阅读状态筛选 /
+          // 阅读时间排序 / 列表缩略图读这里；批量标记读完写 EpubBooks.completedAt。
+          memberInfoOf: _collectionMemberInfo,
+          onSetMembersCompleted: _setCollectionMembersCompleted,
         ),
       ),
     );
+  }
+
+  /// 合集详情页成员的展示信息（显示名 / 纯封面 / 进度 / 最后阅读 / 读完），与书架卡
+  /// 同一份数据（可见书列表 + 进度 / 读完 / 最后阅读映射）。认不出的成员（远端占位、
+  /// 视频 / 游戏）返回 null，详情页只显示卡片本身。
+  CollectionMemberInfo? _collectionMemberInfo(String mediaType, String entryKey) {
+    final Map<String, int> lastRead =
+        ref.read(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
+    final MediaKind? kind = MediaKind.tryParse(mediaType);
+    if (kind == MediaKind.srt) {
+      for (final SrtBook book in _visibleSrtBooks) {
+        if (book.uid != entryKey) continue;
+        final String bookKey = book.bookKey;
+        final ({int position, int duration})? p =
+            bookKey.isEmpty ? null : _epubProgressByBookKey[bookKey];
+        return CollectionMemberInfo(
+          title: _srtDisplayTitle(book),
+          cover: _slotCover(_ShelfBookSlot(srt: book), _epubCoverUrisByBookKey),
+          progress: p == null || p.duration <= 0
+              ? null
+              : (p.position / p.duration).clamp(0.0, 1.0),
+          lastReadAt: bookKey.isEmpty
+              ? null
+              : lastReadAtForBookKey(lastRead, _epubUidByKey, bookKey),
+          completed: bookKey.isNotEmpty && _completedBookKeys.contains(bookKey),
+        );
+      }
+      return null;
+    }
+    if (kind == MediaKind.epub) {
+      // v83：uid / bookKey 双判据匹配（与 [_buildCollectionMemberCard] 同口径）。
+      for (final MediaItem item in _visibleEpubBooks) {
+        final String? bookKey = _parseBookKey(item.mediaIdentifier);
+        if (bookKey == null) continue;
+        if (bookKey != entryKey && _epubUidByKey[bookKey] != entryKey) continue;
+        return CollectionMemberInfo(
+          title: mediaSource.getDisplayTitleFromMediaItem(item),
+          cover: _slotCover(_ShelfBookSlot(epub: item), _epubCoverUrisByBookKey),
+          progress: item.duration > 0
+              ? (item.position / item.duration).clamp(0.0, 1.0)
+              : null,
+          lastReadAt: lastReadAtForBookKey(lastRead, _epubUidByKey, bookKey),
+          completed: _completedBookKeys.contains(bookKey),
+        );
+      }
+    }
+    return null;
+  }
+
+  /// 合集详情页多选「标记读完 / 未读」：epub 成员（uid → bookKey）与配对了书的字幕书
+  /// 写 `EpubBooks.completedAt`（与卡菜单「标记为已读完」同一真值）；纯字幕书没有
+  /// 读完载体，跳过。写完先同步刷内存读完集，详情页随即重建就能读到。
+  Future<void> _setCollectionMembersCompleted(
+    List<MediaCollectionItemRow> members,
+    bool completed,
+  ) async {
+    final FushiDatabase db = appModel.database;
+    final Set<String> bookKeys = <String>{};
+    for (final MediaCollectionItemRow m in members) {
+      switch (MediaKind.tryParse(m.mediaType)) {
+        case MediaKind.epub:
+          bookKeys.add(
+            await db.resolveEpubBookKeyByUid(m.entryKey) ?? m.entryKey,
+          );
+        case MediaKind.srt:
+          final SrtBook? book =
+              await SrtBookRepository(db).findByUid(m.entryKey);
+          if (book != null && book.bookKey.isNotEmpty) {
+            bookKeys.add(book.bookKey);
+          }
+        case MediaKind.video:
+        case MediaKind.game:
+        case null:
+          break;
+      }
+    }
+    for (final String bookKey in bookKeys) {
+      await db.setEpubBookCompleted(bookKey, completed ? DateTime.now() : null);
+    }
+    if (!mounted) return;
+    setState(() {
+      _completedBookKeys = completed
+          ? <String>{..._completedBookKeys, ...bookKeys}
+          : _completedBookKeys.difference(bookKeys);
+      _shelfMapsFuture = _loadShelfMaps();
+    });
   }
 
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
@@ -3118,14 +3217,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 失效标签 map 与筛选 provider，卡面 chip 与标签过滤立即刷新。
   Future<void> _openMediaTagPicker(MediaRef media) async {
     Navigator.pop(context);
-    await Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => TagPickerPage(media: media),
-      ),
-    );
+    await showTagPicker(context, targets: TagTargets(media: <MediaRef>[media]));
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     ref.invalidate(filteredSrtBookUidsProvider);
