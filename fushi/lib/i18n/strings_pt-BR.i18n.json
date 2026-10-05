@@ -6495,5 +6495,7 @@
   "reader_nav_search_empty_hint": "Search the whole book, or jump to a character position",
   "reader_nav_favorites_empty": "No favorite sentences in this book yet",
   "reader_stats_last_7_days": "Last 7 days",
-  "reader_stats_session_title": "This session"
+  "reader_stats_session_title": "This session",
+  "home_nav_rail_expand": "Expand navigation",
+  "home_nav_rail_collapse": "Collapse navigation"
 }

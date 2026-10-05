@@ -265,6 +265,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
+  // collapsed）。描述本机窗口布局，不进 Profile 快照。
+  'nav_rail_expanded',
   // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
   'network_proxy_mode',
   // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过

@@ -6495,5 +6495,7 @@
   "reader_nav_search_empty_hint": "搜索全书，或跳到指定字数位置",
   "reader_nav_favorites_empty": "这本书还没有收藏的句子",
   "reader_stats_last_7_days": "近 7 天",
-  "reader_stats_session_title": "本次阅读"
+  "reader_stats_session_title": "本次阅读",
+  "home_nav_rail_expand": "展开导航栏",
+  "home_nav_rail_collapse": "收起导航栏"
 }

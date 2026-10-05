@@ -1274,6 +1274,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 宽屏主导航 rail（MD3 / M3 Expressive）用户手动选的展开 / 收起：
+  /// `''` = 未选过（按窗口尺寸档：expanded 档展开、medium 档收起）、
+  /// `'expanded'` / `'collapsed'`。由 rail 顶部的菜单钮切换并记忆。
+  bool? get navRailExpanded {
+    final String value =
+        getPref('nav_rail_expanded', defaultValue: '') as String;
+    if (value == 'expanded') return true;
+    if (value == 'collapsed') return false;
+    return null;
+  }
+
+  Future<void> setNavRailExpanded(bool expanded) async {
+    await setPref('nav_rail_expanded', expanded ? 'expanded' : 'collapsed');
+  }
+
   bool get reverseReaderBottomBar =>
       getPref('reverse_reader_bottom_bar', defaultValue: false) as bool;
 
