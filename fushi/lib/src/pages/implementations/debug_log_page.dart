@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
@@ -32,7 +33,7 @@ class _DebugLogPageState extends State<DebugLogPage> {
 
     // 设置子页统一壳（settings kit）：浮动页头 + 动作组胶囊，与 schema 详情页一致。
     return SettingsKitScaffold(
-      leadingIcon: Icons.article_outlined,
+      leadingIcon: FushiIcons.file,
       leadingTone: SettingsIconTone.gray,
       title: t.debug_log_title(count: count),
       actions: <Widget>[

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -95,7 +96,7 @@ class SettingsSearchAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return FushiIconButtonControl(
       key: const ValueKey<String>('settings-search-action'),
-      icon: const FushiIcon(Icons.search),
+      icon: const FushiIcon(FushiIcons.search),
       tooltip: t.settings_search_open,
       onPressed: () => showSettingsSearch(context),
     );
@@ -174,7 +175,7 @@ class _SettingsSearchPageState extends BasePageState<SettingsSearchPage>
               child: _query.trim().isEmpty
                   ? Center(
                       child: SettingsEmptyState(
-                        icon: Icons.manage_search_rounded,
+                        icon: FushiIcons.manageSearch,
                         title: t.settings_search_hint,
                         message: t.settings_search_empty_hint,
                       ),
