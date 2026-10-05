@@ -37,23 +37,26 @@ void main() {
       expect(source.contains('class _ThemeColorPicker'), isTrue);
     });
 
-    test('宽屏两栏：列表在左、预览与选色器在右', () {
+    test('宽屏两栏：预览 sticky 在左、编辑在右；取色器按需弹出不常驻', () {
       expect(source.contains('kCustomThemeWideLayoutMinWidth'), isTrue);
-      expect(source.contains('_buildSidePickerCard()'), isTrue);
+      expect(source.contains('_buildSidePickerCard'), isFalse);
       expect(source.contains('_showRolePickerDialog('), isTrue);
+      expect(source.contains('adaptiveModalSheet<void>('), isTrue);
+      expect(source.contains('SettingsKitScaffold('), isTrue);
     });
   });
 
   group('CustomThemePage · 按用途命名的角色与板块', () {
-    test('四个板块按主题色 / 阅读器 / 有声书 / 微调派生色排列', () {
-      final int accent = source.indexOf('t.theme_section_accent');
-      final int reader = source.indexOf('t.theme_section_reader');
-      final int audiobook = source.indexOf('t.theme_section_audiobook');
-      final int fineTune = source.indexOf('t.theme_section_fine_tune');
-      expect(accent, greaterThanOrEqualTo(0));
-      expect(reader, greaterThan(accent));
-      expect(audiobook, greaterThan(reader));
-      expect(fineTune, greaterThan(audiobook));
+    test('分组按 主题色（种子）/ 界面配色 / 阅读器 排列，主题色只有一处', () {
+      final int seed = source.indexOf('title: t.theme_role_accent');
+      final int ui = source.indexOf('title: t.theme_section_accent');
+      final int reader = source.indexOf('title: t.theme_section_reader');
+      expect(seed, greaterThanOrEqualTo(0));
+      expect(ui, greaterThan(seed));
+      expect(reader, greaterThan(ui));
+      // 2026-10 M3E：不再常驻侧栏选色器，也不再在「界面配色」里重复一排主题色板。
+      expect(source.contains('_buildAccentPresetRow'), isFalse);
+      expect(source.contains('_buildTonalPalette()'), isTrue);
     });
 
     test('十个角色全部用 theme_role_* 文案，不再出现 Material 术语 key', () {

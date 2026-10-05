@@ -6,6 +6,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -120,7 +121,7 @@ final Finder _verticalScrollable = find
     .first;
 
 Future<void> _tapApply(WidgetTester tester) async {
-  final Finder apply = find.byIcon(Icons.check);
+  final Finder apply = find.byKey(const ValueKey<String>('custom-theme-apply'));
   await tester.scrollUntilVisible(apply, 200, scrollable: _verticalScrollable);
   await tester.pumpAndSettle();
   await tester.tap(apply);
@@ -221,7 +222,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await _tapSettingsSwitch(tester, 0);
-      expect(find.byIcon(Icons.lock_outline), findsWidgets);
+      expect(find.byIcon(FushiIcons.lock), findsWidgets);
 
       await _tapApply(tester);
       final CustomThemeEntry saved = appModel.upserts.single;
@@ -250,12 +251,9 @@ void main() {
 
       await _tapRow(tester, t.theme_role_surface);
       expect(find.byType(ColorPickerArea), findsOneWidget);
-      // 预设第一格是纯白。
-      final Finder white = find.byWidgetPredicate(
-        (Widget w) =>
-            w is FushiColorSwatch &&
-            w.onTap != null &&
-            w.color.toARGB32() == 0xFFFFFFFF,
+      // 预设第一格是纯白（取色器色板格按颜色挂 key）。
+      final Finder white = find.byKey(
+        const ValueKey<String>('custom-theme-swatch-ffffffff'),
       );
       await tester.tap(white.first);
       await tester.pumpAndSettle();
@@ -409,26 +407,29 @@ void main() {
     });
   });
 
-  group('CustomThemePage · 宽屏两栏', () {
-    testWidgets('≥ 900 宽：点角色行不弹窗，右栏选色器切到该角色', (WidgetTester tester) async {
+  group('CustomThemePage · 宽屏：取色器按需弹出，预览常驻', () {
+    testWidgets('≥ 900 宽：不再常驻选色器；点色槽弹出取色浮层，预览仍在', (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1280, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final _RecordingAppModel appModel = _RecordingAppModel();
       await tester.pumpWidget(_host(appModel, const CustomThemePage()));
       await tester.pumpAndSettle();
 
-      // 右栏常驻一个选色器（默认编辑主题色）。
-      expect(find.byType(ColorPickerArea), findsOneWidget);
-      expect(find.text(t.theme_role_accent), findsNWidgets(2));
+      expect(find.byType(ColorPickerArea), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('custom-theme-preview')),
+        findsOneWidget,
+      );
 
-      // 界面背景行在第一板块、不用滚动就可见（链接行在 800 高下已在视口外）。
-      await tester.tap(find.text(t.theme_role_surface).first);
-      await tester.pumpAndSettle();
-      // 没弹窗：仍然只有一个选色器；右栏标题换成界面背景。
+      await _tapRow(tester, t.theme_role_surface);
       expect(find.byType(ColorPickerArea), findsOneWidget);
-      expect(find.text(t.dialog_done), findsNothing);
-      expect(find.text(t.theme_role_surface), findsNWidgets(2));
-      expect(find.text(t.theme_role_accent), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('custom-theme-preview')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.dialog_done));
+      await tester.pumpAndSettle();
+      expect(find.byType(ColorPickerArea), findsNothing);
     });
   });
 }
