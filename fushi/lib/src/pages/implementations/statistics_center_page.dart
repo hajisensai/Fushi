@@ -97,13 +97,21 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
         initialIndex: widget.initialTab.index,
         child: Column(
           children: <Widget>[
-            FushiTabBar(
-              tabs: <Widget>[
-                Tab(text: t.stat_center_tab_overview),
-                Tab(text: t.home_filter_read),
-                Tab(text: t.home_filter_watch),
-                Tab(text: t.home_filter_game),
-              ],
+            // 页签轨道与页头标题、正文卡片同一条页边（trackInset: 0，轨道
+            // 不再自己多缩 12，2026-10-06 顶部左缘统一）。
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: FushiDesignTokens.of(context).spacing.page,
+              ),
+              child: FushiTabBar(
+                trackInset: 0,
+                tabs: <Widget>[
+                  Tab(text: t.stat_center_tab_overview),
+                  Tab(text: t.home_filter_read),
+                  Tab(text: t.home_filter_watch),
+                  Tab(text: t.home_filter_game),
+                ],
+              ),
             ),
             Expanded(
               child: TabBarView(

@@ -248,13 +248,20 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
       body: Column(
         children: <Widget>[
           _buildHero(context, game),
-          FushiTabBar(
-            controller: _tabs,
-            tabs: <Widget>[
-              Tab(text: t.game_detail_tab_stats),
-              Tab(text: t.game_detail_tab_summary),
-              Tab(text: t.game_detail_tab_edit),
-            ],
+          // 页签轨道与正文同一条页边（trackInset: 0，轨道不再自己多缩 12）。
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: FushiDesignTokens.of(context).spacing.page,
+            ),
+            child: FushiTabBar(
+              controller: _tabs,
+              trackInset: 0,
+              tabs: <Widget>[
+                Tab(text: t.game_detail_tab_stats),
+                Tab(text: t.game_detail_tab_summary),
+                Tab(text: t.game_detail_tab_edit),
+              ],
+            ),
           ),
           Expanded(
             child: TabBarView(
