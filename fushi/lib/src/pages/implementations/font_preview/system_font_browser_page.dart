@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 按搜索词与日文筛选过滤系统字体。`supportsJapanese == null`（该平台判不出）
 /// 的字体不被日文筛选排除——判不出不等于不支持。
@@ -134,16 +135,11 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiTextField(
-            key: const ValueKey<String>('system-font-search'),
+          FushiSearchBar(
+            fieldKey: const ValueKey<String>('system-font-search'),
             controller: _searchController,
             hintText: t.custom_fonts_search_hint,
-            prefixIcon: const FushiIcon(Icons.search),
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal,
-              vertical: tokens.spacing.rowVertical,
-            ),
-            onChanged: (_) => setState(() {}),
+            onQueryChanged: (_) => setState(() {}),
           ),
           SizedBox(height: tokens.spacing.gap),
           FushiTextField(

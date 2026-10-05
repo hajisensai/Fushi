@@ -33,6 +33,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 export 'package:fushi_engine/media/video/download/video_discovery_selection.dart';
 
@@ -1038,14 +1039,10 @@ class _VideoResourceSearchSurfaceState
             Row(
               children: <Widget>[
                 Expanded(
-                  child: FushiTextFieldControl(
-                    key: const ValueKey<String>('video-resource-query'),
+                  child: FushiSearchBar(
+                    fieldKey: const ValueKey<String>('video-resource-query'),
                     controller: _queryController,
-                    decoration: InputDecoration(
-                      hintText: t.video_discovery_search_hint,
-                      prefixIcon: const FushiIcon(Icons.search_rounded),
-                    ),
-                    textInputAction: TextInputAction.search,
+                    hintText: t.video_discovery_search_hint,
                     onSubmitted: (_) => unawaited(_search()),
                   ),
                 ),
@@ -1088,15 +1085,11 @@ class _VideoResourceSearchSurfaceState
           if (manual) ...<Widget>[
             LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
-                final Widget search = FushiTextFieldControl(
-                  key: const ValueKey<String>('video-resource-query'),
+                final Widget search = FushiSearchBar(
+                  fieldKey: const ValueKey<String>('video-resource-query'),
                   controller: _queryController,
-                  decoration: InputDecoration(
-                    hintText: t.video_discovery_search_hint,
-                    prefixIcon: const FushiIcon(Icons.search_rounded),
-                  ),
-                  textInputAction: TextInputAction.search,
-                  onChanged: (_) => _invalidateManualSearch(),
+                  hintText: t.video_discovery_search_hint,
+                  onQueryChanged: (_) => _invalidateManualSearch(),
                   onSubmitted: (_) => unawaited(_search()),
                 );
                 final Widget category = _buildCategorySelector();
