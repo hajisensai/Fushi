@@ -6379,5 +6379,19 @@
   "video_skip_opening": "Skip opening",
   "video_skip_ending": "Skip ending",
   "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
-  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers."
+  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
+  "game_lookup_attached_status_disabled": "Off",
+  "game_lookup_attached_status_resolving_target": "Finding game window",
+  "game_lookup_attached_status_waiting_body_thread": "Waiting for dialogue thread",
+  "game_lookup_attached_status_needs_risk_acceptance": "Click risk needs confirming",
+  "game_lookup_attached_status_needs_calibration": "Needs calibration",
+  "game_lookup_attached_status_calibrating": "Calibrating",
+  "game_lookup_attached_status_active_native": "On · native layout",
+  "game_lookup_attached_status_active_attached": "On · calibrated layer",
+  "game_lookup_attached_status_suspended": "Paused",
+  "game_lookup_attached_status_fallback": "Fallback",
+  "game_workbench_thread_choose": "Choose dialogue thread",
+  "game_workbench_hook_code": "Hook code",
+  "game_workbench_detail_close": "Close line details",
+  "game_workbench_detail_open": "Line audio"
 }

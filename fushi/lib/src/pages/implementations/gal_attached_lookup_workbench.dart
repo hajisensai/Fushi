@@ -8,10 +8,12 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_draft.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_projection.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
+import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -42,7 +44,6 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         final GalLookupSurfaceMode mode =
             profile?.mode ?? GalLookupSurfaceMode.auto;
         final bool riskModeActive = controller.isUnsafeInputActive;
-        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final GalAttachedUnsafeRiskAcceptanceRequest? riskRequest =
             controller.unsafeRiskAcceptanceRequest;
         final bool riskPending = controller.needsUnsafeRiskAcceptance;
@@ -56,9 +57,11 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         final bool showThreadRequiredPill =
             mode == GalLookupSurfaceMode.attachedOnly && !hasSelectedBodyThread;
 
+        // 2026-10 工作台重做：本行收进页顶「会话状态条」卡片里，作为卡内一行，
+        // 不再自带一条 group 底色横带（卡中卡会多出一道直角色块）。
         return Material(
           key: const ValueKey<String>('game-attached-lookup-workbench'),
-          color: tokens.surfaces.group,
+          type: MaterialType.transparency,
           child: SizedBox(
             height: 44,
             child: Row(
@@ -96,9 +99,19 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             value: _modeLabel(mode),
                           ),
                           const SizedBox(width: 6),
-                          _WorkbenchPill(
-                            label: t.game_lookup_attached_status,
-                            value: controller.status.name,
+                          // 状态枚举一律本地化（此前 `status.name` 原样上屏，界面
+                          // 上出现「状态: disabled」），并按语义着色：可用 = 成功、
+                          // 待处理 = 警告、过渡态 = 强调、其余中性。
+                          GalWorkbenchStatusChip(
+                            key: const ValueKey<String>(
+                              'game-attached-lookup-status',
+                            ),
+                            icon: galAttachedTextStatusIcon(controller.status),
+                            label: galAttachedTextStatusLabel(
+                              controller.status,
+                            ),
+                            tone: galAttachedTextStatusTone(controller.status),
+                            tooltip: t.game_lookup_attached_status,
                           ),
                           const SizedBox(width: 6),
                           _WorkbenchPill(
@@ -491,6 +504,61 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
           t.game_lookup_attached_shield_unknown,
       };
 }
+
+/// [GalAttachedTextStatus] 的用户可读标签（替代 `status.name` 直接上屏）。
+String galAttachedTextStatusLabel(GalAttachedTextStatus status) =>
+    switch (status) {
+      GalAttachedTextStatus.disabled => t.game_lookup_attached_status_disabled,
+      GalAttachedTextStatus.resolvingTarget =>
+        t.game_lookup_attached_status_resolving_target,
+      GalAttachedTextStatus.waitingForBodyThread =>
+        t.game_lookup_attached_status_waiting_body_thread,
+      GalAttachedTextStatus.needsRiskAcceptance =>
+        t.game_lookup_attached_status_needs_risk_acceptance,
+      GalAttachedTextStatus.needsCalibration =>
+        t.game_lookup_attached_status_needs_calibration,
+      GalAttachedTextStatus.calibrating =>
+        t.game_lookup_attached_status_calibrating,
+      GalAttachedTextStatus.activeNative =>
+        t.game_lookup_attached_status_active_native,
+      GalAttachedTextStatus.activeAttached =>
+        t.game_lookup_attached_status_active_attached,
+      GalAttachedTextStatus.suspended =>
+        t.game_lookup_attached_status_suspended,
+      GalAttachedTextStatus.fallback => t.game_lookup_attached_status_fallback,
+    };
+
+/// [GalAttachedTextStatus] 的语义色调：可用 = 成功、需要用户处理 = 警告、
+/// 过渡态 = 强调、关闭 / 暂停 = 中性。
+FushiTagTone galAttachedTextStatusTone(GalAttachedTextStatus status) =>
+    switch (status) {
+      GalAttachedTextStatus.activeNative ||
+      GalAttachedTextStatus.activeAttached => FushiTagTone.success,
+      GalAttachedTextStatus.waitingForBodyThread ||
+      GalAttachedTextStatus.needsRiskAcceptance ||
+      GalAttachedTextStatus.needsCalibration ||
+      GalAttachedTextStatus.fallback => FushiTagTone.warning,
+      GalAttachedTextStatus.resolvingTarget ||
+      GalAttachedTextStatus.calibrating => FushiTagTone.accent,
+      GalAttachedTextStatus.disabled ||
+      GalAttachedTextStatus.suspended => FushiTagTone.neutral,
+    };
+
+/// [GalAttachedTextStatus] 的状态图标（形状与色调双通道，墨水屏 / 色觉障碍下
+/// 只看形状也分得清）。
+IconData galAttachedTextStatusIcon(GalAttachedTextStatus status) =>
+    switch (status) {
+      GalAttachedTextStatus.activeNative ||
+      GalAttachedTextStatus.activeAttached => Icons.check_circle_outline,
+      GalAttachedTextStatus.waitingForBodyThread ||
+      GalAttachedTextStatus.needsRiskAcceptance ||
+      GalAttachedTextStatus.needsCalibration ||
+      GalAttachedTextStatus.fallback => Icons.error_outline,
+      GalAttachedTextStatus.resolvingTarget ||
+      GalAttachedTextStatus.calibrating => Icons.autorenew,
+      GalAttachedTextStatus.disabled => Icons.do_not_disturb_on_outlined,
+      GalAttachedTextStatus.suspended => Icons.pause_circle_outline,
+    };
 
 class _WorkbenchPill extends StatelessWidget {
   const _WorkbenchPill({

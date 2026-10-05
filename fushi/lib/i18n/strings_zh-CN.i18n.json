@@ -6379,5 +6379,19 @@
   "video_skip_opening": "跳过片头",
   "video_skip_ending": "跳过片尾",
   "download_network_fake_ip_udp_blocked": "当前代理（fake-ip / TUN 模式）不转发 UDP：DHT 与 UDP tracker 找不到 peer，任务可能一直 0 连接。请在代理里换支持 UDP 的节点，或让 Fushi 走直连（DIRECT 规则）。",
-  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。"
+  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。",
+  "game_lookup_attached_status_disabled": "未启用",
+  "game_lookup_attached_status_resolving_target": "正在定位游戏窗口",
+  "game_lookup_attached_status_waiting_body_thread": "等待正文线程",
+  "game_lookup_attached_status_needs_risk_acceptance": "待确认点击风险",
+  "game_lookup_attached_status_needs_calibration": "待校准",
+  "game_lookup_attached_status_calibrating": "校准中",
+  "game_lookup_attached_status_active_native": "已启用 · 原生几何",
+  "game_lookup_attached_status_active_attached": "已启用 · 校准层",
+  "game_lookup_attached_status_suspended": "已暂停",
+  "game_lookup_attached_status_fallback": "已降级",
+  "game_workbench_thread_choose": "选择台词线程",
+  "game_workbench_hook_code": "特殊码",
+  "game_workbench_detail_close": "收起本句详情",
+  "game_workbench_detail_open": "查看本句音轨"
 }
