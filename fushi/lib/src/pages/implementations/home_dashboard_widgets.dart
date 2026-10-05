@@ -292,6 +292,7 @@ class HomeGoalRing extends StatelessWidget {
             Text(
               '${(value * 100).round()}%',
               style: tokens.type.metadata.copyWith(
+                fontSize: size * 0.22,
                 fontWeight: FontWeight.w600,
                 color: tokens.surfaces.onSurface,
               ),

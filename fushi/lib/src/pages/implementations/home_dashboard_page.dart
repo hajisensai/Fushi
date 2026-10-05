@@ -2145,14 +2145,9 @@ class _HomeDashboardPageState
       // 撤掉，统一从首页热力图卡右上进统计中心总览）。
       // 2026-10 重设计：学习进度与每日目标合并成一张紧凑卡——顶部「目标环 +
       // 今日字数 + 统计入口」一行，筛选条与热力图在下。
-      header: Row(
-        children: <Widget>[
-          Expanded(
-            child: _initialLoadDone
-                ? _buildDailyGoalRow(tokens)
-                : const HomeGoalSkeleton(),
-          ),
-          SizedBox(width: tokens.spacing.gap),
+      // 统计入口挂在标题行尾，目标行独占一整行（窄屏下与入口挤一行会把
+      // 今日字数截成省略号）。
+      trailing: <Widget>[
           FushiIconButton(
             tooltip: t.stat_center_title,
             label: t.stat_center_title,
@@ -2167,8 +2162,10 @@ class _HomeDashboardPageState
             icon: Icons.emoji_events_outlined,
             onTap: _openLeaderboard,
           ),
-        ],
-      ),
+      ],
+      header: _initialLoadDone
+          ? _buildDailyGoalRow(tokens)
+          : const HomeGoalSkeleton(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -2319,7 +2316,7 @@ class _HomeDashboardPageState
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
           children: <Widget>[
-            HomeGoalRing(fraction: fraction, size: 48),
+            HomeGoalRing(fraction: fraction, size: 52),
             SizedBox(width: tokens.spacing.card),
             Expanded(child: texts),
             if (!hasGoal) ...<Widget>[
@@ -3349,6 +3346,7 @@ class _HomeDashboardPageState
     required String title,
     required Widget child,
     Widget? header,
+    List<Widget> trailing = const <Widget>[],
   }) {
     // eink：group 面层塌缩成页面底色，四张分区卡（学习活动 / 继续 / 最近添加 /
     // 动态）的边界全没了，整页读成一根连续的列；补 1px 描边（FushiCard 同款）。
@@ -3376,7 +3374,20 @@ class _HomeDashboardPageState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(title, style: tokens.type.sectionLabel),
+            if (trailing.isEmpty)
+              Text(title, style: tokens.type.sectionLabel)
+            else
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(title, style: tokens.type.sectionLabel),
+                  ),
+                  for (final Widget w in trailing) ...<Widget>[
+                    SizedBox(width: tokens.spacing.gap),
+                    w,
+                  ],
+                ],
+              ),
             if (header != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               Align(alignment: Alignment.centerLeft, child: header),
