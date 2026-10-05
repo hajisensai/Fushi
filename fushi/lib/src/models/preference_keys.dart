@@ -384,6 +384,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
   // 超限由服务器转码。
   'video_media_server_quality_preset',
+  // String（JSON 对象）：媒体服务器多版本条目「选哪个版本」的记忆
+  // （`MediaServerVersionMemory`）。键 `<serverId>|item|<itemId>` → MediaSource id、
+  // `<serverId>|series|<seriesId>` → 规格签名 + 版本名；按写入先后保留最近
+  // 500 条。非凭据、跨设备（服务器条目 id 在哪台设备上都一样）。
+  'video_media_server_version_choices',
   'video_mining_animated_format',
   'video_mining_clip_format',
   'video_mining_image_mode',

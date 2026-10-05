@@ -6455,5 +6455,6 @@
   "stat_center_media_filter": "メディアの種類",
   "stat_axis_hours": "${n}時間",
   "stat_axis_minutes": "${n}分",
-  "stat_axis_seconds": "${n}秒"
+  "stat_axis_seconds": "${n}秒",
+  "media_server_versions": "Versions"
 }

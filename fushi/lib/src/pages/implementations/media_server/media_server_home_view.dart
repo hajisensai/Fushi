@@ -11,9 +11,16 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一台服务器的首页（2026-10 重做）：页头（连接状态点 + 服务器名 + 切换服务器
-/// 菜单）→「继续观看」横滚行（16:9 卡 + 进度，Resume ∪ NextUp 去重）→「最近
-/// 添加」横滚行 →「媒体库」背景图卡网格 → 每个库一行前 20 条 + 行尾「查看全部」
-/// 进库网格。整页在一个进场窗口里错峰淡入，重试 / 刷新时重开窗口。
+/// 菜单）→「继续观看」横滚行（16:9 卡 + 进度，Resume ∪ NextUp 去重）→「媒体库」
+/// 背景图卡网格 → 每个库一行「该库最新」+ 行尾「查看全部」进库网格。整页在一个
+/// 进场窗口里错峰淡入，重试 / 刷新时重开窗口。
+///
+/// **每库一行取的是 `/Items/Latest?ParentId=<库>`（剧按系列聚合）**，与 Emby /
+/// Jellyfin 官方及主流第三方客户端的首页同形：一行海报，剧卡带未看数角标。此前取
+/// 的是库的直接子级（`/Items?ParentId=<库>`），按文件夹组织的库（「动漫」库下面是
+/// 「完结动漫 / 新番完结」几个物理文件夹）一行全是灰色文件夹卡。只有服务器没有
+/// Latest 端点（飞牛等兼容层，装饰行失败即空）时才退回直接子级。没有单独的全服
+/// 「最近添加」行：它就是各库最新行的并集，重复一遍只多一发请求。
 ///
 /// [MediaServerBrowser.listLibraries] 是主干：失败整页错误 + 重试，同时决定页头
 /// 的连接状态点。其余都是装饰行：失败即空、该行不显示（契约文档的两档失败语义）。
@@ -47,9 +54,8 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
   List<MediaServerLibrary>? _libraries;
   Object? _librariesError;
   List<MediaServerItem> _continueWatching = const <MediaServerItem>[];
-  List<MediaServerItem> _latest = const <MediaServerItem>[];
 
-  /// 每个库一行的前 20 条；缺项 = 还没回来或失败（失败的行不显示）。
+  /// 每个库一行的最新 20 条；缺项 = 还没回来或失败（失败的行不显示）。
   final Map<String, List<MediaServerItem>> _libraryRows =
       <String, List<MediaServerItem>>{};
 
@@ -76,12 +82,10 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       _libraries = null;
       _librariesError = null;
       _continueWatching = const <MediaServerItem>[];
-      _latest = const <MediaServerItem>[];
       _libraryRows.clear();
     });
     // 主干与装饰行并行；装饰行各自吞错，不拖累主干。
     unawaited(_loadContinueWatching(generation));
-    unawaited(_loadLatest(generation));
     List<MediaServerLibrary> libraries;
     try {
       libraries = await _browser.listLibraries();
@@ -127,19 +131,24 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
     setState(() => _continueWatching = merged);
   }
 
-  Future<void> _loadLatest(int generation) async {
-    final List<MediaServerItem> latest = await _decor(
-      'latest',
-      () => _browser.listLatest(),
-    );
-    if (!mounted || generation != _generation) return;
-    setState(() => _latest = latest);
-  }
-
+  /// 一个库的首页行：先要该库最新（剧按系列聚合）；拿不到（端点缺失 / 失败 /
+  /// 空）才退回库的直接子级。
   Future<void> _loadLibraryRow(
     int generation,
     MediaServerLibrary library,
   ) async {
+    final List<MediaServerItem> latest = await _decor(
+      'latest ${library.name}',
+      () => _browser.listLatest(
+        libraryId: library.id,
+        limit: kMediaServerRowLimit,
+      ),
+    );
+    if (!mounted || generation != _generation) return;
+    if (latest.isNotEmpty) {
+      setState(() => _libraryRows[library.id] = latest);
+      return;
+    }
     try {
       final MediaServerPage page = await _browser.listChildren(
         parentId: library.id,
@@ -295,16 +304,6 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
         slivers: <Widget>[
           if (_continueWatching.isNotEmpty)
             SliverToBoxAdapter(child: _continueRow(prefix)),
-          if (_latest.isNotEmpty)
-            SliverToBoxAdapter(
-              child: _itemRow(
-                key: const ValueKey<String>('media-server-home-latest'),
-                title: t.home_recently_added,
-                storageKey: '$prefix-home-latest',
-                items: _latest,
-                cardHeight: cardHeight,
-              ),
-            ),
           SliverToBoxAdapter(
             key: const ValueKey<String>('media-server-home-libraries'),
             child: FushiStaggeredEntrance(
@@ -379,7 +378,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
               key: ValueKey<String>('media-server-library-${library.id}'),
               browser: _browser,
               library: library,
-              // 库自身封面缺失 / 404 时的拼贴素材：就是下面「每库一行」那 20 条。
+              // 库自身封面缺失 / 404 时的拼贴素材：就是下面「每库一行」那 20 条最新。
               fallbackItems:
                   _libraryRows[library.id] ?? const <MediaServerItem>[],
               focusId: FushiFocusId('$prefix-library-${library.id}'),

@@ -6455,5 +6455,6 @@
   "stat_center_media_filter": "미디어 유형",
   "stat_axis_hours": "${n}시간",
   "stat_axis_minutes": "${n}분",
-  "stat_axis_seconds": "${n}초"
+  "stat_axis_seconds": "${n}초",
+  "media_server_versions": "Versions"
 }

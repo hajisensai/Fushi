@@ -69,6 +69,13 @@ class FakeMediaServerBrowser implements MediaServerBrowser {
   final List<MediaServerItem> nextUp = <MediaServerItem>[];
   final List<MediaServerItem> latest = <MediaServerItem>[];
 
+  /// libraryId → 该库最新（`listLatest(libraryId:)`；缺项 = 该库没有最新）。
+  final Map<String, List<MediaServerItem>> latestByLibrary =
+      <String, List<MediaServerItem>>{};
+
+  /// 每次 [listLatest] 的 libraryId（null = 全服）。
+  final List<String?> latestRequests = <String?>[];
+
   /// 搜索结果（不按 query 过滤，任何非空 query 都返回它）。
   final List<MediaServerItem> searchResults = <MediaServerItem>[];
 
@@ -211,8 +218,12 @@ class FakeMediaServerBrowser implements MediaServerBrowser {
     int limit = kMediaServerRowLimit,
   }) async {
     listLatestCalls++;
+    latestRequests.add(libraryId);
     if (failLatest) throw StateError('latest unavailable');
-    return latest.take(limit).toList();
+    final List<MediaServerItem> source = libraryId == null
+        ? latest
+        : latestByLibrary[libraryId] ?? const <MediaServerItem>[];
+    return source.take(limit).toList();
   }
 
   @override

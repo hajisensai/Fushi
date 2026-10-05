@@ -6455,5 +6455,6 @@
   "stat_center_media_filter": "Media type",
   "stat_axis_hours": "${n}h",
   "stat_axis_minutes": "${n}m",
-  "stat_axis_seconds": "${n}s"
+  "stat_axis_seconds": "${n}s",
+  "media_server_versions": "Versions"
 }

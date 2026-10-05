@@ -18,6 +18,10 @@
 </div>
 
 
+## 维护者
+
+Fushi 由 [hajisensai](https://github.com/hajisensai) 维护。官网：[fushi.moe](https://fushi.moe)。联系：[contact@fushi.moe](mailto:contact@fushi.moe)。
+
 ## 平台支持
 
 | 平台 | 状态 | 渲染 / UI |
