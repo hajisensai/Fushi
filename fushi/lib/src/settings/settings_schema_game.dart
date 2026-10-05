@@ -18,6 +18,9 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_kit.dart'
+    show SettingsModifiedRow;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 「游戏」一级设置分类（审计 K / Phase 3.12：游戏域此前没有任何 destination，
@@ -57,7 +60,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.library',
             title: t.game_library,
             subtitle: t.game_home_subtitle,
-            icon: Icons.videogame_asset_outlined,
+            icon: FushiIcons.game,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
               homeShellTabNotifier.value = HomeTab.games;
@@ -67,7 +70,7 @@ SettingsDestination buildGameDestination() {
           SettingsNavigationItem(
             id: 'game.capture_workspace',
             title: t.game_capture_workbench,
-            icon: Icons.sensors_outlined,
+            icon: FushiIcons.audio,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
               homeShellTabNotifier.value = HomeTab.games;
@@ -77,7 +80,7 @@ SettingsDestination buildGameDestination() {
           SettingsNavigationItem(
             id: 'game.diagnostics',
             title: t.game_diagnostics,
-            icon: Icons.monitor_heart_outlined,
+            icon: FushiIcons.hub,
             showIcon: true,
             onTap: (SettingsContext settingsContext) {
               homeShellTabNotifier.value = HomeTab.games;
@@ -106,7 +109,8 @@ SettingsDestination buildGameDestination() {
             // 想关也关不掉的开关——而他此刻最可能想做的恰恰是把它关掉。能力信息属于
             // 副标题，不属于可交互性。
             subtitleBuilder: (_) => _ingameLookupBlockedReason(),
-            icon: Icons.crop_free,
+            icon: FushiIcons.lookup,
+            defaultValue: PreferencesRepository.galIngameLookupEnabledDefault,
             visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galIngameLookupEnabled,
@@ -129,7 +133,7 @@ SettingsDestination buildGameDestination() {
             subtitleBuilder: (_) =>
                 _ingameLookupExeSha256() ??
                 t.gal_hook_ingame_lookup_exe_hash_unavailable,
-            icon: Icons.fingerprint_outlined,
+            icon: FushiIcons.fingerprint,
             // 只在真被挡住时出现——平时多一行"复制哈希"是纯噪音。设置页监听准入
             // notifier（settings_home_page / settings_detail_page），所以开着页面
             // 启动游戏也会把这一行刷出来。
@@ -159,7 +163,9 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_card_lookup_independent_size',
             title: t.gal_card_lookup_independent_size,
             subtitle: t.gal_card_lookup_independent_size_hint,
-            icon: Icons.videogame_asset_outlined,
+            icon: FushiIcons.dashboardCustomize,
+            // 与 PreferencesRepository.galCardLookupIndependentSize 的读取默认一致。
+            defaultValue: false,
             visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galCardLookupIndependentSize,
@@ -174,7 +180,9 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_card_lookup_max_width',
             titleReadout: true,
             title: t.gal_card_lookup_max_width,
-            icon: Icons.open_in_full_outlined,
+            icon: FushiIcons.swap,
+            // 读取默认 = PreferencesRepository.defaultPopupMaxWidth（实例字段，400）。
+            defaultValue: 400.0,
             min: 250,
             max: 2000,
             divisions: 175,
@@ -194,6 +202,8 @@ SettingsDestination buildGameDestination() {
             titleReadout: true,
             title: t.gal_card_lookup_max_height,
             icon: Icons.height_outlined,
+            // 读取默认 = PreferencesRepository.defaultPopupMaxHeight（实例字段，360）。
+            defaultValue: 360.0,
             min: 200,
             max: 1600,
             divisions: 140,
@@ -215,7 +225,8 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_click_lookup',
             title: t.gal_hook_click_lookup,
             subtitle: t.gal_hook_click_lookup_hint,
-            icon: Icons.touch_app_outlined,
+            icon: FushiIcons.touch,
+            defaultValue: PreferencesRepository.galHookClickLookupDefault,
             visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookClickLookup,
@@ -229,7 +240,8 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_lookup_trigger',
             title: t.gal_hook_lookup_trigger,
             subtitle: t.gal_hook_lookup_trigger_hint,
-            icon: Icons.mouse_outlined,
+            icon: FushiIcons.mouse,
+            defaultValue: PreferencesRepository.galHookLookupTriggerDefault,
             dropdown: true,
             visible: (_) => Platform.isWindows,
             options: <SettingsSegmentOption<int>>[
@@ -258,7 +270,8 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_toolbar_auto_hide',
             title: t.gal_hook_toolbar_auto_hide,
             subtitle: t.gal_hook_toolbar_auto_hide_hint,
-            icon: Icons.visibility_off_outlined,
+            icon: FushiIcons.visibilityOff,
+            defaultValue: PreferencesRepository.galHookToolbarAutoHideDefault,
             visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookToolbarAutoHide,
@@ -273,6 +286,8 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_passthrough_blocks_mouse,
             subtitle: t.gal_hook_passthrough_blocks_mouse_hint,
             icon: Icons.ads_click_outlined,
+            defaultValue:
+                PreferencesRepository.galHookPassThroughBlocksMouseDefault,
             visible: (_) => Platform.isWindows,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookPassThroughBlocksMouse,
@@ -291,6 +306,8 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_fold_progressive_lines,
             subtitle: t.gal_hook_fold_progressive_lines_hint,
             icon: Icons.merge_type,
+            defaultValue:
+                PreferencesRepository.galHookFoldProgressiveLinesDefault,
             // 与兄弟项 game.ingame_lookup 同门：折叠只对引擎 hook 行生效，而
             // engineHook 行只由 Windows-only 的 GalHookSessionController 产出。
             // 在其他平台露出来只会让用户对着一个永远不生效的开关。
@@ -313,7 +330,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_font',
             title: t.gal_hook_text_font,
             subtitle: t.gal_hook_text_font_hint,
-            icon: Icons.font_download_outlined,
+            icon: FushiIcons.font,
             showIcon: true,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
@@ -329,7 +346,8 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_font_size',
             title: t.gal_hook_text_font_size,
             subtitle: t.gal_hook_text_font_size_hint,
-            icon: Icons.format_size,
+            icon: FushiIcons.fontSize,
+            defaultValue: PreferencesRepository.galHookTextFontSizeDefault,
             min: PreferencesRepository.galHookTextFontSizeMin,
             max: PreferencesRepository.galHookTextFontSizeMax,
             step: 1,
@@ -347,6 +365,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_letter_spacing,
             subtitle: t.gal_hook_text_letter_spacing_hint,
             icon: Icons.space_bar,
+            defaultValue: PreferencesRepository.galHookTextLetterSpacingDefault,
             min: PreferencesRepository.galHookTextLetterSpacingMin,
             max: PreferencesRepository.galHookTextLetterSpacingMax,
             divisions: 28,
@@ -368,6 +387,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_line_height,
             subtitle: t.gal_hook_text_line_height_hint,
             icon: Icons.format_line_spacing,
+            defaultValue: PreferencesRepository.galHookTextLineHeightDefault,
             min: PreferencesRepository.galHookTextLineHeightMin,
             max: PreferencesRepository.galHookTextLineHeightMax,
             divisions: 24,
@@ -388,6 +408,8 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_bold,
             subtitle: t.gal_hook_text_bold_hint,
             icon: Icons.format_bold,
+            // 与 PreferencesRepository.galHookTextBold 的读取默认一致。
+            defaultValue: true,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.galHookTextBold,
             onChanged: (SettingsContext settingsContext, bool value) =>
@@ -400,6 +422,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_alignment',
             title: t.gal_hook_text_alignment,
             icon: Icons.format_align_center,
+            defaultValue: 'center',
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'center',
@@ -424,6 +447,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_vertical_alignment',
             title: t.gal_hook_text_vertical_alignment,
             icon: Icons.vertical_align_center,
+            defaultValue: 'center',
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'center',
@@ -447,6 +471,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_color',
             title: t.gal_hook_text_color,
             icon: Icons.format_color_text,
+            defaultColor: PreferencesRepository.galHookTextColorDefault,
             value: (SettingsContext context) =>
                 context.appModel.galHookTextColor,
             onChanged: (SettingsContext context, int value) =>
@@ -463,6 +488,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_background_color',
             title: t.gal_hook_text_background_color,
             icon: Icons.format_color_fill,
+            defaultColor: PreferencesRepository.galHookTextBackgroundColorDefault,
             value: (SettingsContext context) =>
                 context.appModel.galHookTextBackgroundColor,
             onChanged: (SettingsContext context, int value) =>
@@ -473,6 +499,8 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_background_opacity,
             subtitle: t.gal_hook_text_background_opacity_hint,
             icon: Icons.opacity,
+            defaultValue:
+                PreferencesRepository.galHookTextBackgroundOpacityDefault,
             min: 0,
             max: 1,
             divisions: 20,
@@ -491,6 +519,7 @@ SettingsDestination buildGameDestination() {
             id: 'game.gal_hook_text_outline_color',
             title: t.gal_hook_text_outline_color,
             icon: Icons.border_color_outlined,
+            defaultColor: PreferencesRepository.galHookTextOutlineColorDefault,
             enableAlpha: true,
             value: (SettingsContext context) =>
                 context.appModel.galHookTextOutlineColor,
@@ -502,6 +531,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_outline_width,
             subtitle: t.gal_hook_text_outline_width_hint,
             icon: Icons.line_weight,
+            defaultValue: PreferencesRepository.galHookTextOutlineWidthDefault,
             min: PreferencesRepository.galHookTextOutlineWidthMin,
             max: PreferencesRepository.galHookTextOutlineWidthMax,
             divisions: 24,
@@ -521,6 +551,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_padding,
             subtitle: t.gal_hook_text_padding_hint,
             icon: Icons.padding,
+            defaultValue: PreferencesRepository.galHookTextPaddingDefault,
             min: PreferencesRepository.galHookTextPaddingMin,
             max: PreferencesRepository.galHookTextPaddingMax,
             divisions: 40,
@@ -540,6 +571,7 @@ SettingsDestination buildGameDestination() {
             title: t.gal_hook_text_corner_radius,
             subtitle: t.gal_hook_text_corner_radius_hint,
             icon: Icons.rounded_corner,
+            defaultValue: PreferencesRepository.galHookTextCornerRadiusDefault,
             min: PreferencesRepository.galHookTextCornerRadiusMin,
             max: PreferencesRepository.galHookTextCornerRadiusMax,
             divisions: 40,
@@ -573,6 +605,7 @@ SettingsCustomItem _galHookColorItem({
   required String id,
   required String title,
   required IconData icon,
+  required int defaultColor,
   required int Function(SettingsContext context) value,
   required Future<void> Function(SettingsContext context, int value) onChanged,
   bool enableAlpha = false,
@@ -583,30 +616,46 @@ SettingsCustomItem _galHookColorItem({
     searchTitle: title,
     builder: (SettingsContext settingsContext) {
       final Color current = Color(value(settingsContext));
-      return AdaptiveSettingsRow(
-        title: title,
-        icon: icon,
-        showIcon: true,
-        trailing: FushiColorSwatch(
-          color: current,
-          size: 24,
-          borderColor: Theme.of(settingsContext.context).dividerColor,
-        ),
-        onTap: () => unawaited(() async {
-          final Color? selected = await _pickGalHookColor(
-            settingsContext.context,
-            title: title,
-            initial: current,
-            enableAlpha: enableAlpha,
-          );
-          if (selected == null || selected.toARGB32() == current.toARGB32()) {
-            return;
-          }
-          await _commitGalHookAppearance(
+      final ColorScheme colors = Theme.of(settingsContext.context).colorScheme;
+      // 自定义行不经渲染层的 settingsResetSpecFor，这里自己接 settings kit 的
+      // 「已改过 → 恢复默认」：与开关 / 滑杆同一套行首圆点 + 行尾重置钮。
+      return SettingsModifiedRow(
+        modified: current.toARGB32() != defaultColor,
+        onReset: () => unawaited(
+          _commitGalHookAppearance(
             settingsContext,
-            () => onChanged(settingsContext, selected.toARGB32()),
-          );
-        }()),
+            () => onChanged(settingsContext, defaultColor),
+          ),
+        ),
+        child: AdaptiveSettingsRow(
+          title: title,
+          icon: icon,
+          showIcon: true,
+          // M3E 色样：28 圆点 + outlineVariant 描边（浅色 / 透明色在卡片底上也
+          // 读得出边界）。
+          trailing: FushiColorSwatch(
+            color: current,
+            size: 28,
+            shape: FushiColorSwatchShape.dot,
+            borderColor: colors.outlineVariant,
+          ),
+          onTap: () => unawaited(() async {
+            final Color? selected = await _pickGalHookColor(
+              settingsContext.context,
+              title: title,
+              initial: current,
+              enableAlpha: enableAlpha,
+            );
+            if (selected == null ||
+                selected.toARGB32() == current.toARGB32()) {
+              return;
+            }
+            await _commitGalHookAppearance(
+              settingsContext,
+              () => onChanged(settingsContext, selected.toARGB32()),
+            );
+          }()),
+        ),
       );
     },
   );
