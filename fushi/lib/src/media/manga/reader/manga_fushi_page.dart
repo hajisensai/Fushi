@@ -886,6 +886,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   String? _upNextResolvedFor;
   bool _upNextResolving = false;
 
+  /// 章末卡片的作品封面：按封面绝对路径缓存，读到末页时（不是 build 里）异步
+  /// 判一次文件在不在；[_upNextCoverFor] 记的是已判过的路径。
+  ImageProvider? _upNextCover;
+  String? _upNextCoverFor;
+
   /// 当前选中的在线章还没下载、在线直读也没成（源不可用 / 取不到页）：正文区显示
   /// 「本章未下载」态（入队 / 选章两个出口），
   /// 顶部 chrome 不显示，返回键照常在。下载服务把这一章下完后自动装载。
@@ -1623,6 +1628,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentPage = MangaFushiPage.firstPageOfSpread(spreads, _currentSpread);
     });
     _pageNotifier.value = _currentPage;
+    _syncChapterEndCard();
     await _loadInitialWindow();
     _updateCurrentPageImagePath();
     _recordProgress();
@@ -1960,6 +1966,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
+    // 换章停在原页码时 notifier 不通知：显式补一次章末卡片的数据准备。
+    _syncChapterEndCard();
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
@@ -3955,6 +3963,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _onReaderPageChanged() {
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
+    _syncChapterEndCard();
   }
 
   /// 在线直读章的边看边识别：从读者当前页起识别眼前这页与后面几页，识别完一页
@@ -4548,6 +4557,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
+    _syncChapterEndCard();
     _noteVisiblePages();
     await _loadInitialWindow();
     // 布局变化会换掉当前 spread 背后的页（ERRATA C2）。
@@ -5154,6 +5164,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     if (modeChanged) {
       _pageNotifier.value = _currentPage;
+      _syncChapterEndCard();
       _noteVisiblePages();
       await _loadInitialWindow();
       if (!mounted) return;
@@ -5299,42 +5310,61 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     await _switchToChapter(target);
   }
 
-  void _scheduleUpNextResolve() {
+  /// 章末卡片的数据准备：读到本章末页时解出「下一章」并判作品封面，结果按章节
+  /// key / 封面路径缓存。只在可见单元变化处调（翻页监听、换章装载、单元边界
+  /// 重建），**不在 build 里**——build 只读缓存。
+  void _syncChapterEndCard() {
+    if (!mounted ||
+        _shelfEntry == null ||
+        !_chromeContentReady ||
+        !_atLastPage()) {
+      return;
+    }
+    unawaited(_resolveUpNextChapter());
+    unawaited(_resolveUpNextCover());
+  }
+
+  Future<void> _resolveUpNextChapter() async {
     final String? key = _shelfChapterKey;
     if (key == null || _upNextResolving || _upNextResolvedFor == key) return;
     _upNextResolving = true;
-    unawaited(
-      Future<void>.microtask(() async {
-        int? target;
-        try {
-          target = await _adjacentChapterIndex(forward: true);
-        } on Object catch (error, stack) {
-          ErrorLogService.instance.log('MangaFushiPage.upNext', error, stack);
-        }
-        _upNextResolving = false;
-        if (!mounted) return;
-        setState(() {
-          _upNextResolvedFor = key;
-          _upNextChapterIndex = target;
-        });
-      }),
-    );
+    int? target;
+    try {
+      target = await _adjacentChapterIndex(forward: true);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.upNext', error, stack);
+    } finally {
+      _upNextResolving = false;
+    }
+    if (!mounted) return;
+    setState(() {
+      _upNextResolvedFor = key;
+      _upNextChapterIndex = target;
+    });
   }
 
-  /// 作品封面（本地文件），章末卡片用；没有就返回 null 画占位。
-  ImageProvider? _seriesCover() {
+  /// 作品封面（本地文件），章末卡片用；不存在就留 null 画占位。
+  Future<void> _resolveUpNextCover() async {
     final EpubBookRow? row = _bookRow;
     final String? cover = row?.coverPath;
-    if (row == null || cover == null || cover.isEmpty) return null;
-    final String path = p.isAbsolute(cover)
-        ? cover
-        : p.join(row.extractDir, cover);
-    if (!File(path).existsSync()) return null;
-    return ResizeImage(
-      FileImage(File(path)),
-      width: 160,
-      policy: ResizeImagePolicy.fit,
-    );
+    String? path;
+    if (row != null && cover != null && cover.isNotEmpty) {
+      path = p.isAbsolute(cover) ? cover : p.join(row.extractDir, cover);
+    }
+    if (path == _upNextCoverFor) return;
+    _upNextCoverFor = path;
+    final bool exists = path != null && await File(path).exists();
+    if (!mounted || _upNextCoverFor != path) return;
+    final String? existing = exists ? path : null;
+    setState(() {
+      _upNextCover = existing == null
+          ? null
+          : ResizeImage(
+              FileImage(File(existing)),
+              width: 160,
+              policy: ResizeImagePolicy.fit,
+            );
+    });
   }
 
   /// 章末「下一章」卡片（只有书架在线条目才有「章」）。点「继续」走与翻过最后
@@ -5342,7 +5372,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Widget _buildChapterEndCard({required bool chromeShown}) {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
     final bool atEnd = entry != null && _chromeContentReady && _atLastPage();
-    if (atEnd) _scheduleUpNextResolve();
     final int? next = _upNextResolvedFor == _shelfChapterKey
         ? _upNextChapterIndex
         : null;
@@ -5366,7 +5395,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     eyebrow: t.manga_series_next_chapter,
                     title: mangaChapterDisplayName(entry.chapters[next]),
                     actionLabel: t.manga_chapter_transition,
-                    cover: atEnd ? _seriesCover() : null,
+                    cover: atEnd ? _upNextCover : null,
                     onContinue: _switchingChapter
                         ? null
                         : () => unawaited(_onReachedChapterEdge(1)),

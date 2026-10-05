@@ -1143,38 +1143,43 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                 queue,
               ),
             ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.gap,
-                  tokens.spacing.page,
-                  tokens.spacing.section,
+            // 玻璃设计下首页 extendBody，悬浮导航胶囊的高度并进了 MediaQuery 底部
+            // padding：页尾垫到胶囊之上，否则最后几行与「加载更多 / 重试」被胶囊盖住。
+            SliverSafeArea(
+              top: false,
+              sliver: SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
+                  child: _loadMoreFailed
+                      ? Center(
+                          child: FushiTextButton.icon(
+                            key: const ValueKey<String>(
+                                'discovery_load_more_retry'),
+                            onPressed: _retryLoadMore,
+                            icon: const FushiIcon(Icons.refresh_rounded),
+                            label: Text(t.retry),
+                          ),
+                        )
+                      : result != null && result.hasMore
+                          ? Center(
+                              // 自动翻页之外的兜底：键盘 / 手柄焦点走到页尾、或首页
+                              // 不满一屏没有滚动事件可等时，仍能手动拉下一页。
+                              child: _loading
+                                  ? const FushiLoadingView(compact: true)
+                                  : FushiTextButton(
+                                      key: const ValueKey<String>(
+                                          'discovery_load_more'),
+                                      onPressed: _loadMore,
+                                      child: Text(t.discovery_load_more),
+                                    ),
+                            )
+                          : const SizedBox.shrink(),
                 ),
-                child: _loadMoreFailed
-                    ? Center(
-                        child: FushiTextButton.icon(
-                          key: const ValueKey<String>(
-                              'discovery_load_more_retry'),
-                          onPressed: _retryLoadMore,
-                          icon: const FushiIcon(Icons.refresh_rounded),
-                          label: Text(t.retry),
-                        ),
-                      )
-                    : result != null && result.hasMore
-                        ? Center(
-                            // 自动翻页之外的兜底：键盘 / 手柄焦点走到页尾、或首页
-                            // 不满一屏没有滚动事件可等时，仍能手动拉下一页。
-                            child: _loading
-                                ? const FushiLoadingView(compact: true)
-                                : FushiTextButton(
-                                    key: const ValueKey<String>(
-                                        'discovery_load_more'),
-                                    onPressed: _loadMore,
-                                    child: Text(t.discovery_load_more),
-                                  ),
-                          )
-                        : const SizedBox.shrink(),
               ),
             ),
           ],

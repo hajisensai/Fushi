@@ -1369,12 +1369,11 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
       // M3 Expressive（2024）滑块：粗轨道 + 竖条手柄。
       year2023: false,
       padding: const EdgeInsets.symmetric(horizontal: _sliderInset),
-      // MD3 每一格恰好一页：divisions 缺省时滑块落在页与页之间、拖动读数会跳。
-      // Apple 滑块按 divisions 在轨道上画刻度点（40 页就是 40 颗），iOS 的进度
-      // 滑块是连续的——那里不分格，读数 / 松手都按 [mangaSliderPageIndex] 取整。
-      divisions: colors.apple || widget.pageCount <= 1
-          ? null
-          : widget.pageCount - 1,
+      // 每一格恰好一页：divisions 缺省时滑块落在页与页之间、拖动读数会跳，
+      // 方向键单步也会退化成量程的 5%/10%（200 页一按跳 20 页）。Apple 滑块
+      // 两端都要分格——它的刻度点在格距不足 8px 时自己不画，长卷不会糊成一串。
+      // 0 / 1 页没有可跳的格（整条栏本就不画），保持 null。
+      divisions: widget.pageCount <= 1 ? null : widget.pageCount - 1,
       onChanged: (double v) => setState(() => _dragPosition = v),
       onChangeEnd: (double v) {
         setState(() => _dragPosition = null);

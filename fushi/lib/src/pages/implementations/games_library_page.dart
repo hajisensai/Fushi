@@ -1362,20 +1362,23 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         SizedBox(
           // 卡片悬停抬升 + 投影需要上下各留几像素，不被横向列表裁掉。
           height: cardHeight + 16,
-          child: ListView.separated(
-            key: const ValueKey<String>('games_continue_row'),
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            clipBehavior: Clip.none,
-            itemCount: games.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 16),
-            itemBuilder: fushiStaggeredItemBuilder(
-              (BuildContext context, int i) => SizedBox(
-                width: cardWidth,
-                child: _ContinuePlayCard(
-                  game: games[i],
-                  onLaunch: () => unawaited(_launchGame(games[i])),
-                  onDetail: () => unawaited(_openDetail(games[i])),
+          // 桌面默认 dragDevices 不含鼠标：横排行要放开鼠标 / 触控板拖动。
+          child: HorizontalDragScrollable(
+            child: ListView.separated(
+              key: const ValueKey<String>('games_continue_row'),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              clipBehavior: Clip.none,
+              itemCount: games.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 16),
+              itemBuilder: fushiStaggeredItemBuilder(
+                (BuildContext context, int i) => SizedBox(
+                  width: cardWidth,
+                  child: _ContinuePlayCard(
+                    game: games[i],
+                    onLaunch: () => unawaited(_launchGame(games[i])),
+                    onDetail: () => unawaited(_openDetail(games[i])),
+                  ),
                 ),
               ),
             ),

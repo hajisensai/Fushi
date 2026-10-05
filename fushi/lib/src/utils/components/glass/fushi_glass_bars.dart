@@ -18,6 +18,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下
@@ -1931,17 +1933,20 @@ class _FushiGlassTabBarState extends State<_FushiGlassTabBar> {
         (_bar.isScrollable ? TabAlignment.start : TabAlignment.fill);
     Widget row;
     if (_bar.isScrollable) {
-      row = SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        controller: _bar.scrollController,
-        physics: _bar.physics,
-        dragStartBehavior: _bar.dragStartBehavior,
-        child: slidingIndicator(
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (int i = 0; i < tabs.length; i++) segment(i),
-            ],
+      // 桌面端默认 dragDevices 不含鼠标：可滚动的标签行鼠标也要拖得动。
+      row = HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          controller: _bar.scrollController,
+          physics: _bar.physics,
+          dragStartBehavior: _bar.dragStartBehavior,
+          child: slidingIndicator(
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                for (int i = 0; i < tabs.length; i++) segment(i),
+              ],
+            ),
           ),
         ),
       );

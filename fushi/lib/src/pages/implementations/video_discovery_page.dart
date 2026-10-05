@@ -1099,8 +1099,13 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               ),
             ),
           ),
-        SliverToBoxAdapter(
-          child: DiscoveryLoadMoreFooter(loading: _loadingMore),
+        // 玻璃设计下首页 extendBody，悬浮导航胶囊的高度并进了 MediaQuery 底部
+        // padding：页尾垫到胶囊之上，否则最后几行与「加载更多」被胶囊盖住。
+        SliverSafeArea(
+          top: false,
+          sliver: SliverToBoxAdapter(
+            child: DiscoveryLoadMoreFooter(loading: _loadingMore),
+          ),
         ),
       ],
     );
