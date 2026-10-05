@@ -122,7 +122,7 @@ class FushiRadii {
   static const double cardValue = 10;
   static const double controlValue = 12;
   static const double chipValue = 6;
-  static const double menuValue = 12;
+  static const double menuValue = 16; // M3E 菜单容器圆角（large，2026-10-05 浮层统一）
   static const double dialogValue = 28; // MD3 对话框规范圆角（2026-10-04 对话框统一）
   static const double sheetValue = 28; // MD3 底部弹层上两角（2026-10-04 弹层统一）
 

@@ -32,6 +32,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiDialogHeroIcon;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -2139,7 +2141,8 @@ class FushiModalSheetFrame extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (hero) ...<Widget>[
-            FushiIcon(leadingIcon, color: colors.secondary, size: 24),
+            // M3E：图标 hero 带形状库装饰底（9 瓣饼干 + secondaryContainer）。
+            FushiDialogHeroIcon(icon: leadingIcon, size: 56),
             const SizedBox(height: 16),
           ],
           if (title != null)
