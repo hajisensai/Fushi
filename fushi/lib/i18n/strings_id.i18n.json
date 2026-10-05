@@ -6495,5 +6495,13 @@
   "reader_nav_search_empty_hint": "Search the whole book, or jump to a character position",
   "reader_nav_favorites_empty": "No favorite sentences in this book yet",
   "reader_stats_last_7_days": "Last 7 days",
-  "reader_stats_session_title": "This session"
+  "reader_stats_session_title": "This session",
+  "settings_reset_to_default": "Reset to default",
+  "settings_modified_hint": "Changed from default",
+  "settings_search_result_count": "${n} results",
+  "settings_search_open": "Search settings",
+  "settings_search_empty_title": "No matching settings",
+  "settings_search_empty_hint": "Try a shorter word or a synonym",
+  "settings_jump_to_section": "Jump to section",
+  "settings_section_modified_count": "${n} changed"
 }

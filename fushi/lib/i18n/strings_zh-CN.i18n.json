@@ -6495,5 +6495,13 @@
   "reader_nav_search_empty_hint": "搜索全书，或跳到指定字数位置",
   "reader_nav_favorites_empty": "这本书还没有收藏的句子",
   "reader_stats_last_7_days": "近 7 天",
-  "reader_stats_session_title": "本次阅读"
+  "reader_stats_session_title": "本次阅读",
+  "settings_reset_to_default": "恢复默认",
+  "settings_modified_hint": "已改过默认值",
+  "settings_search_result_count": "${n} 个结果",
+  "settings_search_open": "搜索设置",
+  "settings_search_empty_title": "没有匹配的设置",
+  "settings_search_empty_hint": "换个更短的词或同义词试试",
+  "settings_jump_to_section": "跳到分组",
+  "settings_section_modified_count": "${n} 项已修改"
 }
