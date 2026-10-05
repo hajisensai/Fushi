@@ -18,6 +18,9 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 ///   已去掉——底下那页必须纹丝不动。
 /// - 返回（pop）走同一路径的反向，时长取 [FushiMotion.longReverse]，退出更快。
 ///
+/// 时长与曲线全部来自 M3E 弹簧 token（2026-10-05）：进入 = spatial slow 的落定
+/// 时长 [FushiMotion.long]，退出 = effects slow [FushiMotion.longReverse]。
+///
 /// 系统「减弱动态效果」/ 墨水屏（[fushiMotionEnabled]）下退化成线性淡入、不位移、
 /// 不压暗。
 /// 墨水屏的主题本就整套换成 `EinkNoPageTransitionsBuilder`，这里只是兜底。
@@ -66,8 +69,10 @@ class FushiSharedAxisTransition extends StatelessWidget {
   static final Animatable<double> _fadeIn = CurveTween(
     curve: const Interval(0.2, 1, curve: FushiMotion.enter),
   );
+  // 位移是 spatial：M3E 整屏级 spatial slow 弹簧形状（[FushiMotion.long] 即其
+  // 落定时长），落点带极轻回弹；淡入 / 压暗是 effects，临界阻尼不过冲。
   static final Animatable<double> _riseIn = CurveTween(
-    curve: FushiMotion.enter,
+    curve: FushiSpringCurve.spatial,
   );
   static final Animatable<double> _coverOut = CurveTween(
     curve: FushiMotion.standard,

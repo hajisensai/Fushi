@@ -262,7 +262,7 @@ void main() {
   });
 
   group('桌面共享轴转场', () {
-    test('进入 360ms / 退出 240ms', () {
+    test('进入 = spatial slow 落定时长 / 退出 = effects slow', () {
       const FushiSharedAxisPageTransitionsBuilder builder =
           FushiSharedAxisPageTransitionsBuilder();
       expect(builder.transitionDuration, FushiMotion.long);
@@ -293,7 +293,7 @@ void main() {
         ),
       );
       await tester.pump();
-      // 转场进行中（360ms 内）逐帧检查；结束后旧页进幕后，finder 取不到。
+      // 转场进行中（450ms 内）逐帧检查；结束后旧页进幕后，finder 取不到。
       for (int ms = 0; ms <= 300; ms += 60) {
         // 用户反馈「进入页面时整个页面会往上一点」：被覆盖页曾随转场上移 6px。
         expect(tester.getTopLeft(find.byKey(homeKey)), Offset.zero);
@@ -327,16 +327,16 @@ void main() {
     });
   });
 
-  test('release 曲线：端点精确、带不超过 2% 的过冲', () {
+  test('release 曲线 = M3E spatial fast 弹簧形状：端点精确、带弹性过冲', () {
     expect(FushiMotion.release.transform(0), closeTo(0, 1e-9));
     expect(FushiMotion.release.transform(1), closeTo(1, 1e-9));
     double peak = 0;
     for (int i = 0; i <= 1000; i++) {
-      peak = peak < FushiMotion.release.transform(i / 1000)
-          ? FushiMotion.release.transform(i / 1000)
-          : peak;
+      final double v = FushiMotion.release.transform(i / 1000);
+      if (v > peak) peak = v;
     }
-    expect(peak, greaterThan(1));
-    expect(peak, lessThan(1.02));
+    // ζ = 0.6 的欠阻尼弹簧过冲约 9.5%。
+    expect(peak, greaterThan(1.05));
+    expect(peak, lessThan(1.12));
   });
 }

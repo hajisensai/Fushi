@@ -180,8 +180,8 @@ class LibraryFilterChip extends StatelessWidget
       );
     }
     return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+      duration: FushiMotion.short,
+      curve: FushiSpringCurve.effects,
       height: height,
       padding: EdgeInsetsDirectional.only(start: active ? 8 : 12, end: 8),
       alignment: Alignment.center,

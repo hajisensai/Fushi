@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 加载指示器的显示门：查询开始后先等 [kDeferredLoadingDelay] 才露出指示器（快
 /// 查询根本不闪），一旦露出至少停留 [kDeferredLoadingMinVisible]（避免一闪而过），
@@ -155,7 +156,7 @@ class _FushiDeferredLoadingState extends State<FushiDeferredLoading> {
         ? TweenAnimationBuilder<double>(
             tween: Tween<double>(begin: 0, end: 1),
             duration: fade,
-            curve: Curves.easeOut,
+            curve: FushiSpringCurve.effects,
             builder: (BuildContext context, double t, Widget? child) =>
                 Opacity(opacity: t, child: child),
             child: Center(
@@ -172,7 +173,7 @@ class _FushiDeferredLoadingState extends State<FushiDeferredLoading> {
     return AnimatedOpacity(
       opacity: _fadingOut ? 0 : 1,
       duration: fade,
-      curve: Curves.easeOut,
+      curve: FushiSpringCurve.effects,
       child: content,
     );
   }
