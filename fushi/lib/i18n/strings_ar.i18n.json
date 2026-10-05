@@ -6689,5 +6689,22 @@
   "lookup_history_favorite": "Add to favorites",
   "lookup_history_more": "More",
   "lookup_idle_title": "Look up a word",
-  "lookup_idle_hint": "Type above, paste from the clipboard, or pick a recent word."
+  "lookup_idle_hint": "Type above, paste from the clipboard, or pick a recent word.",
+  "download_task_status_all": "All",
+  "download_summary_active": "Active $n",
+  "download_summary_queued": "Queued $n",
+  "download_summary_completed": "Done $n",
+  "download_summary_speed_title": "Total speed",
+  "download_pause_all": "Pause all",
+  "download_resume_all": "Resume all",
+  "download_task_add_source_magnet": "Magnet / link",
+  "download_task_add_source_torrent": "Torrent file",
+  "download_task_add_clipboard_use": "Use magnet link from clipboard",
+  "download_task_add_drop_hint": "Drop a .torrent file here, or click to browse",
+  "download_task_add_file_count": "$n files",
+  "download_task_add_start": "Start download",
+  "download_task_add_options": "Download options",
+  "download_subscription_summary": "$n subscriptions · $enabled enabled",
+  "subscription_rules_title": "Rules",
+  "subscription_history_title": "Match history"
 }
