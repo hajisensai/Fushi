@@ -42,12 +42,17 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 ///   `<video>` 播放（Anki 桌面 Qt WebEngine 无 H.264/AAC）。缺了移动端每张片段卡都先编
 ///   WebM 失败、再降级 MP4。ffmpeg-kit 的开关叫 `--enable-opus`，写进 FFmpeg configure
 ///   串的是 `--enable-libopus`。
+/// - `--enable-libdav1d`：BUG-2947 AV1 软件解码。FFmpeg 原生 `av1` 解码器只是 hwaccel
+///   挂钩壳，而移动端配方 `--disable-mediacodec` / `--disable-videotoolbox` 后一个 hwaccel
+///   都没有——缺它，AV1 视频制卡的截帧 / 动图每帧都是 `Your platform doesn't support
+///   hardware accelerated AV1 decoding`。ffmpeg-kit 的开关叫 `--enable-dav1d`。
 const List<String> _requiredMobileFlags = <String>[
   '--enable-gpl',
   '--enable-libx264',
   '--enable-openssl',
   '--enable-libvpx',
   '--enable-libopus',
+  '--enable-libdav1d',
 ];
 
 /// configure 声明了 ≠ 编码器真链进去了：FFmpeg 找不到 libvpx 时会**静默**关掉它的四个
@@ -58,6 +63,19 @@ const Map<String, String> _requiredWebmCodecStrings = <String, String>{
   'WebM Project VP9 Encoder': 'libvpx 自身的 VP9 编码器名（证明真链进了 libvpx）',
   'libopus': 'FFmpeg 的 Opus 编码器封装',
   'request not implemented': 'libopus 自身的错误信息表（FFmpeg 源码里没有这个串）',
+};
+
+/// BUG-2947：AV1 软件解码器同样要「封装名 + 库自身的串」两证。dav1d 的 `dav1d_log` 串
+/// （dav1d 1.2.1 src/obu.c，logging 默认开）在加 dav1d 之前的四个切片里一个都扫不到
+/// （2026-10-05 实测），所以它只可能因真链进 dav1d 而出现。
+///
+/// 不需要断言原生 `av1` 壳**不在**：ffmpeg-kit 不像 ffmpeg-min 那样能逐个挑解码器，壳会一直
+/// 编进来；FFmpeg n6.0 的 allcodecs.c 把它排在所有外部解码器之后（"hwaccel hooks only, so
+/// prefer external decoders"），按 codec id 找解码器时先命中的是 libdav1d。
+const Map<String, String> _requiredAv1DecoderStrings = <String, String>{
+  'libdav1d': 'FFmpeg 的 AV1 软件解码器封装',
+  'Malformed ITU-T T.35 metadata message format':
+      'dav1d 自身的日志串（证明真链进了 dav1d）',
 };
 
 /// 从当前 cwd 向上找含 vendored ffmpeg-kit 的仓库根。
@@ -141,6 +159,11 @@ void main() {
           expect(codec.contains(needle), isTrue,
               reason: '$abi libavcodec.so 里没有「$needle」（$what）');
         });
+        _requiredAv1DecoderStrings.forEach((String needle, String what) {
+          expect(codec.contains(needle), isTrue,
+              reason: '$abi libavcodec.so 里没有「$needle」（$what）——'
+                  'AV1 视频制卡截帧 / 动图会全挂（BUG-2947）');
+        });
       });
     }
 
@@ -167,6 +190,8 @@ void main() {
           reason: 'libvpx 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/license_opus.txt'), isNotNull,
           reason: 'opus 的许可文件必须随产物分发');
+      expect(aar.findFile('res/raw/license_dav1d.txt'), isNotNull,
+          reason: 'dav1d 的许可文件必须随产物分发');
       expect(aar.findFile('res/raw/source.txt'), isNotNull,
           reason: 'GPL/LGPL 要求的「源码获取途径」声明不得丢失');
     });
@@ -213,6 +238,11 @@ void main() {
         _requiredWebmCodecStrings.forEach((String needle, String what) {
           expect(codec.contains(needle), isTrue,
               reason: '$label libavcodec 里没有「$needle」（$what）');
+        });
+        _requiredAv1DecoderStrings.forEach((String needle, String what) {
+          expect(codec.contains(needle), isTrue,
+              reason: '$label libavcodec 里没有「$needle」（$what）——'
+                  'AV1 视频制卡截帧 / 动图会全挂（BUG-2947）');
         });
       });
     });
