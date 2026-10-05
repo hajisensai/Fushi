@@ -2039,8 +2039,10 @@ jobs:
             exit 1
           fi
           mkdir -p "$out_dir"
-          rm -f "$out_dir"/fushi-*-macos.zip
-          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos.zip"
+          # 2026-10 起只出 arm64，资产名带 `-arm64`：旧版（universal、可能跑在 Intel
+          # Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中这个 Intel 上启动不了的包。
+          rm -f "$out_dir"/fushi-*-macos.zip "$out_dir"/fushi-*-macos-arm64.zip
+          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.zip"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and
       # never blocks (or is blocked by) the other platforms.
@@ -2049,7 +2051,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-macos
-          path: fushi/build/release-artifacts/fushi-*-macos.zip
+          path: fushi/build/release-artifacts/fushi-*-macos-arm64.zip
           if-no-files-found: ignore
           retention-days: 14
 
@@ -2920,7 +2922,7 @@ jobs:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
-            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
       # release.yml. softprops upserts same-named assets but never removes a
@@ -2969,12 +2971,13 @@ jobs:
           # KEEP_SEQS by the OTHER platforms' newer seqs -- so another platform's
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
-          # *-windows-setup.exe / macOS: *-macos.zip / iOS: *-ios.ipa) so it keeps
+          # *-windows-setup.exe / macOS: *-macos-arm64.zip (+ legacy *-macos.zip) /
+          # iOS: *-ios.ipa) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -3052,7 +3055,7 @@ jobs:
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
-            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
@@ -3101,6 +3104,6 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: fushi/build/release-artifacts
-          ASSET_GLOB: fushi-*-macos.zip fushi-*-ios.ipa
+          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh
