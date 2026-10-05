@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions;
@@ -449,14 +450,18 @@ class FushiFloatingChromeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return FushiFloatingChromeReveal(
       child: Padding(
-        // 下边距要容得下胶囊的投影（elevation 3），收起动画的裁剪才不切到影子。
+        // M3E 收紧（2026-10-06 用户截图「标题与页签、页签与内容留白偏大」）：
+        // 顶边不再加距——外壳大标题自带 8 的下沿留白，就是标题到胶囊的那段
+        // 间距；底边只留 4 容胶囊投影（elevation 3），收起动画的裁剪不切到
+        // 影子，页面页头自己再给 12，合计约 16。左右与外壳大标题、页面内容
+        // 同一条页边（[FushiSpacingTokens.page]），胶囊左缘对齐标题左缘。
         padding:
             padding ??
-            const EdgeInsets.fromLTRB(
-              12,
+            EdgeInsets.fromLTRB(
+              FushiDesignTokens.of(context).spacing.page,
+              0,
+              FushiDesignTokens.of(context).spacing.page,
               kFushiFloatingChromeGap / 2,
-              12,
-              kFushiFloatingChromeGap,
             ),
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {

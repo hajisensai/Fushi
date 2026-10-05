@@ -850,8 +850,15 @@ class _FushiSectionTabBarState<T extends Object>
         : TabAlignment.fill;
     if (widget.floating && !widget.secondary) {
       final ColorScheme cs = Theme.of(context).colorScheme;
+      // 只要一层胶囊：外框 [_FloatingSectionTabsFrame] 就是 M3E floating
+      // toolbar 那枚胶囊，TabBar 不再自带分段轨道（track: false），也不再留
+      // 轨道内边距——否则胶囊套胶囊、内层两端被外层裁掉，页签胶囊还比右侧
+      // 动作胶囊高一截（2026-10-06 用户截图）。TabBar 本体 46 + 指示器 2 =
+      // 48，装进外框（上下各 4）正好 56，与动作胶囊同高。
       return FushiTabBar(
         controller: controller,
+        track: false,
+        padding: EdgeInsets.zero,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
         dividerHeight: 0,

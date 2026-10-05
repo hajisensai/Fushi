@@ -1718,6 +1718,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.tabAlignment,
     this.textScaler,
     this.indicatorAnimation,
+    this.track = true,
   }) : _secondary = false;
 
   const FushiTabBar.secondary({
@@ -1753,6 +1754,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.tabAlignment,
     this.textScaler,
     this.indicatorAnimation,
+    this.track = true,
   }) : _secondary = true;
 
   final List<Widget> tabs;
@@ -1786,6 +1788,12 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
   final TabAlignment? tabAlignment;
   final TextScaler? textScaler;
   final TabIndicatorAnimation? indicatorAnimation;
+
+  /// Material（M3E）下是否自带那条分段胶囊轨道。已经装在别的悬浮胶囊里的页签
+  /// （库页浮动工具栏的页签胶囊，`LibrarySectionTabs(floating: true)`）传
+  /// false：只画胶囊里的 TabBar 本体，不再叠第二层轨道——胶囊套胶囊会出两圈
+  /// 圆角与底色，内层还会被外层裁掉两端。Apple 设计系统下忽略。
+  final bool track;
   final bool _secondary;
 
   /// MD3（2026-10 页签统一，Material 3 Expressive）：调用方没显式给的值按
@@ -2014,7 +2022,13 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!isGlassDesign(context)) return _FushiM3eSegmentedTabs(bar: this);
+    if (!isGlassDesign(context)) {
+      if (track) return _FushiM3eSegmentedTabs(bar: this);
+      return Material(
+        type: MaterialType.transparency,
+        child: _material(Theme.of(context), true),
+      );
+    }
     return _FushiGlassTabBar(bar: this);
   }
 }
