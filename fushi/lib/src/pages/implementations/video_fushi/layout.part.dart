@@ -486,15 +486,16 @@ extension _VideoLayout on _VideoFushiPageState {
                             ),
                           ),
                         ),
-                        // M3E：进度条 + 底栏三簇共用的底部大圆角中性面板（同样排在控制条
-                        // 之前、IgnorePointer、与控制条同速淡入淡出）。Apple / mini 档为空。
+                        // M3E：控件显示时画面最下方一条很矮的暗角（同样排在控制条之前、
+                        // IgnorePointer、与控制条同速淡入淡出，恒在字幕避让线以下）。
+                        // Apple / mini 档 / 墨水屏为空。
                         Positioned.fill(
                           child: Padding(
                             padding: _videoControlsChromeInsets(),
-                            child: VideoM3eBottomPanel(
+                            child: VideoM3eBottomScrim(
                               visible: _videoControlsVisible,
                               duration: _videoControlsTransitionDuration,
-                              geometry: _m3eBottomPanelGeometry(),
+                              height: _m3eBottomScrimHeight(),
                             ),
                           ),
                         ),

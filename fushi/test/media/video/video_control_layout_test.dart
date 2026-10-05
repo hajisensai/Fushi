@@ -188,17 +188,15 @@ void main() {
       expect(seen, hasLength(VideoControlItem.values.length));
     });
 
-    test('current chrome keeps clip export next to screenshot in the top bar',
+    test('current chrome keeps screenshot in the top bar; clip export folds into ⋯',
         () {
       final List<VideoControlItem> topRight =
           VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
       expect(topRight, contains(VideoControlItem.screenshot));
-      expect(topRight, contains(VideoControlItem.clipExport));
-      expect(
-        topRight.indexOf(VideoControlItem.clipExport),
-        topRight.indexOf(VideoControlItem.screenshot) + 1,
-        reason: '播放器顶栏里片段导出必须贴着截图按钮',
-      );
+      // 2026-10-06 遮挡最小化：片段导出默认移出播放器、常驻右上「⋯」。
+      expect(topRight, isNot(contains(VideoControlItem.clipExport)));
+      expect(VideoControlLayout.currentChrome.removedItems,
+          contains(VideoControlItem.clipExport));
     });
 
     test('moveItem reorders within a slot and across slots', () {
@@ -1090,8 +1088,14 @@ void main() {
 
     test('both frame keys default into the bottom-center transport cluster',
         () {
+      // 2026-10-06 遮挡最小化：[currentChrome] 把逐帧键移出播放器（进右下「⋯」），
+      // 只有 [defaults] 仍把它们放在底栏中簇。
+      expect(VideoControlLayout.currentChrome.removedItems,
+          containsAll(<VideoControlItem>[
+        VideoControlItem.frameBackward,
+        VideoControlItem.frameForward,
+      ]));
       for (final VideoControlLayout layout in <VideoControlLayout>[
-        VideoControlLayout.currentChrome,
         VideoControlLayout.defaults,
       ]) {
         final List<VideoControlItem> center =
@@ -1117,17 +1121,17 @@ void main() {
       }
     });
 
-    test('empty pref decodes to currentChrome carrying both frame keys', () {
+    test('empty pref decodes to currentChrome with both frame keys in ⋯', () {
+      // 2026-10-06 遮挡最小化：逐帧键默认移出播放器（常驻右下「⋯」），可拖回。
       final VideoControlLayout fresh = VideoControlLayout.decode('');
-      expect(fresh.isOnPlayer(VideoControlItem.frameBackward), isTrue);
-      expect(fresh.isOnPlayer(VideoControlItem.frameForward), isTrue);
+      expect(fresh.isOnPlayer(VideoControlItem.frameBackward), isFalse);
+      expect(fresh.isOnPlayer(VideoControlItem.frameForward), isFalse);
       expect(
-        fresh.slotOf(VideoControlItem.frameBackward),
-        VideoControlSlot.bottomCenter,
-      );
-      expect(
-        fresh.slotOf(VideoControlItem.frameForward),
-        VideoControlSlot.bottomCenter,
+        fresh.removedItems,
+        containsAll(<VideoControlItem>[
+          VideoControlItem.frameBackward,
+          VideoControlItem.frameForward,
+        ]),
       );
     });
 

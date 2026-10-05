@@ -142,6 +142,7 @@ class VideoBarMeasure {
     double? compactWidth,
     this.priority,
     this.group,
+    this.folded = false,
   }) : compactWidth = compactWidth ?? fullWidth;
 
   /// 原样（带文字）时的宽。
@@ -155,6 +156,9 @@ class VideoBarMeasure {
 
   /// 见 [VideoBarHideGroup]。
   final Object? group;
+
+  /// 见 [VideoBarEntry.folded]：恒在「⋯」里，不参与栏上排布。
+  final bool folded;
 }
 
 /// [planVideoControlBar] 的结论：要不要换紧凑形态、哪些条目收进「⋯」。
@@ -210,13 +214,20 @@ VideoBarPlan planVideoControlBar({
 
   bool fits(double width) => width <= maxWidth + _kFitTolerance;
 
-  if (fits(total(compact: false, hidden: const <int>{}))) {
-    return VideoBarPlan.showAll;
+  // 常驻菜单项（[VideoBarMeasure.folded]）一开始就在「⋯」里：有它们时「⋯」恒在，
+  // 其宽度从一开始就要算进去。
+  final Set<int> folded = <int>{
+    for (int i = 0; i < entries.length; i++)
+      if (entries[i].folded) i,
+  };
+  final double moreReserve = folded.isEmpty ? 0 : overflowButtonWidth;
+  if (fits(total(compact: false, hidden: folded) + moreReserve)) {
+    return folded.isEmpty ? VideoBarPlan.showAll : VideoBarPlan(hidden: folded);
   }
-  if (fits(total(compact: true, hidden: const <int>{}))) {
-    return const VideoBarPlan(compact: true);
+  if (fits(total(compact: true, hidden: folded) + moreReserve)) {
+    return VideoBarPlan(compact: true, hidden: folded);
   }
-  final Set<int> hidden = <int>{};
+  final Set<int> hidden = <int>{...folded};
   for (final List<int> unit in _videoBarHideOrder(entries)) {
     hidden.addAll(unit);
     if (fits(total(compact: true, hidden: hidden) + overflowButtonWidth)) {
@@ -281,8 +292,9 @@ class VideoBarEntry {
     this.group,
     this.menuAction,
     this.onFolded,
+    this.folded = false,
   }) : assert(
-         priority == null || menuAction != null,
+         (priority == null && !folded) || menuAction != null,
          'a collapsible entry must say what its overflow-menu row does',
        );
 
@@ -302,6 +314,10 @@ class VideoBarEntry {
 
   /// 收起后在「⋯」菜单里的那一行；钉死项可不给。
   final VideoBarMenuAction? menuAction;
+
+  /// 常驻「⋯」菜单：不在栏上画，只作菜单里的一行（用户布局里移出播放器的按钮，
+  /// 默认精简布局靠它把不常用的动作收进「更多」）。[child] 不会显示。
+  final bool folded;
 
   /// 这一项刚从栏上收进「⋯」时（帧尾）调用。被收起的按钮不再绘制，挂在它身上的
   /// 东西（如以它为锚点的浮层）要在这里收场，否则会锚在一个看不见的按钮上。
@@ -531,6 +547,7 @@ class _VideoControlBarState extends State<VideoControlBar> {
             cluster: entry.cluster,
             priority: entry.priority,
             group: entry.group,
+            folded: entry.folded,
           ),
       ],
       onPlan: _onLayoutPlan,
@@ -571,21 +588,28 @@ enum _VideoBarChildRole { full, compact, more }
 
 @immutable
 class _VideoBarSpec {
-  const _VideoBarSpec({required this.cluster, this.priority, this.group});
+  const _VideoBarSpec({
+    required this.cluster,
+    this.priority,
+    this.group,
+    this.folded = false,
+  });
 
   final VideoBarCluster cluster;
   final int? priority;
   final Object? group;
+  final bool folded;
 
   @override
   bool operator ==(Object other) =>
       other is _VideoBarSpec &&
       other.cluster == cluster &&
       other.priority == priority &&
-      other.group == group;
+      other.group == group &&
+      other.folded == folded;
 
   @override
-  int get hashCode => Object.hash(cluster, priority, group);
+  int get hashCode => Object.hash(cluster, priority, group, folded);
 }
 
 class _VideoBarParentData extends ContainerBoxParentData<RenderBox> {
@@ -801,6 +825,7 @@ class _RenderVideoControlBar extends RenderBox
             compactWidth: compact[i],
             priority: _specs[i].priority,
             group: _specs[i].group,
+            folded: _specs[i].folded,
           ),
       ],
       maxWidth: constraints.maxWidth - _pillReserve(_presentClusters),
@@ -1015,7 +1040,7 @@ class _RenderVideoControlBar extends RenderBox
       final _VideoBarParentData data = _data(child);
       final bool counts = switch (data.role) {
         _VideoBarChildRole.more => _specs.any(
-          (_VideoBarSpec s) => s.priority != null,
+          (_VideoBarSpec s) => s.priority != null || s.folded,
         ),
         _VideoBarChildRole.full =>
           data.entry < _specs.length && _specs[data.entry].priority == null,
@@ -1029,8 +1054,11 @@ class _RenderVideoControlBar extends RenderBox
   @override
   double computeMaxIntrinsicWidth(double height) {
     double width = 0;
+    final bool anyFolded = _specs.any((_VideoBarSpec s) => s.folded);
     for (final RenderBox child in _children) {
-      if (_data(child).role == _VideoBarChildRole.full) {
+      final _VideoBarChildRole role = _data(child).role;
+      if (role == _VideoBarChildRole.full ||
+          (anyFolded && role == _VideoBarChildRole.more)) {
         width += child.getMaxIntrinsicWidth(height);
       }
     }

@@ -400,17 +400,17 @@ void main() {
       expect(theme.contains('fork.backdropColor'), isFalse);
     });
 
-    test('M3E 进度条与底栏三簇收进同一块底部面板，顶栏按钮组画浮动胶囊', () {
+    test('M3E 底栏是紧凑小胶囊 + 细轨 + 矮暗角（无整宽面板），顶栏按钮组画浮动胶囊', () {
       final String layout = File(
         'lib/src/pages/implementations/video_fushi/layout.part.dart',
       ).readAsStringSync();
-      expect(theme.contains('lane:'), isFalse, reason: '轨道已收进底部面板，不再画独立轨道槽');
-      expect(layout, contains('VideoM3eBottomPanel('));
-      expect(layout, contains('geometry: _m3eBottomPanelGeometry()'));
+      expect(theme.contains('lane:'), isFalse, reason: '细轨不再画独立轨道槽');
+      expect(layout, contains('VideoM3eBottomScrim('));
+      expect(layout, contains('height: _m3eBottomScrimHeight()'));
       expect(
-        page,
-        contains('clusterStyle: _m3eFloatingBarStyle(inPanel: true)'),
-        reason: '底栏三簇收进底部面板，不再各画胶囊',
+        RegExp(r'clusterStyle:\s*_m3eFloatingBarStyle\(\)').hasMatch(page),
+        isTrue,
+        reason: '底栏每簇一颗紧凑小胶囊',
       );
       expect(
         page,

@@ -38,8 +38,9 @@ void main() {
     // 否则控制条不吃缩放)。撤掉任一 * _videoUiScale 即转红。
     expect(
       source,
-      contains(
-          'double get _videoButtonBarHeight => _videoButtonBarHeightBase * _videoUiScale'),
+      contains('_videoUiScale;
+
+  /// M3E 底栏 / 顶栏胶囊高'),
       reason: 'button bar height must follow appUiScale (TODO-067)',
     );
     expect(

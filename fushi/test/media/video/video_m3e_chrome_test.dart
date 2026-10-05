@@ -103,25 +103,38 @@ void main() {
   group('default layout (M3E rework)', () {
     final VideoControlLayout layout = VideoControlLayout.currentChrome;
 
-    test('bottom-left is episode / play / episode + time', () {
+    // 2026-10-06 控件显示时遮挡最小化：左下一颗「播放 + 时间」胶囊、右下一颗
+    // 「音量 / 字幕 / 倍速 / 全屏」胶囊，学习组移出播放器、常驻右下「⋯」。
+    test('bottom-left is play + time', () {
       expect(layout.itemsIn(VideoControlSlot.bottomLeft), <VideoControlItem>[
-        VideoControlItem.previousEpisode,
         VideoControlItem.playPause,
-        VideoControlItem.nextEpisode,
         VideoControlItem.positionIndicator,
       ]);
     });
 
-    test('bottom-centre is the learning group with replay in the middle', () {
-      expect(layout.itemsIn(VideoControlSlot.bottomCenter), <VideoControlItem>[
-        VideoControlItem.seekBackward,
-        VideoControlItem.frameBackward,
-        VideoControlItem.previousCue,
-        VideoControlItem.replayCue,
-        VideoControlItem.nextCue,
-        VideoControlItem.frameForward,
-        VideoControlItem.seekForward,
+    test('bottom-right is volume / subtitle / speed / fullscreen', () {
+      expect(layout.itemsIn(VideoControlSlot.bottomRight), <VideoControlItem>[
+        VideoControlItem.volume,
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.speed,
+        VideoControlItem.fullscreen,
       ]);
+    });
+
+    test('bottom-centre is empty; the learning group folds into ⋯', () {
+      expect(layout.itemsIn(VideoControlSlot.bottomCenter), isEmpty);
+      expect(
+        layout.removedItems,
+        containsAll(<VideoControlItem>[
+          VideoControlItem.seekBackward,
+          VideoControlItem.frameBackward,
+          VideoControlItem.previousCue,
+          VideoControlItem.replayCue,
+          VideoControlItem.nextCue,
+          VideoControlItem.frameForward,
+          VideoControlItem.seekForward,
+        ]),
+      );
     });
 
     test('replay folds together with the other cue keys', () {
