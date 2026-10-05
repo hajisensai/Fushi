@@ -669,24 +669,14 @@ class _LnReaderDownloadDialogState extends State<LnReaderDownloadDialog> {
 
   Future<DuplicateChoice> _askOnDuplicate(String proposedTitle) async {
     if (!mounted) return DuplicateChoice.cancel;
-    final bool? keep = await showAppDialog<bool>(
+    final bool keep = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog(
-        title: Text(t.book_import_duplicate_title),
-        content: Text(t.book_import_duplicate_message(name: proposedTitle)),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.book_import_duplicate_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.book_import_duplicate_keep),
-          ),
-        ],
-      ),
+      title: t.book_import_duplicate_title,
+      message: t.book_import_duplicate_message(name: proposedTitle),
+      cancelLabel: t.book_import_duplicate_cancel,
+      confirmLabel: t.book_import_duplicate_keep,
     );
-    return keep == true ? DuplicateChoice.suffix : DuplicateChoice.cancel;
+    return keep ? DuplicateChoice.suffix : DuplicateChoice.cancel;
   }
 
   Future<void> _run() async {

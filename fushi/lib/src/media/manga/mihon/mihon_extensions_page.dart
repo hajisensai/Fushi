@@ -177,28 +177,16 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     }
   }
 
-  Future<bool> _confirmInsecureUrl(String url) async =>
-      await showAppDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-          title: Text(t.mihon_store_add),
-          content: Text('${t.mihon_extension_warning}\n\n$url'),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: dialogContext,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(t.dialog_ok),
-            ),
-          ],
-        ),
-      ) ??
-      false;
+  Future<bool> _confirmInsecureUrl(String url) => showFushiConfirmDialog(
+    context: context,
+    title: t.mihon_store_add,
+    message: '${t.mihon_extension_warning}
+
+$url',
+    icon: Icons.warning_amber_rounded,
+    confirmLabel: t.dialog_ok,
+    destructive: true,
+  );
 
   Future<void> _importApk() async {
     final String? path = await pickSystemFilePath(
@@ -436,53 +424,30 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 删仓库也要确认（BUG-1716）：与卸载扩展、Aidoku 仓库删除同一套语义。
   /// 删掉仓库会让它提供的整页可装扩展从列表消失，误触成本远高于一次确认。
   Future<void> _removeStore(MangaExtensionStoreRow store) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    final bool confirmed = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-        title: Text(t.mihon_store_remove),
-        content: Text('${store.name}\n${store.indexUrl}'),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_delete),
-          ),
-        ],
-      ),
+      title: t.mihon_store_remove,
+      message: '${store.name}
+${store.indexUrl}',
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
     );
-    if (confirmed == true) {
+    if (confirmed) {
       await _manager!.removeStore(store.indexUrl);
     }
   }
 
   Future<void> _uninstall(MangaExtensionRow extension) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    final bool confirmed = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-        title: Text(t.mihon_extension_uninstall),
-        content: Text(extension.name),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.mihon_extension_uninstall),
-          ),
-        ],
-      ),
+      title: t.mihon_extension_uninstall,
+      message: extension.name,
+      icon: Icons.delete_outline,
+      confirmLabel: t.mihon_extension_uninstall,
+      destructive: true,
     );
-    if (confirmed == true) {
+    if (confirmed) {
       await _manager!.uninstallExtension(extension);
     }
   }

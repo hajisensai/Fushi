@@ -78,27 +78,15 @@ class _MihonInstalledSourcesSectionState
   }
 
   Future<void> _clearSourceData(MangaOnlineSourceRow source) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    final bool confirmed = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-        title: Text(t.mihon_source_clear_data),
-        content: Text(t.mihon_source_clear_data_hint),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(t.dialog_clear),
-          ),
-        ],
-      ),
+      title: t.mihon_source_clear_data,
+      message: t.mihon_source_clear_data_hint,
+      icon: Icons.cleaning_services_outlined,
+      confirmLabel: t.dialog_clear,
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await widget.manager.clearSourceData(source);
     } on Object catch (error, stack) {
