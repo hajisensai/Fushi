@@ -52,3 +52,60 @@
 - 用户验收最新包：横/竖排单字、多行拖动中实时跟随、页顶/底不压字，三个模式切页及打开有声书（已绑定/未绑定）、导航、图集、统计。
 - 极密正文/小视口没有两个32px合法触控区时，目前不压字而隐藏手柄；如需始终可拖，需要单独确认遮挡/边距交互设计，不能隐式扩选或缩小目标。
 - 不 push、不合并，由作者决定后续集成。
+---
+
+## 2026-10-05 继续审查用户手改（不修改业务代码）
+
+### Scope
+
+- 审查原未提交手改，期间被用户侧提交为 `0c06dcde92`、`7b900d904b`；以 `7b900d904b` 中的正文锚点 + 独立 `handlesBoxes` 为对象。8px 手柄定位回退已由用户明确要求，不将它误报成本轮新引入的手改缺陷。
+- 重点：`reader_selection_toolbar_layout.dart` 的摆放策略、JS→Dart→Flutter 新盒子字段、相邻守卫。未运行 adb、未构建、未改业务/正式测试。
+- 审查期间 worktree 发生另一次合并（曾出现 chrome 冲突标记、未解析 liquid_glass_widgets），完整 widget suite 因并发中间态装载失败，不能归因于这次手改。布局文件及其测试与审查快照的 SHA256 一致。
+
+### Findings
+
+#### HBK-AUDIT-198 — P2 — 跨列竖排错误使用全局最上球，仍会将操作条翻到下方
+- status：reproduced，未修复。
+- 位置：`fushi/lib/src/reader/reader_selection_toolbar_layout.dart:82–90`。
+- 起点在右列中部、终点在下一列顶部时，两球的 y 顺序与选区起止顺序相反。首选位置被起始球挡住后，算法取所有球的最小 top；末端球贴页顶，就把“所有球上方不可用”当成“选区头部上方无空间”，直接进入下方路径。
+- 直接执行生产 delegate 的证伪用例：视口400×700，工具条384×48，首字(300,260,24,24)，两球盒(296,236,32,32)/(216,56,32,32)。输出 **y=324**；**y=180** 在首字及两球上方/之间留足8px且完全可见。这些球盒符合现有 GAP=8 定位公式。
+- 修复建议：以上方首字锚点为基准，只跨过实际阻挡当前候选的球；或按各障碍的上下边界枚举小量候选，优先保持头部附近的合法位置。不要用所有球的全局 top/bottom 再造并集式行为。
+- 同根补充：页顶首字(350,0,24,24)、球盒(346,0,32,32)/(306,104,32,32)，在400×700内输出y=144；y=40本来已经合法、更贴近头部。
+
+#### HBK-AUDIT-199 — P2 — 最后的 clamp 会重新把操作条压回球上，且并非总是空间不足
+- status：reproduced，未修复。
+- 位置：`fushi/lib/src/reader/reader_selection_toolbar_layout.dart:95–107`。
+- `lowest + gap` 未检查 fits/blocked，最后 `clamp(minTop,maxTop)` 之后也不验证碰撞。
+- 实例：视口400×180（小窗/矮视口），工具条384×48，首字(350,0,24,24)，两球盒(346,0,32,32)/(306,104,32,32)。首选下方y=64碰到末球，改成y=144又越界，clamp为 **y=124**，条覆盖y=124–172，与末球 **104–136重叠12px**。而 **y=40–88** 在两个球之间、离正文及球均留足8px，确有可用位置。
+- 修复建议：对最终位置再次做 in-bounds + obstacle 校验；先检查球之间合法空隙，不把clamp视为碰撞安全保证。若确实无解，应显式声明降级策略，而不是混同此类可解场景。
+
+#### HBK-AUDIT-200 — P2 — 改了生产锚点契约却没更新 nonmodal 相邻守卫
+- status：confirmed_source_contract，未修复。
+- 位置：`fushi/test/reader/reader_selection_action_bar_nonmodal_guard_test.dart:36`。
+- 仍要求 `data.handlesRect ?? data.rect`，但生产 `_buildSelectionActionBar` 已改成两个独立映射。复用同一源码切片与 contains 判据：5359c57be3为true，手改为false；这是确定性的过期守卫，不应通过恢复错误的union锚点来满足测试。
+- 建议：改为锁定 `selectionRect` 来自正文、`gripBoxes` 逐盒映射，同时保留非模态/销毁/payload清理断言。
+
+### 已核对而未报为生产缺陷
+
+- `fireSelectionMenu` 在手柄定位后确实发送 handlesBoxes；Dart parser 与 chrome 消费未断链。横/竖排、popover/no-popover四组真实生产函数回放均输出两个有限的32×32盒子、正确并集与独立首字rect。不存在应为这次修改再增加API版本门的证据。
+- 新增盒子的回退逻辑没有发现高可信生产错误；是否空列表/无效输入应退回并集与现实现一致。
+- 当前37场景/24 mutation并未保护新增发送行：内存删除 `payload.handlesBoxes = this.selectionHandlesBoxes();` 后37场景仍绿。因此该绿不能证明新链路被测试锁住；这是补测建议，不另报实际生产故障。
+
+### 验证与局限
+
+- `.codex-test/reader-selection-audit/manual-review/layout_probe_test.dart` 直接import生产delegate，三个用例已执行并复现上述坐标与无碰撞替代位置；测试断言是“观测错误成立”，通过不等于业务正确。
+- 数值证据：`manual-review/layout-evidence.json`；桥接与过期守卫证据：`manual-review/payload/probe-output.txt`。
+- 第一轮多suite运行中有3个证伪用例通过，但6个suite因并发合并/依赖中间态装载失败，整体exit1。保留 `manual-review/flutter-tests.log`，不将编译失败计成手改回归。只读审查没有改依赖、没有解决别人的合并冲突。
+- 最终受限重跑日志：`manual-review/isolated-tests.log`；不宣称完整App/widget/真机已验证。
+- 由于worktree正在进行用户侧合并，本轮只追加报告和本地证据，**不提交，以免将别人的stage内容一并提交**。
+
+### Next Scope
+
+- 修正候选摆放后补：竖排跨列（起点y大于终点y）、页顶两球间恰好有空位、小窗/安全区/大字号，断言“如果存在无碰撞候选，最终结果必须无碰撞且保持首字附近”。
+- 新增 handlesBoxes 的 emit→parse→map 回归及 mutation，补跑 nonmodal 守卫。合并/依赖稳定后再跑原8个widget布局用例。
+#### 本轮受限重跑结果补充
+
+`manual-review/isolated-tests.log` 最终 **18通过 / 1失败，exit1**。三个生产delegate证伪用例执行成功；其余通过含数据解析。唯一失败为 `reader_selection_action_bar_nonmodal_guard_test.dart:36` 的过期锚点字符串断言，已实际跑出，不再只是源码预测。因此HBK-AUDIT-200状态提升为 reproduced-test-failure。业务文件未由本审查修改；当前合并现场仍由用户侧处理。
+#### 审查结束时的外部状态变化
+
+用户侧已完成合并 `0a6e0accdb`，随后 `reader_selection_toolbar_layout.dart` 又出现新的未提交修改。**本轮三项结论限定为已固定的 `7b900d904b`/审查快照，不将刚出现的新修改宣称为已审或已修。** 本轮没有修改任何业务代码或正式测试；仅提交审查报告，源码改动保持用户所有。
