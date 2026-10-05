@@ -154,7 +154,7 @@ class SubtitleCollectionPanel extends StatefulWidget {
   final List<VideoBookRow> members;
 
   /// 统一字幕来源的延迟解析器（填 key 会重建 runtime，不能早绑）。
-  final VideoSubtitleRegistry? Function() subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function() subtitleRegistry;
 
   final String initialApiKey;
   final Future<void> Function(String key) onApiKeyChanged;
@@ -299,9 +299,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     // 这条首搜**只搜不绑**（[_resolveSeries] → [_applySeries]）：这里的前提正是
     // 合集没绑 AniList，若把模糊命中的首条写回库，用户只是打开一次面板就会被
     // 粘性绑定——真人剧合集会被永久绑到一部最像的动画上。
-    if (!_searching && !_resolving && _hasConfiguredSubtitleSource) {
-      unawaited(_resolveSeries());
+    if (_searching || _resolving || !await _hasConfiguredSubtitleSource()) {
+      return;
     }
+    if (!mounted || _searching || _resolving) return;
+    unawaited(_resolveSeries());
   }
 
   /// 本次检索交给 provider 的身份。
@@ -350,10 +352,16 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     super.dispose();
   }
 
-  bool get _hasConfiguredSubtitleSource {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
+  Future<bool> _hasConfiguredSubtitleSource() async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
     return registry != null && registry.providers.isNotEmpty;
   }
+
+  /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
+  /// key 却仍然没有来源 = 来源全被关掉了，不能再拿缺 key 糊弄（BUG-2956）。
+  String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
+      ? t.video_jimaku_no_key
+      : t.video_subtitle_sources_all_disabled;
 
   SubtitleCollectionSource? get _selectedSource {
     for (final SubtitleCollectionSource s in _sources) {
@@ -416,7 +424,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   Future<void> _resolveSeries() async {
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) {
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
       _setNotice(t.video_jimaku_no_key, error: true);
       return;
     }
@@ -540,7 +548,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     int? generation,
   }) async {
     final int requestGeneration = generation ?? ++_generation;
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (!mounted) return;
     final String query = _queryCtrl.text.trim();
     if (registry == null || registry.providers.isEmpty) {
       setState(() {
@@ -548,7 +557,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _selectedSourceKey = null;
         _searched = true;
       });
-      _setNotice(t.video_jimaku_no_key, error: true);
+      _setNotice(_noSourceMessage(), error: true);
       return;
     }
     setState(() {
@@ -644,8 +653,12 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   Future<void> _downloadAll() async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
-    if (registry == null) return;
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (!mounted) return;
+    if (registry == null) {
+      _setNotice(_noSourceMessage(), error: true);
+      return;
+    }
     final List<VideoSubtitleCandidate> candidates = _batchCandidates;
     if (candidates.isEmpty) return;
     setState(() {

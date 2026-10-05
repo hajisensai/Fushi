@@ -6382,5 +6382,8 @@
   "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
   "video_cover_online_search": "オンラインでカバーを検索",
   "video_cover_online_hint": "タイトルでメタデータ提供元を検索するか、ID 指定に切り替えます。選んだ結果はカバー画像だけを使い、作品の紐付けは変わりません。",
-  "video_cover_online_no_image": "この結果にはカバー画像がありません。別の結果を選んでください。"
+  "video_cover_online_no_image": "この結果にはカバー画像がありません。別の結果を選んでください。",
+  "video_subtitle_sources_all_disabled": "オンライン字幕ソースがすべてオフになっています。字幕設定で少なくとも 1 つをオンにしてください。",
+  "video_subtitle_error_key_rejected": "${provider} が API キーを拒否しました。字幕設定のキーを確認してください",
+  "video_subtitle_error_network": "${provider} に接続できません。ネットワークまたはプロキシを確認してください"
 }

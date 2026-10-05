@@ -37,7 +37,7 @@ class JimakuSubtitleDialog extends StatelessWidget {
     super.key,
   });
 
-  final VideoSubtitleRegistry? Function()? subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function()? subtitleRegistry;
   final String initialQuery;
   final SubtitleSearchSeed seed;
   final String? videoPath;

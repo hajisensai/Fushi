@@ -6382,5 +6382,8 @@
   "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
   "video_cover_online_search": "Search cover online",
   "video_cover_online_hint": "Search the metadata provider by title, or switch to ID. Picking a result only uses its cover; the work's identity is not changed.",
-  "video_cover_online_no_image": "This result has no cover image. Try another one."
+  "video_cover_online_no_image": "This result has no cover image. Try another one.",
+  "video_subtitle_sources_all_disabled": "All online subtitle sources are turned off. Turn one on in subtitle settings.",
+  "video_subtitle_error_key_rejected": "${provider} rejected the API key. Check the key in subtitle settings",
+  "video_subtitle_error_network": "Could not reach ${provider}. Check your network or proxy"
 }

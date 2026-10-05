@@ -107,7 +107,7 @@ void main() {
                       initialApiKey: 'jimaku-key',
                       onApiKeyChanged: (String _) async {},
                       saveDirectory: saveDir.path,
-                      subtitleRegistry: () => VideoSubtitleRegistry(
+                      subtitleRegistry: () async => VideoSubtitleRegistry(
                         <VideoSubtitleProvider>[_HostileNameProvider()],
                       ),
                       httpClientFactory: () async => http_testing.MockClient(

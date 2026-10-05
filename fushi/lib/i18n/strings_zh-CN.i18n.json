@@ -6382,5 +6382,8 @@
   "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。",
   "video_cover_online_search": "在线搜索封面",
   "video_cover_online_hint": "按标题搜索资料源，或切换到按 ID。选中的条目只取它的封面，不会改变作品身份。",
-  "video_cover_online_no_image": "这个条目没有封面图，请换一个。"
+  "video_cover_online_no_image": "这个条目没有封面图，请换一个。",
+  "video_subtitle_sources_all_disabled": "在线字幕来源都已关闭，请先在字幕设置里打开至少一个。",
+  "video_subtitle_error_key_rejected": "${provider} 拒绝了 API key，请检查字幕设置里填的 key",
+  "video_subtitle_error_network": "连不上 ${provider}，请检查网络或代理"
 }

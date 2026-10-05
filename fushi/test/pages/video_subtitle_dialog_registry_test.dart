@@ -19,7 +19,7 @@ import 'package:http/testing.dart' as http_testing;
 /// OpenSubtitles。这条测试就是那个能力差的行为门。
 void main() {
   Widget host({
-    required VideoSubtitleRegistry registry,
+    required VideoSubtitleRegistry? registry,
     required String saveDirectory,
     String apiKey = 'jimaku-key',
   }) =>
@@ -31,7 +31,7 @@ void main() {
               initialApiKey: apiKey,
               onApiKeyChanged: (String _) async {},
               saveDirectory: saveDirectory,
-              subtitleRegistry: () => registry,
+              subtitleRegistry: () async => registry,
               // AniList 恒空 → 走文本回退路径，不触网。
               httpClientFactory: () async => http_testing.MockClient(
                 (http.Request request) async => http.Response(
@@ -93,6 +93,29 @@ void main() {
       findsOneWidget,
       reason: '播放页此前只搜 Jimaku，OpenSubtitles 的候选结构上出不来',
     );
+  });
+
+  // BUG-2956：填了 key 却一个来源都拿不到（宿主给 null registry）时，曾经只清空
+  // 候选、显示「找不到字幕」，像是 Jimaku 上没有——实际是根本没问。
+  testWidgets('BUG-2956 拿不到任何字幕来源时报真实原因，不显示成找不到字幕',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(host(
+      registry: null,
+      saveDirectory: Directory.systemTemp.createTempSync('fushi_nosrc').path,
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, t.video_jimaku_search));
+    await tester.pumpAndSettle();
+
+    expect(find.text(t.video_subtitle_sources_all_disabled), findsOneWidget,
+        reason: 'key 已填：不能再说「请先填写 key」，也不能静默显示没结果');
+    expect(find.text(t.video_jimaku_no_key), findsNothing);
   });
 
   testWidgets('只配了 OpenSubtitles（Jimaku key 为空）也能搜，不再被 Jimaku key 卡住',

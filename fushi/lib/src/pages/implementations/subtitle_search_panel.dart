@@ -235,11 +235,42 @@ int? subtitleFailureStatusCode(Object? error) =>
 ///
 /// 拼法本身走 i18n（`video_subtitle_error_with_code`），不在这里写死全角括号——
 /// 中英文的括号形态不同，硬编码等于让英文界面也吃到全角括号。
+///
+/// 鉴权被拒与连不上两类换成说清原因的文案（BUG-2956）：只给「搜索失败（HTTP 401）」
+/// 用户看不出是 key 的问题，会继续换关键词瞎试。
 String describeSubtitleFailure(String baseMessage, Object? error) {
   final int? status = subtitleFailureStatusCode(error);
-  if (status == null) return baseMessage;
-  return t.video_subtitle_error_with_code(msg: baseMessage, code: status);
+  final String message = switch (error) {
+    ExternalProviderFailure(
+      kind: ExternalProviderFailureKind.unauthorized ||
+          ExternalProviderFailureKind.forbidden,
+      :final String providerId,
+    ) =>
+      t.video_subtitle_error_key_rejected(
+        provider: subtitleProviderDisplayName(providerId),
+      ),
+    ExternalProviderFailure(
+      kind: ExternalProviderFailureKind.network ||
+          ExternalProviderFailureKind.timeout,
+      :final String providerId,
+    ) =>
+      t.video_subtitle_error_network(
+        provider: subtitleProviderDisplayName(providerId),
+      ),
+    _ => baseMessage,
+  };
+  if (status == null) return message;
+  return t.video_subtitle_error_with_code(msg: message, code: status);
 }
+
+/// 字幕 provider id → 给用户看的名字（未知 id 原样返回）。纯函数。
+String subtitleProviderDisplayName(String providerId) => switch (providerId) {
+  'jimaku' => 'Jimaku',
+  'opensubtitles' => 'OpenSubtitles',
+  'subdl' => 'SubDL',
+  'ajatt' => 'AJATT',
+  _ => providerId,
+};
 
 /// 一批 provider 结果里最值得说给用户听的那条失败；全绿时为 null。纯函数。
 ///
@@ -325,7 +356,7 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 延迟是必须的：填 key 会经 [onApiKeyChanged] 触发 provider runtime 重建，早绑
   /// 的 registry 实例正是那个「刚填完 key 还是搜不到」的旧实例。null = 宿主没接
   /// registry（纯渲染用的测试宿主）→ 搜索按未配置来源处理。
-  final VideoSubtitleRegistry? Function()? subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function()? subtitleRegistry;
 
   /// 预填的搜索词（由视频文件名解析出的番名）。
   final String initialQuery;
@@ -547,10 +578,17 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }
 
   /// 当前是否有**任何**已配置的在线字幕来源（registry 里有 provider 即算）。
-  bool get _hasConfiguredSubtitleSource {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+  Future<bool> _hasConfiguredSubtitleSource() async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     return registry != null && registry.providers.isNotEmpty;
   }
+
+  /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
+  /// key 却仍然没有来源 = 来源全被关掉了（BUG-2956）。
+  String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
+      ? t.video_jimaku_no_key
+      : t.video_subtitle_sources_all_disabled;
 
   Future<void> _search() async {
     final String apiKey = _apiKeyCtrl.text.trim();
@@ -558,7 +596,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     // 门槛是「有没有可用的字幕来源」，不是「有没有 Jimaku key」：只配了
     // OpenSubtitles 的用户照样能搜。改动前这里硬卡 Jimaku key，等于把另一路来源
     // 挡在门外。已配来源但 key 填错/失效 → 搜索照跑，按无结果呈现（与既有一致）。
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) {
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
       _showError(t.video_jimaku_no_key);
       return;
     }
@@ -689,7 +727,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   Future<void> _selectSeries(AniListMedia media) async {
     if (_selectedSeriesId == media.id || _searching) return;
     final String apiKey = _apiKeyCtrl.text.trim();
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) return;
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) return;
+    if (!mounted) return;
     final int? episode = int.tryParse(_episodeCtrl.text.trim());
     setState(() {
       _searching = true;
@@ -728,14 +767,18 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     required String queryFallback,
     required int? episode,
   }) async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null || registry.providers.isEmpty) {
       if (!mounted) return;
+      // BUG-2956：这里曾只把候选清空、不设错误——没有任何来源可问时页面却显示
+      // 「找不到字幕」，像是搜过了而 Jimaku 上没有。要说清是「没问」。
       setState(() {
         _candidates = const <JimakuCandidate>[];
         _searched = true;
         _searchedWithEpisode = episode != null;
         _selectedSeriesId = anilistId;
+        _error = _noSourceMessage();
       });
       return;
     }
@@ -895,8 +938,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 探测用下载：**每次现取** registry（与直接下载路径同纪律），不长期持有闭包。
   Future<VideoSubtitleDownload> _downloadForProbe(
     VideoSubtitleCandidate candidate,
-  ) {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+  ) async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null) {
       throw ExternalProviderFailure(
         providerId: candidate.providerId,
@@ -937,7 +981,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 一条失败不中断整批（某个 provider 挂了不该把其余的也废掉），失败条数汇总到
   /// 错误提示里；一条都没成功时不回调，避免调用方拿着空列表去「应用第一条」。
   Future<void> _downloadSelected() async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null || _selectedCandidates.isEmpty) return;
     final List<VideoSubtitleCandidate> targets =
         List<VideoSubtitleCandidate>.of(_selectedCandidates);
@@ -990,7 +1035,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }
 
   Future<void> _downloadSource(VideoSubtitleCandidate source) async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry?.call();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+        ?.call();
     if (registry == null) return;
     setState(() {
       _busyName = source.fileName;

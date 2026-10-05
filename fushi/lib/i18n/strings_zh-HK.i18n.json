@@ -6382,5 +6382,8 @@
   "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
   "video_cover_online_search": "在線搜尋封面",
   "video_cover_online_hint": "按標題搜尋資料來源，或切換到按 ID。選中的條目只取它的封面，不會改變作品身分。",
-  "video_cover_online_no_image": "這個條目沒有封面圖，請換一個。"
+  "video_cover_online_no_image": "這個條目沒有封面圖，請換一個。",
+  "video_subtitle_sources_all_disabled": "線上字幕來源都已關閉，請先在字幕設定裡打開至少一個。",
+  "video_subtitle_error_key_rejected": "${provider} 拒絕了 API key，請檢查字幕設定裡填的 key",
+  "video_subtitle_error_network": "連不上 ${provider}，請檢查網絡或代理"
 }
