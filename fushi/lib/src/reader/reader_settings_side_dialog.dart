@@ -16,6 +16,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
   required BuildContext context,
   required PrefStore preferences,
   required WidgetBuilder builder,
+  bool bottomSheetWhenCompact = false,
 }) {
   final ReaderSideSheetSide side =
       preferences.getPref(kReaderSettingsPanelSidePref) == 'left'
@@ -27,6 +28,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
     context: context,
     side: side,
     sideController: controller,
+    bottomSheetWhenCompact: bottomSheetWhenCompact,
     builder: (BuildContext context) => _ReaderSettingsSideSession(
       controller: controller,
       preferences: preferences,
@@ -44,6 +46,10 @@ class ReaderSettingsSideButton extends StatelessWidget {
     final _ReaderSettingsSideScope? scope = context
         .dependOnInheritedWidgetOfExactType<_ReaderSettingsSideScope>();
     if (scope == null) return const SizedBox.shrink();
+    // 底部 sheet 形态没有「左右边」可换。
+    if (ReaderPanelScope.of(context) == ReaderPanelPresentation.bottom) {
+      return const SizedBox.shrink();
+    }
     final bool isLeft = scope.notifier!.value == ReaderSideSheetSide.left;
     return Semantics(
       identifier: 'hibiki.reader.settings.move_side',

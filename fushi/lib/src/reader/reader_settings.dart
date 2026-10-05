@@ -207,6 +207,18 @@ class ReaderSettings {
   /// 清除自定义歌词色 → 回退跟随主题（哨兵 0）。
   Future<void> clearLyricsTextColor() => _set<int>('lyrics_text_color', 0);
 
+  /// 歌词模式当前行高亮色（BUG：歌词模式高亮颜色无法修改）。ARGB int；`0` 哨兵 =
+  /// 未设置，跟随播放器设计系统（MD3 primary / Apple 白）。覆盖层主题下当前行色
+  /// 只认 CSS 变量 `--ly-current`，此偏好经 `LyricsModeHtml.themeVars` 的
+  /// `currentColorOverride` 写进去，是用户改歌词高亮色的唯一通路。
+  int get lyricsHighlightColor => _get<int>('lyrics_highlight_color', 0);
+  Future<void> setLyricsHighlightColor(int v) =>
+      _set<int>('lyrics_highlight_color', v);
+
+  /// 清除自定义歌词高亮色 → 回退跟随播放器主题（哨兵 0）。
+  Future<void> clearLyricsHighlightColor() =>
+      _set<int>('lyrics_highlight_color', 0);
+
   double get lyricsMarginTop => _get<double>('lyrics_margin_top', 0);
   Future<void> setLyricsMarginTop(double v) =>
       _set<double>('lyrics_margin_top', v);

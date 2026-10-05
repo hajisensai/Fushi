@@ -2254,21 +2254,28 @@ extension _ReaderChrome on _ReaderFushiPageState {
     _cancelChromeAutoHide();
     // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
     // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
+    // 面板关闭（任何退出路径）后把键盘焦点还给正文 / WebView 键盘桥
+    // （focus-ownership.md：覆盖层一律经 guardOverlay 归还）。窄窗（手机竖屏）
+    // 面板从底部升起，宽窗贴边（readerPanelPresentationFor）。
     _sideSheetOpen = true;
     try {
-      if (movableSettings) {
-        await showReaderSettingsSideDialog<void>(
+      await _focusOwnership.guardOverlay<void>(() async {
+        if (movableSettings) {
+          await showReaderSettingsSideDialog<void>(
+            context: context,
+            preferences: appModel.prefsRepo,
+            bottomSheetWhenCompact: true,
+            builder: builder,
+          );
+          return;
+        }
+        await showReaderSideSheet<void>(
           context: context,
-          preferences: appModel.prefsRepo,
+          side: side,
+          bottomSheetWhenCompact: true,
           builder: builder,
         );
-        return;
-      }
-      await showReaderSideSheet<void>(
-        context: context,
-        side: side,
-        builder: builder,
-      );
+      });
     } finally {
       _sideSheetOpen = false;
     }
@@ -2443,6 +2450,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
       volumeSwitch: _tocVolumeSwitch(),
+      readerPaperColors: () =>
+          (bg: _themeBackgroundColor(), fg: _themeTextColor()),
     );
   }
 

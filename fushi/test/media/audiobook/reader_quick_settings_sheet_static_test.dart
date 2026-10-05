@@ -90,7 +90,7 @@ void main() {
     // 主题选择器卡用主题专用 context（换肤后还 _syncThemeSelection）。
     final String themeSectionSource = _between(
       source,
-      '  Widget _buildThemeSelectorSection()',
+      '  Widget _buildThemeSelectorSection(',
       '  Widget _buildBookCssEditorRow()',
     );
     expect(themeSectionSource,
@@ -409,10 +409,10 @@ void main() {
     expect(source, isNot(contains('Widget _buildWidePane(')));
     expect(source, isNot(contains('Widget _buildWidePrimary(')));
     expect(source, isNot(contains('SupportingPaneSide.start')));
-    // 分类顺序仍只有一份（设置抽屉分段条 / 有声书面板 / 窄窗主页共用）。
-    expect(source, contains('_wideCategories()'));
+    // 2026-10 侧板重设计：设置侧板的分页改由 reader_settings_ia.dart 的
+    // readerSettingsTabs 按任务分组给出，宽窗分类表（_wideCategories）已删。
+    expect(source, contains('readerSettingsTabs('));
     expect(source, isNot(contains("id: 'appearance'")));
-    expect(source, contains("id: 'location'"));
 
     // 窄窗（手机 bottom sheet）保留原 push：主页 / 子页。
     expect(source, contains('? _buildSubPage(context, theme)'));
@@ -426,8 +426,7 @@ void main() {
   });
 
   test(
-      'narrow nav rows and wide categories share the same category order '
-      '(TODO-725: nav-first)', () {
+      'narrow nav rows keep the nav-first category order (TODO-725)', () {
     final String source =
         File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
             .readAsStringSync();
@@ -443,17 +442,6 @@ void main() {
         .map((Match m) => m.group(1)!)
         .toList();
 
-    // 宽窗 _wideCategories 的分类顺序（按 id: 出现顺序）。
-    final String wideSource = _between(
-      source,
-      '  List<({String id, IconData icon, String label})> _wideCategories()',
-      '  Widget _buildMainPage(BuildContext context, ThemeData theme)',
-    );
-    final List<String> wideOrder = RegExp(r"id: '([a-z]+)'")
-        .allMatches(wideSource)
-        .map((Match m) => m.group(1)!)
-        .toList();
-
     // TODO-802：「外观」分类已删，顺序里不再含 appearance。
     const List<String> expected = <String>[
       'location',
@@ -463,9 +451,7 @@ void main() {
       'audiobook',
     ];
     expect(narrowOrder, expected, reason: '窄窗主页分类顺序必须导航置首：$narrowOrder');
-    expect(wideOrder, expected, reason: '宽窗分类顺序必须与窄窗一致、导航置首：$wideOrder');
     expect(narrowOrder.first, 'location');
-    expect(wideOrder.first, 'location');
   });
 
   test(

@@ -16,11 +16,17 @@ class LyricsModeHtml {
   /// 逐行透明度阶梯全由 [LyricsHtmlTheme] 决定（Apple = Apple Music 白字左对齐；
   /// MD3 = primary 当前行）。[textColorOverride] 是用户自定义歌词文字色（设置项
   /// `lyrics_text_color`，非 0 才传），覆盖非当前行颜色——不丢旧功能。
+  /// [currentColorOverride] 是用户自定义歌词当前行高亮色（`lyrics_highlight_color`，
+  /// 非 0 才传）：覆盖当前行色及其派生（逐字扫过的未读色、回到当前行胶囊）。
+  /// 覆盖层主题下 `.cue.current` 只认 `--ly-current`，不经这里就没有任何用户
+  /// 可控的高亮色通路（歌词模式高亮颜色无法修改的根因）。查词选区 `--ly-hl` 不变。
   static ({Map<String, String> vars, List<String> bodyClasses}) themeVars(
     LyricsHtmlTheme theme, {
     Color? textColorOverride,
+    Color? currentColorOverride,
   }) {
     final Color text = textColorOverride ?? theme.textColor;
+    final Color current = currentColorOverride ?? theme.currentColor;
     final List<double> ops = <double>[
       for (int i = 0; i < 4; i++)
         i < theme.contextOpacities.length
@@ -35,10 +41,10 @@ class LyricsModeHtml {
     final double anchor = theme.anchorY.clamp(0.1, 0.9);
     final Map<String, String> vars = <String, String>{
       '--ly-text': _css(text),
-      '--ly-current': _css(theme.currentColor),
+      '--ly-current': _css(current),
       // 逐字扫过（Niratan 的 line progress sweep）：当前行未读部分 = 当前色 × 0.4。
       '--ly-upcoming': _css(
-        theme.currentColor.withValues(alpha: theme.currentColor.a * 0.4),
+        current.withValues(alpha: current.a * 0.4),
       ),
       '--ly-hl': _css(theme.accentColor),
       '--ly-hl-text': _css(theme.selectionTextColor),
@@ -62,9 +68,9 @@ class LyricsModeHtml {
       '--ly-radius': '${theme.rowRadius.toStringAsFixed(1)}px',
       '--ly-hover': _css(theme.hoverFill),
       '--ly-pill-bg': _css(
-        theme.currentColor.withValues(alpha: 0.16),
+        current.withValues(alpha: 0.16),
       ),
-      '--ly-pill-fg': _css(theme.currentColor),
+      '--ly-pill-fg': _css(current),
     };
     return (
       vars: vars,
@@ -81,9 +87,13 @@ class LyricsModeHtml {
   static String applyThemeInvocation(
     LyricsHtmlTheme theme, {
     Color? textColorOverride,
+    Color? currentColorOverride,
   }) {
-    final ({Map<String, String> vars, List<String> bodyClasses}) t =
-        themeVars(theme, textColorOverride: textColorOverride);
+    final ({Map<String, String> vars, List<String> bodyClasses}) t = themeVars(
+      theme,
+      textColorOverride: textColorOverride,
+      currentColorOverride: currentColorOverride,
+    );
     return 'window.__lyricsApplyTheme && window.__lyricsApplyTheme('
         '${jsonEncode(t.vars)}, ${jsonEncode(t.bodyClasses)});';
   }
@@ -114,6 +124,7 @@ class LyricsModeHtml {
     String fontFaceCss = '',
     LyricsHtmlTheme? theme,
     Color? textColorOverride,
+    Color? currentColorOverride,
     String followLabel = '',
   }) {
     // 覆盖层主题：内联进 :root 与 body class，首帧即是最终观感（不等热更）。
@@ -121,7 +132,11 @@ class LyricsModeHtml {
     final ({Map<String, String> vars, List<String> bodyClasses})? themed =
         theme == null
             ? null
-            : themeVars(theme, textColorOverride: textColorOverride);
+            : themeVars(
+                theme,
+                textColorOverride: textColorOverride,
+                currentColorOverride: currentColorOverride,
+              );
     final String themeVarsCss = themed == null
         ? ''
         : themed.vars.entries

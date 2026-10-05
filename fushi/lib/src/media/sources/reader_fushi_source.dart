@@ -1802,6 +1802,23 @@ class ReaderFushiSource extends ReaderMediaSource {
     onSettingsChangedLive?.call();
   }
 
+  /// 歌词模式当前行高亮色。ARGB int；`0` = 未设置（跟随播放器主题）。写后走
+  /// `onSettingsChangedLive` → 歌词态 `_updateLyricsStyleLive` 热更 CSS 变量。
+  int get lyricsHighlightColor =>
+      readerSettings?.lyricsHighlightColor ??
+      getPreference<int>(key: 'lyrics_highlight_color', defaultValue: 0);
+  Future<void> setLyricsHighlightColor(int v) async {
+    await (readerSettings?.setLyricsHighlightColor(v) ??
+        setPreference<int>(key: 'lyrics_highlight_color', value: v));
+    onSettingsChangedLive?.call();
+  }
+
+  Future<void> clearLyricsHighlightColor() async {
+    await (readerSettings?.clearLyricsHighlightColor() ??
+        setPreference<int>(key: 'lyrics_highlight_color', value: 0));
+    onSettingsChangedLive?.call();
+  }
+
   double get lyricsMarginTop =>
       readerSettings?.lyricsMarginTop ??
       getPreference<double>(key: 'lyrics_margin_top', defaultValue: 0);

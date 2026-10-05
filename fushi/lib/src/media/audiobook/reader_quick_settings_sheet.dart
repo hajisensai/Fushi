@@ -12,7 +12,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -20,9 +19,12 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_settings_ia.dart';
+import 'package:fushi/src/reader/reader_settings_preview.dart';
 import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show ReaderSideSheet, ReaderSideSheetSectionLabel;
+    show ReaderSideSheet;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveCurrentTocEntry;
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
@@ -113,7 +115,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onTranscribe,
     this.onOpenStatistics,
     this.autofocusSearch = false,
-    this.initialSideSheetTab = 'layout',
+    this.initialSideSheetTab = '',
     this.onSideSheetTabChanged,
     this.expandedTocParents,
     this.volumeSwitch,
@@ -121,6 +123,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.presentation = ReaderQuickSettingsPresentation.sheet,
     this.onClose,
     this.coverPath,
+    this.readerPaperColors,
     super.key,
   });
 
@@ -204,7 +207,8 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 移动端 / 窄窗主页的「阅读统计」行（打开阅读器内统计浮层）；null 不显示。
   final VoidCallback? onOpenStatistics;
 
-  /// 桌面端右侧设置抽屉初始分组（页面记忆上次打开的 tab）。
+  /// 设置侧板初始分页（页面记忆上次打开的 tab id；空串 / 未知 id 按
+  /// [readerSettingsInitialTab] 落默认页）。
   final String initialSideSheetTab;
   final ValueChanged<String>? onSideSheetTabChanged;
 
@@ -229,6 +233,11 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 书籍封面文件路径（有声书面板左侧显示；null 不显示）。
   final String? coverPath;
 
+  /// 阅读器当前主题解析出的纸色 / 正文色（设置侧板「实时预览」卡用；面板的
+  /// Theme 是 app 主题，读不到 ecru 之类的阅读纸色）。每次 build 现取，换主题后
+  /// 预览随之变色。null = 退回 app 主题的 surface / onSurface。
+  final ({Color bg, Color fg}) Function()? readerPaperColors;
+
   @override
   State<ReaderQuickSettingsSheet> createState() =>
       _ReaderQuickSettingsSheetState();
@@ -237,7 +246,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
 class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     with
         SettingsContextHost<ReaderQuickSettingsSheet>,
-        SingleTickerProviderStateMixin {
+        TickerProviderStateMixin {
   ReaderFushiSource get _src => ReaderFushiSource.instance;
 
   final TextEditingController _searchController = TextEditingController();
@@ -340,6 +349,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       unawaited(_commitFavoriteDelete(fav));
     }
     _sideSheetTabController?.dispose();
+    _navTabController?.dispose();
     _searchController.dispose();
     _charJumpController.dispose();
     super.dispose();
@@ -490,60 +500,364 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   VoidCallback _sideSheetClose(BuildContext context) =>
       widget.onClose ?? () => Navigator.of(context).maybePop();
 
-  /// 桌面端右侧抽屉「导航」：进度 + 既有的导航子页内容（搜索 / 字数跳转 / 章节 / 收藏）。
+  /// 导航侧板此次出现的分页：目录（有目录 / 多卷时）/ 收藏（恒在，空时给空态）/
+  /// 搜索（书内搜索或按字数跳转可用时；歌词模式两者都不传，整页不出现）。
+  late final List<_ReaderNavTab> _navTabs = <_ReaderNavTab>[
+    if (widget.toc.isNotEmpty || widget.volumeSwitch != null)
+      _ReaderNavTab.contents,
+    _ReaderNavTab.favorites,
+    if ((widget.epubBook != null && widget.onSearchJump != null) ||
+        widget.onJumpToCharOffset != null)
+      _ReaderNavTab.search,
+  ];
+
+  TabController? _navTabController;
+
+  /// 导航侧板「打开即滚到当前章」只做一次（之后由用户自己滚）。
+  bool _scrolledToCurrentTocRow = false;
+
+  TabController _ensureNavTabController() {
+    final TabController? existing = _navTabController;
+    if (existing != null) return existing;
+    // Ctrl+F（autofocusSearch）直达搜索页；其余落目录（没有目录时落第一页）。
+    final int initial = widget.autofocusSearch
+        ? _navTabs.indexOf(_ReaderNavTab.search)
+        : 0;
+    return _navTabController = TabController(
+      length: _navTabs.length,
+      initialIndex: initial < 0 ? 0 : initial,
+      animationDuration: fushiMotionDuration(context, FushiMotion.medium),
+      vsync: this,
+    );
+  }
+
+  String _navTabLabel(_ReaderNavTab tab) => switch (tab) {
+        _ReaderNavTab.contents => t.reader_nav_tab_contents,
+        _ReaderNavTab.favorites => _favorites.isEmpty
+            ? t.reader_nav_tab_favorites
+            : '${t.reader_nav_tab_favorites} ${_favorites.length}',
+        _ReaderNavTab.search => t.reader_nav_tab_search,
+      };
+
+  /// 「导航」侧板（宽窗贴左 / 窄窗底部 sheet）：页头下固定「阅读进度」卡 + 分页
+  /// 标签（目录 / 收藏 / 搜索），每页各自滚动。目录打开即滚到当前章那一行；当前章
+  /// 整行高亮（[_InBookTocRow]）；搜索结果带命中前后文（[_InBookSearchResultRow]）。
   Widget _buildNavigationSideSheet(BuildContext context, ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
-    final Widget progress = _buildProgressSection(theme);
-    // 打开即滚到当前章那一行（首帧后；行不存在时 no-op）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final BuildContext? rowContext = _currentTocRowKey.currentContext;
-      if (rowContext == null || !mounted) return;
-      FushiFocusScroll.ensureVisible(
-        rowContext,
-        alignment: 0.3,
-        duration: const Duration(milliseconds: 160),
-      );
-    });
+    final TabController controller = _ensureNavTabController();
+    // 打开即滚到当前章那一行（只在首次 build 后做一次；行不存在 / 目录页不在场
+    // 时 no-op）。只滚**最近**的那层纵向滚动视图：Scrollable.ensureVisible 会连带
+    // 把外层横向的 TabBarView 也按 alignment 对齐，页面被拽离整页位置后又被
+    // 吸附回去，来回打架永不落定。
+    if (!_scrolledToCurrentTocRow) {
+      _scrolledToCurrentTocRow = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final BuildContext? rowContext = _currentTocRowKey.currentContext;
+        if (rowContext == null || !mounted) return;
+        final ScrollableState? scrollable = Scrollable.maybeOf(rowContext);
+        final RenderObject? row = rowContext.findRenderObject();
+        if (scrollable == null || row == null) return;
+        scrollable.position.ensureVisible(
+          row,
+          alignment: 0.3,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+        );
+      });
+    }
+    final EdgeInsets pagePadding = ReaderSideSheet.defaultPadding.copyWith(
+      top: tokens.spacing.gap + tokens.spacing.gap / 2,
+    );
+    Widget page(_ReaderNavTab tab, Widget child) => SingleChildScrollView(
+          key: PageStorageKey<String>('fushi_nav_tab_${tab.name}'),
+          padding: pagePadding,
+          child: FushiEntranceScope(
+            child: FushiStaggeredEntrance(index: 0, child: child),
+          ),
+        );
     return ReaderSideSheet(
       title: t.section_navigation,
+      icon: Icons.menu_book_outlined,
+      subtitle: widget.epubBook?.title,
       onClose: _sideSheetClose(context),
-      child: Column(
+      scrollable: false,
+      bottom: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (progress is! SizedBox) ...[
-            progress,
-            SizedBox(height: sectionGap),
-          ],
-          _buildLocationSection(theme),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap / 2,
+              tokens.spacing.page,
+              tokens.spacing.gap,
+            ),
+            child: _buildNavProgressCard(context, theme),
+          ),
+          if (_navTabs.length > 1)
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: tokens.spacing.gap / 2,
+                end: tokens.spacing.gap / 2,
+              ),
+              child: Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: LibrarySectionTabs<String>.controlled(
+                  key: const ValueKey<String>('fushi_nav_tabs'),
+                  tabs: <LibrarySectionTab<String>>[
+                    for (final _ReaderNavTab tab in _navTabs)
+                      LibrarySectionTab<String>(
+                        value: tab.name,
+                        label: _navTabLabel(tab),
+                      ),
+                  ],
+                  controller: controller,
+                  focusIdPrefix: 'reader-nav-tab',
+                ),
+              ),
+            ),
+          const FushiDividerControl(height: 1),
+        ],
+      ),
+      child: TabBarView(
+        controller: controller,
+        children: <Widget>[
+          for (final _ReaderNavTab tab in _navTabs)
+            switch (tab) {
+              _ReaderNavTab.contents =>
+                page(tab, _buildTocSection(context, theme)),
+              _ReaderNavTab.favorites => page(
+                  tab,
+                  _favorites.isEmpty
+                      ? _buildNavEmptyState(
+                          theme,
+                          icon: Icons.star_outline_rounded,
+                          message: t.reader_nav_favorites_empty,
+                        )
+                      : _buildFavoritesSection(context, theme),
+                ),
+              _ReaderNavTab.search => page(tab, _buildNavSearchPage(theme)),
+            },
         ],
       ),
     );
   }
 
-  /// 「设置」抽屉的标签页：导航与有声书各有自己的面板，不在这里。
-  List<({String id, IconData icon, String label})> _sideSheetCategories() {
-    return _wideCategories()
-        .where((cat) => cat.id != 'location' && cat.id != 'audiobook')
-        .toList();
+  /// 搜索页：书内搜索（结果带上下文）+ 按字数跳转；还没搜过时给一句用法提示。
+  Widget _buildNavSearchPage(ThemeData theme) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool canSearch = widget.epubBook != null && widget.onSearchJump != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (canSearch) _buildSearchSection(theme),
+        if (canSearch &&
+            _searchResults.isEmpty &&
+            !_searchFailed &&
+            _searchController.text.trim().isEmpty)
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.gap),
+            child: Text(
+              t.reader_nav_search_empty_hint,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: fushiNeutralSecondaryForeground(context),
+              ),
+            ),
+          ),
+        if (widget.onJumpToCharOffset != null) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap * 3),
+          _buildCharJumpSection(theme),
+        ],
+      ],
+    );
   }
 
-  TabController _ensureSideSheetTabController(
-    List<({String id, IconData icon, String label})> cats,
-  ) {
+  /// 分页空态：中性图标 + 一句说明（不铺彩色底块，见 fushi_neutral_decor.dart）。
+  Widget _buildNavEmptyState(
+    ThemeData theme, {
+    required IconData icon,
+    required String message,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      key: const ValueKey<String>('reader_nav_empty'),
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.section),
+      child: Column(
+        children: <Widget>[
+          FushiNeutralIconBadge(icon: icon, size: 56),
+          SizedBox(height: tokens.spacing.gap * 1.5),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: fushiNeutralSecondaryForeground(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 导航页头下的「阅读进度」卡：当前章名 + 全书进度条 + 章 / 页 / 字数读数
+  /// （有声书在场时加一行音频进度）。卡片底色取设置分组卡的同一档表面色。
+  Widget _buildNavProgressCard(BuildContext context, ThemeData theme) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool glass = isGlassDesign(context);
+    final (int, int)? rp = widget.readerProgress;
+    final (int, int)? cp = widget.charProgress;
+    final (int, int)? pp = widget.pageProgress;
+    final double? fraction = cp != null && cp.$2 > 0
+        ? (cp.$1 / cp.$2).clamp(0.0, 1.0)
+        : rp != null && rp.$2 > 0
+            ? ((rp.$1 + 1) / rp.$2).clamp(0.0, 1.0)
+            : null;
+    final String? chapter = widget.chapterLabel?.trim();
+    // 百分比只出现一个：有字数进度时卡片右上角就是全书字数百分比，读数行改报
+    // 字数；只有章节进度时才用「第 n / N 章 · x%」。
+    final List<String> readouts = <String>[
+      if (cp != null && cp.$2 > 0)
+        t.jump_to_char_current(current: cp.$1, total: cp.$2)
+      else if (rp != null && rp.$2 > 0)
+        t.chapter_progress(
+          idx: rp.$1 + 1,
+          total: rp.$2,
+          suffix: '',
+          pct: ((rp.$1 + 1) / rp.$2 * 100).toStringAsFixed(1),
+        ),
+      if (pp != null && pp.$2 > 0) t.page_progress(current: pp.$1, total: pp.$2),
+    ];
+    final AudiobookPlayerController? ctrl = widget.controller;
+    if (fraction == null &&
+        (chapter == null || chapter.isEmpty) &&
+        readouts.isEmpty &&
+        ctrl == null) {
+      return const SizedBox.shrink();
+    }
+    final Color accent = fushiAccentForeground(context);
+    return DecoratedBox(
+      key: const ValueKey<String>('reader_nav_progress_card'),
+      decoration: BoxDecoration(
+        color: glass
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : theme.colorScheme.surfaceContainer,
+        borderRadius: const BorderRadius.all(
+          Radius.circular(kSettingsSegmentOuterRadius),
+        ),
+        border: isEinkTheme(context)
+            ? Border.all(color: theme.colorScheme.outline)
+            : null,
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.rowHorizontal),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    chapter == null || chapter.isEmpty
+                        ? t.reading_progress
+                        : chapter,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: fushiNeutralBlockForeground(context),
+                    ),
+                  ),
+                ),
+                if (fraction != null)
+                  Text(
+                    '${(fraction * 100).toStringAsFixed(1)}%',
+                    key: const ValueKey<String>('reader_nav_progress_percent'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            if (fraction != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              TweenAnimationBuilder<double>(
+                tween: Tween<double>(begin: 0, end: fraction),
+                duration: fushiMotionDuration(context, FushiMotion.long),
+                curve: FushiMotion.enter,
+                // 阅读位置是静态读数：不用 Expressive 波浪进度条（它的波纹恒在
+                // 流动，是「正在进行」的语义，且让面板永远处于动画中）。
+                builder: (BuildContext context, double value, Widget? _) =>
+                    ClipRRect(
+                  key: const ValueKey<String>('reader_nav_progress_bar'),
+                  borderRadius: tokens.radii.chipRadius,
+                  child: SizedBox(
+                    height: 6,
+                    child: ColoredBox(
+                      color: glass
+                          ? appleColorsOf(context).fill
+                          : theme.colorScheme.secondaryContainer,
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: FractionallySizedBox(
+                          widthFactor: value,
+                          heightFactor: 1,
+                          child: ColoredBox(color: accent),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            if (readouts.isNotEmpty) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                readouts.join('  ·  '),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: fushiNeutralSecondaryForeground(context),
+                ),
+              ),
+            ],
+            if (ctrl != null) _buildAudioProgressLine(theme, ctrl),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 本次打开设置侧板出现的标签页（打开时定型：切歌词 / 书籍模式会关掉面板重开）。
+  /// 信息架构（按任务分组、常用置顶、高级折叠）见 reader_settings_ia.dart。
+  late final List<ReaderSettingsTab> _settingsTabs = readerSettingsTabs(
+    lyricsMode: widget.lyricsMode,
+    listeningEnabled: _listeningEnabled,
+    lyricsAvailable: widget.onToggleLyricsMode != null &&
+        (widget.controller != null || widget.lyricsMode),
+  );
+
+  TabController _ensureSideSheetTabController() {
     final TabController? existing = _sideSheetTabController;
     if (existing != null) return existing;
-    final int initial = cats.indexWhere((cat) => cat.id == _sideSheetTab);
+    final List<ReaderSettingsTab> tabs = _settingsTabs;
+    final ReaderSettingsTab initial = readerSettingsInitialTab(
+      tabs,
+      remembered: _sideSheetTab,
+      lyricsMode: widget.lyricsMode,
+    );
     final TabController controller = TabController(
-      length: cats.length,
-      initialIndex: initial < 0 ? 0 : initial,
+      length: tabs.length,
+      initialIndex: tabs.indexOf(initial),
+      animationDuration: fushiMotionDuration(context, FushiMotion.medium),
       vsync: this,
     );
     controller.addListener(() {
       // 点标签时动画开始、结束各通知一次，只认落定后那次；滑动切页只通知落定。
       if (controller.indexIsChanging) return;
-      final String id = cats[controller.index].id;
+      final String id = tabs[controller.index].id;
       if (id == _sideSheetTab) return;
       // 换页由 TabBarView 自己完成，这里只记账、交给页面记忆，不必重建整个面板。
       _sideSheetTab = id;
@@ -552,17 +866,20 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     return _sideSheetTabController = controller;
   }
 
-  /// 桌面端右侧抽屉「设置」：标题下固定一条标签栏（布局显示 / 阅读操作 / 查词），
-  /// 每个标签页各自滚动、切走再切回保留滚动位置，避免几十行全部纵向平铺；有声书
-  /// 不在这里——它有自己的居中面板（[ReaderQuickSettingsPresentation.audiobookPanel]）。
-  /// 歌词模式切换挂在「布局显示」页末尾（退出走顶部工具栏的返回键）。
+  /// 「阅读设置」侧板（宽窗贴边 / 窄窗底部 sheet，外壳见 [showReaderSideSheet]）：
+  /// 标题下固定一条标签栏——主题与字体 / 排版 / 翻页与手势 / 有声书 / 查词 /
+  /// 歌词模式（按任务分组，[readerSettingsTabs]）。每页各自滚动、切走再切回保留
+  /// 滚动位置；页内常用小节展开置顶、高级小节默认折叠（[kReaderSettingsSections]）。
+  /// 有声书的播放控制不在这里——它有自己的面板
+  /// （[ReaderQuickSettingsPresentation.audiobookPanel]）。
   Widget _buildAppearanceSideSheet(BuildContext context, ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<({String id, IconData icon, String label})> cats =
-        _sideSheetCategories();
-    final TabController controller = _ensureSideSheetTabController(cats);
+    final List<ReaderSettingsTab> tabs = _settingsTabs;
+    final TabController controller = _ensureSideSheetTabController();
     return ReaderSideSheet(
       title: t.reader_settings_section,
+      icon: Icons.tune_outlined,
+      subtitle: widget.lyricsMode ? t.lyrics_mode : widget.epubBook?.title,
       headerActions: const <Widget>[ReaderSettingsSideButton()],
       onClose: _sideSheetClose(context),
       scrollable: false,
@@ -575,14 +892,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         children: <Widget>[
           Padding(
             // 首个页签文字与标题左缘对齐（标题左留白 20 = 4 + tab 自带的 16）。
-            padding: const EdgeInsetsDirectional.only(start: 4, end: 4),
+            padding: EdgeInsetsDirectional.only(
+              start: tokens.spacing.gap / 2,
+              end: tokens.spacing.gap / 2,
+            ),
             child: Align(
               alignment: AlignmentDirectional.centerStart,
               child: LibrarySectionTabs<String>.controlled(
                 key: const ValueKey<String>('fushi_side_sheet_tabs'),
                 tabs: <LibrarySectionTab<String>>[
-                  for (final cat in cats)
-                    LibrarySectionTab<String>(value: cat.id, label: cat.label),
+                  for (final ReaderSettingsTab tab in tabs)
+                    LibrarySectionTab<String>(value: tab.id, label: tab.label),
                 ],
                 controller: controller,
                 focusIdPrefix: 'reader-settings-tab',
@@ -598,43 +918,140 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           // 每页一个独立滚动视图（PageStorageKey 记住各自的滚动位置）；页面离屏即
           // 卸载，切换时整棵内容子树重建，不会复用上一页同位置 Element 的
           // Switch / Segmented 动画副作用。
-          for (final cat in cats)
+          for (final ReaderSettingsTab tab in tabs)
             SingleChildScrollView(
-              key: PageStorageKey<String>('fushi_side_sheet_tab_${cat.id}'),
+              key: PageStorageKey<String>('fushi_side_sheet_tab_${tab.id}'),
               padding: ReaderSideSheet.defaultPadding.copyWith(
                 top: tokens.spacing.gap + tokens.spacing.gap / 2,
               ),
-              child: _buildSideSheetTabContent(context, cat.id),
+              child: _buildSettingsTabContent(context, tab),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildSideSheetTabContent(BuildContext context, String tab) {
-    final Widget content = _subPageContent(tab);
-    if (tab != 'layout' || widget.onToggleLyricsMode == null) return content;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        content,
-        ReaderSideSheetSectionLabel(t.lyrics_mode),
-        AdaptiveSettingsSection(children: <Widget>[
-          AdaptiveSettingsNavigationRow(
-            key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
-            title: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
-            icon: widget.lyricsMode
-                ? Icons.auto_stories_outlined
-                : Icons.lyrics_outlined,
-            onTap: () {
-              Navigator.of(context).pop();
-              widget.onToggleLyricsMode!();
-            },
-          ),
-        ]),
-      ],
+  /// 一个设置标签页的内容：面板自绘块（预览 / 主题 / 歌词专属控件）+ 该页的
+  /// schema 小节（[buildReaderSettingsSections]）。各块错峰进场
+  /// （[FushiEntranceScope]，墨水屏 / 减弱动态效果下瞬时出现）。
+  Widget _buildSettingsTabContent(BuildContext context, ReaderSettingsTab tab) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<Widget> blocks = switch (tab) {
+      ReaderSettingsTab.lyrics => _buildLyricsTabBlocks(context),
+      _ => <Widget>[
+          if (tab == ReaderSettingsTab.appearance) ...<Widget>[
+            if (!widget.lyricsMode)
+              Padding(
+                padding: EdgeInsets.only(bottom: tokens.spacing.gap * 2),
+                child: _buildReaderPreview(),
+              ),
+            _buildThemeSelectorSection(),
+          ],
+          _buildReaderTabSchema(tab),
+          if (tab == ReaderSettingsTab.appearance && widget.extractDir != null)
+            _buildBookCssEditorSection(),
+        ],
+    };
+    return FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (final (int i, Widget block) in blocks.indexed)
+            FushiStaggeredEntrance(index: i, child: block),
+        ],
+      ),
     );
+  }
+
+  /// 某标签页的 schema 小节（常用展开 / 高级折叠），按设计系统选渲染器。
+  Widget _buildReaderTabSchema(ReaderSettingsTab tab) {
+    final SettingsContext settingsContext = _settingsContext();
+    return _buildSettingsDestinationContent(
+      settingsContext,
+      SettingsDestination(
+        id: SettingsDestinationId.readerQuickSettings,
+        title: tab.label,
+        icon: Icons.tune_outlined,
+        sections: buildReaderSettingsSections(
+          collectReaderItems(settingsContext),
+          tab,
+          listeningTab: _settingsTabs.contains(ReaderSettingsTab.listening),
+        ),
+      ),
+    );
+  }
+
+  /// 「主题与字体」页顶的实时预览卡：阅读纸色 + 正文色画一段样文，字号 / 字重 /
+  /// 行高 / 横竖排随设置即时变化（schema 行改值经 SettingsContext.refresh 重建本
+  /// 面板，预览随之重读 [ReaderFushiSource] 的现值）。
+  Widget _buildReaderPreview() {
+    final ({Color bg, Color fg})? paper = widget.readerPaperColors?.call();
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return ReaderSettingsPreviewCard(
+      sample: t.reader_panel_preview_sample,
+      label: t.reader_panel_preview_title,
+      background: paper?.bg ?? cs.surface,
+      foreground: paper?.fg ?? cs.onSurface,
+      readerFontSize: _src.readerFontSize,
+      lineHeight: _src.readerLineHeight,
+      fontWeight: _src.readerFontWeight,
+      vertical: _src.readerWritingMode.startsWith('vertical'),
+    );
+  }
+
+  /// 「歌词模式」页：模式切换置顶，其后是歌词页专属控件按任务分三组——
+  /// 文字与颜色（字号 / 文字色 / 当前行高亮色）、版式与边距（竖排 / 四边距，
+  /// 默认折叠）、听力（模糊）。这些都不是 schema 项：它们写歌词专属的
+  /// `setLyrics*`，并经 onStyleChanged / onLyricsReload 实时作用到歌词页。
+  List<Widget> _buildLyricsTabBlocks(BuildContext context) {
+    return <Widget>[
+      if (widget.onToggleLyricsMode != null)
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsNavigationRow(
+              key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
+              title: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
+              subtitle: widget.lyricsMode
+                  ? t.reader_panel_lyrics_exit_hint
+                  : t.reader_panel_lyrics_switch_hint,
+              icon: widget.lyricsMode
+                  ? Icons.auto_stories_outlined
+                  : Icons.lyrics_outlined,
+              showIcon: true,
+              onTap: () {
+                Navigator.of(context).pop();
+                widget.onToggleLyricsMode!();
+              },
+            ),
+          ],
+        ),
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('reader_panel_lyrics_text'),
+        title: t.reader_panel_lyrics_section_text,
+        children: <Widget>[
+          _lyricsFontSizeRow(),
+          _buildLyricsTextColorRow(context),
+          _buildLyricsHighlightColorRow(context),
+        ],
+      ),
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('reader_panel_lyrics_layout'),
+        title: t.reader_panel_lyrics_section_layout,
+        titlePlacement: SettingsSectionTitlePlacement.inside,
+        collapsible: true,
+        initiallyExpanded: false,
+        children: <Widget>[
+          _lyricsVerticalRow(),
+          ..._lyricsMarginRows(),
+        ],
+      ),
+      AdaptiveSettingsSection(
+        key: const ValueKey<String>('reader_panel_lyrics_listening'),
+        title: t.reader_panel_lyrics_section_listening,
+        children: <Widget>[_lyricsBlurRow()],
+      ),
+    ];
   }
 
   /// 桌面端居中「有声书」面板：外壳与三个 tab 在 [ReaderAudiobookPanel]；「设置」
@@ -657,50 +1074,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// 面板分类项（id 与 [_subPageContent] 的 case 对齐）：设置抽屉标签栏、有声书
-  /// 面板与窄窗主页共用同一份顺序。
-  /// audiobook 仅在有 controller 时出现。
-  List<({String id, IconData icon, String label})> _wideCategories() {
-    // TODO-725 / TODO-802：导航置首（location → layout → behavior → lookup →
-    // [audiobook]）。「外观」组已删，主题选择器并入 layout（见 _buildLayoutDetail）。
-    // 与窄窗主页 navigationRows 顺序保持一致。
-    return <({String id, IconData icon, String label})>[
-      (
-        id: 'location',
-        icon: Icons.menu_book_outlined,
-        label: t.section_navigation,
-      ),
-      (
-        id: 'layout',
-        icon: Icons.auto_stories_outlined,
-        label: t.section_layout
-      ),
-      (
-        id: 'behavior',
-        icon: Icons.touch_app_outlined,
-        label: t.settings_destination_reading_controls,
-      ),
-      (
-        id: 'lookup',
-        icon: Icons.manage_search_outlined,
-        label: t.settings_destination_lookup,
-      ),
-      if (widget.controller != null && _listeningEnabled)
-        (
-          id: 'audiobook',
-          icon: Icons.headphones_outlined,
-          label: t.section_audiobook,
-        ),
-    ];
-  }
-
   Widget _buildMainPage(BuildContext context, ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double sectionGap = tokens.spacing.gap + tokens.spacing.gap / 2;
     // TODO-725（手机/窄窗折叠）/ TODO-802：主页只剩「阅读进度 + 分类导航行 + 动作
     // 行」。「外观」组已删，主题选择器并入 layout 子页顶部（见 _buildLayoutDetail）。
-    // 导航置首：location → layout → behavior → lookup → [audiobook]，与宽窗
-    // _wideCategories 顺序一致。
+    // 导航置首：location → layout → behavior → lookup → [audiobook]。
     final List<Widget> navigationRows = [
       _categoryTile(
         icon: Icons.menu_book_outlined,
@@ -1171,9 +1550,20 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           ),
           SizedBox(height: tokens.spacing.gap / 2),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 280),
+            // 导航侧板的「搜索」是独立分页，结果直接随页滚动；窄窗 sheet 里搜索与
+            // 目录同列，结果框限高自滚。
+            constraints: BoxConstraints(
+              maxHeight: widget.presentation ==
+                      ReaderQuickSettingsPresentation.sideSheetNavigation
+                  ? double.infinity
+                  : 280,
+            ),
             child: ListView.builder(
               shrinkWrap: true,
+              physics: widget.presentation ==
+                      ReaderQuickSettingsPresentation.sideSheetNavigation
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
               itemCount: _searchResults.length,
               itemBuilder: (_, i) {
                 final BookSearchResult r = _searchResults[i];
@@ -1790,105 +2180,174 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     );
   }
 
-  /// 歌词专属字号 / 文字色 / 四边距控件（歌词-only `setLyrics*` setter，非 schema）。
+  /// 歌词专属字号 / 文字色 / 高亮色 / 四边距控件（歌词-only `setLyrics*` setter，
+  /// 非 schema）。窄窗 sheet 形态的歌词布局子页用它；设置侧板的「歌词模式」页把
+  /// 同一批行按任务拆成三组（[_buildLyricsTabBlocks]）。
   Widget _buildLyricsMarginSection() {
     return AdaptiveSettingsSection(
       children: [
         AdaptiveSettingsRow(
           title: t.lyrics_font_size_hint,
         ),
-        // TODO-907: 歌词竖排开关（独立于正文 writing-mode）。切换走整页重建。
-        AdaptiveSettingsSwitchRow(
-          title: t.lyrics_vertical_writing,
-          subtitle: t.lyrics_vertical_writing_hint,
-          value: _src.lyricsVerticalWriting,
-          onChanged: (bool enabled) async {
-            await _src.setLyricsVerticalWriting(enabled);
-            if (!mounted) return;
-            setState(() {});
-            await widget.onLyricsReload?.call();
-          },
-        ),
-        // TODO-908: 歌词听力沉浸模糊开关（独立 key）。模糊是 live 维度，走
-        // onStyleChanged（_updateLyricsStyleLive → __lyricsSetBlur），不重建整页。
-        AdaptiveSettingsSwitchRow(
-          title: t.lyrics_blur,
-          subtitle: t.lyrics_blur_hint,
-          value: _src.lyricsBlur,
-          onChanged: (bool enabled) async {
-            await _src.setLyricsBlur(enabled);
-            if (!mounted) return;
-            setState(() {});
-            widget.onStyleChanged?.call();
-          },
-        ),
-        _numberStepper(
-          label: t.lyrics_font_size,
-          value: _src.lyricsFontSize,
-          step: 1,
-          min: 8,
-          max: 64,
-          format: (double v) => '${v.round()}',
-          onChanged: (double v) {
-            _src.setLyricsFontSize(v);
-            setState(() {});
-            widget.onStyleChanged?.call();
-          },
-        ),
+        _lyricsVerticalRow(),
+        _lyricsBlurRow(),
+        _lyricsFontSizeRow(),
         _buildLyricsTextColorRow(context),
-        _numberStepper(
-          label: t.margin_top,
-          value: _src.lyricsMarginTop,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (double v) => '${v.round()}',
-          onChanged: (double v) {
-            _src.setLyricsMarginTop(v);
-            setState(() {});
-            widget.onStyleChanged?.call();
-          },
-        ),
-        _numberStepper(
-          label: t.margin_bottom,
-          value: _src.lyricsMarginBottom,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (double v) => '${v.round()}',
-          onChanged: (double v) {
-            _src.setLyricsMarginBottom(v);
-            setState(() {});
-            widget.onStyleChanged?.call();
-          },
-        ),
-        _numberStepper(
-          label: t.margin_left,
-          value: _src.lyricsMarginLeft,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (double v) => '${v.round()}',
-          onChanged: (double v) {
-            _src.setLyricsMarginLeft(v);
-            setState(() {});
-            widget.onStyleChanged?.call();
-          },
-        ),
-        _numberStepper(
-          label: t.margin_right,
-          value: _src.lyricsMarginRight,
-          step: 1,
-          min: 0,
-          max: 30,
-          format: (double v) => '${v.round()}',
-          onChanged: (double v) {
-            _src.setLyricsMarginRight(v);
-            setState(() {});
-            widget.onStyleChanged?.call();
-          },
-        ),
+        _buildLyricsHighlightColorRow(context),
+        ..._lyricsMarginRows(),
       ],
+    );
+  }
+
+  /// TODO-907: 歌词竖排开关（独立于正文 writing-mode）。切换走整页重建。
+  Widget _lyricsVerticalRow() {
+    return AdaptiveSettingsSwitchRow(
+      title: t.lyrics_vertical_writing,
+      subtitle: t.lyrics_vertical_writing_hint,
+      value: _src.lyricsVerticalWriting,
+      onChanged: (bool enabled) async {
+        await _src.setLyricsVerticalWriting(enabled);
+        if (!mounted) return;
+        setState(() {});
+        await widget.onLyricsReload?.call();
+      },
+    );
+  }
+
+  /// TODO-908: 歌词听力沉浸模糊开关（独立 key）。模糊是 live 维度，走
+  /// onStyleChanged（_updateLyricsStyleLive → __lyricsSetBlur），不重建整页。
+  Widget _lyricsBlurRow() {
+    return AdaptiveSettingsSwitchRow(
+      title: t.lyrics_blur,
+      subtitle: t.lyrics_blur_hint,
+      value: _src.lyricsBlur,
+      onChanged: (bool enabled) async {
+        await _src.setLyricsBlur(enabled);
+        if (!mounted) return;
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+    );
+  }
+
+  Widget _lyricsFontSizeRow() {
+    return _numberStepper(
+      label: t.lyrics_font_size,
+      value: _src.lyricsFontSize,
+      step: 1,
+      min: 8,
+      max: 64,
+      format: (double v) => '${v.round()}',
+      onChanged: (double v) {
+        _src.setLyricsFontSize(v);
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+    );
+  }
+
+  List<Widget> _lyricsMarginRows() {
+    Widget margin(
+      String label,
+      double value,
+      Future<void> Function(double) write,
+    ) {
+      return _numberStepper(
+        label: label,
+        value: value,
+        step: 1,
+        min: 0,
+        max: 30,
+        format: (double v) => '${v.round()}',
+        onChanged: (double v) {
+          write(v);
+          setState(() {});
+          widget.onStyleChanged?.call();
+        },
+      );
+    }
+
+    return <Widget>[
+      margin(t.margin_top, _src.lyricsMarginTop, _src.setLyricsMarginTop),
+      margin(
+        t.margin_bottom,
+        _src.lyricsMarginBottom,
+        _src.setLyricsMarginBottom,
+      ),
+      margin(t.margin_left, _src.lyricsMarginLeft, _src.setLyricsMarginLeft),
+      margin(
+        t.margin_right,
+        _src.lyricsMarginRight,
+        _src.setLyricsMarginRight,
+      ),
+    ];
+  }
+
+  /// 歌词「当前行高亮色」（BUG：歌词模式高亮颜色无法修改）。开关 = 是否用自定义色
+  /// （关 = 跟随播放器主题：MD3 封面取色 primary / Apple 白，哨兵 0）；开时下方展开
+  /// 内联取色器。改色写穿 source 并触发 live 重绘（歌词页的 `--ly-current`）。
+  Widget _buildLyricsHighlightColorRow(BuildContext context) {
+    final int stored = _src.lyricsHighlightColor;
+    final bool custom = stored != 0;
+    final Color themeFallback = Theme.of(context).colorScheme.primary;
+    final Color current = custom ? Color(stored) : themeFallback;
+    return AdaptiveSettingsSwitchActionRow(
+      key: const ValueKey<String>('reader_lyrics_highlight_color'),
+      title: t.lyrics_highlight_color,
+      subtitle: t.lyrics_highlight_color_hint,
+      value: custom,
+      onChanged: (bool enabled) async {
+        if (enabled) {
+          // 种一个不透明的初始色（当前主题强调色），避免落哨兵 0。
+          await _src.setLyricsHighlightColor(
+            0xFF000000 | (themeFallback.toARGB32() & 0xFFFFFF),
+          );
+        } else {
+          await _src.clearLyricsHighlightColor();
+        }
+        if (!mounted) return;
+        setState(() {});
+        widget.onStyleChanged?.call();
+      },
+      body: Row(
+        children: [
+          FushiColorSwatch(
+            color: current,
+            size: 20,
+            shape: FushiColorSwatchShape.dot,
+            borderColor: Theme.of(context).dividerColor,
+          ),
+        ],
+      ),
+      panel: custom
+          ? LayoutBuilder(
+              builder:
+                  (BuildContext layoutContext, BoxConstraints constraints) {
+                final double pickerWidth = constraints.maxWidth.clamp(
+                  0.0,
+                  MediaQuery.of(layoutContext).size.width - 64,
+                );
+                return ColorPicker(
+                  pickerColor: current,
+                  onColorChanged: (Color c) {
+                    // 强制不透明（也保证非哨兵 0）。
+                    _src.setLyricsHighlightColor(
+                      0xFF000000 | (c.toARGB32() & 0xFFFFFF),
+                    );
+                    setState(() {});
+                    widget.onStyleChanged?.call();
+                  },
+                  portraitOnly: true,
+                  colorPickerWidth: pickerWidth,
+                  pickerAreaHeightPercent: 0.5,
+                  enableAlpha: false,
+                  displayThumbColor: true,
+                  hexInputBar: true,
+                  labelTypes: const <ColorLabelType>[],
+                );
+              },
+            )
+          : null,
     );
   }
 
@@ -2186,13 +2645,12 @@ class _InBookTocRow extends StatelessWidget {
       );
     }
 
+    final ThemeData theme = Theme.of(context);
     final Color selectedColor = cupertino
         ? CupertinoTheme.of(context).primaryColor
-        : Theme.of(context).colorScheme.primary;
+        : fushiAccentForeground(context);
 
-    return Padding(
-      padding: EdgeInsetsDirectional.only(start: indent),
-      child: AdaptiveSettingsRow(
+    final Widget row = AdaptiveSettingsRow(
         title: title,
         // TOC chapter names can be long; on a narrow phone the default 2-line
         // clamp clips them. Allow a few wrapped lines (still finite so pathological
@@ -2223,8 +2681,34 @@ class _InBookTocRow extends StatelessWidget {
               ),
           ],
         ),
-      ),
     );
+    // 当前章：整行内嵌一块选中底（MD3 secondaryContainer；Apple / Cupertino 强调色
+    // 14%；墨水屏改描边），配合行尾的勾——长目录里一眼就能找到读到哪了。
+    final Widget indented = Padding(
+      padding: EdgeInsetsDirectional.only(start: indent),
+      child: row,
+    );
+    // 选中底铺满整段（缩进留在底块里面），层级缩进不会把选中底也挤歪。
+    return selected
+        ? Padding(
+            padding: EdgeInsets.all(tokens.spacing.gap / 4),
+            child: DecoratedBox(
+              key: const ValueKey<String>('reader_toc_current_fill'),
+              decoration: BoxDecoration(
+                color: isEinkTheme(context)
+                    ? null
+                    : cupertino || isGlassDesign(context)
+                        ? selectedColor.withValues(alpha: 0.14)
+                        : theme.colorScheme.secondaryContainer,
+                borderRadius: tokens.radii.controlRadius,
+                border: isEinkTheme(context)
+                    ? Border.all(color: theme.colorScheme.outline)
+                    : null,
+              ),
+              child: indented,
+            ),
+          )
+        : indented;
   }
 }
 
@@ -2294,9 +2778,9 @@ class _InBookSearchResultRow extends StatelessWidget {
                       TextSpan(text: after),
                     ],
                   ),
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall,
+                  style: theme.textTheme.bodyMedium,
                 ),
               ],
             ),
@@ -2313,10 +2797,19 @@ class _InBookSearchResultRow extends StatelessWidget {
       );
     }
 
-    return InkWell(
+    final Widget button = InkWell(
       borderRadius: tokens.radii.controlRadius,
       onTap: onTap,
+      // FushiFocusRoot 下由下面登记的焦点目标做唯一停靠点（与 _actionBtn 同理），
+      // 否则 InkWell 自己可聚焦（Tab 遍历）。
+      canRequestFocus: FushiFocusRoot.maybeControllerOf(context) == null,
       child: child,
+    );
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
+    return FushiActivatableFocusTarget(
+      focusIdPrefix: 'reader-search-result',
+      onTap: onTap,
+      child: button,
     );
   }
 }
@@ -2616,3 +3109,6 @@ class AudiobookVolumeRow extends StatelessWidget {
     );
   }
 }
+
+/// 导航侧板的分页（目录 / 收藏 / 搜索）。
+enum _ReaderNavTab { contents, favorites, search }
