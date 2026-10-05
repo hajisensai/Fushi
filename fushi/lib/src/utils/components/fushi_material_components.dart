@@ -18,7 +18,8 @@ import 'package:flutter/services.dart'
         KeyEvent,
         LogicalKeyboardKey,
         SystemChannels,
-        TextInputAction;
+        TextInputAction,
+        TextInputFormatter;
 import 'package:macos_ui/macos_ui.dart'
     show MacosTextField, MacosIcon, OverlayVisibilityMode;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -769,7 +770,17 @@ class FushiSearchField extends StatelessWidget {
     this.onClear,
     this.size = FushiSearchFieldSize.regular,
     this.trailing = const <Widget>[],
+    this.leading,
+    this.autofocus = false,
   });
+
+  /// 替换前置放大镜的控件（M3E search bar 的 leading：返回箭头 / 菜单钮）。
+  /// 为空时是放大镜。会被包进 [FushiSearchLeading]，两套设计系统都仍认得出
+  /// 这是搜索框（胶囊形态不丢）。
+  final Widget? leading;
+
+  /// 挂载后自动取焦点（搜索页 / 搜索视图打开即可输入）。
+  final bool autofocus;
 
   final Key? fieldKey;
   final Key? clearButtonKey;
@@ -892,6 +903,7 @@ class FushiSearchField extends StatelessWidget {
         key: fieldKey,
         controller: controller,
         focusNode: focusNode,
+        autofocus: autofocus,
         style: text,
         textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
@@ -922,13 +934,19 @@ class FushiSearchField extends StatelessWidget {
           focusedBorder: border(
             eink ? BorderSide(color: cs.onSurface, width: 2) : BorderSide.none,
           ),
-          prefixIcon: const Padding(
-            padding: EdgeInsetsDirectional.only(start: 16, end: 12),
-            child: FushiIcon(
-              Icons.search,
-              size: kFushiSearchFieldLargeIconSize,
-            ),
-          ),
+          prefixIcon: leading == null
+              ? const Padding(
+                  padding: EdgeInsetsDirectional.only(start: 16, end: 12),
+                  child: FushiIcon(
+                    Icons.search,
+                    size: kFushiSearchFieldLargeIconSize,
+                  ),
+                )
+              : Padding(
+                  // 48 触控的 leading 钮：4 + 48 + 4，与尾部动作对称。
+                  padding: const EdgeInsetsDirectional.only(start: 4, end: 4),
+                  child: FushiSearchLeading(child: leading!),
+                ),
           prefixIconColor: cs.onSurfaceVariant,
           // 图标槽给满 56：InputDecorator 的容器高取图标槽与正文的较大者，
           // 只给 48 时容器是 48、贴在 56 盒子顶上，正文比胶囊中线高 4px。
@@ -982,12 +1000,15 @@ class FushiSearchField extends StatelessWidget {
             key: fieldKey,
             controller: controller,
             focusNode: focusNode,
+            autofocus: autofocus,
             decoration: InputDecoration(
               hintText: hintText,
-              prefixIcon: const FushiIcon(
-                Icons.search,
-                size: kFushiSearchFieldIconSize,
-              ),
+              prefixIcon: leading == null
+                  ? const FushiIcon(
+                      Icons.search,
+                      size: kFushiSearchFieldIconSize,
+                    )
+                  : FushiSearchLeading(child: leading!),
               suffixIcon: trailing.isEmpty
                   ? null
                   : Row(mainAxisSize: MainAxisSize.min, children: trailing),
@@ -1007,10 +1028,11 @@ class FushiSearchField extends StatelessWidget {
         key: fieldKey,
         controller: controller,
         focusNode: focusNode,
+        autofocus: autofocus,
         placeholder: hintText,
-        prefix: const Padding(
-          padding: EdgeInsets.only(left: 6, right: 2),
-          child: MacosIcon(CupertinoIcons.search),
+        prefix: Padding(
+          padding: const EdgeInsets.only(left: 6, right: 2),
+          child: leading ?? const MacosIcon(CupertinoIcons.search),
         ),
         clearButtonMode: OverlayVisibilityMode.editing,
         onChanged: onChanged,
@@ -1033,11 +1055,18 @@ class FushiSearchField extends StatelessWidget {
             InputDecoration(
               isDense: true,
               hintText: hintText,
-              hintStyle: tokens.type.listSubtitle,
-              prefixIcon: const FushiIcon(
-                Icons.search,
-                size: kFushiSearchFieldIconSize,
+              // 占位符与正文同字号、只换颜色（M3 规格；与 BUG-2973 对
+              // FushiTextField 的修法同一口径）：小一号的占位符在竖直居中的
+              // 单行里按基线对齐，会比正文偏下。
+              hintStyle: tokens.type.listTitle.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
+              prefixIcon: leading == null
+                  ? const FushiIcon(
+                      Icons.search,
+                      size: kFushiSearchFieldIconSize,
+                    )
+                  : FushiSearchLeading(child: leading!),
               suffixIcon: trailing.isEmpty
                   ? null
                   : Row(
@@ -1173,6 +1202,16 @@ class FushiTextField extends StatefulWidget {
     this.style,
     this.contentPadding,
     this.focusId,
+    this.variant = FushiTextFieldVariant.filled,
+    this.size,
+    this.helperText,
+    this.errorText,
+    this.maxLength,
+    this.enabled,
+    this.clearable = false,
+    this.onClear,
+    this.showObscureToggle = true,
+    this.inputFormatters,
   }) : assert(controller == null || initialValue == null);
 
   final TextEditingController? controller;
@@ -1198,6 +1237,31 @@ class FushiTextField extends StatefulWidget {
   final EdgeInsetsGeometry? contentPadding;
   final FushiFocusId? focusId;
 
+  /// M3E 文本框两类：filled（默认，填充底、静止无描边）/ outlined（透明底 +
+  /// 1px outline 描边，标题骑在描边线上）。Apple 设计系统只有一种实色输入框，
+  /// 两类同形。
+  final FushiTextFieldVariant variant;
+
+  /// 尺寸档（单行最小高度 40 / 48 / 56）；为空时按内容自然高度（历史行为）。
+  final FushiInputSize? size;
+
+  /// 帮助文本 / 错误文本（错误优先，错误态描边换 error 色）。
+  final String? helperText;
+  final String? errorText;
+
+  /// 最大字数；给了就在右下角显示计数。
+  final int? maxLength;
+  final bool? enabled;
+
+  /// 有内容时在尾部给清空钮（需要 [controller]）。清空后调 [onChanged] 与
+  /// [onClear]。
+  final bool clearable;
+  final VoidCallback? onClear;
+
+  /// [obscureText] 为真时在尾部给显隐切换钮（M3E 密码框）。
+  final bool showObscureToggle;
+  final List<TextInputFormatter>? inputFormatters;
+
   @override
   State<FushiTextField> createState() => _FushiTextFieldState();
 }
@@ -1209,22 +1273,111 @@ class _FushiTextFieldState extends State<FushiTextField> {
 
   FocusNode get _effectiveFocusNode => widget.focusNode ?? _ownedFocusNode;
 
+  /// 密码显隐：true = 遮挡（初值跟 [FushiTextField.obscureText]）。
+  late bool _obscured = widget.obscureText;
+
+  @override
+  void didUpdateWidget(FushiTextField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.obscureText != widget.obscureText) {
+      _obscured = widget.obscureText;
+    }
+  }
+
   @override
   void dispose() {
     _ownedFocusNode.dispose();
     super.dispose();
   }
 
+  /// 尾部动作：调用方给的 suffixIcon 优先；否则 清空钮 / 密码显隐 / 输入辅助
+  /// （软键盘 / 粘贴）按需排成一行。
+  Widget? _buildSuffix(BuildContext context) {
+    if (widget.suffixIcon != null) return widget.suffixIcon;
+    final TextEditingController? controller = widget.controller;
+    final bool editable = !widget.readOnly && (widget.enabled ?? true);
+    // 尺寸档下尾部钮收成紧凑尺寸（20 + 6 = 32），否则 48 的标准触控区会把
+    // small（40）档撑高。
+    final bool compact = widget.size != null;
+    final double? iconSize = compact ? 20 : null;
+    final EdgeInsets? padding = compact ? const EdgeInsets.all(6) : null;
+    final Widget? assist = _hibikiTextFieldInputSuffix(
+      context: context,
+      controller: editable ? controller : null,
+      onChanged: widget.onChanged,
+      iconSize: iconSize,
+      padding: padding,
+    );
+    final bool toggle = widget.obscureText && widget.showObscureToggle;
+    final bool clear = widget.clearable && editable && controller != null;
+    if (!toggle && !clear) return assist;
+    Widget row(bool hasText) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (clear && hasText)
+              FushiIconButton(
+                icon: Icons.cancel_outlined,
+                tooltip: t.clear,
+                size: iconSize,
+                padding: padding,
+                onTap: () {
+                  controller.clear();
+                  widget.onChanged?.call('');
+                  widget.onClear?.call();
+                },
+              ),
+            if (toggle)
+              FushiIconButton(
+                icon: _obscured
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                tooltip: _obscured
+                    ? t.text_field_password_show
+                    : t.text_field_password_hide,
+                size: iconSize,
+                padding: padding,
+                onTap: () => setState(() => _obscured = !_obscured),
+              ),
+            if (assist != null) assist,
+          ],
+        );
+    if (!clear) return row(false);
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (BuildContext context, TextEditingValue value, Widget? _) =>
+          row(value.text.isNotEmpty),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool glass = isGlassDesign(context);
-    final Widget? effectiveSuffix = widget.suffixIcon ??
-        _hibikiTextFieldInputSuffix(
-          context: context,
-          controller: widget.readOnly ? null : widget.controller,
-          onChanged: widget.onChanged,
-        );
+    final Widget? effectiveSuffix = _buildSuffix(context);
+    final FushiInputSize? size = widget.size;
+    final bool singleLine = !widget.expands && (widget.maxLines ?? 2) == 1;
+    final TextStyle? style = widget.style ?? (glass ? null : tokens.type.listTitle);
+    // 尺寸档的单行：竖直内边距 = (档高 − 行高) / 2，正文与占位符（同字号，
+    // BUG-2973）恰好居中。InputDecoration.constraints 的最小高度只会把多出来
+    // 的高度加在正文下方，不能用它居中。
+    double? sizedVertical;
+    if (size != null && singleLine && !glass) {
+      final ThemeData theme = Theme.of(context);
+      final TextPainter painter = TextPainter(
+        text: TextSpan(
+          text: 'Hg',
+          style: (theme.textTheme.bodyLarge ?? const TextStyle()).merge(style),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(context),
+        maxLines: 1,
+      )..layout();
+      sizedVertical = math.max(
+        0,
+        (fushiInputSizeHeight(size) - painter.height) / 2,
+      );
+      painter.dispose();
+    }
     // 2026-10-04 输入框统一：两套设计系统都走 FushiTextFormFieldControl。
     // - MD3：经 fushiMd3FieldDecoration 得到 surfaceContainerHigh 柔和填充、
     //   圆角 12、静止无描边、聚焦 2px 主色（以前这里自带常驻灰描边方框）；
@@ -1238,18 +1391,50 @@ class _FushiTextFieldState extends State<FushiTextField> {
       focusNode: _effectiveFocusNode,
       autofocus: widget.autofocus,
       readOnly: widget.readOnly,
-      obscureText: widget.obscureText,
+      obscureText: widget.obscureText && _obscured,
+      enabled: widget.enabled,
+      maxLength: widget.maxLength,
+      inputFormatters: widget.inputFormatters,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
       maxLines: widget.expands ? null : widget.maxLines,
       minLines: widget.minLines,
       expands: widget.expands,
-      textAlignVertical: widget.textAlignVertical,
-      style: widget.style ?? (glass ? null : tokens.type.listTitle),
+      textAlignVertical: widget.textAlignVertical ??
+          (size != null && singleLine ? TextAlignVertical.center : null),
+      style: style,
       decoration: InputDecoration(
         hintText: widget.hintText,
         labelText: widget.labelText,
         suffixText: widget.suffixText,
+        helperText: widget.helperText,
+        errorText: widget.errorText,
+        border: widget.variant == FushiTextFieldVariant.outlined
+            ? const FushiOutlinedFieldBorder()
+            : null,
+        // 尺寸档：单行给最小高度（文字由 textAlignVertical 居中），多行只给
+        // 下限，仍随内容长高（自适应高度）。
+        // 尺寸档走 dense 布局：非 dense 的 InputDecorator 自带 48 的最小
+        // 交互高度，small 档会被撑到 48。
+        isDense: size != null ? true : null,
+        constraints: size == null
+            ? null
+            : BoxConstraints(minHeight: fushiInputSizeHeight(size)),
+        // 图标槽给满档高：InputDecorator 的容器高取图标槽与正文的较大者，
+        // 槽比档高矮时容器贴在盒子顶上，正文偏离中线（同 FushiSearchField
+        // large 档的处理）。
+        suffixIconConstraints: size == null || !singleLine
+            ? null
+            : BoxConstraints(
+                minWidth: 40,
+                minHeight: fushiInputSizeHeight(size),
+              ),
+        prefixIconConstraints: size == null || !singleLine
+            ? null
+            : BoxConstraints(
+                minWidth: 40,
+                minHeight: fushiInputSizeHeight(size),
+              ),
         // 占位符与正文同一字号 / 行高（M3 规格：placeholder 只换颜色）。
         // BUG-2973：此前用更小的 listSubtitle，InputDecorator 把占位符的首行
         // 基线对齐到正文首行基线，两种行高的 ascent 差让占位符整体下沉——
@@ -1266,7 +1451,7 @@ class _FushiTextFieldState extends State<FushiTextField> {
                 ? null
                 : EdgeInsets.symmetric(
                     horizontal: tokens.spacing.rowHorizontal,
-                    vertical: tokens.spacing.rowVertical,
+                    vertical: sizedVertical ?? tokens.spacing.rowVertical,
                   )),
         suffixIcon: effectiveSuffix,
         prefixIcon: widget.prefixIcon,
@@ -1283,6 +1468,20 @@ class _FushiTextFieldState extends State<FushiTextField> {
     );
   }
 }
+
+/// [FushiTextField] 的 M3E 两类：filled（填充底）/ outlined（描边）。
+enum FushiTextFieldVariant { filled, outlined }
+
+/// 输入框尺寸档（单行最小高度）：small 40 / medium 48 / large 56（M3 文本框
+/// 默认 56；工具条 / 对话框里的紧凑输入用 40 / 48）。
+enum FushiInputSize { small, medium, large }
+
+/// [FushiInputSize] 的单行最小高度。
+double fushiInputSizeHeight(FushiInputSize size) => switch (size) {
+  FushiInputSize.small => 40,
+  FushiInputSize.medium => 48,
+  FushiInputSize.large => 56,
+};
 
 /// The input-assist suffix icon for a text field. On desktop (no system IME) it
 /// opens the on-screen [showGamepadKeyboard]; on mobile it offers one-tap

@@ -6508,5 +6508,10 @@
   "reader_audiobook_section_tools": "對齊與轉錄",
   "reader_audiobook_no_sentences": "本章沒有可播放的句子",
   "reader_audiobook_jump_to_current": "定位到目前句子",
-  "reader_mini_player_open": "開啟有聲書面板"
+  "reader_mini_player_open": "開啟有聲書面板",
+  "text_field_password_show": "Show password",
+  "text_field_password_hide": "Hide password",
+  "search_view_suggestions_title": "Suggestions",
+  "search_view_recent_title": "Recent searches",
+  "search_view_recent_remove": "Remove from history"
 }

@@ -6508,5 +6508,10 @@
   "reader_audiobook_section_tools": "Alignment & transcription",
   "reader_audiobook_no_sentences": "No playable sentences in this chapter",
   "reader_audiobook_jump_to_current": "Jump to current sentence",
-  "reader_mini_player_open": "Open audiobook panel"
+  "reader_mini_player_open": "Open audiobook panel",
+  "text_field_password_show": "Show password",
+  "text_field_password_hide": "Hide password",
+  "search_view_suggestions_title": "Suggestions",
+  "search_view_recent_title": "Recent searches",
+  "search_view_recent_remove": "Remove from history"
 }
