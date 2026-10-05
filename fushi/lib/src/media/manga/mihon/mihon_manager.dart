@@ -1243,6 +1243,23 @@ class MihonManager extends ChangeNotifier {
     return true;
   }
 
+  /// 拖拽重排（「来源」列表组内拖拽 / 菜单上移下移）：按 [ordered] 的先后把
+  /// `sort_order` 重写成 0..n-1，一次 reload。调用方传完整列表（置顶组在前、
+  /// 其余组在后，组内即用户排出的顺序），与 `pinned desc, sort_order` 的查询序
+  /// 一致；没变的行不写。
+  Future<void> reorderSources(List<MangaOnlineSourceRow> ordered) async {
+    for (int index = 0; index < ordered.length; index++) {
+      final MangaOnlineSourceRow row = ordered[index];
+      if (row.sortOrder == index) continue;
+      await database.updateMangaOnlineSourceSettings(
+        extensionPackage: row.extensionPackage,
+        sourceId: row.sourceId,
+        sortOrder: index,
+      );
+    }
+    await reload();
+  }
+
   Future<List<MihonPreference>> getPreferences(
     MangaOnlineSourceRow source,
   ) async {
