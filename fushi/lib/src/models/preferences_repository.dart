@@ -469,10 +469,10 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 书架合集呈现方式 [ShelfCollectionLayout] `.name`（rows / cards）。默认 rows
+  /// 书架合集呈现方式 [ShelfCollectionLayout] `.name`（rows / cards）。默认 cards（用户 10-06：合集默认单格堆叠卡与书同排）
   /// （全宽横排行，现状零变化）；cards = 合集折成网格里的一个格子、与散书同一排序。
   String get shelfCollectionLayoutName =>
-      getPref('shelf_collection_layout', defaultValue: 'rows') as String;
+      getPref('shelf_collection_layout', defaultValue: 'cards') as String;
 
   Future<void> setShelfCollectionLayoutName(String name) async {
     await setPref('shelf_collection_layout', name);

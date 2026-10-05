@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2739 条。点号进各自文件。
+> 共 2740 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2975](bugs/BUG-2975-floating-chrome-scroll-bounce.md) | ✅ | ✅ | 视频库滚轮上下滚动回弹滚不动 |
 | [BUG-2974](bugs/BUG-2974-collection-picker-cross-domain.md) | ✅ | ✅ | 书的加入合集列表里出现视频合集（合集未按媒体库隔离） |
 | [BUG-2973](bugs/BUG-2973-text-field-vertical-center.md) | ✅ | ✅ | 输入框文字垂直不居中（自定义主题页 AI 输入框与名称框） |
 | [BUG-2972](bugs/BUG-2972-lyrics-highlight-color.md) | ✅ | ✅ | 歌词模式高亮颜色无法修改 |

@@ -159,12 +159,8 @@ void main() {
         reason: '反色药丸里的图标用底色',
       );
 
-      // 底栏本体与内容面之间要有一条前景色边线。
-      final Material bar = tester.widget<Material>(
-        find.byKey(fushiMaterialNavKey),
-      );
-      expect(bar.shape, isA<Border>());
-      expect((bar.shape! as Border).top.color, colors.outline);
+      // 悬浮胶囊一圈前景色描边（eink 不画阴影）。
+      expect(_floatingNavOutline(tester), colors.outline);
     });
 
     testWidgets('侧栏尾侧描边', (WidgetTester tester) async {
@@ -186,12 +182,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final Material rail = tester.widget<Material>(
-        find.byKey(fushiMaterialNavKey),
-      );
-      expect(rail.shape, isA<BorderDirectional>());
+      // 悬浮侧轨面板一圈前景色描边。
       expect(
-        (rail.shape! as BorderDirectional).end.color,
+        _floatingNavOutline(tester),
         buildEinkColorScheme(Brightness.light).outline,
       );
     });
@@ -540,4 +533,23 @@ void main() {
       expect(sync, contains('einkSafeProgressValue(context, p?.fraction)'));
     });
   });
+}
+
+/// MD3 悬浮导航（底部胶囊 / 侧轨面板）表面 Material 的描边色；没有描边返回 null。
+Color? _floatingNavOutline(WidgetTester tester) {
+  final Iterable<Material> surfaces = tester.widgetList<Material>(
+    find.descendant(
+      of: find.byKey(fushiMaterialNavKey),
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is Material &&
+            w.shape is RoundedRectangleBorder &&
+            (w.shape! as RoundedRectangleBorder).side != BorderSide.none,
+      ),
+    ),
+  );
+  if (surfaces.isEmpty) return null;
+  final Material surface = surfaces.first;
+  expect(surface.elevation, 0, reason: 'eink 不画阴影');
+  return (surface.shape! as RoundedRectangleBorder).side.color;
 }

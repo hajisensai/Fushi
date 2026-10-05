@@ -1012,15 +1012,64 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 进度条左右内缩：MD3 = media_kit 默认 16；Apple = 胶囊外边距 + 胶囊内边距，
   /// 轨道落在玻璃胶囊里面。章节刻度 / 缩略图预览层与它同源。
   ///
-  /// M3E：轨道再内缩一个轨道槽探出量（[VideoM3eSeekTrack.lane] 左右各探出
-  /// [_videoM3eSeekLaneOverhang]），槽的外缘恰与浮动工具栏胶囊外缘对齐。
+  /// M3E：轨道落在底部面板（[VideoM3eBottomPanel]，外缘 = [_videoM3eFloatingSideInset]）
+  /// 里，再内缩 [_videoM3eSeekLaneOverhang]——恰与面板里第一个 / 最后一个按钮的内容
+  /// 边缘对齐（按钮行内缩 [_videoM3eBottomBarSideInset] + 簇内边距 4）。
   double get _videoSeekBarSideInset => _appleChrome
       ? kVideoAppleChromeEdgeInset + 16
       : _videoM3eFloatingSideInset + _videoM3eSeekLaneOverhang;
 
-  /// M3E 悬浮轨道槽左右探出轨道的量（随界面缩放）。
+  /// M3E 进度条轨道距底部面板外缘的内缩量（随界面缩放）。
   double get _videoM3eSeekLaneOverhang =>
       12 * _videoUiScale * _controlsDensityScale;
+
+  /// M3E 底栏按钮行左右内缩：面板外缘 + 8（簇内边距再 4，按钮内容与轨道两端对齐）。
+  double get _videoM3eBottomBarSideInset =>
+      _videoM3eFloatingSideInset + 8 * _videoUiScale * _controlsDensityScale;
+
+  /// M3E 底部面板几何（[VideoM3eBottomPanel]，桌面 / full 与 compact 档）：进度条与
+  /// 底栏三簇收进同一块大圆角面板。与 theme 喂给 media_kit 的同一组量推导（同
+  /// [_appleCapsuleGeometry]）：下沿 = 按钮行下沿 − 6，上沿 = 进度条轨道中线 + 16，
+  /// 且不高于进度条触摸热区上缘——字幕避让（[_subtitleControlsBottomReserve]）按热区
+  /// 上缘 + 呼吸间距算，面板因此恒在避让线以下，[_floatingChromeBottomLift] 不变。
+  /// 没有进度条时上沿 = 按钮行上沿 + 4。Apple / mini 档返回 null。
+  VideoAppleCapsuleGeometry? _m3eBottomPanelGeometry() {
+    if (_appleChrome || !_controlsDensity.showBottomButtonBar) return null;
+    final double d = _controlsDensityScale;
+    final double s = _videoUiScale * d;
+    final double barHeight = _videoButtonBarHeight * d;
+    final double buttonBottom;
+    final double trackCenter;
+    final double hitTop;
+    if (_isDesktopVideoControls) {
+      buttonBottom = _floatingChromeBottomLift;
+      // 桌面：进度条容器骑按钮行上沿、被下压 overlap，轨道在容器竖直正中。
+      final double containerBottom =
+          buttonBottom + barHeight - _videoDesktopSeekBarButtonBarOverlap * d;
+      trackCenter = containerBottom + _videoDesktopSeekBarContainerHeight * d / 2;
+      hitTop = containerBottom + _videoDesktopSeekBarContainerHeight * d;
+    } else {
+      buttonBottom = _videoBottomChromeBaseline +
+          _videoBottomSystemInset() +
+          _floatingChromeBottomLift;
+      // 移动：进度条容器在按钮行上方 gap 处；M3E 轨道（[VideoM3eSeekTrack]，底对齐）
+      // 中线在容器底缘之上 10 × 缩放。
+      final double containerBottom =
+          buttonBottom + barHeight + _videoSeekBarButtonGap * d;
+      trackCenter = containerBottom + 10 * s;
+      hitTop = containerBottom + _videoSeekBarContainerHeight * d;
+    }
+    final double top = _controlsDensity.showSeekBar
+        ? math.min(trackCenter + 16 * s, hitTop)
+        : buttonBottom + barHeight + 4 * s;
+    final double bottom = math.max(4.0, buttonBottom - 6 * s);
+    return VideoAppleCapsuleGeometry(
+      left: _videoM3eFloatingSideInset,
+      right: _videoM3eFloatingSideInset,
+      bottom: bottom,
+      height: top - bottom,
+    );
+  }
 
   /// Apple：底栏按钮行左右内缩（胶囊外边距 + 8）。
   double get _videoAppleButtonBarSideInset => kVideoAppleChromeEdgeInset + 8;
@@ -1236,13 +1285,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _appleChrome ? videoChromeNeutralForeground : videoChromeAccentColor(cs);
 
   /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、画面上的单钮、media_kit 自带
-  /// 按钮）：两套设计系统都是中性近白——Apple 恒白；M3E 取播放器深色方案的
-  /// onSurface，与 [VideoM3eIconButton] 同一前景。强调色只留给播放键、进度已播段 /
-  /// 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点怪」：传输簇的绿字
-  /// 绿图标与两侧白字胶囊不统一）。
-  Color _videoChromeButtonForeground(ColorScheme cs) => _appleChrome
-      ? videoChromeNeutralForeground
-      : videoM3eChromeScheme(cs).onSurface;
+  /// 按钮）：两套设计系统都是纯白，与 [VideoM3eIconButton] 同一前景。强调色只留给
+  /// 播放键、进度已播段 / 手柄与开关的「开」态（2026-10-06，shishamo「悬浮色彩有点
+  /// 怪」：传输簇的绿字绿图标与两侧白字胶囊不统一）。
+  Color _videoChromeButtonForeground(ColorScheme cs) =>
+      videoChromeNeutralForeground;
+
+  /// 音量 / 倍速浮层的配色：M3E（非墨水屏）取无色相中性方案
+  /// （[videoM3eNeutralChromeScheme]，与悬浮胶囊同一表面）；Apple / 墨水屏仍跟主题。
+  ColorScheme _videoPopoverColorScheme(BuildContext context) {
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    if (_appleChrome || isEinkTheme(context)) return cs;
+    return videoM3eNeutralChromeScheme(cs);
+  }
 
   /// 顶栏标题字号，随界面大小缩放（TODO-067），与图标按钮同口径。
   double get _videoControlTitleFontSize =>
@@ -8383,10 +8438,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
   }) {
     return VideoControlBar(
-      // MD3 Expressive 浮动工具栏：三簇各是一枚同色中性悬浮胶囊，贴按钮行
-      // 底边，上方让给悬浮进度条；画面在胶囊之外不被任何实体栏遮挡。Apple 走自己的
-      // 玻璃胶囊（[VideoAppleChromeBackdrop]），这里不画。
-      clusterStyle: _m3eFloatingBarStyle(),
+      // MD3 Expressive：三簇与进度条收进同一块底部面板（[VideoM3eBottomPanel]，由
+      // layout 在控制条下面画），簇本身不再各画胶囊，只保留簇几何与实体命中区。
+      // Apple 走自己的玻璃胶囊（[VideoAppleChromeBackdrop]），这里不画。
+      clusterStyle: _m3eFloatingBarStyle(inPanel: true),
       moreButtonBuilder: (VoidCallback open) =>
           _videoBarMoreButton(open, desktop: desktop),
       entries: <VideoBarEntry>[
@@ -8418,12 +8473,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// M3E 浮动工具栏的胶囊外形（底栏贴底、顶栏按钮组居中）；Apple 为 null（玻璃
   /// 胶囊另画）。
-  VideoBarClusterStyle? _m3eFloatingBarStyle({double verticalAlignment = 1}) {
+  VideoBarClusterStyle? _m3eFloatingBarStyle({
+    double verticalAlignment = 1,
+    bool inPanel = false,
+  }) {
     if (!_m3eChrome) return null;
     return videoM3eFloatingBarStyle(
       context,
       scale: _videoUiScale * _controlsDensityScale,
       verticalAlignment: verticalAlignment,
+      inPanel: inPanel,
     );
   }
 

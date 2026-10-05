@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
+import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -23,9 +24,14 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
 //   [FushiFloatingChromeController.handleScrollNotification]，下行累计超过阈值
 //   收起、上行或回到顶部弹回。
 // - [FushiFloatingChromeScope]：把 controller 下发给子树（页面里自己的工具行
-//   用 [FushiFloatingChromeReveal] 跟着同一份显隐走）。
-// - [FushiSpringReveal]：弹簧驱动的「从边缘滑出 + 高度展开 + 淡入」，收起时
-//   高度归零把空间还给内容（不是盖在内容上——页面的首行永远不会被工具栏挡住）。
+//   用 [FushiFloatingChromeOverlay] 叠在内容上、跟着同一份显隐走）。
+// - [FushiFloatingChromeOverlay]：工具区叠在内容上，收起只做位移 + 淡出，
+//   **不改滚动视口的版面**；内容经 [FushiFloatingChromeInset] 让出恒定的顶部
+//   高度。（曾经是「高度收到 0 把空间还给内容」：收起 / 弹回改变视口高度 →
+//   滚动位置被夹紧 / 内容跳动 → 又被判成反向滚动 → 工具栏来回切，滚轮上下
+//   都「回弹、滚不动」。）
+// - [FushiSpringReveal]：弹簧驱动的「从边缘滑出 + 高度展开 + 淡入」，只给不随
+//   滚动显隐的表面用（多选批量栏这类由状态切换驱动的工具栏）。
 // - [FushiFloatingToolbarSurface]：M3E floating toolbar 的容器，与阅读器 / 首页
 //   悬浮栏共用 `fushi_floating_toolbar.dart` 的同一枚胶囊（[FushiFloatingPill]）。
 // - [FushiFloatingActionsPill]：把页头登记进 [FushiShellActionsSlot] 的动作画成
@@ -52,6 +58,11 @@ class FushiFloatingChromeController extends ChangeNotifier {
   bool _visible;
   double _accumulated = 0;
 
+  /// 上一条竖向通知的来源与视口高度：同一滚动视图的视口高度变了，说明这一帧的
+  /// 位移来自版面修正（夹紧 / 重新布局），不是用户在滚。
+  BuildContext? _lastContext;
+  double? _lastViewportDimension;
+
   /// 工具栏此刻应当显示。
   bool get visible => _visible;
 
@@ -70,6 +81,13 @@ class FushiFloatingChromeController extends ChangeNotifier {
   bool handleScrollNotification(ScrollNotification notification) {
     final ScrollMetrics metrics = notification.metrics;
     if (metrics.axis != Axis.vertical) return false;
+    final bool sameScrollable = identical(notification.context, _lastContext);
+    final bool viewportChanged =
+        sameScrollable &&
+        _lastViewportDimension != null &&
+        _lastViewportDimension != metrics.viewportDimension;
+    _lastContext = notification.context;
+    _lastViewportDimension = metrics.viewportDimension;
     if (notification is ScrollEndNotification) {
       _accumulated = 0;
       return false;
@@ -81,6 +99,12 @@ class FushiFloatingChromeController extends ChangeNotifier {
     }
     final double delta = notification.scrollDelta ?? 0;
     if (delta == 0) return false;
+    // 只认用户滚动带来的位移（BUG：滚轮上下都「回弹」）：
+    // - 视口高度变了 = 版面修正，位移是被夹紧出来的；
+    // - 停在底部还在往回走 = 内容总长缩短后的夹紧（用户往上滚一格就离开底部了）；
+    // - 越界回弹（Apple 弹性滚动）不是方向意图。
+    if (viewportChanged || metrics.outOfRange) return false;
+    if (delta < 0 && metrics.extentAfter <= 0.5) return false;
     if (_accumulated != 0 && delta.sign != _accumulated.sign) {
       _accumulated = 0;
     }
@@ -109,29 +133,243 @@ class FushiFloatingChromeScope
       ?.notifier;
 }
 
-/// 跟随 [FushiFloatingChromeScope] 显隐的一段工具区（外壳的页签 / 动作行、页面
-/// 里的搜索筛选行共用同一份显隐，收起时一起收）。
+/// 浮动工具区叠在内容上时，内容顶部要让出的高度（逻辑 px）。
 ///
-/// 收起后键盘 / 手柄焦点走进来（Tab 遍历到页签或按钮）立刻弹回：收起只是让出
-/// 屏幕空间，不能让控件变得够不着。没挂作用域时原样返回 [child]。
-class FushiFloatingChromeReveal extends StatelessWidget {
-  const FushiFloatingChromeReveal({required this.child, super.key});
+/// 由 [FushiFloatingChromeOverlay] 下发，**恒等于工具区的实测高度，不随显隐
+/// 变**：收起只是把工具区移出画面，滚动视口的尺寸与内容的版面一帧都不动——
+/// 这样收起 / 弹回不会反过来改变滚动位置，也就不会自激（滚轮上下都「回弹、
+/// 滚不动」的根因）。主滚动视图把它加成顶部内边距（内容滚到工具区底下），
+/// 其它页面用 [FushiFloatingChromeInsetPadding] 整体让开。没挂时为 0。
+class FushiFloatingChromeInset extends InheritedWidget {
+  const FushiFloatingChromeInset({
+    required this.top,
+    required super.child,
+    super.key,
+  });
+
+  final double top;
+
+  static double of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiFloatingChromeInset>()
+          ?.top ??
+      0;
+
+  @override
+  bool updateShouldNotify(FushiFloatingChromeInset oldWidget) =>
+      top != oldWidget.top;
+}
+
+/// 把 [child] 整体下移 [FushiFloatingChromeInset] 的高度（不会自己加顶部内边距
+/// 的页面用；高度恒定，不随工具区显隐变）。子树里的 inset 归零，不重复让。
+class FushiFloatingChromeInsetPadding extends StatelessWidget {
+  const FushiFloatingChromeInsetPadding({required this.child, super.key});
 
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
+    final double top = FushiFloatingChromeInset.of(context);
+    return Padding(
+      padding: EdgeInsets.only(top: top),
+      child: FushiFloatingChromeInset(top: 0, child: child),
+    );
+  }
+}
+
+/// 跟随 [FushiFloatingChromeScope] 显隐的一段工具区，**叠在 [child] 上**
+/// （外壳的页签 / 动作行、页面里的页头与搜索筛选行共用同一份显隐，一起收）。
+///
+/// [child] 恒占满整个区域，工具区浮在它顶部；[child] 经
+/// [FushiFloatingChromeInset] 拿到「顶部要让出多少」（外层 inset + 本工具区
+/// 实测高度）。收起 = 工具区向上滑出画面 + 淡出（M3E default spatial 弹簧），
+/// 不改任何版面。嵌套时内层工具区排在外层工具区下方，收起时一起滑出。
+///
+/// 收起后键盘 / 手柄焦点走进来（Tab 遍历到页签或按钮）立刻弹回：收起只是让出
+/// 屏幕，不能让控件变得够不着。没挂作用域时退化成常驻的「工具区 + 内容」竖排。
+class FushiFloatingChromeOverlay extends StatefulWidget {
+  const FushiFloatingChromeOverlay({
+    required this.chrome,
+    required this.child,
+    super.key,
+  });
+
+  final Widget chrome;
+  final Widget child;
+
+  @override
+  State<FushiFloatingChromeOverlay> createState() =>
+      _FushiFloatingChromeOverlayState();
+}
+
+class _FushiFloatingChromeOverlayState
+    extends State<FushiFloatingChromeOverlay> {
+  /// 工具区的实测高度（展开态的版面高度；收起不改它）。
+  double _chromeHeight = 0;
+
+  void _onChromeHeight(double height) {
+    if (!mounted || height == _chromeHeight) return;
+    setState(() => _chromeHeight = height);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final FushiFloatingChromeController? controller =
         FushiFloatingChromeScope.maybeOf(context);
-    if (controller == null) return child;
-    return Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onFocusChange: (bool focused) {
-        if (focused) controller.show();
-      },
-      child: FushiSpringReveal(visible: controller.visible, child: child),
+    if (controller == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          widget.chrome,
+          Expanded(child: widget.child),
+        ],
+      );
+    }
+    final double outer = FushiFloatingChromeInset.of(context);
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: FushiFloatingChromeInset(
+            top: outer + _chromeHeight,
+            child: widget.child,
+          ),
+        ),
+        Positioned(
+          top: outer,
+          left: 0,
+          right: 0,
+          child: Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onFocusChange: (bool focused) {
+              if (focused) controller.show();
+            },
+            child: _FloatingChromeSlide(
+              visible: controller.visible,
+              travel: outer + _chromeHeight,
+              child: _HeightReporter(
+                onHeight: _onChromeHeight,
+                // 实色底：内容滚到工具区底下时不从胶囊缝隙里透出来。
+                child: ColoredBox(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: widget.chrome,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
+  }
+}
+
+/// 工具区的显隐动画：只做位移 + 淡出，不改版面。收起时向上滑过 [travel]
+/// （= 工具区底边到叠放区顶边的距离），整段移出画面。树结构恒定：显隐来回切
+/// 不会重建工具区里的输入框 / 菜单锚点。
+class _FloatingChromeSlide extends StatefulWidget {
+  const _FloatingChromeSlide({
+    required this.visible,
+    required this.travel,
+    required this.child,
+  });
+
+  final bool visible;
+  final double travel;
+  final Widget child;
+
+  @override
+  State<_FloatingChromeSlide> createState() => _FloatingChromeSlideState();
+}
+
+class _FloatingChromeSlideState extends State<_FloatingChromeSlide>
+    with SingleTickerProviderStateMixin {
+  late final FushiSpring _spring = FushiSpring(
+    vsync: this,
+    initial: widget.visible ? 1 : 0,
+    spring: fushiExpressiveDefaultSpatial,
+  );
+
+  @override
+  void didUpdateWidget(covariant _FloatingChromeSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible != widget.visible) {
+      _spring.animateTo(
+        widget.visible ? 1 : 0,
+        animate: fushiExpressiveMotionEnabled(context),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _spring.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _spring.animation,
+      child: widget.child,
+      builder: (BuildContext context, Widget? child) {
+        final double value = _spring.value;
+        final double shown = value.clamp(0.0, 1.0);
+        final bool hidden = shown <= 0.001;
+        return ExcludeSemantics(
+          excluding: hidden,
+          child: IgnorePointer(
+            // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
+            ignoring: hidden || !widget.visible,
+            child: Opacity(
+              opacity: hidden ? 0 : shown,
+              child: Transform.translate(
+                // 用未截断的弹簧值：轻微回弹体现在位置上。
+                offset: Offset(0, -(1 - value) * widget.travel),
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 版面完成后把子组件高度报给 [onHeight]（变了才报，下一帧前回调）。
+class _HeightReporter extends SingleChildRenderObjectWidget {
+  const _HeightReporter({required this.onHeight, required super.child});
+
+  final ValueChanged<double> onHeight;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderHeightReporter(onHeight);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderHeightReporter renderObject,
+  ) {
+    renderObject.onHeight = onHeight;
+  }
+}
+
+class _RenderHeightReporter extends RenderProxyBox {
+  _RenderHeightReporter(this.onHeight);
+
+  ValueChanged<double> onHeight;
+  double? _reported;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    final double height = size.height;
+    if (_reported == height) return;
+    _reported = height;
+    // 版面阶段不能 setState：本帧结束后再报（当前正处在一帧之内，回调必跑）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (attached) onHeight(height);
+    });
   }
 }
 
@@ -433,7 +671,7 @@ const double kFushiFloatingChromeGap = 8;
 ///
 /// 页签按自然宽贴左（摆不下时在胶囊里横滑），动作组按自然宽贴右；窄屏上
 /// 动作组最多占一半行宽，再多由 [FushiShellHeaderActions] 收进 ⋯。整行跟随
-/// [FushiFloatingChromeReveal] 显隐。
+/// [FushiFloatingChromeOverlay] 显隐（由外壳把整行叠在内容上）。
 class FushiFloatingChromeBar extends StatelessWidget {
   const FushiFloatingChromeBar({
     required this.tabs,
@@ -448,41 +686,39 @@ class FushiFloatingChromeBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FushiFloatingChromeReveal(
-      child: Padding(
-        // M3E 收紧（2026-10-06 用户截图「标题与页签、页签与内容留白偏大」）：
-        // 顶边不再加距——外壳大标题自带 8 的下沿留白，就是标题到胶囊的那段
-        // 间距；底边只留 4 容胶囊投影（elevation 3），收起动画的裁剪不切到
-        // 影子，页面页头自己再给 12，合计约 16。左右与外壳大标题、页面内容
-        // 同一条页边（[FushiSpacingTokens.page]），胶囊左缘对齐标题左缘。
-        padding:
-            padding ??
-            EdgeInsets.fromLTRB(
-              FushiDesignTokens.of(context).spacing.page,
-              0,
-              FushiDesignTokens.of(context).spacing.page,
-              kFushiFloatingChromeGap / 2,
+    return Padding(
+      // M3E 收紧（2026-10-06 用户截图「标题与页签、页签与内容留白偏大」）：
+      // 顶边不再加距——外壳大标题自带 8 的下沿留白，就是标题到胶囊的那段
+      // 间距；底边只留 4 容胶囊投影（elevation 3），收起动画的裁剪不切到
+      // 影子，页面页头自己再给 12，合计约 16。左右与外壳大标题、页面内容
+      // 同一条页边（[FushiSpacingTokens.page]），胶囊左缘对齐标题左缘。
+      padding:
+          padding ??
+          EdgeInsets.fromLTRB(
+            FushiDesignTokens.of(context).spacing.page,
+            0,
+            FushiDesignTokens.of(context).spacing.page,
+            kFushiFloatingChromeGap / 2,
+          ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double maxActions = constraints.maxWidth.isFinite
+              ? math.max(56.0, constraints.maxWidth / 2)
+              : double.infinity;
+          return FocusTraversalGroup(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Expanded(child: tabs),
+                const SizedBox(width: kFushiFloatingChromeGap),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxActions),
+                  child: FushiFloatingActionsPill(slot: slot),
+                ),
+              ],
             ),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final double maxActions = constraints.maxWidth.isFinite
-                ? math.max(56.0, constraints.maxWidth / 2)
-                : double.infinity;
-            return FocusTraversalGroup(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: <Widget>[
-                  Expanded(child: tabs),
-                  const SizedBox(width: kFushiFloatingChromeGap),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxWidth: maxActions),
-                    child: FushiFloatingActionsPill(slot: slot),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+          );
+        },
       ),
     );
   }

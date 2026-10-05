@@ -14,6 +14,6 @@ enum ShelfCollectionLayout {
   /// 从持久化 `.name` 解析；未知值（含旧版本残留）退默认 [rows]。
   static ShelfCollectionLayout fromName(String name) => values.firstWhere(
         (ShelfCollectionLayout m) => m.name == name,
-        orElse: () => ShelfCollectionLayout.rows,
+        orElse: () => ShelfCollectionLayout.cards,
       );
 }

@@ -6605,5 +6605,6 @@
   "reader_control_editor_drag_hint": "Drag a button (long-press on touch) to reorder it or move it to another area. With a keyboard, press Enter on a button to choose where it goes. Changes apply right away.",
   "reader_audiobook_sleep_timer": "Sleep timer",
   "reader_audiobook_sleep_off": "Off",
-  "reader_audiobook_sleep_remaining": "Stops in $n min"
+  "reader_audiobook_sleep_remaining": "Stops in $n min",
+  "home_nav_more": "More"
 }

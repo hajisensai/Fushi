@@ -13,8 +13,8 @@
 ///
 /// [FushiScrollAwayController] + [FushiScrollAwayChrome]：M3E 浮动工具栏「内容往下
 /// 滚时收起、往回滚时出现」的行为——只认用户发起的滚动方向
-/// （[UserScrollNotification]），不认程序滚动 / 视口尺寸变化，不会因为页头收起
-/// 让视口变高而自激振荡。收起 / 出现走 M3E spatial 弹簧；墨水屏与「减弱动态
+/// （[UserScrollNotification]），不认程序滚动 / 视口尺寸变化；收起不改版面高度，
+/// 页头收起 / 弹回不会改变正文视口而自激振荡。收起 / 出现走 M3E spatial 弹簧；墨水屏与「减弱动态
 /// 效果」下瞬时切换。只服务 Material 设计系统；Apple 设计系统的页头保持既有的
 /// 玻璃形态。
 library;
@@ -207,8 +207,8 @@ class FushiScrollAwayController extends ChangeNotifier {
   }
 }
 
-/// 把页头装进「随滚动收起」的外壳：收起 = 高度收到 0 + 上移淡出（M3E spatial
-/// 弹簧），出现反之。收起时不吃指针；焦点仍可遍历进来，一进来就把页头叫出——
+/// 把页头装进「随滚动收起」的外壳：收起 = 上移淡出（M3E spatial 弹簧），出现
+/// 反之；占位高度不变（不改正文视口，见 build 注释）。收起时不吃指针；焦点仍可遍历进来，一进来就把页头叫出——
 /// 键盘 / 手柄用户 Tab 到页头时不会落在一个看不见的按钮上。
 class FushiScrollAwayChrome extends StatefulWidget {
   const FushiScrollAwayChrome({
@@ -289,18 +289,19 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
           final double v = widget.enabled ? _shown.value : 1;
           final double factor = v.clamp(0.0, 1.0);
           final bool hidden = factor < 0.5;
-          return ClipRect(
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              heightFactor: factor,
-              child: IgnorePointer(
-                ignoring: hidden,
-                child: Opacity(
-                  opacity: factor,
-                  child: Transform.translate(
-                    offset: Offset(0, (1 - v) * -12),
-                    child: child,
-                  ),
+          // 只做位移 + 淡出，**版面高度恒定**：曾经用 heightFactor 把高度收到 0，
+          // 页头在 [FushiPageScaffold] 里与正文竖排，收起 / 弹回改变正文视口
+          // 高度 → 滚动位置被夹紧（内容只比视口略长时直接夹回顶部）、内容跳动 →
+          // 又触发弹回 / 收起，滚轮上下都「回弹、滚不动」。
+          return ExcludeSemantics(
+            excluding: factor <= 0.001,
+            child: IgnorePointer(
+              ignoring: hidden,
+              child: Opacity(
+                opacity: factor,
+                child: Transform.translate(
+                  offset: Offset(0, (1 - v) * -12),
+                  child: child,
                 ),
               ),
             ),

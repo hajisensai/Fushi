@@ -418,12 +418,16 @@ void main() {
     );
   }
 
-  double chromeHeight(WidgetTester tester) => tester
-      .getSize(find.descendant(
-        of: find.byType(FushiFloatingChromeBar),
-        matching: find.byType(FushiSpringReveal),
-      ))
-      .height;
+  /// 工具栏露出在叠放区里的高度：收起时整条滑出画面（底边退到叠放区顶边）。
+  double chromeHeight(WidgetTester tester) {
+    final Rect bar = tester.getRect(find.byType(FushiFloatingChromeBar));
+    final Rect area = tester.getRect(find.byType(FushiFloatingChromeOverlay));
+    return (bar.bottom - area.top).clamp(0.0, double.infinity);
+  }
+
+  /// 内容滚动视口高度：工具栏显隐不得改变它（改了就会夹紧滚动位置、自激回弹）。
+  double listViewport(WidgetTester tester) =>
+      tester.getSize(find.byKey(const ValueKey<String>('probe-list'))).height;
 
   testWidgets('浮动工具栏：页签在顶部浮动胶囊里，页头动作进悬浮动作组', (WidgetTester tester) async {
     await tester.pumpWidget(floatingHarness());
@@ -459,13 +463,15 @@ void main() {
     await tester.pumpAndSettle();
     final double shown = chromeHeight(tester);
     expect(shown, greaterThan(40));
+    final double viewport = listViewport(tester);
 
     await tester.drag(
       find.byKey(const ValueKey<String>('probe-list')),
       const Offset(0, -600),
     );
     await tester.pumpAndSettle();
-    expect(chromeHeight(tester), 0, reason: '往下读：工具栏收起、高度还给内容');
+    expect(chromeHeight(tester), 0, reason: '往下读：工具栏滑出画面');
+    expect(listViewport(tester), viewport, reason: '收起不改内容视口高度');
 
     await tester.drag(
       find.byKey(const ValueKey<String>('probe-list')),
@@ -473,6 +479,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(chromeHeight(tester), shown, reason: '往回拉：工具栏弹回');
+    expect(listViewport(tester), viewport, reason: '弹回不改内容视口高度');
 
     await tester.drag(
       find.byKey(const ValueKey<String>('probe-list')),

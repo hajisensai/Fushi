@@ -62,34 +62,145 @@ ColorScheme videoM3eChromeScheme(ColorScheme cs) {
   );
 }
 
-/// tonal 圆钮的容器色：深色方案的 secondaryContainer，半透明压在画面上。
-Color videoM3eTonalContainer(ColorScheme chrome) =>
-    chrome.secondaryContainer.withValues(alpha: 0.72);
+/// 播放器悬浮表面的固定中性色：HCT chroma 0、tone ≈ 18（#2D2D2D）。**完全不带
+/// 色相**——不从 app 主色生成的深色方案取 surfaceContainerHigh（那份灰带主色色相，
+/// 绿主题下胶囊发绿、和暖色画面打架）。浮在画面上的控件是一层统一的中性表面，
+/// 强调色只留给播放键、进度已播段 / 手柄与开关的「开」态（M3E 视频播放器）。
+const Color kVideoM3eNeutralSurface = Color(0xFF2D2D2D);
 
-/// 浮动工具栏胶囊的底色：深色方案的 surfaceContainerHigh（中性深灰，只带一丝主色
-/// 色相），约 86% 不透明——画面颜色能隐约透出来，白字始终压在近实色上可读。
+/// 悬浮表面不透明度：画面颜色能隐约透出来，白字始终压在近实色上可读。
+const double kVideoM3eNeutralSurfaceAlpha = 0.86;
+
+/// 悬浮表面上的次要文字 / 字形（白 70%）。
+const Color kVideoM3eSecondaryForeground = Color(0xB3FFFFFF);
+
+/// tonal 圆钮的容器色：中性表面上再提一档的白 12%（不带色相）。
+Color videoM3eTonalContainer() => Colors.white.withValues(alpha: 0.12);
+
+/// 播放器上所有悬浮胶囊 / 面板（顶栏返回 / 标题 / 按钮组、底部面板、音量 / 倍速
+/// 浮层）共用的底色。
+Color videoM3eFloatingColor() =>
+    kVideoM3eNeutralSurface.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
+
+final Map<int, ColorScheme> _neutralChromeSchemeCache = <int, ColorScheme>{};
+
+/// 播放器悬浮浮层（音量 / 倍速 popover）用的配色：表面族全换成无色相中性灰、前景
+/// 纯白 / 白 70%，强调色族（primary / primaryContainer …）仍是以 app 主色为种子的
+/// 深色方案。浮层内部的滑条 / 文字按钮读这份方案，浅色主题下也不会黑压黑。
+ColorScheme videoM3eNeutralChromeScheme(ColorScheme cs) {
+  final int key = cs.primary.toARGB32();
+  return _neutralChromeSchemeCache[key] ??= videoM3eChromeScheme(cs).copyWith(
+    surface: const Color(0xFF1F1F1F),
+    onSurface: Colors.white,
+    onSurfaceVariant: kVideoM3eSecondaryForeground,
+    surfaceDim: const Color(0xFF1A1A1A),
+    surfaceBright: const Color(0xFF454545),
+    surfaceContainerLowest: const Color(0xFF141414),
+    surfaceContainerLow: const Color(0xFF222222),
+    surfaceContainer: const Color(0xFF262626),
+    surfaceContainerHigh: const Color(0xFF2A2A2A),
+    surfaceContainerHighest: kVideoM3eNeutralSurface,
+    surfaceTint: Colors.transparent,
+    outline: const Color(0x8AFFFFFF),
+    outlineVariant: const Color(0x33FFFFFF),
+    shadow: Colors.black,
+    inverseSurface: const Color(0xFFE6E6E6),
+    onInverseSurface: const Color(0xFF1F1F1F),
+  );
+}
+
+/// 底部面板圆角上限（M3E extra-large 28）。
+const double kVideoM3eBottomPanelRadius = 28;
+
+/// M3E 底部面板（桌面 / full 与 compact 档）：进度条与底栏三簇按钮收进**同一块**
+/// 大圆角中性面板——上半部是进度条，下半部是三组按钮；三簇不再各自画胶囊。
 ///
-/// 播放器上所有悬浮胶囊（底栏三簇、顶栏返回 / 标题 / 按钮组）共用这一个颜色：浮在
-/// 画面上的控件是一层统一的中性表面，强调色只留给主操作与进度（M3E 视频播放器）。
-Color videoM3eFloatingColor(ColorScheme chrome) =>
-    chrome.surfaceContainerHigh.withValues(alpha: 0.86);
+/// 只是背景：排在 media_kit 控制条**之前**（画在进度条 / 按钮下面、画面上面），
+/// [IgnorePointer]——点击穿透规则与 Apple 玻璃胶囊同口径（按钮簇自身仍是实体，见
+/// [VideoBarClusterStyle]；面板留白交还画面）。显隐跟控制条同一个 notifier、同速
+/// 淡入淡出。[geometry] 为 null（mini 档 / Apple）时不画。墨水屏：纯黑 + 白描边。
+class VideoM3eBottomPanel extends StatelessWidget {
+  const VideoM3eBottomPanel({
+    super.key,
+    required this.visible,
+    required this.duration,
+    required this.geometry,
+  });
 
-/// 悬浮进度条轨道槽的底色：与胶囊同一中性表面，但更透明一档——它只是把轨道从画面里
-/// 托出来的一道浅槽，不该像一条横贯全宽的实体深色条那样压住画面。
-Color videoM3eSeekLaneColor(ColorScheme chrome) =>
-    chrome.surfaceContainerHigh.withValues(alpha: 0.5);
+  final ValueListenable<bool> visible;
+  final Duration duration;
+  final VideoAppleCapsuleGeometry? geometry;
 
-/// 底栏三簇的浮动胶囊外形（[VideoControlBar.clusterStyle]）。[scale] = 界面缩放
+  @override
+  Widget build(BuildContext context) {
+    final VideoAppleCapsuleGeometry? g = geometry;
+    if (g == null || g.height <= 0) return const SizedBox.shrink();
+    final bool eink = isEinkTheme(context);
+    final double radius = math.min(g.height / 2, kVideoM3eBottomPanelRadius);
+    final RoundedRectangleBorder shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(radius),
+    );
+    final ShapeDecoration decoration = eink
+        ? ShapeDecoration(
+            color: Colors.black,
+            shape: shape.copyWith(
+              side: const BorderSide(color: Colors.white, width: 1.5),
+            ),
+          )
+        : fushiFloatingPillDecoration(
+            context,
+            color: videoM3eFloatingColor(),
+            shape: shape,
+          );
+    return IgnorePointer(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: visible,
+        builder: (BuildContext context, bool shown, Widget? child) {
+          return AnimatedOpacity(
+            opacity: shown ? 1.0 : 0.0,
+            duration: einkSafeDuration(context, duration),
+            curve: Curves.easeInOut,
+            child: child,
+          );
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Positioned(
+              left: g.left,
+              right: g.right,
+              bottom: g.bottom,
+              height: g.height,
+              child: DecoratedBox(decoration: decoration),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 按钮簇的浮动胶囊外形（[VideoControlBar.clusterStyle]）。[scale] = 界面缩放
 /// × 密度档；墨水屏：纯黑 + 白描边、无阴影。胶囊贴条高底部（[verticalAlignment]
-/// 1），让出上方给悬浮进度条。
+/// 1），让出上方给进度条。
+///
+/// [inPanel] = 底栏三簇已收进 [VideoM3eBottomPanel]：簇的几何（内边距 / 间距 / 实体
+/// 命中区）照旧，但不再各自画底色与投影——面板就是它们共同的表面。
 VideoBarClusterStyle videoM3eFloatingBarStyle(
   BuildContext context, {
   required double scale,
   double verticalAlignment = 1,
+  bool inPanel = false,
 }) {
-  final ColorScheme chrome = videoM3eChromeScheme(
-    Theme.of(context).colorScheme,
-  );
+  if (inPanel) {
+    return VideoBarClusterStyle(
+      color: Colors.transparent,
+      padding: 4 * scale,
+      verticalPadding: 2 * scale,
+      gap: 8 * scale,
+      verticalAlignment: verticalAlignment,
+    );
+  }
   if (isEinkTheme(context)) {
     return VideoBarClusterStyle(
       color: Colors.black,
@@ -100,9 +211,9 @@ VideoBarClusterStyle videoM3eFloatingBarStyle(
       verticalAlignment: verticalAlignment,
     );
   }
-  final Color standard = videoM3eFloatingColor(chrome);
+  final Color standard = videoM3eFloatingColor();
   return VideoBarClusterStyle(
-    // 三簇同一表面（传输簇不再单独上 primaryContainer 色块）。
+    // 各簇同一中性表面（传输簇不再单独上 primaryContainer 色块）。
     color: standard,
     padding: 4 * scale,
     verticalPadding: 2 * scale,
@@ -135,9 +246,6 @@ class VideoM3eFloatingSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
-    final ColorScheme chrome = videoM3eChromeScheme(
-      Theme.of(context).colorScheme,
-    );
     // 外形 / 投影与阅读器、漫画的浮动工具栏同一份（共享
     // [fushiFloatingPillDecoration]）；底色取播放器 chrome 的深色方案（胶囊恒压在
     // 画面上，不随 app 的浅色主题变白）。墨水屏：纯黑 + 白描边。
@@ -153,10 +261,7 @@ class VideoM3eFloatingSurface extends StatelessWidget {
               side: BorderSide(color: Colors.white, width: 1.5),
             ),
           )
-        : fushiFloatingPillDecoration(
-            context,
-            color: videoM3eFloatingColor(chrome),
-          );
+        : fushiFloatingPillDecoration(context, color: videoM3eFloatingColor());
     return GestureDetector(
       behavior: HitTestBehavior.deferToChild,
       onTap: enabled ? () {} : null,
@@ -231,11 +336,11 @@ class VideoM3eIconButton extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final Color fg = selected
         ? chrome.onPrimaryContainer
-        : foreground ?? (eink ? Colors.white : chrome.onSurface);
+        : foreground ?? Colors.white;
     final Color bg = selected
         ? chrome.primaryContainer
         : tonal
-        ? (eink ? Colors.black : videoM3eTonalContainer(chrome))
+        ? (eink ? Colors.black : videoM3eTonalContainer())
         : Colors.transparent;
     final ButtonStyle style = IconButton.styleFrom(
       foregroundColor: fg,
@@ -367,12 +472,12 @@ class _VideoM3ePlayPauseButtonState extends State<VideoM3ePlayPauseButton>
     final Color bg = eink
         ? Colors.black
         : translucent
-        ? chrome.surfaceContainerHigh.withValues(alpha: 0.5)
+        ? kVideoM3eNeutralSurface.withValues(alpha: 0.5)
         : chrome.primary;
     final Color fg = eink
         ? Colors.white
         : translucent
-        ? chrome.onSurface
+        ? Colors.white
         : chrome.onPrimary;
     final double h = widget.extent;
     final double w = widget.width ?? h;
@@ -580,12 +685,9 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme chrome = videoM3eChromeScheme(
-      Theme.of(context).colorScheme,
-    );
     final bool eink = isEinkTheme(context);
     final double e = widget.extent;
-    final Color fg = eink ? Colors.white : chrome.onSurface;
+    const Color fg = Colors.white;
     final double dir = widget.forward ? 1 : -1;
     return SizedBox.square(
       dimension: e,
@@ -597,7 +699,7 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
             shape: BoxShape.circle,
             color: eink
                 ? Colors.black
-                : chrome.surfaceContainerHigh.withValues(alpha: 0.38),
+                : kVideoM3eNeutralSurface.withValues(alpha: 0.38),
             border: eink ? Border.all(color: Colors.white, width: 1.5) : null,
           ),
           child: _M3eInk(

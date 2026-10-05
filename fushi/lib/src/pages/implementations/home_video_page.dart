@@ -3769,13 +3769,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             kind: DesktopContentKind.readerShelf,
             child: Column(
               children: <Widget>[
-                // 页头 / 搜索筛选行 / 标签行与视频库外壳的浮动工具栏是同一组
-                // 工具区：往下滚一起收起、往上滚一起弹回（同一个
-                // [FushiFloatingChromeController]）；不在外壳里时原样常驻。
-                FushiFloatingChromeReveal(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
+                // 页头 / 搜索筛选行 / 标签行（连同几条提醒横幅）与视频库外壳的
+                // 浮动工具栏是同一组工具区：往下滚一起收起、往上滚一起弹回（同一个
+                // [FushiFloatingChromeController]）。工具区叠在正文上，收起只滑出
+                // 画面、不改正文视口高度——曾经按高度收起，视口一变滚动位置就被
+                // 夹紧 / 内容跳动、又被判成反向滚动，滚轮上下都「回弹、滚不动」。
+                // 正文主滚动视图把 [FushiFloatingChromeInset] 加成顶部内边距。
+                // 不在外壳里时原样常驻（竖排）。
+                Expanded(
+                  child: FushiFloatingChromeOverlay(
+                    chrome: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
                       if (!isCupertinoPlatform(context)) _buildPageHeader(),
                       // 搜索 + 筛选 + 多选 / 排序收成一条库页工具行（2026-10-04），
                       // 标签 chip 只在有标签时另起一行。
@@ -3783,9 +3789,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         _buildVideoSearchBar(allTags),
                       if (widget.section != VideoLibrarySection.home)
                         _buildTagFilterBar(allTags),
-                    ],
-                  ),
-                ),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
                 VideoOnlineServicesBanner(
@@ -3810,10 +3813,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 // 有作品刮不出身份时的常驻提醒（BUG-2201）。放在这里而不是正文
                 // sliver 里：正文按分区分三套 sliver，且会随列表滚走。
                 _buildPendingScrapeBanner(),
-                Expanded(
-                  // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
-                  // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
-                  child: SelectionDragArea(
+                      ],
+                    ),
+                    // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
+                    // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
+                    child: SelectionDragArea(
                     enabled: _selectionMode,
                     onDragBegin: (SelectionSlot slot) =>
                         setState(() => _selection.beginRangeDrag(slot)),
@@ -3821,6 +3825,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         setState(() => _selection.updateRangeDrag(slot)),
                     onDragEnd: () => setState(_selection.endRangeDrag),
                     child: _buildVideoLibraryBody(),
+                  ),
                   ),
                 ),
                 // 批量栏是多选态的底部浮动工具栏：弹簧从底边浮起 / 沉下。
@@ -3968,6 +3973,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               replayKey: widget.section,
               child: RefreshIndicator(
                 onRefresh: _pullToRefresh,
+                // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
+                edgeOffset: FushiFloatingChromeInset.of(context),
                 child: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final FushiDesignTokens tokens =
@@ -3990,9 +3997,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         constraints.maxWidth,
                       ),
                     );
+                    final double chromeInset =
+                        FushiFloatingChromeInset.of(context);
                     return CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: <Widget>[
+                        // 叠放工具区让出的顶部高度：内容从工具区下方开始、滚动时
+                        // 滚到工具区底下。高度恒定，工具区收起 / 弹回不改版面。
+                        // 恒在（不在外壳里时为 0）：不按条件插拔，免得后面的
+                        // sliver 错位重建。
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: chromeInset),
+                        ),
                         // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
                         // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
                         // [all] 描述整库，不随标签筛选变。
