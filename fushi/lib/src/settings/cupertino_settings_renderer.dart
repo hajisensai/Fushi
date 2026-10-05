@@ -120,15 +120,20 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       child: CustomScrollView(
         slivers: <Widget>[
           CupertinoSliverNavigationBar(largeTitle: Text(destination.title)),
-          SliverToBoxAdapter(
-            child: buildDetailContent(
-              settingsContext: settingsContext,
-              destination: destination,
-              // sliver 沿滚动轴无界，详情须收缩到内容高、由外层 CustomScrollView
-              // 滚动（large-title 折叠依赖同一 scrollview）。
-              shrinkWrap: true,
+          // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：占满大标题
+          // 以下的剩余视口。
+          if (destination.fillsViewport(settingsContext))
+            SliverFillRemaining(child: destination.body!(settingsContext))
+          else
+            SliverToBoxAdapter(
+              child: buildDetailContent(
+                settingsContext: settingsContext,
+                destination: destination,
+                // sliver 沿滚动轴无界，详情须收缩到内容高、由外层 CustomScrollView
+                // 滚动（large-title 折叠依赖同一 scrollview）。
+                shrinkWrap: true,
+              ),
             ),
-          ),
         ],
       ),
     );
