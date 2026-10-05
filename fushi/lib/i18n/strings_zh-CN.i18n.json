@@ -6605,5 +6605,6 @@
   "reader_control_editor_drag_hint": "拖动按钮（触屏长按）即可排序或换区；用键盘时在按钮上按 Enter 选择位置。改动立即生效。",
   "reader_audiobook_sleep_timer": "睡眠定时",
   "reader_audiobook_sleep_off": "关闭",
-  "reader_audiobook_sleep_remaining": "$n 分钟后停止"
+  "reader_audiobook_sleep_remaining": "$n 分钟后停止",
+  "home_nav_more": "更多"
 }

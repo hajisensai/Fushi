@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 // 2026-10-05 用户：「导航栏和侧边栏也统一成 m3e」。
@@ -73,8 +74,10 @@ void main() {
     return expanded;
   }
 
+  /// 悬浮侧轨面板宽（占位宽扣掉左右留白）。
   double railWidth(WidgetTester tester) =>
-      tester.getSize(find.byKey(fushiMaterialNavKey)).width;
+      tester.getSize(find.byKey(fushiMaterialNavKey)).width -
+      kMaterialNavRailFloatingInset;
 
   bool labelPainted(WidgetTester tester, String label) {
     final Finder text = find.text(label);
@@ -89,10 +92,10 @@ void main() {
     ) async {
       final ValueNotifier<bool> expanded = await pumpToggleRail(tester);
       expect(railWidth(tester), kMaterialNavRailCollapsedWidth);
-      expect(find.byIcon(Icons.menu), findsOneWidget);
+      expect(find.byIcon(FushiIcons.menu), findsOneWidget);
       expect(find.byTooltip('Expand navigation'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.menu));
+      await tester.tap(find.byIcon(FushiIcons.menu));
       await tester.pump();
       expect(expanded.value, isTrue);
       await tester.pump(const Duration(milliseconds: 30));
@@ -103,10 +106,10 @@ void main() {
 
       await tester.pumpAndSettle();
       expect(railWidth(tester), kMaterialNavRailExpandedWidth);
-      expect(find.byIcon(Icons.menu_open), findsOneWidget);
+      expect(find.byIcon(FushiIcons.chevronLeft), findsOneWidget);
       expect(find.byTooltip('Collapse navigation'), findsOneWidget);
 
-      await tester.tap(find.byIcon(Icons.menu_open));
+      await tester.tap(find.byIcon(FushiIcons.chevronLeft));
       await tester.pumpAndSettle();
       expect(expanded.value, isFalse);
       expect(railWidth(tester), kMaterialNavRailCollapsedWidth);
@@ -164,7 +167,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byIcon(Icons.menu), findsNothing);
+      expect(find.byIcon(FushiIcons.menu), findsNothing);
       expect(railWidth(tester), kMaterialNavRailCollapsedWidth);
     });
 
@@ -197,7 +200,7 @@ void main() {
       final InkWell menuInk = tester.widget<InkWell>(
         find
             .ancestor(
-              of: find.byIcon(Icons.menu_open),
+              of: find.byIcon(FushiIcons.chevronLeft),
               matching: find.byWidgetPredicate((Widget w) => w is InkWell),
             )
             .first,
@@ -205,7 +208,7 @@ void main() {
       final Size menu = tester.getSize(
         find
             .ancestor(
-              of: find.byIcon(Icons.menu_open),
+              of: find.byIcon(FushiIcons.chevronLeft),
               matching: find.byWidgetPredicate((Widget w) => w is InkWell),
             )
             .first,
@@ -253,11 +256,11 @@ void main() {
       );
       expect(
         adaptiveNavRailWidthFor(ctx, extended: false),
-        kMaterialNavRailCollapsedWidth,
+        kMaterialNavRailCollapsedWidth + kMaterialNavRailFloatingInset,
       );
       expect(
         adaptiveNavRailWidthFor(ctx, extended: true),
-        kMaterialNavRailExpandedWidth,
+        kMaterialNavRailExpandedWidth + kMaterialNavRailFloatingInset,
       );
     });
   });
@@ -310,7 +313,9 @@ void main() {
       await pumpBar(tester, width: 420);
       expect(
         tester.getSize(find.byKey(fushiMaterialNavKey)).height,
-        kAdaptiveNavBarContentHeight,
+        kAdaptiveNavBarFloatingTopGap +
+            kAdaptiveNavBarContentHeight +
+            kAdaptiveNavFloatingMargin,
       );
       for (final AdaptiveNavItem item in items) {
         expect(labelPainted(tester, item.label), isTrue, reason: item.label);
