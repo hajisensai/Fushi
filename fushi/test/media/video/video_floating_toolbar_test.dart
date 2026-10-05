@@ -16,7 +16,6 @@ void main() {
     padding: 4,
     verticalPadding: 2,
     gap: 8,
-    elevation: 0,
     verticalAlignment: 1,
   );
 

@@ -9,8 +9,8 @@ import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:media_kit/media_kit.dart';
@@ -88,18 +88,21 @@ VideoBarClusterStyle videoM3eFloatingBarStyle(
       padding: 4 * scale,
       verticalPadding: 2 * scale,
       gap: 8 * scale,
-      elevation: 0,
       border: const BorderSide(color: Colors.white, width: 1.5),
       verticalAlignment: verticalAlignment,
     );
   }
+  final Color standard = videoM3eFloatingColor(chrome);
   return VideoBarClusterStyle(
-    color: videoM3eFloatingColor(chrome),
+    color: standard,
     centerColor: videoM3eFloatingColor(chrome, vibrant: true),
     padding: 4 * scale,
     verticalPadding: 2 * scale,
     gap: 8 * scale,
-    elevation: 3,
+    // 投影与阅读器 / 漫画的浮动工具栏同一组（共享 fushiFloatingPillDecoration）。
+    shadows:
+        fushiFloatingPillDecoration(context, color: standard).shadows ??
+        const <BoxShadow>[],
     verticalAlignment: verticalAlignment,
   );
 }
@@ -129,27 +132,25 @@ class VideoM3eFloatingSurface extends StatelessWidget {
     final ColorScheme chrome = videoM3eChromeScheme(
       Theme.of(context).colorScheme,
     );
-    final ShapeDecoration decoration = ShapeDecoration(
-      color: !enabled
-          ? Colors.transparent
-          : eink
-          ? Colors.black
-          : videoM3eFloatingColor(chrome, vibrant: vibrant),
-      shape: StadiumBorder(
-        side: enabled && eink
-            ? const BorderSide(color: Colors.white, width: 1.5)
-            : BorderSide.none,
-      ),
-      shadows: enabled && !eink
-          ? const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x47000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ]
-          : const <BoxShadow>[],
-    );
+    // 外形 / 投影与阅读器、漫画的浮动工具栏同一份（共享
+    // [fushiFloatingPillDecoration]）；底色取播放器 chrome 的深色方案（胶囊恒压在
+    // 画面上，不随 app 的浅色主题变白）。墨水屏：纯黑 + 白描边。
+    final ShapeDecoration decoration = !enabled
+        ? const ShapeDecoration(
+            color: Colors.transparent,
+            shape: StadiumBorder(),
+          )
+        : eink
+        ? const ShapeDecoration(
+            color: Colors.black,
+            shape: StadiumBorder(
+              side: BorderSide(color: Colors.white, width: 1.5),
+            ),
+          )
+        : fushiFloatingPillDecoration(
+            context,
+            color: videoM3eFloatingColor(chrome, vibrant: vibrant),
+          );
     return GestureDetector(
       behavior: HitTestBehavior.deferToChild,
       onTap: enabled ? () {} : null,
@@ -644,8 +645,7 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
 // ---------------------------------------------------------------------------
 
 /// 控制条显隐时的位移 + 缩放：显示时从 [hiddenOffset]（逻辑像素）、[hiddenScale]
-/// 弹回原位（M3E expressive spatial spring，略带回弹），隐藏时快速收走（fast
-/// spatial spring）。
+/// 弹回原位，隐藏时收回（M3E spatial spring，与共享 [FushiChromeReveal] 同参）。
 ///
 /// fork 在控制条隐藏淡出结束后会**卸载**整排按钮，所以「出现」只能靠挂载时自己
 /// 从偏移处起步（initState 里正向播一次）；「隐藏」跟随 [visible] 反向播。
@@ -672,10 +672,13 @@ class VideoM3eChromeSlide extends StatefulWidget {
   State<VideoM3eChromeSlide> createState() => _VideoM3eChromeSlideState();
 }
 
-/// M3E「expressive default spatial」弹簧（刚度 380、阻尼比 0.8）：浮动工具栏进场
-/// 带一点点回弹。
-final SpringDescription _videoChromeEnterSpring =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 380, ratio: 0.8);
+/// 浮动工具栏显隐弹簧：与共享 [FushiChromeReveal]（阅读器 / 漫画工具栏）同一组
+/// 参数（刚度 520、阻尼比 0.82，带一点回弹的落位），三处显隐手感一致。
+final SpringDescription _videoChromeSpring = SpringDescription.withDampingRatio(
+  mass: 1,
+  stiffness: 520,
+  ratio: 0.82,
+);
 
 class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
     with SingleTickerProviderStateMixin {
@@ -719,12 +722,7 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
 
   void _springTo(double target) {
     _c.animateWith(
-      SpringSimulation(
-        target == 1 ? _videoChromeEnterSpring : fushiExpressiveFastSpatial,
-        _c.value,
-        target,
-        _c.velocity,
-      ),
+      SpringSimulation(_videoChromeSpring, _c.value, target, _c.velocity),
     );
   }
 

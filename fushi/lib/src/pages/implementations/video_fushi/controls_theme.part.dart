@@ -237,7 +237,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
             child: VideoM3eChromeSlide(
               enabled: !apple,
               visible: _mediaKitControlsVisible,
-              hiddenOffset: Offset(0, -12 * _videoUiScale),
+              hiddenOffset: Offset(0, -24 * _videoUiScale),
               child: VideoTopBarSlots(
               leftLead: _topBarSlotGroup(
                 VideoControlSlot.topLeft,
@@ -287,7 +287,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
             child: VideoM3eChromeSlide(
               enabled: !apple,
               visible: _mediaKitControlsVisible,
-              hiddenOffset: Offset(0, 12 * _videoUiScale),
+              hiddenOffset: Offset(0, 24 * _videoUiScale),
               child: _centeredBottomControlBar(controller, desktop: true),
             ),
           ),
@@ -512,7 +512,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
             child: VideoM3eChromeSlide(
               enabled: !apple,
               visible: _mediaKitControlsVisible,
-              hiddenOffset: Offset(0, -12 * _videoUiScale),
+              hiddenOffset: Offset(0, -24 * _videoUiScale),
               child: VideoTopBarSlots(
               leftLead: _topBarSlotGroup(
                 VideoControlSlot.topLeft,
@@ -560,7 +560,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
             child: VideoM3eChromeSlide(
               enabled: !apple,
               visible: _mediaKitControlsVisible,
-              hiddenOffset: Offset(0, 12 * _videoUiScale),
+              hiddenOffset: Offset(0, 24 * _videoUiScale),
               child: _centeredBottomControlBar(controller, desktop: false),
             ),
           ),

@@ -247,6 +247,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/render_backend_service.dart';
@@ -990,12 +992,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : math.max(0, target - _videoBottomChromeBaseline);
   }
 
-  /// M3E 浮动工具栏离播放区底边的距离（胶囊下沿到画面底边）。
-  static const double _videoM3eFloatingEdgeInset = 12;
+  /// M3E 浮动工具栏离播放区底边的距离（胶囊下沿到画面底边）：与阅读器 / 漫画的
+  /// 共享浮动工具栏同一个窗口边距。
+  static const double _videoM3eFloatingEdgeInset = kFushiFloatingToolbarEdgeMargin;
 
-  /// M3E 浮动工具栏左右离播放区边缘的距离（胶囊外缘）。与 media_kit 默认的
-  /// 按钮行左右边距同值，桌面按钮行几何因此不变。
-  static const double _videoM3eFloatingSideInset = 16;
+  /// M3E 浮动工具栏左右离播放区边缘的距离（胶囊外缘）。共享浮动工具栏的窗口边距，
+  /// 也恰是 media_kit 默认的按钮行左右边距，桌面按钮行几何因此不变。
+  static const double _videoM3eFloatingSideInset = kFushiFloatingToolbarEdgeMargin;
 
   /// 进度条几何推导里桌面「按钮行高」要叠加的抬升（见 [_floatingChromeBottomLift]）。
   double get _videoGeometryButtonBarLift =>

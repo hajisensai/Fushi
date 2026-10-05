@@ -322,8 +322,7 @@ class VideoBarClusterStyle {
     this.padding = 4,
     this.verticalPadding = 2,
     this.gap = 8,
-    this.elevation = 3,
-    this.shadowColor = const Color(0x73000000),
+    this.shadows = const <BoxShadow>[],
     this.border,
     this.verticalAlignment = 0,
   });
@@ -343,10 +342,9 @@ class VideoBarClusterStyle {
   /// 相邻胶囊的最小间距。
   final double gap;
 
-  /// 阴影高度（0 = 无阴影，墨水屏）。
-  final double elevation;
-
-  final Color shadowColor;
+  /// 胶囊投影（与共享浮动工具栏 `fushiFloatingPillDecoration` 同一组）；空 = 无
+  /// 阴影（墨水屏）。
+  final List<BoxShadow> shadows;
 
   /// 描边（墨水屏用）；null = 无。
   final BorderSide? border;
@@ -366,8 +364,7 @@ class VideoBarClusterStyle {
       other.padding == padding &&
       other.verticalPadding == verticalPadding &&
       other.gap == gap &&
-      other.elevation == elevation &&
-      other.shadowColor == shadowColor &&
+      listEquals(other.shadows, shadows) &&
       other.border == border &&
       other.verticalAlignment == verticalAlignment;
 
@@ -378,8 +375,7 @@ class VideoBarClusterStyle {
     padding,
     verticalPadding,
     gap,
-    elevation,
-    shadowColor,
+    Object.hashAll(shadows),
     border,
     verticalAlignment,
   );
@@ -1064,12 +1060,11 @@ class _RenderVideoControlBar extends RenderBox
           rect.shift(offset),
           Radius.circular(rect.height / 2),
         );
-        if (style.elevation > 0) {
-          canvas.drawShadow(
-            Path()..addRRect(pill),
-            style.shadowColor,
-            style.elevation,
-            false,
+        // 与 BoxDecoration 画 BoxShadow 同法：偏移 + 外扩后按 blurSigma 模糊。
+        for (final BoxShadow shadow in style.shadows) {
+          canvas.drawRRect(
+            pill.shift(shadow.offset).inflate(shadow.spreadRadius),
+            shadow.toPaint(),
           );
         }
         canvas.drawRRect(pill, Paint()..color = style.colorFor(cluster));
