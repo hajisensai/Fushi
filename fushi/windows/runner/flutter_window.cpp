@@ -4285,6 +4285,9 @@ void FlutterWindow::RegisterHdrVideoHostChannel() {
               {flutter::EncodableValue("bitsPerColor"),
                flutter::EncodableValue(
                    static_cast<int>(info.bits_per_color))},
+              {flutter::EncodableValue("sdrWhiteNits"),
+               flutter::EncodableValue(
+                   static_cast<double>(info.sdr_white_nits))},
           }));
           return;
         }
@@ -4626,8 +4629,17 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         break;
     }
   }
-  if (message == WM_DISPLAYCHANGE && hdr_video_host_channel_) {
-    // HDR toggled / monitor changed: let Dart re-evaluate the output mode.
+  // HDR toggled / monitor changed: let Dart re-evaluate the output mode.
+  // Activation counts too while the host is up: the "SDR content brightness"
+  // slider (which Dart reads to level the subtitle layer against the HDR
+  // video) changes without any window message, and it lives in the Settings
+  // app — so the earliest point the new value can matter is the main window
+  // getting activated again.
+  const bool host_activated =
+      message == WM_ACTIVATE && LOWORD(wparam) != WA_INACTIVE &&
+      hdr_video_host_ && hdr_video_host_->IsCreated();
+  if ((message == WM_DISPLAYCHANGE || host_activated) &&
+      hdr_video_host_channel_) {
     hdr_video_host_channel_->InvokeMethod(
         "onDisplayChanged", std::make_unique<flutter::EncodableValue>());
   }

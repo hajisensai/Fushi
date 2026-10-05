@@ -61,11 +61,17 @@ class HdrVideoHostWindow {
 // Current output colour space of the monitor the main window sits on
 // (IDXGIOutput6::GetDesc1). colour_space == 12 is
 // DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 (Windows HDR on).
+//
+// sdr_white_nits is the "SDR content brightness" slider of that monitor
+// (DISPLAYCONFIG_SDR_WHITE_LEVEL): the luminance DWM gives sRGB 1.0 of every
+// SDR window — including the Flutter overlays composited over the HDR video.
+// 0 = unknown (query failed / pre-1709 Windows).
 struct HdrDisplayInfo {
   bool valid = false;
   int color_space = -1;
   float max_luminance = 0.0f;
   unsigned bits_per_color = 0;
+  float sdr_white_nits = 0.0f;
 };
 HdrDisplayInfo QueryHdrDisplayInfo(HWND main);
 

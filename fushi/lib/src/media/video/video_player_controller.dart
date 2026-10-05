@@ -519,6 +519,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
   final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
 
+  /// 主窗所在显示器的最近一次 runner 回报（每次重判现读）。页面据它与
+  /// [hdrHostActive] 派生字幕 / 弹幕层的 HDR 亮度系数（[hdrGraphicsWhiteScale]）。
+  final ValueNotifier<HdrDisplayInfo> hdrDisplayInfo =
+      ValueNotifier<HdrDisplayInfo>(HdrDisplayInfo.unknown);
+
   /// 当前片源是 DV Profile 5 且本平台 / 设置下没有能正确还原颜色的渲染器
   /// （[dolbyVisionColorsUnsupported]）。页面据此提示用户，BUG-2691。
   final ValueNotifier<bool> dolbyVisionColorsUnsupportedNotifier =
@@ -3745,11 +3750,12 @@ class VideoPlayerController extends ChangeNotifier
     if (!Platform.isWindows) return;
     final Player? player = _player;
     if (player == null) return;
-    bool displayHdr = false;
-    if (_hdrOutputMode == VideoHdrOutputMode.auto) {
-      displayHdr = (await _hdrChannel.displayInfo()).isHdr;
-      if (!identical(_player, player)) return;
-    }
+    // 所有模式都现读：auto 用它判要不要直通，字幕层的 HDR 亮度归一（always 模式在
+    // HDR 显示器上同样需要）用它的 SDR 白电平。
+    final HdrDisplayInfo display = await _hdrChannel.displayInfo();
+    if (!identical(_player, player)) return;
+    hdrDisplayInfo.value = display;
+    final bool displayHdr = display.isHdr;
     final bool want = shouldUseHdrHostWindow(
       isWindows: true,
       mode: _hdrOutputMode,
