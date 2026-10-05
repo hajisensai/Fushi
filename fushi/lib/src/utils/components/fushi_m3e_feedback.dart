@@ -42,19 +42,16 @@ class FushiSkeleton extends StatelessWidget {
   });
 
   /// 文字条：高 [height]（默认 12）、全圆头、宽占父级的 [widthFactor]。
-  static Widget line({
-    double widthFactor = 1,
-    double height = 12,
-    Key? key,
-  }) => FractionallySizedBox(
-    key: key,
-    widthFactor: widthFactor,
-    alignment: AlignmentDirectional.centerStart,
-    child: FushiSkeleton(
-      height: height,
-      borderRadius: BorderRadius.all(Radius.circular(height / 2)),
-    ),
-  );
+  static Widget line({double widthFactor = 1, double height = 12, Key? key}) =>
+      FractionallySizedBox(
+        key: key,
+        widthFactor: widthFactor,
+        alignment: AlignmentDirectional.centerStart,
+        child: FushiSkeleton(
+          height: height,
+          borderRadius: BorderRadius.all(Radius.circular(height / 2)),
+        ),
+      );
 
   final double? width;
   final double? height;
