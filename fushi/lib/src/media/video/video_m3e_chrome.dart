@@ -79,8 +79,20 @@ Color videoM3eTonalContainer() => Colors.white.withValues(alpha: 0.12);
 
 /// 播放器上所有悬浮胶囊 / 面板（顶栏返回 / 标题 / 按钮组、底部面板、音量 / 倍速
 /// 浮层）共用的底色。
-Color videoM3eFloatingColor() =>
-    kVideoM3eNeutralSurface.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
+///
+/// 给了 [cs]（当前主题）时取「带一点主题色调的中性」：以主题主色为种子的深色方案
+/// surfaceContainerHigh（tinted neutral，chroma 很低，不会把画面染色），86% 不透明
+/// ——2026-10-06 用户嫌纯灰「有点灰」。不给时退回无色相的 [kVideoM3eNeutralSurface]。
+Color videoM3eFloatingColor([ColorScheme? cs]) => cs == null
+    ? kVideoM3eNeutralSurface.withValues(alpha: kVideoM3eNeutralSurfaceAlpha)
+    : videoM3eChromeScheme(
+        cs,
+      ).surfaceContainerHigh.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
+
+/// 播放器按钮的 tonal 强调档（M3E「中性面 + 关键处 tonal 色块」）：未激活中性；
+/// 状态型按钮激活（字幕已开 / 面板已打开 / 倍速≠1）走 secondary，收藏走 tertiary，
+/// 静音走 error。颜色都取主题派生的深色方案容器色。
+enum VideoM3eButtonTone { neutral, secondary, tertiary, error }
 
 final Map<int, ColorScheme> _neutralChromeSchemeCache = <int, ColorScheme>{};
 
@@ -182,7 +194,7 @@ VideoBarClusterStyle videoM3eFloatingBarStyle(
       verticalAlignment: verticalAlignment,
     );
   }
-  final Color standard = videoM3eFloatingColor();
+  final Color standard = videoM3eFloatingColor(Theme.of(context).colorScheme);
   return VideoBarClusterStyle(
     // 各簇同一中性表面（传输簇不再单独上 primaryContainer 色块）。
     color: standard,
@@ -232,7 +244,10 @@ class VideoM3eFloatingSurface extends StatelessWidget {
               side: BorderSide(color: Colors.white, width: 1.5),
             ),
           )
-        : fushiFloatingPillDecoration(context, color: videoM3eFloatingColor());
+        : fushiFloatingPillDecoration(
+            context,
+            color: videoM3eFloatingColor(Theme.of(context).colorScheme),
+          );
     return GestureDetector(
       behavior: HitTestBehavior.deferToChild,
       onTap: enabled ? () {} : null,
@@ -280,7 +295,11 @@ class VideoM3eIconButton extends StatelessWidget {
     this.tonal = false,
     this.selected = false,
     this.foreground,
+    this.tone = VideoM3eButtonTone.neutral,
   });
+
+  /// tonal 强调档（激活的状态型按钮）；[selected] 等价于 [VideoM3eButtonTone.secondary]。
+  final VideoM3eButtonTone tone;
 
   final Widget icon;
   final VoidCallback? onPressed;
@@ -305,12 +324,27 @@ class VideoM3eIconButton extends StatelessWidget {
       Theme.of(context).colorScheme,
     );
     final bool eink = isEinkTheme(context);
-    final Color fg = selected
-        ? chrome.onPrimaryContainer
-        : foreground ?? Colors.white;
-    final Color bg = selected
-        ? chrome.primaryContainer
-        : tonal
+    final VideoM3eButtonTone effectiveTone =
+        selected && tone == VideoM3eButtonTone.neutral
+        ? VideoM3eButtonTone.secondary
+        : tone;
+    final bool toned = !eink && effectiveTone != VideoM3eButtonTone.neutral;
+    final Color fg = !toned
+        ? (eink && selected ? Colors.white : foreground ?? Colors.white)
+        : switch (effectiveTone) {
+            VideoM3eButtonTone.secondary => chrome.onSecondaryContainer,
+            VideoM3eButtonTone.tertiary => chrome.onTertiaryContainer,
+            VideoM3eButtonTone.error => chrome.onErrorContainer,
+            VideoM3eButtonTone.neutral => Colors.white,
+          };
+    final Color bg = toned
+        ? switch (effectiveTone) {
+            VideoM3eButtonTone.secondary => chrome.secondaryContainer,
+            VideoM3eButtonTone.tertiary => chrome.tertiaryContainer,
+            VideoM3eButtonTone.error => chrome.errorContainer,
+            VideoM3eButtonTone.neutral => Colors.transparent,
+          }
+        : tonal || (eink && selected)
         ? (eink ? Colors.black : videoM3eTonalContainer())
         : Colors.transparent;
     final ButtonStyle style = IconButton.styleFrom(
@@ -340,7 +374,7 @@ class VideoM3eIconButton extends StatelessWidget {
           : style,
       trackPointer: true,
       pressedRadius: extent * 0.24,
-      selected: selected,
+      selected: toned || selected,
       selectedRadius: extent * 0.3,
       builder: (BuildContext context, ButtonStyle? s, _) => IconButton(
         onPressed: onPressed,
@@ -1032,9 +1066,10 @@ class _VideoM3eSeekTrackState extends State<VideoM3eSeekTrack>
                   trackColor: eink
                       ? Colors.white.withValues(alpha: 0.5)
                       : Colors.white.withValues(alpha: 0.2),
+                  // 缓冲段：主色 30%（与已播段同一色相，弱一档）。
                   bufferColor: eink
                       ? Colors.white.withValues(alpha: 0.75)
-                      : Colors.white.withValues(alpha: 0.36),
+                      : widget.color.withValues(alpha: 0.3),
                   // 字幕密度刻度只是背景信息：更淡、更短、更稀（见 painter）。
                   cueColor: Colors.white.withValues(alpha: 0.22),
                   cueDensity: widget.cueDensity,

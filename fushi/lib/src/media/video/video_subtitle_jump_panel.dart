@@ -2015,7 +2015,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         child: Container(
           clipBehavior: Clip.antiAlias,
           decoration: ShapeDecoration(
-            color: videoM3eFloatingColor(),
+            color: videoM3eFloatingColor(widget.colorScheme),
             shape: const RoundedRectangleBorder(
               borderRadius: BorderRadius.all(Radius.circular(28)),
             ),
@@ -2380,6 +2380,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
     final Color secondary =
         selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
+    final Color chipForeground =
+        selected ? cs.onPrimaryContainer : cs.onSecondaryContainer;
     final BorderRadius radius = BorderRadius.vertical(
       top: Radius.circular(first ? _kM3eRowOuterRadius : _kM3eRowInnerRadius),
       bottom:
@@ -2400,9 +2402,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               vertical: _kM3eChipPadVertical / 2,
             ),
             decoration: ShapeDecoration(
+              // 当前句之外：低饱和 secondary tonal 胶囊。
               color: selected
                   ? cs.onPrimaryContainer.withValues(alpha: 0.12)
-                  : cs.surfaceContainerHighest,
+                  : cs.secondaryContainer.withValues(alpha: 0.55),
               shape: const StadiumBorder(),
             ),
             child: FittedBox(
@@ -2413,7 +2416,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 maxLines: 1,
                 softWrap: false,
                 textHeightBehavior: _kM3eChipHeightBehavior,
-                style: _m3eChipTextStyle(color: secondary),
+                style: _m3eChipTextStyle(color: chipForeground),
               ),
             ),
           ),

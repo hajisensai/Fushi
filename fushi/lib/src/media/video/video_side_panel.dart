@@ -93,7 +93,7 @@ class VideoFloatingPanelSurface extends StatelessWidget {
       data: videoM3ePanelTheme(Theme.of(context)),
       child: Material(
         key: surfaceKey,
-        color: videoM3eFloatingColor(),
+        color: videoM3eFloatingColor(Theme.of(context).colorScheme),
         surfaceTintColor: Colors.transparent,
         shadowColor: Colors.black,
         elevation: kFushiFloatingElevation,
