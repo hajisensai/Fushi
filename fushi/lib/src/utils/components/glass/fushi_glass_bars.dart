@@ -611,12 +611,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
               child: resolvedLeading,
             ),
       automaticallyImplyLeading: false,
-      title: title == null
-          ? null
-          : FushiScrollAwayChrome(
-              controller: chrome,
-              child: FushiPageChromeTitle(title: title!),
-            ),
+      title: _floatingTitleCapsule(title, chrome),
       actions: finalActions == null || finalActions.isEmpty
           ? null
           : <Widget>[
@@ -666,6 +661,63 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       animateColor: animateColor,
     );
   }
+}
+
+/// 悬浮顶栏的标题胶囊。标题为空（null / 空串 [Text] / 零尺寸占位）时不画胶囊——
+/// 否则返回键旁会留一颗空胶囊（合集详情页把标题交给 hero）。标题外层若是
+/// [AnimatedOpacity] / [Opacity]（「hero 滚出视野后才淡入标题」），把透明度提到
+/// 胶囊**外面**，整颗胶囊随标题一起淡入淡出，而不是只淡文字、空壳常驻。
+Widget? _floatingTitleCapsule(
+  Widget? title,
+  FushiScrollAwayController chrome,
+) {
+  if (title == null || _isEmptyTitle(title)) return null;
+  Widget capsule(Widget inner) => FushiScrollAwayChrome(
+        controller: chrome,
+        child: FushiPageChromeTitle(title: inner),
+      );
+  final Widget current = title;
+  if (current is AnimatedOpacity && current.child != null) {
+    if (_isEmptyTitle(current.child!)) return null;
+    return IgnorePointer(
+      ignoring: current.opacity == 0,
+      child: AnimatedOpacity(
+        opacity: current.opacity,
+        duration: current.duration,
+        curve: current.curve,
+        alwaysIncludeSemantics: current.alwaysIncludeSemantics,
+        child: capsule(current.child!),
+      ),
+    );
+  }
+  if (current is Opacity && current.child != null) {
+    if (_isEmptyTitle(current.child!)) return null;
+    return IgnorePointer(
+      ignoring: current.opacity == 0,
+      child: Opacity(
+        opacity: current.opacity,
+        alwaysIncludeSemantics: current.alwaysIncludeSemantics,
+        child: capsule(current.child!),
+      ),
+    );
+  }
+  return capsule(current);
+}
+
+/// 标题 widget 是否「什么都不显示」：空串 / 纯空白的 [Text]、无子的零尺寸
+/// [SizedBox]。
+bool _isEmptyTitle(Widget title) {
+  if (title is Text) {
+    final String? data = title.data;
+    if (data != null) return data.trim().isEmpty;
+    final String? rich = title.textSpan?.toPlainText();
+    return rich != null && rich.trim().isEmpty;
+  }
+  if (title is SizedBox) {
+    return title.child == null &&
+        (title.width == 0 || title.height == 0);
+  }
+  return false;
 }
 
 /// 与框架 AppBar 同一判据推出 M3E 悬浮顶栏的隐含 leading（抽屉键 / 关闭键 /
