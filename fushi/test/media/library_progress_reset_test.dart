@@ -176,6 +176,7 @@ void main() {
         bookKey: 'bk',
         title: 'Book bk',
         records: StudyRecordResetScope.lastSession,
+        nowMs: _base + 5 * _hour,
       );
 
       final Map<String, StudySegmentRow> segs = await _segments(db);
@@ -203,6 +204,24 @@ void main() {
         )?.segmentUids,
         <String>['old'],
       );
+    });
+
+    test('lastSession：最近一次会话早于 24 小时就不撤（误点开没入账时不误删旧阅读）', () async {
+      final FushiDatabase db = await _openDb();
+      await _insertBook(db, 'bk');
+      await db.upsertStudySegment(
+        _seg('old', kind: kActivityMediaBook, key: 'bk', startAt: _base),
+      );
+
+      final bool undone = await undoLatestStudySession(
+        db,
+        mediaKind: kActivityMediaBook,
+        mediaKeys: <String>{'bk'},
+        nowMs: _base + 60000 + kUndoLatestStudySessionWindow.inMilliseconds + 1,
+      );
+
+      expect(undone, isFalse);
+      expect((await _segments(db))['old']!.durationMs, 60000);
     });
 
     test('all：按身份删段并立墓碑（同步安全），含配对字幕书的 SRT uid 身份', () async {
@@ -291,6 +310,7 @@ void main() {
         bookUid: 'v1',
         title: 'Ep 1',
         records: StudyRecordResetScope.lastSession,
+        nowMs: _base + 6 * _hour,
       );
 
       final VideoBookRow row = await (db.select(

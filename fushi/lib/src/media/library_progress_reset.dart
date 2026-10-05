@@ -60,14 +60,21 @@ StudySession? latestStudySessionFor(
   return latest;
 }
 
+/// 「撤销最近一次会话」只看这个窗口内结束的会话（用户 2026-10-05 拍板）：误点开
+/// 往往不产生任何段（关书不入账，BUG-2264），不限时间就会把几天前、甚至别的设备上
+/// 的真实阅读当成「最近一次」写零并同步到所有设备。
+const Duration kUndoLatestStudySessionWindow = Duration(hours: 24);
+
 /// 撤销 ([mediaKind], [mediaKeys]) 最近一次会话；返回是否真的撤了一次。
 ///
 /// 会话只从统一事实面 [loadStatFacts] 派生（当前 Profile），删除走引擎唯一入口
 /// [deleteStudySession]（退役在跑时钟的 uid → 按 uid 写零，同步安全、不立碑）。
+/// 只撤结束于 [kUndoLatestStudySessionWindow] 之内的会话；[nowMs] 仅供测试注入。
 Future<bool> undoLatestStudySession(
   FushiDatabase db, {
   required String mediaKind,
   required Set<String> mediaKeys,
+  int? nowMs,
 }) async {
   final Set<String> keys = <String>{
     for (final String k in mediaKeys)
@@ -81,6 +88,10 @@ Future<bool> undoLatestStudySession(
     mediaKeys: keys,
   );
   if (latest == null) return false;
+  final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+  if (latest.endAt < now - kUndoLatestStudySessionWindow.inMilliseconds) {
+    return false;
+  }
   await deleteStudySession(db, latest);
   return true;
 }
@@ -140,6 +151,7 @@ Future<void> resetBookReadingState({
         db,
         mediaKind: kActivityMediaBook,
         mediaKeys: statKeys,
+        nowMs: nowMs,
       );
     case StudyRecordResetScope.all:
       await ReaderFushiSource.deleteBookStatistics(
@@ -158,6 +170,7 @@ Future<void> resetVideoWatchState({
   required String bookUid,
   required String title,
   StudyRecordResetScope records = StudyRecordResetScope.keep,
+  int? nowMs,
 }) async {
   if (bookUid.isEmpty) return;
   await repo.clearWatchProgress(bookUid);
@@ -169,6 +182,7 @@ Future<void> resetVideoWatchState({
         db,
         mediaKind: kActivityMediaVideo,
         mediaKeys: <String>{bookUid},
+        nowMs: nowMs,
       );
     case StudyRecordResetScope.all:
       // 与删视频时「同时删除统计数据」同一条路径（含「已看过区间」并集，删统计 =
