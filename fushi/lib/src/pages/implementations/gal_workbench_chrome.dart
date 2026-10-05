@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -74,12 +78,14 @@ class GalWorkbenchDetailPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    // M3E：侧板宽度走 effects 弹簧（临界阻尼、无过冲——同一条动画还驱动透明度，
+    // spatial 弹簧的过冲会把 opacity 推出 [0,1]）；减弱动态效果下时长归零。
+    final FushiMotionScheme motion = context.fushiMotion;
     return AnimatedSwitcher(
-      duration: duration,
-      reverseDuration: fushiMotionDuration(context, FushiMotion.short),
-      switchInCurve: FushiMotion.enter,
-      switchOutCurve: FushiMotion.exit,
+      duration: motion.effectsSlow.duration,
+      reverseDuration: motion.effectsDefault.duration,
+      switchInCurve: motion.effectsSlow.curve,
+      switchOutCurve: motion.effectsDefault.curve,
       transitionBuilder: (Widget child, Animation<double> animation) {
         return SizeTransition(
           sizeFactor: animation,
@@ -120,11 +126,12 @@ class GalWorkbenchBottomReveal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget? content = child;
+    final FushiMotionScheme motion = context.fushiMotion;
     return AnimatedSwitcher(
-      duration: fushiMotionDuration(context, FushiMotion.medium),
-      reverseDuration: fushiMotionDuration(context, FushiMotion.short),
-      switchInCurve: FushiMotion.enter,
-      switchOutCurve: FushiMotion.exit,
+      duration: motion.effectsSlow.duration,
+      reverseDuration: motion.effectsDefault.duration,
+      switchInCurve: motion.effectsSlow.curve,
+      switchOutCurve: motion.effectsDefault.curve,
       transitionBuilder: (Widget child, Animation<double> animation) {
         return SizeTransition(
           sizeFactor: animation,
@@ -145,14 +152,19 @@ class GalWorkbenchBottomReveal extends StatelessWidget {
   }
 }
 
-/// 台词列表的空状态：图标 + 标题 + 说明 + 下一步操作按钮（启动游戏 / 选择线程
-/// 等）。各元素按序错峰进场。
+/// 台词列表的空状态：M3E 色块图标 + 标题 + 说明 + 下一步操作按钮（启动游戏 /
+/// 选择线程等）。各元素按序错峰进场，图标色块弹簧弹入。
+///
+/// 与 [FushiPlaceholderMessage] 同一视觉语言（72 色块 + titleMedium emphasized），
+/// 但自己可滚动：窄高（底部本句条占位后）空态不溢出。Apple 设计系统沿用 iOS
+/// ContentUnavailableView 口径（无底大图标）。
 class GalWorkbenchEmptyState extends StatelessWidget {
   const GalWorkbenchEmptyState({
     required this.icon,
     required this.title,
     required this.body,
     this.actions = const <Widget>[],
+    this.tone = FushiCardTone.secondary,
     super.key,
   });
 
@@ -161,17 +173,29 @@ class GalWorkbenchEmptyState extends StatelessWidget {
   final String body;
   final List<Widget> actions;
 
+  /// 图标色块的饱和色调（M3E）：一般空态 secondary，需要用户处理的 tertiary。
+  final FushiCardTone tone;
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiTypography type = context.fushiType;
+    final bool glass = isGlassDesign(context);
+    final Widget badge = glass
+        ? FushiIcon(
+            icon,
+            size: 48,
+            color: appleColorsOf(context).secondaryLabel,
+          )
+        : _GalEmptyBadge(icon: icon, tone: tone);
     final List<Widget> parts = <Widget>[
-      FushiIcon(icon, size: 44, color: theme.colorScheme.outline),
+      badge,
       Padding(
-        padding: const EdgeInsets.only(top: 14),
+        padding: const EdgeInsets.only(top: 16),
         child: Text(
           title,
           textAlign: TextAlign.center,
-          style: theme.textTheme.titleMedium,
+          style: type.titleMediumEmphasized,
         ),
       ),
       Padding(
@@ -181,7 +205,7 @@ class GalWorkbenchEmptyState extends StatelessWidget {
           child: Text(
             body,
             textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
+            style: type.bodyMedium.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
@@ -189,7 +213,7 @@ class GalWorkbenchEmptyState extends StatelessWidget {
       ),
       if (actions.isNotEmpty)
         Padding(
-          padding: const EdgeInsets.only(top: 18),
+          padding: const EdgeInsets.only(top: 20),
           child: Wrap(
             alignment: WrapAlignment.center,
             spacing: 8,
@@ -211,6 +235,35 @@ class GalWorkbenchEmptyState extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 空状态的 M3E 图标色块：72 的 cookie 形饱和 container，挂载时 spatial 弹簧
+/// 从 0.6 弹到 1（带过冲）；墨水屏 / 减弱动态效果下静止（时长为零）。
+class _GalEmptyBadge extends StatelessWidget {
+  const _GalEmptyBadge({required this.icon, required this.tone});
+
+  final IconData icon;
+  final FushiCardTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
+    final Duration duration = spring.duration;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: duration == Duration.zero ? 1 : 0, end: 1),
+      duration: duration,
+      curve: spring.curve,
+      builder: (BuildContext context, double t, Widget? child) =>
+          Transform.scale(scale: 0.6 + 0.4 * t, child: child),
+      child: FushiListLeadingIcon(
+        icon,
+        shape: FushiLeadingShape.cookie,
+        tone: tone,
+        size: 72,
+        iconSize: 32,
       ),
     );
   }
