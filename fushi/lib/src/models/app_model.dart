@@ -356,6 +356,7 @@ ColorScheme buildFushiColorScheme({
   Color? primaryContainer,
   Color? surface,
   bool neutralDerived = false,
+  bool pureBlack = false,
 }) =>
     theme_notifier.buildFushiColorScheme(
       seedColor: seedColor,
@@ -367,6 +368,7 @@ ColorScheme buildFushiColorScheme({
       primaryContainer: primaryContainer,
       surface: surface,
       neutralDerived: neutralDerived,
+      pureBlack: pureBlack,
     );
 
 /// 书架长按「悬浮字幕」启动后台听书的结果（供 UI 决定提示）。
