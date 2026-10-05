@@ -5581,6 +5581,135 @@ function postProcessRuby(container) {
     // entries, incremental updates) also gets them; both passes are idempotent
     // so the double walk over entry 0 (BUG-1098) stays harmless.
     wrapExpressionInlineKanji(container);
+    // M3E 暗色下词典自带浅色底的对比度修正：同样挂在这条每个渲染路径都会走的后处理上。
+    // 推到下一帧做——首个词条的后处理先于 applyCustomCSS()，此刻词典样式表还没进文档，
+    // 读到的计算色不是最终色。
+    __fushiScheduleM3eDictTone(container);
+}
+
+/* =====================================================================
+ * M3E 暗色：词典自带强制底色的对比度修正。
+ *
+ * 词典样式表 / 结构化内容的内联 style 常为浅色主题写死一块浅底（例句粉块、注释黄块），
+ * 在 M3E 暗色卡面上就是一块刺眼的亮斑，且词典没写字色时整块继承浅色正文，几乎读不出。
+ * CSS 读不到「这个元素被词典涂了什么底色」，只能在渲染后读计算色逐个改写：
+ *   - 浅底（相对亮度 > 0.35、不透明度 ≥ 0.25）→ 保留色相、饱和度封顶 0.5、亮度压到
+ *     0.22（贴近 surfaceContainerHigh 的明度），读起来仍是「那一块粉色例句」；
+ *   - 该块里为浅底写的深色字（亮度 < 0.3）→ 同色相提亮到 0.82；继承来的字照旧继承。
+ * 只改颜色，不动结构 / 字号 / 间距。只在 M3E（html.fushi-m3e 或扩展容器 .fushi-m3e）且
+ * data-theme=dark 时运行；浅色主题、Apple 设计系统、墨水屏零变化。每个元素只处理一次
+ * （postProcessRuby 对首个词条会走两遍）。
+ * ===================================================================== */
+var __fushiM3eToneRoots = null;
+var __fushiM3eToneRaf = 0;
+
+function __fushiM3eDarkSurface() {
+    try {
+        const container = __fushiContainer();
+        if (container && container.classList && container.classList.contains('fushi-m3e')) {
+            return container.getAttribute('data-theme') === 'dark';
+        }
+        const root = document.documentElement;
+        return !!(root && root.classList && root.classList.contains('fushi-m3e') &&
+            root.getAttribute('data-theme') === 'dark');
+    } catch (_) {
+        return false;
+    }
+}
+
+function __fushiScheduleM3eDictTone(root) {
+    if (!root || typeof requestAnimationFrame !== 'function' ||
+        typeof getComputedStyle !== 'function') return;
+    if (!__fushiM3eToneRoots) __fushiM3eToneRoots = new Set();
+    __fushiM3eToneRoots.add(root);
+    if (__fushiM3eToneRaf) return;
+    __fushiM3eToneRaf = requestAnimationFrame(() => {
+        __fushiM3eToneRaf = 0;
+        const roots = [...__fushiM3eToneRoots];
+        __fushiM3eToneRoots.clear();
+        if (!__fushiM3eDarkSurface()) return;
+        roots.forEach((r) => {
+            try {
+                if (r.isConnected !== false) __fushiToneDictColors(r);
+            } catch (e) {
+                console.error('[popup] m3e dictionary tone failed', e);
+            }
+        });
+    });
+}
+
+function __fushiParseRgb(value) {
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/
+        .exec(String(value || '').trim());
+    if (!m) return null;
+    let a = m[4] === undefined ? 1 : parseFloat(m[4]);
+    if (m[5] === '%') a /= 100;
+    return { r: +m[1], g: +m[2], b: +m[3], a };
+}
+
+function __fushiRelLuminance(c) {
+    const ch = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+}
+
+function __fushiRgbToHsl(c) {
+    const r = c.r / 255, g = c.g / 255, b = c.b / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return { h: h * 60, s, l };
+}
+
+function __fushiHslCss(h, s, l, a) {
+    const hh = Math.round(h), ss = Math.round(s * 100), ll = Math.round(l * 100);
+    return a < 1
+        ? `hsla(${hh}, ${ss}%, ${ll}%, ${Math.round(a * 100) / 100})`
+        : `hsl(${hh}, ${ss}%, ${ll}%)`;
+}
+
+function __fushiToneDictColors(root) {
+    const scope = '.glossary-group > div[data-dictionary]';
+    const nodes = [];
+    if (root.matches && root.matches(scope)) nodes.push(root);
+    root.querySelectorAll(`${scope}, ${scope} *`).forEach((n) => nodes.push(n));
+    // 相 1（读）：一次读完所有计算色，再统一写，避免读写交错反复重算样式。
+    const toned = [];
+    for (const node of nodes) {
+        if (node.__fushiM3eToned || node.tagName === 'IMG' || node.tagName === 'svg') continue;
+        node.__fushiM3eToned = true;
+        const bg = __fushiParseRgb(getComputedStyle(node).backgroundColor);
+        if (!bg || bg.a < 0.25 || __fushiRelLuminance(bg) <= 0.35) continue;
+        toned.push({ node, bg });
+    }
+    const textFixes = [];
+    toned.forEach(({ node }) => {
+        [node, ...node.querySelectorAll('*')].forEach((n) => {
+            if (n.__fushiM3eTextToned) return;
+            n.__fushiM3eTextToned = true;
+            const fg = __fushiParseRgb(getComputedStyle(n).color);
+            if (fg && __fushiRelLuminance(fg) < 0.3) textFixes.push({ n, fg });
+        });
+    });
+    // 相 2（写）。
+    toned.forEach(({ node, bg }) => {
+        const hsl = __fushiRgbToHsl(bg);
+        node.style.setProperty('background-color',
+            __fushiHslCss(hsl.h, Math.min(hsl.s, 0.5), 0.22, bg.a), 'important');
+    });
+    textFixes.forEach(({ n, fg }) => {
+        const hsl = __fushiRgbToHsl(fg);
+        n.style.setProperty('color',
+            __fushiHslCss(hsl.h, Math.min(hsl.s, 0.6), 0.82, fg.a), 'important');
+    });
 }
 
 // BUG-1898: 给「隔壁也带注音」的基字单元打上 .ruby-tight，popup.css 只对它们把

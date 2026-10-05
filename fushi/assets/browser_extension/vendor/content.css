@@ -2349,31 +2349,120 @@
  * 用户 2026-10-05：Material 设计系统一律 M3 Expressive。class 由
  * popup_settings_injection.dart 的 _themeVariablesJs 在「Material 设计系统 + 非墨水屏」
  * 时 toggle 上来（Apple 设计系统 / 墨水屏不挂，上面的基础规则与下面的 eink 覆盖照旧）。
- * 只改观感（色角色 / 圆角 / 字重 / 状态层 / 按压动效），**不动任何会改变标题行高、
- * 振假名预留、masonry 量高口径的几何**：动作按钮的状态层用 box-shadow 外扩画在盒外，
- * 不加 padding；卡片只换填充与圆角。
+ * 第一版只改观感；第二版（2026-10-06，查词页「间距乱、词头重复、chip 挤成一团」反馈）
+ * 连同几何一起重排，但仍守三条不变式：① 振假名预留照旧走 `.expression` 的 em
+ * padding-top（BUG-2568），本层只换字号；② 折叠箭头只用 transform 换朝向，布局盒恒定
+ * （BUG-2049）；③ 卡片纵向间距在 masonry 下仍由 popup.js masonryGap() 决定，本层只管
+ * 单列流式布局的 margin-top。
  *
  * 全部取 m3e-tokens.css 同源令牌（--md-sys-*）。生成器把 `html.fushi-m3e` 重根为
  * `:where(#entries-container).fushi-m3e`——浏览器扩展给容器挂同名 class 即可复用整层。
  * 减弱动态效果：宿主挂 html.fushi-reduced-motion，本层的过渡 / 按压位移在末尾归零。
  * ===================================================================== */
 
-/* ── 词典结果卡：surfaceContainer 色块分层、16 圆角、无描边无投影 ── */
+/* ── 词典结果卡：M3E 分段卡片 ──
+   单列（流式布局：一本词典 / 列数设置为 1 / 视口窄到只装得下一列）= 分段列表：组首尾
+   24 大圆角、组内 4、卡间 2px，与查词页左栏「查词历史」的 FushiGroupedListItem 同一套
+   形状与间距（Flutter 侧 fushiGroupedItemRadius 24 / 4、行间 2）。
+   多列 masonry（popup.js layoutMasonry 给 body 挂 data-masonry-cols≥2，卡片绝对定位、
+   卡间距 = masonryGap() 6px）= 各自独立的 20 圆角卡（FushiM3eShape.card），分段圆角在
+   错落的两列里没有「组首尾」可言。无描边、无投影，surfaceContainer 色块分层。 */
 :where(#entries-container).fushi-m3e .glossary-group {
     border-color: transparent;
-    border-radius: var(--md-sys-shape-corner-large);
+    border-radius: var(--md-sys-shape-corner-extra-small);
     background-color: var(--md-sys-color-surface-container);
     box-shadow: none;
-    padding: 8px 12px;
+    padding: 0 16px 12px;
 }
 
-/* 词典名（卡头）：label-medium、onSurfaceVariant；当前选中词典 = primary 强调。 */
+:where(#entries-container).fushi-m3e .glossary-section > .category-body > .glossary-group {
+    margin-top: 2px;
+}
+
+:where(#entries-container).fushi-m3e .glossary-section > .category-body > .glossary-group:first-child {
+    margin-top: 0;
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+}
+
+:where(#entries-container).fushi-m3e .glossary-section > .category-body > .glossary-group:last-child {
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+}
+
+:where(#entries-container).fushi-m3e .glossary-section > .category-body[data-masonry-cols]:not([data-masonry-cols="1"]) > .glossary-group {
+    border-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+/* 收起的卡只剩标题行：底部内边距跟着收掉，标题行本身 44px 高、上下居中。 */
+:where(#entries-container).fushi-m3e .glossary-group:not([open]) {
+    padding-bottom: 0;
+}
+
+/* 词典名（卡头）：title-small、onSurfaceVariant；当前选中词典 = primary 强调。整行是
+   折叠 / 展开的点击目标，箭头（::before）挪到行尾。 */
 :where(#entries-container).fushi-m3e .dict-label {
-    font-size: var(--md-sys-typescale-label-small-size);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding-bottom: 0;
+    font-size: var(--md-sys-typescale-title-small-size);
+    line-height: var(--md-sys-typescale-title-small-line-height);
     font-weight: var(--md-sys-typescale-weight-medium);
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
     color: var(--md-sys-color-on-surface-variant);
     opacity: 1;
+}
+
+:where(#entries-container).fushi-m3e .dict-label > .dict-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 折叠箭头：纯 CSS 描边 chevron（零字体依赖，同 TODO-1337 的边框三角），收起指右、
+   展开指下。只旋转、布局盒恒为 8×8（BUG-2049：换朝向不许换盒子），spring 转动。 */
+:where(#entries-container).fushi-m3e .glossary-group > summary::before {
+    order: 1;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 8px;
+    height: 8px;
+    margin: 0 4px 0 0;
+    border-top: 0;
+    border-left: 0;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    opacity: 0.8;
+    transform: rotate(-45deg);
+    transition: transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
+}
+
+:where(#entries-container).fushi-m3e .glossary-group[open] > summary::before {
+    transform: rotate(45deg);
+}
+
+/* 展开 / 收起的高度 spring（Chromium 131+ ::details-content + interpolate-size；不支持
+   的引擎整条规则失效 = 瞬间开合，与改动前一致）。只裁纵向，长释义 / 宽表格横向照旧
+   不裁。卡高逐帧变化由 masonry 的卡片 ResizeObserver 跟随重排。单独成条：选择器列表里
+   混进不认识的伪元素会让整条规则作废。 */
+:where(#entries-container).fushi-m3e {
+    interpolate-size: allow-keywords;
+}
+
+:where(#entries-container).fushi-m3e .glossary-group::details-content {
+    height: 0;
+    overflow-x: visible;
+    overflow-y: clip;
+    transition: height var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial),
+        content-visibility var(--md-sys-motion-spring-default-spatial-duration) allow-discrete;
+}
+
+:where(#entries-container).fushi-m3e .glossary-group[open]::details-content {
+    height: auto;
 }
 
 :where(#entries-container).fushi-m3e .dict-label.selected {
@@ -2381,9 +2470,125 @@
     font-weight: var(--md-sys-typescale-weight-emphasized);
 }
 
-/* ── 词头：Emphasized 字重 ── */
+/* ── 词头 hero ──
+   根因（查词页「词头与下方 chip 几乎重叠、按钮悬在卡片右上」）：基础层的词头区没有
+   行间节奏——`.entry-tags` 用 margin-top:-4px 把标签行反向拽上来贴住词头，`.tag-row`
+   line-height:1 + gap 2px、`.category-section` margin-top 2px，标签 / 频率 / 音调三行
+   几乎零行距；`.header-buttons` margin-left:auto 把按钮甩到卡片最右端，宽屏下与词头
+   隔开大半屏。M3E 层把它们重排成：Display 级大字 + 紧随其后的 button group（同一行、
+   垂直居中），下面是 8px 行距的 chip 行。 */
+:where(#entries-container).fushi-m3e .entry {
+    padding: 12px 0;
+}
+
+:where(#entries-container).fushi-m3e .entry:first-child {
+    padding-top: 0;
+}
+
+:where(#entries-container).fushi-m3e .entry-header {
+    --fushi-m3e-headword-size: clamp(28px, 7vw, var(--md-sys-typescale-display-small-size));
+    gap: 12px;
+    padding-top: 0;
+    min-height: 48px;
+}
+
+:where(#entries-container).fushi-m3e .expression-scroll {
+    flex: 0 1 auto;
+}
+
+/* Display small（36）；窄弹窗按视口宽收到 28，长词头不至于一上来就横向滚动。注音
+   预留（padding-top 0.66em）与 rt 0.6em 都是 em，随字号等比，不需另调。 */
 :where(#entries-container).fushi-m3e .expression {
+    font-size: var(--fushi-m3e-headword-size);
+    line-height: 1.2;
     font-weight: var(--md-sys-typescale-weight-emphasized);
+    letter-spacing: 0;
+}
+
+/* ── 词头 button group：发音 / 收藏 / 在 Anki 打开 = tonal 40 圆钮，制卡 = filled 主按钮。
+   紧贴词头（不再 margin-left:auto 甩到行尾），按钮之间 4px。状态层画在按钮自身的
+   background-image 上（不再外扩 box-shadow 圈），按下形变成 12 圆角方块并 spring 回弹。 */
+/* 垂直居中对的是**大字那一行**，不是整个词头盒：词头盒顶上还压着 0.66em 的注音预留，
+   盒心比字心高出约 0.33em，align-items:center 会让按钮整排浮在字的上半截。按钮组贴
+   行底，再抬起「字行高 − 按钮高」的一半，正好与大字同一条中线。 */
+:where(#entries-container).fushi-m3e .header-buttons {
+    margin-left: 0;
+    gap: 4px;
+    align-self: flex-end;
+    margin-bottom: max(0px, calc((var(--fushi-m3e-headword-size) * 1.2 - 40px) / 2));
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .inline-action-button {
+    box-sizing: border-box;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+    background-image: none;
+    box-shadow: none;
+    opacity: 1;
+    outline: none;
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .audio-button,
+:where(#entries-container).fushi-m3e .header-buttons > .favorite-button,
+:where(#entries-container).fushi-m3e .header-buttons > .open-anki-button,
+:where(#entries-container).fushi-m3e .header-buttons > .clear-draft-button,
+:where(#entries-container).fushi-m3e .header-buttons > .ctx-adjust-button {
+    font-size: 20px;
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .favorite-button.favorited {
+    color: var(--md-sys-color-on-tertiary-container);
+    background-color: var(--md-sys-color-tertiary-container);
+}
+
+/* 制卡：未制卡 = filled primary（十字由 ::before/::after 以 currentColor 画，跟着变
+   onPrimary）；已制卡 ✓ / 已排队 = primaryContainer；最新可改 ✓↩ = tertiaryContainer。 */
+:where(#entries-container).fushi-m3e .header-buttons > .mine-button:where(:not(.duplicate)) {
+    color: var(--md-sys-color-on-primary);
+    background-color: var(--md-sys-color-primary);
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .mine-button.duplicate {
+    color: var(--md-sys-color-on-primary-container);
+    background-color: var(--md-sys-color-primary-container);
+    transform: none;
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .mine-button.latest {
+    color: var(--md-sys-color-on-tertiary-container);
+    background-color: var(--md-sys-color-tertiary-container);
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .inline-action-button:where(:not(:disabled)):hover {
+    background-image: linear-gradient(
+        color-mix(in srgb, currentColor var(--md-sys-state-hover-opacity), transparent),
+        color-mix(in srgb, currentColor var(--md-sys-state-hover-opacity), transparent));
+    box-shadow: none;
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .inline-action-button:where(:not(:disabled)):focus-visible {
+    background-image: linear-gradient(
+        color-mix(in srgb, currentColor var(--md-sys-state-focus-opacity), transparent),
+        color-mix(in srgb, currentColor var(--md-sys-state-focus-opacity), transparent));
+    box-shadow: 0 0 0 2px var(--md-sys-color-surface), 0 0 0 4px var(--md-sys-color-primary);
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .inline-action-button:where(:not(:disabled)):active {
+    border-radius: var(--md-sys-shape-corner-medium);
+    transform: scale(0.92);
+    background-image: linear-gradient(
+        color-mix(in srgb, currentColor var(--md-sys-state-pressed-opacity), transparent),
+        color-mix(in srgb, currentColor var(--md-sys-state-pressed-opacity), transparent));
+    box-shadow: none;
+}
+
+:where(#entries-container).fushi-m3e .header-buttons > .inline-action-button:disabled {
+    opacity: 0.38;
 }
 
 /* 当前词条指示三角跟主题主色（原为固定 #1a73e8）。 */
@@ -2391,7 +2596,50 @@
     border-left-color: var(--md-sys-color-primary);
 }
 
-/* ── 标签 chip：小号 8 圆角色块。词性 / 变形 = secondaryContainer；词典内义项标签同族 ── */
+/* ── 元数据 chip 行（词头标签 / 变形 / 频率 / 音调）：M3E assist chip ──
+   统一 24 高、8 圆角、label-medium；行内 chip 间距 8、可换行（换行的行距也是 8）；行与
+   行之间 8。chip 一律 inline-flex 垂直居中——不再靠各自的 line-height / padding 凑高度，
+   所以音调行的「N 本辞典」与读音 [n] 落在同一条中线上。 */
+:where(#entries-container).fushi-m3e .entry-tags {
+    margin-top: 8px;
+}
+
+:where(#entries-container).fushi-m3e .tag-row {
+    gap: 8px;
+    margin-top: 0;
+    align-items: center;
+    line-height: normal;
+}
+
+:where(#entries-container).fushi-m3e .tag-row + .tag-row {
+    margin-top: 8px;
+}
+
+:where(#entries-container).fushi-m3e .category-section,
+:where(#entries-container).fushi-m3e .frequency-section + .pitch-section {
+    margin-top: 8px;
+}
+
+:where(#entries-container).fushi-m3e .glossary-section {
+    margin-top: 12px;
+}
+
+:where(#entries-container).fushi-m3e .expr-tag,
+:where(#entries-container).fushi-m3e .deinflection-tag,
+:where(#entries-container).fushi-m3e .frequency-group,
+:where(#entries-container).fushi-m3e .pitch-dict-label {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 24px;
+    margin-right: 0;
+    border-radius: var(--md-sys-shape-corner-small);
+    font-size: var(--md-sys-typescale-label-medium-size);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+/* 词头标签（词形 / 读音）与变形链：secondaryContainer 色块。词典内义项标签同族但更小。 */
 :where(#entries-container).fushi-m3e .expr-tag,
 :where(#entries-container).fushi-m3e .deinflection-tag,
 :where(#entries-container).fushi-m3e .glossary-group > div[data-dictionary] .glossary-tag {
@@ -2403,33 +2651,66 @@
 
 :where(#entries-container).fushi-m3e .expr-tag,
 :where(#entries-container).fushi-m3e .deinflection-tag {
-    padding: 2px 6px;
+    padding: 0 10px;
 }
 
-/* 频率：tertiary 双段胶囊（词典名实心段 + 数值 container 段）。 */
+/* 频率：outlined assist chip。词典名段 tertiaryContainer 色块、数值段落在卡面上，
+   整枚 1px outlineVariant 描边（多枚并排时不再是一排饱和色块抢词头的戏）。 */
 :where(#entries-container).fushi-m3e .frequency-group {
-    border: none;
-    border-radius: var(--md-sys-shape-corner-full);
-    background-color: var(--md-sys-color-tertiary-container);
-    color: var(--md-sys-color-on-tertiary-container);
+    align-items: stretch;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background-color: transparent;
+    color: var(--md-sys-color-on-surface);
+}
+
+:where(#entries-container).fushi-m3e .frequency-dict-label,
+:where(#entries-container).fushi-m3e .frequency-values {
+    display: inline-flex;
+    align-items: center;
 }
 
 :where(#entries-container).fushi-m3e .frequency-dict-label {
-    background-color: var(--md-sys-color-tertiary);
-    color: var(--md-sys-color-on-tertiary);
+    background-color: var(--md-sys-color-tertiary-container);
+    color: var(--md-sys-color-on-tertiary-container);
     font-weight: var(--md-sys-typescale-weight-emphasized);
-    padding: 2px 6px;
+    padding: 0 8px;
 }
 
 :where(#entries-container).fushi-m3e .frequency-values {
-    padding: 2px 8px 2px 6px;
+    padding: 0 10px 0 8px;
     font-weight: var(--md-sys-typescale-weight-medium);
+    font-variant-numeric: tabular-nums;
 }
 
-/* 音调来源药丸：primaryContainer 饱和色块。 */
+/* 音调：来源 chip = primaryContainer；整行（chip + 读音 + [n]）中线对齐，读音行高与
+   chip 同为 24。多本音调词典的多行之间 8。 */
+:where(#entries-container).fushi-m3e .pitch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: var(--md-sys-typescale-body-medium-size);
+}
+
+:where(#entries-container).fushi-m3e .pitch-group {
+    align-items: center;
+    gap: 8px;
+    margin-top: 0;
+}
+
 :where(#entries-container).fushi-m3e .pitch-dict-label {
+    padding: 0 10px;
+    font-weight: var(--md-sys-typescale-weight-medium);
     background-color: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
+}
+
+:where(#entries-container).fushi-m3e .pitch-entries {
+    line-height: 24px;
+}
+
+/* 词条之间的分隔：12px 呼吸（基础层 4px，下一个词头紧贴上一张卡片）。 */
+:where(#entries-container).fushi-m3e .entry + hr {
+    margin: 12px 0;
 }
 
 /* ── 词条头动作按钮（♪ / ☆ / + / 在 Anki 打开）：M3E 标准图标按钮 ──
@@ -2672,13 +2953,19 @@
 /* ── 减弱动态效果：过渡与按压位移归零（颜色状态层保留，瞬时切换）── */
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .inline-action-button,
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .kanji-card-char,
-:where(#entries-container).fushi-m3e.fushi-reduced-motion .mined-action-btn {
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .mined-action-btn,
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group > summary::before {
+    transition: none;
+}
+
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group::details-content {
     transition: none;
 }
 
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .inline-action-button:active,
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .kanji-card-char:active,
-:where(#entries-container).fushi-m3e.fushi-reduced-motion .mined-action-btn:active {
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .mined-action-btn:active,
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .header-buttons > .inline-action-button:active {
     transform: none;
 }
 
