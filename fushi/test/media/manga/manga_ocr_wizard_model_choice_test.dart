@@ -117,6 +117,10 @@ void main() {
     );
     expect(download, findsOneWidget);
 
+    // 引擎分段在测试字体下折成多行，向导内容区比 800x600 默认窗口高：下载
+    // 入口落在可滚动内容区下部、被固定的动作栏盖住，先滚到可见再点。
+    await tester.ensureVisible(download);
+    await tester.pumpAndSettle();
     await tester.tap(download);
     await tester.pump();
     expect(

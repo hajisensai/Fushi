@@ -1653,6 +1653,19 @@ Future<ItemVerdict> _verifyFocusedNode({
       await driver.adjust(steps: -4);
       await tester.pump(const Duration(milliseconds: 50));
     }
+    // MD3 重设计：选项多 / 文字长 / 行太窄时分段行退回 Android 16 ListPreference
+    // 形态的菜单选择行（SettingsChoiceMenuRow，settingsChoiceUsesSegments 判据）。
+    // 它的焦点模型与下拉行相同：Enter 开菜单 → 方向键选项 → Enter 确认，左右键
+    // 不逐段切换。仍按真实焦点序列驱动，不放宽「改了能写穿 DB」的判据。
+    if (row.kind == _RowKind.segmented &&
+        _mapsEqual(before, await db.getAllPrefs())) {
+      await _driveDropdownRow(
+        tester: tester,
+        driver: driver,
+        db: db,
+        before: before,
+      );
+    }
   }
   if (LocaleSettings.currentLocale != localeBefore) {
     LocaleSettings.setLocale(localeBefore);

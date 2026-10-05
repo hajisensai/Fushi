@@ -9,6 +9,8 @@ import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_dialog.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
 import '../../../helpers/glass_unwrap.dart';
@@ -349,7 +351,15 @@ void main() {
       () => find.textContaining(progressText).evaluate().isNotEmpty,
       reason: '进度文案回到 UI',
     );
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+    expect(
+      tester
+          .widget<FushiLinearProgressIndicator>(
+            find.byType(FushiLinearProgressIndicator),
+          )
+          .value,
+      0.5,
+    );
     expect(find.textContaining(progressText), findsNWidgets(2));
     expect(find.textContaining(t.download_status_queued), findsNothing);
 
@@ -364,7 +374,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.check_circle), findsOneWidget);
     expect(find.text(t.manga_online_downloaded), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     expect(
       (await db.getMangaDownloadJob(jobId))!.status,
       MangaDownloadJobStatus.done,

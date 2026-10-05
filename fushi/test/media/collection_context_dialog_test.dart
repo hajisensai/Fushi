@@ -111,7 +111,13 @@ void main() {
 
   /// 点确认框里的「删除合集」确认键（销毁按钮 = FilledButton）。
   Future<void> tapConfirm(WidgetTester tester) async {
-    await tester.tap(find.widgetWithText(FilledButton, t.delete_collection));
+    // 二级勾选展开后确认框比 800x600 默认窗口高：内容区可滚动，确认键在
+    // 滚动区底部，先滚到可见再点（与用户滑到底再确认同一路径）。
+    final Finder confirm =
+        find.widgetWithText(FilledButton, t.delete_collection);
+    await tester.ensureVisible(confirm);
+    await tester.pumpAndSettle();
+    await tester.tap(confirm);
     await tester.pumpAndSettle();
   }
 

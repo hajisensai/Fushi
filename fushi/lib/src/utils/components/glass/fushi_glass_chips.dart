@@ -309,26 +309,32 @@ class _AppleChipState extends State<_AppleChip> {
   Widget _buildGlass(BuildContext context, FushiAppleColors apple) {
     final bool tappable = widget.enabled && widget.onTap != null;
     final BorderRadius radius = BorderRadius.circular(widget.height / 2);
+    // GlassButton 的 canRequestFocus: false 不生效：库内 GlassFocusRegion 用
+    // FocusableActionDetector 包自己的节点，而 FocusableActionDetector 会按
+    // enabled 改写 Focus.canRequestFocus，每枚标签因此多出一个 Tab 停靠点（Tab
+    // 落到内层后 Enter 不经外层 ActivateIntent）。焦点只归外层，内层整树排除。
     Widget body = IntrinsicWidth(
       child: IntrinsicHeight(
-        child: GlassButton.custom(
-          onTap: tappable ? widget.onTap! : () {},
-          enabled: widget.enabled,
-          style: widget.glassTint != null
-              ? GlassButtonStyle.prominent
-              : GlassButtonStyle.filled,
-          settings: fushiGlassSettings(context, tint: widget.glassTint),
-          quality: fushiGlassQuality(context),
-          shape: const LiquidRoundedRectangle(borderRadius: 100),
-          interactionScale: 1.03,
-          stretch: 0.3,
-          canRequestFocus: false,
-          excludeFromSemantics: true,
-          width: double.infinity,
-          height: double.infinity,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: widget.height),
-            child: Center(widthFactor: 1, heightFactor: 1, child: widget.child),
+        child: ExcludeFocus(
+          child: GlassButton.custom(
+            onTap: tappable ? widget.onTap! : () {},
+            enabled: widget.enabled,
+            style: widget.glassTint != null
+                ? GlassButtonStyle.prominent
+                : GlassButtonStyle.filled,
+            settings: fushiGlassSettings(context, tint: widget.glassTint),
+            quality: fushiGlassQuality(context),
+            shape: const LiquidRoundedRectangle(borderRadius: 100),
+            interactionScale: 1.03,
+            stretch: 0.3,
+            canRequestFocus: false,
+            excludeFromSemantics: true,
+            width: double.infinity,
+            height: double.infinity,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: widget.height),
+              child: Center(widthFactor: 1, heightFactor: 1, child: widget.child),
+            ),
           ),
         ),
       ),

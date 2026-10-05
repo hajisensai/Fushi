@@ -127,8 +127,14 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
   @override
   Duration get tickerPeriod => const Duration(milliseconds: 1800);
 
+  // 确定态在两端振幅收平成直线（[_amplitudeEase] 为 0），相位流动看不见，
+  // 不跑控制器——否则「已看完」贴底满条这类静止装饰会永远每帧重绘。
   @override
-  bool wantsAnimation(BuildContext context) => _motionAllowed(context);
+  bool wantsAnimation(BuildContext context) {
+    if (!_motionAllowed(context)) return false;
+    final double? value = widget.value;
+    return value == null || _amplitudeEase(value.clamp(0.0, 1.0)) > 0;
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -15,7 +15,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/storage/data_root_migration_view.dart';
-import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 
 void main() {
   group('DataRootMigrationView (TODO-959 机制A：搬移中遮罩)', () {
@@ -39,8 +40,10 @@ void main() {
       expect(find.text(t.data_storage_migrate_overlay_title), findsOneWidget);
       expect(find.text(t.data_storage_migrate_overlay_warning), findsOneWidget);
       // 有进度条。progress=null → 不确定进度（value 为 null）。
-      final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),);
+      final FushiLinearProgressIndicator bar =
+          tester.widget<FushiLinearProgressIndicator>(
+        find.byType(FushiLinearProgressIndicator),
+      );
       expect(bar.value, isNull);
 
       // 背景非 null 且非纯黑（修复的核心：消除「真黑底」）。
@@ -67,8 +70,10 @@ void main() {
       );
       await tester.pump();
 
-      final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),);
+      final FushiLinearProgressIndicator bar =
+          tester.widget<FushiLinearProgressIndicator>(
+        find.byType(FushiLinearProgressIndicator),
+      );
       expect(bar.value, closeTo(0.3, 1e-9));
 
       // 给定的 splash 背景被尊重（非回退）。
@@ -101,7 +106,7 @@ void main() {
       expect(
           find.text(t.data_storage_migrate_failed_suggestions), findsOneWidget);
       // 失败态不显示进度条。
-      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
       // 点重启按钮触发注入的回调（测试里不真重启）。
       await tester.tap(find.text(t.data_storage_migrate_failed_restart));

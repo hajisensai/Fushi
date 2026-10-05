@@ -379,8 +379,11 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
             // 共享底部动作条（限宽居中，MD3 不铺底色）：Apple 悬浮玻璃胶囊。
             child: FushiBottomActionBar(
               md3Surface: false,
+              // heightFactor: 1——动作条拿到的是 bottomNavigationBar 的松弛满屏高，
+              // 不收缩的 Align 会把整条撑到全屏、盖住上方标签栏吸走点击。
               leading: Align(
                 alignment: AlignmentDirectional.centerStart,
+                heightFactor: 1,
                 child: FushiOutlinedButton(
                   onPressed: _currentTabCanReset() ? _doResetCurrent : null,
                   child: Text(t.book_css_editor_reset_current),

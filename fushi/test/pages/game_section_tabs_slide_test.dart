@@ -11,7 +11,6 @@ import 'package:fushi/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
-import '../helpers/glass_unwrap.dart';
 
 /// 游戏顶栏切子区时指示条要滑动（用户反馈「小说漫画游戏导航栏都没动画」）。
 ///
@@ -47,10 +46,15 @@ void main() {
   });
 
   TabController controllerIn(WidgetTester tester, Key sectionKey) {
-    final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.descendant(
+    // 设置页此刻是 Offstage 保活的隐藏页：两层查找都得 skipOffstage: false
+    // （glassUnwrap 的 descendant 默认跳过 offstage，这里不能用）。MD3 下
+    // FushiTabBar 把原 TabBar 渲染在自己下面一层，byType(TabBar) 直接命中它。
+    final TabBar bar = tester.widget<TabBar>(
+      find.descendant(
         of: find.byKey(sectionKey, skipOffstage: false),
         matching: find.byType(TabBar, skipOffstage: false),
-      )),);
+      ),
+    );
     return bar.controller!;
   }
 

@@ -145,9 +145,11 @@ void main() {
       expect(slider.divisions, 3, reason: '1..4 共 4 档 = 3 个 division');
 
       // 标题 + 实时读数（titleReadout）。BUG-806：桌面（测试 host = 桌面）未设「最多列数」
-      // 默认放宽到 3（自动填充、由 popup.js 视口收敛兜底）。
-      expect(find.text('${t.popup_dictionary_max_columns} (3)'), findsOneWidget,
-          reason: 'BUG-806：桌面「最多列数」默认 3，标题带实时读数');
+      // 默认放宽到 3（自动填充、由 popup.js 视口收敛兜底）。MD3 重设计后读数不再
+      // 拼进标题，而是常驻在滑条右侧的读数槽（AdaptiveSettingsSliderRow._buildMd3）。
+      expect(find.text(t.popup_dictionary_max_columns), findsOneWidget);
+      expect(find.text('3'), findsOneWidget,
+          reason: 'BUG-806：桌面「最多列数」默认 3，行内带实时读数');
 
       // 副标题 = hint 本身，渲染成单个 Text。
       // 实验性后缀已按用户要求整体删除（settings_experimental_suffix key 连同它的

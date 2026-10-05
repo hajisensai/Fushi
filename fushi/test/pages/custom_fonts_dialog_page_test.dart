@@ -6,6 +6,7 @@ import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import '../helpers/glass_unwrap.dart';
 
 void main() {
@@ -48,7 +49,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
   });
 
   testWidgets('font catalog row exposes independent target toggles', (

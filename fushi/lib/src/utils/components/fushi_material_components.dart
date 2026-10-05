@@ -1907,6 +1907,9 @@ class FushiBadge extends StatelessWidget {
   }
 }
 
+/// 窗口高度低于此值时 MD3 对话框头部收紧（见 [FushiModalSheetFrame]）。
+const double _kMd3DialogHeaderCompactHeight = 480;
+
 class FushiModalSheetFrame extends StatelessWidget {
   const FushiModalSheetFrame({
     required this.body,
@@ -2108,12 +2111,19 @@ class FushiModalSheetFrame extends StatelessWidget {
     ColorScheme colors,
   ) {
     final TextTheme tt = Theme.of(context).textTheme;
-    final bool hero = leadingIcon != null && title != null;
+    // 矮窗口（桌面小窗 / 横屏手机）里规范头部（24 内边距 + 两行 22 号标题 +
+    // 图标）能吃掉近百像素，把正文挤到放不下自身控件而溢出。矮于阈值时收紧
+    // 内边距、标题只留一行、不画居中图标，把高度让回正文。
+    final bool compactHeight =
+        MediaQuery.sizeOf(context).height < _kMd3DialogHeaderCompactHeight;
+    final bool hero = !compactHeight && leadingIcon != null && title != null;
     final CrossAxisAlignment align =
         hero ? CrossAxisAlignment.center : CrossAxisAlignment.start;
     final TextAlign textAlign = hero ? TextAlign.center : TextAlign.start;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      padding: compactHeight
+          ? const EdgeInsets.fromLTRB(24, 16, 24, 8)
+          : const EdgeInsets.fromLTRB(24, 24, 24, 16),
       child: Column(
         crossAxisAlignment: align,
         mainAxisSize: MainAxisSize.min,
@@ -2125,7 +2135,7 @@ class FushiModalSheetFrame extends StatelessWidget {
           if (title != null)
             Text(
               title!,
-              maxLines: 2,
+              maxLines: compactHeight ? 1 : 2,
               overflow: TextOverflow.ellipsis,
               textAlign: textAlign,
               style: (tt.headlineSmall ?? const TextStyle()).copyWith(
@@ -2140,7 +2150,7 @@ class FushiModalSheetFrame extends StatelessWidget {
               padding: EdgeInsets.only(top: title != null ? 8 : 0),
               child: Text(
                 subtitle!,
-                maxLines: 3,
+                maxLines: compactHeight ? 1 : 3,
                 overflow: TextOverflow.ellipsis,
                 textAlign: textAlign,
                 style: (tt.bodyMedium ?? const TextStyle()).copyWith(
@@ -2655,7 +2665,7 @@ class FushiSchemeSwatch extends StatelessWidget {
       child: RepaintBoundary(
         child: CustomPaint(
           size: Size.square(size),
-          painter: _SchemeMiniUiPainter(
+          painter: SchemeMiniUiPainter(
             textColor: textRole,
             backgroundColor: backgroundRole,
             buttonColor: buttonRole,
@@ -5257,8 +5267,9 @@ class _CompactSearchIconButton extends StatelessWidget {
 
 /// [FushiSchemeSwatch] 的微缩界面：页面底色上一条顶栏、两条文字线与一枚
 /// 强调色胶囊按钮，比例随色板尺寸缩放。
-class _SchemeMiniUiPainter extends CustomPainter {
-  const _SchemeMiniUiPainter({
+@visibleForTesting
+class SchemeMiniUiPainter extends CustomPainter {
+  const SchemeMiniUiPainter({
     required this.textColor,
     required this.backgroundColor,
     required this.buttonColor,
@@ -5306,7 +5317,7 @@ class _SchemeMiniUiPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_SchemeMiniUiPainter old) =>
+  bool shouldRepaint(SchemeMiniUiPainter old) =>
       old.textColor != textColor ||
       old.backgroundColor != backgroundColor ||
       old.buttonColor != buttonColor ||

@@ -61,8 +61,10 @@ void main() {
       ),
     );
 
-    final CircularProgressIndicator indicator = tester.widget(
-      find.byType(CircularProgressIndicator),
+    // MD3 Expressive：加载圈经 FushiCircularProgressIndicator 渲染成表达式
+    // 波浪圈 FushiWavyCircularProgress，确定 / 不定态仍由 value 区分。
+    final FushiWavyCircularProgress indicator = tester.widget(
+      find.byType(FushiWavyCircularProgress),
     );
     expect(indicator.value, isNull);
     // No percentage suffix when progress is null.
@@ -84,8 +86,10 @@ void main() {
       ),
     );
 
-    final CircularProgressIndicator indicator = tester.widget(
-      find.byType(CircularProgressIndicator),
+    // MD3 Expressive：加载圈经 FushiCircularProgressIndicator 渲染成表达式
+    // 波浪圈 FushiWavyCircularProgress，确定 / 不定态仍由 value 区分。
+    final FushiWavyCircularProgress indicator = tester.widget(
+      find.byType(FushiWavyCircularProgress),
     );
     expect(indicator.value, 0.42);
     expect(find.textContaining('Downloading subtitles…'), findsOneWidget);

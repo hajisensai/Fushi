@@ -1505,9 +1505,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final ValueNotifier<VideoM3eRippleEvent?> _doubleTapRipple =
       ValueNotifier<VideoM3eRippleEvent?>(null);
 
-  late final ValueNotifier<bool> _videoTimeShowsRemaining = ValueNotifier<bool>(
-    _appModel.videoTimeDisplayRemaining,
-  );
+  // 首次构建底栏时才读偏好（initState 读 prefs 会在未初始化的 AppModel 上抛）；
+  // 显式可空字段而不是 `late final` 初始化器：dispose 只释放**已建过**的
+  // notifier——没建过（错误态 / 首帧前退出）时不能在 dispose 里顺手把它建出来，
+  // 那会在已失活的 element 上 `ref.read`（「Looking up a deactivated widget's
+  // ancestor is unsafe」）。
+  ValueNotifier<bool>? _videoTimeShowsRemainingNotifier;
+  ValueNotifier<bool> get _videoTimeShowsRemaining =>
+      _videoTimeShowsRemainingNotifier ??= ValueNotifier<bool>(
+        _appModel.videoTimeDisplayRemaining,
+      );
 
   /// 切换底栏时间显示（已播 ⇄ 剩余）并记住。
   void _toggleVideoTimeRemaining() {
@@ -5287,7 +5294,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controller?.dispose();
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
-    _videoTimeShowsRemaining.dispose();
+    _videoTimeShowsRemainingNotifier?.dispose();
     _doubleTapRipple.dispose();
     // TODO-364：先摘控制条可见性派生监听，再 dispose 各 notifier（监听回调读多个 notifier，
     // 顺序错会在 dispose 后回调里触碰已释放对象）。

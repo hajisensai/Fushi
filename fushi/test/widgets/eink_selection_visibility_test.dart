@@ -21,6 +21,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import '../helpers/glass_unwrap.dart';
 
 Color? _resolve(
@@ -192,7 +193,8 @@ void main() {
     testWidgets('eink：leading 图标跟着前景翻色', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
       final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
-      final Icon avatar = chip.avatar! as Icon;
+      // avatar 经 FushiIcon（两套设计系统共用的图标包装）渲染，颜色契约不变。
+      final FushiIcon avatar = chip.avatar! as FushiIcon;
       expect(
         avatar.color,
         Colors.white,

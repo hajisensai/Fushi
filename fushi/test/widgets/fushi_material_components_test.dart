@@ -953,7 +953,8 @@ void main() {
         dialog.shape! as RoundedRectangleBorder;
 
     expect(find.text('Dialog body'), findsOneWidget);
-    expect(shape.borderRadius, BorderRadius.circular(16));
+    // MD3 Expressive 刷新：对话框容器圆角 = M3 规范 extra-large 28。
+    expect(shape.borderRadius, BorderRadius.circular(28));
     expect(dialog.clipBehavior, Clip.antiAlias);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });

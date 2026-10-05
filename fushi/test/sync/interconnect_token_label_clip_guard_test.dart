@@ -11,8 +11,9 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 /// 验证修复：断言浮动标签 painted top 相对包住它的 `ClipRect` 顶沿的位置。
 Future<double> _labelTopMinusClipTop(
   WidgetTester tester,
-  EdgeInsetsGeometry childrenPadding,
-) async {
+  EdgeInsetsGeometry childrenPadding, {
+  bool outlinedField = false,
+}) async {
   final TextEditingController controller = TextEditingController(
     text: 'mwr9S6dz5OQQrc4yWTXAHT2RKYLZ8Pl3KD3PWzDXAPw=',
   );
@@ -30,10 +31,20 @@ Future<double> _labelTopMinusClipTop(
               childrenPadding: childrenPadding,
               title: const Text('手动填写令牌'),
               children: <Widget>[
-                FushiTextField(
-                  controller: controller,
-                  labelText: '对端访问令牌',
-                ),
+                if (outlinedField)
+                  // 墨水屏下 FushiTextField 保留的描边形态（浮动标签骑在描边上）。
+                  TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      labelText: '对端访问令牌',
+                      border: OutlineInputBorder(),
+                    ),
+                  )
+                else
+                  FushiTextField(
+                    controller: controller,
+                    labelText: '对端访问令牌',
+                  ),
               ],
             ),
           ),
@@ -58,7 +69,13 @@ void main() {
   testWidgets(
       'BUG-755 repro: zero childrenPadding clips the floating label top half',
       (WidgetTester tester) async {
-    final double delta = await _labelTopMinusClipTop(tester, EdgeInsets.zero);
+    // MD3 下 FushiTextField 已改为填充式（标题浮在填充块内），零 padding 不再
+    // 裁切；但墨水屏仍是 OutlineInputBorder，标题骑在描边上——用该形态复现。
+    final double delta = await _labelTopMinusClipTop(
+      tester,
+      EdgeInsets.zero,
+      outlinedField: true,
+    );
     expect(
       delta < 0,
       isTrue,
@@ -72,14 +89,20 @@ void main() {
       'BUG-755 fix: top childrenPadding keeps the floating label inside clip',
       (WidgetTester tester) async {
     // Must match the value used in interconnect.part.dart.
-    final double delta =
-        await _labelTopMinusClipTop(tester, const EdgeInsets.only(top: 10));
-    expect(
-      delta >= 0,
-      isTrue,
-      reason:
-          'floating label top ($delta) must sit within the Expansible ClipRect '
-          '(fully visible) once top childrenPadding is applied',
-    );
+    for (final bool outlined in <bool>[false, true]) {
+      final double delta = await _labelTopMinusClipTop(
+        tester,
+        const EdgeInsets.only(top: 10),
+        outlinedField: outlined,
+      );
+      expect(
+        delta >= 0,
+        isTrue,
+        reason:
+            'floating label top ($delta, outlined=$outlined) must sit within '
+            'the Expansible ClipRect (fully visible) once top childrenPadding '
+            'is applied',
+      );
+    }
   });
 }

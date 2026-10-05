@@ -55,11 +55,20 @@ void main() {
       ),
     );
 
+    // 玻璃层：液态档是 GlassContainer；着色器不可用（测试环境 / Skia）时
+    // 液态档回落毛玻璃，走与 MD3 同一组的 BackdropFilter（共用
+    // kFushiLookupPopupBackdropKey，嵌套查词层不会一层比一层实）。
     final Finder glass = find.descendant(
       of: find.byType(FushiPopupSurface),
-      matching: find.byType(GlassContainer),
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is GlassContainer || w is BackdropFilter,
+      ),
     );
     expect(glass, findsOneWidget);
+    final Widget glassWidget = tester.widget(glass);
+    if (glassWidget is BackdropFilter) {
+      expect(glassWidget.backdropGroupKey, kFushiLookupPopupBackdropKey);
+    }
     // 子节点不在玻璃里面（玻璃是兄弟层，不是父层）。
     expect(
       find.descendant(of: glass, matching: find.byKey(childKey)),

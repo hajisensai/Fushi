@@ -11,6 +11,11 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/utils.dart';
 
+/// MD3 底部让给悬浮新建按钮的高度：常规 FAB 56dp + Scaffold 的 FAB 外边距
+/// （上下各一份 [kFloatingActionButtonMargin]），末行才不被悬浮按钮压住。
+/// FAB 几何是组件尺寸而非间距令牌，集中在这一处具名常量里。
+const double _kMd3FabClearance = 56 + kFloatingActionButtonMargin * 2;
+
 const List<int> kTagPresetColors = [
   0xFFEF5350, // red
   0xFFEC407A, // pink
@@ -233,7 +238,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                 tokens.spacing.gap,
                 tokens.spacing.page,
                 // MD3 底部留出 FAB 的位置；Apple 新建在页头，不必留。
-                tokens.spacing.gap + (apple ? 0 : 88),
+                tokens.spacing.gap + (apple ? 0 : _kMd3FabClearance),
               ),
               itemCount: _tags.length,
               itemBuilder: (context, index) {

@@ -23,6 +23,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSegmentedButton;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
@@ -253,8 +255,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // 选项保留（与另外三个引擎同构），但置灰。
-    final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(glassUnwrap<SegmentedButton<MangaOcrEngineId>>(find.byType(SegmentedButton<MangaOcrEngineId>)));
+    final FushiSegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
+          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+        );
     final ButtonSegment<MangaOcrEngineId> pairedSegment = selector.segments
         .firstWhere((ButtonSegment<MangaOcrEngineId> s) =>
             s.value == MangaOcrEngineId.pairedHost);
@@ -338,8 +342,10 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
 
-    final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(glassUnwrap<SegmentedButton<MangaOcrEngineId>>(find.byType(SegmentedButton<MangaOcrEngineId>)));
+    final FushiSegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
+          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+        );
     final ButtonSegment<MangaOcrEngineId> paired = selector.segments.firstWhere(
       (ButtonSegment<MangaOcrEngineId> segment) =>
           segment.value == MangaOcrEngineId.pairedHost,

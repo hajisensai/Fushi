@@ -1169,6 +1169,9 @@ class _VideoResourceSearchSurfaceState
               builder: (BuildContext context, BoxConstraints constraints) {
                 final Widget provider = FushiDropdownButtonFormField<String>(
                   key: const ValueKey<String>('video-resource-provider'),
+                  // 宽屏下钉在 160 宽的槽里：MD3 填充式字段的内边距更大，按内容
+                  // 定宽的按钮行会溢出；撑满槽位、让选中项在剩余宽度内排版。
+                  isExpanded: true,
                   initialValue: _manualProvider,
                   decoration: InputDecoration(
                     labelText: t.video_resource_identity_provider,

@@ -127,15 +127,18 @@ void main() {
       expect(focus, isEmpty);
     });
 
+    // 选中态两种口径：选择型（默认）= 不铺底、行尾强调色对勾、文字不变色；
+    // 导航型（调用点给 selectedTileColor）= 整行铺该底色。
     testWidgets('selected glass tile gets a visible highlight', (
       WidgetTester tester,
     ) async {
-      Future<Color?> fillOf(bool selected) async {
+      Future<Color?> fillOf(bool selected, {Color? selectedTileColor}) async {
         await _pump(
           tester,
           FushiListTileControl(
             title: const Text('row'),
             selected: selected,
+            selectedTileColor: selectedTileColor,
             onTap: () {},
           ),
           glass: true,
@@ -152,9 +155,12 @@ void main() {
       }
 
       final Color? unselected = await fillOf(false);
-      final Color? selected = await fillOf(true);
       expect(unselected!.a, 0);
-      expect(selected!.a, greaterThan(0));
+      expect(find.byType(FushiAppleCheckmark), findsNothing);
+
+      final Color? selected = await fillOf(true);
+      expect(selected!.a, 0);
+      expect(find.byType(FushiAppleCheckmark), findsOneWidget);
       final Text title = tester.widget<Text>(find.text('row'));
       expect(title.style, isNull); // 颜色来自 DefaultTextStyle
       final DefaultTextStyle style = tester.widget<DefaultTextStyle>(
@@ -166,7 +172,12 @@ void main() {
             .first,
       );
       final BuildContext ctx = tester.element(find.text('row'));
-      expect(style.style.color, appleColorsOf(ctx).accent);
+      expect(style.style.color, appleColorsOf(ctx).label);
+
+      const Color navFill = Color(0xFF3366CC);
+      final Color? navSelected = await fillOf(true, selectedTileColor: navFill);
+      expect(navSelected, navFill);
+      expect(find.byType(FushiAppleCheckmark), findsNothing);
     });
   });
 

@@ -6,8 +6,11 @@
 // 分类列表）装进一张与右侧分组卡同款的 FushiCard，窗格之间不画线，边界由卡片
 // 自己表达。
 //
-// 这里钉住三条不变式：宽屏主从不画 VerticalDivider；搜索框与分类列表被同一张
-// `surfaces.card` 色、`groupRadius` 圆角的 FushiCard 包住；详情正文左右内边距相等
+// MD3 Expressive 重设计（2026-10）把左栏改成 Android 16 平板设置的形态：胶囊
+// 搜索栏 + 导航抽屉式分类列表直接坐在页面底上，不再包卡。
+//
+// 这里钉住三条不变式：宽屏主从不画 VerticalDivider；搜索框与分类列表同在定宽
+// 的左导航窗格里、上下相接且不贴边；详情正文左右内边距相等
 // （BUG-2443 的另一半修复，与线无关，保留）。源码层面的对应守卫在
 // settings_redesign_static_test.dart。
 import 'dart:io';
@@ -96,8 +99,8 @@ Widget _wideSettings(AppModel appModel, ThemeNotifier themeNotifier) {
 
 void main() {
   testWidgets(
-    'wide list-detail draws no divider; the nav block sits in one FushiCard '
-    'matching the detail sections; the detail body stays symmetric',
+    'wide list-detail draws no divider; search and category list share the nav '
+    'pane; the detail body stays symmetric',
     (WidgetTester tester) async {
       final AppModel appModel = await _buildAppModel();
       final ThemeNotifier themeNotifier = appModel.themeNotifier;
@@ -131,29 +134,35 @@ void main() {
       );
       final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-      // 搜索框与分类列表被同一张导航卡包住，且这张卡与右侧分组卡同款
-      // （surfaces.card + groupRadius）——用户要的是「左边也有一张卡」，不是一整块
-      // 贴边的 tonal 色块。
+      // MD3 Expressive 重设计（Android 16 平板「设置」）：导航窗格不再装进
+      // FushiCard，而是胶囊搜索栏 + 导航抽屉式分类列表直接坐在页面底上，窗格
+      // 定宽 navPaneWidth。原守卫的意图保持不变：宽屏左栏是一个完整的导航块
+      // （搜索框与分类列表同在左窗格、上下相接），且不贴边。
       final Finder searchField = find.byType(TextField);
       expect(searchField, findsOneWidget);
-      final Finder navCard = find.ancestor(
-        of: searchField,
-        matching: find.byType(FushiCard),
-      );
-      expect(navCard, findsOneWidget, reason: '搜索框必须装在导航卡（FushiCard）里');
-      final FushiCard card = tester.widget<FushiCard>(navCard);
-      expect(card.color, tokens.surfaces.card);
-      expect(card.borderRadius, tokens.radii.groupRadius);
-      // 分类列表（选中项的 FushiListItem）也在同一张卡里。
+      final Finder navList = find.byType(Md3SettingsNavList);
+      expect(navList, findsOneWidget, reason: '宽屏左栏必须是 MD3 导航抽屉式分类列表');
+      final Rect searchRect = tester.getRect(searchField);
+      final Rect listRect = tester.getRect(navList);
+      // 搜索框与分类列表同在左侧导航窗格里（不越过窗格宽度）。
       expect(
-        find.descendant(of: navCard, matching: find.byType(FushiListItem)),
-        findsWidgets,
-        reason: '分类列表必须与搜索框在同一张导航卡里',
+        searchRect.right,
+        lessThanOrEqualTo(MaterialSettingsRenderer.navPaneWidth),
+        reason: '搜索框必须在左侧导航窗格里',
       );
-      // 导航卡不贴边：外面有留白，否则又是一块贴边色块。
-      final Rect cardRect = tester.getRect(navCard);
-      expect(cardRect.left, greaterThan(0));
-      expect(cardRect.top, greaterThan(0));
+      expect(
+        listRect.right,
+        lessThanOrEqualTo(MaterialSettingsRenderer.navPaneWidth),
+        reason: '分类列表必须与搜索框在同一个导航窗格里',
+      );
+      expect(
+        listRect.top,
+        greaterThanOrEqualTo(searchRect.bottom),
+        reason: '分类列表接在搜索框下方，同属一个导航块',
+      );
+      // 导航块不贴边：外面有留白，否则又是一块贴边色块。
+      expect(searchRect.left, greaterThan(0));
+      expect(searchRect.top, greaterThan(0));
 
       // 详情正文左右内边距相等：左边曾多出一个 gap（28 对 20），正文在自己的窗格
       // 里左右不等宽。

@@ -30,7 +30,7 @@ void main() {
         interact: (WidgetTester tester) async {
           final Finder menu = find.byWidgetPredicate(
             (Widget widget) =>
-                widget is DropdownMenu<int> &&
+                widget is FushiDropdownMenu<int> &&
                 '${(widget.key as ValueKey<String>?)?.value}'
                     .startsWith('text-indent-'),
           );

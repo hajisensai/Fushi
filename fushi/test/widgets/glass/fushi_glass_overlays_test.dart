@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -101,12 +102,14 @@ void main() {
       expect(find.byType(Dialog), findsNothing);
       expect(find.byType(FilledButton), findsNothing);
       expect(find.byType(TextButton), findsNothing);
+      // Apple 对话框面板（FushiAppleDialogPanel：近实色面板 + 发丝描边 +
+      // 柔和阴影，背后整屏模糊），不是 Material Dialog 表面。
       expect(
         find.ancestor(
           of: find.text('Body'),
-          matching: find.byType(GlassContainer),
+          matching: find.byType(FushiAppleDialogPanel),
         ),
-        findsWidgets,
+        findsOneWidget,
       );
       expect(find.text('Title'), findsOneWidget);
       // iOS 26 alert：两个动作并排、等宽、48 高胶囊；取消是中性玻璃胶囊
@@ -140,7 +143,7 @@ void main() {
             find
                 .ancestor(
                   of: find.text('Body'),
-                  matching: find.byType(GlassContainer),
+                  matching: find.byType(FushiAppleDialogPanel),
                 )
                 .first,
           )
@@ -263,13 +266,12 @@ void main() {
         ),
       );
       expect(find.byType(Dialog), findsNothing);
-      expect(
-        find.ancestor(
-          of: find.text('full'),
-          matching: find.byType(GlassContainer),
-        ),
-        findsWidgets,
+      final Finder panel = find.ancestor(
+        of: find.text('full'),
+        matching: find.byType(FushiAppleDialogPanel),
       );
+      expect(panel, findsOneWidget);
+      expect(tester.widget<FushiAppleDialogPanel>(panel).radius, 0);
     });
   });
 
@@ -328,13 +330,14 @@ void main() {
       expect(find.byIcon(CupertinoIcons.ellipsis), findsOneWidget);
       await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
       await settle(tester);
-      expect(
-        find.ancestor(
-          of: find.text('one'),
-          matching: find.byType(GlassContainer),
-        ),
-        findsWidgets,
-      );
+      // 玻璃面板由菜单路由单独画在内容背后（随展开变形缩放），不是菜单行的
+      // 祖先：断言唯一一块玻璃面板盖住全部菜单行。
+      final Finder glassPanel = find.byType(GlassContainer);
+      expect(glassPanel, findsOneWidget);
+      final Rect panelRect = tester.getRect(glassPanel);
+      for (final String label in <String>['one', 'two', 'three']) {
+        expect(panelRect.contains(tester.getCenter(find.text(label))), isTrue);
+      }
       // 菜单行高 44（iOS），initialValue 对应项行尾打勾。
       expect(find.byIcon(CupertinoIcons.checkmark), findsOneWidget);
       expect(
@@ -364,10 +367,15 @@ void main() {
             ),
           ),
         );
-        await tester.tap(find.byIcon(CupertinoIcons.ellipsis));
+        // 焦点只在「键盘 / 手柄打开」时落进菜单项（鼠标 / 触摸打开不预先
+        // 高亮某项，与 macOS / iOS 原生菜单一致）：Tab 到触发器再 Enter 打开。
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await settle(tester);
         final FocusNode? initial = FocusManager.instance.primaryFocus;
         expect(initial, isNotNull);
+        expect(initial, isNot(isA<FocusScopeNode>()));
         expect(
           find.descendant(
             of: find.byElementPredicate((Element e) => e == initial!.context),
@@ -833,46 +841,31 @@ void main() {
       await tester.pumpWidget(bar(glass: true, controller: controller));
       expect(find.byType(TabBar), findsNothing);
 
+      // Apple 文字页签：选中 = 强调色 semibold（+ 滑动下划线），未选中 =
+      // secondaryLabel w500；选中态同时挂在语义上。
+      FontWeight? weightOf(String label) => tester
+          .renderObject<RenderParagraph>(find.text(label))
+          .text
+          .style
+          ?.fontWeight;
+
       // 点按 → controller。
       await tester.tap(find.text('Gamma'));
       await settle(tester);
       expect(controller.index, 2);
-      expect(
-        tester
-            .widget<GlassButton>(
-              find.ancestor(
-                of: find.text('Gamma'),
-                matching: find.byType(GlassButton),
-              ),
-            )
-            .style,
-        GlassButtonStyle.filled,
-      );
+      expect(weightOf('Gamma'), FontWeight.w600);
+      expect(weightOf('Alpha'), FontWeight.w500);
       // controller → 选中态。
       controller.animateTo(1);
       await settle(tester);
+      expect(weightOf('Beta'), FontWeight.w600);
+      expect(weightOf('Gamma'), FontWeight.w500);
+      final SemanticsHandle handle = tester.ensureSemantics();
       expect(
-        tester
-            .widget<GlassButton>(
-              find.ancestor(
-                of: find.text('Beta'),
-                matching: find.byType(GlassButton),
-              ),
-            )
-            .style,
-        GlassButtonStyle.filled,
+        tester.getSemantics(find.text('Beta')),
+        isSemantics(isSelected: true, isButton: true),
       );
-      expect(
-        tester
-            .widget<GlassButton>(
-              find.ancestor(
-                of: find.text('Gamma'),
-                matching: find.byType(GlassButton),
-              ),
-            )
-            .style,
-        GlassButtonStyle.transparent,
-      );
+      handle.dispose();
     });
 
     testWidgets('glass: keyboard focus + Enter selects a tab', (
@@ -884,23 +877,12 @@ void main() {
       );
       addTearDown(controller.dispose);
       await tester.pumpWidget(bar(glass: true, controller: controller));
-      final Iterable<Element> buttons = find.byType(GlassButton).evaluate();
-      // 第三个页签的焦点节点：从 GlassButton 子树里找可聚焦的 Focus。
-      final Element third = buttons.elementAt(2);
-      FocusNode? node;
-      void visit(Element e) {
-        final Widget w = e.widget;
-        if (node == null && w is Focus && w.focusNode != null) {
-          if (w.focusNode!.canRequestFocus && !w.focusNode!.skipTraversal) {
-            node = w.focusNode;
-          }
-        }
-        e.visitChildren(visit);
-      }
-
-      visit(third);
-      expect(node, isNotNull);
-      node!.requestFocus();
+      // 第三个页签的焦点节点：包住它文字的最近一个 Focus（页签自身的
+      // FocusableActionDetector），须是可 Tab 到达的停靠点。
+      final FocusNode node = Focus.of(tester.element(find.text('Gamma')));
+      expect(node.canRequestFocus, isTrue);
+      expect(node.skipTraversal, isFalse);
+      node.requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await settle(tester);

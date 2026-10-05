@@ -185,11 +185,21 @@ class _FakeRemoteRunner implements MangaOcrRemoteRunner {
   }) => throw UnimplementedError();
 }
 
+/// 测试宿主统一开「减少动态效果」：波浪进度 / 加载指示器停成静止形态。
+Widget _reduceMotion(BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: true),
+      child: child!,
+    );
+
 void main() {
   Widget wrap(Widget child) {
     return ProviderScope(
       child: TranslationProvider(
         child: MaterialApp(
+            // MD3 Expressive 波浪进度在下载中（不定态 / 0<value<1）持续推相位，
+            // pumpAndSettle 永远等不到静止；「减少动态效果」下退回静止直线，
+            // 下载行为不受影响。
+            builder: _reduceMotion,
             home: Scaffold(body: SingleChildScrollView(child: child))),
       ),
     );
@@ -448,6 +458,7 @@ void main() {
       container: container,
       child: TranslationProvider(
         child: MaterialApp(
+          builder: _reduceMotion,
           home: Scaffold(
             body: SingleChildScrollView(
               child: ValueListenableBuilder<bool>(

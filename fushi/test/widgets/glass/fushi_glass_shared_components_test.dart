@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
@@ -191,7 +192,12 @@ void main() {
     expect(find.byType(ChoiceChip), findsOneWidget);
     // MD3 进度是 M3 Expressive 波浪环（自绘）。
     expect(find.byType(FushiWavyCircularProgress), findsOneWidget);
-    expect(find.byType(PopupMenuButton<int>), findsOneWidget);
+    // 溢出菜单是 FushiPopupMenuButton（PopupMenuButton 子类，MD3 下走父类
+    // build 的 Material 按钮）。
+    expect(
+      find.byWidgetPredicate((Widget w) => w is PopupMenuButton<int>),
+      findsOneWidget,
+    );
   });
 
   testWidgets('② glass renders the liquid component family, no MD3 controls', (
@@ -203,22 +209,51 @@ void main() {
     expect(find.byType(GlassCard), findsNothing);
     expect(find.byType(GlassListTile), findsNothing);
     expect(find.byType(FushiAppleGroupSurface), findsWidgets);
-    expect(find.byType(FushiAppleRow), findsOneWidget);
+    // 卡片点击面 / 设置行 / 列表行都是 FushiAppleRow；列表项本身也在其中。
+    expect(find.byType(FushiAppleRow), findsWidgets);
+    expect(
+      find.ancestor(of: find.text('item'), matching: find.byType(FushiAppleRow)),
+      findsOneWidget,
+    );
     // 输入框与 chip 也是内容层实色控件（FushiTextFieldControl /
     // fushiAppleChip），不是玻璃。
     expect(find.byType(GlassChip), findsNothing);
     expect(find.byType(GlassContainer), findsWidgets);
     expect(find.byType(FushiAppleSwitch), findsWidgets);
     expect(find.byType(FushiAppleSlider), findsOneWidget);
-    expect(find.byType(FushiAppleSegmentedControl), findsOneWidget);
+    // 分段控件两处：adaptiveSegmentedButton 本身 + 选项短、放得下的设置
+    // 选择行（iOS 设置口径：短选项行内分段，长选项才是弹出菜单按钮）。
+    expect(find.byType(FushiAppleSegmentedControl), findsNWidgets(2));
     expect(find.byType(GlassStepper), findsOneWidget);
-    // 设置行的选择器是 macOS / iOS 弹出菜单按钮（当前值 + 上下箭头 → 玻璃
-    // 菜单），不再是 GlassPicker 玻璃字段。
-    expect(find.byType(GlassSettingsPopUpButton), findsOneWidget);
+    // 设置行的选择器是 Apple 分段控件 / 弹出菜单按钮（当前值 + 上下箭头 →
+    // 玻璃菜单），不再是 GlassPicker 玻璃字段。
+    expect(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('picker row'),
+          matching: find.byType(AdaptiveSettingsPickerRow<int>),
+        ),
+        matching: find.byType(AppleSettingsSegmentedControl),
+      ),
+      findsOneWidget,
+    );
     expect(find.byType(GlassPicker), findsNothing);
     // 确定进度是 Apple 细圆环（内容层，不是玻璃）。
     expect(find.byType(FushiAppleProgressRing), findsOneWidget);
-    expect(find.byType(GlassMenu), findsWidgets);
+    // 溢出菜单：FushiPopupMenuButton 的 Apple 分支是纯图标触发器（FushiIcon，
+    // 打开 showFushiMenu 的玻璃菜单路由），没有 Material IconButton。
+    final Finder overflow = find.byWidgetPredicate(
+      (Widget w) => w is FushiPopupMenuButton<int>,
+    );
+    expect(overflow, findsOneWidget);
+    expect(
+      find.descendant(of: overflow, matching: find.byType(FushiIcon)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: overflow, matching: find.byType(IconButton)),
+      findsNothing,
+    );
     expect(find.byType(GlassDivider), findsNothing);
     expect(find.byType(GlassButton), findsWidgets);
 
@@ -228,6 +263,7 @@ void main() {
     expect(find.byType(ChoiceChip), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.byType(PopupMenuButton<int>), findsNothing);
+    expect(find.byType(IconButton), findsNothing);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.byType(OutlinedButton), findsNothing);
     expect(find.byType(TextFormField), findsNothing);
@@ -449,10 +485,18 @@ void main() {
       return tapped;
     }
 
-    testWidgets('MD3 rail stays 80 wide whatever `extended` says', (
+    // MD3 Expressive：宽窗口是图标 + 文字横排的展开 rail（200），窄窗口收成
+    // 80 宽的收起 rail；与标题栏缩进用的 adaptiveNavRailWidthFor 同一口径。
+    testWidgets('MD3 rail: expanded 200 when extended, 80 when collapsed', (
       WidgetTester tester,
     ) async {
       await pumpRail(tester, glass: false, extended: true);
+      expect(
+        tester.getSize(find.byKey(fushiMaterialNavKey)).width,
+        kMaterialNavRailExpandedWidth,
+      );
+      expect(liquidWidgets(), findsNothing);
+      await pumpRail(tester, glass: false, extended: false);
       expect(
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
         kAdaptiveNavRailWidth,

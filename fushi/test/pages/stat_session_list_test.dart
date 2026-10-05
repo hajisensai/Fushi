@@ -138,7 +138,9 @@ void main() {
   });
 
   testWidgets('BUG-2417：长标题排到第二行而不是单行省略', (WidgetTester tester) async {
-    const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
+    // MD3 列表行重做（2026-10：行内缩 4 + 行首间距 16）后文本列比旧实现窄约
+    // 20dp；用一个在 400dp 下仍需两行、且两行装得下的长标题钉同一契约。
+    const String long = 'Re：从零开始的异世界生活 第七话 暗中行动する者たち';
     // 手机宽度：用户实报的截图就是这个宽度下的单行截断。
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;

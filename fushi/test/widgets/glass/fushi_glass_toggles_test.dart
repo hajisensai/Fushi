@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -624,20 +625,28 @@ void main() {
       ButtonSegment<String>(value: 'c', label: Text('Gamma')),
     ];
 
-    testWidgets('MD3 renders Material SegmentedButton', (
+    // MD3 = M3 Expressive 连接式按钮组（墨水屏才保留 Material 原件）。
+    testWidgets('MD3 renders the M3 Expressive connected button group', (
       WidgetTester tester,
     ) async {
+      final List<Set<String>> calls = <Set<String>>[];
       await pumpHost(
         tester,
         (_) => FushiSegmentedButton<String>(
           segments: segments,
           selected: const <String>{'a'},
-          onSelectionChanged: (_) {},
+          onSelectionChanged: calls.add,
         ),
         glass: false,
       );
-      expect(find.byType(SegmentedButton<String>), findsOneWidget);
+      expect(find.byType(FushiConnectedButtonGroup<String>), findsOneWidget);
       expect(find.byType(FushiAppleSegmentedControl), findsNothing);
+      expect(find.byType(SegmentedButton<String>), findsNothing);
+      await tester.tap(find.text('Beta'));
+      await tester.pump();
+      expect(calls, <Set<String>>[
+        <String>{'b'},
+      ]);
     });
 
     testWidgets('glass single select uses FushiAppleSegmentedControl', (

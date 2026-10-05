@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -510,7 +511,8 @@ void main() {
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
     expect(find.text(t.stat_goal_set), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    // 目标进度条走设计系统分派版（MD3 下是 Expressive 波浪条，不是原生控件）。
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
     // 点设定入口 → 对话框输入 1000 → 保存（_editDailyGoal 真实写回 +
     // setState 刷新，与阅读统计页同一持久化）。
@@ -533,7 +535,7 @@ void main() {
       find.text(t.stat_goal_progress(read: 800, goal: 1000)),
       findsOneWidget,
     );
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
   });
 
   testWidgets('点热力图某日弹当日明细 sheet：按类型分节列出条目', (WidgetTester tester) async {

@@ -464,7 +464,15 @@ void main() {
         1,
         reason: '书封面只能经 _bookCoverImage 淡入（eink 下它换成直出的 Image）',
       );
-      expect(src, contains('backgroundColor: eink\n'));
+      // 封面进度条的 eink 实心轨道收进共享的 CoverProgressStrip（书架 / 视频库
+      // 同用）：首页必须走它，组件里轨道在 eink 下换成页面底色。
+      expect(src, contains('CoverProgressStrip('));
+      expect(
+        RegExp(
+          r'class CoverProgressStrip[\s\S]*?backgroundColor: eink\s*\?\s*tokens\.surfaces\.page',
+        ).hasMatch(read('lib/src/utils/components/shelf_card_widgets.dart')),
+        isTrue,
+      );
     });
 
     test('学习热力图：eink 用尺寸而非 alpha 编码等级', () {
@@ -485,14 +493,24 @@ void main() {
       expect(src, contains('LibraryFilterChip('));
       expect(
         read('lib/src/pages/implementations/library_filter_dropdown.dart'),
-        contains('color: active && eink ? colors.onSurface : null'),
+        // eink 分支拆成独立的 _buildEink：激活态反色填充前景色。
+        allOf(
+          contains('if (eink) return _buildEink(context, colors);'),
+          contains('color: active ? colors.onSurface : null'),
+        ),
+      );
+      // 两条封面进度条收进共享 CoverProgressStrip（eink 实心页面底色轨道在组件
+      // 里，见上面首页那条的守卫）。
+      expect(
+        'CoverProgressStrip('.allMatches(src).length,
+        2,
+        reason: '横排卡与墙卡两条进度条都要换实心轨道',
       );
       expect(
         RegExp(
-          r'backgroundColor: isEinkTheme\(context\)\s*\?\s*Theme\.of\(context\)\.colorScheme\.surface',
-        ).allMatches(src).length,
-        2,
-        reason: '横排卡与墙卡两条进度条都要换实心轨道',
+          r'class CoverProgressStrip[\s\S]*?backgroundColor: eink\s*\?\s*tokens\.surfaces\.page',
+        ).hasMatch(read('lib/src/utils/components/shelf_card_widgets.dart')),
+        isTrue,
       );
       expect(
         RegExp(

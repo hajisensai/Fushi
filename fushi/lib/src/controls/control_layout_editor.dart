@@ -974,21 +974,24 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
         fill = style.error.withValues(alpha: 0.08);
         width = 1.8;
     }
-    Widget box = AnimatedContainer(
-      duration: style.duration(140),
-      decoration: BoxDecoration(color: fill, borderRadius: radius),
-      child: child,
+    // 结构恒定：CustomPaint 永远在，只换 painter。按 dash 有无增删这一层会让
+    // 拖动开始（idle → armed）时整棵区内子树重挂——源按钮的 Draggable 随之卸载，
+    // 它的 onDragEnd 不再回调（Draggable 只在 mounted 时调），编辑器卡在「拖动中」，
+    // 松手后的驳回原因永远不显示。
+    final Widget box = CustomPaint(
+      foregroundPainter: dash == null
+          ? null
+          : _DashedBorderPainter(
+              color: dash,
+              radius: radius,
+              strokeWidth: width,
+            ),
+      child: AnimatedContainer(
+        duration: style.duration(140),
+        decoration: BoxDecoration(color: fill, borderRadius: radius),
+        child: child,
+      ),
     );
-    if (dash != null) {
-      box = CustomPaint(
-        foregroundPainter: _DashedBorderPainter(
-          color: dash,
-          radius: radius,
-          strokeWidth: width,
-        ),
-        child: box,
-      );
-    }
     return AnimatedOpacity(
       duration: style.duration(140),
       opacity: state == _DropState.dimmed ? 0.38 : 1,
@@ -1291,31 +1294,39 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: SizedBox(
         height: 36,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(widget.iconOf(item), size: 18, color: style.label),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                widget.labelOf(item),
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: style.label,
+        // 托盘 Wrap 极窄时（320px 窄窗 × 界面缩放 2.0，胶囊只剩几十像素）名称可以
+        // 省略到 0，但「图标 + 间距 + 对勾」的固定宽度（18 + 6 + 4 + 14）放不下就
+        // 会横向溢出；此时只省掉对勾——「已放在栏里」仍由整颗胶囊淡化表达。
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool showUsedMark = used && constraints.maxWidth >= 42;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiIcon(widget.iconOf(item), size: 18, color: style.label),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    widget.labelOf(item),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: style.label,
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            if (used) ...<Widget>[
-              const SizedBox(width: 4),
-              Icon(
-                style.apple ? CupertinoIcons.checkmark_alt : Icons.check,
-                size: 14,
-                color: style.accent,
-              ),
-            ],
-          ],
+                if (showUsedMark) ...<Widget>[
+                  const SizedBox(width: 4),
+                  Icon(
+                    style.apple ? CupertinoIcons.checkmark_alt : Icons.check,
+                    size: 14,
+                    color: style.accent,
+                  ),
+                ],
+              ],
+            );
+          },
         ),
       ),
     );

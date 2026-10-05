@@ -184,7 +184,7 @@ TorrentSettingsSection()
     expect(
       _containsCode(
         moduleSettings,
-        'FushiPageHeader.customTitle(title: widget.navigation)',
+        'FushiPageHeader.customTitle(title: widget.navigation!)',
       ),
       isTrue,
       reason: '隐藏 Cupertino 外观也不能删掉模块分段导航',

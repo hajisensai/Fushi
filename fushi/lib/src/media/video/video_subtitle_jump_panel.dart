@@ -233,6 +233,16 @@ const List<double> _kFontScaleSteps = <double>[
 /// 的 `videoSubtitleListFontScaleIndex` 默认值一致。
 const int _kDefaultFontScaleIndex = 1;
 
+/// 头部五枚图标按钮（搜索 / 字号 ± / 自动滚动 / 关闭）的 MD3 外形：40×40 命中区、
+/// 不再外扩到 48。MD3 Expressive 的 XS 图标按钮默认把点按区补到 48，五枚就是
+/// 240 + 组间 8，面板最窄档（240，移动端 panelWidth 下限）的头部放不下、整行右溢；
+/// 40 与改版前 compact IconButton 的占位一致。玻璃设计系统不读这几项尺寸。
+const ButtonStyle _kHeaderIconButtonStyle = ButtonStyle(
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  minimumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
+  maximumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
+);
+
 /// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形 +
 /// 浮层锚点矩形。比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier
 /// 直接切换查词（BUG-874）。
@@ -1431,6 +1441,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       color: _searchOpen ? cs.primary : cs.onSurfaceVariant,
                       onPressed: () => _toggleSearch(),
                       visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
                     ),
                     FushiIconButtonControl(
                       tooltip: t.video_subtitle_list_font_smaller,
@@ -1438,6 +1449,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       color: _fontScaleIndex > 0 ? cs.onSurfaceVariant : cs.outline,
                       onPressed: _fontScaleIndex > 0 ? () => _stepFont(-1) : null,
                       visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
                     ),
                     FushiIconButtonControl(
                       tooltip: t.video_subtitle_list_font_larger,
@@ -1449,6 +1461,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                           ? () => _stepFont(1)
                           : null,
                       visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
                     ),
                     FushiIconButtonControl(
                       tooltip: t.video_subtitle_list_auto_scroll,
@@ -1461,6 +1474,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       color: _autoScroll ? cs.primary : cs.onSurfaceVariant,
                       onPressed: _toggleAutoScroll,
                       visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
                     ),
                   ],
                   <Widget>[
@@ -1475,6 +1489,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       color: cs.onSurfaceVariant,
                       onPressed: widget.onClose,
                       visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
                     ),
                   ],
                 ],

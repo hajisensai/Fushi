@@ -13,9 +13,9 @@ import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 import '../helpers/test_platform_services.dart';
-import '../helpers/glass_unwrap.dart';
 
 /// BUG-1006：番剧下载推送成功后的收尾在 embedded（下载页内联）模式下不得
 /// `Navigator.pop`——内联模式没有对话框可关，pop 会把宿主路由（下载 tab 页）
@@ -336,7 +336,9 @@ void main() {
     );
     expect(
       tester
-          .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),)
+          .widget<FushiCircularProgressIndicator>(
+            find.byType(FushiCircularProgressIndicator),
+          )
           .value,
       0.55,
       reason: '确定进度环同样只依赖进度',

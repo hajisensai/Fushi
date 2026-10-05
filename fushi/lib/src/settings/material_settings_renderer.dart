@@ -424,7 +424,7 @@ class Md3SettingsNavList extends StatelessWidget {
   }
 }
 
-/// MD3 导航抽屉式分类行：24 单色图标 + 单行标题（labelLarge），行高 48；选中
+/// MD3 导航抽屉式分类行：24 单色图标 + 标题（labelLarge，最多两行），行高至少 48；选中
 /// = secondaryContainer 全圆角胶囊、图标与文字 onSecondaryContainer；悬停 /
 /// 焦点 / 按下是 InkWell 状态层。墨水屏下选中填充塌缩成背景色，补 2px 实描边
 /// 作唯一选中信号。
@@ -478,8 +478,12 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
           onTap: widget.onTap,
           customBorder: const StadiumBorder(),
           canRequestFocus: !hasFocusRoot,
-          child: SizedBox(
-            height: 48,
+          // 行高至少 48 = 交互控件高度令牌（MD3 导航抽屉行的触控高度）；长分类
+          // 名折到第二行时行随内容长高，不裁字（TODO-1143）。
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: tokens.density.controlHeight,
+            ),
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: tokens.spacing.rowHorizontal,
@@ -497,7 +501,9 @@ class _Md3SettingsNavRowState extends State<Md3SettingsNavRow> {
                   Expanded(
                     child: Text(
                       widget.title,
-                      maxLines: 1,
+                      // TODO-1143：窄导航窗格里长 CJK 分类名（如「同步与备份」
+                      // 加后缀）放行第二行，不被单行省略号截断。
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.labelLarge?.copyWith(
                         color: selected

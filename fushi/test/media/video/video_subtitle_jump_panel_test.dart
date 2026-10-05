@@ -464,7 +464,7 @@ void main() {
         loadingHint: 'Loading subtitles...',
       )));
 
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
       expect(find.text('Loading subtitles...'), findsOneWidget);
       expect(find.text('No subtitles loaded'), findsNothing);
 

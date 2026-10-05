@@ -1,10 +1,10 @@
-import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
@@ -20,7 +20,8 @@ import '../helpers/glass_unwrap.dart';
 //   增强对比度是用户明确要求的可读性）；
 // - 功能层表面（对话框 / 底栏）只在 frosted 下才挂 BackdropFilter——off 时
 //   不得多出一层模糊合成（性能 + 与改造前像素一致）；
-// - 查词弹窗主题永远不带玻璃（它的底色必须不透明，见 popup_surface_opaque_guard）。
+// - 查词弹窗主题跟随玻璃材质，但弹窗底色恒不透明（见 popup_surface_opaque_guard），
+//   墨水屏下不带玻璃。
 void main() {
   ThemeData theme({
     FushiGlassMaterial glass = FushiGlassMaterial.off,
@@ -285,12 +286,40 @@ void main() {
     expect(tester.getRect(find.byKey(fushiMaterialNavKey)), solid);
   });
 
-  test('dictionary popup theme never opts into glass', () {
-    final String source = File(
-      'lib/src/pages/implementations/dictionary_popup_theme.dart',
-    ).readAsStringSync();
-    expect(source, contains('buildFushiThemeData('));
-    expect(source.contains('glass:'), isFalse);
+  // 重设计后查词弹窗主题跟随 app 的玻璃材质 / 设计系统（组件表面同源），但
+  // 弹窗自己的底色（fillColor）必须恒不透明，墨水屏下玻璃一律关掉。
+  test('dictionary popup fill stays opaque; e-ink strips glass', () {
+    DictionaryPopupTheme resolvePopup({
+      required bool eink,
+      bool glassDesign = false,
+    }) => resolveDictionaryPopupTheme(
+      eink: eink,
+      einkDark: false,
+      readerBackground: const Color(0xFFF7F1E3),
+      readerForeground: const Color(0xFF222222),
+      readerDark: false,
+      buildColorScheme: (Brightness b) =>
+          ColorScheme.fromSeed(seedColor: Colors.teal, brightness: b),
+      textTheme: Typography.material2021().black,
+      glassDesign: glassDesign,
+      glass: FushiGlassMaterial.frosted,
+    );
+
+    for (final bool glassDesign in <bool>[false, true]) {
+      final DictionaryPopupTheme glassy = resolvePopup(
+        eink: false,
+        glassDesign: glassDesign,
+      );
+      expect(glassy.fillColor.a, 1);
+    }
+    final DictionaryPopupTheme eink = resolvePopup(eink: true);
+    expect(eink.fillColor, Colors.white);
+    expect(
+      eink.theme.extension<FushiGlassTheme>()?.material ??
+          FushiGlassMaterial.off,
+      FushiGlassMaterial.off,
+    );
+    expect(eink.theme.dialogTheme.backgroundColor!.a, 1);
   });
   group('component-wide glass theme', () {
     double alphaOf(Color? c) => c!.a;
@@ -323,24 +352,37 @@ void main() {
       expect(t.floatingActionButtonTheme.backgroundColor, Colors.transparent);
     });
 
+    // 玻璃关 / 墨水屏：MD3 组件主题照常给出实色面板（重设计后不再留 null 交给
+    // Flutter 默认），但绝不出现玻璃的半透明染色——null 或不透明都算实心。
+    void expectSolid(Color? c) {
+      if (c != null) expect(c.a, 1);
+    }
+
+    void expectSolidComponentSurfaces(ThemeData t) {
+      final ColorScheme cs = t.colorScheme;
+      expect(t.dialogTheme.backgroundColor, cs.surfaceContainerHigh);
+      expect(t.popupMenuTheme.color, cs.surfaceContainer);
+      expect(
+        t.menuTheme.style!.backgroundColor!.resolve(<WidgetState>{}),
+        cs.surfaceContainer,
+      );
+      expectSolid(t.bottomSheetTheme.backgroundColor);
+      expectSolid(t.bottomSheetTheme.modalBackgroundColor);
+      expectSolid(t.snackBarTheme.backgroundColor);
+      expect(t.appBarTheme.backgroundColor, isNot(Colors.transparent));
+      expect(alphaOf(t.cardTheme.color), 1);
+    }
+
     test('glass off keeps the stock solid component theme', () {
       final ThemeData t = theme();
-      expect(t.dialogTheme.backgroundColor, isNull);
-      expect(t.popupMenuTheme.color, isNull);
-      expect(t.menuTheme.style, isNull);
-      expect(t.bottomSheetTheme.backgroundColor, isNull);
-      expect(t.snackBarTheme.backgroundColor, isNull);
-      expect(t.appBarTheme.backgroundColor, isNull);
-      expect(alphaOf(t.cardTheme.color), 1);
+      expectSolidComponentSurfaces(t);
       expect(t.floatingActionButtonTheme.backgroundColor,
           t.colorScheme.primaryContainer);
     });
 
     test('e-ink never tints component surfaces', () {
       final ThemeData t = theme(glass: FushiGlassMaterial.frosted, eink: true);
-      expect(t.dialogTheme.backgroundColor, isNull);
-      expect(t.appBarTheme.backgroundColor, isNull);
-      expect(alphaOf(t.cardTheme.color), 1);
+      expectSolidComponentSurfaces(t);
     });
 
     test('glass panels are translucent but the page stays solid', () {

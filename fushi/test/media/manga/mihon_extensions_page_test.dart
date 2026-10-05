@@ -133,7 +133,8 @@ void main() {
     expect(blocking.prepareCalls, 1);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
-    expect(find.byType(FushiLoadingView), findsOneWidget);
+    // 准备中的那一行显示行内小转圈（扩展行的 busy 槽）。
+    expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     await pumpStandalone(tester);

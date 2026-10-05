@@ -128,8 +128,12 @@ void main() {
     expect(find.byType(Switch), findsOneWidget);
   });
 
-  testWidgets('Material contained section title shares the row surface',
-      (tester) async {
+  // MD3 Expressive 刷新（Android 16 设置的分段分组列表）：每行各是一张分段卡，
+  // 分组标题（含 titlePlacement.inside）是组上方的组头，不再塞进行卡里；只有
+  // 可折叠分组的折叠头自己是第一张分段卡。
+  testWidgets(
+      'Material contained section title heads the segmented group above the '
+      'row cards', (tester) async {
     await tester.pumpWidget(
       _buildHarness(
         platform: TargetPlatform.android,
@@ -149,13 +153,15 @@ void main() {
       ),
     );
 
-    expect(find.byType(FushiCard), findsOneWidget);
+    expect(find.byType(FushiCard), findsOneWidget,
+        reason: 'one row → one segment card');
     expect(
       find.ancestor(
         of: find.text('Behavior'),
         matching: find.byType(FushiCard),
       ),
-      findsOneWidget,
+      findsNothing,
+      reason: 'the group title is a header above the cards',
     );
     expect(
       find.ancestor(
@@ -163,6 +169,11 @@ void main() {
         matching: find.byType(FushiCard),
       ),
       findsOneWidget,
+    );
+    expect(
+      tester.getRect(find.text('Behavior')).bottom,
+      lessThanOrEqualTo(tester.getRect(find.byType(FushiCard)).top),
+      reason: 'the title sits directly above the segmented group',
     );
   });
 
@@ -503,7 +514,10 @@ void main() {
           'settings rows must not throw RenderFlex overflow with CJK text at 2x',
     );
     expect(find.byType(Switch), findsOneWidget);
-    expect(find.byType(SegmentedButton<String>), findsOneWidget);
+    // 长 CJK 选项在 2x 下放不进行宽 55%：分段行按唯一判据
+    // settingsChoiceUsesSegments 退回菜单行（当前值写进说明行），不溢出。
+    expect(find.byType(SettingsChoiceMenuRow), findsOneWidget);
+    expect(find.byType(SegmentedButton<String>), findsNothing);
     expect(find.byType(Slider), findsOneWidget);
     expect(find.byType(DropdownMenu<int>), findsOneWidget);
   });

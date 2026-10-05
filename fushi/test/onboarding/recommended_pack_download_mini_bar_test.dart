@@ -65,7 +65,7 @@ void main() {
 
     expect(find.byType(Material), findsWidgets);
     expect(find.text(t.onboarding_pack_status_downloading), findsNothing);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
   });
 
   testWidgets('下载中：进度条 + 已下字节 + 取消', (WidgetTester tester) async {
@@ -80,7 +80,7 @@ void main() {
 
     expect(find.text(t.onboarding_pack_status_downloading), findsOneWidget);
     expect(find.text('3.0 GB (34%)'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
     expect(find.text(t.dialog_cancel), findsOneWidget);
   });
 
@@ -97,7 +97,7 @@ void main() {
     expect(find.text('3.0 GB'), findsOneWidget);
     expect(find.text(t.onboarding_pack_download_resume), findsOneWidget);
     expect(
-      find.byType(LinearProgressIndicator),
+      find.byType(FushiLinearProgressIndicator),
       findsNothing,
       reason: '没在下就不该画一条不动的进度条',
     );
