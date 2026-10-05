@@ -4,14 +4,19 @@
 /// 设置 / 有声书同一容器，用户 2026-09-13 拍板：不再弹居中对话框）。自上而下：
 ///
 ///  1. 标题「书内统计」+ 书名；
-///  2. 大号实时秒表 + 计时态点 + 暂停 / 继续键（[onTogglePause]，与状态行计时块
-///     同一入口 `_toggleStudyClockManualPause`）；本次字数 / 字时；
-///  3. 阅读位置：本章 / 全书 `已读 / 总字数` + 进度条 + 百分比（读口
+///  2. 「本次阅读」hero 卡（2026-10 M3 Expressive 重设计）：大号实时秒表 + 计时态 +
+///     暂停 / 继续键（[onTogglePause]，与状态行计时块同一入口
+///     `_toggleStudyClockManualPause`）；本次字数 / 字时；
+///  3. 阅读位置卡：本章 / 全书 `已读 / 总字数` + 百分比 + 进度条（读口
 ///     [ReaderStatisticsSheet.progress]，与状态行同源）；
-///  4. 今天（本书）：时长 / 字数 / 查词 / 制卡；
-///  5. 本书累计：时长 / 字数；
-///  6. 预计读完：本章还需 / 全书还需（剩余字数 ÷ 速度，[readerFinishCph]）；
-///  7. 「打开完整记录 →」跳统计中心阅读 tab。
+///  4. 今天（本书）指标卡：时长 / 字数 / 查词 / 制卡；
+///  5. 近 7 天迷你柱状图（本书每日字数，复用统计中心 [StatBarChartPainter]）；
+///  6. 本书累计指标卡：时长 / 字数；
+///  7. 预计读完指标卡：本章还需 / 全书还需（剩余字数 ÷ 速度，[readerFinishCph]）；
+///  8. 「打开完整记录 →」跳统计中心阅读 tab。
+///
+/// 指标卡网格按可用宽度自适应列数（[readerStatMetricColumns]：右侧栏 400 / 窄屏
+/// 底板 2 列，宽底板 4 列）；各块在 [FushiEntranceScope] 内错峰进场。
 ///
 /// 账本只在 `StudyClock` 一本，本层不持有任何会话累计副本——会话读数是每秒采样
 /// 的函数（同底部状态行）。今日 / 累计按**本书**身份从统一事实面 `loadStatFacts`
@@ -28,20 +33,29 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 
+import 'package:fushi/src/pages/implementations/stat_charts.dart'
+    show StatBarChartPainter, StatDayData;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
-    show formatStatTime;
+    show StatChartEntrance, formatStatTime;
 import 'package:fushi/src/pages/implementations/stat_trends.dart'
     show computeCph, kMinCphSampleMs;
-import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/reader_status_footer.dart'
     show readerProgressRatio, readingCharsPerHour;
 import 'package:fushi_engine/stats/stat_facts.dart'
     show StatFact, statFactBelongsToBook;
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
 
-/// 本书的今日 / 累计阅读量（字数 + 毫秒）+ 今日查词 / 制卡数。
+/// 本书某个统计日的阅读量（迷你柱状图的一根柱子）。
+typedef ReaderBookDayStat = ({String dateKey, int chars, int ms});
+
+/// 本书的今日 / 累计阅读量（字数 + 毫秒）+ 今日查词 / 制卡数 + 近 7 天逐日序列。
+///
+/// [last7Days] 恰 7 项、按日期升序、末项是今天（[StatWindow.lastDayKeys]），没读
+/// 的日子补 0——图表横轴不会因为断读而少柱。空态（[kEmptyReaderBookStatTotals]）
+/// 为空表，表示「还没加载」。
 typedef ReaderBookStatTotals = ({
   int todayChars,
   int todayMs,
@@ -49,6 +63,7 @@ typedef ReaderBookStatTotals = ({
   int todayCards,
   int allChars,
   int allMs,
+  List<ReaderBookDayStat> last7Days,
 });
 
 const ReaderBookStatTotals kEmptyReaderBookStatTotals = (
@@ -58,6 +73,7 @@ const ReaderBookStatTotals kEmptyReaderBookStatTotals = (
   todayCards: 0,
   allChars: 0,
   allMs: 0,
+  last7Days: <ReaderBookDayStat>[],
 );
 
 /// 阅读位置读口：本章 / 全书的已读与总字数（任一未知为 null）。
@@ -86,6 +102,13 @@ ReaderBookStatTotals summarizeReaderBookStats(
   int todayMs = 0;
   int allChars = 0;
   int allMs = 0;
+  // 近 7 天逐日累加：与「今日」同一个 [StatWindow]（同一锚时刻、同一统计日边界），
+  // 跨午夜打开侧栏时柱子与今日卡不会落在两个时刻上（BUG-2219 同款纪律）。
+  final List<String> weekKeys = window.lastDayKeys(7);
+  final Map<String, ({int chars, int ms})> week =
+      <String, ({int chars, int ms})>{
+    for (final String key in weekKeys) key: (chars: 0, ms: 0),
+  };
   for (final StatFact f in dailyBooks) {
     if (!statFactBelongsToBook(f, bookKey: bookKey, title: title)) continue;
     allChars += f.chars;
@@ -93,6 +116,10 @@ ReaderBookStatTotals summarizeReaderBookStats(
     if (window.isToday(f.dateKey)) {
       todayChars += f.chars;
       todayMs += f.ms;
+    }
+    final ({int chars, int ms})? day = week[f.dateKey];
+    if (day != null) {
+      week[f.dateKey] = (chars: day.chars + f.chars, ms: day.ms + f.ms);
     }
   }
   int todayLookups = 0;
@@ -112,6 +139,10 @@ ReaderBookStatTotals summarizeReaderBookStats(
     todayCards: todayCards,
     allChars: allChars,
     allMs: allMs,
+    last7Days: List<ReaderBookDayStat>.unmodifiable(<ReaderBookDayStat>[
+      for (final String key in weekKeys)
+        (dateKey: key, chars: week[key]!.chars, ms: week[key]!.ms),
+    ]),
   );
 }
 
@@ -267,6 +298,113 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
     final TextStyle muted = theme.textTheme.bodyMedium!.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
+    final double gap = tokens.spacing.gap;
+    // 每块内容是一个错峰进场项：侧栏滑入的同时卡片自上而下依次浮起。
+    final List<Widget> blocks = <Widget>[
+      _SessionHero(session: session, onTogglePause: widget.onTogglePause),
+      _StatCard(
+        title: t.reader_stats_position,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _PositionRow(
+              label: t.reader_stats_position_chapter,
+              current: pos.chapterCurrent,
+              total: pos.chapterTotal,
+              keyPrefix: 'chapter',
+            ),
+            SizedBox(height: gap + gap / 2),
+            _PositionRow(
+              label: t.reader_stats_position_book,
+              current: pos.bookCurrent,
+              total: pos.bookTotal,
+              keyPrefix: 'book',
+            ),
+          ],
+        ),
+      ),
+      _MetricSection(
+        key: const ValueKey<String>('fushi_reader_stats_today'),
+        title: t.stat_today,
+        metrics: <_Metric>[
+          (
+            icon: Icons.schedule_outlined,
+            label: t.stat_metric_time,
+            value: formatStatTime(book.todayMs),
+            key: 'fushi_reader_stats_today_time',
+          ),
+          (
+            icon: Icons.notes_outlined,
+            label: t.stat_metric_chars,
+            value: formatGroupedInt(book.todayChars),
+            key: 'fushi_reader_stats_today_chars',
+          ),
+          (
+            icon: Icons.manage_search_outlined,
+            label: t.stat_lookup,
+            value: '${book.todayLookups}',
+            key: 'fushi_reader_stats_today_lookups',
+          ),
+          (
+            icon: Icons.style_outlined,
+            label: t.stat_mined,
+            value: '${book.todayCards}',
+            key: 'fushi_reader_stats_today_cards',
+          ),
+        ],
+      ),
+      _StatCard(
+        title: t.reader_stats_last_7_days,
+        child: _WeekChart(days: book.last7Days),
+      ),
+      _MetricSection(
+        key: const ValueKey<String>('fushi_reader_stats_all'),
+        title: t.reader_stats_book_total,
+        metrics: <_Metric>[
+          (
+            icon: Icons.schedule_outlined,
+            label: t.stat_metric_time,
+            value: formatStatTime(book.allMs),
+            key: 'fushi_reader_stats_all_time',
+          ),
+          (
+            icon: Icons.notes_outlined,
+            label: t.stat_metric_chars,
+            value: formatGroupedInt(book.allChars),
+            key: 'fushi_reader_stats_all_chars',
+          ),
+        ],
+      ),
+      _MetricSection(
+        title: t.reader_stats_time_to_finish,
+        metrics: <_Metric>[
+          (
+            icon: Icons.bookmark_outline,
+            label: t.reader_stats_remaining_chapter,
+            value: chapterMs == null ? '—' : formatStatTime(chapterMs),
+            key: 'fushi_reader_stats_finish_chapter',
+          ),
+          (
+            icon: Icons.menu_book_outlined,
+            label: t.reader_stats_remaining_book,
+            value: bookMs == null ? '—' : formatStatTime(bookMs),
+            key: 'fushi_reader_stats_finish_book',
+          ),
+        ],
+      ),
+      Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: FushiPressScale(
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('fushi_reader_stats_full'),
+            onPressed: widget.onOpenFullRecords,
+            icon: const FushiIcon(Icons.chevron_right, size: 18),
+            iconAlignment: IconAlignment.end,
+            label: Text(t.reader_stats_full_records_open),
+          ),
+        ),
+      ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -307,91 +445,18 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                _SessionClock(
-                  session: session,
-                  onTogglePause: widget.onTogglePause,
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                _InlineMetrics(
-                  cells: <String>[
-                    '${t.reader_stats_session}  '
-                        '${t.stat_format_chars(n: formatGroupedInt(session.chars))}',
-                    t.reader_stats_chars_per_hour(
-                      n: formatGroupedInt(
-                        readingCharsPerHour(
-                          chars: session.chars,
-                          durationMs: session.durationMs,
-                        ),
-                      ),
-                    ),
+          child: FushiEntranceScope(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (int i = 0; i < blocks.length; i++) ...<Widget>[
+                    if (i > 0) SizedBox(height: gap + gap / 2),
+                    FushiStaggeredEntrance(index: i, child: blocks[i]),
                   ],
-                ),
-                const _Rule(),
-                ReaderSideSheetSectionLabel(t.reader_stats_position),
-                _PositionRow(
-                  label: t.reader_stats_position_chapter,
-                  current: pos.chapterCurrent,
-                  total: pos.chapterTotal,
-                  keyPrefix: 'chapter',
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                _PositionRow(
-                  label: t.reader_stats_position_book,
-                  current: pos.bookCurrent,
-                  total: pos.bookTotal,
-                  keyPrefix: 'book',
-                ),
-                const _Rule(),
-                ReaderSideSheetSectionLabel(t.stat_today),
-                _InlineMetrics(
-                  key: const ValueKey<String>('fushi_reader_stats_today'),
-                  cells: <String>[
-                    formatStatTime(book.todayMs),
-                    t.stat_format_chars(n: formatGroupedInt(book.todayChars)),
-                    t.reader_stats_lookups(n: '${book.todayLookups}'),
-                    t.reader_stats_cards(n: '${book.todayCards}'),
-                  ],
-                ),
-                const _Rule(),
-                ReaderSideSheetSectionLabel(t.reader_stats_book_total),
-                _InlineMetrics(
-                  key: const ValueKey<String>('fushi_reader_stats_all'),
-                  cells: <String>[
-                    formatStatTime(book.allMs),
-                    t.stat_format_chars(n: formatGroupedInt(book.allChars)),
-                  ],
-                ),
-                const _Rule(),
-                ReaderSideSheetSectionLabel(t.reader_stats_time_to_finish),
-                _LabelValueRow(
-                  label: t.reader_stats_remaining_chapter,
-                  value: chapterMs == null ? '—' : formatStatTime(chapterMs),
-                  valueKey: 'fushi_reader_stats_finish_chapter',
-                ),
-                SizedBox(height: tokens.spacing.gap / 2),
-                _LabelValueRow(
-                  label: t.reader_stats_remaining_book,
-                  value: bookMs == null ? '—' : formatStatTime(bookMs),
-                  valueKey: 'fushi_reader_stats_finish_book',
-                ),
-                SizedBox(height: tokens.spacing.gap * 2),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: FushiTextButton.icon(
-                    key: const ValueKey<String>('fushi_reader_stats_full'),
-                    onPressed: widget.onOpenFullRecords,
-                    icon: const FushiIcon(Icons.chevron_right, size: 18),
-                    iconAlignment: IconAlignment.end,
-                    label: Text(t.reader_stats_full_records_open),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -400,9 +465,69 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
   }
 }
 
-/// 大号实时秒表 + 计时态 + 暂停 / 继续键。
-class _SessionClock extends StatelessWidget {
-  const _SessionClock({required this.session, required this.onTogglePause});
+/// 卡片面色：MD3 = surfaceContainer（侧栏底 surfaceContainerLow 之上高一级），
+/// Apple = 分组卡（secondaryGroupedBackground，侧栏底是 groupedBackground）。
+Color _cardColor(BuildContext context) => isGlassDesign(context)
+    ? appleColorsOf(context).secondaryGroupedBackground
+    : Theme.of(context).colorScheme.surfaceContainer;
+
+/// 带小标题的统计卡（M3 Expressive 大圆角容器）。
+class _StatCard extends StatelessWidget {
+  const _StatCard({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _cardColor(context),
+        borderRadius: tokens.radii.groupRadius,
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _SectionHeading(title),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color color = isGlassDesign(context)
+        ? appleColorsOf(context).secondaryLabel
+        : theme.colorScheme.primary;
+    return Text(
+      label,
+      style: theme.textTheme.labelLarge?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+/// 本次阅读 hero：大号实时秒表 + 计时态 + 暂停 / 继续，下挂本次字数 / 字时。
+///
+/// MD3 用 primaryContainer 实色面托起（Expressive 的「主角卡」），Apple 是分组卡
+/// + 强调色读数。颜色全部取当前主题，歌词模式注入的封面取色主题照样生效。
+class _SessionHero extends StatelessWidget {
+  const _SessionHero({required this.session, required this.onTogglePause});
 
   final StudySessionTotals session;
   final VoidCallback onTogglePause;
@@ -410,112 +535,365 @@ class _SessionClock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color dot =
-        session.active ? theme.colorScheme.primary : theme.colorScheme.outline;
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.end,
-            spacing: 12,
-            children: <Widget>[
-              Text(
-                formatStatClock(session.durationMs),
-                key: const ValueKey<String>('fushi_reader_stats_clock'),
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                  fontWeight: FontWeight.w600,
-                  height: 1.0,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: dot,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const SizedBox(width: 8, height: 8),
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool glass = isGlassDesign(context);
+    final ColorScheme cs = theme.colorScheme;
+    final Color surface = glass
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : cs.primaryContainer;
+    final Color onSurface =
+        glass ? appleColorsOf(context).label : cs.onPrimaryContainer;
+    final Color subtle = glass
+        ? appleColorsOf(context).secondaryLabel
+        : cs.onPrimaryContainer.withValues(alpha: 0.72);
+    final Color dot = session.active
+        ? (glass ? appleColorsOf(context).accent : cs.primary)
+        : subtle;
+    final Duration fade = fushiMotionDuration(context, FushiMotion.short);
+    return DecoratedBox(
+      key: const ValueKey<String>('fushi_reader_stats_hero'),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: tokens.radii.groupRadius,
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    t.reader_stats_session_title,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: subtle,
+                      fontWeight: FontWeight.w600,
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      session.active
-                          ? t.reader_stats_clock_running
-                          : t.reader_stats_clock_paused,
-                      key: const ValueKey<String>('fushi_reader_stats_state'),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ),
-        Semantics(
-          identifier: 'hibiki.reader.stats.toggle_pause',
-          child: FushiIconButtonControl.outlined(
-            key: const ValueKey<String>('fushi_reader_stats_pause'),
-            icon: FushiIcon(
-              session.active ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                AnimatedContainer(
+                  duration: fade,
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 6),
+                AnimatedSwitcher(
+                  duration: fade,
+                  child: Text(
+                    session.active
+                        ? t.reader_stats_clock_running
+                        : t.reader_stats_clock_paused,
+                    key: ValueKey<String>(
+                      'fushi_reader_stats_state_${session.active}',
+                    ),
+                    style: theme.textTheme.labelLarge?.copyWith(color: subtle),
+                  ),
+                ),
+              ],
             ),
-            tooltip: session.active
-                ? t.reader_stats_clock_pause
-                : t.reader_stats_clock_resume,
-            onPressed: onTogglePause,
-          ),
+            SizedBox(height: tokens.spacing.gap),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(
+                      formatStatClock(session.durationMs),
+                      key: const ValueKey<String>('fushi_reader_stats_clock'),
+                      style: theme.textTheme.displayMedium?.copyWith(
+                        color: onSurface,
+                        fontFeatures: const <FontFeature>[
+                          FontFeature.tabularFigures(),
+                        ],
+                        fontWeight: FontWeight.w600,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                Semantics(
+                  identifier: 'hibiki.reader.stats.toggle_pause',
+                  child: FushiPressScale(
+                    child: FushiIconButtonControl.filled(
+                      key: const ValueKey<String>('fushi_reader_stats_pause'),
+                      icon: FushiIcon(
+                        session.active
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                      tooltip: session.active
+                          ? t.reader_stats_clock_pause
+                          : t.reader_stats_clock_resume,
+                      onPressed: onTogglePause,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+            Wrap(
+              spacing: tokens.spacing.card,
+              runSpacing: tokens.spacing.gap / 2,
+              children: <Widget>[
+                _HeroFigure(
+                  key: const ValueKey<String>(
+                    'fushi_reader_stats_session_chars',
+                  ),
+                  icon: Icons.notes_outlined,
+                  text: t.stat_format_chars(
+                    n: formatGroupedInt(session.chars),
+                  ),
+                  color: onSurface,
+                ),
+                _HeroFigure(
+                  icon: Icons.speed_outlined,
+                  text: t.reader_stats_chars_per_hour(
+                    n: formatGroupedInt(
+                      readingCharsPerHour(
+                        chars: session.chars,
+                        durationMs: session.durationMs,
+                      ),
+                    ),
+                  ),
+                  color: onSurface,
+                ),
+              ],
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-/// 一行内以细竖线分隔的几段读数（`24 分钟 | 12,640 字 | 查词 83 | 制卡 12`）。
-/// 段之间可换行：窄侧栏里四段放不下时自然折到第二行，不省略任何数字。
-class _InlineMetrics extends StatelessWidget {
-  const _InlineMetrics({super.key, required this.cells});
+class _HeroFigure extends StatelessWidget {
+  const _HeroFigure({
+    super.key,
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
 
-  final List<String> cells;
+  final IconData icon;
+  final String text;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final TextStyle style = theme.textTheme.titleMedium!.copyWith(
-      fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-    );
-    return Wrap(
-      spacing: 0,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        for (int i = 0; i < cells.length; i++)
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (i > 0)
-                Container(
-                  width: 1,
-                  height: 16,
-                  margin: const EdgeInsets.symmetric(horizontal: 12),
-                  color: theme.colorScheme.outlineVariant,
-                ),
-              // Row 给非弹性子项的是无界宽：长文案必须包 Flexible 才会折行而不是
-              // 撑出行外（Wrap 只负责段与段之间换行）。
-              Flexible(child: Text(cells[i], style: style)),
-            ],
+        FushiIcon(icon, size: 18, color: color.withValues(alpha: 0.8)),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            text,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: color,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
           ),
+        ),
       ],
     );
   }
 }
 
-/// 阅读位置一行：`本章  1,842 / 4,930 字` + 进度条 + `37%`。
+/// 一个指标：图标 + 读数 + 标签，[key] 挂在读数 Text 上（测试 / 探针用）。
+typedef _Metric = ({IconData icon, String label, String value, String key});
+
+/// 指标卡网格的列数（纯函数，便于测试）：宽 ≥ 520 且指标多于 2 个时 4 列，否则
+/// 2 列。右侧栏（400）与窄屏底板（360~520）都是 2 列；宽底板 4 列一行排下。
+int readerStatMetricColumns(double width, int count) =>
+    width >= 520 && count > 2 ? 4 : 2;
+
+/// 指标卡网格：按可用宽自适应列数（[readerStatMetricColumns]），卡片等宽、行内
+/// 等高（[IntrinsicHeight]），读数长到放不下时缩字而不截断。
+class _MetricSection extends StatelessWidget {
+  const _MetricSection({super.key, required this.title, required this.metrics});
+
+  final String title;
+  final List<_Metric> metrics;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double gap = tokens.spacing.gap;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsetsDirectional.only(start: 4, bottom: 8),
+          child: _SectionHeading(title),
+        ),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final int columns = readerStatMetricColumns(
+              constraints.maxWidth,
+              metrics.length,
+            );
+            final List<Widget> rows = <Widget>[];
+            for (int start = 0; start < metrics.length; start += columns) {
+              final int end = (start + columns).clamp(0, metrics.length);
+              rows.add(
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      for (int i = start; i < start + columns; i++) ...<Widget>[
+                        if (i > start) SizedBox(width: gap),
+                        Expanded(
+                          child: i < end
+                              ? _MetricTile(metric: metrics[i])
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (int r = 0; r < rows.length; r++) ...<Widget>[
+                  if (r > 0) SizedBox(height: gap),
+                  rows[r],
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _MetricTile extends StatelessWidget {
+  const _MetricTile({required this.metric});
+
+  final _Metric metric;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool glass = isGlassDesign(context);
+    final Color accent =
+        glass ? appleColorsOf(context).accent : theme.colorScheme.primary;
+    final Color label = glass
+        ? appleColorsOf(context).secondaryLabel
+        : theme.colorScheme.onSurfaceVariant;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _cardColor(context),
+        borderRadius: tokens.radii.cardRadius,
+      ),
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(metric.icon, size: 18, color: accent),
+            SizedBox(height: tokens.spacing.gap),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerStart,
+              child: Text(
+                metric.value,
+                key: ValueKey<String>(metric.key),
+                maxLines: 1,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              metric.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(color: label),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 近 7 天每日字数迷你柱状图：复用统计中心的 [StatBarChartPainter]（同一纵轴
+/// 刻度 / 横轴标签口径）与 [StatChartEntrance]（柱高进场，减弱动态效果时直接到位）。
+class _WeekChart extends StatelessWidget {
+  const _WeekChart({required this.days});
+
+  final List<ReaderBookDayStat> days;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool glass = isGlassDesign(context);
+    final bool empty = days.every((ReaderBookDayStat d) => d.chars <= 0);
+    if (empty) {
+      return SizedBox(
+        height: 48,
+        child: Center(
+          child: Text(
+            t.stat_no_data,
+            key: const ValueKey<String>('fushi_reader_stats_week_empty'),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+    final List<StatDayData> data = <StatDayData>[
+      for (final ReaderBookDayStat d in days)
+        StatDayData(dateKey: d.dateKey)
+          ..chars = d.chars
+          ..ms = d.ms,
+    ];
+    final TextStyle labelStyle = theme.textTheme.labelSmall!.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    return SizedBox(
+      key: const ValueKey<String>('fushi_reader_stats_week_chart'),
+      height: 128,
+      child: StatChartEntrance(
+        replayKey: Object.hashAll(days.map((ReaderBookDayStat d) => d.chars)),
+        builder: (BuildContext context, double progress) => CustomPaint(
+          size: Size.infinite,
+          painter: StatBarChartPainter(
+            data: data,
+            progress: progress,
+            labelEvery: 2,
+            barColor: glass
+                ? appleColorsOf(context).accent
+                : theme.colorScheme.primary,
+            barRadius: const Radius.circular(6),
+            labelColor: theme.colorScheme.onSurfaceVariant,
+            labelStyle: labelStyle,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 阅读位置一行：`本章  1,842 / 4,930 字   37%` + Expressive 进度条。
 class _PositionRow extends StatelessWidget {
   const _PositionRow({
     required this.label,
@@ -556,98 +934,33 @@ class _PositionRow extends StatelessWidget {
                       ),
                 key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_text'),
                 style: valueStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              ratio == null ? '—' : '${(ratio * 100).round()}%',
+              key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_pct'),
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                fontFeatures: const <FontFeature>[
+                  FontFeature.tabularFigures(),
+                ],
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: FushiLinearProgressIndicator(
-                  key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_bar'),
-                  value: ratio ?? 0,
-                  minHeight: 6,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 44,
-              child: Text(
-                ratio == null ? '—' : '${(ratio * 100).round()}%',
-                key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_pct'),
-                style: valueStyle,
-                textAlign: TextAlign.end,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _LabelValueRow extends StatelessWidget {
-  const _LabelValueRow({
-    required this.label,
-    required this.value,
-    required this.valueKey,
-  });
-
-  final String label;
-  final String value;
-  final String valueKey;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Row(
-      children: <Widget>[
-        SizedBox(
-          width: 88,
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium!.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Container(
-          width: 1,
-          height: 16,
-          margin: const EdgeInsets.symmetric(horizontal: 12),
-          color: theme.colorScheme.outlineVariant,
-        ),
-        Expanded(
-          child: Text(
-            value,
-            key: ValueKey<String>(valueKey),
-            style: theme.textTheme.titleMedium!.copyWith(
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-            ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: FushiLinearProgressIndicator(
+            key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_bar'),
+            value: ratio ?? 0,
+            minHeight: 8,
+            backgroundColor: theme.colorScheme.surfaceContainerHighest,
           ),
         ),
       ],
-    );
-  }
-}
-
-class _Rule extends StatelessWidget {
-  const _Rule();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16),
-      child: FushiDividerControl(
-        height: 1,
-        thickness: 1,
-        color: Theme.of(context).colorScheme.outlineVariant,
-      ),
     );
   }
 }
