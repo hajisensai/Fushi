@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
@@ -40,6 +42,8 @@ import 'package:fushi/src/pages/implementations/video_download_subscriptions_pan
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
@@ -174,6 +178,28 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 悬浮按钮组胶囊画出（与库页壳 [MediaLibraryShell] 同构）。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
+  /// 「下载执行设备」指向的已配对主机名；null = 本机（任务汇总 hero 的设备 chip）。
+  String? _executionDeviceLabel;
+
+  /// 按偏好解析执行设备的显示名：与 [resolveDownloadExecution] 同一判据——偏好
+  /// 指向的主机已不在配对清单里就算本机（那边会退回本机下载）。只读名字，不探测。
+  Future<void> _refreshExecutionDevice() async {
+    final AppModel appModel = ref.read(appProvider);
+    final String url = appModel.prefsRepo.downloadExecutionHostUrl;
+    String? label;
+    if (url.isNotEmpty) {
+      final FushiClientUrl? paired = interconnectPeerRepresentativeOf(
+        await SyncRepository(appModel.database).getFushiClientUrls(),
+        url,
+      );
+      if (paired != null) {
+        label = paired.deviceName ?? Uri.tryParse(url)?.host ?? url;
+      }
+    }
+    if (!mounted || label == _executionDeviceLabel) return;
+    setState(() => _executionDeviceLabel = label);
+  }
+
   /// 头部（一级页签行 + 各页签的二级页签行）随滚动收放的状态：与四个库页
   /// 同一套规则（下滚收起、上滚弹回、只认主滚动区、平滑滚轮拉回不算）。头部
   /// 叠在正文上，收放不改正文视口（BUG-2975）。
@@ -189,6 +215,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   @override
   void initState() {
     super.initState();
+    unawaited(_refreshExecutionDevice());
     // 初始域 = 第一个可见域，不再硬编码 books：books 模块关掉时旧实现会停在一个
     // 已被过滤掉的域上（分段条选中值不在选项里 → 分段控件直接 assert，发现页也
     // 会挂在一个用户已关掉的模块上）。四个域全关时保持字段原值，此时
@@ -616,13 +643,15 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   /// 下载设置（原「设置」页签）：push 一页，入口在「下载」页签的页头齿轮与番剧
   /// 下载对话框「去设置」。
-  void _openDownloadSettings() {
-    Navigator.of(context).push(
+  Future<void> _openDownloadSettings() async {
+    await Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => const BrowseDownloadSettingsPage(),
       ),
     );
+    // 执行设备可能在设置页里改过：回来刷新汇总 hero 的设备 chip。
+    if (mounted) await _refreshExecutionDevice();
   }
 
   /// 统一门头：与四个库页（[MediaLibraryShell]）同一套 M3E 浮动工具栏行
@@ -725,6 +754,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       focusIdPrefix: 'browse-downloads-section',
       onEdgeOverscroll: (int delta) =>
           _handOffFrom(BrowseTab.downloads, delta),
+      // 任务 / 订阅两页的主滚动视图自己在顶部为浮动头部占位（内容滚到头部之下）。
+      pageHandlesInset: true,
       pageBuilder: (BrowseDownloadsSection section) => switch (section) {
         BrowseDownloadsSection.tasks => _buildTasks(),
         BrowseDownloadsSection.subscriptions =>
@@ -736,28 +767,24 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   Widget _buildTasks() {
     // 有声书「转录后入库」任务包在最外层：它的条目经闭包并进下面统一列表的
     // additionalTasks，与各下载来源并列排序/筛选。
-    final Widget tasks = AudiobookTranscribeTasksSection(
-      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
-          _buildTaskSources(transcribe),
-    );
     // BUG-2950：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
-    // 顶部说明原因；无问题时横幅零高度，任务列表布局不变。
-    return Column(
-      children: <Widget>[
-        ValueListenableBuilder<TorrentNetworkIssue>(
-          valueListenable: ref.read(appProvider).torrentNetworkIssue,
-          builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
-              TorrentNetworkIssueBanner(
-            issue: issue,
-            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          ),
-        ),
-        Expanded(child: tasks),
-      ],
+    // 顶部说明原因；无问题时横幅零高度。横幅作为任务列表的顶部一块随列表滚动
+    // （列表自己在最上方为浮动头部占位，横幅不会被头部盖住）。
+    final Widget banner = ValueListenableBuilder<TorrentNetworkIssue>(
+      valueListenable: ref.read(appProvider).torrentNetworkIssue,
+      builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
+          TorrentNetworkIssueBanner(
+        issue: issue,
+        margin: const EdgeInsets.only(top: 12),
+      ),
+    );
+    return AudiobookTranscribeTasksSection(
+      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
+          _buildTaskSources(transcribe, banner),
     );
   }
 
-  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe) {
+  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe, Widget banner) {
     return AnimeDownloadDialog(
                         embedded: true,
                         tasksOnly: true,
@@ -798,6 +825,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                 ...transcribe,
                               ],
                               database: ref.read(appProvider).database,
+                              header: banner,
+                              onAddTask: _openManualTaskDialog,
+                              executionDeviceLabel: _executionDeviceLabel,
+                              onOpenExecutionSettings: _openDownloadSettings,
                               metricsLoader: ref
                                   .read(appProvider)
                                   .videoDownloadPipelineService

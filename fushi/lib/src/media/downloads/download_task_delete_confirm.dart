@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 下载任务「删除任务」确认框：正文 + 「同时删除已下载文件」勾选框。返回 null=取消，
 /// 否则为勾选值。v78 任务面板与旧番剧计划面板共用，两处口径一致；测试按
@@ -20,70 +20,24 @@ Future<bool?> showDownloadTaskDeleteConfirm(
   required String keySuffix,
   bool offerDeleteFiles = true,
   String? message,
-}) {
-  bool deleteFiles = false;
-  return showAppDialog<bool>(
+}) async {
+  final FushiDestructiveConfirmResult? result =
+      await showAppDialog<FushiDestructiveConfirmResult>(
     context: context,
-    builder: (BuildContext dialogContext) => StatefulBuilder(
-      builder: (
-        BuildContext context,
-        void Function(void Function()) setDialogState,
-      ) =>
-          FushiAlertDialog(
-        title: Text(t.download_task_delete),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(message ?? t.download_task_delete_confirm(title: title)),
-            if (offerDeleteFiles) ...<Widget>[
-              const SizedBox(height: 12),
-              // 共享 MD3 行 + 裸 [Checkbox] 作 leading，整行 onTap 翻转——等价旧
-              // CheckboxListTile 的取值/回调/标题，但行高与内边距走设计令牌。
-              //
-              // 这里刻意**不**换成两个删除确认框用的 [DeleteConfirmCheckboxRow]：
-              // 那个行基于 `AdaptiveSettingsRow`，内部有 `LayoutBuilder`，而
-              // `AlertDialog` 会对 content 做 intrinsic 测量——
-              // 「LayoutBuilder does not support returning intrinsic dimensions」
-              // 直接崩。两个删除确认框用的是 `FushiModalSheetFrame`，不测 intrinsic。
-              // 要统一得先把本弹窗换成同一个 frame，那是另一件事。
-              FushiListItem(
-                key: ValueKey<String>(
-                  'video-download-job-delete-files-$keySuffix',
-                ),
-                density: FushiListDensity.compact,
-                padding: EdgeInsets.zero,
-                onTap: () => setDialogState(
-                  () => deleteFiles = !deleteFiles,
-                ),
-                leading: FushiCheckbox(
-                  value: deleteFiles,
-                  onChanged: (bool? value) => setDialogState(
-                    () => deleteFiles = value ?? false,
-                  ),
-                ),
-                title: Text(t.download_task_delete_files),
-              ),
-            ],
-          ],
-        ),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(t.dialog_cancel),
-          ),
-          FushiFilledButton(
-            key: ValueKey<String>(
-              'video-download-job-delete-confirm-$keySuffix',
-            ),
-            onPressed: () => Navigator.pop(
-              dialogContext,
-              offerDeleteFiles && deleteFiles,
-            ),
-            child: Text(t.dialog_delete),
-          ),
-        ],
+    builder: (BuildContext dialogContext) => FushiDestructiveConfirmDialog(
+      title: t.download_task_delete,
+      message: message ?? t.download_task_delete_confirm(title: title),
+      leadingIcon: FushiIcons.delete,
+      confirmLabel: t.dialog_delete,
+      checkboxLabel: offerDeleteFiles ? t.download_task_delete_files : null,
+      checkboxKey: ValueKey<String>(
+        'video-download-job-delete-files-$keySuffix',
+      ),
+      confirmKey: ValueKey<String>(
+        'video-download-job-delete-confirm-$keySuffix',
       ),
     ),
   );
+  if (result == null) return null;
+  return offerDeleteFiles && result.checked;
 }

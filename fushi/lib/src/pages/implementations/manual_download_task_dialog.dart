@@ -4,7 +4,9 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
@@ -96,7 +98,7 @@ Future<void> showManualDownloadTaskDialog({
     final List<MediaSourceRow> sources =
         await appModel.getManagedVideoDownloadSources();
     if (!context.mounted) return;
-    await showAppDialog<bool>(
+    await adaptiveModalSheet<bool>(
       context: context,
       builder: (BuildContext _) => ManualDownloadTaskDialog(
         pipeline: null,
@@ -138,7 +140,8 @@ Future<void> showManualDownloadTaskDialog({
   final List<MediaSourceRow> sources =
       await appModel.getManagedVideoDownloadSources();
   if (!context.mounted) return;
-  Future<bool?> open(String? torrentPath) => showAppDialog<bool>(
+  // 宽屏居中 M3E 面板（圆角 28、图标 hero 头部），窄屏底部 sheet。
+  Future<bool?> open(String? torrentPath) => adaptiveModalSheet<bool>(
         context: context,
         builder: (BuildContext _) => ManualDownloadTaskDialog(
           pipeline: pipeline,
@@ -210,6 +213,19 @@ class ManualDownloadTaskDialog extends StatefulWidget {
       _ManualDownloadTaskDialogState();
 }
 
+/// 添加任务的来源形态（分段控件）。磁力 · 链接粘贴文本；种子文件走拖放区 /
+/// 文件选择。只是输入方式的切换，提交参数仍由「手里是磁力还是 metainfo」决定。
+enum _ManualTaskSource { magnet, torrent }
+
+/// 选择行的一个选项（底部选择 sheet 用）。
+class _ChoiceOption<T> {
+  const _ChoiceOption(this.value, this.label, {this.icon});
+
+  final T value;
+  final String label;
+  final IconData? icon;
+}
+
 class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   final TextEditingController _magnetController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
@@ -224,6 +240,17 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   VideoDownloadSubtitlePolicy _subtitlePolicy =
       VideoDownloadSubtitlePolicy.none;
   bool _submitting = false;
+
+  /// 正在读 / 解析种子文件（拖放区下画波浪进度、提交禁用）。
+  bool _readingTorrent = false;
+
+  /// 内联错误（无效种子 / 提交失败）；有新输入时清掉。
+  String? _error;
+
+  /// 打开时剪贴板里识别到的磁力链接（输入框为空时给一枚「使用」chip）。
+  String? _clipboardMagnet;
+
+  _ManualTaskSource _source = _ManualTaskSource.magnet;
 
   /// 标题框最近一次被自动预填的值：用户改过就不再覆盖。
   String _autoFilledTitle = '';
@@ -240,7 +267,12 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         (widget.initialUseRemote || widget.pipeline == null);
     _discoveryKind = widget.initialDiscoveryKind;
     final String? torrentPath = widget.initialTorrentPath;
-    if (torrentPath != null) unawaited(_loadTorrentFile(torrentPath));
+    if (torrentPath != null) {
+      _source = _ManualTaskSource.torrent;
+      unawaited(_loadTorrentFile(torrentPath));
+    } else {
+      unawaited(_detectClipboardMagnet());
+    }
   }
 
   @override
@@ -258,6 +290,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
 
   bool get _canSubmit =>
       !_submitting &&
+      !_readingTorrent &&
       _hasPayload &&
       _titleController.text.trim().isNotEmpty &&
       (_useRemote
@@ -267,6 +300,44 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
               _magnetHash != null &&
               widget.remoteTarget?.supportsKind(_discoveryKind?.name) == true
           : widget.pipeline != null && (!_isVideo || _sourceId != null));
+
+  /// 剪贴板里有磁力链接就记下来，给一枚「使用剪贴板中的磁力链接」chip——不自动
+  /// 填进去：剪贴板内容是用户别处复制的，静默改写输入框会让人以为是自己粘的。
+  Future<void> _detectClipboardMagnet() async {
+    final ClipboardData? data;
+    try {
+      data = await Clipboard.getData(Clipboard.kTextPlain);
+    } on PlatformException {
+      // 平台拒绝读剪贴板（权限 / 无文本）：没有可提示的内容，按「没识别到」处理。
+      return;
+    } on MissingPluginException {
+      return;
+    }
+    final String text = data?.text?.trim() ?? '';
+    if (!mounted || text.isEmpty || parseMagnetInfoHash(text) == null) return;
+    if (_magnetController.text.trim().isNotEmpty) return;
+    setState(() => _clipboardMagnet = text);
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final ClipboardData? data;
+    try {
+      data = await Clipboard.getData(Clipboard.kTextPlain);
+    } on PlatformException {
+      return;
+    } on MissingPluginException {
+      return;
+    }
+    final String text = data?.text?.trim() ?? '';
+    if (!mounted || text.isEmpty) return;
+    _useMagnetText(text);
+  }
+
+  void _useMagnetText(String text) {
+    _magnetController.text = text;
+    _magnetController.selection = TextSelection.collapsed(offset: text.length);
+    _onMagnetChanged(text);
+  }
 
   void _prefillTitle(String? candidate) {
     final String value = candidate?.trim() ?? '';
@@ -279,6 +350,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
 
   void _onMagnetChanged(String value) {
     setState(() {
+      _error = null;
+      _clipboardMagnet = null;
       if (value.trim().isNotEmpty) {
         // 磁力与 .torrent 文件互斥：以最后编辑的一方为准。
         _metainfo = null;
@@ -298,6 +371,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     final PlatformFile file = picked.files.first;
     Uint8List? bytes = file.bytes;
     if (bytes == null && file.path != null) {
+      setState(() => _readingTorrent = true);
       bytes = await _readTorrentBytes(file.path!);
     }
     if (!mounted) return;
@@ -306,6 +380,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
 
   /// 拖入 / 预填路径的种子：读文件 → 与选择器同一套解析与落字段。
   Future<void> _loadTorrentFile(String path) async {
+    setState(() => _readingTorrent = true);
     final Uint8List? bytes = await _readTorrentBytes(path);
     if (!mounted) return;
     _applyTorrentBytes(bytes, p.basename(path));
@@ -322,29 +397,31 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   /// 种子字节 → metainfo → 填字段（清磁力框、预填标题）。选择器、拖入、初始
   /// 路径三条入口的唯一汇合点：无效种子的提示、标题预填规则只写一遍。
   void _applyTorrentBytes(Uint8List? bytes, String fileName) {
-    if (bytes == null || bytes.isEmpty) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        FushiSnackBar(content: Text(t.download_task_add_invalid)),
-      );
-      return;
+    InspectedTorrentMetainfo? metainfo;
+    if (bytes != null && bytes.isNotEmpty) {
+      try {
+        metainfo = inspectTorrentMetainfo(bytes);
+      } on TorrentMetainfoException {
+        metainfo = null;
+      }
     }
-    final InspectedTorrentMetainfo metainfo;
-    try {
-      metainfo = inspectTorrentMetainfo(bytes);
-    } on TorrentMetainfoException {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        FushiSnackBar(content: Text(t.download_task_add_invalid)),
-      );
-      return;
-    }
+    final InspectedTorrentMetainfo? parsed = metainfo;
     setState(() {
-      _metainfo = metainfo;
+      _readingTorrent = false;
+      if (parsed == null) {
+        // 内联 error 提示（与选择器同一句），保留已有的种子 / 输入不动。
+        _error = t.download_task_add_invalid;
+        return;
+      }
+      _error = null;
+      _source = _ManualTaskSource.torrent;
+      _metainfo = parsed;
       _metainfoFileName = fileName;
       _magnetController.clear();
       // 远端只收磁链：手里有本机后端时自动切回本机，否则用户得自己发现
       // 「提交按钮为什么灰着」。没有本机后端时保持远端，让 _canSubmit 挡住。
       if (_useRemote && widget.pipeline != null) _useRemote = false;
-      _prefillTitle(metainfo.suggestedName ?? fileName);
+      _prefillTitle(parsed.suggestedName ?? fileName);
     });
   }
 
@@ -363,7 +440,10 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     final VideoDownloadPipelineService? pipeline = widget.pipeline;
     final VideoDownloadBackendTarget? target = widget.target;
     if (pipeline == null || target == null) return;
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
     try {
       await pipeline.enqueueManual(
         VideoDownloadManualEnqueueRequest(
@@ -384,10 +464,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       );
     } on Object catch (error) {
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          FushiSnackBar(
-            content: Text(t.download_task_action_failed(error: '$error')),
-          ),
+        setState(
+          () => _error = t.download_task_action_failed(error: '$error'),
         );
       }
     } finally {
@@ -399,7 +477,10 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     final InterconnectDownloadClient? client = widget.remoteClient;
     final HostDownloadTarget? target = widget.remoteTarget;
     if (client == null || target == null) return;
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
     try {
       await client.addMagnet(
         target,
@@ -415,10 +496,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       );
     } on Object catch (error) {
       if (mounted) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          FushiSnackBar(
-            content: Text(t.download_task_action_failed(error: '$error')),
-          ),
+        setState(
+          () => _error = t.download_task_action_failed(error: '$error'),
         );
       }
     } finally {
@@ -428,247 +507,520 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 模态框开着时页级 drop target 被 `isCurrent` 守卫挡住，拖种子进框必须由框
     // 自己接（与四个导入对话框同一范式）。
     return FushiFileDropTarget(
       enabled: !_submitting,
       debugLabel: 'manual-download-dialog',
       onDrop: _handleDialogDrop,
-      child: _buildDialog(context, tokens),
+      child: _buildSheet(context),
     );
   }
 
-  Widget _buildDialog(BuildContext context, FushiDesignTokens tokens) {
-    return FushiAlertDialog(
-      title: Text(t.download_task_add),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (widget.remoteTarget != null) ...<Widget>[
-                FushiDropdownButtonFormField<bool>(
-                  key: const ValueKey<String>('manual-task-download-target'),
-                  initialValue: _useRemote,
-                  decoration: InputDecoration(
-                    labelText: t.download_target_label,
-                  ),
-                  items: <DropdownMenuItem<bool>>[
-                    if (widget.pipeline != null)
-                      DropdownMenuItem<bool>(
-                        value: false,
-                        child: Text(t.download_target_local),
-                      ),
-                    DropdownMenuItem<bool>(
-                      value: true,
-                      child: Text(
-                        t.download_target_remote(
-                          device: widget.remoteTarget!.label,
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: _submitting
-                      ? null
-                      : (bool? v) => setState(() => _useRemote = v ?? false),
-                ),
-                SizedBox(height: tokens.spacing.gap),
-              ],
-              FushiTextFieldControl(
-                key: const ValueKey<String>('manual-task-magnet'),
-                controller: _magnetController,
-                decoration: InputDecoration(
-                  labelText: t.anime_download_generic_hint,
-                  prefixIcon: const FushiIcon(Icons.link),
-                ),
-                maxLines: 1,
-                keyboardType: TextInputType.url,
-                onChanged: _onMagnetChanged,
+  /// 选择行 + 底部选择 sheet：行上显示当前值，点开是一列带勾选的选项。
+  Widget _choiceRow<T>({
+    required Key key,
+    required String title,
+    required IconData icon,
+    required List<_ChoiceOption<T>> options,
+    required T selected,
+    required ValueChanged<T> onChanged,
+  }) {
+    _ChoiceOption<T>? current;
+    for (final _ChoiceOption<T> option in options) {
+      if (option.value == selected) current = option;
+    }
+    return AdaptiveSettingsRow(
+      key: key,
+      title: title,
+      subtitle: current?.label,
+      icon: icon,
+      showIcon: true,
+      trailing: const FushiIcon(FushiIcons.chevronRight),
+      onTap: _submitting
+          ? null
+          : () async {
+              final _ChoiceOption<T>? picked = await _showChoiceSheet<T>(
+                title: title,
+                icon: icon,
+                options: options,
+                selected: selected,
+              );
+              if (picked != null && mounted) onChanged(picked.value);
+            },
+    );
+  }
+
+  Future<_ChoiceOption<T>?> _showChoiceSheet<T>({
+    required String title,
+    required IconData icon,
+    required List<_ChoiceOption<T>> options,
+    required T selected,
+  }) {
+    return adaptiveModalSheet<_ChoiceOption<T>>(
+      context: context,
+      builder: (BuildContext sheetContext) => FushiModalSheetFrame(
+        title: title,
+        leadingIcon: icon,
+        scrollable: true,
+        bodyPadding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        body: FushiGroupedList(
+          children: <Widget>[
+            for (final _ChoiceOption<T> option in options)
+              FushiListItem(
+                key: ValueKey<String>('manual-task-option-${option.label}'),
+                selected: option.value == selected,
+                leading: option.icon == null ? null : FushiIcon(option.icon),
+                title: Text(option.label),
+                trailing: option.value == selected
+                    ? const FushiIcon(FushiIcons.check)
+                    : null,
+                onTap: () => Navigator.of(sheetContext).pop(option),
               ),
-              SizedBox(height: tokens.spacing.gap),
-              Row(
-                children: <Widget>[
-                  FushiOutlinedButton.icon(
-                    key: const ValueKey<String>('manual-task-pick-torrent'),
-                    onPressed: _submitting ? null : _pickTorrentFile,
-                    icon: const FushiIcon(Icons.file_open_outlined, size: 18),
-                    label: Text(t.download_task_add_pick_torrent),
-                  ),
-                  SizedBox(width: tokens.spacing.gap),
-                  Expanded(
-                    child: Text(
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSourceSwitch() => FushiSegmentedStrip<_ManualTaskSource>(
+        key: const ValueKey<String>('manual-task-source-kind'),
+        segments: <ButtonSegment<_ManualTaskSource>>[
+          ButtonSegment<_ManualTaskSource>(
+            value: _ManualTaskSource.magnet,
+            label: Text(t.download_task_add_source_magnet),
+            icon: const FushiIcon(FushiIcons.link),
+          ),
+          ButtonSegment<_ManualTaskSource>(
+            value: _ManualTaskSource.torrent,
+            label: Text(t.download_task_add_source_torrent),
+            icon: const FushiIcon(FushiIcons.file),
+          ),
+        ],
+        selected: _source,
+        onChanged: (_ManualTaskSource value) {
+          if (_submitting) return;
+          setState(() => _source = value);
+        },
+      );
+
+  Widget _buildMagnetInput(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final String? clipboard = _clipboardMagnet;
+    return Column(
+      key: const ValueKey<String>('manual-task-magnet-pane'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiTextFieldControl(
+          key: const ValueKey<String>('manual-task-magnet'),
+          controller: _magnetController,
+          decoration: InputDecoration(
+            labelText: t.anime_download_generic_hint,
+            alignLabelWithHint: true,
+            prefixIcon: const FushiIcon(FushiIcons.link),
+            suffixIcon: FushiIconButton(
+              key: const ValueKey<String>('manual-task-paste'),
+              tooltip: t.paste,
+              icon: FushiIcons.copy,
+              onTap: _submitting ? null : () => unawaited(_pasteFromClipboard()),
+            ),
+          ),
+          minLines: 3,
+          maxLines: 5,
+          keyboardType: TextInputType.multiline,
+          onChanged: _onMagnetChanged,
+        ),
+        if (clipboard != null && _magnetController.text.trim().isEmpty) ...<
+            Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FushiActionChip(
+              key: const ValueKey<String>('manual-task-clipboard-magnet'),
+              icon: FushiIcons.link,
+              label: t.download_task_add_clipboard_use,
+              onPressed: () => _useMagnetText(clipboard),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildTorrentDropZone(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    return FushiCard(
+      key: const ValueKey<String>('manual-task-drop-zone'),
+      variant: FushiCardVariant.outlined,
+      onTap: _submitting ? null : () => unawaited(_pickTorrentFile()),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: Column(
+        children: <Widget>[
+          const FushiListLeadingIcon(
+            FushiIcons.importFile,
+            shape: FushiLeadingShape.cookie,
+            tone: FushiCardTone.primary,
+            size: 56,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            t.download_task_add_drop_hint,
+            textAlign: TextAlign.center,
+            style: type.bodyMedium.copyWith(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('manual-task-pick-torrent'),
+            onPressed: _submitting ? null : () => unawaited(_pickTorrentFile()),
+            icon: const FushiIcon(FushiIcons.folderOpen, size: 18),
+            label: Text(t.download_task_add_pick_torrent),
+          ),
+          if (_readingTorrent) ...<Widget>[
+            const SizedBox(height: 16),
+            const FushiLinearProgressIndicator(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 种子解析后的元信息预览：名称、总大小、文件数 + 文件列表（只读：选文件
+  /// 在任务详情里做，这里不改提交参数）。
+  Widget _buildPreview(BuildContext context, InspectedTorrentMetainfo info) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final int total = info.files.fold<int>(
+      0,
+      (int sum, InspectedTorrentFile file) => sum + file.length,
+    );
+    const int shown = 6;
+    final String? name = info.suggestedName;
+    return FushiCard(
+      key: const ValueKey<String>('manual-task-preview'),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const FushiListLeadingIcon(
+                FushiIcons.file,
+                shape: FushiLeadingShape.square,
+                tone: FushiCardTone.tertiary,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    if (name != null && name.isNotEmpty)
+                      Text(
+                        name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.titleSmallEmphasized,
+                      ),
+                    Text(
                       _metainfoFileName ?? '',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: tokens.spacing.gap),
-              FushiTextFieldControl(
-                key: const ValueKey<String>('manual-task-title'),
-                controller: _titleController,
-                decoration: InputDecoration(
-                  labelText: t.download_task_add_title_label,
-                ),
-                maxLines: 1,
-                onChanged: (_) => setState(() {}),
-              ),
-              SizedBox(height: tokens.spacing.gap),
-              FushiDropdownButtonFormField<DiscoveryMediaKind?>(
-                key: const ValueKey<String>('manual-task-content-kind'),
-                initialValue: _discoveryKind,
-                decoration: InputDecoration(
-                  labelText: t.download_task_add_content_kind,
-                ),
-                items: <DropdownMenuItem<DiscoveryMediaKind?>>[
-                  DropdownMenuItem<DiscoveryMediaKind?>(
-                    value: null,
-                    child: Text(t.anime_download_kind_video),
-                  ),
-                  DropdownMenuItem<DiscoveryMediaKind?>(
-                    value: DiscoveryMediaKind.novel,
-                    child: Text(t.discovery_kind_novel),
-                  ),
-                  DropdownMenuItem<DiscoveryMediaKind?>(
-                    value: DiscoveryMediaKind.manga,
-                    child: Text(t.discovery_kind_manga),
-                  ),
-                  DropdownMenuItem<DiscoveryMediaKind?>(
-                    value: DiscoveryMediaKind.audiobook,
-                    child: Text(t.discovery_kind_audiobook),
-                  ),
-                  DropdownMenuItem<DiscoveryMediaKind?>(
-                    value: DiscoveryMediaKind.game,
-                    child: Text(t.games),
-                  ),
-                ],
-                onChanged: _submitting
-                    ? null
-                    : (DiscoveryMediaKind? value) =>
-                        setState(() => _discoveryKind = value),
-              ),
-              if (_isVideo) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Expanded(
-                      child: FushiDropdownButtonFormField<VideoMetadataMediaKind>(
-                        key: const ValueKey<String>('manual-task-media-kind'),
-                        initialValue: _mediaKind,
-                        decoration: InputDecoration(
-                          labelText: t.media_tracking_kind,
-                        ),
-                        items: <DropdownMenuItem<VideoMetadataMediaKind>>[
-                          DropdownMenuItem<VideoMetadataMediaKind>(
-                            value: VideoMetadataMediaKind.movie,
-                            child: Text(t.collection_relation_movie),
-                          ),
-                          DropdownMenuItem<VideoMetadataMediaKind>(
-                            value: VideoMetadataMediaKind.tv,
-                            child: Text(t.series),
-                          ),
-                        ],
-                        onChanged: _submitting
-                            ? null
-                            : (VideoMetadataMediaKind? value) {
-                                if (value != null) {
-                                  setState(() => _mediaKind = value);
-                                }
-                              },
-                      ),
-                    ),
-                    SizedBox(width: tokens.spacing.gap),
-                    Expanded(
-                      child:
-                          FushiDropdownButtonFormField<VideoDownloadSubtitlePolicy>(
-                        key: const ValueKey<String>(
-                          'manual-task-subtitle-policy',
-                        ),
-                        initialValue: _subtitlePolicy,
-                        decoration: InputDecoration(
-                          labelText: t.anime_download_include_subs,
-                        ),
-                        items: <DropdownMenuItem<VideoDownloadSubtitlePolicy>>[
-                          DropdownMenuItem<VideoDownloadSubtitlePolicy>(
-                            value: VideoDownloadSubtitlePolicy.none,
-                            child: Text(t.anime_download_no_subs),
-                          ),
-                          DropdownMenuItem<VideoDownloadSubtitlePolicy>(
-                            value: VideoDownloadSubtitlePolicy.bestEffort,
-                            child: Text(t.anime_download_include_subs),
-                          ),
-                        ],
-                        onChanged: _submitting
-                            ? null
-                            : (VideoDownloadSubtitlePolicy? value) {
-                                if (value != null) {
-                                  setState(() => _subtitlePolicy = value);
-                                }
-                              },
+                      style: type.bodySmall.copyWith(
+                        color: cs.onSurfaceVariant,
                       ),
                     ),
                   ],
                 ),
-                SizedBox(height: tokens.spacing.gap),
-                if (widget.sources.isEmpty)
-                  Text(
-                    t.download_no_managed_video_source,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                  )
-                else
-                  FushiDropdownButtonFormField<int>(
-                    key: const ValueKey<String>('manual-task-source'),
-                    initialValue: _sourceId,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: t.video_download_target_source_title,
-                    ),
-                    items: widget.sources
-                        .map(
-                          (MediaSourceRow source) => DropdownMenuItem<int>(
-                            value: source.id,
-                            child: Text(
-                              source.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: _submitting
-                        ? null
-                        : (int? value) => setState(() => _sourceId = value),
-                  ),
-              ],
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: <Widget>[
+              FushiTagChip(
+                label: FushiByteFormat.bytes(total),
+                tone: FushiTagChipTone.surface,
+              ),
+              FushiTagChip(
+                label: t.download_task_add_file_count(n: info.files.length),
+                tone: FushiTagChipTone.surface,
+              ),
+            ],
+          ),
+          if (info.files.length > 1) ...<Widget>[
+            const SizedBox(height: 10),
+            FushiGroupedList(
+              children: <Widget>[
+                for (final InspectedTorrentFile file in info.files.take(shown))
+                  FushiListItem(
+                    key: ValueKey<String>('manual-task-file-${file.index}'),
+                    density: FushiListDensity.compact,
+                    title: Text(
+                      p.basename(file.path),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: Text(
+                      FushiByteFormat.bytes(file.length),
+                      style: type.labelMedium.tabular.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                if (info.files.length > shown)
+                  FushiListItem(
+                    density: FushiListDensity.compact,
+                    title: Text(
+                      '+${info.files.length - shown}',
+                      style: type.labelLarge.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
       ),
-      actions: <Widget>[
-        FushiTextButton(
-          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
+    );
+  }
+
+  Widget _buildError(BuildContext context, String message) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiCardColors? colors = fushiCardToneColors(
+      context,
+      FushiCardTone.error,
+    );
+    return Container(
+      key: const ValueKey<String>('manual-task-error'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: colors?.container ?? cs.surfaceContainerHigh,
+        borderRadius: FushiM3eShape.smallRadius,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          FushiIcon(FushiIcons.error, size: 18, color: cs.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: context.fushiType.bodySmall.copyWith(
+                color: colors?.onContainer ?? cs.error,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildOptionRows() {
+    return <Widget>[
+      _choiceRow<DiscoveryMediaKind?>(
+        key: const ValueKey<String>('manual-task-content-kind'),
+        title: t.download_task_add_content_kind,
+        icon: FushiIcons.widgets,
+        options: <_ChoiceOption<DiscoveryMediaKind?>>[
+          _ChoiceOption<DiscoveryMediaKind?>(
+            null,
+            t.anime_download_kind_video,
+            icon: FushiIcons.video,
+          ),
+          _ChoiceOption<DiscoveryMediaKind?>(
+            DiscoveryMediaKind.novel,
+            t.discovery_kind_novel,
+            icon: FushiIcons.books,
+          ),
+          _ChoiceOption<DiscoveryMediaKind?>(
+            DiscoveryMediaKind.manga,
+            t.discovery_kind_manga,
+            icon: FushiIcons.manga,
+          ),
+          _ChoiceOption<DiscoveryMediaKind?>(
+            DiscoveryMediaKind.audiobook,
+            t.discovery_kind_audiobook,
+            icon: FushiIcons.audiobook,
+          ),
+          _ChoiceOption<DiscoveryMediaKind?>(
+            DiscoveryMediaKind.game,
+            t.games,
+            icon: FushiIcons.games,
+          ),
+        ],
+        selected: _discoveryKind,
+        onChanged: (DiscoveryMediaKind? value) =>
+            setState(() => _discoveryKind = value),
+      ),
+      if (_isVideo) ...<Widget>[
+        _choiceRow<VideoMetadataMediaKind>(
+          key: const ValueKey<String>('manual-task-media-kind'),
+          title: t.media_tracking_kind,
+          icon: FushiIcons.tv,
+          options: <_ChoiceOption<VideoMetadataMediaKind>>[
+            _ChoiceOption<VideoMetadataMediaKind>(
+              VideoMetadataMediaKind.movie,
+              t.collection_relation_movie,
+            ),
+            _ChoiceOption<VideoMetadataMediaKind>(
+              VideoMetadataMediaKind.tv,
+              t.series,
+            ),
+          ],
+          selected: _mediaKind,
+          onChanged: (VideoMetadataMediaKind value) =>
+              setState(() => _mediaKind = value),
         ),
-        FushiFilledButton.icon(
-          key: const ValueKey<String>('manual-task-submit'),
-          onPressed: _canSubmit ? () => unawaited(_submit()) : null,
-          icon: _submitting
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              : const FushiIcon(Icons.add),
-          label: Text(t.download_task_add),
+        _choiceRow<VideoDownloadSubtitlePolicy>(
+          key: const ValueKey<String>('manual-task-subtitle-policy'),
+          title: t.anime_download_include_subs,
+          icon: FushiIcons.subtitles,
+          options: <_ChoiceOption<VideoDownloadSubtitlePolicy>>[
+            _ChoiceOption<VideoDownloadSubtitlePolicy>(
+              VideoDownloadSubtitlePolicy.none,
+              t.anime_download_no_subs,
+            ),
+            _ChoiceOption<VideoDownloadSubtitlePolicy>(
+              VideoDownloadSubtitlePolicy.bestEffort,
+              t.anime_download_include_subs,
+            ),
+          ],
+          selected: _subtitlePolicy,
+          onChanged: (VideoDownloadSubtitlePolicy value) =>
+              setState(() => _subtitlePolicy = value),
         ),
+        if (widget.sources.isNotEmpty)
+          _choiceRow<int?>(
+            key: const ValueKey<String>('manual-task-source'),
+            title: t.video_download_target_source_title,
+            icon: FushiIcons.folder,
+            options: <_ChoiceOption<int?>>[
+              for (final MediaSourceRow source in widget.sources)
+                _ChoiceOption<int?>(source.id, source.label),
+            ],
+            selected: _sourceId,
+            onChanged: (int? value) => setState(() => _sourceId = value),
+          ),
       ],
+      if (widget.remoteTarget != null)
+        _choiceRow<bool>(
+          key: const ValueKey<String>('manual-task-download-target'),
+          title: t.download_target_label,
+          icon: _useRemote ? FushiIcons.hub : FushiIcons.devices,
+          options: <_ChoiceOption<bool>>[
+            if (widget.pipeline != null)
+              _ChoiceOption<bool>(
+                false,
+                t.download_target_local,
+                icon: FushiIcons.devices,
+              ),
+            _ChoiceOption<bool>(
+              true,
+              t.download_target_remote(device: widget.remoteTarget!.label),
+              icon: FushiIcons.hub,
+            ),
+          ],
+          selected: _useRemote,
+          onChanged: (bool value) => setState(() => _useRemote = value),
+        ),
+    ];
+  }
+
+  Widget _buildSheet(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    final InspectedTorrentMetainfo? metainfo = _metainfo;
+    final String? error = _error;
+    return FushiModalSheetFrame(
+      title: t.download_task_add,
+      leadingIcon: FushiIcons.download,
+      scrollable: true,
+      bodyPadding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildSourceSwitch(),
+          SizedBox(height: tokens.spacing.gap + 4),
+          // 两种输入形态之间：尺寸弹簧 + 交叉淡入（透明度走 effects 弹簧）。
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: motion.effectsDefault.duration,
+              switchInCurve: motion.effectsDefault.curve,
+              switchOutCurve: motion.effectsDefault.curve,
+              child: _source == _ManualTaskSource.magnet
+                  ? _buildMagnetInput(context)
+                  : _buildTorrentDropZone(context),
+            ),
+          ),
+          if (error != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            _buildError(context, error),
+          ],
+          if (metainfo != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap + 4),
+            _buildPreview(context, metainfo),
+          ],
+          SizedBox(height: tokens.spacing.gap + 4),
+          FushiTextFieldControl(
+            key: const ValueKey<String>('manual-task-title'),
+            controller: _titleController,
+            decoration: InputDecoration(
+              labelText: t.download_task_add_title_label,
+              prefixIcon: const FushiIcon(FushiIcons.edit),
+            ),
+            maxLines: 1,
+            onChanged: (_) => setState(() {}),
+          ),
+          SizedBox(height: tokens.spacing.gap + 8),
+          Text(
+            t.download_task_add_options,
+            style: context.fushiType.labelLargeEmphasized.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          AdaptiveSettingsSection(children: _buildOptionRows()),
+          if (_isVideo && widget.sources.isEmpty) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            _buildError(context, t.download_no_managed_video_source),
+          ],
+        ],
+      ),
+      footer: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (_submitting) ...<Widget>[
+            const FushiLinearProgressIndicator(),
+            SizedBox(height: tokens.spacing.gap),
+          ],
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiTextButton(
+                onPressed:
+                    _submitting ? null : () => Navigator.of(context).pop(),
+                child: Text(t.dialog_cancel),
+              ),
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('manual-task-submit'),
+                onPressed: _canSubmit ? () => unawaited(_submit()) : null,
+                icon: const FushiIcon(FushiIcons.download),
+                label: Text(t.download_task_add_start),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

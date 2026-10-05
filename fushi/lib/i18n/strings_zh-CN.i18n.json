@@ -6711,5 +6711,22 @@
   "online_sources_filter_enabled": "已启用",
   "online_sources_filter_disabled": "已停用",
   "extension_filter_all_stores": "全部仓库",
-  "extension_update_available": "可更新"
+  "extension_update_available": "可更新",
+  "download_task_status_all": "全部",
+  "download_summary_active": "活动 $n",
+  "download_summary_queued": "排队 $n",
+  "download_summary_completed": "完成 $n",
+  "download_summary_speed_title": "总速度",
+  "download_pause_all": "全部暂停",
+  "download_resume_all": "全部继续",
+  "download_task_add_source_magnet": "磁力 · 链接",
+  "download_task_add_source_torrent": "种子文件",
+  "download_task_add_clipboard_use": "使用剪贴板中的磁力链接",
+  "download_task_add_drop_hint": "将 .torrent 文件拖到这里，或点击选择",
+  "download_task_add_file_count": "$n 个文件",
+  "download_task_add_start": "开始下载",
+  "download_task_add_options": "下载选项",
+  "download_subscription_summary": "$n 个订阅 · $enabled 个启用",
+  "subscription_rules_title": "规则",
+  "subscription_history_title": "匹配历史"
 }

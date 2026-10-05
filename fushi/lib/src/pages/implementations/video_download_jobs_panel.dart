@@ -24,6 +24,7 @@ import 'package:fushi/src/media/video/download/video_download_error_presentation
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show downloadOnlyKindOfOrganizationPolicy;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 // 确认框已迁到 media/downloads 共享层（browser 也要用它做批量删除，
@@ -258,6 +259,10 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     this.stageLabel,
     this.unified = false,
     this.additionalTasks = const <DownloadTaskEntry>[],
+    this.onAddTask,
+    this.executionDeviceLabel,
+    this.onOpenExecutionSettings,
+    this.header,
   });
 
   factory VideoDownloadJobsPanel.database({
@@ -278,6 +283,10 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     String Function(String stage)? stageLabel,
     bool unified = false,
     List<DownloadTaskEntry> additionalTasks = const <DownloadTaskEntry>[],
+    VoidCallback? onAddTask,
+    String? executionDeviceLabel,
+    VoidCallback? onOpenExecutionSettings,
+    Widget? header,
   }) =>
       VideoDownloadJobsPanel(
         key: key,
@@ -299,7 +308,21 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         stageLabel: stageLabel,
         unified: unified,
         additionalTasks: additionalTasks,
+        onAddTask: onAddTask,
+        executionDeviceLabel: executionDeviceLabel,
+        onOpenExecutionSettings: onOpenExecutionSettings,
+        header: header,
       );
+
+  /// 统一列表顶部随列表滚动的一块（网络问题横幅等）。
+  final Widget? header;
+
+  /// 统一列表（[unified]）的添加任务入口：给了就挂 FAB / 空状态按钮。
+  final VoidCallback? onAddTask;
+
+  /// 新任务的执行设备（null = 本机），统一列表汇总 hero 的设备 chip 用。
+  final String? executionDeviceLabel;
+  final VoidCallback? onOpenExecutionSettings;
 
   final bool unified;
   final List<DownloadTaskEntry> additionalTasks;
@@ -465,12 +488,28 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
           AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
         ) {
           if (widget.unified) {
+            // 加载失败提示与宿主给的横幅进列表顶部（随列表滚到浮动头部之下）。
+            final Widget? header = snapshot.hasError || widget.header != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (snapshot.hasError) Text(t.error_load_failed),
+                      if (widget.header != null) widget.header!,
+                    ],
+                  )
+                : null;
             return Column(children: <Widget>[
-              if (snapshot.hasError) Text(t.error_load_failed),
               Expanded(
                   key: const ValueKey<String>('unified-download-tasks'),
                   child: _buildJobList(
-                      snapshot.data ?? const <VideoDownloadJobRow>[])),
+                    snapshot.data ?? const <VideoDownloadJobRow>[],
+                    header: header,
+                    // 首个快照未到且别的来源也还没东西：画骨架，不闪「暂无任务」。
+                    loading: !snapshot.hasData &&
+                        !snapshot.hasError &&
+                        widget.additionalTasks.isEmpty,
+                  )),
             ]);
           }
           if (snapshot.hasError) {
@@ -617,9 +656,18 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
         VideoDownloadJobSort.statusGroup => t.download_task_sort_status,
       };
 
-  Widget _buildJobList(List<VideoDownloadJobRow> jobs) {
+  Widget _buildJobList(
+    List<VideoDownloadJobRow> jobs, {
+    bool loading = false,
+    Widget? header,
+  }) {
     return _VideoDownloadJobList(
       jobs: jobs,
+      loading: loading,
+      header: header,
+      onAddTask: widget.onAddTask,
+      executionDeviceLabel: widget.executionDeviceLabel,
+      onOpenExecutionSettings: widget.onOpenExecutionSettings,
       unified: widget.unified,
       additionalTasks: widget.additionalTasks,
       metricsLoader: widget.metricsLoader,
@@ -710,7 +758,18 @@ class _VideoDownloadJobList extends StatefulWidget {
     required this.actionsFor,
     required this.unified,
     required this.additionalTasks,
+    this.loading = false,
+    this.onAddTask,
+    this.executionDeviceLabel,
+    this.onOpenExecutionSettings,
+    this.header,
   });
+
+  final Widget? header;
+  final bool loading;
+  final VoidCallback? onAddTask;
+  final String? executionDeviceLabel;
+  final VoidCallback? onOpenExecutionSettings;
 
   /// 统一列表里一条 video job 支持的批量动作，由 panel 按注入的回调组装。
   final DownloadTaskActions Function(VideoDownloadJobRow job) actionsFor;
@@ -848,6 +907,11 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
               snapshot?.progress ?? videoDownloadJobComparableProgress(job),
           collectionKey: collectionKey,
           collectionTitle: job.title,
+          seeding: snapshot != null &&
+              torrentDisplayStatusFor(snapshot.state) ==
+                  TorrentDisplayStatus.seeding,
+          downRateBps: snapshot?.downRateBps,
+          upRateBps: snapshot?.upRateBps,
           searchTerms: <String>[
             if (job.resourceTitle != null) job.resourceTitle!,
             job.resourceProvider,
@@ -861,7 +925,14 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
           ),
         );
       }
-      return DownloadTaskBrowser(tasks: entries.values.toList());
+      return DownloadTaskBrowser(
+        tasks: entries.values.toList(),
+        loading: widget.loading,
+        onAddTask: widget.onAddTask,
+        executionDeviceLabel: widget.executionDeviceLabel,
+        onOpenExecutionSettings: widget.onOpenExecutionSettings,
+        header: widget.header,
+      );
     }
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -1240,7 +1311,11 @@ class _VideoDownloadJobCard extends StatelessWidget {
             _defaultLifecycleLabel(job.lifecycle),
         subtitle: job.resourceTitle,
         progress: _progress,
-        leading: FushiIcon(_statusIcon(), color: statusColor, size: 20),
+        tone: _tone,
+        leading: FushiIcon(_kindIcon),
+        metrics: _compactMetrics,
+        quickAction: _quickAction,
+        menuActions: _menuActions,
         details: content,
       );
     }
@@ -1249,6 +1324,159 @@ class _VideoDownloadJobCard extends StatelessWidget {
       onTap: busy ? null : onOpenDetails,
       child: content,
     );
+  }
+
+  /// 卡片状态色调：下载中 primary、暂停中性、完成 tertiary、出错 error。
+  DownloadTaskTone get _tone {
+    switch (job.lifecycle) {
+      case VideoDownloadJobLifecycle.completed:
+        return DownloadTaskTone.completed;
+      case VideoDownloadJobLifecycle.cancelled:
+        return DownloadTaskTone.paused;
+      case VideoDownloadJobLifecycle.failed:
+      case VideoDownloadJobLifecycle.needsAttention:
+        return DownloadTaskTone.error;
+    }
+    final TorrentSnapshot? value = snapshot;
+    if (value == null) return DownloadTaskTone.active;
+    return switch (torrentDisplayStatusFor(value.state)) {
+      TorrentDisplayStatus.paused => DownloadTaskTone.paused,
+      TorrentDisplayStatus.error => DownloadTaskTone.error,
+      TorrentDisplayStatus.seeding ||
+      TorrentDisplayStatus.completed => DownloadTaskTone.completed,
+      _ => DownloadTaskTone.active,
+    };
+  }
+
+  /// 行首徽标里的内容类型图标（状态由徽标色块表达）。
+  IconData get _kindIcon =>
+      switch (DownloadTaskKind.values.asNameMap()[job.mediaKind]) {
+        DownloadTaskKind.novel => FushiIcons.books,
+        DownloadTaskKind.manga => FushiIcons.manga,
+        DownloadTaskKind.audiobook => FushiIcons.audiobook,
+        DownloadTaskKind.game => FushiIcons.games,
+        _ => job.lifecycle == VideoDownloadJobLifecycle.failed
+            ? FushiIcons.error
+            : FushiIcons.video,
+      };
+
+  /// 卡片标题下的指标 chip：↓ / ↑ 速度、剩余时间、大小、做种比。
+  List<DownloadTaskMetric> get _compactMetrics {
+    final TorrentSnapshot? value = snapshot;
+    final int? size = value != null && value.totalSizeBytes >= 0
+        ? value.totalSizeBytes
+        : selectedSizeBytes;
+    if (value == null) {
+      return <DownloadTaskMetric>[
+        if (size != null)
+          DownloadTaskMetric(
+            icon: FushiIcons.storage,
+            label: FushiByteFormat.bytes(size),
+            tooltip: t.anime_download_sort_size,
+          ),
+      ];
+    }
+    final bool running = job.lifecycle == VideoDownloadJobLifecycle.active;
+    final String? eta = formatTorrentEta(
+      amountLeft: value.amountLeft,
+      downRateBps: value.downRateBps,
+    );
+    final String? ratio = formatShareRatio(
+      uploadedBytes: value.uploadedBytes,
+      downloadedBytes: value.downloadedBytes,
+    );
+    return <DownloadTaskMetric>[
+      if (running)
+        DownloadTaskMetric(
+          icon: FushiIcons.download,
+          label: FushiByteFormat.speed(value.downRateBps.toDouble()),
+        ),
+      if (running && value.upRateBps > 0)
+        DownloadTaskMetric(
+          icon: FushiIcons.upload,
+          label: FushiByteFormat.speed(value.upRateBps.toDouble()),
+        ),
+      if (running && eta != null && _progress < 1)
+        DownloadTaskMetric(
+          icon: FushiIcons.timer,
+          label: eta,
+          tooltip: t.download_task_eta,
+        ),
+      if (size != null)
+        DownloadTaskMetric(
+          icon: FushiIcons.storage,
+          label: FushiByteFormat.bytes(size),
+          tooltip: t.anime_download_sort_size,
+        ),
+      if (ratio != null)
+        DownloadTaskMetric(
+          icon: FushiIcons.swap,
+          label: ratio,
+          tooltip: t.download_task_ratio,
+        ),
+    ];
+  }
+
+  /// 行尾主操作：在跑 → 暂停、已暂停 → 继续、出错 → 重试。
+  DownloadTaskQuickAction? get _quickAction {
+    if (_canCancel && onCancel != null) {
+      return DownloadTaskQuickAction(
+        key: ValueKey<String>('video-download-job-quick-pause-${job.jobId}'),
+        icon: FushiIcons.pause,
+        tooltip: t.download_task_pause,
+        onPressed: busy ? null : onCancel,
+      );
+    }
+    if (_canResume && onResume != null) {
+      return DownloadTaskQuickAction(
+        key: ValueKey<String>('video-download-job-quick-resume-${job.jobId}'),
+        icon: FushiIcons.play,
+        tooltip: t.download_task_resume,
+        onPressed: busy ? null : onResume,
+      );
+    }
+    if (_canRetry && onRetry != null) {
+      return DownloadTaskQuickAction(
+        key: ValueKey<String>('video-download-job-quick-retry-${job.jobId}'),
+        icon: FushiIcons.refresh,
+        tooltip: t.retry,
+        onPressed: busy ? null : onRetry,
+      );
+    }
+    return null;
+  }
+
+  /// 「⋯」菜单：打开文件夹、详情（文件 / Tracker / peers / 选择文件 / 限速）、
+  /// 补对齐文件、删除（走共享破坏性确认，保留「同时删除文件」）。busy 时整组不给。
+  List<DownloadTaskMenuAction> get _menuActions {
+    if (busy) return const <DownloadTaskMenuAction>[];
+    return <DownloadTaskMenuAction>[
+      if (onOpenLocation != null)
+        DownloadTaskMenuAction(
+          icon: FushiIcons.folderOpen,
+          label: t.download_task_open_location,
+          onSelected: onOpenLocation!,
+        ),
+      if (onOpenDetails != null)
+        DownloadTaskMenuAction(
+          icon: FushiIcons.info,
+          label: t.download_task_details,
+          onSelected: onOpenDetails!,
+        ),
+      if (onPairAudiobook != null)
+        DownloadTaskMenuAction(
+          icon: FushiIcons.libraryAdd,
+          label: t.download_task_audiobook_pair,
+          onSelected: onPairAudiobook!,
+        ),
+      if (onDelete != null)
+        DownloadTaskMenuAction(
+          icon: FushiIcons.delete,
+          label: t.download_task_delete,
+          onSelected: onDelete!,
+          destructive: true,
+        ),
+    ];
   }
 
   /// 优先级按钮的外观（真正的点击由外层菜单接管，onPressed 恒 null；busy 时
