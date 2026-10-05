@@ -272,26 +272,22 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       actionsSlot: _actionsSlot,
       child: FushiFloatingChromeScope(
         controller: _chrome,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
-            Expanded(
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _onScroll,
-                child: SectionSwipeNavigator<VideoLibrarySection>(
-                  sections: <VideoLibrarySection>[
-                    for (final LibrarySectionTab<VideoLibrarySection> tab
-                        in tabs)
-                      tab.value,
-                  ],
-                  selected: _section,
-                  onSelect: _select,
-                  child: _buildSections(navigation),
-                ),
-              ),
+        // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+        // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
+        child: FushiFloatingChromeOverlay(
+          chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _onScroll,
+            child: SectionSwipeNavigator<VideoLibrarySection>(
+              sections: <VideoLibrarySection>[
+                for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+                  tab.value,
+              ],
+              selected: _section,
+              onSelect: _select,
+              child: _buildSections(navigation),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -308,11 +304,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               enabled: _showsLocalLibrary,
               child: _dropScoped(
                 () => _showsLocalLibrary,
-                widget.localLibraryPageBuilder?.call(
+                _insetPadded(widget.localLibraryPageBuilder?.call(
                       context,
                       _navigationFor(_showsLocalLibrary, navigation),
                       _localSection,
-                    ) ??
+                    )) ??
+                    // 主滚动视图自己把工具栏高度加成顶部内边距（内容滚到工具栏底下）。
                     HomeVideoPage(
                       repo: widget.repository,
                       navigation:
@@ -337,7 +334,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 enabled: _section == VideoLibrarySection.mediaServers,
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.mediaServers,
-                  widget.mediaServerPageBuilder?.call(
+                  FushiFloatingChromeInsetPadding(
+                  child: widget.mediaServerPageBuilder?.call(
                         context,
                         _navigationFor(
                           _section == VideoLibrarySection.mediaServers,
@@ -355,6 +353,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                         loadServers: widget.mediaServerServersLoader ??
                             () async => const <MediaServerEntry>[],
                       ),
+                  ),
                 ),
               ),
             ),
@@ -375,7 +374,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 enabled: _section == VideoLibrarySection.sources,
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.sources,
-                  MediaSourcesPage(
+                  FushiFloatingChromeInsetPadding(
+                  child: MediaSourcesPage(
                     mediaKind: 'video',
                     navigation: _navigationFor(
                       _section == VideoLibrarySection.sources,
@@ -390,6 +390,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                     onOpenScrapeTasks: widget.onOpenScrapeTasks,
                     onLibraryChanged: widget.onLibraryChanged,
                   ),
+                  ),
                 ),
               ),
             ),
@@ -403,12 +404,14 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 enabled: _section == VideoLibrarySection.settings,
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.settings,
-                  ModuleSettingsView(
+                  FushiFloatingChromeInsetPadding(
+                  child: ModuleSettingsView(
                     destinationId: SettingsDestinationId.video,
                     navigation: _navigationFor(
                       _section == VideoLibrarySection.settings,
                       navigation,
                     ),
+                  ),
                   ),
                 ),
               ),
@@ -417,6 +420,10 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
       ],
     );
   }
+  /// 测试替身页面不会自己加顶部内边距：整体让开叠放的工具栏。
+  Widget? _insetPadded(Widget? page) =>
+      page == null ? null : FushiFloatingChromeInsetPadding(child: page);
+
   /// 一个惰性保活分区：与上面各分区同一套 Offstage / ExcludeFocus / TickerMode /
   /// 拖放作用域，判据都是「[section] 是当前分区」。
   Widget _keepAlive(
@@ -433,7 +440,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           enabled: active,
           child: _dropScoped(
             () => _section == section,
-            build(section, _navigationFor(active, navigation)),
+            FushiFloatingChromeInsetPadding(
+              child: build(section, _navigationFor(active, navigation)),
+            ),
           ),
         ),
       ),

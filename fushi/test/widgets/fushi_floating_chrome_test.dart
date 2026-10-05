@@ -134,25 +134,141 @@ void main() {
         home: Scaffold(
           body: FushiFloatingChromeScope(
             controller: controller,
-            child: Column(
-              children: <Widget>[
-                FushiFloatingChromeReveal(
-                  child: Focus(
-                    focusNode: node,
-                    child: const SizedBox(height: 48, width: 100),
-                  ),
+            child: FushiFloatingChromeOverlay(
+              chrome: Focus(
+                focusNode: node,
+                child: const SizedBox(
+                  key: ValueKey<String>('chrome'),
+                  height: 48,
+                  width: 100,
                 ),
-              ],
+              ),
+              child: const SizedBox.expand(),
             ),
           ),
         ),
       ),
     );
+    await tester.pumpAndSettle();
     expect(controller.visible, isFalse);
     node.requestFocus();
     await tester.pumpAndSettle();
     expect(controller.visible, isTrue);
-    expect(tester.getSize(find.byType(FushiSpringReveal)).height, 48);
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey<String>('chrome'))).dy,
+      tester.getTopLeft(find.byType(FushiFloatingChromeOverlay)).dy,
+    );
+  });
+
+  testWidgets('叠放工具区：显隐只滑动、不改内容区尺寸；内容拿到恒定的顶部 inset', (
+    WidgetTester tester,
+  ) async {
+    final FushiFloatingChromeController controller =
+        FushiFloatingChromeController();
+    addTearDown(controller.dispose);
+    final List<double> insets = <double>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FushiFloatingChromeScope(
+            controller: controller,
+            child: FushiFloatingChromeOverlay(
+              chrome: const SizedBox(
+                key: ValueKey<String>('chrome'),
+                height: 56,
+              ),
+              child: Builder(
+                builder: (BuildContext context) {
+                  insets.add(FushiFloatingChromeInset.of(context));
+                  return const SizedBox.expand(
+                    key: ValueKey<String>('content'),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Size content = tester.getSize(
+      find.byKey(const ValueKey<String>('content')),
+    );
+    expect(insets.last, 56);
+
+    controller.hide();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey<String>('content'))),
+      content,
+    );
+    expect(insets.last, 56, reason: 'inset 不随显隐变');
+    expect(
+      tester.getRect(find.byKey(const ValueKey<String>('chrome'))).bottom,
+      lessThanOrEqualTo(
+        tester.getTopLeft(find.byType(FushiFloatingChromeOverlay)).dy,
+      ),
+      reason: '收起后整条滑出叠放区',
+    );
+
+    controller.show();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey<String>('content'))),
+      content,
+    );
+  });
+
+  testWidgets('版面修正带来的位移不算用户滚动：视口高度变了 / 底部夹紧都不切显隐', (
+    WidgetTester tester,
+  ) async {
+    late BuildContext ctx;
+    await tester.pumpWidget(
+      Builder(
+        builder: (BuildContext context) {
+          ctx = context;
+          return const SizedBox();
+        },
+      ),
+    );
+    final FushiFloatingChromeController controller =
+        FushiFloatingChromeController();
+    addTearDown(controller.dispose);
+    ScrollUpdateNotification at({
+      required double pixels,
+      required double delta,
+      double max = 5000,
+      double viewport = 600,
+    }) => ScrollUpdateNotification(
+      metrics: FixedScrollMetrics(
+        minScrollExtent: 0,
+        maxScrollExtent: max,
+        pixels: pixels,
+        viewportDimension: viewport,
+        axisDirection: AxisDirection.down,
+        devicePixelRatio: 1,
+      ),
+      context: ctx,
+      scrollDelta: delta,
+    );
+
+    controller.handleScrollNotification(at(pixels: 300, delta: 100));
+    expect(controller.visible, isFalse);
+    // 收起让视口变高，同一视图的位置被夹紧：负位移但不是用户往回滚。
+    controller.handleScrollNotification(
+      at(pixels: 250, delta: -50, viewport: 650),
+    );
+    expect(controller.visible, isFalse, reason: '视口高度变化的那一帧不计方向');
+    // 停在底部的负位移 = 内容变短后的夹紧。
+    controller.handleScrollNotification(
+      at(pixels: 4000, delta: -60, max: 4000, viewport: 650),
+    );
+    expect(controller.visible, isFalse, reason: '底部夹紧不弹回');
+    // 用户真的往回滚（离开底部）照常弹回。
+    controller.handleScrollNotification(
+      at(pixels: 3900, delta: -100, max: 4000, viewport: 650),
+    );
+    expect(controller.visible, isTrue);
   });
 
   testWidgets('悬浮动作组画出登记的页头动作，动作集合变了做交叉切换', (WidgetTester tester) async {
