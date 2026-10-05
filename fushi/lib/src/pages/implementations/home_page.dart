@@ -1594,14 +1594,28 @@ class _HomePageState extends BasePageState<HomePage>
             // the app focus ring hugs the single selected item; D-pad Up/Down
             // steps between them and Left/Right leaves to the content.
             FocusTraversalGroup(
-              child: adaptiveNavRail(
-                context: context,
-                currentIndex: visualIndex,
-                onTap: selectVisual,
-                items: displayItems,
-                leading: const NavRailBrandButton(),
-                // 玻璃设计系统：宽窗口是图标 + 文字的悬浮侧栏，medium 档收成窄条。
-                extended: sizeClass == WindowSizeClass.expanded,
+              child: ValueListenableBuilder<bool?>(
+                valueListenable: appModel.navRailExpandedNotifier,
+                builder: (BuildContext context, bool? userExpanded, _) {
+                  // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
+                  // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
+                  // 抽屉）。玻璃设计系统恒按尺寸档。
+                  final bool extended = adaptiveNavRailExtended(
+                    context,
+                    sizeClass: sizeClass,
+                    userExpanded: userExpanded,
+                  );
+                  return adaptiveNavRail(
+                    context: context,
+                    currentIndex: visualIndex,
+                    onTap: selectVisual,
+                    items: displayItems,
+                    leading: const NavRailBrandButton(),
+                    extended: extended,
+                    onToggleExtended: () =>
+                        unawaited(appModel.setNavRailExpanded(!extended)),
+                  );
+                },
               ),
             ),
             Expanded(
