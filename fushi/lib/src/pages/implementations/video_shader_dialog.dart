@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_shader_downloader.dart';
@@ -201,22 +202,27 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     final String? url = await showAppDialog<String>(
       context: context,
       builder: (BuildContext ctx) => FushiAlertDialog(
+        icon: const FushiIcon(FushiIcons.link),
         title: Text(t.video_shader_download_url),
         content: FushiTextFieldControl(
           controller: urlController,
           autofocus: true,
           keyboardType: TextInputType.url,
-          decoration: InputDecoration(hintText: t.video_shader_url_hint),
+          decoration: InputDecoration(
+            hintText: t.video_shader_url_hint,
+            prefixIcon: const FushiIcon(FushiIcons.download),
+          ),
           onSubmitted: (String v) => Navigator.pop(ctx, v),
         ),
         actions: <Widget>[
-          FushiTextButton(
+          FushiDialogAction(
+            label: t.dialog_cancel,
             onPressed: () => Navigator.pop(ctx),
-            child: Text(t.dialog_cancel),
           ),
-          FushiTextButton(
+          FushiDialogAction(
+            label: t.dialog_save,
+            kind: FushiDialogActionKind.primary,
             onPressed: () => Navigator.pop(ctx, urlController.text),
-            child: Text(t.dialog_save),
           ),
         ],
       ),
@@ -378,7 +384,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
         ? <Widget>[
             AdaptiveSettingsRow(
               title: t.video_shaders_empty,
-              icon: Icons.hourglass_empty_outlined,
+              icon: FushiIcons.pending,
               showIcon: true,
             ),
           ]
@@ -417,13 +423,13 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
           children: <Widget>[
             _actionRow(
               title: t.video_shader_import,
-              icon: Icons.add_outlined,
+              icon: FushiIcons.add,
               onTap: _import,
             ),
             _actionRow(
               title: t.video_shader_download_url,
               subtitle: t.video_shader_url_hint,
-              icon: Icons.link_outlined,
+              icon: FushiIcons.link,
               onTap: _downloadFromUrl,
             ),
             _actionRow(
@@ -431,7 +437,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
               subtitle: _mpvDir.isEmpty
                   ? t.video_shader_import_from_mpv_hint
                   : t.video_shader_mpv_dir_current(path: _mpvDir),
-              icon: Icons.travel_explore_outlined,
+              icon: FushiIcons.travelExplore,
               onTap: _importFromMpv,
             ),
           ],
@@ -489,7 +495,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       key: ValueKey<String>('video-shader-file-$name'),
       title: title,
       subtitle: name,
-      icon: Icons.auto_awesome_outlined,
+      icon: FushiIcons.ai,
       showIcon: true,
       value: _enabled.contains(name),
       onChanged: (bool v) => _toggle(name, v),
@@ -526,7 +532,7 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       subtitle: subtitle,
       icon: icon,
       showIcon: true,
-      trailing: const FushiIcon(Icons.chevron_right),
+      trailing: const FushiIcon(FushiIcons.chevronRight),
       onTap: onTap,
     );
   }
@@ -675,6 +681,47 @@ class _ShaderFootnote extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
+    // M3E：警示脚注做成 tertiaryContainer 色块（状态色走 tonal，不只靠字色），
+    // 与行文字同一左右缘；Apple / 墨水屏维持一行脚注。
+    if (warning && !isGlassDesign(context) && !isEinkTheme(context)) {
+      final ColorScheme cs = theme.colorScheme;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.rowHorizontal,
+          4,
+          tokens.spacing.rowHorizontal,
+          tokens.spacing.gap,
+        ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.tertiaryContainer,
+            borderRadius: FushiM3eShape.smallRadius,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FushiIcon(
+                  FushiIcons.warning,
+                  size: 18,
+                  color: cs.onTertiaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    text,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onTertiaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final TextStyle? style = isGlassDesign(context)
         ? FushiAppleMetrics.of(context).footnoteStyle(context).copyWith(
               color: warning ? appleColorsOf(context).warning : null,
@@ -724,6 +771,7 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
   @override
   Widget build(BuildContext context) {
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.travelExplore),
       title: Text(t.video_shader_mpv_pick_title),
       content: SizedBox(
         width: 380,
@@ -766,15 +814,16 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
         ),
       ),
       actions: <Widget>[
-        FushiTextButton(
+        FushiDialogAction(
+          label: t.dialog_cancel,
           onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
         ),
-        FushiFilledButton(
+        FushiDialogAction(
+          label: t.video_shader_import,
+          kind: FushiDialogActionKind.primary,
           onPressed: _selected.isEmpty
               ? null
               : () => Navigator.pop(context, _selected.toList()),
-          child: Text(t.video_shader_import),
         ),
       ],
     );
@@ -817,6 +866,7 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.ai),
       title: Text(t.video_shader_anime4k_title),
       content: SizedBox(
         width: 380,
@@ -851,8 +901,9 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                         subtitleMaxLines: 3,
                         subtitle: Text(presetDescription(preset.id)),
                         trailing: added
-                            ? FushiIcon(Icons.check, color: cs.primary)
-                            : const FushiIcon(Icons.download_outlined),
+                            ? FushiIcon(FushiIcons.downloadDone,
+                                color: cs.primary)
+                            : const FushiIcon(FushiIcons.download),
                         onTap: () => Navigator.pop(context, preset),
                       );
                     }(),
@@ -887,7 +938,9 @@ class _Anime4kProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final FushiTypography type = context.fushiType;
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.downloading),
       title: Text(t.video_shader_downloading),
       content: SizedBox(
         width: 320,
@@ -899,25 +952,27 @@ class _Anime4kProgressDialog extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Text(presetName, style: Theme.of(context).textTheme.bodyMedium),
-                const SizedBox(height: 12),
-                FushiLinearProgressIndicator(value: v.progress),
+                Text(
+                  presetName,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
                 const SizedBox(height: 8),
+                // M3E：文件序号用 Display 大数字（等宽），进度条走波浪线。
                 Text(
                   '${v.index + 1} / ${v.total}',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: type.displaySmallEmphasized.tabular,
                 ),
+                const SizedBox(height: 12),
+                FushiLinearProgressIndicator(value: v.progress),
               ],
             );
           },
         ),
       ),
       actions: <Widget>[
-        FushiTextButton(
-          onPressed: onCancel,
-          child: Text(t.dialog_cancel),
-        ),
+        FushiDialogAction(label: t.dialog_cancel, onPressed: onCancel),
       ],
     );
   }
@@ -1050,7 +1105,7 @@ class VideoShaderTierComparison extends StatelessWidget {
   static IconData _tierIcon(VideoShaderTier tier) {
     switch (tier) {
       case VideoShaderTier.off:
-        return Icons.signal_cellular_0_bar;
+        return FushiIcons.block;
       case VideoShaderTier.low:
         return Icons.signal_cellular_alt_1_bar;
       case VideoShaderTier.medium:
@@ -1058,7 +1113,7 @@ class VideoShaderTierComparison extends StatelessWidget {
       case VideoShaderTier.high:
         return Icons.signal_cellular_alt;
       case VideoShaderTier.ultra:
-        return Icons.auto_awesome_outlined;
+        return FushiIcons.ai;
     }
   }
 
@@ -1086,7 +1141,8 @@ class VideoShaderTierComparison extends StatelessWidget {
               icon: _tierIcon(specs[i].tier),
               showIcon: true,
               trailing: current == specs[i].tier
-                  ? FushiIcon(Icons.check, color: checkColor)
+                  ? FushiIcon(FushiIcons.check, color: checkColor)
+
                   : null,
               onTap: onSelect == null
                   ? null
