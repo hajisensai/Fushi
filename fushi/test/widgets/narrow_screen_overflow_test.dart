@@ -322,11 +322,11 @@ void main() {
       );
 
       expect(observed, 320);
-      expect(find.byType(PopupMenuButton<int>), findsOneWidget,
+      expect(find.byWidgetPredicate((Widget w) => w is PopupMenuButton<int>), findsOneWidget,
           reason: '三个动作必须折成一个溢出菜单（BUG-1184）');
       expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
       // 折叠后动作一个都不能少：菜单里必须仍能找到全部三条。
-      await tester.tap(find.byType(PopupMenuButton<int>));
+      await tester.tap(find.byWidgetPredicate((Widget w) => w is PopupMenuButton<int>));
       await tester.pumpAndSettle();
       expect(find.text('重命名'), findsOneWidget);
       expect(find.text('标签'), findsOneWidget);
@@ -342,7 +342,7 @@ void main() {
 
       expect(observed, 360, reason: '判据必须取 AppBar 的局部约束宽');
       expect(
-        find.byType(PopupMenuButton<int>),
+        find.byWidgetPredicate((Widget w) => w is PopupMenuButton<int>),
         findsOneWidget,
         reason: 'BUG-1186：折叠判据曾读 MediaQuery 的整窗宽（1200，不算窄），'
             '于是分栏 / 受限宽容器里三个动作照样平铺，把合集名挤没。'
@@ -359,7 +359,7 @@ void main() {
       );
 
       expect(observed, 700);
-      expect(find.byType(PopupMenuButton<int>), findsNothing);
+      expect(find.byWidgetPredicate((Widget w) => w is PopupMenuButton<int>), findsNothing);
       expect(find.byIcon(Icons.drive_file_rename_outline), findsOneWidget,
           reason: '宽屏必须零行为变化：三个动作逐个平铺');
       expect(find.byIcon(Icons.sell_outlined), findsOneWidget);

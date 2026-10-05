@@ -33,7 +33,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiDialogHeroIcon;
+    show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -2257,21 +2257,17 @@ List<Widget> narrowAwareAppBarActions({
   }
   return <Widget>[
     ...alwaysVisible,
-    PopupMenuButton<int>(
+    // 共享菜单路由（M3E 面板 / Apple 菜单），不再裸用 PopupMenuButton。
+    FushiPopupMenuButton<int>(
       tooltip: t.common_more_actions,
       icon: const FushiIcon(Icons.more_vert),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         for (int i = 0; i < collapsible.length; i++)
-          PopupMenuItem<int>(
+          FushiPopupMenuItem<int>(
             value: i,
             enabled: collapsible[i].onPressed != null,
-            child: Row(
-              children: <Widget>[
-                FushiIcon(collapsible[i].icon, size: 20),
-                const SizedBox(width: 12),
-                Expanded(child: Text(collapsible[i].label)),
-              ],
-            ),
+            icon: collapsible[i].icon,
+            label: collapsible[i].label,
           ),
       ],
       onSelected: (int index) => collapsible[index].onPressed?.call(),
@@ -3944,7 +3940,7 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
       padding: widget.padding,
       splashRadius: widget.splashRadius,
       position: PopupMenuPosition.under,
-      popUpAnimationStyle: fushiMd3MenuAnimationStyle,
+      popUpAnimationStyle: fushiM3eMenuAnimationStyle,
       onSelected: widget.onSelected,
       itemBuilder: (BuildContext context) => widget.items,
       child: widget.child,
