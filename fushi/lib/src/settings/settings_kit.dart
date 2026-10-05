@@ -1196,7 +1196,8 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
                     padding: const EdgeInsets.all(4),
                     child: FushiIconButtonControl(
                       icon: const FushiIcon(Icons.arrow_back),
-                      tooltip: t.back,
+                      tooltip: MaterialLocalizations.of(context)
+                          .backButtonTooltip,
                       onPressed: widget.onBack,
                     ),
                   ),
