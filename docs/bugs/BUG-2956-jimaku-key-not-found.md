@@ -1,0 +1,30 @@
+## BUG-2956 · Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕
+- **报告**：2026-10-05（用户：「字幕搜索有问题」，Windows 繁中 UI，Mirai Nikki VCB-Studio 合集。合集页 Jimaku API 金鑰框有值，顶部却红字「請先填寫 Jimaku API key」，番剧 chip 列出四条、来源「找不到字幕」；单集页集数 7 同样「找不到字幕」）
+- **真实性**：✅ 真 bug。key 本身读得对：输入框与 provider 装配都读偏好 `jimaku_api_key`（`fushi/lib/src/models/preferences_repository.dart:2048`、`fushi/lib/src/media/video/subtitle/configured_subtitle_providers.dart:35`）。真正的问题是**字幕工作台拿不到字幕来源 registry**：
+  - `fushi/lib/src/pages/implementations/subtitle_workbench_page.dart:96` 生产宿主直接读 `appModel.videoSubtitleRegistry`。
+  - 它只在下载管线启动后才被赋值（`fushi/lib/src/models/app_model.dart:5449`），而管线只在「浏览（下载）」模块开着时、由 `startAnimeDownloadService`（`app_model.dart:3359` → `:5095`）在旧任务迁移与 torrent 会话恢复**之后**才启动（`:5190`）。模块关着、启动还没走完、或启动抛错（被 `:3361` 吞进错误日志）时，它都是 null；模块关着时，改 key 触发的 `reloadVideoDownloadPipelineRuntime` 也会被 wanted 门闩挡回（`:5572`），救不回来。
+  - registry 为 null 时，合集页 `fushi/lib/src/pages/implementations/subtitle_collection_panel.dart:545-551` 不看 key，直接报 `video_jimaku_no_key`（截图 1）；单集页 `fushi/lib/src/pages/implementations/subtitle_search_panel.dart:731-741` 只清空候选、不设错误，页面显示「找不到字幕」（截图 2）。整个过程 Jimaku 一次都没请求。
+  - 番剧 chip 来自 AniList（`subtitle_collection_panel.dart:437`），不是 Jimaku，所以不能说明 Jimaku 请求成功过。
+  - Jimaku 请求本身没问题：`Authorization: <key>`（不加 Bearer），`/api/entries/search?anilist_id=…&anime=true`，单集附带 `/api/entries/{id}/files?episode=n`（`packages/fushi_engine/lib/media/video/jimaku_client.dart:492`、`:445`）；401 会归类成 unauthorized 失败，在结果为空时显示出来（BUG-1844）。匿名实测 `GET https://jimaku.cc/api/entries/search?query=mirai%20nikki&anime=true` 返回 HTTP 401 `{"error":"unauthorized","code":7}`。浏览器扩展的查字幕桥早就按需建 registry、不依赖管线（`app_model.dart:4792` `browserExtensionSubtitleRegistry`），只是字幕工作台没有走它。
+- **[x] ① 已修复** —
+  - 把按需建 registry 的 `browserExtensionSubtitleRegistry` 改名为 `AppModel.subtitleSearchRegistry()`，作为交互式查字幕（工作台 + 扩展桥）的唯一入口：管线在就复用管线那套，不在就按同一份 `createConfiguredVideoSubtitleProviders` 现建并缓存；配置变化仍由 `reloadVideoDownloadPipelineRuntime` 统一作废。
+  - `SubtitleWorkbenchHost.subtitleRegistry` 改为异步方法，生产宿主走 `subtitleSearchRegistry()`。两个面板与 `JimakuSubtitleDialog` 的 `subtitleRegistry` 改成 `Future<VideoSubtitleRegistry?> Function()`，每次搜索 / 下载时现取。
+  - 没有任何来源时说真实原因：key 为空才说「请先填写 key」；key 已填却没有来源时，说「在线字幕来源都已关闭」（新 key `video_subtitle_sources_all_disabled`）。单集页不再把这种情况显示成「找不到字幕」。
+  - `describeSubtitleFailure`：401 / 403 显示「<来源> 拒绝了 API key」（`video_subtitle_error_key_rejected`），网络或超时显示「连不上 <来源>」（`video_subtitle_error_network`），状态码照带。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/pages/subtitle_workbench_registry_source_guard_test.dart`：守卫生产宿主不读 `videoSubtitleRegistry`。
+  - `fushi/test/pages/subtitle_collection_panel_test.dart`：key 已填但没有来源时，不报「请先填写 key」。
+  - `fushi/test/pages/video_subtitle_dialog_registry_test.dart`：单集页没有来源时报真实原因，不显示成找不到字幕。
+  - `fushi/test/pages/jimaku_search_identity_test.dart`：401 显示「Jimaku 拒绝了 API key」。
+  - `fushi/test/media/video/jimaku_subtitle_provider_auth_test.dart`：按 Jimaku 真实响应形状伪造 HTTP，钉住 Authorization 头、`anilist_id` + `anime=true`、`episode=7`，以及 401 → unauthorized。
+- **备注**：
+  - 本机没有 Jimaku key，没有真打 Jimaku 拿 Mirai Nikki 的文件列表。
+  - 跟进（同分支第二个提交）：Jimaku 整季压缩包。原先 `jimaku_subtitle_provider.dart` 的 `if (!file.isTextSubtitle) continue;` 把 zip / rar / 7z 一律丢掉，带集号查文件时 Jimaku 服务端也会把 `(01-26).zip` 这类包滤掉——老番只有整季包时，结果必然是「找不到字幕」。修复：
+    - SubDL 里原有的解包（`extractSubdlSubtitles` / `pickSubdlSubtitle`）抽成共享的 `packages/fushi_engine/lib/media/video/subtitle/subtitle_archive.dart`，SubDL 与 Jimaku 共用，不另写一套。
+    - Jimaku 搜索把压缩包列成整季包候选（`VideoSubtitleCandidate.archiveFormat`，不带单集集号）。带集号查时，再列一次不带集号的全表，补回被服务端滤掉的包；认不出语言的包不被语言过滤丢掉。
+    - 单集：下载后按请求集号从包内挑文件，挑不出就明确报「包里没有这一集」，不拿第 1 集顶替。
+    - 合集：`runSubtitleBatch` 在没有单集文件时，把整包下载一次（`VideoSubtitleDownload.archiveEntries` 带回包内全部字幕），再按集号逐集拆分。
+    - 只能解 zip：`archive` 3.x 不支持 RAR / 7z。这两种照样列出，并标注「暂不支持解包，请到网站下载后手动解压」；下载时报同一句话，不静默丢弃。
+    - 列表里标「整季包（ZIP）」；合集预览显示「第 N 集：将从整季包（ZIP）中拆出」。
+    - 测试：`fushi/test/media/video/jimaku_archive_pack_test.dart`，用伪造的 Jimaku files 响应加内存 zip，覆盖搜索补包、标注、单集挑集、缺集报错、RAR 不支持、合集只下一次并逐集拆分。
+  - 另一个已知差异：用户在设置里关掉 Jimaku（`jimaku_enabled=false`）却在工作台填了 key 时，Jimaku 仍不参与搜索，这一点没有改。

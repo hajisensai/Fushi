@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sy
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -72,6 +73,26 @@ class SubtitleCollectionSource {
 
   /// 认得出集号的集数。
   int get episodeCount => index.byEpisode.length;
+
+  /// 能解开的整季压缩包格式（来源里第一个 zip 包）；没有为 null。批量下载时这些
+  /// 包按集号拆分（[runSubtitleBatch]），所以没有单集文件的集照样能配上。
+  SubtitleArchiveFormat? get unpackablePackFormat {
+    for (final VideoSubtitleCandidate c in candidates) {
+      final SubtitleArchiveFormat? f = c.archiveFormat;
+      if (f != null && f.isSupported) return f;
+    }
+    return null;
+  }
+
+  /// 只有解不开的整季包（RAR / 7z）时的格式；有可解的包或没有包为 null。
+  SubtitleArchiveFormat? get unsupportedPackFormat {
+    if (unpackablePackFormat != null) return null;
+    for (final VideoSubtitleCandidate c in candidates) {
+      final SubtitleArchiveFormat? f = c.archiveFormat;
+      if (f != null) return f;
+    }
+    return null;
+  }
 
   /// 来源里出现过的语言（去重，稳定顺序）。
   List<String> get languages => <String>{
@@ -154,7 +175,7 @@ class SubtitleCollectionPanel extends StatefulWidget {
   final List<VideoBookRow> members;
 
   /// 统一字幕来源的延迟解析器（填 key 会重建 runtime，不能早绑）。
-  final VideoSubtitleRegistry? Function() subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function() subtitleRegistry;
 
   final String initialApiKey;
   final Future<void> Function(String key) onApiKeyChanged;
@@ -299,9 +320,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     // 这条首搜**只搜不绑**（[_resolveSeries] → [_applySeries]）：这里的前提正是
     // 合集没绑 AniList，若把模糊命中的首条写回库，用户只是打开一次面板就会被
     // 粘性绑定——真人剧合集会被永久绑到一部最像的动画上。
-    if (!_searching && !_resolving && _hasConfiguredSubtitleSource) {
-      unawaited(_resolveSeries());
+    if (_searching || _resolving || !await _hasConfiguredSubtitleSource()) {
+      return;
     }
+    if (!mounted || _searching || _resolving) return;
+    unawaited(_resolveSeries());
   }
 
   /// 本次检索交给 provider 的身份。
@@ -350,10 +373,16 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     super.dispose();
   }
 
-  bool get _hasConfiguredSubtitleSource {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
+  Future<bool> _hasConfiguredSubtitleSource() async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
     return registry != null && registry.providers.isNotEmpty;
   }
+
+  /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
+  /// key 却仍然没有来源 = 来源全被关掉了，不能再拿缺 key 糊弄（BUG-2956）。
+  String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
+      ? t.video_jimaku_no_key
+      : t.video_subtitle_sources_all_disabled;
 
   SubtitleCollectionSource? get _selectedSource {
     for (final SubtitleCollectionSource s in _sources) {
@@ -416,7 +445,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   Future<void> _resolveSeries() async {
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) {
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
       _setNotice(t.video_jimaku_no_key, error: true);
       return;
     }
@@ -540,7 +569,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     int? generation,
   }) async {
     final int requestGeneration = generation ?? ++_generation;
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (!mounted) return;
     final String query = _queryCtrl.text.trim();
     if (registry == null || registry.providers.isEmpty) {
       setState(() {
@@ -548,7 +578,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _selectedSourceKey = null;
         _searched = true;
       });
-      _setNotice(t.video_jimaku_no_key, error: true);
+      _setNotice(_noSourceMessage(), error: true);
       return;
     }
     setState(() {
@@ -644,8 +674,12 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   Future<void> _downloadAll() async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
-    if (registry == null) return;
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (!mounted) return;
+    if (registry == null) {
+      _setNotice(_noSourceMessage(), error: true);
+      return;
+    }
     final List<VideoSubtitleCandidate> candidates = _batchCandidates;
     if (candidates.isEmpty) return;
     setState(() {
@@ -748,7 +782,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final SubtitleCollectionSource? source = _selectedSource;
     if (source == null) return const FushiIcon(Icons.remove, size: 18);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
-    return (source.index.byEpisode[episode]?.isEmpty ?? true)
+    return (source.index.byEpisode[episode]?.isEmpty ?? true) &&
+            source.unpackablePackFormat == null
         ? const FushiIcon(Icons.search_off, size: 18)
         : FushiIcon(
             Icons.check_circle_outline,
@@ -769,7 +804,15 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       '${jimakuLanguageLabel(item.language!)}',
           );
         case SubtitleBatchStatus.noMatch:
-          return Text(t.video_jimaku_no_results);
+          final SubtitleArchiveFormat? unsupported =
+              _selectedSource?.unsupportedPackFormat;
+          return Text(
+            unsupported == null
+                ? t.video_jimaku_no_results
+                : t.video_subtitle_archive_pack_unsupported(
+                    format: unsupported.label,
+                  ),
+          );
         case SubtitleBatchStatus.failed:
           return Text(t.video_jimaku_download_failed);
         case SubtitleBatchStatus.downloading:
@@ -784,6 +827,22 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final List<VideoSubtitleCandidate> matches =
         source.index.byEpisode[episode] ?? const <VideoSubtitleCandidate>[];
     if (matches.isEmpty) {
+      // 整季包（BUG-2956 跟进）：没有单集文件的集，下载时从包里按集号拆。
+      final SubtitleArchiveFormat? pack = source.unpackablePackFormat;
+      if (pack != null) {
+        return Text(
+          t.video_subtitle_episode_from_pack(
+            episode: episode,
+            format: pack.label,
+          ),
+        );
+      }
+      final SubtitleArchiveFormat? unsupported = source.unsupportedPackFormat;
+      if (unsupported != null && source.index.unnumbered.isEmpty) {
+        return Text(
+          t.video_subtitle_archive_pack_unsupported(format: unsupported.label),
+        );
+      }
       if (source.index.unnumbered.isNotEmpty) {
         return Text(
           t.video_jimaku_episode_unlabeled(

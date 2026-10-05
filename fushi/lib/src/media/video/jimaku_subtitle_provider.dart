@@ -2,6 +2,7 @@ import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
@@ -57,17 +58,33 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
       );
       final List<VideoSubtitleCandidate> candidates =
           <VideoSubtitleCandidate>[];
+      final int? episode = request.effectiveEpisode;
       for (final JimakuEntry entry in entries) {
         final List<JimakuFile> files = await _client.listFiles(
           entry.id,
-          episode: request.effectiveEpisode,
+          episode: episode,
           throwOnError: true,
         );
-        for (final JimakuFile file in files) {
-          if (!file.isTextSubtitle) continue;
+        // 整季压缩包（BUG-2956 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
+        // `Show (01-26).zip` 这类整季包猜不出单集，会被服务端滤掉。带集号查时再列
+        // 一次不带集号的全表，只从里面补压缩包。
+        final List<JimakuFile> packs = <JimakuFile>[
+          for (final JimakuFile file in episode == null
+              ? files
+              : await _client.listFiles(entry.id, throwOnError: true))
+            if (file.archiveFormat != null) file,
+        ];
+        final Set<String> seen = <String>{};
+        for (final JimakuFile file in <JimakuFile>[...files, ...packs]) {
+          final SubtitleArchiveFormat? archive = file.archiveFormat;
+          if (!file.isTextSubtitle && archive == null) continue;
+          if (!seen.add(file.url)) continue;
           final String language = detectSubtitleLanguage(file.name) ?? '';
+          // 压缩包名常不带语言标记：认不出语言的包保留（下载后按包内文件再认），
+          // 不能因为「名字里没写 ja」把整季包当成别的语言滤掉。
           if (request.languages.isNotEmpty &&
-              !request.languages.contains(language)) {
+              !request.languages.contains(language) &&
+              !(archive != null && language.isEmpty)) {
             continue;
           }
           candidates.add(
@@ -77,6 +94,7 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
               language: language,
               season: request.effectiveSeason,
               providerPriority: priority,
+              wantedEpisode: episode,
             ),
           );
         }
@@ -121,10 +139,44 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
           retryable: true,
         );
       }
+      if (!candidate.isArchivePack) {
+        return VideoSubtitleDownload(
+          bytes: bytes,
+          fileName: candidate.file.name,
+          language: candidate.language,
+        );
+      }
+      // 整季包：与 SubDL 同一套解包（RAR / 7z 抛 unsupported）。单集按搜索时的集号
+      // 从包内挑，挑不出就报错——给第 1 集的字幕等于静默装错；全部文件随下载带回，
+      // 合集批量据此逐集拆分。
+      final List<ArchivedSubtitle> entries = extractArchivedSubtitles(
+        bytes,
+        fallbackFileName: candidate.file.name,
+        providerId: 'jimaku',
+      );
+      final ArchivedSubtitle? picked = pickArchivedSubtitle(
+        entries,
+        episode: candidate.wantedEpisode,
+        fallbackToFirst: false,
+      );
+      if (picked == null) {
+        throw ExternalProviderFailure(
+          providerId: 'jimaku',
+          operation: kSubtitleArchiveOperation,
+          kind: ExternalProviderFailureKind.notFound,
+          message: entries.isEmpty
+              ? 'Jimaku archive contained no text subtitle'
+              : 'Jimaku archive has no file for episode '
+                  '${candidate.wantedEpisode}',
+        );
+      }
       return VideoSubtitleDownload(
-        bytes: bytes,
-        fileName: candidate.file.name,
-        language: candidate.language,
+        bytes: picked.bytes,
+        fileName: picked.fileName,
+        language: candidate.language.isNotEmpty
+            ? candidate.language
+            : detectSubtitleLanguage(picked.fileName) ?? '',
+        archiveEntries: entries,
       );
     } on Object catch (error) {
       throw _jimakuFailure('download', error);
@@ -167,6 +219,7 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
     required String language,
     required int? season,
     required int providerPriority,
+    this.wantedEpisode,
   }) : super(
           providerId: 'jimaku',
           remoteId: '${entry.id}:${file.name}',
@@ -175,15 +228,21 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
           providerPriority: providerPriority,
           releaseName: entry.name,
           season: season,
-          episode: file.episode,
+          // 整季包没有单集集号（`(01-26).zip` 会被解析成第 1 集），否则批量会把整包
+          // 当成第 1 集的字幕。
+          episode: file.archiveFormat == null ? file.episode : null,
           fileSize: file.size,
           uploadedAtMs: file.lastModifiedMs,
           collectionId: '${entry.id}',
           collectionLabel: entry.name,
+          archiveFormat: file.archiveFormat,
         );
 
   final JimakuEntry entry;
   final JimakuFile file;
+
+  /// 搜索时请求的集号：整季包下载后按它从包内挑文件（null = 没给集号）。
+  final int? wantedEpisode;
 }
 
 ExternalProviderFailure _jimakuFailure(String operation, Object error) {

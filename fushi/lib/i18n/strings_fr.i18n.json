@@ -6379,5 +6379,16 @@
   "video_skip_opening": "Skip opening",
   "video_skip_ending": "Skip ending",
   "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
-  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers."
+  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
+  "video_cover_online_search": "Search cover online",
+  "video_cover_online_hint": "Search the metadata provider by title, or switch to ID. Picking a result only uses its cover; the work's identity is not changed.",
+  "video_cover_online_no_image": "This result has no cover image. Try another one.",
+  "video_subtitle_sources_all_disabled": "All online subtitle sources are turned off. Turn one on in subtitle settings.",
+  "video_subtitle_error_key_rejected": "${provider} rejected the API key. Check the key in subtitle settings",
+  "video_subtitle_error_network": "Could not reach ${provider}. Check your network or proxy",
+  "video_subtitle_archive_pack": "Season pack (${format})",
+  "video_subtitle_archive_pack_unsupported": "Season pack (${format}) · cannot be unpacked yet; download it from the site and extract it manually",
+  "video_subtitle_episode_from_pack": "Episode ${episode}: will be taken from the season pack (${format})",
+  "video_subtitle_error_archive_unsupported": "RAR / 7z season packs cannot be unpacked yet. Download it from the site and extract it manually",
+  "video_subtitle_error_archive_episode_missing": "This season pack has no subtitle for this episode"
 }

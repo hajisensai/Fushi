@@ -10,8 +10,11 @@ library;
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart'
+    show detectSubtitleLanguage, parseSubtitleEpisode;
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:path/path.dart' as p;
@@ -103,6 +106,93 @@ String batchSubtitleFileName(String bookUid, String fileName) {
   return '${safe}__$fileName';
 }
 
+/// 合集批量里的整季压缩包拆分：每个包只下载一次（registry 的下载结果带回包内全部
+/// 文本字幕 [VideoSubtitleDownload.archiveEntries]），再按集号逐集取文件。
+///
+/// 包按语言偏好排序，先试首选语言的包；解不开的格式（RAR / 7z）不下载，只在
+/// [failureReason] 里说明——让该集显示「格式不支持」而不是「没有字幕」。
+class _ArchivePackSplitter {
+  _ArchivePackSplitter({
+    required this.registry,
+    required List<VideoSubtitleCandidate> candidates,
+    String? preferredLanguage,
+  }) : _packs =
+           <VideoSubtitleCandidate>[
+             for (final VideoSubtitleCandidate c in candidates)
+               if (c.archiveFormat?.isSupported ?? false) c,
+           ]..sort(
+             (VideoSubtitleCandidate a, VideoSubtitleCandidate b) =>
+                 compareCandidatesByLanguagePreference(a, b, preferredLanguage),
+           ),
+       _hasUnsupported = candidates.any(
+         (VideoSubtitleCandidate c) =>
+             c.archiveFormat != null && !c.archiveFormat!.isSupported,
+       );
+
+  final VideoSubtitleRegistry registry;
+  final List<VideoSubtitleCandidate> _packs;
+  final bool _hasUnsupported;
+  final Map<String, Future<VideoSubtitleDownload?>> _downloads =
+      <String, Future<VideoSubtitleDownload?>>{};
+  Object? _lastError;
+
+  /// 本集没从任何包里拆出文件时的原因（没有包可试时为 null，交回单文件判据）。
+  String? get failureReason {
+    if (_lastError != null) return 'archive: $_lastError';
+    if (_packs.isNotEmpty) return 'season pack has no file for this episode';
+    if (_hasUnsupported) return 'season pack format is not supported';
+    return null;
+  }
+
+  Future<VideoSubtitleDownload?> subtitleFor(
+    int episode, {
+    required bool soleTarget,
+  }) async {
+    for (final VideoSubtitleCandidate pack in _packs) {
+      final VideoSubtitleDownload? download =
+          await (_downloads[pack.identityKey] ??= _download(pack));
+      if (download == null) continue;
+      final List<ArchivedSubtitle> entries = download.archiveEntries.isEmpty
+          ? <ArchivedSubtitle>[
+              ArchivedSubtitle(
+                fileName: download.fileName,
+                bytes: download.bytes,
+              ),
+            ]
+          : download.archiveEntries;
+      // 多目标时只认集号精确命中：一个文件发给 N 集等于静默装错。
+      ArchivedSubtitle? picked;
+      for (final ArchivedSubtitle entry in entries) {
+        if (parseSubtitleEpisode(entry.fileName) == episode) {
+          picked = entry;
+          break;
+        }
+      }
+      if (picked == null && soleTarget && entries.length == 1) {
+        picked = entries.single;
+      }
+      if (picked == null) continue;
+      return VideoSubtitleDownload(
+        bytes: picked.bytes,
+        fileName: picked.fileName,
+        language: download.language.isNotEmpty
+            ? download.language
+            : detectSubtitleLanguage(picked.fileName) ?? '',
+      );
+    }
+    return null;
+  }
+
+  Future<VideoSubtitleDownload?> _download(VideoSubtitleCandidate pack) async {
+    try {
+      return await registry.download(pack);
+    } on Object catch (error) {
+      _lastError = error;
+      return null;
+    }
+  }
+}
+
 /// 每集处理完（下载落盘后，含 noMatch/failed）的回调；调用方据此持久化 + 刷新 UI。
 typedef SubtitleBatchItemCallback =
     Future<void> Function(SubtitleBatchItem item);
@@ -130,6 +220,11 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
         candidates,
         preferredLanguage: preferredLanguage,
       );
+  final _ArchivePackSplitter packs = _ArchivePackSplitter(
+    registry: registry,
+    candidates: candidates,
+    preferredLanguage: preferredLanguage,
+  );
   for (final SubtitleBatchTarget target in targets) {
     final SubtitleBatchItem item = SubtitleBatchItem(
       target: target,
@@ -145,13 +240,18 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
             soleTarget: soleTarget,
           );
       final VideoSubtitleCandidate? best = match.file;
-      if (best == null) {
+      // 没有单集文件时，从整季压缩包里按集号拆（整包只下一次）。
+      final VideoSubtitleDownload? fromPack = best == null
+          ? await packs.subtitleFor(item.episode, soleTarget: soleTarget)
+          : null;
+      if (best == null && fromPack == null) {
         item.status = SubtitleBatchStatus.noMatch;
         // 「为什么没配上」对用户是三件不同的事（改来源 / 等字幕 / 无能为力），
         // 别全压成一句「无匹配」。
-        item.message = match.failureReason;
+        item.message = packs.failureReason ?? match.failureReason;
       } else {
-        final VideoSubtitleDownload download = await registry.download(best);
+        final VideoSubtitleDownload download =
+            fromPack ?? await registry.download(best!);
         if (download.bytes.isEmpty) {
           item.status = SubtitleBatchStatus.failed;
           item.message = 'download';

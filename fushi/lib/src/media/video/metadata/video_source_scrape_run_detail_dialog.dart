@@ -305,17 +305,25 @@ Future<VideoSourceScrapeConfirmationCandidate?>
 
 /// 同一个候选搜索 UI，但候选来源由 [search] 注入——互联 7a「在 host 上刮削」把
 /// 搜索打到对端端点，本机不需要有刮削链。
+///
+/// [title] / [hint] 缺省是「手动指定作品」语境的文案；借这个搜索框做别的事（例如
+/// 在线搜封面，选中只取封面图、不改作品身份）的调用方传自己的文案，免得用户以为
+/// 选一条就会重绑作品。
 Future<VideoSourceScrapeConfirmationCandidate?>
     showVideoMetadataCandidateSearchDialog({
   required BuildContext context,
   required String workTitle,
   required VideoMetadataCandidateSearch search,
+  String? title,
+  String? hint,
 }) =>
         showAppDialog<VideoSourceScrapeConfirmationCandidate>(
           context: context,
           builder: (BuildContext context) => _ManualBindingDialog(
             search: search,
             workTitle: workTitle,
+            title: title,
+            hint: hint,
           ),
         );
 
@@ -325,10 +333,16 @@ class _ManualBindingDialog extends StatefulWidget {
   const _ManualBindingDialog({
     required this.search,
     required this.workTitle,
+    this.title,
+    this.hint,
   });
 
   final VideoMetadataCandidateSearch search;
   final String workTitle;
+
+  /// null = 手动指定作品的标题 / 提示（见 [showVideoMetadataCandidateSearchDialog]）。
+  final String? title;
+  final String? hint;
 
   @override
   State<_ManualBindingDialog> createState() => _ManualBindingDialogState();
@@ -385,7 +399,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
   Widget build(BuildContext context) {
     final List<VideoSourceScrapeConfirmationCandidate>? results = _results;
     return FushiAlertDialog(
-      title: Text(t.video_source_scrape_manual_search_title),
+      title: Text(widget.title ?? t.video_source_scrape_manual_search_title),
       content: SizedBox(
         width: 560,
         child: ConstrainedBox(
@@ -455,7 +469,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                Text(t.video_source_scrape_manual_query_hint),
+                Text(widget.hint ?? t.video_source_scrape_manual_query_hint),
                 const SizedBox(height: 12),
                 FushiTextFieldControl(
                   key: const ValueKey<String>('video-source-manual-query'),

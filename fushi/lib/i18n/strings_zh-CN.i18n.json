@@ -6379,5 +6379,16 @@
   "video_skip_opening": "跳过片头",
   "video_skip_ending": "跳过片尾",
   "download_network_fake_ip_udp_blocked": "当前代理（fake-ip / TUN 模式）不转发 UDP：DHT 与 UDP tracker 找不到 peer，任务可能一直 0 连接。请在代理里换支持 UDP 的节点，或让 Fushi 走直连（DIRECT 规则）。",
-  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。"
+  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。",
+  "video_cover_online_search": "在线搜索封面",
+  "video_cover_online_hint": "按标题搜索资料源，或切换到按 ID。选中的条目只取它的封面，不会改变作品身份。",
+  "video_cover_online_no_image": "这个条目没有封面图，请换一个。",
+  "video_subtitle_sources_all_disabled": "在线字幕来源都已关闭，请先在字幕设置里打开至少一个。",
+  "video_subtitle_error_key_rejected": "${provider} 拒绝了 API key，请检查字幕设置里填的 key",
+  "video_subtitle_error_network": "连不上 ${provider}，请检查网络或代理",
+  "video_subtitle_archive_pack": "整季包（${format}）",
+  "video_subtitle_archive_pack_unsupported": "整季包（${format}）· 暂不支持解包，请到网站下载后手动解压",
+  "video_subtitle_episode_from_pack": "第 ${episode} 集：将从整季包（${format}）中拆出",
+  "video_subtitle_error_archive_unsupported": "暂不支持解包 RAR / 7z 整季包，请到网站下载后手动解压",
+  "video_subtitle_error_archive_episode_missing": "这个整季包里没有这一集的字幕"
 }

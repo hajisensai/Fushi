@@ -15,6 +15,8 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -50,6 +52,39 @@ class _IdleScrapeRunner implements VideoSourceScrapeRunner {
     String runScope = 'source',
   }) async =>
       SourceScrapeReport(sourceIds: <int>[source.id]);
+}
+
+/// 支持手动候选搜索的 runner（BUG-2955 在线搜索封面）：只记录搜了什么。
+class _CoverSearchScrapeRunner extends _IdleScrapeRunner
+    implements VideoSourceScrapeManualBinding {
+  final List<String> queries = <String>[];
+
+  @override
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    SourceLibraryRow? source,
+    required String workTitle,
+    String? workStableKey,
+    required String query,
+  }) async {
+    queries.add(query);
+    return const <VideoSourceScrapeConfirmationCandidate>[];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWorkForLookup(
+          VideoMetadataLookup lookup) async =>
+      null;
+
+  @override
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) =>
+      throw UnimplementedError();
 }
 
 class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
@@ -649,6 +684,52 @@ void main() {
 
       expect(find.text(t.video_item_rescrape_not_planned), findsOneWidget);
       await tester.pump(const Duration(seconds: 3));
+    });
+  });
+
+  // BUG-2955：设置封面曾经只剩「选择封面图片」（本地文件）。在线入口与「手动指定
+  // 作品」共用同一条候选搜索，所以只有 controller 支持手动搜索时才画。
+  group('视频卡「在线搜索封面」（BUG-2955）', () {
+    testWidgets('支持手动搜索的 controller 下菜单有在线入口，点开按视频标题搜索',
+        (WidgetTester tester) async {
+      await seedTaggedVideo();
+      final _CoverSearchScrapeRunner runner = _CoverSearchScrapeRunner();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildApp(scrapeTaskController: controller));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      expect(find.text(t.srt_import_pick_cover), findsOneWidget,
+          reason: '本地选图入口照旧在场');
+      expect(find.text(t.video_cover_online_search), findsOneWidget,
+          reason: '设置封面不能只剩本地文件');
+
+      await tester.tap(find.text(t.video_cover_online_search));
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_cover_online_search), findsOneWidget,
+          reason: '弹出的是在线搜封面的候选搜索框（标题用封面文案，不是「手动指定作品」）');
+      expect(find.text(t.video_cover_online_hint), findsOneWidget);
+
+      await tester.tap(
+          find.byKey(const ValueKey<String>('video-source-manual-search')));
+      await tester.pumpAndSettle();
+      expect(runner.queries, <String>['My Episode'],
+          reason: '以视频标题作初始搜索词，打到资料源的候选搜索');
+    });
+
+    testWidgets('controller 不支持手动搜索时不画在线入口', (WidgetTester tester) async {
+      await seedTaggedVideo();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_IdleScrapeRunner());
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildApp(scrapeTaskController: controller));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+      expect(find.text(t.video_cover_online_search), findsNothing);
     });
   });
 

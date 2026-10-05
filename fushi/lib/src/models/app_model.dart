@@ -4777,26 +4777,31 @@ class AppModel with ChangeNotifier {
   VideoSubtitleRegistry? _videoSubtitleRegistry;
   VideoSubtitleRegistry? get videoSubtitleRegistry => _videoSubtitleRegistry;
 
-  // 浏览器扩展「查字幕」桥专用的字幕来源 registry（下载管线没起时才有值）。
-  VideoSubtitleRegistry? _browserSubtitleRegistry;
+  // 交互式查字幕（字幕工作台 / 浏览器扩展桥）按需建的字幕来源 registry（下载管线
+  // 没起时才有值）。
+  VideoSubtitleRegistry? _onDemandSubtitleRegistry;
 
-  /// 浏览器扩展查字幕用的字幕来源 registry。
+  /// 交互式查字幕用的字幕来源 registry：视频的字幕工作台（单集 / 合集）与浏览器
+  /// 扩展的查字幕桥共用这一个入口。
   ///
   /// 优先复用下载管线那一套（同一批 provider 实例、同一份 AJATT 目录缓存）。但
-  /// 管线只在**下载模块开着**时才启动（[startAnimeDownloadService] 的门控），而
-  /// 「给网页视频找字幕」跟下不下载种子毫无关系——关掉下载模块的用户此前照样能用
-  /// 扩展搜 Jimaku（那条老路只看 API key）。所以管线不在时按同一份工厂现建一套，
-  /// 缓存复用；配置变更由 [reloadVideoDownloadPipelineRuntime] 统一作废。
+  /// 管线只在**浏览（下载）模块开着**、且 [startAnimeDownloadService] 跑完前面的
+  /// 旧任务迁移 / torrent 会话恢复之后才启动，而「给一个视频找字幕」跟下不下载种子
+  /// 毫无关系。BUG-2956：字幕工作台曾直接读 [videoSubtitleRegistry]，管线没起来
+  /// （模块关着 / 启动途中 / 启动抛错）时拿到 null，合集页就报「请先填写 Jimaku
+  /// API key」、单集页静默显示「找不到字幕」——哪怕输入框里的 key 好好的。所以管线
+  /// 不在时按同一份工厂现建一套，缓存复用；配置变更由
+  /// [reloadVideoDownloadPipelineRuntime] 统一作废。
   ///
-  /// 返回 null = 一个来源都没配（三家全关）。
-  Future<VideoSubtitleRegistry?> browserExtensionSubtitleRegistry() async {
+  /// 返回 null = 一个来源都没配（全部关闭 / 缺 key）。
+  Future<VideoSubtitleRegistry?> subtitleSearchRegistry() async {
     final VideoSubtitleRegistry? pipeline = _videoSubtitleRegistry;
     if (pipeline != null) {
       // 管线起来了就不再留第二套（多一套 = 多一份 http client + 多一份 9 MB 目录）。
-      _disposeBrowserSubtitleRegistry();
+      _disposeOnDemandSubtitleRegistry();
       return pipeline.providers.isEmpty ? null : pipeline;
     }
-    final VideoSubtitleRegistry? cached = _browserSubtitleRegistry;
+    final VideoSubtitleRegistry? cached = _onDemandSubtitleRegistry;
     if (cached != null) return cached;
     final List<VideoSubtitleProvider> providers =
         await createConfiguredVideoSubtitleProviders(
@@ -4805,12 +4810,12 @@ class AppModel with ChangeNotifier {
       supportRootProvider: AppPaths.supportRootDirectory,
     );
     if (providers.isEmpty) return null;
-    return _browserSubtitleRegistry = VideoSubtitleRegistry(providers);
+    return _onDemandSubtitleRegistry = VideoSubtitleRegistry(providers);
   }
 
-  void _disposeBrowserSubtitleRegistry() {
-    _browserSubtitleRegistry?.close();
-    _browserSubtitleRegistry = null;
+  void _disposeOnDemandSubtitleRegistry() {
+    _onDemandSubtitleRegistry?.close();
+    _onDemandSubtitleRegistry = null;
   }
 
   /// 刮削后自动补字幕（BUG-1698）。与 [_videoSubtitleRegistry] 同生命周期：
@@ -5565,10 +5570,11 @@ class AppModel with ChangeNotifier {
   /// 失败记日志后返回，service 留 null，但 wanted 仍为 true，下一次设置变更
   /// 就能救活。
   Future<void> reloadVideoDownloadPipelineRuntime() async {
-    // 扩展查字幕桥那套按需建的 registry 必须先作废，且**在 wanted 门闩之前**：
-    // 关掉下载模块的用户永远不满足门闩，但他改 Jimaku key / OpenSubtitles 配置
-    // 时同样得让扩展立刻用上新凭据（这里是所有字幕来源设置项的共同汇合点）。
-    _disposeBrowserSubtitleRegistry();
+    // 查字幕（工作台 / 扩展桥）那套按需建的 registry 必须先作废，且**在 wanted
+    // 门闩之前**：关掉下载模块的用户永远不满足门闩，但他改 Jimaku key /
+    // OpenSubtitles 配置时同样得立刻用上新凭据（这里是所有字幕来源设置项的共同
+    // 汇合点）。
+    _disposeOnDemandSubtitleRegistry();
     if (!_videoDownloadPipelineRuntimeWanted) return;
     await _disposeVideoDownloadPipelineRuntime();
     notifyListeners();
@@ -7785,8 +7791,8 @@ class AppModel with ChangeNotifier {
     _animeDownloadSubscriptionService?.stop();
     _videoDownloadPipelineRuntimeWanted = false;
     unawaited(_disposeVideoDownloadPipelineRuntime());
-    // 扩展查字幕桥那套 registry 不属于下载管线（管线关着时它才存在），得单独收。
-    _disposeBrowserSubtitleRegistry();
+    // 查字幕按需建的那套 registry 不属于下载管线（管线关着时它才存在），得单独收。
+    _disposeOnDemandSubtitleRegistry();
     _mangaDownloadService?.dispose();
     _mangaDownloadService = null;
     // 服务持有 FushiDatabase 引用，db 关闭/重开时必须一并销毁，否则新库开出来后
@@ -8531,7 +8537,7 @@ class AppModel with ChangeNotifier {
       // 「查字幕」扩展桥：Side Panel 搜索/下载字幕经 /api/subtitle/{search,fetch}
       // 复用**用户在 app 设置里配好的全部在线字幕来源**（Jimaku / OpenSubtitles /
       // AJATT），与视频页的「找字幕」同一批 provider；一个都没配时端点回 no-provider。
-      subtitleRegistryProvider: browserExtensionSubtitleRegistry,
+      subtitleRegistryProvider: subtitleSearchRegistry,
       // 新手引导「试一试」页：GET /onboarding/extension-test 到达时才生成 HTML。
       extensionTestPageProvider: buildBrowserExtensionTestPageHtml,
       // 扩展字幕外观「字体」下拉框：字体真源是 app 字体目录（与「自定义字体」页

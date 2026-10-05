@@ -24,7 +24,7 @@ class _Host implements SubtitleWorkbenchHost {
   @override
   final FushiDatabase database;
   @override
-  VideoSubtitleRegistry? get subtitleRegistry =>
+  Future<VideoSubtitleRegistry?> subtitleRegistry() async =>
       VideoSubtitleRegistry(const <VideoSubtitleProvider>[]);
   @override
   String get jimakuApiKey => '';
