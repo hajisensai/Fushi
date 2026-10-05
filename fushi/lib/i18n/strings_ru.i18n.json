@@ -6495,5 +6495,18 @@
   "reader_nav_search_empty_hint": "Search the whole book, or jump to a character position",
   "reader_nav_favorites_empty": "No favorite sentences in this book yet",
   "reader_stats_last_7_days": "Last 7 days",
-  "reader_stats_session_title": "This session"
+  "reader_stats_session_title": "This session",
+  "reader_control_slot_overflow": "More menu",
+  "reader_toolbar_style_title": "Toolbar style",
+  "reader_toolbar_style_floating": "Floating",
+  "reader_toolbar_style_docked": "Docked",
+  "reader_toolbar_style_hint": "Floating toolbars hover over the page and hide with a tap; docked bars span the full width.",
+  "reader_control_layout_target_compact": "Phone",
+  "reader_control_layout_target_wide": "Tablet & desktop",
+  "reader_audiobook_tab_sentences": "Sentences",
+  "reader_audiobook_now_playing": "Now playing",
+  "reader_audiobook_section_tools": "Alignment & transcription",
+  "reader_audiobook_no_sentences": "No playable sentences in this chapter",
+  "reader_audiobook_jump_to_current": "Jump to current sentence",
+  "reader_mini_player_open": "Open audiobook panel"
 }

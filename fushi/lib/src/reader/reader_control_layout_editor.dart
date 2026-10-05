@@ -107,6 +107,8 @@ String readerControlSlotLabel(ReaderControlSlot slot) {
       return t.video_control_slot_bottom_center;
     case ReaderControlSlot.bottomRight:
       return t.video_control_slot_bottom_right;
+    case ReaderControlSlot.overflow:
+      return t.reader_control_slot_overflow;
     case ReaderControlSlot.hidden:
       return t.reader_control_slot_hidden;
   }

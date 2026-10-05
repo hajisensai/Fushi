@@ -839,6 +839,36 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeChanged(c);
             },
           ),
+          // 工具栏样式（2026-10，M3 Expressive toolbars）：悬浮（默认，胶囊浮在正文
+          // 上、随点击显隐、正文满屏）/ 贴边（整宽实体条，给依赖旧形态的用户）。
+          // 两种样式的预留高不同 → 走重锚通道。
+          SettingsSegmentedItem<String>(
+            id: 'reading_controls.toolbar_style',
+            title: t.reader_toolbar_style_title,
+            subtitle: t.reader_toolbar_style_hint,
+            icon: Icons.view_agenda_outlined,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 11,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'floating',
+                label: t.reader_toolbar_style_floating,
+                icon: Icons.picture_in_picture_outlined,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'docked',
+                label: t.reader_toolbar_style_docked,
+                icon: Icons.web_asset_outlined,
+              ),
+            ],
+            selected: (SettingsContext c) => c.appModel.readerToolbarStyle,
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setReaderToolbarStyle(value);
+              notifyReaderChromeReanchored(c);
+            },
+          ),
           // 阅读器顶栏 / 底栏按钮拖拽编辑器（与视频页 video.player.controls_editor
           // 同一套泛型编辑器，用户 2026-09-13 要求「和视频一样支持可视化调整」）。
           // 写 appModel.setReaderControlLayout → prefsRepo 通知 → 阅读器页重建，
@@ -873,6 +903,9 @@ SettingsDestination buildReadingDestination() {
               if (!confirmed) return;
               await c.appModel.setReaderControlLayout(
                 ReaderControlLayout.defaults,
+              );
+              await c.appModel.setReaderCompactControlLayout(
+                ReaderControlLayout.compactDefaults,
               );
               notifyReaderChromeReanchored(c);
               FushiToast.show(msg: t.reader_control_layout_reset_done);

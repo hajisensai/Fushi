@@ -6495,5 +6495,18 @@
   "reader_nav_search_empty_hint": "搜索全书，或跳到指定字数位置",
   "reader_nav_favorites_empty": "这本书还没有收藏的句子",
   "reader_stats_last_7_days": "近 7 天",
-  "reader_stats_session_title": "本次阅读"
+  "reader_stats_session_title": "本次阅读",
+  "reader_control_slot_overflow": "更多菜单",
+  "reader_toolbar_style_title": "工具栏样式",
+  "reader_toolbar_style_floating": "悬浮",
+  "reader_toolbar_style_docked": "贴边",
+  "reader_toolbar_style_hint": "悬浮工具栏浮在正文之上、点一下即隐藏；贴边工具栏横贯整个宽度。",
+  "reader_control_layout_target_compact": "手机",
+  "reader_control_layout_target_wide": "平板与桌面",
+  "reader_audiobook_tab_sentences": "句子",
+  "reader_audiobook_now_playing": "正在播放",
+  "reader_audiobook_section_tools": "对齐与转录",
+  "reader_audiobook_no_sentences": "本章没有可播放的句子",
+  "reader_audiobook_jump_to_current": "定位到当前句",
+  "reader_mini_player_open": "打开有声书面板"
 }
