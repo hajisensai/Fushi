@@ -489,10 +489,41 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onSpeedChanged: (double speed) => unawaited(ctrl.setSpeed(speed)),
       onMore: (LyricsMenuAnchor anchor) =>
           unawaited(_showLyricsMoreMenu(anchor)),
+      onTypography: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsTypographyPanel(anchor)),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
       },
+    );
+  }
+
+  /// Aa：歌词文字快捷面板（2026-10，用户：「歌词模式字体调节感觉还需要个入口」）。
+  /// 字号写 `lyrics_font_size` 后走热更样式通道（[_updateLyricsStyleLive]，不重载
+  /// 歌词页）；竖排写 `lyrics_vertical_writing` 后整页重建（[_loadLyricsPage]，排版
+  /// 方向变了热更不够）；「更多歌词设置」打开阅读设置（歌词模式下首页即「歌词
+  /// 模式」页）。面板从按钮自己的 context 弹，跟随歌词模式主题。
+  Future<void> _showLyricsTypographyPanel(LyricsMenuAnchor anchor) async {
+    final ReaderFushiSource src = ReaderFushiSource.instance;
+    await showLyricsTypographyPanel(
+      anchorContext: anchor.context,
+      fontSize: src.lyricsFontSize,
+      vertical: src.lyricsVerticalWriting,
+      onFontSizeChanged: (double v) => unawaited(
+        applyLyricsFontSize(
+          value: v,
+          write: src.setLyricsFontSize,
+          applyLive: _updateLyricsStyleLive,
+        ),
+      ),
+      onVerticalChanged: (bool v) => unawaited(
+        applyLyricsVertical(
+          value: v,
+          write: src.setLyricsVerticalWriting,
+          reload: _loadLyricsPage,
+        ),
+      ),
+      onOpenMore: () => unawaited(_showAppearanceSheet()),
     );
   }
 

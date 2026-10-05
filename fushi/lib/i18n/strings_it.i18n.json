@@ -6508,5 +6508,8 @@
   "reader_audiobook_section_tools": "Alignment & transcription",
   "reader_audiobook_no_sentences": "No playable sentences in this chapter",
   "reader_audiobook_jump_to_current": "Jump to current sentence",
-  "reader_mini_player_open": "Open audiobook panel"
+  "reader_mini_player_open": "Open audiobook panel",
+  "lyrics_typography_title": "Lyrics text",
+  "lyrics_typography_font_follows_reader": "The font follows the reader font.",
+  "lyrics_typography_more_settings": "More lyrics settings"
 }

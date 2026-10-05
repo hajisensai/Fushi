@@ -6508,5 +6508,8 @@
   "reader_audiobook_section_tools": "对齐与转录",
   "reader_audiobook_no_sentences": "本章没有可播放的句子",
   "reader_audiobook_jump_to_current": "定位到当前句",
-  "reader_mini_player_open": "打开有声书面板"
+  "reader_mini_player_open": "打开有声书面板",
+  "lyrics_typography_title": "歌词文字",
+  "lyrics_typography_font_follows_reader": "字体跟随阅读器字体。",
+  "lyrics_typography_more_settings": "更多歌词设置"
 }

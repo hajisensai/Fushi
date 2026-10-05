@@ -47,6 +47,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
