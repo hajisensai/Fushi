@@ -42,16 +42,79 @@ class StatRangeBar extends StatelessWidget {
     ),
   );
 
-  Widget _periodNavigator(BuildContext context, Widget row) =>
-      isGlassDesign(context) ? row : FushiPageChromeCapsule(child: row);
+  /// 期间步进器「‹ 区间 ›」：与粒度分段同高（40）的紧凑胶囊。M3E 是扁平
+  /// surfaceContainerHigh 底的小胶囊（不浮、无投影，曾是 56 高的悬浮大胶囊，
+  /// 与旁边 40 高的分段按钮组一高一矮、两种样式）；Apple 保持无底一排。
+  Widget _periodStepper(BuildContext context, FushiDesignTokens tokens) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    const BoxConstraints button = BoxConstraints.tightFor(
+      width: _kStepperHeight,
+      height: _kStepperHeight,
+    );
+    final Widget row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIconButton(
+          icon: Icons.chevron_left,
+          tooltip: t.stat_range_previous,
+          enabled: range.canGoPrevious,
+          size: 20,
+          padding: EdgeInsets.zero,
+          constraints: button,
+          onTap: () => onChanged(range.shifted(-1)),
+        ),
+        ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 88),
+          child: AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            child: Text(
+              formatStatRange(range),
+              key: ValueKey<String>(formatStatRange(range)),
+              textAlign: TextAlign.center,
+              style: tokens.type.metadata.copyWith(
+                color: scheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        FushiIconButton(
+          icon: Icons.chevron_right,
+          tooltip: t.stat_range_next,
+          enabled: range.canGoNext,
+          size: 20,
+          padding: EdgeInsets.zero,
+          constraints: button,
+          onTap: () => onChanged(range.shifted(1)),
+        ),
+      ],
+    );
+    if (isGlassDesign(context)) return row;
+    final bool eink = isEinkTheme(context);
+    return SizedBox(
+      height: _kStepperHeight,
+      child: DecoratedBox(
+        key: const ValueKey<String>('stat-range-stepper'),
+        decoration: ShapeDecoration(
+          color: eink ? Colors.transparent : scheme.surfaceContainerHigh,
+          shape: StadiumBorder(
+            side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+          ),
+        ),
+        child: row,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 2026-10 统计中心重设计：粒度从一排 chip 改成分段控件（MD3 = M3 Expressive
-    // 连接式按钮组，Apple = 分段控件，经 [FushiSegmentedButton] 一处分派）——
-    // 「五选一的时间窗口」本来就是分段控件的语义，chip 读成可多选的筛选。
+    // 2026-10 统计中心重设计：粒度是分段控件（MD3 = M3 Expressive 连接式按钮
+    // 组，Apple = 分段控件，经 [FushiSegmentedButton] 一处分派）。2026-10-06：
+    // 粒度分段与期间步进器同一行、同高 40（此前分两行、步进器是悬浮大胶囊），
+    // 窄屏摆不下时步进器折到下一行。
     return Padding(
       padding: padding ??
           EdgeInsets.fromLTRB(
@@ -60,9 +123,10 @@ class StatRangeBar extends StatelessWidget {
             tokens.spacing.card,
             0,
           ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+      child: Wrap(
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: <Widget>[
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: kSegmentsMaxWidth),
@@ -81,77 +145,30 @@ class StatRangeBar extends StatelessWidget {
               ],
               selected: <StatRangeMode>{range.mode},
               showSelectedIcon: false,
-              expandedInsets: EdgeInsets.zero,
               onSelectionChanged: (Set<StatRangeMode> modes) {
                 if (modes.isNotEmpty) _selectMode(modes.first);
               },
             ),
           ),
-          SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              // M3E（2026-10-05 浮动工具栏统一）：期间导航「‹ 区间 ›」是一枚
-              // 悬浮胶囊按钮组；Apple 保持原样。
-              _periodNavigator(
-                context,
-                Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  FushiIconButton(
-                    icon: Icons.chevron_left,
-                    tooltip: t.stat_range_previous,
-                    enabled: range.canGoPrevious,
-                    onTap: () => onChanged(range.shifted(-1)),
-                  ),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 96),
-                    child: AnimatedSwitcher(
-                      duration: fushiMotionDuration(
-                        context,
-                        FushiMotion.short,
-                      ),
-                      switchInCurve: FushiMotion.enter,
-                      switchOutCurve: FushiMotion.exit,
-                      child: Text(
-                        formatStatRange(range),
-                        key: ValueKey<String>(formatStatRange(range)),
-                        textAlign: TextAlign.center,
-                        style: tokens.type.metadata.copyWith(
-                          color: scheme.onSurface,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  FushiIconButton(
-                    icon: Icons.chevron_right,
-                    tooltip: t.stat_range_next,
-                    enabled: range.canGoNext,
-                    onTap: () => onChanged(range.shifted(1)),
-                  ),
-                ],
-              ),
-              ),
-              // 2026-10 体验优化：学习日历点某天会把范围切到单日，原先只能再点
-              // 「月」+ 连按箭头才回得去。单日态下给一个显眼的「本月」快捷
-              // 入口，一步回到当月（锚点跟随今日）。
-              if (range.mode == StatRangeMode.day)
-                FushiActionChip(
-                  key: const ValueKey<String>('stat-range-back-to-month'),
-                  label: t.stat_this_month,
-                  icon: Icons.calendar_month_outlined,
-                  onPressed: () => onChanged(const StatRangeSelection()),
-                ),
-            ],
-          ),
+          _periodStepper(context, tokens),
+          // 2026-10 体验优化：学习日历点某天会把范围切到单日，原先只能再点
+          // 「月」+ 连按箭头才回得去。单日态下给一个显眼的「本月」快捷
+          // 入口，一步回到当月（锚点跟随今日）。
+          if (range.mode == StatRangeMode.day)
+            FushiActionChip(
+              key: const ValueKey<String>('stat-range-back-to-month'),
+              label: t.stat_this_month,
+              icon: Icons.calendar_month_outlined,
+              onPressed: () => onChanged(const StatRangeSelection()),
+            ),
         ],
       ),
     );
   }
 }
+
+/// 期间步进器的高：与 M3E 连接式分段按钮组（40）同高。
+const double _kStepperHeight = 40;
 
 String statRangeModeLabel(StatRangeMode mode) => switch (mode) {
   StatRangeMode.day => t.stat_range_mode_day,

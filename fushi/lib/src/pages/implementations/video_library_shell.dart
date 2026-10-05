@@ -374,8 +374,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 enabled: _section == VideoLibrarySection.sources,
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.sources,
-                  FushiFloatingChromeInsetPadding(
-                  child: MediaSourcesPage(
+                  // 导入页的滚动视图自己让出工具区高度（收起后不留空白）。
+                  MediaSourcesPage(
                     mediaKind: 'video',
                     navigation: _navigationFor(
                       _section == VideoLibrarySection.sources,
@@ -389,7 +389,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                     scrapeTaskController: widget.scrapeTaskController,
                     onOpenScrapeTasks: widget.onOpenScrapeTasks,
                     onLibraryChanged: widget.onLibraryChanged,
-                  ),
                   ),
                 ),
               ),
@@ -440,9 +439,13 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           enabled: active,
           child: _dropScoped(
             () => _section == section,
-            FushiFloatingChromeInsetPadding(
-              child: build(section, _navigationFor(active, navigation)),
-            ),
+            // 来源 / 扩展的主滚动视图自己把工具区高度加成顶部内边距（工具区
+            // 收起后不留空白）；发现页仍整体下移。
+            section == VideoLibrarySection.discover
+                ? FushiFloatingChromeInsetPadding(
+                    child: build(section, _navigationFor(active, navigation)),
+                  )
+                : build(section, _navigationFor(active, navigation)),
           ),
         ),
       ),

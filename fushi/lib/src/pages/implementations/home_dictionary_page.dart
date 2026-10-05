@@ -27,6 +27,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
@@ -1151,9 +1152,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       ),
     );
     if (!glass) {
-      // M3E：单行可横滑的 suggestion chip（32 高、8 圆角、描边），点即查；× 只在
-      // 悬停 / 键盘焦点落在这枚 chip 上时出现——一排 × 是密密麻麻的噪声。标题行尾
-      // 「清除」清空全部。
+      // MD3：建议 chip（全胶囊、tonal 面），点即查、× 删一条。
       return Padding(
         padding: EdgeInsets.only(bottom: tokens.spacing.gap),
         child: Column(
@@ -1161,26 +1160,28 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             title,
-            SizedBox(
-              height: _kRecentChipHeight,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-                itemCount: recents.length,
-                separatorBuilder: (BuildContext context, int _) =>
-                    SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int i) =>
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              child: Wrap(
+                spacing: tokens.spacing.gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  for (int i = 0; i < recents.length; i++)
                     FushiStaggeredEntrance(
                       key: ValueKey<String>(
                         'home_dictionary_recent_${recents[i]}',
                       ),
                       index: i,
-                      child: _RecentSearchChip(
-                        label: recents[i].replaceAll('\n', ' '),
-                        onTap: () => _searchRecent(recents[i]),
-                        onDeleted: () => _removeRecentSearch(recents[i]),
+                      child: FushiPressScale(
+                        child: FushiTagChip(
+                          label: recents[i].replaceAll('\n', ' '),
+                          tone: FushiTagChipTone.surface,
+                          onTap: () => _searchRecent(recents[i]),
+                          onDeleted: () => _removeRecentSearch(recents[i]),
+                        ),
                       ),
                     ),
+                ],
               ),
             ),
           ],
@@ -1337,7 +1338,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           }
 
           if (!glass) {
-            // M3E：首字圆形头像 + titleMedium 词 + bodySmall 读音，行尾 tonal 计数
+            // M3E：titleMedium 词 + bodySmall 读音，行尾 tonal 计数
             // 胶囊；没有箭头（整行可点，状态层 / 选中 secondaryContainer + 形变由
             // 分段外壳负责）；悬停 / 聚焦时行尾露出「⋯」（收藏 / 移出历史）。
             return FushiGroupedListItem(
@@ -1348,7 +1349,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               onTap: openRow,
               child: _LookupHistoryRow(
                 term: searchTerm.replaceAll('\n', ' '),
-                avatarSource: word.isNotEmpty ? word : searchTerm,
                 subtitle: hasWordInfo || hasReading
                     ? <String>[
                         if (hasWordInfo) word,
@@ -2274,13 +2274,12 @@ class _RecentSearchChipState extends State<_RecentSearchChip> {
   }
 }
 
-/// M3E 查词历史行：按词首字的 tonal 圆形头像、titleMedium 词 + bodySmall 读音、行尾
+/// M3E 查词历史行：titleMedium 词 + bodySmall 读音、行尾
 /// tonal 计数胶囊；悬停 / 焦点时露出「⋯」菜单（收藏 / 移出历史）。行点击、状态层、
 /// 选中色块与形变由外层 [FushiGroupedListItem] 负责。
 class _LookupHistoryRow extends StatefulWidget {
   const _LookupHistoryRow({
     required this.term,
-    required this.avatarSource,
     required this.subtitle,
     required this.dictionaryCount,
     required this.selected,
@@ -2289,7 +2288,6 @@ class _LookupHistoryRow extends StatefulWidget {
   });
 
   final String term;
-  final String avatarSource;
   final String? subtitle;
   final int dictionaryCount;
   final bool selected;
@@ -2316,7 +2314,6 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: FushiListItem(
-        leading: _LookupHistoryAvatar(source: widget.avatarSource),
         // 只给字号 / 字重，不写死颜色：选中行的未着色文字由分段外壳切到
         // onSecondaryContainer。
         title: Text(
@@ -2398,54 +2395,6 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 查词历史行首的首字头像：40 圆形 tonal 色块，色调按首字码点在
-/// primary / secondary / tertiary 间轮换（同一个字永远同色）。
-class _LookupHistoryAvatar extends StatelessWidget {
-  const _LookupHistoryAvatar({required this.source});
-
-  final String source;
-
-  @override
-  Widget build(BuildContext context) {
-    final String trimmed = source.trim();
-    final String glyph =
-        trimmed.isEmpty ? '?' : trimmed.characters.first.toUpperCase();
-    const List<FushiCardTone> tones = <FushiCardTone>[
-      FushiCardTone.primary,
-      FushiCardTone.secondary,
-      FushiCardTone.tertiary,
-    ];
-    final int code = glyph.runes.isEmpty ? 0 : glyph.runes.first;
-    final FushiCardTone tone = tones[code % tones.length];
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiCardColors colors =
-        fushiCardToneColors(context, tone) ??
-        FushiCardColors(
-          container: cs.secondaryContainer,
-          onContainer: cs.onSecondaryContainer,
-        );
-    return SizedBox.square(
-      dimension: 40,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          color: colors.container,
-          shape: const CircleBorder(),
-        ),
-        child: Center(
-          child: Text(
-            glyph,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: colors.onContainer,
-              fontWeight: FontWeight.w600,
-              height: 1,
-            ),
-          ),
         ),
       ),
     );

@@ -62,11 +62,22 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
   final ValueNotifier<StatRangeSelection> _rangeSelection =
       ValueNotifier<StatRangeSelection>(const StatRangeSelection());
 
+  /// 各 tab 的「目标 / 刷新 / 清空」登记处：页头右侧按钮组画当前 tab 那份。
+  final StatCenterTabActions _tabActions = StatCenterTabActions();
+
   @override
   void dispose() {
     _rangeSelection.dispose();
+    _tabActions.dispose();
     super.dispose();
   }
+
+  String _tabLabel(StatsCenterTab tab) => switch (tab) {
+        StatsCenterTab.overview => t.stat_center_tab_overview,
+        StatsCenterTab.reading => t.home_filter_read,
+        StatsCenterTab.video => t.home_filter_watch,
+        StatsCenterTab.game => t.home_filter_game,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -75,65 +86,97 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
     // （它在 _load 前是 -1 哨兵，此时不显示副标题，等它装好再重建）。
     final String? profileName =
         ref.watch(profileViewModelProvider).activeProfile?.name;
-    return FushiPageScaffold(
-      title: t.stat_center_title,
-      subtitle: profileName == null
-          ? null
-          : t.stat_center_profile_scope(name: profileName),
-      actions: <Widget>[
-        // 「今日」重置整点是三域学习段共用的 dateKey 输入，所以入口放在统计中心
-        // 页头而不是某一域的设置页；宽窗展开成「图标 + 文字」药丸（label），窄窗
-        // 回落为纯图标、tooltip 仍是完整标题。
-        FushiIconButton(
-          icon: Icons.update_outlined,
-          tooltip: t.stat_center_day_reset_hour,
-          label: t.stat_center_day_reset_action,
-          onTap: () =>
-              showStatDayResetHourDialog(context, ref.read(appProvider)),
-        ),
-      ],
-      body: DefaultTabController(
-        length: StatsCenterTab.values.length,
-        initialIndex: widget.initialTab.index,
-        child: Column(
-          children: <Widget>[
-            // 页签轨道与页头标题、正文卡片同一条页边（trackInset: 0，轨道
-            // 不再自己多缩 12，2026-10-06 顶部左缘统一）。
-            Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: FushiDesignTokens.of(context).spacing.page,
+    // 页签与库页同一形态（2026-10-06）：贴合内容宽的单层浮动胶囊
+    // （[LibrarySectionTabs] floating），左缘与页头标题、正文卡片同一条页边；
+    // 当前 tab 的动作并进页头右侧的按钮组胶囊（[StatCenterTabActions]）。
+    return DefaultTabController(
+      length: StatsCenterTab.values.length,
+      initialIndex: widget.initialTab.index,
+      child: Builder(
+        builder: (BuildContext context) {
+          final TabController tabs = DefaultTabController.of(context);
+          final double page = FushiDesignTokens.of(context).spacing.page;
+          final Widget body = Column(
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.fromLTRB(page, 0, page, 4),
+                child: LibrarySectionTabs<StatsCenterTab>.controlled(
+                  tabs: <LibrarySectionTab<StatsCenterTab>>[
+                    for (final StatsCenterTab tab in StatsCenterTab.values)
+                      LibrarySectionTab<StatsCenterTab>(
+                        value: tab,
+                        label: _tabLabel(tab),
+                      ),
+                  ],
+                  controller: tabs,
+                  focusIdPrefix: 'stats-center-tab',
+                  floating: true,
+                ),
               ),
-              child: FushiTabBar(
-                trackInset: 0,
-                tabs: <Widget>[
-                  Tab(text: t.stat_center_tab_overview),
-                  Tab(text: t.home_filter_read),
-                  Tab(text: t.home_filter_watch),
-                  Tab(text: t.home_filter_game),
-                ],
+              Expanded(
+                child: TabBarView(
+                  children: <Widget>[
+                    StatCenterTabScope(
+                      registry: _tabActions,
+                      index: StatsCenterTab.overview.index,
+                      child: _StatsOverviewTab(rangeSelection: _rangeSelection),
+                    ),
+                    StatCenterTabScope(
+                      registry: _tabActions,
+                      index: StatsCenterTab.reading.index,
+                      child: ReadingStatisticsPage(
+                        embedded: true,
+                        rangeSelection: _rangeSelection,
+                      ),
+                    ),
+                    StatCenterTabScope(
+                      registry: _tabActions,
+                      index: StatsCenterTab.video.index,
+                      child: VideoStatisticsPage(
+                        embedded: true,
+                        rangeSelection: _rangeSelection,
+                      ),
+                    ),
+                    StatCenterTabScope(
+                      registry: _tabActions,
+                      index: StatsCenterTab.game.index,
+                      child: GameStatisticsPage(
+                        embedded: true,
+                        rangeSelection: _rangeSelection,
+                      ),
+                    ),
+                  ],
+                ),
               ),
+            ],
+          );
+          return ListenableBuilder(
+            listenable: Listenable.merge(<Listenable>[tabs, _tabActions]),
+            child: body,
+            builder: (BuildContext context, Widget? child) =>
+                FushiPageScaffold(
+              title: t.stat_center_title,
+              subtitle: profileName == null
+                  ? null
+                  : t.stat_center_profile_scope(name: profileName),
+              actions: <Widget>[
+                ..._tabActions.actionsFor(tabs.index),
+                // 「今日」重置整点是三域学习段共用的 dateKey 输入，所以入口放在
+                // 统计中心页头而不是某一域的设置页；宽窗展开成「图标 + 文字」
+                // 药丸（label，独立一颗 tonal 胶囊），窄窗回落为纯图标、tooltip
+                // 仍是完整标题。
+                FushiIconButton(
+                  icon: Icons.update_outlined,
+                  tooltip: t.stat_center_day_reset_hour,
+                  label: t.stat_center_day_reset_action,
+                  onTap: () =>
+                      showStatDayResetHourDialog(context, ref.read(appProvider)),
+                ),
+              ],
+              body: child!,
             ),
-            Expanded(
-              child: TabBarView(
-                children: <Widget>[
-                  _StatsOverviewTab(rangeSelection: _rangeSelection),
-                  ReadingStatisticsPage(
-                    embedded: true,
-                    rangeSelection: _rangeSelection,
-                  ),
-                  VideoStatisticsPage(
-                    embedded: true,
-                    rangeSelection: _rangeSelection,
-                  ),
-                  GameStatisticsPage(
-                    embedded: true,
-                    rangeSelection: _rangeSelection,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

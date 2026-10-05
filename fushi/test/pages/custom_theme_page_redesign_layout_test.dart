@@ -9,10 +9,11 @@ import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// 自定义主题编辑页 2026-10 重设计（M3 Expressive / Apple 两套）的布局契约：
-/// - 窄屏：紧凑预览吸顶——不在编辑列表里、列表滚动时位置不变；
-/// - 宽屏：左栏预览 + 选色器、右栏编辑列表；
-/// - 页头卡有名称框与导入 / 分享；AI 是独立卡片；颜色角色是色板格子；
+/// 自定义主题编辑页 2026-10 M3E 重设计（Apple 共用骨架）的布局契约：
+/// - 窄屏：紧凑预览吸顶——不在编辑列表里、列表滚动时不被滚走；
+/// - 宽屏：左栏 sticky 预览、右栏编辑列表（取色器按需弹出，不常驻）；
+/// - hero 有名称、导入 / 分享 / 更多、预览明暗切换；AI 是独立紧凑卡；
+///   主题色是一行种子色块，其余色槽是统一网格 tile；
 /// - 编辑列表首屏错峰进场（FushiEntranceScope + FushiStaggeredEntrance）。
 class _FakeAppModel extends AppModel {
   _FakeAppModel() : super(testPlatformServices());
@@ -78,7 +79,7 @@ void main() {
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
-    testWidgets('$ds · 窄屏 420×900：紧凑预览吸顶，滚动编辑列表时位置不变', (
+    testWidgets('$ds · 窄屏 420×900：紧凑预览吸顶，滚动编辑列表时不被滚走', (
       WidgetTester tester,
     ) async {
       await _pumpPage(tester, size: const Size(420, 900), apple: apple);
@@ -103,10 +104,14 @@ void main() {
 
       await tester.drag(_editorList, const Offset(0, -600));
       await tester.pumpAndSettle();
-      expect(tester.getRect(preview), before);
+      // 浮动页头随滚动收缩会让预览整体上移几像素，但它不随列表滚走、尺寸不变。
+      final Rect after = tester.getRect(preview);
+      expect(after.height, before.height);
+      expect((after.top - before.top).abs(), lessThan(48));
+      expect(after.bottom, lessThanOrEqualTo(tester.getRect(_editorList).top));
     });
 
-    testWidgets('$ds · 宽屏 1600×900：左栏预览 + 选色器，右栏编辑列表', (
+    testWidgets('$ds · 宽屏 1600×900：左栏 sticky 预览，右栏编辑列表', (
       WidgetTester tester,
     ) async {
       await _pumpPage(tester, size: const Size(1600, 900), apple: apple);
@@ -122,7 +127,7 @@ void main() {
       expect(listRect.width, greaterThan(previewRect.width));
     });
 
-    testWidgets('$ds · 页头卡（名称 + 导入 / 分享）、AI 卡、色板格子都在', (
+    testWidgets('$ds · hero（名称 + 导入 / 分享 / 更多 + 明暗）、AI 卡、色槽网格都在', (
       WidgetTester tester,
     ) async {
       await _pumpPage(tester, size: const Size(1600, 900), apple: apple);
@@ -135,6 +140,8 @@ void main() {
         'custom-theme-name',
         'custom-theme-import',
         'custom-theme-share',
+        'custom-theme-more',
+        'custom-theme-preview-brightness',
       ]) {
         expect(
           find.descendant(
@@ -168,19 +175,23 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey<String>('custom-theme-tonal-palette')),
+        findsOneWidget,
+      );
+      expect(
         find.byKey(const ValueKey<String>('custom-theme-role-surface')),
         findsOneWidget,
       );
-      // 主题色与界面背景两格在同一行（色板网格，而不是一行一个的长列表）。
+      // 界面背景与次要强调色两格在同一行（统一网格 tile，而不是一行一个）。
       expect(
         tester
             .getRect(
-              find.byKey(const ValueKey<String>('custom-theme-role-accent')),
+              find.byKey(const ValueKey<String>('custom-theme-role-surface')),
             )
             .top,
         tester
             .getRect(
-              find.byKey(const ValueKey<String>('custom-theme-role-surface')),
+              find.byKey(const ValueKey<String>('custom-theme-role-secondary')),
             )
             .top,
       );

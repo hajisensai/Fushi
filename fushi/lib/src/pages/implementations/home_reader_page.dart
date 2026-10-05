@@ -83,6 +83,8 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         if (online)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.onlineSources,
+            // 主滚动视图自己把浮动工具区高度加成顶部内边距：工具区收起后不留空白。
+            handlesChromeInset: true,
             label: t.library_view_sources,
             builder: (BuildContext context, Widget navigation) =>
                 LibraryOnlineSourcesView(
@@ -94,6 +96,8 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         if (online)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.extensions,
+            // 主滚动视图自己把浮动工具区高度加成顶部内边距：工具区收起后不留空白。
+            handlesChromeInset: true,
             label: t.media_import_segment_extensions,
             builder: (BuildContext context, Widget navigation) =>
                 LibraryOnlineSourcesView(
@@ -104,6 +108,8 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.sources,
+          // 主滚动视图自己把浮动工具区高度加成顶部内边距：工具区收起后不留空白。
+          handlesChromeInset: true,
           label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
               MediaSourcesPage(mediaKind: 'book', navigation: navigation),

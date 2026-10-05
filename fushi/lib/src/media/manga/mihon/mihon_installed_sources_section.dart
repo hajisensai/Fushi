@@ -8,16 +8,21 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_preferences_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/online/installed_online_source_row.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 扩展提供的在线源列表：「导入」视图「在线源」段的正文，漫画与视频共用。
 ///
-/// 一行一个源：启停开关、上下排序、登录（宿主持有 cookie 的运行时才有）、
-/// 偏好、清数据、置顶；顶部一条搜索框 + 「按下载量排序」。此前漫画来源页和视频
-/// 在线源页各抄了一份几乎相同的行（视频那份少了搜索与排序），2026-09-19 两页
-/// 统一时收成这一处。
+/// 一行一个源（M3E 分段列表行，见 [InstalledOnlineSourceRow]）：启停开关、名称、
+/// 语言 tag · 包名；行尾「来源偏好」+「⋯」菜单（登录——宿主持有 cookie 的运行时
+/// 才有、置顶、上移 / 下移、清数据）。置顶源单独成组排在上方，两组各自组内可
+/// 拖拽重排（批量回写 `sort_order`）。顶部一条搜索框 + 「按下载量排序」+ 状态 /
+/// 语言筛选 chip。此前漫画来源页和视频在线源页各抄了一份几乎相同的行（视频那份
+/// 少了搜索与排序），2026-09-19 两页统一时收成这一处。
 ///
 /// `build` 返回的是 **sliver**（[SliverMainAxisGroup]），由外层 `CustomScrollView`
 /// 直接消费——与同页的扩展目录节同一形态。
@@ -33,7 +38,7 @@ class MihonInstalledSourcesSection extends StatefulWidget {
   final MihonManager manager;
 
   /// 排在扩展源之前的内置源行（漫画：mokuro.moe、互联对端）。普通 box widget，
-  /// 各自带底部间距。
+  /// 各自带底部间距；有内置行时扩展源一组挂「全部来源」小标题。
   final List<Widget> leading;
 
   /// 点行进该源的浏览页；为 null 时行不可点。小说 / 漫画 / 视频三域都传。
@@ -52,6 +57,13 @@ class _MihonInstalledSourcesSectionState
   /// 已安装在线源列表的搜索（BUG-2479）：源一多，找「要登录的那一个」得翻半天。
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+
+  /// 状态 / 语言筛选（只影响显示）。
+  OnlineSourceStatusFilter _status = OnlineSourceStatusFilter.all;
+  String? _language;
+
+  /// 拖拽落点后、回写完成前的乐观顺序（行身份 [_keyOf]）；null = 用 manager 的。
+  List<String>? _pendingOrder;
 
   @override
   void initState() {
@@ -83,7 +95,7 @@ class _MihonInstalledSourcesSectionState
       context: context,
       title: t.mihon_source_clear_data,
       message: t.mihon_source_clear_data_hint,
-      icon: Icons.cleaning_services_outlined,
+      icon: FushiIcons.deleteSweep,
       confirmLabel: t.dialog_clear,
       destructive: true,
     );
@@ -136,23 +148,6 @@ class _MihonInstalledSourcesSectionState
     );
   }
 
-  Future<void> _moveSource(MangaOnlineSourceRow source, int delta) async {
-    final MihonManager manager = widget.manager;
-    final List<MangaOnlineSourceRow> rows = List<MangaOnlineSourceRow>.of(
-      manager.sources,
-    );
-    final int index = rows.indexWhere(
-      (MangaOnlineSourceRow row) =>
-          row.extensionPackage == source.extensionPackage &&
-          row.sourceId == source.sourceId,
-    );
-    final int target = index + delta;
-    if (index < 0 || target < 0 || target >= rows.length) return;
-    final MangaOnlineSourceRow other = rows[target];
-    await manager.updateSourceSettings(source, sortOrder: other.sortOrder);
-    await manager.updateSourceSettings(other, sortOrder: source.sortOrder);
-  }
-
   /// 「按下载量排序」（BUG-2481）：一次性按扩展下载量重写 sort_order。目录快照
   /// 还没刷出来时提示先刷新仓库，不偷偷按 null 排。
   Future<void> _sortSourcesByDownloads() async {
@@ -179,224 +174,343 @@ class _MihonInstalledSourcesSectionState
     }
   }
 
-  /// 搜索按名称 / 语言 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）。
-  List<MangaOnlineSourceRow> _visibleSources() =>
-      filterByMediaSearch<MangaOnlineSourceRow>(
-        widget.manager.sources,
-        _searchQuery,
-        (MangaOnlineSourceRow source) => <String>[
-          source.name,
-          source.language,
-          source.extensionPackage,
-        ],
-      );
+  /// 行身份：同一扩展包可提供多个源。
+  static String _keyOf(MangaOnlineSourceRow source) =>
+      '${source.extensionPackage}#${source.sourceId}';
 
-  Widget _buildSearchField() => FushiSearchBar(
-    fieldKey: const ValueKey<String>('mihon_sources_search_field'),
-    controller: _searchController,
-    hintText: t.mihon_sources_search_hint,
-    onQueryChanged: (String value) => setState(() => _searchQuery = value),
+  /// 当前显示用的完整顺序：拖拽落点后、manager 回写完成前先按用户排出的顺序
+  /// 显示（避免松手后先弹回旧序再跳到新序）。
+  List<MangaOnlineSourceRow> _orderedSources() {
+    final List<MangaOnlineSourceRow> rows = widget.manager.sources;
+    final List<String>? pending = _pendingOrder;
+    if (pending == null) return rows;
+    final Map<String, MangaOnlineSourceRow> byKey =
+        <String, MangaOnlineSourceRow>{
+          for (final MangaOnlineSourceRow row in rows) _keyOf(row): row,
+        };
+    final Set<String> listed = pending.toSet();
+    return <MangaOnlineSourceRow>[
+      for (final String key in pending)
+        if (byKey[key] case final MangaOnlineSourceRow row) row,
+      for (final MangaOnlineSourceRow row in rows)
+        if (!listed.contains(_keyOf(row))) row,
+    ];
+  }
+
+  /// 把一组（置顶组 / 其余组）的新顺序拼回完整列表（置顶组在前），批量回写
+  /// `sort_order`。
+  Future<void> _reorderGroup(
+    List<MangaOnlineSourceRow> group, {
+    required bool pinned,
+  }) async {
+    final List<MangaOnlineSourceRow> all = _orderedSources();
+    final List<MangaOnlineSourceRow> otherGroup = <MangaOnlineSourceRow>[
+      for (final MangaOnlineSourceRow row in all)
+        if (row.pinned != pinned) row,
+    ];
+    final List<MangaOnlineSourceRow> full = pinned
+        ? <MangaOnlineSourceRow>[...group, ...otherGroup]
+        : <MangaOnlineSourceRow>[...otherGroup, ...group];
+    setState(() {
+      _pendingOrder = <String>[
+        for (final MangaOnlineSourceRow row in full) _keyOf(row),
+      ];
+    });
+    try {
+      await widget.manager.reorderSources(full);
+    } on Object catch (error, stack) {
+      if (mounted) {
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'MihonInstalledSources.reorder',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pendingOrder = null);
+    }
+  }
+
+  /// 菜单里的「上移 / 下移」：与拖拽同一条回写路径，只在本组内挪一格。
+  Future<void> _moveWithinGroup(
+    MangaOnlineSourceRow source,
+    List<MangaOnlineSourceRow> group,
+    int delta,
+  ) async {
+    final int index = group.indexWhere(
+      (MangaOnlineSourceRow row) => _keyOf(row) == _keyOf(source),
+    );
+    final int target = index + delta;
+    if (index < 0 || target < 0 || target >= group.length) return;
+    final List<MangaOnlineSourceRow> reordered = List<MangaOnlineSourceRow>.of(
+      group,
+    );
+    final MangaOnlineSourceRow moved = reordered.removeAt(index);
+    reordered.insert(target, moved);
+    await _reorderGroup(reordered, pinned: source.pinned);
+  }
+
+  bool get _searching => _searchQuery.trim().isNotEmpty;
+
+  bool get _filtering =>
+      _status != OnlineSourceStatusFilter.all || _language != null;
+
+  /// 搜索按名称 / 语言 / 扩展包名匹配，走全应用统一的归一化（不用裸 contains）；
+  /// 再叠状态 / 语言筛选。只影响显示。
+  List<MangaOnlineSourceRow> _visible(List<MangaOnlineSourceRow> rows) =>
+      filterByMediaSearch<MangaOnlineSourceRow>(
+            rows,
+            _searchQuery,
+            (MangaOnlineSourceRow source) => <String>[
+              source.name,
+              source.language,
+              source.extensionPackage,
+            ],
+          )
+          .where(
+            (MangaOnlineSourceRow source) => matchesOnlineSourceFilter(
+              enabled: source.enabled,
+              language: source.language,
+              status: _status,
+              languageFilter: _language,
+            ),
+          )
+          .toList();
+
+  Widget _buildSearchRow() => Row(
+    children: <Widget>[
+      Expanded(
+        child: FushiSearchBar(
+          fieldKey: const ValueKey<String>('mihon_sources_search_field'),
+          controller: _searchController,
+          hintText: t.mihon_sources_search_hint,
+          onQueryChanged: (String value) =>
+              setState(() => _searchQuery = value),
+        ),
+      ),
+      const SizedBox(width: 8),
+      // 「按下载量排序」（BUG-2481）：M3E tonal 图标按钮。
+      FushiIconButtonControl.filledTonal(
+        key: const ValueKey<String>('mihon_sources_sort_by_downloads'),
+        tooltip: t.mihon_sources_sort_by_downloads,
+        onPressed: () => unawaited(_sortSourcesByDownloads()),
+        icon: const FushiIcon(FushiIcons.sort),
+      ),
+    ],
   );
 
   @override
   Widget build(BuildContext context) {
-    final MihonManager manager = widget.manager;
-    final List<MangaOnlineSourceRow> visible = _visibleSources();
-    final bool reorderable = _searchQuery.trim().isEmpty;
+    final List<MangaOnlineSourceRow> all = _orderedSources();
+    final List<MangaOnlineSourceRow> pinnedAll = <MangaOnlineSourceRow>[
+      for (final MangaOnlineSourceRow row in all)
+        if (row.pinned) row,
+    ];
+    final List<MangaOnlineSourceRow> restAll = <MangaOnlineSourceRow>[
+      for (final MangaOnlineSourceRow row in all)
+        if (!row.pinned) row,
+    ];
+    final bool narrowed = _searching || _filtering;
+    final List<MangaOnlineSourceRow> pinned = narrowed
+        ? _visible(pinnedAll)
+        : pinnedAll;
+    final List<MangaOnlineSourceRow> rest = narrowed
+        ? _visible(restAll)
+        : restAll;
+    // 筛选后的顺序不是真实顺序：不可拖、菜单里不出上移 / 下移。
+    final bool reorderable = !narrowed;
     final String? emptyLabel = widget.emptyLabel;
-    return SliverMainAxisGroup(
-      slivers: <Widget>[
-        SliverToBoxAdapter(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(child: _buildSearchField()),
-                  const SizedBox(width: 8),
-                  FushiIconButtonControl(
-                    key: const ValueKey<String>(
-                      'mihon_sources_sort_by_downloads',
-                    ),
-                    tooltip: t.mihon_sources_sort_by_downloads,
-                    onPressed: () => unawaited(_sortSourcesByDownloads()),
-                    icon: const FushiIcon(Icons.sort),
+    final List<String> languages = onlineSourceLanguages(
+      all.map((MangaOnlineSourceRow row) => row.language),
+    );
+    // 无置顶且没有内置行时整段只有一组，不必再挂「全部来源」小标题。
+    final bool showAllHeader = pinned.isNotEmpty || widget.leading.isNotEmpty;
+    return FushiEntranceScope(
+      replayKey: '${_status.name}|$_language',
+      child: SliverMainAxisGroup(
+        slivers: <Widget>[
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _buildSearchRow(),
+                if (all.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 8),
+                  OnlineSourcesFilterBar(
+                    status: _status,
+                    language: _language,
+                    languages: languages,
+                    onChanged:
+                        (OnlineSourceStatusFilter status, String? language) =>
+                            setState(() {
+                              _status = status;
+                              _language = language;
+                            }),
                   ),
+                  if (narrowed && all.length > 1)
+                    const OnlineSourcesReorderDisabledHint(),
                 ],
+                const SizedBox(height: 12),
+                ...widget.leading,
+              ],
+            ),
+          ),
+          if (all.isEmpty && emptyLabel != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: FushiPlaceholderMessage(
+                  icon: FushiIcons.browserExtension,
+                  message: emptyLabel,
+                ),
               ),
-              const SizedBox(height: 8),
-              ...widget.leading,
-            ],
-          ),
-        ),
-        if (manager.sources.isEmpty && emptyLabel != null)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(emptyLabel),
-            ),
-          )
-        else
-          SliverList.builder(
-            itemCount: visible.length,
-            itemBuilder: (BuildContext context, int index) => _buildRow(
-              visible[index],
-              manager.sources.indexOf(visible[index]),
-              reorderable: reorderable,
-            ),
-          ),
-        if (_searchQuery.trim().isNotEmpty &&
-            visible.isEmpty &&
-            manager.sources.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              child: Center(child: Text(t.no_search_results)),
-            ),
-          ),
-      ],
+            )
+          else if (narrowed && all.isNotEmpty && pinned.isEmpty && rest.isEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: FushiPlaceholderMessage(
+                  icon: FushiIcons.searchOff,
+                  message: t.no_search_results,
+                ),
+              ),
+            )
+          else ...<Widget>[
+            if (pinned.isNotEmpty)
+              SliverToBoxAdapter(
+                child: InstalledSourcesGroup<MangaOnlineSourceRow>(
+                  key: const ValueKey<String>('mihon_sources_pinned_group'),
+                  header: t.online_sources_pinned_header,
+                  items: pinned,
+                  keyOf: _keyOf,
+                  reorderable: reorderable,
+                  onReorder: (List<MangaOnlineSourceRow> reordered) =>
+                      unawaited(_reorderGroup(reordered, pinned: true)),
+                  rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
+                ),
+              ),
+            if (rest.isNotEmpty)
+              SliverToBoxAdapter(
+                child: InstalledSourcesGroup<MangaOnlineSourceRow>(
+                  key: const ValueKey<String>('mihon_sources_all_group'),
+                  header: showAllHeader ? t.online_sources_all_header : null,
+                  items: rest,
+                  keyOf: _keyOf,
+                  reorderable: reorderable,
+                  entranceOffset: pinned.length,
+                  onReorder: (List<MangaOnlineSourceRow> reordered) =>
+                      unawaited(_reorderGroup(reordered, pinned: false)),
+                  rowBuilder: _rowBuilder(rest, reorderable: reorderable),
+                ),
+              ),
+          ],
+        ],
+      ),
     );
   }
 
-  /// [index] 是该源在**完整**列表里的位置（排序按钮据此判首尾）；筛选中列表
-  /// 顺序已不是真实顺序，[reorderable] 为 false 时不显示排序按钮。
+  InstalledSourceRowBuilder<MangaOnlineSourceRow> _rowBuilder(
+    List<MangaOnlineSourceRow> group, {
+    required bool reorderable,
+  }) =>
+      (
+        BuildContext context,
+        MangaOnlineSourceRow source,
+        int index,
+        int count,
+        bool dragEnabled,
+      ) => _buildRow(
+        source,
+        group,
+        index: index,
+        count: count,
+        reorderable: reorderable,
+        dragEnabled: dragEnabled,
+      );
+
+  /// 一行：开关 + 名称 + 语言 tag · 包名；行尾「来源偏好」+「⋯」菜单，宽窄同形
+  /// （此前宽行铺开六个图标按钮、窄行才收菜单，两种形态各有一套 bug）。
   ///
-  /// 动作区按行宽二选一：宽行铺开成图标按钮；窄行（手机竖屏 / 桌面窄栏）收进
-  /// 一个溢出菜单——五六个 48dp 的图标按钮排开就是 300dp，390dp 的手机上标题会
-  /// 被挤到零宽，行里只剩开关和一排图标（真实像素抓到的形态）。
+  /// [group] 是该行所在组（置顶 / 其余）的完整顺序，「上移 / 下移」只在组内挪，
+  /// 保留给键盘 / 手柄用户；[reorderable] 为 false（搜索 / 筛选中）时不出排序项。
   Widget _buildRow(
     MangaOnlineSourceRow source,
-    int index, {
+    List<MangaOnlineSourceRow> group, {
+    required int index,
+    required int count,
     required bool reorderable,
+    required bool dragEnabled,
   }) {
     final MihonManager manager = widget.manager;
     final void Function(MangaOnlineSourceRow source)? open =
         widget.onOpenSource;
-    final List<_SourceAction> actions = <_SourceAction>[
-      if (reorderable) ...<_SourceAction>[
-        _SourceAction(
-          label: t.mihon_source_move_up,
-          icon: Icons.keyboard_arrow_up,
-          onTap: index == 0 ? null : () => unawaited(_moveSource(source, -1)),
-        ),
-        _SourceAction(
-          label: t.mihon_source_move_down,
-          icon: Icons.keyboard_arrow_down,
-          onTap: index == manager.sources.length - 1
-              ? null
-              : () => unawaited(_moveSource(source, 1)),
-        ),
-      ],
+    final List<OnlineSourceMenuAction> actions = <OnlineSourceMenuAction>[
       if (_loginTargetFor(source) != null)
-        _SourceAction(
+        OnlineSourceMenuAction(
           key: ValueKey<String>('mihon_source_login_${source.sourceId}'),
           label: t.mihon_source_login,
-          icon: Icons.login,
+          icon: FushiIcons.login,
           onTap: () => unawaited(_openWebLogin(source)),
         ),
-      _SourceAction(
-        label: t.mihon_source_preferences,
-        icon: Icons.tune,
-        onTap: () => _openPreferences(source),
-      ),
-      _SourceAction(
-        label: t.mihon_source_clear_data,
-        icon: Icons.delete_sweep_outlined,
-        onTap: () => unawaited(_clearSourceData(source)),
-      ),
-      _SourceAction(
+      OnlineSourceMenuAction(
         label: source.pinned ? t.mihon_source_unpin : t.mihon_source_pin,
-        icon: source.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+        icon: source.pinned
+            ? FushiIcons.filled(FushiIcons.pin)
+            : FushiIcons.pin,
         onTap: () => unawaited(
           manager.updateSourceSettings(source, pinned: !source.pinned),
         ),
       ),
+      if (reorderable) ...<OnlineSourceMenuAction>[
+        OnlineSourceMenuAction(
+          label: t.mihon_source_move_up,
+          icon: FushiIcons.expandLess,
+          onTap: index == 0
+              ? null
+              : () => unawaited(_moveWithinGroup(source, group, -1)),
+        ),
+        OnlineSourceMenuAction(
+          label: t.mihon_source_move_down,
+          icon: FushiIcons.expandMore,
+          onTap: index == count - 1
+              ? null
+              : () => unawaited(_moveWithinGroup(source, group, 1)),
+        ),
+      ],
+      OnlineSourceMenuAction(
+        label: t.mihon_source_clear_data,
+        icon: FushiIcons.deleteSweep,
+        destructive: true,
+        onTap: () => unawaited(_clearSourceData(source)),
+      ),
     ];
-    return FushiCard(
-      margin: EdgeInsets.only(
-        bottom: FushiDesignTokens.of(context).spacing.gap,
+    return InstalledOnlineSourceRow(
+      index: index,
+      count: count,
+      rowKey: ValueKey<String>(
+        'mihon_source_row_${source.extensionPackage}_${source.sourceId}',
       ),
-      padding: EdgeInsets.zero,
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < _kInlineActionsMinWidth;
-          return FushiListItem(
-            key: ValueKey<String>(
-              'mihon_source_row_${source.extensionPackage}_${source.sourceId}',
-            ),
-            leading: FushiSwitch.adaptive(
-              value: source.enabled,
-              onChanged: (bool value) => unawaited(
-                manager.updateSourceSettings(source, enabled: value),
-              ),
-            ),
-            title: Text(source.name),
-            subtitle: Text(
-              '${source.language.toUpperCase()} · ${source.extensionPackage}',
-            ),
-            onTap: open != null && source.enabled ? () => open(source) : null,
-            trailing: compact
-                ? FushiPopupMenuButton<_SourceAction>(
-                    key: ValueKey<String>(
-                      'mihon_source_menu_${source.extensionPackage}_${source.sourceId}',
-                    ),
-                    tooltip: t.common_more_actions,
-                    icon: const FushiIcon(Icons.more_vert),
-                    onSelected: (_SourceAction action) => action.onTap?.call(),
-                    itemBuilder: (BuildContext context) =>
-                        <PopupMenuEntry<_SourceAction>>[
-                          for (final _SourceAction action in actions)
-                            PopupMenuItem<_SourceAction>(
-                              key: action.key,
-                              value: action,
-                              enabled: action.onTap != null,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  FushiIcon(action.icon, size: 20),
-                                  const SizedBox(width: 12),
-                                  Flexible(child: Text(action.label)),
-                                ],
-                              ),
-                            ),
-                        ],
-                  )
-                : Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: <Widget>[
-                      for (final _SourceAction action in actions)
-                        FushiIconButtonControl(
-                          key: action.key,
-                          tooltip: action.label,
-                          onPressed: action.onTap,
-                          icon: FushiIcon(action.icon),
-                        ),
-                    ],
-                  ),
-          );
-        },
+      title: source.name,
+      enabled: source.enabled,
+      onEnabledChanged: (bool value) =>
+          unawaited(manager.updateSourceSettings(source, enabled: value)),
+      language: source.language,
+      detail: source.extensionPackage,
+      pinned: source.pinned,
+      onOpen: open == null ? null : () => open(source),
+      primaryAction: FushiIconButtonControl(
+        tooltip: t.mihon_source_preferences,
+        onPressed: () => _openPreferences(source),
+        icon: const FushiIcon(FushiIcons.settings),
       ),
+      menuKey: ValueKey<String>(
+        'mihon_source_menu_${source.extensionPackage}_${source.sourceId}',
+      ),
+      menuActions: actions,
+      dragEnabled: dragEnabled,
     );
   }
-}
-
-/// 行宽低于此值时动作区收成溢出菜单：开关 + 标题最少留 ~200dp，六个 48dp 的
-/// 图标按钮要 288dp，再加卡片内边距。
-const double _kInlineActionsMinWidth = 560;
-
-/// 源行的一个动作：宽行画成图标按钮，窄行进溢出菜单，同一份定义。
-class _SourceAction {
-  const _SourceAction({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.key,
-  });
-
-  final Key? key;
-  final String label;
-  final IconData icon;
-
-  /// 为 null 表示当前不可用（首行的「上移」、末行的「下移」）。
-  final VoidCallback? onTap;
 }

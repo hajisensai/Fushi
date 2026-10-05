@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
@@ -81,6 +83,10 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
 class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   MihonManager? _manager;
   String _language = '*';
+
+  /// 仓库筛选（indexUrl；`'*'` = 全部仓库）。并入 [_filteredAvailable]，与语言 /
+  /// 下载量 / 搜索同一条过滤链——批量安装装的就是这里筛出来的那批。
+  String _store = '*';
 
   /// 用户手动改过展开状态的仓库（覆盖默认判据）。没记录的仓库按条数自适应。
   final Map<String, bool> _storeExpansionOverrides = <String, bool>{};
@@ -181,7 +187,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     context: context,
     title: t.mihon_store_add,
     message: '${t.mihon_extension_warning}\n\n$url',
-    icon: Icons.warning_amber_rounded,
+    icon: FushiIcons.warning,
     confirmLabel: t.dialog_ok,
     destructive: true,
   );
@@ -426,7 +432,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       context: context,
       title: t.mihon_store_remove,
       message: '${store.name}\n${store.indexUrl}',
-      icon: Icons.delete_outline,
+      icon: FushiIcons.delete,
       confirmLabel: t.dialog_delete,
       destructive: true,
     );
@@ -440,7 +446,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       context: context,
       title: t.mihon_extension_uninstall,
       message: extension.name,
-      icon: Icons.delete_outline,
+      icon: FushiIcons.delete,
       confirmLabel: t.mihon_extension_uninstall,
       destructive: true,
     );
@@ -462,7 +468,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       FushiIconButton(
         tooltip: t.mihon_store_refresh,
         label: t.mihon_store_refresh,
-        icon: Icons.refresh,
+        icon: FushiIcons.refresh,
         onTap: manager.loading
             ? null
             : () => unawaited(manager.refreshStores()),
@@ -471,17 +477,77 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       FushiIconButton(
         tooltip: t.mihon_extension_import,
         label: t.mihon_extension_import,
-        icon: Icons.file_open_outlined,
+        icon: FushiIcons.importFile,
         onTap: manager.loading ? null : _importApk,
       ),
     if (stores)
       FushiIconButton(
         tooltip: t.mihon_store_add,
         label: t.mihon_store_add,
-        icon: Icons.add_link,
+        icon: FushiIcons.link,
         onTap: manager.loading ? null : _addStore,
       ),
   ];
+
+  /// 内嵌目录顶部的动作行（M3E 按钮）。
+  ///
+  /// 库页「扩展」子标签的页头动作组已经挂着「刷新仓库」（
+  /// [ExtensionCatalogHeaderScope]），这里只留一枚 tonal「导入 APK」；没有页头
+  /// 的宿主（浏览模块、测试）刷新仍留在这里——入口只挪位置、一个不丢。仓库段
+  /// 同在时附「添加仓库」。
+  Widget _embeddedActions(MihonManager manager) {
+    final bool refreshInHeader = ExtensionCatalogHeaderScope.refreshInHeaderOf(
+      context,
+    );
+    final bool busy = manager.loading;
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: Wrap(
+        alignment: WrapAlignment.end,
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          if (!refreshInHeader)
+            FushiTextButton.icon(
+              key: const ValueKey<String>('mihon_extension_refresh'),
+              onPressed: busy ? null : () => unawaited(manager.refreshStores()),
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.mihon_store_refresh),
+            ),
+          if (widget._showStores)
+            FushiOutlinedButton.icon(
+              onPressed: busy ? null : _addStore,
+              icon: const FushiIcon(FushiIcons.link),
+              label: Text(t.mihon_store_add),
+            ),
+          if (widget._showCatalog)
+            FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('mihon_extension_import_apk'),
+              onPressed: busy ? null : _importApk,
+              icon: const FushiIcon(FushiIcons.importFile),
+              label: Text(t.mihon_extension_import),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 刷新中的波浪进度条：弹簧展开 / 收起，不再一帧跳出来把列表顶下去。
+  Widget _loadingSlot(bool loading) {
+    final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
+    return AnimatedSize(
+      duration: spring.duration,
+      curve: spring.curve,
+      alignment: Alignment.topCenter,
+      child: loading
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: FushiLinearProgressIndicator(),
+            )
+          : const SizedBox(width: double.infinity),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -494,32 +560,21 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       if (widget._showStores && !widget._showCatalog) {
         return _buildStorePage(manager);
       }
-      return SliverMainAxisGroup(
-        slivers: <Widget>[
-          SliverToBoxAdapter(
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _actions(
-                manager,
-                stores: widget._showStores,
-                catalog: widget._showCatalog,
-              ),
+      // 进场窗口按筛选维度重开：换仓库 / 语言 / 下载量门槛时新的一屏也错峰
+      // 进场；搜索逐字输入不重播（只在首屏与切筛选时动）。
+      return FushiEntranceScope(
+        replayKey: (_language, _store, _minDownloads),
+        child: SliverMainAxisGroup(
+          slivers: <Widget>[
+            SliverToBoxAdapter(child: _embeddedActions(manager)),
+            SliverToBoxAdapter(child: _loadingSlot(manager.loading)),
+            ..._buildContentSlivers(
+              manager,
+              stores: widget._showStores,
+              catalog: widget._showCatalog,
             ),
-          ),
-          if (manager.loading)
-            const SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                child: FushiLinearProgressIndicator(),
-              ),
-            ),
-          ..._buildContentSlivers(
-            manager,
-            stores: widget._showStores,
-            catalog: widget._showCatalog,
-          ),
-        ],
+          ],
+        ),
       );
     }
     return DesktopContentLayout(
@@ -542,8 +597,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                   slivers: <Widget>[
                     SliverPadding(
                       padding: const EdgeInsets.all(16),
-                      sliver: SliverMainAxisGroup(
-                        slivers: _buildContentSlivers(manager),
+                      sliver: FushiEntranceScope(
+                        replayKey: (_language, _store, _minDownloads),
+                        child: SliverMainAxisGroup(
+                          slivers: _buildContentSlivers(manager),
+                        ),
                       ),
                     ),
                   ],
@@ -568,7 +626,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     // 空态走统一占位（MD3 中性分组卡 / Apple ContentUnavailableView），
     // 不再手搓一列图标 + 文字。
     return FushiPlaceholderMessage(
-      icon: Icons.extension_outlined,
+      icon: FushiIcons.browserExtension,
       iconSize: 48,
       message: t.mihon_store_empty,
       action: Wrap(
@@ -578,12 +636,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         children: <Widget>[
           FushiFilledButton.icon(
             onPressed: _addStore,
-            icon: const FushiIcon(Icons.add_link),
+            icon: const FushiIcon(FushiIcons.link),
             label: Text(t.mihon_store_add),
           ),
           FushiOutlinedButton.icon(
             onPressed: _importApk,
-            icon: const FushiIcon(Icons.file_open_outlined),
+            icon: const FushiIcon(FushiIcons.importFile),
             label: Text(t.mihon_extension_import),
           ),
         ],
@@ -595,6 +653,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   /// 顶部刷新 / 添加仓库、信任提示、加载条、仓库分组列表。与小说插件仓库页
   /// 同一组零件（`extension_store_list.dart`）。
   Widget _buildStorePage(MihonManager manager) {
+    return FushiEntranceScope(
+      child: _buildStorePageBody(manager),
+    );
+  }
+
+  Widget _buildStorePageBody(MihonManager manager) {
     return ExtensionStorePageSliver(
       slivers: <Widget>[
         SliverToBoxAdapter(
@@ -612,7 +676,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             padding: const EdgeInsets.only(top: 16),
             child: FushiInlineNotice(
               severity: FushiNoticeSeverity.warning,
-              icon: Icons.shield_outlined,
+              icon: FushiIcons.shield,
               message: t.mihon_extension_warning,
             ),
           ),
@@ -680,9 +744,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     final List<MihonAvailableExtension> visibleAvailable = _filteredAvailable(
       manager,
     );
+    // 只在本机的扩展不属于任何仓库：选了某个仓库时它们不在「当前看到的那批」里。
+    final bool allStores = _effectiveStore(manager) == '*';
     final List<MangaExtensionRow> localOnly = manager.installed
         .where(
           (MangaExtensionRow row) =>
+              allStores &&
               !availablePackages.contains(row.packageName) &&
               (_language == '*' || row.language.toLowerCase() == _language),
         )
@@ -707,7 +774,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
     final Widget storesSliver = SliverList.builder(
       itemCount: manager.stores.length,
-      itemBuilder: (BuildContext context, int index) {
+      itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int index) {
         final MangaExtensionStoreRow store = manager.stores[index];
         // 「请求成功但目录为空」以前是一条完全无声的路径：lastError 会在
         // 刷新成功时被清空，页面上只剩一张干净的卡片配零插件，用户拿不到
@@ -762,31 +829,39 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             extensionStoreCopyAction(store.indexUrl),
             ExtensionStoreRowAction(
               label: t.mihon_store_edit,
-              icon: Icons.edit_outlined,
+              icon: FushiIcons.edit,
               onTap: () => unawaited(_editStore(store)),
             ),
             ExtensionStoreRowAction(
               label: t.mihon_store_remove,
-              icon: Icons.delete_outline,
+              icon: FushiIcons.delete,
               destructive: true,
               onTap: () => unawaited(_removeStore(store)),
             ),
           ],
         );
-      },
+      }),
     );
+    final bool filtering =
+        _searchQuery.trim().isNotEmpty ||
+        _language != '*' ||
+        _effectiveStore(manager) != '*' ||
+        _minDownloads > 0;
     final List<Widget> catalogSlivers = <Widget>[
       if (manager.available.isNotEmpty || manager.installed.isNotEmpty)
         SliverToBoxAdapter(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: _buildFilters(languages),
+            child: _buildFilters(manager, languages),
           ),
         ),
       const SliverToBoxAdapter(child: SizedBox(height: 8)),
       SliverList.builder(
         itemCount: groupedRows.length,
-        itemBuilder: (BuildContext context, int index) {
+        itemBuilder: fushiStaggeredItemBuilder((
+          BuildContext context,
+          int index,
+        ) {
           final MihonExtensionListRow entry = groupedRows[index];
           if (entry is MihonStoreHeaderRow) {
             return ExtensionStoreGroupHeader(
@@ -840,11 +915,14 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 : (bool value) =>
                       unawaited(manager.setExtensionEnabled(row, value)),
           );
-        },
+        }),
       ),
       SliverList.builder(
         itemCount: visibleLocalOnly.length,
-        itemBuilder: (BuildContext context, int index) {
+        itemBuilder: fushiStaggeredItemBuilder((
+          BuildContext context,
+          int index,
+        ) {
           final MangaExtensionRow extension = visibleLocalOnly[index];
           return _InstalledExtensionTile(
             groupIndex: index,
@@ -854,15 +932,17 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
             onEnabledChanged: (bool value) =>
                 unawaited(manager.setExtensionEnabled(extension, value)),
           );
-        },
+        }),
       ),
-      if (_searchQuery.trim().isNotEmpty &&
-          visibleAvailable.isEmpty &&
-          visibleLocalOnly.isEmpty)
+      // 搜索 / 筛选后一条都不剩：统一占位（M3E 色块图标 + 弹入），不是一行裸字。
+      if (filtering && visibleAvailable.isEmpty && visibleLocalOnly.isEmpty)
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: Text(t.no_search_results)),
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: FushiPlaceholderMessage(
+              icon: FushiIcons.searchOff,
+              message: t.no_search_results,
+            ),
           ),
         ),
     ];
@@ -887,41 +967,61 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     });
   }
 
-  /// 当前筛选（语言 + 搜索 + 最低下载量）之后的可安装扩展。
+  /// 实际生效的仓库筛选：选中的仓库被删掉 / 目录里已没有它的扩展时自动退回
+  /// 「全部仓库」——与 chip 行的选中态同一判据（chip 只列有扩展的仓库），不会让
+  /// 目录被一个看不见的筛选条件筛成空表。
+  String _effectiveStore(MihonManager manager) =>
+      _store != '*' &&
+          manager.stores.any(
+            (MangaExtensionStoreRow store) => store.indexUrl == _store,
+          ) &&
+          manager.available.any(
+            (MihonAvailableExtension extension) => extension.storeUrl == _store,
+          )
+      ? _store
+      : '*';
+
+  /// 当前筛选（仓库 + 语言 + 搜索 + 最低下载量）之后的可安装扩展。
   ///
   /// 列表渲染和批量安装**必须**共用这一份判据：批量安装的语义就是「把你现在看见
   /// 的这些装上」，两处各写一遍过滤链迟早会分叉成「看到的和装上的不是一批」。
-  List<MihonAvailableExtension> _filteredAvailable(
-    MihonManager manager,
-  ) => filterByMediaSearch<MihonAvailableExtension>(
-    manager.available
-        .where(
-          (MihonAvailableExtension extension) =>
-              _language == '*' || extension.language.toLowerCase() == _language,
-        )
-        // 下载量筛选只对**有数据**的条目成立（见 passesExtensionMinDownloads）。
-        .where(
-          (MihonAvailableExtension extension) => passesExtensionMinDownloads(
-            extension.downloadCount,
-            _minDownloads,
-          ),
-        )
-        .toList(growable: false),
-    _searchQuery,
-    // 🔴 可搜字段只能是**条目自身**的标识。`storeUrl` 是仓库级字段，同一仓库的
-    // 每个扩展都一样：keiyoushi 的索引地址是
-    // `https://github.com/keiyoushi/extensions/raw/repo/index.pb`，归一化后含
-    // `raw`/`github`/`repo`/`index`，于是搜「raw」整个仓库 1900 个扩展全部命中，
-    // 看起来就是「筛选完全没生效」（BUG-1441）。`language` 同理是低基数共享值，
-    // 且已有专门的语言下拉，留在这里只会把「all」这类查询打成全命中。
-    (MihonAvailableExtension extension) => <String>[
-      extension.name,
-      extension.packageName,
-      ...extension.sources.expand(
-        (MihonAvailableSource source) => <String>[source.name, source.baseUrl],
-      ),
-    ],
-  );
+  List<MihonAvailableExtension> _filteredAvailable(MihonManager manager) {
+    final String store = _effectiveStore(manager);
+    return filterByMediaSearch<MihonAvailableExtension>(
+      manager.available
+          .where(
+            (MihonAvailableExtension extension) =>
+                store == '*' || extension.storeUrl == store,
+          )
+          .where(
+            (MihonAvailableExtension extension) =>
+                _language == '*' ||
+                extension.language.toLowerCase() == _language,
+          )
+          // 下载量筛选只对**有数据**的条目成立（见 passesExtensionMinDownloads）。
+          .where(
+            (MihonAvailableExtension extension) => passesExtensionMinDownloads(
+              extension.downloadCount,
+              _minDownloads,
+            ),
+          )
+          .toList(growable: false),
+      _searchQuery,
+      // 🔴 可搜字段只能是**条目自身**的标识。`storeUrl` 是仓库级字段，同一仓库的
+      // 每个扩展都一样：keiyoushi 的索引地址是
+      // `https://github.com/keiyoushi/extensions/raw/repo/index.pb`，归一化后含
+      // `raw`/`github`/`repo`/`index`，于是搜「raw」整个仓库 1900 个扩展全部命中，
+      // 看起来就是「筛选完全没生效」（BUG-1441）。`language` 同理是低基数共享值，
+      // 且已有专门的语言下拉，留在这里只会把「all」这类查询打成全命中。
+      (MihonAvailableExtension extension) => <String>[
+        extension.name,
+        extension.packageName,
+        ...extension.sources.expand(
+          (MihonAvailableSource source) => <String>[source.name, source.baseUrl],
+        ),
+      ],
+    );
+  }
 
   /// 把当前筛选结果里**还没装**的扩展一次装完。
   ///
@@ -1059,12 +1159,12 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
   }
 
-  Widget _buildFilters(List<String> languages) {
+  Widget _buildFilters(MihonManager manager, List<String> languages) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _buildSearchAndLanguageFilters(languages),
+        _buildSearchAndLanguageFilters(manager, languages),
         const SizedBox(height: 8),
         ExtensionCatalogActions(
           keyPrefix: 'mihon_extension',
@@ -1078,9 +1178,28 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
   }
 
-  Widget _buildSearchAndLanguageFilters(List<String> languages) {
+  Widget _buildSearchAndLanguageFilters(
+    MihonManager manager,
+    List<String> languages,
+  ) {
+    // 只列出目录里真有扩展的仓库：停用 / 刷新失败的仓库选了也是空表。
+    final Set<String> storesWithExtensions = manager.available
+        .map((MihonAvailableExtension extension) => extension.storeUrl)
+        .toSet();
     return MangaExtensionFilters(
       keyPrefix: 'mihon_extension',
+      stores: <ExtensionFilterOption<String>>[
+        for (final MangaExtensionStoreRow store in manager.stores)
+          if (storesWithExtensions.contains(store.indexUrl))
+            (
+              value: store.indexUrl,
+              label: store.name.isEmpty
+                  ? mangaSourceHostLabel(store.indexUrl)
+                  : store.name,
+            ),
+      ],
+      selectedStore: _effectiveStore(manager),
+      onStoreChanged: (String value) => setState(() => _store = value),
       languages: languages,
       selectedLanguage: _language,
       languageLabel: t.mihon_extension_language_filter,
@@ -1261,85 +1380,105 @@ class _AvailableExtensionTileState extends State<_AvailableExtensionTile> {
       installed: installed,
     );
     final ThemeData theme = Theme.of(context);
-    final int hiddenSources = _showAllSources
-        ? 0
-        : (extension.sources.length - _sourcePreviewCount).clamp(
-            0,
-            extension.sources.length,
-          );
+    final FushiMotionScheme motion = context.fushiMotion;
     final List<MihonAvailableSource> shownSources = _showAllSources
         ? extension.sources
         : extension.sources.take(_sourcePreviewCount).toList(growable: false);
+    final bool canToggleSources =
+        extension.sources.length > _sourcePreviewCount || _showAllSources;
     return MangaExtensionManagementTile(
       groupIndex: widget.groupIndex,
       groupCount: widget.groupCount,
       title: extension.name,
       iconUrl: extension.iconUrl,
       contentWarning: extension.contentWarning >= 3,
+      updateAvailable: update,
       busy: widget.busy,
       enabled: installed?.enabled,
       onEnabledChanged: widget.onEnabledChanged,
       secondaryLabel: widget.showPreview ? t.mihon_extension_preview : null,
       onSecondary: widget.onPreview,
+      // 安装 = filled 主操作；有更新 = tonal 强调；卸载 = outlined 次要。
       primaryLabel: installed == null
           ? t.mihon_extension_install
           : update
           ? t.mihon_extension_update
           : t.mihon_extension_uninstall,
+      primaryStyle: installed == null
+          ? ExtensionTileActionStyle.filled
+          : update
+          ? ExtensionTileActionStyle.tonal
+          : ExtensionTileActionStyle.outlined,
       onPrimary: installed == null || update
           ? widget.onInstall
           : widget.onUninstall,
-      // 这一行的副标题是可展开的「包含的源」清单，不是一行元信息。
+      metaChips: <String>[
+        extension.language.toUpperCase(),
+        update && installed != null
+            ? '${installed.versionName} → ${extension.versionName}'
+            : extension.versionName,
+        'lib ${extension.libVersion}',
+      ],
+      downloadsLabel: extensionDownloadCountLabel(extension.downloadCount),
+      // 这一行的详情是可展开的「包含的源」清单。
       subtitleMaxLines: 2,
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            '${extension.language} · ${extension.versionName} · '
-            'lib ${extension.libVersion}',
-          ),
-          Text(
-            extensionDownloadCountLabel(extension.downloadCount),
-            style: theme.textTheme.labelSmall,
-          ),
-          if (extension.sources.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              t.mihon_extension_sources_included,
-              style: theme.textTheme.labelSmall,
+      details: extension.sources.isEmpty
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    t.mihon_extension_sources_included,
+                    style: theme.textTheme.labelSmall,
+                  ),
+                  // 展开 / 收起走弹簧尺寸动画，不再一帧跳变把下面的行顶走。
+                  AnimatedSize(
+                    duration: motion.spatialDefault.duration,
+                    curve: motion.spatialDefault.curve,
+                    alignment: AlignmentDirectional.topStart,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        for (final MihonAvailableSource source in shownSources)
+                          Text(
+                            source.baseUrl.isEmpty
+                                ? '· ${source.name} (${source.language})'
+                                : '· ${source.name} (${source.language}) — '
+                                      '${source.baseUrl}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (canToggleSources)
+                    FushiTextButton.icon(
+                      key: ValueKey<String>(
+                        'mihon-sources-toggle-${extension.packageName}',
+                      ),
+                      size: FushiButtonSize.xs,
+                      onPressed: () =>
+                          setState(() => _showAllSources = !_showAllSources),
+                      icon: AnimatedRotation(
+                        turns: _showAllSources ? 0.5 : 0,
+                        duration: motion.spatialFast.duration,
+                        curve: motion.spatialFast.curve,
+                        child: const FushiIcon(FushiIcons.expandMore, size: 18),
+                      ),
+                      label: Text(
+                        _showAllSources
+                            ? t.mihon_extension_sources_less
+                            : t.mihon_extension_sources_more(
+                                count: extension.sources.length,
+                              ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            for (final MihonAvailableSource source in shownSources)
-              Text(
-                source.baseUrl.isEmpty
-                    ? '· ${source.name} (${source.language})'
-                    : '· ${source.name} (${source.language}) — '
-                          '${source.baseUrl}',
-                style: theme.textTheme.bodySmall,
-              ),
-            if (hiddenSources > 0 || _showAllSources)
-              FushiTextButton(
-                key: ValueKey<String>(
-                  'mihon-sources-toggle-${extension.packageName}',
-                ),
-                onPressed: () =>
-                    setState(() => _showAllSources = !_showAllSources),
-                style: TextButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                child: Text(
-                  _showAllSources
-                      ? t.mihon_extension_sources_less
-                      : t.mihon_extension_sources_more(
-                          count: extension.sources.length,
-                        ),
-                ),
-              ),
-          ],
-        ],
-      ),
     );
   }
 }
@@ -1403,13 +1542,15 @@ class _InstalledExtensionTile extends StatelessWidget {
     groupIndex: groupIndex,
     groupCount: groupCount,
     title: extension.name,
-    subtitle: Text(
-      '${extension.language} · ${extension.versionName} · '
+    metaChips: <String>[
+      extension.language.toUpperCase(),
+      extension.versionName,
       'lib ${extension.libVersion}',
-    ),
+    ],
     enabled: extension.enabled,
     onEnabledChanged: onEnabledChanged,
     primaryLabel: t.mihon_extension_uninstall,
+    primaryStyle: ExtensionTileActionStyle.outlined,
     onPrimary: onUninstall,
   );
 }
