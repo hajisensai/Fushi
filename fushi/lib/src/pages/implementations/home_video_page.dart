@@ -3011,7 +3011,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             final File coverDest = await _remoteCoverDestination(bookUid);
             if (await cloud.getRemoteVideoCover(bookUid, coverDest)) {
               await widget.repo.updateCover(bookUid, coverDest.path);
-              return _commitAutoFrameCover(coverMetaStore, bookUid);
+              return await _commitAutoFrameCover(coverMetaStore, bookUid);
             }
           } catch (e) {
             debugPrint('[home-video] cloud video cover download failed: $e');
