@@ -25,10 +25,17 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
+/// 钉死色上的文字色：黑 / 白里取 WCAG 对比度更高的那个。
+///
+/// 以前用 `ThemeData.estimateBrightnessForColor`（相对亮度阈值 0.15）：亮度落在
+/// 0.15..0.179 之间的中灰（如 #6E6E6E）会被判「亮」配黑字，对比度只有 ~4.1，
+/// 不到 WCAG AA 的 4.5；黑白对比度相等的分界其实是 0.179。直接比对比度，任何
+/// 钉死色都至少 4.58:1。
 Color _readableOnColor(Color color) {
-  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
+  final double l = color.computeLuminance();
+  final double onBlack = (l + 0.05) / 0.05;
+  final double onWhite = 1.05 / (l + 0.05);
+  return onWhite >= onBlack ? Colors.white : Colors.black;
 }
 
 Color _deriveContainer(Color role, Brightness brightness) {
@@ -57,10 +64,15 @@ ColorScheme buildSystemThemeColorScheme({
   if (palette != null) {
     return palette.toColorScheme(brightness: brightness);
   }
+  final Color seed = accent ?? fallbackSeed;
   return ColorScheme.fromSeed(
-    seedColor: accent ?? fallbackSeed,
+    seedColor: seed,
     brightness: brightness,
-    dynamicSchemeVariant: kFushiDefaultSchemeVariant,
+    // 灰色系统强调色（Windows「自动」灰 / 石墨）没有可信色相，vibrant 会把量化色相
+    // 拉成鲜蓝；这类 seed 维持 tonalSpot 的低彩度结果。
+    dynamicSchemeVariant: isAchromaticSeed(seed)
+        ? DynamicSchemeVariant.tonalSpot
+        : kFushiDefaultSchemeVariant,
   );
 }
 
@@ -149,7 +161,13 @@ ColorScheme buildFushiColorScheme({
           ? ColorScheme.fromSeed(
               seedColor: seedColor,
               brightness: brightness,
-              dynamicSchemeVariant: variant,
+              // 无彩度 seed（白 / 灰 / 黑）只有 HCT 量化出的随机色相：vibrant 会把它
+              // 拉成满彩度的蓝，选白色主题却得到鲜蓝强调色。这类 seed 的强调色沿用
+              // tonalSpot 的低彩度版本（与 M3E 前一致）。
+              dynamicSchemeVariant: isAchromaticSeed(seedColor) &&
+                      variant == DynamicSchemeVariant.vibrant
+                  ? DynamicSchemeVariant.tonalSpot
+                  : variant,
             )
           : null;
   final Color? accent = neutral ? (primary ?? accentBase!.primary) : primary;
@@ -992,7 +1010,7 @@ class ThemeNotifier extends ChangeNotifier {
       pureBlack: false,
     ),
     'dark-theme': (
-      // TonalSpot: the teal Hibiki brand colour (~#8ad0ee).
+      // M3E vibrant: the teal Hibiki brand colour (~#60d4ff).
       seed: Color(0xFF1F4959),
       brightness: Brightness.dark,
       variant: kFushiDefaultSchemeVariant,

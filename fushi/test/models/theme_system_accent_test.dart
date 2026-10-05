@@ -37,6 +37,7 @@ void main() {
           ColorScheme.fromSeed(
             seedColor: osAccent,
             brightness: Brightness.light,
+            dynamicSchemeVariant: kFushiDefaultSchemeVariant,
           ).primary,
         ),
       );
@@ -56,6 +57,7 @@ void main() {
           ColorScheme.fromSeed(
             seedColor: fallbackTeal,
             brightness: Brightness.dark,
+            dynamicSchemeVariant: kFushiDefaultSchemeVariant,
           ).primary,
         ),
       );
