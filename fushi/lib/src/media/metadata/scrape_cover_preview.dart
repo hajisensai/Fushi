@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
@@ -37,7 +38,7 @@ class ScrapeCoverPreview extends StatelessWidget {
       ),
     );
     if (normalized == null) return preview;
-    return Tooltip(
+    return FushiTooltip(
       message: t.preview,
       child: Semantics(
         button: true,
@@ -60,7 +61,7 @@ Widget _buildPlaceholder(
   return ColoredBox(
     color: tokens.surfaces.overlay,
     child: Center(
-      child: Icon(
+      child: FushiIcon(
         Icons.image_not_supported_outlined,
         size: iconSize,
         color: tokens.surfaces.onVariant,
@@ -106,13 +107,13 @@ Future<void> _showLargePreview(BuildContext context, String url) async {
               Positioned(
                 top: 8,
                 right: 8,
-                child: IconButton.filledTonal(
+                child: FushiIconButtonControl.filledTonal(
                   key: const ValueKey<String>(
                     'scrape_cover_large_preview_close',
                   ),
                   tooltip: t.dialog_close,
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                 ),
               ),
             ],

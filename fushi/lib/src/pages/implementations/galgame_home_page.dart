@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/models.dart';
@@ -29,6 +31,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 游戏模块的默认首屏（游戏首页 / 仪表盘），布局对齐 ReinaManager `HomePage`
 /// （见 `docs/design/galgame-library-reina-visual-parity.md` §3）。
@@ -456,9 +459,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
             actions: <Widget>[
               if (Platform.isWindows)
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: _gameStreamBusy ? null : _toggleGameStream,
-                  icon: Icon(
+                  icon: FushiIcon(
                     _gameStreamStarted
                         ? Icons.stop_circle_outlined
                         : Icons.cast_connected,
@@ -483,32 +486,16 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     );
   }
 
-  /// 空库态：与库页同款图标 + 提示 + 「添加游戏」入口（切到库页添加）。
+  /// 空库态：与库页同一个共享空态 [FushiPlaceholderMessage]（MD3 中性分组底卡 /
+  /// Apple ContentUnavailableView 式无底居中）+「添加游戏」主按钮（切到库页添加）。
   Widget _buildEmpty(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            Icons.videogame_asset_outlined,
-            size: 64,
-            color: colors.onSurfaceVariant,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            t.game_empty,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: widget.onShowLibrary,
-            icon: const Icon(Icons.add),
-            label: Text(t.game_add),
-          ),
-        ],
+    return FushiPlaceholderMessage(
+      icon: Icons.videogame_asset_outlined,
+      message: t.game_empty,
+      action: FushiFilledButton.icon(
+        onPressed: widget.onShowLibrary,
+        icon: const FushiIcon(Icons.add),
+        label: Text(t.game_add),
       ),
     );
   }
@@ -520,7 +507,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 1000;
         final Widget left = _buildLeftColumn(context);
-        final Widget timeline = _buildTimeline(context);
+        // 时间线整块错峰在左列之后进场（宽屏并排时也是先左后右）。
+        final Widget timeline = FushiStaggeredEntrance(
+          index: 6,
+          child: _buildTimeline(context),
+        );
         final Widget content = wide
             ? Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,20 +529,24 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                   timeline,
                 ],
               );
-        return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.rowVertical,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildKpiStrip(context),
-              SizedBox(height: tokens.spacing.card),
-              content,
-            ],
+        // 2026-10 动效：首屏 KPI → 焦点卡 → 随机卡 → 时间线错峰进场（与库页
+        // 同一套 [FushiEntranceScope]；墨水屏 / 减弱动效下瞬间到位）。
+        return FushiEntranceScope(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.rowVertical,
+              tokens.spacing.page,
+              tokens.spacing.section,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _buildKpiStrip(context),
+                SizedBox(height: tokens.spacing.card),
+                content,
+              ],
+            ),
           ),
         );
       },
@@ -587,13 +582,17 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double gap = tokens.spacing.gap + 4;
+        final List<Widget> staggered = <Widget>[
+          for (int i = 0; i < cells.length; i++)
+            FushiStaggeredEntrance(index: i, child: cells[i]),
+        ];
         // 单行四等分（宽屏）；窄屏降级 2×2。
         if (constraints.maxWidth >= 640) {
           return Row(
             children: <Widget>[
               for (int i = 0; i < cells.length; i++) ...<Widget>[
                 if (i > 0) SizedBox(width: gap),
-                Expanded(child: cells[i]),
+                Expanded(child: staggered[i]),
               ],
             ],
           );
@@ -602,17 +601,17 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                Expanded(child: cells[0]),
+                Expanded(child: staggered[0]),
                 SizedBox(width: gap),
-                Expanded(child: cells[1]),
+                Expanded(child: staggered[1]),
               ],
             ),
             SizedBox(height: gap),
             Row(
               children: <Widget>[
-                Expanded(child: cells[2]),
+                Expanded(child: staggered[2]),
                 SizedBox(width: gap),
-                Expanded(child: cells[3]),
+                Expanded(child: staggered[3]),
               ],
             ),
           ],
@@ -629,10 +628,18 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (recent != null) _buildFocusCard(context, recent),
+        if (recent != null)
+          FushiStaggeredEntrance(
+            index: 4,
+            child: _buildFocusCard(context, recent),
+          ),
         if (recent != null && _random != null)
           SizedBox(height: tokens.spacing.card),
-        if (_random != null) _buildRandomSection(context, _random!),
+        if (_random != null)
+          FushiStaggeredEntrance(
+            index: 5,
+            child: _buildRandomSection(context, _random!),
+          ),
       ],
     );
   }
@@ -650,13 +657,32 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       '${t.game_stat_total_time}  ${formatStatTime(game.totalPlaySeconds * 1000)}',
     ];
     final List<GalgameEntry> recent = _recentlyPlayed;
+    final bool eink = isEinkTheme(context);
+    final bool apple = isGlassDesign(context) && !eink;
+    // 大横版 key art 卡（2026-10 游戏模块重做）：封面模糊铺底 + 深色渐变 +
+    // 宽屏右侧一张清晰竖版封面（Apple Arcade / Game Center「继续玩」形态）。
+    // 圆角：MD3 Expressive extra-large 28 / Apple 22（内容卡大号连续圆角）。
+    final BorderRadius radius =
+        BorderRadius.all(Radius.circular(apple ? 22 : 28));
+    // 墨水屏不模糊（sigma 0，结构恒定）：模糊在灰阶屏上只是一片脏灰。
+    final double blur = eink ? 0 : 28;
 
     return ClipRRect(
-      borderRadius: FushiBorderRadius.poster,
+      borderRadius: radius,
       child: Stack(
         children: <Widget>[
-          // 封面出血背景。
-          Positioned.fill(child: _coverImage(context, game)),
+          // 封面出血背景：放大模糊当 key art 氛围底（游戏封面多为竖版包装图，
+          // 直接横铺只剩中间一条，模糊后只取色调）。
+          Positioned.fill(
+            child: ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(
+                sigmaX: blur,
+                sigmaY: blur,
+                tileMode: TileMode.clamp,
+              ),
+              child: _coverImage(context, game),
+            ),
+          ),
           // 左→右深色渐变蒙版（蒙版内容色，非 surface 语义角色，允许字面深色）。
           const Positioned.fill(
             child: DecoratedBox(
@@ -666,8 +692,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                   end: Alignment.centerRight,
                   colors: <Color>[
                     Color(0xF00B1017),
-                    Color(0xC00B1017),
-                    Color(0x300B1017),
+                    Color(0xB80B1017),
+                    Color(0x660B1017),
                   ],
                   stops: <double>[0.0, 0.55, 1.0],
                 ),
@@ -675,8 +701,14 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            padding: const EdgeInsets.all(24),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                // 宽屏右侧清晰竖版封面；窄屏只留文字列（封面已在模糊底里）。
+                final bool showPoster = constraints.maxWidth >= 520;
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -715,21 +747,25 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 const SizedBox(height: 16),
                 Row(
                   children: <Widget>[
-                    FilledButton.icon(
+                    FushiFilledButton.icon(
                       onPressed: () => unawaited(_launchGame(game)),
-                      icon: const Icon(Icons.play_arrow),
+                      icon: const FushiIcon(Icons.play_arrow),
                       label: Text(t.game_launch),
                     ),
                     const SizedBox(width: 12),
-                    OutlinedButton.icon(
+                    FushiOutlinedButton.icon(
                       onPressed: () => unawaited(_openDetail(game)),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.5),
-                        ),
-                      ),
-                      icon: const Icon(Icons.info_outline),
+                      // Apple：玻璃胶囊自己决定前景（浅色主题下白字压在浅玻璃上
+                      // 不可读），只有 MD3 描边钮需要在深色 key art 上改白。
+                      style: apple
+                          ? null
+                          : OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              side: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.5),
+                              ),
+                            ),
+                      icon: const FushiIcon(Icons.info_outline),
                       label: Text(t.game_view_detail),
                     ),
                   ],
@@ -759,6 +795,22 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                   ),
                 ],
               ],
+            )),
+                    if (showPoster) ...<Widget>[
+                      const SizedBox(width: 24),
+                      SizedBox(
+                        width: 148,
+                        child: AspectRatio(
+                          aspectRatio: 3 / 4,
+                          child: ShelfCoverFrame(
+                            child: _coverImage(context, game),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -774,25 +826,16 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                t.game_random_title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: colors.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            FushiActionChip(
-              label: t.game_random_reroll,
-              icon: Icons.casino_outlined,
-              onPressed: _reroll,
-            ),
-          ],
+        // 区块标题走共享 [FushiSectionTitle]（MD3 titleLarge / Apple Title 2）。
+        FushiSectionTitle(
+          t.game_random_title,
+          padding: const EdgeInsets.only(bottom: 8),
+          trailing: FushiActionChip(
+            label: t.game_random_reroll,
+            icon: Icons.casino_outlined,
+            onPressed: _reroll,
+          ),
         ),
-        const SizedBox(height: 8),
         FushiCard(
           padding: const EdgeInsets.all(12),
           focusId: FushiFocusId('game-dashboard-random-${game.id}'),
@@ -805,10 +848,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
               children: <Widget>[
                 AspectRatio(
                   aspectRatio: 3 / 4,
-                  child: ClipRRect(
-                    borderRadius: FushiBorderRadius.control,
-                    child: _coverImage(context, game),
-                  ),
+                  child: ShelfCoverFrame(child: _coverImage(context, game)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -872,7 +912,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   // ── 右列：动态时间线 ─────────────────────────────────────────────────────
 
   Widget _buildTimeline(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<ActivityEventRow> filtered = _timelineFilter == null
         ? _timelineRows
@@ -889,14 +928,10 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
+        FushiSectionTitle(
           t.home_activity,
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurface,
-            fontWeight: FontWeight.w700,
-          ),
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
         ),
-        SizedBox(height: tokens.spacing.gap),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -1117,7 +1152,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return ColoredBox(
       color: tokens.surfaces.overlay,
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           Icons.videogame_asset,
           color: tokens.surfaces.onVariant,
           size: 32,
@@ -1143,20 +1178,21 @@ class _KpiCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
+    final bool apple = isGlassDesign(context) && !isEinkTheme(context);
     return FushiCard(
       padding: const EdgeInsets.all(14),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 60),
         child: Row(
           children: <Widget>[
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: colors.primary.withValues(alpha: 0.12),
-                borderRadius: FushiBorderRadius.control,
-              ),
-              child: Icon(icon, color: colors.primary, size: 22),
+            // 统计格图标：MD3 tonal 中性方底 + 强调色图标；Apple 单色 SF 风格
+            // 无底（[FushiNeutralIconBadge] 玻璃分支），不再是 primary 12% 彩色块。
+            FushiNeutralIconBadge(
+              icon: icon,
+              size: 42,
+              iconSize: 22,
+              circle: false,
+              color: apple ? null : colors.primary,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1168,7 +1204,12 @@ class _KpiCell extends StatelessWidget {
                     value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.headlineMedium?.copyWith(
+                    // Apple：Title 2 粗体（统计格数字）；MD3 Expressive：
+                    // headlineMedium 粗体。
+                    style: (apple
+                            ? theme.textTheme.titleLarge
+                            : theme.textTheme.headlineMedium)
+                        ?.copyWith(
                       color: colors.onSurface,
                       fontWeight: FontWeight.w700,
                     ),
@@ -1201,16 +1242,23 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    // Apple：叠在深色 key art 上的半透明白胶囊（单色强调色在深底上不可读）；
+    // MD3：主色胶囊。只换值不换结构。
+    final bool apple = isGlassDesign(context) && !isEinkTheme(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: theme.colorScheme.primary,
-        borderRadius: FushiBorderRadius.chip,
+        color: apple
+            ? Colors.white.withValues(alpha: 0.22)
+            : theme.colorScheme.primary,
+        borderRadius: apple
+            ? const BorderRadius.all(Radius.circular(999))
+            : FushiBorderRadius.chip,
       ),
       child: Text(
         label,
         style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onPrimary,
+          color: apple ? Colors.white : theme.colorScheme.onPrimary,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -1241,10 +1289,14 @@ class _RecentThumb extends StatelessWidget {
       button: true,
       child: GestureDetector(
         onTap: onTap,
-        child: SizedBox(
-          width: 44,
-          height: 58,
-          child: ClipRRect(borderRadius: FushiBorderRadius.chip, child: cover),
+        // 与库卡同一个封面框（MD3 12 / Apple 10 圆角 + 内描边 + 柔和投影，
+        // 悬停由外层 [FushiHoverLift] 抬升）。
+        child: FushiHoverLift(
+          builder: (BuildContext context, bool _) => SizedBox(
+            width: 48,
+            height: 64,
+            child: ShelfCoverFrame(child: cover),
+          ),
         ),
       ),
     );
@@ -1281,7 +1333,7 @@ class _TimelineAvatar extends StatelessWidget {
     final Widget child = cover ??
         ColoredBox(
           color: tokens.surfaces.overlay,
-          child: Icon(
+          child: FushiIcon(
             Icons.videogame_asset,
             size: 18,
             color: tokens.surfaces.onVariant,

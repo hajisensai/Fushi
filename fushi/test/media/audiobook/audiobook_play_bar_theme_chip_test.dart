@@ -21,6 +21,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/test_platform_services.dart';
+import '../../helpers/glass_unwrap.dart';
 
 class _FakeInAppWebViewController implements InAppWebViewController {
   @override
@@ -122,32 +123,31 @@ void main() {
       expect(brightnessRow, findsOneWidget);
       expect(tester.getTopLeft(brightnessRow).dy,
           greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy));
-      for (final IconData icon in <IconData>[
-        Icons.light_mode_outlined,
-        Icons.brightness_auto_outlined,
-        Icons.dark_mode_outlined,
-      ]) {
-        final Finder segment = find.descendant(
-          of: brightnessRow,
-          matching: find.byIcon(icon),
-        );
-        expect(segment.hitTestable(), findsOneWidget);
-        expect(tester.getRect(segment).left, greaterThanOrEqualTo(48));
-        expect(tester.getRect(segment).right, lessThanOrEqualTo(320));
-      }
+      // 272 宽抽屉里三段图标条放不进行宽 55%，按设计系统的唯一判据
+      // （settingsChoiceUsesSegments）退回「点整行弹菜单」形态：整行仍须完整落在
+      // 抽屉内（左侧保留 48px 点外关闭区），三个选项都能从菜单里选到。
+      final Finder menuRow = find.descendant(
+        of: brightnessRow,
+        matching: find.byType(SettingsChoiceMenuRow),
+      );
+      expect(menuRow.hitTestable(), findsOneWidget);
+      expect(tester.getRect(menuRow).left, greaterThanOrEqualTo(48));
+      expect(tester.getRect(menuRow).right, lessThanOrEqualTo(320));
 
-      for (final (String, IconData) choice in <(String, IconData)>[
-        ('dark', Icons.dark_mode_outlined),
-        ('light', Icons.light_mode_outlined),
-        ('system', Icons.brightness_auto_outlined),
+      for (final (String, String) choice in <(String, String)>[
+        ('dark', t.dark_mode_dark),
+        ('light', t.dark_mode_light),
+        ('system', t.dark_mode_system),
       ]) {
         final int liveBefore = liveChanges;
         final int styleBefore = styleChanges;
         final int themeBefore = themeChanges;
-        await tester.tap(find.descendant(
-          of: brightnessRow,
-          matching: find.byIcon(choice.$2),
-        ));
+        await tester.tap(menuRow);
+        await tester.pumpAndSettle();
+        final Finder item = find.text(choice.$2).last;
+        expect(tester.getRect(item).left, greaterThanOrEqualTo(0));
+        expect(tester.getRect(item).right, lessThanOrEqualTo(320));
+        await tester.tap(item);
         await tester.pumpAndSettle();
 
         expect(model.themeNotifier.brightnessMode, choice.$1);
@@ -213,8 +213,24 @@ void main() {
     );
     expect(tester.getRect(close).right, lessThanOrEqualTo(320));
 
-    await tester.ensureVisible(find.text(t.settings_destination_lookup));
-    await tester.tap(find.text(t.settings_destination_lookup));
+    // 272 宽放不下全部页签时进入「前 N 段 + 更多」溢出档：「查词」页签可能
+    // 收进末尾的「更多」菜单，从菜单里同样能切过去。
+    final Finder tabs =
+        find.byKey(const ValueKey<String>('fushi_side_sheet_tabs'));
+    final Finder lookupTab = find.descendant(
+      of: tabs,
+      matching: find.text(t.settings_destination_lookup),
+    );
+    if (lookupTab.hitTestable().evaluate().isEmpty) {
+      await tester.tap(find.descendant(
+        of: tabs,
+        matching: find.byIcon(Icons.expand_more),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.settings_destination_lookup).last);
+    } else {
+      await tester.tap(lookupTab);
+    }
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.auto_read_on_lookup), findsOneWidget);
@@ -356,10 +372,10 @@ void main() {
     // 「设置」抽屉：标题下一条标签栏把分类摊平同屏切换（导航 / 有声书不在这里，
     // 它们各有自己的 presentation），默认落在第一组「布局显示」上。不再用分段条。
     expect(find.byType(FushiSegmentedStrip<String>), findsNothing);
-    final TabBar tabBar = tester.widget<TabBar>(find.descendant(
+    final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.descendant(
       of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
       matching: find.byType(TabBar),
-    ));
+    )));
     expect(tabBar.tabs, hasLength(3));
     expect(tabBar.controller!.index, 0);
     expect(find.text(t.section_layout), findsWidgets);

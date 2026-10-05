@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleCheckmark;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// One selectable (value, label) entry for [FushiOptionSelectionPage].
@@ -58,11 +62,17 @@ class FushiOptionSelectionPage<T> extends StatelessWidget {
     // other entry is a plain tappable row. No navigation chevron — tapping an
     // option pops this page with its value, it does not drill into a subpage,
     // so a `chevron_right` would falsely imply a deeper level.
+    // Apple 选择列表：行尾是强调色细对勾（iOS 设置的单选口径）。
+    final bool apple = isGlassDesign(context);
     final List<Widget> rows = options.map((FushiOptionSelectionOption<T> o) {
       final bool isSelected = o.value == selected;
       return AdaptiveSettingsRow(
         title: o.label,
-        trailing: isSelected ? Icon(Icons.check, color: scheme.primary) : null,
+        trailing: !isSelected
+            ? null
+            : apple
+                ? const FushiAppleCheckmark()
+                : FushiIcon(Icons.check, color: scheme.primary),
         onTap: isSelected ? null : () => Navigator.pop(context, o.value),
       );
     }).toList();

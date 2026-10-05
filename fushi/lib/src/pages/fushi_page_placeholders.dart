@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 页面级「加载中 / 出错」占位的统一构建 mixin（审计 §1-K「页面骨架两套」）。
@@ -55,9 +56,9 @@ mixin FushiPagePlaceholders<T extends StatefulWidget> on State<T> {
         message: t.error_load_failed,
         detail: error != null ? '$error' : null,
         action: refresh != null
-            ? FilledButton.tonalIcon(
+            ? FushiFilledButton.tonalIcon(
                 onPressed: () => refresh(),
-                icon: const Icon(Icons.refresh),
+                icon: const FushiIcon(Icons.refresh),
                 label: Text(t.retry),
               )
             : null,

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// Jimaku 对话框两栏布局重构的回归测试。
 ///
@@ -239,7 +240,7 @@ void main() {
     expect(btnRect.bottom, lessThanOrEqualTo(screen.height - keyboard),
         reason: '搜索按钮必须完整落在键盘上方');
     expect(btnRect.top, greaterThanOrEqualTo(0));
-    expect(tester.widget<FilledButton>(searchBtn).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(searchBtn)).onPressed, isNotNull);
     final RenderObject buttonRender = tester.renderObject(searchBtn);
     expect(
       tester

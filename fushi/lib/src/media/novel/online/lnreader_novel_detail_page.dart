@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
 import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -353,16 +354,16 @@ class _LnReaderNovelDetailPageState
       title: novel?.name.isNotEmpty == true ? novel!.name : widget.item.name,
       subtitle: widget.plugin.name,
       actions: <Widget>[
-        IconButton(
+        FushiIconButtonControl(
           key: const ValueKey<String>('novel_detail_open_website'),
           tooltip: t.mihon_source_website_open,
           onPressed: () => unawaited(_openWebsite()),
-          icon: const Icon(Icons.open_in_new),
+          icon: const FushiIcon(Icons.open_in_new),
         ),
-        IconButton(
+        FushiIconButtonControl(
           tooltip: t.refresh,
           onPressed: _loading ? null : () => unawaited(_load()),
-          icon: const Icon(Icons.refresh),
+          icon: const FushiIcon(Icons.refresh),
         ),
       ],
       body: _buildBody(context),
@@ -370,7 +371,6 @@ class _LnReaderNovelDetailPageState
   }
 
   Widget _buildBody(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final LnReaderNovel? novel = _novel;
     final Object? error = _error;
     final String title = novel?.name.isNotEmpty == true
@@ -398,7 +398,7 @@ class _LnReaderNovelDetailPageState
           description: summary,
           selectableDescription: true,
           actions: <Widget>[
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('novel_detail_read_online'),
               onPressed: chapters.isEmpty || _opening
                   ? null
@@ -406,9 +406,9 @@ class _LnReaderNovelDetailPageState
               icon: _opening
                   ? const SizedBox.square(
                       dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.menu_book_outlined),
+                  : const FushiIcon(Icons.menu_book_outlined),
               label: Text(
                 inShelf ? t.book_continue_reading : t.novel_detail_read_online,
               ),
@@ -416,27 +416,27 @@ class _LnReaderNovelDetailPageState
             // 同一个位置、同一个按钮：不在书架是「加入」，在书架是「移出」（与漫画
             // 作品页同一口径）。
             if (inShelf)
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: const ValueKey<String>('novel_detail_library_remove'),
                 onPressed: _opening
                     ? null
                     : () => unawaited(_removeFromShelf()),
-                icon: const Icon(Icons.library_add_check),
+                icon: const FushiIcon(Icons.library_add_check),
                 label: Text(t.novel_detail_library_remove),
               )
             else
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: const ValueKey<String>('novel_detail_library_add'),
                 onPressed: chapters.isEmpty || _opening
                     ? null
                     : () => unawaited(_addToShelf()),
-                icon: const Icon(Icons.library_add_outlined),
+                icon: const FushiIcon(Icons.library_add_outlined),
                 label: Text(t.novel_detail_library_add),
               ),
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               key: const ValueKey<String>('novel_detail_download'),
               onPressed: chapters.isEmpty ? null : () => unawaited(_download()),
-              icon: const Icon(Icons.download_outlined),
+              icon: const FushiIcon(Icons.download_outlined),
               label: Text(t.novel_detail_download),
             ),
           ],
@@ -444,9 +444,11 @@ class _LnReaderNovelDetailPageState
         if (error != null)
           Padding(
             padding: const EdgeInsets.only(top: 16),
-            child: Text(
-              describeOnlineSourceError(error),
-              style: TextStyle(color: theme.colorScheme.error),
+            // 错误走统一提示条（MD3 中性底 + error 图标 / Apple tertiaryFill
+            // 实色底），不再是一行裸红字。
+            child: FushiInlineNotice(
+              severity: FushiNoticeSeverity.error,
+              message: describeOnlineSourceError(error),
             ),
           ),
         // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。
@@ -481,11 +483,11 @@ class _LnReaderNovelDetailPageState
       key: ValueKey<String>('novel_chapter_${chapter.path}'),
       title: chapter.name.isNotEmpty ? chapter.name : '${index + 1}',
       subtitle: chapter.releaseTime,
-      trailing: IconButton(
+      trailing: FushiIconButtonControl(
         key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
         tooltip: t.novel_detail_chapter_download,
         onPressed: () => unawaited(_download(startIndex: index)),
-        icon: const Icon(Icons.download_outlined),
+        icon: const FushiIcon(Icons.download_outlined),
       ),
       onTap: _opening
           ? null
@@ -545,7 +547,7 @@ class _LnReaderChapterRangeDialogState
     final int end = _range.end.round();
     // 普通 AlertDialog：内含 RangeSlider，`.adaptive` 在 iOS / macOS 主题下没有
     // Material 祖先。
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.novel_download_range_title),
       content: SizedBox(
         width: 480,
@@ -562,7 +564,7 @@ class _LnReaderChapterRangeDialogState
             ),
             if (last > 0) ...<Widget>[
               const SizedBox(height: 12),
-              RangeSlider(
+              FushiRangeSlider(
                 key: const ValueKey<String>('novel_download_range_slider'),
                 values: _range,
                 max: last.toDouble(),
@@ -588,7 +590,7 @@ class _LnReaderChapterRangeDialogState
               ),
               Align(
                 alignment: AlignmentDirectional.centerStart,
-                child: TextButton(
+                child: FushiTextButton(
                   onPressed: () =>
                       setState(() => _range = RangeValues(0, last.toDouble())),
                   child: Text(t.novel_download_range_all),
@@ -669,15 +671,15 @@ class _LnReaderDownloadDialogState extends State<LnReaderDownloadDialog> {
     if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.book_import_duplicate_title),
         content: Text(t.book_import_duplicate_message(name: proposedTitle)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.book_import_duplicate_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.book_import_duplicate_keep),
           ),
@@ -717,7 +719,7 @@ class _LnReaderDownloadDialogState extends State<LnReaderDownloadDialog> {
     final bool building = _done >= total;
     return PopScope(
       canPop: false,
-      child: AlertDialog.adaptive(
+      child: FushiAlertDialog.adaptive(
         title: Text(widget.novel.name),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -729,7 +731,7 @@ class _LnReaderDownloadDialogState extends State<LnReaderDownloadDialog> {
                   : t.novel_download_progress(done: _done + 1, total: total),
             ),
             const SizedBox(height: 12),
-            LinearProgressIndicator(
+            FushiLinearProgressIndicator(
               key: const ValueKey<String>('novel_download_progress'),
               value: building ? null : _done / total,
             ),

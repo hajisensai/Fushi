@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   setUp(() {
@@ -385,7 +386,7 @@ void main() {
     // 进入编辑态：原 URL 已载入输入框，+ 变 ✓，并出现取消 ✕。
     expect(find.byType(TextField), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField))).controller?.text,
       'http://localhost:5050/?term={term}',
     );
     expect(find.byIcon(Icons.check), findsOneWidget);
@@ -507,7 +508,7 @@ void main() {
     expect(find.byIcon(Icons.check), findsNothing);
     expect(find.byIcon(Icons.add), findsOneWidget);
     expect(
-      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField))).controller?.text,
       isEmpty,
     );
 

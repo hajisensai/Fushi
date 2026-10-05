@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -139,6 +140,6 @@ class _CreditPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const ColoredBox(
         color: Color(0x1FFFFFFF),
-        child: Icon(Icons.person_outline, size: 42),
+        child: FushiIcon(Icons.person_outline, size: 42),
       );
 }

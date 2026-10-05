@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -74,6 +75,8 @@ class _FushiSettingsDialogPageState extends BasePageState
     final bool cupertino = isCupertinoPlatform(context);
     final SettingsRenderer renderer = cupertino
         ? const CupertinoSettingsRenderer()
+        : isGlassDesign(context)
+        ? const GlassSettingsRenderer()
         : const MaterialSettingsRenderer();
     final Widget detailContent = renderer.buildDetailContent(
       settingsContext: settingsContext,

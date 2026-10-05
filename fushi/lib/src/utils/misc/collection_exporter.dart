@@ -11,6 +11,7 @@ import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 收藏句/词导出（TODO-829）。
 ///
@@ -914,7 +915,7 @@ Future<void> saveOrShareExport({
   void notify(String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   File? tmp;

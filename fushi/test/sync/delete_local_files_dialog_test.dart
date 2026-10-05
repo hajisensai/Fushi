@@ -21,6 +21,15 @@ void main() {
   Widget app(Widget home) =>
       TranslationProvider(child: MaterialApp(home: home));
 
+  // MD3 重设计后（居中图标头部 + 48dp 勾选行 / 按钮）弹窗内容高于默认 800×600
+  // 视口的 0.74 上限，外框整体滚动会把「删除」挤到屏外；这些用例测的是勾选语义，
+  // 不是紧凑布局（那由 test/pages/reader_history_delete_dialog_test.dart 守）。
+  void useTallView(WidgetTester tester) {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 1400);
+    addTearDown(tester.view.reset);
+  }
+
   group('showDeleteScopeConfirm', () {
     testWidgets('没给 localFilesSubtitle → 不渲染勾选框，决定恒不删文件', (
       WidgetTester tester,
@@ -54,6 +63,7 @@ void main() {
     testWidgets('给了副标题 → 默认不勾；勾了才 deleteLocalFiles=true', (
       WidgetTester tester,
     ) async {
+      useTallView(tester);
       DeleteDecision? got;
       await tester.pumpWidget(
         app(
@@ -105,6 +115,7 @@ void main() {
     testWidgets('没给 statisticsSubtitle → 不渲染统计勾选框，决定恒不删统计', (
       WidgetTester tester,
     ) async {
+      useTallView(tester);
       DeleteDecision? got;
       await tester.pumpWidget(
         app(
@@ -135,6 +146,7 @@ void main() {
     testWidgets('给了 statisticsSubtitle → 默认不勾；勾了才 deleteStatistics=true', (
       WidgetTester tester,
     ) async {
+      useTallView(tester);
       DeleteDecision? got;
       await tester.pumpWidget(
         app(
@@ -236,6 +248,7 @@ void main() {
 
   group('ReaderHistoryDeleteDialog', () {
     testWidgets('已记住的两项作为默认值，并连同记住状态一起回写', (WidgetTester tester) async {
+      useTallView(tester);
       DeleteDecision? got;
       DeletePromptRememberedChoices? persisted;
       await tester.pumpWidget(

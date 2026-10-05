@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 诊断类错误的呈现通道（BUG-1703）。
 ///
@@ -18,11 +20,11 @@ Future<void> showErrorDetails(
   required Object error,
 }) {
   final String details = error.toString();
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       final ThemeData theme = Theme.of(dialogContext);
-      return AlertDialog(
+      return FushiAlertDialog(
         title: Text(title),
         content: SizedBox(
           width: 420,
@@ -37,7 +39,7 @@ Future<void> showErrorDetails(
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () async {
               await Clipboard.setData(ClipboardData(text: details));
               if (!dialogContext.mounted) return;
@@ -46,7 +48,7 @@ Future<void> showErrorDetails(
             },
             child: Text(t.copy),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_close),
           ),

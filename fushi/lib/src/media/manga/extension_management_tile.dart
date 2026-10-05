@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart'
+    show LibrarySearchField;
+import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -45,6 +49,8 @@ class MangaExtensionManagementTile extends StatelessWidget {
     this.primaryLabel,
     this.onPrimary,
     this.subtitleMaxLines = 1,
+    this.groupIndex,
+    this.groupCount,
   });
 
   final String title;
@@ -62,6 +68,12 @@ class MangaExtensionManagementTile extends StatelessWidget {
   /// 副标题行数上限。默认 1（一行元信息）；Mihon 的「可用扩展」行在副标题里
   /// 展开自带源清单，由调用点显式放宽。
   final int subtitleMaxLines;
+
+  /// 本行在所属分组（同一仓库 / 同一列表段）里的位置与总行数。两者都给时
+  /// 整段读作一个分组（MD3 分段 / Apple inset grouped，见
+  /// [FushiGroupedListItem]）；缺省时仍是一张张独立卡片。
+  final int? groupIndex;
+  final int? groupCount;
 
   /// 窄于此宽度时文字动作按钮下移到副标题下方一行。
   ///
@@ -84,15 +96,49 @@ class MangaExtensionManagementTile extends StatelessWidget {
   Widget _buildTile(BuildContext context, {required bool narrow}) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget row = _buildRow(context, theme, tokens, narrow: narrow);
+    final int? index = groupIndex;
+    final int? count = groupCount;
+    if (index != null && count != null) {
+      return FushiGroupedListItem(
+        index: index,
+        count: count,
+        // 组尾与下一组之间留一段组间距（组内是 MD3 2px 缝 / Apple 无缝）。
+        margin: EdgeInsets.only(
+          bottom: index >= count - 1 ? tokens.spacing.gap : 0,
+        ),
+        // Apple 分隔线从标题起点开始：行内边距 + 36 图标 + 图标与文字间距。
+        separatorIndent: tokens.spacing.rowHorizontal -
+            4 +
+            _ExtensionIcon._size +
+            FushiAppleMetrics.of(context).leadingGap,
+        child: row,
+      );
+    }
+    return FushiCard(
+      // 行与行之间必须有实边距：卡片圆角 10 而外边距为 0 时，相邻卡片之间只
+      // 从圆角缺口漏出几处页面底色，看着像锯齿而不是分隔。
+      margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+      padding: EdgeInsets.zero,
+      child: row,
+    );
+  }
+
+  Widget _buildRow(
+    BuildContext context,
+    ThemeData theme,
+    FushiDesignTokens tokens, {
+    required bool narrow,
+  }) {
     final List<Widget> actions = <Widget>[
       if (secondaryLabel != null)
-        TextButton(
+        FushiTextButton(
           style: _actionStyle,
           onPressed: onSecondary,
           child: Text(secondaryLabel!),
         ),
       if (primaryLabel != null)
-        TextButton(
+        FushiTextButton(
           style: _actionStyle,
           onPressed: onPrimary,
           child: Text(primaryLabel!),
@@ -104,74 +150,69 @@ class MangaExtensionManagementTile extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: 12),
           child: SizedBox.square(
             dimension: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
         ),
       if (enabled != null)
-        Switch.adaptive(value: enabled!, onChanged: onEnabledChanged),
+        FushiSwitch.adaptive(value: enabled!, onChanged: onEnabledChanged),
       if (!narrow) ...actions,
     ];
-    return FushiCard(
-      // 行与行之间必须有实边距：卡片圆角 10 而外边距为 0 时，相邻卡片之间只
-      // 从圆角缺口漏出几处页面底色，看着像锯齿而不是分隔。
-      margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        // 一行副标题 + 36px 图标已经自带高度；rowVertical(12) 是给两行副标题
-        // 留的，这里收到 gap(8)，行高从 ~89 降到 ~62。
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal - 4,
-          vertical: tokens.spacing.gap,
-        ),
-        titleMaxLines: 2,
-        subtitleMaxLines: subtitleMaxLines,
-        leading: _ExtensionIcon(url: iconUrl ?? ''),
-        title: Row(
-          children: <Widget>[
-            Flexible(child: Text(title)),
-            if (contentWarning) ...<Widget>[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.errorContainer,
-                  borderRadius: tokens.radii.chipRadius,
-                ),
-                child: Text(
-                  '18+',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-        subtitle: narrow && actions.isNotEmpty
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  subtitle,
-                  const SizedBox(height: 4),
-                  Wrap(
-                    key: const ValueKey<String>(
-                      'manga_extension_tile_compact_actions',
-                    ),
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: actions,
-                  ),
-                ],
-              )
-            : subtitle,
-        trailing: trailingChildren.isEmpty
-            ? null
-            : Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: trailingChildren,
-              ),
+    return FushiListItem(
+      // 一行副标题 + 36px 图标已经自带高度；rowVertical(12) 是给两行副标题
+      // 留的，这里收到 gap(8)，行高从 ~89 降到 ~62。
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal - 4,
+        vertical: tokens.spacing.gap,
       ),
+      titleMaxLines: 2,
+      subtitleMaxLines: subtitleMaxLines,
+      leading: _ExtensionIcon(url: iconUrl ?? ''),
+      title: Row(
+        children: <Widget>[
+          Flexible(child: Text(title)),
+          if (contentWarning) ...<Widget>[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              // 中性徽标底 + 错误色文字（不再整块 errorContainer）。
+              decoration: BoxDecoration(
+                color: fushiNeutralTagColors(context).background,
+                borderRadius: tokens.radii.chipRadius,
+              ),
+              child: Text(
+                '18+',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: fushiStatusColor(context, FushiStatusTone.error),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+      subtitle: narrow && actions.isNotEmpty
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                subtitle,
+                const SizedBox(height: 4),
+                Wrap(
+                  key: const ValueKey<String>(
+                    'manga_extension_tile_compact_actions',
+                  ),
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: actions,
+                ),
+              ],
+            )
+          : subtitle,
+      trailing: trailingChildren.isEmpty
+          ? null
+          : Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: trailingChildren,
+            ),
     );
   }
 
@@ -182,6 +223,28 @@ class MangaExtensionManagementTile extends StatelessWidget {
     minimumSize: const Size(0, 44),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   );
+}
+
+/// 把「表头 + 若干扩展行」拍平的目录行表切成分组：返回每一行在所属分组里的
+/// （组内位置, 组内总行数）。[isHeader] 逐行标明是不是仓库表头；表头是本组第
+/// 0 行，后面跟到下一个表头之前的扩展行依次 1、2…。表头之前没有表头的行自成
+/// 一组。漫画 / 视频（Mihon）与小说（LNReader）的扩展目录共用。
+List<(int, int)> extensionGroupSlots(Iterable<bool> isHeader) {
+  final List<bool> headers = isHeader.toList(growable: false);
+  final List<(int, int)> slots = List<(int, int)>.filled(headers.length, (0, 1));
+  int start = 0;
+  while (start < headers.length) {
+    int end = start + 1;
+    while (end < headers.length && !headers[end]) {
+      end++;
+    }
+    final int count = end - start;
+    for (int i = start; i < end; i++) {
+      slots[i] = (i - start, count);
+    }
+    start = end;
+  }
+  return slots;
 }
 
 /// 扩展目录里超过这个条数的仓库分组默认收起。
@@ -207,7 +270,13 @@ class ExtensionStoreGroupHeader extends StatelessWidget {
     required this.expanded,
     required this.onTap,
     super.key,
+    this.groupCount,
   });
+
+  /// 表头所在分组的总行数（表头自己算第一行 + 展开的扩展行）。给了就把表头
+  /// 画成分组的首行（MD3 分段 / Apple inset grouped，与下面的扩展行
+  /// [MangaExtensionManagementTile.groupIndex] 连成一组），缺省时是独立卡片。
+  final int? groupCount;
 
   /// 行 key 前缀（`<keyPrefix>-store-group-<indexUrl>`）。
   final String keyPrefix;
@@ -223,19 +292,32 @@ class ExtensionStoreGroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final Widget row = FushiListItem(
+      key: ValueKey<String>('$keyPrefix-store-group-$indexUrl'),
+      onTap: onTap,
+      leading: AnimatedRotation(
+        turns: expanded ? 0.25 : 0,
+        duration: const Duration(milliseconds: 150),
+        child: const FushiIcon(Icons.chevron_right),
+      ),
+      title: Text(label, style: theme.textTheme.titleSmall),
+      subtitle: Text(t.mihon_store_extension_count(count: count)),
+    );
+    final int? rows = groupCount;
+    if (rows != null) {
+      return FushiGroupedListItem(
+        index: 0,
+        count: rows,
+        // 收起的分组只剩表头一行：它同时是组尾，给出组间距。
+        margin: EdgeInsets.only(
+          bottom: rows <= 1 ? FushiDesignTokens.of(context).spacing.gap : 0,
+        ),
+        child: row,
+      );
+    }
     return FushiCard(
       padding: EdgeInsets.zero,
-      child: FushiListItem(
-        key: ValueKey<String>('$keyPrefix-store-group-$indexUrl'),
-        onTap: onTap,
-        leading: AnimatedRotation(
-          turns: expanded ? 0.25 : 0,
-          duration: const Duration(milliseconds: 150),
-          child: const Icon(Icons.chevron_right),
-        ),
-        title: Text(label, style: theme.textTheme.titleSmall),
-        subtitle: Text(t.mihon_store_extension_count(count: count)),
-      ),
+      child: row,
     );
   }
 }
@@ -271,9 +353,30 @@ class MangaExtensionFilters extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget languageFilter = DropdownButtonFormField<String>(
+    final Widget languageFilter = FushiDropdownButtonFormField<String>(
       value: languages.contains(selectedLanguage) ? selectedLanguage : '*',
-      decoration: InputDecoration(labelText: languageLabel),
+      // 行内筛选不挂浮动标签：标签会把下拉撑得比并排的搜索框高一截（MD3 浮动
+      // 标签 56、Apple 标题在框上方），用户 2026-10-04 报「搜索框和语言框不一样
+      // 高」。维度名由无障碍标签表达，选中值（「全部语言」/「JA」）自明。
+      // MD3 下装饰收成无边无底的紧凑形态，填充胶囊由外层容器画并把下拉在
+      // 定高里居中——InputDecorator 在多余高度里贴顶放内容，靠内边距凑高度
+      // 会随视觉密度 / 字号缩放漂移。Apple 分支不读这些装饰（自带玻璃壳）。
+      decoration: const InputDecoration(
+        isCollapsed: true,
+        border: InputBorder.none,
+      ),
+      // 收起态的选中值直接给文字：默认用菜单项本身（带 48 高的菜单项容器，
+      // 桌面视觉密度下会让文字比按钮中线高 4px），在 40 高的行内里不居中。
+      selectedItemBuilder: (BuildContext context) => <Widget>[
+        for (final String label in <String>[
+          allLanguagesLabel,
+          for (final String language in languages) language.toUpperCase(),
+        ])
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+      ],
       items: <DropdownMenuItem<String>>[
         DropdownMenuItem<String>(
           key: ValueKey<String>('${keyPrefix}_language_*'),
@@ -289,28 +392,56 @@ class MangaExtensionFilters extends StatelessWidget {
       ],
       onChanged: (String? value) => onLanguageChanged(value ?? '*'),
     );
-    final Widget searchField = TextField(
-      key: ValueKey<String>('${keyPrefix}_search_field'),
+    // 与语言下拉同一个行内控件高度（MD3 40 / Apple 36），两者并排时等高、
+    // 中线一致；搜索框与库页工具行同一个组件。
+    final double controlHeight = fushiInlineControlHeight(context);
+    final bool glass = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final Widget searchField = LibrarySearchField(
+      fieldKey: ValueKey<String>('${keyPrefix}_search_field'),
       controller: searchController,
-      decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.search),
-        hintText: searchHint,
-        border: const OutlineInputBorder(),
-        suffixIcon: searchQuery.isEmpty
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: onSearchCleared,
-              ),
-      ),
+      hintText: searchHint,
       onChanged: onSearchChanged,
+      onClear: onSearchCleared,
+    );
+    final Widget sizedLanguageFilter = Semantics(
+      label: languageLabel,
+      container: true,
+      child: Container(
+        height: controlHeight,
+        alignment: Alignment.center,
+        padding: glass
+            ? EdgeInsets.zero
+            : const EdgeInsetsDirectional.only(start: 16, end: 8),
+        // 与并排的 MD3 填充式搜索框同一枚胶囊（surfaceContainerHigh、无描边；
+        // 墨水屏描边）；Apple 由下拉自己的玻璃壳负责，这里不画。
+        decoration: glass
+            ? null
+            : ShapeDecoration(
+                color: eink
+                    ? null
+                    : FushiDesignTokens.of(context).surfaces.search,
+                shape: StadiumBorder(
+                  side: eink ? BorderSide(color: colors.outline) : BorderSide.none,
+                ),
+              ),
+        // 桌面的紧凑视觉密度会让 InputDecorator 把收起态内容整体上移 4px
+        // （densityOffset），在定高胶囊里不居中；行内下拉固定用标准密度。
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            visualDensity: VisualDensity.standard,
+          ),
+          child: languageFilter,
+        ),
+      ),
     );
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         if (constraints.maxWidth < 700) {
           return Column(
             children: <Widget>[
-              languageFilter,
+              sizedLanguageFilter,
               const SizedBox(height: 12),
               searchField,
             ],
@@ -318,7 +449,7 @@ class MangaExtensionFilters extends StatelessWidget {
         }
         return Row(
           children: <Widget>[
-            Expanded(child: languageFilter),
+            Expanded(child: sizedLanguageFilter),
             const SizedBox(width: 12),
             Expanded(child: searchField),
           ],
@@ -342,7 +473,7 @@ class _ExtensionIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     const Widget fallback = Center(
-      child: Icon(Icons.extension_outlined, size: 20),
+      child: FushiIcon(Icons.extension_outlined, size: 20),
     );
     return SizedBox.square(
       dimension: _size,

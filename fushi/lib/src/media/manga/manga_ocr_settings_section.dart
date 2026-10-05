@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
@@ -335,15 +336,15 @@ class _MangaOcrSettingsSectionState
   Future<void> _confirmDelete() async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.manga_ocr_delete_confirm_title),
         content: Text(t.manga_ocr_delete_confirm_message),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.manga_ocr_delete),
           ),
@@ -394,7 +395,7 @@ class _MangaOcrSettingsSectionState
       context: context,
       builder: (BuildContext ctx) {
         final ThemeData dialogTheme = Theme.of(ctx);
-        return AlertDialog(
+        return FushiAlertDialog(
           title: Text(t.manga_ocr_import_title),
           content: SingleChildScrollView(
             child: Column(
@@ -414,9 +415,9 @@ class _MangaOcrSettingsSectionState
                 const SizedBox(height: 4),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
+                  child: FushiTextButton.icon(
                     onPressed: () => unawaited(_copyModelUrls()),
-                    icon: const Icon(Icons.link, size: 18),
+                    icon: const FushiIcon(Icons.link, size: 18),
                     label: Text(t.manga_ocr_import_copy_urls),
                   ),
                 ),
@@ -424,16 +425,16 @@ class _MangaOcrSettingsSectionState
             ),
           ),
           actions: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed: () => Navigator.pop(ctx),
               child: Text(t.dialog_cancel),
             ),
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('manga_ocr_import_pick_files'),
               onPressed: () => Navigator.pop(ctx, false),
               child: Text(t.manga_ocr_import_pick_files),
             ),
-            FilledButton(
+            FushiFilledButton(
               key: const ValueKey<String>('manga_ocr_import_pick_folder'),
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(t.manga_ocr_import_pick_folder),
@@ -566,7 +567,7 @@ class _MangaOcrSettingsSectionState
 
   /// 「导入本地模型」按钮：下载中/导入中禁用（两条路径会动同一批文件）。
   Widget _importButton() {
-    return TextButton.icon(
+    return FushiTextButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
       onPressed: (_importing || _downloading)
           ? null
@@ -574,9 +575,9 @@ class _MangaOcrSettingsSectionState
       icon: _importing
           ? const SizedBox.square(
               dimension: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.drive_folder_upload_outlined, size: 18),
+          : const FushiIcon(Icons.drive_folder_upload_outlined, size: 18),
       label: Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import),
     );
   }
@@ -809,7 +810,7 @@ class _MangaOcrSettingsSectionState
   }
 
   Widget _buildParallelTasks() {
-    return DropdownButtonFormField<int>(
+    return FushiDropdownButtonFormField<int>(
       key: const ValueKey<String>('manga_ocr_parallel_tasks'),
       initialValue: _parallelTasks,
       isExpanded: true,
@@ -820,7 +821,6 @@ class _MangaOcrSettingsSectionState
         // 不能传 null：InputDecorator 的 helper 带 ellipsis，null 反而退化成单行。
         helperMaxLines: 8,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
       items: <DropdownMenuItem<int>>[
         DropdownMenuItem<int>(value: 0, child: Text(t.manga_ocr_parallel_auto)),
@@ -873,7 +873,7 @@ class _MangaOcrSettingsSectionState
   Widget _buildEnginePreference(ThemeData theme) {
     final List<_EngineOption> options = _engineOptions();
     final _EngineChoice selected = _currentChoice;
-    return DropdownButtonFormField<_EngineChoice>(
+    return FushiDropdownButtonFormField<_EngineChoice>(
       key: const ValueKey<String>('manga_ocr_default_engine'),
       initialValue: selected,
       isExpanded: true,
@@ -883,7 +883,6 @@ class _MangaOcrSettingsSectionState
       decoration: InputDecoration(
         labelText: t.manga_ocr_default_engine,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
       // 闭合态只显示标签（说明是给「挑的时候」看的）。选中项的标签完整显示、
       // 放不下就换行（阅读器侧栏只有 ~320px，「自动（不会上传到 Lens）」这类
@@ -952,13 +951,12 @@ class _MangaOcrSettingsSectionState
           child: Text(_lensLanguage),
         ),
     ];
-    return DropdownButtonFormField<String>(
+    return FushiDropdownButtonFormField<String>(
       key: const ValueKey<String>('manga_ocr_lens_language'),
       initialValue: _lensLanguage,
       decoration: InputDecoration(
         labelText: t.manga_ocr_lens_language_label,
         isDense: true,
-        border: const OutlineInputBorder(),
       ),
       items: items,
       onChanged: (String? value) {
@@ -980,7 +978,7 @@ class _MangaOcrSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        DropdownButtonFormField<MangaAiOcrMode>(
+        FushiDropdownButtonFormField<MangaAiOcrMode>(
           key: const ValueKey<String>('manga_ocr_ai_mode'),
           initialValue: _aiMode,
           isExpanded: true,
@@ -989,7 +987,6 @@ class _MangaOcrSettingsSectionState
             helperText: t.manga_ocr_ai_mode_desc,
             helperMaxLines: 6,
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           items: <DropdownMenuItem<MangaAiOcrMode>>[
             for (final MangaAiOcrMode mode in MangaAiOcrMode.values)
@@ -1038,7 +1035,7 @@ class _MangaOcrSettingsSectionState
           if (openAiSettings != null)
             Align(
               alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: () async {
                   await openAiSettings(context);
                   // build 里现算 missingProvider：回来后重建一次即刷新。
@@ -1078,7 +1075,7 @@ class _MangaOcrSettingsSectionState
       return _inset(
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
-          child: LinearProgressIndicator(),
+          child: FushiLinearProgressIndicator(),
         ),
       );
     }
@@ -1120,9 +1117,9 @@ class _MangaOcrSettingsSectionState
               spacing: 8,
               runSpacing: 4,
               children: <Widget>[
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: _importing ? null : _startDownload,
-                  icon: const Icon(Icons.download_outlined, size: 18),
+                  icon: const FushiIcon(Icons.download_outlined, size: 18),
                   label: Text(t.manga_ocr_download),
                 ),
                 _importButton(),
@@ -1181,7 +1178,7 @@ class _MangaOcrSettingsSectionState
         ),
         if (_downloading) ...<Widget>[
           const SizedBox(height: 8),
-          _inset(LinearProgressIndicator(value: _downloadProgressValue)),
+          _inset(FushiLinearProgressIndicator(value: _downloadProgressValue)),
           const SizedBox(height: 4),
           if (_downloadingFile != null)
             _inset(
@@ -1211,7 +1208,7 @@ class _MangaOcrSettingsSectionState
           _inset(
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: _cancelDownload,
                 child: Text(t.dialog_cancel),
               ),
@@ -1230,12 +1227,12 @@ class _MangaOcrSettingsSectionState
                         // 经典模型的提速组件（KV cache decoder）：结果不变、识别约快
                         // 一倍。模型已就绪时补下它，下载器会跳过已就绪的文件。
                         if (status?.acceleratorMissing ?? false)
-                          FilledButton.tonalIcon(
+                          FushiFilledButton.tonalIcon(
                             key: const ValueKey<String>(
                               'manga_ocr_accelerator_download',
                             ),
                             onPressed: _importing ? null : _startDownload,
-                            icon: const Icon(Icons.bolt_outlined, size: 18),
+                            icon: const FushiIcon(Icons.bolt_outlined, size: 18),
                             label: Text(
                               t.manga_ocr_accelerator_download(
                                 size: _formatBytes(
@@ -1251,9 +1248,9 @@ class _MangaOcrSettingsSectionState
                       spacing: 8,
                       runSpacing: 4,
                       children: <Widget>[
-                        FilledButton.icon(
+                        FushiFilledButton.icon(
                           onPressed: _importing ? null : _startDownload,
-                          icon: const Icon(Icons.download_outlined, size: 18),
+                          icon: const FushiIcon(Icons.download_outlined, size: 18),
                           // 「继续下载」不是新能力：下载器一直有 Range 续传。
                           // 文案分叉只是把已有能力说出来——用户取消或断网后看到
                           // 的若还是「下载模型」，就会以为那几百 MB 白下了。
@@ -1342,7 +1339,7 @@ class _MangaOcrSettingsSectionState
   }
 
   Widget _deleteButton() {
-    return OutlinedButton.icon(
+    return FushiOutlinedButton.icon(
       onPressed: (_deleting || _downloading || _importing)
           ? null
           : _confirmDelete,
@@ -1350,9 +1347,9 @@ class _MangaOcrSettingsSectionState
           ? const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.delete_outline, size: 18),
+          : const FushiIcon(Icons.delete_outline, size: 18),
       label: Text(t.manga_ocr_delete),
     );
   }
@@ -1361,29 +1358,28 @@ class _MangaOcrSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        TextField(
+        FushiTextFieldControl(
           controller: _pathCtrl,
           decoration: InputDecoration(
             labelText: t.manga_ocr_external_cli_label,
             hintText: t.manga_ocr_external_cli_hint,
             hintMaxLines: 3,
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (String v) => unawaited(_writePath(v.trim())),
         ),
         const SizedBox(height: 8),
         Row(
           children: <Widget>[
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               onPressed: _probing ? null : _detectExternal,
               icon: _probing
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.search_outlined, size: 18),
+                  : const FushiIcon(Icons.search_outlined, size: 18),
               label: Text(t.manga_ocr_external_detect),
             ),
             if (_probeResult != null) ...<Widget>[
@@ -1404,13 +1400,20 @@ class _MangaOcrSettingsSectionState
   }
 
   Widget _sectionLabel(ThemeData theme, String text) {
+    // Apple 设计系统：分组标题是小号次级灰字（iOS inset grouped 的
+    // section header），不上强调色；MD3 保持主色 titleSmall。
+    final bool glass = isGlassDesign(context);
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
       child: Text(
         text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
+        style: glass
+            ? theme.textTheme.labelLarge?.copyWith(
+                color: appleColorsOf(context).secondaryLabel,
+              )
+            : theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.primary,
+              ),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 「清除全部会话记录」的防呆确认（用户 2026-09-10：「再加个清除所有会话记录并且
 /// 防呆」）。这颗按钮长在会话区块的标题行上、四个 tab 都有，一个纯确认框在这种位置
@@ -20,12 +21,10 @@ void main() {
       find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
 
   bool ackChecked(WidgetTester tester) => tester
-      .widget<Checkbox>(
-        find.descendant(
+      .widget<Checkbox>(glassUnwrap<Checkbox>(find.descendant(
           of: find.byKey(StatClearSessionsConfirmDialog.ackKey),
           matching: find.byType(Checkbox),
-        ),
-      )
+        )),)
       .value!;
 
   Future<void> tapAck(WidgetTester tester) async {
@@ -70,19 +69,19 @@ void main() {
     expect(find.text(t.stat_sessions_clear_all_ack(n: 37)), findsOneWidget);
     expect(ackChecked(tester), isFalse);
     expect(
-      tester.widget<FilledButton>(confirmButton()).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton())).onPressed,
       isNull,
       reason: '防呆：没勾确认项之前一律禁用',
     );
 
     await tapAck(tester);
     expect(ackChecked(tester), isTrue, reason: '整行 onTap 驱动勾选');
-    expect(tester.widget<FilledButton>(confirmButton()).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton())).onPressed, isNotNull);
 
     // 再点一次取消勾选：闸门是双向的，不是一次性开关。
     await tapAck(tester);
     expect(ackChecked(tester), isFalse);
-    expect(tester.widget<FilledButton>(confirmButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton())).onPressed, isNull);
   });
 
   testWidgets('勾上 ack 后点清除 → true', (WidgetTester tester) async {

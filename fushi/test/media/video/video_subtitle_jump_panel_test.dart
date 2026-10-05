@@ -9,6 +9,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import '../../helpers/glass_unwrap.dart';
 
 AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..bookKey = 'video/1'
@@ -463,7 +464,7 @@ void main() {
         loadingHint: 'Loading subtitles...',
       )));
 
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
       expect(find.text('Loading subtitles...'), findsOneWidget);
       expect(find.text('No subtitles loaded'), findsNothing);
 
@@ -1627,12 +1628,10 @@ void main() {
               '这条断言必须**保持不变**——下标就是持久化值，既有元素一旦改动，'
               '所有存量用户的字号都会静默漂移');
       // BUG-2156 之后 2.0× 不再是最大档，A+ 应当仍然可用。
-      final IconButton increase = tester.widget<IconButton>(
-        find.ancestor(
+      final IconButton increase = tester.widget<IconButton>(glassUnwrap<IconButton>(find.ancestor(
           of: find.byIcon(Icons.text_increase),
           matching: find.byType(IconButton),
-        ),
-      );
+        )),);
       expect(increase.onPressed, isNotNull,
           reason: '2.0× 上面还有档位（BUG-2156），A+ 不该禁用');
     });
@@ -1667,12 +1666,10 @@ void main() {
       expect(fontOf('sized'), closeTo(42.0, 0.01),
           reason: '最高档 3.0× × 基准 14 = 42');
 
-      final IconButton increase = tester.widget<IconButton>(
-        find.ancestor(
+      final IconButton increase = tester.widget<IconButton>(glassUnwrap<IconButton>(find.ancestor(
           of: find.byIcon(Icons.text_increase),
           matching: find.byType(IconButton),
-        ),
-      );
+        )),);
       expect(increase.onPressed, isNull, reason: '已在最大档，A+ 禁用');
     });
 

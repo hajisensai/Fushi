@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// TODO-1151：本地备份「导入/恢复」期间的全屏遮罩内容。
 ///
@@ -69,7 +72,12 @@ class BackupImportOverlayView extends StatelessWidget {
         : failed
             ? Icons.error_outline
             : Icons.check_circle;
-    final Color statusColor = failed ? cs.error : cs.primary;
+    // Apple：强调色是单色，完成态的 ✓ 用系统绿（进行中仍用强调色）。
+    final Color statusColor = failed
+        ? cs.error
+        : (!inProgress && isGlassDesign(context)
+            ? appleColorsOf(context).success
+            : cs.primary);
     // 主行文案：validating=「正在读取备份…」；running=「正在导入备份」；done/failed=结果文案。
     final String title = validating
         ? t.backup_import_validating_title
@@ -90,7 +98,7 @@ class BackupImportOverlayView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 statusIcon,
                 size: 48,
                 color: statusColor,
@@ -122,13 +130,13 @@ class BackupImportOverlayView extends StatelessWidget {
                   // validating：读取/预览无字节进度 → 始终不确定动画。
                   // running：progress 有值走确定条，否则不确定动画。
                   child: (validating || progress == null)
-                      ? const LinearProgressIndicator()
+                      ? const FushiLinearProgressIndicator()
                       : ValueListenableBuilder<double>(
                           valueListenable: progress!,
                           builder: (BuildContext context, double value, _) =>
                               // value ≤0 时先走不确定动画（首个 chunk 落盘前），
                               // 有进度后转确定条，避免「卡在 0%」的观感。
-                              LinearProgressIndicator(
+                              FushiLinearProgressIndicator(
                             value: value > 0 ? value : null,
                           ),
                         ),
@@ -136,17 +144,17 @@ class BackupImportOverlayView extends StatelessWidget {
               // validating：进度条下给「取消」出口（中断读取/预览回设置页）。
               if (validating && onCancel != null) ...<Widget>[
                 const SizedBox(height: 20),
-                OutlinedButton.icon(
+                FushiOutlinedButton.icon(
                   onPressed: onCancel,
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   label: Text(t.dialog_cancel),
                 ),
               ],
               // done/failed：「立即重启」确认出口。
               if (!inProgress)
-                FilledButton.icon(
+                FushiFilledButton.icon(
                   onPressed: onRestart,
-                  icon: const Icon(Icons.restart_alt),
+                  icon: const FushiIcon(Icons.restart_alt),
                   label: Text(t.backup_import_restart_button),
                 ),
             ],

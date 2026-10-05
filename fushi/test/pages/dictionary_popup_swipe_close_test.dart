@@ -85,6 +85,12 @@ void main() {
     );
   }
 
+  /// 推过滑动关闭的 200ms 位移动画（或回弹）。
+  Future<void> pumpPastSwipeAnimation(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+
   Future<void> dragHorizontally(
     WidgetTester tester,
     Offset start, {
@@ -100,8 +106,10 @@ void main() {
     }
     await gesture.up();
     // TODO-890: dismiss now fires on the slide-out animation's completion,
-    // so settle the 200ms tween (over-threshold) / spring-back (below).
-    await tester.pumpAndSettle();
+    // so run past the 200ms tween (over-threshold) / spring-back (below).
+    // Not pumpAndSettle: result==null 的 body 现在是延迟加载层（加载指示器
+    // 常驻动画），pumpAndSettle 永远等不到静止。
+    await pumpPastSwipeAnimation(tester);
   }
 
   Future<void> panZoomHorizontally(
@@ -123,8 +131,8 @@ void main() {
       await tester.pump();
     }
     tester.binding.handlePointerEvent(pointer.panZoomEnd());
-    // TODO-890: settle the slide-out animation before the dismiss assert.
-    await tester.pumpAndSettle();
+    // TODO-890: run the slide-out animation before the dismiss assert.
+    await pumpPastSwipeAnimation(tester);
   }
 
   testWidgets(

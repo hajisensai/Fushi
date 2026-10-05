@@ -220,7 +220,13 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       scale: appModel.isInitialised
           ? appModel.appUiScale
           : FushiAppUiScale.defaultScale,
-      child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+      // 查词窗是独立 entry point，不经主 app 的根作用域：玻璃设计系统的组件
+      // 配色 / 渲染档位（GlassTheme）要在这里自己挂一层，否则弹窗里的玻璃
+      // 按钮 / 浮层吃库默认参数，与主 app 不一致。结构恒定（MD3 下也挂，见
+      // [FushiGlassScope] 类注释）。
+      child: FushiGlassScope(
+        child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+      ),
     );
   }
 }

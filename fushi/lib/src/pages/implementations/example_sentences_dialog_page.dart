@@ -201,15 +201,16 @@ class _SentenceCard extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
+    // 选中态 = 中性填充（MD3 surfaceContainerHigh / Apple tertiaryFill）+
+    // 强调色描边；不再整卡 primaryContainer 彩色块。
     return FushiCard(
       onTap: onTap,
       padding: EdgeInsets.all(tokens.spacing.card),
-      color: selected ? colors.primaryContainer : null,
+      color: selected ? fushiNeutralBlockColor(context) : null,
       borderColor: selected ? colors.primary : null,
       child: Text(
         sentence,
         style: tokens.type.listTitle.copyWith(
-          color: selected ? colors.onPrimaryContainer : null,
           fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
         ),
       ),

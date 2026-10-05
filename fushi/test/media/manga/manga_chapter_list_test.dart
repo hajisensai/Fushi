@@ -158,10 +158,27 @@ void main() {
     final List<Element> rows = find.byType(FushiListItem).evaluate().toList();
     expect(rows, hasLength(3));
     for (final Element row in rows) {
-      // standard 密度（下限 56 + 上下各 12）是给两行副标题留的；章节行只有
-      // 标题 + 一行元信息，几百条累计出的空白比内容还多。
-      expect(tester.getSize(find.byWidget(row.widget)).height, lessThan(56));
+      // standard 密度（带副标题时下限 72 + 上下各 12）是给两行副标题留的；章节行
+      // 只有标题 + 一行元信息，几百条累计出的空白比内容还多。所以章节行必须走
+      // compact 密度，且行高只比文字内容多上下各 4 的内边距 + MD3 行恒画的 1px
+      // 透明边框 ×2（几何不随选中态变）——不被 standard 的下限 / 12 内边距撑高。
+      // （副标题在测试字体 Ahem 下可能折成两行，所以按内容高量余量而不是量绝对值。）
+      expect((row.widget as FushiListItem).density, FushiListDensity.compact);
+      final Rect rowRect = tester.getRect(find.byWidget(row.widget));
+      Rect? content;
+      for (final Element text in find
+          .descendant(of: find.byWidget(row.widget), matching: find.byType(Text))
+          .evaluate()) {
+        final Rect r = tester.getRect(find.byWidget(text.widget).first);
+        content = content == null ? r : content.expandToInclude(r);
+      }
+      expect(rowRect.height - content!.height, lessThanOrEqualTo(4 * 2 + 2));
     }
+    // 单行元信息的章节行总高不超过 56（standard 单行下限）。
+    expect(
+      tester.getSize(find.byWidget(rows.first.widget)).height,
+      lessThanOrEqualTo(56),
+    );
     final Rect first = tester.getRect(find.byWidget(rows.first.widget));
     final Rect second = tester.getRect(find.byWidget(rows[1].widget));
     expect(second.top - first.bottom, greaterThan(0));

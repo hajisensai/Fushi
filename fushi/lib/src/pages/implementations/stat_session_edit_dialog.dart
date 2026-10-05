@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -147,9 +148,9 @@ class _StatSessionEditDialogState extends State<StatSessionEditDialog> {
               hintText: 'YYYY-MM-DD',
               autofocus: true,
               onChanged: (_) => setState(() {}),
-              suffixIcon: IconButton(
+              suffixIcon: FushiIconButtonControl(
                 tooltip: t.stat_session_edit_date,
-                icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                icon: const FushiIcon(Icons.calendar_today_outlined, size: 18),
                 onPressed: _pickDate,
               ),
             ),

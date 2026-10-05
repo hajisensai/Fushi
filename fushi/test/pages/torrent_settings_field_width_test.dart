@@ -89,8 +89,10 @@ Widget _harness({required double paneWidth}) {
 const double _kRowInset = 16;
 
 void main() {
-  /// 一个 pane 宽度下的完整不变量：内容容器吃满 `paneWidth - 2 * 16`、左边缘落在
-  /// 16px 基线上，每个输入框与容器同宽同左边缘，开关行不越过容器右边界。
+  /// 一个 pane 宽度下的完整不变量：下载设置由真正的设置分组组成（2026-10 起，
+  /// 不再是一整块缩进 16 的表单），内容容器吃满 pane；分组里每一行自己承接
+  /// 16px 行内边距，于是每个输入框与分段控件都落在同一条 16px 基线上、宽度都是
+  /// `paneWidth - 2 * 16`，开关行不越过内容容器右边界。
   Future<void> expectSingleBaseline(
     WidgetTester tester, {
     required double paneWidth,
@@ -103,15 +105,12 @@ void main() {
     expect(content, findsOneWidget);
     expect(
       tester.getSize(content).width,
-      moreOrLessEquals(expectedWidth, epsilon: 1.0),
+      moreOrLessEquals(paneWidth, epsilon: 1.0),
       reason: 'BUG-1858: 正文吃满内容区，不再收进 560',
     );
     final double contentLeft = tester.getTopLeft(content).dx;
-    expect(
-      contentLeft,
-      moreOrLessEquals(_kRowInset, epsilon: 1.0),
-      reason: 'BUG-1278: 左边缘与普通设置行同一条 16px 基线',
-    );
+    // 行文字 / 控件的左基线：分组行的 16px 内边距（与普通设置行同一条）。
+    final double rowBaseline = contentLeft + _kRowInset;
 
     // FushiSegmentedStrip 是泛型控件，实例的 runtimeType 是
     // FushiSegmentedStrip<DownloadNetworkProxyMode> / <String> / <int>；
@@ -124,8 +123,8 @@ void main() {
     expect(strips, findsWidgets);
     expect(
       tester.getTopLeft(strips.first).dx,
-      moreOrLessEquals(contentLeft, epsilon: 1.0),
-      reason: '分段控件与正文同一条左基线',
+      moreOrLessEquals(rowBaseline, epsilon: 1.0),
+      reason: 'BUG-1278: 分段控件与普通设置行同一条 16px 基线',
     );
 
     final Finder switches = find.byType(AdaptiveSettingsSwitchRow);
@@ -133,7 +132,7 @@ void main() {
     for (final Element element in switches.evaluate()) {
       expect(
         tester.getSize(find.byWidget(element.widget)).width,
-        lessThanOrEqualTo(expectedWidth + 1),
+        lessThanOrEqualTo(paneWidth + 1),
         reason: '开关行不越过正文右边界',
       );
     }
@@ -149,8 +148,8 @@ void main() {
       );
       expect(
         tester.getTopLeft(find.byWidget(element.widget)).dx,
-        moreOrLessEquals(contentLeft, epsilon: 1.0),
-        reason: '输入框与正文同一条左基线',
+        moreOrLessEquals(rowBaseline, epsilon: 1.0),
+        reason: 'BUG-1278: 输入框与普通设置行同一条 16px 基线',
       );
     }
     expect(tester.takeException(), isNull);

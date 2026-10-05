@@ -72,6 +72,22 @@ struct ProcessedFile {
 
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
 
+// Failure-path cleanup (BUG-2952). It runs *after* a failed import -- often a
+// failed import on a full disk -- so it must never throw: the throwing
+// std::filesystem::remove_all overload, and on Windows even building the path
+// from a title that is not valid UTF-8, used to turn a clean "import failed"
+// into an exception escaping the importer with the half-written directory
+// left behind.
+void remove_tree_quietly(const std::string& base, const std::string& child = {}) noexcept {
+  try {
+    std::filesystem::path p = fushi::fs_path(base);
+    if (!child.empty()) p /= fushi::fs_path(child);
+    std::error_code ec;
+    std::filesystem::remove_all(p, ec);
+  } catch (...) {
+  }
+}
+
 Files get_files(const Zip& zip) {
   Files files;
   for (int i = 0; i < static_cast<int>(zip.entries.size()); i++) {
@@ -576,8 +592,13 @@ ProcessedFile process_kanji_bank(const std::string& content) {
   }
 
   std::vector<Kanji> out;
-  if (!yomitan_parser::parse_kanji_bank(content, out)) {
+  size_t skipped = 0;
+  if (!yomitan_parser::parse_kanji_bank(content, out, &skipped)) {
+    FUSHI_LOGW("kanji bank is not a JSON array, skipping the bank");
     return processed;
+  }
+  if (skipped > 0) {
+    FUSHI_LOGW("kanji bank: skipped %zu malformed entries", skipped);
   }
 
   std::vector<char> compressed;
@@ -1520,7 +1541,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
   }
 
   if (!result.success && !sanitized.empty()) {
-    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(sanitized));
+    remove_tree_quietly(output_dir, sanitized);
   }
 
   // Auto-mount the media companions (Foo.mdx -> Foo.mdd + numbered overflow
@@ -1563,7 +1584,21 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
 
     std::vector<std::string> mdd_paths = collect_sibling_mdd_paths(mdx_path);
     if (!mdd_paths.empty() || !extra.empty()) {
-      import_mdd_into(mdd_paths, output_dir + "/" + result.title, extra);
+      // Media is best-effort (see above), and that has to include a write
+      // failure: a disk that fills up while media.bin is being written threw
+      // straight out of import_mdx -- past the dictionary it had just finished
+      // -- and left a truncated media store behind (BUG-2952). Drop the partial
+      // store; the dictionary itself is complete and stays.
+      const std::string dict_dir = output_dir + "/" + result.title;
+      try {
+        import_mdd_into(mdd_paths, dict_dir, extra);
+      } catch (const std::exception& e) {
+        FUSHI_LOGW("mdd media import failed (%s), keeping the dictionary without media", e.what());
+        std::error_code ec;
+        std::filesystem::remove(fushi::fs_path(dict_dir + "/media.bin"), ec);
+        std::filesystem::remove(fushi::fs_path(dict_dir + "/media.idx"), ec);
+        result.errors.emplace_back(std::string("media skipped: ") + e.what());
+      }
     }
   }
 
@@ -1609,6 +1644,9 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     }
     return true;
   };
+  // The extraction below writes the whole .mdx (+ media) into the temp dir; on a
+  // full disk that write throws, and the temp dir must not outlive it (BUG-2952).
+  try {
   extract(mdx_index, mdx_filename);
   for (size_t i = 0; i < zip.entries.size(); i++) {
     if (static_cast<int>(i) == mdx_index) continue;
@@ -1654,9 +1692,13 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
       extract(static_cast<int>(i), fstem + ext);
     }
   }
+  } catch (const std::exception& e) {
+    remove_tree_quietly(temp_dir);
+    return {.success = false, .errors = {std::string("failed to extract MDX archive: ") + e.what()}};
+  }
 
   auto result = import_mdx(temp_path, output_dir);
-  std::filesystem::remove_all(fushi::fs_path(temp_dir));
+  remove_tree_quietly(temp_dir);
   return result;
 }
 
@@ -1697,12 +1739,12 @@ ImportResult import_stardict_from_zip(Zip& zip, const std::string& output_dir) {
   }
 
   if (ifo_path.empty()) {
-    std::filesystem::remove_all(fushi::fs_path(temp_dir));
+    remove_tree_quietly(temp_dir);
     return {.success = false, .errors = {"no .ifo file found in zip"}};
   }
 
   auto result = import_stardict(ifo_path, output_dir);
-  std::filesystem::remove_all(fushi::fs_path(temp_dir));
+  remove_tree_quietly(temp_dir);
   return result;
 }
 
@@ -1717,6 +1759,15 @@ std::string sanitize_title(const std::string& raw) {
     } else {
       title += static_cast<char>(c);
     }
+  }
+  // The title becomes a directory name. A byte string that is not valid UTF-8
+  // cannot be converted to a Windows path at all (libc++ throws "locale not
+  // supported" from the path constructor) and makes utf8::distance below throw
+  // on long titles -- either way a malformed index.json title used to fail the
+  // import with a meaningless message (BUG-2952, found by fuzzing). Repair it
+  // to U+FFFD instead; the user still sees a recognisable name.
+  if (!utf8::is_valid(title.begin(), title.end())) {
+    title = utf8::replace_invalid(title);
   }
   while (!title.empty() && (title.back() == ' ' || title.back() == '.')) title.pop_back();
   if (title.empty()) title = "unnamed_dictionary";
@@ -1975,7 +2026,7 @@ ImportResult import_yomitan(Zip& zip, const std::string& output_dir, bool low_ra
   }
 
   if (!result.success && !result.title.empty()) {
-    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(result.title));
+    remove_tree_quietly(output_dir, result.title);
   }
 
   // Clean return (success or caught failure): drop the breadcrumb so the next
@@ -2021,7 +2072,7 @@ ImportResult dictionary_importer::write_simple_dict(const std::string& title, co
   }
 
   if (!result.success && !sanitized.empty()) {
-    std::filesystem::remove_all(fushi::fs_path(output_dir) / fushi::fs_path(sanitized));
+    remove_tree_quietly(output_dir, sanitized);
   }
   return result;
 }
@@ -2128,8 +2179,9 @@ void finish_simple_dict(SimpleDictSink& sink, SimpleDictRecords&& records_in, co
 
 }  // namespace
 
-ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram,
-                                        const std::string& breadcrumb_dir) {
+namespace {
+ImportResult import_dispatch(const std::string& file_path, const std::string& output_dir, bool low_ram,
+                             const std::string& breadcrumb_dir) {
   std::string ext;
   {
     auto dot = file_path.rfind('.');
@@ -2167,4 +2219,69 @@ ImportResult dictionary_importer::import(const std::string& file_path, const std
   }
 
   return {.success = false, .errors = {"unsupported dictionary format"}};
+}
+
+// A failed import on a (nearly) full volume surfaces as whatever write happened
+// to hit the wall first -- an iostream failbit ("ios_base::clear: unspecified
+// iostream_category error"), a map_rw ENOSPC, a zstd/temp-file error. None of
+// those tell the user what to do. Tag the failure with the stable marker
+// kStorageFullMarker when the cause is the disk, so the Dart side can show a
+// "free up storage" message instead (BUG-2952).
+//
+// "The cause is the disk" = an ENOSPC actually reached us, or the volume the
+// dictionary was being written to is now nearly out of space. The partial
+// output has already been deleted at this point, so the free space measured
+// here is what the import had to work with; less than the archive itself (or a
+// 64 MiB floor) cannot hold the expanded dictionary.
+bool storage_exhausted(const std::string& file_path, const std::string& output_dir, bool saw_enospc) noexcept {
+  if (saw_enospc) return true;
+  try {
+    std::error_code ec;
+    const auto info = std::filesystem::space(fushi::fs_path(output_dir), ec);
+    if (ec) return false;
+    uintmax_t needed = 64ull * 1024 * 1024;
+    const auto input_size = std::filesystem::file_size(fushi::fs_path(file_path), ec);
+    if (!ec && input_size > needed) needed = input_size;
+    return info.available < needed;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool mentions_enospc(const ImportResult& r) {
+  const std::string enospc = std::generic_category().message(ENOSPC);
+  for (const auto& e : r.errors) {
+    if (e.find(enospc) != std::string::npos) return true;
+  }
+  return false;
+}
+}  // namespace
+
+// The public entry is the importer's exception boundary (BUG-2952). Every
+// format path is supposed to turn its own failures into ImportResult::errors,
+// but several did not (MDX extraction, the post-success MDD media write, the
+// failure-path cleanup), and an exception escaping here goes straight into the
+// FFI import thread. Catch everything once, here, so no input -- and no full
+// disk -- can make the import end any other way than with a result.
+ImportResult dictionary_importer::import(const std::string& file_path, const std::string& output_dir, bool low_ram,
+                                        const std::string& breadcrumb_dir) {
+  ImportResult result;
+  bool saw_enospc = false;
+  try {
+    result = import_dispatch(file_path, output_dir, low_ram, breadcrumb_dir);
+  } catch (const std::system_error& e) {
+    saw_enospc = e.code() == std::errc::no_space_on_device;
+    result = {.success = false, .errors = {e.what()}};
+  } catch (const std::exception& e) {
+    result = {.success = false, .errors = {e.what()}};
+  } catch (...) {
+    result = {.success = false, .errors = {"dictionary import failed (unknown native exception)"}};
+  }
+  if (!result.success) {
+    if (storage_exhausted(file_path, output_dir, saw_enospc || mentions_enospc(result))) {
+      result.errors.insert(result.errors.begin(), kStorageFullMarker);
+    }
+    fushi::import_breadcrumb::clear(breadcrumb_dir);
+  }
+  return result;
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -193,7 +194,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     // snackbar like _doResetCurrent/_doResetAll (HBK-AUDIT-108).
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.book_css_editor_saved)),
+        FushiSnackBar(content: Text(t.book_css_editor_saved)),
       );
     }
   }
@@ -236,7 +237,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     setState(() {});
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.book_css_editor_reset_done)),
+        FushiSnackBar(content: Text(t.book_css_editor_reset_done)),
       );
     }
   }
@@ -281,7 +282,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
     _reload();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.book_css_editor_reset_done)),
+        FushiSnackBar(content: Text(t.book_css_editor_reset_done)),
       );
     }
   }
@@ -319,7 +320,7 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
       child: FushiToolScaffold(
         title: t.book_css_editor_title,
         actions: [
-          TextButton(
+          FushiTextButton(
             onPressed: _doResetAll,
             child: Text(t.book_css_editor_reset_all),
           ),
@@ -375,33 +376,25 @@ class _BookCssEditorPageState extends ConsumerState<BookCssEditorPage>
             constraints: const BoxConstraints(
               maxWidth: kFushiSettingsDialogMaxWidth,
             ),
-            child: SizedBox(
-              width: double.infinity,
-              child: SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.card,
-                    vertical: tokens.spacing.gap,
-                  ),
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: tokens.spacing.gap,
-                    runSpacing: tokens.spacing.gap / 2,
-                    children: [
-                      OutlinedButton(
-                        onPressed:
-                            _currentTabCanReset() ? _doResetCurrent : null,
-                        child: Text(t.book_css_editor_reset_current),
-                      ),
-                      FilledButton(
-                        onPressed: () => _doSave(_selectedIndex),
-                        child: Text(t.book_css_editor_save),
-                      ),
-                    ],
-                  ),
+            // 共享底部动作条（限宽居中，MD3 不铺底色）：Apple 悬浮玻璃胶囊。
+            child: FushiBottomActionBar(
+              md3Surface: false,
+              // heightFactor: 1——动作条拿到的是 bottomNavigationBar 的松弛满屏高，
+              // 不收缩的 Align 会把整条撑到全屏、盖住上方标签栏吸走点击。
+              leading: Align(
+                alignment: AlignmentDirectional.centerStart,
+                heightFactor: 1,
+                child: FushiOutlinedButton(
+                  onPressed: _currentTabCanReset() ? _doResetCurrent : null,
+                  child: Text(t.book_css_editor_reset_current),
                 ),
               ),
+              actions: <Widget>[
+                FushiFilledButton(
+                  onPressed: () => _doSave(_selectedIndex),
+                  child: Text(t.book_css_editor_save),
+                ),
+              ],
             ),
           ),
         ),

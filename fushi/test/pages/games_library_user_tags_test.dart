@@ -96,7 +96,8 @@ void main() {
     await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    expect(find.byType(FushiTagFilterBar), findsOneWidget,
+    // 2026-10-04 起同一组件拆两段渲染：工具行行尾的「管理标签」+ 下方标签 chip 段。
+    expect(find.byType(FushiTagFilterBar), findsWidgets,
         reason: '必须复用书架/视频页同一组件，而不是游戏页自己手搓一条');
     expect(
       find.descendant(
@@ -162,6 +163,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.tag_label), findsOneWidget);
 
+    // 菜单项多于 800x600 视口能放下的行数时菜单自身可滚：先滚到该项再点。
+    await tester.ensureVisible(find.text(t.tag_label));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.tag_label));
     await tester.pumpAndSettle();
     expect(find.byType(TagPickerPage), findsOneWidget,

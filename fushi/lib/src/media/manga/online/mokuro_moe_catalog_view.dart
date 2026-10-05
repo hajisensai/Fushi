@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -468,7 +469,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.public_off_outlined,
                 color: tokens.surfaces.onVariant,
               ),
@@ -523,18 +524,18 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
         children: <Widget>[
-          OutlinedButton(
+          FushiOutlinedButton(
             onPressed: backToBrowse,
             child: Text(t.back),
           ),
           SizedBox(width: tokens.spacing.gap),
-          OutlinedButton(
+          FushiOutlinedButton(
             key: const ValueKey<String>('mokuro_moe_download_all'),
             onPressed: _selectableVolumes().isEmpty ? null : enqueueAll,
             child: Text(t.manga_online_download_all),
           ),
           SizedBox(width: tokens.spacing.gap),
-          FilledButton(
+          FushiFilledButton(
             onPressed: _selectedVolumes.isEmpty ? null : enqueueSelected,
             child: Text(t.manga_online_download_selected),
           ),
@@ -547,13 +548,12 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        TextField(
+        FushiTextFieldControl(
           controller: _searchCtrl,
           decoration: InputDecoration(
             hintText: t.manga_online_search_hint,
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const FushiIcon(Icons.search),
             isDense: true,
-            border: const OutlineInputBorder(),
           ),
           onChanged: (String value) => setState(() => _query = value),
         ),
@@ -567,7 +567,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     // 2026-10 体验优化：加载 / 错误态统一 adaptiveIndicator +
     // FushiPlaceholderMessage，重试统一 FilledButton.icon。
     if (_loading) {
-      return Center(child: adaptiveIndicator(context: context));
+      return const FushiLoadingView();
     }
     final String? error = _loadError;
     if (error != null) {
@@ -575,9 +575,9 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         icon: Icons.cloud_off_outlined,
         message: t.manga_online_load_failed,
         detail: error,
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           onPressed: _loadLibrary,
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );
@@ -607,7 +607,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     // 无封面占位：MD3 tokens 面色（overlay = 最高 tonal 层），不裸引 scheme 角色。
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.overlay,
-      child: Icon(Icons.menu_book_outlined, color: tokens.surfaces.onVariant),
+      child: FushiIcon(Icons.menu_book_outlined, color: tokens.surfaces.onVariant),
     );
     return InkWell(
       borderRadius: tokens.radii.cardRadius,
@@ -673,7 +673,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
       child: Row(
         children: <Widget>[
-          Checkbox(
+          FushiCheckbox(
             key: const ValueKey<String>('mokuro_moe_select_all'),
             value: allSelected,
             onChanged: selectable.isEmpty ? null : (_) => toggleSelectAll(),
@@ -690,7 +690,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
   /// 什么都不画的空白，用户无从判断发生了什么。
   Widget _buildSeriesBody(FushiDesignTokens tokens, MokuroMoeSeries series) {
     if (_seriesLoading) {
-      return Center(child: adaptiveIndicator(context: context));
+      return const FushiLoadingView();
     }
     final String? error = _seriesError;
     if (error != null) {
@@ -698,9 +698,9 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         icon: Icons.cloud_off_outlined,
         message: t.manga_online_detail_load_failed,
         detail: error,
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           onPressed: () => unawaited(_openSeries(series)),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );
@@ -760,9 +760,9 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
         child: Row(
           children: <Widget>[
             if (imported)
-              Icon(Icons.check_circle, color: tokens.surfaces.primary)
+              FushiIcon(Icons.check_circle, color: tokens.surfaces.primary)
             else
-              Checkbox(
+              FushiCheckbox(
                 value: _selectedVolumes.contains(volume.name),
                 onChanged: !selectable
                     ? null
@@ -864,7 +864,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
             ],
           ),
           SizedBox(height: tokens.spacing.gap / 2),
-          LinearProgressIndicator(value: _progressValue(running)),
+          FushiLinearProgressIndicator(value: _progressValue(running)),
         ],
       ),
     );

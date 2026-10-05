@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
     show AiMediaAcquisitionDomain;
@@ -416,7 +417,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                     );
                   },
                 ),
-                const Divider(height: 1),
+                const FushiDividerControl(height: 1),
                 Expanded(
                   child: widget.libraryBuilder?.call(
                         context,
@@ -494,7 +495,7 @@ class _CaptureStatusStrip extends StatelessWidget {
       onTap: onOpen,
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             active ? Icons.sensors : Icons.sensors_off_outlined,
             color: accent,
             size: 20,
@@ -502,7 +503,7 @@ class _CaptureStatusStrip extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(child: detail),
           const SizedBox(width: 8),
-          Icon(Icons.chevron_right, color: colors.onSurfaceVariant, size: 20),
+          FushiIcon(Icons.chevron_right, color: colors.onSurfaceVariant, size: 20),
         ],
       ),
     );

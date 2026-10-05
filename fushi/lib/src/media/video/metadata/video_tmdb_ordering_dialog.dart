@@ -127,7 +127,7 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.collection_tmdb_ordering),
       content: SizedBox(
         width: 460,
@@ -137,7 +137,7 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(t.collection_tmdb_ordering_hint),
-              RadioListTile<String?>(
+              FushiRadioListTile<String?>(
                 key: const ValueKey<String>('video-tmdb-ordering-default'),
                 value: null,
                 groupValue: _selected,
@@ -146,7 +146,7 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
               ),
               for (final VideoMetadataEpisodeGroupSummary group
                   in widget.groups)
-                RadioListTile<String?>(
+                FushiRadioListTile<String?>(
                   key: ValueKey<String>('video-tmdb-ordering-${group.id}'),
                   value: group.id,
                   groupValue: _selected,

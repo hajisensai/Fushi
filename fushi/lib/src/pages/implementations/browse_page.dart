@@ -548,7 +548,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final DroppedFiles files = classifyDroppedFiles(paths);
     if (files.torrents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
+        FushiSnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
       );
       return;
     }
@@ -1137,44 +1137,54 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return BrowseSubPage(
       title: t.download_settings,
+      // 与设置详情页同一种页面：页边距由这里给，正文全是真正的设置分组
+      // （MD3 分段卡 / Apple inset grouped），组件自己不再缩进。
       child: ListView(
-                        children: <Widget>[
-                          const TorrentSettingsSection(),
-                          // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
-                          // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
-                          // 番剧下载对话框「去设置」落到这里仍能一步到达。
-                          // 「在线服务」分类被 [ModuleId.services] 关掉时这一行
-                          // 不渲染：它指向的设置分类此刻已从设置页消失，留着就是
-                          // 一条通往不存在页面的死路。
-                          if (ref
-                              .watch(appProvider)
-                              .moduleVisibility
-                              .isEnabled(ModuleId.services))
-                            Builder(
-                              builder: (BuildContext rowContext) =>
-                                  AdaptiveSettingsNavigationRow(
-                                    title: t.settings_destination_services,
-                                    subtitle: t.settings_services_link_subtitle,
-                                    icon: Icons.cloud_outlined,
-                                    showIcon: true,
-                                    onTap: () => Navigator.of(rowContext).push(
-                                      adaptivePageRoute(
-                                        context: rowContext,
-                                        builder: (_) => SettingsDetailPage(
-                                          destination:
-                                              buildServicesDestination(),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
+        ),
+        children: <Widget>[
+          const TorrentSettingsSection(),
+          // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务（第三方凭据一个家）；
+          // 下载设置页留一条跳转，番剧下载对话框「去设置」落到这里仍能一步到达。
+          // 「在线服务」分类被 [ModuleId.services] 关掉时这一组不渲染：它指向的
+          // 设置分类此刻已从设置页消失，留着就是一条通往不存在页面的死路。
+          if (ref
+              .watch(appProvider)
+              .moduleVisibility
+              .isEnabled(ModuleId.services))
+            AdaptiveSettingsSection(
+              children: <Widget>[
+                Builder(
+                  builder: (BuildContext rowContext) =>
+                      AdaptiveSettingsNavigationRow(
+                        title: t.settings_destination_services,
+                        subtitle: t.settings_services_link_subtitle,
+                        icon: Icons.cloud_outlined,
+                        showIcon: true,
+                        onTap: () => Navigator.of(rowContext).push(
+                          adaptivePageRoute(
+                            context: rowContext,
+                            builder: (_) => SettingsDetailPage(
+                              destination: buildServicesDestination(),
                             ),
-                          const VideoExternalProviderSettingsSection(
-                            scope: VideoExternalProviderScope.downloadRouting,
                           ),
-                        ],
+                        ),
                       ),
+                ),
+              ],
+            ),
+          const VideoExternalProviderSettingsSection(
+            scope: VideoExternalProviderScope.downloadRouting,
+          ),
+        ],
+      ),
     );
   }
 }

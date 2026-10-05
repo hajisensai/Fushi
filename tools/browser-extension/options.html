@@ -6,12 +6,43 @@
   <title data-i18n="opt_root_title">Fushi 浏览器扩展</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="options.css">
+  <link rel="stylesheet" href="glass.css">
 </head>
 <body>
   <div class="shell">
+    <header class="page-header">
+      <img class="brand-icon" src="icon-48.png" width="40" height="40" alt="">
+      <div class="page-title">
+        <h1 data-i18n="opt_root_title">Fushi 浏览器扩展</h1>
+        <p data-i18n="opt_page_subtitle">设置只保存在本机浏览器里，大多数修改立即生效。</p>
+      </div>
+    </header>
     <div class="layout">
-      <main class="main-column">
-        <section class="section" aria-labelledby="appearance-heading">
+      <aside class="side-column">
+        <section class="connection" id="connectionCard" data-tone="loading" aria-live="polite">
+          <div class="connection-top">
+            <span class="status-dot" id="connDot" aria-hidden="true"></span>
+            <span class="connection-label" data-i18n="opt_connection_label">本机服务</span>
+            <button class="icon-button" id="check" type="button" title="重新检测" data-i18n-title="opt_check_title" aria-label="重新检测连接" data-i18n-aria-label="opt_check_aria_label">↻</button>
+          </div>
+          <h2 id="connTitle" data-i18n="opt_connTitle_heading">正在检测…</h2>
+          <p id="connDetail" data-i18n="opt_connDetail_text">确认 Fushi 的查词与字幕服务状态。</p>
+          <code id="connEndpoint">127.0.0.1:19633</code>
+        </section>
+        <nav class="section-nav" id="sectionNav" aria-label="设置分区" data-i18n-aria-label="opt_section_nav_aria_label">
+          <a class="section-link" href="#sec-appearance" data-i18n="opt_appearance_heading_section_kicker">外观与语言</a>
+          <a class="section-link" href="#sec-popup-size" data-i18n="opt_popup_size_heading_section_kicker">查词弹窗</a>
+          <a class="section-link" href="#sec-touch-lookup" data-i18n="opt_touch_lookup_heading_heading">手机与平板</a>
+          <a class="section-link" href="#sec-subtitle" data-i18n="opt_subtitle_heading_heading">观看与字幕</a>
+          <a class="section-link" href="#sec-subtitle-style" data-i18n="opt_subtitle_style_heading_section_kicker">字幕外观</a>
+          <a class="section-link" href="#sec-study" data-i18n="opt_study_heading_heading">沉浸时间</a>
+          <a class="section-link" href="#sec-shortcut" data-i18n="opt_shortcut_heading_heading">视频快捷键</a>
+          <a class="section-link" href="#sec-site" data-i18n="opt_site_heading_heading">流媒体站点</a>
+          <a class="section-link" href="#sec-connection" data-i18n="opt_connection_section_heading">连接与诊断</a>
+        </nav>
+      </aside>
+      <main class="main-column" id="main">
+        <section class="section" id="sec-appearance" aria-labelledby="appearance-heading">
           <div class="section-heading compact">
             <div>
               <p class="section-kicker" data-i18n="opt_appearance_heading_section_kicker">外观与语言</p>
@@ -121,7 +152,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="popup-size-heading">
+        <section class="section" id="sec-popup-size" aria-labelledby="popup-size-heading">
           <div class="section-heading">
             <div>
               <p class="section-kicker" data-i18n="opt_popup_size_heading_section_kicker">查词弹窗</p>
@@ -168,7 +199,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="touch-lookup-heading">
+        <section class="section" id="sec-touch-lookup" aria-labelledby="touch-lookup-heading">
           <div class="section-heading compact">
             <div>
               <p class="section-kicker" data-i18n="opt_touch_lookup_heading_section_kicker">触屏查词与字幕抽屉</p>
@@ -218,7 +249,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="subtitle-heading">
+        <section class="section" id="sec-subtitle" aria-labelledby="subtitle-heading">
           <div class="section-heading">
             <div>
               <p class="section-kicker" data-i18n="opt_subtitle_heading_section_kicker">字幕工作台</p>
@@ -325,7 +356,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="subtitle-style-heading">
+        <section class="section" id="sec-subtitle-style" aria-labelledby="subtitle-style-heading">
           <div class="section-heading">
             <div>
               <p class="section-kicker" data-i18n="opt_subtitle_style_heading_section_kicker">字幕外观</p>
@@ -490,7 +521,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="study-heading">
+        <section class="section" id="sec-study" aria-labelledby="study-heading">
           <div class="section-heading compact">
             <div>
               <p class="section-kicker" data-i18n="opt_study_heading_section_kicker">学习统计</p>
@@ -520,7 +551,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="shortcut-heading">
+        <section class="section" id="sec-shortcut" aria-labelledby="shortcut-heading">
           <div class="section-heading compact">
             <div>
               <p class="section-kicker" data-i18n="opt_shortcut_heading_section_kicker">按键控制</p>
@@ -608,7 +639,7 @@
           </div>
         </section>
 
-        <section class="section" aria-labelledby="site-heading">
+        <section class="section" id="sec-site" aria-labelledby="site-heading">
           <div class="section-heading compact">
             <div>
               <p class="section-kicker" data-i18n="opt_site_heading_section_kicker">站点适配</p>
@@ -631,76 +662,72 @@
             </div>
           </div>
         </section>
-      </main>
-
-      <aside class="side-column">
-        <section class="connection" id="connectionCard" data-tone="loading" aria-live="polite">
-          <div class="connection-top">
-            <span class="status-dot" id="connDot" aria-hidden="true"></span>
-            <span class="connection-label" data-i18n="opt_connection_label">本机服务</span>
-            <button class="icon-button" id="check" type="button" title="重新检测" data-i18n-title="opt_check_title" aria-label="重新检测连接" data-i18n-aria-label="opt_check_aria_label">↻</button>
+        <section class="section section-diagnostics" id="sec-connection" aria-labelledby="connection-heading">
+          <div class="section-heading compact">
+            <div>
+              <p class="section-kicker" data-i18n="opt_connection_label">本机服务</p>
+              <h2 id="connection-heading" data-i18n="opt_connection_section_heading">连接与诊断</h2>
+            </div>
           </div>
-          <h2 id="connTitle" data-i18n="opt_connTitle_heading">正在检测…</h2>
-          <p id="connDetail" data-i18n="opt_connDetail_text">确认 Fushi 的查词与字幕服务状态。</p>
-          <code id="connEndpoint">127.0.0.1:19633</code>
+          <div class="diagnostics-stack">
+            <details class="advanced" id="advancedConnection">
+              <summary>
+                <span data-i18n="opt_advancedConnection_label">高级连接设置</span>
+                <small data-i18n="opt_advancedConnection_desc">自动配置失效时使用</small>
+              </summary>
+              <form id="connectionForm">
+                <label class="field">
+                  <span>Host</span>
+                  <input id="host" autocomplete="off" inputmode="url">
+                </label>
+                <label class="field">
+                  <span>Port</span>
+                  <input id="port" type="number" min="1" max="65535" inputmode="numeric">
+                </label>
+                <label class="field">
+                  <span>Token</span>
+                  <span class="token-field">
+                    <input id="token" type="password" autocomplete="off">
+                    <button id="showToken" type="button" aria-label="显示或隐藏 Token" data-i18n-aria-label="opt_showToken_aria_label" data-i18n="opt_showToken_button">显示</button>
+                  </span>
+                </label>
+                <p class="field-help" data-i18n="opt_connection_field_help">留空即使用 Fushi 安装助手写入的自动配置。</p>
+                <div class="button-row">
+                  <button class="primary-button" id="save" type="submit" data-i18n="opt_save_button">保存并检测</button>
+                  <button class="text-button" id="reset" type="button" data-i18n="opt_reset_button">恢复自动配置</button>
+                </div>
+              </form>
+            </details>
+
+            <details class="advanced lookup-perf" id="lookupPerfPanel">
+              <summary>
+                <span data-i18n="opt_lookupPerfPanel_label">查词性能日志</span>
+                <small id="lookupPerfSummary" data-i18n="opt_lookupPerfSummary_desc">复现慢查询后在这里查看</small>
+              </summary>
+              <div class="lookup-perf-body">
+                <p data-i18n="opt_lookupPerf_intro">仅保存在本机扩展存储，不记录原词。每次查词会分别记录后端等待、响应读取、JSON 解析和弹框首显耗时。</p>
+                <div class="lookup-perf-actions">
+                  <button class="text-button" id="refreshLookupPerf" type="button" data-i18n="opt_refreshLookupPerf_button">刷新</button>
+                  <button class="text-button" id="copyLookupPerf" type="button" data-i18n="opt_copyLookupPerf_button">复制完整日志</button>
+                  <button class="text-button danger-button" id="clearLookupPerf" type="button" data-i18n="opt_clearLookupPerf_button">清空</button>
+                </div>
+                <pre class="lookup-perf-output" id="lookupPerfOutput" tabindex="0" data-i18n="opt_lookupPerfOutput_text">暂无查词日志</pre>
+              </div>
+            </details>
+
+            <div class="tip" id="updateCard">
+              <strong id="updTitle" data-i18n="opt_updTitle_title">版本与更新</strong>
+              <p id="updDetail" data-i18n="opt_updDetail_text">正在读取扩展版本信息…</p>
+              <code id="updBuild"></code>
+            </div>
+
+            <div class="tip">
+              <strong data-i18n="opt_loadOwnSubtitles_title">加载自己的字幕</strong>
+              <p data-i18n="opt_loadOwnSubtitles_text">打开浏览器原生字幕侧边栏后点“＋”，或直接把字幕文件拖到视频上。</p>
+            </div>
+          </div>
         </section>
-
-        <details class="advanced" id="advancedConnection">
-          <summary>
-            <span data-i18n="opt_advancedConnection_label">高级连接设置</span>
-            <small data-i18n="opt_advancedConnection_desc">自动配置失效时使用</small>
-          </summary>
-          <form id="connectionForm">
-            <label class="field">
-              <span>Host</span>
-              <input id="host" autocomplete="off" inputmode="url">
-            </label>
-            <label class="field">
-              <span>Port</span>
-              <input id="port" type="number" min="1" max="65535" inputmode="numeric">
-            </label>
-            <label class="field">
-              <span>Token</span>
-              <span class="token-field">
-                <input id="token" type="password" autocomplete="off">
-                <button id="showToken" type="button" aria-label="显示或隐藏 Token" data-i18n-aria-label="opt_showToken_aria_label" data-i18n="opt_showToken_button">显示</button>
-              </span>
-            </label>
-            <p class="field-help" data-i18n="opt_connection_field_help">留空即使用 Fushi 安装助手写入的自动配置。</p>
-            <div class="button-row">
-              <button class="primary-button" id="save" type="submit" data-i18n="opt_save_button">保存并检测</button>
-              <button class="text-button" id="reset" type="button" data-i18n="opt_reset_button">恢复自动配置</button>
-            </div>
-          </form>
-        </details>
-
-        <details class="advanced lookup-perf" id="lookupPerfPanel">
-          <summary>
-            <span data-i18n="opt_lookupPerfPanel_label">查词性能日志</span>
-            <small id="lookupPerfSummary" data-i18n="opt_lookupPerfSummary_desc">复现慢查询后在这里查看</small>
-          </summary>
-          <div class="lookup-perf-body">
-            <p data-i18n="opt_lookupPerf_intro">仅保存在本机扩展存储，不记录原词。每次查词会分别记录后端等待、响应读取、JSON 解析和弹框首显耗时。</p>
-            <div class="lookup-perf-actions">
-              <button class="text-button" id="refreshLookupPerf" type="button" data-i18n="opt_refreshLookupPerf_button">刷新</button>
-              <button class="text-button" id="copyLookupPerf" type="button" data-i18n="opt_copyLookupPerf_button">复制完整日志</button>
-              <button class="text-button danger-button" id="clearLookupPerf" type="button" data-i18n="opt_clearLookupPerf_button">清空</button>
-            </div>
-            <pre class="lookup-perf-output" id="lookupPerfOutput" tabindex="0" data-i18n="opt_lookupPerfOutput_text">暂无查词日志</pre>
-          </div>
-        </details>
-
-        <div class="tip" id="updateCard">
-          <strong id="updTitle" data-i18n="opt_updTitle_title">版本与更新</strong>
-          <p id="updDetail" data-i18n="opt_updDetail_text">正在读取扩展版本信息…</p>
-          <code id="updBuild"></code>
-        </div>
-
-        <div class="tip">
-          <strong data-i18n="opt_loadOwnSubtitles_title">加载自己的字幕</strong>
-          <p data-i18n="opt_loadOwnSubtitles_text">打开浏览器原生字幕侧边栏后点“＋”，或直接把字幕文件拖到视频上。</p>
-        </div>
-      </aside>
+      </main>
     </div>
   </div>
 
@@ -709,6 +736,7 @@
   <script src="i18n.js"></script>
   <script src="theme-palette.js"></script>
   <script src="theme.js"></script>
+  <script src="glass-select.js"></script>
   <script src="subtitle-style.js"></script>
   <script src="fushi-defaults.js"></script>
   <script src="popup-size.js"></script>

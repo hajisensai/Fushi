@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import '../helpers/glass_unwrap.dart';
 
 VideoDiscoveryItem _item(String id, String title) {
   return VideoDiscoveryItem(
@@ -180,15 +181,9 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    final OutlinedButton resource = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey<String>('video-discovery-search-resource')),
-    );
-    final OutlinedButton subtitle = tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey<String>('video-discovery-search-subtitle')),
-    );
-    final FilledButton subscribe = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-discovery-subscribe')),
-    );
+    final OutlinedButton resource = tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('video-discovery-search-resource'))),);
+    final OutlinedButton subtitle = tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('video-discovery-search-subtitle'))),);
+    final FilledButton subscribe = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-discovery-subscribe'))),);
     expect(resource.onPressed, isNotNull,
         reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。');
     expect(subscribe.onPressed, isNull);

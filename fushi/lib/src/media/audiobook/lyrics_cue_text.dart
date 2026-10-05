@@ -55,11 +55,26 @@ class LyricsCueTextResolver {
         return LyricsCueText.plain(cue.text);
       }
       final int available = normalized.length - start;
-      final int from = first ? chapter.norm.starts[start] : 0;
+      // 句首开括号（「『（…）被归一化剥掉、落在匹配区间之外——往回补上，歌词行
+      // 才是「月が替わると…」而不是缺了左括号的半句。
+      final int from = first
+          ? _extendOpening(chapter.text, chapter.norm.starts[start])
+          : 0;
       if (remaining <= available) {
         final int end = start + remaining;
         if (!_isBoundary(normalized, end)) return LyricsCueText.plain(cue.text);
-        final int to = chapter.norm.ends[end - 1];
+        // 句末标点 / 闭括号（。」』！？…）同样被归一化剥掉：matcher 的区间止于最后
+        // 一个「有读音」的字，直接按它截取正文会让每行都丢掉句号（用户 2026-10-04
+        // 报「歌词模式没有标点」）。往后补到下一个有读音的字之前，只收收尾类标点，
+        // 不越过换行 / 空白 / 下一句的开括号。
+        final int limit = end < normalized.length
+            ? chapter.norm.starts[end]
+            : chapter.text.length;
+        final int to = _extendClosing(
+          chapter.text,
+          chapter.norm.ends[end - 1],
+          limit,
+        );
         _collectRubies(rubies, chapter, from, to, result.length);
         result.write(chapter.text.substring(from, to));
         return LyricsCueText(result.toString(), rubies);
@@ -106,6 +121,30 @@ class LyricsCueTextResolver {
     }
     return value;
   }
+
+  /// 句首开括号：往回吞连续的开括号（不越过其它任何字符）。
+  static int _extendOpening(String text, int from) {
+    int i = from;
+    while (i > 0 && _kOpening.contains(text.codeUnitAt(i - 1))) {
+      i--;
+    }
+    return i;
+  }
+
+  /// 句末收尾标点：往后吞连续的句末标点 / 闭括号，止于 [limit]（下一个有读音的
+  /// 字）或第一个非收尾字符（换行、空白、开括号……）。
+  static int _extendClosing(String text, int to, int limit) {
+    int i = to;
+    while (i < limit && _kClosing.contains(text.codeUnitAt(i))) {
+      i++;
+    }
+    return i;
+  }
+
+  static final Set<int> _kOpening = '「『（(［[｛{【〔〈《〖〘〚“‘'.codeUnits.toSet();
+
+  static final Set<int> _kClosing =
+      '。．｡.、，､,！!？?…‥」』）)］]｝}】〕〉》〗〙〛”’～〜：:；;♪'.codeUnits.toSet();
 
   static bool _isBoundary(String text, int offset) =>
       offset == text.length ||

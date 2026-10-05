@@ -180,6 +180,53 @@ class RemoteLookupRoutes {
     });
   }
 
+  /// 单词音频「选择音频源」菜单：`POST /api/lookup/audio/list {expression, reading}`
+  /// → `{type:'audioSourceList', audioSources:[{name, variant, url}]}`，每项与
+  /// [handleAudioLookup] 一样签发免鉴权的短命取字节 URL。service 没实现
+  /// [FushiRemoteAudioListService] 时回落成默认源单项（名字留空，弹窗按「默认」显示）。
+  Future<shelf.Response> handleAudioList(shelf.Request request) async {
+    final FushiRemoteLookupService? service = lookup;
+    if (service == null) return shelf.Response.notFound('Remote lookup off');
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+
+    final String expression = body['expression']?.toString() ?? '';
+    final String reading = body['reading']?.toString() ?? '';
+    final List<RemoteAudioChoice> choices;
+    if (expression.trim().isEmpty) {
+      choices = const <RemoteAudioChoice>[];
+    } else if (service is FushiRemoteAudioListService) {
+      choices = await (service as FushiRemoteAudioListService)
+          .listAudio(expression: expression, reading: reading);
+    } else {
+      final RemoteAudioLookup? found =
+          await service.lookupAudio(expression: expression, reading: reading);
+      choices = found == null
+          ? const <RemoteAudioChoice>[]
+          : <RemoteAudioChoice>[
+              RemoteAudioChoice(name: '', variant: '', audio: found),
+            ];
+    }
+
+    return jsonResponse(<String, dynamic>{
+      'type': 'audioSourceList',
+      'audioSources': <Map<String, String>>[
+        for (final RemoteAudioChoice choice in choices)
+          <String, String>{
+            'name': choice.name,
+            'variant': choice.variant,
+            'url': request.requestedUri.replace(
+              path: '/api/lookup/audio/file',
+              queryParameters: <String, String>{
+                'id': audioTokens.mint(
+                    choice.audio.bytes, choice.audio.contentType),
+              },
+            ).toString(),
+          },
+      ],
+    });
+  }
+
   /// 单词音频②：GET/HEAD `?id=` 取字节（免鉴权，靠不可猜 id）；命中即续期。
   shelf.Response handleAudioFile(shelf.Request request,
       {required bool headOnly}) {

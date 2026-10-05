@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -127,43 +128,27 @@ class _ChangelogEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.cloud_off_outlined,
-              size: 48,
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.changelog_empty,
-              textAlign: TextAlign.center,
-              style: tokens.type.listSubtitle,
-            ),
-            SizedBox(height: tokens.spacing.card),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: tokens.spacing.gap,
-              runSpacing: tokens.spacing.gap,
-              children: <Widget>[
-                OutlinedButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: Text(t.retry),
-                ),
-                FilledButton.icon(
-                  onPressed: onOpenReleases,
-                  icon: const Icon(Icons.open_in_new_outlined),
-                  label: Text(t.changelog_open_releases),
-                ),
-              ],
-            ),
-          ],
-        ),
+    // 统一空态：MD3 中性分组底块 / Apple 无底块大图标 + 灰字（各自在
+    // FushiPlaceholderMessage 里分派），不再自画 outline 色图标 + 裸文字。
+    return FushiPlaceholderMessage(
+      icon: Icons.cloud_off_outlined,
+      message: t.changelog_empty,
+      action: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: tokens.spacing.gap,
+        runSpacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiOutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const FushiIcon(Icons.refresh),
+            label: Text(t.retry),
+          ),
+          FushiFilledButton.icon(
+            onPressed: onOpenReleases,
+            icon: const FushiIcon(Icons.open_in_new_outlined),
+            label: Text(t.changelog_open_releases),
+          ),
+        ],
       ),
     );
   }
@@ -256,23 +241,12 @@ class _ChannelBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.gap / 2,
-        vertical: tokens.spacing.gap / 4,
-      ),
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: tokens.radii.chipRadius,
-      ),
-      child: Text(
-        label,
-        style: tokens.type.metadata.copyWith(
-          color: scheme.onSecondaryContainer,
-        ),
-      ),
+    // 标签统一（2026-10-04）：不可交互小标签走共享 FushiTag（MD3 圆角 6
+    // secondaryContainer，Apple 空心胶囊 + secondaryLabel 字）。
+    return FushiTag(
+      text: label,
+      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+      dense: true,
     );
   }
 }

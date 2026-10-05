@@ -39,6 +39,7 @@ import 'package:fushi/src/sync/desktop_oauth_wait_dialog.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';

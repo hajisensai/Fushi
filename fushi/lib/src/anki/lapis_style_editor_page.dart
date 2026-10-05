@@ -5,6 +5,8 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_lapis_style_assistant.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -256,7 +258,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         _refreshPreview();
       }
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(
             suggestion.explanation.isEmpty
                 ? t.lapis_style_ai_applied
@@ -297,16 +299,16 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: FilledButton.icon(
+            child: FushiFilledButton.icon(
               key: const ValueKey<String>('lapis-ai-generate'),
               onPressed: _aiBusy ? null : () => unawaited(_runAi()),
               icon: _aiBusy
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_outlined),
+                  : const FushiIcon(Icons.auto_awesome_outlined),
               label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
             ),
           ),
@@ -494,15 +496,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     }
     final bool? discard = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.book_css_editor_unsaved_changes),
         content: Text(t.book_css_editor_unsaved_changes_message),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(t.book_css_editor_discard),
           ),
@@ -539,17 +541,17 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       child: FushiToolScaffold(
         title: t.anki_lapis_visual_editor,
         actions: <Widget>[
-          SegmentedButton<bool>(
+          FushiSegmentedButton<bool>(
             showSelectedIcon: false,
             segments: <ButtonSegment<bool>>[
               ButtonSegment<bool>(
                 value: false,
-                icon: const Icon(Icons.flip_to_front_outlined),
+                icon: const FushiIcon(Icons.flip_to_front_outlined),
                 label: Text(t.anki_lapis_visual_front),
               ),
               ButtonSegment<bool>(
                 value: true,
-                icon: const Icon(Icons.flip_to_back_outlined),
+                icon: const FushiIcon(Icons.flip_to_back_outlined),
                 label: Text(t.anki_lapis_visual_back),
               ),
             ],
@@ -594,28 +596,19 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ),
           ),
         ),
-        bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.card,
-              vertical: tokens.spacing.gap,
+        // 共享底部动作条：MD3 贴底 surfaceContainer 条，Apple 悬浮玻璃胶囊。
+        bottomNavigationBar: FushiBottomActionBar(
+          actions: <Widget>[
+            FushiTextButton(
+              onPressed: _attemptClose,
+              child: Text(t.dialog_cancel),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: <Widget>[
-                TextButton(
-                  onPressed: _attemptClose,
-                  child: Text(t.dialog_cancel),
-                ),
-                SizedBox(width: tokens.spacing.gap),
-                FilledButton.icon(
-                  onPressed: _isDirty ? _save : null,
-                  icon: const Icon(Icons.save_outlined),
-                  label: Text(t.dialog_save),
-                ),
-              ],
+            FushiFilledButton.icon(
+              onPressed: _isDirty ? _save : null,
+              icon: const FushiIcon(Icons.save_outlined),
+              label: Text(t.dialog_save),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -756,10 +749,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               LapisVisualField.glossaries,
             ],
           ),
-          ExpansionTile(
+          FushiExpansionTile(
             tilePadding: EdgeInsets.zero,
             childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            leading: const Icon(Icons.tune_outlined),
+            leading: const FushiIcon(Icons.tune_outlined),
             title: Text(t.anki_lapis_visual_target_inside_definition),
             initiallyExpanded: _isDetailedDefinitionTarget(_selectedField),
             children: <Widget>[
@@ -797,7 +790,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   style: tokens.type.listTitle,
                 ),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: rule.isDefault
                     ? null
                     : () => _updateSelectedRule(const LapisVisualRule()),
@@ -808,20 +801,9 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           if (_selectedFieldNote case final String note)
             Padding(
               padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Icon(
-                    Icons.info_outline,
-                    size: 16,
-                    color: tokens.surfaces.onVariant,
-                  ),
-                  SizedBox(width: tokens.spacing.gap),
-                  Expanded(
-                    child: Text(note, style: tokens.type.listSubtitle),
-                  ),
-                ],
-              ),
+              // 统一提示块（MD3 中性填充 r12 / Apple tertiaryFill r10，单色
+              // 图标），与页内「正在编辑」横幅同一层级语言，不再是裸图标 + 灰字。
+              child: FushiInlineNotice(message: note),
             ),
           Text(
             t.anki_lapis_visual_font_size(
@@ -829,7 +811,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ),
             style: tokens.type.listSubtitle,
           ),
-          Slider(
+          FushiSlider(
             value: rule.fontScalePercent.toDouble(),
             min: 70,
             max: 180,
@@ -839,7 +821,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               rule.copyWith(fontScalePercent: value.round()),
             ),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             title: Text(t.anki_lapis_visual_bold),
             value: rule.bold,
@@ -847,7 +829,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                 _updateSelectedRule(rule.copyWith(bold: value)),
           ),
           SizedBox(height: tokens.spacing.gap),
-          DropdownMenu<int>(
+          FushiDropdownMenu<int>(
             key: ValueKey<String>(
               'line-height-${_selectedField.wireName}-'
               '${rule.lineHeightPercent}',
@@ -877,7 +859,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             style: tokens.type.listSubtitle,
           ),
           SizedBox(height: tokens.spacing.gap),
-          SegmentedButton<LapisVisualTextAlign?>(
+          FushiSegmentedButton<LapisVisualTextAlign?>(
             showSelectedIcon: false,
             segments: <ButtonSegment<LapisVisualTextAlign?>>[
               ButtonSegment<LapisVisualTextAlign?>(
@@ -886,15 +868,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
               ),
               const ButtonSegment<LapisVisualTextAlign?>(
                 value: LapisVisualTextAlign.start,
-                icon: Icon(Icons.format_align_left_outlined),
+                icon: FushiIcon(Icons.format_align_left_outlined),
               ),
               const ButtonSegment<LapisVisualTextAlign?>(
                 value: LapisVisualTextAlign.center,
-                icon: Icon(Icons.format_align_center_outlined),
+                icon: FushiIcon(Icons.format_align_center_outlined),
               ),
               const ButtonSegment<LapisVisualTextAlign?>(
                 value: LapisVisualTextAlign.end,
-                icon: Icon(Icons.format_align_right_outlined),
+                icon: FushiIcon(Icons.format_align_right_outlined),
               ),
             ],
             selected: <LapisVisualTextAlign?>{rule.alignment},
@@ -904,7 +886,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ),
           ),
           SizedBox(height: tokens.spacing.card),
-          DropdownMenu<int>(
+          FushiDropdownMenu<int>(
             key: ValueKey<String>(
               'text-indent-${_selectedField.wireName}-'
               '${rule.textIndentPercent}',
@@ -952,10 +934,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           ),
           if (_selectedSupportsBoxLayout) ...<Widget>[
             SizedBox(height: tokens.spacing.card),
-            ExpansionTile(
+            FushiExpansionTile(
               tilePadding: EdgeInsets.zero,
               childrenPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.crop_square_outlined),
+              leading: const FushiIcon(Icons.crop_square_outlined),
               title: Text(t.anki_lapis_visual_box_layout),
               children: <Widget>[
                 _buildOptionalSlider(
@@ -1017,14 +999,14 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           SizedBox(height: tokens.spacing.card),
           _buildAiSection(tokens),
           SizedBox(height: tokens.spacing.card),
-          ExpansionTile(
+          FushiExpansionTile(
             tilePadding: EdgeInsets.zero,
             childrenPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.code_outlined),
+            leading: const FushiIcon(Icons.code_outlined),
             title: Text(t.anki_lapis_visual_advanced_css),
             subtitle: Text(t.anki_lapis_custom_css_hint),
             children: <Widget>[
-              TextField(
+              FushiTextFieldControl(
                 controller: _advancedCssController,
                 minLines: 8,
                 maxLines: 16,
@@ -1168,35 +1150,37 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 主题下几乎看不出来（用户反馈「右排的不明显」）。用实底容器 + 主色把当前
   /// 目标单独拎出来，选中态就不再依赖用户去分辨哪个 chip 稍亮一点。
   Widget _buildCurrentTargetBanner(FushiDesignTokens tokens) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 中性信息块 + 强调色图标 / 路径：醒目度靠强调色文字与粗体承担，
+    // 不再整块 primaryContainer 彩底（与同页中性卡片、填充按钮抢视觉）。
+    final Color accent = fushiAccentForeground(context);
     return Container(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.gap,
         vertical: tokens.spacing.gap / 2,
       ),
-      decoration: BoxDecoration(
-        color: colors.primaryContainer,
-        borderRadius: tokens.radii.cardRadius,
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             Icons.edit_outlined,
             size: 16,
-            color: colors.onPrimaryContainer,
+            color: accent,
           ),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: RichText(
               text: TextSpan(
                 style: tokens.type.listSubtitle
-                    .copyWith(color: colors.onPrimaryContainer),
+                    .copyWith(color: fushiNeutralBlockForeground(context)),
                 children: <InlineSpan>[
                   TextSpan(text: '${t.anki_lapis_visual_editing_now}  '),
                   TextSpan(
                     text: _selectedTargetPath.join('  ›  '),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      color: accent,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ],
               ),
@@ -1238,10 +1222,10 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 数据；这也是为什么这里没有「新建字段」入口。
   Widget _buildBlocksSection(FushiDesignTokens tokens) {
     final LapisCustomBlock? selected = _selectedBlock;
-    return ExpansionTile(
+    return FushiExpansionTile(
       tilePadding: EdgeInsets.zero,
       childrenPadding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      leading: const Icon(Icons.dashboard_outlined),
+      leading: const FushiIcon(Icons.dashboard_outlined),
       title: Text(t.anki_lapis_visual_blocks),
       subtitle: Text(t.anki_lapis_visual_blocks_hint),
       initiallyExpanded: _blocks.isNotEmpty,
@@ -1250,7 +1234,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           FushiListItem(
             padding: EdgeInsets.zero,
             selected: block.id == _selectedBlockId,
-            leading: const Icon(Icons.crop_free_outlined),
+            leading: const FushiIcon(Icons.crop_free_outlined),
             title: Text(
               t.anki_lapis_visual_block_name(
                 index: _blocks.indexOf(block) + 1,
@@ -1262,8 +1246,8 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   : '${_blockAnchorLabel(block.anchor)} · '
                       '${block.fields.join(' / ')}',
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.delete_outline),
+            trailing: FushiIconButtonControl(
+              icon: const FushiIcon(Icons.delete_outline),
               tooltip: t.anki_lapis_visual_block_delete,
               onPressed: () => _removeBlock(block.id),
             ),
@@ -1271,15 +1255,15 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           ),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(
+          child: FushiTextButton.icon(
             onPressed: _addBlock,
-            icon: const Icon(Icons.add),
+            icon: const FushiIcon(Icons.add),
             label: Text(t.anki_lapis_visual_block_add),
           ),
         ),
         if (selected != null) ...<Widget>[
           SizedBox(height: tokens.spacing.gap),
-          DropdownMenu<String>(
+          FushiDropdownMenu<String>(
             key: ValueKey<String>(
               'lapis-block-anchor-${selected.id}-${selected.anchor.wireName}',
             ),
@@ -1354,7 +1338,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
 
   /// 卡片区块位置。三项都直接映射 vendored Lapis 自己的 user settings 变量
   /// （见 [LapisVisualLayout]）——空值 = 不覆写 = 保持出厂布局。
-  Widget _buildLayoutSection(FushiDesignTokens tokens) => ExpansionTile(
+  Widget _buildLayoutSection(FushiDesignTokens tokens) => FushiExpansionTile(
         tilePadding: EdgeInsets.zero,
         // top 不能是 0：outline 输入框的浮动 label 竖直居中压在顶边框线上，约半个
         // 字高（实测 5.5px）画在自身 RenderBox **外面**，而 ExpansionTile 用
@@ -1364,7 +1348,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           top: tokens.spacing.gap,
           bottom: tokens.spacing.gap,
         ),
-        leading: const Icon(Icons.dashboard_customize_outlined),
+        leading: const FushiIcon(Icons.dashboard_customize_outlined),
         title: Text(t.anki_lapis_visual_layout),
         subtitle: Text(t.anki_lapis_visual_layout_hint),
         initiallyExpanded: !_layout.isDefault,
@@ -1448,7 +1432,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     required List<MapEntry<String, String>> options,
     required ValueChanged<String> onSelected,
   }) =>
-      DropdownMenu<String>(
+      FushiDropdownMenu<String>(
         key: ValueKey<String>('lapis-layout-$label-$selected'),
         expandedInsets: EdgeInsets.zero,
         initialSelection: selected,
@@ -1505,7 +1489,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                   ? t.anki_field_not_mapped
                   : _mappingFor(ankiField),
             ),
-            trailing: const Icon(Icons.edit_outlined),
+            trailing: const FushiIcon(Icons.edit_outlined),
             onTap: () => unawaited(_editMapping(ankiField)),
           ),
       ],
@@ -1582,7 +1566,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
     Color picked = initial;
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.anki_lapis_visual_color_picker_title),
         content: SingleChildScrollView(
           child: ColorPicker(
@@ -1596,11 +1580,11 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_ok),
           ),
@@ -1619,7 +1603,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   }) =>
       Column(
         children: <Widget>[
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
             title: Text(value == null ? title : '$title · ${value}px'),
             value: value != null,
@@ -1627,7 +1611,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
                 onChanged(enabled ? enabledValue : null),
           ),
           if (value != null)
-            Slider(
+            FushiSlider(
               value: value.toDouble(),
               min: 0,
               max: max.toDouble(),
@@ -1663,7 +1647,7 @@ class _LapisColorChoice extends StatelessWidget {
     final Color color = colorHex == null || showPaletteIcon
         ? tokens.surfaces.overlay
         : lapisColorFromHex(colorHex!);
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: InkResponse(
         onTap: onTap,
@@ -1684,14 +1668,14 @@ class _LapisColorChoice extends StatelessWidget {
               ),
             ),
             child: switch ((showPaletteIcon, selected, colorHex)) {
-              (true, _, _) => const Icon(Icons.palette_outlined, size: 20),
-              (_, true, _) => Icon(
+              (true, _, _) => const FushiIcon(Icons.palette_outlined, size: 20),
+              (_, true, _) => FushiIcon(
                   Icons.check,
                   color: color.computeLuminance() > 0.55
                       ? colors.onSurface
                       : colors.surface,
                 ),
-              (_, _, null) => const Icon(Icons.format_color_reset_outlined),
+              (_, _, null) => const FushiIcon(Icons.format_color_reset_outlined),
               _ => null,
             },
           ),

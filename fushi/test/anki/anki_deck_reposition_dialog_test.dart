@@ -6,6 +6,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import '../helpers/glass_unwrap.dart';
 
 // 「按词频重排新卡」弹窗的行为守卫：
 //   - 词典来源下没有装载词频词典 → 预览按钮禁用并给出原因；切到「笔记字段」
@@ -98,28 +99,20 @@ void main() {
   testWidgets('没有词频词典时预览禁用；切到笔记字段来源后可用', (WidgetTester tester) async {
     await _pumpDialog(tester, loaded: const <String>[]);
     expect(find.text(t.anki_reposition_dicts_none), findsOneWidget);
-    FilledButton preview = tester.widget<FilledButton>(
-      find.byKey(const Key('anki_reposition_preview')),
-    );
+    FilledButton preview = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const Key('anki_reposition_preview'))),);
     expect(preview.onPressed, isNull);
 
     await tester.tap(find.text(t.anki_reposition_source_field));
     await tester.pumpAndSettle();
     expect(find.text(t.anki_reposition_source_field_hint), findsOneWidget);
-    preview = tester.widget<FilledButton>(
-      find.byKey(const Key('anki_reposition_preview')),
-    );
+    preview = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const Key('anki_reposition_preview'))),);
     expect(preview.onPressed, isNotNull);
   });
 
   testWidgets('按词典名渲染 chip，勾选状态从设置恢复，多本时显示复合方式', (WidgetTester tester) async {
     await _pumpDialog(tester, loaded: const <String>['JPDB', 'BCCWJ']);
-    final FilterChip jpdb = tester.widget<FilterChip>(
-      find.byKey(const Key('anki_reposition_dict_JPDB')),
-    );
-    final FilterChip bccwj = tester.widget<FilterChip>(
-      find.byKey(const Key('anki_reposition_dict_BCCWJ')),
-    );
+    final FilterChip jpdb = tester.widget<FilterChip>(glassUnwrap<FilterChip>(find.byKey(const Key('anki_reposition_dict_JPDB'))),);
+    final FilterChip bccwj = tester.widget<FilterChip>(glassUnwrap<FilterChip>(find.byKey(const Key('anki_reposition_dict_BCCWJ'))),);
     expect(jpdb.selected, isTrue);
     expect(bccwj.selected, isFalse);
     // 只勾一本：复合方式无意义，不显示。
@@ -128,9 +121,7 @@ void main() {
     await tester.tap(find.byKey(const Key('anki_reposition_dict_BCCWJ')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('anki_reposition_aggregate')), findsOneWidget);
-    final FilledButton preview = tester.widget<FilledButton>(
-      find.byKey(const Key('anki_reposition_preview')),
-    );
+    final FilledButton preview = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const Key('anki_reposition_preview'))),);
     expect(preview.onPressed, isNotNull);
   });
 

@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
+import '../helpers/glass_unwrap.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 2026-10 体验优化：视频库筛选空态（视频自己的文案 + 一键清除）与窄屏搜索行
@@ -162,7 +163,13 @@ void main() {
     await tester.tap(clear);
     await tester.pumpAndSettle();
 
-    expect(tester.widget<TextField>(searchField()).controller!.text, isEmpty);
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(searchField()))
+          .controller!
+          .text,
+      isEmpty,
+    );
     expect(find.text(t.video_library_filter_empty), findsNothing);
     // 系列归属也被复位成「全部」：合集里的集与散片都回来。
     expect(cardOf('video/ep1'), findsOneWidget);

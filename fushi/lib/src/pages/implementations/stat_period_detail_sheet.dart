@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -291,7 +292,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
       SizedBox(height: tokens.spacing.card),
       Row(
         children: <Widget>[
-          Icon(icon, size: 16, color: tokens.type.metadata.color),
+          FushiIcon(icon, size: 16, color: tokens.type.metadata.color),
           SizedBox(width: tokens.spacing.gap / 2),
           Text(label, style: tokens.type.metadata),
         ],

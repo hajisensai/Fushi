@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 
@@ -115,7 +116,7 @@ class _CollectionRelationsSectionState
         Overlay.of(context).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
-    final _RelationMenuAction? action = await showMenu<_RelationMenuAction>(
+    final _RelationMenuAction? action = await showFushiMenu<_RelationMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromPoints(anchor, anchor),
@@ -127,7 +128,7 @@ class _CollectionRelationsSectionState
             value: _RelationMenuAction.download,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.download_outlined, size: 20),
+                const FushiIcon(Icons.download_outlined, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_relation_download),
               ],
@@ -137,7 +138,7 @@ class _CollectionRelationsSectionState
           value: _RelationMenuAction.bind,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.link, size: 20),
+              const FushiIcon(Icons.link, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_relation_bind),
             ],
@@ -168,11 +169,11 @@ class _CollectionRelationsSectionState
     if (!mounted) return;
     final MediaCollectionRow? chosen = await showAppDialog<MediaCollectionRow>(
       context: context,
-      builder: (BuildContext context) => SimpleDialog(
+      builder: (BuildContext context) => FushiSimpleDialog(
         title: Text(t.collection_relation_bind),
         children: <Widget>[
           for (final MediaCollectionRow c in candidates)
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.of(context).pop(c),
               child: Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
@@ -261,7 +262,7 @@ class _CollectionRelationsSectionState
                       PositionedDirectional(
                         bottom: 6,
                         end: 6,
-                        child: Icon(
+                        child: FushiIcon(
                           Icons.link,
                           size: 16,
                           color: Colors.white.withValues(alpha: 0.9),

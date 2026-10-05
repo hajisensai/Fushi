@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show hdrHostActiveGlobal;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:window_manager/window_manager.dart' show DragToMoveArea;
 
 /// 桌面自绘顶栏挂在 Navigator 外，`Theme.of` 只读得到根主题；阅读器的纸色是
 /// 预设色（ecru `#F7F6EB`），与种子色生成的 `surface` 不同源——不上报，正文顶上
@@ -58,16 +59,21 @@ void main() {
     return scheme;
   }
 
+  // 顶栏不再显示页面标题（用户 2026-10-04），按拖动区找标题行容器。
   Color? captionColor(WidgetTester tester) => tester
       .widget<Container>(
         find
-            .ancestor(of: find.text('Fushi'), matching: find.byType(Container))
+            .ancestor(
+              of: find.byType(DragToMoveArea),
+              matching: find.byType(Container),
+            )
             .first,
       )
       .color;
 
+  /// 窗口按钮的前景色来源：页面上报的 foreground（null = 根主题 token）。
   Color? titleColor(WidgetTester tester) =>
-      DefaultTextStyle.of(tester.element(find.text('Fushi'))).style.color;
+      FushiDesktopTitleBar.pageColors.value?.foreground;
 
   Widget reader() => const FushiTitleBarColorScope(
     colors: readerColors,
@@ -77,7 +83,7 @@ void main() {
   testWidgets('没有页面上报时顶栏用根主题 surface', (WidgetTester tester) async {
     final ColorScheme scheme = await pumpShell(tester, const Scaffold());
     expect(captionColor(tester), scheme.surface);
-    expect(titleColor(tester), scheme.onSurface);
+    expect(titleColor(tester), isNull);
     expect(
       scheme.surface,
       isNot(paper),

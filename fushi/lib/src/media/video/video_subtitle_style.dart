@@ -288,6 +288,32 @@ SubtitleLayerVAnchor? resolveLayerForcedAnchor({
 /// 纯黑，实际可见透明度由 opacity 决定。
 const Color kDefaultSubtitleBackgroundColor = Color(0xFF000000);
 
+/// 字幕正文行高（`TextStyle.height`）。播放页 [VideoSubtitleOverlay] 与设置页的
+/// 字幕样式预览（`SubtitleStylePreview`）读同一个常量——预览要和真字幕同一套几何，
+/// 不能各写一份字面量后慢慢漂开。
+const double kVideoSubtitleLineHeight = 1.3;
+
+/// 字幕盒（背景底色那一块）的内边距与圆角，overlay 与设置预览同源（理由同上）。
+const EdgeInsets kVideoSubtitleBoxPadding = EdgeInsets.symmetric(
+  horizontal: 12,
+  vertical: 6,
+);
+const double kVideoSubtitleBoxRadius = 6;
+
+/// CSS 数字字重（100..900）→ [FontWeight]，越界夹到两端。overlay 的默认外观与
+/// 设置预览共用这一个换算。
+FontWeight videoSubtitleFontWeight(int value) {
+  final int index = ((value.clamp(100, 900) ~/ 100).clamp(1, 9)) - 1;
+  return FontWeight.values[index];
+}
+
+/// 字幕样式的**未落盘预览态**：设置里拖动字号 / 阴影 / 位置等滑条时，松手前样式
+/// 只经 `previewVideoSubtitleStyle` 发给播放页，不写偏好；设置页的字幕样式预览
+/// 没有播放页可问，就听这里。非 null = 正在拖动中的样式；落盘后清回 null，预览
+/// 回到读偏好（偏好仓库的通知会带它重建）。
+final ValueNotifier<VideoSubtitleStyle?> videoSubtitleStyleDraft =
+    ValueNotifier<VideoSubtitleStyle?>(null);
+
 /// Video subtitle appearance persisted as app preferences.
 ///
 /// The default is a high-contrast caption look: fixed white text with a thick

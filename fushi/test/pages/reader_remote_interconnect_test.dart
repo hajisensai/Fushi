@@ -26,6 +26,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -219,9 +220,9 @@ void main() {
       final InterconnectDownloadManager manager = ProviderScope.containerOf(
         tester.element(find.byType(ReaderFushiHistoryPage)),
       ).read(interconnectDownloadManagerProvider);
-      final VoidCallback retryDownload = tester.widget<IconButton>(find.byKey(
+      final VoidCallback retryDownload = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
         const ValueKey<String>('remote_book_download_Download_fixture'),
-      )).onPressed!;
+      ))).onPressed!;
       await tester.runAsync(() async {
         await tester.tap(
           find.byKey(

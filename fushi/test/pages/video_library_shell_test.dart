@@ -11,6 +11,7 @@ import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -315,7 +316,7 @@ void main() {
     expect(tester.state(stripFinder), same(before),
         reason: '页签必须是同一个 State 换父节点，而不是新挂一份');
     final TabController controller =
-        tester.widget<TabBar>(find.byType(TabBar)).controller!;
+        tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
     expect(controller.index, 3);
     expect(controller.animation!.value, greaterThan(0));
     expect(controller.animation!.value, lessThan(3),
@@ -347,7 +348,7 @@ void main() {
     expect(tester.state(stripFinder), same(before),
         reason: '切回本地库也必须是同一个 State 换父节点');
     final TabController controller =
-        tester.widget<TabBar>(find.byType(TabBar)).controller!;
+        tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
     expect(controller.index, 0);
     expect(controller.animation!.value, 0);
   });

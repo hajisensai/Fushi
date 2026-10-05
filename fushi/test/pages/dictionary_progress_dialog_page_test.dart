@@ -6,6 +6,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_delete_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_import_page.dart';
 
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import '../helpers/test_platform_services.dart';
 
 void main() {
@@ -47,7 +48,8 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // MD3 下不定态进度是 Expressive 加载指示（变形形状），取代原圆形进度。
+    expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
   });
 
   testWidgets('dictionary delete progress fits a compact desktop window', (
@@ -66,6 +68,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    // MD3 下不定态进度是 Expressive 加载指示（变形形状），取代原圆形进度。
+    expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
   });
 }

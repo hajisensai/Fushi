@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -394,7 +395,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
         final Widget? divider = showDivider
-            ? VerticalDivider(
+            ? FushiVerticalDivider(
                 width: 1,
                 thickness: 1,
                 color: resolvedDividerColor,

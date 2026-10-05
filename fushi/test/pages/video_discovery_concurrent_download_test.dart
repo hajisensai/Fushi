@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 用户反馈：「感觉下的源不对劲，想再下一个，但是下不了，只能取消或者等下载结束…
 /// 完成的不影响，还可以下，但是下载中的不行」。
@@ -110,7 +111,7 @@ void main() {
         find.byKey(const ValueKey<String>('video-discovery-search-resource'));
     expect(button, findsOneWidget);
     // key 就挂在 OutlinedButton.icon 产出的 OutlinedButton 上（不是它的祖先）。
-    expect(tester.widget<OutlinedButton>(button).onPressed, isNotNull,
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(button)).onPressed, isNotNull,
         reason: '下载进行中这颗按钮必须是 enabled 的。');
 
     await tester.tap(button);

@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 
 import '../torrent/nyaa_html_fixture.dart';
+import '../helpers/glass_unwrap.dart';
 
 class _TimeoutProvider implements VideoResourceProvider {
   @override
@@ -159,9 +160,7 @@ void main() {
 
     expect(resolveCalls, 1);
     // 预填词跟着换成补齐后的首选罗马字。
-    final TextField field = tester.widget<TextField>(
-      find.byKey(const ValueKey<String>('video-resource-query')),
-    );
+    final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('video-resource-query'))),);
     expect(field.controller!.text, 'Sousou no Frieren');
     expect(queries, <String>['Sousou no Frieren', '葬送のフリーレン']);
     expect(

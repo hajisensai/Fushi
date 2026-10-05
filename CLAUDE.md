@@ -16,6 +16,7 @@
   - 普通任务 agent 不主动 rebase/merge `develop`；integration owner 统一读取 claims、决定合并顺序、更新 `develop`、跑 broad verification，并将完成/阻塞的 claim 移到 `done/` / `blocked/`。
 - 多使用子代理：遇到 2 个以上可独立推进的分析、审查、文件定位、测试诊断或实现子任务时，优先派发子代理并行处理；主代理负责整合结论、控制范围、复核关键证据和最终提交。不要把需要共享同一脏文件或强顺序依赖的步骤硬拆给多个子代理。子代理后台派发、主代理不空等，绝不让两个代理重复做同一子任务；难度分级、标准并行时间线和空等禁止清单见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md)。
 - 根因修复：遇到功能异常、测试失败、运行时报错或用户要求修复，先复现或沿真实代码路径定位，再修数据结构、状态同步、生命周期、平台边界或依赖契约。不允许用延迟、重试、吞异常、硬编码、特例分支掩盖症状；只有外部系统或平台限制不可控时才允许临时兼容层，并说明影响范围和清理条件。
+- **新模块 / 重设计页面必须带动效（用户 2026-10-04 拍板）**：动效是 UI 交付的一部分，不能只改静态样式。列表 / 网格错峰进场用 `FushiEntranceScope` + `fushiStaggeredItemBuilder` / `FushiStaggeredEntrance`（守卫 `fushi/test/**/fushi_entrance_wiring_guard_test.dart`），按压 / 悬停用 `FushiPressScale` / `FushiHoverLift`，页面切换走现有共享轴转场，时长一律取 `fushiMotionDuration` / `FushiMotion`（墨水屏与系统「减弱动态效果」自动归零）；不另立动效常量。MD3 与 Apple 两套设计系统都要接。
 - 函数和新增 Dart helper 要有明确类型签名。
 - 不从零重写现有功能；在当前实现上删减、合并、修正。
 - 发现问题直接说，不要为了顺滑把风险说轻。

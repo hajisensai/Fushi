@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
@@ -231,6 +232,16 @@ const List<double> _kFontScaleSteps = <double>[
 /// 默认字号档位（1.0×）。持久化 key 从未写过时的初值，与 `preferences_repository.dart`
 /// 的 `videoSubtitleListFontScaleIndex` 默认值一致。
 const int _kDefaultFontScaleIndex = 1;
+
+/// 头部五枚图标按钮（搜索 / 字号 ± / 自动滚动 / 关闭）的 MD3 外形：40×40 命中区、
+/// 不再外扩到 48。MD3 Expressive 的 XS 图标按钮默认把点按区补到 48，五枚就是
+/// 240 + 组间 8，面板最窄档（240，移动端 panelWidth 下限）的头部放不下、整行右溢；
+/// 40 与改版前 compact IconButton 的占位一致。玻璃设计系统不读这几项尺寸。
+const ButtonStyle _kHeaderIconButtonStyle = ButtonStyle(
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  minimumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
+  maximumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
+);
 
 /// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形 +
 /// 浮层锚点矩形。比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier
@@ -1316,7 +1327,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             _buildHeader(cs, cues),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Expanded(
               // BUG-878：Ctrl / ⌘ + 滚轮缩字号（浏览器式）。Listener 不消费滚轮信号，
               // 裸滚轮照常下探给 ListView 滚动；Ctrl 按住时 ListView 已切禁滚物理，故只缩
@@ -1413,59 +1424,75 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                 ),
               ),
-              // BUG-1907：搜索开关。放第一行是因为它是**列表模式**开关，与字号/自动
-              // 滚动/关闭同族；导出则放第二行「收藏 N 句」旁边（它导的就是那批句子）。
-              IconButton(
-                tooltip: t.video_subtitle_list_search,
-                icon: Icon(
-                  _searchOpen ? Icons.search_off : Icons.search,
-                  size: iconSize,
-                ),
-                color: _searchOpen ? cs.primary : cs.onSurfaceVariant,
-                onPressed: () => _toggleSearch(),
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                tooltip: t.video_subtitle_list_font_smaller,
-                icon: Icon(Icons.text_decrease, size: iconSize),
-                color: _fontScaleIndex > 0 ? cs.onSurfaceVariant : cs.outline,
-                onPressed: _fontScaleIndex > 0 ? () => _stepFont(-1) : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                tooltip: t.video_subtitle_list_font_larger,
-                icon: Icon(Icons.text_increase, size: iconSize),
-                color: _fontScaleIndex < _kFontScaleSteps.length - 1
-                    ? cs.onSurfaceVariant
-                    : cs.outline,
-                onPressed: _fontScaleIndex < _kFontScaleSteps.length - 1
-                    ? () => _stepFont(1)
-                    : null,
-                visualDensity: VisualDensity.compact,
-              ),
-              IconButton(
-                tooltip: t.video_subtitle_list_auto_scroll,
-                icon: Icon(
-                  _autoScroll
-                      ? Icons.vertical_align_center
-                      : Icons.pause_circle_outline,
-                  size: iconSize,
-                ),
-                color: _autoScroll ? cs.primary : cs.onSurfaceVariant,
-                onPressed: _toggleAutoScroll,
-                visualDensity: VisualDensity.compact,
-              ),
-              // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
-              // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
-              // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
-              // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
-              // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
-              IconButton(
-                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                icon: Icon(Icons.close, size: iconSize),
-                color: cs.onSurfaceVariant,
-                onPressed: widget.onClose,
-                visualDensity: VisualDensity.compact,
+              // 列表模式开关一组（搜索 / 字号 / 自动滚动），关闭单独一组：
+              // MD3 是无底一排，Apple 下各成一枚玻璃胶囊。
+              FushiToolbar(
+                dense: true,
+                groups: <List<Widget>>[
+                  <Widget>[
+                    // BUG-1907：搜索开关。放第一行是因为它是**列表模式**开关，与字号/自动
+                    // 滚动/关闭同族；导出则放第二行「收藏 N 句」旁边（它导的就是那批句子）。
+                    FushiIconButtonControl(
+                      tooltip: t.video_subtitle_list_search,
+                      icon: FushiIcon(
+                        _searchOpen ? Icons.search_off : Icons.search,
+                        size: iconSize,
+                      ),
+                      color: _searchOpen ? cs.primary : cs.onSurfaceVariant,
+                      onPressed: () => _toggleSearch(),
+                      visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
+                    ),
+                    FushiIconButtonControl(
+                      tooltip: t.video_subtitle_list_font_smaller,
+                      icon: FushiIcon(Icons.text_decrease, size: iconSize),
+                      color: _fontScaleIndex > 0 ? cs.onSurfaceVariant : cs.outline,
+                      onPressed: _fontScaleIndex > 0 ? () => _stepFont(-1) : null,
+                      visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
+                    ),
+                    FushiIconButtonControl(
+                      tooltip: t.video_subtitle_list_font_larger,
+                      icon: FushiIcon(Icons.text_increase, size: iconSize),
+                      color: _fontScaleIndex < _kFontScaleSteps.length - 1
+                          ? cs.onSurfaceVariant
+                          : cs.outline,
+                      onPressed: _fontScaleIndex < _kFontScaleSteps.length - 1
+                          ? () => _stepFont(1)
+                          : null,
+                      visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
+                    ),
+                    FushiIconButtonControl(
+                      tooltip: t.video_subtitle_list_auto_scroll,
+                      icon: FushiIcon(
+                        _autoScroll
+                            ? Icons.vertical_align_center
+                            : Icons.pause_circle_outline,
+                        size: iconSize,
+                      ),
+                      color: _autoScroll ? cs.primary : cs.onSurfaceVariant,
+                      onPressed: _toggleAutoScroll,
+                      visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
+                    ),
+                  ],
+                  <Widget>[
+                    // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
+                    // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
+                    // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
+                    // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
+                    // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
+                    FushiIconButtonControl(
+                      tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                      icon: FushiIcon(Icons.close, size: iconSize),
+                      color: cs.onSurfaceVariant,
+                      onPressed: widget.onClose,
+                      visualDensity: VisualDensity.compact,
+                      style: _kHeaderIconButtonStyle,
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -1475,7 +1502,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 child: HorizontalDragScrollable(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: SegmentedButton<VideoSubtitleListFilter>(
+                    child: FushiSegmentedButton<VideoSubtitleListFilter>(
                       showSelectedIcon: false,
                       segments: VideoSubtitleListFilter.values
                           .map(
@@ -1502,11 +1529,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
               if (_filter == VideoSubtitleListFilter.favorites &&
                   widget.onExportFavorites != null)
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.video_subtitle_list_export_favorites,
                   // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
                   // 收藏夹页的导出按钮同此约定）。
-                  icon: Icon(Icons.share_outlined, size: iconSize),
+                  icon: FushiIcon(Icons.share_outlined, size: iconSize),
                   color: cs.onSurfaceVariant,
                   visualDensity: VisualDensity.compact,
                   onPressed: _favoriteCueCount(cues) == 0
@@ -1539,7 +1566,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           if (_searchOpen)
             Padding(
               padding: const EdgeInsets.only(top: 6, right: 12),
-              child: TextField(
+              child: FushiTextFieldControl(
                 controller: _searchController,
                 focusNode: _searchFocusNode,
                 onChanged: _onSearchChanged,
@@ -1549,17 +1576,17 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   isDense: true,
                   hintText: t.video_subtitle_list_search_hint,
                   hintStyle: TextStyle(fontSize: widget.fontSize - 1),
-                  prefixIcon: Icon(Icons.search, size: widget.fontSize + 2),
+                  prefixIcon: FushiIcon(Icons.search, size: widget.fontSize + 2),
                   prefixIconConstraints: BoxConstraints(
                     minWidth: widget.fontSize + 14,
                     minHeight: widget.fontSize + 2,
                   ),
                   suffixIcon: _searchQuery.isEmpty
                       ? null
-                      : IconButton(
+                      : FushiIconButtonControl(
                           tooltip: MaterialLocalizations.of(context)
                               .cancelButtonLabel,
-                          icon: Icon(Icons.close, size: widget.fontSize + 2),
+                          icon: FushiIcon(Icons.close, size: widget.fontSize + 2),
                           visualDensity: VisualDensity.compact,
                           onPressed: () {
                             _searchController.clear();
@@ -1622,7 +1649,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const CircularProgressIndicator(),
+            const FushiCircularProgressIndicator(),
             const SizedBox(height: 16),
             Text(
               widget.loadingHint ?? widget.emptyHint,
@@ -1656,10 +1683,18 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 行内实心星标记，与两种瞬态背景正交叠加（BUG-264）。背景优先级仍为
     // current > hover。
     final bool favorited = widget.isCueFavorited(cue);
-    final Color tsColor = selected
-        ? cs.onPrimaryContainer
-        : cs.onSurfaceVariant;
-    final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
+    // 当前行前景色与 SubtitleTranscriptRow 的当前行底色成对（MD3 tonal 容器 /
+    // Apple 中性填充），由共享行统一给出。
+    final Color tsColor = SubtitleTranscriptRow.secondaryColorOf(
+      context,
+      cs,
+      selected: selected,
+    );
+    final Color textColor = SubtitleTranscriptRow.textColorOf(
+      context,
+      cs,
+      selected: selected,
+    );
     return MouseRegion(
       onEnter: (_) => setState(() => _hoveredIndex = index),
       onExit: (_) {
@@ -1729,8 +1764,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     bool selected,
     bool favorited,
   ) {
-    final Color iconColor =
-        selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
+    final Color iconColor = SubtitleTranscriptRow.secondaryColorOf(
+      context,
+      cs,
+      selected: selected,
+    );
     final double iconSize = _effectiveFontSize + 2;
     final bool copied = rawIndex == _copiedRawIndex;
     return Row(

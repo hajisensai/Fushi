@@ -229,25 +229,35 @@ void main() {
           .width;
     }
 
-    testWidgets('选中时从 32 横向展开到 64', (WidgetTester tester) async {
+    // MD3 Expressive 刷新：完整药丸宽 = AdaptiveNavTileMetrics.fullPillWidth（56）。
+    testWidgets('选中时从 32 横向展开到 56', (WidgetTester tester) async {
       await tester.pumpWidget(bar(0));
       await tester.pumpAndSettle();
-      expect(pillWidth(tester, Icons.home), 64);
+      expect(
+        pillWidth(tester, Icons.home),
+        AdaptiveNavTileMetrics.fullPillWidth,
+      );
       expect(pillWidth(tester, Icons.book_outlined), 32);
       await tester.pumpWidget(bar(1));
       await tester.pump(const Duration(milliseconds: 40));
       final double mid = pillWidth(tester, Icons.book);
       expect(mid, greaterThan(32));
-      expect(mid, lessThan(64));
+      expect(mid, lessThan(AdaptiveNavTileMetrics.fullPillWidth));
       await tester.pumpAndSettle();
-      expect(pillWidth(tester, Icons.book), 64);
+      expect(
+        pillWidth(tester, Icons.book),
+        AdaptiveNavTileMetrics.fullPillWidth,
+      );
     });
 
     testWidgets('减弱动态效果下同帧到位', (WidgetTester tester) async {
       await tester.pumpWidget(bar(0, reduceMotion: true));
       await tester.pumpWidget(bar(1, reduceMotion: true));
       await tester.pump();
-      expect(pillWidth(tester, Icons.book), 64);
+      expect(
+        pillWidth(tester, Icons.book),
+        AdaptiveNavTileMetrics.fullPillWidth,
+      );
     });
   });
 

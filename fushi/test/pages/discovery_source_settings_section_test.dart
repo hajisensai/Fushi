@@ -15,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 「发现来源」开关区：它是 `discovery_disabled_sources` 这个偏好的**唯一** UI，
 /// 所以断言必须落到偏好本身（写穿），而不是 widget 的局部状态。
@@ -99,7 +100,7 @@ void main() {
       await tester.ensureVisible(row);
       await tester.pumpAndSettle();
       expect(
-        tester.widget<SwitchListTile>(row).value,
+        tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(row)).value,
         source.id == 'sukebei' ? isFalse : isTrue,
         reason: '${source.id} default',
       );
@@ -161,7 +162,7 @@ void main() {
     // 停用清单是**唯一**状态：开关写的就是发现页聚合读的那个偏好。
     expect(appModel.discoveryDisabledSourceIds, contains('nyaa'));
     expect(prefs.discoveryDisabledSources.split(','), contains('nyaa'));
-    expect(tester.widget<SwitchListTile>(nyaa).value, isFalse);
+    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(nyaa)).value, isFalse);
 
     // 出厂就停用的 sukebei 不能被这次写入顺手打开。
     expect(appModel.discoveryDisabledSourceIds, contains('sukebei'));
@@ -169,6 +170,6 @@ void main() {
     await tester.tap(nyaa);
     await tester.pumpAndSettle();
     expect(appModel.discoveryDisabledSourceIds, isNot(contains('nyaa')));
-    expect(tester.widget<SwitchListTile>(nyaa).value, isTrue);
+    expect(tester.widget<SwitchListTile>(glassUnwrap<SwitchListTile>(nyaa)).value, isTrue);
   });
 }

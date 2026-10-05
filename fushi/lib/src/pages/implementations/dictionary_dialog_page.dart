@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show PlatformException;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as path;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -16,6 +17,7 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
@@ -178,14 +180,14 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('dict-download-select-all'),
               onPressed: selectable.isEmpty
                   ? null
                   : () => onCheckedChanged(Set<int>.of(selectable)),
               child: Text(t.batch_select_all),
             ),
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('dict-download-invert-selection'),
               onPressed: selectable.isEmpty
                   ? null
@@ -234,7 +236,7 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
           children: <Widget>[
             FushiListItem(
               minHeight: 52,
-              leading: Checkbox(
+              leading: FushiCheckbox(
                 key: ValueKey<String>(
                   'dict-download-category-check-${cat.name}',
                 ),
@@ -261,7 +263,7 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              trailing: Icon(
+              trailing: FushiIcon(
                 expanded ? Icons.expand_less : Icons.expand_more,
                 color: tokens.surfaces.onVariant,
               ),
@@ -301,7 +303,7 @@ class DictionaryCatalogSelectionList extends StatelessWidget {
       ),
       selected: selected,
       onTap: () => _toggleOne(idx, !selected),
-      leading: Checkbox(
+      leading: FushiCheckbox(
         value: selected,
         onChanged: (bool? value) => _toggleOne(idx, value ?? false),
       ),
@@ -365,7 +367,11 @@ class _DictionaryDialogPageState extends BasePageState {
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
+    // Apple 设计系统（iOS 26 / macOS 26）与 Cupertino 渲染一样把导入 / 更新 / 清空
+    // 放进标题栏动作（桌面一排玻璃圆钮、窄屏「…」溢出菜单），不再在内容层铺一排
+    // MD3 tonal 按钮——iOS 的「添加」类动作住在导航栏，内容层只放列表。
+    final bool cupertino =
+        isCupertinoPlatform(context) || isGlassDesign(context);
     final bool compact = MediaQuery.sizeOf(context).width < 480;
     // 桌面三端：整页包一层文件拖放区，把拖入的词典包接到与「导入词典」按钮同源的
     // 导入路径（TODO-059）。移动端 FushiFileDropTarget 直接透传 child，零开销。
@@ -419,63 +425,53 @@ class _DictionaryDialogPageState extends BasePageState {
         top: tokens.spacing.gap + tokens.spacing.gap / 2,
         bottom: tokens.spacing.gap,
       ),
-      child: FushiCard(
-        padding: EdgeInsets.zero,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            SwitchListTile.adaptive(
-              secondary: const Icon(Icons.update_outlined),
-              title: Text(t.dict_auto_update),
-              subtitle: Text(t.dict_auto_update_hint),
-              value: autoUpdate,
-              onChanged: (bool value) async {
-                await appModel.setAutoUpdateDictionaries(value);
+      // 设置分组（不是自绘卡片里塞 SwitchListTile + 裸分段 + 列表项）：MD3 下是
+      // Android 16 分段分组卡，Apple 下是 inset grouped 分组 + 行分隔线，与设置
+      // 页其它分组同一套行组件，开关 / 分段 / 只读行各自按设计系统渲染。
+      child: AdaptiveSettingsSection(
+        children: <Widget>[
+          AdaptiveSettingsSwitchRow(
+            title: t.dict_auto_update,
+            // 开着时下一行的分段标题就是这句说明，不再在开关下重复一遍。
+            subtitle: autoUpdate ? null : t.dict_auto_update_hint,
+            icon: Icons.update_outlined,
+            showIcon: true,
+            value: autoUpdate,
+            onChanged: (bool value) async {
+              await appModel.setAutoUpdateDictionaries(value);
+              if (mounted) setState(() {});
+            },
+          ),
+          if (autoUpdate)
+            AdaptiveSettingsSegmentedRow<DictionaryUpdateInterval>(
+              title: t.dict_auto_update_hint,
+              controlBelow: false,
+              segments: <ButtonSegment<DictionaryUpdateInterval>>[
+                ButtonSegment<DictionaryUpdateInterval>(
+                  value: DictionaryUpdateInterval.daily,
+                  label: Text(t.dict_update_interval_daily),
+                ),
+                ButtonSegment<DictionaryUpdateInterval>(
+                  value: DictionaryUpdateInterval.weekly,
+                  label: Text(t.dict_update_interval_weekly),
+                ),
+                ButtonSegment<DictionaryUpdateInterval>(
+                  value: DictionaryUpdateInterval.monthly,
+                  label: Text(t.dict_update_interval_monthly),
+                ),
+              ],
+              selected: interval,
+              onChanged: (DictionaryUpdateInterval value) async {
+                await appModel.setDictionaryUpdateInterval(value);
                 if (mounted) setState(() {});
               },
             ),
-            if (autoUpdate)
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.gap,
-                  0,
-                  tokens.spacing.gap,
-                  tokens.spacing.gap,
-                ),
-                child: adaptiveSegmentedButton<DictionaryUpdateInterval>(
-                  context: context,
-                  segments: <ButtonSegment<DictionaryUpdateInterval>>[
-                    ButtonSegment<DictionaryUpdateInterval>(
-                      value: DictionaryUpdateInterval.daily,
-                      label: Text(t.dict_update_interval_daily),
-                    ),
-                    ButtonSegment<DictionaryUpdateInterval>(
-                      value: DictionaryUpdateInterval.weekly,
-                      label: Text(t.dict_update_interval_weekly),
-                    ),
-                    ButtonSegment<DictionaryUpdateInterval>(
-                      value: DictionaryUpdateInterval.monthly,
-                      label: Text(t.dict_update_interval_monthly),
-                    ),
-                  ],
-                  selected: <DictionaryUpdateInterval>{interval},
-                  onSelectionChanged:
-                      (Set<DictionaryUpdateInterval> selection) async {
-                    await appModel.setDictionaryUpdateInterval(selection.first);
-                    if (mounted) setState(() {});
-                  },
-                ),
-              ),
-            FushiListItem(
-              minHeight: 44,
-              leading: const Icon(Icons.schedule_outlined, size: 18),
-              title: Text(
-                t.dict_auto_update_last(time: lastUpdateText),
-                style: textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
+          AdaptiveSettingsRow(
+            title: t.dict_auto_update_last(time: lastUpdateText),
+            icon: Icons.schedule_outlined,
+            showIcon: true,
+          ),
+        ],
       ),
     );
   }
@@ -535,9 +531,10 @@ class _DictionaryDialogPageState extends BasePageState {
             icon: Icons.delete_sweep_outlined,
             label: t.dialog_clear_all_dictionaries,
             onTap: showDictionaryClearDialog,
+            // 破坏性动作：与同排按钮同一中性 tonal 底，只把前景换成错误色
+            // （iOS destructive 按钮同口径），不再并排出现一块 errorContainer 色块。
             style: FilledButton.styleFrom(
-              backgroundColor: scheme.errorContainer,
-              foregroundColor: scheme.onErrorContainer,
+              foregroundColor: fushiStatusColor(context, FushiStatusTone.error),
             ),
           ),
         ],
@@ -557,10 +554,10 @@ class _DictionaryDialogPageState extends BasePageState {
     required VoidCallback onTap,
     ButtonStyle? style,
   }) {
-    final Widget button = FilledButton.tonalIcon(
+    final Widget button = FushiFilledButton.tonalIcon(
       onPressed: onTap,
       style: style,
-      icon: Icon(icon, size: 18),
+      icon: FushiIcon(icon, size: 18),
       label: Text(label),
     );
     if (FushiFocusRoot.maybeControllerOf(context) == null) {
@@ -1378,21 +1375,48 @@ class _DictionaryDialogPageState extends BasePageState {
           ),
           child: FushiCard(
             padding: EdgeInsets.zero,
-            child: ValueListenableBuilder<String>(
-              valueListenable: controller.message,
-              builder: (_, String msg, __) => FushiListItem(
-                minHeight: 44,
-                leading: const Icon(Icons.cloud_download_outlined, size: 18),
-                title: Text(
-                  msg.isEmpty ? t.dict_update_checking : msg,
-                  style: textTheme.bodySmall,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                ValueListenableBuilder<String>(
+                  valueListenable: controller.message,
+                  builder: (_, String msg, __) => FushiListItem(
+                    minHeight: 44,
+                    leading: const FushiIcon(
+                      Icons.cloud_download_outlined,
+                      size: 18,
+                    ),
+                    title: Text(
+                      msg.isEmpty ? t.dict_update_checking : msg,
+                      style: textTheme.bodySmall,
+                    ),
+                    titleMaxLines: 2,
+                    trailing: FushiTextButton(
+                      onPressed: _showDownloadProgressDialog,
+                      child: Text(t.dict_download_progress_show),
+                    ),
+                  ),
                 ),
-                titleMaxLines: 2,
-                trailing: TextButton(
-                  onPressed: _showDownloadProgressDialog,
-                  child: Text(t.dict_download_progress_show),
+                // 后台任务的进度直接画在回程条里（MD3 Expressive 波浪进度 / Apple
+                // 细进度条），不必点开进度对话框才知道跑到哪了；没有进度值时是
+                // 不定态。
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.card,
+                    0,
+                    tokens.spacing.card,
+                    tokens.spacing.gap,
+                  ),
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: controller.progress,
+                    builder: (_, double progress, __) =>
+                        FushiLinearProgressIndicator(
+                      value: progress > 0 ? progress : null,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         );
@@ -1533,7 +1557,11 @@ class _DictionaryDialogPageState extends BasePageState {
         if (selectedDictionaries.isEmpty)
           _buildEmptyCategoryRow()
         else
-          _buildDictionaryList(selectedDictionaries),
+          // 进场窗口：首开与切换词典类型时，首屏词典行错峰淡入上移。
+          FushiEntranceScope(
+            replayKey: _selectedType,
+            child: _buildDictionaryList(selectedDictionaries),
+          ),
       ],
     );
   }
@@ -1679,6 +1707,7 @@ class _DictionaryDialogPageState extends BasePageState {
   Widget _buildDictionaryTile({
     required Dictionary dictionary,
     required int index,
+    required int count,
     required bool isLast,
     required VoidCallback onMoveUp,
     required VoidCallback onMoveDown,
@@ -1733,8 +1762,9 @@ class _DictionaryDialogPageState extends BasePageState {
       // 拿满整行剩余宽，不再被右侧控件串抢宽）；第二行 = 副标题；第三行 = 控件串
       // （上/下/Switch/更新/删除）右对齐。彻底消除「窄屏 trailing 抢 title 宽」的
       // 结构（TODO-749/751）。
-      return FushiCard(
-        padding: EdgeInsets.zero,
+      return _buildDictionaryGroupCard(
+        index: index,
+        count: count,
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
@@ -1764,8 +1794,9 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
       );
     }
-    return FushiCard(
-      padding: EdgeInsets.zero,
+    return _buildDictionaryGroupCard(
+      index: index,
+      count: count,
       child: FushiListItem(
         minHeight: 70,
         padding: EdgeInsets.symmetric(
@@ -1789,6 +1820,23 @@ class _DictionaryDialogPageState extends BasePageState {
         // the old three-dot menu does not lose any function (TODO-422).
         trailing: controls,
       ),
+    );
+  }
+
+  /// 词典列表的一行外壳：整张列表读作一个设置分组，而不是一摞各自独立的圆角卡
+  /// （MD3 分段分组 / Apple inset grouped，见共享外壳 [FushiGroupedListItem]）。
+  /// 行间距由 FushiReorderableColumn 的 spacing 统一插入（拖拽浮层不带缝），
+  /// 外壳自己不加缝。
+  Widget _buildDictionaryGroupCard({
+    required int index,
+    required int count,
+    required Widget child,
+  }) {
+    return FushiGroupedListItem(
+      index: index,
+      count: count,
+      includeGap: false,
+      child: child,
     );
   }
 
@@ -1881,19 +1929,18 @@ class _DictionaryDialogPageState extends BasePageState {
     Dictionary dictionary,
     bool enabled,
   ) {
-    final ColorScheme scheme = theme.colorScheme;
     final String tooltip = enabled ? t.options_hide : t.options_show;
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: Semantics(
         button: true,
         toggled: enabled,
         label: tooltip,
-        child: Switch(
+        child: FushiSwitch(
           value: enabled,
+          // 走开关自身的主题配色（MD3 primary 轨 / Apple 系统开关），
+          // 不再自定 primaryContainer 浅色轨——那与全应用其它开关不是一个长相。
           onChanged: (_) => _toggleDictionaryHidden(dictionary),
-          activeThumbColor: scheme.onPrimaryContainer,
-          activeTrackColor: scheme.primaryContainer,
         ),
       ),
     );
@@ -1949,23 +1996,32 @@ class _DictionaryDialogPageState extends BasePageState {
   // （BUG-044）。前者把拖拽反馈渲染在列表自身坐标系、用 globalToLocal 消掉祖先缩放
   // → 任意缩放下都精确跟手、零偏移且视觉一致。上下箭头按钮仍是无障碍/手柄重排路径。
   Widget _buildDictionaryList(List<Dictionary> dictionaries) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiReorderableColumn(
       itemCount: dictionaries.length,
       // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
       // 圆角传卡片半径，让拖拽浮层裁成圆角、不在卡片四角露出底色。
-      spacing: tokens.spacing.rowVertical,
-      feedbackBorderRadius: tokens.radii.cardRadius,
+      // 分组形态（见 _buildDictionaryGroupCard）：MD3 分段的 2px 缝，Apple
+      // inset grouped 无缝（行间靠 separator）。
+      spacing: fushiGroupedListGap(context),
+      feedbackBorderRadius: fushiCardBorderRadius(context),
       keyForIndex: (int index) => ValueKey<String>(dictionaries[index].name),
       // FushiReorderableColumn 的 to 已是最终下标，直接 removeAt(from)/insert(to)。
       onReorder: (int from, int to) =>
           _reorderDictionaries(from, to, dictionaries),
-      itemBuilder: (BuildContext context, int index) => _buildDictionaryTile(
-        dictionary: dictionaries[index],
+      // 逐行错峰进场（窗口见 buildContent 的 FushiEntranceScope）：只改透明度与
+      // 位移、不改布局，列表测高与拖拽浮层复制不受影响；拖拽浮层挂载时窗口早已
+      // 关闭，浮层瞬间出现。
+      itemBuilder: (BuildContext context, int index) => FushiStaggeredEntrance(
         index: index,
-        isLast: index == dictionaries.length - 1,
-        onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
-        onMoveDown: () => _reorderDictionaries(index, index + 1, dictionaries),
+        child: _buildDictionaryTile(
+          dictionary: dictionaries[index],
+          index: index,
+          count: dictionaries.length,
+          isLast: index == dictionaries.length - 1,
+          onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
+          onMoveDown: () =>
+              _reorderDictionaries(index, index + 1, dictionaries),
+        ),
       ),
     );
   }
@@ -2520,7 +2576,7 @@ class DictionaryDownloadProgressDialog extends StatelessWidget {
           children: <Widget>[
             ValueListenableBuilder<double>(
               valueListenable: progressListenable,
-              builder: (_, double progress, __) => LinearProgressIndicator(
+              builder: (_, double progress, __) => FushiLinearProgressIndicator(
                 value: progress > 0 ? progress : null,
               ),
             ),

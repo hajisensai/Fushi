@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 最小 eink 主题：白底黑字的纯黑白 scheme + 扩展标志，与产品 `_buildThemeData`
 /// 的 eink 分支同源（这里只需要颜色角色塌缩这一层）。
@@ -333,9 +334,7 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
       expect(
         tester
-            .widget<CircularProgressIndicator>(
-              find.byType(CircularProgressIndicator),
-            )
+            .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),)
             .value,
         0.5,
       );
@@ -346,16 +345,22 @@ void main() {
         _wrap(
           const Row(
             children: <Widget>[
-              RemoteDownloadProgressBadge(progress: null, tooltip: '下载中'),
+              // 进度态铺满封面（自身撑满父级），给一个封面大小的框。
+              SizedBox(
+                width: 120,
+                height: 180,
+                child: RemoteDownloadProgressBadge(
+                  progress: null,
+                  tooltip: '下载中',
+                ),
+              ),
               RemoteDownloadFailedBadge(tooltip: '失败'),
             ],
           ),
         ),
       );
       final CircularProgressIndicator ring = tester
-          .widget<CircularProgressIndicator>(
-            find.byType(CircularProgressIndicator),
-          );
+          .widget<CircularProgressIndicator>(glassUnwrap<CircularProgressIndicator>(find.byType(CircularProgressIndicator)),);
       expect(ring.value, 0, reason: 'null = 无限转圈，eink 下钉成 0');
       final List<Container> discs = tester
           .widgetList<Container>(find.byType(Container))
@@ -401,7 +406,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final TabBar bar = tester.widget<TabBar>(find.byType(TabBar));
+      final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
       expect(bar.controller?.animationDuration, Duration.zero);
 
       final Finder gradientBox = find.byWidgetPredicate(
@@ -433,7 +438,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final TabBar bar = tester.widget<TabBar>(find.byType(TabBar));
+      final TabBar bar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)));
       expect(bar.controller?.animationDuration, kTabScrollDuration);
     });
   });
@@ -459,7 +464,15 @@ void main() {
         1,
         reason: '书封面只能经 _bookCoverImage 淡入（eink 下它换成直出的 Image）',
       );
-      expect(src, contains('backgroundColor: eink\n'));
+      // 封面进度条的 eink 实心轨道收进共享的 CoverProgressStrip（书架 / 视频库
+      // 同用）：首页必须走它，组件里轨道在 eink 下换成页面底色。
+      expect(src, contains('CoverProgressStrip('));
+      expect(
+        RegExp(
+          r'class CoverProgressStrip[\s\S]*?backgroundColor: eink\s*\?\s*tokens\.surfaces\.page',
+        ).hasMatch(read('lib/src/utils/components/shelf_card_widgets.dart')),
+        isTrue,
+      );
     });
 
     test('学习热力图：eink 用尺寸而非 alpha 编码等级', () {
@@ -480,14 +493,24 @@ void main() {
       expect(src, contains('LibraryFilterChip('));
       expect(
         read('lib/src/pages/implementations/library_filter_dropdown.dart'),
-        contains('color: active && eink ? colors.onSurface : null'),
+        // eink 分支拆成独立的 _buildEink：激活态反色填充前景色。
+        allOf(
+          contains('if (eink) return _buildEink(context, colors);'),
+          contains('color: active ? colors.onSurface : null'),
+        ),
+      );
+      // 两条封面进度条收进共享 CoverProgressStrip（eink 实心页面底色轨道在组件
+      // 里，见上面首页那条的守卫）。
+      expect(
+        'CoverProgressStrip('.allMatches(src).length,
+        2,
+        reason: '横排卡与墙卡两条进度条都要换实心轨道',
       );
       expect(
         RegExp(
-          r'backgroundColor: isEinkTheme\(context\)\s*\?\s*Theme\.of\(context\)\.colorScheme\.surface',
-        ).allMatches(src).length,
-        2,
-        reason: '横排卡与墙卡两条进度条都要换实心轨道',
+          r'class CoverProgressStrip[\s\S]*?backgroundColor: eink\s*\?\s*tokens\.surfaces\.page',
+        ).hasMatch(read('lib/src/utils/components/shelf_card_widgets.dart')),
+        isTrue,
       );
       expect(
         RegExp(

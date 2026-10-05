@@ -27,6 +27,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSegmentedButton;
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -214,10 +216,10 @@ void main() {
     });
 
     expect(find.text(t.manga_remote_ocr_engine), findsOneWidget);
-    final SegmentedButton<MangaOcrEngineId> selector =
-        tester.widget<SegmentedButton<MangaOcrEngineId>>(
-      find.byType(SegmentedButton<MangaOcrEngineId>),
-    );
+    final FushiSegmentedButton<MangaOcrEngineId> selector =
+        tester.widget<FushiSegmentedButton<MangaOcrEngineId>>(
+          find.byType(FushiSegmentedButton<MangaOcrEngineId>),
+        );
     final ButtonSegment<MangaOcrEngineId> remoteSegment = selector.segments
         .singleWhere((ButtonSegment<MangaOcrEngineId> segment) =>
             segment.value == MangaOcrEngineId.pairedHost);

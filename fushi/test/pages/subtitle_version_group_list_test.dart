@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/jimaku_subtitle_dialog.dart';
 import 'package:fushi/src/pages/implementations/subtitle_version_group_list.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 class _FakeCandidate extends VideoSubtitleCandidate {
   _FakeCandidate({
@@ -298,14 +299,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final Checkbox box = tester.widget<Checkbox>(
-        find.descendant(
+      final Checkbox box = tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.descendant(
           of: find.byKey(
             ValueKey<String>('subtitle-file-${member.identityKey}'),
           ),
           matching: find.byType(Checkbox),
-        ),
-      );
+        )),);
       expect(box.value, isTrue);
     });
   });

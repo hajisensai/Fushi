@@ -57,7 +57,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
             await Clipboard.setData(ClipboardData(text: _log));
             if (context.mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(t.copied_to_clipboard)),
+                FushiSnackBar(content: Text(t.copied_to_clipboard)),
               );
             }
           },

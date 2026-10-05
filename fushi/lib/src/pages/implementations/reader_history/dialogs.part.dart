@@ -333,7 +333,7 @@ class BookProfileDialogFrame extends StatelessWidget {
               ),
         footer: Align(
           alignment: Alignment.centerRight,
-          child: TextButton(onPressed: onClose, child: Text(t.dialog_close)),
+          child: FushiTextButton(onPressed: onClose, child: Text(t.dialog_close)),
         ),
       ),
     );
@@ -407,22 +407,33 @@ class _BookProfileOptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    // Apple 设计系统：iOS 单选列表只在选中行尾画强调色对勾，未选中行留空
+    // （透明对勾占位，行高与对齐不跳），不画 Material 的空心圆。
+    final bool glass = !cupertino && isGlassDesign(context);
     final Color selectedColor = cupertino
         ? CupertinoTheme.of(context).primaryColor
+        : glass
+        ? appleColorsOf(context).accent
         : Theme.of(context).colorScheme.primary;
     final Color idleColor = cupertino
         ? CupertinoColors.secondaryLabel.resolveFrom(context)
+        : glass
+        ? Colors.transparent
         : Theme.of(context).colorScheme.onSurfaceVariant;
 
     return AdaptiveSettingsRow(
       title: title,
       onTap: onTap,
-      trailing: Icon(
+      trailing: FushiIcon(
         selected
-            ? (cupertino
+            ? (cupertino || glass
                   ? CupertinoIcons.check_mark
                   : Icons.radio_button_checked)
-            : (cupertino ? CupertinoIcons.circle : Icons.radio_button_off),
+            : (cupertino
+                  ? CupertinoIcons.circle
+                  : glass
+                  ? CupertinoIcons.check_mark
+                  : Icons.radio_button_off),
         size: cupertino ? 20 : 22,
         color: selected ? selectedColor : idleColor,
       ),
@@ -659,7 +670,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                     _BatchTagIntent.keep,
                     keepColor,
                   ),
-                  icon: Icon(
+                  icon: FushiIcon(
                     cupertino
                         ? CupertinoIcons.minus_circle
                         : Icons.remove_circle_outline,
@@ -675,7 +686,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                     _BatchTagIntent.add,
                     addColor,
                   ),
-                  icon: Icon(
+                  icon: FushiIcon(
                     cupertino ? CupertinoIcons.add_circled : Icons.add_circle,
                     size: 16,
                     color: selected == _BatchTagIntent.add ? addColor : null,
@@ -689,7 +700,7 @@ class _BatchTagIntentRow extends StatelessWidget {
                     _BatchTagIntent.remove,
                     removeColor,
                   ),
-                  icon: Icon(
+                  icon: FushiIcon(
                     cupertino
                         ? CupertinoIcons.minus_circle_fill
                         : Icons.do_not_disturb_on,

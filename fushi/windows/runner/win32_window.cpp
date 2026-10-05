@@ -591,7 +591,17 @@ void Win32Window::PaintBackdrop(HDC dc) {
     return;
   }
   RECT rect = GetClientArea();
-  FillRect(dc, &rect, backdrop_brush_);
+  FillRect(dc, &rect,
+           system_backdrop_ ? static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH))
+                            : backdrop_brush_);
+}
+
+void Win32Window::SetSystemBackdrop(bool enabled) {
+  if (system_backdrop_ == enabled) {
+    return;
+  }
+  system_backdrop_ = enabled;
+  FillSurfaceBackdrop();
 }
 
 namespace {

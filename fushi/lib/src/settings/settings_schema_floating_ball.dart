@@ -61,7 +61,7 @@ SettingsDestination buildFloatingBallDestination() {
                 final BuildContext ctx = c.context;
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(
+                    FushiSnackBar(
                       content: Text(t.floating_ball_overlay_permission_needed),
                     ),
                   );

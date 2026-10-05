@@ -157,8 +157,17 @@ void main() {
     expect(find.text(t.game_dashboard), findsOneWidget);
     expect(find.text(t.game_library), findsOneWidget);
     expect(find.text(t.game_capture_workbench_tab), findsOneWidget);
-    expect(find.text(t.settings), findsOneWidget,
-        reason: '800px 页头必须完整呈现首页、游戏库、工作台、设置四个分段');
+    // 2026-10-04 全宽顶栏：摆不下的尾段收进末尾「更多」下拉，不再横滑截断。
+    // 测试字体（每字 1em 宽）下 800px 排不下全部六段，「设置」可能在下拉里——
+    // 不变式是它必须**够得到**：要么直接画在顶栏上，要么在「更多」菜单里。
+    if (find.text(t.settings).evaluate().isEmpty) {
+      await tester.tap(find.byIcon(Icons.expand_more));
+      await tester.pumpAndSettle();
+      expect(find.text(t.settings), findsOneWidget,
+          reason: '800px 页头必须能到达设置分段（顶栏或「更多」菜单）');
+      Navigator.of(tester.element(find.text(t.settings))).pop();
+      await tester.pumpAndSettle();
+    }
     expect(
       controller.requestById(
         const FushiFocusId('game-library-tab-sections'),

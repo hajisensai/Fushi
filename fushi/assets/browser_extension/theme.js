@@ -16,6 +16,11 @@
 //   绝不碰宿主页 :root。查词弹窗的 --md-* 由 popupVars() 给三处弹窗壳覆盖，弹窗与其它表面
 //   同一款主题。
 //
+// 材质：液态玻璃是扩展唯一的材质（用户 2026-10-04 拍板，实心样式与「材质」设置一并删除），
+//   glass.css 无条件生效，不再由这里决议；只有系统「减少透明度」/ 内核不支持 backdrop-filter
+//   时由 glass.css 自身的兼容层回落实心。旧版本存下的 extensionMaterial / appGlassMirror
+//   读到也忽略，启动时顺手清掉。
+//
 // content script / 扩展页面共用一份；没有 chrome.storage 的环境（纯 vm 测试）退化为
 // 跟随系统、setPreference 仍可用。
 (function () {
@@ -26,9 +31,11 @@
   var PALETTE_KEY = 'extensionPalette';
   var CUSTOM_KEY = 'extensionCustomThemes';
   var APP_MIRROR_KEY = 'appThemeMirror';
+  // 已退役的材质设置键（只用于清理旧存储）。
+  var RETIRED_KEYS = ['extensionMaterial', 'appGlassMirror'];
   var STYLE_ID = 'fushi-theme-palette';
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
-  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)';
+  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
   var VALID = { auto: true, light: true, dark: true };
   var pref = 'auto';
   var paletteId = 'fushi';
@@ -216,6 +223,13 @@
     var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY];
     var p = chrome.storage.local.get(keys, readAll);
     if (p && typeof p.then === 'function') p.then(readAll, function () {});
+  } catch (_) {}
+  // 旧版「材质」设置留下的键：只有扩展自己的页面清（content script 每个网页都跑，不必重复写）。
+  try {
+    if (isExtensionPage() && chrome.storage.local.remove) {
+      var r = chrome.storage.local.remove(RETIRED_KEYS);
+      if (r && typeof r.then === 'function') r.then(null, function () {});
+    }
   } catch (_) {}
   try {
     chrome.storage.onChanged.addListener(function (changes, area) {

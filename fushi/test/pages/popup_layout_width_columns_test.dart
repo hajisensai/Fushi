@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart'
+    show kLookupPopupMaxWidth;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -62,7 +64,13 @@ void main() {
       final int next = src.indexOf("id: 'lookup.", idx + 10);
       expect(next, greaterThan(idx), reason: '找不到下一个 item，块划不出来');
       final String block = src.substring(idx, next);
-      expect(block.contains('max: 2000'), isTrue,
+      // 滑块上限改为引用与 clamp 同源的 kLookupPopupMaxWidth（不再写字面量）；
+      // 判据不变：上限必须是 2000。
+      expect(
+          block.contains('max: 2000') ||
+              (block.contains('max: kLookupPopupMaxWidth') &&
+                  kLookupPopupMaxWidth == 2000),
+          isTrue,
           reason: 'TODO-1352：弹窗最大宽度上限应放宽到 2000');
       expect(block.contains('max: 1000'), isFalse,
           reason: 'TODO-1352：旧的 1000 强制上限应已移除');

@@ -164,8 +164,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.filter_alt_outlined));
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)));
+    // 卡片封面上的状态角标也写着「在玩」：筛选面板在最上层，取最后一个。
+    await tester.tap(
+        find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)).last);
     await tester.pumpAndSettle();
     navKey.currentState!.pop();
     await tester.pumpAndSettle();

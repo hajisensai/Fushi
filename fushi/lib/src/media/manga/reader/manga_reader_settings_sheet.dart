@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheetSide, showReaderSideSheet;
@@ -351,7 +352,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
             setState(() => _overrides = _persisted);
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+            ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
           }
         }
       }
@@ -439,7 +440,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
             onFocusChange: (bool focused) {
               if (!focused) _submitColor(d.key, _draftColor);
             },
-            child: TextFormField(
+            child: FushiTextFormFieldControl(
               key: ValueKey<String>('manga_filter_color_${_value(d.key)}'),
               initialValue: _value(d.key) as String?,
               decoration: InputDecoration(
@@ -574,15 +575,15 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                 ),
               ],
             ),
           ),
-          TabBar(
+          FushiTabBar(
             labelPadding: const EdgeInsets.symmetric(horizontal: 4),
             tabs: <Widget>[
               Tab(
@@ -643,7 +644,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
               ],
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           // 状态与重置按钮放得下就并排一行：状态贴左、按钮贴右（竖排时页脚独占
           // 近 100px，横屏手机上留给设置列表的只剩一两行）。放不下就上下叠放、
           // 都贴右，按钮始终在右下角。不用 Wrap(spaceBetween)：折行后按钮独占
@@ -661,7 +662,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
                       : t.manga_reader_override,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                TextButton(
+                FushiTextButton(
                   onPressed: _overrides.isEmpty ? null : _reset,
                   child: Text(t.manga_reader_restore, textAlign: TextAlign.end),
                 ),

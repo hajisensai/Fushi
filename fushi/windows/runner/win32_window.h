@@ -77,6 +77,12 @@ class Win32Window {
   // colour here for those transitions. |color| is a COLORREF (0x00BBGGRR).
   void SetBackdropColor(COLORREF color);
 
+  // Glass material: while a DWM system backdrop (Windows 11 Mica) is active
+  // the surface is painted black instead of |backdrop_brush_| -- with the
+  // frame extended into the whole client area, GDI black is what lets the
+  // backdrop show through. Does not touch DWM itself; FlutterWindow owns that.
+  void SetSystemBackdrop(bool enabled);
+
   // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
   // SetFullScreen (and media_kit's EnterNativeFullscreen — same technique)
   // strips WS_CAPTION|WS_THICKFRAME, which makes DWM rebuild the window's
@@ -180,6 +186,10 @@ class Win32Window {
   // Owned solid brush used by PaintBackdrop. Starts with a fallback colour and
   // is replaced by SetBackdropColor; released in the destructor.
   HBRUSH backdrop_brush_ = nullptr;
+
+  // True while FlutterWindow has a DWM system backdrop applied; see
+  // SetSystemBackdrop.
+  bool system_backdrop_ = false;
 
   // BUG-1933: captures the window's current on-screen client pixels into
   // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a

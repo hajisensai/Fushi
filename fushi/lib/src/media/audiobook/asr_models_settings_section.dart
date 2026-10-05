@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
@@ -173,15 +174,15 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
   Future<void> _detach(_PackRow row) async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.audiobook_transcribe_model_custom_detach),
         content: Text(t.audiobook_transcribe_model_custom_detach_hint),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             key: ValueKey<String>('asr-models-detach-confirm-${row.pack.id}'),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.audiobook_transcribe_model_custom_detach),
@@ -208,15 +209,15 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
   Future<void> _confirmDelete(_PackRow row) async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.asr_models_delete_confirm_title),
         content: Text(t.asr_models_delete_confirm_message),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             key: ValueKey<String>('asr-models-delete-confirm-${row.pack.id}'),
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.asr_models_delete),
@@ -281,11 +282,11 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       return const SizedBox(
         width: 18,
         height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     }
     if (row.downloading) {
-      return TextButton(
+      return FushiTextButton(
         key: ValueKey<String>('asr-models-cancel-${row.pack.id}'),
         onPressed: () => unawaited(_cancelDownload(row)),
         child: Text(t.dialog_cancel),
@@ -296,23 +297,23 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     // 会把用户的模型文件真删掉。所以这里给的是「移除接入」——只从目录里去掉这个
     // 包（连同指向它的选择），文件一个不碰。
     if (localAsrModelDirectory(row.pack) != null) {
-      return OutlinedButton.icon(
+      return FushiOutlinedButton.icon(
         key: ValueKey<String>('asr-models-detach-${row.pack.id}'),
         onPressed: row.deleting ? null : () => unawaited(_detach(row)),
-        icon: const Icon(Icons.link_off_outlined, size: 18),
+        icon: const FushiIcon(Icons.link_off_outlined, size: 18),
         label: Text(t.audiobook_transcribe_model_custom_detach),
       );
     }
-    final Widget delete = OutlinedButton.icon(
+    final Widget delete = FushiOutlinedButton.icon(
       key: ValueKey<String>('asr-models-delete-${row.pack.id}'),
       onPressed: row.deleting ? null : () => unawaited(_confirmDelete(row)),
       icon: row.deleting
           ? const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.delete_outline, size: 18),
+          : const FushiIcon(Icons.delete_outline, size: 18),
       label: Text(t.asr_models_delete),
     );
     if (status.ready) return delete;
@@ -321,10 +322,10 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: ValueKey<String>('asr-models-download-${row.pack.id}'),
           onPressed: row.deleting ? null : () => _startDownload(row),
-          icon: const Icon(Icons.download_outlined, size: 18),
+          icon: const FushiIcon(Icons.download_outlined, size: 18),
           label: Text(t.asr_models_download),
         ),
         // 不全但磁盘上有残留（中断的 `.part`、另一变体的编码器）也得能清掉。
@@ -354,7 +355,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
         ),
         if (row.downloading) ...<Widget>[
           _inset(
-            LinearProgressIndicator(
+            FushiLinearProgressIndicator(
               value: row.downloadTotal > 0
                   ? (row.downloadReceived / row.downloadTotal).clamp(0.0, 1.0)
                   : null,

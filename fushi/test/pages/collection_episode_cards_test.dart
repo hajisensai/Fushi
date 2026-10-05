@@ -248,6 +248,9 @@ void main() {
         reason: '有观看痕迹的集必须给「清除观看进度」');
     await tester.tap(find.text(t.video_watch_progress_clear));
     await tester.pumpAndSettle();
+    // 先过确认框（学习记录两条勾选默认都不勾 = 统计不动）。
+    await tester.tap(find.text(t.library_progress_reset_confirm));
+    await tester.pumpAndSettle();
 
     final VideoBookRow e2 = (await db.getVideoBookByBookUid('video/e2'))!;
     expect(e2.lastPositionMs, 0);
