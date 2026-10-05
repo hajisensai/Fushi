@@ -26,6 +26,8 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/jimaku_client.dart'
+    show jimakuLanguageLabel, kJimakuLanguageCodes;
 
 /// 「在线服务」一级设置分类：第三方 API / 索引器 / 媒体服务器的凭据与端点。
 ///
@@ -139,13 +141,41 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
-          SettingsCustomItem(
+          // AJATT 与默认字幕语言：此前是一张自绘卡（开关 + 下拉内嵌、字号层级
+          // 自成一套），现在拆成两条标准分段行，与上面的来源行同一视觉语言。
+          // 读写走与旧卡完全相同的 AppModel 入口，持久化键不变。
+          SettingsSwitchItem(
             id: 'services.subtitle_preferences',
-            searchTitle: 'AJATT · ${t.video_setting_jimaku_default_language}',
-            builder: (SettingsContext c) =>
-                const VideoExternalProviderSettingsSection(
-                  scope: VideoExternalProviderScope.subtitlePreferences,
+            // 品牌名，不进 i18n（同 Jimaku / SubDL）。
+            title: 'AJATT',
+            subtitle: t.video_ajatt_enabled_hint,
+            icon: FushiIcons.subtitles,
+            value: (SettingsContext c) => c.appModel.videoSubtitleAjattEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setVideoSubtitleAjattEnabled(value),
+            defaultValue: true,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'services.subtitle_default_language',
+            title: t.video_setting_jimaku_default_language,
+            subtitle: t.video_setting_jimaku_default_language_hint,
+            icon: FushiIcons.language,
+            dropdown: true,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.video_jimaku_language_follow_video,
+              ),
+              for (final String language in kJimakuLanguageCodes)
+                SettingsSegmentOption<String>(
+                  value: language,
+                  label: jimakuLanguageLabel(language),
                 ),
+            ],
+            selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.setJimakuDefaultLanguage(value),
+            defaultValue: '',
           ),
         ],
       ),

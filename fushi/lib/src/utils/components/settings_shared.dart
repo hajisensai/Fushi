@@ -11,6 +11,9 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/settings_section_anchor.dart';
+import 'package:fushi/src/settings/settings_kit.dart'
+    show SettingsKitScaffold;
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -39,8 +42,13 @@ class SettingsSectionHeader extends StatelessWidget {
   final String text;
   final EdgeInsetsGeometry? padding;
 
+  // 带标题的分组标题即页内分组锚点（settings kit 的分组跳转条自动收录，见
+  // settings_section_anchor.dart；不在设置页壳里时原样渲染）。
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SettingsSectionAnchor(title: text, child: _build(context));
+
+  Widget _build(BuildContext context) {
     if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
       // Apple：与 [AdaptiveSettingsSection] 分组外标题同一口径——13 号 semibold
       // secondaryLabel，缩进到分组行文字起点（桌面 10 / 触屏 16）。调用方显式
@@ -168,6 +176,33 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
       );
     }
 
+    // 设置类子页统一壳（settings kit）：标题是纯文字时走 SettingsKitScaffold——
+    // 浮动页头（返回 + 标题胶囊 + 动作组，随滚动收缩）+ 页内 ≥ 2 个带标题分组时
+    // 的分组跳转条，与 schema 详情页同一套外观。标题是自定义组件时保持原工具栏。
+    final Widget titleWidget = title;
+    if (titleWidget is Text && titleWidget.data != null) {
+      return SettingsKitScaffold(
+        title: titleWidget.data!,
+        actions: actions ?? const <Widget>[],
+        bodyBuilder:
+            (
+              BuildContext context,
+              ScrollController controller,
+              SettingsSectionSpy spy,
+            ) {
+              final Widget list = ListView(
+                controller: controller,
+                padding: listPadding,
+                children: children,
+              );
+              return bottom == null
+                  ? list
+                  : Column(
+                      children: <Widget>[Expanded(child: list), bottom!],
+                    );
+            },
+      );
+    }
     final Widget list = ListView(padding: listPadding, children: children);
     return FushiToolScaffold.customTitle(
       title: title,
@@ -212,7 +247,10 @@ class AdaptiveSettingsSurface extends StatelessWidget {
   final VoidCallback? onTitleTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      SettingsSectionAnchor(title: title, child: _build(context));
+
+  Widget _build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget content = Column(
@@ -446,10 +484,17 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     }
   }
 
+  // 带标题的分组 = 页内分组锚点（见 SettingsSectionHeader 的同名说明）。
   @override
   Widget build(BuildContext context) {
     if (widget.children.isEmpty) return const SizedBox.shrink();
+    return SettingsSectionAnchor(
+      title: widget.title,
+      child: _buildSection(context),
+    );
+  }
 
+  Widget _buildSection(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
     final bool glassDesign = isGlassDesign(context) && !cupertino;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
