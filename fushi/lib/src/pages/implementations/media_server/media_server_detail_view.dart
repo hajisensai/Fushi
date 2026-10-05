@@ -48,6 +48,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView> {
   final ScrollController _scrollController = ScrollController();
 
   late MediaServerItem _detail = widget.item;
+
+  /// 当前选中的版本在 [MediaServerItem.versions] 里的下标（详情回来后按记住的
+  /// 选择解析；单版本 / 无版本 -1，版本区不显示）。
+  int _versionIndex = -1;
   List<MediaServerItem> _seasons = const <MediaServerItem>[];
   String? _seasonId;
 
@@ -96,7 +100,17 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView> {
     try {
       final MediaServerItem detail = await _browser.itemDetail(widget.item.id);
       if (!mounted) return;
-      setState(() => _detail = detail);
+      setState(() {
+        _detail = detail;
+        _versionIndex = detail.versions.length > 1
+            ? resolveMediaServerVersionIndex(
+                serverId: _browser.serverId,
+                itemId: detail.id,
+                seriesId: detail.seriesId,
+                versions: detail.versions,
+              )
+            : -1;
+      });
     } catch (e) {
       debugPrint('[media-server] item detail failed: $e');
     }
@@ -186,6 +200,18 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView> {
         _hasMore = false;
       });
     }
+  }
+
+  /// 选版本：记住（本条目 + 同剧），「播放」/ 下载取流时按它带 MediaSourceId。
+  void _selectVersion(int index) {
+    if (index == _versionIndex) return;
+    rememberMediaServerVersion(
+      serverId: _browser.serverId,
+      itemId: _detail.id,
+      seriesId: _detail.seriesId,
+      version: _detail.versions[index],
+    );
+    setState(() => _versionIndex = index);
   }
 
   void _selectSeason(String seasonId) {
@@ -298,6 +324,15 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView> {
               secondaryAction: _buildDownloadAction(),
             ),
           ),
+          if (_versionIndex >= 0)
+            SliverToBoxAdapter(
+              child: MediaServerVersionSection(
+                versions: _detail.versions,
+                selectedIndex: _versionIndex,
+                focusPrefix: '${widget.session.serverId}-version-${_detail.id}',
+                onSelected: _selectVersion,
+              ),
+            ),
           SliverToBoxAdapter(
             child: CollectionWorkDetailsSection(
               overview: _detail.overview,
@@ -692,6 +727,134 @@ class _MediaServerEpisodeRow extends StatelessWidget {
                 : null,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 「版本」区（多版本电影 / 集的详情页）：版本胶囊行（[FushiSelectableChip]：
+/// MD3 filter chip / Apple 液态玻璃胶囊，可 Tab / 方向键逐个聚焦、Enter 选中）
+/// + 选中版本的规格行与音轨 / 字幕轨清单。换版本时规格块交叉淡入
+/// （[fushiMotionDuration]，墨水屏与「减弱动态效果」下瞬切）。
+class MediaServerVersionSection extends StatelessWidget {
+  const MediaServerVersionSection({
+    required this.versions,
+    required this.selectedIndex,
+    required this.focusPrefix,
+    required this.onSelected,
+    super.key,
+  });
+
+  final List<MediaServerVersion> versions;
+  final int selectedIndex;
+  final String focusPrefix;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool apple = isGlassDesign(context);
+    final Color secondary = apple
+        ? appleColorsOf(context).secondaryLabel
+        : tokens.surfaces.onVariant;
+    final MediaServerVersion selected = versions[selectedIndex];
+    return Padding(
+      key: const ValueKey<String>('media-server-versions'),
+      padding: EdgeInsets.only(top: tokens.spacing.section),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          CollectionSectionTitle(t.media_server_versions),
+          SizedBox(height: tokens.spacing.gap),
+          HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
+              padding: EdgeInsets.symmetric(
+                horizontal: tokens.spacing.page,
+                vertical: 4,
+              ),
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < versions.length; i++) ...<Widget>[
+                    if (i > 0) SizedBox(width: tokens.spacing.gap),
+                    FushiSelectableChip(
+                      key: ValueKey<String>(
+                        'media-server-version-${versions[i].id}',
+                      ),
+                      label: versions[i].title,
+                      selected: i == selectedIndex,
+                      allowLabelOverflow: true,
+                      focusId: FushiFocusId('$focusPrefix-${versions[i].id}'),
+                      onSelected: (bool _) => onSelected(i),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              0,
+            ),
+            child: AnimatedSwitcher(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+                alignment: Alignment.topLeft,
+                children: <Widget>[...previous, ?current],
+              ),
+              child: Column(
+                key: ValueKey<String>(
+                  'media-server-version-info-${selected.id}',
+                ),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  if (selected.qualitySummary.isNotEmpty)
+                    Text(
+                      selected.qualitySummary,
+                      style: tokens.type.listTitle.copyWith(
+                        fontWeight: apple ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                  if (selected.audioTracks.isNotEmpty)
+                    _trackLine(
+                      tokens,
+                      secondary,
+                      t.video_audio_track,
+                      selected.audioTracks,
+                    ),
+                  if (selected.subtitleTracks.isNotEmpty)
+                    _trackLine(
+                      tokens,
+                      secondary,
+                      t.section_video_subtitles,
+                      selected.subtitleTracks,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _trackLine(
+    FushiDesignTokens tokens,
+    Color color,
+    String label,
+    List<MediaServerStreamTrack> tracks,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        '$label: ${tracks.map((MediaServerStreamTrack s) => s.label).where((String l) => l.isNotEmpty).join(' / ')}',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: tokens.type.metadata.copyWith(color: color),
       ),
     );
   }

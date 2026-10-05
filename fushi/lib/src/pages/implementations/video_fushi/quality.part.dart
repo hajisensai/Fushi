@@ -443,6 +443,15 @@ extension _VideoQuality on _VideoFushiPageState {
     final String label = variants[index].label;
     _hideVideoSidePanel();
     client.streamVariantIndex = index;
+    // 媒体服务器换版本 = 换一个文件：先报停旧会话（与换档同口径，服务器据此结束
+    // 旧版本的转码）；扩展线路没有会话能力，这一步是空操作。
+    await _reportRemotePlaybackStopped(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      positionMs: posMs,
+      generation: _remotePlaybackGeneration,
+    );
+    if (!mounted) return;
     await _loadRemoteEpisode(
       _currentEpisode < 0 ? 0 : _currentEpisode,
       startIntent: EpisodeStartIntent.explicitCue,
@@ -490,17 +499,58 @@ extension _VideoQuality on _VideoFushiPageState {
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
+  /// 多条可播候选（扩展线路 / 媒体服务器版本）各一行，正在播的打勾；点了按
+  /// [_switchStreamVariant] 换候选并回到当前位置重新起播。
+  List<Widget> _buildStreamVariantTiles(
+    ColorScheme cs,
+    List<RemoteVideoStreamVariant> variants,
+  ) {
+    final int current = _streamVariantsClient?.streamVariantIndex ?? -1;
+    return <Widget>[
+      for (int i = 0; i < variants.length; i++)
+        FushiListTileControl(
+          key: ValueKey<String>('video-quality-stream-variant-$i'),
+          dense: true,
+          leading: const FushiIcon(Icons.alt_route),
+          title: Text(variants[i].label),
+          selected: current == i,
+          selectedColor: cs.primary,
+          trailing:
+              current == i ? FushiIcon(Icons.check, color: cs.primary) : null,
+          onTap: () => unawaited(_switchStreamVariant(i)),
+        ),
+    ];
+  }
+
   /// 画质侧栏面板：「自动」+ 各档 variant（高到低），当前档打勾。YouTube 流优先显其懒解析
   /// 的各档（解析中显 spinner）；否则显 HLS 档；空态显示标题占位。
   Widget _buildQualitySidePanel(VideoPlayerController controller) {
     final ColorScheme cs = _videoChromeColorScheme(context);
-    // 媒体服务器分支：固定阶梯（自动 + 各档），当前档打勾。
+    // 媒体服务器分支：固定阶梯（自动 + 各档），当前档打勾。条目在服务器上有
+    // 多个版本（同一集 1080p / 4K 两个文件）时版本列在最上面：换版本与换档互不
+    // 覆盖（版本决定哪个文件，档位决定要不要转码）。
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server != null) {
       final List<MediaServerQualityPreset> presets = server.qualityPresets;
+      final List<RemoteVideoStreamVariant> versions = _streamVariants;
       return ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: <Widget>[
+          if (versions.isNotEmpty) ...<Widget>[
+            Padding(
+              key: const ValueKey<String>('video-quality-versions-header'),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Text(
+                t.media_server_versions,
+                style: Theme.of(context)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ),
+            ..._buildStreamVariantTiles(cs, versions),
+            const FushiDividerControl(),
+          ],
           _buildMediaServerQualityTile(
             cs,
             icon: Icons.auto_awesome,
@@ -523,23 +573,11 @@ extension _VideoQuality on _VideoFushiPageState {
     // 是 HLS master 时把它的码率档接在下面（换线路与换档互不覆盖）。
     final List<RemoteVideoStreamVariant> streamVariants = _streamVariants;
     if (streamVariants.isNotEmpty) {
-      final int current = _streamVariantsClient!.streamVariantIndex;
       final List<HlsVariant> hls = _hlsVariants;
       return ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: <Widget>[
-          for (int i = 0; i < streamVariants.length; i++)
-            FushiListTileControl(
-              key: ValueKey<String>('video-quality-stream-variant-$i'),
-              dense: true,
-              leading: const FushiIcon(Icons.alt_route),
-              title: Text(streamVariants[i].label),
-              selected: current == i,
-              selectedColor: cs.primary,
-              trailing:
-                  current == i ? FushiIcon(Icons.check, color: cs.primary) : null,
-              onTap: () => unawaited(_switchStreamVariant(i)),
-            ),
+          ..._buildStreamVariantTiles(cs, streamVariants),
           if (hls.isNotEmpty) ...<Widget>[
             const FushiDividerControl(),
             _buildQualityTile(

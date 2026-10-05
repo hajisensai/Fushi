@@ -35,6 +35,8 @@ import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
+    show MediaServerVersionMemory, mediaServerVersionMemory;
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
@@ -182,6 +184,9 @@ class PreferencesRepository extends ChangeNotifier
     _prefCache[prefsVersionKey] =
         PrefCodec.encode(await readPrefsVersionFromDb());
     _installAppProxyReaders();
+    // 媒体服务器多版本选择的记忆落偏好表（进程级装配点，取流时由 client 读）；
+    // 理由同上：挂在偏好变得可读的那一刻，所有入口都拿到同一份。
+    mediaServerVersionMemory = _PrefsMediaServerVersionMemory(this);
   }
 
   /// BUG-2429 的存量数据修复标记。跑过一次就再也不跑。
@@ -574,6 +579,42 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setMediaServerQualityPresetIndex(int index) async {
     await setPref('video_media_server_quality_preset', index);
     notifyListeners();
+  }
+
+  /// 媒体服务器多版本选择的记忆上限（按写入先后淘汰最旧的）。
+  static const int kMediaServerVersionChoiceLimit = 500;
+
+  /// 媒体服务器多版本条目「选哪个版本」的记忆（见 [MediaServerVersionMemory]）。
+  /// 单一 JSON map 落 KV 表；解析失败回退空 map。
+  Map<String, String> get mediaServerVersionChoices {
+    final String raw = getPref('video_media_server_version_choices',
+        defaultValue: '') as String;
+    if (raw.isEmpty) return <String, String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return <String, String>{
+          for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+            e.key.toString(): e.value.toString(),
+        };
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+          'PreferencesRepository.mediaServerVersionChoices.decode', e, stack);
+    }
+    return <String, String>{};
+  }
+
+  /// 记一条版本选择：删后重插让它排到最新，超出 [kMediaServerVersionChoiceLimit]
+  /// 从最旧的开始丢。不 notifyListeners：没有界面监听它，取流时按需读。
+  Future<void> setMediaServerVersionChoice(String key, String value) async {
+    final Map<String, String> map = mediaServerVersionChoices
+      ..remove(key)
+      ..[key] = value;
+    while (map.length > kMediaServerVersionChoiceLimit) {
+      map.remove(map.keys.first);
+    }
+    await setPref('video_media_server_version_choices', jsonEncode(map));
   }
 
   /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
@@ -4114,5 +4155,25 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setReadingGoalWeeklyChars(int value) async {
     await setPref('reading_goal_weekly_chars', value.clamp(0, 10000000));
     notifyListeners();
+  }
+}
+
+/// [MediaServerVersionMemory] 的偏好表实现（[PreferencesRepository.loadFromDb]
+/// 装配）。读走偏好缓存；写入是后台落库，失败只记日志——丢一次版本记忆不该
+/// 打断播放。
+class _PrefsMediaServerVersionMemory implements MediaServerVersionMemory {
+  _PrefsMediaServerVersionMemory(this._prefs);
+
+  final PreferencesRepository _prefs;
+
+  @override
+  String? read(String key) => _prefs.mediaServerVersionChoices[key];
+
+  @override
+  void write(String key, String value) {
+    _prefs.setMediaServerVersionChoice(key, value).catchError(
+      (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('PreferencesRepository.setMediaServerVersionChoice', e, stack),
+    );
   }
 }
