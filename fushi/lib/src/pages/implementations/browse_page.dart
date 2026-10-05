@@ -41,7 +41,14 @@ import 'package:fushi/src/pages/implementations/video_external_provider_settings
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeBar;
+    show
+        FushiFloatingChromeBar,
+        FushiFloatingChromeController,
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationFromVisibleSubtree;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoDownloadJobFileRow, VideoDownloadJobRow;
@@ -167,6 +174,18 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 悬浮按钮组胶囊画出（与库页壳 [MediaLibraryShell] 同构）。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
+  /// 头部（一级页签行 + 各页签的二级页签行）随滚动收放的状态：与四个库页
+  /// 同一套规则（下滚收起、上滚弹回、只认主滚动区、平滑滚轮拉回不算）。头部
+  /// 叠在正文上，收放不改正文视口（BUG-2975）。
+  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+
+  bool _onScroll(ScrollNotification notification) {
+    // 保活的离屏页签 / 内容域（TickerMode 关着）发来的通知不算；横向翻页在
+    // controller 内按轴过滤。
+    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    return _chrome.handleScrollNotification(notification);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -205,6 +224,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     _actionsSlot.release(this);
     _actionsSlot.dispose();
     _tabController?.dispose();
+    _chrome.dispose();
     super.dispose();
   }
 
@@ -225,7 +245,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     );
     next.addListener(() {
       if (identical(next, _tabController)) {
-        _selectedTab = _controllerTabs[next.index];
+        final BrowseTab tab = _controllerTabs[next.index];
+        // 换了页签：新页面从顶部开始，头部回来、遮罩撤掉。
+        if (tab != _selectedTab) _chrome.resetToTop();
+        _selectedTab = tab;
       }
     });
     _tabController = next;
@@ -274,6 +297,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   void _selectOnlineDomain(OnlineSourcesDomain domain) {
     if (domain == _onlineDomain) return;
+    _chrome.resetToTop();
     setState(() => _onlineDomain = domain);
   }
 
@@ -312,6 +336,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
               onTap: () => openOnlineSourceStores(context, selected),
             )
           : null,
+      // 在线来源面的主滚动视图自己把头部高度加成顶部 sliver（内容滚到头部底下）。
+      pageHandlesInset: true,
       pageBuilder: (OnlineSourcesDomain domain) => BrowseOnlineSourcesView(
         key: ValueKey<String>('browse-${tab.name}-${domain.name}'),
         domain: domain,
@@ -445,6 +471,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   void _selectResourceDomain(_DownloadsResourceDomain domain) {
     if (domain == _resourceDomain) return;
+    _chrome.resetToTop();
     setState(() => _resourceDomain = domain);
   }
 
@@ -691,8 +718,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         ),
       ],
       selected: _downloadsSection,
-      onChanged: (BrowseDownloadsSection value) =>
-          setState(() => _downloadsSection = value),
+      onChanged: (BrowseDownloadsSection value) {
+        _chrome.resetToTop();
+        setState(() => _downloadsSection = value);
+      },
       focusIdPrefix: 'browse-downloads-section',
       onEdgeOverscroll: (int delta) =>
           _handOffFrom(BrowseTab.downloads, delta),
@@ -921,11 +950,17 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         // 进来（设置入口）时的状态栏避让，双层无副作用。
         child: SafeArea(
           bottom: false,
-          child: Column(
-            children: <Widget>[
-              if (!isCupertinoPlatform(context))
-                _buildHeader(controller, tabs),
-              Expanded(
+          // 头部（一级页签行）叠在正文上、随滚动收放（与库页同一套，见
+          // [FushiFloatingChromeOverlay]）；各页签的二级页签行在 [_BrowseSwipeSections]
+          // 里同样叠放，排在这一行下面、一起收。
+          child: FushiFloatingChromeScope(
+            controller: _chrome,
+            child: FushiFloatingChromeOverlay(
+              chrome: isCupertinoPlatform(context)
+                  ? const SizedBox.shrink()
+                  : _buildHeader(controller, tabs),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _onScroll,
                 // 只在选中页签变化时重建（controller 的 notifyListeners 只在下标
                 // 变化时触发），用来给隐藏页签关焦点。
                 child: AnimatedBuilder(
@@ -954,7 +989,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -985,8 +1020,13 @@ class _BrowseSwipeSections<T extends Object> extends StatefulWidget {
     required this.pageBuilder,
     required this.onEdgeOverscroll,
     this.trailing,
+    this.pageHandlesInset = false,
     super.key,
   });
+
+  /// true：[pageBuilder] 的页面自己消费 [FushiFloatingChromeInset]（主滚动视图
+  /// 加顶部 sliver）；false：页面整体下移头部高度（[FushiFloatingChromeInsetPadding]）。
+  final bool pageHandlesInset;
 
   /// 标签条的稳定 key（焦点导航与行为验证用）。
   final Key pickerKey;
@@ -1100,10 +1140,12 @@ class _BrowseSwipeSectionsState<T extends Object>
     // 页签既不能切换、又占一整行纵向空间，还会被误读成标题。此时不画标签条，
     // 只在有尾随动作时留下那一行放动作。
     final bool showTabs = widget.tabs.length > 1;
-    return Column(
-      children: <Widget>[
-        if (showTabs || widget.trailing != null)
-          Padding(
+    // 二级页签行叠在页面上、与一级页签行同一份显隐（[FushiFloatingChromeOverlay]
+    // 读同一个作用域），收放不改页面视口。
+    return FushiFloatingChromeOverlay(
+      chrome: !(showTabs || widget.trailing != null)
+          ? const SizedBox.shrink()
+          : Padding(
             // 与上面的一级页签浮动胶囊、页面内容同一条页边（左缘对齐）；
             // 顶上 8 + 浮动工具栏底边 4 = 两级页签之间 12。
             padding: EdgeInsets.fromLTRB(
@@ -1133,8 +1175,7 @@ class _BrowseSwipeSectionsState<T extends Object>
               ],
             ),
           ),
-        Expanded(
-          child: NotificationListener<ScrollNotification>(
+      child: NotificationListener<ScrollNotification>(
             onNotification: _handleScroll,
             // 只在选中段变化时重建，用来给离屏段关焦点与 ticker。
             child: AnimatedBuilder(
@@ -1148,14 +1189,16 @@ class _BrowseSwipeSectionsState<T extends Object>
                     _BrowseTabKeepAlive(
                       key: ValueKey<T>(value),
                       active: _controllerValues[controller.index] == value,
-                      child: widget.pageBuilder(value),
+                      child: widget.pageHandlesInset
+                          ? widget.pageBuilder(value)
+                          : FushiFloatingChromeInsetPadding(
+                              child: widget.pageBuilder(value),
+                            ),
                     ),
                 ],
               ),
             ),
           ),
-        ),
-      ],
     );
   }
 }

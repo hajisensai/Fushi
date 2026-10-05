@@ -21,6 +21,8 @@ import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -839,6 +841,11 @@ class _MangaOnlineSourcesViewState
     ];
     return CustomScrollView(
       slivers: <Widget>[
+        // 叠放头部（浏览页的一二级页签行）让出的高度，恒定、不随头部收放变；
+        // 内容滚到头部底下。不在浮动头部下时为 0（BUG-2975）。
+        SliverToBoxAdapter(
+          child: SizedBox(height: FushiFloatingChromeInset.of(context)),
+        ),
         SliverPadding(
           padding: const EdgeInsets.all(16),
           sliver: SliverMainAxisGroup(slivers: slivers),

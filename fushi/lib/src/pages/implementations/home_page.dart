@@ -1476,7 +1476,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
   /// 它们上面。
   static bool _tabHasFloatingChrome(HomeTab tab) => switch (tab) {
-        HomeTab.books || HomeTab.manga || HomeTab.video || HomeTab.games =>
+        HomeTab.books ||
+        HomeTab.manga ||
+        HomeTab.video ||
+        HomeTab.games ||
+        HomeTab.browse =>
           true,
         _ => false,
       };
