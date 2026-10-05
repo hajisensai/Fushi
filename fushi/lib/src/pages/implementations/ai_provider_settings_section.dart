@@ -32,6 +32,8 @@ import 'package:fushi/src/settings/glass_settings_renderer.dart'
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/settings/settings_kit.dart';
 
 // 历史上 aiFailureText 住在这里，五处调用方按 `show aiFailureText` 从本文件引；
 // 搬到 lib/src/ai/ 后保留这条再导出，不逐个改调用方。
@@ -261,9 +263,19 @@ class _AiProviderSettingsSectionState
     final double inset = isGlassDesign(pageContext)
         ? GlassSettingsRenderer.detailHorizontalInset(pageContext)
         : tokens.spacing.page;
-    return FushiPageScaffold(
+    // 设置子页统一壳（settings kit）：浮动页头 + 分组跳转条（编辑表单的
+    // 连接 / 请求方式 / 自检等分组 ≥ 2 时自动出现）。
+    return SettingsKitScaffold(
       title: draft.displayName,
-      body: ListView(
+      leadingIcon: FushiIcons.ai,
+      leadingTone: SettingsIconTone.purple,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) => ListView(
+        controller: controller,
         key: ValueKey<String>('ai-provider-editor-${draft.id}'),
         padding: EdgeInsets.fromLTRB(
           inset,
