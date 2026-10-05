@@ -414,15 +414,18 @@ class _FontSpecimenCardState extends State<FontSpecimenCard> {
                       ? const BorderRadius.all(Radius.circular(8))
                       : FushiM3eShape.smallRadius,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                  child: Align(
-                    alignment: AlignmentDirectional.topStart,
-                    child: FontSpecimenText(
-                      entry: entry,
-                      text: widget.sampleText,
-                      fontSize: 22,
-                      maxLines: 3,
+                // 网格单元等高：样张区放不下 3 行时裁掉而不是溢出到信息区。
+                child: ClipRect(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    child: Align(
+                      alignment: AlignmentDirectional.topStart,
+                      child: FontSpecimenText(
+                        entry: entry,
+                        text: widget.sampleText,
+                        fontSize: 22,
+                        maxLines: 3,
+                      ),
                     ),
                   ),
                 ),
@@ -497,7 +500,7 @@ class _FontSpecimenCardState extends State<FontSpecimenCard> {
       onPointerDown: (PointerDownEvent event) => _lastPointer = event.position,
       child: FushiHoverLift(
         builder: (BuildContext context, bool hovering) => FushiCard(
-          key: ValueKey<String>('font-card-${entry.identity}'),
+          key: ValueKey<String>('font-card-surface-${entry.identity}'),
           selected: widget.selected,
           padding: EdgeInsets.zero,
           onTap: widget.onOpen,
@@ -1041,6 +1044,9 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
       replayKey: entry.identity,
       child: ListView.builder(
         controller: widget.scrollController,
+        // 侧板与页面正文同处一个 PrimaryScrollController 之下：不认领它，
+        // 否则两个滚动视图挂到同一控制器上。
+        primary: widget.scrollController == null ? false : null,
         padding: EdgeInsets.fromLTRB(
           tokens.spacing.page,
           tokens.spacing.gap,
