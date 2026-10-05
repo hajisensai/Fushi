@@ -1662,7 +1662,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (!audio && !dock) return 0;
     if (!_floatingToolbars) return _readerChromeHeight;
     double extent = kReaderFloatingBarMargin;
-    if (audio) extent += kFushiFloatingToolbarExtent;
+    // 迷你播放条：M3E 72（胶囊 + 底边波浪进度），Apple 64。
+    if (audio) extent += isGlassDesign(context) ? kFushiFloatingToolbarExtent : 72;
     if (dock) extent += kFushiFloatingToolbarExtent;
     if (audio && dock) extent += kFushiFloatingToolbarFabGap;
     return extent;
@@ -3106,12 +3107,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (ctrl == null && !hasDock) return const SizedBox.shrink();
     final bool phone = _readerCompactWidth;
     final FushiFloatingToolbarColors colors = _floatingToolbarColors();
-    final Widget? fab = ctrl == null ? null : AudiobookPlayFab(controller: ctrl);
+    // 播放键住在迷你条里（M3E 连接式按钮组的中间那颗形状变形 FAB），底部只有
+    // 这一颗播放键；Apple 形态同样放进条内。
     final Widget? mini = ctrl == null
         ? null
         : AudiobookMiniPlayer(
             key: const ValueKey<String>('fushi_play_bar'),
             controller: ctrl,
+            showPlayButton: true,
+            coverPath: _extractDir == null
+                ? null
+                : ReaderFushiSource.resolveCoverFilePath(
+                    extractDir: _extractDir!,
+                    coverPath: _book?.coverHref,
+                  ),
+            chapterLabel: _lyricsMode ? null : _currentChapterLabel(),
             skipActionSeconds: ReaderFushiSource.instance.skipActionSeconds,
             invertSkip:
                 ReaderFushiSource.instance.invertAudiobookSkipDirection,
@@ -3125,7 +3135,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
             groups: dock,
             showLabels: phone,
             colors: colors,
-            fab: mini == null ? null : fab,
           )
         : null;
     final Widget body;
@@ -3140,13 +3149,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         ],
       );
     } else if (mini != null) {
-      body = Row(
-        children: <Widget>[
-          Expanded(child: mini),
-          const SizedBox(width: kFushiFloatingToolbarFabGap),
-          fab!,
-        ],
-      );
+      body = mini;
     } else {
       body = Center(child: toolbar);
     }
