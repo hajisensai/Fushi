@@ -3922,8 +3922,12 @@ function positionAudioSourceMenu(menu, button) {
 function __fushiAudioMenuMount() {
     const root = window.__fushiRoot;
     if (!root || !root.host || typeof document.createElement !== 'function') return document.body;
+    // 全屏时顶层是 fullscreenElement，挂在它外面的节点画在全屏层下面看不见（菜单却已记了
+    // 模态层、拿走焦点，Esc 关不掉查词窗）——与弹窗本体同一挂载点，已建的宿主随全屏状态迁移。
+    const parent = document.fullscreenElement || document.documentElement || document.body;
     let host = typeof document.getElementById === 'function'
         ? document.getElementById('fushi-audio-menu-host') : null;
+    if (host && host.shadowRoot && host.parentNode !== parent) parent.appendChild(host);
     if (!host || !host.shadowRoot) {
         host = document.createElement('div');
         host.id = 'fushi-audio-menu-host';
@@ -3935,7 +3939,7 @@ function __fushiAudioMenuMount() {
                 shadow.appendChild(node.cloneNode(true));
             }
         }
-        (document.documentElement || document.body).appendChild(host);
+        parent.appendChild(host);
     }
     return host.shadowRoot;
 }

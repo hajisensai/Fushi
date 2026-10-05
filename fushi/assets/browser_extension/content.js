@@ -2023,6 +2023,8 @@ function fushiDrawHighlightOverlay(rects) {
 
 function fushiRemoveContainer() {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
+  // 音频源菜单挂在独立宿主上，不随弹窗 shadow host 一起移除；不收会残留在页面上并卡住模态计数。
+  if (typeof window.fushiCloseAudioSourceMenu === 'function') window.fushiCloseAudioSourceMenu(false);
   // 上层草稿依赖底层词条，底层真正关闭时同步撤掉，不能留下失去制卡目标的弹层。
   fushiCloseSentenceContextModal();
   // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __fushiRoot 让 popup.js

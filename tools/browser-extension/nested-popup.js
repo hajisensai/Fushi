@@ -173,6 +173,8 @@
   document.addEventListener('pointerdown', function () { send({ type: 'activate' }); }, true);
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
+    // 子层里的音频源菜单 / 制卡面板开着：Esc 归它们先关最内层，不能连整层一起关。
+    if ((window.__fushiPopupModalDepth || 0) > 0) return;
     event.preventDefault();
     event.stopPropagation();
     send({ type: 'close' });
