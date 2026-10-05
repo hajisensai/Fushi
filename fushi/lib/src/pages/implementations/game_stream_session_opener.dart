@@ -101,11 +101,7 @@ Future<void> openGameStreamSession({
     try {
       await receiver?.disconnect();
       if (joinedClientId != null) {
-        await client.stop(
-          sessionId: session.sessionId,
-          clientId: joinedClientId,
-          reason: 'receiver_left',
-        );
+        await leaveGameStreamOnHost(client, session.sessionId, joinedClientId);
       }
     } catch (error) {
       leaveError = error;
@@ -116,4 +112,23 @@ Future<void> openGameStreamSession({
     }
   }
   if (leaveError != null) throw GameStreamLeaveError(leaveError);
+}
+
+/// Tells the host this receiver left. A host that no longer knows the session
+/// (it ended the stream, or its server restarted) already is where leaving
+/// wants it to be, so `session_not_found` is not a failed leave.
+Future<void> leaveGameStreamOnHost(
+  FushiGameStreamClient client,
+  String sessionId,
+  String clientId,
+) async {
+  try {
+    await client.stop(
+      sessionId: sessionId,
+      clientId: clientId,
+      reason: 'receiver_left',
+    );
+  } on GameStreamRequestError catch (error) {
+    if (error.code != 'session_not_found') rethrow;
+  }
 }

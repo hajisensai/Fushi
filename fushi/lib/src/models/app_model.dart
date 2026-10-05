@@ -8418,7 +8418,7 @@ class AppModel with ChangeNotifier {
       FushiGameStreamLibraryHost(
         loadGames: () => galgameRepo.load(),
         isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
-        service: syncServerController.gameStreamService,
+        service: () => syncServerController.gameStreamService,
         startStream: syncServerController.startLaunchedGameStream,
       ),
       miningFactory: createGameStreamMiningAdapter,

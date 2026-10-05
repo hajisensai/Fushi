@@ -4804,6 +4804,9 @@ function createEntryHeader(entry, idx) {
             },
         });
         setButtonIcon(adjustBtn, 'tune');
+        // M3E 按压形状变形 / 缩放：系统「减弱动态效果」或墨水屏下归零（popup.css 不能写
+        // @media，生成扩展 content.css 的脚本不处理嵌套 at-rule；同音频源菜单 .no-motion）。
+        if (__fushiPopupReducedMotion()) adjustBtn.classList.add('no-motion');
         // BUG-842：DOM 提示替代原生 title（离屏 WebView2 上原生 title 会飞到窗口角落）。
         setInlineButtonTip(adjustBtn, (window.i18nCtx && window.i18nCtx.adjust) || '');
         buttonsContainer.appendChild(adjustBtn);
