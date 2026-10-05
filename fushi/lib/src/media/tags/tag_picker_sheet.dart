@@ -363,7 +363,6 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
     if (_applying) return;
     setState(() => _applying = true);
     final FushiDatabase db = _db;
-    final Translations tr = Translations.of(context);
     final List<String> messages = <String>[];
     for (final MapEntry<int, TagCheckState> e in _intents.entries) {
       final BookTagRow? tag =
@@ -383,8 +382,8 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
       if (tag != null && touched > 0) {
         messages.add(
           e.value == TagCheckState.all
-              ? tr.batch_tag_added(name: tag.name, n: touched)
-              : tr.batch_tag_removed(name: tag.name, n: touched),
+              ? t.batch_tag_added(name: tag.name, n: touched)
+              : t.batch_tag_removed(name: tag.name, n: touched),
         );
       }
     }

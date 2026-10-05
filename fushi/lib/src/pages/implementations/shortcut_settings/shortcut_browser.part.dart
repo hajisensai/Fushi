@@ -1621,7 +1621,7 @@ class _InlineRecorder extends StatefulWidget {
   final FocusOnKeyEventCallback onKeyEvent;
   final ValueChanged<GamepadButton> onGamepadButton;
   final PointerDownEventListener onPointerDown;
-  final PointerSignalEventListener onPointerSignal;
+  final void Function(PointerSignalEvent event) onPointerSignal;
   final VoidCallback onCancel;
 
   @override
