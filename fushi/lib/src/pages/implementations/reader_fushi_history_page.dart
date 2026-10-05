@@ -56,7 +56,11 @@ import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeReveal, FushiSpringReveal;
+    show
+        FushiFloatingChromeInset,
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeOverlay,
+        FushiSpringReveal;
 import 'package:fushi_core/fushi_core.dart';
 // BUG-813：构造 ReaderPositionsCompanion 回填下载书的阅读进度需要 drift 的 Value（
 // hibiki_core 未再导出它）。
@@ -687,25 +691,28 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             kind: DesktopContentKind.readerShelf,
             child: Column(
               children: [
-                // 页头 / 搜索筛选行 / 标签行与库页外壳的浮动工具栏是同一组工具区：
-                // 往下滚一起收起、往上滚一起弹回（同一个
-                // [FushiFloatingChromeController]，与视频库同构）；不在外壳里时
-                // 原样常驻。
-                FushiFloatingChromeReveal(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                      // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行
-                      // （2026-10-04），标签 chip 只在有标签时另起一行。
-                      _buildSearchBar(allTags.valueOrNull ?? const []),
-                      _buildTagBar(allTags.valueOrNull ?? const []),
-                    ],
-                  ),
-                ),
-                // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-                SyncProgressBanner(compact: _compactLibraryToolbar),
+                // 页头 / 搜索筛选行 / 标签行（连同同步横幅）与库页外壳的浮动
+                // 工具栏是同一组工具区：往下滚一起收起、往上滚一起弹回（同一个
+                // [FushiFloatingChromeController]，与视频库同构）。工具区叠在
+                // 正文上，收起只滑出画面、不改正文视口高度（BUG-2975）；正文主
+                // 滚动视图把 [FushiFloatingChromeInset] 加成顶部内边距。不在外壳
+                // 里时原样常驻（竖排）。
                 Expanded(
+                  child: FushiFloatingChromeOverlay(
+                    chrome: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                        // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行
+                        // （2026-10-04），标签 chip 只在有标签时另起一行。
+                        _buildSearchBar(allTags.valueOrNull ?? const []),
+                        _buildTagBar(allTags.valueOrNull ?? const []),
+                        // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时
+                        // 零高度。
+                        SyncProgressBanner(compact: _compactLibraryToolbar),
+                      ],
+                    ),
                   // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
                   // 一段区间。非多选态原样透传（长按仍归卡片自身的菜单）。
                   child: SelectionDragArea(
@@ -786,7 +793,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           ),
                         );
                       },
-                      error: (error, stack) => buildError(
+                      error: (error, stack) => FushiFloatingChromeInsetPadding(
+                        child: buildError(
                         error: error,
                         stack: stack,
                         refresh: () {
@@ -796,10 +804,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           );
                         },
                       ),
+                      ),
                       // BasePage 家族历史样式（25×25 主色圈），参数化保留、视觉不变。
-                      loading: () => buildLoading(
-                          size: 25, color: theme.colorScheme.primary),
+                      loading: () => FushiFloatingChromeInsetPadding(
+                        child: buildLoading(
+                            size: 25, color: theme.colorScheme.primary),
+                      ),
                     ),
+                  ),
                   ),
                 ),
                 // 批量栏是多选态的底部浮动工具栏：弹簧从底边浮起 / 沉下（与视频库
@@ -1794,13 +1806,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         remoteBooks.isEmpty &&
         remoteSrtBooks.isEmpty) {
       return hasActiveFilter || searching
-          ? Center(
-              child: FushiPlaceholderMessage(
-                icon: Icons.filter_list_off,
-                message: t.tag_no_books_for_filter,
+          ? FushiFloatingChromeInsetPadding(
+              child: Center(
+                child: FushiPlaceholderMessage(
+                  icon: Icons.filter_list_off,
+                  message: t.tag_no_books_for_filter,
+                ),
               ),
             )
-          : buildPlaceholder();
+          : FushiFloatingChromeInsetPadding(child: buildPlaceholder());
     }
     // 2026-10 动效重做：书架首屏的散书卡错峰淡入（见 FushiStaggeredEntrance）；
     // 窗口关闭后滚动带出的卡瞬间出现，不拖影。
@@ -1813,13 +1827,22 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
           builder: (context, constraints) => RefreshIndicator(
             onRefresh: _pullToRefreshBooks,
+            // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
+            edgeOffset: FushiFloatingChromeInset.of(context),
             child: CustomScrollView(
               controller: _shelfScrollController,
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
               slivers: [
-                SliverToBoxAdapter(child: SizedBox(height: tokens.spacing.gap)),
+                // 叠放工具区让出的顶部高度（不在外壳里时为 0）+ 原有的 gap：内容
+                // 从工具区下方开始、滚动时滚到工具区底下。
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height:
+                        FushiFloatingChromeInset.of(context) + tokens.spacing.gap,
+                  ),
+                ),
                 // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
                 // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
                 // 属重复信息。无在读候选时整条隐藏。

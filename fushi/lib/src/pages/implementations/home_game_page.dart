@@ -284,7 +284,13 @@ class _HomeGamePageState extends State<HomeGamePage> {
             // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
             DropSurfaceScope(
               isActive: () => _section == section,
-              child: SectionPrimaryScrollScope(child: sections[section]!),
+              // 子区整体让出浮动工具栏的高度（工具栏叠在内容上，见下方
+              // [FushiFloatingChromeOverlay]）。
+              child: SectionPrimaryScrollScope(
+                child: FushiFloatingChromeInsetPadding(
+                  child: sections[section]!,
+                ),
+              ),
             ),
         ],
         ),
@@ -297,17 +303,13 @@ class _HomeGamePageState extends State<HomeGamePage> {
         actionsSlot: _actionsSlot,
         child: FushiFloatingChromeScope(
           controller: _chrome,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
-              Expanded(
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _onScroll,
-                  child: GameSectionTabsHostScope(child: body),
-                ),
-              ),
-            ],
+          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
+          child: FushiFloatingChromeOverlay(
+            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: GameSectionTabsHostScope(child: body),
+            ),
           ),
         ),
       ),

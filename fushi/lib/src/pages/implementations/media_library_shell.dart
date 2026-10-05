@@ -52,11 +52,17 @@ class MediaLibraryViewSpec {
     required this.kind,
     required this.label,
     required this.builder,
+    this.handlesChromeInset = false,
   });
 
   final MediaLibraryViewKind kind;
   final String label;
   final Widget Function(BuildContext context, Widget navigation) builder;
+
+  /// 视图自己的主滚动视图把 [FushiFloatingChromeInset] 加成顶部内边距（内容滚到
+  /// 壳的浮动工具栏底下，如书架）。false 时壳把整个视图下移工具栏高度
+  /// （[FushiFloatingChromeInsetPadding]），视图不必知道工具栏的存在。
+  final bool handlesChromeInset;
 }
 
 /// 向壳内子树暴露「切到某个视图」的能力（[InheritedWidget]，不改 builder 签名）。
@@ -237,10 +243,10 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                     // 每个保活视图自己的主滚动控制器：共用 tab 外壳那一个会让
                     // 多个主滚动视图附着同一控制器、Scrollbar 断言。
                     child: SectionPrimaryScrollScope(
-                      // 页签由壳的浮动工具栏画出，视图页头的主位留空。
-                      child: views[i].builder(
-                        context,
-                        const SizedBox.shrink(),
+                      child: _insetFor(
+                        views[i],
+                        // 页签由壳的浮动工具栏画出，视图页头的主位留空。
+                        views[i].builder(context, const SizedBox.shrink()),
                       ),
                     ),
                   ),
@@ -259,22 +265,27 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
         actionsSlot: _actionsSlot,
         child: FushiFloatingChromeScope(
           controller: _chrome,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
-              Expanded(
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _onScroll,
-                  child: sections,
-                ),
-              ),
-            ],
+          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
+          // 滚不动」的根因是收起改了视口高度，BUG-2975，见
+          // [FushiFloatingChromeOverlay]）。
+          child: FushiFloatingChromeOverlay(
+            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: sections,
+            ),
           ),
         ),
       ),
     );
   }
+
+  /// 不自己处理工具栏让位的视图整体下移工具栏高度（见
+  /// [MediaLibraryViewSpec.handlesChromeInset]）。
+  Widget _insetFor(MediaLibraryViewSpec spec, Widget view) =>
+      spec.handlesChromeInset
+          ? view
+          : FushiFloatingChromeInsetPadding(child: view);
 
   Widget _buildNavigation(List<MediaLibraryViewSpec> views) {
     final MediaLibraryViewKind selected = views[_currentIndex].kind;
