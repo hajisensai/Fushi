@@ -180,7 +180,24 @@ class FushiCard extends StatefulWidget {
     this.pressScale = true,
     this.grouped = false,
     this.clipBehavior = Clip.antiAlias,
+    this.variant = FushiCardVariant.filled,
+    this.tone = FushiCardTone.neutral,
+    this.morph,
   });
+
+  /// M3 卡片三类容器（填充 / 抬升 / 描边），默认填充。调用点显式 [color] /
+  /// [borderColor] 仍优先。
+  final FushiCardVariant variant;
+
+  /// M3E 饱和配色变体：非 neutral 时底色换成对应 container 色块、卡内未显式
+  /// 着色的文字与图标换成 onContainer（Apple 落到淡染底，见
+  /// [fushiCardToneColors]）。
+  final FushiCardTone tone;
+
+  /// 是否做 M3E 交互形变（悬停内侧角 → 12、按下 / 选中 → 16，弹簧驱动）。
+  /// null = 分组列表格（[grouped]）开、独立卡片关——M3E 的形变是列表分段的
+  /// 语言，独立卡片的反馈是抬升 + 按压回弹。
+  final bool? morph;
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
@@ -214,21 +231,105 @@ class FushiCard extends StatefulWidget {
   State<FushiCard> createState() => _FushiCardState();
 }
 
-class _FushiCardState extends State<FushiCard> {
+class _FushiCardState extends State<FushiCard>
+    with SingleTickerProviderStateMixin {
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'hibiki-card-${identityHashCode(this)}',
   );
+
+  /// M3E 交互形变 / 抬升的弹簧：0 静止、1 悬停、2 按下 / 选中。只在需要时
+  /// 惰性创建（大多数卡片不可点，不该各挂一个 ticker）。
+  FushiSpring? _spring;
+  bool _hovered = false;
+  bool _pressed = false;
+
+  bool get _interactive =>
+      widget.onTap != null ||
+      widget.onLongPress != null ||
+      widget.onSecondaryTap != null;
+
+  bool get _morphEnabled => widget.morph ?? widget.grouped;
+
+  /// 是否需要弹簧驱动的视觉（形变或抬升卡的悬停投影）。
+  bool get _animated =>
+      _morphEnabled ||
+      (widget.variant == FushiCardVariant.elevated && _interactive);
+
+  double get _stateLevel {
+    if (_pressed || widget.selected) return 2;
+    if (_hovered) return 1;
+    return 0;
+  }
+
+  FushiSpring _ensureSpring() => _spring ??= FushiSpring(
+        vsync: this,
+        initial: _stateLevel,
+        spring: fushiExpressiveDefaultSpatial,
+      );
+
+  void _retarget() {
+    if (!mounted || !_animated || !fushiExpressiveMotionEnabled(context)) {
+      return;
+    }
+    _ensureSpring().animateTo(
+      _stateLevel,
+      animate: fushiExpressiveMotionEnabled(context),
+    );
+  }
+
+  void _setHovered(bool value) {
+    if (_hovered == value) return;
+    setState(() => _hovered = value);
+    _retarget();
+  }
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+    _retarget();
+  }
+
+  @override
+  void didUpdateWidget(covariant FushiCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selected != widget.selected && _spring != null) {
+      // didUpdateWidget 在构建期：弹簧重定向挪到帧后（直接改 controller 会在
+      // 构建中把子孙标脏），并补一帧确保回调真的跑。
+      SchedulerBinding.instance
+        ..addPostFrameCallback((_) => _retarget())
+        ..ensureVisualUpdate();
+    }
+  }
+
+  @override
+  void dispose() {
+    _spring?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
-    // MD3 内容层卡片（2026-10-04 卡片 / 列表统一）：surfaceContainerLow
-    // （tokens.surfaces.group）填充分层、16 圆角、无描边无阴影；选中 =
-    // secondaryContainer 底（全局唯一的卡片选中口径，不再另加 primary 描边）。
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // M3E 内容层卡片（2026-10-05 列表 / 卡片统一为 M3E）：
+    // - 填充（默认）= surfaceContainerLow（tokens.surfaces.group）分层、20 圆角、
+    //   无描边无阴影；抬升 = 同底 + level1 投影（悬停 level2）；描边 = surface 底
+    //   + outlineVariant 1px；
+    // - 饱和变体（[FushiCard.tone]）= xxxContainer 色块 + onXxxContainer 前景；
+    // - 选中 = secondaryContainer 底（全局唯一的卡片选中口径）。
+    final FushiCardColors? toneColors =
+        fushiCardToneColors(context, widget.tone);
+    final Color baseColor = toneColors?.container ??
+        (widget.variant == FushiCardVariant.outlined && !eink
+            ? scheme.surface
+            : tokens.surfaces.group);
     final Color effectiveColor = widget.color ??
-        (widget.selected ? tokens.surfaces.selected : tokens.surfaces.group);
-    final BorderRadius radius = widget.borderRadius ??
+        (widget.selected ? tokens.surfaces.selected : baseColor);
+    final Color? foreground = widget.color == null && widget.selected && !eink
+        ? scheme.onSecondaryContainer
+        : (widget.color == null ? toneColors?.onContainer : null);
+    final BorderRadius baseRadius = widget.borderRadius ??
         const BorderRadius.all(Radius.circular(kFushiMd3CardRadius));
     // eink 把所有 surface container 塌缩为背景色（theme_notifier eink scheme），
     // 卡片没有边就与页面融为一体；主题层只给裸 Card 补了描边（CardThemeData），
@@ -244,10 +345,20 @@ class _FushiCardState extends State<FushiCard> {
                 color: tokens.surfaces.outline,
                 width: widget.selected ? 2 : 1,
               )
-            : BorderSide.none);
-    final Widget content = Padding(
+            : widget.variant == FushiCardVariant.outlined
+                ? BorderSide(color: scheme.outlineVariant)
+                : BorderSide.none);
+    Widget content = Padding(
       padding: widget.padding ?? EdgeInsets.all(tokens.spacing.card),
       child: widget.child,
+    );
+    // 前景层恒在（只换颜色）：按选中 / 配色增删这一层会让卡内子树整棵重挂。
+    content = IconTheme.merge(
+      data: IconThemeData(color: foreground),
+      child: DefaultTextStyle.merge(
+        style: TextStyle(color: foreground),
+        child: content,
+      ),
     );
     final Widget card = isGlassDesign(context)
         ? _buildGlassCard(context, content)
@@ -259,43 +370,20 @@ class _FushiCardState extends State<FushiCard> {
               padding: widget.margin ?? EdgeInsets.zero,
               // 可点的卡片按下即轻微下沉（2026-10 交互重做）：只旁观指针事件，不进
               // 手势竞技场，InkWell 的点击 / 长按语义不变；eink / 减弱动态效果下不包。
+              // 分段列表格（grouped + 形变）的按压反馈是形变，不缩放（整组里单独
+              // 一格缩一下会和上下格错开一道缝）。
               child: FushiPressScale(
                 enabled: widget.pressScale &&
+                    !(widget.grouped && _morphEnabled) &&
                     (widget.onTap != null || widget.onLongPress != null),
-                child: AnimatedContainer(
-                  duration: einkSafeDuration(context, fushiMd3StateDuration),
-                  curve: fushiMd3StateCurve,
-                  decoration: ShapeDecoration(
-                    color: effectiveColor,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: radius,
-                      side: side,
-                    ),
-                  ),
-                  child: Material(
-                    type: MaterialType.transparency,
-                    shape: RoundedRectangleBorder(borderRadius: radius),
-                    clipBehavior: widget.clipBehavior,
-                    child: widget.onTap == null &&
-                            widget.onLongPress == null &&
-                            widget.onSecondaryTap == null
-                        ? content
-                        : InkWell(
-                            onTap: widget.onTap,
-                            onLongPress: widget.onLongPress,
-                            // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
-                            // （像素不变），封面卡不裁剪时靠它保持圆角。
-                            borderRadius: radius,
-                            // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
-                            // 由外层 Material 裁在圆角里；墨水屏交回默认。
-                            overlayColor: eink
-                                ? null
-                                : fushiMd3ContentStateLayer(
-                                    Theme.of(context).colorScheme,
-                                  ),
-                            child: content,
-                          ),
-                  ),
+                child: _buildMd3Surface(
+                  context,
+                  content: content,
+                  color: effectiveColor,
+                  baseRadius: baseRadius,
+                  side: side,
+                  eink: eink,
+                  scheme: scheme,
                 ),
               ),
             ),
@@ -316,6 +404,71 @@ class _FushiCardState extends State<FushiCard> {
         id: widget.focusId ?? _fallbackFocusId,
         child: card,
       ),
+    );
+  }
+
+  /// MD3（M3E）卡面：底色经状态时长渐变；圆角 / 投影跟随弹簧（形变卡悬停
+  /// 内侧角 → 12、按下 / 选中 → 16；抬升卡悬停 level1 → level2）。树结构
+  /// 恒定：不论是否形变 / 抬升，都是 AnimatedBuilder → AnimatedContainer →
+  /// Material → (InkWell) → content。
+  Widget _buildMd3Surface(
+    BuildContext context, {
+    required Widget content,
+    required Color color,
+    required BorderRadius baseRadius,
+    required BorderSide side,
+    required bool eink,
+    required ColorScheme scheme,
+  }) {
+    final bool elevated = widget.variant == FushiCardVariant.elevated && !eink;
+    // 弹簧在首次需要时以「当前状态」为初值建好，之后的悬停 / 按下才有过渡。
+    if (_animated) _ensureSpring();
+    // 动效关（墨水屏 / 减弱动态效果）或未首次交互时直接取状态值，不建弹簧。
+    final Animation<double> level =
+        _animated && fushiExpressiveMotionEnabled(context)
+            ? _spring!.animation
+            : AlwaysStoppedAnimation<double>(_animated ? _stateLevel : 0);
+    return AnimatedBuilder(
+      animation: level,
+      builder: (BuildContext context, Widget? _) {
+        final double t = level.value;
+        final BorderRadius radius =
+            _morphEnabled ? fushiM3eMorphRadius(baseRadius, t) : baseRadius;
+        // 颜色走状态时长渐变（AnimatedContainer）；圆角 / 投影由弹簧逐帧给值，
+        // AnimatedContainer 只在两帧之间补间，弹簧仍是形变节奏的唯一来源。
+        return AnimatedContainer(
+          duration: einkSafeDuration(context, fushiMd3StateDuration),
+          curve: fushiMd3StateCurve,
+          decoration: ShapeDecoration(
+            color: color,
+            shape: RoundedRectangleBorder(borderRadius: radius, side: side),
+            shadows: elevated
+                ? fushiM3eCardShadow(context, t.clamp(0.0, 1.0))
+                : null,
+          ),
+          child: Material(
+            type: MaterialType.transparency,
+            shape: RoundedRectangleBorder(borderRadius: radius),
+            clipBehavior: widget.clipBehavior,
+            child: !_interactive
+                ? content
+                : InkWell(
+                    onTap: widget.onTap,
+                    onLongPress: widget.onLongPress,
+                    onHover: _setHovered,
+                    onHighlightChanged: _setPressed,
+                    // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
+                    // （像素不变），封面卡不裁剪时靠它保持圆角。
+                    borderRadius: radius,
+                    // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
+                    // 由外层 Material 裁在圆角里；墨水屏交回默认。
+                    overlayColor:
+                        eink ? null : fushiMd3ContentStateLayer(scheme),
+                    child: content,
+                  ),
+          ),
+        );
+      },
     );
   }
 
@@ -404,7 +557,12 @@ class FushiListItem extends StatefulWidget {
     this.subtitleMaxLines = 2,
     this.focusId,
     this.autofocus = false,
+    this.isThreeLine = false,
   });
+
+  /// 三行列表项（M3 three-line list item）：最小高 88，行首 / 行尾与标题顶对齐，
+  /// 副标题默认放宽到两行。与单行（56）/ 双行（72，带副标题）构成三档高度。
+  final bool isThreeLine;
 
   final Widget title;
   final Widget? subtitle;
@@ -449,6 +607,14 @@ class _FushiListItemState extends State<FushiListItem> {
     'hibiki-list-item-${identityHashCode(this)}',
   );
 
+  /// 按下中：M3E 列表行按下 / 选中时高亮块形变到 corner-large（16）。
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -487,9 +653,11 @@ class _FushiListItemState extends State<FushiListItem> {
     // 最小高 56，带副标题的两行行 72（MD3 one-line / two-line list item）。
     final double resolvedMinHeight = widget.minHeight ??
         switch (widget.density) {
-          FushiListDensity.standard => widget.subtitle != null
-              ? 72
-              : tokens.density.listMinHeight,
+          FushiListDensity.standard => widget.isThreeLine
+              ? 88
+              : widget.subtitle != null
+                  ? 72
+                  : tokens.density.listMinHeight,
           FushiListDensity.compact => tokens.density.compactListMinHeight,
         };
 
@@ -501,8 +669,15 @@ class _FushiListItemState extends State<FushiListItem> {
     // 对话框）内缩 8，平铺列表内缩 4——平铺行默认内边距同步减 4，文字起点仍在
     // 容器边 16 处，与分隔线、分组标题对齐。
     final double inset = pill ? tokens.spacing.gap : kFushiMd3RowInset;
-    const BorderRadius highlightRadius =
-        BorderRadius.all(Radius.circular(kFushiMd3RowRadius));
+    // M3E 列表行形变：静止 / 悬停 12（corner-medium），按下 / 选中 16
+    // （corner-large）；墨水屏不形变。
+    final BorderRadius highlightRadius = BorderRadius.all(
+      Radius.circular(
+        (widget.selected || _pressed) && !eink
+            ? FushiM3eShape.listActive
+            : kFushiMd3RowRadius,
+      ),
+    );
     final double horizontalPadding = pill
         ? tokens.spacing.rowHorizontal
         : tokens.spacing.rowHorizontal - inset;
@@ -515,9 +690,13 @@ class _FushiListItemState extends State<FushiListItem> {
               vertical: tokens.spacing.rowVertical,
             ),
         child: Row(
+          crossAxisAlignment: widget.isThreeLine
+              ? CrossAxisAlignment.start
+              : CrossAxisAlignment.center,
           children: <Widget>[
             if (widget.leading != null) ...<Widget>[
-              // 行首图标 24、单色、无底（MD3 list leading icon）。
+              // 行首图标 24、单色、无底（MD3 list leading icon）；要 M3E 形状底的
+              // 调用点传 [FushiListLeadingIcon]。
               IconTheme.merge(
                 data: IconThemeData(color: secondaryForeground, size: 24),
                 child: widget.leading!,
@@ -544,7 +723,9 @@ class _FushiListItemState extends State<FushiListItem> {
                       padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
                       child: DefaultTextStyle.merge(
                         style: subtitleStyle,
-                        maxLines: widget.subtitleMaxLines,
+                        maxLines: widget.isThreeLine
+                            ? math.max(2, widget.subtitleMaxLines)
+                            : widget.subtitleMaxLines,
                         overflow: TextOverflow.ellipsis,
                         child: widget.subtitle!,
                       ),
@@ -583,8 +764,8 @@ class _FushiListItemState extends State<FushiListItem> {
           : Colors.transparent,
     );
     final Widget material = AnimatedContainer(
-      duration: fushiMd3StateDuration,
-      curve: fushiMd3StateCurve,
+      duration: einkSafeDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
       margin: EdgeInsets.symmetric(horizontal: inset),
       decoration: BoxDecoration(
         color: color,
@@ -598,6 +779,7 @@ class _FushiListItemState extends State<FushiListItem> {
             : InkWell(
                 onTap: widget.onTap,
                 autofocus: widget.autofocus,
+                onHighlightChanged: _setPressed,
                 borderRadius: highlightRadius,
                 // 柔和状态层（悬停 8% / 按下 10% onSurface）；墨水屏交回默认。
                 overlayColor: eink ? null : fushiMd3ContentStateLayer(scheme),
@@ -670,7 +852,11 @@ class _FushiListItemState extends State<FushiListItem> {
     final Widget? trailing = widget.trailing ??
         (checkSelected ? const FushiAppleCheckmark() : null);
     final double minHeight = widget.minHeight ??
-        (compact ? metrics.rowMinHeight - 4 : metrics.rowMinHeight);
+        (widget.isThreeLine
+            ? metrics.rowMinHeight + 20
+            : compact
+                ? metrics.rowMinHeight - 4
+                : metrics.rowMinHeight);
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
