@@ -199,8 +199,14 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   /// [visible] 是回调而不是 bool：拖放判定只发生在事件到达的瞬间，判据与上面
   /// `offstage:` 用的是同一个表达式，保证「看得见的那个」与「接拖放的那个」
   /// 永远是同一个。
+  ///
+  /// 同时给分区一份自己的主滚动控制器（[SectionPrimaryScrollScope]）：保活分区
+  /// 同时挂在树上，共用外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
   Widget _dropScoped(bool Function() visible, Widget child) =>
-      DropSurfaceScope(isActive: visible, child: child);
+      DropSurfaceScope(
+        isActive: visible,
+        child: SectionPrimaryScrollScope(child: child),
+      );
 
   @override
   Widget build(BuildContext context) {

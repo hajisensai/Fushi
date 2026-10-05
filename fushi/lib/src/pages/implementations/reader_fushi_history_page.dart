@@ -213,6 +213,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   MediaType get mediaType => mediaSource.mediaType;
 
+  /// 本页自己的滚动控制器。书架与漫画库是同一个页面类、取同一个
+  /// `ReaderFushiSource.instance.mediaType`，两个 tab 保活并存；共用
+  /// `mediaType.scrollController` 会让一个控制器附着两个位置，`thumbVisibility`
+  /// 常显的 [RawScrollbar] 每次依赖变化都断言（BUG-1181 遗留）。
+  final ScrollController _shelfScrollController = ScrollController();
+
   @override
   ReaderFushiSource get mediaSource => ReaderFushiSource.instance;
 
@@ -607,6 +613,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   void dispose() {
     _searchController.dispose();
+    _shelfScrollController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _collectionTablesSub?.cancel();
     _collectionsReloadDebounce?.cancel();
@@ -1772,13 +1779,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       child: RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
-        controller: mediaType.scrollController,
+        controller: _shelfScrollController,
         child: LayoutBuilder(
           // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
           builder: (context, constraints) => RefreshIndicator(
             onRefresh: _pullToRefreshBooks,
             child: CustomScrollView(
-              controller: mediaType.scrollController,
+              controller: _shelfScrollController,
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
