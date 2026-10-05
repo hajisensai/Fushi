@@ -6495,5 +6495,8 @@
   "reader_nav_search_empty_hint": "Search the whole book, or jump to a character position",
   "reader_nav_favorites_empty": "No favorite sentences in this book yet",
   "reader_stats_last_7_days": "Last 7 days",
-  "reader_stats_session_title": "This session"
+  "reader_stats_session_title": "This session",
+  "reader_nav_progress_book": "全体",
+  "reader_nav_progress_chapter": "第 $current / $total 章",
+  "reader_nav_progress_chars": "$current / $total 字"
 }

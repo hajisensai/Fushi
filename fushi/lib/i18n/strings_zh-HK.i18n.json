@@ -6495,5 +6495,8 @@
   "reader_nav_search_empty_hint": "搜尋全書，或跳到指定字數位置",
   "reader_nav_favorites_empty": "這本書還沒有收藏的句子",
   "reader_stats_last_7_days": "近 7 天",
-  "reader_stats_session_title": "本次閱讀"
+  "reader_stats_session_title": "本次閱讀",
+  "reader_nav_progress_book": "全書",
+  "reader_nav_progress_chapter": "第 $current / $total 章",
+  "reader_nav_progress_chars": "$current / $total 字"
 }
