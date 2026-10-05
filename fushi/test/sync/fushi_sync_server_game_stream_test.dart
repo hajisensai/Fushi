@@ -22,6 +22,9 @@ SecurityContext _selfSignedContext() {
 http.Client _selfSignedTrustingClient() =>
     IOClient(HttpClient()..badCertificateCallback = (_, _, _) => true);
 
+Object? _code(http.Response response) =>
+    (jsonDecode(response.body) as Map<String, Object?>)['code'];
+
 void main() {
   test(
     'actual server routes require a paired token and pin the joining peer',
@@ -66,10 +69,22 @@ void main() {
         (await post('sessions', 'wrong', <String, Object?>{})).statusCode,
         401,
       );
-      expect(
-        (await post('sessions', 'shared', <String, Object?>{})).statusCode,
-        403,
+      final http.Response sharedToken = await post(
+        'sessions',
+        'shared',
+        <String, Object?>{},
       );
+      expect(sharedToken.statusCode, 403);
+      expect(_code(sharedToken), 'unauthorized_peer');
+      // No library attached (not Windows / Games module off at start): the
+      // receiver must be told that, not that the host is outdated.
+      final http.Response library = await post(
+        'library',
+        'phone',
+        <String, Object?>{},
+      );
+      expect(library.statusCode, 404);
+      expect(_code(library), 'library_off');
       expect(
         (await post('sessions', 'phone', <String, Object?>{})).statusCode,
         200,
@@ -147,8 +162,36 @@ void main() {
         reason: '$suffix 在明文 HTTP 上必须拒绝（WebRTC 的信任链就在这条信令上）',
       );
       expect(res.body, contains('HTTPS'), reason: '$suffix 的拒绝理由要说清是 HTTPS');
+      expect(_code(res), 'https_required', reason: suffix);
     }
     // 明文下没有任何一条请求能建立会话。
     expect(service.sessions.single.sessionId, sessionId);
+  });
+
+  test('a server without the game-stream service says it is off', () async {
+    final Directory root = await Directory.systemTemp.createTemp('stream_off_');
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: root.path,
+      port: 0,
+      token: 'shared',
+    );
+    final http.Client client = http.Client();
+    addTearDown(() async {
+      client.close();
+      await server.stop();
+      await root.delete(recursive: true);
+    });
+    await server.start();
+
+    final http.Response res = await client.post(
+      Uri.parse('http://127.0.0.1:${server.port}/api/game-stream/sessions'),
+      headers: <String, String>{
+        'authorization': 'Basic ${base64Encode(utf8.encode('fushi:shared'))}',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    );
+    expect(res.statusCode, 404);
+    expect(_code(res), 'game_stream_off');
   });
 }
