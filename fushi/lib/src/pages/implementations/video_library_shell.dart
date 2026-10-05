@@ -146,7 +146,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   void _select(VideoLibrarySection value) {
     if (value == _section) return;
     // 换了分区，新页面从顶部开始：工具栏回来。
-    _chrome.show();
+    _chrome.resetToTop();
     setState(() {
       _section = value;
       if (value == VideoLibrarySection.home ||

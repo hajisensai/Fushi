@@ -71,10 +71,27 @@ class FushiFloatingChromeController extends ChangeNotifier {
   /// 驱动显隐的滚动区深度（见过的最浅竖向滚动区）。
   int? _ownerDepth;
 
+  /// 内容是否已滚离顶部（有内容在工具区底下）。顶部渐隐遮罩只在此时出现：
+  /// 没滚动时工具区下面就是内容的第一行，遮罩只会把它压暗一截。
+  bool get contentUnderTop => _contentUnderTop;
+  bool _contentUnderTop = false;
+
   /// 工具栏此刻应当显示。
   bool get visible => _visible;
 
   void show() => _set(true);
+
+  /// 换了视图 / 分区（新页面从顶部开始）：工具栏回来，遮罩撤掉，重新认主滚动区。
+  void resetToTop() {
+    _ownerDepth = null;
+    _lastContext = null;
+    _lastViewportDimension = null;
+    if (_contentUnderTop) {
+      _contentUnderTop = false;
+      notifyListeners();
+    }
+    show();
+  }
 
   void hide() => _set(false);
 
@@ -100,6 +117,11 @@ class FushiFloatingChromeController extends ChangeNotifier {
     if (notification is ScrollUpdateNotification &&
         (owner == null || depth < owner)) {
       _ownerDepth = depth;
+    }
+    final bool underTop = metrics.extentBefore > 0.5;
+    if (underTop != _contentUnderTop) {
+      _contentUnderTop = underTop;
+      notifyListeners();
     }
     final bool sameScrollable = identical(notification.context, _lastContext);
     final bool viewportChanged =
@@ -219,7 +241,12 @@ class FushiFloatingChromeInsetPadding extends StatelessWidget {
                   left: 0,
                   right: 0,
                   child: AnimatedOpacity(
-                    opacity: controller.visible || top <= 0 ? 0 : 1,
+                    opacity:
+                        controller.visible ||
+                            top <= 0 ||
+                            !controller.contentUnderTop
+                        ? 0
+                        : 1,
                     duration: fushiMotionDuration(context, FushiMotion.short),
                     child: const FushiTopFadeScrim(solidHeight: 0),
                   ),
@@ -342,11 +369,20 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             final bool hidden = shown <= 0.001;
             return Stack(
               children: <Widget>[
+                // 遮罩在内容之上、所有 chrome（外壳标题、页签、按钮组、搜索行）
+                // 之下：实色段盖住外壳标题区（[outer]）+ 此刻可见的工具区，
+                // 再往下渐隐。没滚动时不画（工具区下面就是第一行内容）。
                 Positioned(
                   top: 0,
                   left: 0,
                   right: 0,
-                  child: FushiTopFadeScrim(solidHeight: shown * travel),
+                  child: AnimatedOpacity(
+                    opacity: controller.contentUnderTop ? 1 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: FushiTopFadeScrim(
+                      solidHeight: outer + shown * _chromeHeight,
+                    ),
+                  ),
                 ),
                 Positioned(
                   top: outer,

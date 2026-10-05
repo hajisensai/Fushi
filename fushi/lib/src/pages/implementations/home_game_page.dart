@@ -140,7 +140,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     final GameSection requested = gameSectionNotifier.value;
     if (requested == _section || !mounted) return;
     // 换了子区，新页面从顶部开始：工具栏回来。
-    _chrome.show();
+    _chrome.resetToTop();
     setState(() {
       _section = requested;
       if (requested == GameSection.discover) _discoverVisited = true;

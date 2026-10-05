@@ -182,7 +182,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     }
     if (index == _currentIndex) return;
     // 换了视图，新页面从顶部开始：工具栏回来。
-    _chrome.show();
+    _chrome.resetToTop();
     setState(() {
       _currentIndex = index;
       _visited.add(index);

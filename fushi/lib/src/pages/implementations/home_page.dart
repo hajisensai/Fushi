@@ -29,7 +29,6 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeInset,
         FushiHeightReporter,
-        FushiTopFadeScrim,
         kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
@@ -1457,7 +1456,7 @@ class _HomePageState extends BasePageState<HomePage>
               FushiFloatingChromeInset(top: titleInset, child: content),
               apple: apple,
               overlay: overlayTitle && !narrow
-                  ? _floatingTitleOverlay(titleInset)
+                  ? _floatingTitleOverlay()
                   : const <Widget>[],
             ),
           ),
@@ -1498,13 +1497,11 @@ class _HomePageState extends BasePageState<HomePage>
   /// 就是顶部锚点——单独一整行标题胶囊只占地方（用户 2026-10-06）。并进页签行
   /// 会和页签胶囊、动作胶囊三颗挤一行；「只在收起时显示」会在工具栏还没收起的
   /// 那段距离里与页签胶囊重叠，都不取。
-  List<Widget> _floatingTitleOverlay(double titleInset) => <Widget>[
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: FushiTopFadeScrim(solidHeight: titleInset),
-        ),
+  ///
+  /// 标题条本身透明、不带底色或遮罩：顶部渐隐由库页工具区
+  /// （[FushiFloatingChromeOverlay]）在**页签胶囊之下**画，并把这段标题区一并
+  /// 盖住——遮罩若画在这里，就压在页签胶囊上面了（用户 2026-10-06 截图）。
+  List<Widget> _floatingTitleOverlay() => <Widget>[
         Positioned(
           top: 0,
           left: 0,
