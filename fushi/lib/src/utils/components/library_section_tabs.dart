@@ -571,6 +571,11 @@ class _FushiSectionTabBarState<T extends Object>
     final double basePadding = apple
         ? _kSectionTabAppleLabelPadding
         : _kSectionTabHorizontalPadding;
+    // Apple 文字页签在 label 内边距里还给文字两侧各留一圈内衬（悬停 / 焦点底的
+    // 呼吸位），每段实际多占这一截。漏算它时窄屏 4 段（浏览页「发现 / 在线源 /
+    // 扩展 / 下载」）被判成「等分放得下」，实际「在线源」被 Tab 的渐隐截断
+    // （2026-10-05 用户截图）。
+    final double inset = apple ? kFushiAppleTabContentInset * 2 : 0.0;
     final TextStyle style = _labelStyleBase(context);
     final double baseFont = _baseFontSize(context, apple);
     final List<double> fonts = <double>[
@@ -584,7 +589,7 @@ class _FushiSectionTabBarState<T extends Object>
       style.copyWith(fontSize: baseFont),
     );
     final double widest = widths.reduce(math.max);
-    if ((widest + basePadding * 2) * n <= available) {
+    if ((widest + inset + basePadding * 2) * n <= available) {
       return const _SectionTabLayout(fit: _SectionTabFit.fill);
     }
 
@@ -593,7 +598,9 @@ class _FushiSectionTabBarState<T extends Object>
         widths = _measureLabels(context, style.copyWith(fontSize: font));
       }
       final double sum = widths.fold<double>(0, (double a, double b) => a + b);
-      final double padding = _floorPadding((available - sum) / (2 * n));
+      final double padding = _floorPadding(
+        (available - sum - inset * n) / (2 * n),
+      );
       if (padding >= _kSectionTabMinLabelPadding) {
         return _SectionTabLayout(
           fit: _SectionTabFit.natural,
@@ -607,7 +614,8 @@ class _FushiSectionTabBarState<T extends Object>
     // 因为选中段可能被替换上来）。
     final double room = available - _kSectionTabMoreWidth;
     final List<double> cells = <double>[
-      for (final double w in widths) w + _kSectionTabMinLabelPadding * 2,
+      for (final double w in widths)
+        w + inset + _kSectionTabMinLabelPadding * 2,
     ];
     int count = 1;
     for (int k = n - 1; k >= 1; k--) {
@@ -631,7 +639,7 @@ class _FushiSectionTabBarState<T extends Object>
     ];
     double visibleText = 0;
     for (final int i in visible) {
-      visibleText += widths[i];
+      visibleText += widths[i] + inset;
     }
     final double padding = math.max(
       4.0,

@@ -16,6 +16,7 @@ import 'package:fushi/utils.dart';
 
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
+export 'package:fushi/src/pages/implementations/discovery/discovery_hero_carousel.dart';
 export 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
 /// 搜索框输入到发请求之间的防抖间隔。

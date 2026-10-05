@@ -6423,5 +6423,8 @@
   "dict_order_position_move": "Move to position…",
   "dict_order_position_title": "Move to position",
   "dict_order_position_label": "Position (1–$m)",
-  "dict_order_position_clamped": "Out of range — will move to position $n"
+  "dict_order_position_clamped": "Out of range — will move to position $n",
+  "discovery_hero_previous": "Previous",
+  "discovery_hero_next": "Next",
+  "discovery_hero_page_indicator": "Item ${index} of ${count}"
 }

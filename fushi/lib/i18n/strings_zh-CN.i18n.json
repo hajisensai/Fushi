@@ -6423,5 +6423,8 @@
   "dict_order_position_move": "移到指定位置…",
   "dict_order_position_title": "移到第几位",
   "dict_order_position_label": "位置（1–$m）",
-  "dict_order_position_clamped": "超出范围，将移到第 $n 位"
+  "dict_order_position_clamped": "超出范围，将移到第 $n 位",
+  "discovery_hero_previous": "上一个",
+  "discovery_hero_next": "下一个",
+  "discovery_hero_page_indicator": "第 ${index} / ${count} 项"
 }

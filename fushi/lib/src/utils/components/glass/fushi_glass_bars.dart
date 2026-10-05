@@ -1475,6 +1475,11 @@ class FushiShellLargeTitleBar extends StatelessWidget {
   }
 }
 
+/// Apple 文字页签在 label 内边距之内、文字两侧各再留的内衬（悬停 / 焦点圆角
+/// 底的呼吸位）。量页签宽度的调用方（`LibrarySectionTabs` 的铺满判据）必须把它
+/// 算进去，否则判「放得下」的一档实际会把文字挤到渐隐截断。
+const double kFushiAppleTabContentInset = 6.0;
+
 /// [TabBar] 的设计系统分派版（含 `.secondary`）。实现 [PreferredSizeWidget]
 /// 供 `AppBar.bottom` 使用，[preferredSize] 与同参 TabBar 一致（两套设计系统
 /// 下高度相同，切换不跳布局）。
@@ -2065,7 +2070,9 @@ class _FushiAppleTabState extends State<_FushiAppleTab> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: kFushiAppleTabContentInset,
+                    ),
                     child: Center(
                       widthFactor: 1,
                       child: KeyedSubtree(
