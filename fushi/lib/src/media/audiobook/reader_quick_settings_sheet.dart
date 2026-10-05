@@ -924,7 +924,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               padding: ReaderSideSheet.defaultPadding.copyWith(
                 top: tokens.spacing.gap + tokens.spacing.gap / 2,
               ),
-              child: _buildSettingsTabContent(context, tab),
+              // 内容自成重绘边界：SingleChildScrollView 的子树不是边界，滚动每帧
+              // 都要把整页设置重录一遍；隔开后滚动只平移已录好的层。Android 上
+              // 面板压在 Hybrid Composition 的正文 WebView 之上，每帧 UI 线程省下
+              // 的这段直接决定滚动跟不跟手。
+              child: RepaintBoundary(
+                child: _buildSettingsTabContent(context, tab),
+              ),
             ),
         ],
       ),
