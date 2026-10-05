@@ -248,7 +248,7 @@ class _AppUiPreview extends StatelessWidget {
 }
 
 /// 一段带振假名的日文：`(基字, 注音)`，注音为 null 即普通文字。
-const List<(String, String?)> _kBodyRubySample = <(String, String?)>[
+const List<(String, String?)> kJaFontRubySample = <(String, String?)>[
   ('吾輩', 'わがはい'),
   ('は猫である。名前はまだ無い。どこで', null),
   ('生', 'うま'),
@@ -289,7 +289,7 @@ class _BodyPreviewState extends State<_BodyPreview> {
       height: 1,
     );
     final List<(String, String?)> segments = widget.sampleText == null
-        ? _kBodyRubySample
+        ? kJaFontRubySample
         : <(String, String?)>[(widget.sampleText!, null)];
     return ColoredBox(
       color: tokens.surfaces.card,
@@ -317,53 +317,17 @@ class _BodyPreviewState extends State<_BodyPreview> {
             if (_vertical)
               SizedBox(
                 height: 176,
-                child: _VerticalText(
+                child: FontVerticalSpecimen(
                   segments: segments,
                   style: body,
                   rubyStyle: ruby,
                 ),
               )
             else
-              Text.rich(
-                TextSpan(
-                  children: <InlineSpan>[
-                    for (final (String base, String? rt) in segments)
-                      if (rt == null)
-                        TextSpan(text: base, style: body)
-                      else
-                        // 基字与正文同样式、按基线对齐（Stack 的基线取基字）；
-                        // 注音浮在基字上方的行距留白里，不撑高行、不挤换行。
-                        WidgetSpan(
-                          alignment: PlaceholderAlignment.baseline,
-                          baseline: TextBaseline.alphabetic,
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: <Widget>[
-                              Text(base, style: body),
-                              Positioned(
-                                left: -8,
-                                right: -8,
-                                top:
-                                    (body.fontSize ?? 16) *
-                                        ((body.height ?? 1) - 1) /
-                                        2 -
-                                    (ruby.fontSize ?? 8),
-                                // 不参与基线：否则 Stack 取最高基线 = 注音的。
-                                child: IgnoreBaseline(
-                                  child: Text(
-                                    rt,
-                                    style: ruby,
-                                    textAlign: TextAlign.center,
-                                    softWrap: false,
-                                    overflow: TextOverflow.visible,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                  ],
-                ),
+              FontHorizontalRubySpecimen(
+                segments: segments,
+                style: body,
+                rubyStyle: ruby,
               ),
           ],
         ),
@@ -372,13 +336,78 @@ class _BodyPreviewState extends State<_BodyPreview> {
   }
 }
 
-/// 竖排近似：从右往左一列一列排，每字一格，振假名贴在基字右侧。Flutter 没有原生
-/// 竖排，这里只为看字形在竖排版面里的观感，不追求 WebView 的标点换形。
-class _VerticalText extends StatelessWidget {
-  const _VerticalText({
+/// 横排带振假名的样张：基字与正文同样式、按基线对齐，注音浮在基字上方的行距
+/// 留白里（不撑高行、不挤换行）。字体库样张卡与详情页、正文用途预览共用。
+class FontHorizontalRubySpecimen extends StatelessWidget {
+  const FontHorizontalRubySpecimen({
     required this.segments,
     required this.style,
     required this.rubyStyle,
+    this.maxLines,
+    super.key,
+  });
+
+  final List<(String, String?)> segments;
+  final TextStyle style;
+  final TextStyle rubyStyle;
+  final int? maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle body = style;
+    final TextStyle ruby = rubyStyle;
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          for (final (String base, String? rt) in segments)
+            if (rt == null)
+              TextSpan(text: base, style: body)
+            else
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Text(base, style: body),
+                    Positioned(
+                      left: -8,
+                      right: -8,
+                      top:
+                          (body.fontSize ?? 16) *
+                              ((body.height ?? 1) - 1) /
+                              2 -
+                          (ruby.fontSize ?? 8),
+                      // 不参与基线：否则 Stack 取最高基线 = 注音的。
+                      child: IgnoreBaseline(
+                        child: Text(
+                          rt,
+                          style: ruby,
+                          textAlign: TextAlign.center,
+                          softWrap: false,
+                          overflow: TextOverflow.visible,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+      maxLines: maxLines,
+      overflow: maxLines == null ? null : TextOverflow.ellipsis,
+    );
+  }
+}
+
+/// 竖排近似：从右往左一列一列排，每字一格，振假名贴在基字右侧。Flutter 没有原生
+/// 竖排，这里只为看字形在竖排版面里的观感，不追求 WebView 的标点换形。
+class FontVerticalSpecimen extends StatelessWidget {
+  const FontVerticalSpecimen({
+    required this.segments,
+    required this.style,
+    required this.rubyStyle,
+    super.key,
   });
 
   final List<(String, String?)> segments;

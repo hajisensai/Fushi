@@ -1494,6 +1494,7 @@ class SettingsKitScaffold extends StatefulWidget {
     this.actions = const <Widget>[],
     this.showBack = true,
     this.sections = const <(String, String)>[],
+    this.floatingActionButton,
   });
 
   final String title;
@@ -1507,6 +1508,10 @@ class SettingsKitScaffold extends StatefulWidget {
   /// 旧接口保留（不再使用）：分组表现在由页内带标题的共享分组组件自动登记
   /// （见 settings_section_anchor.dart），≥ 2 个分组即画跳转条。
   final List<(String, String)> sections;
+
+  /// 页面主操作（如字体库的「导入字体」扩展 FAB）。独立路由页交给 Scaffold
+  /// 定位；嵌在宽屏右窗格时叠在右下角。
+  final Widget? floatingActionButton;
 
   final Widget Function(
     BuildContext context,
@@ -1617,9 +1622,28 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     // 独立路由页用 Scaffold（SnackBar / 键盘避让都要它）；嵌在宽屏右窗格时
     // 只铺 Material，不再套第二层 Scaffold。
     if (widget.showBack) {
-      return Scaffold(backgroundColor: page, body: column);
+      return Scaffold(
+        backgroundColor: page,
+        body: column,
+        floatingActionButton: widget.floatingActionButton,
+      );
     }
-    return Material(color: page, child: column);
+    final Widget? fab = widget.floatingActionButton;
+    return Material(
+      color: page,
+      child: fab == null
+          ? column
+          : Stack(
+              children: <Widget>[
+                Positioned.fill(child: column),
+                PositionedDirectional(
+                  end: tokens.spacing.page,
+                  bottom: tokens.spacing.page,
+                  child: SafeArea(top: false, child: fab),
+                ),
+              ],
+            ),
+    );
   }
 }
 

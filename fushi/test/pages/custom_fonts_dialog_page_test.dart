@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_library_widgets.dart';
+import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import '../helpers/glass_unwrap.dart';
 
 void main() {
   setUp(() {
@@ -52,119 +54,98 @@ void main() {
     expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
   });
 
-  testWidgets('font catalog row exposes independent target toggles', (
+  FontLibraryEntryView entryView({
+    String name = 'Klee One',
+    bool isFile = true,
+    Set<FontTarget> targets = const <FontTarget>{
+      FontTarget.body,
+      FontTarget.dictionary,
+    },
+  }) => FontLibraryEntryView(
+    identity: '$name\u0000${isFile ? '/fonts/$name.ttf' : ''}',
+    name: name,
+    isFile: isFile,
+    path: isFile ? '/fonts/$name.ttf' : null,
+    family: null,
+    state: FontSpecimenState.ready,
+    targets: targets,
+  );
+
+  testWidgets('font detail panel exposes independent target toggles', (
     WidgetTester tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(420, 1600);
+    addTearDown(tester.view.reset);
     final List<FontTarget> toggledTargets = <FontTarget>[];
 
     await tester.pumpWidget(
       buildApp(
         Scaffold(
-          body: CustomFontCatalogTile(
-            name: 'Klee One',
-            isFile: true,
-            index: 0,
-            isLast: true,
-            targets: const <FontTarget>{FontTarget.body, FontTarget.dictionary},
-            onTargetToggled: toggledTargets.add,
+          body: FontLibraryDetailPanel(
+            entry: entryView(),
+            script: FontSampleScript.japanese,
+            customSample: '',
+            onToggleTarget: toggledTargets.add,
             onDelete: () {},
-            onMoveUp: () {},
-            onMoveDown: () {},
           ),
         ),
       ),
     );
-
-    expect(find.text('Klee One'), findsOneWidget);
-
-    // Target chips are collapsed by default so the row stays compact; expand
-    // the "Font roles" section before asserting on the individual toggles.
-    expect(find.widgetWithText(FilterChip, t.font_target_app_ui), findsNothing);
-    await tester.tap(find.text(t.custom_fonts_font_roles));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.font_target_app_ui), findsOneWidget);
-    expect(find.text(t.font_target_body), findsOneWidget);
-    expect(find.text(t.font_target_dictionary), findsOneWidget);
-
-    final Finder appUiChip = find.widgetWithText(
-      FilterChip,
-      t.font_target_app_ui,
+    expect(find.text('Klee One'), findsWidgets);
+    final Finder appUi = find.byKey(
+      const ValueKey<String>('font-detail-target-appUi'),
     );
-    final Finder bodyChip = find.widgetWithText(FilterChip, t.font_target_body);
-    final Finder dictionaryChip = find.widgetWithText(
-      FilterChip,
-      t.font_target_dictionary,
+    final Finder body = find.byKey(
+      const ValueKey<String>('font-detail-target-body'),
     );
+    expect(tester.widget<FushiToggleButton>(appUi).selected, isFalse);
+    expect(tester.widget<FushiToggleButton>(body).selected, isTrue);
 
-    expect(tester.widget<FilterChip>(glassUnwrap<FilterChip>(appUiChip)).selected, isFalse);
-    expect(tester.widget<FilterChip>(glassUnwrap<FilterChip>(bodyChip)).selected, isTrue);
-    expect(tester.widget<FilterChip>(glassUnwrap<FilterChip>(dictionaryChip)).selected, isTrue);
-
-    await tester.tap(appUiChip);
+    await tester.tap(appUi);
     await tester.pump();
 
     expect(toggledTargets, <FontTarget>[FontTarget.appUi]);
   });
 
-  testWidgets('font catalog row keeps three action buttons inline with title', (
+  testWidgets('font specimen card fits a narrow list row without overflow', (
     WidgetTester tester,
   ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(360, 420);
     addTearDown(tester.view.reset);
+    final List<Offset> menus = <Offset>[];
 
     await tester.pumpWidget(
       buildApp(
         Scaffold(
-          body: CustomFontCatalogTile(
-            name: 'Aozora Mincho Super Family',
-            isFile: false,
-            index: 1,
-            isLast: false,
-            targets: const <FontTarget>{
-              FontTarget.appUi,
-              FontTarget.body,
-              FontTarget.dictionary,
-            },
-            onTargetToggled: (_) {},
-            onDelete: () {},
-            onMoveUp: () {},
-            onMoveDown: () {},
+          body: FontSpecimenCard(
+            entry: entryView(
+              name: 'Aozora Mincho Super Family',
+              isFile: false,
+              targets: const <FontTarget>{
+                FontTarget.appUi,
+                FontTarget.body,
+                FontTarget.dictionary,
+              },
+            ),
+            sampleText: '吾輩は猫である。名前はまだ無い。',
+            layout: FontLibraryLayout.list,
+            onOpen: () {},
+            onContextMenu: menus.add,
           ),
         ),
       ),
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(FushiIconButton), findsNWidgets(3));
-
-    final Rect titleRect = tester.getRect(
-      find.text('Aozora Mincho Super Family'),
-    );
-    final Rect moveUpRect = tester.getRect(find.bySemanticsLabel(t.move_up));
-    final Rect moveDownRect = tester.getRect(
-      find.bySemanticsLabel(t.move_down),
-    );
-    final Rect deleteRect = tester.getRect(
-      find.bySemanticsLabel(t.custom_fonts_removed),
-    );
-
-    for (final Rect buttonRect in <Rect>[
-      moveUpRect,
-      moveDownRect,
-      deleteRect,
-    ]) {
-      expect(
-        (buttonRect.center.dy - titleRect.center.dy).abs(),
-        lessThanOrEqualTo(6),
-        reason: 'Font row actions must visually share the title line.',
-      );
-    }
-
-    expect(titleRect.right, lessThanOrEqualTo(moveUpRect.left));
-    expect(moveUpRect.right, lessThanOrEqualTo(moveDownRect.left));
-    expect(moveDownRect.right, lessThanOrEqualTo(deleteRect.left));
+    expect(find.text('Aozora Mincho Super Family'), findsOneWidget);
+    // 「更多」钮是触屏与键盘打开上下文菜单的入口。
+    await tester.tap(find.byType(FushiIconButton));
+    await tester.pump();
+    expect(menus, hasLength(1));
   });
 
   test('font catalog rows include fonts with no target membership', () {
