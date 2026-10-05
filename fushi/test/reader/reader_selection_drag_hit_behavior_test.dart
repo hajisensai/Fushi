@@ -25,8 +25,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// New lifecycle cases run real document/handle listeners and assert coordinates
 /// and visibility synchronously after every event; this is not a compositor or
 /// physical-touch device test. Both CSS Highlights and non-mutating fallback run.
-/// Full 32px touch boxes must clear every selected glyph/line fragment, including
-/// tiny corner glyphs, interior words and multi-line horizontal/vertical ranges.
+/// Interior handles preserve endpoint anchors; edge hit targets remain bounded.
 /// Node is required locally and in CI: fail explicitly when unavailable.
 void main() {
   test(
@@ -92,7 +91,7 @@ void main() {
         '34_edge_touch_boxes_bounded_and_independently_grabbable',
         '35_offscreen_endpoints_are_not_clamped_into_view',
         '36_edge_small_viewport_has_explicit_geometry_limit',
-        '37_interior_touch_boxes_clear_all_selected_fragments',
+        '37_interior_handles_keep_endpoint_anchors',
       ]) {
         expect(
           stdout,
@@ -121,7 +120,7 @@ void main() {
       expect(
         stdout,
         contains(
-          'SCENARIO 37_interior_touch_boxes_clear_all_selected_fragments '
+          'SCENARIO 37_interior_handles_keep_endpoint_anchors '
           ':: {"cases":32}',
         ),
       );
@@ -148,14 +147,12 @@ void main() {
         'reopen_live_touch_target',
         'skip_touch_box_clamp',
         'overlap_clamped_grips',
-        'restore_8px_gap',
-        'cover_selected_glyphs',
-        'ignore_middle_selection_fragments',
+        'displace_interior_anchors',
         'clamp_offscreen_endpoints',
       ]) {
         expect(stdout, contains('MUTATION $mutation :: KILLED'));
       }
-      expect(stdout, contains('killed 26 mutations'));
+      expect(stdout, contains('killed 24 mutations'));
       expect(stdout, contains('all assertions passed'));
     },
   );

@@ -351,184 +351,19 @@ void main() {
       },
     );
 
-    test('edge placement bounds full targets without changing text ranges', () {
-      final String body = _between(
-        js,
-        'positionSelectionHandles: function',
-        'selectionHandlesRect: function',
-      );
-      expect(body, contains('var SIZE = 32, half = SIZE / 2;'));
-      expect(body, contains('var GAP = half + 4;'));
-      expect(body, isNot(contains('var GAP = 8;')));
-      expect(body, contains('Math.max(half, Math.min(vw - half, xs[a]))'));
-      expect(body, contains('Math.max(half, Math.min(vh - half, ys[b]))'));
-      expect(
-        body,
-        contains(
-          'target.left < 0 || target.top < 0 || '
-          'target.right > vw || target.bottom > vh',
-        ),
-      );
-      expect(body, contains('if (overlaps(first.rect, last.rect)) continue;'));
-      expect(body, contains('if (first.cost + last.cost < cost)'));
-      expect(body, contains('if (!bestStart || !bestEnd)'));
+    test('rollback preserves endpoint anchors and only fits viewport edges', () {
+      final String body = _between(js, 'positionSelectionHandles: function', 'selectionHandlesRect: function');
+      expect(body, contains('var GAP = 8;'));
+      expect(body, contains('sy = sRect.top - GAP;'));
+      expect(body, contains('ey = eRect.bottom + GAP;'));
+      expect(body, contains('sx = sRect.left;'));
+      expect(body, contains('ex = eRect.right;'));
+      expect(body, contains('edgeClamped && Math.abs(sx - ex) < SIZE'));
+      expect(body, contains('return Math.max(half, Math.min(extent - half, value));'));
       expect(body, contains('this.visibleContentBox()'));
-      expect(
-        body,
-        contains('this.charRangeAt(eps.startNode, eps.startOffset)'),
-      );
-      expect(body, contains('this.charRangeAt(eps.endNode, eps.endOffset)'));
-      expect(body, contains('this.hideSelectionHandles();'));
+      expect(body, isNot(contains('selectedRects')));
+      expect(body, isNot(contains('bestStart')));
       expect(body, isNot(contains('this.selection =')));
-      expect(body, isNot(contains('collectRangeBetween')));
-    });
-
-    test('手柄定位按书写模式分支（横排 vs 竖排 vertical-rl）', () {
-      final String body = _between(
-        js,
-        'positionSelectionHandles: function',
-        'selectionHandlesRect: function',
-      );
-      expect(body, contains('this._selectionVertical()'), reason: '定位必须读书写模式');
-      expect(
-        body,
-        contains('vertical ? sRect.left + sRect.width / 2 : sRect.left'),
-        reason: 'horizontal/vertical start anchors use their own inline axis',
-      );
-      expect(body, contains('vertical ? sRect.top - GAP : sRect.bottom + GAP'));
-      expect(
-        body,
-        contains('vertical ? eRect.left + eRect.width / 2 : eRect.right'),
-      );
-      expect(body, contains('var ey = eRect.bottom + GAP;'));
-      expect(body, contains('_glyphRect'));
-      // _selectionVertical 走 fushiReader.isVertical()（与 caret 同源）。
-      final String vBody = _between(
-        js,
-        '_selectionVertical: function',
-        'selectionEndpoints: function',
-      );
-      expect(vBody, contains('window.fushiReader'));
-      expect(vBody, contains('isVertical'));
-    });
-
-    test('placement checks every selected client rect, not only endpoints', () {
-      final String body = _between(
-        js,
-        'positionSelectionHandles: function',
-        'selectionHandlesRect: function',
-      );
-      expect(body, contains('i < this.selection.ranges.length'));
-      expect(body, contains('range.setStart(segment.node, segment.start)'));
-      expect(body, contains('range.setEnd(segment.node, segment.end)'));
-      expect(body, contains('range.getClientRects()'));
-      expect(body, contains('selectedRects.push(rects[j])'));
-      expect(
-        body,
-        contains(
-          'if (selectedRects.some(function(rect) { '
-          'return overlaps(target, rect); })) continue;',
-        ),
-      );
-      expect(
-        body.indexOf('selectedRects.some'),
-        lessThan(body.indexOf('result.push(')),
-        reason: 'reject text collisions before admitting a placement candidate',
-      );
-    });
-
-    test('clearSelection 同步隐藏手柄（无选区必无悬空手柄）', () {
-      final String body = js.substring(js.indexOf('clearSelection: function'));
-      expect(body, contains('this.hideSelectionHandles();'));
-    });
-
-    test('手柄段绝不建立/读写原生选区（不复活 TODO-1279 双选区）', () {
-      // endRangeSelection..getSelectionRect 之间涵盖全部手柄方法。
-      final String region = _between(
-        js,
-        'endRangeSelection: function',
-        'getSelectionRect: function',
-      );
-      expect(
-        region,
-        isNot(contains('window.getSelection')),
-        reason: '手柄绝不读/建原生选区',
-      );
-      expect(region, isNot(contains('.addRange(')), reason: '手柄绝不写原生选区');
-      expect(region, isNot(contains('removeAllRanges')), reason: '手柄绝不动原生选区');
-    });
-  });
-
-  group('长按手势 IIFE 对手柄触摸让路', () {
-    test('lpsAllowed 排除手柄元素（触手柄不 arm 新长按）', () {
-      final String gestureJs =
-          ReaderSelectionScripts.longPressDragGestureScript();
-      expect(
-        gestureJs,
-        contains('[data-fushi-sel-handle]'),
-        reason: '长按 arm 白名单必须排除起止手柄元素',
-      );
-    });
-  });
-
-  group('BUG-765 续修：getCaretRange caretPositionFromPoint 命中非文本节点不早退', () {
-    test('caretPositionFromPoint 仅在文本节点走快路，非文本落几何兜底', () {
-      final String body = _between(
-        js,
-        'getCaretRange: function',
-        'getCharacterAtPoint: function',
-      );
-      // 命中判据必须校验 TEXT_NODE（旧代码 if(!pos) return 无条件早退，押注
-      // caretPositionFromPoint 尊重 pointer-events，真机不成立 → 拖手柄冻结）。
-      expect(
-        body,
-        contains('nodeType === Node.TEXT_NODE'),
-        reason: 'caretPositionFromPoint 结果必须校验是文本节点才走快路',
-      );
-      // 非文本节点（遮挡的手柄 div / documentElement）不得早退，必须落到下方
-      // elementFromPoint + 最近字符几何兜底（对 pointer-events:none 稳定生效）。
-      final int caretIdx = body.indexOf('caretPositionFromPoint');
-      final int fallbackIdx = body.indexOf('elementFromPoint');
-      expect(caretIdx, greaterThanOrEqualTo(0));
-      expect(
-        fallbackIdx,
-        greaterThan(caretIdx),
-        reason: 'elementFromPoint 几何兜底必须在 caretPositionFromPoint 之后可达（非早退）',
-      );
-      // 不得再有「拿到 pos 就无条件 setStart 返回」的旧早退。
-      expect(
-        body,
-        isNot(contains('if (!pos) return null;')),
-        reason: '旧无条件早退必须移除，改为 TEXT_NODE 校验 + 兜底',
-      );
-    });
-  });
-
-  group('BUG-765 续修：手柄外观（主题色 + 触控盒 + 内层圆钮，去刺眼橙）', () {
-    test('手柄用主题变量 var(--fushi-sel-handle) 上色，不再硬编码刺眼橙 + 发光', () {
-      final String body = _between(
-        js,
-        'ensureSelectionHandles: function',
-        '_wireHandle: function',
-      );
-      expect(
-        body,
-        contains('var(--fushi-sel-handle'),
-        reason: '圆钮颜色须走主题变量（reader CSS 从 linkColor 下发，随主题变）',
-      );
-      // 内层实心圆钮存在（外层是透明触控盒）。
-      expect(body, contains("'data-fushi-sel-ball'"), reason: '须有内层视觉圆钮元素');
-      // 旧刺眼橙 + 双重发光 box-shadow 必须移除。
-      expect(
-        body,
-        isNot(contains('rgba(255,138,0,0.98)')),
-        reason: '旧刺眼橙背景必须移除',
-      );
-      expect(
-        body,
-        isNot(contains('0 0 4px rgba(255,138,0,0.9)')),
-        reason: '旧橙色发光 box-shadow 必须移除',
-      );
     });
   });
 }

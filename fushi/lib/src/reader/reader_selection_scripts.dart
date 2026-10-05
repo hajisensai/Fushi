@@ -1713,6 +1713,10 @@ window.fushiSelection = {
     // Viewport CSS pixels, including BOTH 32px touch targets. Lookup's
     // single-glyph getSelectionRect remains unchanged.
     payload.handlesRect = this.selectionHandlesRect();
+    // 两个球**各自**的触控盒：宿主避让操作条要按单个球算 —— 只有并集 bbox 时，两球之间
+    // 的整段正文空白也算成障碍（竖排长选区里 bbox 一路延伸到末字球），宿主在页顶"上方
+    // 放不下"就只能翻到 bbox 底端，操作条于是掉到选区尾部下方。
+    payload.handlesBoxes = this.selectionHandlesBoxes();
     window.flutter_inappwebview.callHandler('onSelectionMenu', JSON.stringify(payload));
     return payload.text;
   },
@@ -2064,61 +2068,48 @@ window.fushiSelection = {
       this.hideSelectionHandles();
       return;
     }
-    // Keep the complete touch box outside selected glyphs, not merely its center.
-    // The previous 8px center gap was smaller than the 9px ball radius; clamping
-    // at page edges then moved both the visible ball and hit box onto the text.
-    var GAP = half + 4;
-    var sx = vertical ? sRect.left + sRect.width / 2 : sRect.left;
-    var sy = vertical ? sRect.top - GAP : sRect.bottom + GAP;
-    var ex = vertical ? eRect.left + eRect.width / 2 : eRect.right;
-    var ey = eRect.bottom + GAP;
-    // Use line fragments, not a union bounding box that fills inter-line gaps.
-    // All selected fragments participate: moving a grip off its own endpoint
-    // must not put it onto another selected line/column.
-    var selectedRects = [];
-    for (var i = 0; i < this.selection.ranges.length; i++) {
-      var segment = this.selection.ranges[i];
-      var range = document.createRange();
-      range.setStart(segment.node, segment.start);
-      range.setEnd(segment.node, segment.end);
-      var rects = range.getClientRects();
-      for (var j = 0; j < rects.length; j++) {
-        if (rects[j].width > 0 && rects[j].height > 0) selectedRects.push(rects[j]);
-      }
+    var sx, sy, ex, ey;
+    // 圆钮离开文字的间隙（约半个钮），让抓手悬在选区外缘、不压住字。
+    var GAP = 8;
+    if (vertical) {
+      // vertical-rl: reading runs top->bottom, columns right->left. Start grip
+      // above the first glyph, end grip below the last glyph.
+      sx = sRect.left + sRect.width / 2;
+      sy = sRect.top - GAP;
+      ex = eRect.left + eRect.width / 2;
+      ey = eRect.bottom + GAP;
+    } else {
+      // horizontal: start grip at the lower-left of the first glyph, end grip at
+      // the lower-right of the last glyph (below the baseline).
+      sx = sRect.left;
+      sy = sRect.bottom + GAP;
+      ex = eRect.right;
+      ey = eRect.bottom + GAP;
     }
-    var overlaps = function(a, b) {
-      return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    var clampCenter = function(value, extent) {
+      return Math.max(half, Math.min(extent - half, value));
     };
-    var candidates = function(glyph, x, y) {
-      var xs = [x, glyph.left - GAP, glyph.right + GAP, x - SIZE, x + SIZE, half, vw - half];
-      var ys = [y, glyph.top - GAP, glyph.bottom + GAP, y - SIZE, y + SIZE, half, vh - half];
-      var result = [], seen = {};
-      for (var a = 0; a < xs.length; a++) for (var b = 0; b < ys.length; b++) {
-        var cx = Math.max(half, Math.min(vw - half, xs[a]));
-        var cy = Math.max(half, Math.min(vh - half, ys[b]));
-        var key = cx + ':' + cy;
-        if (seen[key]) continue;
-        seen[key] = true;
-        var target = { left: cx - half, top: cy - half, right: cx + half, bottom: cy + half };
-        if (target.left < 0 || target.top < 0 || target.right > vw || target.bottom > vh) continue;
-        if (selectedRects.some(function(rect) { return overlaps(target, rect); })) continue;
-        result.push({ x: cx, y: cy, rect: target, cost: (cx - x) * (cx - x) + (cy - y) * (cy - y) });
-      }
-      return result;
-    };
-    var starts = candidates(sRect, sx, sy), ends = candidates(eRect, ex, ey);
-    var bestStart = null, bestEnd = null, cost = Infinity;
-    for (var a = 0; a < starts.length; a++) for (var b = 0; b < ends.length; b++) {
-      var first = starts[a], last = ends[b];
-      if (overlaps(first.rect, last.rect)) continue;
-      if (first.cost + last.cost < cost) {
-        cost = first.cost + last.cost; bestStart = first; bestEnd = last;
-      }
+    var edgeClamped = sx < half || sx > vw - half || ex < half || ex > vw - half ||
+      sy < half || sy > vh - half || ey < half || ey > vh - half;
+    sx = clampCenter(sx, vw); ex = clampCenter(ex, vw);
+    sy = clampCenter(sy, vh); ey = clampCenter(ey, vh);
+    // Preserve ordinary interior placement. At an edge a single glyph can put
+    // both balls under one touch box after clamping. Separate those boxes along
+    // the reading axis, moving the pair together when it meets a viewport edge.
+    if (edgeClamped && Math.abs(sx - ex) < SIZE && Math.abs(sy - ey) < SIZE) {
+      var alongY = vertical;
+      if ((alongY ? vh : vw) < SIZE * 2) alongY = !alongY;
+      var extent = alongY ? vh : vw;
+      // No room for two full non-overlapping boxes on either axis: fail closed
+      // rather than shrink targets, overlap them or manufacture more text.
+      if (extent < SIZE * 2) { this.hideSelectionHandles(); return; }
+      var a = alongY ? sy : sx, b = alongY ? ey : ex;
+      var mid = Math.max(SIZE, Math.min(extent - SIZE, (a + b) / 2));
+      var direction = a <= b ? 1 : -1;
+      a = mid - direction * half; b = mid + direction * half;
+      if (alongY) { sy = a; ey = b; }
+      else { sx = a; ex = b; }
     }
-    // A fully occupied/tiny viewport may have no legal placement. Never cover
-    // text or shrink targets to pretend that it does; the selection stays intact.
-    if (!bestStart || !bestEnd) { this.hideSelectionHandles(); return; }
-    sx = bestStart.x; sy = bestStart.y; ex = bestEnd.x; ey = bestEnd.y;
     handles.start.style.left = sx + 'px';
     handles.start.style.top = sy + 'px';
     handles.end.style.left = ex + 'px';
@@ -2147,6 +2138,21 @@ window.fushiSelection = {
       }
     }
     return { x: bounds.x, y: bounds.y, width: bounds.right - bounds.x, height: bounds.bottom - bounds.y };
+  },
+  // 两个球各自的触控盒（视口 CSS 像素，顺序 = start, end）。宿主避让操作条时按单个盒子
+  // 算：只有并集 bbox 会把两球之间的正文也算成障碍。任一端不可用 -> null（宿主退回并集）。
+  selectionHandlesBoxes: function() {
+    var handles = this.selectionHandles;
+    if (!handles || !this.selectionEndpoints()) return null;
+    var boxes = [];
+    for (var i = 0; i < 2; i++) {
+      var el = i === 0 ? handles.start : handles.end;
+      if (!el.isConnected || el.style.display === 'none') return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      boxes.push({ x: r.left, y: r.top, width: r.width, height: r.height });
+    }
+    return boxes;
   },
   showSelectionHandles: function() {
     this.positionSelectionHandles();

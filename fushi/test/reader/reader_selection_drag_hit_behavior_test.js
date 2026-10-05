@@ -125,33 +125,16 @@ const mutations = {
     '    /* toolbar has only glyph bounds */', '33_handles_rect_and_legacy_top_layer_contract',
   ],
   skip_touch_box_clamp: [
-    'if (target.left < 0 || target.top < 0 || target.right > vw || target.bottom > vh) continue;',
-    '/* accept unclamped out-of-viewport candidates */',
-    '34_edge_touch_boxes_bounded_and_independently_grabbable',
-    'full touch box must stay inside viewport',
+    'return Math.max(half, Math.min(extent - half, value));',
+    'return value;', '34_edge_touch_boxes_bounded_and_independently_grabbable',
   ],
   overlap_clamped_grips: [
-    'if (overlaps(first.rect, last.rect)) continue;',
-    '/* accept overlapping grips */',
-    '34_edge_touch_boxes_bounded_and_independently_grabbable',
-    'two touch boxes must not overlap',
+    'if (edgeClamped && Math.abs(sx - ex) < SIZE && Math.abs(sy - ey) < SIZE)',
+    'if (false)', '34_edge_touch_boxes_bounded_and_independently_grabbable',
   ],
-  restore_8px_gap: [
-    'var GAP = half + 4;', 'var GAP = 8;',
-    '28_longpress_live_coordinates_each_move',
-    'unobstructed 20px candidates have zero displacement cost',
-  ],
-  cover_selected_glyphs: [
-    'if (selectedRects.some(function(rect) { return overlaps(target, rect); })) continue;',
-    '/* accept candidates on selected glyphs */',
-    '34_edge_touch_boxes_bounded_and_independently_grabbable',
-    'touch box must not cover selected glyph',
-  ],
-  ignore_middle_selection_fragments: [
-    'selectedRects.push(rects[j]);',
-    'selectedRects.push(sRect, eRect);',
-    '37_interior_touch_boxes_clear_all_selected_fragments',
-    'touch box must not cover selected glyph',
+  displace_interior_anchors: [
+    'var GAP = 8;', 'var GAP = 20;',
+    '37_interior_handles_keep_endpoint_anchors',
   ],
   clamp_offscreen_endpoints: [
     '!this.charRangeVisible(this.charRangeAt(eps.startNode, eps.startOffset), box) ||',
@@ -167,17 +150,6 @@ function mutateSource(source) {
   const name = mutation.slice('--mutant='.length);
   assert.ok(Object.hasOwn(mutations, name), `unknown mutation ${name}`);
   const [before, after] = mutations[name];
-  if (name === 'skip_touch_box_clamp') {
-    // Clamping and bounds validation are independent safety barriers. Bypass
-    // both; removing only one is an equivalent (surviving) mutation.
-    for (const [clamp, raw] of [
-      ['Math.max(half, Math.min(vw - half, xs[a]))', 'xs[a]'],
-      ['Math.max(half, Math.min(vh - half, ys[b]))', 'ys[b]'],
-    ]) {
-      assert.strictEqual(source.split(clamp).length - 1, 1, `${name}: ${clamp}`);
-      source = source.replace(clamp, raw);
-    }
-  }
   if (name === 'late_end_without_session') {
     assert.strictEqual(source.split(before).length - 1, 2);
     return source.replaceAll(before, after).replace(
@@ -1538,78 +1510,39 @@ function liveDom(vertical, popover = true) {
     { rect: rect(20, 20, 340, 240), textNodes: [{ text: CJK, rects: glyphs }] },
   ] });
 }
-// Independent geometry oracle: inspect every selected code-unit rect, not just
-// the first/last glyph or the union used by the toolbar. Edge contact is legal;
-// any positive-area intersection (including the transparent touch box) is not.
+// Rollback contract: bound edge hit targets, but do not relocate interior
+// handles to free whitespace. Text-avoidance candidates were rejected by user.
 function rectanglesOverlap(a, b) {
   return Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
     Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
 }
-function selectedGlyphRects(sel) {
-  return sel.selection.ranges.flatMap(segment =>
-    segment.node.__rects.slice(segment.start, segment.end));
-}
 function assertTouchBoxesClear(sel, width, height, context = '') {
-  const glyphs = selectedGlyphRects(sel);
-  // Also check the browser-like merged line fragments: checking only individual
-  // glyph boxes would miss selected justification/whitespace between them.
-  const fragments = sel.selection.ranges.flatMap(segment => {
-    const range = makeRange();
-    range.setStart(segment.node, segment.start);
-    range.setEnd(segment.node, segment.end);
-    return range.getClientRects();
-  });
-  assert.ok(glyphs.length > 0, 'fixture must contain selected glyphs');
   const boxes = ['start', 'end'].map(which => {
-    const el = sel.selectionHandles[which];
-    assert.strictEqual(el.style.display, 'block', `${context}: ${which} must be visible`);
-    const box = el.getBoundingClientRect();
-    assert.deepStrictEqual([box.width, box.height], [32, 32], 'do not shrink the touch target');
-    assert.ok([box.left, box.top, box.right, box.bottom].every(Number.isFinite),
-      `${context}: finite touch coordinates`);
-    glyphs.forEach((glyph, i) => assert.ok(!rectanglesOverlap(box, glyph),
-      `${context}: ${which} touch box must not cover selected glyph ${i}: ` +
-      `box=${JSON.stringify(box)}, glyph=${JSON.stringify(glyph)}`));
-    fragments.forEach((fragment, i) => assert.ok(!rectanglesOverlap(box, fragment),
-      `${context}: ${which} touch box must not cover selected clientRect ${i}`));
+    const el = sel.selectionHandles[which], box = el.getBoundingClientRect();
+    assert.strictEqual(el.style.display, 'block', context);
+    assert.deepStrictEqual([box.width, box.height], [32, 32]);
     assert.ok(box.left >= 0 && box.top >= 0 && box.right <= width && box.bottom <= height,
-      `${context}: ${which} full touch box must stay inside viewport: ${JSON.stringify(box)}`);
+      context + ': full touch box must stay inside viewport');
     return box;
   });
-  assert.ok(!rectanglesOverlap(...boxes), `${context}: two touch boxes must not overlap`);
+  assert.ok(!rectanglesOverlap(...boxes), context + ': two touch boxes must not overlap');
   return boxes;
 }
 function assertLiveHandles(sel, vertical, pair = sel.selectionHandles) {
-  assert.strictEqual(sel.selectionHandles, pair, 'keep the touch targets, not replacement nodes');
-  const eps = sel.selectionEndpoints();
-  assert.ok(eps);
-  const start = eps.startNode.__rects[eps.startOffset];
-  const end = eps.endNode.__rects[eps.endOffset];
-  // A 32px box leaves 4px of clearance at the natural 20px endpoint offset.
-  // Colliding/edge candidates may move, so do not pin all frames to one center.
-  const desired = vertical
-    ? [[start.left + start.width / 2, start.top - 20], [end.left + end.width / 2, end.bottom + 20]]
-    : [[start.left, start.bottom + 20], [end.right, end.bottom + 20]];
-  const boxes = assertTouchBoxesClear(sel, 400, 300, `live vertical=${vertical}`);
-  const centers = boxes.map(box => [(box.left + box.right) / 2, (box.top + box.bottom) / 2]);
-  [pair.start, pair.end].forEach((el, i) => {
-    assert.strictEqual(el.style.display, 'block', 'visible BEFORE release');
-    assert.strictEqual(el.style.pointerEvents, 'auto');
-    assert.ok(Math.hypot(centers[i][0] - desired[i][0], centers[i][1] - desired[i][1]) <= 64,
-      'both touch targets must remain near their CURRENT endpoints after EACH touchmove');
-    assert.deepStrictEqual(el.__styleWrites.filter(w => w.key === 'display').map(w => w.value), ['block'],
-      'a live target is shown once, not hidden/re-shown while dragging');
-    if (el.showPopover) {
-      assert.strictEqual(el.__popoverOpen, true);
-      assert.strictEqual(el.__popoverShows, 1, 'do not reopen a popover during the gesture');
-    }
+  assert.strictEqual(sel.selectionHandles, pair, 'retain target identity');
+  const eps = sel.selectionEndpoints(); assert.ok(eps);
+  const start = eps.startNode.__rects[eps.startOffset], end = eps.endNode.__rects[eps.endOffset];
+  const centers = vertical
+    ? [[start.left + start.width / 2, start.top - 8], [end.left + end.width / 2, end.bottom + 8]]
+    : [[start.left, start.bottom + 8], [end.right, end.bottom + 8]];
+  [pair.start,pair.end].forEach((el,i) => {
+    assert.strictEqual(el.style.display,'block','visible before release');
+    assert.strictEqual(el.style.pointerEvents,'auto');
+    assert.deepStrictEqual([parseFloat(el.style.left),parseFloat(el.style.top)], centers[i],
+      'interior handles must stay anchored to current endpoint, not jump to blank space');
+    assert.deepStrictEqual(el.__styleWrites.filter(w=>w.key==='display').map(w=>w.value),['block']);
+    if(el.showPopover){assert.strictEqual(el.__popoverOpen,true);assert.strictEqual(el.__popoverShows,1);}
   });
-  const desiredBoxes = desired.map(([x, y]) => rect(x - 16, y - 16, x + 16, y + 16));
-  if (!rectanglesOverlap(...desiredBoxes) && desiredBoxes.every(box =>
-    box.left >= 0 && box.top >= 0 && box.right <= 400 && box.bottom <= 300 &&
-    selectedGlyphRects(sel).every(glyph => !rectanglesOverlap(box, glyph)))) {
-    assert.deepStrictEqual(centers, desired, 'unobstructed 20px candidates have zero displacement cost');
-  }
   return centers;
 }
 function handleEvent(el, name, dom, i) {
@@ -1879,40 +1812,26 @@ scenario('36_edge_small_viewport_has_explicit_geometry_limit', () => {
   }
   return { cases: 8 };
 });
-scenario('37_interior_touch_boxes_clear_all_selected_fragments', () => {
+scenario('37_interior_handles_keep_endpoint_anchors', () => {
   let cases = 0;
-  for (const vertical of [false, true]) for (const popover of [false, true]) {
-    for (const cssHighlights of [false, true]) for (const [label, text, perLine] of [
-      ['short-word', 'hi', 6], ['single-glyph', '\u6625', 6],
-      ['multi-glyph', '\u6625\u590f\u79cb\u51ac', 6], ['multi-line', '\u6625\u590f\u79cb\u51ac\u5c71\u5ddd\u82b1\u9ce5\u98a8\u6708\u96ea\u7a7a', 4],
-    ]) {
-      const glyphs = Array.from(text, (_, i) => vertical
-        ? rect(240 - Math.floor(i / perLine) * 40, 80 + (i % perLine) * 24,
-          264 - Math.floor(i / perLine) * 40, 104 + (i % perLine) * 24)
-        : rect(80 + (i % perLine) * 24, 80 + Math.floor(i / perLine) * 40,
-          104 + (i % perLine) * 24, 104 + Math.floor(i / perLine) * 40));
-      const dom = buildDocument({ vertical, popover, bodyRect: rect(0, 0, 400, 300),
-        blocks: [{ rect: unionRects(glyphs), textNodes: [{ text, rects: glyphs }] }] });
-      dom.win.__fushiCssHighlightsSupported = cssHighlights;
-      const sel = loadSelection(dom, true);
-      assert.ok(sel.beginRangeSelection(...glyphPoint(dom, 0)));
-      const pair = sel.selectionHandles;
-      assertTouchBoxesClear(sel, 400, 300, `${label} begin vertical=${vertical}`);
-      if (text.length > 1) sel.updateRangeSelection(...glyphPoint(dom, text.length - 1));
-      assert.strictEqual(textOf(sel), text, 'positioning must not truncate or expand selected text');
-      assertTouchBoxesClear(sel, 400, 300, `${label} move vertical=${vertical}`);
-      sel.endRangeSelection(...glyphPoint(dom, text.length - 1));
-      assertTouchBoxesClear(sel, 400, 300, `${label} release vertical=${vertical}`);
-      const before = sel.selection;
+  for (const vertical of [false,true]) for (const popover of [false,true]) {
+    for (const end of [0,1,3,5,6,7,9,11]) {
+      const dom=liveDom(vertical,popover), sel=loadSelection(dom,true);
+      assert.ok(sel.beginRangeSelection(...glyphPoint(dom,0)));
+      const pair=sel.selectionHandles;
+      assertLiveHandles(sel,vertical,pair);
+      sel.updateRangeSelection(...glyphPoint(dom,end));
+      assertLiveHandles(sel,vertical,pair);
+      sel.endRangeSelection(...glyphPoint(dom,end));
+      assertLiveHandles(sel,vertical,pair);
+      const before=sel.selection;
       sel.positionSelectionHandles();
-      assert.strictEqual(sel.selection, before, 'repositioning must preserve selection identity');
-      assert.strictEqual(sel.selectionHandles, pair);
-      assert.strictEqual(dom.textNodes[0].textContent, text, 'never modify source text for placement');
-      assert.strictEqual(textOf(sel), text);
+      assert.strictEqual(sel.selection,before);
+      assertLiveHandles(sel,vertical,pair);
       cases++;
     }
   }
-  return { cases };
+  return {cases};
 });
 // ---------------------------------------------------------------- summary
 const failures = results.filter((r) => !r.ok);
@@ -1933,7 +1852,7 @@ if (!mutation) {
     }
     assert.strictEqual((run.stdout.match(/^SCENARIO /gm) || []).length, 37,
       `${name}: every scenario must execute even after a witnessed failure`);
-    assert.ok(run.stdout.includes('SCENARIO 37_interior_touch_boxes_clear_all_selected_fragments ::'), 'mutant must execute the full suite');
+    assert.ok(run.stdout.includes('SCENARIO 37_interior_handles_keep_endpoint_anchors ::'), 'mutant must execute the full suite');
     console.log(`MUTATION ${name} :: KILLED (${witness})`);
   }
   console.log(`killed ${Object.keys(mutations).length} mutations`);
