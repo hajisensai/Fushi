@@ -6,6 +6,9 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Moonlight-style stream settings. Returns the edited settings, or null when
 /// dismissed without saving.
@@ -15,7 +18,7 @@ Future<GameStreamVideoSettings?> showGameStreamSettingsSheet(
 }) {
   return adaptiveModalSheet<GameStreamVideoSettings>(
     context: context,
-    showDragHandle: false,
+    showDragHandle: true,
     builder: (BuildContext context) =>
         GameStreamSettingsSheet(initial: initial),
   );
@@ -76,179 +79,152 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     // Log-scale slider: 0.5 → 150 Mbps spans three decades; a linear slider
     // would leave the common 5–30 Mbps range in the first tenth of the track.
     final double minLog = _log(GameStreamVideoSettings.minBitrateKbps);
     final double maxLog = _log(GameStreamVideoSettings.maxBitrateKbps);
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.85,
-        child: Column(
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      t.game_stream_settings_title,
-                      style: theme.textTheme.titleLarge,
-                    ),
-                  ),
-                  FushiTextButton(
-                    onPressed: () => setState(() {
-                      _bitrateTouched = false;
-                      _settings = const GameStreamVideoSettings().copyWith(
-                        bitrateKbps:
-                            GameStreamVideoSettings.recommendedBitrateKbps(
-                              maxHeight: 1080,
-                              maxFps: 60,
-                            ),
-                      );
-                    }),
-                    child: Text(t.game_stream_settings_reset),
-                  ),
-                  // 两枚按钮之间留出间距：Apple 下是两颗相邻胶囊，贴着会粘成一块。
-                  const SizedBox(width: 8),
-                  FushiFilledButton(
-                    key: GameStreamSettingsSheet.saveKey,
-                    onPressed: () => Navigator.of(context).pop(_settings),
-                    child: Text(t.game_stream_settings_save),
-                  ),
-                ],
-              ),
+    final List<Widget> rows = <Widget>[
+      AdaptiveSettingsSegmentedRow<int>(
+        title: t.game_stream_settings_resolution,
+        subtitle: t.game_stream_settings_resolution_hint,
+        segments: <ButtonSegment<int>>[
+          for (final int height in GameStreamVideoSettings.heightChoices)
+            ButtonSegment<int>(
+              value: height,
+              label: Text(_heightLabel(height)),
             ),
-            Expanded(
-              child: ListView(
-                children: <Widget>[
-                  AdaptiveSettingsSegmentedRow<int>(
-                    title: t.game_stream_settings_resolution,
-                    subtitle: t.game_stream_settings_resolution_hint,
-                    segments: <ButtonSegment<int>>[
-                      for (final int height
-                          in GameStreamVideoSettings.heightChoices)
-                        ButtonSegment<int>(
-                          value: height,
-                          label: Text(_heightLabel(height)),
-                        ),
-                    ],
-                    selected: _settings.maxHeight,
-                    onChanged: (int value) =>
-                        _update(_settings.copyWith(maxHeight: value)),
-                  ),
-                  AdaptiveSettingsSegmentedRow<int>(
-                    title: t.game_stream_settings_fps,
-                    segments: <ButtonSegment<int>>[
-                      for (final int fps in GameStreamVideoSettings.fpsChoices)
-                        ButtonSegment<int>(value: fps, label: Text('$fps')),
-                    ],
-                    selected:
-                        GameStreamVideoSettings.fpsChoices.contains(
-                          _settings.maxFps,
-                        )
-                        ? _settings.maxFps
-                        : 60,
-                    onChanged: (int value) =>
-                        _update(_settings.copyWith(maxFps: value)),
-                  ),
-                  AdaptiveSettingsSliderRow(
-                    title: t.game_stream_settings_bitrate,
-                    readout: bitrateLabel(_settings.bitrateKbps),
-                    min: minLog,
-                    max: maxLog,
-                    step: (maxLog - minLog) / 60,
-                    value: _log(_settings.bitrateKbps).clamp(minLog, maxLog),
-                    onChanged: (double value) => setState(() {
-                      _bitrateTouched = true;
-                      _settings = _settings.copyWith(
-                        bitrateKbps: _roundBitrate(_exp(value)),
-                      );
-                    }),
-                  ),
-                  AdaptiveSettingsSwitchRow(
-                    title: t.game_stream_settings_adaptive,
-                    subtitle: t.game_stream_settings_adaptive_hint,
-                    value: _settings.adaptiveBitrate,
-                    onChanged: (bool value) => setState(
-                      () => _settings = _settings.copyWith(
-                        adaptiveBitrate: value,
-                      ),
-                    ),
-                  ),
-                  AdaptiveSettingsSegmentedRow<GameStreamDegradation>(
-                    title: t.game_stream_settings_degradation,
-                    segments: <ButtonSegment<GameStreamDegradation>>[
-                      ButtonSegment<GameStreamDegradation>(
-                        value: GameStreamDegradation.balanced,
-                        label: Text(
-                          t.game_stream_settings_degradation_balanced,
-                        ),
-                      ),
-                      ButtonSegment<GameStreamDegradation>(
-                        value: GameStreamDegradation.maintainFramerate,
-                        label: Text(
-                          t.game_stream_settings_degradation_framerate,
-                        ),
-                      ),
-                      ButtonSegment<GameStreamDegradation>(
-                        value: GameStreamDegradation.maintainResolution,
-                        label: Text(
-                          t.game_stream_settings_degradation_resolution,
-                        ),
-                      ),
-                    ],
-                    selected: _settings.degradation,
-                    onChanged: (GameStreamDegradation value) => setState(
-                      () => _settings = _settings.copyWith(degradation: value),
-                    ),
-                  ),
-                  AdaptiveSettingsSegmentedRow<GameStreamCodec>(
-                    title: t.game_stream_settings_codec,
-                    subtitle: t.game_stream_settings_codec_hint,
-                    segments: <ButtonSegment<GameStreamCodec>>[
-                      for (final GameStreamCodec codec
-                          in GameStreamCodec.values)
-                        ButtonSegment<GameStreamCodec>(
-                          value: codec,
-                          label: Text(_codecLabel(codec)),
-                        ),
-                    ],
-                    selected: _settings.codec,
-                    onChanged: (GameStreamCodec value) => setState(
-                      () => _settings = _settings.copyWith(codec: value),
-                    ),
-                  ),
-                  AdaptiveSettingsSegmentedRow<GameStreamInputFocus>(
-                    title: t.game_stream_settings_input_focus,
-                    subtitle: t.game_stream_settings_input_focus_hint,
-                    segments: <ButtonSegment<GameStreamInputFocus>>[
-                      ButtonSegment<GameStreamInputFocus>(
-                        value: GameStreamInputFocus.background,
-                        label: Text(t.game_stream_settings_input_background),
-                      ),
-                      ButtonSegment<GameStreamInputFocus>(
-                        value: GameStreamInputFocus.foreground,
-                        label: Text(t.game_stream_settings_input_foreground),
-                      ),
-                    ],
-                    selected: _settings.inputFocus,
-                    onChanged: (GameStreamInputFocus value) => setState(
-                      () => _settings = _settings.copyWith(inputFocus: value),
-                    ),
-                  ),
-                  AdaptiveSettingsSwitchRow(
-                    title: t.game_stream_settings_audio,
-                    value: _settings.audio,
-                    onChanged: (bool value) => setState(
-                      () => _settings = _settings.copyWith(audio: value),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+        ],
+        selected: _settings.maxHeight,
+        onChanged: (int value) => _update(_settings.copyWith(maxHeight: value)),
+      ),
+      AdaptiveSettingsSegmentedRow<int>(
+        title: t.game_stream_settings_fps,
+        segments: <ButtonSegment<int>>[
+          for (final int fps in GameStreamVideoSettings.fpsChoices)
+            ButtonSegment<int>(value: fps, label: Text('$fps')),
+        ],
+        selected: GameStreamVideoSettings.fpsChoices.contains(_settings.maxFps)
+            ? _settings.maxFps
+            : 60,
+        onChanged: (int value) => _update(_settings.copyWith(maxFps: value)),
+      ),
+      AdaptiveSettingsSliderRow(
+        title: t.game_stream_settings_bitrate,
+        readout: bitrateLabel(_settings.bitrateKbps),
+        min: minLog,
+        max: maxLog,
+        step: (maxLog - minLog) / 60,
+        value: _log(_settings.bitrateKbps).clamp(minLog, maxLog),
+        onChanged: (double value) => setState(() {
+          _bitrateTouched = true;
+          _settings = _settings.copyWith(
+            bitrateKbps: _roundBitrate(_exp(value)),
+          );
+        }),
+      ),
+      AdaptiveSettingsSwitchRow(
+        title: t.game_stream_settings_adaptive,
+        subtitle: t.game_stream_settings_adaptive_hint,
+        value: _settings.adaptiveBitrate,
+        onChanged: (bool value) => setState(
+          () => _settings = _settings.copyWith(adaptiveBitrate: value),
         ),
+      ),
+      AdaptiveSettingsSegmentedRow<GameStreamDegradation>(
+        title: t.game_stream_settings_degradation,
+        segments: <ButtonSegment<GameStreamDegradation>>[
+          ButtonSegment<GameStreamDegradation>(
+            value: GameStreamDegradation.balanced,
+            label: Text(t.game_stream_settings_degradation_balanced),
+          ),
+          ButtonSegment<GameStreamDegradation>(
+            value: GameStreamDegradation.maintainFramerate,
+            label: Text(t.game_stream_settings_degradation_framerate),
+          ),
+          ButtonSegment<GameStreamDegradation>(
+            value: GameStreamDegradation.maintainResolution,
+            label: Text(t.game_stream_settings_degradation_resolution),
+          ),
+        ],
+        selected: _settings.degradation,
+        onChanged: (GameStreamDegradation value) =>
+            setState(() => _settings = _settings.copyWith(degradation: value)),
+      ),
+      AdaptiveSettingsSegmentedRow<GameStreamCodec>(
+        title: t.game_stream_settings_codec,
+        subtitle: t.game_stream_settings_codec_hint,
+        segments: <ButtonSegment<GameStreamCodec>>[
+          for (final GameStreamCodec codec in GameStreamCodec.values)
+            ButtonSegment<GameStreamCodec>(
+              value: codec,
+              label: Text(_codecLabel(codec)),
+            ),
+        ],
+        selected: _settings.codec,
+        onChanged: (GameStreamCodec value) =>
+            setState(() => _settings = _settings.copyWith(codec: value)),
+      ),
+      AdaptiveSettingsSegmentedRow<GameStreamInputFocus>(
+        title: t.game_stream_settings_input_focus,
+        subtitle: t.game_stream_settings_input_focus_hint,
+        segments: <ButtonSegment<GameStreamInputFocus>>[
+          ButtonSegment<GameStreamInputFocus>(
+            value: GameStreamInputFocus.background,
+            label: Text(t.game_stream_settings_input_background),
+          ),
+          ButtonSegment<GameStreamInputFocus>(
+            value: GameStreamInputFocus.foreground,
+            label: Text(t.game_stream_settings_input_foreground),
+          ),
+        ],
+        selected: _settings.inputFocus,
+        onChanged: (GameStreamInputFocus value) =>
+            setState(() => _settings = _settings.copyWith(inputFocus: value)),
+      ),
+      AdaptiveSettingsSwitchRow(
+        title: t.game_stream_settings_audio,
+        value: _settings.audio,
+        onChanged: (bool value) =>
+            setState(() => _settings = _settings.copyWith(audio: value)),
+      ),
+    ];
+    // M3E 底部弹层：共享弹层框（标题 + 底部动作区靠右），设置行沿用设置
+    // kit 的自适应行，逐行错峰进场。
+    return FushiModalSheetFrame(
+      title: t.game_stream_settings_title,
+      leadingIcon: FushiIcons.settings,
+      maxHeightFactor: 0.85,
+      body: FushiEntranceScope(
+        child: ListView.builder(
+          itemCount: rows.length,
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int index) => rows[index],
+          ),
+        ),
+      ),
+      footer: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiTextButton(
+            onPressed: () => setState(() {
+              _bitrateTouched = false;
+              _settings = const GameStreamVideoSettings().copyWith(
+                bitrateKbps: GameStreamVideoSettings.recommendedBitrateKbps(
+                  maxHeight: 1080,
+                  maxFps: 60,
+                ),
+              );
+            }),
+            child: Text(t.game_stream_settings_reset),
+          ),
+          // 两枚按钮之间留出间距：Apple 下是两颗相邻胶囊，贴着会粘成一块。
+          const SizedBox(width: 8),
+          FushiFilledButton(
+            key: GameStreamSettingsSheet.saveKey,
+            onPressed: () => Navigator.of(context).pop(_settings),
+            child: Text(t.game_stream_settings_save),
+          ),
+        ],
       ),
     );
   }
