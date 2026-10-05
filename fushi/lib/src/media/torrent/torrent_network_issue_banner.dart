@@ -3,6 +3,7 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// BUG-2950：会话级网络问题对应的用户文案；[TorrentNetworkIssue.none] 返回 null。
 String? torrentNetworkIssueMessage(TorrentNetworkIssue issue) {
@@ -33,24 +34,19 @@ class TorrentNetworkIssueBanner extends StatelessWidget {
     final String? message = torrentNetworkIssueMessage(issue);
     if (message == null) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
-    return Container(
+    final bool eink = isEinkTheme(context);
+    // 卡片底色 / 圆角 / eink 描边走共享 FushiCard（MD3 令牌），本组件不再自定。
+    return FushiCard(
       key: ValueKey<String>('torrent-network-issue-${issue.name}'),
       margin: margin,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: isEinkTheme(context)
-            ? Border.all(color: theme.colorScheme.outline)
-            : null,
-      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Icon(
             Icons.warning_amber_rounded,
             size: 18,
-            color: isEinkTheme(context)
+            color: eink
                 ? theme.colorScheme.onSurfaceVariant
                 : theme.colorScheme.error,
           ),
