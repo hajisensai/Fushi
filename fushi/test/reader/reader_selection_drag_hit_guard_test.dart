@@ -39,6 +39,7 @@ void main() {
       'geometricCaretAtPoint: function',
       'caretPositionAtPoint: function',
       'resolveSelectionEndpoint: function',
+      'selectionEndpointAtPoint: function',
       'selectionAnchorAtHit: function',
     ]) {
       expect(js, contains(api), reason: '缺解析层 API：$api');
@@ -137,8 +138,8 @@ void main() {
       js.indexOf('normalizeEndpoint: function'),
       js.indexOf('caretHasVisibleNeighbour: function'),
     );
-    // collectRangeBetween 的游走用 createWalker（REJECT 纯空白节点与振假名），端点落在被跳过
-    // 的节点里时游走永远匹配不到 endNode —— 会一路扫到文末、选区暴涨。故必须先规范化。
+    // Filtered endpoints do not obey the range walker's contract. Directional
+    // failure alone is not proof that no body text exists (e.g. a leading indent).
     expect(body, contains('createWalker'));
     expect(body, contains('isFurigana'));
     expect(
@@ -232,21 +233,29 @@ void main() {
       // 拖动：端点**始终**解析 —— 没有「落在锚点区间内就维持锚点」的粘滞分支（那会让
       // 拉丁词永远只按整词进退、选不到词内的任意字符）。
       final String updateBody = js.substring(update, end);
-      expect(updateBody, contains('this.resolveSelectionEndpoint('));
+      expect(updateBody, contains('this.selectionEndpointAtPoint('));
+      expect(updateBody, contains('if (!endpoint) return null;'));
+      expect(updateBody, contains('anchor.moved = true'));
+      expect(updateBody, contains('if (!anchor.moved) return'));
       expect(
         updateBody,
         isNot(contains('anchor.endNode, anchor.endOffset) > 0')),
         reason: '不得保留锚点区间粘滞判定',
       );
-      // 松手：不再重新解析一次（原地长按会把整词截断）。
+      // Only an actual drag resolves the last release coordinate; a hold keeps the word.
       final String endBody = js.substring(
         end,
         js.indexOf('_selectionVertical: function'),
       );
       expect(
         endBody,
-        isNot(contains('this.updateRangeSelection(')),
-        reason: 'endRangeSelection 不得再解析端点',
+        contains(
+          'if (this.dragAnchor && this.dragAnchor.moved) this.updateRangeSelection(x, y);',
+        ),
+      );
+      expect(
+        endBody.indexOf('this.updateRangeSelection('),
+        lessThan(endBody.indexOf('this.dragAnchor = null')),
       );
       // 会话状态复位。
       expect(
@@ -254,6 +263,59 @@ void main() {
         contains('this.dragAnchor = null'),
       );
     });
+
+    test(
+      'clear/detach invalidates the long-press session before end can show a menu',
+      () {
+        final String js = ReaderSelectionScripts.source();
+        final String end = js.substring(
+          js.indexOf('endRangeSelection: function'),
+          js.indexOf('_selectionVertical: function'),
+        );
+        expect(end, contains('if (!this.dragAnchor) return false;'));
+        expect(end, contains('if (!this.liveDragAnchor())'));
+        expect(
+          end.indexOf('if (!this.dragAnchor) return false;'),
+          lessThan(end.indexOf('this.updateRangeSelection(')),
+        );
+        expect(
+          end.indexOf('if (!this.liveDragAnchor())'),
+          lessThan(end.indexOf('this.fireSelectionMenu(')),
+        );
+        final String points = js.substring(
+          js.indexOf('liveSelectionPoint: function'),
+          js.indexOf('_glyphRect: function'),
+        );
+        expect(points, contains('node.isConnected'));
+        expect(points, contains('document.body.contains(node)'));
+        expect(points, contains('segment.end - 1'));
+      },
+    );
+
+    test(
+      'begin reacquires a hit only after old wrappers normalize the DOM',
+      () {
+        final String js = ReaderSelectionScripts.source();
+        final String begin = js.substring(
+          js.indexOf('beginRangeSelection: function'),
+          js.indexOf('notifySelectionDragStarted: function'),
+        );
+        expect(
+          begin,
+          contains('var hadWrappers = this.highlightWrappers.length > 0;'),
+        );
+        expect(
+          begin,
+          contains(
+            'if (hadWrappers) hit = this.getSelectableCharacterAtPoint(x, y);',
+          ),
+        );
+        expect(
+          begin.indexOf('if (hadWrappers) hit ='),
+          greaterThan(begin.indexOf('this.clearSelection();')),
+        );
+      },
+    );
 
     test('长按锚点是区间（词首..词末 / 单字），反向拖动不丢词尾', () {
       final String js = ReaderSelectionScripts.source();
@@ -303,11 +365,10 @@ void main() {
 
     test('桌面鼠标与单击查词路径不经解析层（只被拖动入口调用）', () {
       final String js = ReaderSelectionScripts.source();
-      // 调用点只应有 2 处、全在拖动入口里：updateRangeSelection 一次、moveSelectionHandle
-      // 一次（长按只在 beginRangeSelection 里直接画锚点区间，不解析端点）。桌面鼠标走浏览器
-      // 原生选区 + 右键菜单，单击查词走 selectText（`pointer: fine` 分支），都不该碰这一层。
+      // Both drag entries share a single hit/resolve window. Tap lookup stays separate.
       expect('resolveSelectionEndpoint: function'.allMatches(js).length, 1);
-      expect('this.resolveSelectionEndpoint('.allMatches(js).length, 2);
+      expect('this.resolveSelectionEndpoint('.allMatches(js).length, 1);
+      expect('this.selectionEndpointAtPoint('.allMatches(js).length, 2);
       final int tapStart = js.indexOf('selectText: function');
       final int tapEnd = js.indexOf('selectFromPosition: function');
       expect(tapStart, greaterThan(0));
@@ -325,31 +386,45 @@ void main() {
       expect(js, isNot(contains('snapEndpointToWord')));
     });
 
-    test('moveSelectionHandle 在「手柄对命中测试透明」的窗口内解析端点', () {
+    test('both drag entries use one transparent endpoint window', () {
       final String js = ReaderSelectionScripts.source();
       final String body = js.substring(
-        js.indexOf('moveSelectionHandle: function'),
-        js.indexOf('positionSelectionHandles: function'),
+        js.indexOf('selectionEndpointAtPoint: function'),
+        js.indexOf('selectionAnchorAtHit: function'),
       );
       final int transparent = body.indexOf("pointerEvents = 'none'");
+      final int hit = body.indexOf('this.getSelectableCharacterAtPoint(');
       final int resolve = body.indexOf('this.resolveSelectionEndpoint(');
-      final int restore = body.indexOf('savedStartPe ||');
-      expect(
-        transparent,
-        greaterThanOrEqualTo(0),
-        reason: '拖动手柄前必须先把两只手柄设成对命中测试透明（BUG-765）',
-      );
-      expect(resolve, greaterThan(transparent), reason: '端点解析必须在手柄已透明之后');
-      expect(
-        restore,
-        greaterThan(resolve),
-        reason:
-            '恢复 pointer-events 必须在端点解析之后：解析层的两条路'
-            '（caretPositionFromPoint / elementFromPoint）与命中测试同源，手柄一旦恢复，'
-            '原生快路会拿到手柄元素（ELEMENT_NODE，只认文本节点故被拒）、几何兜底又会把'
-            '手柄自身（div）当成文本块——两条同时失败，手指压在 32×32 触控盒里的那几帧'
-            '端点不前进，手柄看起来冻结。这条顺序是 BUG-2951 修复的一部分，别改回去',
-      );
+      final int restore = body.indexOf('pointerEvents = savedStartPe;');
+      expect(transparent, greaterThanOrEqualTo(0));
+      expect(hit, greaterThan(transparent));
+      expect(resolve, greaterThan(hit));
+      expect(restore, greaterThan(resolve));
+      expect(body, contains('finally'));
+      expect(body, isNot(contains("|| 'auto'")));
+      expect(body, isNot(contains('style.display')));
     });
+
+    test(
+      'normalization failure is terminal and a normalized endpoint stays visible',
+      () {
+        final String js = ReaderSelectionScripts.source();
+        final String body = js.substring(
+          js.indexOf('resolveSelectionEndpoint: function'),
+          js.indexOf('selectionEndpointAtPoint: function'),
+        );
+        expect(
+          body,
+          contains('this.normalizeEndpoint(node, offset, forward);'),
+        );
+        expect(body, contains('if (!endpoint) return null;'));
+        expect(
+          body,
+          contains('this.charRangeAt(endpoint.node, endpoint.offset)'),
+        );
+        expect(body, contains('this.charRangeVisible(normalizedRange,'));
+        expect(body, isNot(contains('forward) ||')));
+      },
+    );
   });
 }

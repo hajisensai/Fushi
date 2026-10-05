@@ -29,12 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2715 条。点号进各自文件。
+> 共 2718 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2952](bugs/BUG-2952-reader-selection-persists-across-page-turn.md) | 🚧 | 🚧 | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
-| [BUG-2951](bugs/BUG-2951-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
+| [BUG-2961](bugs/BUG-2961-reader-selection-toolbar-grip-overlap.md) | ✅ | ✅ | 竖排选择操作条遮挡选择球，视口边缘手柄难以抓取 |
+| [BUG-2960](bugs/BUG-2960-reader-selection-overlay-lifecycle.md) | ✅ | ✅ | 阅读器选中时打开导航、插图、统计或有声书，选择控件残留在覆盖页面上 |
+| [BUG-2959](bugs/BUG-2959-reader-selection-persists-across-page-turn.md) | ✅ | ✅ | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
+| [BUG-2958](bugs/BUG-2958-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
+| [BUG-2957](bugs/BUG-2957-reader-selection-handle-covers-glyph.md) | ✅ | ✅ | 页边缘选择手柄避让回归：触控盒和选择球遮挡选中字 |
 | [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
 | [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |
 | [BUG-2948](bugs/BUG-2948-macos-shortcut-key-identity.md) | ✅ | ✅ | macOS 上 Shift+符号键与系统保留默认键导致快捷键无法识别 |

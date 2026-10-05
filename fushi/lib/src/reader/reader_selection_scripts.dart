@@ -164,7 +164,10 @@ class ReaderSelectionScripts {
     lpsClearTimer();
     lpsActive = false;
   }, {passive: false});
-  document.addEventListener('touchcancel', function() { lpsReset(); }, {passive: true});
+  document.addEventListener('touchcancel', function() {
+    lpsReset();
+    if (window.fushiSelection) window.fushiSelection.dragAnchor = null;
+  }, {passive: true});
 })();''';
   }
 
@@ -789,29 +792,22 @@ window.fushiSelection = {
     return { start: start, end: end };
   },
   // 端点规范化：collectRangeBetween 的游走用 createWalker（REJECT 纯空白节点与振假名），
-  // 端点若落在被跳过的节点里，游走永远匹配不到 endNode —— 会一路扫到文末、选区暴涨。故先把
-  // 端点挪到游走会访问的正文节点：正向顺延到下一个正文节点的首字，反向回退到上一个正文
-  // 节点的末字；两个方向都没有正文时返回 null（调用方保持旧端点）。
+  // Endpoints must belong to the walker, not filtered whitespace / ruby nodes.
+  // Prefer the drag direction, then the other side: no previous text at a leading
+  // indent does NOT mean no body text. Only failure on both sides returns null.
   normalizeEndpoint: function(node, offset, forward) {
     if (!node || node.nodeType !== Node.TEXT_NODE) return null;
     var text = node.textContent || '';
     var walkable = text.length > 0 && !this.isFurigana(node) && !/^[\s　]*$/.test(text);
-    if (walkable) return { node: node, offset: Math.min(offset, text.length - 1) };
-    var walker = this.createWalker(document.body);
-    walker.currentNode = node;
-    if (forward) {
-      var next = walker.nextNode();
-      while (next) {
-        if (next.textContent.length > 0) return { node: next, offset: 0 };
-        next = walker.nextNode();
+    if (walkable) return { node: node, offset: Math.max(0, Math.min(offset, text.length - 1)) };
+    for (var attempt = 0; attempt < 2; attempt++) {
+      var searchForward = attempt === 0 ? forward : !forward;
+      var walker = this.createWalker(document.body);
+      walker.currentNode = node;
+      var adjacent = searchForward ? walker.nextNode() : walker.previousNode();
+      if (adjacent) {
+        return { node: adjacent, offset: searchForward ? 0 : adjacent.textContent.length - 1 };
       }
-    }
-    var back = this.createWalker(document.body);
-    back.currentNode = node;
-    var prev = back.previousNode();
-    while (prev) {
-      if (prev.textContent.length > 0) return { node: prev, offset: prev.textContent.length - 1 };
-      prev = back.previousNode();
     }
     return null;
   },
@@ -828,40 +824,31 @@ window.fushiSelection = {
   },
   // ① 原生 caret 快路。返回 {node, offset}（caret 语义，offset ∈ [0, len]）或 null。
   nativeCaretAtPoint: function(x, y, box) {
-    var node = null;
-    var offset = 0;
-    try {
-      if (document.caretPositionFromPoint) {
-        var pos = document.caretPositionFromPoint(x, y);
-        if (pos && pos.offsetNode && pos.offsetNode.nodeType === Node.TEXT_NODE) {
-          node = pos.offsetNode;
-          offset = pos.offset;
+    // Presence does not imply success: null / element / invisible results must
+    // try the range dialect before resorting to geometric hit-testing.
+    for (var api = 0; api < 2; api++) {
+      var node = null;
+      var offset = 0;
+      try {
+        if (api === 0 && document.caretPositionFromPoint) {
+          var pos = document.caretPositionFromPoint(x, y);
+          if (pos) { node = pos.offsetNode; offset = pos.offset; }
+        } else if (api === 1 && document.caretRangeFromPoint) {
+          var range = document.caretRangeFromPoint(x, y);
+          if (range) { node = range.startContainer; offset = range.startOffset; }
         }
-      } else if (document.caretRangeFromPoint) {
-        var range = document.caretRangeFromPoint(x, y);
-        if (range && range.startContainer &&
-            range.startContainer.nodeType === Node.TEXT_NODE) {
-          node = range.startContainer;
-          offset = range.startOffset;
-        }
+      } catch (err) {
+        // A WebView may expose an unsupported native entry point. Try the other.
+        continue;
       }
-    } catch (err) {
-      return null;
+      if (!node || node.nodeType !== Node.TEXT_NODE || this.isFurigana(node)) continue;
+      if (!this.caretHasVisibleNeighbour(node, offset, box)) continue;
+      return { node: node, offset: offset };
     }
-    if (!node || this.isFurigana(node)) return null;
-    if (!this.caretHasVisibleNeighbour(node, offset, box)) return null;
-    return { node: node, offset: offset };
+    return null;
   },
-  // 命中测试取「手指下方第一个非手柄元素」。手柄是挂在 <html> 下的 32×32 透明触控盒
-  // （`data-fushi-sel-handle`，pointer-events:auto）：它盖住手指时 elementFromPoint 返回的
-  // 是手柄**自身**（一个 div），拿它当文本块会扫不到任何字符 —— 这正是「手指压在手柄上就
-  // 解析不出端点」的那条路。elementsFromPoint 能拿到整个元素栈，跳过手柄及其内部节点取真正
-  // 承载文字的那个元素；老 WebView 没有 elementsFromPoint 时退回 elementFromPoint，并显式
-  // 判掉手柄自身（返回 null = 这个点没有可解析的文本，调用方保持旧端点即可）。
-  //
-  // 这一层是**兜底**：moveSelectionHandle 已经在「手柄对命中测试透明」的窗口内解析（那才是
-  // 主路径）；updateRangeSelection 完全不碰 pointer-events，手指滑到端点附近被手柄盖住时
-  // 只有靠这里才解析得出来。
+  // Fallback for callers outside the shared transparent endpoint window. Skip
+  // grips in the stack when available; a single-point hit on a grip is no text.
   _hitElementUnderPoint: function(x, y) {
     var isHandle = function(candidate) {
       return !!(candidate && candidate.closest &&
@@ -975,9 +962,31 @@ window.fushiSelection = {
       var endpointRange = this.charRangeAt(node, offset);
       if (!endpointRange || !this.charRangeVisible(endpointRange, box)) return null;
     }
-    var endpoint = this.normalizeEndpoint(node, offset, forward) ||
-      { node: node, offset: offset };
+    var endpoint = this.normalizeEndpoint(node, offset, forward);
+    if (!endpoint) return null;
+    var normalizedRange = this.charRangeAt(endpoint.node, endpoint.offset);
+    if (!normalizedRange || !this.charRangeVisible(normalizedRange, this.visibleContentBox())) return null;
     return { node: endpoint.node, offset: endpoint.offset, forward: forward };
+  },
+  // Strict hit AND caret/geometric resolution share one transparent window.
+  // No visual hiding, no dependence on elementsFromPoint; restore even on throw.
+  selectionEndpointAtPoint: function(x, y, refNode, refOffset) {
+    var handles = this.selectionHandles;
+    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
+    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
+    try {
+      if (handles) {
+        handles.start.style.pointerEvents = 'none';
+        handles.end.style.pointerEvents = 'none';
+      }
+      var hit = this.getSelectableCharacterAtPoint(x, y);
+      return this.resolveSelectionEndpoint(x, y, hit, refNode, refOffset);
+    } finally {
+      if (handles) {
+        handles.start.style.pointerEvents = savedStartPe;
+        handles.end.style.pointerEvents = savedEndPe;
+      }
+    }
   },
   // 长按定锚的锚点区间：空格分词词里长按 -> 整词锚点（词首..词末），原地长按即选中整词、
   // 向两侧拖动都不丢词尾；CJK / 标点 / 空白 -> 单字锚点（与 BUG-609 起的老行为一致）。
@@ -1701,6 +1710,9 @@ window.fushiSelection = {
   fireSelectionMenu: function(x, y) {
     var payload = this.buildSelectionPayload(x, y);
     if (!payload) return null;
+    // Viewport CSS pixels, including BOTH 32px touch targets. Lookup's
+    // single-glyph getSelectionRect remains unchanged.
+    payload.handlesRect = this.selectionHandlesRect();
     window.flutter_inappwebview.callHandler('onSelectionMenu', JSON.stringify(payload));
     return payload.text;
   },
@@ -1771,13 +1783,19 @@ window.fushiSelection = {
     if (el && el.closest && el.closest('a')) return false;
     var hit = this.getSelectableCharacterAtPoint(x, y);
     if (!hit) return false;
+    // Clearing legacy wrappers unwraps + normalizes text nodes, invalidating
+    // hits obtained before that mutation. Resolve against the resulting DOM.
+    var hadWrappers = this.highlightWrappers.length > 0;
     this.clearSelection();
+    if (hadWrappers) hit = this.getSelectableCharacterAtPoint(x, y);
+    if (!hit) return false;
     // 锚点区间：空格分词词里长按定的是整词（原地长按即选中整词 —— 浏览器 / Android 长按
     // 的语义），CJK / 标点 / 空白定的是单字（与 BUG-609 起的老行为一致）。
     var anchor = this.selectionAnchorAtHit(hit);
     this.dragAnchor = {
       node: anchor.node, offset: anchor.offset,
-      endNode: anchor.endNode, endOffset: anchor.endOffset
+      endNode: anchor.endNode, endOffset: anchor.endOffset,
+      startX: x, startY: y, moved: false
     };
     // Establish and paint the anchor glyph immediately. This is the feedback the
     // native Android selection path gives at long-press time; the old path only
@@ -1795,35 +1813,48 @@ window.fushiSelection = {
         ranges: built.ranges, text: built.text
       };
       this.renderSelectionHighlight();
+      this.showSelectionHandles();
+      this.notifySelectionDragStarted();
+      return true;
     }
-    return true;
+    this.clearSelection();
+    return false;
+  },
+  notifySelectionDragStarted: function() {
+    if (window.flutter_inappwebview &&
+        typeof window.flutter_inappwebview.callHandler === 'function') {
+      window.flutter_inappwebview.callHandler('onSelectionDragStarted');
+    }
+  },
+  liveDragAnchor: function() {
+    var anchor = this.dragAnchor;
+    return !!(anchor && this.liveSelectionPoint(anchor.node, anchor.offset) &&
+      this.liveSelectionPoint(anchor.endNode, anchor.endOffset) && this.selectionEndpoints());
   },
   updateRangeSelection: function(x, y) {
     if (!this.dragAnchor) return null;
+    if (!this.liveDragAnchor()) { this.clearSelection(); return null; }
     var anchor = this.dragAnchor;
-    var hit = this.getSelectableCharacterAtPoint(x, y);
+    if (x !== anchor.startX || y !== anchor.startY) anchor.moved = true;
+    if (!anchor.moved) return this.selection ? this.selection.text : null;
     // 端点**始终**跟随手指：压在字符矩形上就用那个字，落在字缝 / 行距 / 行尾 / 行首等没有
     // 字符矩形的位置就走「坐标 -> 文本位置」解析（Android TextView.getOffsetForPosition 语义），
     // 端点才能连续跟随手指。锚点区间只是长按那一刻选中的初始范围（浏览器语义：不拖不动），
     // 拖动可以自由收缩到词内、也可以越过词尾向外扩 —— 这里刻意**不**保留「落在锚点区间内
     // 就维持锚点」的粘滞判定：那会让拉丁词永远只按整词进退、选不到词内的任意字符（用户
     // 报「拉丁语言没法随意选择字符」的根因，与网上的实现不一致）。
-    var endpoint = this.resolveSelectionEndpoint(x, y, hit, anchor.node, anchor.offset);
-    var built;
-    if (endpoint) {
-      built = endpoint.forward
-        ? this.collectRangeBetween(anchor.node, anchor.offset, endpoint.node, endpoint.offset)
-        : this.collectRangeBetween(endpoint.node, endpoint.offset, anchor.endNode, anchor.endOffset);
-    } else {
-      // 解析失败 / 手指仍在锚点区间内：重建锚点选区（不收缩、不清高亮）。
-      built = this.collectRangeBetween(anchor.node, anchor.offset, anchor.endNode, anchor.endOffset);
-    }
+    var endpoint = this.selectionEndpointAtPoint(x, y, anchor.node, anchor.offset);
+    if (!endpoint) return null;
+    var built = endpoint.forward
+      ? this.collectRangeBetween(anchor.node, anchor.offset, endpoint.node, endpoint.offset)
+      : this.collectRangeBetween(endpoint.node, endpoint.offset, anchor.endNode, anchor.endOffset);
     if (!built) return null;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
       ranges: built.ranges, text: built.text
     };
     this.renderSelectionHighlight();
+    this.positionSelectionHandles();
     return built.text;
   },
   // Finalize the long-press selection: extend to the release point, then present
@@ -1833,9 +1864,14 @@ window.fushiSelection = {
   // this.selection (highlight stays up) and hands Dart a menu so a plain-text
   // range selection (copy) and lookup/mining coexist instead of forcing lookup.
   endRangeSelection: function(x, y) {
-    // 刻意**不**在这里再解析一次端点：touchmove 已经把端点跟到最后一次移动处，而为一次
-    // 原地长按（没有任何移动）再解析一次，会把刚定下的整词截成手指所在的那一个字。
-    // 浏览器同理——没拖过就直接确认长按选中的范围。
+    // A late touchend after clear / DOM replacement must not confirm a lookup
+    // selection established by a different action in the meantime.
+    if (!this.dragAnchor) return false;
+    if (!this.liveDragAnchor()) { this.clearSelection(); return false; }
+    // Stationary holds retain the word; an actual drag consumes the release
+    // coordinate, which need not have arrived in the last touchmove event.
+    if (this.dragAnchor && this.dragAnchor.moved) this.updateRangeSelection(x, y);
+    if (!this.dragAnchor) return false;
     this.dragAnchor = null;
     if (!this.selection || !this.selection.text) {
       this.clearSelection();
@@ -1865,13 +1901,22 @@ window.fushiSelection = {
   // Visual endpoints of the current selection as {startNode, startOffset (first
   // glyph), endNode, endOffset (index of the last glyph = one before range end)}.
   // null when there is no live glyph selection.
+  liveSelectionPoint: function(node, offset) {
+    return !!(node && node.nodeType === Node.TEXT_NODE && node.isConnected &&
+      document.body.contains(node) && offset >= 0 && offset < node.textContent.length);
+  },
   selectionEndpoints: function() {
     if (!this.selection || !this.selection.ranges || !this.selection.ranges.length) {
       return null;
     }
+    for (var i = 0; i < this.selection.ranges.length; i++) {
+      var segment = this.selection.ranges[i];
+      if (segment.end <= segment.start ||
+          !this.liveSelectionPoint(segment.node, segment.start) ||
+          !this.liveSelectionPoint(segment.node, segment.end - 1)) return null;
+    }
     var first = this.selection.ranges[0];
     var last = this.selection.ranges[this.selection.ranges.length - 1];
-    if (last.end <= last.start) return null;
     return {
       startNode: first.node, startOffset: first.start,
       endNode: last.node, endOffset: last.end - 1
@@ -1908,8 +1953,13 @@ window.fushiSelection = {
         // 滚动手势并可拖。视觉抓手是内层 18px 实心圆钮，用主题色 var(--fushi-sel-handle)
         // （reader CSS 从 linkColor 下发，随主题变）+ 白描边（任意背景都可见）+ 单柔和阴
         // 影，去掉旧的刺眼橙色 + 双重发光 box-shadow（用户投诉「难看」）。
+        // html itself is a multi-column/overflow container in paged books.
+        // Promote the SAME touch target out of column clipping when supported;
+        // older WebViews keep the fixed-position path.
+        if (typeof el.showPopover === 'function') el.setAttribute('popover', 'manual');
         el.style.cssText = 'position:fixed;z-index:2147483645;width:32px;height:32px;' +
-          'margin-left:-16px;margin-top:-16px;box-sizing:border-box;' +
+          'inset:auto;margin:0;margin-left:-16px;margin-top:-16px;padding:0;' +
+          'overflow:visible;writing-mode:horizontal-tb;box-sizing:border-box;' +
           'background:transparent;border:0;' +
           'pointer-events:auto;touch-action:none;display:none;';
         var ball = document.createElement('div');
@@ -1936,7 +1986,10 @@ window.fushiSelection = {
     el.addEventListener('touchstart', function(e) {
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
+      if (!e.touches || e.touches.length !== 1 || !self.selectionEndpoints() ||
+          !self.selectionHandles || self.selectionHandles[which] !== el) return;
       self.activeHandle = which;
+      self.notifySelectionDragStarted();
     }, {passive: false});
     el.addEventListener('touchmove', function(e) {
       if (self.activeHandle !== which) return;
@@ -1949,8 +2002,12 @@ window.fushiSelection = {
       if (self.activeHandle !== which) return;
       if (e.cancelable) e.preventDefault();
       e.stopPropagation();
-      self.activeHandle = null;
       var t = (e.changedTouches && e.changedTouches[0]) || null;
+      if (t) self.moveSelectionHandle(which, t.clientX, t.clientY);
+      // move can invalidate the session if its source DOM was replaced.
+      if (self.activeHandle !== which) return;
+      if (!self.selectionEndpoints()) { self.clearSelection(); return; }
+      self.activeHandle = null;
       var x = t ? t.clientX : 0;
       var y = t ? t.clientY : 0;
       self.positionSelectionHandles();
@@ -1970,7 +2027,7 @@ window.fushiSelection = {
   // reposition both grips. No-op over a gap so the range never collapses.
   moveSelectionHandle: function(which, x, y) {
     var eps = this.selectionEndpoints();
-    if (!eps) return;
+    if (!eps) { this.clearSelection(); return; }
     // 定锚端（对侧端点）：拖 end 手柄时锚点是选区起点，拖 start 手柄时锚点是选区终点。
     var anchorNode, anchorOffset;
     if (which === 'end') {
@@ -1978,40 +2035,7 @@ window.fushiSelection = {
     } else {
       anchorNode = eps.endNode; anchorOffset = eps.endOffset;
     }
-    // The grip div sits directly under the finger (pointer-events:auto, top
-    // z-index). A hit-test at the raw finger point resolves elementFromPoint /
-    // caretPositionFromPoint to the grip element (an ELEMENT_NODE, not a text
-    // node) -> getCharacterAtPoint returns null -> the grip appears frozen and
-    // the range never adjusts. Make both grips transparent to hit-testing for
-    // the duration of the point resolution so the finger coordinate falls
-    // through to the glyph underneath, then restore. No native selection is
-    // touched (still app-drawn only).
-    var handles = this.selectionHandles;
-    var savedStartPe = handles ? handles.start.style.pointerEvents : null;
-    var savedEndPe = handles ? handles.end.style.pointerEvents : null;
-    if (handles) {
-      handles.start.style.pointerEvents = 'none';
-      handles.end.style.pointerEvents = 'none';
-    }
-    // 手柄拖动是在调整**选区范围**，不是查词：用选择命中，才能把选区端点停在标点
-    // 或句读上（旧实现走查词命中，拖到句号处 hit 为 null → 手柄卡住不动）。
-    var hit = this.getSelectableCharacterAtPoint(x, y);
-    // 字缝 / 行距 / 行尾/行首空白处严格命中为 null —— 回退到「坐标 -> 文本位置」解析
-    // （本次修复），端点才能连续跟随手指；旧实现在这里直接 return，手柄视觉冻结、松手
-    // 再拖也过不去那一段空白。
-    //
-    // 🔴 解析必须留在上面那个「手柄对命中测试透明」的窗口**里面**：解析层的两条路
-    // （caretPositionFromPoint / elementFromPoint）与命中测试同源。手柄一恢复
-    // pointer-events:auto，原生快路就会拿到手柄元素（ELEMENT_NODE，不是文本节点）而返回
-    // null，几何兜底又会把手柄**自身**当成文本块（它是 div，closest('div') 命中自己）而扫
-    // 不到任何字符——两条路同时失效，手指还在 32×32 触控盒里的那几帧端点不前进，手柄看起
-    // 来就是卡住的。旧实现只在窗口内取严格命中，所以那个窗口够用；引入解析层之后必须把它
-    // 一起框进来。
-    var endpoint = this.resolveSelectionEndpoint(x, y, hit, anchorNode, anchorOffset);
-    if (handles) {
-      handles.start.style.pointerEvents = savedStartPe || 'auto';
-      handles.end.style.pointerEvents = savedEndPe || 'auto';
-    }
+    var endpoint = this.selectionEndpointAtPoint(x, y, anchorNode, anchorOffset);
     if (!endpoint) return;
     var built = this.collectRangeBetween(anchorNode, anchorOffset, endpoint.node, endpoint.offset);
     if (!built) return;
@@ -2029,30 +2053,100 @@ window.fushiSelection = {
     var vertical = this._selectionVertical();
     var sRect = this._glyphRect(eps.startNode, eps.startOffset);
     var eRect = this._glyphRect(eps.endNode, eps.endOffset);
-    var sx, sy, ex, ey;
-    // 圆钮离开文字的间隙（约半个钮），让抓手悬在选区外缘、不压住字。
-    var GAP = 8;
-    if (vertical) {
-      // vertical-rl: reading runs top->bottom, columns right->left. Start grip
-      // above the first glyph, end grip below the last glyph.
-      sx = sRect.left + sRect.width / 2;
-      sy = sRect.top - GAP;
-      ex = eRect.left + eRect.width / 2;
-      ey = eRect.bottom + GAP;
-    } else {
-      // horizontal: start grip at the lower-left of the first glyph, end grip at
-      // the lower-right of the last glyph (below the baseline).
-      sx = sRect.left;
-      sy = sRect.bottom + GAP;
-      ex = eRect.right;
-      ey = eRect.bottom + GAP;
+    // Clamp only the controls, never the text range or its visibility test.
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var SIZE = 32, half = SIZE / 2; // Same outer touch box as ensureSelectionHandles.
+    var box = this.visibleContentBox() || { left: 0, top: 0, right: vw, bottom: vh };
+    if (vw < SIZE || vh < SIZE ||
+        !this.charRangeVisible(this.charRangeAt(eps.startNode, eps.startOffset), box) ||
+        !this.charRangeVisible(this.charRangeAt(eps.endNode, eps.endOffset), box)) {
+      this.hideSelectionHandles();
+      return;
     }
+    // Keep the complete touch box outside selected glyphs, not merely its center.
+    // The previous 8px center gap was smaller than the 9px ball radius; clamping
+    // at page edges then moved both the visible ball and hit box onto the text.
+    var GAP = half + 4;
+    var sx = vertical ? sRect.left + sRect.width / 2 : sRect.left;
+    var sy = vertical ? sRect.top - GAP : sRect.bottom + GAP;
+    var ex = vertical ? eRect.left + eRect.width / 2 : eRect.right;
+    var ey = eRect.bottom + GAP;
+    // Use line fragments, not a union bounding box that fills inter-line gaps.
+    // All selected fragments participate: moving a grip off its own endpoint
+    // must not put it onto another selected line/column.
+    var selectedRects = [];
+    for (var i = 0; i < this.selection.ranges.length; i++) {
+      var segment = this.selection.ranges[i];
+      var range = document.createRange();
+      range.setStart(segment.node, segment.start);
+      range.setEnd(segment.node, segment.end);
+      var rects = range.getClientRects();
+      for (var j = 0; j < rects.length; j++) {
+        if (rects[j].width > 0 && rects[j].height > 0) selectedRects.push(rects[j]);
+      }
+    }
+    var overlaps = function(a, b) {
+      return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+    };
+    var candidates = function(glyph, x, y) {
+      var xs = [x, glyph.left - GAP, glyph.right + GAP, x - SIZE, x + SIZE, half, vw - half];
+      var ys = [y, glyph.top - GAP, glyph.bottom + GAP, y - SIZE, y + SIZE, half, vh - half];
+      var result = [], seen = {};
+      for (var a = 0; a < xs.length; a++) for (var b = 0; b < ys.length; b++) {
+        var cx = Math.max(half, Math.min(vw - half, xs[a]));
+        var cy = Math.max(half, Math.min(vh - half, ys[b]));
+        var key = cx + ':' + cy;
+        if (seen[key]) continue;
+        seen[key] = true;
+        var target = { left: cx - half, top: cy - half, right: cx + half, bottom: cy + half };
+        if (target.left < 0 || target.top < 0 || target.right > vw || target.bottom > vh) continue;
+        if (selectedRects.some(function(rect) { return overlaps(target, rect); })) continue;
+        result.push({ x: cx, y: cy, rect: target, cost: (cx - x) * (cx - x) + (cy - y) * (cy - y) });
+      }
+      return result;
+    };
+    var starts = candidates(sRect, sx, sy), ends = candidates(eRect, ex, ey);
+    var bestStart = null, bestEnd = null, cost = Infinity;
+    for (var a = 0; a < starts.length; a++) for (var b = 0; b < ends.length; b++) {
+      var first = starts[a], last = ends[b];
+      if (overlaps(first.rect, last.rect)) continue;
+      if (first.cost + last.cost < cost) {
+        cost = first.cost + last.cost; bestStart = first; bestEnd = last;
+      }
+    }
+    // A fully occupied/tiny viewport may have no legal placement. Never cover
+    // text or shrink targets to pretend that it does; the selection stays intact.
+    if (!bestStart || !bestEnd) { this.hideSelectionHandles(); return; }
+    sx = bestStart.x; sy = bestStart.y; ex = bestEnd.x; ey = bestEnd.y;
     handles.start.style.left = sx + 'px';
     handles.start.style.top = sy + 'px';
-    handles.start.style.display = 'block';
     handles.end.style.left = ex + 'px';
     handles.end.style.top = ey + 'px';
-    handles.end.style.display = 'block';
+    [handles.start, handles.end].forEach(function(el) {
+      // Never hide/reopen a live target: it owns the whole touch stream.
+      if (el.style.display !== 'block') el.style.display = 'block';
+      if (typeof el.showPopover === 'function' && !el.matches(':popover-open')) {
+        el.showPopover();
+      }
+    });
+  },
+  selectionHandlesRect: function() {
+    var handles = this.selectionHandles;
+    if (!handles || !this.selectionEndpoints()) return null;
+    var bounds = null;
+    for (var i = 0; i < 2; i++) {
+      var el = i === 0 ? handles.start : handles.end;
+      if (!el.isConnected || el.style.display === 'none') return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      if (!bounds) bounds = { x: r.left, y: r.top, right: r.right, bottom: r.bottom };
+      else {
+        bounds.x = Math.min(bounds.x, r.left); bounds.y = Math.min(bounds.y, r.top);
+        bounds.right = Math.max(bounds.right, r.right); bounds.bottom = Math.max(bounds.bottom, r.bottom);
+      }
+    }
+    return { x: bounds.x, y: bounds.y, width: bounds.right - bounds.x, height: bounds.bottom - bounds.y };
   },
   showSelectionHandles: function() {
     this.positionSelectionHandles();
@@ -2060,8 +2154,10 @@ window.fushiSelection = {
   hideSelectionHandles: function() {
     this.activeHandle = null;
     if (this.selectionHandles) {
-      this.selectionHandles.start.style.display = 'none';
-      this.selectionHandles.end.style.display = 'none';
+      [this.selectionHandles.start, this.selectionHandles.end].forEach(function(el) {
+        if (typeof el.hidePopover === 'function' && el.matches(':popover-open')) el.hidePopover();
+        el.style.display = 'none';
+      });
     }
   },
   getSelectionRect: function(x, y) {
@@ -2235,6 +2331,10 @@ window.fushiSelection = {
       window.fushiReader.buildNodeOffsets();
     }
   },
+  clearSelectionOnViewportChange: function() {
+    if (this.dragAnchor || this.activeHandle) return;
+    this.clearSelection();
+  },
   clearSelection: function() {
     window.getSelection()?.removeAllRanges();
     if (window.__fushiCssHighlightsSupported) {
@@ -2247,6 +2347,13 @@ window.fushiSelection = {
     this.selection = null;
     // 锚点是「一次长按拖选」的会话状态：选区清掉就复位，下次长按重新建立。
     this.dragAnchor = null;
+    // Always notify, including already-empty JS state, to clear stale host UI.
+    // The host clears only its own toolbar, never calls back into JS. begin's
+    // clear notification precedes the new selection/menu notification.
+    if (window.flutter_inappwebview &&
+        typeof window.flutter_inappwebview.callHandler === 'function') {
+      window.flutter_inappwebview.callHandler('onSelectionCleared');
+    }
   }
 };
 """;

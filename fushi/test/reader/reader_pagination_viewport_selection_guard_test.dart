@@ -1,7 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
+import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
-/// BUG-2952：移动端划词后翻页，选择高亮与两端手柄留在新页面上。
+/// BUG-2959：移动端划词后翻页，选择高亮与两端手柄留在新页面上。
 ///
 /// 根因：**翻页路径从来没有清过选区**。`reader_pagination_scripts.dart` 里只有两处
 /// `window.fushiSelection.clearSelection()`，且都挂在**有声书句子音频**的收口上
@@ -9,12 +10,10 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 /// `paginate()` 原来只做 `clearImageLateAnchor()`（放弃迟到图片重锚），不碰选区 —— 于是
 /// 翻页后旧页面的 highlight / wrapper / 两端手柄 / 原生 range 全部留在屏幕上。
 ///
-/// 修法：换视口统一收口 `_clearSelectionOnViewportChange()`，用户滚动（`noteUserScroll`）
-/// 与两个 shell 的 `paginate` 都走它；**拖选中途不打断**（`dragAnchor` 还在 = 手指没松）。
-/// 这里钉住的就是这些接线：清除点被删掉、或挪到 `"limit"` 早退路径上（页面没换却丢选区），
-/// CI 就红。
+/// 输入意图不清选区；真实连续滚动保护拖选，显式分页 / DOM 替换强制结束拖选。
+/// 行为回归见 reader_selection_viewport_behavior_test.{dart,js}，此处只守卫接线。
 void main() {
-  test('换视口的收口：必须清选区，且拖选中途不打断', () {
+  test('shell 区分强制失效与滚动，完整清理仍委托 selection', () {
     final String js = ReaderPaginationScripts.paginatedShellSource();
     final int start = js.indexOf('_clearSelectionOnViewportChange: function');
     expect(start, greaterThan(0), reason: '换视口收口必须存在');
@@ -23,11 +22,18 @@ void main() {
       js.indexOf('reapplyImageLateAnchor: function', start),
     );
     expect(body, contains('window.fushiSelection'));
-    expect(body, contains('clearSelection'));
-    expect(body, contains('s.dragAnchor'), reason: '拖选中途（手指没松）不得被翻页/滚动打断');
+    expect(body, contains('s.clearSelectionOnViewportChange();'));
+    expect(body, contains('function(force)'));
+    expect(
+      body,
+      contains("if (force && s && typeof s.clearSelection === 'function')"),
+    );
+    expect(body, contains('s.clearSelection();'));
+    expect(body, isNot(contains('s.dragAnchor')));
+    expect(body, isNot(contains('s.activeHandle')));
   });
 
-  test('用户滚动（noteUserScroll）走同一个收口', () {
+  test('capture 输入意图只清恢复锚，不清选区', () {
     final String js = ReaderPaginationScripts.paginatedShellSource();
     final int start = js.indexOf('noteUserScroll: function');
     expect(start, greaterThan(0));
@@ -37,12 +43,34 @@ void main() {
     );
     expect(
       body,
-      contains('this._clearSelectionOnViewportChange();'),
-      reason: '连续模式的滚轮 / 触摸原生滚动 / 拖滚动条换的也是视口，选区必须跟着清',
+      isNot(contains('this._clearSelectionOnViewportChange(')),
+      reason: '输入可能被手柄 target 阻止，或被边界 clamp，不能冒充位移',
     );
   });
 
-  test('分页 shell 的 paginate：两个方向都在真正翻页之后清选区', () {
+  test('分页所有程序化落点共用 setPagePosition，实际位移后强制清理', () {
+    final String js = ReaderPaginationScripts.paginatedShellSource();
+    final int start = js.indexOf('setPagePosition: function');
+    expect(start, greaterThan(0));
+    final String body = js.substring(
+      start,
+      js.indexOf('registerSnapScroll: function', start),
+    );
+    expect(body, contains('var before = this.getPagePosition(context);'));
+    expect(body, contains('if (this.getPagePosition(context) !== before)'));
+    expect(
+      body,
+      contains('this._clearSelectionOnViewportChange(true);'),
+      reason: '程序化翻页也必须结束旧拖选，不能被 dragAnchor / activeHandle 挡住',
+    );
+    expect(
+      body.indexOf('this.assignPagePosition(context, clamped);'),
+      lessThan(body.indexOf('if (this.getPagePosition(context) !== before)')),
+      reason: '比较实际落点，不把同位置 settle 或 clamp 当作换页',
+    );
+  });
+
+  test('分页 paginate 的两个方向在 limit 后才进入统一落点收口', () {
     final String js = ReaderPaginationScripts.paginatedShellSource();
     final int start = js.indexOf('paginate: function(direction)');
     expect(start, greaterThan(0));
@@ -50,32 +78,19 @@ void main() {
       start,
       js.indexOf('getFirstVisibleCharOffset: function', start),
     );
-    expect(
-      'this._clearSelectionOnViewportChange();'.allMatches(body).length,
-      2,
-      reason: 'forward / backward 两个方向各清一次',
-    );
-    // 每次清除都必须紧跟在 `setPagePosition` 之后：`"limit"` 早退（页面没换）不清 ——
-    // 否则用户在末页点一下翻页就会莫名丢掉选区。
-    int idx = 0;
-    int checked = 0;
-    while (true) {
-      final int call = body.indexOf(
-        'this._clearSelectionOnViewportChange();',
-        idx,
-      );
-      if (call < 0) break;
-      final int setPos = body.lastIndexOf('this.setPagePosition(', call);
-      expect(setPos, greaterThan(0), reason: '清选区必须排在 setPagePosition 之后');
-      expect(
-        call - setPos,
-        lessThan(200),
-        reason: '两者必须在同一个翻页分支内（不能挪到 limit 早退路径上）',
-      );
-      idx = call + 1;
-      checked++;
+    expect('this.setPagePosition('.allMatches(body).length, 2);
+    for (final String target in <String>['targetForward', 'targetBack']) {
+      final int call = body.indexOf('this.setPagePosition(context, $target);');
+      final int limit = body.lastIndexOf('return "limit";', call);
+      expect(call, greaterThan(0));
+      expect(limit, greaterThan(0));
+      expect(call - limit, lessThan(80));
     }
-    expect(checked, 2);
+    expect(
+      body,
+      isNot(contains('this._clearSelectionOnViewportChange(')),
+      reason: 'setPagePosition 已清理，不应重复通知或清掉新选区',
+    );
   });
 
   test('连续 shell 的 paginate：只在真的滚动了才清选区', () {
@@ -88,9 +103,38 @@ void main() {
     );
     expect(
       body,
-      contains('if (moved) this._clearSelectionOnViewportChange();'),
+      contains('if (moved) this._clearSelectionOnViewportChange(true);'),
       reason: '没滚动（moved=false）不该丢选区',
     );
+  });
+
+  test('原生连续 scroll 仍走拖选保护，不能强制清理', () {
+    final String js = ReaderPaginationScripts.continuousShellSource();
+    final int start = js.indexOf('_onContinuousViewportScroll: function');
+    expect(start, greaterThan(0));
+    final String body = js.substring(
+      start,
+      js.indexOf('_writeContinuousScroll: function', start),
+    );
+    expect(body, contains('position !== previous'));
+    expect(body, contains('this._clearSelectionOnViewportChange();'));
+    expect(body, isNot(contains('this._clearSelectionOnViewportChange(true)')));
+  });
+
+  test('VN 所有 renderScreen 在替换旧节点前完整清理，不复用滚动保护', () {
+    final String js = ReaderVisualNovelScripts.vnShellScript();
+    final int start = js.indexOf('renderScreen: function');
+    expect(start, greaterThan(0));
+    final String body = js.substring(
+      start,
+      js.indexOf('centerScreenInk: function', start),
+    );
+    final int clear = body.indexOf('selection.clearSelection();');
+    expect(clear, greaterThan(0));
+    expect(body, isNot(contains('clearSelectionOnViewportChange')));
+    expect(clear, lessThan(body.indexOf('this.screen.replaceChildren();')));
+    expect(clear, lessThan(body.indexOf('this.screen.removeChild(')));
+    expect(body.indexOf('if (!this.screens.length) return;'), lessThan(clear));
   });
 
   test('翻页清除与有声书 cue 清除是两件事（本 bug 长期存在的根因）', () {

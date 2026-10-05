@@ -1,4 +1,4 @@
-## BUG-2951 · 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住
+## BUG-2958 · 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住
 
 - **报告**：2026-10-05（用户：手机阅读器长按进选择后，拖动两端手柄到文字之间的空白、行尾或其它没有直接命中字符的位置，手柄停止移动、选择范围无法继续扩大或缩小；松手再拖有时仍过不去）
 - **真实性**：✅ 真 bug —— 根因在 `fushi/lib/src/reader/reader_selection_scripts.dart` 的拖动端点解析：**唯一**入口是几何命中 `getSelectableCharacterAtPoint(x, y)`，它要求手指压在某字符的 client rect 上（先精确包含、再 ±6px 容差）。字缝（两端对齐撑开的空白）、行尾/行首空白（text-indent、伸缩空隙）、行距（line box 之外）、段间 margin 上没有任何字符矩形盖住手指 → `hit` 为 null →
@@ -28,4 +28,13 @@
   - `fushi/test/reader/reader_selection_drag_hit_guard_test.dart`（源码契约）：解析层 API 齐全、原生快路优先且两条 WebView 方言都覆盖、几何兜底按交叉轴·行内轴定行定 caret + 有界扫描 + 命中元素经「跳过手柄」的取元素层、端点规范化（跳过的节点必须挪走）、可见性收口（BUG-1797）、**端点不做词边界吸附（`snapEndpointToWord` / `wordSelectMode` 全文件不得再出现）**、**拖动端点始终跟随手指 / 长按原地保留锚点区间 / `endRangeSelection` 不得再解析端点**、解析层不碰原生选区、单击查词段不经解析层、调用点数量哨兵（2 处）。
   - `fushi/test/reader/reader_selection_handles_guard_test.dart` 更新：`beginRangeSelection` 的锚点断言改成「区间锚点 + `selectionAnchorAtHit` + 直接 `collectRangeBetween` 画区间（不得走 `updateRangeSelection`）」；`updateRangeSelection` / `moveSelectionHandle` 补「严格命中落空必须走 `resolveSelectionEndpoint`、不得直接 return 冻结手柄」的断言。
 - **备注**：真机（Android / iOS）触屏长按拖选后拖两端手柄跨越字缝·行尾·行距·段间空白必须能连续跟随、查词/复制/收藏菜单无回归 —— 真触屏手势与真实字符矩形只能设备验（离屏 `pointer: fine` 不触发 coarse，`flutter test` 也没有真布局），按 CLAUDE.md 验证纪律标 `implemented_unverified`，待用户或 reviewer 在受支持设备上复验；分页 / 连续 / VN 三种 view mode 都要过一遍（几何不同）。本机已跑：`dart tool/heavy.dart -- flutter analyze --no-pub`（Flutter 3.44.0）→ No issues found；行为测试 16/16；`reader_selection_drag_hit_guard_test` / `reader_selection_handles_guard_test` / `reader_pagination_viewport_selection_guard_test` 全绿。
-- **后续反馈（同 PR 内）**：① 用户报「拉丁语言没法随意选择字符」→ 端点按词吸附整条移除（见上）。② 用户报「拖动时手柄不改变位置」→ 根因即本 bug 的 P1：`moveSelectionHandle` 原先把端点解析放在**恢复** `pointer-events` 之后，解析层两条命中路都会命中手柄自身 → 端点解析为 null → 手柄不跟随；已改为在透明窗口内解析 + 几何兜底跳过手柄元素（**保留手柄可见**，不采用「拖动时藏起手柄」那种丢反馈的做法）。③ 用户报「有选区时翻页，选择的条还在」→ 另立 BUG-2952（翻页/滚动换视口时清选区）。
+- **后续反馈（同 PR 内）**：① 用户报「拉丁语言没法随意选择字符」→ 端点按词吸附整条移除（见上）。② 用户报「拖动时手柄不改变位置」→ 根因即本 bug 的 P1：`moveSelectionHandle` 原先把端点解析放在**恢复** `pointer-events` 之后，解析层两条命中路都会命中手柄自身 → 端点解析为 null → 手柄不跟随；已改为在透明窗口内解析 + 几何兜底跳过手柄元素（**保留手柄可见**，不采用「拖动时藏起手柄」那种丢反馈的做法）。③ 用户报「有选区时翻页，选择的条还在」→ 另立 BUG-2959（翻页/滚动换视口时清选区）。
+
+### 2026-10-05 审查与后续补修（以下覆盖前述首轮实现/验证说明）
+
+- `normalizeEndpoint` 的空结果可达，但没有证实“该分支必然选到文末”；规范化现在先沿拖动方向找正文，失败再试另一侧，仍失败则保留旧选择，不回到 anchor。
+- 两种 caret API 依次尝试；严格命中与几何解析统一放入 `selectionEndpointAtPoint` 的手柄 pointer-events 透明窗口，finally 精确恢复。
+- 长按 begin/update 原先只更新高亮，松手才显示手柄。现在初始/每次移动均同步定位；手柄 touchstart 通知 Flutter 移除旧工具条，touchend 使用最终坐标。源 DOM 被 clear/normalize/detach 时重新命中或结束旧会话，禁止迟到 release 复活菜单。
+- 根多列布局支持 manual popover top layer，避免 html 分栏影响 fixed 手柄；老内核保留 fixed 路径。视口边缘触控盒与工具条避让见 BUG-2961。
+- 原简报声称恢复 pointer-events 后解析可让第15/16场景变红，实测原16条仍全绿；第15条被 elementsFromPoint 几何兜底救回，第16条不走被变异方法。最终新增无 elementsFromPoint、异常恢复、实时坐标、迟到事件与边界断言：36 场景通过，23 个 mutation 全被检出；Node 缺失直接失败，不再 skip。
+- 最终真实 headless Chrome 10/10（含 trusted CDP touch 拖动，在松手前坐标已更新），不等价于手机验收。用户最终要求不再 adb；最终状态仍为 `implemented_unverified`。测试文件为 `reader_selection_drag_hit_behavior_test.{js,dart}`、`reader_selection_handles_guard_test.dart`、`reader_selection_drag_hit_guard_test.dart`；证据在 `.codex-test/reader-selection-audit/`。

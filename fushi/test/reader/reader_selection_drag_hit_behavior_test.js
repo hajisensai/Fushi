@@ -19,9 +19,9 @@
 //   3  下一行右侧空白                  -> 归最近的一行
 //   4  段末之后（段间 margin）         -> clamp 到本段末字
 //   5  几何兜底（无原生 caret API）    -> 与 1/2 同样不卡住
-//   6  拉丁词的换行处                  -> 吸附到词末（词跨行也不丢）
+//   6  拉丁词拖选                      -> 拖动端点保持字符级
 //   7  拉丁词长按                      -> 原地长按即选中整词
-//   8  拉丁词拖动                      -> 端点吸附到词边界（Android WordIterator 语义）
+//   8  拉丁词拖动                      -> 可缩进长按锚词内部，不锁在词边界
 //   9  CJK                             -> 保持字符级（不吸附、不退化成词选择）
 //   10 竖排 vertical-rl                -> 轴向互换后同样不卡住
 //   11 分页页边距带（BUG-1797）        -> 绝不选中被 clip 掉的相邻页字符
@@ -35,6 +35,159 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+const mutation = process.argv[2] || null;
+assert.ok(!mutation || mutation.startsWith('--mutant='), 'unknown harness argument');
+
+// Mutate only the production payload in memory; assert the expected match
+// count at each site. Demand behavioral witness failures, not syntax/load errors.
+const mutations = {
+  early_restore: [
+    '      return this.resolveSelectionEndpoint(x, y, hit, refNode, refOffset);',
+    `      if (handles) {
+        handles.start.style.pointerEvents = savedStartPe;
+        handles.end.style.pointerEvents = savedEndPe;
+      }
+      return this.resolveSelectionEndpoint(x, y, hit, refNode, refOffset);`,
+    '23_no_stack_endpoint_window',
+  ],
+  bypass_text_window: [
+    'this.selectionEndpointAtPoint(x, y, anchor.node, anchor.offset)',
+    'this.resolveSelectionEndpoint(x, y, this.getSelectableCharacterAtPoint(x, y), anchor.node, anchor.offset)',
+    '23_no_stack_endpoint_window',
+  ],
+  skip_range_fallback: ['api < 2', 'api < (document.caretPositionFromPoint ? 1 : 2)', '17_native_api_fallback_order'],
+  raw_endpoint_fallback: [
+    'var endpoint = this.normalizeEndpoint(node, offset, forward);',
+    'var endpoint = this.normalizeEndpoint(node, offset, forward) || { node: node, offset: offset };',
+    '19_normalization_failure_is_not_a_raw_endpoint',
+  ],
+  one_direction_only: ['attempt < 2', 'attempt < 1', '18_normalization_direction_and_boundary'],
+  reset_to_anchor: [
+    '    if (!endpoint) return null;\n    var built = endpoint.forward',
+    `    if (!endpoint) {
+      this.selection = this.collectRangeBetween(anchor.node, anchor.offset, anchor.endNode, anchor.endOffset);
+      return null;
+    }
+    var built = endpoint.forward`,
+    '20_failed_drag_preserves_current_selection',
+  ],
+  drop_release: [
+    'if (this.dragAnchor && this.dragAnchor.moved) this.updateRangeSelection(x, y);',
+    '/* ignore release */', '22_drag_release_uses_last_coordinate',
+  ],
+  lose_stationary_word: [
+    'if (!anchor.moved) return this.selection ? this.selection.text : null;',
+    '/* truncate even on unchanged touchmove */', '21_stationary_longpress_keeps_word',
+  ],
+  restore_auto: [
+    'handles.start.style.pointerEvents = savedStartPe;',
+    "handles.start.style.pointerEvents = savedStartPe || 'auto';", '24_window_restores_exact_style_even_on_throw',
+  ],
+  clear_busy_viewport: [
+    'if (this.dragAnchor || this.activeHandle) return;',
+    '/* clear while dragging */', '25_viewport_clear_and_bridge_order',
+  ],
+  skip_empty_notification: [
+    "window.flutter_inappwebview.callHandler('onSelectionCleared');",
+    "if (this.selection) window.flutter_inappwebview.callHandler('onSelectionCleared');", '25_viewport_clear_and_bridge_order',
+  ],
+  hide_until_release: [
+    '      this.showSelectionHandles();',
+    '      /* hidden until release */', '28_longpress_live_coordinates_each_move',
+  ],
+  freeze_text_handles: [
+    '    this.positionSelectionHandles();\n    return built.text;',
+    '    return built.text;', '28_longpress_live_coordinates_each_move',
+  ],
+  freeze_handle_handles: [
+    '    this.renderSelectionHighlight();\n    this.positionSelectionHandles();\n  },',
+    '    this.renderSelectionHighlight();\n  },', '29_handle_listener_live_coordinates_and_bridge',
+  ],
+  skip_drag_bridge: [
+    "      window.flutter_inappwebview.callHandler('onSelectionDragStarted');",
+    '      /* stale menu stays up */', '29_handle_listener_live_coordinates_and_bridge',
+  ],
+  late_end_without_session: [
+    '    if (!this.dragAnchor) return false;',
+    '    /* no drag session required */', '30_clear_then_late_end_does_not_revive_menu',
+  ],
+  ignore_detached_nodes: [
+    'node.nodeType === Node.TEXT_NODE && node.isConnected &&',
+    'node.nodeType === Node.TEXT_NODE &&', '31_detached_dom_cancels_drag_and_late_end',
+  ],
+  reuse_pre_normalize_hit: [
+    '    if (hadWrappers) hit = this.getSelectableCharacterAtPoint(x, y);',
+    '    /* reuse the detached pre-clear hit */', '32_begin_resolves_after_wrapper_normalize',
+  ],
+  skip_handles_rect_payload: [
+    '    payload.handlesRect = this.selectionHandlesRect();',
+    '    /* toolbar has only glyph bounds */', '33_handles_rect_and_legacy_top_layer_contract',
+  ],
+  skip_touch_box_clamp: [
+    'if (target.left < 0 || target.top < 0 || target.right > vw || target.bottom > vh) continue;',
+    '/* accept unclamped out-of-viewport candidates */',
+    '34_edge_touch_boxes_bounded_and_independently_grabbable',
+    'full touch box must stay inside viewport',
+  ],
+  overlap_clamped_grips: [
+    'if (overlaps(first.rect, last.rect)) continue;',
+    '/* accept overlapping grips */',
+    '34_edge_touch_boxes_bounded_and_independently_grabbable',
+    'two touch boxes must not overlap',
+  ],
+  restore_8px_gap: [
+    'var GAP = half + 4;', 'var GAP = 8;',
+    '28_longpress_live_coordinates_each_move',
+    'unobstructed 20px candidates have zero displacement cost',
+  ],
+  cover_selected_glyphs: [
+    'if (selectedRects.some(function(rect) { return overlaps(target, rect); })) continue;',
+    '/* accept candidates on selected glyphs */',
+    '34_edge_touch_boxes_bounded_and_independently_grabbable',
+    'touch box must not cover selected glyph',
+  ],
+  ignore_middle_selection_fragments: [
+    'selectedRects.push(rects[j]);',
+    'selectedRects.push(sRect, eRect);',
+    '37_interior_touch_boxes_clear_all_selected_fragments',
+    'touch box must not cover selected glyph',
+  ],
+  clamp_offscreen_endpoints: [
+    '!this.charRangeVisible(this.charRangeAt(eps.startNode, eps.startOffset), box) ||',
+    'false ||', '35_offscreen_endpoints_are_not_clamped_into_view',
+  ],
+  reopen_live_touch_target: [
+    "typeof el.showPopover === 'function' && !el.matches(':popover-open')",
+    "typeof el.showPopover === 'function'", '28_longpress_live_coordinates_each_move',
+  ],
+};
+function mutateSource(source) {
+  if (!mutation) return source;
+  const name = mutation.slice('--mutant='.length);
+  assert.ok(Object.hasOwn(mutations, name), `unknown mutation ${name}`);
+  const [before, after] = mutations[name];
+  if (name === 'skip_touch_box_clamp') {
+    // Clamping and bounds validation are independent safety barriers. Bypass
+    // both; removing only one is an equivalent (surviving) mutation.
+    for (const [clamp, raw] of [
+      ['Math.max(half, Math.min(vw - half, xs[a]))', 'xs[a]'],
+      ['Math.max(half, Math.min(vh - half, ys[b]))', 'ys[b]'],
+    ]) {
+      assert.strictEqual(source.split(clamp).length - 1, 1, `${name}: ${clamp}`);
+      source = source.replace(clamp, raw);
+    }
+  }
+  if (name === 'late_end_without_session') {
+    assert.strictEqual(source.split(before).length - 1, 2);
+    return source.replaceAll(before, after).replace(
+      'if (!this.liveDragAnchor()) { this.clearSelection(); return false; }',
+      'if (this.dragAnchor && !this.liveDragAnchor()) { this.clearSelection(); return false; }');
+  }
+  assert.strictEqual(source.split(before).length - 1, 1, `${name} must match exactly once`);
+  return source.replace(before, after);
+}
+
 
 // ---------------------------------------------------------------- production JS
 function selectionSource() {
@@ -49,7 +202,7 @@ function selectionSource() {
   const bodyStart = start + marker.length;
   const end = dart.indexOf('""";', bodyStart);
   assert.ok(end > bodyStart, 'source() raw string terminator missing');
-  return dart.substring(bodyStart, end);
+  return mutateSource(dart.substring(bodyStart, end));
 }
 
 function selectionObjectLiteral(source) {
@@ -144,6 +297,7 @@ function layoutText(text, options) {
 function makeTextNode(text, rects, parent) {
   return {
     nodeType: TEXT_NODE,
+    get isConnected() { return !!(this.parentElement && this.parentElement.isConnected); },
     textContent: text,
     nodeValue: text,
     parentElement: parent,
@@ -199,12 +353,38 @@ function makeElement(tag, parent) {
     setAttribute(name, value) {
       attrs[name] = String(value);
     },
-    addEventListener() {},
+    contains(candidate) {
+      for (let node = candidate; node; node = node.parentElement) {
+        if (node === el) return true;
+      }
+      return false;
+    },
+    __listeners: {},
+    __styleWrites: [],
+    addEventListener(name, fn) { el.__listeners[name] = fn; },
     getBoundingClientRect() {
+      if (attrs['data-fushi-sel-handle']) {
+        if (el.style.display === 'none') return rect(0, 0, 0, 0);
+        const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+        return rect(x - 16, y - 16, x + 16, y + 16);
+      }
       return el.__rect;
     },
   };
   el.__attrs = attrs;
+  el.style = new Proxy({}, {
+    set(style, key, value) {
+      el.__styleWrites.push({ key, value });
+      style[key] = value;
+      if (key === 'cssText') {
+        for (const declaration of value.split(';')) {
+          const [property, val] = declaration.split(':');
+          if (val !== undefined) style[property.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = val;
+        }
+      }
+      return true;
+    },
+  });
   return el;
 }
 
@@ -368,13 +548,13 @@ function buildDocument(spec) {
     return best ? { offsetNode: best.offsetNode, offset: best.offset } : null;
   }
 
+  const root = makeElement('html');
+  root.clientWidth = body.__rect.right;
+  root.clientHeight = body.__rect.bottom;
+  root.appendChild(body);
   const doc = {
     body,
-    documentElement: {
-      clientWidth: body.__rect.right,
-      clientHeight: body.__rect.bottom,
-      appendChild() {},
-    },
+    documentElement: root,
     createRange: () => makeRange(),
     createTreeWalker(root, whatToShow, filter) {
       const accepted = [];
@@ -419,7 +599,21 @@ function buildDocument(spec) {
     elementFromPoint,
     elementsFromPoint,
     getElementById: () => null,
-    createElement: (tag) => makeElement(tag, null),
+    createElement: (tag) => {
+      const el = makeElement(tag, null);
+      if (spec.popover) {
+        el.__popoverOpen = false;
+        el.__popoverShows = 0;
+        el.showPopover = () => {
+          assert.strictEqual(el.getAttribute('popover'), 'manual');
+          assert.strictEqual(el.style.display, 'block');
+          el.__popoverOpen = true; el.__popoverShows++;
+        };
+        el.hidePopover = () => { el.__popoverOpen = false; };
+        el.matches = (selector) => selector === ':popover-open' && el.__popoverOpen;
+      }
+      return el;
+    },
     caretPositionFromPoint,
     caretRangeFromPoint(x, y) {
       const pos = caretPositionFromPoint(x, y);
@@ -468,22 +662,23 @@ function buildDocument(spec) {
   };
 }
 
-function loadSelection(dom) {
+function loadSelection(dom, realHandles = false) {
   const literal = selectionObjectLiteral(selectionSource());
   const factory = new Function(
     'window',
     'document',
     'Node',
     'NodeFilter',
-    'JAPANESE_RANGES',
+    'JAPANESE_RANGES', 'CSS', 'Highlight',
     `return (${literal});`,
   );
   const sel = factory(dom.win, dom.doc, NodeStub, NodeFilterStub, [
     [0x3040, 0x309f],
     [0x30a0, 0x30ff],
     [0x4e00, 0x9fff],
-  ]);
+  ], { highlights: new Map() }, class Highlight extends Array {});
   dom.win.fushiSelection = sel;
+  if (realHandles) return sel;
   // The grips are created lazily through ensureSelectionHandles (real DOM work);
   // pre-seeding a connected pair keeps this harness on the hit-testing logic under
   // test while positionSelectionHandles still runs for real. They are element-shaped
@@ -493,7 +688,11 @@ function loadSelection(dom) {
     const el = {
       nodeType: ELEMENT_NODE,
       tagName: 'DIV',
-      style: {},
+      style: { pointerEvents: 'auto' },
+      getBoundingClientRect() {
+        const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+        return rect(x - 16, y - 16, x + 16, y + 16);
+      },
       isConnected: true,
       __attrs: { 'data-fushi-sel-handle': which },
       // Mirrors makeElement.closest. A real grip IS a `div`, so the geometric fallback's
@@ -987,14 +1186,7 @@ scenario('14_whitespace_only_node_endpoint_normalized', () => {
 });
 
 scenario('15_handle_drag_under_grip_still_advances', () => {
-  // The finger drags the end grip, so the 32x32 transparent grip box sits *under* the
-  // finger and a hit test at the raw coordinate resolves to the grip element instead of
-  // the glyph. moveSelectionHandle must therefore resolve the endpoint inside the window
-  // where the grips are transparent to hit-testing. Resolving after restoring
-  // `pointer-events` kills both routes at once: the native caret fast path gets an
-  // ELEMENT_NODE (rejected — it only trusts text nodes) and the geometric fallback gets
-  // the grip as its walker root (it is a `div`, so closest('div') is itself -> no text),
-  // which returns null and leaves the grip frozen under the finger.
+  // Stack-enabled case: the new no-stack matrix independently locks ordering.
   const dom = cjkDom();
   const sel = loadSelection(dom);
   const rects = dom.textNodes[0].__rects;
@@ -1019,10 +1211,7 @@ scenario('15_handle_drag_under_grip_still_advances', () => {
 });
 
 scenario('16_text_drag_under_grip_still_advances', () => {
-  // updateRangeSelection does not toggle pointer-events, so a grip can still occlude the
-  // raw point while the finger drags the text itself. The geometric fallback must look
-  // *through* the grip (elementsFromPoint) instead of treating the grip element as the
-  // text block.
+  // Defensive overlap: normal long-press begin hides handles until release.
   const dom = cjkDom();
   const sel = loadSelection(dom);
   const rects = dom.textNodes[0].__rects;
@@ -1041,14 +1230,713 @@ scenario('16_text_drag_under_grip_still_advances', () => {
   return { before, after };
 });
 
+// Execute the actual generated gesture script, replacing only Dart numeric parameters.
+function gestureDriver(dom) {
+  const dart = fs.readFileSync(path.resolve(__dirname, '../../lib/src/reader/reader_selection_scripts.dart'), 'utf8');
+  const method = dart.indexOf('static String longPressDragGestureScript({');
+  const start = dart.indexOf("return '''", method) + "return '''".length;
+  const end = dart.indexOf("''';", start);
+  assert.ok(method >= 0 && start > method && end > start);
+  const script = dart.slice(start, end).replace('$delayMs', '400').replace('$slopSq', '100');
+  const listeners = {};
+  const timers = new Map();
+  let id = 0;
+  dom.doc.addEventListener = (name, fn) => { listeners[name] = fn; };
+  dom.win.matchMedia = () => ({ matches: true });
+  new Function('window', 'document', 'setTimeout', 'clearTimeout', script)(dom.win, dom.doc,
+    (fn) => { timers.set(++id, fn); return id; }, (key) => timers.delete(key));
+  return {
+    fire(name, x, y) {
+      const t = { clientX: x, clientY: y };
+      assert.ok(listeners[name], `missing actual gesture listener ${name}`);
+      listeners[name]({ target: dom.blocks[0].el, touches: name === 'touchend' ? [] : [t],
+        changedTouches: [t], cancelable: true, preventDefault() {}, stopPropagation() {} });
+    },
+    hold() {
+      assert.strictEqual(timers.size, 1, 'long-press must really arm');
+      for (const [key, fn] of [...timers]) { timers.delete(key); fn(); }
+    },
+  };
+}
+function glyphPoint(dom, index) {
+  const r = dom.textNodes[0].__rects[index];
+  return [r.left + 4, verticalCenter(r)];
+}
+
+scenario('17_native_api_fallback_order', () => {
+  const modes = ['null', 'element', 'absent', 'throws', 'invisible', 'valid'];
+  for (const mode of modes) {
+    const dom = cjkDom();
+    const sel = loadSelection(dom);
+    const node = dom.textNodes[0];
+    const calls = [];
+    dom.doc.caretPositionFromPoint = () => {
+      calls.push('position');
+      if (mode === 'throws') throw new Error('unsupported native API');
+      if (mode === 'null') return null;
+      return { offsetNode: mode === 'element' ? dom.blocks[0].el : node, offset: mode === 'invisible' ? 999 : 6 };
+    };
+    if (mode === 'absent') delete dom.doc.caretPositionFromPoint;
+    dom.doc.caretRangeFromPoint = () => { calls.push('range'); return { startContainer: node, startOffset: 6 }; };
+    // Disable geometric rescue: test the native contract, not a lucky final result.
+    dom.doc.elementFromPoint = () => null;
+    dom.doc.elementsFromPoint = () => [];
+    const hit = sel.caretPositionAtPoint(189, 40);
+    assert.ok(hit, `${mode}: range fallback must remain reachable`);
+    assert.strictEqual(hit.node, node);
+    assert.strictEqual(hit.offset, 6);
+    assert.deepStrictEqual(calls, mode === 'absent' ? ['range'] : mode === 'valid' ? ['position'] : ['position', 'range']);
+  }
+  return { modes };
+});
+
+function spacedDom(parts) {
+  let x = 20;
+  return buildDocument({ bodyRect: rect(0, 0, 400, 300), blocks: [{ rect: rect(20, 20, 380, 80),
+    textNodes: parts.map((text) => ({ text,
+      rects: Array.from(text, () => { const r = rect(x, 20, x + 20, 60); x += 20; return r; }),
+    })),
+  }] });
+}
+scenario('18_normalization_direction_and_boundary', () => {
+  const dom = spacedDom(['  ', 'AB', '  ', 'CD', '  ']);
+  const sel = loadSelection(dom);
+  const [leading, first, middle, last, trailing] = dom.textNodes;
+  for (const [node, forward, expectedNode, offset] of [
+    [middle, true, last, 0], [middle, false, first, 1],
+    [leading, false, first, 0], [leading, true, first, 0],
+    [trailing, true, last, 1], [trailing, false, last, 1],
+  ]) assert.deepStrictEqual(sel.normalizeEndpoint(node, 0, forward), { node: expectedNode, offset });
+  // Real reverse drag onto preserved leading whitespace: use the first body
+  // character, not a raw filtered whitespace node. No balloon claim is needed.
+  assert.ok(sel.beginRangeSelection(145, 40));
+  sel.updateRangeSelection(165, 40);
+  assert.strictEqual(sel.updateRangeSelection(25, 40), 'ABCD');
+  assert.strictEqual(sel.selection.startNode, first);
+  return { leadingReverse: textOf(sel), directions: 6 };
+});
+scenario('19_normalization_failure_is_not_a_raw_endpoint', () => {
+  const dom = spacedDom(['  ']);
+  const sel = loadSelection(dom);
+  const node = dom.textNodes[0];
+  for (const forward of [true, false]) assert.strictEqual(sel.normalizeEndpoint(node, 0, forward), null);
+  for (const offset of [0, 1]) assert.strictEqual(
+    sel.resolveSelectionEndpoint(25, 40, { node, offset }, node, 0), null,
+    'failed normalization must not resurrect the filtered raw endpoint');
+  // Normalization can move a visible whitespace hit onto an off-page glyph.
+  // Recheck the normalized character, not just the original caret neighbour.
+  const clipped = spacedDom(['  ', 'AB']);
+  const clippedSel = loadSelection(clipped);
+  clipped.textNodes[1].__rects = [rect(500, 20, 520, 60), rect(520, 20, 540, 60)];
+  assert.strictEqual(clippedSel.resolveSelectionEndpoint(25, 40,
+    { node: clipped.textNodes[0], offset: 1 }, clipped.textNodes[0], 0), null);
+  return { rejected: true, clippedNormalizedEndpointRejected: true };
+});
+scenario('20_failed_drag_preserves_current_selection', () => {
+  const dom = cjkDom({ disableCaretApis: true, blocks: [
+    { rect: rect(20, 20, 340, 130), textNodes: [{ text: CJK, rects: cjkRects() }] },
+    { tag: 'div', rect: rect(20, 150, 340, 200), textNodes: [] },
+  ] });
+  const sel = loadSelection(dom);
+  sel.beginRangeSelection(...glyphPoint(dom, 0));
+  sel.updateRangeSelection(...glyphPoint(dom, 4));
+  const previous = sel.selection;
+  assert.strictEqual(sel.updateRangeSelection(60, 170), null);
+  assert.strictEqual(sel.selection, previous, 'empty block must preserve expanded selection, not anchor');
+  // Also isolate normalization failure after a genuine strict glyph hit.
+  const normalize = sel.normalizeEndpoint;
+  sel.normalizeEndpoint = () => null;
+  assert.strictEqual(sel.updateRangeSelection(...glyphPoint(dom, 6)), null);
+  assert.strictEqual(sel.selection, previous);
+  sel.normalizeEndpoint = normalize;
+  const collect = sel.collectRangeBetween;
+  sel.collectRangeBetween = () => null;
+  assert.strictEqual(sel.updateRangeSelection(...glyphPoint(dom, 6)), null);
+  assert.strictEqual(sel.selection, previous, 'range build failure must also preserve current selection');
+  sel.collectRangeBetween = collect;
+  assert.strictEqual(sel.endRangeSelection(60, 170), true);
+  assert.strictEqual(sel.selection, previous, 'failed final release keeps the last valid range');
+  assert.strictEqual(sel.dragAnchor, null);
+  return { text: textOf(sel) };
+});
+scenario('21_stationary_longpress_keeps_word', () => {
+  const dom = latinDom();
+  const sel = loadSelection(dom);
+  const driver = gestureDriver(dom);
+  const point = glyphPoint(dom, LATIN.indexOf('quick') + 2);
+  driver.fire('touchstart', ...point);
+  driver.hold();
+  assert.strictEqual(textOf(sel), 'quick');
+  driver.fire('touchmove', ...point); // same coordinates are not a drag
+  driver.fire('touchend', ...point);
+  assert.strictEqual(textOf(sel), 'quick');
+  assert.strictEqual(sel.dragAnchor, null);
+  return { text: textOf(sel) };
+});
+scenario('22_drag_release_uses_last_coordinate', () => {
+  const outputs = [];
+  for (const latin of [false, true]) {
+    const dom = latin ? latinDom() : cjkDom();
+    const sel = loadSelection(dom);
+    const driver = gestureDriver(dom);
+    const start = latin ? LATIN.indexOf('quick') + 2 : 0;
+    const move = latin ? LATIN.indexOf('brown') : 2;
+    const release = latin ? LATIN.indexOf('quick') + 1 : 3;
+    const expected = latin ? 'qu' : CJK.slice(0, 4);
+    const bridge = [];
+    dom.win.flutter_inappwebview.callHandler = (name, payload) => bridge.push({ name, payload });
+    driver.fire('touchstart', ...glyphPoint(dom, start));
+    driver.hold();
+    driver.fire('touchmove', ...glyphPoint(dom, move));
+    assert.notStrictEqual(textOf(sel), expected);
+    driver.fire('touchend', ...glyphPoint(dom, release));
+    assert.strictEqual(textOf(sel), expected);
+    const menu = bridge.find((e) => e.name === 'onSelectionMenu');
+    assert.ok(menu, 'release must publish a real menu');
+    assert.strictEqual(JSON.parse(menu.payload).text, expected);
+    outputs.push(expected);
+  }
+  return { outputs };
+});
+scenario('23_no_stack_endpoint_window', () => {
+  const outputs = [];
+  for (const disableCaretApis of [false, true]) for (const kind of ['end', 'start', 'text']) {
+    const dom = cjkDom({ disableCaretApis });
+    delete dom.doc.elementsFromPoint;
+    const sel = loadSelection(dom);
+    const anchor = kind === 'start' ? 9 : 0;
+    sel.beginRangeSelection(...glyphPoint(dom, anchor));
+    if (kind !== 'text') sel.endRangeSelection(...glyphPoint(dom, anchor));
+    else sel.showSelectionHandles(); // defensive overlap, not the normal lifecycle
+    const r = dom.textNodes[0].__rects[5];
+    const points = [[r.right + 12, verticalCenter(r)], [kind === 'start' ? 10 : 335, verticalCenter(r)]];
+    for (let i = 0; i < points.length; i++) {
+      const [x, y] = points[i];
+      dom.addOverlay(sel.selectionHandles.end, rect(x - 16, y - 16, x + 16, y + 16));
+      if (kind !== 'text') sel.moveSelectionHandle(kind, x, y);
+      else sel.updateRangeSelection(x, y);
+      assert.strictEqual(textOf(sel), (kind === 'start' ? CJK.slice(i === 0 ? 6 : 0, 10) : CJK.slice(0, i === 0 ? 6 : 10)), `${kind}, native=${!disableCaretApis}, step=${i}`);
+      assert.strictEqual(sel.selectionHandles.end.style.pointerEvents, 'auto');
+      assert.strictEqual(sel.selectionHandles.end.style.display, 'block');
+    }
+    outputs.push({ kind, native: !disableCaretApis, text: textOf(sel) });
+  }
+  return { outputs };
+});
+scenario('24_window_restores_exact_style_even_on_throw', () => {
+  let checked = 0;
+  for (const pe of ['', 'auto', 'none']) for (const failAt of [null, 'strict', 'resolve']) {
+    const dom = cjkDom();
+    const sel = loadSelection(dom);
+    const { start, end } = sel.selectionHandles;
+    Object.assign(start.style, { pointerEvents: pe, display: 'block', visibility: 'visible' });
+    Object.assign(end.style, { pointerEvents: 'inherit', display: 'block', visibility: 'visible' });
+    const sentinel = new Error('endpoint failure');
+    for (const [method, stage] of [['getSelectableCharacterAtPoint', 'strict'], ['resolveSelectionEndpoint', 'resolve']]) {
+      const original = sel[method];
+      sel[method] = function(...args) {
+        assert.strictEqual(start.style.pointerEvents, 'none', `${stage} must be inside the window`);
+        assert.strictEqual(end.style.pointerEvents, 'none');
+        assert.strictEqual(start.style.display, 'block', 'hit window must stay visually visible');
+        assert.strictEqual(end.style.visibility, 'visible');
+        if (failAt === stage) throw sentinel;
+        return original.apply(this, args);
+      };
+    }
+    const action = () => sel.selectionEndpointAtPoint(...glyphPoint(dom, 3), dom.textNodes[0], 0);
+    if (failAt) assert.throws(action, (e) => e === sentinel);
+    else assert.ok(action());
+    assert.strictEqual(start.style.pointerEvents, pe, 'restore exact inline value, including empty string');
+    assert.strictEqual(end.style.pointerEvents, 'inherit');
+    checked++;
+  }
+  return { checked };
+});
+scenario('25_viewport_clear_and_bridge_order', () => {
+  const dom = cjkDom();
+  const sel = loadSelection(dom);
+  const calls = [];
+  dom.win.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'onSelectionCleared') {
+      assert.strictEqual(sel.selection, null, 'notify only AFTER local cleanup');
+      assert.strictEqual(sel.dragAnchor, null);
+      assert.strictEqual(sel.activeHandle, null);
+      assert.strictEqual(sel.selectionHandles.start.style.display, 'none');
+    }
+    calls.push({ name, payload });
+  };
+  sel.beginRangeSelection(...glyphPoint(dom, 0));
+  const before = sel.selection;
+  assert.deepStrictEqual(calls.map((e) => e.name), ['onSelectionCleared', 'onSelectionDragStarted']);
+  sel.clearSelectionOnViewportChange();
+  assert.strictEqual(sel.selection, before, 'anchor owns viewport changes');
+  assert.strictEqual(calls.length, 2);
+  sel.endRangeSelection(...glyphPoint(dom, 0));
+  assert.deepStrictEqual(calls.map((e) => e.name), ['onSelectionCleared', 'onSelectionDragStarted', 'onSelectionMenu']);
+  sel.activeHandle = 'end';
+  sel.clearSelectionOnViewportChange();
+  assert.strictEqual(sel.selection, before, 'handle owns viewport changes');
+  assert.strictEqual(calls.length, 3);
+  sel.activeHandle = null;
+  sel.clearSelectionOnViewportChange();
+  assert.strictEqual(sel.selection, null);
+  sel.clearSelectionOnViewportChange(); // empty JS state must still reconcile host UI
+  assert.deepStrictEqual(calls.map((e) => e.name), [
+    'onSelectionCleared', 'onSelectionDragStarted', 'onSelectionMenu', 'onSelectionCleared', 'onSelectionCleared',
+  ]);
+  delete dom.win.flutter_inappwebview;
+  assert.doesNotThrow(() => sel.clearSelection());
+  dom.win.flutter_inappwebview = { callHandler: null };
+  assert.doesNotThrow(() => sel.clearSelection());
+  return { order: calls.map((e) => e.name) };
+});
+scenario('26_handle_release_uses_last_coordinate', () => {
+  const dom = cjkDom();
+  const sel = loadSelection(dom);
+  sel.beginRangeSelection(...glyphPoint(dom, 0));
+  sel.endRangeSelection(...glyphPoint(dom, 0));
+  const listeners = {};
+  const grip = sel.selectionHandles.end;
+  grip.addEventListener = (name, fn) => { listeners[name] = fn; };
+  sel._wireHandle(grip, 'end');
+  const event = (i) => {
+    const [clientX, clientY] = glyphPoint(dom, i);
+    const t = { clientX, clientY };
+    return { touches: [t], changedTouches: [t], cancelable: true, preventDefault() {}, stopPropagation() {} };
+  };
+  listeners.touchstart(event(0));
+  listeners.touchmove(event(2));
+  listeners.touchend(event(6));
+  assert.strictEqual(textOf(sel), CJK.slice(0, 7));
+  assert.strictEqual(sel.activeHandle, null);
+  return { text: textOf(sel) };
+});
+scenario('27_cancelled_drag_does_not_block_viewport_clear', () => {
+  const dom = cjkDom();
+  const sel = loadSelection(dom);
+  const driver = gestureDriver(dom);
+  driver.fire('touchstart', ...glyphPoint(dom, 0));
+  driver.hold();
+  assert.ok(sel.dragAnchor);
+  driver.fire('touchcancel', ...glyphPoint(dom, 0));
+  assert.strictEqual(sel.dragAnchor, null);
+  sel.clearSelectionOnViewportChange();
+  assert.strictEqual(sel.selection, null);
+  return { cancelled: true };
+});
+
+
+// Actual DOM listeners + production ensure/position/highlight code. Geometry is
+// deterministic; this does NOT model WebView compositor frames or prove clipping.
+function liveDom(vertical, popover = true) {
+  const glyphs = Array.from(CJK, (_, i) => vertical
+    ? rect(240 - Math.floor(i / 6) * 40, 40 + (i % 6) * 24,
+      264 - Math.floor(i / 6) * 40, 64 + (i % 6) * 24)
+    : rect(40 + (i % 6) * 24, 40 + Math.floor(i / 6) * 40,
+      64 + (i % 6) * 24, 64 + Math.floor(i / 6) * 40));
+  return buildDocument({ vertical, popover, bodyRect: rect(0, 0, 400, 300), blocks: [
+    { rect: rect(20, 20, 340, 240), textNodes: [{ text: CJK, rects: glyphs }] },
+  ] });
+}
+// Independent geometry oracle: inspect every selected code-unit rect, not just
+// the first/last glyph or the union used by the toolbar. Edge contact is legal;
+// any positive-area intersection (including the transparent touch box) is not.
+function rectanglesOverlap(a, b) {
+  return Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
+    Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
+}
+function selectedGlyphRects(sel) {
+  return sel.selection.ranges.flatMap(segment =>
+    segment.node.__rects.slice(segment.start, segment.end));
+}
+function assertTouchBoxesClear(sel, width, height, context = '') {
+  const glyphs = selectedGlyphRects(sel);
+  // Also check the browser-like merged line fragments: checking only individual
+  // glyph boxes would miss selected justification/whitespace between them.
+  const fragments = sel.selection.ranges.flatMap(segment => {
+    const range = makeRange();
+    range.setStart(segment.node, segment.start);
+    range.setEnd(segment.node, segment.end);
+    return range.getClientRects();
+  });
+  assert.ok(glyphs.length > 0, 'fixture must contain selected glyphs');
+  const boxes = ['start', 'end'].map(which => {
+    const el = sel.selectionHandles[which];
+    assert.strictEqual(el.style.display, 'block', `${context}: ${which} must be visible`);
+    const box = el.getBoundingClientRect();
+    assert.deepStrictEqual([box.width, box.height], [32, 32], 'do not shrink the touch target');
+    assert.ok([box.left, box.top, box.right, box.bottom].every(Number.isFinite),
+      `${context}: finite touch coordinates`);
+    glyphs.forEach((glyph, i) => assert.ok(!rectanglesOverlap(box, glyph),
+      `${context}: ${which} touch box must not cover selected glyph ${i}: ` +
+      `box=${JSON.stringify(box)}, glyph=${JSON.stringify(glyph)}`));
+    fragments.forEach((fragment, i) => assert.ok(!rectanglesOverlap(box, fragment),
+      `${context}: ${which} touch box must not cover selected clientRect ${i}`));
+    assert.ok(box.left >= 0 && box.top >= 0 && box.right <= width && box.bottom <= height,
+      `${context}: ${which} full touch box must stay inside viewport: ${JSON.stringify(box)}`);
+    return box;
+  });
+  assert.ok(!rectanglesOverlap(...boxes), `${context}: two touch boxes must not overlap`);
+  return boxes;
+}
+function assertLiveHandles(sel, vertical, pair = sel.selectionHandles) {
+  assert.strictEqual(sel.selectionHandles, pair, 'keep the touch targets, not replacement nodes');
+  const eps = sel.selectionEndpoints();
+  assert.ok(eps);
+  const start = eps.startNode.__rects[eps.startOffset];
+  const end = eps.endNode.__rects[eps.endOffset];
+  // A 32px box leaves 4px of clearance at the natural 20px endpoint offset.
+  // Colliding/edge candidates may move, so do not pin all frames to one center.
+  const desired = vertical
+    ? [[start.left + start.width / 2, start.top - 20], [end.left + end.width / 2, end.bottom + 20]]
+    : [[start.left, start.bottom + 20], [end.right, end.bottom + 20]];
+  const boxes = assertTouchBoxesClear(sel, 400, 300, `live vertical=${vertical}`);
+  const centers = boxes.map(box => [(box.left + box.right) / 2, (box.top + box.bottom) / 2]);
+  [pair.start, pair.end].forEach((el, i) => {
+    assert.strictEqual(el.style.display, 'block', 'visible BEFORE release');
+    assert.strictEqual(el.style.pointerEvents, 'auto');
+    assert.ok(Math.hypot(centers[i][0] - desired[i][0], centers[i][1] - desired[i][1]) <= 64,
+      'both touch targets must remain near their CURRENT endpoints after EACH touchmove');
+    assert.deepStrictEqual(el.__styleWrites.filter(w => w.key === 'display').map(w => w.value), ['block'],
+      'a live target is shown once, not hidden/re-shown while dragging');
+    if (el.showPopover) {
+      assert.strictEqual(el.__popoverOpen, true);
+      assert.strictEqual(el.__popoverShows, 1, 'do not reopen a popover during the gesture');
+    }
+  });
+  const desiredBoxes = desired.map(([x, y]) => rect(x - 16, y - 16, x + 16, y + 16));
+  if (!rectanglesOverlap(...desiredBoxes) && desiredBoxes.every(box =>
+    box.left >= 0 && box.top >= 0 && box.right <= 400 && box.bottom <= 300 &&
+    selectedGlyphRects(sel).every(glyph => !rectanglesOverlap(box, glyph)))) {
+    assert.deepStrictEqual(centers, desired, 'unobstructed 20px candidates have zero displacement cost');
+  }
+  return centers;
+}
+function handleEvent(el, name, dom, i) {
+  const [clientX, clientY] = glyphPoint(dom, i);
+  const t = { clientX, clientY, identifier: 1 };
+  let stopped = false, prevented = false;
+  el.__listeners[name]({ touches: name === 'touchend' ? [] : [t], changedTouches: [t],
+    cancelable: true, preventDefault() { prevented = true; }, stopPropagation() { stopped = true; } });
+  return { stopped, prevented };
+}
+scenario('28_longpress_live_coordinates_each_move', () => {
+  const frames = [];
+  for (const vertical of [false, true]) for (const cssHighlights of [false, true]) {
+    const dom = liveDom(vertical);
+    dom.win.__fushiCssHighlightsSupported = cssHighlights;
+    const sel = loadSelection(dom, true), calls = [];
+    dom.win.flutter_inappwebview.callHandler = (name) => calls.push(name);
+    const driver = gestureDriver(dom);
+    driver.fire('touchstart', ...glyphPoint(dom, 0)); driver.hold();
+    const pair = sel.selectionHandles;
+    assert.ok(pair, 'longpress creates handles before the first move');
+    let previous = assertLiveHandles(sel, vertical, pair);
+    for (const i of [2, 5, 7, 9]) {
+      driver.fire('touchmove', ...glyphPoint(dom, i));
+      assert.strictEqual(textOf(sel), CJK.slice(0, i + 1));
+      const current = assertLiveHandles(sel, vertical, pair);
+      assert.notDeepStrictEqual(current[1], previous[1], 'end grip follows each changed text endpoint');
+      previous = current;
+      frames.push(current);
+      assert.deepStrictEqual(calls, ['onSelectionCleared', 'onSelectionDragStarted']);
+      assert.strictEqual(sel.highlightWrappers.length, 0, 'live fallback must not mutate source nodes');
+    }
+    driver.fire('touchend', ...glyphPoint(dom, 10));
+    const released = assertLiveHandles(sel, vertical, pair);
+    assert.notDeepStrictEqual(released[1], previous[1], 'release consumes its final text endpoint');
+    assert.strictEqual(calls.at(-1), 'onSelectionMenu');
+  }
+  return { synchronousFrames: frames.length, frames };
+});
+scenario('29_handle_listener_live_coordinates_and_bridge', () => {
+  const frames = [];
+  for (const vertical of [false, true]) for (const which of ['start', 'end']) {
+    const dom = liveDom(vertical), sel = loadSelection(dom, true), calls = [];
+    dom.win.flutter_inappwebview.callHandler = (name) => calls.push(name);
+    sel.beginRangeSelection(...glyphPoint(dom, 0));
+    sel.updateRangeSelection(...glyphPoint(dom, 10));
+    sel.endRangeSelection(...glyphPoint(dom, 10));
+    const pair = sel.selectionHandles, grip = pair[which];
+    calls.length = 0;
+    assert.deepStrictEqual(handleEvent(grip, 'touchstart', dom, which === 'start' ? 0 : 10),
+      { stopped: true, prevented: true });
+    assert.deepStrictEqual(calls, ['onSelectionDragStarted'], 'hide old host menu at touchstart');
+    let previous = assertLiveHandles(sel, vertical, pair);
+    for (const i of which === 'start' ? [1, 2, 4] : [8, 6, 5]) {
+      assert.deepStrictEqual(handleEvent(grip, 'touchmove', dom, i), { stopped: true, prevented: true });
+      assert.strictEqual(sel.activeHandle, which);
+      const current = assertLiveHandles(sel, vertical, pair);
+      const moving = which === 'start' ? 0 : 1;
+      assert.notDeepStrictEqual(current[moving], previous[moving], 'active grip follows each changed endpoint');
+      previous = current;
+      frames.push(current);
+      assert.deepStrictEqual(calls, ['onSelectionDragStarted'], 'no menu during move');
+    }
+    handleEvent(grip, 'touchend', dom, which === 'start' ? 5 : 4);
+    const released = assertLiveHandles(sel, vertical, pair);
+    const moving = which === 'start' ? 0 : 1;
+    assert.notDeepStrictEqual(released[moving], previous[moving], 'release consumes its final handle endpoint');
+    assert.deepStrictEqual(calls, ['onSelectionDragStarted', 'onSelectionMenu']);
+  }
+  return { synchronousFrames: frames.length };
+});
+scenario('30_clear_then_late_end_does_not_revive_menu', () => {
+  for (const kind of ['text', 'handle']) {
+    const dom = liveDom(false), sel = loadSelection(dom, true), calls = [];
+    dom.win.flutter_inappwebview.callHandler = (name) => calls.push(name);
+    const driver = gestureDriver(dom);
+    driver.fire('touchstart', ...glyphPoint(dom, 0)); driver.hold();
+    const grip = sel.selectionHandles.end;
+    if (kind === 'handle') {
+      driver.fire('touchend', ...glyphPoint(dom, 0));
+      handleEvent(grip, 'touchstart', dom, 0);
+    }
+    const unrelatedLookup = { ...sel.selection };
+    sel.clearSelection(); calls.length = 0;
+    sel.selection = unrelatedLookup; // lookup can establish a DIFFERENT selection
+    if (kind === 'text') driver.fire('touchend', ...glyphPoint(dom, 4));
+    else handleEvent(grip, 'touchend', dom, 4);
+    assert.deepStrictEqual(calls, [], 'an ended session cannot confirm another selection');
+    assert.strictEqual(sel.selection, unrelatedLookup);
+    assert.strictEqual(sel.selectionHandlesRect(), null);
+    assert.strictEqual(sel.endRangeSelection(...glyphPoint(dom, 4)), false);
+  }
+  return { sessions: 2 };
+});
+scenario('31_detached_dom_cancels_drag_and_late_end', () => {
+  for (const kind of ['text', 'handle']) for (const moveFirst of [false, true]) {
+    const dom = liveDom(false), sel = loadSelection(dom, true), calls = [];
+    dom.win.flutter_inappwebview.callHandler = (name) => calls.push(name);
+    sel.beginRangeSelection(...glyphPoint(dom, 0));
+    const grip = sel.selectionHandles.end;
+    if (kind === 'handle') {
+      sel.endRangeSelection(...glyphPoint(dom, 0));
+      handleEvent(grip, 'touchstart', dom, 0);
+    }
+    calls.length = 0;
+    dom.blocks[0].el.isConnected = false; // VN / chapter source subtree removed
+    if (kind === 'text') {
+      if (moveFirst) sel.updateRangeSelection(...glyphPoint(dom, 3));
+      assert.strictEqual(sel.endRangeSelection(...glyphPoint(dom, 4)), false);
+    } else {
+      if (moveFirst) handleEvent(grip, 'touchmove', dom, 3);
+      handleEvent(grip, 'touchend', dom, 4);
+    }
+    assert.strictEqual(sel.selection, null);
+    assert.strictEqual(sel.dragAnchor, null);
+    assert.strictEqual(sel.activeHandle, null);
+    assert.ok(!calls.includes('onSelectionMenu'));
+    assert.strictEqual(grip.style.display, 'none');
+    assert.strictEqual(grip.__popoverOpen, false);
+  }
+  return { cases: 4 };
+});
+scenario('32_begin_resolves_after_wrapper_normalize', () => {
+  const dom = liveDom(false), sel = loadSelection(dom, true);
+  const old = dom.textNodes[0], block = dom.blocks[0].el;
+  // Run real clearHighlightWrappers: extraction/normalization detaches the hit
+  // text and the hit API now resolves against the replacement merged text.
+  const fresh = makeTextNode(old.textContent, old.__rects, block);
+  fresh.__order = old.__order;
+  const wrapper = { parentNode: block, firstChild: null };
+  block.removeChild = (child) => assert.strictEqual(child, wrapper);
+  block.normalize = () => {
+    old.parentElement = null;
+    block.childNodes = [fresh];
+    dom.textNodes[0] = fresh;
+    dom.blocks[0].textNodes[0] = fresh;
+  };
+  sel.highlightWrappers = [wrapper];
+  assert.ok(sel.beginRangeSelection(...glyphPoint(dom, 1)));
+  assert.strictEqual(sel.dragAnchor.node, fresh, 'pre-clear hit must never be retained');
+  assert.strictEqual(sel.selection.ranges[0].node, fresh);
+  sel.updateRangeSelection(...glyphPoint(dom, 4));
+  assert.strictEqual(textOf(sel), CJK.slice(1, 5));
+  assertLiveHandles(sel, false);
+  return { oldDetached: !old.isConnected, text: textOf(sel) };
+});
+scenario('33_handles_rect_and_legacy_top_layer_contract', () => {
+  const bounds = [];
+  for (const vertical of [false, true]) for (const popover of [false, true]) {
+    const dom = liveDom(vertical, popover), sel = loadSelection(dom, true), menus = [];
+    dom.win.flutter_inappwebview.callHandler = (name, payload) => {
+      if (name === 'onSelectionMenu') menus.push(JSON.parse(payload));
+    };
+    assert.strictEqual(sel.selectionHandlesRect(), null);
+    sel.beginRangeSelection(...glyphPoint(dom, 0));
+    sel.updateRangeSelection(...glyphPoint(dom, 8));
+    sel.endRangeSelection(...glyphPoint(dom, 8));
+    const pair = sel.selectionHandles;
+    assertLiveHandles(sel, vertical, pair);
+    const r = unionRects([pair.start.getBoundingClientRect(), pair.end.getBoundingClientRect()]);
+    const expected = { x: r.left, y: r.top, width: r.width, height: r.height };
+    assert.deepStrictEqual(sel.selectionHandlesRect(), expected);
+    assert.deepStrictEqual(menus[0].handlesRect, expected);
+    const first = dom.textNodes[0].__rects[0];
+    assert.deepStrictEqual(sel.getSelectionRect(...glyphPoint(dom, 0)),
+      { x: first.left, y: first.top, width: first.width, height: first.height }, 'lookup anchor remains a glyph');
+    sel.clearSelection();
+    assert.strictEqual(sel.selectionHandlesRect(), null);
+    if (popover) assert.strictEqual(pair.start.__popoverOpen, false);
+    bounds.push(expected);
+  }
+  return { bounds };
+});
+// Edge fixtures deliberately include one glyph only: moving the grips must not
+// invent a larger selection to make space. Real compositor hit-tests are covered
+// separately by the headless probe; here both actual listener targets are tested.
+scenario('34_edge_touch_boxes_bounded_and_independently_grabbable', () => {
+  let cases = 0;
+  for (const vertical of [false, true]) for (const popover of [false, true]) {
+    for (const size of [8, 24]) for (const [x, y] of [[0, 0], [400 - size, 0],
+      [0, 300 - size], [400 - size, 300 - size]]) {
+      const glyph = rect(x, y, x + size, y + size);
+      const dom = buildDocument({ vertical, popover, bodyRect: rect(0, 0, 400, 300),
+        blocks: [{ rect: glyph, textNodes: [{ text: '春', rects: [glyph] }] }] });
+      const sel = loadSelection(dom, true);
+      assert.ok(sel.beginRangeSelection(x + size / 2, y + size / 2));
+      sel.endRangeSelection(x + size / 2, y + size / 2);
+      const pair = sel.selectionHandles, before = sel.selection;
+      const boxes = assertTouchBoxesClear(sel, 400, 300,
+        `edge vertical=${vertical}, popover=${popover}, glyph=${JSON.stringify(glyph)}`);
+      for (const r of boxes) {
+        assert.deepStrictEqual([r.width, r.height], [32, 32], 'do not shrink the touch target');
+        assert.ok(r.left >= 0 && r.top >= 0 && r.right <= 400 && r.bottom <= 300,
+          `vertical=${vertical}, glyph=${JSON.stringify(glyph)}, box=${JSON.stringify(r)}`);
+      }
+      const [a, b] = boxes;
+      assert.ok(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top,
+        'clamping a single glyph must not stack the two touch boxes');
+      assert.strictEqual(sel.selection, before, 'positioning must not replace the range');
+      assert.strictEqual(textOf(sel), '春');
+      for (const which of ['start', 'end']) {
+        const el = pair[which], r = el.getBoundingClientRect();
+        // Check either DOM stacking order: no other grip can cover this center.
+        const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+        const other = pair[which === 'start' ? 'end' : 'start'].getBoundingClientRect();
+        assert.ok(cx < other.left || cx > other.right || cy < other.top || cy > other.bottom);
+        el.__listeners.touchstart({ cancelable: true, touches: [{ clientX: cx, clientY: cy }],
+          preventDefault() {}, stopPropagation() {} });
+        assert.strictEqual(sel.activeHandle, which);
+        el.__listeners.touchcancel();
+        assert.strictEqual(sel.selection, before, 'grabbing/cancelling does not expand a single glyph');
+        assert.strictEqual(sel.selectionHandles, pair, 'retain live target identity');
+        if (popover) assert.strictEqual(el.__popoverShows, 1);
+      }
+      cases++;
+    }
+  }
+  return { cases };
+});
+scenario('35_offscreen_endpoints_are_not_clamped_into_view', () => {
+  let cases = 0;
+  for (const vertical of [false, true]) for (const which of ['start', 'end']) {
+    for (const hidden of [rect(-24, 40, 0, 64), rect(400, 40, 424, 64),
+      rect(40, -24, 64, 0), rect(40, 300, 64, 324), rect(0, 40, 19, 64)]) {
+      const dom = liveDom(vertical), sel = loadSelection(dom, true);
+      sel.beginRangeSelection(...glyphPoint(dom, 0));
+      sel.updateRangeSelection(...glyphPoint(dom, 2));
+      sel.endRangeSelection(...glyphPoint(dom, 2));
+      const before = sel.selection, pair = sel.selectionHandles;
+      // Last fixture is inside the viewport but outside the visible content box.
+      dom.win.getComputedStyle = () => ({ paddingLeft: '20px' });
+      dom.textNodes[0].__rects[which === 'start' ? 0 : 2] = hidden;
+      sel.positionSelectionHandles();
+      assert.strictEqual(pair.start.style.display, 'none');
+      assert.strictEqual(pair.end.style.display, 'none');
+      assert.strictEqual(sel.selectionHandlesRect(), null);
+      assert.strictEqual(sel.selection, before, 'do not truncate or expand offscreen text');
+      cases++;
+    }
+  }
+  // A partly clipped glyph remains a real visible endpoint (same hit-test rule).
+  const dom = buildDocument({ vertical: true, bodyRect: rect(0, 0, 400, 300), blocks: [
+    { rect: rect(380, 0, 410, 24), textNodes: [{ text: '春', rects: [rect(380, -8, 410, 24)] }] },
+  ] });
+  const sel = loadSelection(dom, true);
+  assert.ok(sel.beginRangeSelection(390, 8));
+  assert.strictEqual(sel.selectionHandles.start.style.display, 'block');
+  return { cases, partialGlyphVisible: true };
+});
+scenario('36_edge_small_viewport_has_explicit_geometry_limit', () => {
+  for (const vertical of [false, true]) for (const [width, height, shown] of
+    [[32, 96, true], [96, 32, true], [48, 48, false], [31, 96, false]]) {
+    const glyph = rect(0, 0, 8, 8);
+    const dom = buildDocument({ vertical, bodyRect: rect(0, 0, width, height), blocks: [
+      { rect: glyph, textNodes: [{ text: '春', rects: [glyph] }] },
+    ] });
+    const sel = loadSelection(dom, true);
+    assert.ok(sel.beginRangeSelection(4, 4));
+    const bounds = sel.selectionHandlesRect();
+    if (shown) {
+      assert.ok(bounds && bounds.x >= 0 && bounds.y >= 0 &&
+        bounds.x + bounds.width <= width && bounds.y + bounds.height <= height);
+      const [a, b] = assertTouchBoxesClear(sel, width, height, 'small viewport');
+      assert.ok(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+    } else assert.strictEqual(bounds, null, 'do not fake usable overlapping or shrunken targets');
+    assert.strictEqual(textOf(sel), '春');
+  }
+  return { cases: 8 };
+});
+scenario('37_interior_touch_boxes_clear_all_selected_fragments', () => {
+  let cases = 0;
+  for (const vertical of [false, true]) for (const popover of [false, true]) {
+    for (const cssHighlights of [false, true]) for (const [label, text, perLine] of [
+      ['short-word', 'hi', 6], ['single-glyph', '\u6625', 6],
+      ['multi-glyph', '\u6625\u590f\u79cb\u51ac', 6], ['multi-line', '\u6625\u590f\u79cb\u51ac\u5c71\u5ddd\u82b1\u9ce5\u98a8\u6708\u96ea\u7a7a', 4],
+    ]) {
+      const glyphs = Array.from(text, (_, i) => vertical
+        ? rect(240 - Math.floor(i / perLine) * 40, 80 + (i % perLine) * 24,
+          264 - Math.floor(i / perLine) * 40, 104 + (i % perLine) * 24)
+        : rect(80 + (i % perLine) * 24, 80 + Math.floor(i / perLine) * 40,
+          104 + (i % perLine) * 24, 104 + Math.floor(i / perLine) * 40));
+      const dom = buildDocument({ vertical, popover, bodyRect: rect(0, 0, 400, 300),
+        blocks: [{ rect: unionRects(glyphs), textNodes: [{ text, rects: glyphs }] }] });
+      dom.win.__fushiCssHighlightsSupported = cssHighlights;
+      const sel = loadSelection(dom, true);
+      assert.ok(sel.beginRangeSelection(...glyphPoint(dom, 0)));
+      const pair = sel.selectionHandles;
+      assertTouchBoxesClear(sel, 400, 300, `${label} begin vertical=${vertical}`);
+      if (text.length > 1) sel.updateRangeSelection(...glyphPoint(dom, text.length - 1));
+      assert.strictEqual(textOf(sel), text, 'positioning must not truncate or expand selected text');
+      assertTouchBoxesClear(sel, 400, 300, `${label} move vertical=${vertical}`);
+      sel.endRangeSelection(...glyphPoint(dom, text.length - 1));
+      assertTouchBoxesClear(sel, 400, 300, `${label} release vertical=${vertical}`);
+      const before = sel.selection;
+      sel.positionSelectionHandles();
+      assert.strictEqual(sel.selection, before, 'repositioning must preserve selection identity');
+      assert.strictEqual(sel.selectionHandles, pair);
+      assert.strictEqual(dom.textNodes[0].textContent, text, 'never modify source text for placement');
+      assert.strictEqual(textOf(sel), text);
+      cases++;
+    }
+  }
+  return { cases };
+});
 // ---------------------------------------------------------------- summary
 const failures = results.filter((r) => !r.ok);
 console.log(`passed ${results.length - failures.length} cases`);
 if (failures.length) {
-  for (const failure of failures) {
-    console.error(`FAILED ${failure.name}: ${failure.detail}`);
-  }
+  for (const failure of failures) console.error(`FAILED ${failure.name}: ${failure.detail}`);
   process.exit(1);
+}
+if (!mutation) {
+  for (const [name, [, , witness, diagnostic]] of Object.entries(mutations)) {
+    const run = spawnSync(process.execPath, [__filename, `--mutant=${name}`], { encoding: 'utf8', timeout: 30000 });
+    assert.ifError(run.error);
+    assert.strictEqual(run.status, 1, `${name} must be killed, not survive or crash: ${run.stdout}\n${run.stderr}`);
+    assert.ok(run.stdout.includes(`SCENARIO ${witness} :: FAILED`), `${name}: missing behavioral witness ${witness}\n${run.stdout}\n${run.stderr}`);
+    if (diagnostic) {
+      const failureLine = run.stdout.split('\n').find(line => line.startsWith(`SCENARIO ${witness} :: FAILED`));
+      assert.ok(failureLine.includes(diagnostic), `${name}: wrong failure reason\n${failureLine}`);
+    }
+    assert.strictEqual((run.stdout.match(/^SCENARIO /gm) || []).length, 37,
+      `${name}: every scenario must execute even after a witnessed failure`);
+    assert.ok(run.stdout.includes('SCENARIO 37_interior_touch_boxes_clear_all_selected_fragments ::'), 'mutant must execute the full suite');
+    console.log(`MUTATION ${name} :: KILLED (${witness})`);
+  }
+  console.log(`killed ${Object.keys(mutations).length} mutations`);
 }
 console.log('all assertions passed');
 console.log('OK');

@@ -2051,6 +2051,24 @@ updateLive: function(patch) {
         // onTextSelected. Dart shows a selection menu (Copy / Lookup) so a
         // plain-text range selection (copy) and lookup/mining coexist -- the
         // drag no longer forces an immediate lookup (BUG-609 regression).
+        // While a grip is moving, the old action bar must not cover its path.
+        controller.addJavaScriptHandler(
+          handlerName: 'onSelectionDragStarted',
+          callback: (_) {
+            if (mounted) _removeSelectionActionBar();
+            return null;
+          },
+        );
+
+        // Mirror JS selection teardown without calling JS again (no clear loop).
+        controller.addJavaScriptHandler(
+          handlerName: 'onSelectionCleared',
+          callback: (_) {
+            if (mounted) _removeSelectionActionBar();
+            return null;
+          },
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onSelectionMenu',
           callback: (args) async {

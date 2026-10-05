@@ -3,6 +3,7 @@ class ReaderSelectionData {
     required this.text,
     required this.sentence,
     this.rect,
+    this.handlesRect,
     this.normalizedOffset,
     this.normalizedLength,
     this.sentenceOffset = 0,
@@ -33,19 +34,20 @@ class ReaderSelectionData {
       text: json['text'] as String? ?? '',
       sentence: json['sentence'] as String? ?? '',
       rect: rect,
+      handlesRect: _readHandlesRect(json['handlesRect']),
       normalizedOffset: (json['normalizedOffset'] as num?)?.toInt(),
       normalizedLength: (json['normalizedLength'] as num?)?.toInt(),
       sentenceOffset: (json['sentenceOffset'] as num?)?.toInt() ?? 0,
-      sentenceNormalizedOffset:
-          (json['sentenceNormalizedOffset'] as num?)?.toInt(),
-      sentenceNormalizedLength:
-          (json['sentenceNormalizedLength'] as num?)?.toInt(),
+      sentenceNormalizedOffset: (json['sentenceNormalizedOffset'] as num?)
+          ?.toInt(),
+      sentenceNormalizedLength: (json['sentenceNormalizedLength'] as num?)
+          ?.toInt(),
       matchableOffset: (json['matchableOffset'] as num?)?.toInt(),
       matchableLength: (json['matchableLength'] as num?)?.toInt(),
-      sentenceMatchableOffset:
-          (json['sentenceMatchableOffset'] as num?)?.toInt(),
-      sentenceMatchableLength:
-          (json['sentenceMatchableLength'] as num?)?.toInt(),
+      sentenceMatchableOffset: (json['sentenceMatchableOffset'] as num?)
+          ?.toInt(),
+      sentenceMatchableLength: (json['sentenceMatchableLength'] as num?)
+          ?.toInt(),
       verticalWriting: json['verticalWriting'] as bool? ?? false,
       mangaPageIndex: (json['mangaPageIndex'] as num?)?.toInt(),
       audioCuePayload: json['audioCuePayload'] as String?,
@@ -59,6 +61,10 @@ class ReaderSelectionData {
   final String? audioCuePayload;
   final String sentence;
   final Map<String, double>? rect;
+
+  /// Union of the two grip touch targets in WebView viewport CSS pixels.
+  /// Separate from the glyph anchor used by dictionary lookup.
+  final Map<String, double>? handlesRect;
 
   /// Chapter learning-unit coordinates for navigation and persisted favorites.
   final int? normalizedOffset;
@@ -93,4 +99,16 @@ class ReaderSelectionData {
   /// 悬停一行就会连查十几个词，宿主据此跳过「每查一次就付费一次」的旁路工作
   /// （查词按句意自动挑词条，见 `LookupOrigin.hover`）。旧 payload 没有该字段 = false。
   final bool fromHover;
+}
+
+Map<String, double>? _readHandlesRect(Object? raw) {
+  if (raw is! Map) return null;
+  final Map<String, double> result = <String, double>{};
+  for (final String key in <String>['x', 'y', 'width', 'height']) {
+    final Object? value = raw[key];
+    if (value is! num || !value.toDouble().isFinite) return null;
+    result[key] = value.toDouble();
+  }
+  if (result['width']! <= 0 || result['height']! <= 0) return null;
+  return result;
 }

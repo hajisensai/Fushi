@@ -33,7 +33,8 @@ void main() {
       expect(bar, contains('OverlayEntry('));
       expect(bar, contains('overlay.insert(entry)'));
       expect(bar, contains('markNeedsBuild()'));
-      expect(bar, contains('handleReserve'));
+      expect(bar, contains('data.handlesRect ?? data.rect'));
+      expect(bar, contains('ReaderSelectionToolbarLayout('));
     });
 
     test('remove path disposes entry and clears payload', () {

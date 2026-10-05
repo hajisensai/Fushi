@@ -16,25 +16,24 @@ import 'package:flutter_test/flutter_test.dart';
 ///   * 行尾/行首空白 -> clamp 到本行，且不跳到相邻行；
 ///   * 行距 / 段末 -> 归最近的一行 / 本段末字；
 ///   * 无原生 caret API 时的几何兜底同样不卡；
-///   * 拉丁词长按选整词、拖动吸附词边界；CJK 保持字符级；
+///   * 拉丁词长按选整词、拖动保持字符级；CJK 保持字符级；
 ///   * 竖排 vertical-rl 轴向互换后同样不卡；
 ///   * 分页页边距带（BUG-1797）绝不选中被 clip 掉的相邻页字符；
 ///   * 手柄横扫（跨越字缝/行尾/行距）端点单调前进、永不冻结；
-///   * 纯空白文本节点端点规范化（否则区间游走会把选区撑到文末）。
+///   * 纯空白文本节点端点规范化及失败保持旧选区。
 ///
-/// 本机 / CI 无 node 时 skip（源码契约由 reader_selection_drag_hit_guard_test.dart 兜底）。
+/// New lifecycle cases run real document/handle listeners and assert coordinates
+/// and visibility synchronously after every event; this is not a compositor or
+/// physical-touch device test. Both CSS Highlights and non-mutating fallback run.
+/// Full 32px touch boxes must clear every selected glyph/line fragment, including
+/// tiny corner glyphs, interior words and multi-line horizontal/vertical ranges.
+/// Node is required locally and in CI: fail explicitly when unavailable.
 void main() {
   test(
     'selection drag hit-testing: gaps / line ends / line pitch keep the handle '
-    'moving (BUG-2951)',
+    'moving (BUG-2958)',
     () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped(
-          'node not found on PATH; skipping JS behavior execution',
-        );
-        return;
-      }
+      final String nodeExe = _resolveNode();
       final File harness = File(
         'test/reader/reader_selection_drag_hit_behavior_test.js',
       );
@@ -73,6 +72,27 @@ void main() {
         '14_whitespace_only_node_endpoint_normalized',
         '15_handle_drag_under_grip_still_advances',
         '16_text_drag_under_grip_still_advances',
+        '17_native_api_fallback_order',
+        '18_normalization_direction_and_boundary',
+        '19_normalization_failure_is_not_a_raw_endpoint',
+        '20_failed_drag_preserves_current_selection',
+        '21_stationary_longpress_keeps_word',
+        '22_drag_release_uses_last_coordinate',
+        '23_no_stack_endpoint_window',
+        '24_window_restores_exact_style_even_on_throw',
+        '25_viewport_clear_and_bridge_order',
+        '26_handle_release_uses_last_coordinate',
+        '27_cancelled_drag_does_not_block_viewport_clear',
+        '28_longpress_live_coordinates_each_move',
+        '29_handle_listener_live_coordinates_and_bridge',
+        '30_clear_then_late_end_does_not_revive_menu',
+        '31_detached_dom_cancels_drag_and_late_end',
+        '32_begin_resolves_after_wrapper_normalize',
+        '33_handles_rect_and_legacy_top_layer_contract',
+        '34_edge_touch_boxes_bounded_and_independently_grabbable',
+        '35_offscreen_endpoints_are_not_clamped_into_view',
+        '36_edge_small_viewport_has_explicit_geometry_limit',
+        '37_interior_touch_boxes_clear_all_selected_fragments',
       ]) {
         expect(
           stdout,
@@ -85,14 +105,64 @@ void main() {
           reason: '$scenario failed',
         );
       }
-      expect(stdout, contains('passed 16 cases'));
+      expect(stdout, contains('passed 37 cases'));
+      expect(
+        RegExp(r'^SCENARIO ', multiLine: true).allMatches(stdout).length,
+        37,
+      );
+      // Keep the complete corner matrix and both interior rendering paths.
+      expect(
+        stdout,
+        contains(
+          'SCENARIO 34_edge_touch_boxes_bounded_and_independently_grabbable '
+          ':: {"cases":32}',
+        ),
+      );
+      expect(
+        stdout,
+        contains(
+          'SCENARIO 37_interior_touch_boxes_clear_all_selected_fragments '
+          ':: {"cases":32}',
+        ),
+      );
+      for (final String mutation in <String>[
+        'early_restore',
+        'bypass_text_window',
+        'skip_range_fallback',
+        'raw_endpoint_fallback',
+        'one_direction_only',
+        'reset_to_anchor',
+        'drop_release',
+        'lose_stationary_word',
+        'restore_auto',
+        'clear_busy_viewport',
+        'skip_empty_notification',
+        'hide_until_release',
+        'freeze_text_handles',
+        'freeze_handle_handles',
+        'skip_drag_bridge',
+        'late_end_without_session',
+        'ignore_detached_nodes',
+        'reuse_pre_normalize_hit',
+        'skip_handles_rect_payload',
+        'reopen_live_touch_target',
+        'skip_touch_box_clamp',
+        'overlap_clamped_grips',
+        'restore_8px_gap',
+        'cover_selected_glyphs',
+        'ignore_middle_selection_fragments',
+        'clamp_offscreen_endpoints',
+      ]) {
+        expect(stdout, contains('MUTATION $mutation :: KILLED'));
+      }
+      expect(stdout, contains('killed 26 mutations'));
       expect(stdout, contains('all assertions passed'));
     },
   );
 }
 
-/// Resolve a usable `node` executable, returning null when none is on PATH.
-String? _resolveNode() {
+/// Resolve Node or fail: a missing runtime must never turn behavior tests green.
+String _resolveNode() {
   final List<String> candidates = Platform.isWindows
       ? <String>['node.exe', 'node']
       : <String>['node'];
@@ -106,5 +176,7 @@ String? _resolveNode() {
       // Not found; try next candidate.
     }
   }
-  return null;
+  throw StateError(
+    'Node.js is required for reader selection behavior/mutation tests; install Node and add it to PATH.',
+  );
 }
