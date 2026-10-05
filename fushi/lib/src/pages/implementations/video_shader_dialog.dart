@@ -681,10 +681,9 @@ class _ShaderFootnote extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    // M3E：警示脚注做成 tertiaryContainer 色块（状态色走 tonal，不只靠字色），
-    // 与行文字同一左右缘；Apple / 墨水屏维持一行脚注。
+    // M3E：警示脚注走全 app 唯一的提示横幅（中性块 + 语义色图标），与行文字
+    // 同一左右缘；Apple / 墨水屏维持一行脚注。
     if (warning && !isGlassDesign(context) && !isEinkTheme(context)) {
-      final ColorScheme cs = theme.colorScheme;
       return Padding(
         padding: EdgeInsets.fromLTRB(
           tokens.spacing.rowHorizontal,
@@ -692,33 +691,10 @@ class _ShaderFootnote extends StatelessWidget {
           tokens.spacing.rowHorizontal,
           tokens.spacing.gap,
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: cs.tertiaryContainer,
-            borderRadius: FushiM3eShape.smallRadius,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                FushiIcon(
-                  FushiIcons.warning,
-                  size: 18,
-                  color: cs.onTertiaryContainer,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    text,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onTertiaryContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        child: FushiInlineNotice(
+          message: text,
+          severity: FushiNoticeSeverity.warning,
+          icon: FushiIcons.warning,
         ),
       );
     }
