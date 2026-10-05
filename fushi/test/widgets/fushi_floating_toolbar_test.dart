@@ -26,8 +26,8 @@ void main() {
                 onPressed: () => tapped++,
               ),
             ],
-            <FushiToolbarItem>[
-              const FushiToolbarItem(
+            const <FushiToolbarItem>[
+              FushiToolbarItem(
                 icon: Icons.tune,
                 label: 'Settings',
                 onPressed: null,

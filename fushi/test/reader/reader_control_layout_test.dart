@@ -127,10 +127,12 @@ void main() {
         '{"version":1,"slots":{"topLeft":["back"],'
         '"topRight":["audiobook","fullscreen","focusMode","settings"]}}',
       );
+      // JSON 里缺席的按钮（navigation）按当前出厂位置回填到其后。
       expect(stale.itemsIn(ReaderControlSlot.topRight), <ReaderControlItem>[
         ReaderControlItem.audiobook,
         ReaderControlItem.fullscreen,
         ReaderControlItem.settings,
+        ReaderControlItem.navigation,
       ]);
       // 新增的顶栏 / 底栏开关按出厂位置（托盘）补进来，不会冒到顶栏上。
       expect(stale.core.removedItems, contains(ReaderControlItem.toolbars));
@@ -243,8 +245,8 @@ void main() {
       expect(decoded.itemsIn(ReaderControlSlot.topLeft),
           isNot(contains(ReaderControlItem.title)));
       expect(decoded.core.slotOf(ReaderControlItem.gallery),
-          ReaderControlSlot.topLeft,
-          reason: '误进中槽的按钮回 recoverySlot');
+          ReaderControlLayout.defaults.core.slotOf(ReaderControlItem.gallery),
+          reason: '误进中槽的按钮解码时被拒，按出厂位置回填');
     });
 
     test('槽位 / 按钮 storageValue 与枚举名一致（持久化契约）', () {

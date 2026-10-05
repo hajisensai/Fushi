@@ -33,7 +33,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/physics.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
