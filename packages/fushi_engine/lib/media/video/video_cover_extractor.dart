@@ -451,7 +451,14 @@ const double kNearlyBlackLumaStdDev = 10;
 /// 解码后先缩到 64px 宽（均值插值）再统计，1080p 帧也只算几千个像素。解码不出的
 /// 字节返回 false：这里只回答「是不是黑」，坏图由发布时的完整性校验拦。
 bool isNearlyBlackFrame(Uint8List bytes) {
-  final img.Image? decoded = img.decodeImage(bytes);
+  // `decodeImage` 对残缺字节不是返回 null 而是抛（实测 GIF 探测越界 RangeError）；
+  // 「解码不出」在这里的语义就是「不判黑」，完整性由 [publishStagedCoverFile] 判。
+  final img.Image? decoded;
+  try {
+    decoded = img.decodeImage(bytes);
+  } on Object {
+    return false;
+  }
   if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
     return false;
   }
