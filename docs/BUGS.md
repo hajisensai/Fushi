@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2716 条。点号进各自文件。
+> 共 2721 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
+| [BUG-2960](bugs/BUG-2960-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |
+| [BUG-2959](bugs/BUG-2959-md3-large-app-bar-title.md) | ✅ | ✅ | MD3 大标题顶栏展开态被主题钉成 titleLarge 小字（设置页标题上方大片空白） |
+| [BUG-2958](bugs/BUG-2958-md3-settings-search-capsule.md) | ✅ | ✅ | MD3 设置页搜索栏被压成 12 圆角方框（胶囊判据认不出包了 Padding 的放大镜） |
+| [BUG-2957](bugs/BUG-2957-android-liquid-glass-bar.md) | ✅ | ✅ | Android 设计系统 Apple（液态玻璃）底栏渲染成灰色矩形 |
 | [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
 | [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
 | [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |

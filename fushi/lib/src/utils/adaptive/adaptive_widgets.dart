@@ -534,6 +534,8 @@ class _LiquidSheetBodyState extends State<_LiquidSheetBody> {
             child: ClipRRect(borderRadius: radius, child: content),
           )
         : GlassContainer(
+            // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+            useOwnLayer: true,
             shape: LiquidRoundedSuperellipse(borderRadius: _radius),
             quality: fushiGlassQuality(context, prominent: true),
             settings: fushiGlassSettings(context),

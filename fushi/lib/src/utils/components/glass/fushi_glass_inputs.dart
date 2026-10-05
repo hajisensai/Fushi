@@ -54,7 +54,13 @@ Widget _cupertinoContextMenuBuilder(
 /// （UISearchBar），普通输入框是圆角 10 的矩形——这是唯一能从调用点无侵入
 /// 读出的信号。
 bool _isSearchDecoration(InputDecoration decoration) {
-  final Widget? prefix = decoration.prefixIcon;
+  Widget? prefix = decoration.prefixIcon;
+  // 调用点给放大镜自配留白（设置页 MD3 胶囊搜索栏的 `Padding(FushiIcon)`）时
+  // 要看穿这层包装：认不出来就会把调用方写好的胶囊边框压成 12 圆角方框
+  // （BUG-2958，Android 设置页搜索栏变成圆角矩形）。
+  while (prefix is Padding) {
+    prefix = prefix.child;
+  }
   // 调用点的图标经全局替换是 FushiIcon（玻璃下映射成 SF 字形），原生 Icon
   // 也认——只认 Icon 会让全部搜索框失去胶囊形态。
   final IconData? icon = switch (prefix) {

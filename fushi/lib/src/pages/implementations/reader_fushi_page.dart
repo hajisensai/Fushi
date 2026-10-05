@@ -13,6 +13,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/shortcuts/shortcut_labels.dart'
+    show labelWithShortcutHint;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:path/path.dart' as p;

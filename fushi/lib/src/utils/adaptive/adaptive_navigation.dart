@@ -384,6 +384,9 @@ class _MaterialNavCluster extends StatelessWidget {
                 SizedBox.square(
                   dimension: kGlassNavBarCapsuleHeight,
                   child: GlassContainer(
+                    // premium 档必须自带 LiquidGlassLayer（BUG-2957），见
+                    // [fushiGlassQuality]。
+                    useOwnLayer: true,
                     shape: const LiquidOval(),
                     quality: fushiGlassQuality(context, prominent: true),
                     settings: fushiClearGlassSettings(context, bar: true),
@@ -826,6 +829,9 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
                     width: w,
                     height: kGlassNavBarCapsuleHeight,
                     child: GlassContainer(
+                      // premium 档必须自带 LiquidGlassLayer（BUG-2957）；透镜
+                      // 指示器在这层里分组渲染。
+                      useOwnLayer: true,
                       shape: const LiquidRoundedSuperellipse(
                         borderRadius: radius,
                       ),
@@ -925,6 +931,8 @@ class _NavSurfaceBackdrop extends StatelessWidget {
       background = Padding(
         padding: glassMargin ?? EdgeInsets.zero,
         child: GlassContainer(
+          // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+          useOwnLayer: true,
           shape: LiquidRoundedSuperellipse(borderRadius: glassRadius),
           quality: fushiGlassQuality(context, prominent: true),
           settings: fushiGlassSettings(context),

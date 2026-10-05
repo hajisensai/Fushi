@@ -2768,12 +2768,14 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ///
   /// 纯指针面：包 ExcludeFocus，不进焦点遍历池（与 [_wrapBottomChromeBar] 同一规则，
   /// TODO-700 不变式）。BUG-1692：排在 WebView 之后绘制，必须自带 RepaintBoundary。
-  /// 动作文案后缀绑定键（`插图画廊 · G`），让快捷键在工具栏 tooltip 里可见。
+  /// 动作文案后缀绑定键（`插图画廊 · G`），让快捷键在工具栏 tooltip 里可见；
+  /// 触屏平台不挂（见 [labelWithShortcutHint]，BUG-2960）。
   String _labelWithShortcut(String label, ShortcutAction action) {
-    final List<InputBinding> keys =
-        appModel.shortcutRegistry.bindingsFor(action).keyboardBindings;
-    if (keys.isEmpty) return label;
-    return '$label · ${keys.first.displayLabel}';
+    return labelWithShortcutHint(
+      label,
+      appModel.shortcutRegistry.bindingsFor(action).keyboardBindings,
+      keyboardHints: isDesktopPlatform,
+    );
   }
 
   Widget _buildDesktopHeader() {

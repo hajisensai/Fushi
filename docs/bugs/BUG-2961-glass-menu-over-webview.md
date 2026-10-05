@@ -1,0 +1,6 @@
+## BUG-2961 · 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑
+- **报告**：2026-10-05（协作者 shishamo：Android 平板歌词模式「⋯」菜单玻璃背景错位灰块 / 白斑）
+- **真实性**：✅ 真 bug。歌词模式「⋯」菜单走 `showFushiMenu` → Apple 菜单面板 `_appleMenuSurface`（`fushi/lib/src/utils/components/glass/fushi_glass_overlays.dart:137`），settings 来自 `_overlayGlassSettings`（同文件 `:73`），没有 `platformViewFallbackColor`。菜单右半压在歌词 WebView 上：Android flutter_inappwebview 走 Hybrid Composition，压在平台视图上的 Flutter 层落在独立 overlay surface，着色器采到空纹理；库在「采不到」处按 fallback 色合成，未设时是透明黑 → 浅色玻璃填充 + 高光叠在黑上 = 截图里与面板错位的灰矩形（边界就是 WebView 区域）和白斑。阅读器顶栏等已知压在平台视图上的玻璃早就用 `fushiGlassSettingsOverPlatformView` 带了兜底色，浮层（菜单 / 对话框 / 面板）不知道自己压在什么上面，漏了。
+- **[x] ① 已修复** — 新增 `fushiGlassPlatformViewFallback(context)`（`fushi_glass_scope.dart`，深 #1C1C1E / 浅 #F9F9F9，与 `fushiGlassSettingsOverPlatformView` 共用），`_overlayGlassSettings` 一律带上：库只在采样为空的像素上用它，采得到背景处照常是玻璃。iOS / macOS 原生视图同理受益。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/glass/fushi_glass_overlays_test.dart`「showFushiMenu: glass panel carries a platform-view fallback fill (dark/light)」：液态 Apple 菜单的每个 `GlassContainer` settings 都带对应亮暗的兜底色。
+- **备注**：真机未能直接复现歌词模式（测试包里没有带音频的书，歌词模式进不去）；导入了一本纯文本 EPUB，阅读器顶栏（同为压在 WebView 上、早已带兜底色）渲染正常。歌词菜单的修后效果需在有有声书的设备上目视确认，标 implemented_unverified。

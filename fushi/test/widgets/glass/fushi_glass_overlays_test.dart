@@ -457,6 +457,59 @@ void main() {
       await settle(tester);
       expect(await result, 8);
     });
+
+    // BUG-2961：菜单压在 WebView（Android Hybrid Composition）/ 原生视图上时，
+    // 着色器采到空纹理；玻璃面板必须带实色兜底，否则按透明黑合成成灰块白斑。
+    for (final Brightness brightness in Brightness.values) {
+      testWidgets(
+        'showFushiMenu: glass panel carries a platform-view fallback fill '
+        '($brightness)',
+        (WidgetTester tester) async {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(
+                  seedColor: Colors.teal,
+                  brightness: brightness,
+                ),
+                textTheme: Typography.material2021().black,
+                glass: FushiGlassMaterial.liquid,
+                glassDesign: true,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: Scaffold(
+                body: Builder(
+                  builder: (BuildContext context) => Center(
+                    child: ElevatedButton(
+                      onPressed: () => showFushiMenu<int>(
+                        context: context,
+                        position: const RelativeRect.fromLTRB(10, 10, 10, 10),
+                        items: const <PopupMenuEntry<int>>[
+                          PopupMenuItem<int>(value: 1, child: Text('one')),
+                        ],
+                      ),
+                      child: const Text('open'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(find.text('open'));
+          await settle(tester);
+          final Iterable<GlassContainer> panels = tester
+              .widgetList<GlassContainer>(find.byType(GlassContainer));
+          expect(panels, isNotEmpty);
+          final Color expected = brightness == Brightness.dark
+              ? const Color(0xFF1C1C1E)
+              : const Color(0xFFF9F9F9);
+          for (final GlassContainer panel in panels) {
+            expect(panel.settings?.platformViewFallbackColor, expected);
+          }
+        },
+      );
+    }
   });
 
   group('FushiMenuAnchor', () {
