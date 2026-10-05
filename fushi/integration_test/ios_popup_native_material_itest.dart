@@ -98,7 +98,7 @@ class _HarnessState extends State<_Harness> {
     });
   }
 
-  static const String _backgroundHtml = """<!doctype html><html><head>
+  static const String _backgroundHtml = '''<!doctype html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;padding:16px;background:#101014;color:#eee;
 font:700 30px/1.5 -apple-system,sans-serif}
@@ -110,7 +110,7 @@ font:700 30px/1.5 -apple-system,sans-serif}
 <span class=g>誰も近寄らないほど古い本棚の奥で、</span><span class=y>一冊の本が静かに光っていた。</span></p>
 <p><span class=y>彼は鍵を握りしめ、</span><span class=r>見覚えのない扉を見つけた。</span>
 <span class=b>空は紫色で、二つの月が浮かんでいた。</span></p>
-</body></html>""";
+</body></html>''';
 
   @override
   Widget build(BuildContext context) {
