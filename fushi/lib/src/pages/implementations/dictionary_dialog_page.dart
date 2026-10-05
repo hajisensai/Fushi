@@ -4,7 +4,14 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/services.dart'
+    show
+        HardwareKeyboard,
+        KeyDownEvent,
+        KeyEvent,
+        KeyRepeatEvent,
+        LogicalKeyboardKey,
+        PlatformException;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as path;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -16,7 +23,9 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
+import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
@@ -344,6 +353,38 @@ class DictionaryDialogPage extends BasePage {
 class _DictionaryDialogPageState extends BasePageState {
   DictionaryType _selectedType = DictionaryType.term;
 
+  /// 多选态：行首换成复选框，底部钉批量操作栏（启用 / 停用 / 删除）。
+  bool _selecting = false;
+
+  /// 多选态下选中的词典（按真名，真名是主键）。只在当前类型内选，切类型清空。
+  final Set<String> _selectedNames = <String>{};
+
+  /// 两栏布局（宽屏）右侧详情侧板正在展示的词典真名；null = 概览。
+  String? _detailName;
+
+  /// 每次 setState 自增：窄屏底部 sheet 是另一条路由，页面 setState 重建不到它，
+  /// sheet 内容监听这个计数跟着刷新（开关 / 改名 / 排序后 sheet 立刻反映）。
+  final ValueNotifier<int> _revision = ValueNotifier<int>(0);
+
+  /// 每行一个不取焦点的外层节点：Alt+↑/↓ 挪动后焦点要跟着词典走，而
+  /// FushiReorderableColumn 的行元素按下标复用，焦点会留在原下标那一行。
+  final Map<String, FocusNode> _rowFocusNodes = <String, FocusNode>{};
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _revision.value++;
+  }
+
+  @override
+  void dispose() {
+    _revision.dispose();
+    for (final FocusNode node in _rowFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
   /// BUG-1500：判「是否已有下载在跑」的唯一真相源是 app 级 controller，不再是页面
   /// 私有的 bool——页面 bool 挡不住启动时的静默自动更新，两条流程能并发写同一本词典。
   bool get _isDownloading => appModel.dictionaryDownloadController.isBusy;
@@ -372,32 +413,76 @@ class _DictionaryDialogPageState extends BasePageState {
     // MD3 tonal 按钮——iOS 的「添加」类动作住在导航栏，内容层只放列表。
     final bool cupertino =
         isCupertinoPlatform(context) || isGlassDesign(context);
+    final double width = MediaQuery.sizeOf(context).width;
     final bool compact = MediaQuery.sizeOf(context).width < 480;
+    // 宽屏（PC）= 列表 + 右侧详情侧板两栏；窄屏 = 单列卡片列表 + 底部 sheet。
+    final bool split = dictionaryManagerUsesSplitLayout(width);
+    final List<Widget> actions = cupertino
+        ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
+        : const <Widget>[];
+    final List<Widget> listChildren = <Widget>[
+      if (!cupertino) _buildActionBar(compact: compact),
+      // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
+      _buildDownloadStatusRow(),
+      if (appModel.dictionaries.isNotEmpty) _buildCategorySelector(),
+      buildContent(),
+      // TODO-1075：自动更新设置卡移到词典列表之后（页尾设置区），不再横切
+      // 「导入/浏览/清空」高频操作与分类选择器之间的操作动线。宽屏它住进右侧
+      // 概览面板（见 _buildDetailPane）。
+      if (!split) _buildAutoUpdateCard(),
+    ];
     // 桌面三端：整页包一层文件拖放区，把拖入的词典包接到与「导入词典」按钮同源的
     // 导入路径（TODO-059）。移动端 FushiFileDropTarget 直接透传 child，零开销。
     return FushiFileDropTarget(
       debugLabel: 'dictionary-dialog',
       onDrop: _handleDictionaryDrop,
-      child: AdaptiveSettingsScaffold(
-        title: Text(t.dictionaries),
-        // Cupertino (iOS/macOS) keeps its native nav-bar icon actions. Material
-        // (Android/Windows/Linux) empties the app bar and surfaces the same
-        // actions as labeled buttons in an in-page action bar so they read as
-        // normal buttons instead of bare icons.
-        actions: cupertino
-            ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
-            : const <Widget>[],
-        children: [
-          if (!cupertino) _buildActionBar(),
-          // 收进后台的下载/更新任务的回程入口（BUG-1499）；无任务时是零高度。
-          _buildDownloadStatusRow(),
-          compact ? _buildDictionaryTypePicker() : _buildCategorySelector(),
-          buildContent(),
-          // TODO-1075：自动更新设置卡移到词典列表之后（页尾设置区），不再横切
-          // 「导入/浏览/清空」高频操作与分类选择器之间的操作动线。
-          _buildAutoUpdateCard(),
-        ],
-      ),
+      child: split
+          ? FushiToolScaffold.customTitle(
+              title: Text(t.dictionaries),
+              actions: actions,
+              body: _buildSplitBody(listChildren),
+            )
+          : AdaptiveSettingsScaffold(
+              title: Text(t.dictionaries),
+              // Cupertino (iOS/macOS) keeps its native nav-bar icon actions.
+              // Material (Android/Windows/Linux) empties the app bar and
+              // surfaces the same actions as labeled buttons in an in-page
+              // action bar so they read as normal buttons instead of bare icons.
+              actions: actions,
+              bottom: _buildBatchBar(),
+              children: listChildren,
+            ),
+    );
+  }
+
+  /// 宽屏两栏：左列表（独立滚动）+ 右详情侧板（独立滚动）；多选态的批量栏
+  /// 钉在左列底部。
+  Widget _buildSplitBody(List<Widget> listChildren) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double gutter = tokens.spacing.rowHorizontal;
+    final Widget? batchBar = _buildBatchBar();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            children: <Widget>[
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.fromLTRB(gutter, 8, gutter, gutter),
+                  children: listChildren,
+                ),
+              ),
+              if (batchBar != null) batchBar,
+            ],
+          ),
+        ),
+        const FushiVerticalDivider(width: 1),
+        SizedBox(
+          width: kDictionaryManagerDetailPaneWidth,
+          child: _buildDetailPane(),
+        ),
+      ],
     );
   }
 
@@ -476,69 +561,152 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// Material in-page action bar: labeled import/clear buttons that wrap on
-  /// narrow widths. Replaces the bare app-bar icon buttons on Material.
-  Widget _buildActionBar() {
+  /// Material in-page action bar（M3 Expressive）。按使用频率分层，不再一排五个
+  /// 等权按钮：
+  /// - 主操作「导入词典」是实心主色按钮，「下载推荐」tonal 紧随其后——两个最常用
+  ///   的入口一步可达；
+  /// - 「导入文件夹 / 更新全部」宽屏直接铺开，窄屏收进行尾溢出菜单；
+  /// - 破坏性的「删除所有」一律进溢出菜单，不再与常用操作并排（误触代价太高）；
+  /// - 行尾是多选开关（进入批量启用 / 停用 / 删除）。
+  Widget _buildActionBar({required bool compact}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = theme.colorScheme;
+    final double gap = tokens.spacing.gap;
+    if (compact) {
+      // 手机：两个主入口各占半行（不再折成两行按钮）；多选开关与溢出菜单挪到
+      // 列表头右侧（见 _buildListHeader）。一本词典都没有时没有列表头，溢出菜单
+      // （导入文件夹等）留在这里。
+      return Padding(
+        padding: EdgeInsets.only(
+          bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
+        ),
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: _buildActionButton(
+                focusPrefix: 'dict-action-file',
+                icon: Icons.upload_file_outlined,
+                label: t.dialog_import_dictionary,
+                onTap: _importDictionaryFiles,
+                primary: true,
+              ),
+            ),
+            SizedBox(width: gap),
+            Expanded(
+              child: _buildActionButton(
+                focusPrefix: 'dict-action-download',
+                icon: Icons.cloud_download_outlined,
+                label: t.dict_download_browse,
+                onTap: _showDownloadSelectionDialog,
+              ),
+            ),
+            if (appModel.dictionaries.isEmpty) _buildOverflowMenu(compact: true),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: EdgeInsets.only(
         bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
-      child: Wrap(
-        spacing: tokens.spacing.gap,
-        runSpacing: tokens.spacing.gap,
+      child: Row(
         children: <Widget>[
-          // TODO-609：一键更新全部可在线更新的词典（逐本比 revision，有新版才下）。
-          // 放第一个、常驻显示：以前「没有可更新词典就不显示」，而旧版导入的词典
-          // 缺来源字段全被判成不可更新，用户根本找不到这个入口，只看得到行尾那个
-          // 要自己下新包再选文件的按钮。现在没有可更新词典时点了会明确告诉原因。
-          _buildActionButton(
-            focusPrefix: 'dict-action-update',
-            icon: Icons.system_update_alt,
-            label: t.dict_update_all,
-            onTap: _checkForUpdates,
-            style: FilledButton.styleFrom(
-              backgroundColor: scheme.primary,
-              foregroundColor: scheme.onPrimary,
+          Expanded(
+            child: Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: <Widget>[
+                _buildActionButton(
+                  focusPrefix: 'dict-action-file',
+                  icon: Icons.upload_file_outlined,
+                  label: t.dialog_import_dictionary,
+                  onTap: _importDictionaryFiles,
+                  primary: true,
+                ),
+                _buildActionButton(
+                  focusPrefix: 'dict-action-download',
+                  icon: Icons.cloud_download_outlined,
+                  label: t.dict_download_browse,
+                  onTap: _showDownloadSelectionDialog,
+                ),
+                if (!compact) ...<Widget>[
+                  // Folder import is unavailable on iOS. This bar only renders
+                  // on Material, so the guard is a no-op on a normal iOS device;
+                  // it stays live only for a forced Material design-system
+                  // override on iOS, mirroring _buildDesktopPageActions.
+                  if (!Platform.isIOS)
+                    _buildActionButton(
+                      focusPrefix: 'dict-action-folder',
+                      icon: Icons.drive_folder_upload_outlined,
+                      label: t.dialog_import_folder,
+                      onTap: _importDictionaryFolder,
+                    ),
+                  // TODO-609：一键更新全部可在线更新的词典（逐本比 revision，有新版
+                  // 才下）。常驻显示：没有可更新词典时点了会明确告诉原因。
+                  _buildActionButton(
+                    focusPrefix: 'dict-action-update',
+                    icon: Icons.system_update_alt,
+                    label: t.dict_update_all,
+                    onTap: _checkForUpdates,
+                  ),
+                ],
+              ],
             ),
           ),
-          _buildActionButton(
-            focusPrefix: 'dict-action-download',
-            icon: Icons.cloud_download_outlined,
-            label: t.dict_download_browse,
-            onTap: _showDownloadSelectionDialog,
-          ),
-          // Folder import is unavailable on iOS. This bar only renders on
-          // Material, so the guard is a no-op on a normal iOS device (Cupertino
-          // there); it stays live only for a forced Material design-system
-          // override on iOS, mirroring _buildDesktopPageActions.
-          if (!Platform.isIOS)
-            _buildActionButton(
-              focusPrefix: 'dict-action-folder',
-              icon: Icons.drive_folder_upload_outlined,
-              label: t.dialog_import_folder,
-              onTap: _importDictionaryFolder,
-            ),
-          _buildActionButton(
-            focusPrefix: 'dict-action-file',
-            icon: Icons.upload_file_outlined,
-            label: t.dialog_import_dictionary,
-            onTap: _importDictionaryFiles,
-          ),
-          _buildActionButton(
-            focusPrefix: 'dict-action-clear',
-            icon: Icons.delete_sweep_outlined,
-            label: t.dialog_clear_all_dictionaries,
-            onTap: showDictionaryClearDialog,
-            // 破坏性动作：与同排按钮同一中性 tonal 底，只把前景换成错误色
-            // （iOS destructive 按钮同口径），不再并排出现一块 errorContainer 色块。
-            style: FilledButton.styleFrom(
-              foregroundColor: fushiStatusColor(context, FushiStatusTone.error),
-            ),
-          ),
+          SizedBox(width: gap / 2),
+          _buildSelectionToggle(),
+          _buildOverflowMenu(compact: false),
         ],
       ),
+    );
+  }
+
+  Widget _buildOverflowMenu({required bool compact}) {
+    return FushiOverflowMenu<VoidCallback>(
+      tooltip: t.show_options,
+      icon: Icons.more_vert,
+      onSelected: (VoidCallback action) => action(),
+      items: _buildOverflowItems(includeSecondaryImports: compact),
+    );
+  }
+
+  /// 溢出菜单里的动作。[includeSecondaryImports] = 页面上没有铺开「导入文件夹 /
+  /// 更新全部」时（窄屏、Apple 窄屏标题栏）把它们也放进来。
+  List<FushiPopupMenuItem<VoidCallback>> _buildOverflowItems({
+    required bool includeSecondaryImports,
+  }) {
+    return <FushiPopupMenuItem<VoidCallback>>[
+      if (includeSecondaryImports) ...<FushiPopupMenuItem<VoidCallback>>[
+        buildPopupItem(
+          label: t.dict_update_all,
+          icon: Icons.system_update_alt,
+          action: _checkForUpdates,
+        ),
+        if (!Platform.isIOS)
+          buildPopupItem(
+            label: t.dialog_import_folder,
+            icon: Icons.drive_folder_upload_outlined,
+            action: _importDictionaryFolder,
+          ),
+      ],
+      buildPopupItem(
+        label: t.dialog_clear_all_dictionaries,
+        icon: Icons.delete_sweep_outlined,
+        color: theme.colorScheme.error,
+        action: showDictionaryClearDialog,
+      ),
+    ];
+  }
+
+  /// 多选开关：进入 / 退出批量模式。当前类型一本词典都没有时置灰。
+  Widget _buildSelectionToggle() {
+    final bool hasRows = _dictionariesForType(_selectedType).isNotEmpty;
+    return FushiIconButton(
+      key: const ValueKey<String>('dict-selection-toggle'),
+      icon: _selecting ? Icons.close : Icons.checklist,
+      tooltip: _selecting ? t.dict_selection_exit : t.batch_select,
+      selected: _selecting,
+      enabled: _selecting || hasRows,
+      onTap: _toggleSelecting,
     );
   }
 
@@ -546,20 +714,36 @@ class _DictionaryDialogPageState extends BasePageState {
   /// [FushiFocusRoot], a single gamepad/keyboard focus stop (A/Enter fires
   /// [onTap]). Same idiom as the reader quick-settings action strip: the
   /// underlying button is removed from focus traversal so it does not grab a
-  /// competing, unregistered focus node.
+  /// competing, unregistered focus node. [primary] = 实心主色（本页主操作），
+  /// 否则 tonal。
   Widget _buildActionButton({
     required String focusPrefix,
     required IconData icon,
     required String label,
     required VoidCallback onTap,
-    ButtonStyle? style,
+    bool primary = false,
   }) {
-    final Widget button = FushiFilledButton.tonalIcon(
-      onPressed: onTap,
-      style: style,
-      icon: FushiIcon(icon, size: 18),
-      label: Text(label),
-    );
+    final Widget button = primary
+        ? FushiFilledButton.icon(
+            key: ValueKey<String>(focusPrefix),
+            onPressed: onTap,
+            icon: FushiIcon(icon, size: 18),
+            label: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
+        : FushiFilledButton.tonalIcon(
+            key: ValueKey<String>(focusPrefix),
+            onPressed: onTap,
+            icon: FushiIcon(icon, size: 18),
+            label: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
     if (FushiFocusRoot.maybeControllerOf(context) == null) {
       return button;
     }
@@ -593,6 +777,7 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: Icons.upload_file_outlined,
         onTap: _importDictionaryFiles,
       ),
+      _buildSelectionToggle(),
       FushiIconButton(
         tooltip: t.dialog_clear_all_dictionaries,
         icon: Icons.delete_sweep_outlined,
@@ -604,38 +789,23 @@ class _DictionaryDialogPageState extends BasePageState {
 
   List<Widget> _buildMobilePageActions() {
     return [
+      FushiIconButton(
+        tooltip: t.dialog_import_dictionary,
+        icon: Icons.upload_file_outlined,
+        onTap: _importDictionaryFiles,
+      ),
+      _buildSelectionToggle(),
       FushiOverflowMenu<VoidCallback>(
         tooltip: t.show_options,
         icon: Icons.more_vert,
         onSelected: (VoidCallback action) => action(),
         items: [
           buildPopupItem(
-            label: t.dict_update_all,
-            icon: Icons.system_update_alt,
-            action: _checkForUpdates,
-          ),
-          buildPopupItem(
             label: t.dict_download_browse,
             icon: Icons.cloud_download_outlined,
             action: _showDownloadSelectionDialog,
           ),
-          if (!Platform.isIOS)
-            buildPopupItem(
-              label: t.dialog_import_folder,
-              icon: Icons.drive_folder_upload_outlined,
-              action: _importDictionaryFolder,
-            ),
-          buildPopupItem(
-            label: t.dialog_import_dictionary,
-            icon: Icons.upload_file_outlined,
-            action: _importDictionaryFiles,
-          ),
-          buildPopupItem(
-            label: t.dialog_clear_all_dictionaries,
-            icon: Icons.delete_sweep_outlined,
-            color: theme.colorScheme.error,
-            action: showDictionaryClearDialog,
-          ),
+          ..._buildOverflowItems(includeSecondaryImports: true),
         ],
       ),
     ];
@@ -1550,10 +1720,7 @@ class _DictionaryDialogPageState extends BasePageState {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SettingsSectionHeader(
-          _labelForType(_selectedType),
-          padding: const EdgeInsets.only(bottom: 6),
-        ),
+        _buildListHeader(selectedDictionaries),
         if (selectedDictionaries.isEmpty)
           _buildEmptyCategoryRow()
         else
@@ -1566,8 +1733,72 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
+  /// 列表头：分类标题 + 「共 N 本 · 已启用 M 本」，右侧是排序方式提示（桌面
+  /// 「拖动 / Alt+↑↓」，触屏「长按拖动」）——以前排序全靠用户自己发现。
+  Widget _buildListHeader(List<Dictionary> dictionaries) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = theme.colorScheme;
+    final int enabledCount = dictionaries
+        .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
+        .length;
+    final TargetPlatform platform = theme.platform;
+    final bool desktop = platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux ||
+        platform == TargetPlatform.macOS;
+    final bool compact = MediaQuery.sizeOf(context).width < 480;
+    // Material 手机：多选开关与溢出菜单住在这一行右侧（动作条只放两个主入口）。
+    final bool headerActions = compact &&
+        !(isCupertinoPlatform(context) || isGlassDesign(context));
+    final Widget? hint = dictionaries.length > 1
+        ? Text(
+            desktop ? t.dict_reorder_hint_desktop : t.dict_reorder_hint_touch,
+            style: textTheme.bodySmall?.copyWith(color: scheme.outline),
+          )
+        : null;
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SettingsSectionHeader(
+                  _labelForType(_selectedType),
+                  padding: EdgeInsets.zero,
+                ),
+                Text(
+                  t.dict_manager_summary(
+                    n: dictionaries.length,
+                    m: enabledCount,
+                  ),
+                  style: textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                if (hint != null && headerActions) hint,
+              ],
+            ),
+          ),
+          if (headerActions) ...<Widget>[
+            _buildSelectionToggle(),
+            _buildOverflowMenu(compact: true),
+          ] else if (hint != null)
+            hint,
+        ],
+      ),
+    );
+  }
+
+  /// 词典类型筛选（术语 / 汉字 / 词频 / 音调），每段带本数。宽窄屏同一个分段
+  /// 控件（MD3 Expressive 连接式按钮组 / Apple 分段），窄屏放不下时横向滚动——
+  /// 不再在手机上退化成一个要点开才看得到选项的下拉框。
   Widget _buildCategorySelector() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    String label(String name, DictionaryType type) =>
+        '$name ${_dictionariesForType(type).length}';
     return Padding(
       padding: EdgeInsets.only(
         bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
@@ -1592,37 +1823,49 @@ class _DictionaryDialogPageState extends BasePageState {
                     DictionaryType.pitch,
                   ],
                   selected: _selectedType,
-                  onChanged: (DictionaryType value) {
-                    setState(() => _selectedType = value);
-                  },
+                  onChanged: _selectType,
                   child: adaptiveSegmentedButton<DictionaryType>(
                     context: context,
                     segments: [
                       ButtonSegment<DictionaryType>(
                         value: DictionaryType.term,
-                        label: Text(t.dictionary_type_term),
+                        label: Text(
+                          label(t.dictionary_type_term, DictionaryType.term),
+                        ),
                         tooltip: t.dictionary_type_term,
                       ),
                       ButtonSegment<DictionaryType>(
                         value: DictionaryType.kanji,
-                        label: Text(t.dictionary_section_kanji),
+                        label: Text(
+                          label(
+                            t.dictionary_section_kanji,
+                            DictionaryType.kanji,
+                          ),
+                        ),
                         tooltip: t.dictionary_section_kanji,
                       ),
                       ButtonSegment<DictionaryType>(
                         value: DictionaryType.frequency,
-                        label: Text(t.dictionary_type_frequency),
+                        label: Text(
+                          label(
+                            t.dictionary_type_frequency,
+                            DictionaryType.frequency,
+                          ),
+                        ),
                         tooltip: t.dictionary_type_frequency,
                       ),
                       ButtonSegment<DictionaryType>(
                         value: DictionaryType.pitch,
-                        label: Text(t.dictionary_type_pitch),
+                        label: Text(
+                          label(t.dictionary_type_pitch, DictionaryType.pitch),
+                        ),
                         tooltip: t.dictionary_type_pitch,
                       ),
                     ],
                     selected: {_selectedType},
                     onSelectionChanged: (Set<DictionaryType> selection) {
                       if (selection.isEmpty) return;
-                      setState(() => _selectedType = selection.first);
+                      _selectType(selection.first);
                     },
                     style: kSettingsSegmentedStyle,
                   ),
@@ -1635,55 +1878,27 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  Widget _buildDictionaryTypePicker() {
-    return AdaptiveSettingsSection(
-      children: [
-        AdaptiveSettingsPickerRow<DictionaryType>(
-          title: t.dictionaries,
-          icon: Icons.menu_book_outlined,
-          controlBelow: true,
-          materialWidth: double.infinity,
-          selected: _selectedType,
-          options: [
-            AdaptiveSettingsPickerOption<DictionaryType>(
-              value: DictionaryType.term,
-              label: t.dictionary_type_term,
-            ),
-            AdaptiveSettingsPickerOption<DictionaryType>(
-              value: DictionaryType.kanji,
-              label: t.dictionary_section_kanji,
-            ),
-            AdaptiveSettingsPickerOption<DictionaryType>(
-              value: DictionaryType.frequency,
-              label: t.dictionary_type_frequency,
-            ),
-            AdaptiveSettingsPickerOption<DictionaryType>(
-              value: DictionaryType.pitch,
-              label: t.dictionary_type_pitch,
-            ),
-          ],
-          onChanged: (DictionaryType value) {
-            setState(() => _selectedType = value);
-          },
-        ),
-      ],
-    );
+  /// 切换词典类型：多选只在当前类型内进行，切走即清空选择（避免对看不见的
+  /// 词典做批量操作）。
+  void _selectType(DictionaryType type) {
+    if (type == _selectedType) return;
+    setState(() {
+      _selectedType = type;
+      _selectedNames.clear();
+    });
   }
 
   Widget buildEmptyMessage() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AdaptiveSettingsSection(
-      children: [
-        Padding(
-          padding: EdgeInsets.symmetric(
-            vertical: tokens.spacing.card + tokens.spacing.gap,
-          ),
-          child: FushiPlaceholderMessage(
-            icon: DictionaryMediaType.instance.outlinedIcon,
-            message: t.dictionaries_menu_empty,
-          ),
-        ),
-      ],
+    final TargetPlatform platform = theme.platform;
+    // 一本词典都没有：说明支持的格式，把「导入」「下载推荐」两个入口直接放在
+    // 眼前；桌面再提示可以直接拖进窗口（TODO-059 的拖放导入）。
+    return DictionaryManagerEmptyState(
+      icon: DictionaryMediaType.instance.outlinedIcon,
+      onImport: _importDictionaryFiles,
+      onDownload: _showDownloadSelectionDialog,
+      showDropHint: platform == TargetPlatform.windows ||
+          platform == TargetPlatform.linux ||
+          platform == TargetPlatform.macOS,
     );
   }
 
@@ -1704,121 +1919,92 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
+  /// 词典列表的一行（M3 Expressive 卡片行，宽窄屏同一份）：
+  /// - 行首：优先级序号徽标（多选态换成复选框）；
+  /// - 中段：词典名（窄屏最多两行）+ 版本 / 状态；
+  /// - 行尾：折叠三态一键切换（BUG-2158 状态一览）+ 启用开关。
+  /// 改名 / 内容语言 / 更新 / 排序 / 删除这些低频动作收进详情（宽屏右侧侧板、
+  /// 窄屏点行弹出底部 sheet），行尾不再堆八个无字图标。
+  ///
+  /// 整行可点：普通态打开详情，多选态切换勾选。键盘：Alt+↑/↓ 挪动、Delete 删除
+  /// （见 [_handleRowKey]）；手柄 A 打开详情，排序按钮在详情里。
   Widget _buildDictionaryTile({
     required Dictionary dictionary,
     required int index,
     required int count,
-    required bool isLast,
-    required VoidCallback onMoveUp,
-    required VoidCallback onMoveDown,
+    required List<Dictionary> dictionaries,
+    required bool split,
   }) {
-    DictionaryFormat dictionaryFormat =
-        appModel.dictionaryFormats[dictionary.formatKey]!;
     final bool enabled = !dictionary.isHidden(JapaneseLanguage.instance);
     final ColorScheme scheme = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color titleColor =
-        enabled ? scheme.onSurface : scheme.onSurfaceVariant;
-    final Color subtitleColor = scheme.onSurfaceVariant;
-    // 窄屏（手机）= 与本页其它分支同一真值阈值（_buildDictionaryTypePicker /
-    // _buildMobilePageActions 都用 width < 480）。窄屏下控件串挤死了词典名：leading
-    // 折叠 + 上/下/Switch/(更新)/删除 共 6-7 个固有宽控件占去约 176px，中段 title 只
-    // 剩约 80px ≈ 5 个汉字 → 长词典名被省略号截短。修复=窄屏改两行布局：标题独占
-    // 整行宽（不再与 trailing 抢宽），控件串挪到标题下方一行；桌面宽屏仍是单行
-    // FushiListItem（向后兼容）。这从结构上消除「窄屏 trailing 抢 title 宽」的特殊
-    // 情况，四个 tab（term/kanji/frequency/pitch）共用本 tile 一处修复全覆盖。
     final bool compact = MediaQuery.sizeOf(context).width < 480;
+    final bool checked = _selectedNames.contains(dictionary.name);
+    final bool showingDetail = split && _detailName == dictionary.name;
     final Text nameText = Text(
       // 用户可见的词典名一律走 effectiveDisplayName（改过名用改的，否则真名）。
       dictionary.effectiveDisplayName,
       style: textTheme.bodyLarge?.copyWith(
-        color: titleColor,
+        color: enabled ? scheme.onSurface : scheme.onSurfaceVariant,
         fontWeight: FontWeight.w600,
       ),
     );
-    final Text subtitleText = Text(
-      _subtitleForDictionary(dictionary, dictionaryFormat),
-      maxLines: 2,
+    final Widget subtitle = Text(
+      enabled
+          ? _subtitleForDictionary(dictionary)
+          : '${_subtitleForDictionary(dictionary)} · ${t.dict_status_disabled}',
+      maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: textTheme.bodySmall?.copyWith(
-        color: subtitleColor,
-      ),
+      style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
     );
-    final Row controls = _buildDictionaryTileControls(
-      dictionary: dictionary,
-      index: index,
-      isLast: isLast,
-      enabled: enabled,
-      onMoveUp: onMoveUp,
-      onMoveDown: onMoveDown,
-    );
-    // 行内容本身不含拖拽监听：长按拖拽由外层 FushiReorderableColumn 统一接管
-    // （局部坐标，缩放下零偏移），不再用 SDK 的 ReorderableDelayedDragStartListener。
-    // 行间距交给 FushiReorderableColumn 的 spacing（见 _buildDictionaryList），
-    // 此处不再包 bottom padding——否则拖拽浮层会把行间空隙连同卡片一起涂成背景，
-    // 表现为「被拖行下方多出一条背景」（BUG-078 第二症状）。
-    if (compact) {
-      // 窄屏两行布局：第一行 = 折叠按钮（leading 语义，最左）+ 词典名（Expanded
-      // 拿满整行剩余宽，不再被右侧控件串抢宽）；第二行 = 副标题；第三行 = 控件串
-      // （上/下/Switch/更新/删除）右对齐。彻底消除「窄屏 trailing 抢 title 宽」的
-      // 结构（TODO-749/751）。
-      return _buildDictionaryGroupCard(
-        index: index,
-        count: count,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
-            vertical: tokens.spacing.rowVertical,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final Widget leading = _selecting
+        ? FushiCheckbox(
+            value: checked,
+            onChanged: (_) => _toggleSelected(dictionary),
+          )
+        : DictionaryOrderBadge(position: index + 1, enabled: enabled);
+    // 多选态行尾收起：整行就是勾选面，不再并排可单独操作的开关。
+    final Widget? trailing = _selecting
+        ? null
+        : Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  _buildDictionaryCollapseButton(dictionary),
-                  SizedBox(width: tokens.spacing.gap),
-                  Expanded(child: nameText),
-                ],
-              ),
-              Padding(
-                padding: EdgeInsets.only(top: tokens.spacing.gap / 4),
-                child: subtitleText,
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: controls,
-              ),
+              _buildDictionaryCollapseButton(dictionary),
+              _buildDictionaryVisibilityButton(dictionary, enabled),
             ],
+          );
+    // 行内容本身不含拖拽监听：拖拽由外层 FushiReorderableColumn 统一接管
+    // （鼠标按下即拖、触屏长按拖，局部坐标，缩放下零偏移）。行间距交给
+    // FushiReorderableColumn 的 spacing（见 _buildDictionaryList），此处不再包
+    // bottom padding——否则拖拽浮层会把行间空隙连同卡片一起涂成背景（BUG-078）。
+    return Focus(
+      focusNode: _rowFocusNode(dictionary.name),
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) =>
+          _handleRowKey(event, dictionary, index, dictionaries),
+      child: _buildDictionaryGroupCard(
+        index: index,
+        count: count,
+        selected: checked || showingDetail,
+        onTap: () => _selecting
+            ? _toggleSelected(dictionary)
+            : _openDictionaryDetail(dictionary),
+        child: FushiListItem(
+          minHeight: 64,
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
+            vertical: tokens.spacing.rowVertical - tokens.spacing.gap / 2,
           ),
+          leading: leading,
+          title: nameText,
+          // 窄屏给名字两行：长词典名（「三省堂国語辞典 第七版」）不再被截成
+          // 五个字（TODO-749/751 的同一诉求，现在行尾只剩三件，宽度够）。
+          titleMaxLines: compact ? 2 : 1,
+          subtitle: subtitle,
+          subtitleMaxLines: 1,
+          trailing: trailing,
         ),
-      );
-    }
-    return _buildDictionaryGroupCard(
-      index: index,
-      count: count,
-      child: FushiListItem(
-        minHeight: 70,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal - tokens.spacing.gap / 2,
-          vertical: tokens.spacing.rowVertical,
-        ),
-        // TODO-381 (user request): collapse/expand is the most-used one-tap
-        // toggle for a row, so it is promoted to the row leading (leftmost):
-        // visible at a glance, reachable with one finger, no longer buried in
-        // the trailing control cluster. The name sits in the middle and uses
-        // FushiListItem own Expanded + ellipsis to take the full middle width,
-        // so even on narrow widths it shows as much as fits (graceful ellipsis)
-        // and is never squeezed out by the trailing controls.
-        leading: _buildDictionaryCollapseButton(dictionary),
-        title: nameText,
-        subtitle: subtitleText,
-        // Trailing keeps only: gamepad/a11y reorder arrows, the show/hide
-        // switch, and a single inline delete button. Collapse/expand moved to
-        // leading; custom CSS keeps its global fallback entry under settings →
-        // dictionary settings (DictCssEditorDialog 可下拉选本词典), so dropping
-        // the old three-dot menu does not lose any function (TODO-422).
-        trailing: controls,
       ),
     );
   }
@@ -1826,102 +2012,21 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 词典列表的一行外壳：整张列表读作一个设置分组，而不是一摞各自独立的圆角卡
   /// （MD3 分段分组 / Apple inset grouped，见共享外壳 [FushiGroupedListItem]）。
   /// 行间距由 FushiReorderableColumn 的 spacing 统一插入（拖拽浮层不带缝），
-  /// 外壳自己不加缝。
+  /// 外壳自己不加缝。可点卡片按下自带 FushiPressScale 下沉反馈。
   Widget _buildDictionaryGroupCard({
     required int index,
     required int count,
     required Widget child,
+    required bool selected,
+    required VoidCallback onTap,
   }) {
     return FushiGroupedListItem(
       index: index,
       count: count,
       includeGap: false,
+      selected: selected,
+      onTap: onTap,
       child: child,
-    );
-  }
-
-  /// 词典行尾的控件串（上/下重排箭头 + 显示/隐藏 Switch + 可选更新按钮 + 独立删除
-  /// 按钮）。桌面宽屏放进 FushiListItem 的 trailing（与标题同一行），窄屏挪到标题
-  /// 下方（两行布局，见 _buildDictionaryTile），两处共用这一份避免重复。
-  Row _buildDictionaryTileControls({
-    required Dictionary dictionary,
-    required int index,
-    required bool isLast,
-    required bool enabled,
-    required VoidCallback onMoveUp,
-    required VoidCallback onMoveDown,
-  }) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 行尾控件串（窄屏挪到标题下方，桌面在标题右侧）；末尾是独立删除按钮
-    //（TODO-422 取代旧三点菜单），不含旧的三点溢出菜单图标。
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        // Gamepad/keyboard reorder equivalent for the drag handle.
-        FushiIconButton(
-          icon: Icons.keyboard_arrow_up,
-          size: 18,
-          tooltip: t.move_up,
-          enabled: index > 0,
-          onTap: onMoveUp,
-        ),
-        FushiIconButton(
-          icon: Icons.keyboard_arrow_down,
-          size: 18,
-          tooltip: t.move_down,
-          enabled: !isLast,
-          onTap: onMoveDown,
-        ),
-        _buildDictionaryVisibilityButton(dictionary, enabled),
-        SizedBox(width: tokens.spacing.gap / 2),
-        // 改名：导入包里的 index.json title 常常又长又带日期（`JMdict [2026-05-17]`），
-        // 而它同时是主键/目录名/引擎键，改不得——所以这里改的是显示名覆盖层。
-        FushiIconButton(
-          key: ValueKey<String>('dict_rename_${dictionary.name}'),
-          icon: Icons.drive_file_rename_outline,
-          size: 20,
-          tooltip: t.dict_rename,
-          onTap: () => _renameDictionary(dictionary),
-        ),
-        // TODO-839：每本词典行尾恒显示一个「更新」按钮（消除「这本能更新那本不能」
-        // 的视觉断层）。按 isUpdatable 分流：
-        //   - 在线来源（isUpdatable 三条件满足）→ 走 _updateSingleDictionary（拉远端
-        //     index.json 比 revision，TODO-609 原行为不变；它首行另有 isUpdatable 双保险）。
-        //   - 本地导入 / 旧词典（isUpdatable=false）→ 走 _updateDictionaryFromFile（从
-        //     文件重选 force 覆盖；异名先弹确认，避免静默改判成新增导入）。
-        SizedBox(width: tokens.spacing.gap / 2),
-        FushiIconButton(
-          icon: Icons.system_update_alt,
-          size: 20,
-          // 不可在线更新的词典点下去是「选本地文件覆盖」，tooltip 要把这件事说在
-          // 前头，别让用户以为和 Yomitan 一样会自己去下新版。
-          tooltip: dictionary.isUpdatable
-              ? t.dict_update_tooltip
-              : t.dict_update_from_file_tooltip,
-          onTap: () => dictionary.isUpdatable
-              ? _updateSingleDictionary(dictionary)
-              : _updateDictionaryFromFile(dictionary),
-        ),
-        SizedBox(width: tokens.spacing.gap / 2),
-        // 内容语言：决定这本词典的文字用哪条字体链渲染。多数词典会在 index.json
-        // 里声明（自动读取），但旧包 / 本地导入包不带该字段，这时只有用户知道
-        // 「这本是什么语言的」——不给入口就只能靠字符检测猜，而那个检测把汉字
-        // 一律判成日文。
-        FushiIconButton(
-          icon: Icons.translate,
-          size: 20,
-          tooltip: t.dict_language_tooltip,
-          onTap: () => _showDictionaryLanguageDialog(dictionary),
-        ),
-        SizedBox(width: tokens.spacing.gap / 2),
-        // 行尾独立删除按钮（取代旧三点菜单），仍走原删除确认对话框流程。
-        FushiIconButton(
-          icon: Icons.delete_outline,
-          size: 20,
-          tooltip: t.options_delete,
-          onTap: () => showDictionaryDeleteDialog(dictionary),
-        ),
-      ],
     );
   }
 
@@ -1937,6 +2042,7 @@ class _DictionaryDialogPageState extends BasePageState {
         toggled: enabled,
         label: tooltip,
         child: FushiSwitch(
+          key: ValueKey<String>('dict-row-switch-${dictionary.name}'),
           value: enabled,
           // 走开关自身的主题配色（MD3 primary 轨 / Apple 系统开关），
           // 不再自定 primaryContainer 浅色轨——那与全应用其它开关不是一个长相。
@@ -1946,12 +2052,13 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  // TODO-091/TODO-381：把每本词典的「折叠/展开」状态做成行首 leading（最左）的
-  // 一键开关，使 20+ 本词典的折叠状态可在列表里一眼一览（图标本身即状态），单击
-  // 直接切换、无需先开菜单再选（对齐用户参考的 hsa 体验，并按用户诉求把它放到
-  // 行最左）。折叠语义 = 查词弹窗里该词典释义默认折叠（见 dictionary_popup_webview
-  // 注入 collapsedDictionaryNames）；持久化仍走既有 Dictionary.collapsedLanguages
-  // （按阅读语言 JapaneseLanguage.instance 区分），不改后端逻辑。
+  // TODO-091/TODO-381：每本词典的「折叠/展开」状态是行内的一键开关，20+ 本词典
+  // 的折叠状态可在列表里一眼一览（图标本身即状态），单击直接切换、无需先开菜单。
+  // 2026-10 词典管理重做：从行首挪到行尾开关旁（行首让给优先级序号 / 多选
+  // 复选框），详情里另有同一状态的三段分段控件。折叠语义 = 查词弹窗里该词典
+  // 释义默认折叠（见 dictionary_popup_webview 注入 collapsedDictionaryNames）；
+  // 持久化仍走既有 Dictionary.collapsedLanguages（按阅读语言 JapaneseLanguage.
+  // instance 区分），不改后端逻辑。
   // BUG-2158：这个按钮以前是双态的，而模型里只有一个 collapsedLanguages 名单 ——
   // 于是「不在名单里」被当成「展开」画出来，实际语义却是「继承全局」。全局
   // collapse_dictionaries 默认 true，用户对自动展开窗口之外的词典点「展开」，
@@ -1980,6 +2087,7 @@ class _DictionaryDialogPageState extends BasePageState {
         ),
     };
     return FushiIconButton(
+      key: ValueKey<String>('dict-row-collapse-${dictionary.name}'),
       icon: icon,
       size: 20,
       tooltip: tooltip,
@@ -1994,8 +2102,12 @@ class _DictionaryDialogPageState extends BasePageState {
   // ReorderableListView：后者的 Overlay 拖拽代理不认祖先 FushiAppUiScale 的
   // Transform.scale，缩放界面下长按拖拽反馈会按 (1−s)×距离 向右下漂移、飞离原位
   // （BUG-044）。前者把拖拽反馈渲染在列表自身坐标系、用 globalToLocal 消掉祖先缩放
-  // → 任意缩放下都精确跟手、零偏移且视觉一致。上下箭头按钮仍是无障碍/手柄重排路径。
+  // → 任意缩放下都精确跟手、零偏移且视觉一致。键盘 Alt+↑/↓ 与详情里的
+  // 上移 / 下移按钮（Icons.keyboard_arrow_up / Icons.keyboard_arrow_down）仍是
+  // 无障碍 / 手柄重排路径。
   Widget _buildDictionaryList(List<Dictionary> dictionaries) {
+    final bool split =
+        dictionaryManagerUsesSplitLayout(MediaQuery.sizeOf(context).width);
     return FushiReorderableColumn(
       itemCount: dictionaries.length,
       // 行间距由列表统一插入（见 _buildDictionaryTile 不再自带 bottom padding）；
@@ -2017,10 +2129,8 @@ class _DictionaryDialogPageState extends BasePageState {
           dictionary: dictionaries[index],
           index: index,
           count: dictionaries.length,
-          isLast: index == dictionaries.length - 1,
-          onMoveUp: () => _reorderDictionaries(index, index - 1, dictionaries),
-          onMoveDown: () =>
-              _reorderDictionaries(index, index + 1, dictionaries),
+          dictionaries: dictionaries,
+          split: split,
         ),
       ),
     );
@@ -2028,12 +2138,18 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 把 [dictionaries] 中 `from` 处的词典移动到**最终下标** `newIndex`，重排 order
   /// 并持久化。`newIndex` 是移动完成后该词典应处的位置（非 SDK 的「插入前下标」），
-  /// 上下箭头与长按拖拽统一走这套最终下标语义——无需 SDK 的 `if(new>old)new--` 特例。
+  /// 拖拽、键盘、详情里的上移 / 下移 / 置顶 / 置底统一走这套最终下标语义——无需
+  /// SDK 的 `if(new>old)new--` 特例。越界与原地不动直接忽略。
   void _reorderDictionaries(
     int oldIndex,
     int newIndex,
     List<Dictionary> dictionaries,
   ) {
+    if (newIndex < 0 ||
+        newIndex >= dictionaries.length ||
+        newIndex == oldIndex) {
+      return;
+    }
     final List<Dictionary> cloneDictionaries = List.from(dictionaries);
 
     final Dictionary item = cloneDictionaries.removeAt(oldIndex);
@@ -2047,16 +2163,406 @@ class _DictionaryDialogPageState extends BasePageState {
     setState(() {});
   }
 
-  String _subtitleForDictionary(
+  /// 把 [dictionary] 挪到本类型列表的最终下标 [to]（详情里的四个排序按钮）。
+  void _moveDictionaryTo(Dictionary dictionary, int to) {
+    final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
+    final int from =
+        dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
+    if (from < 0) return;
+    _reorderDictionaries(from, to, dictionaries);
+  }
+
+  FocusNode _rowFocusNode(String name) => _rowFocusNodes.putIfAbsent(
+        name,
+        () => FocusNode(debugLabel: 'dict-row-$name'),
+      );
+
+  /// 行级键盘：Alt+↑/↓ 上下挪一位（焦点跟着词典走），Delete 删除这本。只在行内
+  /// 某个控件持焦时生效；其余键照常冒泡给全局方向导航。
+  KeyEventResult _handleRowKey(
+    KeyEvent event,
     Dictionary dictionary,
-    DictionaryFormat dictionaryFormat,
+    int index,
+    List<Dictionary> dictionaries,
   ) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final bool alt = HardwareKeyboard.instance.isAltPressed;
+    final LogicalKeyboardKey key = event.logicalKey;
+    if (alt &&
+        (key == LogicalKeyboardKey.arrowUp ||
+            key == LogicalKeyboardKey.arrowDown)) {
+      final int to = key == LogicalKeyboardKey.arrowUp ? index - 1 : index + 1;
+      if (to >= 0 && to < dictionaries.length) {
+        _reorderDictionaries(index, to, dictionaries);
+        _focusRowAfterFrame(dictionary.name);
+      }
+      return KeyEventResult.handled;
+    }
+    if (!alt &&
+        event is KeyDownEvent &&
+        key == LogicalKeyboardKey.delete &&
+        !_selecting) {
+      unawaited(showDictionaryDeleteDialog(dictionary));
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// 重排后把焦点交给挪到新位置的那一行（它的第一个可聚焦控件 = 整行点击面）。
+  void _focusRowAfterFrame(String name) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final FocusNode? row = _rowFocusNodes[name];
+      if (row == null) return;
+      // 逐层（广度优先）找最浅的可聚焦节点——整行点击面，而不是行尾的开关 /
+      // 折叠按钮（descendants 是后序，最深的先出，不能直接取第一个）。
+      Iterable<FocusNode> level = row.children;
+      while (level.isNotEmpty) {
+        for (final FocusNode node in level) {
+          if (node.canRequestFocus && !node.skipTraversal) {
+            node.requestFocus();
+            return;
+          }
+        }
+        level = level.expand((FocusNode node) => node.children).toList();
+      }
+    });
+    // addPostFrameCallback 不调度帧（树静止时回调永不触发），显式要一帧。
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  // ── 详情：宽屏右侧侧板 / 窄屏底部 sheet ─────────────────────────────────
+
+  /// 点一行：宽屏把它放进右侧详情侧板（再点一次收回概览），窄屏弹底部 sheet。
+  void _openDictionaryDetail(Dictionary dictionary) {
+    if (dictionaryManagerUsesSplitLayout(MediaQuery.sizeOf(context).width)) {
+      setState(() {
+        _detailName =
+            _detailName == dictionary.name ? null : dictionary.name;
+      });
+      return;
+    }
+    unawaited(_showDictionaryDetailSheet(dictionary));
+  }
+
+  Future<void> _showDictionaryDetailSheet(Dictionary dictionary) {
+    return adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) {
+        return ValueListenableBuilder<int>(
+          valueListenable: _revision,
+          builder: (BuildContext context, int _, Widget? __) {
+            final Dictionary? current = _findDictionary(dictionary.name);
+            if (current == null) return const SizedBox.shrink();
+            final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+            return FushiModalSheetFrame(
+              title: current.effectiveDisplayName,
+              subtitle: _typeLabel(current.type),
+              leadingIcon: DictionaryMediaType.instance.outlinedIcon,
+              scrollable: true,
+              maxHeightFactor: 0.9,
+              bodyPadding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                0,
+                tokens.spacing.page,
+                tokens.spacing.page,
+              ),
+              body: _buildDictionaryDetail(
+                current,
+                showHeader: false,
+                onDeleteRequested: () {
+                  // 先收 sheet 再走删除确认：删完这本已不存在，sheet 留着只会
+                  // 变成空壳。
+                  Navigator.of(sheetContext).pop();
+                  unawaited(showDictionaryDeleteDialog(current));
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Dictionary? _findDictionary(String name) {
+    for (final Dictionary d in appModel.dictionaries) {
+      if (d.name == name) return d;
+    }
+    return null;
+  }
+
+  Widget _buildDictionaryDetail(
+    Dictionary dictionary, {
+    required bool showHeader,
+    required VoidCallback onDeleteRequested,
+  }) {
+    final List<Dictionary> siblings = _dictionariesForType(dictionary.type);
+    final int position =
+        siblings.indexWhere((Dictionary d) => d.name == dictionary.name);
+    final DictionaryFormat? format =
+        appModel.dictionaryFormats[dictionary.formatKey];
+    final String override = dictionary.languageOverride ?? '';
+    final String source = dictionary.sourceLanguage;
+    final String languageLabel = override.isNotEmpty
+        ? contentLanguageLabelOf(override)
+        : source.isNotEmpty
+            ? '${t.dict_language_auto} · ${contentLanguageLabelOf(source)}'
+            : t.dict_language_auto;
+    return DictionaryManagerDetail(
+      key: ValueKey<String>('dict-detail-${dictionary.name}'),
+      dictionary: dictionary,
+      enabled: !dictionary.isHidden(JapaneseLanguage.instance),
+      collapseState: dictionary.collapseStateFor(JapaneseLanguage.instance),
+      typeLabel: _typeLabel(dictionary.type),
+      versionLabel: dictionary.revision,
+      formatLabel: format?.name ?? dictionary.formatKey,
+      languageLabel: languageLabel,
+      position: position < 0 ? 0 : position,
+      count: siblings.length,
+      showHeader: showHeader,
+      onEnabledChanged: (bool value) {
+        if (value == dictionary.isHidden(JapaneseLanguage.instance)) {
+          _toggleDictionaryHidden(dictionary);
+        }
+      },
+      onCollapseChanged: (DictionaryCollapseState state) =>
+          _setCollapseState(dictionary, state),
+      onRename: () => _renameDictionary(dictionary),
+      onLanguage: () => _showDictionaryLanguageDialog(dictionary),
+      // TODO-839：每本词典都给「更新」（消除「这本能更新那本不能」的断层），按
+      // isUpdatable 分流：在线来源走 _updateSingleDictionary（拉远端 index.json
+      // 比 revision），本地导入 / 旧词典走 _updateDictionaryFromFile（选文件
+      // force 覆盖，异名先确认）。
+      onUpdate: () => dictionary.isUpdatable
+          ? _updateSingleDictionary(dictionary)
+          : _updateDictionaryFromFile(dictionary),
+      onMoveTo: (int to) => _moveDictionaryTo(dictionary, to),
+      onDelete: onDeleteRequested,
+    );
+  }
+
+  /// 详情里的折叠三段分段：数据层只有「循环一格」这一个写入点（BUG-2158 唯一
+  /// 写入点 cycleDictionaryCollapseState），所以按循环序走到目标态——最多两步，
+  /// 不另开写入口。
+  void _setCollapseState(Dictionary dictionary, DictionaryCollapseState target) {
+    for (int step = 0;
+        step < DictionaryCollapseState.values.length &&
+            dictionary.collapseStateFor(JapaneseLanguage.instance) != target;
+        step++) {
+      appModel.cycleDictionaryCollapseState(dictionary);
+    }
+    setState(() {});
+  }
+
+  /// 宽屏右侧侧板：选中了词典 = 它的详情；没选 = 概览（四类计数 + 自动更新）。
+  /// 切换时淡入 + 轻微上移（时长取 FushiMotion，减弱动态效果下归零）。
+  Widget _buildDetailPane() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Dictionary? dictionary =
+        _detailName == null ? null : _findDictionary(_detailName!);
+    final Widget content = dictionary == null
+        ? DictionaryManagerOverview(
+            key: const ValueKey<String>('dict-overview'),
+            counts: _typeCounts(),
+            totalDictionaries: appModel.dictionaries.length,
+            enabledDictionaries: appModel.dictionaries
+                .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
+                .length,
+            selectedType: _selectedType,
+            onTypeSelected: _selectType,
+            footer: _buildAutoUpdateCard(),
+          )
+        : _buildDictionaryDetail(
+            dictionary,
+            showHeader: true,
+            onDeleteRequested: () => showDictionaryDeleteDialog(dictionary),
+          );
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      switchInCurve: FushiMotion.enter,
+      switchOutCurve: FushiMotion.exit,
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.02),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: ListView(
+        key: ValueKey<String?>(dictionary?.name),
+        padding: EdgeInsets.all(tokens.spacing.page),
+        children: <Widget>[content],
+      ),
+    );
+  }
+
+  List<DictionaryTypeCount> _typeCounts() {
+    DictionaryTypeCount count(DictionaryType type, IconData icon) {
+      final List<Dictionary> list = _dictionariesForType(type);
+      return DictionaryTypeCount(
+        type: type,
+        label: _typeLabel(type),
+        icon: icon,
+        total: list.length,
+        enabled: list
+            .where((Dictionary d) => !d.isHidden(JapaneseLanguage.instance))
+            .length,
+      );
+    }
+
+    return <DictionaryTypeCount>[
+      count(DictionaryType.term, Icons.menu_book_outlined),
+      count(DictionaryType.kanji, Icons.translate),
+      count(DictionaryType.frequency, Icons.bar_chart),
+      count(DictionaryType.pitch, Icons.graphic_eq),
+    ];
+  }
+
+  String _typeLabel(DictionaryType type) {
+    return switch (type) {
+      DictionaryType.term => t.dictionary_type_term,
+      DictionaryType.kanji => t.dictionary_section_kanji,
+      DictionaryType.frequency => t.dictionary_type_frequency,
+      DictionaryType.pitch => t.dictionary_type_pitch,
+    };
+  }
+
+  // ── 多选 / 批量 ─────────────────────────────────────────────────────────
+
+  void _toggleSelecting() {
+    setState(() {
+      _selecting = !_selecting;
+      _selectedNames.clear();
+    });
+  }
+
+  void _toggleSelected(Dictionary dictionary) {
+    setState(() {
+      if (!_selectedNames.remove(dictionary.name)) {
+        _selectedNames.add(dictionary.name);
+      }
+    });
+  }
+
+  List<Dictionary> get _selectedDictionaries => _dictionariesForType(
+        _selectedType,
+      ).where((Dictionary d) => _selectedNames.contains(d.name)).toList();
+
+  /// 多选态的底部批量栏（共享 [BatchActionBar]：已选 N · 全选 · 反选 + 动作）。
+  /// 全选 / 反选的域是当前类型的可见列表。非多选态返回 null（不占位）。
+  Widget? _buildBatchBar() {
+    if (!_selecting) return null;
+    final List<Dictionary> visible = _dictionariesForType(_selectedType);
+    final bool any = _selectedNames.isNotEmpty;
+    final bool compact = MediaQuery.sizeOf(context).width < 480;
+    final Widget delete = FushiIconButton(
+      key: const ValueKey<String>('dict-batch-delete'),
+      icon: Icons.delete_outline,
+      tooltip: t.options_delete,
+      enabled: any,
+      enabledColor: fushiStatusColor(context, FushiStatusTone.error),
+      onTap: _batchDelete,
+    );
+    return BatchActionBar(
+      key: const ValueKey<String>('dict-batch-bar'),
+      selectedCount: _selectedNames.length,
+      onSelectAll: () => setState(
+        () => _selectedNames.addAll(visible.map((Dictionary d) => d.name)),
+      ),
+      onInvertSelection: () => setState(() {
+        final Set<String> next = <String>{
+          for (final Dictionary d in visible)
+            if (!_selectedNames.contains(d.name)) d.name,
+        };
+        _selectedNames
+          ..clear()
+          ..addAll(next);
+      }),
+      // 窄屏只放图标（带 tooltip），宽屏图标 + 文字；退出多选在页头的多选开关。
+      actions: compact
+          ? <Widget>[
+              FushiIconButton(
+                key: const ValueKey<String>('dict-batch-enable'),
+                icon: Icons.visibility_outlined,
+                tooltip: t.dict_batch_enable,
+                enabled: any,
+                onTap: () => _batchSetEnabled(true),
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('dict-batch-disable'),
+                icon: Icons.visibility_off_outlined,
+                tooltip: t.dict_batch_disable,
+                enabled: any,
+                onTap: () => _batchSetEnabled(false),
+              ),
+              delete,
+            ]
+          : <Widget>[
+              FushiTextButton.icon(
+                key: const ValueKey<String>('dict-batch-enable'),
+                onPressed: any ? () => _batchSetEnabled(true) : null,
+                icon: const FushiIcon(Icons.visibility_outlined, size: 18),
+                label: Text(t.dict_batch_enable),
+              ),
+              FushiTextButton.icon(
+                key: const ValueKey<String>('dict-batch-disable'),
+                onPressed: any ? () => _batchSetEnabled(false) : null,
+                icon: const FushiIcon(Icons.visibility_off_outlined, size: 18),
+                label: Text(t.dict_batch_disable),
+              ),
+              delete,
+            ],
+    );
+  }
+
+  /// 批量启用 / 停用：只翻状态与目标不同的那几本（toggle 语义的写入点不变；
+  /// 引擎重载是排期的，N 次写入塌成一次装载）。
+  void _batchSetEnabled(bool enabled) {
+    for (final Dictionary dictionary in _selectedDictionaries) {
+      final bool hidden = dictionary.isHidden(JapaneseLanguage.instance);
+      if (hidden == enabled) appModel.toggleDictionaryHidden(dictionary);
+    }
+    setState(() {});
+  }
+
+  /// 批量删除：一次确认，逐本走与单本删除同一条 [AppModel.deleteDictionary]
+  /// （同一进度页 / 失败提示），删完退出多选。
+  Future<void> _batchDelete() {
+    final List<Dictionary> targets = _selectedDictionaries;
+    if (targets.isEmpty) return Future<void>.value();
+    return _showDictionaryActionConfirmDialog(
+      title: t.dict_batch_delete_title(n: targets.length),
+      content: t.dialog_content_dictionary_delete,
+      confirmLabel: t.dialog_delete,
+      run: () async {
+        for (final Dictionary dictionary in targets) {
+          await appModel.deleteDictionary(dictionary);
+        }
+        _selectedNames.clear();
+        _selecting = false;
+        if (targets.any((Dictionary d) => d.name == _detailName)) {
+          _detailName = null;
+        }
+      },
+    );
+  }
+
+  /// 行副标题：版本号（revision / version / formatVersion），没有就退回格式名。
+  String _subtitleForDictionary(Dictionary dictionary) {
+    final DictionaryFormat? dictionaryFormat =
+        appModel.dictionaryFormats[dictionary.formatKey];
     final String revision = dictionary.metadata['revision'] ??
         dictionary.metadata['version'] ??
         dictionary.metadata['formatVersion'] ??
         '';
     if (revision.isNotEmpty) return revision;
-    return dictionaryFormat.name;
+    return dictionaryFormat?.name ?? dictionary.formatKey;
   }
 
   List<Dictionary> _dictionariesForType(DictionaryType type) {
@@ -2399,9 +2905,10 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  // TODO-422：每本词典行尾原来的三点菜单（自定义 CSS + 删除）已移除，改为行尾
-  // 一个独立删除按钮（见 _buildDictionaryTile 的 trailing Row）。删单本词典仍走
-  // showDictionaryDeleteDialog 的确认对话框；自定义 CSS 仍有设置 → 词典设置里的
+  // TODO-422：每本词典行尾原来的三点菜单（自定义 CSS + 删除）已移除。2026-10
+  // 词典管理重做后删除住在词典详情里（宽屏右侧侧板 / 窄屏底部 sheet，见
+  // DictionaryManagerDetail），另有多选批量删除与行内 Delete 键；都走
+  // showDictionaryDeleteDialog 同一确认流程。自定义 CSS 仍有设置 → 词典设置里的
   // DictCssEditorDialog 全局入口（可下拉选本词典），故不丢功能。
 }
 
