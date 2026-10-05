@@ -1984,6 +1984,44 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 窄窗（手机竖屏）的按钮布局（2026-10：手机与桌面分别可配）。持久化键
+  /// `reader_control_layout_compact`。兼容存量：没存过窄窗布局、但存过（宽窗）
+  /// 布局的用户——此前一份布局两端共用——继续沿用那份自定义，不丢；两份都没有
+  /// 才落窄窗出厂布局 [ReaderControlLayout.compactDefaults]。
+  ReaderControlLayout get readerCompactControlLayout {
+    final String compact =
+        getPref('reader_control_layout_compact', defaultValue: '') as String;
+    if (compact.trim().isNotEmpty) {
+      return ReaderControlLayout.decode(
+        compact,
+        fallback: ReaderControlLayout.compactDefaults,
+      );
+    }
+    final String wide =
+        getPref('reader_control_layout', defaultValue: '') as String;
+    if (wide.trim().isNotEmpty) return ReaderControlLayout.decode(wide);
+    return ReaderControlLayout.compactDefaults;
+  }
+
+  Future<void> setReaderCompactControlLayout(ReaderControlLayout layout) async {
+    await setPref('reader_control_layout_compact', layout.encode());
+    notifyListeners();
+  }
+
+  /// 阅读器工具栏样式（2026-10，M3 Expressive toolbars）：`floating`（默认：
+  /// 悬浮胶囊 + 底部悬浮工具栏，正文满屏）/ `docked`（贴边整宽实体条，旧形态）。
+  /// 未知值按默认。
+  String get readerToolbarStyle {
+    final String v =
+        getPref('reader_toolbar_style', defaultValue: 'floating') as String;
+    return v == 'docked' ? 'docked' : 'floating';
+  }
+
+  Future<void> setReaderToolbarStyle(String style) async {
+    await setPref('reader_toolbar_style', style == 'docked' ? 'docked' : 'floating');
+    notifyListeners();
+  }
+
   /// 视频「快捷键 1..4」自定义动作按钮的绑定（用户请求）：槽位序号 → 视频动作。
   ///
   /// 与 [videoControlLayout] **分开存**：布局管「按钮在哪个槽位、显不显示」，本表管

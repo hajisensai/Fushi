@@ -4259,6 +4259,23 @@ class AppModel with ChangeNotifier {
   Future<void> setReaderControlLayout(ReaderControlLayout layout) =>
       prefsRepo.setReaderControlLayout(layout);
 
+  /// 窄窗（手机竖屏）按钮布局；没存过时沿用存量宽窗自定义（见 prefsRepo）。
+  ReaderControlLayout get readerCompactControlLayout =>
+      prefsRepo.readerCompactControlLayout;
+
+  Future<void> setReaderCompactControlLayout(ReaderControlLayout layout) =>
+      prefsRepo.setReaderCompactControlLayout(layout);
+
+  /// 按窗口宽度取当前生效的按钮布局（< [kReaderControlCompactWidth] 用窄窗那份）。
+  ReaderControlLayout readerControlLayoutFor({required bool compact}) =>
+      compact ? readerCompactControlLayout : readerControlLayout;
+
+  /// 阅读器工具栏样式：`floating`（默认）/ `docked`。
+  String get readerToolbarStyle => prefsRepo.readerToolbarStyle;
+
+  Future<void> setReaderToolbarStyle(String style) =>
+      prefsRepo.setReaderToolbarStyle(style);
+
   /// 视频「快捷键 1..4」自定义动作按钮的绑定（槽位 → 视频动作）。
   VideoCustomActionBindings get videoCustomActionBindings =>
       prefsRepo.videoCustomActionBindings;
