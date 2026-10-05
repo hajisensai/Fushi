@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
@@ -115,7 +116,7 @@ void main() {
   // 用 IconButton finder（不是 byTooltip）：byTooltip 命中的是 RawTooltip 包装层，
   // 拿不到 IconButton.onPressed 判禁用。
   Finder editButtons() =>
-      find.widgetWithIcon(IconButton, Icons.edit_outlined);
+      find.widgetWithIcon(IconButton, FushiIcons.edit);
 
   Future<void> open(WidgetTester tester) async {
     // 放大测试视口，保证对话框全部按钮在屏可点（默认 800x600 会把按钮区挤出屏）。
@@ -254,7 +255,7 @@ void main() {
     stubPrev = 1;
     await open(tester);
     expect(editButtons(), findsNothing);
-    expect(find.byIcon(Icons.edit_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.edit), findsNothing);
   });
 
   testWidgets('每张有句子的卡各一个编辑按钮，「(无)」空卡没有', (WidgetTester tester) async {
