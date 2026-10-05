@@ -382,8 +382,10 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
   /// 时按钮禁用（URL 打开就是连接失败），提示先开服务器。
   Widget _tryItCard(ThemeData theme, {required bool serverOn}) {
     final SettingsKitStyle style = SettingsKitStyle.of(context);
-    final FushiCardColors colors =
-        fushiCardToneColors(context, FushiCardTone.secondary);
+    final FushiCardColors colors = _cardToneColors(
+      context,
+      FushiCardTone.secondary,
+    );
     final ColorScheme scheme = theme.colorScheme;
     return FushiCard(
       tone: FushiCardTone.secondary,
@@ -428,7 +430,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
                 ? t.browser_extension_test_page_action_desc
                 : t.browser_extension_test_page_server_off,
             style: theme.textTheme.bodyMedium?.copyWith(
-              color: colors.onContainer.withValues(alpha: 0.85),
+              color: colors.onContainer!.withValues(alpha: 0.85),
             ),
           ),
           const SizedBox(height: 20),
@@ -588,9 +590,9 @@ class _StatusHero extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final SettingsKitStyle style = SettingsKitStyle.of(context);
     final FushiCardTone tone = _tone;
-    final FushiCardColors colors = fushiCardToneColors(context, tone);
+    final FushiCardColors colors = _cardToneColors(context, tone);
     final Duration d = fushiMotionDuration(context, FushiMotion.long);
-    final Color fg = colors.onContainer;
+    final Color fg = colors.onContainer!;
     final String title = connected
         ? t.browser_extension_status_connected
         : t.browser_extension_status_never;
@@ -1543,5 +1545,16 @@ Widget buildBrowserExtensionInstallStepsForTest({
     serverPort: serverPort,
     portConflict: portConflict,
     detectedBrowser: detectedBrowser,
+  );
+}
+
+/// [fushiCardToneColors] 在墨水屏 / neutral 下返回 null（卡片走描边口径）；
+/// 本页的状态卡与特色卡始终需要一对确定的底色与前景，null 时回落到中性分层色。
+FushiCardColors _cardToneColors(BuildContext context, FushiCardTone tone) {
+  final FushiCardColors? colors = fushiCardToneColors(context, tone);
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  return FushiCardColors(
+    container: colors?.container ?? cs.surfaceContainerHigh,
+    onContainer: colors?.onContainer ?? cs.onSurface,
   );
 }
