@@ -2558,6 +2558,33 @@ ThemeData buildFushiThemeData({
   );
 }
 
+/// 把已成型的 [base] 换成 [scheme] 重走一遍工厂：组件主题（菜单 / 对话框 / 弹层
+/// / 提示条 / 滑条……的底色与前景）全按新 scheme 重算，字阶、设计系统、玻璃材质、
+/// 墨水屏、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂产物同类型
+/// 的扩展优先）。
+///
+/// 为什么不能 `base.copyWith(colorScheme: scheme)`：工厂把 scheme 颜色**烤进**了
+/// 各组件主题（popupMenuTheme.color = surfaceContainer 等），只换 colorScheme
+/// 时那些组件仍是旧色——歌词模式按封面取色后，⋯ 菜单仍是全局主题的深蓝表面。
+ThemeData rethemeFushiWithScheme(ThemeData base, ColorScheme scheme) {
+  final FushiGlassTheme? glass = base.extension<FushiGlassTheme>();
+  final ThemeData rebuilt = buildFushiThemeData(
+    scheme: scheme,
+    textTheme: base.textTheme,
+    eink: base.extension<FushiEinkTheme>()?.einkMode ?? false,
+    designSystem: base.extension<FushiDesignSystemTheme>()?.designSystem ??
+        FushiDesignSystem.auto,
+    glass: glass?.material ?? FushiGlassMaterial.off,
+    glassDesign: glass?.glassDesign ?? false,
+  );
+  return rebuilt.copyWith(
+    platform: base.platform,
+    // 不写显式类型实参：`<ThemeExtension<dynamic>>[]` 在 CFE 里会按 F-有界
+    // 实参推成 ThemeExtension<ThemeExtension<dynamic>>，spread 编译不过。
+    extensions: [...base.extensions.values, ...rebuilt.extensions.values],
+  );
+}
+
 /// 数据库就绪前（启动加载 / 初始化报错 / 降级拦截 / 数据目录迁移）与弹窗冷启动
 /// 占位用的主题：读不到用户偏好，取默认种子色与系统默认字体，但组件主题与字号
 /// 阶梯与主 app 同源（字号 / 圆角 / 组件形状一致；用户字体要等偏好加载后才有）。

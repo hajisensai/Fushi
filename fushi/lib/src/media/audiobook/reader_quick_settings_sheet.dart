@@ -7,6 +7,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -1518,23 +1519,16 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       builder: (context, _) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final double current = ctrl.speed;
+        final String readout = AudiobookSpeedSlider.format(current);
         return AdaptiveSettingsRow(
-          title: '${t.playback_speed} (${current.toStringAsFixed(2)}x)',
+          title: '${t.playback_speed} ($readout)',
           icon: Icons.speed_outlined,
           controlBelow: true,
           trailing: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              gamepadSeekableSlider(
-                value: current.clamp(0.25, 3.0),
-                min: 0.25,
-                max: 3,
-                divisions: 55,
-                onChanged: (v) {
-                  final double rounded = (v * 20).roundToDouble() / 20;
-                  ctrl.setSpeed(rounded);
-                },
-              ),
+              // 与歌词模式倍速面板同一个组件（范围 / 吸附 / 步进只写一处）。
+              AudiobookSpeedSlider(speed: current, onChanged: ctrl.setSpeed),
               Align(
                 alignment: Alignment.centerRight,
                 child: FushiIconButton(

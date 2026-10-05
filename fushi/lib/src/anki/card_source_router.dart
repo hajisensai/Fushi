@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
@@ -217,10 +218,12 @@ Future<void> _openCardSource({
                 bookKey: row.bookKey,
                 sourceReview: link,
               )
-            : ReaderFushiPage(
-                item: item,
-                bookKey: row.bookKey,
-                initialBookmarkJump: bookmark,
+            : LyricsThemeHost(
+                child: ReaderFushiPage(
+                  item: item,
+                  bookKey: row.bookKey,
+                  initialBookmarkJump: bookmark,
+                ),
               ),
       ),
     ),

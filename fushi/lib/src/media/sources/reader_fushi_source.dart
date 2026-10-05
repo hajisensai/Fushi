@@ -12,6 +12,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -484,10 +485,13 @@ class ReaderFushiSource extends ReaderMediaSource {
   }) {
     final String bookKey = _extractBookKey(item?.mediaIdentifier ?? '');
     return FushiAppUiScaleNeutralizer(
-      child: ReaderFushiPage(
-        item: item,
-        bookKey: bookKey,
-        initialBookmarkJump: initialBookmarkJump,
+      // 歌词模式配色的注入点：页面 context 弹出的侧栏 / 菜单 / 对话框都在它之下。
+      child: LyricsThemeHost(
+        child: ReaderFushiPage(
+          item: item,
+          bookKey: bookKey,
+          initialBookmarkJump: initialBookmarkJump,
+        ),
       ),
     );
   }

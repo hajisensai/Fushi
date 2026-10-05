@@ -517,59 +517,70 @@ Future<T?> showReaderSideSheet<T>({
   ValueListenable<ReaderSideSheetSide>? sideController,
 }) {
   final bool left = side == ReaderSideSheetSide.left;
+  // showGeneralDialog 不像 showDialog 那样捕获主题：抽屉只会拿到 Navigator 层
+  // 的根主题。歌词模式把整页换成封面取色主题（LyricsThemeHost），从页面 context
+  // 打开的导航 / 设置 / 有声书 / 统计抽屉必须跟着它走，所以在这里补捕获。
+  final CapturedThemes themes = InheritedTheme.capture(
+    from: context,
+    to: Navigator.of(context).context,
+  );
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: true,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     barrierColor: Colors.transparent,
     transitionDuration: const Duration(milliseconds: 180),
-    pageBuilder: (BuildContext ctx, Animation<double> a, Animation<double> b) {
-      final double width = readerSideSheetWidth(MediaQuery.sizeOf(ctx).width);
-      final Widget panel = SizedBox(
-        width: width,
-        height: double.infinity,
-        child: Material(
-          key: const ValueKey<String>('fushi_reader_side_sheet'),
-          // 抽屉底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
-          // （secondaryGroupedBackground）才浮得出来；MD3 = surfaceContainerLow
-          // （Expressive 侧边面板），分组卡 surfaceContainer 比它高一级。墨水屏
-          // 两者都塌成底色，描一圈 outline 切出抽屉。
-          color: isGlassDesign(ctx)
-              ? appleColorsOf(ctx).groupedBackground
-              : Theme.of(ctx).colorScheme.surfaceContainerLow,
-          shape: isEinkTheme(ctx)
-              ? Border.all(color: Theme.of(ctx).colorScheme.outline)
-              : null,
-          elevation: kFushiFloatingElevation,
-          child: Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+    pageBuilder: (BuildContext route, Animation<double> a, Animation<double> b) {
+      Widget buildSheet(BuildContext ctx) {
+        final double width = readerSideSheetWidth(MediaQuery.sizeOf(ctx).width);
+        final Widget panel = SizedBox(
+          width: width,
+          height: double.infinity,
+          child: Material(
+            key: const ValueKey<String>('fushi_reader_side_sheet'),
+            // 抽屉底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
+            // （secondaryGroupedBackground）才浮得出来；MD3 = surfaceContainerLow
+            // （Expressive 侧边面板），分组卡 surfaceContainer 比它高一级。墨水屏
+            // 两者都塌成底色，描一圈 outline 切出抽屉。
+            color: isGlassDesign(ctx)
+                ? appleColorsOf(ctx).groupedBackground
+                : Theme.of(ctx).colorScheme.surfaceContainerLow,
+            shape: isEinkTheme(ctx)
+                ? Border.all(color: Theme.of(ctx).colorScheme.outline)
+                : null,
+            elevation: kFushiFloatingElevation,
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
+              child: SafeArea(child: Builder(builder: builder)),
             ),
-            child: SafeArea(child: Builder(builder: builder)),
           ),
-        ),
-      );
-      if (sideController == null) {
-        return Align(
-          alignment: left ? Alignment.centerLeft : Alignment.centerRight,
+        );
+        if (sideController == null) {
+          return Align(
+            alignment: left ? Alignment.centerLeft : Alignment.centerRight,
+            child: panel,
+          );
+        }
+        return ValueListenableBuilder<ReaderSideSheetSide>(
+          valueListenable: sideController,
           child: panel,
+          builder:
+              (BuildContext context, ReaderSideSheetSide side, Widget? child) {
+            return AnimatedAlign(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              alignment: side == ReaderSideSheetSide.left
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
+              child: child,
+            );
+          },
         );
       }
-      return ValueListenableBuilder<ReaderSideSheetSide>(
-        valueListenable: sideController,
-        child: panel,
-        builder:
-            (BuildContext context, ReaderSideSheetSide side, Widget? child) {
-          return AnimatedAlign(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            alignment: side == ReaderSideSheetSide.left
-                ? Alignment.centerLeft
-                : Alignment.centerRight,
-            child: child,
-          );
-        },
-      );
+
+      return themes.wrap(Builder(builder: buildSheet));
     },
     transitionBuilder: (
       BuildContext ctx,

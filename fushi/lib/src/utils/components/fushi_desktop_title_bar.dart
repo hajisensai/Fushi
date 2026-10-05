@@ -127,6 +127,51 @@ class FushiDesktopTitleBar extends StatefulWidget {
   /// 当前生效的页面配色；null = 用根主题。
   static ValueListenable<FushiTitleBarColors?> get pageColors => _pageColors;
 
+  /// 页面上报的「延伸到顶栏底下」的背景（歌词模式的封面取色背景）。设置后顶栏
+  /// 不再是一条独立色带：标题行先铺上报色兜底，再把这张背景画布的最上面一截
+  /// 画进标题行（[FushiTitleBarBackdropView]），页面从同一画布的下半截画——
+  /// 两边像素连续。页面一般不直接调，用 [FushiTitleBarColorScope.backdrop]
+  /// （与配色同一套「被整页盖住时撤回」语义）。
+  static final Map<Object, FushiTitleBarBackdrop> _pageBackdropOwners =
+      <Object, FushiTitleBarBackdrop>{};
+  static final ValueNotifier<FushiTitleBarBackdrop?> _pageBackdrop =
+      ValueNotifier<FushiTitleBarBackdrop?>(null);
+
+  /// 当前生效的页面背景；null = 标题行只铺底色。
+  static ValueListenable<FushiTitleBarBackdrop?> get pageBackdrop =>
+      _pageBackdrop;
+
+  static void setPageBackdrop({
+    required Object owner,
+    required FushiTitleBarBackdrop? backdrop,
+  }) {
+    if (backdrop == null) {
+      if (_pageBackdropOwners.remove(owner) == null) return;
+    } else {
+      // 记录按值比较：画布尺寸、构建函数（tear-off）与修订号都没变就不重发。
+      if (_pageBackdropOwners[owner] == backdrop) return;
+      _pageBackdropOwners[owner] = backdrop;
+    }
+    void publish() => _pageBackdrop.value = _pageBackdropOwners.isEmpty
+        ? null
+        : _pageBackdropOwners.values.last;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => publish());
+    } else {
+      publish();
+    }
+  }
+
+  /// 自绘顶栏此刻占的高度（未装自绘顶栏 / 内容全屏收起时为 0）。页面要把背景
+  /// 延伸到顶栏底下时，用它算画布；随 [visibleHeightListenable] 变化。
+  static double get visibleHeight =>
+      _isEnabled && !_contentFullscreen.value ? height : 0;
+
+  /// [visibleHeight] 的变化信号（顶栏只在内容全屏时收起）。
+  static ValueListenable<bool> get visibleHeightListenable =>
+      _contentFullscreen;
+
   static void setPageColors({
     required Object owner,
     required FushiTitleBarColors? colors,
@@ -378,7 +423,29 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     return Container(
       height: FushiDesktopTitleBar.height,
       color: captionFill,
-      child: Row(
+      // 页面上报了延伸背景（歌词模式）：在底色之上画同一张背景的顶部一截。
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          ValueListenableBuilder<FushiTitleBarBackdrop?>(
+            valueListenable: FushiDesktopTitleBar._pageBackdrop,
+            builder: (
+              BuildContext context,
+              FushiTitleBarBackdrop? backdrop,
+              Widget? _,
+            ) =>
+                backdrop == null
+                    ? const SizedBox.shrink()
+                    : FushiTitleBarBackdropView(backdrop: backdrop),
+          ),
+          _buildCaptionControls(trafficLights, page),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCaptionControls(bool trafficLights, FushiTitleBarColors? page) {
+    return Row(
         children: <Widget>[
           // 系统红绿灯画在原生标题栏视图里，浮在这块留位之上。
           if (trafficLights) const SizedBox(width: _kTrafficLightsReserve),
@@ -429,7 +496,6 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           const SizedBox(width: 4),
           ],
         ],
-      ),
     );
   }
 
@@ -512,6 +578,42 @@ class _FushiCaptionButton extends StatelessWidget {
 /// 页面上报给桌面顶栏的配色：底色 + 标题 / 窗口按钮的前景色。
 typedef FushiTitleBarColors = ({Color background, Color foreground});
 
+/// 延伸到顶栏底下的页面背景。[canvas] 是页面画背景用的整张画布（页面尺寸 +
+/// 顶栏高度，顶栏占它最上面一截）；[builder] 画这张画布（顶栏与页面各画同一张
+/// 画布的一截，像素才连续）；[revision] 在背景外观变化（换主题 / 换封面）时换值，
+/// 让顶栏重画——构建函数通常是同一个 tear-off，不变。
+typedef FushiTitleBarBackdrop = ({
+  Size canvas,
+  WidgetBuilder builder,
+  Object? revision,
+});
+
+/// 在顶栏里画页面背景的顶部一截：画布顶对齐、超出部分裁掉；不吃指针、不进
+/// 语义树。公开给测试与页面侧对照。
+class FushiTitleBarBackdropView extends StatelessWidget {
+  const FushiTitleBarBackdropView({required this.backdrop, super.key});
+
+  final FushiTitleBarBackdrop backdrop;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: ClipRect(
+          child: OverflowBox(
+            alignment: Alignment.topCenter,
+            minWidth: backdrop.canvas.width,
+            maxWidth: backdrop.canvas.width,
+            minHeight: backdrop.canvas.height,
+            maxHeight: backdrop.canvas.height,
+            child: RepaintBoundary(child: Builder(builder: backdrop.builder)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 只有底色、没有配套前景色的页面（视频黑底、串流黑底、漫画固定底色）用它
 /// 上报：窗口按钮按底色明暗取半透明白 / 黑，与 MD3 onSurfaceVariant 同一观感。
 FushiTitleBarColors fushiTitleBarColorsOn(Color background) => (
@@ -538,10 +640,15 @@ class FushiTitleBarColorScope extends StatefulWidget {
   const FushiTitleBarColorScope({
     required this.colors,
     required this.child,
+    this.backdrop,
     super.key,
   });
 
   final FushiTitleBarColors? colors;
+
+  /// 延伸到顶栏底下的页面背景（歌词模式）；null = 顶栏只铺 [colors] 底色。
+  /// 撤回时机与 [colors] 相同（被整页盖住 / dispose）。
+  final FushiTitleBarBackdrop? backdrop;
   final Widget child;
 
   @override
@@ -569,9 +676,14 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
       AnimationStatus.dismissed;
 
   void _publish() {
+    final bool covered = _covered;
     FushiDesktopTitleBar.setPageColors(
       owner: this,
-      colors: _covered ? null : widget.colors,
+      colors: covered ? null : widget.colors,
+    );
+    FushiDesktopTitleBar.setPageBackdrop(
+      owner: this,
+      backdrop: covered ? null : widget.backdrop,
     );
   }
 
@@ -579,6 +691,7 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
   void dispose() {
     _coverAnimation?.removeStatusListener(_onCoverStatus);
     FushiDesktopTitleBar.setPageColors(owner: this, colors: null);
+    FushiDesktopTitleBar.setPageBackdrop(owner: this, backdrop: null);
     super.dispose();
   }
 

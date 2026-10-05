@@ -476,7 +476,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onToggleMask: () => unawaited(_toggleLyricsMask()),
       onOpenStatistics: _openReadingStatistics,
       onSpeedChanged: (double speed) => unawaited(ctrl.setSpeed(speed)),
-      onMore: (Rect anchor) => unawaited(_showLyricsMoreMenu(anchor)),
+      onMore: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsMoreMenu(anchor)),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -496,20 +497,25 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// ⋯：阅读器顶栏 / 底栏的完整操作（目录、设置、有声书面板、统计、跟随、全屏…）。
   /// 覆盖层自己只放播放控件，其余能力一律复用 [_readerControlAction]——与顶栏
   /// 按钮同一个真相源，歌词模式不丢任何入口。
-  Future<void> _showLyricsMoreMenu(Rect anchor) async {
+  ///
+  /// 菜单从按钮自己的 context 弹（[LyricsMenuAnchor.context]）：歌词模式整棵
+  /// 子树换了封面取色主题，页面 context 在它之外，从页面弹会是全局表面色。
+  Future<void> _showLyricsMoreMenu(LyricsMenuAnchor menuAnchor) async {
+    final Rect anchor = menuAnchor.rect;
+    final BuildContext menuContext = menuAnchor.context;
     final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
       for (final ReaderControlItem item in kLyricsOverlayMenuItems)
         if (_shouldRenderReaderControl(item)) _readerControlAction(item),
     ];
-    if (actions.isEmpty || !mounted) return;
+    if (actions.isEmpty || !mounted || !menuContext.mounted) return;
     final RenderBox overlay =
-        Overlay.of(context).context.findRenderObject()! as RenderBox;
+        Overlay.of(menuContext).context.findRenderObject()! as RenderBox;
     final Rect local = Rect.fromPoints(
       overlay.globalToLocal(anchor.topLeft),
       overlay.globalToLocal(anchor.bottomRight),
     );
     final ReaderHeaderAction? choice = await showFushiMenu<ReaderHeaderAction>(
-      context: context,
+      context: menuContext,
       position: RelativeRect.fromRect(local, Offset.zero & overlay.size),
       items: <PopupMenuEntry<ReaderHeaderAction>>[
         for (final ReaderHeaderAction action in actions)

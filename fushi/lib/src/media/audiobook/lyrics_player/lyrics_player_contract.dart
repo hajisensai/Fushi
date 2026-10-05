@@ -143,6 +143,22 @@ abstract class LyricsPlayerClock {
   LyricsPlayerStats get stats;
 }
 
+/// ⋯ 菜单的锚点：按钮的全局矩形 + 按钮自己的 [context]。
+///
+/// 菜单必须从 [context] 弹（`showFushiMenu` 从它捕获主题）：歌词模式整棵子树换了
+/// 封面取色的 ColorScheme（Apple 还套了深色档），页面自己的 context 在这层主题
+/// 之外——从页面弹出的菜单是全局主题的表面色，与歌词页完全不搭。
+@immutable
+class LyricsMenuAnchor {
+  const LyricsMenuAnchor({required this.rect, required this.context});
+
+  /// 按钮的全局矩形。
+  final Rect rect;
+
+  /// 按钮的 context（位于歌词模式主题之内）。
+  final BuildContext context;
+}
+
 /// 覆盖层上的全部操作。全部由阅读器页面实现；覆盖层自己不碰播放器 / 统计。
 @immutable
 class LyricsPlayerCallbacks {
@@ -177,27 +193,17 @@ class LyricsPlayerCallbacks {
   /// 📈：打开阅读统计（阅读器的统计侧栏，只读展示）。
   final VoidCallback onOpenStatistics;
 
-  /// 倍速选择。
+  /// 倍速调整（倍速面板拖动条实时回调，值已按 0.05× 吸附；页面交给
+  /// `AudiobookPlayerController.setSpeed`，与普通阅读模式同一处生效 + 持久化）。
   final ValueChanged<double> onSpeedChanged;
 
   /// ⋯：更多（阅读器的完整操作菜单：目录 / 设置 / 有声书面板 / 收藏…）。
-  /// 参数是按钮的全局矩形，供菜单锚定。
-  final ValueChanged<Rect> onMore;
+  /// 参数带按钮的全局矩形（锚定）与按钮自己的 context（菜单从它取主题）。
+  final ValueChanged<LyricsMenuAnchor> onMore;
 
   /// 点到背景空白处（关查词弹窗等）。
   final VoidCallback onTapBackground;
 }
-
-/// 可选的倍速档位（与有声书面板一致）。
-const List<double> kLyricsPlayerSpeeds = <double>[
-  0.5,
-  0.75,
-  1.0,
-  1.25,
-  1.5,
-  1.75,
-  2.0,
-];
 
 /// 一套设计系统的歌词播放器外观。实现只负责「画」，不持有业务状态。
 abstract class LyricsPlayerDesign {
@@ -208,7 +214,16 @@ abstract class LyricsPlayerDesign {
   Rect lyricsRect(Size size, EdgeInsets padding);
 
   /// 背景层（铺满）。必须是不透明的——它就是歌词页的底色。
-  Widget buildBackground(BuildContext context, LyricsPlayerData data);
+  ///
+  /// [bleedTop]：背景向上延伸到桌面自绘标题栏底下的高度。画布 = 页面尺寸再加
+  /// 这一截，布局相关的形状（宽屏歌词底板）仍按页面尺寸算、整体下移
+  /// [bleedTop]——这样标题栏画画布顶上那截、页面画下面那截，两边像素连续，
+  /// 标题栏不再是一条独立色带。
+  Widget buildBackground(
+    BuildContext context,
+    LyricsPlayerData data, {
+    double bleedTop = 0,
+  });
 
   /// 控件层（铺满，透明处不吃指针）。[lyricsRect] 是 [lyricsRect] 算出的同一个矩形，
   /// 供控件避让 / 对齐。
