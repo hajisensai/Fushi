@@ -10,10 +10,10 @@
 library;
 
 /// 项目主页；随 UA 一起报出去，方便被访问方联系到上游。
-const String kFushiUserAgentHomepage = 'https://github.com/hajisensai/fushi';
+const String kFushiUserAgentHomepage = 'https://fushi.moe';
 
 /// 组件名 [component] 的对外 UA，形如
-/// `fushi/<component> (https://github.com/hajisensai/fushi)`。
+/// `fushi/<component> (https://fushi.moe)`。
 ///
 /// [component] 用小写短横线（`shader-downloader` / `custom-fonts`），描述**是哪
 /// 个子系统在发请求**——出问题时对方能直接指出是哪条链路，而不是只知道「某个
