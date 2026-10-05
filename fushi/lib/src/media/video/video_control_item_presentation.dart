@@ -5,6 +5,7 @@ import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Single source of truth for the icon + label presentation of every
 /// [VideoControlItem] / [VideoControlButton].
@@ -33,13 +34,13 @@ import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 IconData videoControlButtonIcon(VideoControlButton button) {
   switch (button) {
     case VideoControlButton.speed:
-      return Icons.speed_outlined;
+      return FushiIcons.speed;
     case VideoControlButton.subtitleList:
-      return Icons.format_list_bulleted;
+      return FushiIcons.listView;
     case VideoControlButton.favoriteSentence:
-      return Icons.star_border_rounded;
+      return FushiIcons.star;
     case VideoControlButton.settings:
-      return Icons.tune;
+      return FushiIcons.settings;
   }
 }
 
@@ -70,41 +71,41 @@ IconData videoControlItemIcon(
 }) {
   final int? slotIndex = item.customActionSlotIndex;
   if (slotIndex != null) {
-    return bindings?.actionAt(slotIndex)?.buttonIcon ?? Icons.add;
+    return bindings?.actionAt(slotIndex)?.buttonIcon ?? FushiIcons.add;
   }
   final VideoControlButton? legacy = item.legacyButton;
   if (legacy != null) return videoControlButtonIcon(legacy);
   switch (item) {
     case VideoControlItem.playPause:
-      return Icons.play_arrow_rounded;
+      return FushiIcons.play;
     case VideoControlItem.back:
-      return Icons.arrow_back;
+      return FushiIcons.back;
     case VideoControlItem.immersiveLock:
-      return Icons.lock_outline;
+      return FushiIcons.lock;
     case VideoControlItem.seekBackward:
-      return Icons.fast_rewind;
+      return FushiIcons.fastRewind;
     case VideoControlItem.seekForward:
-      return Icons.fast_forward;
+      return FushiIcons.fastForward;
     case VideoControlItem.frameBackward:
       return Icons.arrow_left;
     case VideoControlItem.frameForward:
       return Icons.arrow_right;
     case VideoControlItem.previousCue:
-      return Icons.skip_previous;
+      return FushiIcons.skipPrevious;
     case VideoControlItem.nextCue:
-      return Icons.skip_next;
+      return FushiIcons.skipNext;
     case VideoControlItem.replayCue:
-      return Icons.replay_rounded;
+      return FushiIcons.replay;
     case VideoControlItem.fullscreen:
-      return Icons.fullscreen;
+      return FushiIcons.fullscreen;
     case VideoControlItem.screenshot:
       return Icons.photo_camera_outlined;
     case VideoControlItem.clipExport:
-      return Icons.movie_creation_outlined;
+      return FushiIcons.video;
     case VideoControlItem.subtitleTrack:
-      return Icons.subtitles;
+      return FushiIcons.subtitles;
     case VideoControlItem.audioTrack:
-      return Icons.audiotrack;
+      return FushiIcons.audio;
     case VideoControlItem.previousEpisode:
       return Icons.skip_previous_outlined;
     case VideoControlItem.nextEpisode:
@@ -118,7 +119,7 @@ IconData videoControlItemIcon(
     case VideoControlItem.chapterList:
       return Icons.format_list_numbered;
     case VideoControlItem.volume:
-      return Icons.volume_up_outlined;
+      return FushiIcons.volumeUp;
     case VideoControlItem.title:
       return Icons.title;
     case VideoControlItem.positionIndicator:
@@ -126,14 +127,14 @@ IconData videoControlItemIcon(
     case VideoControlItem.subtitleList:
     case VideoControlItem.favoriteSentence:
     case VideoControlItem.settings:
-      return Icons.tune;
+      return FushiIcons.settings;
     case VideoControlItem.customAction1:
     case VideoControlItem.customAction2:
     case VideoControlItem.customAction3:
     case VideoControlItem.customAction4:
       // 不可达：函数开头已按 [customActionSlotIndex] 解析并返回。保留分支只为让穷举
       // 检查继续生效——将来新增枚举项时仍然是「漏写即编译失败」。
-      return Icons.add;
+      return FushiIcons.add;
   }
 }
 
