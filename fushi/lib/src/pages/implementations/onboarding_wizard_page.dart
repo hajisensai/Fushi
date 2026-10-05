@@ -1936,10 +1936,10 @@ class OnboardingStepHero extends StatelessWidget {
   }
 }
 
-/// [OnboardingStepHero] 的 M3E 插画式图标色块（花形主块 + 两枚点缀）。
-///
-/// 进场只播一次（每步是新的 keyed 子树，换步即重播）：主块从 0.6 倍弹簧放大并
-/// 回正 12°，点缀在后半段弹出。墨水屏下改为描边无底（动效由 motion scheme 归零）。
+/// [OnboardingStepHero] 的 M3E 插画式图标色块：主块复用对话框 hero
+/// （[FushiDialogHeroIcon]：九瓣饼干形 primaryContainer 底、弹簧放大轻转进场、
+/// 墨水屏描边、减弱动态效果静止），旁边点缀一枚 tertiary 四瓣 cookie 与一颗
+/// secondary 圆点，在主块落定前后弹出。每步是新的 keyed 子树，换步即重播。
 class OnboardingHeroIllustration extends StatelessWidget {
   const OnboardingHeroIllustration({required this.icon, super.key});
 
@@ -1955,91 +1955,62 @@ class OnboardingHeroIllustration extends StatelessWidget {
     final BorderSide side = eink
         ? BorderSide(color: colors.outline)
         : BorderSide.none;
-    Widget shape({
+    Widget accent({
       required double size,
       required ShapeBorder border,
       required Color color,
-      Widget? child,
-    }) => SizedBox.square(
-      dimension: size,
-      child: DecoratedBox(
-        decoration: ShapeDecoration(
-          color: eink ? colors.surface : color,
-          shape: border,
+    }) => TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: spring.duration,
+      curve: Interval(0.3, 1, curve: spring.curve),
+      builder: (BuildContext context, double v, Widget? child) =>
+          Transform.scale(scale: v, child: child),
+      child: SizedBox.square(
+        dimension: size,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: eink ? colors.surface : color,
+            shape: border,
+          ),
         ),
-        child: child,
       ),
     );
     return ExcludeSemantics(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0, end: 1),
-        duration: spring.duration,
-        builder: (BuildContext context, double t, Widget? _) {
-          final double main = spring.curve.transform(t);
-          final double accent = spring.curve.transform(
-            ((t - 0.3) / 0.7).clamp(0.0, 1.0),
-          );
-          return SizedBox(
-            width: _blob + 40,
-            height: _blob + 12,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                Positioned(
-                  left: 0,
-                  top: 12,
-                  child: Transform.rotate(
-                    angle: (1 - main) * -0.21,
-                    child: Transform.scale(
-                      scale: 0.6 + 0.4 * main,
-                      child: shape(
-                        size: _blob,
-                        border: FushiCookieBorder(lobes: 9, side: side),
-                        color: colors.primaryContainer,
-                        child: Center(
-                          child: Transform.rotate(
-                            angle: (1 - main) * 0.21,
-                            child: FushiIcon(
-                              icon,
-                              size: 48,
-                              color: eink
-                                  ? colors.onSurface
-                                  : colors.onPrimaryContainer,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: Transform.scale(
-                    scale: accent,
-                    child: shape(
-                      size: 40,
-                      border: FushiCookieBorder(lobes: 4, side: side),
-                      color: colors.tertiaryContainer,
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 18,
-                  bottom: 0,
-                  child: Transform.scale(
-                    scale: accent,
-                    child: shape(
-                      size: 18,
-                      border: CircleBorder(side: side),
-                      color: colors.secondaryContainer,
-                    ),
-                  ),
-                ),
-              ],
+      child: SizedBox(
+        width: _blob + 40,
+        height: _blob + 12,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: 0,
+              top: 12,
+              child: FushiDialogHeroIcon(
+                icon: icon,
+                tone: FushiHeroTone.primary,
+                size: _blob,
+              ),
             ),
-          );
-        },
+            Positioned(
+              right: 0,
+              top: 0,
+              child: accent(
+                size: 40,
+                border: FushiCookieBorder(lobes: 4, side: side),
+                color: colors.tertiaryContainer,
+              ),
+            ),
+            Positioned(
+              right: 18,
+              bottom: 0,
+              child: accent(
+                size: 18,
+                border: CircleBorder(side: side),
+                color: colors.secondaryContainer,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
