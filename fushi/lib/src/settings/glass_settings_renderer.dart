@@ -162,6 +162,19 @@ class GlassSettingsRenderer implements SettingsRenderer {
     required SettingsContext settingsContext,
     required SettingsDestination destination,
   }) {
+    if (destination.fillsViewport(settingsContext)) {
+      // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：与 MD3 渲染器
+      // 同一契约，只保留 Apple 的水平内边距。
+      final double horizontal = detailHorizontalInset(settingsContext.context);
+      return FushiPageScaffold(
+        title: destination.title,
+        subtitle: destination.summary,
+        body: Padding(
+          padding: EdgeInsets.fromLTRB(horizontal, 12, horizontal, 0),
+          child: destination.body!(settingsContext),
+        ),
+      );
+    }
     return FushiPageScaffold(
       title: destination.title,
       subtitle: destination.summary,

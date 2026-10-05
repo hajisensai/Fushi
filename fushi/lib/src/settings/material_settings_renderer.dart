@@ -165,6 +165,28 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required SettingsContext settingsContext,
     required SettingsDestination destination,
   }) {
+    if (destination.fillsViewport(settingsContext)) {
+      // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平内边距与
+      // 顶部一点呼吸，正文占满剩余视口——吸顶工具区 / 两栏导航 / 粘性分组标题
+      // 都要靠这一点。底部安全区由正文自己的滚动视图负责。
+      final FushiDesignTokens tokens = FushiDesignTokens.of(
+        settingsContext.context,
+      );
+      final EdgeInsets horizontal = detailHorizontalInsets(tokens);
+      return FushiPageScaffold(
+        title: destination.title,
+        subtitle: destination.summary,
+        body: Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontal.left,
+            tokens.spacing.gap,
+            horizontal.right,
+            0,
+          ),
+          child: destination.body!(settingsContext),
+        ),
+      );
+    }
     return FushiPageScaffold(
       title: destination.title,
       subtitle: destination.summary,
