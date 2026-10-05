@@ -193,7 +193,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       sections: settingsJumpSections(
         destination.visibleSections(settingsContext),
       ),
-      actions: const <Widget>[SettingsSearchAction()],
+      actions: showBack
+          ? const <Widget>[SettingsSearchAction()]
+          : const <Widget>[],
       bodyBuilder:
           (
             BuildContext context,
