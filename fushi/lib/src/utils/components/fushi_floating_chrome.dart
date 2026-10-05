@@ -753,6 +753,12 @@ class _FloatingActionsBody extends StatelessWidget {
           ),
         ),
       );
+    } else if (actions is FushiShellHeaderActions) {
+      // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊、文字
+      // 动作画成同高的 tonal 胶囊按钮（[fushiFloatingHeaderActionGroups]）。
+      // 再套一层悬浮面就是「胶囊包胶囊」：两圈投影、组比页签胶囊高出 8、
+      // 文字按钮被关进组里（2026-10-06 用户截图「开始串流」）。
+      return actions;
     } else {
       content = actions;
     }
@@ -806,12 +812,17 @@ class FushiFloatingChromeBar extends StatelessWidget {
     required this.tabs,
     required this.slot,
     this.padding,
+    this.leading,
     super.key,
   });
 
   final Widget tabs;
   final FushiShellActionsSlot slot;
   final EdgeInsetsGeometry? padding;
+
+  /// 页签胶囊左边的前导（独立 push 进来的页面的返回键，一枚圆胶囊）；与
+  /// 页签胶囊同一行、间距 [kFushiFloatingChromeGap]。
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -838,6 +849,10 @@ class FushiFloatingChromeBar extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
+                if (leading != null) ...<Widget>[
+                  leading!,
+                  const SizedBox(width: kFushiFloatingChromeGap),
+                ],
                 Expanded(child: tabs),
                 const SizedBox(width: kFushiFloatingChromeGap),
                 ConstrainedBox(

@@ -35,6 +35,9 @@ const double _kSectionTabMoreWidth = 40.0;
 /// 更轻，并避免与选中指示器形成两条含义不同的横线。
 const double _kSectionTabOverflowFadeWidth = 24.0;
 
+/// 二级内容域紧凑分段胶囊（`floating` + `secondary`）里页签的高。
+const double _kCompactSecondaryTabHeight = 36.0;
+
 const ValueKey<String> _kSectionTabLeadingOverflowCueKey = ValueKey<String>(
   'library-section-tabs-leading-overflow-cue',
 );
@@ -524,6 +527,7 @@ class _FushiSectionTabBarState<T extends Object>
                   key: _kSectionTabLeadingOverflowCueKey,
                   leading: true,
                   floating: widget.floating,
+                  secondary: widget.secondary,
                 ),
               ),
             if (scrollFit && _showTrailingOverflowCue)
@@ -535,6 +539,7 @@ class _FushiSectionTabBarState<T extends Object>
                   key: _kSectionTabTrailingOverflowCueKey,
                   leading: false,
                   floating: widget.floating,
+                  secondary: widget.secondary,
                 ),
               ),
           ],
@@ -542,11 +547,22 @@ class _FushiSectionTabBarState<T extends Object>
       },
     );
     if (!widget.floating) return bar;
+    if (widget.secondary) {
+      return _CompactSecondaryTabsFrame(
+        naturalWidth: _floatingNaturalWidth(context),
+        child: bar,
+      );
+    }
     return _FloatingSectionTabsFrame(
       naturalWidth: _floatingNaturalWidth(context),
       child: bar,
     );
   }
+
+  /// 二级内容域的紧凑分段胶囊（`floating` + `secondary`，Material 设计系统）。
+  /// Apple 设计系统沿用二级文字页签（下划线跟字走），只换成贴合内容宽。
+  bool get _compactSecondary =>
+      widget.floating && widget.secondary && !isGlassDesign(context);
 
   /// 浮动胶囊里整排页签的自然宽：与 [_resolveLayout] 同一把量尺（真实字体
   /// 量文字进距），加上各段内边距（Apple 还有文字内衬与页签条两端外边距）。
@@ -614,9 +630,10 @@ class _FushiSectionTabBarState<T extends Object>
     }
     final bool apple = isGlassDesign(context);
     // Apple 页签条自带左右各 8 的外边距（_FushiGlassTabBar 的 padding 默认值）；
-    // M3E 分段胶囊轨道两侧各吃 [kFushiM3eTabTrackInset]。
+    // M3E 分段胶囊轨道贴齐页边（trackInset: 0，见 [_buildTabBar]），两侧只吃
+    // 轨道内边距 [kFushiM3eFlushTabTrackInset]。
     final double available =
-        maxWidth - (apple ? 16.0 : kFushiM3eTabTrackInset * 2);
+        maxWidth - (apple ? 16.0 : kFushiM3eFlushTabTrackInset * 2);
     final double basePadding = apple
         ? _kSectionTabAppleLabelPadding
         : _kSectionTabHorizontalPadding;
@@ -823,12 +840,18 @@ class _FushiSectionTabBarState<T extends Object>
             // 也不 rebuild），得靠这次校正把它拉回来。
             _scheduleProjection();
           };
+    // 二级内容域的浮动形态（[_compactSecondary]）矮一档：36 高的页签装进
+    // 44 高的扁平分段胶囊，与上面 56 高的悬浮一级页签胶囊层级分明。
+    final double? tabHeight = _compactSecondary
+        ? _kCompactSecondaryTabHeight
+        : null;
     final List<Widget> tabs = <Widget>[
       if (overflow)
-        for (final int i in layout.visible) Tab(text: widget.tabs[i].label)
+        for (final int i in layout.visible)
+          Tab(text: widget.tabs[i].label, height: tabHeight)
       else
         for (final LibrarySectionTab<T> tab in widget.tabs)
-          Tab(text: tab.label),
+          Tab(text: tab.label, height: tabHeight),
     ];
     final double? font = layout.fontSize;
     final TextStyle? labelStyle = font == null
@@ -848,6 +871,33 @@ class _FushiSectionTabBarState<T extends Object>
     final TabAlignment alignment = scrollable
         ? TabAlignment.start
         : TabAlignment.fill;
+    if (_compactSecondary) {
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      // 二级内容域：外框 [_CompactSecondaryTabsFrame] 是一条扁平的 tonal 分段
+      // 胶囊（无投影），TabBar 不带轨道；选中段是一枚 secondaryContainer 小胶囊。
+      return FushiTabBar(
+        controller: controller,
+        track: false,
+        padding: EdgeInsets.zero,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        dividerHeight: 0,
+        labelStyle: labelStyle,
+        unselectedLabelStyle: unselectedLabelStyle,
+        labelPadding: labelPadding,
+        onTap: onTap,
+        indicator: ShapeDecoration(
+          shape: const StadiumBorder(),
+          color: cs.secondaryContainer,
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicatorAnimation: TabIndicatorAnimation.elastic,
+        labelColor: cs.onSecondaryContainer,
+        unselectedLabelColor: cs.onSurfaceVariant,
+        splashBorderRadius: const BorderRadius.all(Radius.circular(999)),
+        tabs: tabs,
+      );
+    }
     if (widget.floating && !widget.secondary) {
       final ColorScheme cs = Theme.of(context).colorScheme;
       // 只要一层胶囊：外框 [_FloatingSectionTabsFrame] 就是 M3E floating
@@ -881,9 +931,12 @@ class _FushiSectionTabBarState<T extends Object>
         tabs: tabs,
       );
     }
+    // 非浮动形态的调用方都已按页边内缩（页头 / 页面内容同一条页边），轨道
+    // 不再自己多缩 12：左缘与页面大标题、内容卡对齐。
     if (widget.secondary) {
       return FushiTabBar.secondary(
         controller: controller,
+        trackInset: 0,
         isScrollable: scrollable,
         tabAlignment: alignment,
         dividerHeight: 0,
@@ -896,6 +949,7 @@ class _FushiSectionTabBarState<T extends Object>
     }
     return FushiTabBar(
       controller: controller,
+      trackInset: 0,
       isScrollable: scrollable,
       tabAlignment: alignment,
       dividerHeight: 0,
@@ -979,6 +1033,7 @@ class _SectionTabOverflowFade extends StatelessWidget {
   const _SectionTabOverflowFade({
     required this.leading,
     this.floating = false,
+    this.secondary = false,
     super.key,
   });
 
@@ -987,11 +1042,16 @@ class _SectionTabOverflowFade extends StatelessWidget {
   /// 在浮动胶囊里：渐隐要用胶囊底色才盖得住。
   final bool floating;
 
+  /// 浮动 + 二级：在 [_CompactSecondaryTabsFrame] 的扁平胶囊里。
+  final bool secondary;
+
   @override
   Widget build(BuildContext context) {
     // eink：渐隐是一条灰阶过渡带 = 抖动噪点；去掉，尾端 tab 直接截断（横向拖滚照常）。
     if (isEinkTheme(context)) return const SizedBox.shrink();
-    final Color background = floating
+    final Color background = floating && secondary
+        ? _CompactSecondaryTabsFrame.colorOf(context)
+        : floating
         ? FushiFloatingToolbarSurface.colorOf(context)
         : Theme.of(context).scaffoldBackgroundColor;
     return IgnorePointer(
@@ -1047,6 +1107,69 @@ class _FloatingSectionTabsFrame extends StatelessWidget {
               child: child,
             ),
           ),
+        );
+      },
+    );
+  }
+}
+
+/// 二级内容域的紧凑分段胶囊外框（`LibrarySectionTabs(floating: true,
+/// secondary: true)`）：贴合页签自然宽贴左（超出可用宽时吃满、页签在里面横滑），
+/// Material 是一条扁平的 surfaceContainerHigh 全胶囊（不浮、无投影，比一级
+/// 悬浮页签胶囊矮一档）；Apple 不画底，只按内容宽排二级文字页签。
+class _CompactSecondaryTabsFrame extends StatelessWidget {
+  const _CompactSecondaryTabsFrame({
+    required this.naturalWidth,
+    required this.child,
+  });
+
+  /// 整排页签的自然宽（不含胶囊内边距）。
+  final double naturalWidth;
+  final Widget child;
+
+  static const double _padding = 4;
+
+  /// 胶囊底色（两端渐隐用同一个颜色才盖得住）。
+  static Color colorOf(BuildContext context) =>
+      Theme.of(context).colorScheme.surfaceContainerHigh;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double wanted = naturalWidth + (apple ? 0 : _padding * 2) + 2;
+        final double width = constraints.maxWidth.isFinite
+            ? math.min(wanted, constraints.maxWidth)
+            : wanted;
+        final Widget content = apple
+            ? child
+            : DecoratedBox(
+                decoration: ShapeDecoration(
+                  color: colorOf(context),
+                  shape: StadiumBorder(
+                    side: eink
+                        ? BorderSide(color: cs.outline)
+                        : BorderSide.none,
+                  ),
+                ),
+                child: ClipPath(
+                  clipper: const ShapeBorderClipper(shape: StadiumBorder()),
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: Padding(
+                      padding: const EdgeInsets.all(_padding),
+                      child: child,
+                    ),
+                  ),
+                ),
+              );
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          widthFactor: constraints.maxWidth.isFinite ? null : 1,
+          child: SizedBox(width: width, child: content),
         );
       },
     );
