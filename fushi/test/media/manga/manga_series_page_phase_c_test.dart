@@ -23,6 +23,7 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -293,6 +294,10 @@ Future<void> _settle(WidgetTester tester) async {
   }
 }
 
+/// 作品页 hero 的「⋯」更多操作（M3E 详情骨架：原 AppBar 动作、自动识别、
+/// 识别全部已下载都在这里）。
+const ValueKey<String> _moreKey = ValueKey<String>('online_work_more');
+
 /// 某一章行尾的溢出菜单按钮。
 Finder _chapterMenu(String chapterName) => find.descendant(
   of: find.ancestor(
@@ -391,12 +396,11 @@ void main() {
       final EpubBookRow row = await library.add(_entry());
       bookKey = row.bookKey;
       await tester.pumpWidget(_harness(appModel, bookKey, registry: registry));
-      await _pumpUntil(
-        tester,
-        find.byKey(const ValueKey<String>('manga_series_auto_ocr_chip')),
-      );
+      await _pumpUntil(tester, find.byKey(_moreKey));
       expect(appModel.mangaDownloadAutoOcr, isFalse);
 
+      await tester.tap(find.byKey(_moreKey));
+      await _settle(tester);
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_auto_ocr_chip')),
       );
@@ -566,6 +570,8 @@ void main() {
         findsNWidgets(2),
       );
 
+      await tester.tap(find.byKey(_moreKey));
+      await _settle(tester);
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_ocr_all_downloaded')),
       );
@@ -601,11 +607,17 @@ void main() {
         tester,
         find.byKey(const ValueKey<String>('manga_series_subscribe')),
       );
-      expect(find.byIcon(Icons.bookmark_add_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.bookmarkAdd), findsOneWidget);
+      // 没订阅时「⋯」里没有「新章自动下载」。
+      await tester.tap(find.byKey(_moreKey));
+      await _settle(tester);
       expect(
-        find.byKey(const ValueKey<String>('manga_series_more')),
+        find.byKey(const ValueKey<String>('manga_series_auto_download')),
         findsNothing,
       );
+      // 点遮罩关菜单。
+      await tester.tapAt(const Offset(4, 4));
+      await _settle(tester);
 
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_subscribe')),
@@ -616,14 +628,10 @@ void main() {
     OnlineMangaLibraryEntry entry = await persisted();
     expect(entry.subscribed, isTrue);
     expect(entry.autoDownload, isTrue, reason: '开订阅默认开自动下载');
-    expect(find.byIcon(Icons.bookmark), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('manga_series_more')),
-      findsOneWidget,
-    );
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.bookmark)), findsOneWidget);
 
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(const ValueKey<String>('manga_series_more')));
+      await tester.tap(find.byKey(_moreKey));
       await _settle(tester);
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_auto_download')),
@@ -643,9 +651,13 @@ void main() {
     entry = await persisted();
     expect(entry.subscribed, isFalse);
     expect(entry.autoDownload, isFalse, reason: '关订阅把两位一起关');
-    expect(find.byIcon(Icons.bookmark_add_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.bookmarkAdd), findsOneWidget);
+    await tester.runAsync(() async {
+      await tester.tap(find.byKey(_moreKey));
+      await _settle(tester);
+    });
     expect(
-      find.byKey(const ValueKey<String>('manga_series_more')),
+      find.byKey(const ValueKey<String>('manga_series_auto_download')),
       findsNothing,
     );
   });
