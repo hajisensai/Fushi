@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-1902：牌组 / 笔记类型选择与「一键创建 Lapis 卡组」的**单一实现**。
@@ -148,17 +150,17 @@ class _AnkiCreateLapisRowState extends State<AnkiCreateLapisRow> {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
-      icon: Icons.note_add_outlined,
+      icon: FushiIcons.libraryAdd,
       showIcon: true,
       title: t.anki_create_lapis,
       subtitle: t.anki_create_lapis_hint,
+      // 在途：M3E 圆形进度（Material 设计系统下是波浪），尺寸与行尾按钮同档。
       trailing: _busy
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: adaptiveIndicator(context: context, strokeWidth: 2),
+          ? const SizedBox.square(
+              dimension: 24,
+              child: FushiCircularProgressIndicator(strokeWidth: 3),
             )
-          : null,
+          : const FushiIcon(FushiIcons.chevronRight),
       onTap: widget.isFetching || _busy ? null : () => unawaited(_run()),
     );
   }
@@ -229,6 +231,7 @@ Future<bool> promptCreateLapisIfCannotMine({
     message: t.anki_lapis_suggest_body,
     cancelLabel: t.anki_lapis_suggest_dismiss,
     confirmLabel: t.anki_create_lapis,
+    icon: FushiIcons.ankiCard,
   );
   if (!confirmed) return false;
 
