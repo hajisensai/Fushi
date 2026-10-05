@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
@@ -128,7 +129,7 @@ class _LeaderboardWorkPageState extends ConsumerState<LeaderboardWorkPage> {
           onTap: _share,
         ),
       ],
-      body: RefreshIndicator(
+      body: FushiRefreshIndicator(
         onRefresh: () => _load(reset: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),

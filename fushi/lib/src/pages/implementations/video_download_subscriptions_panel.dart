@@ -4,6 +4,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -529,7 +530,7 @@ class _VideoDownloadSubscriptionsViewState
                       icon: Icons.search_off,
                       title: t.subscription_no_match,
                     )
-                  : RefreshIndicator(
+                  : FushiRefreshIndicator(
                       onRefresh: widget.onCheckAll,
                       child: ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

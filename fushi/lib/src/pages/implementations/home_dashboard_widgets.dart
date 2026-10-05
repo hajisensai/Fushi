@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -24,8 +25,9 @@ const double kHomeHeroRowMinWidth = 520;
 /// 墨水屏描边），尺寸即最终内容的大致轮廓，数据到达时整块换成真实内容——
 /// 首帧就有版式，不再先闪一圈菊花或「暂无内容」再跳成真数据。
 ///
-/// 刻意不做呼吸 / 闪光动画：首屏最多同时挂三四块骨架，常驻动画会把首帧之后
-/// 的每一帧都拖进重绘，而骨架通常只活几百毫秒。
+/// M3E（2026-10-05）：块本身是 [FushiSkeleton]（surfaceContainerHighest 色块），
+/// 成组骨架外包一层 [FushiSkeletonShimmer]，光带一次扫过整组；闪光**有界**
+/// （扫三轮就停），不会像常驻动画那样把之后每一帧都拖进重绘。
 class HomeSkeletonBlock extends StatelessWidget {
   const HomeSkeletonBlock({
     super.key,
@@ -40,16 +42,7 @@ class HomeSkeletonBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final BoxDecoration base = fushiNeutralBlockDecoration(context);
-    return SizedBox(
-      width: width,
-      height: height,
-      child: DecoratedBox(
-        decoration: base.copyWith(
-          borderRadius: radius ?? fushiNeutralBlockRadius(context),
-        ),
-      ),
-    );
+    return FushiSkeleton(width: width, height: height, borderRadius: radius);
   }
 }
 
@@ -60,7 +53,8 @@ class HomeContinueHeroSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Row(
+    return FushiSkeletonShimmer(
+        child: Row(
       key: const ValueKey<String>('home-continue-skeleton'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -87,7 +81,7 @@ class HomeContinueHeroSkeleton extends StatelessWidget {
           ),
         ),
       ],
-    );
+    ));
   }
 }
 

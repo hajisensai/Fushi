@@ -141,10 +141,20 @@ String _themeVariablesJs({
   // 形状变形。只随玻璃宿主挂（墨水屏 / 桌面全局查词窗不挂）；toggle 同上要能摘除。
   final bool appleDesign =
       glassHost && theme.extension<FushiAppleColors>() != null;
+  // M3 Expressive 视觉层（用户 2026-10-05：Material 设计系统一律 M3E）：popup.css 的
+  // `html.fushi-m3e` 段把卡片 / 标签 / 动作按钮 / 提示 / 菜单换成 M3E 色块与形状。
+  // 只看设计系统本身（不随玻璃宿主）：桌面全局查词窗与 app 外窗同样是 Material。
+  // 墨水屏与 Apple 设计系统不挂。减弱动态效果（系统无障碍「关闭动画」）挂
+  // fushi-reduced-motion，CSS 侧归零按压位移与过渡（CSS 不能写 @media，见生成器）。
+  final bool m3e = !eink && theme.extension<FushiAppleColors>() == null;
+  final bool reducedMotion = WidgetsBinding
+      .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
       "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
-      "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n";
+      "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n"
+      "document.documentElement.classList.toggle('fushi-m3e', $m3e);\n"
+      "document.documentElement.classList.toggle('fushi-reduced-motion', $reducedMotion);\n";
   return '''
       $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
@@ -157,6 +167,21 @@ String _themeVariablesJs({
       document.documentElement.style.setProperty('--md-on-surface-variant', '${vars['--md-on-surface-variant']}');
       document.documentElement.style.setProperty('--md-primary', '${vars['--md-primary']}');
       document.documentElement.style.setProperty('--md-on-primary', '${vars['--md-on-primary']}');
+      document.documentElement.style.setProperty('--md-on-surface', '${vars['--md-on-surface']}');
+      document.documentElement.style.setProperty('--md-primary-container', '${vars['--md-primary-container']}');
+      document.documentElement.style.setProperty('--md-on-primary-container', '${vars['--md-on-primary-container']}');
+      document.documentElement.style.setProperty('--md-secondary-container', '${vars['--md-secondary-container']}');
+      document.documentElement.style.setProperty('--md-on-secondary-container', '${vars['--md-on-secondary-container']}');
+      document.documentElement.style.setProperty('--md-tertiary', '${vars['--md-tertiary']}');
+      document.documentElement.style.setProperty('--md-on-tertiary', '${vars['--md-on-tertiary']}');
+      document.documentElement.style.setProperty('--md-tertiary-container', '${vars['--md-tertiary-container']}');
+      document.documentElement.style.setProperty('--md-on-tertiary-container', '${vars['--md-on-tertiary-container']}');
+      document.documentElement.style.setProperty('--md-surface-container-low', '${vars['--md-surface-container-low']}');
+      document.documentElement.style.setProperty('--md-surface-container-highest', '${vars['--md-surface-container-highest']}');
+      document.documentElement.style.setProperty('--md-outline', '${vars['--md-outline']}');
+      document.documentElement.style.setProperty('--md-inverse-surface', '${vars['--md-inverse-surface']}');
+      document.documentElement.style.setProperty('--md-inverse-on-surface', '${vars['--md-inverse-on-surface']}');
+      document.documentElement.style.setProperty('--md-error', '${vars['--md-error']}');
       document.documentElement.style.setProperty('--fushi-radius-card', '${vars['--fushi-radius-card']}');
       document.documentElement.style.setProperty('--dict-columns', '${vars['--dict-columns']}');
 ''';

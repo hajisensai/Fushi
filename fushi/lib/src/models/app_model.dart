@@ -3779,6 +3779,21 @@ class AppModel with ChangeNotifier {
       '--md-primary': vars['--md-primary']!,
       // BUG-736：主色上的文字/图标色（popup.css `color: var(--md-on-primary,#fff)`）。
       '--md-on-primary': vars['--md-on-primary']!,
+      // M3E 视觉层 / m3e-tokens.css 的色角色（与 in-app 注入同源，扩展对齐同一套令牌）。
+      '--md-primary-container': vars['--md-primary-container']!,
+      '--md-on-primary-container': vars['--md-on-primary-container']!,
+      '--md-secondary-container': vars['--md-secondary-container']!,
+      '--md-on-secondary-container': vars['--md-on-secondary-container']!,
+      '--md-tertiary': vars['--md-tertiary']!,
+      '--md-on-tertiary': vars['--md-on-tertiary']!,
+      '--md-tertiary-container': vars['--md-tertiary-container']!,
+      '--md-on-tertiary-container': vars['--md-on-tertiary-container']!,
+      '--md-surface-container-low': vars['--md-surface-container-low']!,
+      '--md-surface-container-highest': vars['--md-surface-container-highest']!,
+      '--md-outline': vars['--md-outline']!,
+      '--md-inverse-surface': vars['--md-inverse-surface']!,
+      '--md-inverse-on-surface': vars['--md-inverse-on-surface']!,
+      '--md-error': vars['--md-error']!,
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
       '--fushi-radius-card': vars['--fushi-radius-card']!,

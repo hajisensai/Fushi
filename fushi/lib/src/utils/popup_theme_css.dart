@@ -71,6 +71,22 @@ Map<String, String> buildPopupThemeCssVars({
     '--md-outline-variant': cssRgb(scheme.outlineVariant),
     '--md-primary': cssRgb(scheme.primary),
     '--md-on-primary': cssRgb(scheme.onPrimary),
+    // M3E 视觉层（popup.css `html.fushi-m3e` / m3e-tokens.css 的 --md-sys-color-*）
+    // 要的饱和 container 色块与反色 / 分层表面角色。缺席时 CSS 按 --md-primary 推导回退。
+    '--md-primary-container': cssRgb(scheme.primaryContainer),
+    '--md-on-primary-container': cssRgb(scheme.onPrimaryContainer),
+    '--md-secondary-container': cssRgb(scheme.secondaryContainer),
+    '--md-on-secondary-container': cssRgb(scheme.onSecondaryContainer),
+    '--md-tertiary': cssRgb(scheme.tertiary),
+    '--md-on-tertiary': cssRgb(scheme.onTertiary),
+    '--md-tertiary-container': cssRgb(scheme.tertiaryContainer),
+    '--md-on-tertiary-container': cssRgb(scheme.onTertiaryContainer),
+    '--md-surface-container-low': cssRgb(scheme.surfaceContainerLow),
+    '--md-surface-container-highest': cssRgb(scheme.surfaceContainerHighest),
+    '--md-outline': cssRgb(scheme.outline),
+    '--md-inverse-surface': cssRgb(scheme.inverseSurface),
+    '--md-inverse-on-surface': cssRgb(scheme.onInverseSurface),
+    '--md-error': cssRgb(scheme.error),
     '--fushi-radius-card': '${FushiRadii.cardValue.toInt()}px',
     '--dict-columns': '$dictionaryColumns',
   };

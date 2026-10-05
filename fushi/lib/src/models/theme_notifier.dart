@@ -16,6 +16,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/fushi_m3e_misc_themes.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
@@ -2280,10 +2281,8 @@ ThemeData buildFushiThemeData({
     // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
     // **常驻**覆盖在每个列表右侧的，压住并吞掉最右一列的操作按钮。仓库里 9 处
     // RawScrollbar 都硬写 3，说明 3 才是设计意图，深色只是漏钉。
-    scrollbarTheme: ScrollbarThemeData(
-      thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
-      thumbVisibility: WidgetStateProperty.all(true),
-    ),
+    // M3E：粗细不变、全圆头 + onSurfaceVariant 状态递进拇指（fushi_m3e_misc_themes）。
+    scrollbarTheme: fushiM3eScrollbarTheme(cs: cs, eink: eink),
     // 2026-10：M3 2024 版滑块（16 粗轨道 + 竖条拇指 + 拇指两侧留缝 + 尾端停止
     // 点），与下面的 2024 版进度条同一代视觉；RangeSlider 吃同一份主题。墨水屏
     // 保留 2023 版细轨圆钮与原配色（缝与停止点在低分辨率面板上会糊成灰点）。
@@ -2315,36 +2314,36 @@ ThemeData buildFushiThemeData({
               color: cs.onInverseSurface,
             ),
           ),
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.card,
-      ),
-      insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
-      // 玻璃设计系统：FushiSnackBar 自己把内容画进玻璃胶囊，SnackBar 本体
-      // 必须透明无阴影，否则胶囊外再多一层底。
-      backgroundColor: glassDesign && !eink
-          ? Colors.transparent
-          : glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
-      elevation: glassDesign && !eink ? 0 : null,
+    // M3 Expressive 其余组件（2026-10-05 用户「所有组件都是 m3e」）：提示条 /
+    // tooltip / 徽标 / 日期时间选择器 / 轮播的主题统一在 fushi_m3e_misc_themes.dart，
+    // 这里只调用。提示条与 toast、plain tooltip 同一套「反色浮层」语言。
+    snackBarTheme: fushiM3eSnackBarTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      glassDesign: glassDesign,
+      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
-    // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
-    // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路
-    // 闪），离开 100ms 收起。
-    tooltipTheme: TooltipThemeData(
-      waitDuration: const Duration(milliseconds: 400),
-      exitDuration: const Duration(milliseconds: 100),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity) ??
-            cs.inverseSurface,
-        borderRadius: FushiBorderRadius.chip,
-      ),
-      textStyle: (tt.labelMedium ?? const TextStyle()).copyWith(
-        color: cs.onInverseSurface,
-      ),
+    tooltipTheme: fushiM3eTooltipTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
+    badgeTheme: fushiM3eBadgeTheme(cs: cs, tt: tt, eink: eink),
+    datePickerTheme: fushiM3eDatePickerTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      appleDesign: appleDesign,
+    ),
+    timePickerTheme: fushiM3eTimePickerTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      appleDesign: appleDesign,
+    ),
+    carouselViewTheme: fushiM3eCarouselTheme(cs: cs, eink: eink),
     // 2026-10：M3 2024 版进度条——圆头、轨道与指示器之间留缝、确定态尾端有
     // 停止点，读数比 2023 版的一整条色带清楚。墨水屏保留 2023 版（缝与停止点在
     // 低分辨率面板上会糊成灰点）。
