@@ -21,6 +21,7 @@ import 'package:integration_test/integration_test.dart';
 
 import 'support/test_app_launcher.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/utils.dart' show FushiAdjustableSegmented;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:fushi/src/startup/observe_blank_detector.dart';
@@ -100,6 +101,15 @@ void main() {
 
       // 切到可视化（手柄）视图：直接触发视图切换段控件的 onSelectionChanged
       // 回调切 visualMode（程序化驱动，非坐标 tap）。
+      // 2026-10 单页重设计：键位图按输入设备分开画，先把设备切到手柄（程序化
+      // 调设备分段的 onChanged，非坐标 tap）。
+      final Finder device = find.byKey(const Key('shortcut_device_toggle'));
+      expect(device, findsOneWidget, reason: '输入设备分段应存在');
+      tester
+          .widget<FushiAdjustableSegmented<ShortcutInputDevice>>(device)
+          .onChanged(ShortcutInputDevice.gamepad);
+      await tester.pump(const Duration(milliseconds: 400));
+
       final Finder toggle = find.byKey(const Key('shortcut_view_toggle'));
       expect(toggle, findsOneWidget, reason: '视图切换段控件应存在');
       final SegmentedButton<bool> segmented =
