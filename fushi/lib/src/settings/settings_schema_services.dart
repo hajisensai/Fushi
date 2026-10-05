@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -51,7 +52,7 @@ SettingsDestination buildServicesDestination() {
     ),
     title: t.settings_destination_services,
     summary: t.settings_destination_services_summary,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'services.subtitles',
@@ -239,7 +240,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: t.section_services_metadata,
-              icon: Icons.fingerprint,
+              icon: FushiIcons.fingerprint,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.metadata.credentials',
@@ -248,7 +249,7 @@ SettingsDestination buildServicesDestination() {
                       id: 'services.metadata.anidb_hash_enabled',
                       title: t.video_anidb_hash_enabled,
                       subtitle: t.video_anidb_hash_hint,
-                      icon: Icons.fingerprint,
+                      icon: FushiIcons.fingerprint,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
@@ -268,7 +269,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.metadata.anidb_username',
                       title: t.video_anidb_username,
-                      icon: Icons.person_outline,
+                      icon: FushiIcons.person,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbUsernamePref,
@@ -286,7 +287,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.metadata.anidb_password',
                       title: t.video_anidb_password,
-                      icon: Icons.lock_outline,
+                      icon: FushiIcons.lock,
                       secret: true,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
@@ -363,7 +364,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsStatusItem(
                       id: 'services.metadata.anidb_http_api',
                       title: t.video_anidb_http_api,
-                      icon: Icons.cloud_outlined,
+                      icon: FushiIcons.cloud,
                       subtitleBuilder: (SettingsContext c) =>
                           anidbHttpApiStatusLabel(
                             VideoSourceScrapeGlobalConfig.fromPreferences(
@@ -394,7 +395,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: 'TMDB',
-              icon: Icons.key_outlined,
+              icon: FushiIcons.key,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.tmdb.credentials',
@@ -410,7 +411,7 @@ SettingsDestination buildServicesDestination() {
                       id: 'services.metadata.tmdb_api_key',
                       title: t.video_setting_tmdb_key,
                       subtitle: t.video_setting_tmdb_key_hint,
-                      icon: Icons.key_outlined,
+                      icon: FushiIcons.key,
                       secret: true,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
@@ -459,7 +460,7 @@ SettingsDestination buildServicesDestination() {
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
               title: 'Dandanplay',
-              icon: Icons.dns_outlined,
+              icon: FushiIcons.server,
               sections: <SettingsSection>[
                 SettingsSection(
                   id: 'services.danmaku.endpoint',
@@ -467,7 +468,7 @@ SettingsDestination buildServicesDestination() {
                     SettingsTextItem(
                       id: 'services.danmaku.server_url',
                       title: t.video_setting_danmaku_server_url,
-                      icon: Icons.dns_outlined,
+                      icon: FushiIcons.server,
                       keyboardType: TextInputType.url,
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.videoDanmakuConfig.baseUrl,
@@ -524,7 +525,7 @@ SettingsNavigationItem _servicePage({
   child: () => SettingsDestination(
     id: SettingsDestinationId.services,
     title: title,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     sections: const <SettingsSection>[],
     body: body,
     bodySearchEntries: entries,
@@ -541,7 +542,7 @@ SettingsNavigationItem buildOpenServicesItem(String id) {
     id: id,
     title: t.settings_destination_services,
     subtitle: t.settings_services_link_subtitle,
-    icon: Icons.cloud_outlined,
+    icon: FushiIcons.cloud,
     showIcon: true,
     // 与它指向的分类同门控：services 模块关掉时整行不渲染。留着就是一条通往已关
     // 模块的暗门（宿主分类——视频 / 下载——可能仍开着，所以宿主的 destination 级
@@ -593,7 +594,7 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
         () => SettingsDestination(
           id: SettingsDestinationId.services,
           title: 'Jellyfin · Emby',
-          icon: Icons.cloud_outlined,
+          icon: FushiIcons.cloud,
           sections: const <SettingsSection>[],
           body: (SettingsContext c) => JellyfinConfigWidget(settingsContext: c),
         ),
@@ -656,7 +657,7 @@ class _PlexSettingsLinkState extends State<_PlexSettingsLink> {
         () => SettingsDestination(
           id: SettingsDestinationId.services,
           title: 'Plex',
-          icon: Icons.cloud_outlined,
+          icon: FushiIcons.cloud,
           sections: const <SettingsSection>[],
           body: (SettingsContext c) => PlexConfigWidget(settingsContext: c),
         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -37,7 +38,7 @@ SettingsDestination buildAiDestination() {
     ),
     title: t.ai_settings_title,
     summary: t.ai_settings_summary,
-    icon: Icons.smart_toy_outlined,
+    icon: FushiIcons.aiAssistant,
     body: (SettingsContext settingsContext) =>
         const AiProviderSettingsSection(),
     bodyBeforeSections: true,
@@ -54,7 +55,7 @@ SettingsDestination buildAiDestination() {
             SettingsSwitchItem(
               id: 'ai.web_knowledge.${site.id}',
               title: webKnowledgeSiteDisplayLabel(site),
-              icon: Icons.public,
+              icon: FushiIcons.globe,
               value: (SettingsContext c) => c
                   .appModel
                   .prefsRepo

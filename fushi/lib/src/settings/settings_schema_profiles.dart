@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -9,7 +10,7 @@ SettingsDestination buildProfilesDestination() {
     id: SettingsDestinationId.profiles,
     title: t.settings_destination_profile_presets,
     summary: t.profile_management,
-    icon: Icons.manage_accounts_outlined,
+    icon: FushiIcons.profiles,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'profiles.section.current',
@@ -18,7 +19,7 @@ SettingsDestination buildProfilesDestination() {
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'profiles.current',
-            icon: Icons.person_outline,
+            icon: FushiIcons.person,
             // searchTitle 复用选择器行的既有标题（无新 key），让配置选择进入搜索。
             searchTitle: t.profile_label,
             builder: buildProfilePickerRow,
