@@ -996,8 +996,12 @@ class JellyfinApi {
   /// 「最近添加」（GET /Users/{uid}/Items/Latest）。
   ///
   /// 这条端点回的是**裸数组**而不是 `{Items, TotalRecordCount}`，解析单独走
-  /// [parseItemList]；同时容忍对象形状（兼容层不一定照抄）。剧集库的新集会被
-  /// 服务器折成 Series 容器返回（`GroupItems` 缺省 true）。
+  /// [parseItemList]；同时容忍对象形状（兼容层不一定照抄）。剧集库的新集由
+  /// 服务器折成 Series 容器返回（`GroupItems=true`，显式带上：Emby 与 Jellyfin
+  /// 官方首页「最新 <库>」行就是这个形态——剧带 `UserData.UnplayedItemCount`
+  /// 未看数角标，而不是逐集平铺）。
+  ///
+  /// Fields 点名卡片要的轻字段（年份 / 子项数）；**不带 MediaSources**（BUG-1891）。
   Future<List<JellyfinItem>> latest({
     required String userId,
     String? parentId,
@@ -1007,6 +1011,8 @@ class JellyfinApi {
         await _getDecoded('/Users/$userId/Items/Latest', <String, String>{
       if (parentId != null) 'ParentId': parentId,
       'Limit': '$limit',
+      'GroupItems': 'true',
+      'Fields': 'ProductionYear,ChildCount,RecursiveItemCount,OriginalTitle',
     });
     if (decoded is List) return parseItemList(decoded);
     if (decoded is Map) {

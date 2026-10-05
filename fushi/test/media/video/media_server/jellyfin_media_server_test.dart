@@ -673,6 +673,16 @@ void main() {
         expect(r.single.url.path, '/Users/u1/Items/Latest');
         expect(r.singleQuery['ParentId'], 'lib-tv');
         expect(r.singleQuery['Limit'], '12');
+        expect(r.singleQuery['GroupItems'], 'true');
+        expect(
+          r.singleQuery['Fields']!.split(','),
+          containsAll(<String>['ProductionYear', 'RecursiveItemCount']),
+        );
+        expect(
+          r.singleQuery['Fields']!.contains('MediaSources'),
+          isFalse,
+          reason: 'BUG-1891：首页行不带重字段',
+        );
         expect(row.map((MediaServerItem i) => i.id).toList(), <String>[
           's1',
           'm1',
@@ -681,6 +691,56 @@ void main() {
         expect(row[0].unplayedChildCount, 2);
       },
     );
+
+    test('Emby 4.9 真实形状：按库折成剧 + 年份 + 未看数 + 主图', () async {
+      // 取自 Emby 4.9「完结动漫」库 `/Items/Latest?GroupItems=true` 的响应形态
+      // （裁掉无关字段）：剧条目带 ProductionYear / RecursiveItemCount /
+      // UserData.UnplayedItemCount / ImageTags.Primary，没有 MediaSources。
+      final _Router r = _Router(
+        (_) => _json(<Object?>[
+          <String, Object?>{
+            'Name': '独自一人的异世界攻略',
+            'ServerId': 'srv',
+            'Id': '120345',
+            'IsFolder': true,
+            'Type': 'Series',
+            'ProductionYear': 2024,
+            'RecursiveItemCount': 12,
+            'ChildCount': 1,
+            'UserData': <String, Object?>{
+              'UnplayedItemCount': 12,
+              'PlaybackPositionTicks': 0,
+              'PlayCount': 0,
+              'IsFavorite': false,
+              'Played': false,
+            },
+            'ImageTags': <String, Object?>{'Primary': 'abc'},
+            'BackdropImageTags': <Object?>['bd1'],
+          },
+          <String, Object?>{
+            'Name': '航海王',
+            'Id': '99',
+            'IsFolder': true,
+            'Type': 'Series',
+            'ProductionYear': 1999,
+            'UserData': <String, Object?>{'UnplayedItemCount': 1024},
+            'ImageTags': <String, Object?>{'Primary': 'p'},
+          },
+        ]),
+      );
+      final List<MediaServerItem> row = await _client(
+        r.client,
+      ).listLatest(libraryId: 'lib-done');
+      expect(row, hasLength(2));
+      expect(row[0].name, '独自一人的异世界攻略');
+      expect(row[0].type, MediaServerItemType.series);
+      expect(row[0].productionYear, 2024);
+      expect(row[0].episodeCount, 12);
+      expect(row[0].unplayedChildCount, 12);
+      expect(row[0].hasCover, isTrue);
+      expect(row[0].hasBackdrop, isTrue);
+      expect(row[1].unplayedChildCount, 1024);
+    });
 
     test('libraryId null 不带 ParentId；对象形状 {Items:[…]} 也能解', () async {
       final _Router r = _Router(
