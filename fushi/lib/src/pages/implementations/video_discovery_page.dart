@@ -812,11 +812,18 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     unawaited(_reload());
   }
 
+  /// 筛选触发器（[_filterButton] = MD3 FushiCard）的圆角：交给
+  /// [FushiPopupMenuButton] 让悬停 / 按压状态层与卡片同形。
+  static const BorderRadius _kFilterTriggerRadius =
+      BorderRadius.all(Radius.circular(kFushiMd3CardRadius));
+
   Widget _buildYearField({int? value, ValueChanged<int>? onChanged}) {
     final int selected = value ?? _year;
     final int newestYear = DateTime.now().year + 2;
     return FushiPopupMenuButton<int>(
       key: const ValueKey<String>('video-discovery-filter-year'),
+      // MD3 下状态层与 _filterButton 的卡片同圆角（FushiCard 默认圆角）。
+      borderRadius: _kFilterTriggerRadius,
       tooltip: t.video_filter_year,
       initialValue: selected,
       onSelected: onChanged ?? _applyYearFilter,
@@ -837,6 +844,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     const List<String> regions = <String>['CN', 'JP', 'KR', 'US', 'GB', 'FR'];
     return FushiPopupMenuButton<String>(
       key: const ValueKey<String>('video-discovery-filter-region'),
+      // MD3 下状态层与 _filterButton 的卡片同圆角（FushiCard 默认圆角）。
+      borderRadius: _kFilterTriggerRadius,
       tooltip: t.video_work_countries,
       initialValue: selected,
       onSelected: onChanged ??
@@ -860,6 +869,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     final String selected = value ?? _genre;
     return FushiPopupMenuButton<String>(
       key: const ValueKey<String>('video-discovery-filter-genre'),
+      // MD3 下状态层与 _filterButton 的卡片同圆角（FushiCard 默认圆角）。
+      borderRadius: _kFilterTriggerRadius,
       tooltip: t.video_work_genres,
       initialValue: selected,
       onSelected: onChanged ??
@@ -882,6 +893,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   Widget _buildSortMenu({bool compact = false}) {
     return FushiPopupMenuButton<discovery.VideoDiscoverySort>(
       key: const ValueKey<String>('video-discovery-filter-sort'),
+      // MD3 下状态层与触发器同形：窄屏是 48 圆形图标格，宽屏是筛选卡片。
+      borderRadius: compact
+          ? const BorderRadius.all(Radius.circular(24))
+          : _kFilterTriggerRadius,
       tooltip: '${t.sort_by}: ${_sortLabel(_sort)}',
       initialValue: _sort,
       onSelected: (discovery.VideoDiscoverySort value) {

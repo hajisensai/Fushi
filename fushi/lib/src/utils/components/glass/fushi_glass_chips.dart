@@ -419,7 +419,7 @@ Widget fushiAppleChip(
 }
 
 /// [Chip] 的设计系统分派版。
-class FushiChip extends StatelessWidget {
+class FushiChip extends StatelessWidget implements FushiShapedMenuTrigger {
   const FushiChip({
     super.key,
     this.avatar,
@@ -476,6 +476,11 @@ class FushiChip extends StatelessWidget {
   final BoxConstraints? deleteIconBoxConstraints;
   final ChipAnimationStyle? chipAnimationStyle;
   final MouseCursor? mouseCursor;
+
+  /// 作菜单触发器时的可视形状：[shape] / chipTheme 的 shape，缺省 MD3 胶囊。
+  @override
+  ShapeBorder menuTriggerShape(BuildContext context) =>
+      shape ?? ChipTheme.of(context).shape ?? const StadiumBorder();
 
   @override
   Widget build(BuildContext context) {

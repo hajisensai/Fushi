@@ -93,7 +93,8 @@ double librarySearchFieldHeight(BuildContext context) =>
 ///
 /// eink：primary / outline / onSurfaceVariant 全塌成前景色，激活与未激活逐像素
 /// 相同；改反色填充表达激活（chipTheme / segmentedButtonTheme 同一套处理）。
-class LibraryFilterChip extends StatelessWidget {
+class LibraryFilterChip extends StatelessWidget
+    implements FushiShapedMenuTrigger {
   const LibraryFilterChip({
     required this.label,
     required this.active,
@@ -102,6 +103,15 @@ class LibraryFilterChip extends StatelessWidget {
 
   final String label;
   final bool active;
+
+  /// 与下面画出来的胶囊同一个形状：[FushiPopupMenuButton] 用它裁剪悬停 / 按压
+  /// 状态层（2026-10-05 用户反馈：灰色反馈范围与高亮 chip 对不上）。
+  @override
+  ShapeBorder menuTriggerShape(BuildContext context) => isEinkTheme(context)
+      ? RoundedRectangleBorder(
+          borderRadius: const OutlineInputBorder().borderRadius,
+        )
+      : const StadiumBorder();
 
   @override
   Widget build(BuildContext context) {
