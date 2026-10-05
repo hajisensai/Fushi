@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
@@ -260,7 +261,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_book,
     );
 
@@ -286,7 +287,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_dict,
     );
 
@@ -305,7 +306,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_book,
     );
 
@@ -329,7 +330,7 @@ void main() {
 
     await tapDeleteAndConfirm(
       tester,
-      rowDeleteIcon: find.byIcon(Icons.delete_outline),
+      rowDeleteIcon: find.byIcon(FushiIcons.delete),
       menuLabel: t.sync_compare_delete_audiobook,
     );
 
@@ -346,7 +347,7 @@ void main() {
     expect(find.text('BookA'), findsOneWidget);
 
     // Re-open the row overflow: the audiobook item is gone, the book item stays.
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(FushiIcons.delete));
     await tester.pumpAndSettle();
     expect(find.text(t.sync_compare_delete_audiobook), findsNothing);
     expect(find.text(t.sync_compare_delete_book), findsOneWidget);
@@ -375,7 +376,7 @@ void main() {
         findsOneWidget,
       );
       // Still deletable on the remote side.
-      expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+      expect(find.byIcon(FushiIcons.delete), findsOneWidget);
     });
 
     testWidgets('remote-only dictionary shows Remote, never Local',
@@ -402,7 +403,7 @@ void main() {
         find.text('${t.sync_compare_local} · ${t.sync_compare_remote}'),
         findsNothing,
       );
-      expect(find.byIcon(Icons.delete_outline), findsNothing);
+      expect(find.byIcon(FushiIcons.delete), findsNothing);
     });
   });
 }

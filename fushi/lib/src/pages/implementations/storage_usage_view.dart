@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +11,8 @@ import 'package:fushi/src/media/video/video_shader_downloader.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show settingsFootnoteStyle;
 import 'package:fushi/src/storage/storage_usage_service.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置 →「存储」目的地正文（经 [SettingsDestination.body] 逃生口渲染）。
@@ -203,7 +206,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       context: context,
       title: t.storage_entry_delete_confirm_title(name: name),
       message: body,
-      icon: Icons.delete_outline,
+      icon: FushiIcons.delete,
       confirmLabel: t.dialog_delete,
       destructive: true,
     );
@@ -330,20 +333,20 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   static const Map<StorageCategoryId, IconData> _categoryIcons =
       <StorageCategoryId, IconData>{
-    StorageCategoryId.books: Icons.menu_book_outlined,
-    StorageCategoryId.dictionaries: Icons.translate_outlined,
-    StorageCategoryId.videoDownloads: Icons.movie_outlined,
-    StorageCategoryId.covers: Icons.image_outlined,
-    StorageCategoryId.subtitles: Icons.subtitles_outlined,
-    StorageCategoryId.shaders: Icons.auto_awesome_outlined,
-    StorageCategoryId.customFonts: Icons.font_download_outlined,
-    StorageCategoryId.web: Icons.public_outlined,
-    StorageCategoryId.exports: Icons.output_outlined,
-    StorageCategoryId.backups: Icons.backup_outlined,
-    StorageCategoryId.database: Icons.storage_outlined,
-    StorageCategoryId.ocrModels: Icons.document_scanner_outlined,
-    StorageCategoryId.cache: Icons.cached_outlined,
-    StorageCategoryId.other: Icons.more_horiz_outlined,
+    StorageCategoryId.books: FushiIcons.books,
+    StorageCategoryId.dictionaries: FushiIcons.dictionary,
+    StorageCategoryId.videoDownloads: FushiIcons.video,
+    StorageCategoryId.covers: FushiIcons.image,
+    StorageCategoryId.subtitles: FushiIcons.subtitles,
+    StorageCategoryId.shaders: FushiIcons.ai,
+    StorageCategoryId.customFonts: FushiIcons.font,
+    StorageCategoryId.web: FushiIcons.globe,
+    StorageCategoryId.exports: FushiIcons.upload,
+    StorageCategoryId.backups: FushiIcons.backup,
+    StorageCategoryId.database: FushiIcons.storage,
+    StorageCategoryId.ocrModels: FushiIcons.ocr,
+    StorageCategoryId.cache: FushiIcons.history,
+    StorageCategoryId.other: FushiIcons.moreHoriz,
   };
 
   String _categoryTitle(StorageCategoryId id) {
@@ -379,58 +382,195 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     }
   }
 
+  /// 占比图的配色：按体积降序给前 [_kSliceColorCount] 个非零类目分配强调色，
+  /// 其余并成中性色。墨水屏一律前景色（靠缝区分）。
+  static const int _kSliceColorCount = 5;
+
+  Map<StorageCategoryId, Color> _sliceColors(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final List<Color> palette = <Color>[
+      cs.primary,
+      cs.tertiary,
+      cs.secondary,
+      cs.onTertiaryContainer,
+      cs.onPrimaryContainer,
+    ];
+    final List<StorageCategoryUsage> ranked = _usage.values
+        .where((StorageCategoryUsage u) => u.bytes > 0)
+        .toList()
+      ..sort((StorageCategoryUsage a, StorageCategoryUsage b) =>
+          b.bytes.compareTo(a.bytes));
+    return <StorageCategoryId, Color>{
+      for (int i = 0; i < ranked.length; i++)
+        ranked[i].id: eink
+            ? cs.onSurface
+            : (i < _kSliceColorCount ? palette[i] : cs.outline),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Map<StorageCategoryId, Color> colors = _sliceColors(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _buildOverviewSection(),
+        FushiStaggeredEntrance(index: 0, child: _buildHero(colors)),
+        const SizedBox(height: 12),
+        FushiStaggeredEntrance(
+          index: 1,
+          child: _buildOverviewSection(colors),
+        ),
         if (_bundled.isNotEmpty) ...<Widget>[
           const SizedBox(height: 12),
-          _buildBundledSection(),
+          FushiStaggeredEntrance(index: 2, child: _buildBundledSection()),
         ],
       ],
     );
   }
 
-  Widget _buildOverviewSection() {
-    final int total = _usage.values
-        .fold<int>(0, (int sum, StorageCategoryUsage u) => sum + u.bytes);
-    return AdaptiveSettingsSection(
-      title: t.storage_overview_section,
+  int get _totalBytes => _usage.values
+      .fold<int>(0, (int sum, StorageCategoryUsage u) => sum + u.bytes);
+
+  /// M3E 总览卡：环形占比图（各类目一段、段间留缝、圆头，弹簧展开）+ 圆心
+  /// 等宽大号总量；页头一行是「总计」标签、扫描进度与刷新按钮。类目标题不在
+  /// 图例里重复——下方分段列表的每行都带同色圆点与百分比，就是图例。
+  Widget _buildHero(Map<StorageCategoryId, Color> colors) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool eink = isEinkTheme(context);
+    final int total = _totalBytes;
+    final List<double> fractions = <double>[
+      for (final StorageCategoryId id in StorageCategoryId.values)
+        total <= 0 ? 0 : (_usage[id]?.bytes ?? 0) / total,
+    ];
+    final List<Color> sliceColors = <Color>[
+      for (final StorageCategoryId id in StorageCategoryId.values)
+        colors[id] ?? cs.outline,
+    ];
+    final Widget header = Row(
       children: <Widget>[
-        AdaptiveSettingsRow(
-          title: t.storage_overview_total,
-          subtitle: _scanning ? t.storage_overview_scanning : null,
-          icon: Icons.pie_chart_outline,
-          showIcon: true,
-          trailing: Row(
+        const FushiListLeadingIcon(
+          FushiIcons.sdStorage,
+          shape: FushiLeadingShape.cookie,
+          tone: FushiCardTone.primary,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              if (_scanning)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Text(formatStorageBytes(total)),
-              const SizedBox(width: 4),
-              FushiIconButtonControl(
-                tooltip: t.storage_overview_refresh,
-                icon: const FushiIcon(Icons.refresh_outlined),
-                onPressed: _scanning ? null : _rescan,
+              Text(t.storage_overview_total, style: type.titleMediumEmphasized),
+              AnimatedSwitcher(
+                duration: motion.effectsFast.duration,
+                switchInCurve: motion.effectsFast.curve,
+                switchOutCurve: motion.effectsFast.curve,
+                child: _scanning
+                    ? Text(
+                        t.storage_overview_scanning,
+                        key: const ValueKey<String>('storage-scanning'),
+                        style: type.bodySmall
+                            .copyWith(color: cs.onSurfaceVariant),
+                      )
+                    : const SizedBox(
+                        key: ValueKey<String>('storage-idle'),
+                        height: 0,
+                      ),
               ),
             ],
           ),
         ),
+        if (_scanning)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: SizedBox(
+              width: 18,
+              height: 18,
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        FushiIconButtonControl(
+          tooltip: t.storage_overview_refresh,
+          icon: const FushiIcon(FushiIcons.refresh),
+          onPressed: _scanning ? null : _rescan,
+        ),
+      ],
+    );
+    return FushiCard(
+      pressScale: false,
+      padding: const EdgeInsets.fromLTRB(20, 16, 12, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          header,
+          const SizedBox(height: 16),
+          Center(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double size =
+                    math.min(200, math.max(140, constraints.maxWidth * 0.5));
+                return SizedBox.square(
+                  dimension: size,
+                  child: TweenAnimationBuilder<List<double>>(
+                    tween: _FractionsTween(
+                      begin: List<double>.filled(fractions.length, 0),
+                      end: fractions,
+                    ),
+                    duration: motion.spatialSlow.duration,
+                    curve: motion.spatialSlow.curve,
+                    builder: (BuildContext context, List<double> value, _) =>
+                        CustomPaint(
+                      painter: _StorageDonutPainter(
+                        fractions: value,
+                        colors: sliceColors,
+                        trackColor:
+                            eink ? cs.outline : cs.surfaceContainerHighest,
+                        strokeWidth: size * 0.11,
+                        outlineOnly: eink,
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(size * 0.18),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              formatStorageBytes(total),
+                              style: type.headlineMediumEmphasized.tabular
+                                  .copyWith(color: cs.onSurface),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverviewSection(Map<StorageCategoryId, Color> colors) {
+    final int total = _totalBytes;
+    return AdaptiveSettingsSection(
+      title: t.storage_overview_section,
+      children: <Widget>[
         for (final StorageCategoryId id in StorageCategoryId.values)
-          ..._buildCategoryRows(id),
+          ..._buildCategoryRows(id, colors[id], total),
       ],
     );
   }
 
-  List<Widget> _buildCategoryRows(StorageCategoryId id) {
+  List<Widget> _buildCategoryRows(
+    StorageCategoryId id,
+    Color? sliceColor,
+    int total,
+  ) {
     final StorageCategoryUsage? usage = _usage[id];
     // 未扫到且已结束 = 0 字节：仍显示行（0 也是信息）；扫描中未出结果的类目
     // 显示占位。
@@ -446,6 +586,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       // 一致；Apple 下图标是强调色单色、按下是 systemFill 高亮），不再混用列表项。
       AdaptiveSettingsRow(
         title: _categoryTitle(id),
+        // 占比（与环形图同一口径）；0 字节 / 扫描中不显示。
+        subtitle: usage != null && usage.bytes > 0 && total > 0
+            ? _percentLabel(usage.bytes / total)
+            : null,
         icon: _categoryIcons[id],
         showIcon: true,
         trailing: Row(
@@ -463,23 +607,35 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     )
                   : FushiIconButtonControl(
                       tooltip: t.storage_shaders_delete_anime4k,
-                      icon: const FushiIcon(Icons.auto_fix_off_outlined, size: 18),
+                      icon: const FushiIcon(FushiIcons.deleteSweep, size: 18),
                       onPressed: _anime4kDeleteAction,
                     ),
-            Text(usage == null ? '…' : formatStorageBytes(usage.bytes)),
+            // 图例圆点：与环形图里这一段同色。
+            if (sliceColor != null) ...<Widget>[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: sliceColor,
+                  shape: BoxShape.circle,
+                ),
+                child: const SizedBox.square(dimension: 10),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              usage == null ? '…' : formatStorageBytes(usage.bytes),
+              style: context.fushiType.bodyMedium.tabular,
+            ),
             if (expandable) ...<Widget>[
               const SizedBox(width: 4),
               // 展开指示：Apple = iOS 披露 chevron（展开转到朝下），MD3 =
               // expand_more（展开翻转朝上）；与可折叠设置分组同一口径。
               AnimatedRotation(
                 turns: expanded ? (isGlassDesign(context) ? 0.25 : 0.5) : 0.0,
-                duration: einkSafeDuration(
-                  context,
-                  const Duration(milliseconds: 180),
-                ),
+                duration: context.fushiMotion.spatialFast.duration,
+                curve: context.fushiMotion.spatialFast.curve,
                 child: isGlassDesign(context)
                     ? const FushiAppleChevron()
-                    : const FushiIcon(Icons.expand_more, size: 18),
+                    : const FushiIcon(FushiIcons.expandMore, size: 18),
               ),
             ],
           ],
@@ -492,6 +648,12 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       ),
       if (expandable && expanded) ..._buildEntryRows(usage),
     ];
+  }
+
+  /// 占比文案：不足 1% 保留一位小数（0.4%），否则取整。
+  static String _percentLabel(double fraction) {
+    final double pct = fraction * 100;
+    return '${pct.toStringAsFixed(pct < 1 ? 1 : 0)}%';
   }
 
   List<Widget> _buildEntryRows(StorageCategoryUsage usage) {
@@ -529,7 +691,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     )
                   : FushiIconButtonControl(
                       tooltip: t.dialog_delete,
-                      icon: const FushiIcon(Icons.delete_outline, size: 18),
+                      icon: const FushiIcon(FushiIcons.delete, size: 18),
                       onPressed: _busyEntryId != null
                           ? null
                           : () => _deleteEntry(entry),
@@ -555,7 +717,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           AdaptiveSettingsRow(
             title: c.name,
             subtitle: c.path,
-            icon: Icons.inventory_2_outlined,
+            icon: FushiIcons.widgets,
             showIcon: true,
             trailing: Text(formatStorageBytes(c.bytes)),
           ),
@@ -570,5 +732,91 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         ),
       ],
     );
+  }
+}
+
+/// 各类目占比的逐元素插值（长度恒为类目数，顺序固定）。
+class _FractionsTween extends Tween<List<double>> {
+  _FractionsTween({required super.begin, required super.end});
+
+  @override
+  List<double> lerp(double t) {
+    final List<double> a = begin!;
+    final List<double> b = end!;
+    return <double>[
+      for (int i = 0; i < b.length; i++)
+        (i < a.length ? a[i] : 0) + (b[i] - (i < a.length ? a[i] : 0)) * t,
+    ];
+  }
+}
+
+/// M3E 环形占比图：底轨一整圈，各非零段从 12 点方向顺时针排开，圆头、段间
+/// 留缝（缝宽随描边粗细换算成角度）。弹簧过冲时总和可能略超 1，按 1 截断。
+class _StorageDonutPainter extends CustomPainter {
+  _StorageDonutPainter({
+    required this.fractions,
+    required this.colors,
+    required this.trackColor,
+    required this.strokeWidth,
+    required this.outlineOnly,
+  });
+
+  final List<double> fractions;
+  final List<Color> colors;
+  final Color trackColor;
+  final double strokeWidth;
+  final bool outlineOnly;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset center = size.center(Offset.zero);
+    final double radius = (math.min(size.width, size.height) - strokeWidth) / 2;
+    if (radius <= 0) return;
+    final Rect rect = Rect.fromCircle(center: center, radius: radius);
+    final Paint track = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = outlineOnly ? 1 : strokeWidth
+      ..color = trackColor;
+    canvas.drawCircle(center, radius, track);
+
+    final List<int> live = <int>[
+      for (int i = 0; i < fractions.length; i++)
+        if (fractions[i] > 0.0005) i,
+    ];
+    if (live.isEmpty) return;
+    // 圆头会向两端各伸出半个线宽：缝 = 线宽 + 4px，换算成弧度。
+    final double gap = live.length > 1 ? (strokeWidth + 4) / radius : 0;
+    double start = -math.pi / 2;
+    double budget = 1;
+    for (final int i in live) {
+      final double f = math.min(fractions[i], budget);
+      budget -= f;
+      final double full = f * 2 * math.pi;
+      final double sweep = math.max(0.0001, full - gap);
+      final Paint paint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..color = colors[i];
+      canvas.drawArc(rect, start + gap / 2, sweep, false, paint);
+      start += full;
+      if (budget <= 0) break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_StorageDonutPainter old) =>
+      old.trackColor != trackColor ||
+      old.strokeWidth != strokeWidth ||
+      old.outlineOnly != outlineOnly ||
+      !_listEquals(old.fractions, fractions) ||
+      !_listEquals(old.colors, colors);
+
+  static bool _listEquals<T>(List<T> a, List<T> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 }
