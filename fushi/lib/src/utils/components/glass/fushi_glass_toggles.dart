@@ -214,6 +214,7 @@ Widget _glassCheckIndicator(
     checked: value ?? false,
     mixed: value == null ? true : null,
     inMutuallyExclusiveGroup: round ? true : null,
+    enabled: enabled,
     label: semanticLabel,
     child: _AppleToggleHit(
       enabled: enabled,
@@ -4350,6 +4351,8 @@ class _FushiAppleSegmentedControlState
       selected: selected,
       enabled: enabled,
       label: data.label ?? data.tooltip,
+      // 内层 GestureDetector 排除了语义，读屏的 tap 由这里直接接到选段。
+      onTap: enabled ? () => _select(index) : null,
       child: FocusableActionDetector(
         enabled: enabled,
         mouseCursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
@@ -4509,6 +4512,8 @@ class _AppleSegmentState extends State<_AppleSegment> {
       selected: widget.selected,
       enabled: widget.enabled,
       label: widget.semanticLabel,
+      // 内层 GestureDetector 排除了语义，读屏的 tap 由这里直接接到 onTap。
+      onTap: widget.enabled ? widget.onTap : null,
       child: FocusableActionDetector(
         enabled: widget.enabled,
         mouseCursor: widget.enabled

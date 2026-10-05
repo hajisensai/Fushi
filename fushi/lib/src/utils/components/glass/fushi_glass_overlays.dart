@@ -1293,6 +1293,8 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
       child: Semantics(
         button: true,
         enabled: enabled,
+        // 内层 GestureDetector 排除了语义，读屏的 tap 由这里直接接到 onTap。
+        onTap: enabled ? widget.onTap : null,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           excludeFromSemantics: true,

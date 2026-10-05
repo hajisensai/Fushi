@@ -165,6 +165,7 @@ Widget _glassChip(
     glass: glass,
     glassTint: selected || customUnselected ? fill : null,
     enabled: enabled,
+    selected: selected,
     onTap: onTap,
     focusNode: focusNode,
     autofocus: autofocus,
@@ -194,9 +195,14 @@ class _AppleChip extends StatefulWidget {
     this.focusable = true,
     this.glass = false,
     this.glassTint,
+    this.selected = false,
   });
 
   final bool interactive;
+
+  /// 选中态（ChoiceChip / FilterChip）：只进语义（读屏「已选中」），外观由
+  /// [fill] / [glassTint] 表达。
+  final bool selected;
 
   /// true：画成液态玻璃胶囊（库的 [GlassButton]，带按压拉伸），而不是实色
   /// [fill] 胶囊。
@@ -259,6 +265,7 @@ class _AppleChipState extends State<_AppleChip> {
     final bool tappable = widget.enabled && widget.onTap != null;
     final Widget gesture = Semantics(
       button: true,
+      selected: widget.selected,
       enabled: widget.enabled,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -337,7 +344,14 @@ class _AppleChipState extends State<_AppleChip> {
       child: body,
     );
     body = Opacity(opacity: widget.enabled ? 1 : 0.4, child: body);
-    body = Semantics(button: true, enabled: widget.enabled, child: body);
+    // GlassButton 排除了自己的语义，读屏的 tap 由这里直接接到 onTap。
+    body = Semantics(
+      button: true,
+      selected: widget.selected,
+      enabled: widget.enabled,
+      onTap: tappable ? widget.onTap : null,
+      child: body,
+    );
     if (!widget.focusable) return body;
     return FocusableActionDetector(
       enabled: widget.enabled,

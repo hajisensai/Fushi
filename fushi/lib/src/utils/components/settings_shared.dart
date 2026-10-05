@@ -331,7 +331,15 @@ class AdaptiveSettingsSurface extends StatelessWidget {
       ],
     );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
-    final Widget tappable = cupertino || glassDesign
+    // 玻璃：iOS 单元格口径的实色行（按下 systemFill）。无焦点根时行自己是 Tab
+    // 停靠点（Enter / 手柄 A 展开收起），有焦点根时交给外层焦点目标。
+    final Widget tappable = glassDesign && !cupertino
+        ? FushiAppleRow(
+            onTap: onTitleTap,
+            focusable: !hasFocusRoot,
+            child: header,
+          )
+        : cupertino
         ? GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onTitleTap,
@@ -993,15 +1001,14 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // - 有焦点根：目标可聚焦 + ExcludeFocus 生效 → 单停靠点（PR-0 契约）；
     // - 无焦点根：目标 skipTraversal + ExcludeFocus 直通 → InkWell/Switch 照旧
     //   参与原生 Tab 遍历，与旧「裸 InkWell」分支逐字节同语义。
-    // 「玻璃」设计系统：行的点击面换成 GestureDetector + 玻璃按压高亮
-    // （GlassListTile 的观感）；焦点目标、ExcludeFocus 与 MD3 同一结构，Enter /
-    // 手柄 A 仍经 _SettingsRowFocusTarget 的 ActivateIntent 激活。
+    // 「玻璃」设计系统：行的点击面换成 [FushiAppleRow]（iOS 单元格的按下
+    // systemFill 高亮）；焦点目标、ExcludeFocus 与 MD3 同一结构。行与 InkWell
+    // 一样自带焦点节点：无焦点根时它是 Tab 停靠点（Enter / 手柄 A → onTap，强调
+    // 色焦点描边）；有焦点根时被 ExcludeFocus 排除，由 _SettingsRowFocusTarget
+    // 的 ActivateIntent 激活。focusable 恒为 true（只靠 ExcludeFocus 门控），
+    // 切实验开关时树结构不变。
     final Widget tapSurface = isGlassDesign(context)
-        ? GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onTap,
-            child: FushiGlassPressHighlight(child: content),
-          )
+        ? FushiAppleRow(onTap: onTap, child: content)
         : InkWell(onTap: onTap, child: content);
     return _SettingsRowFocusTarget(
       onTap: onTap!,

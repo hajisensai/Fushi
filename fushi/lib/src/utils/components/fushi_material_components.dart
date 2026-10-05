@@ -322,20 +322,27 @@ class _FushiCardState extends State<FushiCard> {
   /// 是强调色 1.5px 细描边（不是 MD3 的 tonal 色块）；按下是 systemFill 高亮。
   /// 焦点（外层 Actions + FushiFocusTarget）、右键菜单、按压下沉与 margin 和
   /// MD3 分支同一套，调用点的 key / focusId 不变。
+  ///
+  /// 点击面是 [FushiAppleRow]（同 MD3 的 InkWell）：没有 FushiFocusRoot 时它
+  /// 自己就是 Tab 停靠点（Enter / 手柄 A → onTap，强调色焦点描边）；有焦点根时
+  /// 交给外层 FushiFocusTarget，行自身不再取焦点（一卡一个停靠点）。
   Widget _buildGlassCard(BuildContext context, Widget content) {
     final FushiAppleColors apple = appleColorsOf(context);
     final BorderRadius radius = widget.borderRadius ??
         FushiAppleMetrics.of(context).groupBorderRadius;
-    final bool interactive = widget.onTap != null ||
-        widget.onLongPress != null ||
-        widget.onSecondaryTap != null;
+    final bool interactive =
+        widget.onTap != null || widget.onLongPress != null;
     Widget body = content;
     if (interactive) {
-      body = GestureDetector(
-        behavior: HitTestBehavior.opaque,
+      body = FushiAppleRow(
         onTap: widget.onTap,
         onLongPress: widget.onLongPress,
-        child: FushiGlassPressHighlight(borderRadius: radius, child: body),
+        selected: widget.selected,
+        // 卡片选中靠下面的强调色描边，不铺选中底。
+        selectedBackground: Colors.transparent,
+        focusable: FushiFocusRoot.maybeControllerOf(context) == null,
+        borderRadius: radius,
+        child: body,
       );
     }
     // 描边层恒在（只换颜色）：按选中态增删这一层会让卡片内容整棵重挂。
