@@ -25,6 +25,12 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeInset,
+        FushiHeightReporter,
+        FushiTopFadeScrim,
+        kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -1405,6 +1411,19 @@ class _HomePageState extends BasePageState<HomePage>
     _appleChrome.syncScope(_visibleTab);
     _largeTitle.syncScope(_visibleTab);
     final bool apple = isGlassDesign(context);
+    final bool overlayTitle = !apple && _tabHasFloatingChrome(_visibleTab);
+    final bool narrow = windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact;
+    // 叠放标题让出的高度：宽窗 = 标题条展开高度 + 6（收起成 48 的标题胶囊后，
+    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题，只留 8 的呼吸。
+    final double titleInset = !overlayTitle
+        ? 0
+        : narrow
+            ? kFushiFloatingChromeGap
+            : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
@@ -1418,27 +1437,97 @@ class _HomePageState extends BasePageState<HomePage>
       },
       // 外壳大标题条在内容之上（库页的分区页签行之上）；条与内容的父层两套
       // 设计系统、有无标题都恒定，只靠条的高度 / 透明度变化。
+      //
+      // MD3 库页（书 / 漫画 / 视频 / 游戏，内容顶部是叠放的浮动工具栏）：大标题
+      // 条改为**叠在内容上**（[_floatingTitleOverlay]），内容经
+      // [FushiFloatingChromeInset] 让出恒定的顶部高度——条收起（56→52）不再
+      // 改内容视口，也不再在条下沿留一道实色硬切边（用户 2026-10-06 截图「滚
+      // 下去这里会贴住」）。窄窗不显示这条标题（见 [_floatingTitleOverlay]）。
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           ListenableBuilder(
             listenable: _largeTitle,
-            builder: (BuildContext context, Widget? _) =>
-                FushiShellLargeTitleBar(
-              title: _shellTitleFor(_visibleTab),
-              collapsed: _largeTitle.collapsed,
-              actions: _shellActions,
+            builder: (BuildContext context, Widget? _) => overlayTitle
+                ? const SizedBox.shrink()
+                : _buildShellTitleBar(),
+          ),
+          Expanded(
+            child: _withAppleTopEdge(
+              FushiFloatingChromeInset(top: titleInset, child: content),
+              apple: apple,
+              overlay: overlayTitle && !narrow
+                  ? _floatingTitleOverlay(titleInset)
+                  : const <Widget>[],
             ),
           ),
-          Expanded(child: _withAppleTopEdge(content, apple: apple)),
         ],
       ),
     );
   }
 
+  /// 外壳大标题条（两种摆法共用同一份配置）。
+  Widget _buildShellTitleBar() => FushiShellLargeTitleBar(
+        title: _shellTitleFor(_visibleTab),
+        collapsed: _largeTitle.collapsed,
+        actions: _shellActions,
+      );
+
+  /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
+  /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
+  /// 它们上面。
+  static bool _tabHasFloatingChrome(HomeTab tab) => switch (tab) {
+        HomeTab.books || HomeTab.manga || HomeTab.video || HomeTab.games =>
+          true,
+        _ => false,
+      };
+
+  /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
+  /// 所以内容让出的高度恒定）。
+  double _overlayTitleHeight = 0;
+
+  void _onOverlayTitleHeight(double height) {
+    if (!mounted || height <= _overlayTitleHeight) return;
+    setState(() => _overlayTitleHeight = height);
+  }
+
+  /// 叠在内容上的外壳大标题条 + 它背后的顶部渐隐遮罩（宽窗）。
+  ///
+  /// 窄窗（手机竖屏 / 窄窗口）不显示这条标题：M3E 浮动工具栏在紧凑窗口里
+  /// 取代顶部应用栏，模块名已经在底部导航 / 侧栏上，库页自己的分区页签胶囊
+  /// 就是顶部锚点——单独一整行标题胶囊只占地方（用户 2026-10-06）。并进页签行
+  /// 会和页签胶囊、动作胶囊三颗挤一行；「只在收起时显示」会在工具栏还没收起的
+  /// 那段距离里与页签胶囊重叠，都不取。
+  List<Widget> _floatingTitleOverlay(double titleInset) => <Widget>[
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: FushiTopFadeScrim(solidHeight: titleInset),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: FushiHeightReporter(
+            onHeight: _onOverlayTitleHeight,
+            child: ListenableBuilder(
+              listenable: _largeTitle,
+              builder: (BuildContext context, Widget? _) =>
+                  _buildShellTitleBar(),
+            ),
+          ),
+        ),
+      ];
+
   /// 外壳大标题条下面那条 scroll edge 带（Apple：内容滚上去之后内容区顶部的
-  /// soft 渐隐）。
-  Widget _withAppleTopEdge(Widget content, {required bool apple}) {
+  /// soft 渐隐）；[overlay] 是叠在内容上的大标题条（MD3 库页，见
+  /// [_floatingTitleOverlay]），排在内容之后。
+  Widget _withAppleTopEdge(
+    Widget content, {
+    required bool apple,
+    List<Widget> overlay = const <Widget>[],
+  }) {
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
@@ -1459,6 +1548,7 @@ class _HomePageState extends BasePageState<HomePage>
               ),
             ),
           ),
+        ...overlay,
       ],
     );
   }

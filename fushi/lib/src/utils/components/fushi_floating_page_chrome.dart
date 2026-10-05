@@ -27,6 +27,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiIconButtonControl;
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
+    show SmoothWheelScrollScope;
 
 /// 悬浮页头胶囊的高：48 = M3E 小号图标按钮 40 + 上下 4（与
 /// [kFushiFloatingToolbarCompactExtent] 一致）。
@@ -187,6 +189,8 @@ class FushiScrollAwayController extends ChangeNotifier {
 
   /// 喂滚动通知；永远返回 false（不拦截冒泡）。只认竖向滚动。
   bool handleNotification(Notification notification) {
+    // 平滑滚轮补间的「拉回起点」不是用户滚动（[SmoothWheelScrollScope.isRewinding]）。
+    if (SmoothWheelScrollScope.isRewinding) return false;
     if (notification is UserScrollNotification) {
       if (notification.metrics.axis != Axis.vertical) return false;
       switch (notification.direction) {
