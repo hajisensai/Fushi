@@ -6408,5 +6408,9 @@
   "dict_overview_title": "Overview",
   "dict_empty_hint": "Import Yomitan .zip, DSL, MDict or StarDict dictionaries, or download a recommended set.",
   "dict_empty_drop_hint": "You can also drag dictionary files onto this window.",
-  "dict_detail_order_position": "Position $n / $m"
+  "dict_detail_order_position": "Position $n / $m",
+  "dict_order_position_move": "Move to position…",
+  "dict_order_position_title": "Move to position",
+  "dict_order_position_label": "Position (1–$m)",
+  "dict_order_position_clamped": "Out of range — will move to position $n"
 }

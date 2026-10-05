@@ -6408,5 +6408,9 @@
   "dict_overview_title": "概览",
   "dict_empty_hint": "支持导入 Yomitan .zip、DSL、MDict、StarDict 词典，或一键下载推荐词典。",
   "dict_empty_drop_hint": "也可以把词典文件直接拖进窗口。",
-  "dict_detail_order_position": "第 $n / $m 位"
+  "dict_detail_order_position": "第 $n / $m 位",
+  "dict_order_position_move": "移到指定位置…",
+  "dict_order_position_title": "移到第几位",
+  "dict_order_position_label": "位置（1–$m）",
+  "dict_order_position_clamped": "超出范围，将移到第 $n 位"
 }

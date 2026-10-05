@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show KeyDownEvent, KeyEvent, KeyRepeatEvent, LogicalKeyboardKey;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -81,6 +83,7 @@ class DictionaryManagerDetail extends StatelessWidget {
     required this.onLanguage,
     required this.onUpdate,
     required this.onMoveTo,
+    required this.onMoveToPrompt,
     required this.onDelete,
     this.showHeader = true,
     super.key,
@@ -106,6 +109,9 @@ class DictionaryManagerDetail extends StatelessWidget {
 
   /// 移到本类型列表的最终下标（0 起）。
   final ValueChanged<int> onMoveTo;
+
+  /// 「移到第几位」：弹位置输入框（见 [showDictionaryPositionDialog]）。
+  final VoidCallback onMoveToPrompt;
   final VoidCallback onDelete;
   final bool showHeader;
 
@@ -164,9 +170,12 @@ class DictionaryManagerDetail extends StatelessWidget {
           title: t.dict_detail_order_section,
           children: <Widget>[
             AdaptiveSettingsRow(
+              key: const ValueKey<String>('dict-detail-position'),
               title: t.dict_detail_order_position(n: position + 1, m: count),
               icon: Icons.low_priority,
               showIcon: true,
+              // 点「第 n / m 位」本身也是「移到第几位」。
+              onTap: count > 1 ? onMoveToPrompt : null,
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
@@ -200,6 +209,13 @@ class DictionaryManagerDetail extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+            AdaptiveSettingsRow(
+              key: const ValueKey<String>('dict-detail-move-to'),
+              title: t.dict_order_position_move,
+              icon: Icons.format_list_numbered,
+              showIcon: true,
+              onTap: count > 1 ? onMoveToPrompt : null,
             ),
           ],
         ),
@@ -591,6 +607,234 @@ class DictionaryManagerEmptyState extends StatelessWidget {
                 icon: const FushiIcon(Icons.cloud_download_outlined, size: 18),
                 label: Text(t.dict_download_browse),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 把用户输入的位置文本解析成 1 起的位置，并夹进 `1..count`。
+///
+/// - 空 / 非数字 → null（确认键置灰，回车不提交）；
+/// - 越界 → 夹到最近的端点（输 0 = 第 1 位，输 99 = 最后一位），对话框里会
+///   提示「将移到第 n 位」，不静默改值。
+@visibleForTesting
+int? parseDictionaryPosition(String text, int count) {
+  final int? value = int.tryParse(text.trim());
+  if (value == null || count <= 0) return null;
+  return value.clamp(1, count);
+}
+
+/// 「移到第几位」输入框：数字输入 + 两侧 −/+ 步进（输入框里 ↑/↓ 同样步进），
+/// 回车 / 确认提交。返回**最终下标（0 起）**；取消返回 null。
+///
+/// 外壳与改名框同一套（[FushiDialogFrame] + [FushiModalSheetFrame]），所以 MD3 /
+/// Apple 两套设计系统、对话框转场、焦点圈都随共享组件走。
+Future<int?> showDictionaryPositionDialog({
+  required BuildContext context,
+  required String name,
+  required int position,
+  required int count,
+}) {
+  return showAppDialog<int>(
+    context: context,
+    builder: (_) => DictionaryPositionDialog(
+      name: name,
+      position: position,
+      count: count,
+    ),
+  );
+}
+
+@visibleForTesting
+class DictionaryPositionDialog extends StatefulWidget {
+  const DictionaryPositionDialog({
+    required this.name,
+    required this.position,
+    required this.count,
+    super.key,
+  });
+
+  final String name;
+
+  /// 当前下标（0 起）与本类型词典总数。
+  final int position;
+  final int count;
+
+  @override
+  State<DictionaryPositionDialog> createState() =>
+      _DictionaryPositionDialogState();
+}
+
+class _DictionaryPositionDialogState extends State<DictionaryPositionDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: '${widget.position + 1}');
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _controller.text.length,
+    );
+    _controller.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_onChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onChanged() => setState(() {});
+
+  int? get _parsed => parseDictionaryPosition(_controller.text, widget.count);
+
+  bool get _clamped {
+    final int? raw = int.tryParse(_controller.text.trim());
+    final int? parsed = _parsed;
+    return raw != null && parsed != null && raw != parsed;
+  }
+
+  void _step(int delta) {
+    final int base = _parsed ?? widget.position + 1;
+    final int next = (base + delta).clamp(1, widget.count);
+    _controller.value = TextEditingValue(
+      text: '$next',
+      selection: TextSelection.collapsed(offset: '$next'.length),
+    );
+  }
+
+  void _submit() {
+    final int? target = _parsed;
+    if (target == null) return;
+    Navigator.pop(context, target - 1);
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+      _step(1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+      _step(-1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextTheme textTheme = Theme.of(context).textTheme;
+    final int? parsed = _parsed;
+    return FushiDialogFrame(
+      maxWidth: 380,
+      maxHeightFactor: 0.74,
+      scrollable: false,
+      child: FushiModalSheetFrame(
+        title: t.dict_order_position_title,
+        subtitle: widget.name,
+        leadingIcon: Icons.format_list_numbered,
+        scrollable: true,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiIconButton(
+                  key: const ValueKey<String>('dict-position-dec'),
+                  icon: Icons.remove,
+                  tooltip: t.move_up,
+                  enabled: (parsed ?? 1) > 1,
+                  onTap: () => _step(-1),
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                Expanded(
+                  child: Focus(
+                    canRequestFocus: false,
+                    skipTraversal: true,
+                    onKeyEvent: _onKey,
+                    child: FushiTextField(
+                      key: const ValueKey<String>('dict-position-field'),
+                      controller: _controller,
+                      labelText: t.dict_order_position_label(m: widget.count),
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      autofocus: true,
+                      onSubmitted: (_) => _submit(),
+                    ),
+                  ),
+                ),
+                SizedBox(width: tokens.spacing.gap),
+                FushiIconButton(
+                  key: const ValueKey<String>('dict-position-inc'),
+                  icon: Icons.add,
+                  tooltip: t.move_down,
+                  enabled: (parsed ?? widget.count) < widget.count,
+                  onTap: () => _step(1),
+                ),
+              ],
+            ),
+            // 越界提示：淡入 + 高度展开（时长取 FushiMotion，减弱动态效果下归零）。
+            AnimatedSize(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              child: AnimatedOpacity(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                opacity: _clamped ? 1 : 0,
+                child: _clamped
+                    ? Padding(
+                        padding: EdgeInsets.only(top: tokens.spacing.gap),
+                        child: Text(
+                          t.dict_order_position_clamped(n: parsed!),
+                          style: textTheme.bodySmall?.copyWith(
+                            color: fushiStatusColor(
+                              context,
+                              FushiStatusTone.warning,
+                            ),
+                          ),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+            ),
+          ],
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: parsed == null ? null : _submit,
+              child: Text(t.dialog_ok),
             ),
           ],
         ),
