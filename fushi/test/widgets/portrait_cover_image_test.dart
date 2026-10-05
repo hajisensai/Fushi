@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// BUG-1299：[PortraitCoverImage] 槽向自适应行为（此前该组件零测试覆盖）。
 ///
@@ -68,21 +69,21 @@ void main() {
     await pumpCover(tester,
         imageWidth: 20, imageHeight: 30, landscapeSlot: false);
     expect(foregroundFit(tester), BoxFit.cover);
-    expect(find.byType(ImageFiltered), findsNothing);
+    expect(find.byType(PrebakedBlurImage), findsNothing);
   });
 
   testWidgets('竖槽 + 横图：模糊垫底 + contain 前景', (WidgetTester tester) async {
     await pumpCover(tester,
         imageWidth: 32, imageHeight: 18, landscapeSlot: false);
     expect(foregroundFit(tester), BoxFit.contain);
-    expect(find.byType(ImageFiltered), findsOneWidget);
+    expect(find.byType(PrebakedBlurImage), findsOneWidget);
   });
 
   testWidgets('横槽 + 横图：cover 铺满，无模糊垫底', (WidgetTester tester) async {
     await pumpCover(tester,
         imageWidth: 32, imageHeight: 18, landscapeSlot: true);
     expect(foregroundFit(tester), BoxFit.cover);
-    expect(find.byType(ImageFiltered), findsNothing);
+    expect(find.byType(PrebakedBlurImage), findsNothing);
   });
 
   testWidgets('横槽 + 竖图（BUG-1299 主诉）：模糊垫底 + contain，不再裁成中间一条',
@@ -90,7 +91,7 @@ void main() {
     await pumpCover(tester,
         imageWidth: 20, imageHeight: 30, landscapeSlot: true);
     expect(foregroundFit(tester), BoxFit.contain);
-    expect(find.byType(ImageFiltered), findsOneWidget);
+    expect(find.byType(PrebakedBlurImage), findsOneWidget);
   });
 
   testWidgets('方图两种槽向都不合槽：均走垫底（cover 会裁掉四成以上）', (WidgetTester tester) async {

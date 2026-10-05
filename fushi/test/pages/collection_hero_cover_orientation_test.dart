@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 
 /// BUG-1298 守卫：合集详情页 hero 是宽幅槽（整屏宽 × 400~600 高，约 2.7:1），
 /// 而它的图源 `MediaCollections.coverPath` 一个列同时承载两种朝向——导入抽帧的
@@ -36,7 +37,7 @@ void main() {
             '不得回归',
       );
       expect(
-        find.byType(ImageFiltered),
+        find.byType(PrebakedBlurImage),
         findsNothing,
         reason: '横图不需要模糊垫底；出现垫底说明朝向判定把横图误判成竖图',
       );
@@ -50,7 +51,7 @@ void main() {
       await _pumpHero(tester, provider);
 
       expect(
-        find.byType(ImageFiltered),
+        find.byType(PrebakedBlurImage),
         findsOneWidget,
         reason: '竖版海报必须有模糊垫底填满宽幅槽的两侧，否则要么黑边要么被裁',
       );
@@ -67,16 +68,16 @@ void main() {
           MemoryImage(await _solidPngBytes(tester, 853, 1200));
       await _pumpHero(tester, provider);
 
-      // 取渲染出竖图三层的那个 Stack（含 ImageFiltered 垫底的那个）。
+      // 取渲染出竖图三层的那个 Stack（含模糊垫底的那个）。
       final Stack stack = tester
           .widgetList<Stack>(find.byType(Stack))
-          .firstWhere(
-              (Stack s) => s.children.any((Widget w) => w is ImageFiltered));
+          .firstWhere((Stack s) =>
+              s.children.any((Widget w) => w is PrebakedBlurImage));
 
       final int overlayIndex =
           stack.children.indexWhere((Widget w) => w.key == _overlayKey);
       final int blurIndex =
-          stack.children.indexWhere((Widget w) => w is ImageFiltered);
+          stack.children.indexWhere((Widget w) => w is PrebakedBlurImage);
       final int foregroundIndex =
           stack.children.indexWhere((Widget w) => w is Padding);
 
