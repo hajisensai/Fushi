@@ -15,6 +15,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(
@@ -502,6 +503,56 @@ void main() {
 
       expect(notifier.theme.platform, TargetPlatform.windows);
       expect(notifier.darkTheme.platform, TargetPlatform.windows);
+    });
+
+    group('glass design system', () {
+      tearDown(() => SystemTransparency.reduceTransparency.value = false);
+
+      test('glass is a visible design system rendered by Material', () async {
+        await notifier.setDesignSystem('glass');
+        expect(notifier.designSystem, 'glass');
+        expect(notifier.designSystemTheme, FushiDesignSystem.material);
+      });
+
+      test('glass material is off unless the glass design system is chosen',
+          () async {
+        await notifier.setGlassMaterial(FushiGlassMaterial.frosted);
+        await notifier.setDesignSystem('material');
+        expect(notifier.glassMaterial, FushiGlassMaterial.off);
+        expect(
+          notifier.theme.extension<FushiGlassTheme>()?.material,
+          FushiGlassMaterial.off,
+        );
+
+        await notifier.setDesignSystem('glass');
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
+        expect(
+          notifier.theme.extension<FushiGlassTheme>()?.material,
+          FushiGlassMaterial.frosted,
+        );
+      });
+
+      test('glass tier defaults to liquid and never resolves to off', () async {
+        await notifier.setDesignSystem('glass');
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterial, FushiGlassMaterial.liquid);
+
+        await notifier.setGlassMaterial(FushiGlassMaterial.off);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.liquid);
+      });
+
+      test('system reduce-transparency turns glass off and rebuilds', () async {
+        await notifier.setDesignSystem('glass');
+        int notified = 0;
+        notifier.addListener(() => notified++);
+
+        SystemTransparency.reduceTransparency.value = true;
+        expect(notified, 1);
+        expect(notifier.glassMaterial, FushiGlassMaterial.off);
+
+        SystemTransparency.reduceTransparency.value = false;
+        expect(notifier.glassMaterial, FushiGlassMaterial.liquid);
+      });
     });
   });
 

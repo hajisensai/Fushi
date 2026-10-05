@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -120,7 +121,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
   @override
   Widget build(BuildContext context) {
     final List<MihonPreference>? preferences = _preferences;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text('${widget.source.name} · ${t.mihon_source_preferences}'),
       content: SizedBox(
         width: 480,
@@ -140,11 +141,11 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
               ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _savingAll ? null : () => Navigator.pop(context),
           child: Text(t.dialog_close),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed:
               preferences == null ||
                   _error != null ||
@@ -162,7 +163,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
     final bool busy = _savingAll || _savingKey == preference.key;
     return switch (preference.kind) {
       MihonPreferenceKind.checkBox ||
-      MihonPreferenceKind.switchControl => SwitchListTile.adaptive(
+      MihonPreferenceKind.switchControl => FushiSwitchListTile.adaptive(
         title: Text(preference.title),
         subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
         value: preference.value == true,
@@ -172,7 +173,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
       ),
       MihonPreferenceKind.text => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: TextFormField(
+        child: FushiTextFormFieldControl(
           key: ValueKey<String>('${preference.key}:${preference.value}'),
           initialValue: preference.value?.toString() ?? '',
           enabled: !busy,
@@ -185,7 +186,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
               unawaited(_save(preference, value)),
         ),
       ),
-      MihonPreferenceKind.list => DropdownButtonFormField<int>(
+      MihonPreferenceKind.list => FushiDropdownButtonFormField<int>(
         value: (preference.value as int? ?? 0).clamp(
           0,
           preference.entries.length - 1,
@@ -205,7 +206,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
             ? null
             : (int? value) => unawaited(_save(preference, value ?? 0)),
       ),
-      MihonPreferenceKind.multiSelect => ExpansionTile(
+      MihonPreferenceKind.multiSelect => FushiExpansionTile(
         title: Text(preference.title),
         subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
         children: <Widget>[
@@ -235,7 +236,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
         ],
       ),
       MihonPreferenceKind.unsupported => FushiListItem(
-        leading: const Icon(Icons.warning_amber_outlined),
+        leading: const FushiIcon(Icons.warning_amber_outlined),
         title: Text(preference.title),
         subtitle: Text(t.mihon_extension_incompatible),
       ),
@@ -264,7 +265,7 @@ class _MihonMultiSelectRow extends StatelessWidget {
     final ValueChanged<bool?>? changed = onChanged;
     return FushiListItem(
       title: Text(label),
-      leading: Checkbox(value: selected, onChanged: changed),
+      leading: FushiCheckbox(value: selected, onChanged: changed),
       onTap: changed == null ? null : () => changed(!selected),
     );
   }

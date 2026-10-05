@@ -34,7 +34,7 @@ void main() {
     final int gate = body.indexOf('_readerTextContextMenuActive = true;');
     final int jsAwait = body.indexOf('evaluateJavascript(');
     final int prune = body.indexOf('_webviewPrunePopupStack(0);');
-    final int menu = body.indexOf('showMenu<String>(');
+    final int menu = body.indexOf('showFushiMenu<String>(');
     final int reset = body.lastIndexOf('_readerTextContextMenuActive = false;');
     expect(jsAwait, greaterThan(gate));
     expect(prune, greaterThan(jsAwait));

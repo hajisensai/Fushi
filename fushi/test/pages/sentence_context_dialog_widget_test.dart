@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/pages/implementations/sentence_context_dialog.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// BUG-763/766：「制卡·选择句子上下文」原生顶层对话框（[SentenceContextDialog]）行为测试。
 /// 旧模态画在查词弹窗 WebView 内、无头测试照不到；改原生对话框后可用 widget 测试钉死行为。
@@ -180,8 +181,7 @@ void main() {
     // 期间不能再按第二次，也不能改上下文（整屏进 busy）。
     expect(
       tester
-          .widget<FilledButton>(
-              find.widgetWithText(FilledButton, t.popup_ctx_confirm))
+          .widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.popup_ctx_confirm)))
           .onPressed,
       isNull,
     );
@@ -343,26 +343,26 @@ void main() {
     }
     // 底部主/次按钮。
     expect(
-      tester.widget<FilledButton>(find.widgetWithText(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(
         FilledButton,
         t.popup_ctx_confirm,
-      )).onPressed,
+      ))).onPressed,
       isNull,
       reason: '编辑态下「确认制卡」必须禁用——改到一半不该被制卡带走',
     );
     expect(
-      tester.widget<TextButton>(find.widgetWithText(
+      tester.widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(
         TextButton,
         t.popup_ctx_cancel,
-      )).onPressed,
+      ))).onPressed,
       isNull,
     );
     // 编辑器自己的两颗按钮反过来必须是活的。
     expect(
-      tester.widget<FilledButton>(find.widgetWithText(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(
         FilledButton,
         t.popup_ctx_edit_confirm,
-      )).onPressed,
+      ))).onPressed,
       isNotNull,
     );
     // 同时只允许一句在编辑：其余卡的编辑入口也被禁。

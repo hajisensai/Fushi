@@ -190,6 +190,12 @@ _AnimeIdentityCatalog _decodeIdentityCatalog(
   return _AnimeIdentityCatalog.fromRows(decoded);
 }
 
+/// Fribb `anime-list-full.json` 的行 → 按 AniDB 条目归并后的身份条目，与
+/// [AnimeIdentityMapping] 同一套解析规则（发现页的紧凑交叉索引复用它，不另写
+/// 一份字段解析）。
+List<AnimeIdentityEntry> animeIdentityEntriesFromRows(List<Object?> rows) =>
+    _AnimeIdentityCatalog.fromRows(rows).byAnidb.values.toList();
+
 class _AnimeIdentityCatalog {
   const _AnimeIdentityCatalog({
     required this.byAnidb,

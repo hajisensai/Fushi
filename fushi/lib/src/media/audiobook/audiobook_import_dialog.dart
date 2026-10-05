@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
@@ -310,9 +311,9 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               SizedBox(height: tokens.spacing.rowVertical),
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton.icon(
+                child: FushiTextButton.icon(
                   onPressed: importing ? null : () => _openReMatchSheet(ab),
-                  icon: const Icon(Icons.tune_outlined, size: 18),
+                  icon: const FushiIcon(Icons.tune_outlined, size: 18),
                   label: Text(t.rematch_adjust_window),
                 ),
               ),
@@ -353,19 +354,21 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     final String pctStr = health.ratePct?.toString() ?? '?';
     final String? reason = health.reason;
     final String tail = (reason == null || reason.isEmpty) ? '' : ' · $reason';
-    final cs = Theme.of(context).colorScheme;
+    // 状态色走共享 [fushiStatusColor]（MD3 与主色协调的绿 / 橙 / error；Apple
+    // 系统绿 / 橙 / 红）：旧实现借 tertiary / secondary 表达「成功 / 部分」，
+    // 在 Apple 色板里 tertiary 是橙、secondary 是强调色，语义全错位。
     switch (health.kind) {
       case HealthKind.ok:
         icon = Icons.check_circle;
-        color = cs.tertiary;
+        color = fushiStatusColor(context, FushiStatusTone.success);
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.partial:
         icon = Icons.warning_amber;
-        color = cs.secondary;
+        color = fushiStatusColor(context, FushiStatusTone.warning);
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.failed:
         icon = Icons.error_outline;
-        color = cs.error;
+        color = fushiStatusColor(context, FushiStatusTone.error);
         label = t.audiobook_rematch_health_label(pct: '$pctStr%', detail: tail);
       case HealthKind.running:
       case HealthKind.unrun:
@@ -374,7 +377,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     }
     return Row(
       children: [
-        Icon(icon, size: 16, color: color),
+        FushiIcon(icon, size: 16, color: color),
         SizedBox(width: tokens.spacing.gap),
         Expanded(
           child: Text(

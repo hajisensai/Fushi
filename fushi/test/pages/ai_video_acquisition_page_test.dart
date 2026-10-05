@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 对话页只渲染 service 状态：文本经 AI 解析、chip 永不经 AI、摘要卡三按钮、
 /// 「以后默认」勾选框默认勾上且值随 chip 一起回传。不挂 ProviderScope。
@@ -52,9 +53,7 @@ void main() {
     expect(ports.parseCalls, 1);
     // 画质偏好未设置 → 问画质，带「以后默认」勾选框且默认勾上。
     expect(service.state.question?.slot, VideoAcquisitionSlot.quality);
-    final Checkbox remember = tester.widget<Checkbox>(
-      find.byKey(const ValueKey<String>('ai-video-acquire-remember')),
-    );
+    final Checkbox remember = tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byKey(const ValueKey<String>('ai-video-acquire-remember'))),);
     expect(remember.value, isTrue);
 
     await tester.tap(

@@ -32,6 +32,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoControlLayout layout,
   ) {
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // Apple 分支只覆盖少数外观字段；MD3 分支一律回填 fork 构造器默认值（[fork]），
+    // 与「不传」逐像素等价。
+    final bool apple = _appleChrome;
+    const MaterialDesktopVideoControlsThemeData fork =
+        MaterialDesktopVideoControlsThemeData();
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
@@ -107,6 +112,42 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarPositionColor: _videoChromeAccent(cs),
       seekBarThumbColor: _videoChromeAccent(cs),
       buttonBarButtonColor: _videoChromeAccent(cs),
+      // Apple（iOS / macOS 26，见 video_apple_chrome.dart）：fork 的 38% 黑渐变换成
+      // 透明——很淡的顶 / 底暗化与底栏玻璃胶囊由 [VideoAppleChromeBackdrop] 在控制条
+      // 下面画；进度条是 AVKit 的圆头细轨（4，悬停 / 拖动加粗到 10，无滑块），已播放
+      // 白、缓冲浅白、未播灰；进度条与按钮行收进胶囊（左右内缩 + 整体抬离底边
+      // [_appleBottomLift]）。MD3 分支全部取 fork 默认值，像素不变。
+      backdropColor:
+          apple ? const Color(0x00000000) : fork.backdropColor,
+      seekBarRadius: apple ? 999 : fork.seekBarRadius,
+      seekBarHeight: apple ? _videoSeekBarTrackHeight : fork.seekBarHeight,
+      seekBarHoverHeight: apple
+          ? _VideoFushiPageState._videoAppleSeekBarActiveHeightBase *
+              _videoUiScale
+          : fork.seekBarHoverHeight,
+      seekBarColor: apple ? const Color(0x40FFFFFF) : fork.seekBarColor,
+      seekBarHoverColor:
+          apple ? const Color(0x1FFFFFFF) : fork.seekBarHoverColor,
+      seekBarBufferColor:
+          apple ? const Color(0x66FFFFFF) : fork.seekBarBufferColor,
+      seekBarThumbSize: apple ? 0 : fork.seekBarThumbSize,
+      seekBarMargin: apple
+          ? EdgeInsets.symmetric(horizontal: _videoSeekBarSideInset)
+          : fork.seekBarMargin,
+      // MD3 Expressive：进度条轨道交给宿主画（波浪已播段 / 竖条手柄 / 时间气泡 /
+      // 字幕密度刻度，[VideoM3eSeekTrack]）；手势、seek 落点与上面的回调仍归 fork。
+      seekBarTrackBuilder: apple
+          ? null
+          : (BuildContext _, VideoSeekBarVisual visual) =>
+              _m3eSeekTrack(controller, visual),
+      bottomButtonBarMargin: apple
+          ? EdgeInsets.fromLTRB(
+              _videoAppleButtonBarSideInset,
+              0,
+              _videoAppleButtonBarSideInset,
+              _appleBottomLift,
+            )
+          : fork.bottomButtonBarMargin,
       // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
       // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
       buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
@@ -137,7 +178,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // （`material_desktop.dart`），给 null 会把 media_kit 自己那套默认键装回来，
       // 与注册表打架。
       keyboardShortcuts: const <ShortcutActivator, VoidCallback>{},
-      primaryButtonBar: const <Widget>[],
+      // MD3 Expressive：画面中央 ±10s + 96dp 大播放键（fork 在缓冲时自动淡掉这一行，
+      // 换成居中的缓冲指示）。Apple 与 mini 档（自绘居中三键）不挂。
+      primaryButtonBar: _m3eCenterControlsBar(controller),
       // 视频内顶栏（替代被删的 Scaffold AppBar，BUG-102）：左右按钮和标题均从用户布局
       // slot 渲染；标题仍监听 _titleNotifier。
       topButtonBar: <Widget>[
@@ -149,7 +192,12 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // mini chrome 提供（[_buildMiniWindowTopChrome]）。
         if (_controlsDensity.showTopBar)
           Expanded(
-            child: VideoTopBarSlots(
+            // MD3 Expressive：显隐时顶栏上滑（叠在 fork 的淡入淡出上）。
+            child: VideoM3eChromeSlide(
+              enabled: !apple,
+              visible: _mediaKitControlsVisible,
+              hiddenOffset: Offset(0, -12 * _videoUiScale),
+              child: VideoTopBarSlots(
               leftLead: _topBarSlotGroup(
                 VideoControlSlot.topLeft,
                 controller,
@@ -181,6 +229,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
                 segment: VideoTopBarSegment.tail,
               ),
             ),
+            ),
           ),
       ],
       bottomButtonBar: <Widget>[
@@ -193,7 +242,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 即系统画中画那种观感）；系统画中画下连三键也不画（系统自带控件）。
         if (_controlsDensity.showBottomButtonBar)
           Expanded(
-            child: _centeredBottomControlBar(controller, desktop: true),
+            // MD3 Expressive：显隐时底栏下滑。
+            child: VideoM3eChromeSlide(
+              enabled: !apple,
+              visible: _mediaKitControlsVisible,
+              hiddenOffset: Offset(0, 12 * _videoUiScale),
+              child: _centeredBottomControlBar(controller, desktop: true),
+            ),
           ),
       ],
     );
@@ -217,9 +272,14 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
     // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
+    // Apple：底栏玻璃胶囊把整组控件再抬一点（[_appleBottomLift]，MD3 恒 0）。
     final double bottomChromeInset =
         _VideoFushiPageState._videoBottomChromeBaseline +
-            _videoBottomSystemInset();
+            _videoBottomSystemInset() +
+            _appleBottomLift;
+    // 同桌面 theme：Apple 分支只覆盖外观字段，MD3 回填 fork 构造器默认值。
+    final bool apple = _appleChrome;
+    const MaterialVideoControlsThemeData fork = MaterialVideoControlsThemeData();
     // 进度条抬到底部按钮条上方（TODO-156/BUG-217）：media_kit 把进度条与按钮条放同一
     // 个 bottomCenter Stack、都按 bottom 对齐，进度条 bottom 必须 = 按钮条底部基线 +
     // 按钮条高 + 间距，否则两者落同一基线重叠。保留 [bottomChromeInset]（BUG-184 抬离
@@ -332,14 +392,15 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 进度条抬到按钮条上方（TODO-156）：bottom = 按钮条基线 + 按钮条高 + 间距，
       // 不再与按钮条同基线重叠。
       seekBarMargin: EdgeInsets.only(
-        left: 16,
-        right: 16,
+        left: _videoSeekBarSideInset,
+        right: _videoSeekBarSideInset,
         bottom: seekBarBottom,
       ),
-      // 底部按钮条留在系统栏上方基线（沿用 media_kit 默认的左右 16/8）。
+      // 底部按钮条留在系统栏上方基线（沿用 media_kit 默认的左右 16/8）。Apple 下
+      // 按钮行收进玻璃胶囊，左右对称内缩。
       bottomButtonBarMargin: EdgeInsets.only(
-        left: 16,
-        right: 8,
+        left: apple ? _videoAppleButtonBarSideInset : 16,
+        right: apple ? _videoAppleButtonBarSideInset : 8,
         bottom: bottomChromeInset,
       ),
       // 进度条触摸热区 / 滑块 / 轨道整体抬高（TODO-157/BUG-218）：media_kit 默认
@@ -357,11 +418,30 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarPositionColor: _videoChromeAccent(cs),
       seekBarThumbColor: _videoChromeAccent(cs),
       buttonBarButtonColor: _videoChromeAccent(cs),
+      // Apple（同桌面 theme）：整屏 40% 黑 backdrop 换成透明（很淡的暗化与胶囊玻璃
+      // 由 [VideoAppleChromeBackdrop] 画）；圆头细轨，按住加粗（iOS 26 scrubber），
+      // 已播放白、缓冲浅白、未播灰。
+      backdropColor: apple ? const Color(0x00000000) : fork.backdropColor,
+      seekBarRadius: apple ? 999 : fork.seekBarRadius,
+      seekBarActiveHeight: apple
+          ? _VideoFushiPageState._videoAppleSeekBarActiveHeightBase *
+              _videoUiScale *
+              density
+          : fork.seekBarActiveHeight,
+      seekBarColor: apple ? const Color(0x40FFFFFF) : fork.seekBarColor,
+      seekBarBufferColor:
+          apple ? const Color(0x66FFFFFF) : fork.seekBarBufferColor,
+      // MD3 Expressive 轨道（同桌面 theme）。
+      seekBarTrackBuilder: apple
+          ? null
+          : (BuildContext _, VideoSeekBarVisual visual) =>
+              _m3eSeekTrack(controller, visual),
       // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
       // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
       buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
       buttonBarButtonSize: _videoControlIconSize * _controlsDensityScale,
-      primaryButtonBar: const <Widget>[],
+      // MD3 Expressive 中央 ±10s + 大播放键（同桌面 theme）。
+      primaryButtonBar: _m3eCenterControlsBar(controller),
       // 视频内顶栏抬离状态栏 / 刘海（BUG-463）：移动端视频永不进 media_kit 全屏路由
       // （BUG-221），fork 只在全屏分支给顶栏套 `MediaQuery.padding` 顶部内缩、窗口分支恒
       // `EdgeInsets.zero` → 顶栏按钮永远贴 y=0 被系统栏 / 刘海盖住。这里把系统顶部 / 左 / 右
@@ -376,7 +456,12 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 同桌面：mini 档整条顶栏收起。
         if (_controlsDensity.showTopBar)
           Expanded(
-            child: VideoTopBarSlots(
+            // MD3 Expressive：显隐时顶栏上滑（叠在 fork 的淡入淡出上）。
+            child: VideoM3eChromeSlide(
+              enabled: !apple,
+              visible: _mediaKitControlsVisible,
+              hiddenOffset: Offset(0, -12 * _videoUiScale),
+              child: VideoTopBarSlots(
               leftLead: _topBarSlotGroup(
                 VideoControlSlot.topLeft,
                 controller,
@@ -408,6 +493,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
                 segment: VideoTopBarSegment.tail,
               ),
             ),
+            ),
           ),
       ],
       bottomButtonBar: <Widget>[
@@ -418,7 +504,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 同桌面：mini 档整行让位给自绘居中三键。
         if (_controlsDensity.showBottomButtonBar)
           Expanded(
-            child: _centeredBottomControlBar(controller, desktop: false),
+            // MD3 Expressive：显隐时底栏下滑。
+            child: VideoM3eChromeSlide(
+              enabled: !apple,
+              visible: _mediaKitControlsVisible,
+              hiddenOffset: Offset(0, 12 * _videoUiScale),
+              child: _centeredBottomControlBar(controller, desktop: false),
+            ),
           ),
       ],
     );
@@ -452,8 +544,44 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // [_osdTextColor]，inverseSurface 自配对），字号 / 内边距吃 [_videoUiScale]
     // ——此前硬编码 0xCC000000 / 白 / 22px，是页内唯一不吃缩放的 OSD。
     final ColorScheme cs = _videoChromeColorScheme(context);
-    final Color textColor = _osdTextColor(cs);
     final double scale = _videoUiScale;
+    // Apple：横滑跳转提示是一枚深色液态玻璃胶囊（与音量 HUD / 通知同一材质），
+    // 目标时间用等宽数字白字、增量降一级透明度。
+    final bool apple = _appleChrome;
+    final Color textColor = apple ? videoChromeNeutralForeground : _osdTextColor(cs);
+    final Widget labels = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          targetLabel,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 22 * scale,
+            fontWeight: FontWeight.w600,
+            color: textColor,
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          deltaLabel,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 14 * scale,
+            color: textColor.withValues(alpha: 0.8),
+            fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
+    if (apple) {
+      return VideoGlassHud(
+        radius: 22 * scale,
+        padding:
+            EdgeInsets.symmetric(horizontal: 22 * scale, vertical: 12 * scale),
+        child: labels,
+      );
+    }
     return Container(
       alignment: Alignment.center,
       padding:
@@ -462,31 +590,77 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         color: _osdSurfaceColor(cs),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            targetLabel,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 22 * scale,
-              fontWeight: FontWeight.w600,
-              color: textColor,
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            deltaLabel,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14 * scale,
-              color: textColor.withValues(alpha: 0.8),
-              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
-      ),
+      child: labels,
     );
+  }
+
+  /// MD3 Expressive 进度条轨道（fork `seekBarTrackBuilder`）。缩略图预览在时（桌面
+  /// 本地文件）不出时间气泡——预览自带时间戳，两个时间叠在一起反而乱。
+  Widget _m3eSeekTrack(
+    VideoPlayerController controller,
+    VideoSeekBarVisual visual,
+  ) {
+    return VideoM3eSeekTrack(
+      visual: visual,
+      color: _videoChromeAccent(Theme.of(context).colorScheme),
+      scale: _videoUiScale * _controlsDensityScale,
+      hoverBubble: _thumbnailPreview == null,
+      cueDensity: _m3eCueDensity(controller, visual.duration),
+    );
+  }
+
+  /// MD3 Expressive 画面中央控制行（fork `primaryButtonBar`）：`[−10s] [▶ 96dp] [+10s]`。
+  /// Apple、mini 档（底栏整行让位给自绘居中三键）与系统画中画下为空。
+  List<Widget> _m3eCenterControlsBar(VideoPlayerController controller) {
+    if (_appleChrome || !_controlsDensity.showBottomButtonBar) {
+      return const <Widget>[];
+    }
+    // compact 档（窄窗 / 小屏）整组缩到 0.72。
+    final double k =
+        _videoUiScale *
+        (_controlsDensity.density == VideoControlsDensity.full ? 1 : 0.72);
+    final double play = 96 * k;
+    final double seek = 56 * k;
+    final double gap = 28 * k;
+    return <Widget>[
+      FushiTooltip(
+        message: t.video_bottom_seek_back,
+        child: VideoM3eSeekButton(
+          forward: false,
+          seconds: 10,
+          extent: seek,
+          semanticLabel: t.video_bottom_seek_back,
+          onPressed: () => unawaited(_seekRelative(-10000)),
+        ),
+      ),
+      SizedBox(width: gap),
+      FushiTooltip(
+        message: t.video_bottom_play_pause,
+        child: ListenableBuilder(
+          listenable: controller,
+          builder: (BuildContext _, Widget? __) => VideoM3ePlayPauseButton(
+            playing: controller.isPlaying,
+            extent: play,
+            style: VideoM3ePlayButtonStyle.translucent,
+            semanticLabel: t.video_bottom_play_pause,
+            onPressed: () {
+              _pokeControlsVisible();
+              unawaited(controller.playOrPause());
+            },
+          ),
+        ),
+      ),
+      SizedBox(width: gap),
+      FushiTooltip(
+        message: t.video_bottom_seek_forward,
+        child: VideoM3eSeekButton(
+          forward: true,
+          seconds: 10,
+          extent: seek,
+          semanticLabel: t.video_bottom_seek_forward,
+          onPressed: () => unawaited(_seekRelative(10000)),
+        ),
+      ),
+    ];
   }
 }

@@ -15,6 +15,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -303,13 +304,13 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               onChanged: (bool value) {
                 setState(() => _visualMode = value);
               },
-              child: SegmentedButton<bool>(
+              child: FushiSegmentedButton<bool>(
                 key: const Key('shortcut_view_toggle'),
                 showSelectedIcon: false,
                 segments: <ButtonSegment<bool>>[
                   ButtonSegment<bool>(
                     value: false,
-                    icon: const Icon(Icons.list_outlined),
+                    icon: const FushiIcon(Icons.list_outlined),
                     tooltip: t.shortcut_view_list,
                   ),
                   ButtonSegment<bool>(
@@ -321,7 +322,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
                     // asked "where is the controller diagram?". A controller
                     // glyph tells the user at a glance that this segment shows
                     // the gamepad visual layout.
-                    icon: const Icon(Icons.sports_esports_outlined),
+                    icon: const FushiIcon(Icons.sports_esports_outlined),
                     tooltip: t.shortcut_view_visual,
                   ),
                 ],
@@ -351,31 +352,10 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// controller is dead and how to enable it. A styled inline banner (not a
   /// blocking dialog) so it informs without interrupting.
   Widget _buildGameInputHint(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color fg = theme.colorScheme.onSecondaryContainer;
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      child: Container(
-        padding: EdgeInsets.all(tokens.spacing.gap),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.secondaryContainer,
-          borderRadius: tokens.radii.cardRadius,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Icon(Icons.info_outline, size: 20, color: fg),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Text(
-                t.shortcut_gamepad_unavailable_hint,
-                style: theme.textTheme.bodyMedium?.copyWith(color: fg),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: FushiInlineNotice(message: t.shortcut_gamepad_unavailable_hint),
     );
   }
 
@@ -407,7 +387,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
               values: GamepadBrand.values,
               selected: _gamepadBrand,
               onChanged: _onGamepadBrandChanged,
-              child: SegmentedButton<GamepadBrand>(
+              child: FushiSegmentedButton<GamepadBrand>(
                 key: const Key('gamepad_brand_select'),
                 showSelectedIcon: false,
                 segments: <ButtonSegment<GamepadBrand>>[

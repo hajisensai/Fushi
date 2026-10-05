@@ -57,15 +57,25 @@ void main() {
       'lib/src/pages/implementations/game_stream_library_page.dart',
       'lib/src/pages/implementations/history_reader_page.dart',
       'lib/src/pages/implementations/media_server/media_server_grid_view.dart',
+      // 2026-10 媒体服务器整块重做：服务器列表 / 首页（横滚行 + 库网格）/
+      // 详情集列表同样接入。
+      'lib/src/pages/implementations/media_server/media_server_server_list_view.dart',
+      'lib/src/pages/implementations/media_server/media_server_home_view.dart',
+      'lib/src/pages/implementations/media_server/media_server_detail_view.dart',
       'lib/src/pages/implementations/video_discovery_page.dart',
       'lib/src/media/online/online_source_browse_page.dart',
       'lib/src/media/manga/discovery/manga_discovery_page.dart',
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart',
       'lib/src/media/manga/online/mokuro_moe_catalog_view.dart',
+      // 2026-10 漫画阅读器重做：「全部页面」缩略图网格。
+      'lib/src/media/manga/reader/manga_reader_page_grid.dart',
       // 合集详情（视频剧集列表 / 书与游戏成员网格）与首页仪表盘分区 + 横滚行。
       'lib/src/pages/implementations/media_collection_detail_page.dart',
       'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
       'lib/src/pages/implementations/home_dashboard_page.dart',
+      // 2026-10 查词模块重做：查词页历史 / 最近搜索与词典管理列表。
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+      'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

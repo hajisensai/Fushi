@@ -4,6 +4,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
@@ -227,14 +228,14 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
         message: t.manga_global_search_no_sources,
         action: onOpenSources == null
             ? null
-            : FilledButton.tonalIcon(
+            : FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>(
                   'manga_global_search_open_sources',
                 ),
                 onPressed: onOpenSources,
                 // 「导入」的图标（与书架空态引导同一个）。拼图块 extension_outlined
                 // 恰恰是本 bug 的病根：漫画库里没有叫「扩展」的入口。
-                icon: const Icon(Icons.library_add_outlined),
+                icon: const FushiIcon(Icons.library_add_outlined),
                 label: Text(t.manga_global_search_open_sources),
               ),
       );
@@ -295,7 +296,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     MangaSearchRunStatus.loading => const SizedBox(
       width: 16,
       height: 16,
-      child: CircularProgressIndicator(strokeWidth: 2),
+      child: FushiCircularProgressIndicator(strokeWidth: 2),
     ),
     _ => const SizedBox.shrink(),
   };
@@ -406,23 +407,12 @@ class _LanguageChip extends StatelessWidget {
   /// 挤出圆外；改成随文字伸缩的药丸，单行不换。
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Container(
-      constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
-      ),
-      child: Text(
-        language.toUpperCase(),
-        maxLines: 1,
-        softWrap: false,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: theme.colorScheme.onSecondaryContainer,
-        ),
-      ),
+    // 中性灰底：语言码只是元信息，不该抢主色（Apple 设计系统下更是禁止彩色
+    // 底块），所以不用 secondaryContainer 的 tonal 色块。
+    return FushiTag(
+      text: language.toUpperCase(),
+      tone: FushiTagTone.neutral,
+      dense: true,
     );
   }
 }

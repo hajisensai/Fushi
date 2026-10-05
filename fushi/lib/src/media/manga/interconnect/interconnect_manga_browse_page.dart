@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -165,10 +166,10 @@ class _InterconnectMangaBrowsePageState
       return FushiPlaceholderMessage(
         icon: Icons.error_outline,
         message: describeOnlineSourceError(error),
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           key: const ValueKey<String>('interconnect_manga_retry'),
           onPressed: () => unawaited(_load()),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );
@@ -242,19 +243,31 @@ class _RemoteMangaCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? url = book.coverUrl;
+    // 占位底跟随主题中性色：black12 在深色主题下几乎不可见。
+    final ColorScheme cs = Theme.of(context).colorScheme;
     if (url == null || url.isEmpty) {
-      return const ColoredBox(
-        color: Colors.black12,
-        child: Center(child: Icon(Icons.menu_book_outlined)),
+      return ColoredBox(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: FushiIcon(
+            Icons.menu_book_outlined,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
       );
     }
     return Image(
       image: RemoteCoverImage(url, backend, cacheKey: book.downloadId),
       fit: BoxFit.cover,
       errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
-          const ColoredBox(
-        color: Colors.black12,
-        child: Center(child: Icon(Icons.broken_image_outlined)),
+          ColoredBox(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: FushiIcon(
+            Icons.broken_image_outlined,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
       ),
     );
   }

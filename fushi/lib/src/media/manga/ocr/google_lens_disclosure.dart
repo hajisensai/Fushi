@@ -25,15 +25,15 @@ Future<bool> ensureGoogleLensDisclosure(BuildContext context) async {
   }
   final bool? accepted = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(t.manga_google_lens_disclosure_title),
       content: Text(t.manga_google_lens_disclosure_body),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(dialogContext, false),
           child: Text(t.manga_google_lens_disclosure_decline),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: () => Navigator.pop(dialogContext, true),
           child: Text(t.manga_google_lens_disclosure_accept),
         ),

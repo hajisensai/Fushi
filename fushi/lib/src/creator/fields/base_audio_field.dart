@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
 import 'package:fushi/creator.dart';
@@ -196,8 +197,8 @@ abstract class BaseAudioField extends AudioExportField {
           iconData = Icons.play_arrow_outlined;
         }
 
-        return IconButton(
-          icon: Icon(iconData, size: 24),
+        return FushiIconButtonControl(
+          icon: FushiIcon(iconData, size: 24),
           tooltip: playerState?.playing == true ? t.pause : t.play,
           onPressed: () async {
             AudioSession? session;

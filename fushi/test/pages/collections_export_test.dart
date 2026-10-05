@@ -15,6 +15,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-829 收藏句/词导出·分享：widget 行为测试（焦点驱动 Tab/Enter，禁 tap/坐标）。
 void main() {
@@ -315,19 +316,19 @@ void main() {
     // TODO-936：复选/开关行已迁到共享 FushiListItem + 裸 Checkbox/Switch，故按裸
     // 控件类型断言（行为等价：value/onChanged 不变）。
     final List<Checkbox> checkboxes =
-        tester.widgetList<Checkbox>(find.byType(Checkbox)).toList();
+        tester.widgetList<Checkbox>(glassUnwrapAll<Checkbox>(find.byType(Checkbox))).toList();
     // 至少有 制卡句/收藏句/收藏词 三个；前两个默认 true，收藏词默认 false。
     expect(checkboxes.length, greaterThanOrEqualTo(3));
     final int checkedCount =
         checkboxes.where((Checkbox c) => c.value == true).length;
     expect(checkedCount, 2, reason: '默认勾制卡句 + 收藏句（收藏词不默认勾）');
 
-    final Switch dedupeSwitch = tester.widget<Switch>(find.byType(Switch));
+    final Switch dedupeSwitch = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch)));
     expect(dedupeSwitch.value, isTrue, reason: '去重开关默认开');
 
     // 导出按钮默认可用（有勾选）。
     final Finder exportFab = find.widgetWithText(FilledButton, t.dialog_export);
-    expect(tester.widget<FilledButton>(exportFab).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNotNull);
 
     // 焦点驱动取消两个范围勾选：找到仍勾选的范围 Checkbox（其 value==true）翻转。
     // 简化：直接断言 onChanged 回调把状态清空后按钮 disabled——通过逐个翻转。
@@ -340,13 +341,13 @@ void main() {
         (Widget w) => w is Checkbox && w.value == true,
       );
       expect(checkedBox, findsWidgets);
-      final Checkbox box = tester.widget<Checkbox>(checkedBox.first);
+      final Checkbox box = tester.widget<Checkbox>(glassUnwrap<Checkbox>(checkedBox.first));
       box.onChanged!(false);
       await tester.pumpAndSettle();
     }
 
     // 全部取消勾选后导出按钮 disabled（onPressed == null）。
-    expect(tester.widget<FilledButton>(exportFab).onPressed, isNull,
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNull,
         reason: '勾选集为空且未勾收藏词 → 导出按钮 disabled');
   });
 
@@ -373,12 +374,12 @@ void main() {
 
     // 默认两个范围勾选 → 导出按钮可用。
     final Finder exportFab = find.widgetWithText(FilledButton, t.dialog_export);
-    expect(tester.widget<FilledButton>(exportFab).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNotNull);
 
     int checkedScopeCount() => tester
-        .widgetList<Checkbox>(find.byWidgetPredicate(
+        .widgetList<Checkbox>(glassUnwrapAll<Checkbox>(find.byWidgetPredicate(
           (Widget w) => w is Checkbox && w.value == true,
-        ))
+        )))
         .length;
     expect(checkedScopeCount(), 2, reason: '初始勾制卡句 + 收藏句');
 
@@ -414,7 +415,7 @@ void main() {
     expect(checkedScopeCount(), 0, reason: '两个范围均经 Enter 取消');
 
     // 全部范围取消且未勾收藏词 → 导出按钮 disabled。
-    expect(tester.widget<FilledButton>(exportFab).onPressed, isNull,
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(exportFab)).onPressed, isNull,
         reason: '焦点驱动取消所有范围后导出按钮 disabled');
   });
 }

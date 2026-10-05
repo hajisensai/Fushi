@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// keiyoushi 这类真实仓库的索引地址：注意路径里带 `raw`（GitHub 原始文件直链）。
 /// BUG-1441 的一半根因就长在这个字符串上——它曾经是可搜字段。
@@ -124,24 +125,23 @@ void main() {
     final Finder install =
         find.widgetWithText(TextButton, t.mihon_extension_install);
     final VoidCallback previewAction =
-        tester.widget<TextButton>(preview).onPressed!;
+        tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed!;
     previewAction();
     previewAction();
     await tester.pump();
 
     expect(blocking.prepareCalls, 1);
-    expect(tester.widget<TextButton>(preview).onPressed == null, isTrue);
-    expect(tester.widget<TextButton>(install).onPressed == null, isTrue);
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
+    // 准备中的那一行显示行内小转圈（扩展行的 busy 槽）。
+    expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     await pumpStandalone(tester);
     expect(blocking.prepareCalls, 1);
     expect(
       tester
-          .widget<TextButton>(
-            find.widgetWithText(TextButton, t.mihon_extension_preview),
-          )
+          .widget<TextButton>(glassUnwrap<TextButton>(find.widgetWithText(TextButton, t.mihon_extension_preview)),)
           .onPressed,
       equals(null),
       reason: 'manager-level ownership must survive leaving and re-entering',
@@ -150,19 +150,19 @@ void main() {
     blocking.failPending();
     await tester.pump();
     await tester.pump();
-    expect(tester.widget<TextButton>(preview).onPressed != null, isTrue);
-    expect(tester.widget<TextButton>(install).onPressed != null, isTrue);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed != null, isTrue);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed != null, isTrue);
 
     blocking.resetPending();
     final VoidCallback installAction =
-        tester.widget<TextButton>(install).onPressed!;
+        tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed!;
     installAction();
     installAction();
     await tester.pump();
 
     expect(blocking.prepareCalls, 2);
-    expect(tester.widget<TextButton>(preview).onPressed == null, isTrue);
-    expect(tester.widget<TextButton>(install).onPressed == null, isTrue);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
+    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
     blocking.failPending();
     await tester.pump();
     await tester.pump();

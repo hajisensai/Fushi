@@ -12,6 +12,8 @@ import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import '../helpers/glass_unwrap.dart';
 
 DownloadTaskEntry _task(
   String id, {
@@ -66,6 +68,13 @@ Widget _host(
     ),
   ),
 );
+
+/// 推过展开 / 折叠等一次性转场。在途任务的 MD3 Expressive 波浪进度条常驻
+/// 流动动画，列表里有进行中进度时 pumpAndSettle 永远不会返回。
+Future<void> _pumpPastTransitions(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
 
 void _viewport(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
@@ -255,7 +264,7 @@ void main() {
       _task('unknown', collectionKey: 'key', collectionTitle: 'Key Collection'),
     ];
     await tester.pumpWidget(_host(tasks));
-    await tester.pumpAndSettle();
+    await _pumpPastTransitions(tester);
     final Finder progressBar = find.byKey(
       const ValueKey<String>('download-group-progress-collection:key'),
     );
@@ -267,11 +276,11 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('download-group-collection:key')),
     );
-    await tester.pumpAndSettle();
+    await _pumpPastTransitions(tester);
     expect(find.text('half'), findsNothing);
     expect(progressBar, findsOneWidget);
     expect(
-      tester.widget<LinearProgressIndicator>(progressBar).value,
+      tester.widget<FushiLinearProgressIndicator>(progressBar).value,
       closeTo(0.375, 1e-9),
     );
     expect(find.text('38%'), findsOneWidget);
@@ -388,12 +397,12 @@ void main() {
           ),
         ], scale: scale),
       );
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
       expect(tester.takeException(), isNull);
       await tester.tap(
         find.byKey(const ValueKey<String>('download-task-toggle-long')),
       );
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
       expect(find.text('details-long'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -447,7 +456,7 @@ void main() {
         ),
       ], fontFamily: previewFont),
     );
-    await tester.pumpAndSettle();
+    await _pumpPastTransitions(tester);
     expect(tester.takeException(), isNull);
     final RenderRepaintBoundary boundary = tester
         .renderObject<RenderRepaintBoundary>(
@@ -537,7 +546,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(cardTaps, 0, reason: '选择态里卡片按钮必须让位，否则勾选会变成删除');
       expect(
-        tester.widget<Checkbox>(find.byType(Checkbox)).value,
+        tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox))).value,
         isTrue,
         reason: '这一下应该被算作「勾选这一行」',
       );

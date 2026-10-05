@@ -4,6 +4,7 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// [FushiDestructiveConfirmDialog] 的返回值。
 ///
@@ -204,7 +205,7 @@ class _FushiDestructiveConfirmDialogState
                 // 焦点遍历（单站点契约，行即唯一停靠点）。
                 leading: ExcludeFocus(
                   child: IgnorePointer(
-                    child: Checkbox(
+                    child: FushiCheckbox(
                       value: _checked,
                       onChanged: (_) {},
                     ),
@@ -254,7 +255,7 @@ class _FushiDestructiveConfirmDialogState
                 title: Text(widget.deleteSubscriptionsLabel!),
                 leading: ExcludeFocus(
                   child: IgnorePointer(
-                    child: Checkbox(
+                    child: FushiCheckbox(
                       value: _deleteSubscriptions,
                       onChanged: (_) {},
                     ),

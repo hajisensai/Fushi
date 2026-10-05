@@ -347,7 +347,7 @@ class _TorrentTaskDetailDialogState
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
-          TabBar(
+          FushiTabBar(
             controller: _tabController,
             tabs: <Widget>[
               Tab(text: t.download_detail_tab_overview),
@@ -369,7 +369,7 @@ class _TorrentTaskDetailDialogState
           ),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton(
+            child: FushiTextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_cancel),
             ),
@@ -415,7 +415,7 @@ class _TorrentTaskDetailDialogState
       return _buildEmptyNote(theme, _backendUnavailableMessage);
     }
     if (!state.attempted) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     if (state.failed || absentMessage == null) {
       return _buildEmptyNote(theme, t.error_load_failed);
@@ -517,7 +517,7 @@ class _TorrentTaskDetailDialogState
         Row(
           children: <Widget>[
             Expanded(
-              child: LinearProgressIndicator(
+              child: FushiLinearProgressIndicator(
                 value: snapshot.progress.clamp(0.0, 1.0),
                 minHeight: 6,
               ),
@@ -753,7 +753,7 @@ class _TorrentTaskDetailDialogState
           subtitle: Row(
             children: <Widget>[
               Expanded(
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: file.progress.clamp(0.0, 1.0),
                   minHeight: 4,
                 ),
@@ -768,7 +768,7 @@ class _TorrentTaskDetailDialogState
           ),
           trailing: priority == null
               ? null
-              : DropdownButton<TorrentFilePriority>(
+              : FushiDropdownButton<TorrentFilePriority>(
                   value: priority,
                   isDense: true,
                   underline: const SizedBox.shrink(),

@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart
     show VideoDiscoveryActions;
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import '../helpers/glass_unwrap.dart';
 
 typedef _LoadHandler = Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>
     Function(
@@ -174,7 +175,7 @@ void main() {
       expect(find.text('video navigation'), findsNothing);
       final Finder entry = find.byKey(calendarKey);
       expect(entry, findsOneWidget);
-      final IconButton button = tester.widget<IconButton>(entry);
+      final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(entry));
       expect(button.onPressed, isNotNull);
       expect(tester.getRect(entry).right, lessThanOrEqualTo(width));
 
@@ -709,7 +710,7 @@ void main() {
     expect(controller.requests, hasLength(appliedRequests));
     await tester.tap(openFilters);
     await tester.pumpAndSettle();
-    expect(tester.widget<PopupMenuButton<String>>(region).initialValue, 'JP');
+    expect(tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(region)).initialValue, 'JP');
     await tester.tap(reset);
     await tester.pumpAndSettle();
     await tester.tap(apply);
@@ -776,7 +777,7 @@ void main() {
     final Finder yearFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-year'));
     final PopupMenuButton<int> yearMenu =
-        tester.widget<PopupMenuButton<int>>(yearFinder);
+        tester.widget<PopupMenuButton<int>>(glassUnwrap<PopupMenuButton<int>>(yearFinder));
     final Iterable<int?> yearValues = yearMenu
         .itemBuilder(tester.element(yearFinder))
         .whereType<PopupMenuItem<int>>()
@@ -789,7 +790,7 @@ void main() {
     final Finder genreFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
     final PopupMenuButton<String> genreMenu =
-        tester.widget<PopupMenuButton<String>>(genreFinder);
+        tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(genreFinder));
     final List<PopupMenuEntry<String>> genreEntries =
         genreMenu.itemBuilder(tester.element(genreFinder));
     expect(
@@ -822,7 +823,7 @@ void main() {
     final Finder genreFinder =
         find.byKey(const ValueKey<String>('video-discovery-filter-genre'));
     final PopupMenuButton<String> genreMenu =
-        tester.widget<PopupMenuButton<String>>(genreFinder);
+        tester.widget<PopupMenuButton<String>>(glassUnwrap<PopupMenuButton<String>>(genreFinder));
     final Iterable<String?> values = genreMenu
         .itemBuilder(tester.element(genreFinder))
         .whereType<PopupMenuItem<String>>()

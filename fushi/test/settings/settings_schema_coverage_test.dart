@@ -413,6 +413,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
+  'appearance/Glass material':
+      'test/widgets/fushi_glass_material_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
   // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
   // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
@@ -479,6 +481,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  // 「只在小说中底部停靠」：总开关关着时出现的小说专属入口，写的是同一组停靠键
+  // （总开关 + 四个模块细分），生效点同上；只翻小说有效值的语义由专项测试咬住。
+  'lookup/Dock only in novels':
+      'test/settings/reader_lookup_popup_size_settings_test.dart',
   // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
   // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
   'lookup/Pick meaning from context with AI':
@@ -812,6 +818,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'downloads/Ban progress cheat':
       'test/media/torrent/anime_download_config_backend_test.dart',
   'downloads/Ban relative progress cheat':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  // 「对等加密」2026-10 起从自绘分段条换成标准分段设置行，焦点遍历开始能驱动它；
+  // 生效点同样在 native session 下发，由编解码测试覆盖。
+  'downloads/Peer encryption':
       'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread direction': 'DEVICE: spread page order in WebView',
@@ -1642,6 +1652,19 @@ Future<ItemVerdict> _verifyFocusedNode({
     if (_mapsEqual(before, await db.getAllPrefs())) {
       await driver.adjust(steps: -4);
       await tester.pump(const Duration(milliseconds: 50));
+    }
+    // MD3 重设计：选项多 / 文字长 / 行太窄时分段行退回 Android 16 ListPreference
+    // 形态的菜单选择行（SettingsChoiceMenuRow，settingsChoiceUsesSegments 判据）。
+    // 它的焦点模型与下拉行相同：Enter 开菜单 → 方向键选项 → Enter 确认，左右键
+    // 不逐段切换。仍按真实焦点序列驱动，不放宽「改了能写穿 DB」的判据。
+    if (row.kind == _RowKind.segmented &&
+        _mapsEqual(before, await db.getAllPrefs())) {
+      await _driveDropdownRow(
+        tester: tester,
+        driver: driver,
+        db: db,
+        before: before,
+      );
     }
   }
   if (LocaleSettings.currentLocale != localeBefore) {

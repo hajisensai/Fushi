@@ -23,6 +23,28 @@ import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 final DictionarySearchResult kPopupSearchingPlaceholderResult =
     DictionarySearchResult(searchTerm: '');
 
+/// 宿主注入弹窗页 `window.lookupPending` 的**唯一派生点**（popup.js 只在它为 true 且
+/// 文档可见时，150ms 后插入循环加载动画）。
+///
+/// 「占位 / 空闲」与「查询进行中」是两件事：热槽 seed、关栈复位、停驻 realm 挂的都是
+/// [kPopupSearchingPlaceholderResult]，但那是**空闲**——旧实现按「结果是占位单例」推
+/// pending=true，停驻在屏外的热槽页里加载动画就无限循环（Windows WebView2 停驻仍
+/// `IsVisible(true)`、文档仍 visible，纹理合成持续出帧）。所以 pending 只由查询状态与
+/// 层可见性决定，与结果对象身份无关：
+/// - [layerVisible]：这一层当前真的画在屏上（非停驻、未被对话框挪到屏外）；
+/// - [isSearching]：这一层确实有一次查询在进行中（[DictionaryPopupEntry.isSearching]）；
+/// - 还没有可渲染内容——分页 load-more 期间 `isSearching` 也为 true，但页面已有词条，
+///   此时翻 pending 只会触发一次无意义的全量重渲染（滚回顶）。
+bool popupLookupPending({
+  required bool layerVisible,
+  required bool isSearching,
+  required DictionarySearchResult? result,
+}) {
+  if (!layerVisible || !isSearching) return false;
+  return result == null ||
+      (result.entries.isEmpty && result.kanjiResults.isEmpty);
+}
+
 /// 弹窗**原地跳转**历史里的一页（对齐 Hoshi Reader iOS `popup.js` 的
 /// `backStack/forwardStack` 快照：条目 + 滚动位）。
 ///
@@ -104,6 +126,15 @@ class DictionaryPopupEntry {
 
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
+
+  /// 按控制器状态，本层页面此刻应收到的 `window.lookupPending`（见
+  /// [popupLookupPending]）。宿主若还有额外的屏外停靠门（对话框期间），实际注入值由
+  /// `parkedPopupLayer` 的最终可见性再收紧一次，派生函数仍是同一个。
+  bool get lookupPending => popupLookupPending(
+        layerVisible: visible,
+        isSearching: isSearching,
+        result: result,
+      );
 
   /// 是否已无更多结果可加载（分页到底）。
   bool allLoaded;

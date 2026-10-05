@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
@@ -131,7 +132,7 @@ class LeaderboardPublicDataList extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(icon, size: 18),
+                FushiIcon(icon, size: 18),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(child: Text(item, style: tokens.type.listSubtitle)),
               ],
@@ -175,7 +176,7 @@ class LeaderboardConsentTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return FushiListItem(
       leading: ExcludeFocus(
-        child: Checkbox(
+        child: FushiCheckbox(
           value: value,
           onChanged: (bool? v) => onChanged(v ?? false),
         ),
@@ -336,14 +337,20 @@ class LeaderboardAvatar extends ConsumerWidget {
     final String initial = account.nickname.isEmpty
         ? '?'
         : String.fromCharCodes(account.nickname.runes.take(1));
+    // 无头像时的首字占位：中性底（MD3 surfaceContainerHigh / Apple fill），
+    // 不再是 primaryContainer 彩色圆。
+    final bool glass = isGlassDesign(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget fallback = ColoredBox(
-      color: colors.primaryContainer,
+      color: glass ? appleColorsOf(context).fill : tokens.surfaces.search,
       child: Center(
         child: Text(
           initial,
-          style: Theme.of(
-            context,
-          ).textTheme.titleSmall?.copyWith(color: colors.onPrimaryContainer),
+          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            color: glass
+                ? appleColorsOf(context).secondaryLabel
+                : colors.onSurfaceVariant,
+          ),
         ),
       ),
     );
@@ -360,7 +367,7 @@ class LeaderboardAvatar extends ConsumerWidget {
               ),
       ),
     );
-    final Widget labelled = Tooltip(message: account.tag, child: circle);
+    final Widget labelled = FushiTooltip(message: account.tag, child: circle);
     if (onTap == null) return labelled;
     return FushiFocusable(
       onTap: onTap,
@@ -397,13 +404,14 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final double width = widget.width;
     final double height = width * 1.42;
+    // 无封面占位：中性填充 + 单色种类图标（不再是 secondaryContainer 色块）。
     final Widget placeholder = ColoredBox(
-      color: colors.secondaryContainer,
+      color: fushiNeutralBlockColor(context),
       child: Center(
-        child: Icon(
+        child: FushiIcon(
           _kindIcon,
           size: width * 0.42,
-          color: colors.onSecondaryContainer,
+          color: fushiNeutralSecondaryForeground(context),
         ),
       ),
     );
@@ -428,7 +436,7 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
             child: image,
           ),
           Center(
-            child: Icon(Icons.visibility_off_outlined, color: colors.onSurface),
+            child: FushiIcon(Icons.visibility_off_outlined, color: colors.onSurface),
           ),
         ],
       );
@@ -439,7 +447,7 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
       child: ClipRRect(borderRadius: tokens.radii.chipRadius, child: image),
     );
     if (!hidden) return box;
-    return Tooltip(
+    return FushiTooltip(
       message: t.leaderboard_cover_reveal,
       child: FushiFocusable(
         onTap: () => setState(() => _revealed = true),
@@ -471,10 +479,10 @@ class LeaderboardLoadMore extends StatelessWidget {
       padding: EdgeInsets.all(tokens.spacing.card),
       child: Center(
         child: loading
-            ? const CircularProgressIndicator()
-            : OutlinedButton.icon(
+            ? const FushiCircularProgressIndicator()
+            : FushiOutlinedButton.icon(
                 onPressed: onLoadMore,
-                icon: const Icon(Icons.expand_more),
+                icon: const FushiIcon(Icons.expand_more),
                 label: Text(t.leaderboard_load_more),
               ),
       ),
@@ -498,7 +506,7 @@ class LeaderboardErrorView extends StatelessWidget {
     return FushiPlaceholderMessage(
       icon: Icons.cloud_off_outlined,
       message: leaderboardErrorText(error),
-      action: FilledButton.tonal(
+      action: FushiFilledButton.tonal(
         onPressed: onRetry,
         child: Text(t.leaderboard_retry),
       ),
@@ -506,7 +514,7 @@ class LeaderboardErrorView extends StatelessWidget {
   }
 }
 
-/// 页内小标题（区块名）。
+/// 页内小标题（区块名）：委托共享 [FushiSectionTitle.group]。
 class LeaderboardSectionTitle extends StatelessWidget {
   const LeaderboardSectionTitle(this.text, {this.trailing, super.key});
 
@@ -516,18 +524,14 @@ class LeaderboardSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
+    return FushiSectionTitle.group(
+      text,
+      trailing: trailing,
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.card,
         tokens.spacing.section,
         tokens.spacing.card,
         tokens.spacing.gap,
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: Text(text, style: tokens.type.sectionLabel)),
-          if (trailing != null) trailing!,
-        ],
       ),
     );
   }

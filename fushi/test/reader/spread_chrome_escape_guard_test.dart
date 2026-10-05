@@ -168,13 +168,27 @@ void main() {
           containsCodeLine(clearBody, '_spreadDocumentLoaded = false'), isTrue,
           reason: '正文章节装载原语必须复位，否则翻回正文后引擎再不注入');
 
-      // 第三个装载点：歌词。漏掉它 → 从双页页面切进歌词模式时标记残留为真，
-      // spread 守卫把歌词分支一起挡掉 → 歌词永远不就绪。
+      // 歌词：已改为独立覆盖层 WebView（不再往正文 WebView 装文档），所以不是
+      // 本标记的写点；要守的是「从双页切歌词，歌词就绪不被 spread 守卫挡死」——
+      // 歌词文档必须装进歌词自己的 WebView，就绪走自己的 finalize，绝不经
+      // _onChapterLoadComplete 的 spread 守卫。
       final String lyricsBody =
           methodBody(source, 'Future<void> _loadLyricsPage()');
-      expect(
-          containsCodeLine(lyricsBody, '_spreadDocumentLoaded = false'), isTrue,
-          reason: '歌词装载点必须复位，否则从双页切歌词会被 spread 守卫挡死');
+      expect(lyricsBody, contains('lyricsController.loadData('),
+          reason: '歌词文档必须装进歌词覆盖层 WebView，而不是正文 WebView');
+      final int lyricsStop = source.indexOf(
+          'onLoadStop: (InAppWebViewController controller, WebUri? url) async {');
+      expect(lyricsStop, greaterThan(0), reason: '歌词 WebView 的 onLoadStop 不见了');
+      final String lyricsStopBody = source.substring(
+          lyricsStop, source.indexOf('onReceivedError:', lyricsStop));
+      expect(lyricsStopBody, contains('_finalizeLyricsDocumentIfReady('),
+          reason: '歌词就绪必须走歌词自己的 finalize');
+      expect(lyricsStopBody, isNot(contains('_onChapterLoadComplete(')),
+          reason: '歌词文档经正文装载收尾会被 spread 守卫挡死');
+      final String finalizeBody = methodBody(
+          source, 'Future<bool> _finalizeLyricsDocumentIfReady(');
+      expect(containsCodeLine(finalizeBody, '_spreadDocumentLoaded'), isFalse,
+          reason: '歌词就绪不得受 spread 标记门控');
     });
   });
 

@@ -285,7 +285,8 @@ void main() {
           reason: '必须把连续模式绑进门控（分页模式抑制的来源）');
       expect(containsCodeLine(body, 'readerContentReady: _readerContentReady'),
           isTrue);
-      expect(containsCodeLine(body, 'lyricsMode: _lyricsMode'), isTrue);
+      // 2026-10-04 歌词覆盖层：正文文档永不被歌词替换，缩放重锚不再看歌词态。
+      expect(containsCodeLine(body, 'lyricsMode: false'), isTrue);
       expect(
           containsCodeLine(body, 'restoreInFlight: _restoreInFlight'), isTrue);
       // begin / commit 回调必须绑各自的 invocation；postFrame 必须经 addPostFrameCallback。

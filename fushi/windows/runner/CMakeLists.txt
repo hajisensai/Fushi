@@ -47,6 +47,7 @@ add_executable(${BINARY_NAME} WIN32
   "system_font_list.cpp"
   "system_ocr_channel_host.cpp"
   "system_ocr_windows.cpp"
+  "system_transparency_channel.cpp"
   "utils.cpp"
   "win32_window.cpp"
   "window_capture.cpp"

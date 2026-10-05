@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 
-/// The long-press dialog quick actions are equal-width chips laid out below the
-/// cover: a single row when they fit, otherwise fewer columns per row (down to
+/// The long-press dialog quick actions are equal-width buttons (MD3: Expressive
+/// tonal icon buttons) laid out below the cover: a single row when they fit, otherwise fewer columns per row (down to
 /// full-width vertical rows) — the column count is decided from the chips'
 /// real intrinsic widths, never from a guessed minimum (BUG-2603). Labels must
 /// render without ellipsis on both wide and narrow dialogs, and chips sharing a
@@ -250,7 +250,10 @@ void main() {
     expect(frameEnd, greaterThan(frameStart));
     final String build = source.substring(frameStart, frameEnd);
 
-    expect(build, contains('leading: Icon(action.icon)'));
+    // MD3 分段行与快捷动作的图标都经设计系统分派的 FushiIcon（Apple 下换 SF
+    // 字形），列表行图标在行首。
+    expect(build, contains('FushiIcon(icon, size: 24'));
+    expect(build, contains('FushiIcon(action.icon'));
     expect(
       RegExp(r'SizedBox\(height: tokens\.spacing\.gap\)')
           .allMatches(build)
@@ -261,15 +264,17 @@ void main() {
   });
 }
 
-/// Width of the chip wrapping the given label (the OutlinedButton ancestor).
+/// Width of the quick-action button wrapping the given label.
 double _chipWidth(WidgetTester tester, String label) =>
     _chipRect(tester, label).width;
 
-/// Screen rect of the chip wrapping the given label.
+/// Screen rect of the quick-action button wrapping the given label. MD3 renders
+/// it as an Expressive tonal icon button (`FilledButton.tonalIcon`, a private
+/// FilledButton subclass, so match by `is` rather than exact type).
 Rect _chipRect(WidgetTester tester, String label) {
   final Finder button = find.ancestor(
     of: find.text(label),
-    matching: find.byType(OutlinedButton),
+    matching: find.byWidgetPredicate((Widget w) => w is FilledButton),
   );
   expect(button, findsOneWidget, reason: 'chip for "$label" not found');
   return tester.getRect(button);

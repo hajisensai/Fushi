@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/utils.dart';
@@ -57,9 +58,13 @@ class _BookDragTargetState extends State<BookDragTarget> {
                   decoration: BoxDecoration(
                     // eink：半透明罩在墨水屏上合成抖动灰；只留描边 + 图标
                     // （CollectionDropTarget / CollectionShelfRow 同款处理）。
+                    // MD3 primary 12% 状态层；Apple 中性 systemFill 灰罩 +
+                    // 强调色描边（三处拖放落点同一口径）。
                     color: isEinkTheme(context)
                         ? null
-                        : hoverColor.withValues(alpha: 0.2),
+                        : isGlassDesign(context)
+                            ? appleColorsOf(context).fill
+                            : hoverColor.withValues(alpha: 0.12),
                     borderRadius: tokens.radii.cardRadius,
                     border: Border.all(
                       color: hoverColor,
@@ -67,7 +72,7 @@ class _BookDragTargetState extends State<BookDragTarget> {
                     ),
                   ),
                   child: Center(
-                    child: Icon(
+                    child: FushiIcon(
                       Icons.add_circle_outline,
                       color: hoverColor,
                       size: tokens.spacing.gap * 4,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
     show AudiobookImportDialog;
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show loadEpubSectionsInBackground;
@@ -145,13 +146,13 @@ class SubtitleRematch {
         footer: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            TextButton(
+            FushiTextButton(
               onPressed: autoBusy ? null : () => Navigator.pop(sheetCtx),
               child: Text(t.cancel),
             ),
             SizedBox(width: tokens.spacing.gap),
-            FilledButton.icon(
-              icon: const Icon(Icons.play_arrow_outlined, size: 18),
+            FushiFilledButton.icon(
+              icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
               label: Text(t.rematch_run),
               onPressed: autoBusy
                   ? null
@@ -375,7 +376,7 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
               ),
             ),
             if (onAutoTap != null)
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: autoBusy ? null : onAutoTap,
                 icon: autoBusy
                     ? SizedBox(
@@ -384,7 +385,7 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
                         child:
                             adaptiveIndicator(context: context, strokeWidth: 2),
                       )
-                    : const Icon(Icons.auto_awesome_outlined, size: 16),
+                    : const FushiIcon(Icons.auto_awesome_outlined, size: 16),
                 label: Text(autoBusy
                     ? t.audiobook_rematch_matching
                     : t.audiobook_rematch_auto_match),

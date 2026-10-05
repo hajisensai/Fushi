@@ -95,7 +95,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
         initialIndex: widget.initialTab.index,
         child: Column(
           children: <Widget>[
-            TabBar(
+            FushiTabBar(
               tabs: <Widget>[
                 Tab(text: t.stat_center_tab_overview),
                 Tab(text: t.home_filter_read),
@@ -309,11 +309,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   Widget _buildBody(FushiDesignTokens tokens) {
     if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      );
+      return const FushiLoadingView();
     }
     if (_error != null) {
       // 2026-10 体验优化：不再把异常原文（英文堆栈片段）直接甩给用户；原文已在
@@ -556,11 +552,13 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             Expanded(
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 6,
-                  backgroundColor: tokens.surfaces.card,
-                  color: tokens.surfaces.primary,
+                  // 轨道不传 surfaces.card：它与外层 FushiCard 同一档面色，整条
+                  // 隐形；用进度条默认轨道（MD3 secondaryContainer / Apple
+                  // systemFill）。
+                  color: statChartColorsOf(context).series,
                 ),
               ),
             ),

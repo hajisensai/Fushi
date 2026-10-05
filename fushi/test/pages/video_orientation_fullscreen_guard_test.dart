@@ -125,8 +125,9 @@ void main() {
         reason: 'Windows 进全屏前必须认领应用顶栏隐藏状态',
       );
       // BUG-973: 桌面退全屏分支在 `defaultExitNativeFullscreen()` 之后追加
-      // `setMacOSTrafficLightsHidden(true)` re-hide（AppKit 退全屏重建标题栏会复位
-      // 交通灯 isHidden）。分支不再是单行 return，但仍须在 !isMobilePlatform 下先转调
+      // `FushiDesktopTitleBar.reassertMacTrafficLights()`（AppKit 退全屏重建标题栏会
+      // 复位交通灯 isHidden，按顶栏真值重申；钉序见
+      // test/video/macos_video_trafficlight_hide_guard_test.dart）。分支不再是单行 return，但仍须在 !isMobilePlatform 下先转调
       // 默认退出回调（对称还原 OS 窗口），故守卫改为要求「桌面分支存在且调
       // defaultExitNativeFullscreen()」，而非钉死单行写法。
       expect(
@@ -134,6 +135,11 @@ void main() {
             exitBody.contains('defaultExitNativeFullscreen()'),
         isTrue,
         reason: '退全屏桌面分支必须转调 defaultExitNativeFullscreen (对称还原OS窗口)',
+      );
+      expect(
+        exitBody.contains('FushiDesktopTitleBar.reassertMacTrafficLights()'),
+        isTrue,
+        reason: '退全屏桌面分支必须按顶栏真值重申 macOS 红绿灯 (BUG-973)',
       );
       expect(enterBody.contains('if (!isMobilePlatform) return;'), isFalse,
           reason: '进全屏桌面分支不得 no-op (会丢桌面OS窗口真全屏)');

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
@@ -261,7 +262,7 @@ class _MediaCollectionGridDetailPageState
       Rect.fromPoints(anchor, anchor),
       Offset.zero & overlay.size,
     );
-    final _MemberMenuAction? action = await showMenu<_MemberMenuAction>(
+    final _MemberMenuAction? action = await showFushiMenu<_MemberMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_MemberMenuAction>>[
@@ -270,7 +271,7 @@ class _MediaCollectionGridDetailPageState
             value: _MemberMenuAction.open,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.open_in_new, size: 20),
+                const FushiIcon(Icons.open_in_new, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_open),
               ],
@@ -280,7 +281,7 @@ class _MediaCollectionGridDetailPageState
           value: _MemberMenuAction.remove,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.remove_circle_outline, size: 20),
+              const FushiIcon(Icons.remove_circle_outline, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_remove_member),
             ],
@@ -298,7 +299,7 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
-  AppBar _buildAppBar(double availableWidth) => AppBar(
+  PreferredSizeWidget _buildAppBar(double availableWidth) => FushiAppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
         // BUG-1184：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
         actions: narrowAwareAppBarActions(

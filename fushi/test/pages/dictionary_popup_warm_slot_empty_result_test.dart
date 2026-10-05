@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
@@ -220,7 +222,11 @@ void main() {
     await tester.pump();
 
     expect(find.byType(DictionaryPopupWebView), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    // 盖板立即铺底；加载指示器 150ms 后才露出（快查询不闪）。
+    expect(find.byType(FushiDeferredLoading), findsOneWidget);
+    expect(find.byType(FushiLoadingView), findsNothing);
+    await tester.pump(kDeferredLoadingDelay);
+    expect(find.byType(FushiLoadingView), findsOneWidget);
     expect(find.byType(FushiPlaceholderMessage), findsNothing);
   });
 }

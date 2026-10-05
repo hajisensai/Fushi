@@ -12,6 +12,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -365,14 +366,14 @@ void main() {
       hostKey.currentState!.showDeferredPopup();
       await tester.pump();
       // 本帧确实架过盖板（渲染进树），post-frame 已拿到 false 并清态……
-      expect(find.byType(LinearProgressIndicator), findsOneWidget,
+      expect(_activeLoadingCover(), findsOneWidget,
           reason: '盖板在探询帧内确实架起过（结构没被绕开）');
       await tester.pump();
 
       // ……下一帧（零时长）盖板必须已撤，弹窗可见——不等 1.8s failsafe。
       final stack = hostKey.currentState!.debugPopupStack;
       expect(stack.single.visible, isTrue);
-      expect(find.byType(LinearProgressIndicator), findsNothing,
+      expect(_activeLoadingCover(), findsNothing,
           reason: 'refreshCurrentResult 返回 false（已渲染完成、信号不会再来）时，'
               '宿主必须立即走 rendered 路径撤盖板，而不是空等 failsafe 超时');
       expect(harness.pushCount, seedPushes + 1, reason: '兜底探询对已渲染结果零重推');
@@ -908,3 +909,8 @@ Widget buildDedupHostApp({
     ),
   );
 }
+
+/// 查词浮层的加载盖板（[FushiDeferredLoading]）当前是否在盖。
+Finder _activeLoadingCover() => find.byWidgetPredicate(
+  (Widget w) => w is FushiDeferredLoading && w.active,
+);

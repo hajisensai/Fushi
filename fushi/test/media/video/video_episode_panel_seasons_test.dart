@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_episode_panel.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// BUG-2520：播放器「选集」面板对多季合集要出季 chip，与合集详情页季 tab 同一
 /// 分组真相源（文件名纯函数）。单季合集头部零变化。
@@ -106,7 +107,7 @@ void main() {
         tester.getTopLeft(chip('s2')).dx,
         lessThan(tester.getTopLeft(chip(kCollectionExtrasGroupKey)).dx),
       );
-      expect(tester.widget<ChoiceChip>(chip('s2')).selected, isTrue);
+      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s2'))).selected, isTrue);
 
       // 轨道只有第 2 季的卡片，且 key 仍是全局下标。
       expect(card(3), findsOneWidget);
@@ -149,12 +150,12 @@ void main() {
           ),
         ),
       );
-      expect(tester.widget<ChoiceChip>(chip('s1')).selected, isTrue);
+      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s1'))).selected, isTrue);
       expect(card(0), findsOneWidget);
 
       await tester.tap(chip('s2'));
       await tester.pumpAndSettle();
-      expect(tester.widget<ChoiceChip>(chip('s2')).selected, isTrue);
+      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s2'))).selected, isTrue);
       expect(card(0), findsNothing);
       expect(card(4), findsOneWidget);
 
@@ -173,7 +174,7 @@ void main() {
       // 页面换集到 S1E2（全局 1）→ chip 跟回第 1 季。
       setOuter(() => current = 1);
       await tester.pumpAndSettle();
-      expect(tester.widget<ChoiceChip>(chip('s1')).selected, isTrue);
+      expect(tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(chip('s1'))).selected, isTrue);
       expect(card(1), findsOneWidget);
       expect(
         find.descendant(

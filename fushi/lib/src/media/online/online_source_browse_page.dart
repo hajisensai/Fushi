@@ -19,6 +19,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -358,11 +359,11 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
             ),
             if (_prepared && _catalog.hasFilters) ...<Widget>[
               const SizedBox(width: 8),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('${prefix}_filters'),
                 tooltip: _catalog.filtersTooltip,
                 onPressed: _showFilters,
-                icon: const Icon(Icons.tune),
+                icon: const FushiIcon(Icons.tune),
               ),
             ],
           ],
@@ -426,9 +427,9 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         action: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FilledButton.icon(
+            FushiFilledButton.icon(
               onPressed: () => unawaited(_retry()),
-              icon: const Icon(Icons.refresh_rounded),
+              icon: const FushiIcon(Icons.refresh_rounded),
               label: Text(t.retry),
             ),
             const SizedBox(height: 8),
@@ -481,10 +482,10 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                   return Center(
                     child: _loading
                         ? adaptiveIndicator(context: context)
-                        : IconButton(
+                        : FushiIconButtonControl(
                             key: ValueKey<String>('${prefix}_more'),
                             onPressed: () => unawaited(_load(reset: false)),
-                            icon: const Icon(Icons.add_circle_outline),
+                            icon: const FushiIcon(Icons.add_circle_outline),
                           ),
                   );
                 }

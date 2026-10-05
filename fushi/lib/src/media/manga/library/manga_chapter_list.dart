@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
@@ -168,10 +169,10 @@ class MangaChapterList extends StatelessWidget {
           ),
         ),
         if (onSortToggled != null)
-          TextButton.icon(
+          FushiTextButton.icon(
             key: const ValueKey<String>('manga_chapter_sort'),
             onPressed: onSortToggled,
-            icon: Icon(newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
+            icon: FushiIcon(newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
             label: Text(
               newestFirst
                   ? t.manga_series_sort_newest
@@ -217,7 +218,7 @@ class MangaChapterList extends StatelessWidget {
               alignment: WrapAlignment.center,
               children: <Widget>[
                 for (final OnlineMangaSiblingSource sibling in scope.siblings)
-                  ActionChip(
+                  FushiActionChipControl(
                     key: ValueKey<String>(
                       'manga_series_sibling_${sibling.sourceId}',
                     ),
@@ -279,7 +280,7 @@ class MangaChapterList extends StatelessWidget {
               : null,
         ),
         subtitle: _buildSubtitle(context, chapter, state, partial),
-        leading: Icon(
+        leading: FushiIcon(
           read
               ? Icons.check_circle_outline
               : partial
@@ -364,7 +365,7 @@ class MangaChapterList extends StatelessWidget {
     final List<Widget> children = <Widget>[
       _buildDownloadIndicator(context, download),
       if (current)
-        Icon(Icons.play_circle_outline, color: theme.colorScheme.primary),
+        FushiIcon(Icons.play_circle_outline, color: theme.colorScheme.primary),
       if (hasMenu)
         FushiOverflowMenu<String>(
           items: <PopupMenuEntry<String>>[
@@ -426,7 +427,7 @@ class MangaChapterList extends StatelessWidget {
           },
         ),
     ];
-    if (children.isEmpty) return const Icon(Icons.chevron_right);
+    if (children.isEmpty) return const FushiIcon(Icons.chevron_right);
     return Row(mainAxisSize: MainAxisSize.min, children: children);
   }
 
@@ -437,12 +438,12 @@ class MangaChapterList extends StatelessWidget {
   ) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Widget icon = switch (download) {
-      _ChapterDownloadState.downloaded => Icon(
+      _ChapterDownloadState.downloaded => FushiIcon(
         Icons.download_done,
         size: 20,
         color: scheme.primary,
       ),
-      _ChapterDownloadState.queued => Icon(
+      _ChapterDownloadState.queued => FushiIcon(
         Icons.schedule,
         size: 20,
         color: scheme.onSurfaceVariant,
@@ -450,14 +451,14 @@ class MangaChapterList extends StatelessWidget {
       _ChapterDownloadState.downloading => const SizedBox(
         width: 16,
         height: 16,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       ),
-      _ChapterDownloadState.failed => Icon(
+      _ChapterDownloadState.failed => FushiIcon(
         Icons.error_outline,
         size: 20,
         color: scheme.error,
       ),
-      _ChapterDownloadState.notDownloaded => Icon(
+      _ChapterDownloadState.notDownloaded => FushiIcon(
         Icons.cloud_outlined,
         size: 20,
         color: scheme.onSurfaceVariant,

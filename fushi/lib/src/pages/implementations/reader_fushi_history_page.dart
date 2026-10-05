@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:io';
@@ -62,6 +63,8 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
+import 'package:fushi/src/media/library_progress_reset.dart';
+import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
@@ -662,7 +665,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             child: Column(
               children: [
                 if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                _buildSearchBar(),
+                // 搜索 + 阅读状态 + 多选 / 排序收成一条库页工具行（2026-10-04），
+                // 标签 chip 只在有标签时另起一行。
+                _buildSearchBar(allTags.valueOrNull ?? const []),
                 _buildTagBar(allTags.valueOrNull ?? const []),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 SyncProgressBanner(compact: _compactLibraryToolbar),
@@ -779,11 +784,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       ) ==
       WindowSizeClass.compact;
 
-  Widget _buildTagBar(List<BookTagRow> allTags) {
+  /// [part]：工具行行尾的「管理标签 / 批量选择 / 排序」（[FushiTagFilterBarPart.actions]，
+  /// 窄屏用 44 触控尺寸；管理标签常驻，key `library_tag_settings`）或工具行下方的
+  /// 标签 chip 段（无标签时零高度）。
+  Widget _buildTagBar(
+    List<BookTagRow> allTags, {
+    FushiTagFilterBarPart part = FushiTagFilterBarPart.tags,
+  }) {
     return FushiTagFilterBar(
       tags: allTags,
+      part: part,
       pinActions: _compactLibraryToolbar,
-      showTagManagement: !_compactLibraryToolbar,
       onToggleFilter: _toggleFilter,
       onReorder: _reorderTags,
       selectionMode: _selectionMode,
@@ -961,79 +972,38 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     setState(() {});
   }
 
-  /// P5-A 书架搜索框。形态与游戏库页工具条一致（三个库页搜索长一个样），
-  /// 搜索词只影响本次会话、不落库。
-  Future<void> _openTagManagement() async {
-    await Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const TagManagementPage(),
-      ),
-    );
-    if (!mounted) return;
-    ref.invalidate(allTagsProvider);
-    ref.invalidate(bookTagMapProvider);
-  }
+  /// P5-A 书架工具行：搜索框 + 阅读状态 + 行尾「管理标签 / 批量选择 / 排序」，
+  /// 与视频库 / 游戏库同一个 [LibraryToolbar]。搜索词只影响本次会话、不落库。
 
-  Widget _buildSearchBar() {
-    final Widget search = SizedBox(
-      height: _compactLibraryToolbar ? 44 : 40,
-      child: TextField(
-        key: const ValueKey<String>('shelf_search_field'),
-        controller: _searchController,
-        decoration: InputDecoration(
-          isDense: true,
-          prefixIcon: const Icon(Icons.search, size: 18),
-          hintText: t.library_search,
-          border: const OutlineInputBorder(),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 4,
-          ),
-          suffixIcon: _searchQuery.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close, size: 18),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = '');
-                  },
-                ),
-        ),
-        onChanged: (String value) => setState(() => _searchQuery = value),
-      ),
+  Widget _buildSearchBar(List<BookTagRow> allTags) {
+    final Widget actions = _buildTagBar(
+      allTags,
+      part: FushiTagFilterBarPart.actions,
     );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: search),
-          const SizedBox(width: 8),
-          LibraryFilterDropdown<ShelfReadStatus>(
-            key: const ValueKey<String>('shelf_filter_read_status'),
-            value: _readStatusFilter,
-            options: ShelfReadStatus.values,
-            labelOf: _readStatusLabel,
-            title: t.shelf_filter_read_status,
-            allLabel: t.home_filter_all,
-            onSelected: _setReadStatusFilter,
-          ),
-          if (_compactLibraryToolbar) ...<Widget>[
-            const SizedBox(width: 8),
-            IconButton(
-              key: const ValueKey<String>('library_tag_settings'),
-              tooltip: t.tag_manage,
-              constraints: const BoxConstraints(
-                minWidth: 44,
-                minHeight: 44,
-              ),
-              icon: const Icon(Icons.settings_outlined, size: 22),
-              onPressed: _openTagManagement,
-            ),
-          ],
-        ],
+    return LibraryToolbar(
+      search: LibrarySearchField(
+        fieldKey: const ValueKey<String>('shelf_search_field'),
+        controller: _searchController,
+        hintText: t.library_search,
+        onChanged: (String value) => setState(() => _searchQuery = value),
+        onClear: () {
+          _searchController.clear();
+          setState(() => _searchQuery = '');
+        },
       ),
+      filters: <Widget>[
+        LibraryFilterDropdown<ShelfReadStatus>(
+          key: const ValueKey<String>('shelf_filter_read_status'),
+          value: _readStatusFilter,
+          options: ShelfReadStatus.values,
+          labelOf: _readStatusLabel,
+          title: t.shelf_filter_read_status,
+          allLabel: t.home_filter_all,
+          onSelected: _setReadStatusFilter,
+        ),
+      ],
+      // 行尾：管理标签（常驻，key `library_tag_settings`）+ 批量选择 + 排序。
+      trailing: actions,
     );
   }
 
@@ -1390,7 +1360,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ),
           ),
           SizedBox(width: tokens.spacing.gap),
-          Icon(
+          FushiIcon(
             Icons.play_circle_filled,
             size: 36,
             color: tokens.surfaces.primary,
@@ -1980,7 +1950,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   ) async {
     final String? own = collection.coverPath;
     if (own != null && own.isNotEmpty && File(own).existsSync()) {
-      return FileImage(File(own));
+      return resizedFileImage(File(own));
     }
     final List<MediaItem> books =
         ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
@@ -2349,14 +2319,14 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           if (shell != null)
-            FilledButton.icon(
-              icon: const Icon(Icons.library_add_outlined, size: 18),
+            FushiFilledButton.icon(
+              icon: const FushiIcon(Icons.library_add_outlined, size: 18),
               label: Text(t.library_empty_go_import),
               onPressed: () => shell.select(MediaLibraryViewKind.sources),
             )
           else
-            FilledButton.icon(
-              icon: const Icon(Icons.library_add_outlined, size: 18),
+            FushiFilledButton.icon(
+              icon: const FushiIcon(Icons.library_add_outlined, size: 18),
               label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
               onPressed: () async {
                 // 空态兜底与页头兜底指向同一个对话框：漫画库开漫画框，书架开书籍框。
@@ -2601,6 +2571,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             ? Icons.check_circle
             : Icons.check_circle_outline,
         onPressed: () => _toggleBookCompleted(bookKey),
+      ),
+      // 误点开一本书后把它变回「没读过」：进度归零 + 取消读完 + 离开继续阅读，
+      // 学习记录可选只撤最近一次 / 全清（默认不动），见 [_resetBookReadingState]。
+      DialogListAction(
+        label: t.library_progress_reset_action,
+        icon: Icons.restart_alt_outlined,
+        onPressed: () => _resetBookReadingState(item, bookKey),
       ),
       // 统一三库页刮削入口：书卡菜单直达「在线刮削封面」（视频/游戏的刮削都在
       // 卡菜单一层，书此前必须绕「编辑信息→封面字段小图标」两层，用户实报）。

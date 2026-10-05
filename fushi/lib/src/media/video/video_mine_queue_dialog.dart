@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart' show BaseAnkiRepository;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/utils.dart';
@@ -151,18 +152,18 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final ({int done, int total})? progress = _progress;
     final bool busy = progress != null;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_mine_queue_title),
       content: SizedBox(
         width: 520,
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const FushiLoadingView()
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
                   if (progress != null) ...<Widget>[
-                    LinearProgressIndicator(
+                    FushiLinearProgressIndicator(
                       value: progress.total == 0
                           ? null
                           : progress.done / progress.total,
@@ -208,9 +209,9 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                               overflow: TextOverflow.ellipsis,
                               style: failed ? TextStyle(color: cs.error) : null,
                             ),
-                            trailing: IconButton(
+                            trailing: FushiIconButtonControl(
                               tooltip: t.video_mine_queue_remove,
-                              icon: const Icon(Icons.delete_outline),
+                              icon: const FushiIcon(Icons.delete_outline),
                               onPressed: busy ? null : () => _remove(row),
                             ),
                           );
@@ -221,11 +222,11 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
               ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: busy ? null : () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: busy || _rows.isEmpty ? null : _commitAll,
           child: Text(t.video_mine_queue_commit_all),
         ),

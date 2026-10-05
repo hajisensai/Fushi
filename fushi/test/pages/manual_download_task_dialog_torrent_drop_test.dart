@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:path/path.dart' as p;
+import '../helpers/glass_unwrap.dart';
 
 /// 拖入 `.torrent` 种子的三条入口都汇到 [ManualDownloadTaskDialog]：
 ///
@@ -74,8 +75,7 @@ void main() {
   }
 
   String titleText(WidgetTester tester) => tester
-      .widget<TextField>(
-          find.byKey(const ValueKey<String>('manual-task-title')))
+      .widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('manual-task-title'))))
       .controller!
       .text;
 

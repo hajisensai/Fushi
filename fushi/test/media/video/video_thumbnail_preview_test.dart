@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 
 /// 造一个 1x1 的真 [ui.Image]（取帧 fake 返回值）。
 Future<ui.Image> _makeImage() async {
@@ -522,7 +524,7 @@ void main() {
       await tester.pump();
       expect(c.state.phase, ThumbnailPreviewPhase.loading);
       expect(find.byType(RawImage), findsOneWidget, reason: '上一帧继续显示');
-      expect(find.byType(CircularProgressIndicator), findsNothing,
+      expect(find.byType(FushiCircularProgressIndicator), findsNothing,
           reason: '已有图时不叠 spinner，否则匀速划过进度条会变频闪');
       pending.complete(null);
       c.dispose();
@@ -540,7 +542,7 @@ void main() {
       await tester.pump();
       expect(c.state.phase, ThumbnailPreviewPhase.loading);
       expect(find.byType(RawImage), findsNothing);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
       pending.complete(null);
       c.dispose();
     });

@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics, kFushiMd3CardRadius;
 
 /// 预留文字块高度时统一加的余量（行高取整、字体 metrics 与理论值的零头）。
 const double kTextBlockSlack = 4.0;
@@ -59,27 +64,41 @@ class FushiDesignTokens {
   // theme actually changes, and repeat calls within a frame return the cache.
   static ColorScheme? _cachedScheme;
   static TextTheme? _cachedTextTheme;
+  static bool? _cachedGlass;
+  static FushiAppleColors? _cachedApple;
   static FushiDesignTokens? _cached;
 
   static FushiDesignTokens of(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme scheme = theme.colorScheme;
     final TextTheme textTheme = theme.textTheme;
+    // 玻璃生效（已扣除墨水屏 / 高对比度 / 降低透明度）时面板色阶半透明。
+    final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
+    // Apple 设计系统（色板扩展只挂在 Apple 主题上）：面板色阶一律实色。
+    final FushiAppleColors? apple = theme.extension<FushiAppleColors>();
     final FushiDesignTokens? cached = _cached;
     if (cached != null &&
         identical(_cachedScheme, scheme) &&
-        identical(_cachedTextTheme, textTheme)) {
+        identical(_cachedTextTheme, textTheme) &&
+        identical(_cachedApple, apple) &&
+        _cachedGlass == glass) {
       return cached;
     }
     final FushiDesignTokens tokens = FushiDesignTokens(
       radii: const FushiRadii(),
-      surfaces: FushiSurfaceColors.fromScheme(scheme),
+      surfaces: FushiSurfaceColors.fromScheme(
+        scheme,
+        glass: glass,
+        apple: apple,
+      ),
       type: FushiTypeRoles.fromTheme(theme),
       spacing: const FushiSpacingTokens(),
       density: const FushiDensityTokens(),
     );
     _cachedScheme = scheme;
     _cachedTextTheme = textTheme;
+    _cachedGlass = glass;
+    _cachedApple = apple;
     _cached = tokens;
     return tokens;
   }
@@ -103,9 +122,9 @@ class FushiRadii {
   static const double cardValue = 10;
   static const double controlValue = 12;
   static const double chipValue = 6;
-  static const double menuValue = 10;
-  static const double dialogValue = 16;
-  static const double sheetValue = 16;
+  static const double menuValue = 12;
+  static const double dialogValue = 28; // MD3 对话框规范圆角（2026-10-04 对话框统一）
+  static const double sheetValue = 28; // MD3 底部弹层上两角（2026-10-04 弹层统一）
 
   /// galgame 竖版海报卡的圆角（对齐 ReinaManager 的圆润卡片观感，比 Hibiki 常规
   /// [cardValue] 稍大一档；见 `docs/design/galgame-library-reina-visual-parity.md`）。
@@ -182,21 +201,70 @@ class FushiSurfaceColors {
   final Color onSurface;
   final Color onVariant;
 
-  factory FushiSurfaceColors.fromScheme(ColorScheme scheme) {
+  /// [glass] 为 true（玻璃材质生效）时，分组 / 卡片 / 搜索 / 浮层这些
+  /// 叠在页面之上的面板色阶改为半透明，透出外壳背后的系统窗口材质
+  /// （Windows 11 Mica / macOS vibrancy）与下层内容；[page] 是页面底色本身，
+  /// 恒实心（透明了窗口就直接透黑）。
+  ///
+  /// [apple]（Apple 设计系统的色板）非空时走 Apple 26 规则、优先于 [glass]：
+  /// 内容层**一律实色**（玻璃只给浮在内容上的控件层），四档面板各差一级、
+  /// 互不相同——分组 / 卡片同色时卡里套卡、卡里的进度轨道整条隐形：
+  /// - group = secondarySystemGroupedBackground（FushiCard 默认底，深 #1C1C1E / 浅 #F2F2F7）；
+  /// - card = tertiarySystemGroupedBackground（分组里再嵌一层，深 #2C2C2E / 浅 #E5E5EA）；
+  /// - search = surfaceContainerHighest（systemGray5 档，深 #3A3A3C / 浅 #D1D1D6）；
+  /// - overlay = systemGray4 档（深 #48484A / 浅 #C7C7CC），最高一阶的占位 / 轨道。
+  /// MD3 不变。
+  factory FushiSurfaceColors.fromScheme(
+    ColorScheme scheme, {
+    bool glass = false,
+    FushiAppleColors? apple,
+  }) {
+    if (apple != null) {
+      final bool dark = scheme.brightness == Brightness.dark;
+      return FushiSurfaceColors(
+        primary: scheme.primary,
+        primaryContainer: scheme.primaryContainer,
+        page: scheme.surface,
+        group: apple.secondaryGroupedBackground,
+        card: apple.tertiaryGroupedBackground,
+        selected: scheme.secondaryContainer,
+        search: scheme.surfaceContainerHighest,
+        overlay: dark ? const Color(0xFF48484A) : const Color(0xFFC7C7CC),
+        outline: scheme.outlineVariant,
+        onSurface: scheme.onSurface,
+        onVariant: scheme.onSurfaceVariant,
+      );
+    }
+    Color panel(Color color) => glass
+        ? color.withValues(
+            alpha: fushiGlassContainerOpacity(scheme.brightness),
+          )
+        : color;
     return FushiSurfaceColors(
       primary: scheme.primary,
       primaryContainer: scheme.primaryContainer,
       page: scheme.surface,
-      group: scheme.surfaceContainerLow,
-      card: scheme.surfaceContainer,
+      group: panel(scheme.surfaceContainerLow),
+      card: panel(scheme.surfaceContainer),
       selected: scheme.secondaryContainer,
-      search: scheme.surfaceContainerHigh,
-      overlay: scheme.surfaceContainerHighest,
+      search: panel(scheme.surfaceContainerHigh),
+      overlay: panel(scheme.surfaceContainerHighest),
       outline: scheme.outlineVariant,
       onSurface: scheme.onSurface,
       onVariant: scheme.onSurfaceVariant,
     );
   }
+}
+
+/// FushiCard 的真实外圆角（拖拽浮层 / 预览框要与卡片同形时用它，别用
+/// [FushiRadii.cardRadius]——那是 10 的旧编辑刻度，和卡片实际圆角对不上）：
+/// MD3 = [kFushiMd3CardRadius]（16）；Apple = inset grouped 分组圆角
+/// （[FushiAppleMetrics.groupBorderRadius]，iOS 24 / 桌面 12）。
+BorderRadius fushiCardBorderRadius(BuildContext context) {
+  if (isGlassDesign(context)) {
+    return FushiAppleMetrics.of(context).groupBorderRadius;
+  }
+  return const BorderRadius.all(Radius.circular(kFushiMd3CardRadius));
 }
 
 class FushiTypeRoles {
@@ -219,6 +287,7 @@ class FushiTypeRoles {
   factory FushiTypeRoles.fromTheme(ThemeData theme) {
     final TextTheme textTheme = theme.textTheme;
     final ColorScheme scheme = theme.colorScheme;
+    final FushiAppleColors? apple = theme.extension<FushiAppleColors>();
     return FushiTypeRoles(
       listTitle: (textTheme.bodyLarge ?? const TextStyle()).copyWith(
         color: scheme.onSurface,
@@ -234,10 +303,20 @@ class FushiTypeRoles {
         color: scheme.onSurface,
         fontWeight: FontWeight.w600,
       ),
-      sectionLabel: (textTheme.labelLarge ?? const TextStyle()).copyWith(
-        color: scheme.primary,
-        fontWeight: FontWeight.w600,
-      ),
+      // 分组标题（2026-10-04）：MD3 规范的分组标题可以用主色——titleSmall
+      // primary w600；Apple 的分组标题是 13 号 semibold 的 secondaryLabel 灰字
+      // （主色粗体在 iOS 分组列表里是 MD3 口音）。Apple 色板扩展只在 Apple
+      // 设计系统的主题里挂（buildFushiThemeData），据此分流。
+      sectionLabel: apple != null
+          ? (textTheme.labelMedium ?? const TextStyle()).copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: apple.secondaryLabel,
+            )
+          : (textTheme.titleSmall ?? const TextStyle()).copyWith(
+              color: scheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
       controlLabel: textTheme.labelLarge ?? const TextStyle(),
     );
   }

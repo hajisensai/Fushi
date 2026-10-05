@@ -142,13 +142,17 @@ void main() {
     expect(source, isNot(contains('FushiListItem(')),
         reason: 'wide categories must not render as a left list anymore');
     expect(source, contains('_buildTopCategoryBar('),
-        reason: 'wide categories must render in a top horizontal chip bar');
-    expect(source, contains('FushiSelectableChip('),
-        reason: 'each top-bar category is a selectable chip');
-    // TODO-1351（用户复诉）：顶栏 chip 恢复「图标 + 完整文字」，标签按固有宽度完整
-    // 渲染（allowLabelOverflow，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
-    expect(source, contains('allowLabelOverflow: true'),
-        reason: 'top-bar category chips render full labels (TODO-1351)');
+        reason: 'wide categories must render in a top horizontal tab bar');
+    // 2026-10-04：顶栏由 chip 行改成标签栏（MD3 primary tab / Apple 文字标签），
+    // 每个分类一个 _VideoSettingsCategoryTab，按分类 id 稳定 key 命中。
+    expect(source, contains('_VideoSettingsCategoryTab('),
+        reason: 'each top-bar category is a selectable tab');
+    expect(source, contains("ValueKey<String>('video-settings-cat-\${cat.id}')"),
+        reason: 'category tabs keep their stable id keys');
+    // TODO-1351（用户复诉）：分类标签「图标 + 完整文字」，标签按固有宽度完整
+    // 渲染（TextOverflow.visible，无 ellipsis）；TODO-640 的纯图标 + tooltip 方案废弃。
+    expect(source, contains('overflow: TextOverflow.visible'),
+        reason: 'top-bar category tabs render full labels (TODO-1351)');
     expect(source, isNot(contains('iconOnly: true')),
         reason:
             'icon-only top-bar chips were rejected by the user (TODO-1351)');
@@ -165,7 +169,7 @@ void main() {
       source.indexOf('Widget _buildWideDetailTitle('),
     );
     expect(topBarSource, contains('Wrap('),
-        reason: 'the top category bar wraps so no category chip is clipped');
+        reason: 'the top category bar wraps so no category tab is clipped');
     expect(topBarSource, isNot(contains('scrollDirection: Axis.horizontal')),
         reason:
             'top category bar must wrap, not horizontally scroll (last chip '

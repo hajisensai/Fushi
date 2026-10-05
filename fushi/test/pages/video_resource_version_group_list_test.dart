@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dial
 import 'package:fushi_engine/media/torrent/torrent_backend.dart'
     show TorrentAddPayload;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
+import '../helpers/glass_unwrap.dart';
 
 class _FakeResource extends VideoResourceCandidate {
   _FakeResource({
@@ -189,9 +190,7 @@ void main() {
       find.byKey(ValueKey<String>('resource-version-${movie.key}')),
     );
     await tester.pumpAndSettle();
-    final FilledButton submit = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-resource-submit')),
-    );
+    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
     expect(submit.onPressed, isNotNull, reason: '选中即可提交');
   });
 
@@ -234,9 +233,7 @@ void main() {
     expect(row, findsOneWidget, reason: '多条组点卡应展开而不是瞎选');
     await tester.tap(row);
     await tester.pumpAndSettle();
-    final FilledButton submit = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-resource-submit')),
-    );
+    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
     expect(submit.onPressed, isNotNull, reason: '点行选中后提交可用');
   });
 
@@ -288,9 +285,7 @@ void main() {
       findsOneWidget,
       reason: '提交失败后仍应留在资源搜索页',
     );
-    final FilledButton submit = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-resource-submit')),
-    );
+    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
     expect(submit.onPressed, isNotNull, reason: '提示后应允许用户重试');
   });
 
@@ -318,9 +313,7 @@ void main() {
       findsOneWidget,
       reason: '选了多条时按钮上要写清这一下会入队几条',
     );
-    final FilledButton submit = tester.widget<FilledButton>(
-      find.byKey(const ValueKey<String>('video-resource-submit')),
-    );
+    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),);
     expect(submit.onPressed, isNotNull);
   });
 
@@ -338,9 +331,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey<String>('video-resource-submit')),
-          )
+          .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),)
           .onPressed,
       isNotNull,
     );
@@ -349,9 +340,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .widget<FilledButton>(
-            find.byKey(const ValueKey<String>('video-resource-submit')),
-          )
+          .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('video-resource-submit'))),)
           .onPressed,
       isNull,
       reason: '一条都没选还能提交的话，点下去只会入队 0 条',

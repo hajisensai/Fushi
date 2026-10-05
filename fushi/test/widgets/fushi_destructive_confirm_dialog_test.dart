@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   Future<FushiDestructiveConfirmResult?>? dialogResult;
@@ -67,7 +68,7 @@ void main() {
 
     await tester.tap(find.text('连同本体删除'));
     await tester.pumpAndSettle();
-    final Checkbox checkbox = tester.widget<Checkbox>(find.byType(Checkbox));
+    final Checkbox checkbox = tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox)));
     expect(checkbox.value, isTrue);
 
     await tester.tap(find.text('DELETE'));
@@ -164,14 +165,14 @@ void main() {
     ) async {
       await open(tester, gate: true);
       expect(
-        tester.widget<FilledButton>(confirm()).onPressed,
+        tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm())).onPressed,
         isNull,
         reason: '不是「点了没反应」，是按钮本身禁用',
       );
 
       await tester.tap(find.text('我确认删除这 37 条记录'));
       await tester.pumpAndSettle();
-      expect(tester.widget<FilledButton>(confirm()).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm())).onPressed, isNotNull);
 
       await tester.tap(confirm());
       await tester.pumpAndSettle();
@@ -183,7 +184,7 @@ void main() {
     ) async {
       await open(tester, gate: false);
       expect(
-        tester.widget<FilledButton>(confirm()).onPressed,
+        tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm())).onPressed,
         isNotNull,
         reason: '可选项决定删多少，不决定能不能删',
       );

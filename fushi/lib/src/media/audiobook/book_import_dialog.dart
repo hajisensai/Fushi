@@ -236,17 +236,17 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (!_classifyCarrier(path).isManga) return false;
     final bool? go = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.manga_import_detected_title),
         content: Text(
           t.manga_import_detected_message(name: p.basename(path)),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.manga_import_detected_confirm),
           ),
@@ -905,15 +905,15 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.book_import_duplicate_title),
         content: Text(t.book_import_duplicate_message(name: proposedTitle)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.book_import_duplicate_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.book_import_duplicate_keep),
           ),

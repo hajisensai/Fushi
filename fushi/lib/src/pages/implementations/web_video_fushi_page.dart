@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:media_kit_video/media_kit_video.dart'
@@ -62,11 +63,14 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 
 /// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
 const String kWebVideoJsHandler = 'fushiWebVideo';
@@ -1419,7 +1423,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   Widget _buildPopupOverlay(BuildContext overlayContext) {
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    return FushiAppUiScaleNeutralizer(
+    // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    return LookupOverlayNavigator(
+     child: FushiAppUiScaleNeutralizer(
       child: Theme(
         data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
         child: LayoutBuilder(
@@ -1478,6 +1484,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           },
         ),
       ),
+     ),
     );
   }
 
@@ -1633,8 +1640,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final String? fail = _failReason;
     if (fail != null) {
       return Scaffold(
-        appBar: AppBar(),
-        body: Center(child: Text(fail)),
+        appBar: FushiAppBar(),
+        // 加载失败走统一空状态（MD3 中性卡 / Apple ContentUnavailableView），
+        // 不再是光秃秃一行居中文字。
+        body: FushiPlaceholderMessage(
+          icon: Icons.error_outline,
+          message: fail,
+        ),
       );
     }
     final VideoBookRow? row = _row;
@@ -1645,8 +1657,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // [_buildAppBar]，而那只挂在下面的**就绪**分支上；WebView2 环境创建 / 资源加载
       // 慢或悬挂时，桌面端没有系统返回键，用户就被钉在这个转圈上。
       return Scaffold(
-        appBar: AppBar(),
-        body: const Center(child: CircularProgressIndicator()),
+        appBar: FushiAppBar(),
+        body: const FushiLoadingView(),
       );
     }
     // 网页流媒体页属于视频模块，同样是**窗口全屏的合法宿主**（见
@@ -1658,12 +1670,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         focusNode: _focusNode,
         autofocus: true,
         child: Scaffold(
-          backgroundColor: Colors.black,
+          // 页面底是 surface、只有画面区垫黑：顶栏（FushiAppBar，MD3 未滚动 /
+          // Apple 恒透明）画在 Scaffold 底色上，整页黑底会让它变成黑条——标题
+          // 按 onSurface 取色，浅色主题下黑字压黑底看不见，桌面自绘顶栏（根主题
+          // surface）与它之间还切出一道明暗接缝。
+          backgroundColor: cs.surface,
           appBar: _fullscreen ? null : _buildAppBar(row, cs),
           body: Row(
             children: <Widget>[
               Expanded(
-                child: Stack(
+                child: ColoredBox(
+                  color: Colors.black,
+                  child: Stack(
                   children: <Widget>[
                     Positioned.fill(
                       child: KeyedSubtree(
@@ -1688,6 +1706,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                       ),
                   ],
                 ),
+                ),
               ),
               if (_listVisible) _buildListPanel(cs),
             ],
@@ -1704,7 +1723,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         if (t.videoKey == _videoKey && t.cues.isNotEmpty) t,
     ];
     final ({int done, int total})? progress = _mineProgress;
-    return AppBar(
+    return FushiAppBar(
       title: Text(
         progress != null
             ? t.web_video_mine_queue_running(
@@ -1715,9 +1734,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         overflow: TextOverflow.ellipsis,
       ),
       actions: <Widget>[
-        PopupMenuButton<WebVideoHosting>(
+        FushiPopupMenuButton<WebVideoHosting>(
           tooltip: t.web_video_hosting_menu,
-          icon: Icon(_windowed ? Icons.four_k_outlined : Icons.hd_outlined),
+          icon: FushiIcon(_windowed ? Icons.four_k_outlined : Icons.hd_outlined),
           onSelected: (WebVideoHosting h) => unawaited(_switchHosting(h)),
           itemBuilder: (BuildContext context) =>
               <PopupMenuEntry<WebVideoHosting>>[
@@ -1736,9 +1755,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         if (!_windowed)
           // 超分档只有内置档有（窗口档画面归硬件 DRM，碰不到帧）。low = mpv 内置缩放档，
           // 网页帧没有 mpv 缩放器，这里不列。
-          PopupMenuButton<VideoShaderTier>(
+          FushiPopupMenuButton<VideoShaderTier>(
             tooltip: t.video_shader_tier_off,
-            icon: Icon(
+            icon: FushiIcon(
               _shaderActive
                   ? Icons.auto_fix_high
                   : Icons.auto_fix_high_outlined,
@@ -1758,12 +1777,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           ),
         if (_windowed)
           // 窗口宿主档不能录/截（画面归硬件 DRM）：队列交给内置档重放。
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.web_video_mine_switch_builtin(count: _minePending),
-            icon: Badge.count(
+            icon: FushiBadgeControl.count(
               count: _minePending,
               isLabelVisible: _minePending > 0,
-              child: const Icon(Icons.auto_awesome_motion_outlined),
+              child: const FushiIcon(Icons.auto_awesome_motion_outlined),
             ),
             onPressed: _minePending == 0
                 ? null
@@ -1775,26 +1794,26 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                   ),
           )
         else if (_mineRunning)
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.web_video_mine_queue_stop,
-            icon: const Icon(Icons.stop_circle_outlined),
+            icon: const FushiIcon(Icons.stop_circle_outlined),
             onPressed: () => _mineStopRequested = true,
           )
         else
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.web_video_mine_queue_run,
-            icon: Badge.count(
+            icon: FushiBadgeControl.count(
               count: _minePending,
               isLabelVisible: _minePending > 0,
-              child: const Icon(Icons.auto_awesome_motion_outlined),
+              child: const FushiIcon(Icons.auto_awesome_motion_outlined),
             ),
             onPressed: _minePending == 0
                 ? null
                 : () => unawaited(_runMineQueue()),
           ),
-        PopupMenuButton<String>(
+        FushiPopupMenuButton<String>(
           tooltip: t.web_video_track_menu,
-          icon: const Icon(Icons.subtitles_outlined),
+          icon: const FushiIcon(Icons.subtitles_outlined),
           onSelected: _selectTrack,
           itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
             if (mine.isEmpty)
@@ -1810,9 +1829,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
               ),
           ],
         ),
-        IconButton(
+        FushiIconButtonControl(
           tooltip: t.web_video_hide_native_subtitles,
-          icon: Icon(
+          icon: FushiIcon(
             _hideNativeSubtitles
                 ? Icons.closed_caption_disabled_outlined
                 : Icons.closed_caption_outlined,
@@ -1822,15 +1841,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             unawaited(_setNativeSubtitlesHidden(_hideNativeSubtitles));
           },
         ),
-        IconButton(
+        FushiIconButtonControl(
           tooltip: t.video_subtitle_list,
-          icon: Icon(
+          icon: FushiIcon(
             _listVisible ? Icons.view_sidebar : Icons.view_sidebar_outlined,
           ),
           onPressed: _toggleList,
         ),
-        IconButton(
-          icon: const Icon(Icons.fullscreen),
+        FushiIconButtonControl(
+          icon: const FushiIcon(Icons.fullscreen),
           onPressed: () => unawaited(_toggleFullscreen()),
         ),
       ],

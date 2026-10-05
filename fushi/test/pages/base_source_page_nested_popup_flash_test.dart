@@ -5,6 +5,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
@@ -238,7 +240,7 @@ void main() {
     expect(stack, hasLength(1));
     expect(stack.single.visible, isTrue,
         reason: 'showDeferredPopup should reveal the shell at the final rect');
-    expect(find.byType(LinearProgressIndicator), findsOneWidget,
+    expect(_activeLoadingCover(), findsOneWidget,
         reason: 'The body must stay covered until the reused WebView reports '
             'that this lookup has rendered; otherwise macOS can expose a '
             'white empty WebView body.');
@@ -248,8 +250,10 @@ void main() {
 
     stack = hostKey.currentState!.debugPopupStack;
     expect(stack.single.visible, isTrue);
-    expect(find.byType(LinearProgressIndicator), findsNothing,
+    expect(_activeLoadingCover(), findsNothing,
         reason: 'popupRendered clears the temporary cover.');
+    // 指示器在 150ms 内撤场 = 从没露出过（快查询不闪）。
+    expect(find.byType(FushiLoadingView), findsNothing);
   });
 
   testWidgets(
@@ -272,7 +276,7 @@ void main() {
     expect(stack, hasLength(1));
     expect(stack.single.isWarmSlot, isTrue);
     expect(stack.single.visible, isTrue);
-    expect(find.byType(LinearProgressIndicator), findsNothing,
+    expect(_activeLoadingCover(), findsNothing,
         reason: 'A completed empty lookup has no WebView content to wait for; '
             'waiting exposes the warm WebView shell as a blank white body.');
     expect(find.text(t.no_search_results), findsOneWidget);
@@ -347,3 +351,9 @@ void main() {
     );
   });
 }
+
+/// 查词浮层的加载盖板（[FushiDeferredLoading]）当前是否在盖：底色立即铺上，
+/// 指示器 150ms 后才露出，所以判「盖着」看 active，而不是找进度条。
+Finder _activeLoadingCover() => find.byWidgetPredicate(
+  (Widget w) => w is FushiDeferredLoading && w.active,
+);

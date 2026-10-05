@@ -128,7 +128,10 @@ void main() {
     expect(manager.progressFor('remote/video-1'), 0.3);
 
     client.completer.complete();
-    await tester.pumpAndSettle();
+    // 徽章是 MD3 Expressive 波浪进度环，在场时常驻流动动画，pumpAndSettle
+    // 永远不会返回；推过收尾即可。
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
   });
 
   test('source guard: page delegates download to InterconnectDownloadManager',

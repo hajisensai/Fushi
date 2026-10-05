@@ -9,6 +9,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../../helpers/glass_unwrap.dart';
 
 void main() {
   late FushiDatabase db;
@@ -133,10 +134,10 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.tap(find.text(t.video_online_services_setup_register));
     expect(registrations, 1);
-    final TextButton dismiss = tester.widget<TextButton>(find.ancestor(
+    final TextButton dismiss = tester.widget<TextButton>(glassUnwrap<TextButton>(find.ancestor(
       of: find.text(t.video_online_services_setup_dismiss),
       matching: find.byType(TextButton),
-    ));
+    )));
     await tester.runAsync(() async {
       await (dismiss.onPressed! as Future<void> Function())();
     });
@@ -188,10 +189,10 @@ void main() {
         ),
       ),
     ));
-    final FilledButton settings = tester.widget<FilledButton>(find.ancestor(
+    final FilledButton settings = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
       of: find.text(t.video_online_services_setup_settings),
       matching: find.byType(FilledButton),
-    ));
+    )));
     await tester.runAsync(() async {
       await (settings.onPressed! as Future<void> Function())();
     });

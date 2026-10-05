@@ -152,7 +152,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
       SizedBox(height: tokens.spacing.card),
       ValueListenableBuilder<double>(
         valueListenable: progress,
-        builder: (_, value, __) => LinearProgressIndicator(value: value),
+        builder: (_, value, __) => FushiLinearProgressIndicator(value: value),
       ),
       SizedBox(height: tokens.spacing.gap / 2),
       ValueListenableBuilder<String>(

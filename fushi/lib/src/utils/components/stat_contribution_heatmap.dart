@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
@@ -398,16 +400,23 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
         height: kStatHeatmapArrowHitSize,
       );
     }
+    // Apple：翻页箭头是强调色的纯图标按钮（无水波，系统 UIButton.plain 观感）；
+    // MD3 保留 onSurfaceVariant + 圆形水波。
+    final bool apple = isGlassDesign(context);
     return SizedBox(
       width: kStatHeatmapArrowHitSize,
       height: kStatHeatmapArrowHitSize,
       child: InkResponse(
         radius: kStatHeatmapArrowHitSize / 2,
+        splashFactory: apple ? NoSplash.splashFactory : null,
+        highlightColor: apple ? Colors.transparent : null,
         onTap: enabled ? onTap : null,
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: 18,
-          color: enabled ? activeColor : disabledColor!,
+          color: enabled
+              ? (apple ? appleColorsOf(context).accent : activeColor)
+              : disabledColor!,
         ),
       ),
     );
@@ -415,10 +424,14 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
 
   Widget _bubbleChip(ThemeData theme, String text) {
     // eink：surfaceContainerHighest 塌成页面底色，气泡只剩一行悬空的字；描边。
+    // Apple：tertiarySystemFill 胶囊（中性灰，不是 tonal 色块）。
+    final bool apple = isGlassDesign(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: apple
+            ? appleColorsOf(context).tertiaryFill
+            : theme.colorScheme.surfaceContainerHighest,
         borderRadius: const BorderRadius.all(Radius.circular(10)),
         border: isEinkTheme(context)
             ? Border.all(color: theme.colorScheme.outline)

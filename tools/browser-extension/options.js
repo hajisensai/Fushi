@@ -416,10 +416,13 @@ function paletteLabel(id) {
   return p ? tr(p.labelKey) : id;
 }
 
-// 一颗色块的两个示意色：主色 + 表面色（当前明暗下）。
+// 一张主题卡的预览色：页面底 / 顶栏 / 文字 / 强调色（当前明暗下）。
 function swatchColors(id) {
   if (!PALETTE || !THEME) return null;
-  const scheme = THEME.resolve();
+  // 自带明暗的预设（灰暗 / 深邃 / 纯黑…）按它自己的明暗预览——选中它时页面也会切过去。
+  const preset = PALETTE.presetFor(id);
+  const scheme = (preset && (preset.brightness === 'light' || preset.brightness === 'dark'))
+    ? preset.brightness : THEME.resolve();
   let tokens = null;
   if (id === 'app') {
     tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme]);
@@ -430,20 +433,103 @@ function swatchColors(id) {
     const spec = PALETTE.specFor(id, paletteState.customThemes);
     tokens = spec ? PALETTE.derive(spec, scheme) : null;
   }
-  if (!tokens) {
-    // 默认绿：theme.css 的值经计算样式取，色块与页面同源。
-    const cs = getComputedStyle(document.documentElement);
-    return { primary: cs.getPropertyValue('--fushi-primary').trim(), surface: cs.getPropertyValue('--fushi-surface').trim() };
+  const pick = (name) => {
+    if (tokens && tokens[name]) return tokens[name];
+    // 默认绿：theme.css 的值经计算样式取，预览与页面同源。
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  };
+  return {
+    primary: pick('--fushi-primary'),
+    surface: pick('--fushi-surface'),
+    bg: pick('--fushi-bg'),
+    bar: pick('--fushi-surface-strong'),
+    text: pick('--fushi-text'),
+  };
+}
+
+// 微缩界面预览（与 app 设置页 FushiSchemeSwatch / _SchemeMiniUiPainter 同一画法）：页面底 +
+// 顶栏（带强调色小圆点）+ 两条文字线 + 强调色胶囊按钮。
+function paletteMiniPreview(colors) {
+  const pv = document.createElement('span');
+  pv.className = 'palette-preview';
+  pv.setAttribute('aria-hidden', 'true');
+  if (!colors) {
+    pv.classList.add('is-pending');
+    return pv;
   }
-  return { primary: tokens['--fushi-primary'], surface: tokens['--fushi-surface'] };
+  pv.style.setProperty('--sw-bg', colors.bg || colors.surface);
+  pv.style.setProperty('--sw-bar', colors.bar || colors.surface);
+  pv.style.setProperty('--sw-text', colors.text);
+  pv.style.setProperty('--sw-primary', colors.primary);
+  for (const part of ['pv-bar', 'pv-line pv-line-1', 'pv-line pv-line-2', 'pv-pill']) {
+    const s = document.createElement('span');
+    s.className = part;
+    pv.appendChild(s);
+  }
+  return pv;
+}
+
+function paletteCheckBadge() {
+  const b = document.createElement('span');
+  b.className = 'palette-check';
+  b.setAttribute('aria-hidden', 'true');
+  b.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.4l3 3 6-6.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  return b;
+}
+
+// 主题卡网格的键盘：roving tabindex（Tab 只进出一次，落在选中项上），方向键移动焦点（上下按
+// 实际排版的行列），Home/End 到首尾，Enter / 空格选中（button 原生行为）。
+function paletteGridItems(grid) {
+  return Array.prototype.slice.call(grid.querySelectorAll('.palette-swatch'));
+}
+
+function onPaletteGridKeydown(e) {
+  const grid = e.currentTarget;
+  const items = paletteGridItems(grid);
+  const cur = items.indexOf(document.activeElement);
+  if (cur < 0) return;
+  let next = -1;
+  if (e.key === 'ArrowRight') next = Math.min(items.length - 1, cur + 1);
+  else if (e.key === 'ArrowLeft') next = Math.max(0, cur - 1);
+  else if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = items.length - 1;
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const rect = items[cur].getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const down = e.key === 'ArrowDown';
+    let best = -1, bestRow = Infinity, bestDx = Infinity;
+    items.forEach((it, i) => {
+      const r = it.getBoundingClientRect();
+      const dy = down ? r.top - rect.top : rect.top - r.top;
+      if (dy < 4) return; // 同一行或反方向
+      const dx = Math.abs(r.left + r.width / 2 - cx);
+      if (dy < bestRow - 4 || (Math.abs(dy - bestRow) <= 4 && dx < bestDx)) {
+        best = i; bestRow = dy; bestDx = dx;
+      }
+    });
+    next = best >= 0 ? best : cur;
+  } else {
+    return;
+  }
+  e.preventDefault();
+  if (next === cur) return;
+  items.forEach((it, i) => { it.tabIndex = i === next ? 0 : -1; });
+  items[next].focus();
 }
 
 function renderPaletteGrid() {
   const grid = $('paletteGrid');
   if (!grid || !PALETTE) return;
+  // 选中会触发 storage → 整格重建；记住焦点所在的卡，重建后还给它（否则键盘焦点掉回 body）。
+  const active = document.activeElement;
+  const refocus = active && grid.contains(active) ? (active.dataset.palette || active.id || '') : '';
   const ids = ['app', 'fushi'].concat(PALETTE.PRESETS.filter((p) => p.key !== 'fushi').map((p) => p.key))
     .concat(paletteState.customThemes.map((t) => 'custom:' + t.id));
   grid.textContent = '';
+  if (!grid.__fushiKeys) {
+    grid.addEventListener('keydown', onPaletteGridKeydown);
+    grid.__fushiKeys = true;
+  }
   for (const id of ids) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -452,21 +538,15 @@ function renderPaletteGrid() {
     btn.setAttribute('role', 'radio');
     const selected = id === paletteState.palette;
     btn.setAttribute('aria-checked', selected ? 'true' : 'false');
+    btn.tabIndex = selected ? 0 : -1;
     if (selected) btn.classList.add('is-selected');
-    const dot = document.createElement('span');
-    dot.className = 'palette-dot';
     const colors = swatchColors(id);
-    if (colors) {
-      dot.style.setProperty('--swatch-primary', colors.primary);
-      dot.style.setProperty('--swatch-surface', colors.surface);
-    } else {
-      dot.classList.add('is-pending');
-    }
     const name = document.createElement('span');
     name.className = 'palette-name';
     name.textContent = paletteLabel(id);
-    btn.appendChild(dot);
+    btn.appendChild(paletteMiniPreview(colors));
     btn.appendChild(name);
+    btn.appendChild(paletteCheckBadge());
     if (id === 'app' && !colors) btn.title = tr('theme_palette_app_pending');
     btn.addEventListener('click', () => selectPalette(id));
     grid.appendChild(btn);
@@ -475,8 +555,10 @@ function renderPaletteGrid() {
   add.type = 'button';
   add.className = 'palette-swatch palette-add';
   add.id = 'paletteAdd';
+  add.tabIndex = -1;
   const plus = document.createElement('span');
-  plus.className = 'palette-dot';
+  plus.className = 'palette-preview';
+  plus.setAttribute('aria-hidden', 'true');
   plus.textContent = '+';
   const label = document.createElement('span');
   label.className = 'palette-name';
@@ -485,6 +567,16 @@ function renderPaletteGrid() {
   add.appendChild(label);
   add.addEventListener('click', createCustomTheme);
   grid.appendChild(add);
+  // 当前选中项不在列表里（旧存储里的失效 id）时，让第一张卡可 Tab 进入。
+  const items = paletteGridItems(grid);
+  if (!items.some((it) => it.tabIndex === 0) && items.length) items[0].tabIndex = 0;
+  if (refocus) {
+    const back = items.find((it) => (it.dataset.palette || it.id) === refocus);
+    if (back) {
+      items.forEach((it) => { it.tabIndex = it === back ? 0 : -1; });
+      back.focus();
+    }
+  }
   renderCustomThemeEditor();
 }
 
@@ -910,3 +1002,37 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadPalette();
 loadSubtitleStyle();
+
+// ── 节导航：左侧（窄屏为顶部横条）链接随滚动高亮当前节（aria-current="true"）。
+// 只是锚点 + 视觉提示，键盘 Tab 到链接回车即跳；没有 IntersectionObserver 的环境（vm 测试）跳过。
+function bindSectionNav() {
+  if (typeof IntersectionObserver !== 'function' || typeof document.querySelectorAll !== 'function') return;
+  const links = Array.from(document.querySelectorAll('#sectionNav .section-link'));
+  if (!links.length) return;
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  const visible = new Map();
+  const mark = (id) => {
+    for (const [key, a] of byId) {
+      if (key === id) a.setAttribute('aria-current', 'true');
+      else a.removeAttribute('aria-current');
+    }
+    // 窄屏横条：把当前项滚进横条可视区（只滚横条自身，不动页面滚动）。
+    const active = byId.get(id);
+    const bar = active && active.parentElement;
+    if (bar && bar.scrollWidth > bar.clientWidth) {
+      bar.scrollLeft = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+    }
+  };
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) visible.set(e.target.id, e.isIntersecting ? e.intersectionRatio : 0);
+    for (const id of byId.keys()) {
+      if ((visible.get(id) || 0) > 0) { mark(id); return; }
+    }
+  }, { rootMargin: '-15% 0px -60% 0px', threshold: [0, 0.01] });
+  for (const id of byId.keys()) {
+    const sec = document.getElementById(id);
+    if (sec) io.observe(sec);
+  }
+  mark(links[0].getAttribute('href').slice(1));
+}
+bindSectionNav();

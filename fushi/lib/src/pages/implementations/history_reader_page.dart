@@ -157,7 +157,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
             ),
           );
         }),
-        LinearProgressIndicator(
+        FushiLinearProgressIndicator(
           value: (item.position / item.duration).isNaN ||
                   (item.position / item.duration) == double.infinity ||
                   (item.position == 0 && item.duration == 0)

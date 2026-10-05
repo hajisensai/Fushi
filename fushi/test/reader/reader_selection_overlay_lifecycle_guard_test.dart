@@ -151,6 +151,11 @@ void main() {
     expect(bar, contains('overlayBox.globalToLocal(bottomGlobal)'));
     expect(bar, contains('ReaderSelectionToolbarLayout('));
     expect(bar, contains('safeInsets: MediaQuery.paddingOf(overlayContext)'));
-    expect(bar, isNot(contains('const double barHeight')));
+    // 定位必须完全交给布局器：不得回到「假定 48px 高度 + 首字顶边 + 手柄预留」那套手算
+    // （上游 glass 分支仍会用到 `barHeight`，但那只服务胶囊形状，不参与定位）。
+    expect(bar, isNot(contains('double top =')));
+    expect(bar, isNot(contains('handleReserve')));
+    expect(bar, isNot(contains('selectionTop')));
+    expect(bar, isNot(contains('selectionBottom')));
   });
 }

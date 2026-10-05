@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -248,12 +249,12 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.download_airing_calendar_title),
         actions: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.refresh,
-            icon: const Icon(Icons.refresh),
+            icon: const FushiIcon(Icons.refresh),
             onPressed: _loading ? null : () => unawaited(_load(force: true)),
           ),
         ],
@@ -277,9 +278,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.download_airing_calendar_week_prev,
-            icon: const Icon(Icons.chevron_left),
+            icon: const FushiIcon(Icons.chevron_left),
             onPressed: _loading ? null : () => _shiftWeek(-7),
           ),
           Text(
@@ -287,13 +288,13 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             '${FushiTimeFormat.dayKey(weekEnd)}',
             style: theme.textTheme.titleSmall,
           ),
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.download_airing_calendar_week_next,
-            icon: const Icon(Icons.chevron_right),
+            icon: const FushiIcon(Icons.chevron_right),
             onPressed: _loading ? null : () => _shiftWeek(7),
           ),
           const Spacer(),
-          FilterChip(
+          FushiFilterChip(
             label: Text(t.download_airing_calendar_show_all),
             selected: _showAll,
             onSelected: _loading
@@ -310,7 +311,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
 
   Widget _buildBody(ThemeData theme) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     final String? errorDetail = _errorDetail;
     if (errorDetail != null) {
@@ -349,49 +350,17 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
 
   /// 网络失败：如实展示错误详情 + 重试按钮（不吞、不静默降级）。
   Widget _buildError(ThemeData theme, String detail, AniListFailureKind? kind) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(Icons.cloud_off, size: 40, color: theme.colorScheme.error),
-              const SizedBox(height: 12),
-              Text(
-                t.download_airing_calendar_error,
-                style: theme.textTheme.titleMedium,
-                textAlign: TextAlign.center,
-              ),
-              if (anilistFailureNotice(kind)
-                  case final String notice) ...<Widget>[
-                const SizedBox(height: 8),
-                Text(
-                  notice,
-                  style: theme.textTheme.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              const SizedBox(height: 8),
-              Text(
-                detail,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              FilledButton.tonalIcon(
-                icon: const Icon(Icons.refresh),
-                label: Text(t.anime_download_retry),
-                onPressed: () => unawaited(_load(force: true)),
-              ),
-            ],
-          ),
-        ),
+    // 走共享 [FushiPlaceholderMessage]（MD3 中性卡 / Apple
+    // ContentUnavailableView）：接口提示 + 原始错误串作说明行。
+    return FushiPlaceholderMessage(
+      icon: Icons.cloud_off,
+      message: t.download_airing_calendar_error,
+      details: <String>[?anilistFailureNotice(kind), detail],
+      detailMaxLines: 4,
+      action: FushiFilledButton.tonalIcon(
+        icon: const FushiIcon(Icons.refresh),
+        label: Text(t.anime_download_retry),
+        onPressed: () => unawaited(_load(force: true)),
       ),
     );
   }
@@ -401,26 +370,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     required IconData icon,
     required String message,
   }) {
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: 40, color: theme.colorScheme.onSurfaceVariant),
-              const SizedBox(height: 12),
-              Text(
-                message,
-                style: theme.textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    // 空状态走共享 [FushiPlaceholderMessage]（MD3 中性卡 / Apple
+    // ContentUnavailableView），不再手写图标 + 文字列。
+    return FushiPlaceholderMessage(icon: icon, message: message);
   }
 
   /// 宽屏：周一到周日七列。
@@ -523,12 +475,14 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
             _buildBadge(
               theme,
               t.download_airing_calendar_in_library,
+              Icons.video_library_outlined,
               theme.colorScheme.primary,
             ),
           if (subscribed)
             _buildBadge(
               theme,
               t.download_airing_calendar_subscribed,
+              Icons.notifications_active_outlined,
               theme.colorScheme.tertiary,
             ),
         ],
@@ -546,7 +500,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     // 明令的「普通页面不得就地重开局部 MD3 决策」，发现页的封面占位就是这么写的。
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.group,
-      child: const Icon(Icons.movie_outlined, size: 20),
+      child: const FushiIcon(Icons.movie_outlined, size: 20),
     );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,
@@ -566,17 +520,22 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
   }
 
-  Widget _buildBadge(ThemeData theme, String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        border: Border.all(color: color),
-        borderRadius: FushiBorderRadius.chip,
-      ),
-      child: Text(
-        label,
-        style: theme.textTheme.labelSmall?.copyWith(color: color),
-      ),
+  /// 「已入库」「已订阅」小标签：走共享 [FushiTag]（不可交互小标签统一语言），
+  /// 不再是彩色细描边方框。MD3 = 中性 secondaryContainer 底 + 图标区分；
+  /// Apple = systemFill 灰胶囊，语义色 [dotColor] 只落在字前圆点上。
+  Widget _buildBadge(
+    ThemeData theme,
+    String label,
+    IconData icon,
+    Color dotColor,
+  ) {
+    return FushiTag(
+      text: label,
+      icon: icon,
+      backgroundColor: isGlassDesign(context)
+          ? dotColor
+          : theme.colorScheme.secondaryContainer,
+      foregroundColor: theme.colorScheme.onSecondaryContainer,
     );
   }
 }

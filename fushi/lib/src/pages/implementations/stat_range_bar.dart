@@ -335,8 +335,8 @@ Widget buildStatRangeCalendarSection(
           valueByDateKey: values,
           now: now,
           baseColor: tokens.surfaces.primary,
-          emptyColor: tokens.surfaces.overlay,
-          emptyBorderColor: tokens.surfaces.outline,
+          emptyColor: statHeatmapEmptyColors(context).$1,
+          emptyBorderColor: statHeatmapEmptyColors(context).$2,
           valueLabel: (String dateKey, int _) {
             final StatDayData? d = byDay[dateKey];
             final String day = formatStatHeatmapDay(dateKey);

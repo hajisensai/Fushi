@@ -6,7 +6,9 @@ import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/cjk_font_families.dart' show CjkFontStyle;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiSelectableChip;
 import 'package:fushi/i18n/strings.g.dart';
@@ -177,7 +179,8 @@ class _AppUiPreview extends StatelessWidget {
               width: 44,
               height: 60,
               decoration: BoxDecoration(
-                color: scheme.primaryContainer,
+                // 样张里的假封面：中性填充（不再是 primaryContainer 彩块）。
+                color: fushiNeutralBlockColor(context),
                 borderRadius: tokens.radii.controlRadius,
               ),
               alignment: Alignment.center,
@@ -185,7 +188,7 @@ class _AppUiPreview extends StatelessWidget {
                 '猫',
                 style: ui(
                   theme.textTheme.titleLarge,
-                ).copyWith(color: scheme.onPrimaryContainer),
+                ).copyWith(color: fushiNeutralSecondaryForeground(context)),
               ),
             ),
             SizedBox(width: tokens.spacing.card),
@@ -225,7 +228,10 @@ class _AppUiPreview extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 color: scheme.primary,
-                borderRadius: tokens.radii.chipRadius,
+                // 样张按钮跟随设计系统的按钮形状：Apple 是胶囊。
+                borderRadius: isGlassDesign(context)
+                    ? const BorderRadius.all(Radius.circular(999))
+                    : tokens.radii.chipRadius,
               ),
               child: Text(
                 t.font_preview_ui_sample_action,
@@ -486,14 +492,15 @@ class _DictionaryPreview extends StatelessWidget {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: scheme.secondaryContainer,
+                    // 词性小徽标：中性底（与 FushiTag 等共享徽标同口径）。
+                    color: fushiNeutralTagColors(context).background,
                     borderRadius: tokens.radii.chipRadius,
                   ),
                   child: Text(
                     '名詞',
                     style: content(
                       theme.textTheme.labelSmall,
-                    ).copyWith(color: scheme.onSecondaryContainer),
+                    ).copyWith(color: fushiNeutralTagColors(context).foreground),
                   ),
                 ),
               ],

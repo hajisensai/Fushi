@@ -161,6 +161,10 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   frameForward('frameForward'),
   previousCue('previousCue'),
   nextCue('nextCue'),
+  // 重播当前句（2026-10-05 播放器 UI 重做）：与快捷键 videoReplayCurrentSubtitle
+  // （默认 R / 手柄 LT）同一路径——回到本句开头、只播这一句。学习主路径上最常用
+  // 的动作此前只有键盘 / 手柄能触发，手机上没有入口。
+  replayCue('replayCue'),
   volume('volume', isSpecialRender: true),
   fullscreen('fullscreen'),
   screenshot('screenshot'),
@@ -446,6 +450,7 @@ class VideoControlLayout {
       VideoControlItem.frameForward: VideoControlSlot.bottomCenter,
       VideoControlItem.seekForward: VideoControlSlot.bottomCenter,
       VideoControlItem.nextCue: VideoControlSlot.bottomCenter,
+      VideoControlItem.replayCue: VideoControlSlot.bottomCenter,
       VideoControlItem.volume: VideoControlSlot.bottomRight,
       VideoControlItem.speed: VideoControlSlot.bottomRight,
       VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
@@ -483,6 +488,7 @@ class VideoControlLayout {
         VideoControlItem.previousCue,
         VideoControlItem.playPause,
         VideoControlItem.nextCue,
+        VideoControlItem.replayCue,
         VideoControlItem.frameForward,
         VideoControlItem.seekForward,
       ],
@@ -503,57 +509,61 @@ class VideoControlLayout {
     },
   );
 
-  /// The layout that reproduces the **current** player chrome pixel-for-pixel
-  /// (TODO-274 phase 1 wiring default). Distinct from [defaults] (the phase-0
-  /// aspirational target where favorites land in bottomRight): [currentChrome]
-  /// keeps every button exactly where today's hardcoded media_kit theme draws
-  /// it, so feeding it into the slot renderer leaves the chrome unchanged.
+  /// 出厂布局（解码兜底 / 「重置为默认」/ 页面初值都用它，[defaults] 只是测试里的
+  /// 早期目标布局）。2026-10-05 播放器 UI 重做（Material 3 Expressive）按使用频率
+  /// 重排：
   ///
-  /// Mapping of today's chrome:
-  ///   - learning keys (speed / subtitleList / favorites / settings): the legacy
-  ///     3-tier default placed speed in the bottom cluster and the rest on the
-  ///     right rail -> bottomRight / screenRight respectively.
-  ///   - transport / nav keys: drawn in the fixed top bar (back via topLeft,
-  ///     title topCenter, episode nav / screenshot / subtitle-track / audio-track
-  ///     topRight) and the bottom-center transport cluster (previousCue /
-  ///     playPause / nextCue + seek labels) with the position indicator at
-  ///     bottomLeft and volume / fullscreen trailing in bottomRight.
+  /// - **底栏左**：上一集 / 播放 / 下一集（连接按钮组，上下集只在合集里出现）+ 时间。
+  ///   播放离开底栏正中——MD3 画面中央已有 96dp 大播放键，底栏左手位是 YouTube /
+  ///   Netflix 的肌肉记忆；Apple 底栏胶囊里同样从左起排。
+  /// - **底栏中**：学习组 `[−10s][上一帧][上一句][重播本句][下一句][下一帧][+10s]`——
+  ///   学习者最高频的动作钉在正中（逐帧只在桌面渲染、优先级最低，窄窗最先收起）；
+  ///   三个字幕键成对收进「⋯」（[VideoBarHideGroup.cue]）。
+  /// - **底栏右**：字幕轨 / 倍速 / 音量 / 全屏（+ 自定义快捷键槽）。
+  /// - **右上**：音轨 / 选集 / 章节 / 截图 / 片段导出 / 设置——不常用的放这里，窄窗时
+  ///   按优先级自动收进「⋮」（设置优先级最高，最后才收）。
+  /// - **右侧栏**：字幕列表 / 收藏句子（学习侧栏，点开即在画面旁查字幕、制卡）。
+  /// - 默认移出：上 / 下一章（章节列表与 PageUp / PageDown 仍在；OP / ED 章节另有
+  ///   「跳过片头 / 片尾」按钮）。
+  ///
+  /// 已保存过布局的用户不受影响：持久化布局原样解码，只有**新增**的按钮（如
+  /// [VideoControlItem.replayCue]）按这里的槽位补进去（`fallbackAssignments`）。
+  /// compact / mini 档的退化不在布局层，由 [planVideoControlBar] 按优先级收起、
+  /// 由密度档收掉整条栏。
   static final VideoControlLayout currentChrome =
       VideoControlLayout.fromAssignments(
     const <VideoControlItem, VideoControlSlot>{
-      // -- fixed top bar / side lock, now rendered from layout slots --
+      // -- 顶栏 / 侧栏锁 --
       VideoControlItem.back: VideoControlSlot.topLeft,
       VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
       VideoControlItem.title: VideoControlSlot.topCenter,
-      // TODO-642：默认精简右上角顶栏——只保留 episodeList / chapterList / screenshot /
-      // clipExport / subtitleTrack / audioTrack 六个常用入口；prev/next 集与
-      // prev/next 章 4 个导航键不再默认占顶栏（它们各有 episodeList / chapterList
-      // 入口 + 快捷键，挤进顶栏只会把按钮逼进横向滚动区、还压窄标题）。这 4 个键仍是
-      // 可自定义项，未在此 assignment / explicitOrder 列出 = 默认落 hidden（removed 集，
-      // 可从编辑器面板拖回），不是从模型里删掉。
+      VideoControlItem.audioTrack: VideoControlSlot.topRight,
       VideoControlItem.episodeList: VideoControlSlot.topRight,
+      VideoControlItem.chapterList: VideoControlSlot.topRight,
       VideoControlItem.screenshot: VideoControlSlot.topRight,
       VideoControlItem.clipExport: VideoControlSlot.topRight,
-      VideoControlItem.subtitleTrack: VideoControlSlot.topRight,
-      VideoControlItem.audioTrack: VideoControlSlot.topRight,
-      VideoControlItem.chapterList: VideoControlSlot.topRight,
-      // -- bottom-center transport cluster (play pinned geometric centre) --
+      VideoControlItem.settings: VideoControlSlot.topRight,
+      // -- 底栏左：上一集 / 播放 / 下一集 + 时间 --
+      VideoControlItem.previousEpisode: VideoControlSlot.bottomLeft,
+      VideoControlItem.playPause: VideoControlSlot.bottomLeft,
+      VideoControlItem.nextEpisode: VideoControlSlot.bottomLeft,
+      VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
+      // -- 底栏中：学习组 --
       VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
       VideoControlItem.frameBackward: VideoControlSlot.bottomCenter,
       VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
-      VideoControlItem.playPause: VideoControlSlot.bottomCenter,
+      VideoControlItem.replayCue: VideoControlSlot.bottomCenter,
       VideoControlItem.nextCue: VideoControlSlot.bottomCenter,
       VideoControlItem.frameForward: VideoControlSlot.bottomCenter,
       VideoControlItem.seekForward: VideoControlSlot.bottomCenter,
-      // -- bottom row trailing / leading --
-      VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
+      // -- 底栏右 --
+      VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
+      VideoControlItem.speed: VideoControlSlot.bottomRight,
       VideoControlItem.volume: VideoControlSlot.bottomRight,
       VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
-      // -- learning keys, mirroring the legacy default placement --
-      VideoControlItem.speed: VideoControlSlot.bottomRight,
+      // -- 学习侧栏 --
       VideoControlItem.subtitleList: VideoControlSlot.screenRight,
       VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
-      VideoControlItem.settings: VideoControlSlot.screenRight,
       // -- 自定义「快捷键 1..4」按钮：默认可见（未绑定时只露一个加号，点它就地配动作）。
       // 这条 assignment 同时是**老布局的解码兜底**：不列在这里，老用户升级后这几个
       // 按钮会被判成「用户移除过」而落进隐藏托盘，播放器上永远不出现。
@@ -565,43 +575,40 @@ class VideoControlLayout {
     explicitOrder: const <VideoControlSlot, List<VideoControlItem>>{
       VideoControlSlot.topLeft: <VideoControlItem>[VideoControlItem.back],
       VideoControlSlot.topRight: <VideoControlItem>[
-        // TODO-642：默认右上角顺序去掉 4 个 prev/next 导航键（落 hidden，可自定义拖回）。
         // screenshot / clipExport 相邻顺序受守卫钉死，保持紧挨。
+        VideoControlItem.audioTrack,
         VideoControlItem.episodeList,
+        VideoControlItem.chapterList,
         VideoControlItem.screenshot,
         VideoControlItem.clipExport,
-        VideoControlItem.subtitleTrack,
-        VideoControlItem.audioTrack,
-        VideoControlItem.chapterList,
+        VideoControlItem.settings,
       ],
       VideoControlSlot.screenLeft: <VideoControlItem>[
         VideoControlItem.immersiveLock,
+      ],
+      VideoControlSlot.bottomLeft: <VideoControlItem>[
+        VideoControlItem.previousEpisode,
+        VideoControlItem.playPause,
+        VideoControlItem.nextEpisode,
+        VideoControlItem.positionIndicator,
       ],
       VideoControlSlot.bottomCenter: <VideoControlItem>[
         VideoControlItem.seekBackward,
         VideoControlItem.frameBackward,
         VideoControlItem.previousCue,
-        VideoControlItem.playPause,
+        VideoControlItem.replayCue,
         VideoControlItem.nextCue,
         VideoControlItem.frameForward,
         VideoControlItem.seekForward,
       ],
-      VideoControlSlot.bottomLeft: <VideoControlItem>[
-        VideoControlItem.positionIndicator,
-      ],
       VideoControlSlot.bottomRight: <VideoControlItem>[
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.speed,
         VideoControlItem.volume,
         VideoControlItem.fullscreen,
-        VideoControlItem.speed,
         // 自定义「快捷键 1..4」按钮默认落底栏右区。四个槽位都**在布局里**，但播放器上
         // 只画「已绑的 + 第一个未绑的（加号）」——那条渲染门控在 `_shouldRenderControlItem`，
-        // 不在布局层：布局管「按钮在哪、什么顺序」，绑定管「画不画」，两件事不混在一起
-        // （否则解绑一个动作就得改写用户的布局 JSON，顺序还会跟着丢）。
-        //
-        // 必须写在 [currentChrome] 而不只是 [defaults]：老用户的持久化布局里没有这几个
-        // 新枚举项，解码时按 `currentChrome.slotOf(item)` 兜底——不列在这里就会被判成
-        // 「用户移除过」而落进隐藏托盘，于是升级后**连那个加号都看不到**，得先翻进
-        // 编辑器把它们拖出来才知道有这功能。加号点一下即弹动作选择器，不是死按钮。
+        // 不在布局层：布局管「按钮在哪、什么顺序」，绑定管「画不画」。
         VideoControlItem.customAction1,
         VideoControlItem.customAction2,
         VideoControlItem.customAction3,
@@ -610,7 +617,6 @@ class VideoControlLayout {
       VideoControlSlot.screenRight: <VideoControlItem>[
         VideoControlItem.subtitleList,
         VideoControlItem.favoriteSentence,
-        VideoControlItem.settings,
       ],
     },
   );
@@ -782,10 +788,50 @@ class VideoControlLayout {
     }
   }
 
+  /// 已保存布局（v1 / v2 / v3）里**缺失**的按钮落到哪：2026-10-05 M3E 重排之前的
+  /// 出厂位置。重排只改「从没保存过布局的用户」看到的默认（[currentChrome]）；已经
+  /// 存过布局的用户，缺项仍按他们当年熟悉的旧默认补（播放键补回底栏正中、设置补回
+  /// 右侧栏……），不会因为改默认把一个已定制布局里的按钮挪到别处。旧默认里没有的
+  /// 新按钮（如 [VideoControlItem.replayCue]）才按 [currentChrome] 补。
+  static const Map<VideoControlItem, VideoControlSlot> _kSavedLayoutFallback =
+      <VideoControlItem, VideoControlSlot>{
+        VideoControlItem.back: VideoControlSlot.topLeft,
+        VideoControlItem.immersiveLock: VideoControlSlot.screenLeft,
+        VideoControlItem.title: VideoControlSlot.topCenter,
+        VideoControlItem.episodeList: VideoControlSlot.topRight,
+        VideoControlItem.screenshot: VideoControlSlot.topRight,
+        VideoControlItem.clipExport: VideoControlSlot.topRight,
+        VideoControlItem.subtitleTrack: VideoControlSlot.topRight,
+        VideoControlItem.audioTrack: VideoControlSlot.topRight,
+        VideoControlItem.chapterList: VideoControlSlot.topRight,
+        VideoControlItem.seekBackward: VideoControlSlot.bottomCenter,
+        VideoControlItem.frameBackward: VideoControlSlot.bottomCenter,
+        VideoControlItem.previousCue: VideoControlSlot.bottomCenter,
+        VideoControlItem.playPause: VideoControlSlot.bottomCenter,
+        VideoControlItem.nextCue: VideoControlSlot.bottomCenter,
+        VideoControlItem.frameForward: VideoControlSlot.bottomCenter,
+        VideoControlItem.seekForward: VideoControlSlot.bottomCenter,
+        VideoControlItem.positionIndicator: VideoControlSlot.bottomLeft,
+        VideoControlItem.volume: VideoControlSlot.bottomRight,
+        VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
+        VideoControlItem.speed: VideoControlSlot.bottomRight,
+        VideoControlItem.subtitleList: VideoControlSlot.screenRight,
+        VideoControlItem.favoriteSentence: VideoControlSlot.screenRight,
+        VideoControlItem.settings: VideoControlSlot.screenRight,
+        VideoControlItem.customAction1: VideoControlSlot.bottomRight,
+        VideoControlItem.customAction2: VideoControlSlot.bottomRight,
+        VideoControlItem.customAction3: VideoControlSlot.bottomRight,
+        VideoControlItem.customAction4: VideoControlSlot.bottomRight,
+        VideoControlItem.previousEpisode: VideoControlSlot.hidden,
+        VideoControlItem.nextEpisode: VideoControlSlot.hidden,
+        VideoControlItem.previousChapter: VideoControlSlot.hidden,
+        VideoControlItem.nextChapter: VideoControlSlot.hidden,
+      };
+
   static Map<VideoControlItem, VideoControlSlot> _currentChromeAssignments() =>
       <VideoControlItem, VideoControlSlot>{
         for (final VideoControlItem item in VideoControlItem.values)
-          item: currentChrome.slotOf(item),
+          item: _kSavedLayoutFallback[item] ?? currentChrome.slotOf(item),
       };
 
   /// v2 / v3 slot table. TODO-598 / BUG-339: the v2 layout persisted everything

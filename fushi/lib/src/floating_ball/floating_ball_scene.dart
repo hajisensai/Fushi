@@ -26,7 +26,7 @@ class _SceneEntry {
   List<String> get pinnedIds => state.widget.pinnedIds;
 
   bool get isCurrent {
-    if (!state.mounted) return false;
+    if (!state.mounted || !state._active) return false;
     final ModalRoute<Object?>? route = ModalRoute.of(state.context);
     // 不在任何路由里（直接挂在根上）视为当前。
     return route == null || route.isCurrent;
@@ -34,7 +34,7 @@ class _SceneEntry {
 
   /// 场景所在的页面（路由）；不在路由里时用场景本身。
   Object get owner {
-    if (!state.mounted) return state;
+    if (!state.mounted || !state._active) return state;
     return ModalRoute.of(state.context) ?? state;
   }
 }
@@ -207,6 +207,26 @@ class _FloatingBallSceneState extends State<FloatingBallScene> {
         !sameFloatingBallActions(oldWidget.actions, widget.actions)) {
       _registry._scheduleNotify();
     }
+  }
+
+  /// 元素是否处于活动态。整棵子树被摘下（例如切换设计系统时外壳结构变化、
+  /// GlobalKey 重挂）后到 dispose / 重新挂上之前，元素仍 mounted 但已停用：
+  /// 这期间宿主重建若对它做 `ModalRoute.of`，会在停用元素上查祖先而断言，
+  /// 并连锁成整屏红。停用期间登记项视为不在当前路由。
+  bool _active = true;
+
+  @override
+  void deactivate() {
+    _active = false;
+    _registry._scheduleNotify();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+    _registry._scheduleNotify();
   }
 
   @override

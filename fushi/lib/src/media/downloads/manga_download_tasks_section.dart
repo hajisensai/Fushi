@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -216,21 +217,21 @@ class _MangaDownloadTaskRow extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final Widget statusIcon = switch (job.status) {
       MangaDownloadJobStatus.queued =>
-        Icon(Icons.schedule_outlined, size: 20, color: scheme.outline),
+        FushiIcon(Icons.schedule_outlined, size: 20, color: scheme.outline),
       MangaDownloadJobStatus.done =>
-        Icon(Icons.check_circle_outline, size: 20, color: scheme.primary),
+        FushiIcon(Icons.check_circle_outline, size: 20, color: scheme.primary),
       MangaDownloadJobStatus.failed =>
-        Icon(Icons.error_outline, size: 20, color: scheme.error),
+        FushiIcon(Icons.error_outline, size: 20, color: scheme.error),
       MangaDownloadJobStatus.cancelled =>
-        Icon(Icons.block_outlined, size: 20, color: scheme.outline),
+        FushiIcon(Icons.block_outlined, size: 20, color: scheme.outline),
       _ => eink
-          ? const Icon(Icons.downloading_outlined, size: 20)
+          ? const FushiIcon(Icons.downloading_outlined, size: 20)
           : SizedBox(
               width: 20,
               height: 20,
               child: Padding(
                 padding: const EdgeInsets.all(2),
-                child: CircularProgressIndicator(
+                child: FushiCircularProgressIndicator(
                   strokeWidth: 2,
                   value: job.pagesTotal > 0
                       ? (job.pagesDone / job.pagesTotal).clamp(0.0, 1.0)

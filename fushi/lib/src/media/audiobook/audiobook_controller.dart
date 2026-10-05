@@ -1516,7 +1516,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// reader 的 `_onCueChanged` 在调 AudiobookBridge.highlight 时读一次
   /// 这个值传过去。
   bool get shouldRevealCurrentCue =>
-      followAudio.value &&
+      _effectiveFollowAudio &&
       _hasPlayedOnce &&
       _player.playing &&
       _stopAtPositionMs == null;
@@ -1583,7 +1583,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     if (!shouldCrossChapterForTesting(
       cueSec: cueSec,
       currentSec: currentSec,
-      followAudio: followAudio.value,
+      followAudio: _effectiveFollowAudio,
       hasPlayedOnce: _hasPlayedOnce,
       bypassPlayGuard: bypassPlayGuard,
     )) {
@@ -1729,6 +1729,30 @@ class AudiobookPlayerController extends ChangeNotifier {
   ///   重新拉回当前 cue。
   /// 否则用户手动翻页后再开 Follow 只翻图标，要等下一条 cue 才被动回跳，
   /// 体感是"跳不回去"。
+  /// 歌词覆盖层在场期间的「正文强制跟随」（2026-10-04 覆盖层架构）。
+  ///
+  /// 歌词模式是盖在阅读器上的一层：阅读器在下面照常翻页 / 高亮，阅读统计（字数、
+  /// 时长）也由阅读器这条路承担——字数来自阅读器滚动回传的页区间。用户关掉「跟随
+  /// 音频」时正文不再跟着音频走，被覆盖的阅读器就会停在原地，整段听歌词字数为 0。
+  /// 覆盖层期间正文看不见，「跟随」开关只管歌词列表自己滚不滚（`__lyricsSetCue` 的
+  /// scroll 参数），正文必须跟随；退出歌词即撤销，恢复用户的开关语义。
+  /// 不持久化、不改 [followAudio] 的值（图标 / 偏好不变）。
+  bool _readerFollowOverride = false;
+
+  bool get readerFollowOverride => _readerFollowOverride;
+
+  /// 正文跟随判据 = 用户开关 || 覆盖层强制。
+  bool get _effectiveFollowAudio =>
+      followAudio.value || _readerFollowOverride;
+
+  /// 进入 / 退出歌词覆盖层时由阅读器调用。打开时立即把正文对齐到音频（与
+  /// OFF→ON 翻跟随开关同一条 [snapReaderToAudio]），否则要等下一句才跟上。
+  void setReaderFollowOverride(bool value) {
+    if (_readerFollowOverride == value) return;
+    _readerFollowOverride = value;
+    if (value && !followAudio.value) snapReaderToAudio();
+  }
+
   void setFollowAudio(bool value) {
     if (followAudio.value == value) return;
     followAudio.value = value;

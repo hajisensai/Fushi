@@ -62,7 +62,7 @@ class _EpisodeRenameConfirmDialogState
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.collection_episode_rename_title),
       content: SizedBox(
         width: 520,
@@ -76,13 +76,13 @@ class _EpisodeRenameConfirmDialogState
               key: const ValueKey<String>('episode-rename-select-all'),
               density: FushiListDensity.compact,
               onTap: () => _setAllChecked(!_allChecked),
-              leading: Checkbox(
+              leading: FushiCheckbox(
                 value: _allChecked,
                 onChanged: (bool? value) => _setAllChecked(value ?? false),
               ),
               title: Text(t.backup_export_select_all),
             ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
@@ -94,7 +94,7 @@ class _EpisodeRenameConfirmDialogState
                     key: ValueKey<String>('episode-rename-row-${p.bookUid}'),
                     density: FushiListDensity.compact,
                     onTap: () => _setChecked(p.bookUid, !checked),
-                    leading: Checkbox(
+                    leading: FushiCheckbox(
                       value: checked,
                       onChanged: (bool? value) =>
                           _setChecked(p.bookUid, value ?? false),
@@ -123,11 +123,11 @@ class _EpisodeRenameConfirmDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: _checked.isEmpty
               ? null
               : () => Navigator.of(context).pop(<EpisodeRenameProposal>[

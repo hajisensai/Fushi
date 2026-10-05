@@ -864,13 +864,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (ctx == null) return;
     ScaffoldMessenger.maybeOf(
       ctx,
-    )?.showSnackBar(SnackBar(content: Text(message)));
+    )?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _manualLookup() async {
     final BuildContext? ctx = _navigatorContext;
     if (ctx == null) return;
-    final String? word = await showDialog<String>(
+    final String? word = await showAppDialog<String>(
       context: ctx,
       builder: (BuildContext context) => const _ManualLookupDialog(),
     );
@@ -1194,9 +1194,9 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
   @override
   Widget build(BuildContext context) {
     final MaterialLocalizations l10n = MaterialLocalizations.of(context);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.floating_ball_action_lookup),
-      content: TextField(
+      content: FushiTextFieldControl(
         key: const ValueKey<String>('floating_ball_lookup_field'),
         controller: _controller,
         autofocus: true,
@@ -1205,11 +1205,11 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
         onSubmitted: (_) => _submit(),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(l10n.cancelButtonLabel),
         ),
-        FilledButton(onPressed: _submit, child: Text(l10n.searchFieldLabel)),
+        FushiFilledButton(onPressed: _submit, child: Text(l10n.searchFieldLabel)),
       ],
     );
   }

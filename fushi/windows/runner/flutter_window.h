@@ -218,6 +218,12 @@ class FlutterWindow : public Win32Window {
   // focus changes, so the unfocused title bar keeps following the app theme.
   void ApplyCaptionColors(uint32_t caption_argb, uint32_t text_argb);
 
+  // Glass material: turns the Windows 11 Mica system backdrop on / off behind
+  // the (translucent) Flutter view. Returns whether Mica is actually active,
+  // so Dart only makes its shell background translucent when DWM really draws
+  // something behind it (Windows 10 / older Windows 11 builds return false).
+  bool ApplySystemBackdrop(bool mica, bool dark);
+
   // TODO-1092: notify Dart (system_theme_channel_) that the OS accent/theme
   // color changed so ThemeNotifier.refreshSystemPalette() re-reads it live.
   // Safe to call before the channel exists (null-guarded no-op).

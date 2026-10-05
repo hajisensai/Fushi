@@ -5,6 +5,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 Widget _host(Widget child) => MaterialApp(
       home: Scaffold(
@@ -56,11 +57,15 @@ void main() {
         selected: true,
       ),
     ));
-    final AnimatedContainer container = tester.widget(
-      find.byType(AnimatedContainer),
+    // 2026-10 并入封面卡体系：选中环由封面框上的共享选中罩画（MD3 主色 3px
+    // 内描边 + 淡罩），标题染主色。
+    expect(find.byType(ShelfSelectedOverlay), findsOneWidget,
+        reason: '选中态应在封面上画选中环');
+    final Text title = tester.widget<Text>(find.text('Sel'));
+    expect(
+      title.style?.color,
+      Theme.of(tester.element(find.text('Sel'))).colorScheme.primary,
     );
-    final BoxDecoration deco = container.decoration! as BoxDecoration;
-    expect(deco.border, isNotNull, reason: '选中态应有边框环');
   });
 
   testWidgets('点击 / 长按 / 右键各自回调', (WidgetTester tester) async {

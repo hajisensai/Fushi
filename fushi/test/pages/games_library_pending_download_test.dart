@@ -18,6 +18,7 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// BUG-1911：「刚开始下载的、下载一半的应该也进到库里面占位。否则不知道是否加入了，
 /// 毕竟发现已经获取到对应的名称和封面了」（用户 2026-08-28）。
@@ -152,9 +153,7 @@ void main() {
 
     expect(find.text('9-nine-'), findsOneWidget,
         reason: '名称必须来自发现页条目 —— 用户正是靠它确认「加进来了」');
-    final LinearProgressIndicator bar = tester.widget<LinearProgressIndicator>(
-      find.byType(LinearProgressIndicator),
-    );
+    final LinearProgressIndicator bar = tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)),);
     expect(bar.value, closeTo(0.5, 0.001));
     expect(find.text('50%'), findsOneWidget);
   });

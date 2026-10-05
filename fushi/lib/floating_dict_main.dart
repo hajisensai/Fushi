@@ -7,6 +7,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/floating_dict_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 const _overlayChannel = MethodChannel('app.fushi.reader/floating_overlay');
 
@@ -94,6 +95,10 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       themeMode: appModel.overrideDictionaryTheme != null
           ? ThemeMode.light
           : appModel.themeMode,
+      // 独立 entry point 不经主 app 的根作用域：玻璃设计系统的组件配色 / 渲染
+      // 档位在这里自己挂（结构恒定，MD3 下也挂，见 [FushiGlassScope]）。
+      builder: (BuildContext context, Widget? child) =>
+          FushiGlassScope(child: child ?? const SizedBox.shrink()),
       home: FloatingDictPage(
         channel: widget.channel,
         pendingSearch: _pendingSearch,

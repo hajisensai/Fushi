@@ -589,18 +589,39 @@ void main() {
     final String source = readNormalizedSource(
       'lib/src/settings/material_settings_renderer.dart',
     );
-    expect(source, contains('FushiListItemSelectedShape'));
-    // 旧锚点 `'pushRoutes ? const Icon(Icons.chevron_right)'` 同样钉死三元排版。
-    // 契约是「trailing 的雪佛龙由 pushRoutes 门控」。
-    final List<String> trailing = namedArgumentValues(source, 'trailing');
+    // MD3 Expressive 重设计（Android 16 设置，用户 2026-10-04）：宽屏左栏不再是
+    // FushiListItem + FushiListItemSelectedShape，而是导航抽屉式 Md3SettingsNavRow；
+    // 窄屏 push 列表按 Android 16 只留图标 + 标题，不再画 chevron（有意设计变化）。
+    // 守卫意图不变：宽屏（pushRoutes: false）分支走带「选中胶囊」的导航行，
+    // 选中态既有可见胶囊又有无障碍语义。
+    final String list = methodBody(source, 'Widget buildDestinationList(');
     expect(
-      trailing.any(
-        (String value) =>
-            value.contains('pushRoutes') &&
-            value.contains('Icons.chevron_right'),
-      ),
+      list,
+      contains('if (!pushRoutes)'),
+      reason: '宽屏主从左栏与窄屏 push 列表必须由 pushRoutes 分流',
+    );
+    expect(
+      containsIdentifierCall(list, 'Md3SettingsNavList'),
       isTrue,
-      reason: 'destination 行的 chevron 必须由 pushRoutes 门控，实际：$trailing',
+      reason: '宽屏左栏必须走 MD3 导航抽屉式列表（带选中胶囊）',
+    );
+    final int rowStart = source.indexOf('class _Md3SettingsNavRowState');
+    expect(rowStart, isNonNegative, reason: 'MD3 导航行状态类必须存在');
+    final String rowSource = source.substring(rowStart);
+    expect(
+      rowSource,
+      contains('selected ? scheme.secondaryContainer'),
+      reason: '选中项 = secondaryContainer 胶囊填充（MD3 导航抽屉）',
+    );
+    expect(
+      containsIdentifierCall(rowSource, 'StadiumBorder'),
+      isTrue,
+      reason: '选中胶囊必须是全圆角（StadiumBorder）',
+    );
+    expect(
+      rowSource,
+      contains('selected: selected'),
+      reason: '选中态必须同时暴露给无障碍语义',
     );
   });
 
@@ -637,10 +658,22 @@ void main() {
       isTrue,
       reason: 'the shared disclosure must still render the adaptive surface',
     );
-    expect(
+    // 「玻璃」设计系统下不可折叠分组的标题按 Apple inset grouped 放到卡片上方
+    // （有意设计变化）；MD3 / 可折叠分组仍把标题放在分组面里。
+    final String placement = namedArgumentValues(
       container,
-      contains('titlePlacement: SettingsSectionTitlePlacement.inside'),
+      'titlePlacement',
+    ).join(' ');
+    expect(
+      placement,
+      contains('SettingsSectionTitlePlacement.inside'),
       reason: 'detail section titles must remain inside the section surface',
+    );
+    expect(
+      placement,
+      contains('isGlassDesign(context)'),
+      reason:
+          'only the glass design system may move titles outside the surface',
     );
     expect(container, contains('children: widget.children'));
     expect(container, contains('title: widget.title'));
@@ -651,15 +684,27 @@ void main() {
       reason: 'Material destination groups must retain shared section surfaces',
     );
     // 分组卡只在**窄屏 push 列表**里铺：那里列表直接落在 `surfaces.page` 上，卡是
-    // 它唯一的容器。宽屏主从的导航窗格本身已经是一块 tonal 面（`surfaces.card`，
-    // 见下面那条守卫），再铺一层同色卡片就是卡中卡——卡边界看不见，窗格反而少了
-    // 一整块可辨的实色面，于是窗格与详情之间那条分隔线两侧都是近乎同色的浅面，
-    // 线读不出「两个窗格」、只读成一条凭空的竖线。宽屏那侧显式传 transparent。
-    expect(
+    // 它唯一的容器。宽屏主从的导航窗格（MD3 重设计后是导航抽屉式列表，直接坐在
+    // 页面底上）不得再铺一层分组卡——卡中卡/卡面窗格会让窗格边界读不出来。
+    final String groups = methodBody(
       material,
-      contains('surfaceColor: pushRoutes ? null : Colors.transparent'),
-      reason:
-          'narrow push list keeps the group card; the wide nav pane is itself the tonal surface',
+      'Widget buildDestinationGroups(',
+    );
+    expect(
+      containsIdentifierCall(groups, 'AdaptiveSettingsSection'),
+      isTrue,
+      reason: 'narrow push list keeps the group card',
+    );
+    final int navStart = material.indexOf('class Md3SettingsNavList');
+    final int navEnd = material.indexOf('class Md3SettingsNavRow');
+    expect(navStart, isNonNegative);
+    expect(navEnd, greaterThan(navStart));
+    final String navList = material.substring(navStart, navEnd);
+    expect(
+      containsIdentifierCall(navList, 'AdaptiveSettingsSection') ||
+          containsIdentifierCall(navList, 'FushiCard'),
+      isFalse,
+      reason: 'the wide nav pane must not stack a group card on its list',
     );
     expect(
       containsIdentifierCall(material, 'ListView.separated'),
@@ -821,7 +866,16 @@ void main() {
 }
 
 /// 「整个实参槽位就是一个数字字面量」的形态。
-final RegExp _numericArgument = RegExp(r'[(,:]\s*(-?\d+(?:\.\d+)?)\s*[,)]');
+///
+/// 命名实参会带出标签（group 1），以便放行嵌套子树里**不是间距**的数字实参
+/// （`maxLines: 1` / 图标 `size: 24`）：判据扫的是整个构造调用的文本，
+/// `SizedBox(height: ..., child: Row(... Text(maxLines: 1)))` 里的行数不是间距。
+final RegExp _numericArgument = RegExp(
+  r'(?:[(,]|(\w+)\s*:)\s*(-?\d+(?:\.\d+)?)\s*[,)]',
+);
+
+/// 不承载间距语义的命名实参：行数与图标尺寸。
+const Set<String> _nonSpacingArguments = <String>{'maxLines', 'size'};
 
 /// 会被硬编码间距污染的构造器。
 const List<String> _spacingConstructors = <String>['EdgeInsets', 'SizedBox'];
@@ -832,7 +886,8 @@ const List<String> _spacingConstructors = <String>['EdgeInsets', 'SizedBox'];
 /// 令牌为基准的算式也放行——契约是「间距来自设计令牌」，不是「不许出现数字」。
 bool _hasHardcodedSpacing(String expr) {
   for (final RegExpMatch match in _numericArgument.allMatches(expr)) {
-    final double? value = double.tryParse(match.group(1)!);
+    if (_nonSpacingArguments.contains(match.group(1))) continue;
+    final double? value = double.tryParse(match.group(2)!);
     if (value != null && value != 0) return true;
   }
   return false;

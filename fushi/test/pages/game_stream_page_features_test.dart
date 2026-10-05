@@ -75,7 +75,11 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('720p'));
+    // 分辨率档位多于分段控件能容纳的数量，MD3 下按统一判据退成「点行 → 弹出
+    // 菜单选值」：先点开分辨率行，再在菜单里选 720p。
+    await tester.tap(find.text(t.game_stream_settings_resolution));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('720p').last);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(GameStreamSettingsSheet.saveKey));
     await tester.pumpAndSettle();

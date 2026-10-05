@@ -1011,7 +1011,7 @@ Widget buildReaderControlLayoutEditor(SettingsContext context) {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(
           t.reader_control_editor_hint,
-          style: Theme.of(context.context).textTheme.bodySmall,
+          style: controlLayoutEditorHintStyle(context.context),
         ),
       ),
       ReaderControlLayoutEditor(

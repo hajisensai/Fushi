@@ -217,16 +217,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
       // CSS Custom Highlight range，重进章节时高亮不绘制（立即收藏时布局已稳定
       // 所以能显示）。在这里（与立即收藏相同的稳定状态）再应用一次即可对齐。
       // 重复应用是幂等的：__fushiApplyHighlights 会先清空再重建 range map。
-      if (!_lyricsMode) {
-        _applyChapterHighlights();
-      }
+      _applyChapterHighlights();
       // TODO-724：跳章 / 位置恢复完成后重置有声书图片暂停的 cue 推进锚点
       // (__fushiPrevHighlight)。否则恢复到章节中段后，首次 cue 推进时 prev 仍指向很早
       // 的元素，__fushiImageBetween 会跨越中间所有插图、误把视口 reveal 到一张远处的图
       // （BUG-007 的 reveal 滚图被恢复 + 大跨度 cue 放大）。本路径同时覆盖初次开书与
       // 有声书跨章推进（_handleCueCrossChapter→_navigateToChapter 完成后均回到这里）。
       // 与 718 的 _reanchorContinuousAfterRestore（连续模式重锚）零共享状态，正交独立。
-      if (!_lyricsMode && _controller != null) {
+      if (_controller != null) {
         AudiobookBridge.resetImagePauseAnchor(_controller!);
       }
       _refreshProgress();
@@ -324,7 +322,8 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     final bool allowed = readerScrollProgressRefreshAllowed(
       readerContentReady: _readerContentReady,
       restoreInFlight: _restoreInFlight,
-      lyricsMode: _lyricsMode,
+      // 覆盖层架构：正文在歌词层下面照常回传滚动、照常记进度 / 账本。
+      lyricsMode: false,
       controllerAvailable: _controller != null,
     );
     // TODO-151/164 / BUG-225 诊断（默认 off，DebugLogService.instance.enabled 门控）：
@@ -1206,7 +1205,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
     // 章末 progress 会把「旧位置 → 章末」整段计成本次读到的新字数。恢复完成
     // （_onRestoreComplete）与失败（_failNavigation / reload catch）都清旗，之后的
     // 首发刷新、onReanchorSettled 补刷都在清旗之后到达，不受这条门影响。
-    if (_controller == null || _lyricsMode || _restoreInFlight) return;
+    // 覆盖层架构（2026-10-04）：歌词模式不再替换正文文档，正文在歌词层下面照常跟随
+    // 音频翻页——字数 / 进度照常由这里采样入账，所以不再按歌词态早返回。
+    if (_controller == null || _restoreInFlight) return;
     final InAppWebViewController controller = _controller!;
     final int generation = _navigateGeneration;
     final int chapter = _currentChapter;
@@ -1241,7 +1242,6 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         chapter != _currentChapter ||
         !identical(controller, _controller) ||
         _restoreInFlight ||
-        _lyricsMode ||
         !_readerContentReady) {
       return;
     }
@@ -1260,8 +1260,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         _controller != controller ||
         _navigateGeneration != generation ||
         _currentChapter != chapter ||
-        _restoreInFlight ||
-        _lyricsMode) {
+        _restoreInFlight) {
       return;
     }
     final ReaderStableProgressDetails? snapshot =
@@ -1398,10 +1397,7 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   }
 
   Future<void> _syncPositionFromWebViewProgress() async {
-    if (_controller == null ||
-        _lyricsMode ||
-        !_readerContentReady ||
-        _restoreInFlight) {
+    if (_controller == null || !_readerContentReady || _restoreInFlight) {
       return;
     }
 
@@ -1428,7 +1424,6 @@ extension _ReaderNavigation on _ReaderFushiPageState {
         chapter != _currentChapter ||
         !identical(controller, _controller) ||
         _restoreInFlight ||
-        _lyricsMode ||
         !_readerContentReady) {
       return;
     }
@@ -1644,12 +1639,9 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// 完整论证见 [flushWithBoundedProbe] 的文档注释。
   Future<void> _syncAndFlushPosition() async {
     await flushWithBoundedProbe(
+      // 覆盖层架构：正文一直跟着音频，位置就从正文采（歌词态不再另走 cue 派生）。
       probe: () async {
-        if (_lyricsMode) {
-          _syncPositionFromCurrentCue();
-        } else {
-          await _syncPositionFromWebViewProgress();
-        }
+        await _syncPositionFromWebViewProgress();
       },
       persist: () async {
         await _flushPosition();
@@ -1672,11 +1664,6 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// `_lastProgress*` 字段直接落库（[_flushPosition]），并把阅读统计 + 有声书
   /// 播放位置写穿。await 完成后退出路径才会 exit(0)。
   Future<void> _flushAllForProcessExit() async {
-    if (_lyricsMode) {
-      // 歌词模式可见进度只有音频 cue 位置，先从当前 cue 派生位置再落库
-      // （纯内存计算，不碰 WebView）。
-      _syncPositionFromCurrentCue();
-    }
     await _flushPosition();
     // 退出 / 退后台不是翻走：站着的那页不结算（`ReadUnitLedger` 类文档），只写穿时钟。
     await _flushReadingStats();

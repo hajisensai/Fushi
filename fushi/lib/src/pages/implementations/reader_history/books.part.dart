@@ -315,6 +315,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
               : Icons.check_circle_outline,
           onPressed: () => _toggleBookCompleted(bookKey),
         ),
+        // 与 EPUB 卡菜单对称：「重置阅读状态」。后台听书时钟对配对字幕书也可能按
+        // SRT uid 记账，所以统计身份带上 uid。
+        DialogListAction(
+          label: t.library_progress_reset_action,
+          icon: Icons.restart_alt_outlined,
+          onPressed: () =>
+              _resetBookReadingState(item, bookKey, srtUid: book.uid),
+        ),
         // TODO-1191：与 EPUB 卡菜单对称补「查看插画」。仅在该 SRT 书有对应
         // EpubBooks 行（[_epubBackedBookKeys] 命中 = extractDir 存在）时展示，
         // 复用 EPUB 侧同一 [_openIllustrations]（自行 Navigator.pop + 打开
@@ -495,6 +503,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           tooltip: t.tag_label,
         ),
         FushiIconButton(
+          // 只作用于散卡书（合集不是一本书，没有进度可重置），与打标签同一可用态。
+          key: const ValueKey<String>('reader_shelf_batch_reset_progress'),
+          enabled: localKeys.isNotEmpty,
+          onTap: _batchResetReadingState,
+          icon: Icons.restart_alt_outlined,
+          tooltip: t.library_progress_reset_action,
+        ),
+        FushiIconButton(
           key: const ValueKey<String>('reader_shelf_batch_delete'),
           enabled: hasLocalSelection,
           onTap: _batchDeleteConfirm,
@@ -503,6 +519,72 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           enabledColor: theme.colorScheme.error,
         ),
       ],
+    );
+  }
+
+  /// 批量「重置阅读状态」：与单卡同一确认框、同一落地函数 [resetBookReadingState]。
+  /// 目标在弹窗前定死（与 [_batchDeleteConfirm] 同纪律）；纯字幕书（bookKey 空）没有
+  /// 进度 / 读完真值载体，跳过且不计数。
+  Future<void> _batchResetReadingState() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final Set<String> targetKeys = _selectedLocalKeys;
+    final FushiDatabase db = appModel.database;
+    final SrtBookRepository srtRepo = SrtBookRepository(db);
+    final List<({String bookKey, String? srtUid, String title})> targets =
+        <({String bookKey, String? srtUid, String title})>[];
+    for (final String key in targetKeys) {
+      if (key.startsWith('srt_')) {
+        final SrtBook? book = await srtRepo.findByUid(key.substring(4));
+        if (book != null && book.bookKey.isNotEmpty) {
+          targets.add(
+            (bookKey: book.bookKey, srtUid: book.uid, title: book.title),
+          );
+        }
+        continue;
+      }
+      final String? bookKey = _parseBookKey(key);
+      if (bookKey == null) continue;
+      final EpubBookRow? row = await db.getEpubBook(bookKey);
+      if (row == null) continue;
+      targets.add((bookKey: bookKey, srtUid: null, title: row.title));
+    }
+    if (targets.isEmpty || !mounted) return;
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.library_progress_reset_action,
+      message: '${t.library_progress_reset_book_message}\n\n'
+          '${t.library_progress_reset_batch_message(n: targets.length)}',
+    );
+    if (records == null || !mounted) return;
+    int done = 0;
+    for (final ({String bookKey, String? srtUid, String title}) target
+        in targets) {
+      try {
+        await resetBookReadingState(
+          db: db,
+          bookKey: target.bookKey,
+          title: target.title,
+          extraStatKeys: <String>{
+            if (target.srtUid != null) target.srtUid!,
+          },
+          records: records,
+        );
+        done++;
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderHistory.batchResetReadingState', e, stack);
+      }
+    }
+    if (!mounted) return;
+    _exitSelectionMode();
+    _afterReadingStateReset();
+    FushiToast.show(
+      msg: done == targets.length
+          ? t.library_progress_reset_batch_done(n: done)
+          : t.library_progress_reset_failed,
+      severity: done == targets.length
+          ? ToastSeverity.success
+          : ToastSeverity.warning,
     );
   }
 
@@ -1246,6 +1328,59 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     );
   }
 
+  /// 书卡 / 配对字幕书卡「重置阅读状态」：先收起长按菜单，弹确认框（可选只撤最近
+  /// 一次会话 / 全清学习记录，默认都不动），确认后经 [resetBookReadingState] 落库
+  /// （位置写回开头而不是删行——删行会被同步通道从对端灌回，见该函数文件头），
+  /// 再让书列表 / 最近阅读时刻 / 读完集合三份缓存一起失效。
+  Future<void> _resetBookReadingState(
+    MediaItem item,
+    String bookKey, {
+    String? srtUid,
+  }) async {
+    Navigator.pop(context);
+    if (bookKey.isEmpty) return;
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.library_progress_reset_action,
+      message: t.library_progress_reset_book_message,
+      itemTitle: displayTitleForBook(item: item, rawTitle: item.title),
+    );
+    if (records == null || !mounted) return;
+    try {
+      await resetBookReadingState(
+        db: appModel.database,
+        bookKey: bookKey,
+        title: item.title,
+        extraStatKeys: <String>{if (srtUid != null) srtUid},
+        records: records,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderHistory.resetReadingState', e, stack);
+      if (!mounted) return;
+      _afterReadingStateReset();
+      FushiToast.show(
+        msg: t.library_progress_reset_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    _afterReadingStateReset();
+    FushiToast.show(
+      msg: t.library_progress_reset_done,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 重置阅读状态之后：书列表（进度）、最近阅读时刻、读完集合与书架映射一起重取。
+  void _afterReadingStateReset() {
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(bookLastReadAtProvider);
+    ref.invalidate(completedEpubBookKeysProvider);
+    _shelfMapsFuture = _loadShelfMaps();
+    _rebuild(() {});
+  }
+
   Future<void> _openIllustrations(MediaItem item, String bookKey) async {
     Navigator.pop(context);
     final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);
@@ -1410,7 +1545,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+      ).showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
     }
 
     switch (intent) {
@@ -1441,7 +1576,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
           '[fushi-drop] [reader-shelf] intent=unsupportedMangaArchive',
         );
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
+          FushiSnackBar(content: Text(t.drag_drop_manga_archive_unsupported)),
         );
       case DropIntent.attachToBookCard:
         // 往书卡上拖音频/字幕 = 给这本书挂有声书，属听书模块。
@@ -1458,7 +1593,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.needCardTarget:
         debugPrint('[fushi-drop] [reader-shelf] intent=needCardTarget');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_need_card_target)),
+          FushiSnackBar(content: Text(t.drag_drop_need_card_target)),
         );
       case DropIntent.importNewVideo:
         // 书架拖入视频 → 自动切到视频导入流程，带上文件（不再只提示让用户手动切，
@@ -1507,7 +1642,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       case DropIntent.unsupportedSurface:
         debugPrint('[fushi-drop] [reader-shelf] intent=unsupportedSurface');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.drag_drop_unsupported_on_books)),
+          FushiSnackBar(content: Text(t.drag_drop_unsupported_on_books)),
         );
       case DropIntent.attachToVideoCard:
       case DropIntent.ignore:
@@ -1612,7 +1747,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (!exists) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.book_css_editor_no_extract_dir)),
+          FushiSnackBar(content: Text(t.book_css_editor_no_extract_dir)),
         );
       }
       return;

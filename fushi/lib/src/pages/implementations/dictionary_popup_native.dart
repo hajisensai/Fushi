@@ -143,7 +143,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
         vertical: tokens.spacing.gap / 2,
       ),
       itemCount: _grouped.length,
-      separatorBuilder: (_, __) => Divider(
+      separatorBuilder: (_, __) => FushiDividerControl(
         height: 1,
         color: tokens.surfaces.outline,
       ),
@@ -294,7 +294,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
   /// 展示某一层词形变化的语法说明（来自 `assets/transforms/<lang>.json`）。
   Future<void> _showGrammarDescription(DeinflectionTag tag) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return showDialog<void>(
+    return showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => FushiDialogFrame(
         padding: EdgeInsets.all(tokens.spacing.card),
@@ -317,7 +317,7 @@ class _DictionaryPopupNativeState extends ConsumerState<DictionaryPopupNative> {
             SizedBox(height: tokens.spacing.gap),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: () => Navigator.of(dialogContext).pop(),
                 child: Text(t.dialog_close),
               ),

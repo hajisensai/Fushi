@@ -32,6 +32,7 @@ import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/media/source_library/source_library_removal.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -321,7 +322,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       if (rows.isNotEmpty) ...<Widget>[
         Padding(
           padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-          child: const Divider(height: 1),
+          child: const FushiDividerControl(height: 1),
         ),
         _buildFolderRows(tokens, rows),
       ],
@@ -365,7 +366,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: Row(
         children: <Widget>[
-          Icon(icon, color: cs.onSurfaceVariant),
+          FushiIcon(icon, color: cs.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Column(
@@ -422,7 +423,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             isLocal ? Icons.folder_outlined : Icons.cloud_outlined,
             color: cs.onSurfaceVariant,
           ),
@@ -691,14 +692,14 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (isBusy) return;
     final _AddSourceChoice? choice = await showAppDialog<_AddSourceChoice>(
       context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
+      builder: (BuildContext ctx) => FushiSimpleDialog(
         title: Text(t.media_source_add),
         children: <Widget>[
-          SimpleDialogOption(
+          FushiSimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, _AddSourceChoice.local),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.folder_outlined),
+                const FushiIcon(Icons.folder_outlined),
                 const SizedBox(width: 16),
                 // BUG-1184：紧邻的「网络来源」选项已用 Expanded，这条漏了——窄屏 +
                 // 长本地化文案时裸 Text 直接把 Row 撑溢出。
@@ -706,12 +707,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               ],
             ),
           ),
-          SimpleDialogOption(
+          FushiSimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, _AddSourceChoice.network),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                const Icon(Icons.cloud_outlined),
+                const FushiIcon(Icons.cloud_outlined),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -757,14 +758,14 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     final _FolderImportChoice? choice =
         await showAppDialog<_FolderImportChoice>(
       context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
+      builder: (BuildContext ctx) => FushiSimpleDialog(
         title: Text(t.media_import_folder),
         children: <Widget>[
-          SimpleDialogOption(
+          FushiSimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, _FolderImportChoice.asSource),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.create_new_folder_outlined),
+                const FushiIcon(Icons.create_new_folder_outlined),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
@@ -782,11 +783,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               ],
             ),
           ),
-          SimpleDialogOption(
+          FushiSimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, _FolderImportChoice.once),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.file_download_outlined),
+                const FushiIcon(Icons.file_download_outlined),
                 const SizedBox(width: 16),
                 Expanded(child: Text(t.media_import_folder_once)),
               ],
@@ -1121,11 +1122,11 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (widget.mediaKind != 'video') return 'series';
     return await showAppDialog<String>(
       context: context,
-      builder: (BuildContext context) => SimpleDialog(
+      builder: (BuildContext context) => FushiSimpleDialog(
         title: Text(t.video_source_grouping_mode),
         children: <Widget>[
           for (final String mode in <String>['series', 'folder'])
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.pop(context, mode),
               child: FushiListItem(
                 padding: EdgeInsets.zero,
@@ -1165,7 +1166,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     if (row.transport != 'local' || row.mediaKind != 'video') return;
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog.adaptive(
+      builder: (BuildContext ctx) => FushiAlertDialog.adaptive(
         title: Text(t.video_scrape_diagnostic_confirm_title),
         content: Text(t.video_scrape_diagnostic_confirm_body),
         actions: <Widget>[
@@ -1346,7 +1347,7 @@ class _SourceRemovalDialogState extends State<_SourceRemovalDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog.adaptive(
+    return FushiAlertDialog.adaptive(
       title: Text(t.media_source_remove),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1364,7 +1365,7 @@ class _SourceRemovalDialogState extends State<_SourceRemovalDialog> {
             const SizedBox(height: 8),
             Material(
               type: MaterialType.transparency,
-              child: DropdownButton<int>(
+              child: FushiDropdownButton<int>(
                 key: const ValueKey<String>('media-source-remove-migrate'),
                 isExpanded: true,
                 value: _target,
@@ -1532,7 +1533,7 @@ class _VideoSourceScrapeSettingsDialogState
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_source_scrape_settings),
       content: SizedBox(
         width: 480,
@@ -1586,7 +1587,7 @@ class _VideoSourceScrapeSettingsDialogState
                 Text(t.video_metadata_primary_provider_hint),
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: TextField(
+                  child: FushiTextFieldControl(
                     controller: _metadataLocale,
                     decoration: InputDecoration(
                       labelText: t.video_source_scrape_metadata_locale,
@@ -1981,7 +1982,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.media_source_add_network),
       content: SizedBox(
         width: 420,
@@ -2101,9 +2102,9 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                     ? const SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : FilledButton.tonal(
+                    : FushiFilledButton.tonal(
                         onPressed: _testConnection,
                         child: Text(t.sync_test_connection),
                       ),

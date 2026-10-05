@@ -8,6 +8,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -256,7 +257,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
         ? _buildEpisodePanel()
         : _buildCollectionPanel();
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.video_subtitle_workbench_title),
         // 作用域开关与标题**同一行**。原来它挂在 `AppBar.bottom` 上独占 56px：
         // 标题行右侧整条空着，开关与面板之间又多一截死白。
@@ -273,18 +274,18 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: Center(
-                child: SegmentedButton<SubtitleWorkbenchScope>(
+                child: FushiSegmentedButton<SubtitleWorkbenchScope>(
                   key: const ValueKey<String>('subtitle-workbench-scope'),
                   showSelectedIcon: false,
                   segments: <ButtonSegment<SubtitleWorkbenchScope>>[
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.episode,
-                      icon: const Icon(Icons.subtitles_outlined),
+                      icon: const FushiIcon(Icons.subtitles_outlined),
                       tooltip: t.video_subtitle_scope_episode,
                     ),
                     ButtonSegment<SubtitleWorkbenchScope>(
                       value: SubtitleWorkbenchScope.collection,
-                      icon: const Icon(Icons.video_library_outlined),
+                      icon: const FushiIcon(Icons.video_library_outlined),
                       tooltip: t.video_subtitle_scope_collection,
                     ),
                   ],

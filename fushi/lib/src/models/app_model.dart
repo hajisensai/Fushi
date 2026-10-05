@@ -62,7 +62,6 @@ import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/browser_extension_font_catalog.dart';
-import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -1233,7 +1232,7 @@ class AppModel with ChangeNotifier {
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
       'hajisensai/Fushi/$_mediaTrackingAppVersion '
-      '(https://github.com/hajisensai/fushi)';
+      '(https://fushi.moe)';
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
@@ -3154,7 +3153,6 @@ class AppModel with ChangeNotifier {
       await Future.wait(<Future<void>>[
         JapaneseLanguage.instance.initialise(),
         injectAssetLicenses(),
-        _seedBuiltInTags(),
         _prepareLocalAudioForPlayback(),
       ]);
 
@@ -3615,18 +3613,6 @@ class AppModel with ChangeNotifier {
   Future<void> _setPref(String key, dynamic value) =>
       prefsRepo.setPref(key, value);
 
-  // TODO-1166：新装时把内置默认标签播种为 5 档星级评分（1⭐..5⭐）。
-  // 仍是「一次性、仅空池」播种：`builtInTagsSeeded` 标志种过即不再动，空池才种，
-  // 保证既有用户的标签池不被覆盖（老用户改星级走标签管理页的一键补齐入口）。
-  Future<void> _seedBuiltInTags() async {
-    if (prefsRepo.containsKey('builtInTagsSeeded')) return;
-    final existing = await _database.getAllTags();
-    if (existing.isEmpty) {
-      await seedStarRatingTags(_database);
-    }
-    await _setPref('builtInTagsSeeded', 'true');
-  }
-
   // _bindLocalAudioDbForNativeHandler moved to LocalAudioManager.bindForNativeHandler
 
   // _rowToDictionary, _dictionaryToCompanion, _persistDictionary
@@ -3671,6 +3657,11 @@ class AppModel with ChangeNotifier {
   /// 墨水屏模式（E-ink）：全局纯黑白主题 + 关动画 + 阅读器/弹窗高对比。
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
+
+  /// 功能层表面材质（导航 / 底部弹层 / 对话框的毛玻璃），与颜色主题正交。
+  FushiGlassMaterial get glassMaterial => themeNotifier.glassMaterial;
+  Future<void> setGlassMaterial(FushiGlassMaterial value) =>
+      themeNotifier.setGlassMaterial(value);
 
   /// BUG-1718：查词弹窗「CSS 尾段」供给器——词典包自带 CSS（`FushiDicts.dictionaryStyles`，
   /// mdx 导入落成的词典目录 `styles.css`）+ 用户全局/单典自定义 CSS，随查词响应按 revision
@@ -3820,6 +3811,10 @@ class AppModel with ChangeNotifier {
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
       // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
       '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
+      // 浏览器扩展的唯一材质是液态玻璃（不再跟随 app 设计系统，用户 2026-10-04 拍板）；
+      // 这条只剩墨水屏开关：墨水屏下发 '0'，content.js 让浮动弹窗保持不透明（非 CSS 变量、
+      // 仅 content.js 消费）。
+      '--fushi-glass': einkMode ? '0' : '1',
     };
   }
 
@@ -4142,6 +4137,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
+
+  /// 播放器底栏时间显示剩余时长（默认关，点按底栏时间切换）。
+  bool get videoTimeDisplayRemaining => prefsRepo.videoTimeDisplayRemaining;
+
+  Future<void> setVideoTimeDisplayRemaining(bool value) =>
+      prefsRepo.setVideoTimeDisplayRemaining(value);
 
   /// 自动下载的外挂字幕按视频内嵌字幕轨对时间轴（默认开）。
   bool get subtitleReferenceSyncEnabled =>
@@ -8411,7 +8412,7 @@ class AppModel with ChangeNotifier {
       FushiGameStreamLibraryHost(
         loadGames: () => galgameRepo.load(),
         isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
-        service: syncServerController.gameStreamService,
+        service: () => syncServerController.gameStreamService,
         startStream: syncServerController.startLaunchedGameStream,
       ),
       miningFactory: createGameStreamMiningAdapter,
@@ -9283,6 +9284,7 @@ RemoteMineResult remoteMineError(
 class _AppModelRemoteLookupService
     implements
         FushiRemoteLookupService,
+        FushiRemoteAudioListService,
         FushiRemoteTimedPopupLookupService,
         FushiRemoteMiningService,
         FushiRemoteSourceNoteService,
@@ -10012,6 +10014,43 @@ class _AppModelRemoteLookupService
         return audioFile.readAsBytes();
       },
     );
+  }
+
+  /// 「选择音频源」菜单（浏览器扩展 / 远端弹窗经 `/api/lookup/audio/list`）：与
+  /// app 内弹窗同一份 [listLookupAudioCandidates]，每项再按 [lookupAudio] 的同一
+  /// 归一化取回字节（本机短命 token 播放）。并发下载、上限 12 项——远端列表型源
+  /// 一个词可能给出几十条录音，菜单只需要够挑。取不回字节的候选直接略过。
+  @override
+  Future<List<RemoteAudioChoice>> listAudio({
+    required String expression,
+    required String reading,
+  }) async {
+    final List<WordAudioCandidate> candidates =
+        (await listLookupAudioCandidates(_appModel, expression, reading))
+            .take(12)
+            .toList(growable: false);
+    final List<RemoteAudioLookup?> audios =
+        await Future.wait(<Future<RemoteAudioLookup?>>[
+      for (final WordAudioCandidate c in candidates)
+        remoteAudioLookupFromResolvedUrl(
+          c.ref,
+          downloadRemote: _downloadRemoteAudioBytes,
+          loadLocalFile: (String filePath) async {
+            final File audioFile = File(filePath);
+            if (!audioFile.existsSync()) return null;
+            return audioFile.readAsBytes();
+          },
+        ),
+    ]);
+    return <RemoteAudioChoice>[
+      for (int i = 0; i < candidates.length; i++)
+        if (audios[i] != null)
+          RemoteAudioChoice(
+            name: lookupAudioSourceDisplayName(candidates[i].source),
+            variant: candidates[i].variant,
+            audio: audios[i]!,
+          ),
+    ];
   }
 
   /// TODO-1335 ②：服务端下载远程发音源字节（Forvo/jpod/fushiRemote 解析出的 http(s)

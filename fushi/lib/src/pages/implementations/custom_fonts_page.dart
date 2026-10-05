@@ -17,6 +17,7 @@ import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
@@ -1204,7 +1205,7 @@ class CustomFontDownloadProgressDialog extends StatelessWidget {
           builder: (_, progress, __) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              LinearProgressIndicator(value: progress),
+              FushiLinearProgressIndicator(value: progress),
               SizedBox(height: tokens.spacing.gap),
               Text(
                 progress != null
@@ -1386,8 +1387,8 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
               icon: Icons.font_download_outlined,
               onTap: added ? null : () => _toggle(font),
               trailing: added
-                  ? Icon(Icons.check, color: scheme.outline)
-                  : Checkbox(
+                  ? FushiIcon(Icons.check, color: scheme.outline)
+                  : FushiCheckbox(
                       value: selected,
                       onChanged: (_) => _toggle(font),
                     ),
@@ -1486,7 +1487,9 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool cupertino = isCupertinoPlatform(context);
+    // Apple 设计系统的行与 Cupertino 渲染同一套几何（16 边距 / 列表标题字号）。
+    final bool cupertino =
+        isCupertinoPlatform(context) || isGlassDesign(context);
     final TextStyle? titleStyle = cupertino
         ? tokens.type.listTitle
         : Theme.of(context).textTheme.bodyMedium;
@@ -1496,11 +1499,11 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
     // ☰ 拖拽手柄：整行本就可拖（外层 FushiReorderDragListener——桌面按下即拖、
     // 移动端长按再拖），这枚手柄是把「可拖拽重排」画出来的视觉锚点，替代原先
     // 单列一行的「拖拽以调整优先级」文字提示。
-    final Widget dragHandle = Tooltip(
+    final Widget dragHandle = FushiTooltip(
       message: t.custom_fonts_drag_hint,
       child: Padding(
         padding: EdgeInsets.only(right: tokens.spacing.gap),
-        child: Icon(
+        child: FushiIcon(
           Icons.drag_indicator,
           size: 20,
           color: scheme.onSurfaceVariant,
@@ -1544,7 +1547,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
           children: [
-            Icon(
+            FushiIcon(
               _rolesExpanded ? Icons.expand_less : Icons.expand_more,
               size: 20,
               color: scheme.onSurfaceVariant,
@@ -1625,16 +1628,16 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
                     if (widget.unsupportedTargets.containsKey(target))
                       // 置灰而非隐藏：用户需要知道「这个用途存在，但这个字体格式
                       // 用不了」，隐藏只会让人继续找不到、以为是 app 少做了。
-                      Tooltip(
+                      FushiTooltip(
                         message: widget.unsupportedTargets[target]!,
-                        child: FilterChip(
+                        child: FushiFilterChip(
                           label: Text(_targetLabel(target)),
                           selected: false,
                           onSelected: null,
                         ),
                       )
                     else
-                      FilterChip(
+                      FushiFilterChip(
                         label: Text(_targetLabel(target)),
                         selected: widget.targets.contains(target),
                         onSelected: (_) => widget.onTargetToggled(target),

@@ -4,6 +4,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// Preserve structured challenges across the library's stage/error wrappers.
 MihonCloudflareChallengeException? mihonCloudflareChallenge(Object? error) {
@@ -76,14 +78,14 @@ class _MihonCloudflareActionState extends State<MihonCloudflareAction> {
     }
     final String label = t.manga_source_cloudflare_verify_title;
     final Widget action = widget.compact
-        ? IconButton(
+        ? FushiIconButtonControl(
             tooltip: label,
             onPressed: _busy ? null : _verify,
-            icon: const Icon(Icons.verified_user_outlined),
+            icon: const FushiIcon(Icons.verified_user_outlined),
           )
-        : TextButton.icon(
+        : FushiTextButton.icon(
             onPressed: _busy ? null : _verify,
-            icon: const Icon(Icons.verified_user_outlined),
+            icon: const FushiIcon(Icons.verified_user_outlined),
             label: Text(label),
           );
     if (_failure == null) return action;

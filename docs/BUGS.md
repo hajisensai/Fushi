@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2718 条。点号进各自文件。
+> 共 2724 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -38,6 +38,12 @@
 | [BUG-2959](bugs/BUG-2959-reader-selection-persists-across-page-turn.md) | ✅ | ✅ | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
 | [BUG-2958](bugs/BUG-2958-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
 | [BUG-2957](bugs/BUG-2957-reader-selection-handle-covers-glyph.md) | ✅ | ✅ | 页边缘选择手柄避让回归：触控盒和选择球遮挡选中字 |
+| [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
+| [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
+| [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
+| [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
+| [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
+| [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |
 | [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
 | [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |
 | [BUG-2948](bugs/BUG-2948-macos-shortcut-key-identity.md) | ✅ | ✅ | macOS 上 Shift+符号键与系统保留默认键导致快捷键无法识别 |
@@ -45,7 +51,7 @@
 | [BUG-2946](bugs/BUG-2946-youtube-watchpage-spof.md) | ✅ | ✅ | YouTube 制卡/播放：watch 页被降级时 5 个 client 全部报「视频不可用」 |
 | [BUG-2945](bugs/BUG-2945-host-delete-book-no-tombstone.md) | ✅ | ✅ | 互联「从所有设备删除」对书/有声书不生效：host 删除不写墓碑 |
 | [BUG-2944](bugs/BUG-2944-interconnect-download-progress-jank.md) | ✅ | ✅ | 下载互联书时 iOS 掉帧：进度回报每次整页重建书架/媒体库 |
-| [BUG-2943](bugs/BUG-2943-reader-lock-inset-page-hint.md) | ✅ | ✅ | 阅读器锁屏解锁改变页距后重锚 hint 退回上一页 |
+| [BUG-2943](bugs/BUG-2943-reader-lock-inset-page-hint.md) | ✅ | ✅ | 阅读器 inset 往返重锚丢失原字符锚 |
 | [BUG-2942](bugs/BUG-2942-collection-delete-orphans-subscriptions.md) | ✅ | ✅ | 删除合集后下载订阅仍启用并继续下载；任务页无法整组删除 |
 | [BUG-2941](bugs/BUG-2941-download-collection-sync-order.md) | ✅ | ✅ | 下载合集选集乱序：同步平手取远端冲掉按集号排序 |
 | [BUG-2940](bugs/BUG-2940-synced-clip-silent-audio.md) | ✅ | ✅ | 同步片段导出放过 0 音频包的 webm（#1951） |

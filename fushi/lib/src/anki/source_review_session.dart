@@ -8,6 +8,8 @@ import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/anki/source_review_draft_store.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/anki/source_review_controls.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Reading state and note edits have independent lifetimes. Continuing reading
 /// never turns an edit of the source note into creation of another note.
@@ -96,7 +98,7 @@ class SourceReviewSession extends ChangeNotifier {
   void _message(String message) {
     final BuildContext? ui = _context;
     if (ui != null && ui.mounted) {
-      ScaffoldMessenger.of(ui).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(ui).showSnackBar(FushiSnackBar(content: Text(message)));
     }
   }
 
@@ -272,16 +274,16 @@ class SourceReviewSession extends ChangeNotifier {
     _busy = true;
     _notify();
     try {
-      final bool? discard = await showDialog<bool>(
+      final bool? discard = await showAppDialog<bool>(
         context: ui,
-        builder: (BuildContext context) => AlertDialog(
+        builder: (BuildContext context) => FushiAlertDialog(
           title: Text(t.card_source_review_draft_discard),
           actions: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed: () => Navigator.pop(context, false),
               child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
             ),
-            FilledButton(
+            FushiFilledButton(
               onPressed: () => Navigator.pop(context, true),
               child: Text(t.card_source_review_draft_discard),
             ),
@@ -367,20 +369,20 @@ class SourceReviewBanner extends StatelessWidget {
                       child: Row(
                         children: <Widget>[
                           if (session.hasDraft) ...<Widget>[
-                            TextButton(
+                            FushiTextButton(
                               onPressed: session.busy
                                   ? null
                                   : () => _runDialog(session.resumeDraft),
                               child: Text(t.card_source_review_draft_resume),
                             ),
-                            TextButton(
+                            FushiTextButton(
                               onPressed: session.busy
                                   ? null
                                   : () => _runDialog(session.discardDraft),
                               child: Text(t.card_source_review_draft_discard),
                             ),
                           ],
-                          TextButton(
+                          FushiTextButton(
                             onPressed: session.busy
                                 ? null
                                 : () => session.returnToReading(onReturn),
@@ -391,7 +393,7 @@ class SourceReviewBanner extends StatelessWidget {
                             ),
                           ),
                           if (session.isReview)
-                            TextButton(
+                            FushiTextButton(
                               onPressed:
                                   session.busy ? null : session.continueReading,
                               child: Text(

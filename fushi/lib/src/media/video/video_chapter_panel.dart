@@ -3,6 +3,7 @@ import 'package:fushi/src/media/video/video_panel_auto_scroll.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart'
     show formatCueTimestamp;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 视频内封章节（chapter）列表面板（TODO-424）。复用 [VideoTranslucentSidePanel]
@@ -145,7 +146,7 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
-          trailing: selected ? Icon(Icons.play_arrow, color: cs.primary) : null,
+          trailing: selected ? FushiIcon(Icons.play_arrow, color: cs.primary) : null,
           onTap: () => widget.onTapChapter(chapter),
         );
       },

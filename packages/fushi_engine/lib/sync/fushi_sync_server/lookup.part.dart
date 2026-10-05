@@ -16,6 +16,10 @@ extension _FushiSyncServerLookup on FushiSyncServer {
       if (method != 'POST') return shelf.Response(405);
       return _lookupRoutes.handleAudioLookup(request);
     }
+    if (reqPath == '/api/lookup/audio/list') {
+      if (method != 'POST') return shelf.Response(405);
+      return _lookupRoutes.handleAudioList(request);
+    }
     if (reqPath == '/api/lookup/audio/file') {
       if (method != 'GET' && method != 'HEAD') return shelf.Response(405);
       return _lookupRoutes.handleAudioFile(request, headOnly: method == 'HEAD');

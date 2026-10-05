@@ -13,6 +13,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
@@ -220,11 +221,11 @@ class _CardDragFeedback extends StatelessWidget {
       enabled: false,
       child: Opacity(
         opacity: isEinkTheme(context) ? 1 : 0.92,
-        child: Material(
-          color: Colors.transparent,
-          elevation: 8,
+        // 抬起观感与重排列表同一枚浮层（MD3 elevation 投影 / Apple 柔和大阴影 +
+        // 轻微放大）；卡片自带底色，浮层只抬阴影。
+        child: FushiReorderDragProxy(
+          transparent: true,
           borderRadius: tokens.radii.cardRadius,
-          clipBehavior: Clip.antiAlias,
           child: SizedBox(
             width: size.width,
             height: size.height,
@@ -251,25 +252,20 @@ class _DragFeedback extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Material(
-      color: Colors.transparent,
-      elevation: 4,
+    // 中性抬起 chip（MD3 surfaceContainerHigh / Apple 二级分组底），不再铺
+    // primaryContainer 彩色块。
+    return FushiReorderDragProxy(
       borderRadius: tokens.radii.chipRadius,
-      clipBehavior: Clip.antiAlias,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 220),
         padding: EdgeInsets.symmetric(
           horizontal: tokens.spacing.gap,
           vertical: tokens.spacing.gap / 2,
         ),
-        decoration: BoxDecoration(
-          color: tokens.surfaces.primaryContainer,
-          borderRadius: tokens.radii.chipRadius,
-        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.collections_bookmark_outlined,
               size: 18,
               color: tokens.surfaces.onSurface,
@@ -363,7 +359,14 @@ class _CollectionDropTargetState extends State<CollectionDropTarget> {
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: eink ? null : hoverColor.withValues(alpha: 0.18),
+                      // MD3：primary 12% 状态层（原 18% 盖得太实，卡片内容
+                      // 发灰）；Apple：中性 systemFill 灰罩 + 强调色描边
+                      // （单色强调色下黑 / 白半透明罩是一块脏色）。
+                      color: eink
+                          ? null
+                          : isGlassDesign(context)
+                              ? appleColorsOf(context).fill
+                              : hoverColor.withValues(alpha: 0.12),
                       borderRadius:
                           widget.borderRadius ?? tokens.radii.cardRadius,
                       border: Border.all(
@@ -377,7 +380,7 @@ class _CollectionDropTargetState extends State<CollectionDropTarget> {
                         padding: EdgeInsets.symmetric(
                           horizontal: tokens.spacing.gap,
                         ),
-                        child: Icon(
+                        child: FushiIcon(
                           Icons.library_add_outlined,
                           color: hoverColor,
                           size: 20,
