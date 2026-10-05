@@ -565,10 +565,11 @@ class _StatGoalPanel extends StatelessWidget {
     final Widget body;
     if (goalChars <= 0) {
       body = Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           _StatIconBadge(icon: Icons.flag_outlined, color: colors.series),
           SizedBox(width: tokens.spacing.card),
-          Expanded(
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -602,6 +603,7 @@ class _StatGoalPanel extends StatelessWidget {
       final bool reached = progressChars >= goalChars;
       final Color ringColor = reached ? colors.reached : colors.series;
       body = Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           StatChartEntrance(
             replayKey: fraction,
@@ -616,7 +618,7 @@ class _StatGoalPanel extends StatelessWidget {
             ),
           ),
           SizedBox(width: tokens.spacing.card),
-          Expanded(
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
