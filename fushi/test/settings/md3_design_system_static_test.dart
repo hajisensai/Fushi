@@ -1146,6 +1146,10 @@ void main() {
           'Reading-position progress bars are chart content (progress-track '
           'surface + clipped track corners) — same reviewed exception class '
           'as reading_statistics_page / video_statistics_page.',
+      'lib/src/reader/reader_settings_preview.dart':
+          'Reading-settings live preview renders sample BOOK TEXT at the '
+          "reader's own (scaled) font size — reader content, not page chrome; "
+          'same reviewed exception class as reader_fushi/chrome.part.dart.',
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart':
           'In-book quick settings sheet packs reader controls at reader '
           'density — same reviewed exception class as '
@@ -1488,6 +1492,7 @@ void main() {
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
         'VisualDensity.compact',
       },
+      'lib/src/reader/reader_settings_preview.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:',
       },
