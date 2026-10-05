@@ -632,3 +632,33 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   :root :is(.toolbar button, .offset-row button, .hdr-fold, .timestamp):active { transform: none; }
 }
+
+/* 查字幕的集数框：前导 Material Symbols「#」图标代替原来的「集」占位字（文字仍在 title / aria-label）。
+   特异性压过 material.css 的 :root:root .subs-row input[type="number"]（居中、8px 内边距）。 */
+.subs-ep-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.subs-ep-icon {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  display: inline-flex;
+  color: var(--fushi-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+:root:root .subs-row .subs-ep-field input[type="number"] {
+  width: 100%;
+  padding: 0 4px 0 28px;
+  text-align: left;
+}
+
+#subs-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

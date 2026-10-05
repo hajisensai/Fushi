@@ -49,7 +49,7 @@
   var DEFAULT_STYLE = 'm3e';
   var pref = 'auto';
   var style = DEFAULT_STYLE;
-  var paletteId = 'fushi';
+  var paletteId = (window.fushiThemePalette && window.fushiThemePalette.DEFAULT_PALETTE) || 'app';
   var customThemes = [];
   var appMirror = null;
   var subscribers = [];
@@ -123,18 +123,29 @@
     if (!palette) return null;
     var s = (scheme === 'light' || scheme === 'dark') ? scheme : resolve();
     if (paletteId === 'app') {
-      return palette.tokensFromAppTheme(appMirror && appMirror[s]);
+      var own = palette.tokensFromAppTheme(appMirror && appMirror[s]);
+      if (own) return own;
+      // app 只下发过另一种明暗（查词弹窗跟 app 当前明暗，扩展页面 auto 时跟系统）：用那份的主色
+      // 色相按本明暗派生，仍是 app 的主题色，而不是退回 theme.css 的扩展绿。
+      var other = appMirror && appMirror[s === 'dark' ? 'light' : 'dark'];
+      var seed = other && palette.parseCssColor(other['--md-primary']);
+      return seed ? palette.derive({ seed: palette.toHex(seed) }, s) : null;
     }
     if (paletteId === 'fushi') return null;
     var spec = palette.specFor(paletteId, customThemes);
     return spec ? palette.derive(spec, s) : null;
   }
 
-  // 查词弹窗要覆盖的 app 下发变量（键名同 browserExtensionThemeColors）；'app' / 'fushi' 下为
-  // null（弹窗照旧吃 app 自己的配色）。
+  // 查词弹窗要覆盖的 app 下发变量（键名同 browserExtensionThemeColors）。只有 'app'（跟随 Fushi）下
+  // 为 null——弹窗本来就吃 app 下发的配色，与扩展页面的 app 镜像同源。'fushi'（扩展绿）以前也回
+  // null，弹窗于是用 app 的配色、侧边栏 / 设置页却是 theme.css 的绿（用户截图：弹窗薰衣草、侧栏绿），
+  // 现在按扩展绿那款预设派生，弹窗与其它表面同色。
   function popupVars(scheme) {
-    if (!palette || paletteId === 'app' || paletteId === 'fushi') return null;
-    return palette.popupVarsFromTokens(tokens(scheme));
+    if (!palette || paletteId === 'app') return null;
+    var s = (scheme === 'light' || scheme === 'dark') ? scheme : resolve();
+    var t = tokens(s);
+    if (!t && paletteId === 'fushi') t = palette.derive(palette.specFor('fushi'), s);
+    return palette.popupVarsFromTokens(t);
   }
 
   // 把弹窗覆盖变量套到弹窗容器上（content.js / side-panel.js / nested-popup.js 三处共用）。
@@ -219,7 +230,7 @@
   }
 
   function setPalette(v) {
-    var n = palette ? palette.normalizePaletteId(v) : 'fushi';
+    var n = palette ? palette.normalizePaletteId(v) : 'app';
     if (n === paletteId) return;
     paletteId = n;
     notify();
@@ -276,7 +287,7 @@
     if (!c) return;
     pref = normalize(c[KEY]);
     style = normalizeStyle(c[STYLE_KEY]);
-    paletteId = palette ? palette.normalizePaletteId(c[PALETTE_KEY]) : 'fushi';
+    paletteId = palette ? palette.normalizePaletteId(c[PALETTE_KEY]) : 'app';
     customThemes = palette ? palette.normalizeCustomThemes(c[CUSTOM_KEY]) : [];
     appMirror = (c[APP_MIRROR_KEY] && typeof c[APP_MIRROR_KEY] === 'object') ? c[APP_MIRROR_KEY] : null;
     notify();
