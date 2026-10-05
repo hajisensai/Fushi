@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -198,8 +199,8 @@ void main() {
       expect(find.text('builtin-row'), findsOneWidget);
       expect(find.text('Alpha source'), findsOneWidget);
       expect(find.text('Beta source'), findsOneWidget);
-      // 排序箭头只在未筛选时出现。
-      expect(find.byIcon(Icons.keyboard_arrow_up), findsNWidgets(2));
+      // 拖拽把手只在未筛选时出现（同组两行各一个）。
+      expect(find.byType(FushiDragHandle), findsNWidgets(2));
 
       await tester.enterText(
         find.byKey(const ValueKey<String>('mihon_sources_search_field')),
@@ -209,10 +210,11 @@ void main() {
       expect(find.text('Alpha source'), findsNothing);
       expect(find.text('Beta source'), findsOneWidget);
       expect(
-        find.byIcon(Icons.keyboard_arrow_up),
+        find.byType(FushiDragHandle),
         findsNothing,
-        reason: '筛选中的列表顺序不是真实顺序，不得提供排序按钮',
+        reason: '筛选中的列表顺序不是真实顺序，不得提供拖拽排序',
       );
+      expect(find.text(t.font_library_reorder_filtered_hint), findsOneWidget);
 
       await tester.tap(find.byType(Switch).first);
       await tester.pump();
@@ -251,50 +253,105 @@ void main() {
       expect(tester.takeException(), null);
     });
 
-    testWidgets('窄行动作收进溢出菜单，标题不再被挤成零宽', (WidgetTester tester) async {
+    for (final Size size in const <Size>[Size(390, 760), Size(1400, 900)]) {
+      testWidgets('行尾宽窄同形：来源偏好 + ⋯ 菜单，标题不被挤成零宽（${size.width}）', (
+        WidgetTester tester,
+      ) async {
+        await pumpSlivers(tester, <Widget>[
+          MihonInstalledSourcesSection(manager: manager),
+        ], size: size);
+        // 常驻动作只有「来源偏好」，其余全在 ⋯ 菜单里。
+        expect(find.byTooltip(t.mihon_source_preferences), findsNWidgets(2));
+        final Finder menu = find.byKey(
+          const ValueKey<String>('mihon_source_menu_org.example.fixture_1'),
+        );
+        expect(menu, findsOneWidget);
+        // 真实像素抓到过：五个 48dp 图标按钮排开后标题只剩 2px。标题列必须拿到
+        // 像样的宽度（量的是 Text 的绘制宽，短标题也远超这个阈值）。
+        final Size titleSize = tester.getSize(find.text('Alpha source'));
+        expect(titleSize.width, greaterThan(60));
+
+        await tester.tap(menu);
+        await tester.pumpAndSettle();
+        expect(find.text(t.mihon_source_move_down), findsOneWidget);
+        expect(find.text(t.mihon_source_clear_data), findsOneWidget);
+        expect(find.text(t.mihon_source_pin), findsOneWidget);
+        // 组首的「上移」在菜单里是禁用项而不是消失。
+        final PopupMenuItem<Object?> moveUp = tester
+            .widget<PopupMenuItem<Object?>>(
+              find.ancestor(
+                of: find.text(t.mihon_source_move_up),
+                matching: find.byWidgetPredicate(
+                  (Widget widget) => widget is PopupMenuItem<Object?>,
+                ),
+              ),
+            );
+        expect(moveUp.enabled, isFalse);
+
+        // 菜单里点「下移」真写穿排序：Alpha 从第一行挪到第二行。
+        await tester.tap(find.text(t.mihon_source_move_down));
+        await tester.pumpAndSettle();
+        final List<MangaOnlineSourceRow> rows = await database
+            .getMangaOnlineSources();
+        expect(
+          rows.map((MangaOnlineSourceRow row) => row.name).toList(),
+          <String>['Beta source', 'Alpha source'],
+        );
+        expect(tester.takeException(), null);
+      });
+    }
+
+    testWidgets('置顶源单独成组排在上方，组内顺序不受另一组影响', (WidgetTester tester) async {
+      final MangaOnlineSourceRow beta = manager.sources.singleWhere(
+        (MangaOnlineSourceRow row) => row.sourceId == '2',
+      );
+      await manager.updateSourceSettings(beta, pinned: true);
       await pumpSlivers(tester, <Widget>[
         MihonInstalledSourcesSection(manager: manager),
-      ], size: const Size(390, 760));
-      // 内联图标按钮一个都不在，换成一个 ⋮ 菜单。
-      expect(find.byIcon(Icons.keyboard_arrow_up), findsNothing);
-      expect(find.byIcon(Icons.tune), findsNothing);
-      final Finder menu = find.byKey(
-        const ValueKey<String>('mihon_source_menu_org.example.fixture_1'),
-      );
-      expect(menu, findsOneWidget);
-      // 真实像素抓到过：五个 48dp 图标按钮排开后标题只剩 2px。标题列必须拿到
-      // 像样的宽度（量的是 Text 的绘制宽，短标题也远超这个阈值）。
-      final Size titleSize = tester.getSize(find.text('Alpha source'));
-      expect(titleSize.width, greaterThan(60));
-
-      await tester.tap(menu);
-      await tester.pumpAndSettle();
-      expect(find.text(t.mihon_source_move_down), findsOneWidget);
-      expect(find.text(t.mihon_source_preferences), findsOneWidget);
-      expect(find.text(t.mihon_source_clear_data), findsOneWidget);
-      expect(find.text(t.mihon_source_pin), findsOneWidget);
-      // 首行的「上移」在菜单里是禁用项而不是消失。
-      final PopupMenuItem<Object?> moveUp = tester
-          .widget<PopupMenuItem<Object?>>(
-            find.ancestor(
-              of: find.text(t.mihon_source_move_up),
-              matching: find.byWidgetPredicate(
-                (Widget widget) => widget is PopupMenuItem<Object?>,
-              ),
-            ),
-          );
-      expect(moveUp.enabled, isFalse);
-
-      // 菜单里点「下移」真写穿排序：Alpha 从第一行挪到第二行。
-      await tester.tap(find.text(t.mihon_source_move_down));
-      await tester.pumpAndSettle();
-      final List<MangaOnlineSourceRow> rows = await database
-          .getMangaOnlineSources();
+      ]);
+      expect(find.text(t.online_sources_pinned_header), findsOneWidget);
+      expect(find.text(t.online_sources_all_header), findsOneWidget);
       expect(
-        rows.map((MangaOnlineSourceRow row) => row.name).toList(),
+        tester.getTopLeft(find.text('Beta source')).dy,
+        lessThan(tester.getTopLeft(find.text('Alpha source')).dy),
+      );
+      // 两组各只有一行：组内没有可拖的对象。
+      expect(find.byType(FushiDragHandle), findsNothing);
+      expect(tester.takeException(), null);
+    });
+
+    testWidgets('状态筛选 chip 只影响显示', (WidgetTester tester) async {
+      final MangaOnlineSourceRow alpha = manager.sources.singleWhere(
+        (MangaOnlineSourceRow row) => row.sourceId == '1',
+      );
+      await manager.updateSourceSettings(alpha, enabled: false);
+      await pumpSlivers(tester, <Widget>[
+        MihonInstalledSourcesSection(manager: manager),
+      ]);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('online_sources_filter_disabled')),
+      );
+      await tester.pump();
+      expect(find.text('Alpha source'), findsOneWidget);
+      expect(find.text('Beta source'), findsNothing);
+      expect(manager.sources, hasLength(2), reason: '筛选不改数据');
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('online_sources_filter_all')),
+      );
+      await tester.pump();
+      expect(find.text('Beta source'), findsOneWidget);
+      expect(tester.takeException(), null);
+    });
+
+    test('reorderSources 按给定顺序重写 sort_order', () async {
+      final List<MangaOnlineSourceRow> reversed = manager.sources.reversed
+          .toList();
+      await manager.reorderSources(reversed);
+      expect(
+        manager.sources.map((MangaOnlineSourceRow row) => row.name).toList(),
         <String>['Beta source', 'Alpha source'],
       );
-      expect(tester.takeException(), null);
     });
 
     testWidgets('一个扩展源都没有时显示 emptyLabel', (WidgetTester tester) async {

@@ -6699,5 +6699,17 @@
   "theme_accent_auto_tone_short": "浅色与深色各自生成色调",
   "theme_neutral_derived_short": "只有主题色带色相",
   "theme_preview_collapse": "收起预览",
-  "theme_preview_expand": "展开预览"
+  "theme_preview_expand": "展开预览",
+  "import_drop_zone_title": "导入到库里",
+  "import_drop_zone_hint": "选择文件或文件夹；也可以把文件直接拖进库页。",
+  "import_supported_formats": "支持格式",
+  "import_methods_title": "导入方式",
+  "media_source_list_empty": "还没有常驻来源。添加文件夹或网络共享后会自动扫描。",
+  "online_sources_pinned_header": "已置顶",
+  "online_sources_all_header": "全部来源",
+  "online_sources_filter_all": "全部",
+  "online_sources_filter_enabled": "已启用",
+  "online_sources_filter_disabled": "已停用",
+  "extension_filter_all_stores": "全部仓库",
+  "extension_update_available": "可更新"
 }

@@ -16,8 +16,8 @@ import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeInset;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 
@@ -118,7 +118,7 @@ class BrowseSubPage extends StatelessWidget {
             FushiPageHeader(
               title: title,
               leading: FushiIconButton(
-                icon: Icons.arrow_back,
+                icon: FushiIcons.back,
                 tooltip: t.back,
                 onTap: () => Navigator.of(context).maybePop(),
               ),
@@ -271,15 +271,12 @@ class _BrowseOnlineSourcesViewState
     };
     return CustomScrollView(
       slivers: <Widget>[
-        // 叠放头部（浏览页的一二级页签行）让出的高度，恒定、不随头部收放变；
-        // 内容滚到头部底下。不在浮动头部下时为 0（BUG-2975）。
-        SliverToBoxAdapter(
-          child: SizedBox(height: FushiFloatingChromeInset.of(context)),
-        ),
         SliverPadding(
+          // 顶部让出浮动工具区的实测高度（库页壳不再套固定下移；不在库页壳里
+          // 时为 0）+ M3E 行内间距 8：内容滚到工具区底下，收起后不留空白。
           padding: EdgeInsets.fromLTRB(
             tokens.spacing.page,
-            0,
+            FushiFloatingChromeInset.of(context) + 8,
             tokens.spacing.page,
             tokens.spacing.page,
           ),
