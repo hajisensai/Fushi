@@ -593,6 +593,9 @@ SettingsDestination buildReadingDestination() {
             min: 150,
             max: 1000,
             divisions: 17,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 8,
@@ -619,6 +622,9 @@ SettingsDestination buildReadingDestination() {
             min: ReaderSettings.minSwipePageTurnSensitivity,
             max: ReaderSettings.maxSwipePageTurnSensitivity,
             divisions: 25,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 9,
@@ -771,6 +777,9 @@ SettingsDestination buildReadingDestination() {
             max: 10,
             divisions: 9,
             visible: (SettingsContext c) => c.readerSource.tapEmptyToHideChrome,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 19,
