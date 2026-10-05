@@ -2,14 +2,19 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show fushiMotionEnabled;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 /// 拖拽重排中「被抬起的那一项」的统一浮层（[FushiReorderableColumn] /
 /// `FushiReorderableGrid` 的自绘浮层；页面里自写的拖拽代理也应套它）。
 ///
-/// - MD3 Expressive：拖拽态 = 浮起面（tokens.surfaces.search）叠 16% dragged 状态层
-///   + elevation 8 投影、无 surface tint，圆角默认 16（M3E corner-large）；抬起
-///   瞬间用 expressive spatial 弹簧放大到 1.03（带过冲），像被手指捏起来。
+/// - MD3 Expressive：拖拽态 = 浮起面（tokens.surfaces.search）叠 dragged 状态层
+///   + elevation 8 投影、无 surface tint，圆角默认 16（M3E 列表行的「按下 / 拖拽」
+///   形变档 [FushiM3eShape.listActive]）；抬起瞬间用 expressive spatial 弹簧放大到
+///   1.03（带过冲），像被手指捏起来。
 /// - Apple（iOS 26 / macOS 26）：抬起的行是实色二级分组底（不是玻璃）+ 一圈
 ///   柔和的大半径阴影 + 轻微放大 1.02（UITableView 拖拽 lift 的观感），圆角默认 10。
 /// - 墨水屏：无阴影（灰阶抖动），改一圈实描边标出抬起项。
@@ -25,7 +30,7 @@ class FushiReorderDragProxy extends StatelessWidget {
 
   final Widget child;
 
-  /// 浮层圆角；null 走设计系统默认（MD3 12 / Apple 10）。
+  /// 浮层圆角；null 走设计系统默认（MD3 16 / Apple 10）。
   final BorderRadius? borderRadius;
 
   /// 行内容自带背景（封面网格单元等）时传 true：浮层只画阴影不涂底色。
@@ -37,7 +42,9 @@ class FushiReorderDragProxy extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context);
     final BorderRadius radius = borderRadius ??
-        BorderRadius.all(Radius.circular(apple ? 10 : 16));
+        BorderRadius.all(
+          Radius.circular(apple ? 10 : FushiM3eShape.listActive),
+        );
     final Color fill;
     final double elevation;
     final Color shadowColor;
@@ -60,9 +67,8 @@ class FushiReorderDragProxy extends StatelessWidget {
       elevation = eink ? 0 : 8;
       shadowColor = cs.shadow;
     }
-    final double liftScale = eink ? 1.0 : (apple ? 1.02 : 1.03);
-    final bool animate =
-        !eink && !(MediaQuery.maybeDisableAnimationsOf(context) ?? false);
+    final bool animate = fushiMotionEnabled(context);
+    final double liftScale = !animate ? 1.0 : (apple ? 1.02 : 1.03);
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: animate ? 1.0 : liftScale, end: liftScale),
       duration: animate ? const Duration(milliseconds: 350) : Duration.zero,

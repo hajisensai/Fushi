@@ -66,6 +66,9 @@ class ProfileKeys {
     'mining_image_mode_install_default',
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
+    // 宽屏导航 rail 的展开 / 收起记的是本机窗口布局，与 current_home_tab_index
+    // 同族；进快照的话切 Profile 会把侧栏忽宽忽窄地翻过去。
+    'nav_rail_expanded',
     'startup_default_dictionary_tab',
     'app_ui_scale',
     'app_ui_scale_mode',

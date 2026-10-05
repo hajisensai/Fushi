@@ -1183,21 +1183,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                     setState(() => _swipingRecentSearch = swiping);
                   },
                   onDismissed: (_) => _removeRecentSearch(rows[i]),
-                  background: ColoredBox(
-                    color: apple.destructive,
-                    child: Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: Padding(
-                        padding: EdgeInsetsDirectional.only(
-                          end: metrics.rowHorizontal,
-                        ),
-                        child: const FushiIcon(
-                          CupertinoIcons.delete,
-                          size: 20,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                  // 统一滑动操作底（Apple 系统红 / MD3 errorContainer）；外层分段
+                  // 卡已按组内位置裁圆角，这里不再另给圆角。
+                  background: const FushiSwipeActionBackground(
+                    icon: CupertinoIcons.delete,
+                    destructive: true,
+                    borderRadius: BorderRadius.zero,
                   ),
                   // 结构恒定：底色层一直在，只在被左滑时才不透明。
                   child: ColoredBox(

@@ -76,18 +76,28 @@ class _MediaSourcePickerDialogPageState
     );
   }
 
+  bool _isCurrentSource(MediaSource mediaSource) =>
+      mediaSource.uniqueKey ==
+      appModel
+          .getCurrentSourceForMediaType(mediaType: widget.mediaType)
+          .uniqueKey;
+
   Widget buildSourceTile(MediaSource mediaSource) {
     return KeyedSubtree(
       key: ValueKey(mediaSource.uniqueKey),
       child: FushiListItem(
-        leading: FushiIcon(
+        // M3E 行首形状底：当前来源 = cookie 形 primary 色块，其余圆形
+        // secondaryContainer。
+        leading: FushiListLeadingIcon(
           mediaSource.icon,
-          color: theme.appBarTheme.foregroundColor,
+          shape: _isCurrentSource(mediaSource)
+              ? FushiLeadingShape.cookie
+              : FushiLeadingShape.circle,
+          tone: _isCurrentSource(mediaSource)
+              ? FushiCardTone.primary
+              : FushiCardTone.secondary,
         ),
-        selected: mediaSource.uniqueKey ==
-            appModel
-                .getCurrentSourceForMediaType(mediaType: widget.mediaType)
-                .uniqueKey,
+        selected: _isCurrentSource(mediaSource),
         title: Text(mediaSource.getLocalisedSourceName(appModel)),
         subtitle: Text(mediaSource.getLocalisedDescription(appModel)),
         onTap: () {

@@ -1,13 +1,19 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_icon_map.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Material 图标在玻璃（Apple 26）设计系统下的 SF 风格替身。
 ///
-/// 只认 `MaterialIcons` 字体（且无 fontPackage）的 IconData：自定义图标字体、
-/// 已经是 CupertinoIcons 的、或映射表里没有语义对应的，一律原样返回。
-IconData? fushiAppleIcon(IconData? icon) {
+/// 认两类 IconData：M3E 语义图标（[FushiIcons]，按 [kFushiSymbolAppleMap] 换成同一
+/// 语义的 SF 字形，实心字族或 `fill >= 0.5` 取 `_fill` 版），以及旧 `MaterialIcons`
+/// 字体（且无 fontPackage）的 `Icons.*`。其它自定义图标字体、已经是 CupertinoIcons
+/// 的、或映射表里没有语义对应的，一律原样返回。
+IconData? fushiAppleIcon(IconData? icon, {double? fill}) {
   if (icon == null) return null;
+  if (isFushiSymbol(icon)) {
+    return fushiSymbolAppleIcon(icon, fill: fill) ?? icon;
+  }
   if (icon.fontFamily != 'MaterialIcons' || icon.fontPackage != null) {
     return icon;
   }
@@ -81,9 +87,28 @@ class FushiIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final IconData? glyph = isGlassDesign(context)
-        ? fushiAppleIcon(icon)
-        : icon;
+    final bool glass = isGlassDesign(context);
+    final IconData? glyph = glass ? fushiAppleIcon(icon, fill: fill) : icon;
+    // M3E 语义图标（Material Symbols 可变字体）：没显式给轴值时按实际字号配 opsz /
+    // 字重、深色背景降 GRAD。Apple 下字形已换成 CupertinoIcons，轴值无意义，不加。
+    if (!glass && isFushiSymbol(glyph)) {
+      final double resolvedSize = size ?? IconTheme.of(context).size ?? 24;
+      return Icon(
+        glyph,
+        size: size,
+        fill: fill,
+        weight: weight ?? fushiSymbolWeight(resolvedSize),
+        grade: grade ?? fushiSymbolGrade(_backdropBrightness(context, color)),
+        opticalSize: opticalSize ?? fushiSymbolOpticalSize(resolvedSize),
+        color: color,
+        shadows: shadows,
+        semanticLabel: semanticLabel,
+        textDirection: textDirection,
+        applyTextScaling: applyTextScaling,
+        blendMode: blendMode,
+        fontWeight: fontWeight,
+      );
+    }
     return Icon(
       glyph,
       size: size,
@@ -100,4 +125,13 @@ class FushiIcon extends StatelessWidget {
       fontWeight: fontWeight,
     );
   }
+}
+
+/// 图标所在背景的明暗：优先图标颜色本身（浅色图标 ≈ 深色背景），否则看平台明暗。
+Brightness _backdropBrightness(BuildContext context, Color? explicit) {
+  final Color? color = explicit ?? IconTheme.of(context).color;
+  if (color != null) {
+    return color.computeLuminance() > 0.5 ? Brightness.dark : Brightness.light;
+  }
+  return MediaQuery.maybePlatformBrightnessOf(context) ?? Brightness.light;
 }

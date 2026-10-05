@@ -1996,16 +1996,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     return Dismissible(
       key: Key(key),
       direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: EdgeInsets.only(
-          right: tokens.spacing.card + tokens.spacing.gap / 2,
-        ),
-        color: Theme.of(context).colorScheme.error,
-        child: FushiIcon(
-          Icons.delete_outline,
-          color: Theme.of(context).colorScheme.onError,
-        ),
+      // M3E 滑动删除底：errorContainer 圆角块（与行高亮同形），Apple 系统红。
+      background: const FushiSwipeActionBackground(
+        icon: Icons.delete_outline,
+        destructive: true,
+        borderRadius: FushiM3eShape.smallRadius,
       ),
       confirmDismiss: (_) async {
         final String message = item.text ?? '';

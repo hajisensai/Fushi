@@ -6,11 +6,12 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show FushiAppleColors, appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiFilledButton;
+    show FushiFilledButton, FushiTextButton;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
@@ -79,24 +80,26 @@ Widget adaptiveDialogAction({
       child: child,
     );
   }
+  // M3 Expressive（2026-10-05 浮层统一）：主操作 filled、破坏性 error 实底
+  // filled、其余 text；全部走 Fushi* 按钮，按下有 M3E 形状变形回弹。
   if (isDestructiveAction) {
     final cs = Theme.of(context).colorScheme;
-    return FilledButton(
+    return FushiFilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(
-        backgroundColor: cs.errorContainer,
-        foregroundColor: cs.onErrorContainer,
+        backgroundColor: cs.error,
+        foregroundColor: cs.onError,
       ),
       child: child,
     );
   }
   if (isDefaultAction) {
-    return FilledButton(
+    return FushiFilledButton(
       onPressed: onPressed,
       child: child,
     );
   }
-  return TextButton(
+  return FushiTextButton(
     onPressed: onPressed,
     child: child,
   );
@@ -315,12 +318,24 @@ Widget adaptiveIndicator({
   );
 }
 
+/// 全应用唯一的底部弹层入口（同一 API 按设计系统 / 宽度自适应）：
+/// - Apple：iOS 26 悬浮玻璃 sheet（移动）/ macOS 26 顶部垂下的 sheet（桌面）；
+/// - Material（M3 Expressive）窄屏（< 600）：上两角 28 的底部弹层，自绘拖动条
+///   （48 交互区 + 32×4 横条）、弹簧进出、软键盘弹出时整体抬升、高度封顶 92%
+///   屏高（不压进状态栏）；[expandable] 时两档高度——先停在半屏（55%），拖动条
+///   上拉 / 点按展开到 92%，下拉收回 / 关闭。拖动条之外的内容区照常滚动，
+///   滚动与拖拽互不抢手势；
+/// - Material 宽屏（≥ 600）：改为居中浮动面板（圆角 28、最宽 640、最高 86%），
+///   与对话框同一条弹簧缩放进出、同一 scrim；内容外包 [FushiDialogScope]，
+///   [FushiModalSheetFrame] 随之按对话框规范排版。
+/// 两种形态都是模态路由：Esc / 手柄 B / 点遮罩关闭，关闭后焦点回到打开前。
 Future<T?> adaptiveModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   bool isScrollControlled = true,
   bool showDragHandle = true,
   bool useSafeArea = false,
+  bool expandable = false,
 }) {
   if (isCupertinoPlatform(context)) {
     return showCupertinoModalPopup<T>(
@@ -331,7 +346,7 @@ Future<T?> adaptiveModalSheet<T>({
   final bool noMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
   final AnimationStyle sheetMotion = noMotion
       ? AnimationStyle.noAnimation
-      : fushiMd3SheetAnimationStyle;
+      : fushiM3eSheetAnimationStyle;
   if (isGlassDesign(context)) {
     final TargetPlatform platform = Theme.of(context).platform;
     final bool desktop =
@@ -402,7 +417,24 @@ Future<T?> adaptiveModalSheet<T>({
       ),
     );
   }
-  if (glassMaterialOf(context) != FushiGlassMaterial.off) {
+  final bool frosted = glassMaterialOf(context) != FushiGlassMaterial.off;
+  if (MediaQuery.sizeOf(context).width >= kFushiSheetWideBreakpoint) {
+    final NavigatorState navigator = Navigator.of(context);
+    return navigator.push<T>(
+      FushiDialogRoute<T>(
+        context: context,
+        themes: InheritedTheme.capture(from: context, to: navigator.context),
+        barrierColor: fushiModalScrimColor(context),
+        traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
+        reduceMotion: noMotion || !fushiMotionEnabled(context),
+        builder: (BuildContext sheetContext) => FushiM3eFloatingSheet(
+          frosted: frosted,
+          child: builder(sheetContext),
+        ),
+      ),
+    );
+  }
+  if (frosted) {
     // 毛玻璃：BottomSheet 自己的底色让位，表面交给 FushiGlassSurface。拖动条
     // 由 BottomSheet 画在 child 之外，底色透明后会悬在未模糊的内容上，所以这里
     // 关掉它、在玻璃里按 M3 同一几何（48 高交互区 + 32x4 横条）自己画。
@@ -416,7 +448,11 @@ Future<T?> adaptiveModalSheet<T>({
       sheetAnimationStyle: sheetMotion,
       builder: (BuildContext sheetContext) => _GlassSheetBody(
         showDragHandle: showDragHandle,
-        child: builder(sheetContext),
+        child: FushiM3eSheetBody(
+          showDragHandle: false,
+          expandable: false,
+          child: builder(sheetContext),
+        ),
       ),
     );
   }
@@ -424,9 +460,14 @@ Future<T?> adaptiveModalSheet<T>({
     context: context,
     isScrollControlled: isScrollControlled,
     useSafeArea: useSafeArea,
-    showDragHandle: showDragHandle,
+    // 拖动条由 [FushiM3eSheetBody] 自绘（同 M3 几何），两档高度要接它的手势。
+    showDragHandle: false,
     sheetAnimationStyle: sheetMotion,
-    builder: builder,
+    builder: (BuildContext sheetContext) => FushiM3eSheetBody(
+      showDragHandle: showDragHandle,
+      expandable: expandable,
+      child: builder(sheetContext),
+    ),
   );
 }
 

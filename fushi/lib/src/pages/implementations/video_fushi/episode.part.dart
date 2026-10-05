@@ -507,7 +507,7 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 吃系统 inset，缩放 >1 或手势导航高 inset 时压进进度条 / 按钮条。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
       buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,

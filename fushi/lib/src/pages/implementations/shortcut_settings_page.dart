@@ -1,12 +1,14 @@
 // 快捷键设置页（library 壳）。
 //
-// 结构（快捷键设置重构）：本文件只保留页面本体（scope 卡片投影 + 可视化/列表
-// 切换 + 手柄品牌选择 + GameInput 提示）；单个动作行与鼠标 chip 在
-// `shortcut_settings/action_tile.part.dart`，绑定编辑对话框（键盘/鼠标实时捕获
+// 结构（2026-10 单页重设计）：本文件只保留页面本体（把作用域 / 模块可见性 /
+// 可视化键位图 / 手柄品牌 / GameInput 提示 / 确认弹窗装配进浏览器）；单页浏览器
+// （搜索 + 按键反查 + 域筛选 + 输入设备切换 + 两栏 / 粘性分组 + 行内录制与冲突）
+// 在 `shortcut_settings/shortcut_browser.part.dart`，单个动作行与鼠标 chip 在
+// `shortcut_settings/action_tile.part.dart`，完整编辑对话框（多通道实时捕获
 // + 手柄下拉 + 冲突重分配）在 `shortcut_settings/binding_edit_dialog.part.dart`，
 // 动作/作用域/鼠标绑定的本地化标签在公开的
 // `shortcuts/shortcut_labels.dart` 扩展（加动作时标签与数据层就近同步）。
-// 写穿路径不变：updateBindingWithReassignments → saveShortcutRegistry。
+// 写穿路径不变：registry.updateBinding* → saveShortcutRegistry，改完立即生效。
 
 import 'dart:async';
 
@@ -15,6 +17,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -25,15 +30,18 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/src/shortcuts/shortcut_preferences.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/shortcuts/visual/gamepad_button_widget.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_glyphs.dart';
 import 'package:fushi/src/shortcuts/visual/gamepad_layout_view.dart';
 import 'package:fushi/src/shortcuts/visual/keyboard_layout_view.dart';
 
 part 'shortcut_settings/action_tile.part.dart';
 part 'shortcut_settings/binding_edit_dialog.part.dart';
+part 'shortcut_settings/shortcut_browser.part.dart';
 
 class ShortcutSettingsPage extends BasePage {
   const ShortcutSettingsPage({super.key});
@@ -94,10 +102,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   }
 
   Future<void> _save() async {
-    await saveShortcutRegistry(
-      _registry,
-      ReaderFushiSource.instance,
-    );
+    await saveShortcutRegistry(_registry, ReaderFushiSource.instance);
   }
 
   Future<void> _confirmResetScope(ShortcutScope scope) async {
@@ -151,6 +156,62 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     );
     if (confirmed != true || !mounted) return;
     _registry.resetScopeToDefaults(scope, defaultTargetPlatform);
+    await _save();
+    setState(() {});
+  }
+
+  /// 「全部恢复默认」：与分组恢复同一套确认弹窗，写回整张默认表。
+  Future<void> _confirmResetAll() async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiDialogFrame(
+          maxWidth: 420,
+          maxHeightFactor: 0.78,
+          scrollable: false,
+          child: FushiModalSheetFrame(
+            title: t.shortcut_reset_all,
+            leadingIcon: Icons.restart_alt_rounded,
+            scrollable: true,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            footerPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.gap,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            body: Text(t.shortcut_reset_all_confirm),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: ctx,
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                adaptiveDialogAction(
+                  context: ctx,
+                  isDefaultAction: true,
+                  isDestructiveAction: true,
+                  onPressed: () => Navigator.pop(ctx, true),
+                  child: Text(t.shortcut_reset_all),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (confirmed != true || !mounted) return;
+    _registry.resetToDefaults(defaultTargetPlatform);
     await _save();
     setState(() {});
   }
@@ -233,8 +294,9 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// [ShortcutAction.actionsForScope] + [ShortcutActionLabel]），选中返回该 action，
   /// 取消返回 null。纯 UI 选择器，不写任何注册表（写穿仍由后续 [_editBinding] 完成）。
   Future<ShortcutAction?> _pickActionForScope(ShortcutScope scope) {
-    final List<ShortcutAction> actions =
-        ShortcutAction.actionsForScope(scope).toList(growable: false);
+    final List<ShortcutAction> actions = ShortcutAction.actionsForScope(
+      scope,
+    ).toList(growable: false);
     return showAppDialog<ShortcutAction>(
       context: context,
       builder: (BuildContext ctx) {
@@ -271,78 +333,91 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     );
   }
 
-  /// 把每个 scope 投影成一张统一的 [AdaptiveSettingsSection] 卡片（标题用共享的
-  /// section header 样式，不再是孤立的 primary 色标题），卡片内首行是「恢复默认」
-  /// 动作行，其后是各 action 行。返回裸内容（无脚手架），由统一详情壳承载滚动与
-  /// 内边距，使从统一设置详情面板点进来不再有风格跳变。
-  Widget _buildScopeSections(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        // TODO-1223: hint shown only when the platform's controller backend is
-        // unavailable (Windows without GameInput.dll). Rendered here — on the
-        // gamepad-related settings surface — rather than as a startup popup, so
-        // it never interrupts a user who does not touch controller settings.
-        if (_gameInputUnavailable) _buildGameInputHint(context),
-        Padding(
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            // Wrap the list/keyboard segmented toggle in a
-            // FushiAdjustableSegmented so it becomes a single gamepad/keyboard
-            // focus stop with D-pad / arrow Left-Right flipping between the two
-            // views (TODO-942 residual: a bare SegmentedButton is a cluster of
-            // native buttons the directional FushiFocusController skips
-            // entirely, leaving pure-gamepad users unable to reach the
-            // keyboard-skin view at all). The inner SegmentedButton keeps its
-            // Key so it stays mouse/touch-tappable and test-addressable.
-            child: FushiAdjustableSegmented<bool>(
-              focusIdPrefix: 'shortcut-view-toggle',
-              values: const <bool>[false, true],
-              selected: _visualMode,
-              onChanged: (bool value) {
-                setState(() => _visualMode = value);
-              },
-              child: FushiSegmentedButton<bool>(
-                key: const Key('shortcut_view_toggle'),
-                showSelectedIcon: false,
-                segments: <ButtonSegment<bool>>[
-                  ButtonSegment<bool>(
-                    value: false,
-                    icon: const FushiIcon(Icons.list_outlined),
-                    tooltip: t.shortcut_view_list,
-                  ),
-                  ButtonSegment<bool>(
-                    value: true,
-                    // TODO-942 discoverability: the visual segment opens the
-                    // gamepad/keyboard skin overview (GamepadLayoutView). Its
-                    // icon used to be a plain keyboard glyph, which read as a
-                    // mere keyboard view and hid the controller layout — users
-                    // asked "where is the controller diagram?". A controller
-                    // glyph tells the user at a glance that this segment shows
-                    // the gamepad visual layout.
-                    icon: const FushiIcon(Icons.sports_esports_outlined),
-                    tooltip: t.shortcut_view_visual,
-                  ),
-                ],
-                selected: <bool>{_visualMode},
-                onSelectionChanged: (Set<bool> selection) {
-                  setState(() => _visualMode = selection.first);
-                },
-              ),
-            ),
-          ),
-        ),
-        if (_visualMode) _buildGamepadBrandSelector(),
-        // 被关掉的功能模块不出现自己的快捷键分区（见 `module_registry.dart`）。
-        // 这不只是文案泄露：`globalExternal` 分区一旦可编辑，用户改一次绑定就会
-        // 让 `GlobalLookupController._onRegistryChanged` **当场**装上 OS 热键与
-        // native RawInput 鼠标钩子——查词模块关着时装系统级钩子是实打实的越权。
+  /// 被关掉的功能模块不出现自己的快捷键分区（见 `module_registry.dart`）。
+  /// 这不只是文案泄露：`globalExternal` 分区一旦可编辑，用户改一次绑定就会
+  /// 让 `GlobalLookupController._onRegistryChanged` **当场**装上 OS 热键与
+  /// native RawInput 鼠标钩子——查词模块关着时装系统级钩子是实打实的越权。
+  List<ShortcutScope> _visibleScopes() => <ShortcutScope>[
         for (final ShortcutScope scope in ShortcutScope.values)
-          if (isShortcutScopeVisible(scope, appModel.moduleVisibility))
-            _buildScopeSection(scope),
-      ],
+          if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,
+      ];
+
+  bool get _isMobilePlatform =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// 单页浏览器：搜索 / 按键反查 / 域筛选 / 输入设备切换都在它的固定工具区里，
+  /// 本页只把作用域、确认弹窗、键位图与手柄品牌这些页面级装配接进去。
+  Widget _buildBrowser(BuildContext context) {
+    return ShortcutBindingsBrowser(
+      registry: _registry,
+      scopes: _visibleScopes(),
+      platform: defaultTargetPlatform,
+      gamepadBrand: _gamepadBrand,
+      onChanged: () async {
+        await _save();
+        if (mounted) setState(() {});
+      },
+      onOpenEditor: (ShortcutAction action) => _editBinding(action),
+      onResetScope: _confirmResetScope,
+      onResetAll: _confirmResetAll,
+      // TODO-1066: 移动端 app 外查词由系统触发（文本选择菜单 / 分享 / 悬浮球），
+      // 系统不许应用改这个热键——只读展示 + 说明，不给一条点了没用的改键行。
+      readOnlyScopes: _isMobilePlatform
+          ? const <ShortcutScope>{ShortcutScope.globalExternal}
+          : const <ShortcutScope>{},
+      scopeExtras: _scopeExtras,
+      scopeBodyOverride: _buildFigure,
+      // TODO-1223: hint shown only when the platform's controller backend is
+      // unavailable (Windows without GameInput.dll). Rendered here — on the
+      // gamepad-related settings surface — rather than as a startup popup, so
+      // it never interrupts a user who does not touch controller settings.
+      banner: _gameInputUnavailable ? _buildGameInputHint(context) : null,
+      toolbarTrailing: <Widget>[_buildViewToggle()],
+      // 手柄按钮样式只换显示（键帽 / 键位图），切到手柄设备时才出现。
+      deviceAccessory: (ShortcutInputDevice device) =>
+          device == ShortcutInputDevice.gamepad
+              ? _buildGamepadBrandSelector()
+              : null,
+    );
+  }
+
+  /// 列表 / 键位图切换。Wrap the segmented toggle in a FushiAdjustableSegmented
+  /// so it becomes a single gamepad/keyboard focus stop with D-pad / arrow
+  /// Left-Right flipping between the two views (TODO-942 residual: a bare
+  /// SegmentedButton is a cluster of native buttons the directional
+  /// FushiFocusController skips entirely). The inner SegmentedButton keeps its
+  /// Key so it stays mouse/touch-tappable and test-addressable.
+  Widget _buildViewToggle() {
+    return FushiAdjustableSegmented<bool>(
+      focusIdPrefix: 'shortcut-view-toggle',
+      values: const <bool>[false, true],
+      selected: _visualMode,
+      onChanged: (bool value) {
+        setState(() => _visualMode = value);
+      },
+      child: FushiSegmentedButton<bool>(
+        key: const Key('shortcut_view_toggle'),
+        showSelectedIcon: false,
+        segments: <ButtonSegment<bool>>[
+          ButtonSegment<bool>(
+            value: false,
+            icon: const FushiIcon(Icons.list_outlined),
+            tooltip: t.shortcut_view_list,
+          ),
+          ButtonSegment<bool>(
+            value: true,
+            // TODO-942 discoverability: a controller glyph tells the user at a
+            // glance that this segment shows the visual layout figure.
+            icon: const FushiIcon(Icons.sports_esports_outlined),
+            tooltip: t.shortcut_view_visual,
+          ),
+        ],
+        selected: <bool>{_visualMode},
+        onSelectionChanged: (Set<bool> selection) {
+          setState(() => _visualMode = selection.first);
+        },
+      ),
     );
   }
 
@@ -415,136 +490,94 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
     );
   }
 
-  /// Builds one scope's card. TODO-1066: on mobile the `globalExternal` scope
-  /// (app-external lookup) is triggered by the OS (text-selection menu / share /
-  /// floating ball) and the OS forbids apps from remapping that hotkey, so it
-  /// renders a read-only explanatory note instead of an editable binding row —
-  /// keeping the app honest ("为什么这里改不了键") without a dead, non-functional
-  /// remap row. On desktop the same scope is a real, editable Ctrl+Alt+D binding
-  /// and renders like every other scope.
-  Widget _buildScopeSection(ShortcutScope scope) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool isMobilePlatform =
-        defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS;
-    if (scope == ShortcutScope.globalExternal && isMobilePlatform) {
-      return AdaptiveSettingsSection(
-        title: scope.label,
-        children: <Widget>[
-          AdaptiveSettingsRow(
-            title: ShortcutAction.globalExternalLookup.label,
-            subtitle: t.shortcut_scope_global_external_mobile_note,
-            icon: Icons.info_outline,
-            showIcon: true,
-          ),
-        ],
-      );
-    }
-    // 可视化模式只对真的会消费键盘 / 手柄的 scope 有意义。查词弹窗的词条导航是纯
-    // 滚轮通道（[ShortcutScope.channels]），给它画键盘图/手柄图不但是空图，点空键位
-    // 还会写出一条永不触发的死绑定——这类 scope 在可视化模式下也回落到列表行。
-    final bool hasVisualChannels =
-        scope.channels.contains(ShortcutChannel.keyboard) ||
-            scope.channels.contains(ShortcutChannel.gamepad);
-    return AdaptiveSettingsSection(
-      title: scope.label,
-      children: <Widget>[
-        // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
-        if (scope == ShortcutScope.dictionaryPopup)
-          AdaptiveSettingsRow(
-            title: t.shortcut_scope_dictionary_popup_note,
-            icon: Icons.info_outline,
-            showIcon: true,
-          ),
-        // TODO-1066 — 桌面 app 外查词开了鼠标通道，但**只有侧键**能当全局触发：
-        // 这条触发不拦截原事件（native 走 RawInput，见 global_mouse_trigger.h），
-        // 右键/中键有全系统级默认语义（上下文菜单 / 自动滚动），绑上去等于两件事
-        // 同时发生。上面的 mobile 分支已提前 return，故这里只会在桌面渲染。
-        if (scope == ShortcutScope.globalExternal)
-          AdaptiveSettingsRow(
-            title: t.shortcut_scope_global_external_desktop_note,
-            icon: Icons.info_outline,
-            showIcon: true,
-          ),
-        // 用户请求（Flow Launcher 式用法）：「置顶并打开查词页」热键的另一半——查完
-        // 在查词页按「返回上一级」（默认 Esc）把主窗最小化，回到之前的程序。放在
-        // 这张卡里而不是词典设置：它只在配合本 scope 的置顶热键时才有意义。执行体在
-        // HomeDictionaryPage（只在桌面生效；上面的 mobile 分支已提前 return）。
-        if (scope == ShortcutScope.globalExternal)
-          AdaptiveSettingsSwitchRow(
-            key: const ValueKey<String>('shortcut-lookup-page-escape-minimize'),
-            title: t.shortcut_lookup_page_escape_minimize,
-            subtitle: t.shortcut_lookup_page_escape_minimize_hint,
-            icon: Icons.minimize_outlined,
-            showIcon: true,
-            value: appModel.lookupPageEscapeMinimizesWindow,
-            onChanged: (bool value) =>
-                unawaited(appModel.setLookupPageEscapeMinimizesWindow(value)),
-          ),
+  /// 分组卡顶部的说明行 / 开关（浏览器只在未搜索时显示它们）。
+  List<Widget> _scopeExtras(ShortcutScope scope) {
+    return <Widget>[
+      // TODO-1066 — 移动端：系统接管，解释为什么这里改不了键。
+      if (scope == ShortcutScope.globalExternal && _isMobilePlatform)
         AdaptiveSettingsRow(
-          title: t.shortcut_reset_defaults,
-          icon: Icons.restore_outlined,
+          title: ShortcutAction.globalExternalLookup.label,
+          subtitle: t.shortcut_scope_global_external_mobile_note,
+          icon: Icons.info_outline,
           showIcon: true,
-          onTap: () => _confirmResetScope(scope),
         ),
-        if (_visualMode && hasVisualChannels)
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal,
-              vertical: tokens.spacing.gap,
-            ),
-            // TODO-942 P1: keyboard / gamepad are two separately titled
-            // blocks — the gamepad is a full real-layout figure, no longer
-            // stacked below the keyboard inside one widget.
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Padding(
-                  padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
-                  child: Text(
-                    t.shortcut_keyboard,
-                    // 小节标题统一走 sectionLabel token（不再裸用 labelMedium）。
-                    style: tokens.type.sectionLabel,
-                  ),
-                ),
-                KeyboardLayoutView(
-                  registry: _registry,
-                  scope: scope,
-                  onKeyTap: _onKeyboardKeyTap,
-                  onEmptyKeyTap: (LogicalKeyboardKey key) =>
-                      _onEmptyKeyboardKeyTap(scope, key),
-                ),
-                SizedBox(height: tokens.spacing.rowVertical),
-                Padding(
-                  padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
-                  child: Text(
-                    t.shortcut_gamepad,
-                    style: tokens.type.sectionLabel,
-                  ),
-                ),
-                GamepadLayoutView(
-                  registry: _registry,
-                  scope: scope,
-                  gamepadBrand: _gamepadBrand,
-                  onGamepadTap: _onGamepadButtonTap,
-                  onEmptyGamepadTap: (GamepadButton button) =>
-                      _onEmptyGamepadButtonTap(scope, button),
-                ),
-              ],
-            ),
-          )
-        else
-          for (final ShortcutAction action
-              in ShortcutAction.actionsForScope(scope))
-            _ActionTile(
-              action: action,
-              bindings: _registry.bindingsFor(action),
-              brand: _gamepadBrand,
-              onEdit: () => _editBinding(action),
-            ),
-      ],
-    );
+      // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
+      if (scope == ShortcutScope.dictionaryPopup)
+        AdaptiveSettingsRow(
+          title: t.shortcut_scope_dictionary_popup_note,
+          icon: Icons.info_outline,
+          showIcon: true,
+        ),
+      // TODO-1066 — 桌面 app 外查词开了鼠标通道，但**只有侧键**能当全局触发：
+      // 这条触发不拦截原事件（native 走 RawInput，见 global_mouse_trigger.h），
+      // 右键/中键有全系统级默认语义（上下文菜单 / 自动滚动），绑上去等于两件事
+      // 同时发生。
+      if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
+        AdaptiveSettingsRow(
+          title: t.shortcut_scope_global_external_desktop_note,
+          icon: Icons.info_outline,
+          showIcon: true,
+        ),
+      // 用户请求（Flow Launcher 式用法）：「置顶并打开查词页」热键的另一半——查完
+      // 在查词页按「返回上一级」（默认 Esc）把主窗最小化，回到之前的程序。放在
+      // 这张卡里而不是词典设置：它只在配合本 scope 的置顶热键时才有意义。执行体在
+      // HomeDictionaryPage（只在桌面生效）。
+      if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('shortcut-lookup-page-escape-minimize'),
+          title: t.shortcut_lookup_page_escape_minimize,
+          subtitle: t.shortcut_lookup_page_escape_minimize_hint,
+          icon: Icons.minimize_outlined,
+          showIcon: true,
+          value: appModel.lookupPageEscapeMinimizesWindow,
+          onChanged: (bool value) async {
+            await appModel.setLookupPageEscapeMinimizesWindow(value);
+            if (mounted) setState(() {});
+          },
+        ),
+    ];
+  }
+
+  /// 键位图模式下替换分组的行列表：键盘设备画键盘图、手柄设备画手柄图（TODO-942
+  /// P1：两张图各自独立）。只对真的会消费该通道的 scope 画——查词弹窗的词条导航
+  /// 是纯滚轮通道，给它画键盘图不但是空图，点空键位还会写出一条永不触发的死绑定，
+  /// 这类 scope 与鼠标设备一律回落到列表行（off-figure 键也在列表里可改）。
+  Widget? _buildFigure(ShortcutScope scope, ShortcutInputDevice device) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (_visualMode) {
+      final EdgeInsets padding = EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: tokens.spacing.gap,
+      );
+      if (device == ShortcutInputDevice.keyboard &&
+          scope.channels.contains(ShortcutChannel.keyboard)) {
+        return Padding(
+          padding: padding,
+          child: KeyboardLayoutView(
+            registry: _registry,
+            scope: scope,
+            onKeyTap: _onKeyboardKeyTap,
+            onEmptyKeyTap: (LogicalKeyboardKey key) =>
+                _onEmptyKeyboardKeyTap(scope, key),
+          ),
+        );
+      }
+      if (device == ShortcutInputDevice.gamepad &&
+          scope.channels.contains(ShortcutChannel.gamepad)) {
+        return Padding(
+          padding: padding,
+          child: GamepadLayoutView(
+            registry: _registry,
+            scope: scope,
+            gamepadBrand: _gamepadBrand,
+            onGamepadTap: _onGamepadButtonTap,
+            onEmptyGamepadTap: (GamepadButton button) =>
+                _onEmptyGamepadButtonTap(scope, button),
+          ),
+        );
+      }
+    }
+    return null;
   }
 
   @override
@@ -571,7 +604,9 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       title: t.shortcut_settings_title,
       icon: Icons.keyboard_outlined,
       sections: const <SettingsSection>[],
-      body: (_) => _buildScopeSections(context),
+      // 浏览器自己管滚动：吸顶工具区、宽屏左栏导航、粘性分组标题都要占满视口。
+      bodyFillsViewport: true,
+      body: (_) => _buildBrowser(context),
     );
 
     return buildSettingsDetailShell(

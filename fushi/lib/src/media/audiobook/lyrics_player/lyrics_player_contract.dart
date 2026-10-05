@@ -173,7 +173,12 @@ class LyricsPlayerCallbacks {
     required this.onSpeedChanged,
     required this.onMore,
     required this.onTapBackground,
+    this.onTypography,
   });
+
+  /// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。参数带按钮的全局矩形与
+  /// 按钮自己的 context（面板从它取歌词模式主题）。null = 不显示该键。
+  final ValueChanged<LyricsMenuAnchor>? onTypography;
 
   /// 退出歌词模式（回到下面的阅读器）。
   final VoidCallback onClose;

@@ -7,7 +7,8 @@ Widget _host({
   required ValueNotifier<int> page,
   required bool rtl,
   required ValueChanged<int> onCommitted,
-  bool floating = true,
+  VoidCallback? onPageTap,
+  String Function(int)? bubbleLabel,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -16,8 +17,9 @@ Widget _host({
         pageListenable: page,
         currentPage: () => page.value,
         rtl: rtl,
-        floating: floating,
         onPageCommitted: onCommitted,
+        onPageTap: onPageTap,
+        bubbleLabel: bubbleLabel,
       ),
     ),
   );
@@ -212,6 +214,95 @@ void main() {
       await gesture.up();
       await tester.pump();
       expect(committed.single, greaterThan(20), reason: 'RTL 下往物理左拖必须走向卷尾');
+    });
+
+    testWidgets('拖动中气泡显示「页 / 总页」，松手气泡消失', (WidgetTester tester) async {
+      final ValueNotifier<int> page = ValueNotifier<int>(0);
+      addTearDown(page.dispose);
+      await tester.pumpWidget(
+        _host(pageCount: 41, page: page, rtl: false, onCommitted: (_) {}),
+      );
+      final Finder slider = find.byKey(
+        const ValueKey<String>('manga_page_slider'),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('manga_slider_bubble')),
+        findsNothing,
+      );
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(slider),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(1, 0));
+      await tester.pumpAndSettle();
+      final String bubble = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('manga_slider_bubble_text')),
+          )
+          .data!;
+      final String readout = tester
+          .widget<Text>(
+            find.byKey(const ValueKey<String>('manga_slider_current_page')),
+          )
+          .data!;
+      expect(bubble, '$readout / 41', reason: '气泡与读数同一页');
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('manga_slider_bubble')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('双页模式：气泡文案由页面给跨页区间', (WidgetTester tester) async {
+      final ValueNotifier<int> page = ValueNotifier<int>(0);
+      addTearDown(page.dispose);
+      await tester.pumpWidget(
+        _host(
+          pageCount: 41,
+          page: page,
+          rtl: true,
+          onCommitted: (_) {},
+          bubbleLabel: (int i) => 'pair ${i + 1}',
+        ),
+      );
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(
+          find.byKey(const ValueKey<String>('manga_page_slider')),
+        ),
+      );
+      await tester.pump();
+      await gesture.moveBy(const Offset(-1, 0));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey<String>('manga_slider_bubble_text')),
+            )
+            .data,
+        startsWith('pair '),
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets('点当前页读数 = 跳页入口', (WidgetTester tester) async {
+      final ValueNotifier<int> page = ValueNotifier<int>(3);
+      addTearDown(page.dispose);
+      int taps = 0;
+      await tester.pumpWidget(
+        _host(
+          pageCount: 40,
+          page: page,
+          rtl: false,
+          onCommitted: (_) {},
+          onPageTap: () => taps++,
+        ),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_page_jump_button')),
+      );
+      expect(taps, 1);
     });
   });
 

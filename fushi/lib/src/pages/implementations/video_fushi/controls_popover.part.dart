@@ -73,7 +73,6 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           child: _chromeIconButton(
             icon: _volumeIconFor(value),
             desktop: desktop,
-            tonal: _isTopSlot(slot),
             onPressed: () => _toggleControlPopover(
               _VideoControlPopoverKind.volume,
               popoverLink: popoverLink,

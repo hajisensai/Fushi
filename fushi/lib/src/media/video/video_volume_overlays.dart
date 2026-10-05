@@ -121,6 +121,10 @@ class VideoVolumePopoverCard extends StatelessWidget {
                       color: colorScheme.onSurface,
                       fontSize: 12 * scale,
                       fontWeight: FontWeight.w600,
+                      // 百分比随拖动逐帧变化：等宽数字。
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
                     ),
                   ),
                 ],

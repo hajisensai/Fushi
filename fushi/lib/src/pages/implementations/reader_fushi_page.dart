@@ -47,6 +47,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
@@ -137,6 +138,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -2001,6 +2004,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 有实色，不置此旗。
   bool _sideSheetOpen = false;
 
+  /// 侧板原地换内容（2026-10 整合）：开着的面板种类（navigation / audiobook /
+  /// settings / statistics，见 chrome.part 的 `_openReaderPanel`）；没开面板时 null。
+  ValueNotifier<String>? _panelKind;
+
+  /// 当前面板会话是否持有 [_studyClockModalDepth] 的一层（统计侧板不停表）。
+  bool _panelHoldsClock = false;
+
   bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
   set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
 
@@ -2326,7 +2336,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     enabled: _desktopChromeEnabled,
     barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
-    headerHeight: kReaderDesktopHeaderHeight,
+    // 悬浮工具栏样式（默认）顶部是浮在正文上的胶囊行，挤压态预留它的整段外框
+    // （上外边距 + 胶囊高 + 下外边距）；贴边样式照旧 48。
+    headerHeight: _floatingToolbars
+        ? kReaderFloatingHeaderExtent
+        : kReaderDesktopHeaderHeight,
   );
 
   /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
@@ -2358,10 +2372,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double get _bottomChromeReserve => bottomChromeReserve(
     barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
-    // 无有声书播放条且底栏槽位没有按钮时底栏不存在 → 0（默认布局如此）。
-    chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons
-        ? 0
-        : _readerChromeHeight,
+    // 无有声书播放条且底栏槽位没有按钮时底栏不存在 → 0（宽窗默认布局如此）；
+    // 悬浮样式按迷你播放条 / 悬浮工具栏的叠放高度预留（[_bottomChromeExtent]）。
+    chromeHeight: _bottomChromeExtent,
   );
 
   /// 宽屏把阅读状态并入播放条；窄屏保留独立状态行，避免文本挤占触控按钮。
@@ -2376,7 +2389,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 并进播放条右端的那一份同样不能画，否则只是把同一批冻住的旧数字换个位置。
   /// 正文模式两个判据恒等（非歌词 ⇒ 状态行启用 ⇒ chrome 启用），行为逐字不变。
   bool get _playbackStatusInline => readerPlaybackStatusInline(
-    enabled: _statusFooterEnabled,
+    // 悬浮工具栏样式下读数不并进迷你播放条（胶囊里只放播放面），状态行照常
+    // 贴屏底，悬浮条坐在它上方。
+    enabled: _statusFooterEnabled && !_floatingToolbars,
     landscape: _readerIsLandscape,
     width: _readerControlsWidth,
   );
@@ -2402,6 +2417,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 底栏此刻**真的画着东西**才谈得上并进去：没有有声书播放条、底栏槽位又是空的
   /// （默认布局）时 [_buildBottomChrome] 整条不画，读数照旧自己贴屏底右端。
   bool get _statusFooterInBottomBar =>
+      !_floatingToolbars &&
       _separatePlaybackStatus &&
       _statusFooterShouldPaint &&
       _bottomBarShouldPaint &&

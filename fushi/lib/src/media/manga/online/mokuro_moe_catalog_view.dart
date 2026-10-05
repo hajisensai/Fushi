@@ -15,6 +15,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// mokuro.moe 目录内容体的外层可见状态快照：标题与动作按钮所需的最小事实。
 ///
@@ -548,14 +549,10 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        FushiTextFieldControl(
+        FushiSearchBar(
           controller: _searchCtrl,
-          decoration: InputDecoration(
-            hintText: t.manga_online_search_hint,
-            prefixIcon: const FushiIcon(Icons.search),
-            isDense: true,
-          ),
-          onChanged: (String value) => setState(() => _query = value),
+          hintText: t.manga_online_search_hint,
+          onQueryChanged: (String value) => setState(() => _query = value),
         ),
         SizedBox(height: tokens.spacing.gap),
         Expanded(child: _buildBrowseBody(tokens)),

@@ -364,7 +364,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
         final Offset ballCenter = layout.ballCenterInBox;
         return AnimatedPositioned(
           duration: _snapping && !dragging ? _snapDuration : Duration.zero,
-          curve: Curves.easeOutCubic,
+          curve: FushiSpringCurve.spatial,
           onEnd: () {
             if (_snapping) setState(() => _snapping = false);
           },
@@ -413,7 +413,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     final Interval interval = Interval(
       begin,
       math.min(1, begin + 0.65),
-      curve: Curves.easeOutBack,
+      curve: FushiSpringCurve.spatialFast,
     );
     final double k = interval.transform(_expand.value);
     final Offset target = layout.buttonOffset(index);

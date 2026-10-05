@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show GalgameSourceRow;
 
 import 'package:fushi/src/mining/galgame_cover_download.dart';
@@ -15,6 +14,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 游戏「刮削元数据」统一弹窗。
 ///
@@ -379,16 +379,10 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     return Row(
       children: <Widget>[
         Expanded(
-          child: FushiTextFieldControl(
+          // 共享 M3E 搜索栏：MD3 填充胶囊 / Apple 搜索胶囊，回车即搜。
+          child: FushiSearchBar(
             controller: _queryCtrl,
-            // 前置放大镜让共享输入层把它认成搜索框：MD3 = 填充式全圆角胶囊，
-            // Apple = 搜索胶囊；不再是灰色细描边方框。
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: t.game_scrape_query,
-              prefixIcon: const FushiIcon(Icons.search),
-              border: const OutlineInputBorder(),
-            ),
+            hintText: t.game_scrape_query,
             onSubmitted: (_) => _search(),
           ),
         ),

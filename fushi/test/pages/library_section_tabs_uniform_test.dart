@@ -210,8 +210,8 @@ void main() {
     );
     expect(
       centerGap(tester, '首页', '系列'),
-      closeTo(1600 / 6, 1),
-      reason: '六段等分 1600 宽',
+      closeTo((1600 - kFushiM3eTabTrackInset * 2) / 6, 1),
+      reason: '六段等分 1600 宽（扣掉 M3E 分段胶囊轨道两侧内缩）',
     );
     expect(
       find.byType(SegmentedButton<int>),
@@ -340,10 +340,12 @@ void main() {
     expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isFalse);
     // 三段等分整行：相邻两段中心距 = 行宽 / 3，末段中心在 5/6 处（贴左形态下
     // 三段全挤在左边一两百像素内）。
-    expect(centerGap(tester, '小说', '漫画'), closeTo(300, 1));
+    // M3E 分段胶囊轨道两侧各内缩 kFushiM3eTabTrackInset。
+    const double track = 900 - kFushiM3eTabTrackInset * 2;
+    expect(centerGap(tester, '小说', '漫画'), closeTo(track / 3, 1));
     expect(
       tester.getRect(find.widgetWithText(Tab, '视频')).center.dx,
-      closeTo(750, 1),
+      closeTo(kFushiM3eTabTrackInset + track * 5 / 6, 1),
     );
 
     await pumpFill(120);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 
 /// 卡片悬浮抬升：鼠标移入时轻微放大，并把 hover 态交给 [builder]，由调用方决定
@@ -127,7 +128,10 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
       vsync: this,
       duration: kFushiHoverLiftDuration,
     );
-    _curved = CurvedAnimation(parent: _lift, curve: Curves.easeOut);
+    _curved = CurvedAnimation(
+      parent: _lift,
+      curve: FushiSpringCurve.effects,
+    );
   }
 
   /// 抬升的唯一判据：指针在这张卡上，且**这一帧刚滚过**（BUG-2124）。

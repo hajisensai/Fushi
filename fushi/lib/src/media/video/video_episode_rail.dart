@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -122,8 +123,8 @@ class _VideoEpisodeRailState extends State<VideoEpisodeRail> {
     if ((position.pixels - target).abs() < 1) return;
     _controller.animateTo(
       target,
-      duration: const Duration(milliseconds: 280),
-      curve: Curves.easeOutCubic,
+      duration: FushiMotion.medium,
+      curve: FushiSpringCurve.effects,
     );
   }
 
@@ -196,8 +197,8 @@ class _EpisodeRailCard extends StatelessWidget {
       selected: selected,
       label: '$_displayNumber. ${entry.title}',
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
+        duration: FushiMotion.short,
+        curve: FushiSpringCurve.effects,
         width: width,
         decoration: BoxDecoration(
           borderRadius: radius,

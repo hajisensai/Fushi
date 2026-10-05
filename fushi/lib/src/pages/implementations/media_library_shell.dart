@@ -207,9 +207,15 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
                   // 落地那一刻求值。
                   child: DropSurfaceScope(
                     isActive: () => i == _currentIndex,
-                    child: views[i].builder(
-                      context,
-                      i == _currentIndex ? navigation : const SizedBox.shrink(),
+                    // 每个保活视图自己的主滚动控制器：共用 tab 外壳那一个会让
+                    // 多个主滚动视图附着同一控制器、Scrollbar 断言。
+                    child: SectionPrimaryScrollScope(
+                      child: views[i].builder(
+                        context,
+                        i == _currentIndex
+                            ? navigation
+                            : const SizedBox.shrink(),
+                      ),
                     ),
                   ),
                 ),

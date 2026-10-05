@@ -269,8 +269,9 @@ class CollectionDetailHero extends StatelessWidget {
   /// hero 左侧的竖版海报卡（仅在有横版背景时出现）。2:3 是海报的正确槽向。
   Widget _buildPosterCard(ImageProvider cover, double heroHeight) {
     final double posterHeight = (heroHeight * 0.78).clamp(280.0, 500.0);
+    // M3E 形状分级：封面属小件档（12，与书架封面框同形）。
     return ClipRRect(
-      borderRadius: FushiBorderRadius.card,
+      borderRadius: FushiM3eShape.smallRadius,
       child: SizedBox(
         key: const ValueKey<String>('collection-hero-poster'),
         height: posterHeight,
@@ -833,12 +834,15 @@ class CollectionEpisodeCard extends StatelessWidget {
       child: Material(
         // Apple：primaryContainer 在单色强调色下就是灰填充，再乘 0.35 后与卡片底
         // 几乎同色，续播集认不出来；改用高一阶的实色 raised 底（iOS 选中行同款）。
+        // MD3（M3E）：续播集 = 当前项口径 secondaryContainer 实色块（不再是
+        // primaryContainer 35% 淡染）；卡圆角走 M3E 卡档 20（内边距 10 + 缩略
+        // 图 10 的嵌套圆角正好同心）。
         color: isContinue
             ? (isGlassDesign(context)
                   ? cs.surfaceContainerHigh
-                  : cs.primaryContainer.withValues(alpha: 0.35))
+                  : cs.secondaryContainer)
             : cs.surfaceContainerLow,
-        borderRadius: FushiBorderRadius.card,
+        borderRadius: FushiM3eShape.cardRadius,
         clipBehavior: Clip.antiAlias,
         child: Stack(
           children: <Widget>[

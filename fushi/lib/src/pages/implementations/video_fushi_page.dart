@@ -245,8 +245,10 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
-    show einkSafeDuration;
+    show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/render_backend_service.dart';
@@ -976,28 +978,49 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 章节刻度、缩略图预览、自动连播卡），否则字幕会压进抬高后的进度条——桌面加在
   /// 按钮行高上（桌面几何以按钮行高为基准），移动端加在离底基线上，见
   /// [_videoGeometryButtonBarLift] / [_videoGeometryBottomBaseline]。
-  double get _appleBottomLift {
-    if (!_appleChrome || !_controlsDensity.showBottomButtonBar) return 0;
-    const double target =
-        kVideoAppleChromeEdgeInset + kVideoAppleCapsuleBottomPadding;
+  ///
+  /// 2026-10-05 起 MD3 也是浮动底栏（M3E 浮动工具栏：每簇一枚胶囊、贴按钮行底，
+  /// [videoM3eFloatingBarStyle]），胶囊离底 [_videoM3eFloatingEdgeInset]，同一条
+  /// 抬升口径——不另开第二套几何。
+  double get _floatingChromeBottomLift {
+    if (!_controlsDensity.showBottomButtonBar) return 0;
+    final double target = _appleChrome
+        ? kVideoAppleChromeEdgeInset + kVideoAppleCapsuleBottomPadding
+        : _videoM3eFloatingEdgeInset;
     return _isDesktopVideoControls
         ? target
-        : target - _videoBottomChromeBaseline;
+        : math.max(0, target - _videoBottomChromeBaseline);
   }
 
-  /// 进度条几何推导里桌面「按钮行高」要叠加的抬升（见 [_appleBottomLift]）。
+  /// M3E 浮动工具栏离播放区底边的距离（胶囊下沿到画面底边）：与阅读器 / 漫画的
+  /// 共享浮动工具栏同一个窗口边距。
+  static const double _videoM3eFloatingEdgeInset = kFushiFloatingToolbarEdgeMargin;
+
+  /// M3E 浮动工具栏左右离播放区边缘的距离（胶囊外缘）。共享浮动工具栏的窗口边距，
+  /// 也恰是 media_kit 默认的按钮行左右边距，桌面按钮行几何因此不变。
+  static const double _videoM3eFloatingSideInset = kFushiFloatingToolbarEdgeMargin;
+
+  /// 进度条几何推导里桌面「按钮行高」要叠加的抬升（见 [_floatingChromeBottomLift]）。
   double get _videoGeometryButtonBarLift =>
-      _isDesktopVideoControls ? _appleBottomLift : 0;
+      _isDesktopVideoControls ? _floatingChromeBottomLift : 0;
 
   /// 进度条几何推导里移动端的离底基线（[_videoBottomChromeBaseline] + 抬升）。
   double get _videoGeometryBottomBaseline =>
       _videoBottomChromeBaseline +
-      (_isDesktopVideoControls ? 0 : _appleBottomLift);
+      (_isDesktopVideoControls ? 0 : _floatingChromeBottomLift);
 
   /// 进度条左右内缩：MD3 = media_kit 默认 16；Apple = 胶囊外边距 + 胶囊内边距，
   /// 轨道落在玻璃胶囊里面。章节刻度 / 缩略图预览层与它同源。
-  double get _videoSeekBarSideInset =>
-      _appleChrome ? kVideoAppleChromeEdgeInset + 16 : 16;
+  ///
+  /// M3E：轨道再内缩一个轨道槽探出量（[VideoM3eSeekTrack.lane] 左右各探出
+  /// [_videoM3eSeekLaneOverhang]），槽的外缘恰与浮动工具栏胶囊外缘对齐。
+  double get _videoSeekBarSideInset => _appleChrome
+      ? kVideoAppleChromeEdgeInset + 16
+      : _videoM3eFloatingSideInset + _videoM3eSeekLaneOverhang;
+
+  /// M3E 悬浮轨道槽左右探出轨道的量（随界面缩放）。
+  double get _videoM3eSeekLaneOverhang =>
+      12 * _videoUiScale * _controlsDensityScale;
 
   /// Apple：底栏按钮行左右内缩（胶囊外边距 + 8）。
   double get _videoAppleButtonBarSideInset => kVideoAppleChromeEdgeInset + 8;
@@ -1013,7 +1036,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final double buttonBottom;
     final double trackCenter;
     if (_isDesktopVideoControls) {
-      buttonBottom = _appleBottomLift;
+      buttonBottom = _floatingChromeBottomLift;
       // 桌面：进度条容器骑按钮行上沿、被下压 overlap，轨道在容器竖直正中。
       trackCenter = buttonBottom +
           barHeight -
@@ -1022,7 +1045,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } else {
       buttonBottom = _videoBottomChromeBaseline +
           _videoBottomSystemInset() +
-          _appleBottomLift;
+          _floatingChromeBottomLift;
       // 移动：进度条容器在按钮行上方 gap 处，轨道贴容器底缘。
       trackCenter = buttonBottom +
           barHeight +
@@ -7573,7 +7596,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     count: _episodes.length,
                   )
                 : null;
-            return Column(
+            // M3E 浮动工具栏：标题是一枚独立的浮动胶囊（返回键胶囊与右侧按钮组
+            // 胶囊之间），不再是压在画面上的带阴影白字。
+            if ((title ?? '').isEmpty && episode == null) {
+              return const SizedBox.shrink();
+            }
+            return VideoM3eFloatingSurface(
+              enabled: true,
+              padding: EdgeInsets.symmetric(
+                horizontal: 16 * scale,
+                vertical: 6 * scale,
+              ),
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: cross,
               children: <Widget>[
@@ -7588,9 +7622,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     height: 1.25,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.1,
-                    shadows: const <Shadow>[
-                      Shadow(color: Color(0x66000000), blurRadius: 8),
-                    ],
                   ),
                 ),
                 if (episode != null)
@@ -7611,6 +7642,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     ),
                   ),
               ],
+              ),
             );
           },
         ),
@@ -7663,7 +7695,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ? Icons.skip_previous
                 : Icons.keyboard_double_arrow_left_rounded,
             desktop: desktop,
-            tonal: _isTopSlot(slot),
             onPressed: () => _skipCueAndPokeControls(forward: false),
           ),
         );
@@ -7675,7 +7706,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ? Icons.skip_next
                 : Icons.keyboard_double_arrow_right_rounded,
             desktop: desktop,
-            tonal: _isTopSlot(slot),
             onPressed: () => _skipCueAndPokeControls(forward: true),
           ),
         );
@@ -7811,9 +7841,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         icon: _videoControlItemIcon(item),
         desktop: desktop,
         // MD3 Expressive：上 / 下一集与底栏播放键连成一组（tonal 圆钮夹着主色宽
-        // 播放键，[_m3ePlayPauseButton]）；顶栏按钮恒 tonal。
+        // 播放键，[_m3ePlayPauseButton]）；其余按钮的底色由所在浮动胶囊提供。
         tonal:
-            _isTopSlot(slot) ||
             item == VideoControlItem.previousEpisode ||
             item == VideoControlItem.nextEpisode,
         onPressed: () =>
@@ -7957,7 +7986,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         child: _chromeIconButton(
           icon: _videoControlItemIcon(item),
           desktop: desktop,
-          tonal: true,
+          // M3E：按钮组整体是一枚浮动胶囊，组内按钮不再各带 tonal 圆底。
           onPressed: () => _activateVideoControlItem(
             item,
             controller,
@@ -7988,6 +8017,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     Widget buttonGroup() {
       return VideoControlBar(
         fill: false,
+        clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
         moreButtonBuilder: (VoidCallback open) =>
             _videoBarMoreButton(open, desktop: desktop),
         entries: <VideoBarEntry>[
@@ -8344,6 +8374,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
   }) {
     return VideoControlBar(
+      // MD3 Expressive 浮动工具栏：三簇各是一枚悬浮胶囊（传输簇 vibrant），贴按钮行
+      // 底边，上方让给悬浮进度条；画面在胶囊之外不被任何实体栏遮挡。Apple 走自己的
+      // 玻璃胶囊（[VideoAppleChromeBackdrop]），这里不画。
+      clusterStyle: _m3eFloatingBarStyle(),
       moreButtonBuilder: (VoidCallback open) =>
           _videoBarMoreButton(open, desktop: desktop),
       entries: <VideoBarEntry>[
@@ -8370,6 +8404,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           cluster: VideoBarCluster.end,
         ),
       ],
+    );
+  }
+
+  /// M3E 浮动工具栏的胶囊外形（底栏贴底、顶栏按钮组居中）；Apple 为 null（玻璃
+  /// 胶囊另画）。
+  VideoBarClusterStyle? _m3eFloatingBarStyle({double verticalAlignment = 1}) {
+    if (!_m3eChrome) return null;
+    return videoM3eFloatingBarStyle(
+      context,
+      scale: _videoUiScale * _controlsDensityScale,
+      verticalAlignment: verticalAlignment,
     );
   }
 
@@ -8552,7 +8597,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final Widget controlButton = _chromeIconButton(
       icon: _videoControlButtonIcon(button),
       desktop: desktop,
-      tonal: _isTopSlot(slot),
       onPressed: () => _activateVideoControlButton(
         button,
         popoverLink: popoverLink,
@@ -8678,7 +8722,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 与下面 seek bar 两项同理必须按 0 算：否则小窗里控制条一「可见」（media_kit 仍
       // 会因 hover 翻 visible，尽管它在这一档一个像素都画不出来），字幕就为一条根本
       // 不存在的按钮行凭空上移一格——画面越小这一格越扎眼。
-      // Apple：底栏玻璃胶囊把整组控件抬离底边（[_appleBottomLift]）——桌面几何以
+      // Apple：底栏玻璃胶囊把整组控件抬离底边（[_floatingChromeBottomLift]）——桌面几何以
       // 按钮行高为基准、移动端以离底基线为基准，抬升分别叠在这两项上。
       buttonBarHeight: _controlsDensity.showBottomButtonBar
           ? _videoButtonBarHeight * densityScale + _videoGeometryButtonBarLift

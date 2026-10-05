@@ -385,7 +385,8 @@ void main() {
     // 2026-09-27：手机的有声书面板也走右侧侧栏，不再有底部抽屉分支。
     expect(route, isNot(contains('readerAudiobookUsesSideSheet(')));
     expect(route, contains('showReaderSideSheet<void>('));
-    expect(route, contains('ReaderSideSheetSide.left'));
+    // 2026-10 整合：四类侧板同一外壳、同一停靠边，开着时原地切换。
+    expect(route, contains('switcher: _readerPanelSwitcher('));
     expect(route, contains('ReaderSideSheetSide.right'));
     expect(route, isNot(contains('ReaderQuickSettingsPresentation.sheet')));
     expect(route, isNot(contains('FushiDialogFrame(')));
@@ -475,18 +476,22 @@ void main() {
         ? source.substring(tocIndex, nextClassIndex)
         : source.substring(tocIndex);
 
-    // TOC 行必须用共享 AdaptiveSettingsRow 渲染章节名（章节名走它的 title）。
-    expect(tocSource, contains('AdaptiveSettingsRow('),
-        reason: 'TOC 章节行应复用共享 AdaptiveSettingsRow 渲染标题');
-
-    // 必须显式传 titleMaxLines，且其值为 > 2 的有限整数字面量。
+    // 2026-10 导航重做：TOC 行委托给 ReaderTocRow（reader_navigation_widgets.dart）
+    // 渲染章节名，行数上限是它的 titleMaxLines 常量。
+    expect(tocSource, contains('ReaderTocRow('),
+        reason: 'TOC 章节行应委托 ReaderTocRow 渲染标题');
+    final String rowSource =
+        File('lib/src/reader/reader_navigation_widgets.dart')
+            .readAsStringSync();
     final RegExpMatch? match =
-        RegExp(r'titleMaxLines:\s*(\d+)').firstMatch(tocSource);
+        RegExp(r'static const int titleMaxLines = (\d+);').firstMatch(rowSource);
     expect(match, isNotNull,
-        reason: 'TOC 章节行必须显式传 titleMaxLines，否则回退默认 2 行截断长章节名');
+        reason: 'ReaderTocRow 必须显式声明 titleMaxLines，否则回退默认 2 行截断长章节名');
     final int maxLines = int.parse(match!.group(1)!);
     expect(maxLines, greaterThan(kSettingsRowTitleMaxLines),
         reason: '章节名要能换行显示，titleMaxLines 必须大于默认 2 行 clamp');
+    expect(rowSource, contains('maxLines: titleMaxLines'),
+        reason: '标题 Text 必须真的用上 titleMaxLines');
   });
 
   test(

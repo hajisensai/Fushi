@@ -242,9 +242,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
             // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
             // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
             // `_section`，且写成回调、在 drop 落地那一刻求值。
+            // 每个子区自己的主滚动控制器：六个子区同时挂在 IndexedStack 里，
+            // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
             DropSurfaceScope(
               isActive: () => _section == section,
-              child: sections[section]!,
+              child: SectionPrimaryScrollScope(child: sections[section]!),
             ),
         ],
         ),
