@@ -2001,6 +2001,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
   set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
 
+  /// 本页登记在 [ReaderFushiSource] 持有者栈里的实时 hook（BUG-2954）。
+  ReaderLiveHooks? _liveHooks;
+
   // BUG-969：设置实时预览的合并执行器。拖 slider 时 onSettingsChangedLive 每个
   // tick 触发一次，旧实现每次直接跑「CSS 注入 + 样式重锚 + tap-gate 同步 + 整页
   // setState」→ 一次拖动上百趟 WebView 往返叠加、本页 build 每 tick 全量重建。
@@ -2503,49 +2506,57 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
-    ReaderFushiSource.onSettingsChangedLive = () {
-      if (!mounted) return;
-      // BUG-969：经 _liveSettingsRunner 合并（错误处理/tap-gate 同步/setState
-      // 都在 runner 动作内），拖动风暴收敛为背靠背串行趟。
-      unawaited(_liveSettingsRunner.trigger());
-    };
-    ReaderFushiSource.onLayoutReloadLive = () {
-      if (!mounted) return;
-      unawaited(
-        _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log('ReaderFushi.onLayoutReloadLive', e, s);
-        }),
-      );
-    };
-    // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
-    // 不动 WebView 内容、不重锚、不重排分页。
-    ReaderFushiSource.onChromeReloadLive = () {
-      if (!mounted) return;
-      setState(() {});
-    };
-    // TODO-975：改变了喂给 WebView 的预留高的 chrome 偏好（开/关顶部进度、顶部/底栏
-    // 挤压↔悬浮切换）。除重建外还需重新下发 chrome insets 并重锚连续模式滚动位置，
-    // 否则预留高变化触发的 reflow 会把 window.scrollY 归零弹回章首。切换悬浮模式时
-    // 先收起临时可见态（新模式从隐藏起步、reserve 自洽）。
-    ReaderFushiSource.onChromeReanchorLive = () {
-      if (!mounted) return;
-      _cancelChromeAutoHide();
-      setState(() {
-        _chromeTransientVisible = false;
-      });
-      // 「关掉顶栏和底栏」也走这条通道：下面的重下 inset + 重锚一并覆盖它改变的
-      // 预留高，这里只同步状态与点词门控。
-      _syncToolbarsHidden(reanchor: false);
-      unawaited(
-        _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log(
-            'ReaderFushi.onChromeReanchorLive',
-            e,
-            s,
-          );
-        }),
-      );
-    };
+    // BUG-2954：四个 hook 作为一组登记到持有者栈，dispose 只注销自己那组。
+    _liveHooks = ReaderLiveHooks(
+      settingsChanged: () {
+        if (!mounted) return;
+        // BUG-969：经 _liveSettingsRunner 合并（错误处理/tap-gate 同步/setState
+        // 都在 runner 动作内），拖动风暴收敛为背靠背串行趟。
+        unawaited(_liveSettingsRunner.trigger());
+      },
+      layoutReload: () {
+        if (!mounted) return;
+        unawaited(
+          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log(
+              'ReaderFushi.onLayoutReloadLive',
+              e,
+              s,
+            );
+          }),
+        );
+      },
+      // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
+      // 不动 WebView 内容、不重锚、不重排分页。
+      chromeReload: () {
+        if (!mounted) return;
+        setState(() {});
+      },
+      // TODO-975：改变了喂给 WebView 的预留高的 chrome 偏好（开/关顶部进度、顶部/底栏
+      // 挤压↔悬浮切换）。除重建外还需重新下发 chrome insets 并重锚连续模式滚动位置，
+      // 否则预留高变化触发的 reflow 会把 window.scrollY 归零弹回章首。切换悬浮模式时
+      // 先收起临时可见态（新模式从隐藏起步、reserve 自洽）。
+      chromeReanchor: () {
+        if (!mounted) return;
+        _cancelChromeAutoHide();
+        setState(() {
+          _chromeTransientVisible = false;
+        });
+        // 「关掉顶栏和底栏」也走这条通道：下面的重下 inset + 重锚一并覆盖它改变的
+        // 预留高，这里只同步状态与点词门控。
+        _syncToolbarsHidden(reanchor: false);
+        unawaited(
+          _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log(
+              'ReaderFushi.onChromeReanchorLive',
+              e,
+              s,
+            );
+          }),
+        );
+      },
+    );
+    ReaderFushiSource.attachLiveHooks(_liveHooks!);
     _initBook();
   }
 
@@ -3170,10 +3181,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugFlushReadingStats = null;
       return true;
     }());
-    ReaderFushiSource.onSettingsChangedLive = null;
-    ReaderFushiSource.onLayoutReloadLive = null;
-    ReaderFushiSource.onChromeReloadLive = null;
-    ReaderFushiSource.onChromeReanchorLive = null;
+    // BUG-2954：只注销自己登记的那组；切卷（pushReplacement）时新页已先登记，
+    // 旧页晚于它 dispose 不能把新页的 hook 一起置 null。
+    final ReaderLiveHooks? liveHooks = _liveHooks;
+    if (liveHooks != null) {
+      ReaderFushiSource.detachLiveHooks(liveHooks);
+      _liveHooks = null;
+    }
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {

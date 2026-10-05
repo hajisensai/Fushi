@@ -570,6 +570,8 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
       child: FushiOutlinedButton.icon(
         // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
         onPressed: null,
+        // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形（FushiShapedMenuTrigger）。
+        style: kFushiMenuTriggerButtonStyle,
         icon: const FushiIcon(Icons.sort, size: 18),
         label: Text(_sortLabel(_sort)),
       ),
@@ -1253,6 +1255,8 @@ class _VideoDownloadJobCard extends StatelessWidget {
   /// 直接单独渲染这张脸当禁用态）。
   Widget _priorityButtonFace() => FushiOutlinedButton.icon(
         onPressed: null,
+        // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形（FushiShapedMenuTrigger）。
+        style: kFushiMenuTriggerButtonStyle,
         icon: const FushiIcon(Icons.low_priority, size: 18),
         label: Text(
           '${t.download_task_priority} · ${_priorityLabel(job.priority)}',

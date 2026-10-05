@@ -454,6 +454,8 @@ class _VideoDownloadSubscriptionsViewState
             child: FushiOutlinedButton.icon(
               // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
               onPressed: null,
+              // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形。
+              style: kFushiMenuTriggerButtonStyle,
               icon: const FushiIcon(Icons.sort, size: 18),
               label: Text(_sortLabel(_sort)),
             ),

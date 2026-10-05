@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -34,7 +35,9 @@ SettingsDestination buildReadingDestination() {
     // 一点；且 summary 参与设置搜索的命中面（settings_search 的 haystack），
     // 用户搜「听书」才还能落到这里。复用原一级分类名，不新增 i18n key。
     summary: '${t.section_layout} · ${t.settings_destination_listening}',
-    icon: Icons.auto_stories_outlined,
+    // 图标与底栏「书架」同一真值（homeNavItemFor），不在设置里另写一份；
+    // 此前与漫画分类同用 auto_stories，两条分类撞图标、又都对不上底栏。
+    icon: homeNavItemFor(HomeTab.books).icon,
     sections: <SettingsSection>[
       // 「模式与排版方向」：阅读呈现的模式与方向选择（翻页/滚动、竖排、跨页展开、
       // 竖排取向、振假名）。原「布局与显示」组重命名并把翻页/滚动模式提到首位；纯

@@ -947,8 +947,24 @@ class FushiFilledButton extends StatelessWidget {
   }
 }
 
+/// 菜单触发器声明自己的可视形状（`FushiPopupMenuButton` / `FushiOverflowMenu`
+/// 的 `child` 实现它）。MD3 下状态层（悬停 / 按压 / 焦点，含涟漪）按这个形状
+/// 裁剪并叠在触发器之上，与可视胶囊同尺寸同圆角。实现方的布局边界必须就是
+/// 可视形状本身（chip / 按钮作触发器时用 `MaterialTapTargetSize.shrinkWrap`，
+/// 不留 48dp 点击区外边距）。
+abstract interface class FushiShapedMenuTrigger {
+  ShapeBorder menuTriggerShape(BuildContext context);
+}
+
+/// 按钮作菜单触发器（`onPressed: null`、点击交给外层菜单）时的 style：去掉
+/// 48dp 点击区外边距，让布局边界 = 可视胶囊（见 [FushiShapedMenuTrigger]）。
+const ButtonStyle kFushiMenuTriggerButtonStyle = ButtonStyle(
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
+
 /// [OutlinedButton] 的设计系统分派版（含 `.icon`）。
-class FushiOutlinedButton extends StatelessWidget {
+class FushiOutlinedButton extends StatelessWidget
+    implements FushiShapedMenuTrigger {
   const FushiOutlinedButton({
     super.key,
     required this.onPressed,
@@ -1002,6 +1018,16 @@ class FushiOutlinedButton extends StatelessWidget {
 
   /// 破坏性操作（删除 / 退出登录）：MD3 error 色字与描边，Apple systemRed 字。
   final bool destructive;
+
+  /// 作菜单触发器（onPressed 为 null、点击交给外层菜单）时的可视形状：
+  /// [style] / 主题给的 shape，缺省 MD3 胶囊。
+  @override
+  ShapeBorder menuTriggerShape(BuildContext context) =>
+      style?.shape?.resolve(const <WidgetState>{}) ??
+      OutlinedButtonTheme.of(
+        context,
+      ).style?.shape?.resolve(const <WidgetState>{}) ??
+      const StadiumBorder();
 
   @override
   Widget build(BuildContext context) {

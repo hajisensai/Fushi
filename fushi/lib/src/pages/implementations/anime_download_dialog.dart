@@ -1755,6 +1755,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 avatar: const FushiIcon(Icons.sort, size: 18),
                 label: Text('${t.sort_by}: ${_torrentSortLabel(_torrentSort)}'),
                 visualDensity: VisualDensity.compact,
+                // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形。
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
             ),
           ],

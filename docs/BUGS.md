@@ -29,12 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2718 条。点号进各自文件。
+> 共 2719 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2956](bugs/BUG-2956-jimaku-key-not-found.md) | ✅ | ✅ | Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕 |
 | [BUG-2955](bugs/BUG-2955-video-cover-online-search.md) | ✅ | ✅ | 视频设置封面只能选本地文件，在线搜索封面入口丢失 |
+| [BUG-2954](bugs/BUG-2954-reader-live-hooks-cleared.md) | ✅ | ✅ | 阅读器按钮布局等实时设置在切卷/叠开阅读器后改了不生效，须退出重进 |
 | [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
 | [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
 | [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |

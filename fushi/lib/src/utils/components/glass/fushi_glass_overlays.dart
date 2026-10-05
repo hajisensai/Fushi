@@ -2435,8 +2435,13 @@ class FushiPopupMenuButton<T> extends PopupMenuButton<T> {
 /// - MD3：主色 w600 字 + 20 号 `expand_more`，左右 12 / 上下 8；
 /// - Apple：强调色 15 号 w500 字 + 13 号 `chevron.up.chevron.down`（iOS 26
 ///   pull-down 按钮），左右 10 / 上下 6。
-class FushiMenuLabelTrigger extends StatelessWidget {
+class FushiMenuLabelTrigger extends StatelessWidget
+    implements FushiShapedMenuTrigger {
   const FushiMenuLabelTrigger({required this.label, this.color, super.key});
+
+  /// MD3 文字按钮形态：全圆角。
+  @override
+  ShapeBorder menuTriggerShape(BuildContext context) => const StadiumBorder();
 
   final String label;
 
@@ -2485,6 +2490,67 @@ class FushiMenuLabelTrigger extends StatelessWidget {
 class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
   bool _glassExpanded = false;
   RelativeRect? _lastPosition;
+
+  /// MD3 自定义触发器的可视形状：调用方显式给的 [PopupMenuButton.borderRadius]
+  /// 优先，其次是触发器自己声明的形状（[FushiShapedMenuTrigger]）。都没有时
+  /// 返回 null，走框架默认外观。
+  ShapeBorder? _materialTriggerShape(BuildContext context) {
+    final Widget? child = widget.child;
+    if (child == null) return null;
+    final BorderRadius? radius = widget.borderRadius;
+    if (radius != null) return RoundedRectangleBorder(borderRadius: radius);
+    if (child is FushiShapedMenuTrigger) {
+      return (child as FushiShapedMenuTrigger).menuTriggerShape(context);
+    }
+    return null;
+  }
+
+  /// MD3 自定义触发器：悬停 / 按压 / 焦点状态层与可视胶囊**同一个形状**、并
+  /// 画在触发器**之上**（2026-10-05 用户反馈：书架「阅读状态」筛选 chip 的灰色
+  /// 反馈范围与高亮胶囊对不上）。框架 [PopupMenuButton] 把 InkWell 直接包在
+  /// child 外：状态层是 child 的外接矩形（未给 borderRadius 时）且画在最近的
+  /// Material 上、位于 child 之下——实底胶囊盖住了中间，只在胶囊外的四角露出
+  /// 一圈灰。这里把状态层放进一块按同一形状裁剪的透明 Material，叠在 child 上。
+  Widget _buildShapedMaterialTrigger(BuildContext context, ShapeBorder shape) {
+    final bool enableFeedback =
+        widget.enableFeedback ??
+        PopupMenuTheme.of(context).enableFeedback ??
+        true;
+    final NavigationMode mode =
+        MediaQuery.maybeNavigationModeOf(context) ?? NavigationMode.traditional;
+    final bool canRequestFocus = switch (mode) {
+      NavigationMode.traditional => widget.enabled,
+      NavigationMode.directional => true,
+    };
+    final Widget trigger = Stack(
+      children: <Widget>[
+        widget.child!,
+        Positioned.fill(
+          child: Material(
+            type: MaterialType.transparency,
+            shape: shape,
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              key: const ValueKey<String>('fushi-popup-trigger-ink'),
+              customBorder: shape,
+              onTap: widget.enabled ? showButtonMenu : null,
+              canRequestFocus: canRequestFocus,
+              radius: widget.splashRadius,
+              enableFeedback: enableFeedback,
+            ),
+          ),
+        ),
+      ],
+    );
+    return Semantics(
+      expanded: _glassExpanded,
+      child: Tooltip(
+        message:
+            widget.tooltip ?? MaterialLocalizations.of(context).showMenuTooltip,
+        child: trigger,
+      ),
+    );
+  }
 
   /// 菜单锚 = 按钮矩形（加 [PopupMenuButton.offset]）。图标按钮的点击区比
   /// 可见按钮大一圈 padding，上下各收掉一半，间距按看得见的按钮量。
@@ -2561,7 +2627,11 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
 
   @override
   Widget build(BuildContext context) {
-    if (!isGlassDesign(context)) return super.build(context);
+    if (!isGlassDesign(context)) {
+      final ShapeBorder? shape = _materialTriggerShape(context);
+      if (shape == null) return super.build(context);
+      return _buildShapedMaterialTrigger(context, shape);
+    }
     final String tooltip =
         widget.tooltip ?? MaterialLocalizations.of(context).showMenuTooltip;
     if (widget.child != null) {
