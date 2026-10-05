@@ -1075,15 +1075,8 @@ void main() {
           'Jimaku subtitle rows plus a download-task list as transient '
           'video-subsystem content — the same reviewed content exception '
           'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
-      // PR#295：Hook 控制台的状态胶囊（hook-ready / 未读行数 / 每行句音状态）是
-      // hook 子系统的实时内容指示器，非普通页面 chrome——同视频子系统内容行豁免类。
-      'lib/src/pages/implementations/texthooker_page.dart':
-          'Hook console status pills (hook-ready / unread-lines / per-line '
-          'audio status capsules) are live hook-subsystem content '
-          'indicators, not ordinary page chrome — same reviewed content '
-          'exception class as the video-subsystem content rows. The unread-'
-          'lines pill text is pinned to 13 (Apple accent label) so it keeps '
-          'the pill geometry under both design systems.',
+      // texthooker_page（Hook 控制台）的豁免已于 2026-10-06 M3E 重做时收口：未读
+      // 计数胶囊改用共享 FushiFilledButton.tonal（xs），文件里不再有裸圆角 / 裸字号。
       // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
       // 触发整库任务，故此处不再需要它的豁免条目。
       // PR#253 / BUG-922：制卡「选择句子上下文」原生对话框（Niratan 式）的 ±上下文
@@ -1548,10 +1541,6 @@ void main() {
       'lib/src/pages/implementations/series_shelf_card.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
-      },
-      'lib/src/pages/implementations/texthooker_page.dart': <String>{
-        'BorderRadius.circular(',
-        'fontSize:',
       },
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},

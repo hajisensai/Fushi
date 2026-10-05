@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart'
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// galgame 详情页守卫（契约 §4.2）：三个 tab 渲染 + 统计 KPI 由会话事实表现算。
 void main() {
@@ -148,7 +149,7 @@ void main() {
     );
     await tester.drag(find.byType(ListView), const Offset(0, -400));
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.delete_outline), findsNWidgets(2));
+    expect(find.byIcon(FushiIcons.delete), findsNWidgets(2));
   });
 
   testWidgets('无会话时给空态而不是崩', (WidgetTester tester) async {

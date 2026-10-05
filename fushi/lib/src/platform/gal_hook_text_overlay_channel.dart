@@ -1111,6 +1111,14 @@ typedef GalHookTextBoundsHandler =
 /// 所以没拖过窗的用户观感逐像素不变。
 const double kGalHookTextFontSize = 30.0;
 
+/// Hook 浮窗工具条的历史配色（白字 / 紫灰悬停底 / 浅紫激活）。M3E 重设计后由
+/// 控制器按 app 主题色下发（见 `galHookToolbarPalette`），这里只作「拿不到主题」
+/// 时的回落与 channel 参数默认值。键名与 alpha 均不变：悬停底色只在悬停格上画、
+/// 叠在 alpha ≥ 0x99 的工具条底板上，不改变分层窗口的逐像素命中区。
+const int kGalHookToolbarLegacyButtonTextColor = 0xFFFFFFFF;
+const int kGalHookToolbarLegacyButtonBgColor = 0x552D2340;
+const int kGalHookToolbarLegacyActiveColor = 0xFFCE93D8;
+
 /// Windows Hook 台词浮窗的专用 MethodChannel 契约。
 class GalHookTextOverlayChannel extends FloatingOverlayChannel {
   GalHookTextOverlayChannel._() : super(FushiChannels.galHookText);
@@ -1359,6 +1367,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double outlineWidth = 1.6,
     double textPadding = 20,
     double cornerRadius = 14,
+    int buttonTextColor = kGalHookToolbarLegacyButtonTextColor,
+    int buttonBgColor = kGalHookToolbarLegacyButtonBgColor,
+    int activeColor = kGalHookToolbarLegacyActiveColor,
     bool following = true,
     bool passThrough = false,
     bool locked = false,
@@ -1389,9 +1400,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'outlineColor': outlineColor,
       'outlineWidth': outlineWidth,
       'textPadding': textPadding,
-      'buttonTextColor': 0xFFFFFFFF,
-      'buttonBgColor': 0x552D2340,
-      'activeColor': 0xFFCE93D8,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'activeColor': activeColor,
       'windowWidth': 900.0,
       'windowHeight': 140.0,
       'cornerRadius': cornerRadius,
@@ -1455,6 +1466,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     double outlineWidth = 1.6,
     double textPadding = 20,
     double cornerRadius = 14,
+    int buttonTextColor = kGalHookToolbarLegacyButtonTextColor,
+    int buttonBgColor = kGalHookToolbarLegacyButtonBgColor,
+    int activeColor = kGalHookToolbarLegacyActiveColor,
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', <String, Object?>{
@@ -1472,9 +1486,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'outlineWidth': outlineWidth,
       'textPadding': textPadding,
       'cornerRadius': cornerRadius,
-      'buttonTextColor': 0xFFFFFFFF,
-      'buttonBgColor': 0x552D2340,
-      'activeColor': 0xFFCE93D8,
+      'buttonTextColor': buttonTextColor,
+      'buttonBgColor': buttonBgColor,
+      'activeColor': activeColor,
     });
   }
 

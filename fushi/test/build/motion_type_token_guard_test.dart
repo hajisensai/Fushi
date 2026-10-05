@@ -111,7 +111,6 @@ const Map<String, int> _fontSizeBudget = <String, int>{
   'lib/src/pages/implementations/game_stream_page.dart': 1,
   'lib/src/pages/implementations/reader_fushi/chrome.part.dart': 5,
   'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': 1,
-  'lib/src/pages/implementations/texthooker_page.dart': 1,
   'lib/src/pages/implementations/video_fushi/controls_popover.part.dart': 1,
   'lib/src/pages/implementations/video_fushi/controls_theme.part.dart': 2,
   'lib/src/pages/implementations/video_fushi/episode.part.dart': 3,

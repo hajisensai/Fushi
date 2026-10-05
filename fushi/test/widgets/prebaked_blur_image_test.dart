@@ -178,12 +178,13 @@ void main() {
     );
   });
   test('库卡 / 封面垫底不再用渲染期 ImageFiltered（每卡每帧重算模糊即掉帧根因）', () {
-    // 滚动列表里每卡一份的封面模糊：游戏库「继续游戏」卡、游戏首页大卡、视频 /
-    // 合集封面比例不符时的垫底。任何一处退回 ImageFiltered，滚动就重新按卡数
-    // 线性地每帧做高斯卷积（Impeller 无 raster cache，Skia 滚动中缓存失效）。
+    // 滚动列表里每卡一份的封面模糊：游戏库「继续游戏」卡、视频 / 合集封面比例
+    // 不符时的垫底。任何一处退回 ImageFiltered，滚动就重新按卡数线性地每帧做
+    // 高斯卷积（Impeller 无 raster cache，Skia 滚动中缓存失效）。游戏首页大卡
+    // 2026-10 M3E 重做后改成饱和 primaryContainer 色块 + 清晰大封面，不再有
+    // 模糊垫底，故不在此列（它若重新引入模糊，仍须走 PrebakedBlurImage）。
     const List<String> files = <String>[
       'lib/src/pages/implementations/games_library_page.dart',
-      'lib/src/pages/implementations/galgame_home_page.dart',
       'lib/src/media/video/cover_ui/portrait_cover_image.dart',
       'lib/src/media/video/cover_ui/landscape_cover_image.dart',
     ];

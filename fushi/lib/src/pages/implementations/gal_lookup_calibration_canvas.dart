@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
@@ -843,33 +844,33 @@ class _GalLookupCalibrationCanvasState
               ),
             ),
           ),
+          // 缩放工具：M3E 浮动工具栏胶囊（surfaceContainer + 投影；Apple 玻璃
+          // 胶囊），悬在截图右上角而不是贴边一块方底。只改外观，缩放逻辑不变。
           Positioned(
-            right: 0,
-            top: 0,
-            child: Material(
-              color: Theme.of(context).colorScheme.surface,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  FushiIconButtonControl(
-                    tooltip: t.game_lookup_samples_zoom_out,
-                    icon: const FushiIcon(Icons.zoom_out),
-                    onPressed: () =>
-                        _zoom(_transform.value.getMaxScaleOnAxis() / 1.5),
-                  ),
-                  FushiIconButtonControl(
-                    tooltip: t.game_lookup_samples_zoom_in,
-                    icon: const FushiIcon(Icons.zoom_in),
-                    onPressed: () =>
-                        _zoom(_transform.value.getMaxScaleOnAxis() * 1.5),
-                  ),
-                  FushiIconButtonControl(
-                    tooltip: t.game_lookup_samples_zoom_reset,
-                    icon: const FushiIcon(Icons.fit_screen),
-                    onPressed: () => _zoom(1),
-                  ),
-                ],
-              ),
+            right: 8,
+            top: 8,
+            child: FushiToolbar(
+              floating: true,
+              dense: true,
+              children: <Widget>[
+                FushiIconButtonControl(
+                  tooltip: t.game_lookup_samples_zoom_out,
+                  icon: const FushiIcon(Icons.zoom_out),
+                  onPressed: () =>
+                      _zoom(_transform.value.getMaxScaleOnAxis() / 1.5),
+                ),
+                FushiIconButtonControl(
+                  tooltip: t.game_lookup_samples_zoom_in,
+                  icon: const FushiIcon(Icons.zoom_in),
+                  onPressed: () =>
+                      _zoom(_transform.value.getMaxScaleOnAxis() * 1.5),
+                ),
+                FushiIconButtonControl(
+                  tooltip: t.game_lookup_samples_zoom_reset,
+                  icon: const FushiIcon(Icons.fit_screen),
+                  onPressed: () => _zoom(1),
+                ),
+              ],
             ),
           ),
         ],

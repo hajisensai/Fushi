@@ -10,7 +10,6 @@ import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -24,6 +23,9 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope, fushiTitleBarColorsOn;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Receiver-side wording for a host mine result. The host only sends stable
 /// detail codes (its raw failure text stays on the host), so every outcome a
@@ -469,6 +471,16 @@ class _GameStreamPageState extends State<GameStreamPage>
     GameStreamVirtualButton.menu => 'Menu',
   };
 
+  /// 按键映射行的行首图标：方向键 = 手柄、其余（A/B/L/R）= 键盘按键。
+  static IconData _bindingIcon(GameStreamVirtualButton button) =>
+      switch (button) {
+        GameStreamVirtualButton.up ||
+        GameStreamVirtualButton.down ||
+        GameStreamVirtualButton.left ||
+        GameStreamVirtualButton.right => FushiIcons.games,
+        _ => FushiIcons.keyboard,
+      };
+
   Future<void> _configureKeys() async {
     // A held control must retain its down/up mapping until it is released.
     if (_heldButtons.isNotEmpty) return;
@@ -477,54 +489,61 @@ class _GameStreamPageState extends State<GameStreamPage>
     try {
       await adaptiveModalSheet<void>(
         context: context,
-        showDragHandle: false,
         builder: (BuildContext context) => StatefulBuilder(
-          builder: (BuildContext context, StateSetter updateSheet) => SafeArea(
-            child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * 0.7,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: <Widget>[
-                  Text(
-                    t.game_stream_keys,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(t.game_stream_keys_hint),
-                  for (final GameStreamVirtualButton button
-                      in GameStreamVirtualButton.values)
-                    if (button != GameStreamVirtualButton.menu)
-                      FushiListItem(
-                        title: Text(_buttonLabel(button)),
-                        trailing: FushiDropdownButton<String>(
-                          key: ValueKey<String>(
-                            'game-stream-binding-${button.name}',
-                          ),
-                          value: _keyBindings[button] ?? '',
-                          items: <DropdownMenuItem<String>>[
-                            DropdownMenuItem<String>(
-                              value: '',
-                              child: Text(t.game_stream_key_default),
-                            ),
-                            for (final String key in _allowedKeys)
-                              DropdownMenuItem<String>(
-                                value: key,
-                                child: Text(key),
+          builder: (BuildContext context, StateSetter updateSheet) =>
+              // M3E 底部弹层：共享弹层框（标题 + 说明），按键映射是一组分段
+              // 列表行，行尾下拉选主机按键。
+              FushiModalSheetFrame(
+                title: t.game_stream_keys,
+                subtitle: t.game_stream_keys_hint,
+                leadingIcon: FushiIcons.games,
+                maxHeightFactor: 0.7,
+                body: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  children: <Widget>[
+                    FushiGroupedList(
+                      children: <Widget>[
+                        for (final GameStreamVirtualButton button
+                            in GameStreamVirtualButton.values)
+                          if (button != GameStreamVirtualButton.menu)
+                            FushiListItem(
+                              leading: FushiListLeadingIcon(
+                                _bindingIcon(button),
+                                tone: _keyBindings.containsKey(button)
+                                    ? FushiCardTone.primary
+                                    : FushiCardTone.secondary,
                               ),
-                          ],
-                          onChanged: (String? key) => updateSheet(() {
-                            if (key == null || key.isEmpty) {
-                              _keyBindings.remove(button);
-                            } else {
-                              _keyBindings[button] = key;
-                            }
-                          }),
-                        ),
-                      ),
-                ],
+                              title: Text(_buttonLabel(button)),
+                              trailing: FushiDropdownButton<String>(
+                                key: ValueKey<String>(
+                                  'game-stream-binding-${button.name}',
+                                ),
+                                value: _keyBindings[button] ?? '',
+                                items: <DropdownMenuItem<String>>[
+                                  DropdownMenuItem<String>(
+                                    value: '',
+                                    child: Text(t.game_stream_key_default),
+                                  ),
+                                  for (final String key in _allowedKeys)
+                                    DropdownMenuItem<String>(
+                                      value: key,
+                                      child: Text(key),
+                                    ),
+                                ],
+                                onChanged: (String? key) => updateSheet(() {
+                                  if (key == null || key.isEmpty) {
+                                    _keyBindings.remove(button);
+                                  } else {
+                                    _keyBindings[button] = key;
+                                  }
+                                }),
+                              ),
+                            ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
         ),
       );
     } finally {
@@ -726,25 +745,38 @@ class _GameStreamPageState extends State<GameStreamPage>
                     alignment: Alignment.topCenter,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 52),
-                      // 浮在画面上的中性圆角浮层 + 错误色文字，不再是贴边的
-                      // errorContainer 色条。
-                      child: Material(
-                        color: theme.colorScheme.surfaceContainer,
-                        borderRadius: FushiBorderRadius.control,
-                        elevation: kFushiFloatingElevation,
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            widget.receiver?.error != null
-                                ? '${t.game_stream_disconnected}: ${widget.receiver!.error}'
-                                : _rejectionMessage(
-                                    widget.inputComposer.lastRejectionReason,
+                      // M3E：浮在画面上的 error 饱和色块（图标 + 文案），
+                      // 不再是贴边色条；Apple 落到系统红淡染。
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: FushiM3eShape.cardRadius,
+                            boxShadow: fushiM3eCardShadow(context, 1),
+                          ),
+                          child: FushiCard(
+                            tone: FushiCardTone.error,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                const FushiIcon(FushiIcons.warning, size: 20),
+                                const SizedBox(width: 12),
+                                Flexible(
+                                  child: Text(
+                                    widget.receiver?.error != null
+                                        ? '${t.game_stream_disconnected}: ${widget.receiver!.error}'
+                                        : _rejectionMessage(
+                                            widget
+                                                .inputComposer
+                                                .lastRejectionReason,
+                                          ),
                                   ),
-                            style: TextStyle(
-                              color: fushiStatusColor(
-                                context,
-                                FushiStatusTone.error,
-                              ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -768,7 +800,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                           children: <Widget>[
                             FushiIconButtonControl(
                               tooltip: t.back,
-                              icon: const FushiIcon(Icons.arrow_back),
+                              icon: const FushiIcon(FushiIcons.back),
                               onPressed: () => Navigator.of(context).maybePop(),
                             ),
                           ],
@@ -813,31 +845,31 @@ class _GameStreamPageState extends State<GameStreamPage>
                         <Widget>[
                           FushiIconButtonControl(
                             tooltip: t.game_stream_settings_title,
-                            icon: const FushiIcon(Icons.settings_outlined),
+                            icon: const FushiIcon(FushiIcons.settingsGear),
                             onPressed: _openSettings,
                           ),
                           FushiOverflowMenu<_StreamMenuAction>(
                             tooltip: t.game_stream_more,
-                            iconWidget: const FushiIcon(Icons.more_vert),
+                            iconWidget: const FushiIcon(FushiIcons.more),
                             onSelected: _onOverflowAction,
                             items: <PopupMenuEntry<_StreamMenuAction>>[
                               FushiPopupMenuItem<_StreamMenuAction>(
                                 value: _StreamMenuAction.touchMode,
                                 icon: _touchMode == GameStreamTouchMode.direct
-                                    ? Icons.mouse_outlined
-                                    : Icons.touch_app_outlined,
+                                    ? FushiIcons.mouse
+                                    : FushiIcons.touch,
                                 label: _touchMode == GameStreamTouchMode.direct
                                     ? t.game_stream_touch_trackpad
                                     : t.game_stream_touch_direct,
                               ),
                               FushiPopupMenuItem<_StreamMenuAction>(
                                 value: _StreamMenuAction.keyboard,
-                                icon: Icons.keyboard_outlined,
+                                icon: FushiIcons.keyboard,
                                 label: t.game_stream_keyboard,
                               ),
                               FushiPopupMenuItem<_StreamMenuAction>(
                                 value: _StreamMenuAction.stats,
-                                icon: Icons.speed_outlined,
+                                icon: FushiIcons.speed,
                                 label: _statsVisible
                                     ? t.game_stream_stats_hide
                                     : t.game_stream_stats_show,
@@ -845,8 +877,8 @@ class _GameStreamPageState extends State<GameStreamPage>
                               FushiPopupMenuItem<_StreamMenuAction>(
                                 value: _StreamMenuAction.audio,
                                 icon: _settings.audio
-                                    ? Icons.volume_off_outlined
-                                    : Icons.volume_up_outlined,
+                                    ? FushiIcons.volumeOff
+                                    : FushiIcons.volumeUp,
                                 label: _settings.audio
                                     ? t.game_stream_audio_mute
                                     : t.game_stream_audio_unmute,
@@ -857,15 +889,16 @@ class _GameStreamPageState extends State<GameStreamPage>
                         <Widget>[
                           FushiIconButtonControl(
                             tooltip: t.game_stream_keys,
-                            icon: const FushiIcon(Icons.tune),
+                            icon: const FushiIcon(FushiIcons.settings),
                             onPressed: _configureKeys,
                           ),
                           FushiIconButtonControl(
                             tooltip: t.game_stream_lookup_toggle,
                             icon: FushiIcon(
-                              _lookupVisible
-                                  ? Icons.menu_book
-                                  : Icons.menu_book_outlined,
+                              FushiIcons.resolve(
+                                FushiIcons.dictionary,
+                                filled: _lookupVisible,
+                              ),
                             ),
                             onPressed: () =>
                                 setState(() => _lookupVisible = !_lookupVisible),
@@ -873,9 +906,10 @@ class _GameStreamPageState extends State<GameStreamPage>
                           FushiIconButtonControl(
                             tooltip: t.game_stream_controls_toggle,
                             icon: FushiIcon(
-                              _controlsVisible
-                                  ? Icons.gamepad
-                                  : Icons.gamepad_outlined,
+                              FushiIcons.resolve(
+                                FushiIcons.games,
+                                filled: _controlsVisible,
+                              ),
                             ),
                             onPressed: () => setState(
                               () => _controlsVisible = !_controlsVisible,
@@ -936,15 +970,14 @@ class _GameStreamPageState extends State<GameStreamPage>
           // 圆角与浮层统一，不再是直角黑块。
           decoration: const BoxDecoration(
             color: Color(0xAA000000),
-            borderRadius: BorderRadius.all(Radius.circular(8)),
+            borderRadius: FushiM3eShape.smallRadius,
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             child: Text(
               lines.isEmpty ? t.game_stream_video_waiting : lines.join('\n'),
-              style: theme.textTheme.labelSmall?.copyWith(
+              style: context.fushiType.labelMedium.tabular.copyWith(
                 color: Colors.white,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -976,13 +1009,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         color: Colors.black,
         alignment: Alignment.center,
         child: widget.receiver == null
-            ? (widget.videoPlaceholder ??
-                  Text(
-                    t.game_stream_video_waiting,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ))
+            ? (widget.videoPlaceholder ?? const _VideoWaiting())
             : Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
@@ -1003,14 +1030,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                       ),
                     ),
                   if (!widget.receiver!.ready)
-                    Center(
-                      child: Text(
-                        t.game_stream_video_waiting,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: Colors.white70,
-                        ),
-                      ),
-                    ),
+                    const Center(child: _VideoWaiting()),
                 ],
               ),
       ),
@@ -1088,7 +1108,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                       padding: const EdgeInsets.all(12),
                       child: Text(
                         t.game_stream_line,
-                        style: theme.textTheme.labelLarge,
+                        style: context.fushiType.titleSmallEmphasized,
                       ),
                     ),
                     if (line == null)
@@ -1137,7 +1157,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                           },
                         ),
                         trailing: SubtitleTranscriptAction(
-                          icon: Icons.content_copy_outlined,
+                          icon: FushiIcons.copy,
                           tooltip: t.copy,
                           color: SubtitleTranscriptRow.secondaryColorOf(
                             context,
@@ -1341,12 +1361,15 @@ class _PadShellState extends State<_PadShell> {
   final Set<LogicalKeyboardKey> _keys = <LogicalKeyboardKey>{};
   bool _pressed = false;
   bool _focused = false;
+  bool _disposing = false;
 
   void _syncPressed() {
     final bool pressed = _pointers.isNotEmpty || _keys.isNotEmpty;
     if (pressed == _pressed) return;
     _pressed = pressed;
     unawaited(pressed ? widget.onDown() : widget.onUp());
+    // 视觉反馈（按下收缩 + 形变）只在活着的时候重建；dispose 里的释放只发 up。
+    if (!_disposing && mounted) setState(() {});
   }
 
   void _release() {
@@ -1374,12 +1397,14 @@ class _PadShellState extends State<_PadShell> {
 
   @override
   void dispose() {
+    _disposing = true;
     _release();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final FushiMotionScheme motion = context.fushiMotion;
     return Focus(
       onKeyEvent: _onKey,
       onFocusChange: (bool focused) {
@@ -1402,18 +1427,29 @@ class _PadShellState extends State<_PadShell> {
             _pointers.remove(event.pointer);
             _syncPressed();
           },
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.45),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: _focused ? Colors.white : Colors.white54,
-                width: _focused ? 2 : 1,
-              ),
-            ),
-            child: SizedBox(
+          // M3E 按压：spring 收缩 + 圆 → 方圆角形变，底色提亮；画面上的
+          // 按钮保持深色半透明底（任何画面亮度下都看得清）。
+          child: AnimatedScale(
+            scale: _pressed ? 0.9 : 1,
+            duration: motion.spatialFast.duration,
+            curve: motion.spatialFast.curve,
+            child: AnimatedContainer(
               width: 58,
               height: 58,
+              duration: motion.effectsFast.duration,
+              curve: motion.effectsFast.curve,
+              decoration: BoxDecoration(
+                color: _pressed
+                    ? Colors.white.withValues(alpha: 0.32)
+                    : Colors.black.withValues(alpha: 0.45),
+                borderRadius: _pressed
+                    ? FushiM3eShape.cardRadius
+                    : const BorderRadius.all(Radius.circular(29)),
+                border: Border.all(
+                  color: _focused ? Colors.white : Colors.white54,
+                  width: _focused ? 2 : 1,
+                ),
+              ),
               child: Center(child: widget.child),
             ),
           ),
@@ -1424,6 +1460,29 @@ class _PadShellState extends State<_PadShell> {
 }
 
 enum _StreamMenuAction { touchMode, keyboard, stats, audio }
+
+/// 等待首帧：状态文案 + 一条波浪进度（M3E 不定进度），压在黑底画面中央。
+class _VideoWaiting extends StatelessWidget {
+  const _VideoWaiting();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.game_stream_video_waiting,
+          textAlign: TextAlign.center,
+          style: context.fushiType.titleMediumEmphasized.copyWith(
+            color: Colors.white70,
+          ),
+        ),
+        const SizedBox(height: 16),
+        const SizedBox(width: 180, child: FushiLinearProgressIndicator()),
+      ],
+    );
+  }
+}
 
 /// Trackpad-mode cursor drawn over the contained video picture.
 class _TrackpadCursorPainter extends CustomPainter {

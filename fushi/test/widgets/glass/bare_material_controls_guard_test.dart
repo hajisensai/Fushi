@@ -95,7 +95,6 @@ const List<String> _implementationFiles = <String>[
 const Map<String, int> _pendingFiles = <String, int>{
   'src/media/audiobook/audiobook_play_bar.dart': 1,
   'src/media/audiobook/reader_quick_settings_sheet.dart': 3,
-  'src/pages/implementations/games_library_page.dart': 1,
   'src/pages/implementations/home_page.dart': 1,
   'src/pages/implementations/profile_management_page.dart': 1,
   'src/pages/implementations/reader_fushi/chrome.part.dart': 1,

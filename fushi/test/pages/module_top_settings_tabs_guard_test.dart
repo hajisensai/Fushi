@@ -196,7 +196,7 @@ TorrentSettingsSection()
     expect(
       _containsCode(
         diagnostics,
-        'icon: Icons.arrow_back',
+        'icon: FushiIcons.back',
       ),
       isTrue,
       reason: '诊断页高亮设置段时，重选当前段不会回调，必须另有显式返回入口',

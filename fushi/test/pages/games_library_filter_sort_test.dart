@@ -19,6 +19,7 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 游戏库页工具条守卫（契约 §4.1）：搜索命中、排序切换、状态筛选三条真实用户路径。
 ///
@@ -137,7 +138,7 @@ void main() {
     await pumpPage(tester, await buildModel());
 
     Future<void> pickSort(String label) async {
-      await tester.tap(find.byIcon(Icons.sort));
+      await tester.tap(find.byIcon(FushiIcons.sort));
       await tester.pumpAndSettle();
       await tester.tap(find.text(label).last);
       await tester.pumpAndSettle();
@@ -162,7 +163,7 @@ void main() {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byIcon(Icons.filter_alt_outlined));
+    await tester.tap(find.byIcon(FushiIcons.filter));
     await tester.pumpAndSettle();
     // 卡片封面上的状态角标也写着「在玩」：筛选面板在最上层，取最后一个。
     await tester.tap(
@@ -199,7 +200,7 @@ void main() {
     // 搜索框拿到近整行宽（旧单行布局里被挤到只剩百余像素）。
     expect(tester.getSize(find.byType(TextField)).width, greaterThan(340));
     // 排序 / 刮削不再平铺在工具条上。
-    expect(find.byIcon(Icons.sort), findsNothing);
+    expect(find.byIcon(FushiIcons.sort), findsNothing);
 
     Future<void> pickSortFromOverflow() async {
       await tester

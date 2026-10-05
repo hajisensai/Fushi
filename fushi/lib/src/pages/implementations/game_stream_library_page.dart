@@ -26,12 +26,15 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
-import 'package:fushi/src/utils/components/fushi_loading_view.dart';
-import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 一台已配对主机上一个可用的串流客户端（已绑定到能连通的那个地址）。
 class GameStreamHostConnection {
@@ -406,6 +409,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
   @override
   Widget build(BuildContext context) {
     final bool loading = _loadingPeers;
+    final FushiMotionScheme motion = context.fushiMotion;
     return Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -416,24 +420,116 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
             actions: <Widget>[
               FushiIconButton(
                 key: GameStreamLibraryPage.refreshKey,
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 tooltip: t.refresh,
                 onTap: loading || _busy ? null : () => unawaited(_reload()),
               ),
               FushiIconButton(
                 key: GameStreamLibraryPage.settingsKey,
-                icon: Icons.tune,
+                icon: FushiIcons.settings,
                 tooltip: t.game_stream_settings_title,
                 onTap: _busy ? null : () => unawaited(_openSettings()),
               ),
             ],
           ),
           Expanded(
-            child: loading
-                ? const FushiLoadingView()
-                : _buildBody(context),
+            // 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
+            child: AnimatedSwitcher(
+              duration: motion.effectsDefault.duration,
+              switchInCurve: motion.effectsDefault.curve,
+              switchOutCurve: motion.effectsDefault.curve,
+              child: loading
+                  ? KeyedSubtree(
+                      key: const ValueKey<String>('game-stream-skeleton'),
+                      child: _buildLoadingSkeleton(context),
+                    )
+                  : KeyedSubtree(
+                      key: const ValueKey<String>('game-stream-body'),
+                      child: _buildBody(context),
+                    ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 网格列宽：窄屏（手机竖屏）两到三列海报，宽屏放大海报而不是挤出很多列。
+  static double _gridExtent(double width) => width >= 840 ? 220 : 180;
+
+  SliverGridDelegate _gridDelegate(double width) {
+    final bool wide = width >= 600;
+    return SliverGridDelegateWithMaxCrossAxisExtent(
+      maxCrossAxisExtent: _gridExtent(width),
+      mainAxisSpacing: wide ? 24 : 16,
+      crossAxisSpacing: wide ? 20 : 12,
+      childAspectRatio: 0.6,
+    );
+  }
+
+  /// 首次加载主机列表时的骨架：与最终版面同轮廓（状态 hero + 海报网格），
+  /// 共享一层有界闪光。
+  Widget _buildLoadingSkeleton(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double page = tokens.spacing.page;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return FushiSkeletonShimmer(
+          child: CustomScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            slivers: <Widget>[
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.gap),
+                sliver: const SliverToBoxAdapter(
+                  child: FushiSkeleton(
+                    height: 120,
+                    borderRadius: FushiM3eShape.cardRadius,
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(page, 16, page, 10),
+                sliver: SliverToBoxAdapter(
+                  child: FushiSkeleton.line(widthFactor: 0.32, height: 20),
+                ),
+              ),
+              _buildSkeletonGrid(context, constraints.maxWidth, shimmer: false),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 海报网格骨架。[shimmer] = 每格自带闪光（外层没有共享闪光时；闪光是
+  /// box widget，包不住 sliver，只能逐格包）。
+  Widget _buildSkeletonGrid(
+    BuildContext context,
+    double width, {
+    bool shimmer = true,
+  }) {
+    final double page = FushiDesignTokens.of(context).spacing.page;
+    const Widget cell = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(child: FushiSkeleton(borderRadius: FushiM3eShape.smallRadius)),
+        SizedBox(height: 10),
+        FushiSkeleton(height: 14),
+        SizedBox(height: 6),
+        FractionallySizedBox(
+          widthFactor: 0.55,
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiSkeleton(height: 12),
+        ),
+      ],
+    );
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: page),
+      sliver: SliverGrid.builder(
+        gridDelegate: _gridDelegate(width),
+        itemCount: 6,
+        itemBuilder: (BuildContext context, int index) =>
+            shimmer ? const FushiSkeletonShimmer(child: cell) : cell,
       ),
     );
   }
@@ -445,73 +541,84 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     final double page = tokens.spacing.page;
     final List<GameStreamLibraryGame> games =
         host.library?.games ?? const <GameStreamLibraryGame>[];
-    return FushiEntranceScope(
-      child: CustomScrollView(
-        slivers: <Widget>[
-          SliverPadding(
-            padding: EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.gap),
-            sliver: SliverList.list(
-              children: <Widget>[
-                if (_hosts.length > 1) _buildHostSwitcher(tokens),
-                _buildHostHeader(context, host),
-                if (_notice != null) _buildNotice(context, _notice!),
-                if (host.sessions.isNotEmpty) ..._buildSessions(context, host),
-                if (host.phase == _HostPhase.ready && games.isNotEmpty)
-                  _sectionLabel(context, t.game_library),
-              ],
-            ),
+    final List<Widget> header = <Widget>[
+      if (_hosts.length > 1) _buildHostSwitcher(tokens),
+      _buildHostHeader(context, host),
+      if (_notice != null) _buildNotice(context, _notice!),
+      if (host.sessions.isNotEmpty) ..._buildSessions(context, host),
+      if (host.phase == _HostPhase.ready && games.isNotEmpty)
+        _sectionLabel(context, t.game_library),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        return FushiEntranceScope(
+          // 切主机 = 换一屏内容，重开进场窗口让新主机的卡同样错峰进场。
+          replayKey: host.key,
+          child: CustomScrollView(
+            slivers: <Widget>[
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.gap),
+                sliver: SliverList.list(
+                  children: <Widget>[
+                    for (int i = 0; i < header.length; i++)
+                      FushiStaggeredEntrance(index: i, child: header[i]),
+                  ],
+                ),
+              ),
+              // 主机在线但库是空的：与本机游戏库同一个共享空态（图标 + 文案）。
+              if (host.phase == _HostPhase.ready && games.isEmpty)
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: page),
+                    child: FushiPlaceholderMessage(
+                      icon: FushiIcons.games,
+                      message: t.game_stream_library_empty,
+                    ),
+                  ),
+                ),
+              // 主机还在连：游戏库位置先放同轮廓骨架，连上后整块换成海报。
+              if (host.phase == _HostPhase.loading && games.isEmpty)
+                SliverPadding(
+                  padding: EdgeInsets.only(top: tokens.spacing.gap),
+                  sliver: _buildSkeletonGrid(context, width),
+                ),
+              if (host.phase == _HostPhase.ready && games.isNotEmpty)
+                SliverPadding(
+                  padding: withBottomSafeInset(
+                    context,
+                    EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.section),
+                  ),
+                  sliver: SliverGrid.builder(
+                    gridDelegate: _gridDelegate(width),
+                    itemCount: games.length,
+                    // 首屏错峰进场（与本机游戏库同一套）；滚动带出的卡瞬间出现。
+                    itemBuilder: fushiStaggeredItemBuilder(
+                      (BuildContext context, int index) =>
+                          _buildGameCard(context, host, games[index]),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          // 主机在线但库是空的：与本机游戏库同一个共享空态（图标 + 文案），
-          // 不再是一行居中灰字。
-          if (host.phase == _HostPhase.ready && games.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: page),
-                child: FushiPlaceholderMessage(
-                  icon: Icons.sports_esports_outlined,
-                  message: t.game_stream_library_empty,
-                ),
-              ),
-            ),
-          if (host.phase == _HostPhase.ready && games.isNotEmpty)
-            SliverPadding(
-              padding: withBottomSafeInset(
-                context,
-                EdgeInsets.fromLTRB(page, 0, page, tokens.spacing.section),
-              ),
-              sliver: SliverGrid.builder(
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 200,
-                  mainAxisSpacing: 20,
-                  crossAxisSpacing: 16,
-                  childAspectRatio: 0.6,
-                ),
-                itemCount: games.length,
-                // 首屏错峰进场（与本机游戏库同一套）；滚动带出的卡瞬间出现。
-                itemBuilder: fushiStaggeredItemBuilder(
-                  (BuildContext context, int index) =>
-                      _buildGameCard(context, host, games[index]),
-                ),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 
   Widget _buildNoHosts(BuildContext context) {
-    // 空态走共享占位件：图标 / 文案 / 行动按钮的层级与两套设计系统的配色
-    // 都由它统一，不再手搓一列 Icon + Text。
+    // 空态走共享占位件（M3E 色块图标 + 弹入），行动按钮是 M3E 中号主按钮。
     return FushiPlaceholderMessage(
-      icon: Icons.cast_connected_outlined,
+      icon: FushiIcons.cast,
       message: t.game_stream_no_hosts,
       action: _services.openInterconnectSettings == null
           ? null
           : FushiFilledButton.icon(
               key: GameStreamLibraryPage.interconnectButtonKey,
               autofocus: true,
+              size: FushiButtonSize.m,
               onPressed: () => unawaited(_openInterconnect()),
-              icon: const FushiIcon(Icons.devices_outlined),
+              icon: const FushiIcon(FushiIcons.devices),
               label: Text(t.game_stream_open_interconnect),
             ),
     );
@@ -538,11 +645,20 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
   }
 
   static IconData _phaseIcon(_HostPhase phase) => switch (phase) {
-    _HostPhase.loading => Icons.more_horiz,
-    _HostPhase.ready => Icons.computer,
-    _HostPhase.outdated => Icons.system_update_alt,
-    _HostPhase.unreachable => Icons.cloud_off_outlined,
-    _HostPhase.rejected => Icons.block,
+    _HostPhase.loading => FushiIcons.sync,
+    _HostPhase.ready => FushiIcons.devices,
+    _HostPhase.outdated => FushiIcons.warning,
+    _HostPhase.unreachable => FushiIcons.cloudOff,
+    _HostPhase.rejected => FushiIcons.block,
+  };
+
+  /// 状态 hero 的饱和色块：在线 primary、连接中 secondary、版本过旧 tertiary、
+  /// 连不上 / 被拒 error（Apple 落到强调色 / 系统色淡染，墨水屏不上色）。
+  static FushiCardTone _phaseTone(_HostPhase phase) => switch (phase) {
+    _HostPhase.ready => FushiCardTone.primary,
+    _HostPhase.loading => FushiCardTone.secondary,
+    _HostPhase.outdated => FushiCardTone.tertiary,
+    _HostPhase.unreachable || _HostPhase.rejected => FushiCardTone.error,
   };
 
   String _phaseLabel(_StreamHost host) => switch (host.phase) {
@@ -555,88 +671,118 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     _HostPhase.rejected => t.game_stream_host_rejected,
   };
 
+  /// 主机状态 hero：整卡是随状态换色的 M3E 饱和色块，主机名走 headline
+  /// 强调字重，连接中给波浪进度，异常时给 tonal 重试按钮。
   Widget _buildHostHeader(BuildContext context, _StreamHost host) {
-    final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
     final bool online = host.phase == _HostPhase.ready;
+    final bool loading = host.phase == _HostPhase.loading;
     final bool launchOff = online && host.library?.launchEnabled == false;
-    // 状态只落在单色图标 / 文字上：MD3 primary / error，Apple accent /
-    // systemRed（墨水屏统一 onSurface，靠图标形状区分）。
-    final Color accent = online
-        ? fushiAccentForeground(context)
-        : host.phase == _HostPhase.loading
-        ? tokens.surfaces.onVariant
-        : fushiStatusColor(context, FushiStatusTone.error);
-    return FushiCard(
-      margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              // 主机图标走中性徽标（MD3 tonal 圆底 / Apple 单色 SF 风格无底），
-              // 状态色只留在下方状态行上，不再给整颗大图标染色。
-              const FushiNeutralIconBadge(
-                icon: Icons.desktop_windows_outlined,
-                size: 44,
-                iconSize: 24,
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final FushiCardTone tone = _phaseTone(host.phase);
+    final Color? onTone = fushiCardToneColors(context, tone)?.onContainer;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide = constraints.maxWidth >= 600;
+        final Widget retry = FushiFilledButton.tonalIcon(
+          size: FushiButtonSize.s,
+          onPressed: _busy ? null : () => unawaited(_refreshHost(host)),
+          icon: const FushiIcon(FushiIcons.refresh),
+          label: Text(t.retry),
+        );
+        return FushiCard(
+          tone: tone,
+          margin: EdgeInsets.only(bottom: tokens.spacing.gap),
+          padding: EdgeInsets.all(wide ? 24 : 20),
+          child: AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: AlignmentDirectional.topStart,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
                   children: <Widget>[
-                    Text(
-                      host.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    _HostHeroBadge(
+                      icon: _phaseIcon(host.phase),
+                      tone: tone,
+                      online: online,
+                      size: wide ? 64 : 52,
                     ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: <Widget>[
-                        FushiIcon(_phaseIcon(host.phase), size: 14, color: accent),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            _phaseLabel(host),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: accent,
+                    SizedBox(width: wide ? 20 : 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            host.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                (wide
+                                        ? type.headlineMediumEmphasized
+                                        : type.headlineSmallEmphasized)
+                                    .copyWith(color: onTone),
+                          ),
+                          const SizedBox(height: 4),
+                          // 状态文案换状态时淡入淡出（effects 弹簧，不过冲）。
+                          AnimatedSwitcher(
+                            duration: motion.effectsDefault.duration,
+                            switchInCurve: motion.effectsDefault.curve,
+                            switchOutCurve: motion.effectsDefault.curve,
+                            layoutBuilder: _startAlignedLayout,
+                            child: Text(
+                              _phaseLabel(host),
+                              key: ValueKey<_HostPhase>(host.phase),
+                              style: type.titleMedium.copyWith(color: onTone),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
+                    if (!online && !loading && wide) ...<Widget>[
+                      const SizedBox(width: 12),
+                      retry,
+                    ],
                   ],
                 ),
-              ),
-              if (host.phase == _HostPhase.loading)
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              else if (host.phase != _HostPhase.ready)
-                FushiTextButton(
-                  onPressed: _busy ? null : () => unawaited(_refreshHost(host)),
-                  child: Text(t.retry),
-                ),
-            ],
-          ),
-          if (launchOff) ...<Widget>[
-            const SizedBox(height: 10),
-            Text(
-              t.game_stream_host_launch_off,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: tokens.surfaces.onVariant,
-              ),
+                if (loading) ...<Widget>[
+                  const SizedBox(height: 16),
+                  const FushiLinearProgressIndicator(),
+                ],
+                if (!online && !loading && !wide) ...<Widget>[
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: retry,
+                  ),
+                ],
+                if (launchOff) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    t.game_stream_host_launch_off,
+                    style: type.bodyMedium.copyWith(color: onTone),
+                  ),
+                ],
+              ],
             ),
-          ],
-        ],
-      ),
+          ),
+        );
+      },
+    );
+  }
+
+  static Widget _startAlignedLayout(
+    Widget? currentChild,
+    List<Widget> previousChildren,
+  ) {
+    return Stack(
+      alignment: AlignmentDirectional.centerStart,
+      children: <Widget>[
+        ...previousChildren,
+        if (currentChild != null) currentChild,
+      ],
     );
   }
 
@@ -661,26 +807,35 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     );
   }
 
+  /// 「正在串流」：M3E 分段列表（组首尾大圆角、行间细缝、悬停 / 按下形变），
+  /// 行首 primary 色块图标，行尾是中号主按钮「加入」。
   List<Widget> _buildSessions(BuildContext context, _StreamHost host) {
     return <Widget>[
       _sectionLabel(context, t.game_stream_active_sessions),
-      for (final GameStreamSession session in host.sessions)
-        FushiCard(
-          key: GameStreamLibraryPage.sessionKey(session.sessionId),
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: EdgeInsets.zero,
-          child: FushiListItem(
-            focusId: FushiFocusId('game-stream-session-${session.sessionId}'),
-            leading: const FushiNeutralIconBadge(icon: Icons.cast, size: 36),
-            title: Text(session.gameTitle ?? t.game_stream_available),
-            subtitle: Text(host.name),
-            trailing: FushiFilledButton(
-              onPressed: _busy ? null : () => unawaited(_join(host, session)),
-              child: Text(t.game_stream_join_action),
+      FushiGroupedList(
+        padding: const EdgeInsets.only(bottom: 8),
+        children: <Widget>[
+          for (final GameStreamSession session in host.sessions)
+            FushiListItem(
+              key: GameStreamLibraryPage.sessionKey(session.sessionId),
+              focusId: FushiFocusId('game-stream-session-${session.sessionId}'),
+              leading: const FushiListLeadingIcon(
+                FushiIcons.cast,
+                shape: FushiLeadingShape.cookie,
+                tone: FushiCardTone.primary,
+              ),
+              title: Text(session.gameTitle ?? t.game_stream_available),
+              subtitle: Text(host.name),
+              trailing: FushiFilledButton.icon(
+                size: FushiButtonSize.m,
+                onPressed: _busy ? null : () => unawaited(_join(host, session)),
+                icon: const FushiIcon(FushiIcons.play),
+                label: Text(t.game_stream_join_action),
+              ),
+              onTap: _busy ? null : () => unawaited(_join(host, session)),
             ),
-            onTap: _busy ? null : () => unawaited(_join(host, session)),
-          ),
-        ),
+        ],
+      ),
     ];
   }
 
@@ -722,7 +877,73 @@ class _RunningBadge extends StatelessWidget {
     // 与书架 / 视频卡的封面角标同一形态（深色胶囊；Apple 磨砂），不再铺整块
     // primary 彩色底（角标底随主题反相，语义绿在浅色主题的深底上对比不够，
     // 保持角标前景色）。
-    return CoverBadge(icon: Icons.play_arrow, label: t.game_stream_running);
+    return CoverBadge(icon: FushiIcons.play, label: t.game_stream_running);
+  }
+}
+
+/// 状态 hero 的行首形状徽标。M3E：在线 = 四瓣 cookie、其余 = 圆，底色取
+/// 色块的 onContainer、图标取 container（在饱和底上反相，最醒目）；换状态时
+/// spring 弹入。Apple / 墨水屏交给 [FushiListLeadingIcon] 的系统形态。
+class _HostHeroBadge extends StatelessWidget {
+  const _HostHeroBadge({
+    required this.icon,
+    required this.tone,
+    required this.online,
+    required this.size,
+  });
+
+  final IconData icon;
+  final FushiCardTone tone;
+  final bool online;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiMotionScheme motion = context.fushiMotion;
+    final FushiCardColors? colors = fushiCardToneColors(context, tone);
+    final FushiLeadingShape shape = online
+        ? FushiLeadingShape.cookie
+        : FushiLeadingShape.circle;
+    final Widget badge;
+    final Color? background = colors?.onContainer;
+    if (isGlassDesign(context) || colors == null || background == null) {
+      badge = FushiListLeadingIcon(
+        icon,
+        shape: shape,
+        tone: tone,
+        size: size,
+        iconSize: size * 0.5,
+      );
+    } else {
+      badge = SizedBox.square(
+        dimension: size,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: background,
+            shape: fushiLeadingShapeBorder(shape),
+          ),
+          child: Center(
+            child: FushiIcon(icon, size: size * 0.5, color: colors.container),
+          ),
+        ),
+      );
+    }
+    // 切换曲线用 effects（临界阻尼、不过冲）：同一条动画还驱动透明度，
+    // 过冲会让 opacity 越界。
+    return AnimatedSwitcher(
+      duration: motion.effectsDefault.duration,
+      switchInCurve: motion.effectsDefault.curve,
+      switchOutCurve: motion.effectsDefault.curve,
+      transitionBuilder: (Widget child, Animation<double> animation) =>
+          ScaleTransition(
+            scale: Tween<double>(begin: 0.6, end: 1).animate(animation),
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+      child: KeyedSubtree(
+        key: ValueKey<Object>(Object.hash(icon, tone)),
+        child: badge,
+      ),
+    );
   }
 }
 
@@ -752,9 +973,7 @@ class _GameStreamCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const Widget placeholder = ShelfCoverPlaceholder(
-      icon: Icons.sports_esports_outlined,
-    );
+    const Widget placeholder = ShelfCoverPlaceholder(icon: FushiIcons.games);
     if (!hasCover) return placeholder;
     return FutureBuilder<Uint8List?>(
       future: _bytes(),
@@ -928,25 +1147,32 @@ class _GameStreamLaunchDialogState extends State<_GameStreamLaunchDialog> {
             ),
           ),
           const SizedBox(height: 16),
-          if (failure == null)
-            Row(
-              children: <Widget>[
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2.5),
-                ),
-                const SizedBox(width: 16),
-                Expanded(child: Text(_stepLabel)),
-              ],
-            )
-          else
-            Text(
-              failure,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: fushiStatusColor(context, FushiStatusTone.error),
-              ),
-            ),
+          // M3E：步骤文案走 title 强调字重，下面一条波浪进度（不定进度——
+          // 主机启动耗时不可预估，分段百分比会骗人）；失败原地换成错误横幅。
+          AnimatedSwitcher(
+            duration: context.fushiMotion.effectsDefault.duration,
+            switchInCurve: context.fushiMotion.effectsDefault.curve,
+            switchOutCurve: context.fushiMotion.effectsDefault.curve,
+            child: failure == null
+                ? Column(
+                    key: const ValueKey<String>('launch-progress'),
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        _stepLabel,
+                        style: context.fushiType.titleMediumEmphasized,
+                      ),
+                      const SizedBox(height: 16),
+                      const FushiLinearProgressIndicator(),
+                    ],
+                  )
+                : FushiInlineNotice(
+                    key: const ValueKey<String>('launch-failure'),
+                    message: failure,
+                    severity: FushiNoticeSeverity.error,
+                  ),
+          ),
         ],
       ),
       actions: <Widget>[
