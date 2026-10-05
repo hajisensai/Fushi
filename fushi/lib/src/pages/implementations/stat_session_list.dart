@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
@@ -92,57 +94,49 @@ Widget buildStatSessionSection(
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final List<StudySession> shown =
       sessions.length <= limit ? sessions : sessions.sublist(0, limit);
-  return Padding(
-    padding: EdgeInsets.fromLTRB(
-      tokens.spacing.card,
-      tokens.spacing.card + tokens.spacing.gap,
-      tokens.spacing.card,
-      0,
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  // 2026-10 统计中心重设计：会话区块是一张与图表卡同形的 [StatSectionCard]
+  // （卡头 = 图标 + 标题 + 「全部」/「清除」动作），不再是裸在页面底色上的列表。
+  return StatSectionCard(
+    key: const ValueKey<String>('stat-sessions-section'),
+    icon: Icons.history,
+    title: t.stat_sessions_recent,
+    // 窄屏时两颗动作按钮自己换行（卡头给行尾的宽度有限）。
+    trailing: Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              child: Text(
-                t.stat_sessions_recent,
-                style: statSectionTitleStyle(context),
-              ),
-            ),
-            if (sessions.length > shown.length)
-              FushiTextButton(
-                onPressed: () => unawaited(
-                  showStatSessionsSheet(
-                    context,
-                    title: t.stat_sessions_show_all,
-                    sessions: sessions,
-                    titleOf: titleOf,
-                    collectionOf: collectionOf,
-                    coverOf: coverOf,
-                    onDelete: onDelete,
-                    onEdit: onEdit,
-                    onClearAll: onClearAll,
-                  ),
-                ),
-                child: Text('${t.stat_sessions_show_all} (${sessions.length})'),
-              ),
-            // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
-            // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
-            if (sessions.isNotEmpty)
-              _StatSessionsClearAllButton(
+        if (sessions.length > shown.length)
+          FushiTextButton(
+            onPressed: () => unawaited(
+              showStatSessionsSheet(
+                context,
+                title: t.stat_sessions_show_all,
                 sessions: sessions,
+                titleOf: titleOf,
+                collectionOf: collectionOf,
+                coverOf: coverOf,
+                onDelete: onDelete,
+                onEdit: onEdit,
                 onClearAll: onClearAll,
               ),
-          ],
-        ),
-        if (shown.isEmpty)
-          Padding(
+            ),
+            child: Text('${t.stat_sessions_show_all} (${sessions.length})'),
+          ),
+        // 清的是**这一页拿到的整批**会话（域 tab = 本域全部，总览 = 跨域全部），
+        // 不是屏幕上截断显示的那 8 条——按钮文案与防呆勾选项复述的都是 N。
+        if (sessions.isNotEmpty)
+          _StatSessionsClearAllButton(
+            sessions: sessions,
+            onClearAll: onClearAll,
+          ),
+      ],
+    ),
+    child: shown.isEmpty
+        ? Padding(
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
             child: Text(t.stat_sessions_empty, style: tokens.type.metadata),
           )
-        else
-          StatSessionList(
+        : StatSessionList(
             sessions: shown,
             titleOf: titleOf,
             collectionOf: collectionOf,
@@ -150,8 +144,6 @@ Widget buildStatSessionSection(
             onDelete: onDelete,
             onEdit: onEdit,
           ),
-      ],
-    ),
   );
 }
 
@@ -198,6 +190,7 @@ class StatSessionList extends StatefulWidget {
     this.collectionOf,
     this.coverOf,
     this.onDeleted,
+    this.staggered = false,
     super.key,
   });
 
@@ -218,6 +211,9 @@ class StatSessionList extends StatefulWidget {
   /// 每删掉一行 / 改完一行后回调（sheet 用它记「动过」让调用方关 sheet 后重聚合）。
   final VoidCallback? onDeleted;
 
+  /// 行错峰进场（sheet 打开时用；页面区块整卡已在页面的错峰序列里，不再逐行）。
+  final bool staggered;
+
   @override
   State<StatSessionList> createState() => _StatSessionListState();
 }
@@ -237,9 +233,7 @@ class _StatSessionListState extends State<StatSessionList> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
+    final List<Widget> rows = <Widget>[
         for (final StudySession s in _rows)
           FushiListItem(
             key: ValueKey<String>(s.key),
@@ -267,8 +261,21 @@ class _StatSessionListState extends State<StatSessionList> {
               onPressed: () => unawaited(_confirmAndDelete(s)),
             ),
           ),
+    ];
+    final Widget list = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < rows.length; i++)
+          widget.staggered
+              ? FushiStaggeredEntrance(
+                  key: rows[i].key,
+                  index: i,
+                  child: rows[i],
+                )
+              : rows[i],
       ],
     );
+    return widget.staggered ? FushiEntranceScope(child: list) : list;
   }
 
   Widget _buildLeading(StudySession s, ColorScheme colors) {
@@ -382,25 +389,23 @@ Future<bool> showStatSessionsSheet(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(title, style: tokens.type.sectionLabel),
-                  ),
-                  if (sessions.isNotEmpty)
-                    _StatSessionsClearAllButton(
-                      sessions: sessions,
-                      onClearAll: (List<StudySession> batch) async {
-                        touched = true;
-                        await onClearAll(batch);
-                        if (sheetContext.mounted) {
-                          Navigator.of(sheetContext).pop();
-                        }
-                      },
-                    ),
-                ],
+              StatSheetHeader(
+                title: title,
+                subtitle: t.stat_sessions_count(n: sessions.length),
+                trailing: sessions.isEmpty
+                    ? null
+                    : _StatSessionsClearAllButton(
+                        sessions: sessions,
+                        onClearAll: (List<StudySession> batch) async {
+                          touched = true;
+                          await onClearAll(batch);
+                          if (sheetContext.mounted) {
+                            Navigator.of(sheetContext).pop();
+                          }
+                        },
+                      ),
               ),
-              SizedBox(height: tokens.spacing.gap / 2),
+              SizedBox(height: tokens.spacing.gap),
               if (sessions.isEmpty)
                 Text(t.stat_sessions_empty, style: tokens.type.metadata)
               else
@@ -412,6 +417,7 @@ Future<bool> showStatSessionsSheet(
                   onDelete: onDelete,
                   onEdit: onEdit,
                   onDeleted: () => touched = true,
+                  staggered: true,
                 ),
             ],
           ),

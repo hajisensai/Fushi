@@ -4,95 +4,83 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-/// TODO-1046 守卫（static wiring）：统计页的日/周阅读目标卡片。
+/// TODO-1046 守卫（static wiring）：统计页的日/周阅读目标。
 ///
 /// 该页需要完整 AppModel（DB + prefsRepo）初始化才能真装配，widget 装配成本高，
 /// 因此按计划降级为源码 wiring 守卫（照 home_video_statistics_entry_static_test）。
-/// 纯函数行为（封顶/关闭/达成）已由 test/pages/stat_goal_test.dart 直测；这里只坐实：
-///   1) 目标卡 sliver 已接入 _buildContent（紧跟 summary cards）；
-///   2) 两目标都 0 时 return SizedBox.shrink()（never-break 红线：零视觉变化）；
-///   3) 进度条经纯函数 goalProgressFraction/goalReached 驱动，达成换 tertiary 色；
-///   4) 编辑入口是 edit 图标按钮，写 pref 后 setState 即时刷新。
+/// 纯函数行为（封顶/关闭/达成）已由 test/pages/stat_goal_test.dart 直测，目标面板
+/// 的渲染由 test/pages/stat_overview_test.dart 直测；这里只坐实：
+///   1) 2026-10 统计中心重设计后目标是关键指标区的 lead（共享 [StatGoalPanel]，
+///      与总览同一个组件），喂日 / 周两个目标与学习域分子（BUG-1993）；
+///   2) 两目标都 0 时面板显示「设定目标」引导而不是整块消失（总览同款）；
+///   3) 周进度条经纯函数 goalProgressFraction/goalReached 驱动，达成换 reached 色；
+///   4) 整张面板可点进目标编辑，写 pref 后 setState 即时刷新。
 void main() {
   final File src =
       File('lib/src/pages/implementations/reading_statistics_page.dart');
+  final File dashboard =
+      File('lib/src/pages/implementations/stat_dashboard.dart');
 
-  test('goal card sliver is wired right after the summary cards', () {
-    final String text = src.readAsStringSync();
-    expect(
-      text.contains('SliverToBoxAdapter(child: _buildGoalPanel())'),
-      isTrue,
-      reason: '目标卡应作为独立 sliver 接入 _buildContent',
-    );
-    final int summaryIdx =
-        text.indexOf('SliverToBoxAdapter(child: _buildSummaryCards())');
-    final int goalIdx =
-        text.indexOf('SliverToBoxAdapter(child: _buildGoalPanel())');
-    expect(summaryIdx, greaterThanOrEqualTo(0));
-    expect(goalIdx, greaterThan(summaryIdx),
-        reason: '目标卡 sliver 应紧接在 summary cards 之后');
-  });
-
-  test('goal card hides entirely when both goals are 0 (never-break red line)',
+  test('goal panel is the hero lead, fed both goals and study-domain numerators',
       () {
-    final String text = src.readAsStringSync();
-    final int start = text.indexOf('Widget _buildGoalPanel()');
-    expect(start, greaterThanOrEqualTo(0), reason: '应定义 _buildGoalPanel');
-    final String body = text.substring(start, start + 400);
-    expect(body.contains('dailyGoal <= 0 && weeklyGoal <= 0'), isTrue,
-        reason: '两目标皆 0 才隐藏');
-    expect(body.contains('return const SizedBox.shrink()'), isTrue,
-        reason: '两目标皆 0 -> SizedBox.shrink()，默认零视觉变化');
+    final String content =
+        methodBody(src.readAsStringSync(), 'Widget _buildContent()');
+    final int hero = content.indexOf('StatHero(');
+    final int goal = content.indexOf('lead: StatGoalPanel(');
+    expect(hero, greaterThanOrEqualTo(0), reason: '阅读页应有关键指标区');
+    expect(goal, greaterThan(hero), reason: '目标面板是指标区的 lead');
+    for (final String arg in <String>[
+      'goalChars: appModelNoUpdate.readingGoalDailyChars',
+      'progressChars: _todayStudyChars',
+      'weeklyGoalChars: appModelNoUpdate.readingGoalWeeklyChars',
+      'weeklyProgressChars: _weekStudyChars',
+      '_editGoals',
+    ]) {
+      expect(content.contains(arg), isTrue, reason: '目标面板缺 $arg');
+    }
   });
 
-  test('goal row uses the pure fraction/reached helpers', () {
-    final String text = src.readAsStringSync();
-    // _buildGoalRow 是本文件唯一使用这些 goal 纯函数/文案的地方，用全文件 contains
-    // 断言更稳（CJK 注释使窗口偏移不可靠）。
-    expect(text.contains('Widget _buildGoalRow('), isTrue,
-        reason: '应定义 _buildGoalRow');
+  test('both goals 0 shows the set-goal guide instead of hiding', () {
+    final String text = dashboard.readAsStringSync();
+    final int start = text.indexOf('class StatGoalPanel extends StatelessWidget');
+    final int end = text.indexOf('class _StatWeeklyGoalBar', start);
+    expect(start, greaterThanOrEqualTo(0));
+    final String panel = text.substring(start, end);
+    expect(panel.contains('goalChars <= 0 && weeklyGoalChars <= 0'), isTrue,
+        reason: '两目标皆 0 才进引导态');
+    expect(panel.contains('t.stat_overview_goal_unset'), isTrue);
+    expect(panel.contains('onTap: onTap'), isTrue, reason: '整卡可点进目标编辑');
+  });
+
+  test('weekly bar uses the pure fraction/reached helpers', () {
+    final String text = dashboard.readAsStringSync();
     expect(text.contains('goalProgressFraction(read, goal)'), isTrue,
         reason: '进度条 value 应来自纯函数 goalProgressFraction');
     expect(text.contains('goalReached(read, goal)'), isTrue,
         reason: '达成判定应来自纯函数 goalReached');
     expect(text.contains('LinearProgressIndicator('), isTrue);
-    // 统计配色收口进 StatChartColors（MD3 下 reached = tertiary，Apple 下为
-    // systemGreen）：达成后进度条换「达成」色，MD3 口径仍是 tertiary。
-    expect(
-        text.contains(
-            'reached ? chartColors.reached : chartColors.series'),
-        isTrue,
-        reason: '达成后进度条换 tertiary 色');
+    expect(text.contains('reached ? colors.reached : colors.series'), isTrue,
+        reason: '达成后换「达成」色');
     final String shared =
         File('lib/src/pages/implementations/stat_shared.dart')
             .readAsStringSync();
     expect(shared.contains('reached: scheme.tertiary,'), isTrue,
-        reason: '达成后进度条换 tertiary 色（MD3 配色）');
+        reason: '达成色在 MD3 下是 tertiary');
     expect(text.contains('t.stat_goal_reached'), isTrue,
         reason: '达成时展示 stat_goal_reached 文案');
-    expect(
-        text.contains('t.stat_goal_progress(read: read, goal: goal)'), isTrue,
+    expect(text.contains('t.stat_goal_progress(read: read, goal: goal)'), isTrue,
         reason: '"已读 / 目标" 文案走带占位符 i18n key');
   });
 
-  test('edit entry is an edit icon button that persists then setState', () {
+  test('edit goals persists via the shared dialog then setState', () {
     final String text = src.readAsStringSync();
-    // 目标卡右上编辑入口。
-    expect(text.contains('icon: Icons.edit'), isTrue,
-        reason: '编辑入口应为 edit 图标按钮');
-    expect(text.contains('onTap: _editGoals'), isTrue,
-        reason: '编辑按钮应调 _editGoals');
     expect(text.contains('Future<void> _editGoals()'), isTrue,
         reason: '应定义 _editGoals');
-    // 表单本体已提成统计页共享件：统计中心总览 tab 编辑的是同一个持久化目标，
-    // 两处各写一份的话单位/清零语义/校验一改就只改到一处。本页因此只剩「调共享
-    // 对话框 → setState 即时刷新卡片」两步，持久化写入的落点随之搬到
-    // stat_shared.dart（由下一条守卫钉死那边是唯一落点）。
     final String editGoals = methodBody(text, 'Future<void> _editGoals()');
     expect(editGoals.contains('showStatGoalEditDialog(context'), isTrue,
         reason: '_editGoals 应调统计页共享目标对话框');
     expect(editGoals.contains('setState(() {})'), isTrue,
-        reason: '保存后 setState 即时刷新卡片');
+        reason: '保存后 setState 即时刷新面板');
   });
 
   test('shared goal dialog is the single place that persists both goals', () {
@@ -110,8 +98,8 @@ void main() {
   test('BUG-970: goal-set entry lives in the page top bar, always reachable',
       () {
     final String text = src.readAsStringSync();
-    // 目标卡在两目标皆 0 时整块隐藏（上一个测试的 never-break 红线），因此设置
-    // 入口必须常驻页面顶栏 actions，否则从未设过目标的用户无法首次设置。守卫：
+    // 目标入口必须常驻页面顶栏 actions（目标面板只在内容区，加载 / 出错时不在），
+    // 否则从未设过目标的用户可能无法首次设置。守卫：
     //   1) 顶栏有 flag 图标按钮，onTap 直接调 _editGoals；
     //   2) 该按钮位于 scaffold actions（在 body: 之前）；
     //   3) 顶栏入口不被任何 dailyGoal/weeklyGoal 条件包裹（恒可见）。
