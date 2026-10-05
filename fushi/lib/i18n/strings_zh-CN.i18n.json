@@ -6684,5 +6684,17 @@
   "font_target_app_ui_short": "界面",
   "font_target_dictionary_short": "查词",
   "font_target_video_subtitle_short": "字幕",
-  "font_target_game_lookup_short": "游戏"
+  "font_target_game_lookup_short": "游戏",
+  "import_drop_zone_title": "导入到库里",
+  "import_drop_zone_hint": "选择文件或文件夹；也可以把文件直接拖进库页。",
+  "import_supported_formats": "支持格式",
+  "import_methods_title": "导入方式",
+  "media_source_list_empty": "还没有常驻来源。添加文件夹或网络共享后会自动扫描。",
+  "online_sources_pinned_header": "已置顶",
+  "online_sources_all_header": "全部来源",
+  "online_sources_filter_all": "全部",
+  "online_sources_filter_enabled": "已启用",
+  "online_sources_filter_disabled": "已停用",
+  "extension_filter_all_stores": "全部仓库",
+  "extension_update_available": "可更新"
 }

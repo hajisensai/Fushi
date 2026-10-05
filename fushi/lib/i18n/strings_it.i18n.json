@@ -6684,5 +6684,17 @@
   "font_target_app_ui_short": "Interface",
   "font_target_dictionary_short": "Dictionary",
   "font_target_video_subtitle_short": "Subtitles",
-  "font_target_game_lookup_short": "Game"
+  "font_target_game_lookup_short": "Game",
+  "import_drop_zone_title": "Add to your library",
+  "import_drop_zone_hint": "Choose files or a folder. You can also drag files straight onto the library page.",
+  "import_supported_formats": "Supported formats",
+  "import_methods_title": "Ways to import",
+  "media_source_list_empty": "No library sources yet. Add a folder or a network share and it will be scanned automatically.",
+  "online_sources_pinned_header": "Pinned",
+  "online_sources_all_header": "All sources",
+  "online_sources_filter_all": "All",
+  "online_sources_filter_enabled": "Enabled",
+  "online_sources_filter_disabled": "Disabled",
+  "extension_filter_all_stores": "All repositories",
+  "extension_update_available": "Update available"
 }
