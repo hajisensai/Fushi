@@ -20,6 +20,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -391,13 +393,86 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
   }
 }
 
-/// 右侧抽屉外壳：标题行（标题 + 关闭 ×）+ 可选固定页头 [bottom] + 内容。
+/// 阅读器面板的呈现形态：宽窗贴边侧板，窄窗（手机竖屏）底部 sheet。
+enum ReaderPanelPresentation { side, bottom }
+
+/// 窄于此宽度（逻辑 px，MD3 compact window class 的上界）时，开启了
+/// `bottomSheetWhenCompact` 的面板改从底部升起：手机竖屏上 400px 的侧板会把正文
+/// 压成一条 48px 的缝，底部 sheet 保留上方一截正文可见、单手也够得着。
+const double kReaderPanelCompactWidth = 600;
+
+/// 面板的形态判据（纯函数，供测试）：只有调用方允许、且窗口窄于
+/// [kReaderPanelCompactWidth] 时才是底部 sheet。
+ReaderPanelPresentation readerPanelPresentationFor(
+  Size window, {
+  required bool bottomSheetWhenCompact,
+}) {
+  if (bottomSheetWhenCompact && window.width < kReaderPanelCompactWidth) {
+    return ReaderPanelPresentation.bottom;
+  }
+  return ReaderPanelPresentation.side;
+}
+
+/// 底部 sheet 的高度：可用高度（扣掉键盘与顶部安全区、再留一截正文可见）与
+/// 窗高 [kReaderPanelBottomSheetHeightFraction] 取小。
+const double kReaderPanelBottomSheetHeightFraction = 0.86;
+
+/// 底部 sheet 顶上至少留出的正文高度（逻辑 px），点它即关。
+const double kReaderPanelBottomSheetTopGap = 48;
+
+/// 底部 sheet 的最大宽度：横向更宽的窄窗（如 580 宽的分屏）不铺满整行。
+const double kReaderPanelBottomSheetMaxWidth = 640;
+
+double readerPanelBottomSheetHeight({
+  required double windowHeight,
+  required double topPadding,
+  required double keyboardInset,
+}) {
+  final double available =
+      windowHeight - keyboardInset - topPadding - kReaderPanelBottomSheetTopGap;
+  final double preferred = windowHeight * kReaderPanelBottomSheetHeightFraction;
+  return available < preferred ? (available < 0 ? 0 : available) : preferred;
+}
+
+/// 面板内容拿得到的呈现上下文（[ReaderSideSheet] 据此画拖动把手、
+/// [ReaderSettingsSideButton] 在底部 sheet 下隐藏左右换边键）。
+class ReaderPanelScope extends InheritedWidget {
+  const ReaderPanelScope({
+    super.key,
+    required this.presentation,
+    required super.child,
+  });
+
+  final ReaderPanelPresentation presentation;
+
+  bool get isBottomSheet => presentation == ReaderPanelPresentation.bottom;
+
+  static ReaderPanelPresentation of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<ReaderPanelScope>()
+          ?.presentation ??
+      ReaderPanelPresentation.side;
+
+  @override
+  bool updateShouldNotify(ReaderPanelScope oldWidget) =>
+      presentation != oldWidget.presentation;
+}
+
+/// 阅读器面板外壳（导航 / 设置 / 统计 / 有声书共用）：页头（可选图标徽标 +
+/// 标题 + 副标题 + 动作 + 关闭 ×）+ 可选固定页头 [bottom] + 内容。
+///
+/// M3 Expressive 页头：标题 titleLarge、副标题给上下文（书名 / 当前章），
+/// 图标走中性徽标（[FushiNeutralIconBadge]，不铺彩色 tonal 底，见
+/// fushi_neutral_decor.dart 的规则）。底部 sheet 形态在页头上方多一条拖动把手
+/// （向下拖动关闭）。颜色全部取 context 主题，歌词模式注入的封面取色主题照常生效。
 class ReaderSideSheet extends StatelessWidget {
   const ReaderSideSheet({
     super.key,
     required this.title,
     required this.child,
     required this.onClose,
+    this.subtitle,
+    this.icon,
     this.padding = defaultPadding,
     this.headerActions = const <Widget>[],
     this.bottom,
@@ -408,6 +483,12 @@ class ReaderSideSheet extends StatelessWidget {
   static const EdgeInsets defaultPadding = EdgeInsets.fromLTRB(20, 4, 20, 24);
 
   final String title;
+
+  /// 标题下一行的上下文（书名、当前章）；null / 空串不画。
+  final String? subtitle;
+
+  /// 页头左侧的中性图标徽标；null 不画。
+  final IconData? icon;
   final Widget child;
   final VoidCallback onClose;
   final EdgeInsets padding;
@@ -423,20 +504,53 @@ class ReaderSideSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final bool glass = isGlassDesign(context);
+    final String? sub = subtitle?.trim();
+    final bool bottomSheet =
+        ReaderPanelScope.of(context) == ReaderPanelPresentation.bottom;
+    final TextStyle? titleStyle = (glass
+            ? theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)
+            : theme.textTheme.titleLarge)
+        ?.copyWith(color: fushiNeutralBlockForeground(context));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (bottomSheet) const _ReaderPanelDragHandle(),
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 8, 4),
+          padding: EdgeInsets.fromLTRB(20, bottomSheet ? 4 : 14, 8, 6),
           child: Row(
             children: <Widget>[
+              if (icon != null) ...<Widget>[
+                FushiNeutralIconBadge(
+                  key: const ValueKey<String>('fushi_side_sheet_icon'),
+                  icon: icon!,
+                  size: 36,
+                ),
+                const SizedBox(width: 12),
+              ],
               Expanded(
-                child: Text(
-                  title,
-                  key: const ValueKey<String>('fushi_side_sheet_title'),
-                  style: theme.textTheme.titleMedium,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      key: const ValueKey<String>('fushi_side_sheet_title'),
+                      style: titleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (sub != null && sub.isNotEmpty)
+                      Text(
+                        sub,
+                        key: const ValueKey<String>('fushi_side_sheet_subtitle'),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: fushiNeutralSecondaryForeground(context),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
                 ),
               ),
               ...headerActions,
@@ -459,6 +573,38 @@ class ReaderSideSheet extends StatelessWidget {
               : child,
         ),
       ],
+    );
+  }
+}
+
+/// 底部 sheet 顶端的拖动把手（MD3 drag handle：32×4、onSurfaceVariant 40%）。
+/// 只是视觉提示 + 语义按钮；拖动关闭由路由外层的手势承担。
+class _ReaderPanelDragHandle extends StatelessWidget {
+  const _ReaderPanelDragHandle();
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeFocus(
+      child: Semantics(
+        button: true,
+        label: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        onTap: () => Navigator.of(context).maybePop(),
+        child: SizedBox(
+          key: const ValueKey<String>('fushi_side_sheet_drag_handle'),
+          height: 22,
+          child: Center(
+            child: Container(
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: fushiNeutralSecondaryForeground(context)
+                    .withValues(alpha: 0.4),
+                borderRadius: const BorderRadius.all(Radius.circular(2)),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -505,18 +651,28 @@ bool readerWebViewPointerClosesSideSheet({
 }) =>
     sideSheetOpen && !readerRouteIsCurrent;
 
-/// 从左或右贴边滑出一条全高抽屉路由。遮罩透明（正文照常可见），点抽屉外空白即关。
+/// 从左或右贴边滑出一条全高面板路由；[bottomSheetWhenCompact] 为 true 且窗口
+/// 窄于 [kReaderPanelCompactWidth] 时改从底部升起（[ReaderPanelPresentation]）。
 ///
-/// 用**路由**而非页内 Stack 叠层：抽屉里有输入框（书内搜索 / 按字数跳转），焦点
+/// 侧板遮罩透明（正文照常可见，ッツ 形态），点面板外空白即关；底部 sheet 盖住
+/// 大半屏，给一层静态 scrim（MD3 modal sheet 的 32% scrim）。两种形态都**不**对
+/// 背后的 WebView 平台视图做 BackdropFilter 实时模糊——平台视图上逐帧重采样在
+/// Android 上掉帧（BUG-969 同一机制），层次只靠表面色阶、圆角与 elevation。
+///
+/// 用**路由**而非页内 Stack 叠层：面板里有输入框（书内搜索 / 按字数跳转），焦点
 /// 需要真正离开正文；走路由让焦点体系与既有的居中设置对话框完全一致
-/// （focus-ownership.md 的 overlay 语义），不引入新的焦点所有者。
+/// （focus-ownership.md 的 overlay 语义），不引入新的焦点所有者。关闭后由调用方
+/// 经 `PageFocusOwnership.guardOverlay` 把焦点还给正文。
+///
+/// 动效：进场 [FushiMotion.long] + emphasized decelerate 滑入并淡入，退场
+/// emphasized accelerate；墨水屏 / 系统「减弱动态效果」下瞬时开合。
 Future<T?> showReaderSideSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   ReaderSideSheetSide side = ReaderSideSheetSide.right,
   ValueListenable<ReaderSideSheetSide>? sideController,
+  bool bottomSheetWhenCompact = false,
 }) {
-  final bool left = side == ReaderSideSheetSide.left;
   // showGeneralDialog 不像 showDialog 那样捕获主题：抽屉只会拿到 Navigator 层
   // 的根主题。歌词模式把整页换成封面取色主题（LyricsThemeHost），从页面 context
   // 打开的导航 / 设置 / 有声书 / 统计抽屉必须跟着它走，所以在这里补捕获。
@@ -524,57 +680,41 @@ Future<T?> showReaderSideSheet<T>({
     from: context,
     to: Navigator.of(context).context,
   );
+  final bool motion = fushiMotionEnabled(context);
+  final ReaderPanelPresentation openedAs = readerPanelPresentationFor(
+    MediaQuery.sizeOf(context),
+    bottomSheetWhenCompact: bottomSheetWhenCompact,
+  );
+  ReaderPanelPresentation presentationOf(BuildContext ctx) =>
+      readerPanelPresentationFor(
+        MediaQuery.sizeOf(ctx),
+        bottomSheetWhenCompact: bottomSheetWhenCompact,
+      );
   return showGeneralDialog<T>(
     context: context,
     barrierDismissible: true,
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    barrierColor: Colors.transparent,
-    transitionDuration: const Duration(milliseconds: 180),
+    barrierColor: openedAs == ReaderPanelPresentation.bottom
+        ? Theme.of(context).colorScheme.scrim.withValues(alpha: 0.32)
+        : Colors.transparent,
+    transitionDuration: motion ? FushiMotion.long : Duration.zero,
     pageBuilder: (BuildContext route, Animation<double> a, Animation<double> b) {
       Widget buildSheet(BuildContext ctx) {
-        final double width = readerSideSheetWidth(MediaQuery.sizeOf(ctx).width);
-        final Widget panel = SizedBox(
-          width: width,
-          height: double.infinity,
-          child: Material(
-            key: const ValueKey<String>('fushi_reader_side_sheet'),
-            // 抽屉底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
-            // （secondaryGroupedBackground）才浮得出来；MD3 = surfaceContainerLow
-            // （Expressive 侧边面板），分组卡 surfaceContainer 比它高一级。墨水屏
-            // 两者都塌成底色，描一圈 outline 切出抽屉。
-            color: isGlassDesign(ctx)
-                ? appleColorsOf(ctx).groupedBackground
-                : Theme.of(ctx).colorScheme.surfaceContainerLow,
-            shape: isEinkTheme(ctx)
-                ? Border.all(color: Theme.of(ctx).colorScheme.outline)
-                : null,
-            elevation: kFushiFloatingElevation,
-            child: Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.viewInsetsOf(ctx).bottom,
-              ),
-              child: SafeArea(child: Builder(builder: builder)),
-            ),
-          ),
-        );
+        final ReaderPanelPresentation presentation = presentationOf(ctx);
+        if (presentation == ReaderPanelPresentation.bottom) {
+          return _ReaderBottomPanel(builder: builder);
+        }
         if (sideController == null) {
-          return Align(
-            alignment: left ? Alignment.centerLeft : Alignment.centerRight,
-            child: panel,
-          );
+          return _ReaderSidePanel(side: side, builder: builder);
         }
         return ValueListenableBuilder<ReaderSideSheetSide>(
           valueListenable: sideController,
-          child: panel,
           builder:
-              (BuildContext context, ReaderSideSheetSide side, Widget? child) {
-            return AnimatedAlign(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              alignment: side == ReaderSideSheetSide.left
-                  ? Alignment.centerLeft
-                  : Alignment.centerRight,
-              child: child,
+              (BuildContext context, ReaderSideSheetSide current, Widget? _) {
+            return _ReaderSidePanel(
+              side: current,
+              builder: builder,
+              animateSide: true,
             );
           },
         );
@@ -588,16 +728,194 @@ Future<T?> showReaderSideSheet<T>({
       Animation<double> secondary,
       Widget child,
     ) {
-      final Animation<Offset> slide = Tween<Offset>(
-        begin: Offset(
-          (sideController?.value ?? side) == ReaderSideSheetSide.left ? -1 : 1,
-          0,
-        ),
-        end: Offset.zero,
-      ).animate(
-        CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+      final CurvedAnimation curved = CurvedAnimation(
+        parent: animation,
+        curve: FushiMotion.enter,
+        reverseCurve: FushiMotion.exit,
       );
-      return SlideTransition(position: slide, child: child);
+      final Offset begin = switch (presentationOf(ctx)) {
+        ReaderPanelPresentation.bottom => const Offset(0, 1),
+        ReaderPanelPresentation.side =>
+          (sideController?.value ?? side) == ReaderSideSheetSide.left
+              ? const Offset(-1, 0)
+              : const Offset(1, 0),
+      };
+      return SlideTransition(
+        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(curved),
+        child: FadeTransition(
+          opacity: CurvedAnimation(
+            parent: animation,
+            curve: const Interval(0, 0.5, curve: Curves.easeOut),
+          ),
+          child: child,
+        ),
+      );
     },
   );
+}
+
+/// 面板底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
+/// （secondaryGroupedBackground）才浮得出来；MD3 = surfaceContainerLow
+/// （Expressive 侧边面板），分组卡 surfaceContainer 比它高一级。
+Color _readerPanelColor(BuildContext ctx) => isGlassDesign(ctx)
+    ? appleColorsOf(ctx).groupedBackground
+    : Theme.of(ctx).colorScheme.surfaceContainerLow;
+
+/// 贴边侧板：全高、朝正文那一侧两角 [FushiRadii.sheetValue] 圆角（M3 Expressive
+/// 模态侧板），贴边那侧直角。墨水屏补一圈 outline 切出面板。
+class _ReaderSidePanel extends StatelessWidget {
+  const _ReaderSidePanel({
+    required this.side,
+    required this.builder,
+    this.animateSide = false,
+  });
+
+  final ReaderSideSheetSide side;
+  final WidgetBuilder builder;
+  final bool animateSide;
+
+  @override
+  Widget build(BuildContext ctx) {
+    final bool left = side == ReaderSideSheetSide.left;
+    final double width = readerSideSheetWidth(MediaQuery.sizeOf(ctx).width);
+    const Radius corner = Radius.circular(FushiRadii.sheetValue);
+    final BorderRadius radius = left
+        ? const BorderRadius.only(topRight: corner, bottomRight: corner)
+        : const BorderRadius.only(topLeft: corner, bottomLeft: corner);
+    final Widget panel = SizedBox(
+      width: width,
+      height: double.infinity,
+      child: Material(
+        key: const ValueKey<String>('fushi_reader_side_sheet'),
+        color: _readerPanelColor(ctx),
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: isEinkTheme(ctx)
+              ? BorderSide(color: Theme.of(ctx).colorScheme.outline)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        elevation: kFushiFloatingElevation,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+          child: SafeArea(
+            child: ReaderPanelScope(
+              presentation: ReaderPanelPresentation.side,
+              child: Builder(builder: builder),
+            ),
+          ),
+        ),
+      ),
+    );
+    final Alignment alignment =
+        left ? Alignment.centerLeft : Alignment.centerRight;
+    if (!animateSide) return Align(alignment: alignment, child: panel);
+    return AnimatedAlign(
+      duration: fushiMotionDuration(ctx, FushiMotion.short),
+      curve: FushiMotion.standard,
+      alignment: alignment,
+      child: panel,
+    );
+  }
+}
+
+/// 底部 sheet：上两角 [FushiRadii.sheetValue] 圆角，高度见
+/// [readerPanelBottomSheetHeight]（键盘弹起时整块抬到键盘上方并收矮）。页头区
+/// 向下拖动可关闭（内容区的纵向拖动仍归内部滚动视图）。
+class _ReaderBottomPanel extends StatefulWidget {
+  const _ReaderBottomPanel({required this.builder});
+
+  final WidgetBuilder builder;
+
+  @override
+  State<_ReaderBottomPanel> createState() => _ReaderBottomPanelState();
+}
+
+class _ReaderBottomPanelState extends State<_ReaderBottomPanel>
+    with SingleTickerProviderStateMixin {
+  /// 拖动位移（逻辑 px，≥ 0）。松手未达关闭阈值时弹回 0。
+  late final AnimationController _drag = AnimationController(
+    vsync: this,
+    lowerBound: 0,
+    upperBound: double.infinity,
+    value: 0,
+  );
+  double _height = 1;
+
+  @override
+  void dispose() {
+    _drag.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    _drag.value = (_drag.value + details.delta.dy).clamp(0.0, _height);
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final double velocity = details.primaryVelocity ?? 0;
+    if (velocity > 700 || _drag.value > _height * 0.25) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    _drag.animateTo(
+      0,
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.release,
+    );
+  }
+
+  @override
+  Widget build(BuildContext ctx) {
+    final Size size = MediaQuery.sizeOf(ctx);
+    final double keyboard = MediaQuery.viewInsetsOf(ctx).bottom;
+    _height = readerPanelBottomSheetHeight(
+      windowHeight: size.height,
+      topPadding: MediaQuery.paddingOf(ctx).top,
+      keyboardInset: keyboard,
+    );
+    final double width = size.width < kReaderPanelBottomSheetMaxWidth
+        ? size.width
+        : kReaderPanelBottomSheetMaxWidth;
+    final Widget panel = SizedBox(
+      width: width,
+      height: _height,
+      child: Material(
+        key: const ValueKey<String>('fushi_reader_side_sheet'),
+        color: _readerPanelColor(ctx),
+        shape: RoundedRectangleBorder(
+          borderRadius: FushiDesignTokens.of(ctx).radii.sheetRadius,
+          side: isEinkTheme(ctx)
+              ? BorderSide(color: Theme.of(ctx).colorScheme.outline)
+              : BorderSide.none,
+        ),
+        clipBehavior: Clip.antiAlias,
+        elevation: kFushiFloatingElevation,
+        child: SafeArea(
+          top: false,
+          child: ReaderPanelScope(
+            presentation: ReaderPanelPresentation.bottom,
+            child: Builder(builder: widget.builder),
+          ),
+        ),
+      ),
+    );
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: keyboard),
+        child: AnimatedBuilder(
+          animation: _drag,
+          child: GestureDetector(
+            behavior: HitTestBehavior.deferToChild,
+            onVerticalDragUpdate: _onDragUpdate,
+            onVerticalDragEnd: _onDragEnd,
+            child: panel,
+          ),
+          builder: (BuildContext context, Widget? child) =>
+              Transform.translate(offset: Offset(0, _drag.value), child: child),
+        ),
+      ),
+    );
+  }
 }
