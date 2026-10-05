@@ -6511,5 +6511,17 @@
   "reader_mini_player_open": "打开有声书面板",
   "lyrics_typography_title": "歌词文字",
   "lyrics_typography_font_follows_reader": "字体跟随阅读器字体。",
-  "lyrics_typography_more_settings": "更多歌词设置"
+  "lyrics_typography_more_settings": "更多歌词设置",
+  "reader_control_zone_pinned": "常驻",
+  "reader_control_zone_pinned_hint": "始终显示在工具栏上",
+  "reader_control_zone_overflow_hint": "收进 ⋯ 菜单，仍可使用",
+  "reader_control_zone_hidden": "隐藏",
+  "reader_control_zone_hidden_hint": "不在阅读器中显示",
+  "reader_control_zone_bottom_toolbar": "底部工具栏",
+  "reader_control_restore_defaults": "恢复默认",
+  "reader_control_move_to": "移到",
+  "reader_control_move_earlier": "前移",
+  "reader_control_move_later": "后移",
+  "reader_control_show_title": "显示书名",
+  "reader_control_editor_drag_hint": "拖动按钮（触屏长按）即可排序或换区；用键盘时在按钮上按 Enter 选择位置。改动立即生效。"
 }
