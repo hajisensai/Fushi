@@ -21,7 +21,6 @@ import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
     show AudiobookFollowAudioButton, AudiobookPlayFab;
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
-import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -342,19 +341,39 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               if (coverPath != null) ...<Widget>[
-                ClipRRect(
-                  borderRadius: const BorderRadius.all(Radius.circular(12)),
-                  child: Image.file(
-                    File(coverPath),
-                    key: const ValueKey<String>('fushi_audiobook_cover'),
-                    width: 56,
-                    height: 80,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        const SizedBox(width: 56, height: 80),
+                // M3E 大封面：大圆角 + 两层投影把它从色块里托起来；Apple 小圆角。
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(isGlassDesign(context) ? 10 : 20),
+                    ),
+                    boxShadow: isGlassDesign(context)
+                        ? const <BoxShadow>[]
+                        : <BoxShadow>[
+                            BoxShadow(
+                              color: theme.colorScheme.shadow
+                                  .withValues(alpha: 0.28),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(isGlassDesign(context) ? 10 : 20),
+                    ),
+                    child: Image.file(
+                      File(coverPath),
+                      key: const ValueKey<String>('fushi_audiobook_cover'),
+                      width: 92,
+                      height: 128,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          const SizedBox(width: 92, height: 128),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
               ],
               Expanded(
                 child: Column(
@@ -435,38 +454,48 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        // M3E：拖动条之上叠一条随播放波动的波浪进度（暂停收平）；拖动条本身
-        // 负责命中、章节刻度与拇指（轨道透明）。
-        Stack(
-          alignment: Alignment.center,
-          children: <Widget>[
-            if (!glass)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: FushiWavyLinearProgress(
-                  value: value,
-                  waving: ctrl.isPlaying,
-                  color: fg,
-                  trackColor: fg.withValues(alpha: 0.2),
-                ),
-              ),
-            SliderTheme(
-              data: SliderTheme.of(context).copyWith(
-                trackHeight: glass ? 3 : 10,
-                activeTrackColor: glass ? null : Colors.transparent,
-                inactiveTrackColor: glass ? null : Colors.transparent,
-                thumbColor: glass ? null : fg,
-                trackShape: ReaderAudiobookChapterTrackShape(
-                  fractions: ticks,
-                  tickColor: fg.withValues(alpha: 0.55),
-                ),
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              ),
+        // M3E：粗轨道滑块（S 档 24，竖条把手、按下变窄、拖动时时间气泡），章节刻度
+        // 画在同一条轨道上；Apple 保持细轨道 iOS 滑块。
+        Builder(
+          builder: (BuildContext context) {
+            final SliderThemeData base = SliderTheme.of(context);
+            final SliderThemeData data = glass
+                ? base.copyWith(
+                    trackHeight: 3,
+                    trackShape: ReaderAudiobookChapterTrackShape(
+                      fractions: ticks,
+                      tickColor: fg.withValues(alpha: 0.55),
+                    ),
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                  )
+                : fushiSliderSizeTheme(
+                    base.copyWith(
+                      activeTrackColor: fg,
+                      inactiveTrackColor: fg.withValues(alpha: 0.22),
+                      thumbColor: fg,
+                      valueIndicatorColor: theme.colorScheme.inverseSurface,
+                      trackShape: ReaderAudiobookChapterTrackShape(
+                        fractions: ticks,
+                        tickColor: theme.colorScheme.primaryContainer
+                            .withValues(alpha: 0.9),
+                        inner: const GappedSliderTrackShape(),
+                      ),
+                      thumbShape: const HandleThumbShape(),
+                      showValueIndicator: ShowValueIndicator.onDrag,
+                    ),
+                    FushiSliderSize.s,
+                  );
+            return SliderTheme(
+              data: data,
               child: FushiSlider(
                 key: const ValueKey<String>('fushi_audiobook_panel_slider'),
                 value: value,
                 ticks: ticks,
+                year2023: glass ? null : false,
+                label: _formatDuration(pos),
                 onChangeStart: durMs > 0
                     ? (double v) => setState(() {
                           _scrubTargetMs = (v * durMs).round();
@@ -490,8 +519,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                       }
                     : null,
               ),
-            ),
-          ],
+            );
+          },
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -499,9 +528,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
               ReaderStatNumber(
+                key: const ValueKey<String>('fushi_audiobook_time'),
                 value: _formatDuration(pos),
                 color: fg,
-                large: false,
               ),
               const Spacer(),
               Text(
@@ -529,20 +558,20 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
             FushiIconButtonControl(
               tooltip: t.prev_sentence,
               style: flat,
-              iconSize: 30,
+              iconSize: 36,
               icon: const FushiIcon(Icons.skip_previous_rounded),
               onPressed: () => unawaited(ctrl.skipToPrevCue()),
             ),
             const SizedBox(width: 6),
             KeyedSubtree(
               key: const ValueKey<String>('fushi_audiobook_panel_play'),
-              child: AudiobookPlayFab(controller: ctrl, size: 64),
+              child: AudiobookPlayFab(controller: ctrl, size: 80),
             ),
             const SizedBox(width: 6),
             FushiIconButtonControl(
               tooltip: t.next_sentence,
               style: flat,
-              iconSize: 30,
+              iconSize: 36,
               icon: const FushiIcon(Icons.skip_next_rounded),
               onPressed: () => unawaited(ctrl.skipToNextCue()),
             ),
@@ -552,6 +581,27 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
               icon: const FushiIcon(Icons.forward_10_rounded),
               onPressed: () => unawaited(ctrl.seekRelative(10)),
             ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // 倍速预设 chip 组（M3E），下面一行是同款自定义拖动条；睡眠定时 chip。
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            for (final double v in kReaderAudiobookSpeedPresets)
+              FushiChoiceChip(
+                key: ValueKey<String>('fushi_audiobook_speed_$v'),
+                label: Text(AudiobookSpeedSlider.format(v)),
+                selected: (ctrl.speed - v).abs() < 0.01,
+                showCheckmark: false,
+                onSelected: (_) {
+                  unawaited(ctrl.setSpeed(v));
+                  setState(() {});
+                },
+              ),
+            _SleepTimerChip(controller: ctrl),
           ],
         ),
         const SizedBox(height: 4),
@@ -625,6 +675,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                     meta: _formatDuration(Duration(milliseconds: cue.startMs)),
                     current: isCurrent,
                     maxLines: 3,
+                    trailing: isCurrent
+                        ? _SoundWaveIcon(playing: ctrl.isPlaying)
+                        : null,
                     onTap: () => unawaited(ctrl.skipToCue(cue)),
                   ),
                 );
@@ -880,4 +933,189 @@ class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
 
 extension _Let<T> on T {
   R let<R>(R Function(T) f) => f(this);
+}
+
+/// 倍速预设（chip 组）。
+const List<double> kReaderAudiobookSpeedPresets = <double>[
+  0.75,
+  1.0,
+  1.25,
+  1.5,
+  2.0,
+];
+
+/// 有声书睡眠定时：到点暂停。计时器挂在控制器上（[Expando]），关掉侧板照样走；
+/// 换书（换控制器）自然失效。
+class AudiobookSleepTimer {
+  AudiobookSleepTimer._(this._controller);
+
+  static final Expando<AudiobookSleepTimer> _byController =
+      Expando<AudiobookSleepTimer>('audiobookSleepTimer');
+
+  static AudiobookSleepTimer of(AudiobookPlayerController controller) =>
+      _byController[controller] ??= AudiobookSleepTimer._(controller);
+
+  final AudiobookPlayerController _controller;
+  Timer? _timer;
+  DateTime? _endsAt;
+
+  /// 剩余分钟（向上取整，至少 1）；没开定时 = null。
+  int? get remainingMinutes {
+    final DateTime? end = _endsAt;
+    if (end == null) return null;
+    final int seconds = end.difference(DateTime.now()).inSeconds;
+    return seconds <= 0 ? null : (seconds / 60).ceil();
+  }
+
+  /// 开 [minutes] 分钟定时；null = 关闭。
+  void start(int? minutes) {
+    _timer?.cancel();
+    _timer = null;
+    _endsAt = null;
+    if (minutes == null || minutes <= 0) return;
+    final Duration d = Duration(minutes: minutes);
+    _endsAt = DateTime.now().add(d);
+    _timer = Timer(d, () {
+      _timer = null;
+      _endsAt = null;
+      unawaited(_controller.pause());
+    });
+  }
+}
+
+/// 睡眠定时 chip：点开选 关闭 / 15 / 30 / 45 / 60 分钟；开着时显示剩余分钟。
+class _SleepTimerChip extends StatelessWidget {
+  const _SleepTimerChip({required this.controller});
+
+  final AudiobookPlayerController controller;
+
+  static const List<int> _options = <int>[15, 30, 45, 60];
+
+  @override
+  Widget build(BuildContext context) {
+    final AudiobookSleepTimer timer = AudiobookSleepTimer.of(controller);
+    final int? remaining = timer.remainingMinutes;
+    return Builder(
+      builder: (BuildContext anchor) => FushiChoiceChip(
+        key: const ValueKey<String>('fushi_audiobook_sleep_timer'),
+        avatar: const FushiIcon(Icons.bedtime_outlined, size: 18),
+        label: Text(
+          remaining == null
+              ? t.reader_audiobook_sleep_timer
+              : t.reader_audiobook_sleep_remaining(n: remaining),
+        ),
+        selected: remaining != null,
+        showCheckmark: false,
+        onSelected: (_) async {
+          final RenderObject? box = anchor.findRenderObject();
+          final RenderObject? overlay =
+              Overlay.of(anchor).context.findRenderObject();
+          if (box is! RenderBox || overlay is! RenderBox) return;
+          final Offset at = box.localToGlobal(Offset.zero, ancestor: overlay);
+          final int? choice = await showMenu<int>(
+            context: anchor,
+            position: RelativeRect.fromRect(
+              at & box.size,
+              Offset.zero & overlay.size,
+            ),
+            items: <PopupMenuEntry<int>>[
+              PopupMenuItem<int>(
+                value: 0,
+                child: Text(t.reader_audiobook_sleep_off),
+              ),
+              for (final int m in _options)
+                PopupMenuItem<int>(
+                  value: m,
+                  child: Text(t.stat_format_minutes(n: m)),
+                ),
+            ],
+          );
+          if (choice == null) return;
+          timer.start(choice == 0 ? null : choice);
+          // 面板每秒 tick 重建，chip 读数随之刷新。
+        },
+      ),
+    );
+  }
+}
+
+/// 当前句的小音波图标：三根竖条随播放起伏（暂停静止），弹簧般的错相正弦。
+class _SoundWaveIcon extends StatefulWidget {
+  const _SoundWaveIcon({required this.playing});
+
+  final bool playing;
+
+  @override
+  State<_SoundWaveIcon> createState() => _SoundWaveIconState();
+}
+
+class _SoundWaveIconState extends State<_SoundWaveIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_SoundWaveIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  void _sync() {
+    if (widget.playing && fushiMotionEnabled(context)) {
+      if (!_c.isAnimating) _c.repeat();
+    } else {
+      _c.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = isGlassDesign(context)
+        ? appleColorsOf(context).accent
+        : Theme.of(context).colorScheme.onSecondaryContainer;
+    return SizedBox(
+      width: 20,
+      height: 18,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (BuildContext context, Widget? _) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              for (int i = 0; i < 3; i++)
+                Container(
+                  width: 4,
+                  height: 6 +
+                      12 *
+                          (0.5 +
+                              0.5 *
+                                  math.sin(
+                                    (_c.value + i / 3) * 2 * math.pi,
+                                  )),
+                  decoration: ShapeDecoration(
+                    color: color,
+                    shape: const StadiumBorder(),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
