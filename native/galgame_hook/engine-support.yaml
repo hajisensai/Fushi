@@ -350,6 +350,25 @@
           "status": "implemented_unverified",
           "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
         }
+      },
+      {
+        "engine_id": "kogado_hy",
+        "geometry": {
+          "status": "implemented_unverified",
+          "providers": [
+            "engine_exact_layout",
+            "attached_calibrated"
+          ],
+          "evidence": "Engine-exact message-window provider (kLookupGeometryProviderIdKogadoHy, 24). Sites resolve only from structure (kogado_hy_core.h ResolveLookupSites): the row renderer of the text lane gives the row pitch (`shl r,imm8; lea r,[r+r*s]`), the row band (`push WIDTH; push HEIGHT` before THyAlpha::Draw) and, at every row-array call site that shows a row, the row array's panel (`mov eax,[ebx+P]; call THyRGBPanel::SetModify`); the exported THyRGBPanel::ClientToScreen gives the panel's x/y/parent fields and THyRGBPanel::SetVisible its shown flag. A CP932 byte is half the row height wide (MS Gothic). The glyphs of the published click unit are placed at the panel chain's live origin (every panel of the chain shown) plus (byte * width, row * pitch), the same skips as the text lane (speaker row, quote indent), and projected to physical client pixels under the design aspect (the window's logical client is the design screen). The engine reads clicks only as window messages (a press swallowed in the game window's procedure does not advance; no key-state polling): a claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the game window's procedure (replaced for each bound window, chained with CallWindowProc and restored at shutdown while still the head of the chain; the window thread is not the script thread that renders the rows; the window is the only visible non-child top-level window whose class the game image registered), for mouse and promoted touch alike; refused when the unit or its last row changed, the panel moved or hid, the client size changed, the host's native-input admission is missing, a card shields the game or the game is not foreground. Offline: resolver on the 2004 Symphonic Rain SR.exe (row 24/520x20, panel fields 0x70/0x74/0x38/0x31, arrays 0x118->0x60 and 0x248->0xb4); fushi_kogado_hy_adapter_test. Fushi host run 2026-10-04 (local build of this branch, original launch path: SR.exe SHA-256 04b4c08b...ce4c started from the workbench under Locale Emulator, DPI-unaware 640x480 window stretched to a 1120x840 client): mouse click on a glyph opened the card for the clicked word in the adventure window (row 1 and row 2) and in the full-screen window (row 3), without advancing; a click outside closed the card without advancing; with no card a click advanced. Touch (InjectTouchInput PT_TOUCH): a tap on a glyph opened the card without advancing; a tap inside the card (nested lookup) then outside closed both without advancing; a horizontal swipe on the card closed it without advancing; with no card a swipe advanced and a 0.9 s long press opened the game's right-click menu, as the mouse does; the game window stayed foreground throughout. No card was written (no fake AnkiConnect run); not an accept4 run; single sample."
+        },
+        "verified_shield": {
+          "status": "implemented_unverified",
+          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+        },
+        "risky_left_click": {
+          "status": "implemented_unverified",
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded."
+        }
       }
     ]
   },
@@ -3511,6 +3530,143 @@
       "test_paths": [
         "tests/fvp_format_test.cpp",
         "tests/fvp_lookup_test.cpp"
+      ]
+    },
+    {
+      "id": "kogado_hy",
+      "display_name": "Kogado Hy engine",
+      "aliases": [
+        "工画堂スタジオ",
+        "Kogado Studio",
+        "Hy library"
+      ],
+      "family": {
+        "id": "kogado_hy",
+        "relation": "Kogado Studio in-house Borland C++Builder engine on its exported \"Hy\" runtime library; no verified sibling"
+      },
+      "detection": {
+        "executable_names": {
+          "values": [
+            "SR.exe"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: 2004 シンフォニック=レイン (SR.exe). The adapter never matches on names; identity is the exported Hy runtime library (THyRGBText::SetText, THyAlpha::BoxFill, THyAlpha::Draw)."
+          }
+        },
+        "pe_architectures": {
+          "values": [
+            "x86"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SR.exe is PE32 machine 0x14c"
+          }
+        },
+        "directory_files_all": {
+          "values": [
+            "Script.pak",
+            "Voice/*.PAK"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only: Script.pak, Ev*.pak and Voice\\srev%03d.pak next to SR.exe"
+          }
+        },
+        "pe_imports": {
+          "values": [
+            "GDI32.DLL",
+            "DSOUND.DLL",
+            "DDRAW.DLL",
+            "USER32.DLL"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "SR.exe import table: TextOutA is the only text API (THyRGBText renders rows into an offscreen buffer), DirectSound plays, DirectDraw presents; mouse input arrives as VCL window messages"
+          }
+        },
+        "runtime_modules": {
+          "values": [],
+          "evidence": null
+        },
+        "resource_extensions": {
+          "values": [
+            ".pak"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Voice\\srev%03d.pak archives addressed by voice id / 1000000; script text is pre-wrapped rows separated by the script newline marker and closed by its page marker"
+          }
+        },
+        "hashes": {
+          "values": [
+            "SR.exe sha256:04b4c08bb976c2a311d6a720433e5c20f38c24c1008464a773634c333479ce4c"
+          ],
+          "evidence": {
+            "kind": "real_sample",
+            "reference": "Catalogue only; the adapter does not hash-pin"
+          }
+        }
+      },
+      "process_strategy": {
+        "launch": "create_suspended_early_injection",
+        "attach": "supported",
+        "follow_child_processes": false,
+        "notes": [
+          "The original path is SR.exe started directly under the Japanese locale (Locale Emulator); there is no launcher process.",
+          "The click-wait and row-render detours are resolved from the executable read from disk and installed at startup; a unit already on screen is published at its next row render."
+        ]
+      },
+      "text": {
+        "capabilities": [
+          {
+            "kind": "kogado_hy_message_page_hook",
+            "status": "implemented_unverified",
+            "verification": "Native exact text lane (source kind 11, hook 'Kogado Hy exact', ENGINE:KOGADO_HY:message_page; Fushi host run 2026-10-04: the lane is listed, folds each click unit into one line and pairs engine PCM voice with voiced lines): the message window's row renderer (the one function that renders a row through THyRGBText::SetText between THyAlpha::BoxFill and THyAlpha::Draw and whose every call site is fed by a counter-indexed page buffer) and the script's click wait (the one short game method that shows the window's wait cursor in both window modes, through the window field and mode byte the row fillers' caller reads) are detoured. A click unit runs from the row after a click wait (or row 0 of a cleared page) to the current row; the detour copies the page rows (bounded, 16 rows) and the worker drops the unit's speaker row (【name】), joins the rows, strips a continuation row's quote indent, converts from CP932 and republishes the unit so far at every row, so the host folds the rows of one unit into one line. Native run 2026-10-04 on the original path: adventure-window pages and full-screen-window paragraphs published as whole click units, speaker rows removed. No Fushi-host text_ready run is recorded yet."
+          },
+          {
+            "kind": "luna_auto_or_pc_hooks",
+            "status": "implemented_unverified",
+            "verification": "LunaHook attaches only generic GDI hooks (TextOutA); each TextOutA call is one pre-wrapped row drawn seconds after the previous one, so that lane splits a page into rows. It is not used as the selected thread."
+          },
+          {
+            "kind": "ingame_lookup_geometry",
+            "status": "implemented_unverified",
+            "verification": "Engine-exact message-window provider kLookupGeometryProviderIdKogadoHy (24), see lookup_support.geometry."
+          }
+        ],
+        "codepage": "932",
+        "thread_selection_hint": "Select the 'Kogado Hy exact' lane; the TextOutA LunaHook lane splits every page into its rows."
+      },
+      "audio": {
+        "priority": [
+          {
+            "kind": "directsound_pcm",
+            "format": "generic DirectSound fallback",
+            "status": "implemented_unverified",
+            "clean_voice": "engine_dependent"
+          },
+          {
+            "kind": "process_loopback",
+            "format": "host PCM fallback",
+            "status": "implemented_unverified",
+            "clean_voice": false
+          }
+        ]
+      },
+      "verified_games": [],
+      "current_status": "implemented_unverified",
+      "known_limitations": [
+        "Single sample: the resolver is proven offline on one executable (2004 Symphonic Rain); other Hy-engine titles may refuse and then install nothing. 37 x86 executables of RealLive, Siglus, BGI, CMVS, Leaf and other engines resolve to no Hy exports.",
+        "The unit is the script's click unit (text between two click waits): one page of the 4-row adventure window, one paragraph of the 16-row full-screen window. If the click wait does not resolve, the adapter falls back to the page (correct for the adventure window, whole pages for the full-screen window) and logs the result.",
+        "Voice reaches the host only through the generic DirectSound PCM capture, paired by time."
+      ],
+      "adapter_path": "hook/adapters/kogado_hy_adapter.inc",
+      "fixture_paths": [
+        "tests/fixtures/kogado_hy_replay.json"
+      ],
+      "test_paths": [
+        "tests/kogado_hy_adapter_test.cpp"
       ]
     }
   ]

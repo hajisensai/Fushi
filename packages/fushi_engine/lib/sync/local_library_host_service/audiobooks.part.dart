@@ -233,7 +233,7 @@ mixin _LocalLibraryHostAudiobooks
 
         // 删除 Audiobooks 行（及其 audioCues 级联，via deleteAudiobookByBookKey）。
         await _db.deleteAudiobookByBookKey(bookKey);
-        // BUG-2927：同步删除墓碑，其它设备经 /api/tombstones 跟着删。
+        // BUG-2945：同步删除墓碑，其它设备经 /api/tombstones 跟着删。
         await _writeHostSyncTombstone(SyncTombstoneKind.audiobook, bookKey);
 
         await _deleteAudioRootIfPersisted(audioRoot);
