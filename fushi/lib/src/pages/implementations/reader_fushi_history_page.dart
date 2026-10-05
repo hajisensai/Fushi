@@ -314,7 +314,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   /// 合集呈现方式（偏好 `shelf_collection_layout`，默认整行展开 = 现状）：
   /// [ShelfCollectionLayout.cards] 时合集折成网格里的一个格子、与散书同一排序。
-  ShelfCollectionLayout _collectionLayout = ShelfCollectionLayout.rows;
+  ShelfCollectionLayout _collectionLayout = ShelfCollectionLayout.cards;
 
   /// P5-A：书架搜索词（原文，匹配时才归一化）。**刻意不持久化**——下次进书架还
   /// 挂着上次的搜索词只会让人以为书没了（与游戏库页同一决定）。
