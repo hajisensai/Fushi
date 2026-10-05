@@ -6584,5 +6584,8 @@
   "collection_detail_empty_hint": "Add books from the library with Combine or Add to collection.",
   "collection_detail_edit_tags": "Edit tags",
   "shelf_toolbar_more": "More",
-  "shelf_toolbar_filters": "Filters"
+  "shelf_toolbar_filters": "Filters",
+  "reader_nav_progress_book": "全書",
+  "reader_nav_progress_chapter": "第 $current / $total 章",
+  "reader_nav_progress_chars": "$current / $total 字"
 }

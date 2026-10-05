@@ -6584,5 +6584,8 @@
   "collection_detail_empty_hint": "在书架里用「组合」或「加入合集」把条目放进来。",
   "collection_detail_edit_tags": "编辑标签",
   "shelf_toolbar_more": "更多",
-  "shelf_toolbar_filters": "筛选"
+  "shelf_toolbar_filters": "筛选",
+  "reader_nav_progress_book": "全书",
+  "reader_nav_progress_chapter": "第 $current / $total 章",
+  "reader_nav_progress_chars": "$current / $total 字"
 }
