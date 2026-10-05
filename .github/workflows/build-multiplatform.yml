@@ -245,7 +245,7 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -394,7 +394,7 @@ jobs:
             gcc-14 g++-14 libstdc++-14-dev
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       # 服务端是 pub workspace 成员；解析依赖仍要 Flutter SDK（fushi_anki / fushi_dictionary /
       # fushi_platform 尚声明 flutter），与 server-gate.yml 同一个入口解析整个 workspace。
@@ -687,7 +687,7 @@ jobs:
           platform: macos
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -1023,7 +1023,7 @@ jobs:
           platform: ios
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
 
       # 烘进包里的密钥统一由 composite action 注入 —— 这批注入曾被逐字抄进 11 个
@@ -1145,7 +1145,7 @@ jobs:
       # SDK 缓存照留。release-desktop.yml 的 windows job 同一取舍。
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: false
           pub-cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh

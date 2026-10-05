@@ -5,7 +5,7 @@ publish_to: 'none'
 version: 2.9.1+1351
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: "^3.41.6"
+  flutter: "^3.47.0"
 
 dependencies:
   # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/fushi-subtitles，GPL-3.0），本仓只留
