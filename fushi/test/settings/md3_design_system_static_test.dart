@@ -1142,10 +1142,6 @@ void main() {
           'Audiobook cue list is dense reader content (tonal cue track + cue '
           'row corners) — same reviewed exception class as '
           'reader_fushi/chrome.part.dart.',
-      'lib/src/reader/reader_statistics_sheet.dart':
-          'Reading-position progress bars are chart content (progress-track '
-          'surface + clipped track corners) — same reviewed exception class '
-          'as reading_statistics_page / video_statistics_page.',
       'lib/src/reader/reader_settings_preview.dart':
           'Reading-settings live preview renders sample BOOK TEXT at the '
           "reader's own (scaled) font size — reader content, not page chrome; "
@@ -1484,10 +1480,6 @@ void main() {
       'lib/src/reader/reader_audiobook_panel.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerHighest',
-      },
-      'lib/src/reader/reader_statistics_sheet.dart': <String>{
-        'surfaceContainerHighest',
-        'BorderRadius.circular(',
       },
       'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
         'VisualDensity.compact',
