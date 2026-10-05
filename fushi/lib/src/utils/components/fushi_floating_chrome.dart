@@ -624,6 +624,12 @@ class _FloatingActionsBody extends StatelessWidget {
           ),
         ),
       );
+    } else if (actions is FushiShellHeaderActions) {
+      // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊、文字
+      // 动作画成同高的 tonal 胶囊按钮（[fushiFloatingHeaderActionGroups]）。
+      // 再套一层悬浮面就是「胶囊包胶囊」：两圈投影、组比页签胶囊高出 8、
+      // 文字按钮被关进组里（2026-10-06 用户截图「开始串流」）。
+      return actions;
     } else {
       content = actions;
     }
