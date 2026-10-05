@@ -55,6 +55,8 @@ class LyricsModeHtml {
       '--ly-fade': '${(theme.edgeFade * 100).toStringAsFixed(1)}%',
       '--ly-align': theme.alignStart ? 'start' : 'center',
       '--ly-origin': theme.alignStart ? 'left center' : 'center',
+      // 竖排（vertical-rl）的「行首」在上：靠首对齐时当前句从顶端放大，不往上溢出。
+      '--ly-origin-v': theme.alignStart ? 'center top' : 'center',
       '--ly-self': theme.alignStart ? 'stretch' : 'auto',
       '--ly-ctx-blur': '${theme.contextBlurPx.toStringAsFixed(1)}px',
       '--ly-radius': '${theme.rowRadius.toStringAsFixed(1)}px',
@@ -160,8 +162,11 @@ class LyricsModeHtml {
     final String htmlBodyAxisCss = vertical
         ? 'writing-mode: vertical-rl; overflow-x: auto; overflow-y: hidden;'
         : 'overflow-x: hidden;';
+    // flex 主轴跟随 writing-mode：vertical-rl 下 column = 块方向 = 从右往左，句子
+    // 一列一句右起排开；row 是行内方向（自上而下），会把所有句子塞进一屏高里竖着
+    // 叠成一摞、每句被压成几行碎块（TODO-907 初版就是这样，竖排从来没正常显示过）。
     final String containerAxisCss = vertical
-        ? 'flex-direction: row; justify-content: flex-start; align-items: center;'
+        ? 'flex-direction: column; justify-content: flex-start; align-items: center;'
         : 'flex-direction: column; align-items: center;';
     // 主轴方向的「45vh/45vw 居中余量 + 用户边距」。横排=上下(vh)，竖排=左右(vw)。
     // 注意竖排 vertical-rl 视觉「先读」在右，但 padding 仍按物理 left/right 写，
@@ -180,6 +185,34 @@ class LyricsModeHtml {
         // 下 (1-anchorY)·100vh；无主题时 var 回落 45vh（旧的居中余量）。
         : 'padding: calc(var(--ly-pad-top, 45vh) + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
               'calc(var(--ly-pad-bottom, 45vh) + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
+    // 竖排专属的 .cue 几何，只在竖排时输出（横排文档逐字节不变）。选择器刻意不写成
+    // 裸 `.cue`：__lyricsUpdateStyle 按 selectorText 逐条改写规则，裸 `.cue` 会被
+    // 当成基础规则再写一遍。
+    // - 宽度上限换成行内方向（竖排=高度）：长句折成多列，而不是撑出屏幕被裁掉；
+    // - 句内留白 / 句间距按物理方向对调（列与列之间是左右）；
+    // - 放大原点用 --ly-origin-v（靠首对齐 = 顶端），收藏星标挪到列尾（下端）。
+    final String verticalCueCss = vertical
+        ? '''
+/* 竖排（vertical-rl）：句子是右起左排的列。 */
+.lyrics-container > .cue {
+  max-width: none;
+  max-inline-size: calc(100% / var(--cue-scale) - 1%);
+  padding: 8px 12px;
+  transform-origin: var(--ly-origin-v, center);
+}
+body.ly-themed .lyrics-container > .cue {
+  padding: 14px 10px;
+  margin: 0 2px;
+}
+.lyrics-container > .cue.favorited::before {
+  right: auto;
+  top: auto;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+'''
+        : '';
     // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
     final String verticalJs = vertical ? 'true' : 'false';
     // TODO-908 / BUG-852：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS
@@ -413,7 +446,7 @@ body.lyrics-blur .cue.revealed {
   font-size: 0.5em;
   opacity: 0.6;
 }
-</style>
+$verticalCueCss</style>
 </head>
 <body$blurBodyClass>
 <div class="lyrics-container" id="lc">
@@ -439,13 +472,19 @@ function _lyReadAnchor() {
   _lyAnchor = (isFinite(v) && v > 0 && v < 1) ? v : 0.5;
 }
 _lyReadAnchor();
+// 纯函数（无 DOM / 无全局读）：给定元素的视口矩形，求沿滚动轴还需滚多少才让它落到
+// 锚点。结果只用作「scrollLeft/scrollTop += delta」的增量，从不换算成绝对坐标：
+// vertical-rl 的 scrollLeft 在 WebView2 / Android WebView（Chromium 85+）与
+// WKWebView 上都是「起点 0、往左为负」，老 Chromium WebView（<85）是「起点 max、
+// 往左变小」；两种约定下 scrollLeft 变大都等于视口右移，所以增量写法不分平台、
+// 不必探测约定（与正文竖排 scrollBy({left}) 同一口径）。
+function __lyricsCenterDeltaFor(rect, viewW, viewH, vertical, anchor) {
+  if (vertical) return (rect.left + rect.width / 2) - viewW / 2;
+  return (rect.top + rect.height * anchor) - viewH * anchor;
+}
 function _lyricsCenterDelta(el) {
-  var r = el.getBoundingClientRect();
-  if (__lyricsVertical) {
-    var elCenterX = r.left + r.width / 2;
-    return elCenterX - (window.innerWidth / 2);
-  }
-  return (r.top + r.height * _lyAnchor) - (window.innerHeight * _lyAnchor);
+  return __lyricsCenterDeltaFor(el.getBoundingClientRect(), window.innerWidth,
+      window.innerHeight, __lyricsVertical, _lyAnchor);
 }
 // BUG-784: `html, body { height:100%; overflow-x:hidden }` —— 按 CSS 规范，overflow-x
 // 非 visible 会把 overflow-y 从 visible **计算成 auto**，于是 body 恰好填满 html、真正
@@ -542,6 +581,18 @@ function _lyResume() {
   }
 }
 window.addEventListener('wheel', function() { _lyEnterBrowse(); }, {passive: true});
+// 竖排只能横向滚：鼠标滚轮只给 deltaY，Chromium / WebKit 不会把它转成横滚，桌面上
+// 滚轮就滚不动歌词。主方向是纵向的滚轮投影成横滚，往下滚 = 往后读 = 视口左移
+// （scrollLeft 变小，两种 RTL 约定同向）。触控板的横向手势（|dx| ≥ |dy|）照原生走。
+if (__lyricsVertical) {
+  window.addEventListener('wheel', function(e) {
+    if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    var px = e.deltaMode === 1 ? e.deltaY * 40
+        : e.deltaMode === 2 ? e.deltaY * window.innerWidth : e.deltaY;
+    e.preventDefault();
+    _lyricsScrollTarget().scrollLeft -= px;
+  }, {passive: false});
+}
 document.addEventListener('scroll', function() {
   if (performance.now() > _lyProgUntil) _lyEnterBrowse();
 }, {passive: true, capture: true});
