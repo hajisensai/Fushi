@@ -419,7 +419,9 @@ class MangaExtensionFilters extends StatelessWidget {
         decoration: glass
             ? null
             : ShapeDecoration(
-                color: eink ? null : colors.surfaceContainerHigh,
+                color: eink
+                    ? null
+                    : FushiDesignTokens.of(context).surfaces.search,
                 shape: StadiumBorder(
                   side: eink ? BorderSide(color: colors.outline) : BorderSide.none,
                 ),

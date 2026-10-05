@@ -409,24 +409,10 @@ class _LanguageChip extends StatelessWidget {
   Widget build(BuildContext context) {
     // 中性灰底：语言码只是元信息，不该抢主色（Apple 设计系统下更是禁止彩色
     // 底块），所以不用 secondaryContainer 的 tonal 色块。
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    return Container(
-      constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest,
-        borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
-      ),
-      child: Text(
-        language.toUpperCase(),
-        maxLines: 1,
-        softWrap: false,
-        style: theme.textTheme.labelSmall?.copyWith(
-          color: cs.onSurfaceVariant,
-        ),
-      ),
+    return FushiTag(
+      text: language.toUpperCase(),
+      tone: FushiTagTone.neutral,
+      dense: true,
     );
   }
 }

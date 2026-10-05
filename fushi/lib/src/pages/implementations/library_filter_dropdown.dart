@@ -175,7 +175,9 @@ class LibraryFilterChip extends StatelessWidget {
       padding: EdgeInsetsDirectional.only(start: active ? 8 : 12, end: 8),
       alignment: Alignment.center,
       decoration: ShapeDecoration(
-        color: active ? colors.secondaryContainer : colors.surfaceContainerHigh,
+        color: active
+            ? FushiDesignTokens.of(context).surfaces.selected
+            : FushiDesignTokens.of(context).surfaces.search,
         shape: const StadiumBorder(),
       ),
       child: row,

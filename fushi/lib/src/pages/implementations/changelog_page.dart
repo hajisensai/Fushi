@@ -241,32 +241,12 @@ class _ChannelBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    // 标签统一（2026-10-04）：不可交互小标签——左右 8、11 号 w500；MD3 圆角 6
-    // secondaryContainer，Apple 灰胶囊 + secondaryLabel 字。
-    final FushiAppleColors? apple =
-        isGlassDesign(context) ? appleColorsOf(context) : null;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        // Apple：不铺 systemFill 灰底，发丝分隔线描边的空心胶囊。
-        color: apple != null ? null : scheme.secondaryContainer,
-        border: apple != null
-            ? Border.all(color: apple.separator, width: 0.8)
-            : null,
-        borderRadius: apple != null
-            ? BorderRadius.circular(999)
-            : tokens.radii.chipRadius,
-      ),
-      child: Text(
-        label,
-        style: tokens.type.metadata.copyWith(
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: apple?.secondaryLabel ?? scheme.onSecondaryContainer,
-        ),
-      ),
+    // 标签统一（2026-10-04）：不可交互小标签走共享 FushiTag（MD3 圆角 6
+    // secondaryContainer，Apple 空心胶囊 + secondaryLabel 字）。
+    return FushiTag(
+      text: label,
+      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+      dense: true,
     );
   }
 }

@@ -644,15 +644,33 @@ void main() {
       'CheckboxListTile(',
       'PopupMenuButton(',
     ];
+    const String kGlassDesignSystemImplementation =
+        'Apple glass design-system implementation (PR glass-material): the '
+        'Fushi* glass components ARE the shared primitives pages route '
+        'through; they translate Apple 26 HIG metrics (capsule radii, inset '
+        'grouped radii, SF point sizes) and the Apple palette into widgets — '
+        'same reviewed exception class as fushi_material_components.';
+    const String kSharedComponentImplementation =
+        'Shared Fushi* component implementation (PR glass-material redesign): '
+        'pages consume this component instead of making the decision; the '
+        'MD3 / Apple dual rendering of the component owns its radii, surface '
+        'roles and label sizes — same reviewed exception class as '
+        'fushi_material_components / settings_shared.';
     const Map<String, String> allowedFiles = <String, String>{
       'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
       'lib/src/utils/components/fushi_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
-          'Shared adaptive settings primitives own compact settings controls.',
+          'Shared adaptive settings primitives own compact settings controls '
+          '(including the Apple pop-up button capsule radius).',
       'lib/src/models/theme_notifier.dart':
-          'Theme preview content intentionally displays generated surface roles.',
+          'Theme preview content intentionally displays generated surface '
+          'roles. buildFushiThemeData is also the ThemeData source for both '
+          'design systems: the component themes it builds (input decoration '
+          'radius MD3 12 / Apple 10, Apple HIG text sizes for buttons, tabs, '
+          'list tiles, app bars) ARE the shared tokens pages read through '
+          'Theme.of — same reviewed exception class as fushi_design_tokens.',
       'lib/src/pages/implementations/custom_theme_page.dart':
           'Theme preview studio intentionally displays user-selected colors.',
       'lib/src/pages/implementations/font_preview/font_target_preview.dart':
@@ -701,7 +719,9 @@ void main() {
           'badge implementations; its fixed dark scrim and pill radius '
           'preserve the existing badge pixel spec — cover overlay '
           'content, not ordinary page chrome, same reviewed exception '
-          'class as the reader-shelf book-cover overlays.',
+          'class as the reader-shelf book-cover overlays. The badge label is '
+          'pinned to 11 w600 so it stays legible on the fixed scrim at cover '
+          'scale regardless of the app type roles.',
       // TODO-947 系列/合集折叠卡的马赛克封面（2x2 成员封面网格）是书架内容/封面美术，
       // 不是页面 chrome：letterbox 底 surfaceContainerHighest 与格子圆角
       // BorderRadius.circular(cellRadius) 是封面拼图单元，同「书架封面/拖放」豁免类。
@@ -724,7 +744,11 @@ void main() {
           'cover thumbnails (ClipRRect radius + no-cover letterbox placeholder '
           'using surfaceContainerHighest); cover art / media-shelf content, not '
           'ordinary page chrome — the media_collection_detail_page exemption '
-          'moved here with the visuals.',
+          'moved here with the visuals. Glass/MD3 redesign: under the Apple '
+          'design system the continue-watching episode card is lifted one '
+          'step to surfaceContainerHigh (iOS selected-row raised fill), '
+          'because primaryContainer is a gray fill under the monochrome '
+          'accent and becomes invisible on the card.',
       // 更新中心（#1427）每条新集消息带一张该集截图缩略图（Image.file + ClipRRect
       // 圆角，无图时退作品封面/纯文字）。列表行外壳本身走 FushiListItem，文件里
       // 唯一的裸 BorderRadius 就是这张缩略图的圆角——截图/封面美术，非普通页面
@@ -751,8 +775,6 @@ void main() {
           'per-episode covers / reader-shelf book covers.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
-      'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
-          'Book-cover badges/progress are reader-shelf card content.',
       'lib/src/pages/implementations/reader_history/remote.part.dart':
           'Remote book download control density is reader-shelf content.',
       'lib/src/pages/implementations/reader_fushi_page.dart':
@@ -809,7 +831,10 @@ void main() {
           'Now-listening media mini-bar: surface role + book-cover thumbnail '
           'radius are media-subsystem content chrome (same category as the '
           'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme.',
+          'hero), driven off the active ColorScheme. Glass/MD3 redesign: the '
+          'MD3 branch is now a floating card (surfaceContainerHigh, inset 12, '
+          'elevation 2) that the recommended-pack download mini-bar mirrors '
+          'tone-for-tone — the two bars are one media mini-bar family.',
       'lib/src/models/app_model.dart':
           'AppModel builds the FloatingLyricStyle data object (overlay font '
           'size is user content passed to the platform overlay), not an '
@@ -1023,23 +1048,6 @@ void main() {
           'scale with appUiScale, the same reviewed media-page exception '
           'class as the parent video player page allowlist entry and the '
           'sibling video_volume_overlays.dart HUD entry.',
-      'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
-          'Audio-track side panel chrome (track-list ListTile rows) extracted '
-          'verbatim from video_fushi_page.dart (TODO-590 batch9); the '
-          'ListTile track rows are the same reviewed media-page exception '
-          'class as the parent video player page allowlist entry and the '
-          'sibling subtitle/chapter side panels.',
-      'lib/src/pages/implementations/video_fushi/quality.part.dart':
-          'HLS quality side panel chrome (variant-list ListTile rows, TODO-1158) '
-          'is the same reviewed media-page exception class as the sibling '
-          'audio_track.part.dart / subtitle side panels — a translucent video '
-          'side-panel list of playable stream qualities, not ordinary page chrome.',
-      'lib/src/media/video/danmaku_manual_match_panel.dart':
-          'Danmaku manual search/match side panel chrome (episode-list ListTile '
-          'rows, TODO-1376) is the same reviewed media-page exception class '
-          'as the sibling audio_track.part.dart / quality.part.dart video '
-          'side panels — a translucent video side-panel list of searched '
-          'anime episodes to bind danmaku, not ordinary page chrome.',
       'lib/src/pages/implementations/video_fushi/layout.part.dart':
           'Subtitle caption render tree (fontSize: _subtitleStyle.fontSize) '
           'extracted verbatim from video_fushi_page.dart (TODO-590 '
@@ -1047,17 +1055,8 @@ void main() {
           'content, not page chrome — the same reviewed media-page '
           'exception class as the parent video player page allowlist entry '
           'and the sibling video_quick_settings_sheet caption font size.',
-      'lib/src/pages/implementations/video_shader_dialog.dart':
-          'Experimental mpv shader dialog lists imported shader files as '
-          'checkbox rows (transient video-subsystem content).',
       // 2026-08 字幕工作台：两个 Jimaku 对话框的状态机整体搬进面板文件（对话框只剩
       // 壳，不再含被禁模式），豁免随代码一起搬，理由不变。
-      'lib/src/pages/implementations/subtitle_collection_panel.dart':
-          'Collection batch-download member list renders per-episode status '
-          'icon / title / language rows as video-subsystem content (batch '
-          'subtitle download progress), not ordinary page chrome — same '
-          'reviewed content exception class as video_episode_panel / '
-          'video_subtitle_jump_panel and the sibling subtitle_search_panel.',
       'lib/src/pages/implementations/subtitle_search_panel.dart':
           'Online subtitle search panel lists downloadable subtitle files as '
           'transient video-subsystem content rows.',
@@ -1067,30 +1066,17 @@ void main() {
           'Jimaku subtitle rows plus a download-task list as transient '
           'video-subsystem content — the same reviewed content exception '
           'class as the sibling jimaku_subtitle_dialog / jimaku_batch_dialog.',
-      // PR#295：galgame Hook 诊断页把实时语音轨候选行与 hook 事件日志行渲染为
-      // hook 子系统的瞬态内容行（含状态横幅胶囊），非普通页面 chrome——同
-      // jimaku/anime 下载对话框与 anki_mined_card_action_sheet 的内容豁免类。
-      'lib/src/pages/implementations/game_diagnostics_page.dart':
-          'Galgame hook diagnostics page lists live voice-track candidate rows '
-          'and hook event-log rows as transient hook-subsystem content '
-          '(plus a status banner pill), not ordinary page chrome — same '
-          'reviewed content exception class as the jimaku/anime download '
-          'dialogs and anki_mined_card_action_sheet.',
       // PR#295：Hook 控制台的状态胶囊（hook-ready / 未读行数 / 每行句音状态）是
       // hook 子系统的实时内容指示器，非普通页面 chrome——同视频子系统内容行豁免类。
       'lib/src/pages/implementations/texthooker_page.dart':
           'Hook console status pills (hook-ready / unread-lines / per-line '
           'audio status capsules) are live hook-subsystem content '
           'indicators, not ordinary page chrome — same reviewed content '
-          'exception class as the video-subsystem content rows.',
+          'exception class as the video-subsystem content rows. The unread-'
+          'lines pill text is pinned to 13 (Apple accent label) so it keeps '
+          'the pill geometry under both design systems.',
       // 批量刮削对话框（PR#387）已随「刮削自动化」删除——刮削不再由用户点按钮
       // 触发整库任务，故此处不再需要它的豁免条目。
-      'lib/src/anki/anki_mined_card_action_sheet.dart':
-          'TODO-1007/1008 mined-card action sheet lists matching Anki notes '
-          'as transient content rows (note preview + per-note overwrite/view '
-          'actions) plus an add-duplicate action row — Anki-subsystem content, '
-          'the same reviewed exception class as the dictionary import/delete '
-          'content rows.',
       // PR#253 / BUG-922：制卡「选择句子上下文」原生对话框（Niratan 式）的 ±上下文
       // 调整按钮，在横屏矮窗里刻意收紧到 compact 视觉密度（VisualDensity.compact +
       // 收敛 padding/minSize），给句子预览让出竖向空间——挖矿子系统的内容对话框，
@@ -1142,7 +1128,10 @@ void main() {
           'Reader toolbar typography lives on the reading surface scale '
           '(kReaderDesktopHeaderTitleFontSize, a named sibling of '
           'kTopProgressFontSize), not the app type roles — same reviewed '
-          'exception class as reader_fushi/chrome.part.dart.',
+          'exception class as reader_fushi/chrome.part.dart. The reader '
+          'settings side sheet background is the MD3 Expressive side-panel '
+          'tone (surfaceContainerLow, one step under the setting group cards; '
+          'Apple uses groupedBackground) — same class as video_side_panel.',
       'lib/src/reader/reader_status_footer.dart':
           'Status strip font size is kReaderStatusFooterFontSize == '
           'kTopProgressFontSize: the footer must match the top progress '
@@ -1161,6 +1150,133 @@ void main() {
           'In-book quick settings sheet packs reader controls at reader '
           'density — same reviewed exception class as '
           'reader_fushi/chrome.part.dart.',
+      // Apple 玻璃设计系统 + MD3 Expressive 重设计（PR glass-material）。
+      // 1) 设计系统实现层：glass/ 下的 Fushi* 组件与新增 / 改写的共享组件——
+      //    与 fushi_design_tokens / fushi_material_components 同一「共享原语本身」类，
+      //    页面经它们拿到圆角 / 面色 / 字号，所以它们自己必然写出这些值。
+      'lib/src/utils/components/glass/fushi_apple_palette.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_expressive.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_bars.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_buttons.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_chips.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_feedback.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_inputs.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_lists.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_overlays.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/utils/components/glass/fushi_glass_toggles.dart':
+          kGlassDesignSystemImplementation,
+      'lib/src/settings/glass_settings_renderer.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/adaptive/adaptive_navigation.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/batch_action_bar.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_bottom_action_bar.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_download_progress.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_dropdown.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_icon_button.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_inline_notice.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_loading_view.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_placeholder_message.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_tag.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/library_section_tabs.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/shelf_card_widgets.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/misc/fushi_toast.dart':
+          kSharedComponentImplementation,
+      // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
+      //    Apple 分支的 HIG 尺寸——FushiTypeRoles 暂无 Apple 字阶）。
+      'lib/src/lookup/lookup_popup_size_preview.dart':
+          'Popup size preview draws a scaled mock screen (frame fill, fake text '
+          'lines, popup rectangle) so the user can see where the lookup popup '
+          'lands; the radii and surface are preview content, not page chrome — '
+          'same reviewed exception class as the theme preview cards.',
+      'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart':
+          'Lyrics player top edge under the Apple design system takes '
+          'surfaceContainerHigh from the scheme generated from the cover art, so '
+          'the desktop title bar blends into the blurred cover backdrop — '
+          'content-derived color, same class as history_reader_page.',
+      'lib/src/media/manga/aidoku/aidoku_cover_image.dart':
+          'Missing-cover placeholder letterbox (surfaceContainerHighest) is cover '
+          'art, replacing a hard-coded black 7% that vanished in dark themes — '
+          'same reviewed exception class as series_shelf_card.',
+      'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart':
+          'Remote manga cover placeholder / decode-failure letterbox '
+          '(surfaceContainerHighest) is cover art, replacing black12 — same '
+          'reviewed exception class as series_shelf_card.',
+      'lib/src/media/manga/library/manga_series_page.dart':
+          'Chapter cover placeholder letterbox (surfaceContainerHighest) is cover '
+          'art, replacing a hard-coded #303030 block — same reviewed exception '
+          'class as series_shelf_card.',
+      'lib/src/media/manga/manga_cover_failure.dart':
+          'Cover decode-failure tile background (surfaceContainerHighest, caller '
+          'may override) is cover art — same reviewed exception class as '
+          'series_shelf_card.',
+      'lib/src/media/video/video_apple_chrome.dart':
+          'Apple video player chrome: the round glass transport buttons clip '
+          'their press highlight to a circle (radius = size / 2); geometry of a '
+          'circular control over video, not a radius decision — same class as '
+          'the video-subsystem player chrome.',
+      'lib/src/media/video/video_side_panel.dart':
+          'Shared floating side panel of the video player (subtitle / audio / '
+          'chapter panels): MD3 Expressive side-panel surface (surfaceContainerLow '
+          '+ panel radius) and the Apple sheet title (17 / 15 semibold) are the '
+          'player overlay chrome, drawn over video, not ordinary page chrome.',
+      'lib/src/onboarding/recommended_pack_download_mini_bar.dart':
+          'Recommended-pack download mini-bar mirrors the now-listening mini-bar '
+          'tone-for-tone (MD3 floating surfaceContainerHigh card, Apple 28 clear '
+          'bar glass capsule) — same reviewed media mini-bar family.',
+      'lib/src/pages/implementations/ai_video_acquisition_page.dart':
+          'AI video acquisition chat: message bubbles (user primaryContainer / AI '
+          'surfaceContainerHigh) and the 28 capsule composer are conversation '
+          'content, not ordinary page chrome.',
+      'lib/src/pages/implementations/discovery/discovery_layout.dart':
+          'Discovery layout helpers own the cover-art geometry of the discovery '
+          'pages: cover radius (MD3 FushiRadii.posterValue / Apple TV 12 / 10), '
+          'hero banner radius and skeleton text-line bars — cover art and loading '
+          'skeleton content, same class as series_shelf_card.',
+      'lib/src/pages/implementations/media_discovery_page.dart':
+          'Torrent / file result thumbnail (36x54 cover) clips with a small cover '
+          'radius — cover art, same class as series_shelf_card.',
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart':
+          'Apple branch of the shortcut key-cap chip pins its label to 12 w500 '
+          '(macOS key-cap label); the MD3 branch stays on the shared tag chip '
+          'type. FushiTypeRoles has no Apple key-cap role yet.',
+      'lib/src/pages/implementations/video_discovery_page.dart':
+          'Apple branch of the filter control turns the shared FushiCard into a '
+          'clear capsule (radius = control height / 2); the MD3 branch keeps the '
+          'FushiCard token radius.',
+      'lib/src/reader/reader_floating_ball.dart':
+          'Reader floating-ball action buttons clip their press highlight to a '
+          'circle (radius = size / 2) — circular control geometry on the reading '
+          'surface, same class as reader_fushi/chrome.part.dart.',
+      'lib/src/settings/settings_home_page.dart':
+          'Settings shell under the Apple design system: the iOS large title '
+          '(34 bold) and the CupertinoSearchTextField metrics (radius, 13 / 17 '
+          'text) reproduce the iOS / macOS Settings app header; the MD3 branch '
+          'stays on the shared settings primitives.',
+      'lib/src/sync/sync_settings_schema/interconnect_link.part.dart':
+          'Pairing QR code sits on a fixed white card (quiet zone must stay white '
+          'for camera scanners) with a rounded corner (MD3 12 / Apple 16) — QR '
+          'content, not ordinary page chrome.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1185,7 +1301,6 @@ void main() {
     // 得到，因此本轮零红。它不是「以后再收窄」的占位——名单里的每个 token 从现在起
     // 都必须真实存在，删一个就红。
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
-      'lib/src/anki/anki_mined_card_action_sheet.dart': <String>{'ListTile('},
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
         'fontSize:',
@@ -1201,6 +1316,7 @@ void main() {
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
         'BorderRadius.circular(',
+        'surfaceContainerHigh',
         'surfaceContainerHighest',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
@@ -1211,9 +1327,6 @@ void main() {
       },
       'lib/src/media/manga/ocr/system_ocr_manga_service.dart': <String>{
         'fontSize:',
-      },
-      'lib/src/media/video/danmaku_manual_match_panel.dart': <String>{
-        'ListTile(',
       },
       'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
         'BorderRadius.circular(',
@@ -1252,7 +1365,6 @@ void main() {
       },
       'lib/src/media/video/video_settings_actions.dart': <String>{
         'fontSize:',
-        'ListTile(',
       },
       'lib/src/media/video/video_subtitle_jump_panel.dart': <String>{
         'VisualDensity.compact',
@@ -1288,6 +1400,8 @@ void main() {
         'fontSize:',
       },
       'lib/src/models/theme_notifier.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
         'surfaceContainerLow',
         'surfaceContainerLowest',
         'surfaceContainerHigh',
@@ -1298,8 +1412,6 @@ void main() {
         'VisualDensity.compact',
         'surfaceContainerHighest',
         'fontSize:',
-        'Card(',
-        'ListTile(',
       },
       // BUG-2187 重设计后预览区改用的 token：SegmentedButton 的紧凑密度与
       // 预览进度条的 tonal 轨道底色，都是「预览studio 展示的样例控件」而非页面
@@ -1315,27 +1427,20 @@ void main() {
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
         'surfaceContainerHighest',
       },
-      'lib/src/pages/implementations/game_diagnostics_page.dart': <String>{
-        'ListTile(',
-      },
       'lib/src/pages/implementations/games_library_page.dart': <String>{
         'surfaceContainerHighest',
-        'fontSize:',
       },
       'lib/src/pages/implementations/history_reader_page.dart': <String>{
         'surfaceContainerHighest',
       },
-      'lib/src/pages/implementations/subtitle_collection_panel.dart': <String>{
-        'ListTile(',
-      },
       'lib/src/pages/implementations/subtitle_search_panel.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
-        'ListTile(',
       },
       'lib/src/media/collections/collection_detail_layout.dart': <String>{
         'BorderRadius.circular(',
         'surfaceContainerLow',
+        'surfaceContainerHigh',
         'surfaceContainerHighest',
       },
       // 更新中心（#1427）：行骨架走 FushiListItem，唯一命中的是新集截图缩略图的
@@ -1364,7 +1469,10 @@ void main() {
         'fontSize:',
       },
       'lib/src/reader/illustration_zoom_viewer.dart': <String>{'fontSize:'},
-      'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
+      'lib/src/reader/reader_desktop_chrome.dart': <String>{
+        'surfaceContainerLow',
+        'fontSize:',
+      },
       'lib/src/reader/reader_status_footer.dart': <String>{
         'fontSize:',
         'BorderRadius.circular(',
@@ -1391,8 +1499,6 @@ void main() {
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/pages/implementations/reader_history/card_widgets.part.dart':
-          <String>{'surfaceContainerHighest'},
       'lib/src/pages/implementations/reader_history/remote.part.dart': <String>{
         'VisualDensity.compact',
         'surfaceContainerHighest',
@@ -1409,10 +1515,8 @@ void main() {
       },
       'lib/src/pages/implementations/texthooker_page.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest',
+        'fontSize:',
       },
-      'lib/src/pages/implementations/video_fushi/audio_track.part.dart':
-          <String>{'ListTile('},
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},
       'lib/src/pages/implementations/video_fushi/controls_theme.part.dart':
@@ -1431,9 +1535,6 @@ void main() {
       'lib/src/pages/implementations/video_fushi/layout.part.dart': <String>{
         'fontSize:',
       },
-      'lib/src/pages/implementations/video_fushi/quality.part.dart': <String>{
-        'ListTile(',
-      },
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1443,17 +1544,13 @@ void main() {
           <String>{'BorderRadius.circular(', 'fontSize:'},
       'lib/src/pages/implementations/video_fushi_page.dart': <String>{
         'fontSize:',
-        'ListTile(',
-      },
-      'lib/src/pages/implementations/video_shader_dialog.dart': <String>{
-        'CheckboxListTile(',
       },
       'lib/src/settings/settings_schema_video.dart': <String>{'fontSize:'},
       'lib/src/utils/components/clipboard_lookup_text_panel.dart': <String>{
         'fontSize:',
       },
       'lib/src/utils/components/cover_badge.dart': <String>{
-        'BorderRadius.circular(',
+        'fontSize:',
       },
       'lib/src/utils/components/fushi_design_tokens.dart': <String>{
         'BorderRadius.circular(',
@@ -1469,6 +1566,7 @@ void main() {
         'fontSize:',
       },
       'lib/src/utils/components/settings_shared.dart': <String>{
+        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
@@ -1476,6 +1574,163 @@ void main() {
         'surfaceContainerHighest',
       },
       'lib/src/utils/popup_theme_css.dart': <String>{'surfaceContainerHigh'},
+      // Apple 玻璃设计系统 + MD3 Expressive 重设计（PR glass-material），见 allowedFiles。
+      'lib/src/lookup/lookup_popup_size_preview.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+      },
+      'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart': <String>{
+        'surfaceContainerHigh',
+      },
+      'lib/src/media/manga/aidoku/aidoku_cover_image.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/media/manga/library/manga_series_page.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/media/manga/manga_cover_failure.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/media/video/video_apple_chrome.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/media/video/video_side_panel.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'fontSize:',
+      },
+      'lib/src/onboarding/recommended_pack_download_mini_bar.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+      },
+      'lib/src/pages/implementations/ai_video_acquisition_page.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+      },
+      'lib/src/pages/implementations/discovery/discovery_layout.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/pages/implementations/media_discovery_page.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/video_discovery_page.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/reader/reader_floating_ball.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/settings/glass_settings_renderer.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/settings/settings_home_page.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/sync/sync_settings_schema/interconnect_link.part.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/batch_action_bar.dart': <String>{
+        'surfaceContainerHigh',
+      },
+      'lib/src/utils/components/fushi_bottom_action_bar.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_download_progress.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_dropdown.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_icon_button.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_inline_notice.dart': <String>{
+        'surfaceContainerHigh',
+      },
+      'lib/src/utils/components/fushi_loading_view.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_placeholder_message.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_tag.dart': <String>{
+        'surfaceContainerHighest',
+        'fontSize:',
+      },
+      'lib/src/utils/components/glass/fushi_apple_palette.dart': <String>{
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/utils/components/glass/fushi_expressive.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/utils/components/glass/fushi_glass_bars.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/glass/fushi_glass_buttons.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'fontSize:',
+      },
+      'lib/src/utils/components/glass/fushi_glass_chips.dart': <String>{
+        'BorderRadius.circular(',
+        'VisualDensity.compact',
+        'fontSize:',
+      },
+      'lib/src/utils/components/glass/fushi_glass_feedback.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/glass/fushi_glass_inputs.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+      },
+      'lib/src/utils/components/glass/fushi_glass_lists.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+        'fontSize:',
+        'Card(',
+        'ListTile(',
+      },
+      'lib/src/utils/components/glass/fushi_glass_overlays.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/glass/fushi_glass_toggles.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+        'SwitchListTile(',
+        'CheckboxListTile(',
+      },
+      'lib/src/utils/components/library_section_tabs.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/shelf_card_widgets.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/utils/misc/fushi_toast.dart': <String>{
+        'fontSize:',
+      },
     };
 
     expect(
@@ -1541,7 +1796,8 @@ void main() {
       isEmpty,
       reason:
           'Route ordinary visual chrome through shared MD3 components, or '
-          'add a reviewed allowlist reason for true content exceptions.',
+          'add a reviewed allowlist reason for true content exceptions:\n'
+          '${violations.join('\n')}',
     );
 
     final List<String> deadAllowlistEntries = allowedFiles.keys
@@ -1903,10 +2159,19 @@ void main() {
     final String source = File(
       'lib/src/utils/components/fushi_icon_button.dart',
     ).readAsStringSync();
-    final String buildSource = _sectionSource(
+    // 文件末尾新增了 Apple 按压态私有类 _AppleIconPressable（自己的 build），
+    // 「最后一个 build」不再是 FushiIconButton 的 build。先切出
+    // _FushiIconButtonState 整个类（到下一个顶层 class 为止），再取其中的 build
+    // 及其后的 _buildMaterialIcon / _buildAppleIcon 分支。
+    final String stateSource = _functionSource(
       source,
+      'class _FushiIconButtonState extends State<FushiIconButton>',
+      '\nclass ',
+    );
+    final String buildSource = _sectionSource(
+      stateSource,
       '  Widget build(BuildContext context) {',
-      source.length,
+      stateSource.length,
     );
 
     expect(buildSource, contains('FushiDesignTokens.of(context)'));
@@ -2694,7 +2959,38 @@ void main() {
     ).readAsStringSync();
 
     expect(dialog, contains('animationStyle: fushiMd3DialogAnimationStyle'));
-    expect(sheet, contains('sheetAnimationStyle: fushiMd3SheetAnimationStyle'));
+    // adaptiveModalSheet 先按系统「减少动态效果」把共享 sheet 动效收成一个局部
+    // sheetMotion（关动效 = AnimationStyle.noAnimation，否则恒为
+    // fushiMd3SheetAnimationStyle），三条 showModalBottomSheet 分支（Apple 液态
+    // 玻璃 / 毛玻璃 / 标准 MD3）都只吃这一个值。钉住：sheetMotion 的唯一非零来源
+    // 是共享 token，且每条底部弹层分支都用它——任何一条换回本地动效都会红。
+    final String modalSheet = _functionSource(
+      sheet,
+      'Future<T?> adaptiveModalSheet<T>({',
+      '\n}\n',
+    );
+    expect(
+      modalSheet,
+      contains(
+        RegExp(
+          r'AnimationStyle sheetMotion = noMotion\s*\?\s*'
+          r'AnimationStyle\.noAnimation\s*:\s*fushiMd3SheetAnimationStyle;',
+        ),
+      ),
+    );
+    final int bottomSheetCalls = 'showModalBottomSheet<T>('
+        .allMatches(modalSheet)
+        .length;
+    expect(bottomSheetCalls, greaterThanOrEqualTo(1));
+    expect(
+      'sheetAnimationStyle: sheetMotion'.allMatches(modalSheet).length,
+      bottomSheetCalls,
+      reason: 'every bottom-sheet branch must use the shared sheet motion',
+    );
+    expect(
+      RegExp(r'sheetAnimationStyle:\s*AnimationStyle\(').hasMatch(modalSheet),
+      isFalse,
+    );
     expect(menu, contains('popUpAnimationStyle: fushiMd3MenuAnimationStyle'));
     expect(home, contains('showAppDialog<bool>('));
     expect(sync, contains('showAppDialog<int>('));
@@ -2796,7 +3092,20 @@ void main() {
     expect(managerEmptyState, contains('FushiPlaceholderMessage('));
     expect(managerEmptyState, isNot(contains('DecoratedBox(')));
     expect(managerEmptyState, isNot(contains('surfaceContainerLowest')));
-    expect(managerTile, contains('FushiCard('));
+    // 词典行改成「整张列表读作一个设置分组」：每行外壳是共享分组行
+    // FushiGroupedListItem（MD3 分段卡 / Apple inset grouped），它内部就是按组内
+    // 位置定圆角的 FushiCard。守卫钉住外壳必须是这个共享原语、且共享原语本身仍
+    // 落到 FushiCard——不许页面退回自己画卡片底 / 圆角。
+    expect(managerTile, contains('FushiGroupedListItem('));
+    expect(containsIdentifierCall(managerTile, 'Card'), isFalse);
+    final String groupedListItem = _functionSource(
+      File(
+        'lib/src/utils/components/glass/fushi_glass_lists.dart',
+      ).readAsStringSync(),
+      'class FushiGroupedListItem extends StatelessWidget {',
+      'class FushiGroupedList extends StatelessWidget {',
+    );
+    expect(groupedListItem, contains('FushiCard('));
     expect(managerTile, contains('FushiListItem('));
     expect(managerTile, contains('FushiDesignTokens.of(context)'));
     expect(managerTile, contains('tokens.spacing'));
@@ -2831,7 +3140,15 @@ void main() {
       // 改成 Future<MinePopupResult>，守卫的区段结束锚点跟随新签名。
       'Future<MinePopupResult> onMineFromPopup',
     );
-    expect(dictionaryLoading, contains('FushiCard('));
+    // 查词在途指示改走共享延迟加载层 FushiDeferredLoading（150ms 后才露出、
+    // 至少停 300ms、撤场后是不拦指针的空盒；指示器是共享 FushiLoadingView），
+    // 取代原先「透明 FushiCard 里手搭一条 LinearProgressIndicator」。钉住共享
+    // 原语，且页面不许再自己搭进度条 / 卡片底。
+    expect(dictionaryLoading, contains('FushiDeferredLoading('));
+    expect(
+      containsIdentifierCall(dictionaryLoading, 'LinearProgressIndicator'),
+      isFalse,
+    );
     // 免白名单：`FushiCard(` 本身含子串 `Card(`，旧写法靠换名绕开；但仓内还有
     // `_EndpointCard(` / `_EpisodeRailCard(` / `SeriesShelfCard(` 等一堆以 Card
     // 结尾的组件没登记。标识符边界匹配只认裸 `Card` 构造。

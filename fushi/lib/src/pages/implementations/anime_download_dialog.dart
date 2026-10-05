@@ -1425,7 +1425,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       // Apple：surfaceContainerHighest 是 raisedHigh（浅 #D1D1D6），在分组底上是
       // 一块很重的灰；Apple 的内容分组一律 secondaryGroupedBackground。
       color: isGlassDesign(context)
-          ? theme.colorScheme.surfaceContainerLow
+          ? FushiDesignTokens.of(context).surfaces.group
           : theme.colorScheme.surfaceContainerHighest,
       child: FushiExpansionTile(
         dense: true,
