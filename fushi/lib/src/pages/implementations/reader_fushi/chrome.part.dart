@@ -3360,7 +3360,12 @@ extension _ReaderChrome on _ReaderFushiPageState {
         showTimer: ReaderFushiSource.instance.showReadingTimer,
         showProgress: ReaderFushiSource.instance.showTopProgressBar,
         textColor: _themeTextColor(),
-        backgroundColor: _chromeSurfaceColor(),
+        // 悬浮工具栏样式：读数是一枚浮在正文上的小胶囊（与悬浮工具栏同色），整条
+        // 带透明，竖排 / 横排都没有实体底栏。
+        backgroundColor: _floatingToolbars
+            ? _floatingToolbarColors().container!
+            : _chromeSurfaceColor(),
+        floating: _floatingToolbars,
         onTap: _anyChromeFloating
             ? () => _handleFloatingChromeReveal()
             : _toggleChrome,
@@ -3378,6 +3383,34 @@ extension _ReaderChrome on _ReaderFushiPageState {
       current: _progressCurrentChars,
       total: _progressTotalChars,
     )!;
+    if (_floatingToolbars) {
+      // 悬浮样式：不画整宽贴底线，改成屏底居中的一小段圆头进度（胶囊形）。
+      return Positioned(
+        left: 0,
+        right: 0,
+        bottom: _stableBottomInset > 6 ? _stableBottomInset : 6,
+        child: IgnorePointer(
+          child: RepaintBoundary(
+            child: Center(
+              child: SizedBox(
+                width: 96,
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.all(Radius.circular(2)),
+                  child: ColoredBox(
+                    color: _themeTextColor().withValues(alpha: 0.14),
+                    child: ReaderProgressEdgeLine(
+                      key: const ValueKey<String>('fushi_progress_edge_line'),
+                      ratio: ratio,
+                      color: _themeTextColor(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Positioned(
       left: MediaQuery.viewPaddingOf(context).left,
       right: MediaQuery.viewPaddingOf(context).right,

@@ -359,7 +359,13 @@ class ReaderStatusFooter extends StatefulWidget {
     this.onTap,
     this.onTapTracker,
     this.onTapProgress,
+    this.floating = false,
   });
+
+  /// 悬浮工具栏样式（M3E，默认）：读数是一枚浮在正文上的小胶囊（底色
+  /// [backgroundColor]、全圆角、轻阴影），整条带透明——不画整条实体底栏，竖排 /
+  /// 横排一样。带高（预留）不变，只是不再铺底色。
+  final bool floating;
 
   /// 会话累计的**读口**（每个 [tick] 采样一次）。账本在 `StudyClock`，页面不持有
   /// 任何会话累计副本（v92 统计纪律），所以这里拿的是函数而不是快照。
@@ -483,7 +489,7 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
       behavior: HitTestBehavior.opaque,
       onTap: widget.onTap,
       child: ColoredBox(
-        color: widget.backgroundColor,
+        color: widget.floating ? Colors.transparent : widget.backgroundColor,
         child: SizedBox(
           height: bandHeight,
           child: Padding(
@@ -494,7 +500,9 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             // 两段都 ellipsis，谁放不下谁先省略，行永远不溢出。
             child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints constraints) {
-              return Row(
+              final Widget row = Row(
+                mainAxisSize:
+                    widget.floating ? MainAxisSize.min : MainAxisSize.max,
                 mainAxisAlignment: widget.centered
                     ? MainAxisAlignment.center
                     : MainAxisAlignment.end,
@@ -568,6 +576,30 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
                       ),
                     ),
                 ],
+              );
+              if (!widget.floating) return row;
+              return Align(
+                alignment: widget.centered
+                    ? Alignment.center
+                    : AlignmentDirectional.centerEnd,
+                child: DecoratedBox(
+                  key: const ValueKey<String>('fushi_status_footer_pill'),
+                  decoration: ShapeDecoration(
+                    color: widget.backgroundColor,
+                    shape: const StadiumBorder(),
+                    shadows: <BoxShadow>[
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: row,
+                  ),
+                ),
               );
             }),
           ),
