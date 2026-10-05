@@ -326,7 +326,7 @@ void main() {
     return report;
   }
 
-  // BUG-2927：书 / 有声书 / 纯 SRT 书在 host 上被删后，host 此前不写同步墓碑，
+  // BUG-2945：书 / 有声书 / 纯 SRT 书在 host 上被删后，host 此前不写同步墓碑，
   // 第三台设备拉 /api/tombstones 什么都拿不到——「从所有设备删除」只删了两端。
   test('client 删书推送到 host：host 删行并写自己的 book 墓碑', () async {
     final String extractDir = p.join(work.path, 'host_books', 'bk-1');

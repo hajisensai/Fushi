@@ -311,6 +311,40 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
         "flags": event.modifierFlags.rawValue,
         "keyCode": event.keyCode,
       ])
+    case "key":
+      // 真 NSEvent 键盘按下/抬起（经 NSApp.postEvent，走 sendEvent → key equivalent /
+      // 菜单 → first responder 的真实派发链），供快捷键在 macOS 上的可达性取证。
+      // flags 带设备位（同 flagsChanged 的口径）：cmd 0x100008 / shift 0x20002 /
+      // alt 0x80020 / ctrl 0x40001。
+      let keyCode = UInt16((args["keyCode"] as? Int) ?? 0)
+      let chars = (args["chars"] as? String) ?? ""
+      let ignoring = (args["ignoring"] as? String) ?? chars
+      var raw: UInt = 0
+      if (args["cmd"] as? Bool) ?? false { raw |= 0x100008 }
+      if shift { raw |= 0x20002 }
+      if (args["alt"] as? Bool) ?? false { raw |= 0x80020 }
+      if (args["ctrl"] as? Bool) ?? false { raw |= 0x40001 }
+      let keyFlags = NSEvent.ModifierFlags(rawValue: raw)
+      guard let down = NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: keyFlags, timestamp: now,
+        windowNumber: window.windowNumber, context: nil, characters: chars,
+        charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: keyCode),
+        let up = NSEvent.keyEvent(
+        with: .keyUp, location: .zero, modifierFlags: keyFlags, timestamp: now + 0.03,
+        windowNumber: window.windowNumber, context: nil, characters: chars,
+        charactersIgnoringModifiers: ignoring, isARepeat: false, keyCode: keyCode)
+      else {
+        result(FlutterError(code: "event", message: "key construction failed", details: nil))
+        return
+      }
+      let mode = (args["mode"] as? String) ?? "post"
+      let before = AppDelegate.responderName(window.firstResponder)
+      deliverTestEvent(down, mode: mode)
+      deliverTestEvent(up, mode: mode)
+      result([
+        "firstResponderBefore": before,
+        "firstResponder": AppDelegate.responderName(window.firstResponder),
+      ])
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -338,6 +372,8 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
       case .flagsChanged: vc.flagsChanged(with: event)
       case .leftMouseDown: vc.mouseDown(with: event)
       case .leftMouseUp: vc.mouseUp(with: event)
+      case .keyDown: vc.keyDown(with: event)
+      case .keyUp: vc.keyUp(with: event)
       default: NSApp.sendEvent(event)
       }
     default: NSApp.postEvent(event, atStart: false)

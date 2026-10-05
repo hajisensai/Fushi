@@ -3285,6 +3285,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       event.logicalKey,
       activeModifierKeys(),
+      physicalKey: event.physicalKey,
     );
     if (action == null) return KeyEventResult.ignored;
     if (repeat && _panStepFor(action) == null) {
@@ -3482,16 +3483,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 注册表解析 → 跨页方向校正 → 上下文门控。键盘路径与 WebView 桥回传路径共用，
   /// 保证「改键」对两条路径同时生效（否则改了键，WebView 持焦时又变回默认键位）。
+  ///
+  /// [physicalKey] 只由 Flutter 键盘路径传入（BUG-2948：macOS 上 Shift+/ 的逻辑键是
+  /// `question`，由注册表按物理键收拢）；WebView 桥回传的是按 DOM `code` 拼的注册表
+  /// token，本就是表内键名，不需要。
   MangaReaderInputAction? _resolveMangaKeyAction(
     LogicalKeyboardKey key,
-    Set<ModifierKey> modifiers,
-  ) {
+    Set<ModifierKey> modifiers, {
+    PhysicalKeyboardKey? physicalKey,
+  }) {
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
     final ShortcutAction? bound =
         registry.resolveKeyboard(
           key,
           modifiers: modifiers,
           scope: ShortcutScope.manga,
+          physicalKey: physicalKey,
         ) ??
         // 兜底「返回上一级」（universal，默认 Esc）。排在 manga scope 之后：本页专属
         // 键永远优先。跨页方向校正只作用于翻页动作，globalBack 原样穿过。
@@ -3499,11 +3506,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           key,
           modifiers: modifiers,
           scope: ShortcutScope.universal,
+          physicalKey: physicalKey,
         ) ??
         registry.resolveKeyboard(
           key,
           modifiers: modifiers,
           scope: ShortcutScope.global,
+          physicalKey: physicalKey,
         );
     final ShortcutAction? corrected =
         resolveMangaArrowPageTurn(

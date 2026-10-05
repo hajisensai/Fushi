@@ -14,7 +14,9 @@ import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
+import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
@@ -655,9 +657,24 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   Widget _buildTasks() {
     // 有声书「转录后入库」任务包在最外层：它的条目经闭包并进下面统一列表的
     // additionalTasks，与各下载来源并列排序/筛选。
-    return AudiobookTranscribeTasksSection(
+    final Widget tasks = AudiobookTranscribeTasksSection(
       tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
           _buildTaskSources(transcribe),
+    );
+    // BUG-2950：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
+    // 顶部说明原因；无问题时横幅零高度，任务列表布局不变。
+    return Column(
+      children: <Widget>[
+        ValueListenableBuilder<TorrentNetworkIssue>(
+          valueListenable: ref.read(appProvider).torrentNetworkIssue,
+          builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
+              TorrentNetworkIssueBanner(
+            issue: issue,
+            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          ),
+        ),
+        Expanded(child: tasks),
+      ],
     );
   }
 
@@ -767,6 +784,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                     liveDataAbsence: details.liveDataAbsence,
                                     initialSnapshot: details.snapshot,
                                     initialFiles: details.files,
+                                    networkIssue:
+                                        appModel.torrentNetworkIssue,
                                   ),
                                 );
                               },
