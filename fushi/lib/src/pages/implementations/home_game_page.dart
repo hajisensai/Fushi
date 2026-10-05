@@ -20,6 +20,11 @@ import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationFromVisibleSubtree;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/utils.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），
@@ -108,8 +113,21 @@ class _HomeGamePageState extends State<HomeGamePage> {
     gameSectionNotifier.addListener(_onSectionRequested);
   }
 
+  /// 浮动工具栏的显隐（滚动驱动，与视频 / 书 / 漫画库同构）。
+  final FushiFloatingChromeController _chrome = FushiFloatingChromeController();
+
+  /// 子区页头登记动作的槽：由浮动工具栏右侧的动作组画出。
+  final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
+
+  bool _onScroll(ScrollNotification notification) {
+    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    return _chrome.handleScrollNotification(notification);
+  }
+
   @override
   void dispose() {
+    _chrome.dispose();
+    _actionsSlot.dispose();
     gameSectionNotifier.removeListener(_onSectionRequested);
     // HomeGamePage 生命周期结束后不要把一次外部导航请求泄漏给下一次挂载（也避免
     // profile/窗口重建后意外停在旧工作台）。回落到默认首屏（游戏首页）。运行中的
@@ -121,6 +139,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
   void _onSectionRequested() {
     final GameSection requested = gameSectionNotifier.value;
     if (requested == _section || !mounted) return;
+    // 换了子区，新页面从顶部开始：工具栏回来。
+    _chrome.show();
     setState(() {
       _section = requested;
       if (requested == GameSection.discover) _discoverVisited = true;
@@ -219,12 +239,30 @@ class _HomeGamePageState extends State<HomeGamePage> {
             : const SizedBox.shrink(),
       ),
     };
-    return Material(
-      type: MaterialType.transparency,
-      // 六个子区常驻 IndexedStack、各挂一份常量 selected 的页签：广播真实所在子区，
-      // 让隐藏页的页签跟着走，被切出来时指示条才有起点可滑（见
-      // [LibrarySectionFollowScope]）。
-      child: LibrarySectionFollowScope(
+    // 顶部与视频 / 书 / 漫画库同一套 M3E 浮动工具栏（2026-10-06「库页顶部结构
+    // 统一」）：外壳大标题下一行是贴合内容宽的分区页签胶囊 + 右侧动作组；各子区
+    // 页头里的那份页签在 [GameSectionTabsHostScope] 下留空，动作登记进外壳的
+    // [_actionsSlot] 由动作组画出。
+    final Widget navigation = GameSectionTabs(
+      selected: _section,
+      // 焦点 id 沿用各子区原来那份页签的稳定 id（`game-library-tab-sections`
+      // 等）：键盘 / 手柄 / 集成测试按它定位，换成外壳统一画也不能变。
+      focusIdPrefix: switch (_section) {
+        GameSection.dashboard => 'game-dashboard-tab',
+        GameSection.library => 'game-library-tab',
+        GameSection.monitor => 'game-capture-tab',
+        GameSection.discover => 'game-discover-tab',
+        GameSection.importGames => 'game-import-tab',
+        GameSection.settings => 'game-settings-tab',
+        GameSection.diagnostics => 'game-diagnostics-tab',
+      },
+      floating: true,
+      onSelectDashboard: _showDashboard,
+      onSelectLibrary: _showLibrary,
+      onSelectMonitor: _showMonitor,
+      onSelectSettings: _showSettings,
+    );
+    final Widget body = LibrarySectionFollowScope(
         current: gameSectionNotifier,
       // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
       // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
@@ -246,11 +284,34 @@ class _HomeGamePageState extends State<HomeGamePage> {
             // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
             DropSurfaceScope(
               isActive: () => _section == section,
-              child: SectionPrimaryScrollScope(child: sections[section]!),
+              // 子区整体让出浮动工具栏的高度（工具栏叠在内容上，见下方
+              // [FushiFloatingChromeOverlay]）。
+              child: SectionPrimaryScrollScope(
+                child: FushiFloatingChromeInsetPadding(
+                  child: sections[section]!,
+                ),
+              ),
             ),
         ],
         ),
       ),
+    );
+    return Material(
+      type: MaterialType.transparency,
+      child: FushiShellTitleScope(
+        title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
+        actionsSlot: _actionsSlot,
+        child: FushiFloatingChromeScope(
+          controller: _chrome,
+          // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
+          child: FushiFloatingChromeOverlay(
+            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: GameSectionTabsHostScope(child: body),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -407,8 +468,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
                       hasEngineSource: _controller.hasEngineSource,
                       selectedTextThreadKey: _controller.selectedTextThreadKey,
                     );
+                    final double page =
+                        FushiDesignTokens.of(context).spacing.page;
+                    // 左右取页边，与浮动页签胶囊 / 工具行 / 内容同一条左右缘。
                     return Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                      padding: EdgeInsets.fromLTRB(page, 8, page, 12),
                       child: _CaptureStatusStrip(
                         lineCount: lines.length,
                         latestLine: lines.isEmpty ? null : lines.last.text,

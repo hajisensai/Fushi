@@ -1250,7 +1250,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       SliverPadding(
         key: const ValueKey<String>('games_pending_downloads'),
         // 底边留 0：下一段（网格）自带 16 顶边，两段之间正好一个 spacing。
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+        padding: const EdgeInsets.fromLTRB(
+          _kGameGridEdge,
+          16,
+          _kGameGridEdge,
+          0,
+        ),
         sliver: SliverGrid.builder(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: metrics.columns,
@@ -1305,11 +1310,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         SliverToBoxAdapter(
           child: FushiSectionTitle(
             t.game_library,
-            padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+            padding: const EdgeInsets.fromLTRB(
+              _kGameGridEdge,
+              20,
+              _kGameGridEdge,
+              0,
+            ),
           ),
         ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+        padding: const EdgeInsets.fromLTRB(
+          _kGameGridEdge,
+          16,
+          _kGameGridEdge,
+          88,
+        ),
         sliver: SliverMainAxisGroup(
           slivers: _buildGridSlivers(context, visible, metrics),
         ),
@@ -1349,14 +1364,21 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   ) {
     final double viewport = metrics.viewportWidth;
     final double cardWidth =
-        viewport < 600 ? (viewport - 32) * 0.86 : _kContinueCardWidth;
+        viewport < 600
+            ? (viewport - _kGameGridEdge * 2) * 0.86
+            : _kContinueCardWidth;
     final double cardHeight = cardWidth * 9 / 16;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         FushiSectionTitle(
           t.game_focus_continue,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.fromLTRB(
+            _kGameGridEdge,
+            16,
+            _kGameGridEdge,
+            8,
+          ),
         ),
         SizedBox(
           // 卡片悬停抬升 + 投影需要上下各留几像素，不被横向列表裁掉。
@@ -1366,7 +1388,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
             child: ListView.separated(
               key: const ValueKey<String>('games_continue_row'),
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(
+                horizontal: _kGameGridEdge,
+                vertical: 8,
+              ),
               clipBehavior: Clip.none,
               itemCount: games.length,
               separatorBuilder: (_, __) => const SizedBox(width: 16),
@@ -1596,6 +1621,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 /// 游戏网格的卡间距。
 const double _kGameGridSpacing = 16;
 
+/// 游戏库内容段的左右页边：与外壳大标题、浮动页签胶囊、工具行同一条左右缘
+/// （[FushiSpacingTokens.page]，2026-10-06 库页顶部对齐）。
+const double _kGameGridEdge = 20;
+
 /// 游戏海报卡的目标宽度（ReinaManager 海报宽档）。
 const double _kGameCardTargetWidth = 168;
 
@@ -1612,8 +1641,8 @@ class _GameGridMetrics {
 
   /// 复算 `MaxCrossAxisExtent(168)` 的列数与卡宽（ceil → 卡宽 ≤168）。
   factory _GameGridMetrics.forWidth(double maxWidth) {
-    // 32 = 网格段左右各 16 的内边距。
-    final double rawWidth = maxWidth - 32;
+    // 网格段左右各一个页边的内边距。
+    final double rawWidth = maxWidth - _kGameGridEdge * 2;
     final double available = rawWidth < 1 ? 1 : rawWidth;
     final int columns = ((available + _kGameGridSpacing) /
             (_kGameCardTargetWidth + _kGameGridSpacing))

@@ -13,6 +13,8 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInsetPadding;
 import 'package:fushi/utils.dart';
 
 /// The body content for the Reader tab in the main menu.
@@ -47,8 +49,16 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.library,
           label: t.library_view_shelf,
-          builder: (BuildContext context, Widget navigation) =>
-              mediaSource.buildHistoryPage(navigation: navigation),
+          // 书架（[ReaderFushiHistoryPage]）主滚动视图自己让出浮动工具栏的高度；
+          // 其它来源的通用回退页不认识工具栏，整体下移。
+          handlesChromeInset: true,
+          builder: (BuildContext context, Widget navigation) {
+            final Widget page =
+                mediaSource.buildHistoryPage(navigation: navigation);
+            return page is ReaderFushiHistoryPage
+                ? page
+                : FushiFloatingChromeInsetPadding(child: page);
+          },
         ),
         if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           MediaLibraryViewSpec(

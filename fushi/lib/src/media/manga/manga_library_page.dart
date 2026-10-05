@@ -44,6 +44,8 @@ class MangaLibraryPage extends StatelessWidget {
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.library,
           label: t.library_view_shelf,
+          // 书架主滚动视图自己让出浮动工具栏的高度（内容滚到工具栏底下）。
+          handlesChromeInset: true,
           builder: (BuildContext context, Widget navigation) =>
               ReaderFushiHistoryPage(mangaOnly: true, navigation: navigation),
         ),
