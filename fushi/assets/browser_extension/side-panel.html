@@ -28,8 +28,8 @@
     <select id="track" class="track-select" aria-label="字幕轨" data-i18n-aria-label="sp_track_aria_label" hidden></select>
     <div id="subs-row" class="subs-row" hidden>
       <input id="subs-query" type="search" placeholder="搜在线字幕（日文原名命中率最高）" data-i18n-placeholder="sp_subs_query_placeholder" aria-label="字幕搜索词" data-i18n-aria-label="sp_subs_query_aria_label">
-      <input id="subs-ep" type="number" min="1" placeholder="集" data-i18n-placeholder="sp_subs_ep_placeholder" title="集数（可选）" data-i18n-title="sp_subs_ep_title" aria-label="集数" data-i18n-aria-label="sp_subs_ep_aria_label">
-      <button id="subs-go" type="button" title="搜索" data-i18n-title="sp_subs_go_title" data-i18n="sp_subs_go_button">搜</button>
+      <label class="subs-ep-field" title="集数（可选）" data-i18n-title="sp_subs_ep_title"><span class="msr-slot subs-ep-icon" data-fushi-icon="numbers" data-fushi-icon-size="18" aria-hidden="true"></span><input id="subs-ep" type="number" min="1" placeholder="" aria-label="集数" data-i18n-aria-label="sp_subs_ep_aria_label"></label>
+      <button id="subs-go" type="button" title="搜索" data-i18n-title="sp_subs_go_title" aria-label="搜索" data-i18n-aria-label="sp_subs_go_title"><span class="msr-slot" data-fushi-icon="search" data-fushi-icon-size="20" aria-hidden="true"></span></button>
     </div>
     <div id="subs-results" class="subs-results" hidden></div>
     <div id="offset" class="offset-row" hidden>
