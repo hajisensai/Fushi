@@ -198,6 +198,9 @@ void main() {
       findsOneWidget,
     );
     // 名字进了输入框；主题列表在按「应用」前一条都没写。
+    // 名称框在列表最上面的页头卡里（2026-10 重设计），滚回顶部再看。
+    await tester.drag(_verticalScrollable, const Offset(0, 2000));
+    await tester.pumpAndSettle();
     expect(find.widgetWithText(TextField, '暖纸'), findsOneWidget);
     expect(appModel.upserts, isEmpty);
     // AI 没给音频高亮色：全局偏好保持原值（null），没有被清成别的。
