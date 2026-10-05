@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 书籍、游戏等交互式元数据刮削的统一失败态展示件。
@@ -13,6 +14,11 @@ import 'package:fushi/utils.dart';
 /// 通、代理没生效、被限流还是对面 5xx，只能换页翻日志。一句可行动的话回答「我该做
 /// 什么」，完整详情回答「到底怎么了」，两者都留在出错的地方。
 ///
+/// 外观（M3E，2026-10-06）：与全应用错误态同一个 [FushiPlaceholderMessage]
+/// （tone: error——errorContainer 色块图标弹入 + 标题 / 原因淡入上浮），下面是
+/// 「重试」（调用方给了 [onRetry] 才出现）与「显示详情」按钮组，详情展开成一块
+/// tonal 卡并带「复制错误」。Apple 设计系统 / 墨水屏由共享组件自行降级。
+///
 /// 差异只在标题文案与原因折叠规则，均由调用方传入。
 class ScrapeFailureView extends StatefulWidget {
   const ScrapeFailureView({
@@ -20,6 +26,7 @@ class ScrapeFailureView extends StatefulWidget {
     required this.title,
     required this.reason,
     required this.detail,
+    this.onRetry,
   });
 
   /// 失败标题（各弹窗自己的 i18n 文案，如「搜索失败，点「搜索」可重试。」）。
@@ -35,6 +42,10 @@ class ScrapeFailureView extends StatefulWidget {
   /// 错误日志与日志上传，只堵界面等于没堵。
   final String detail;
 
+  /// 重新执行失败的那次请求。null = 不出「重试」按钮（调用方另有重试入口，
+  /// 例如搜索框旁的「搜索」键）。
+  final VoidCallback? onRetry;
+
   @override
   State<ScrapeFailureView> createState() => _ScrapeFailureViewState();
 }
@@ -46,36 +57,45 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 结果区高度由弹窗决定，可能比本列矮（窄窗/小屏）：外层滚动兜底，避免
+    // RenderFlex overflow 把失败态本身变成一条黄黑警告。
     return Center(
-      // 结果区高度由弹窗决定，可能比本列矮（窄窗/小屏）：外层滚动兜底，避免
-      // RenderFlex overflow 把失败态本身变成一条黄黑警告。
       child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: FushiPlaceholderMessage(
+          tone: FushiPlaceholderTone.error,
+          icon: FushiIcons.error,
+          message: widget.title,
+          detail: widget.reason,
+          detailMaxLines: null,
+          action: _buildActions(context),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActions(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
           children: <Widget>[
-            FushiIcon(Icons.error_outline, color: theme.colorScheme.error),
-            const SizedBox(height: 8),
-            Text(
-              widget.title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.error),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              widget.reason,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 4),
+            if (widget.onRetry case final VoidCallback retry)
+              FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('scrape_failure_retry'),
+                onPressed: retry,
+                icon: const FushiIcon(FushiIcons.refresh, size: 18),
+                label: Text(t.retry),
+              ),
             // 展开开关：默认折叠，一键看全。图标随状态翻转，文案两态各自 i18n。
             FushiTextButton.icon(
               key: const ValueKey<String>('scrape_failure_detail_toggle'),
               icon: FushiIcon(
-                _detailShown ? Icons.expand_less : Icons.expand_more,
+                _detailShown ? FushiIcons.expandLess : FushiIcons.expandMore,
                 size: 18,
               ),
               label: Text(_detailShown
@@ -83,45 +103,56 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                   : t.scrape_failure_detail_show),
               onPressed: () => setState(() => _detailShown = !_detailShown),
             ),
-            if (_detailShown) ...<Widget>[
-              const SizedBox(height: 8),
-              // 详情块限高 + 内部滚动：长异常链（含底层 SocketException 全文）不把
-              // 「复制」按钮推出可视区，用户永远够得着上报入口。
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 132),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FushiCard(
-                    padding: EdgeInsets.all(tokens.spacing.gap),
-                    color: tokens.surfaces.overlay,
-                    borderRadius: tokens.radii.cardRadius,
-                    child: SingleChildScrollView(
-                      child: SelectableText(
-                        widget.detail,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+          ],
+        ),
+        AnimatedSize(
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: !_detailShown
+              ? const SizedBox(width: double.infinity)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    const SizedBox(height: 12),
+                    // 详情块限高 + 内部滚动：长异常链（含底层 SocketException 全文）
+                    // 不把「复制」按钮推出可视区，用户永远够得着上报入口。
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 132),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FushiCard(
+                          tone: FushiCardTone.error,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          borderRadius: FushiM3eShape.smallRadius,
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              widget.detail,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 8),
+                    FushiTextButton.icon(
+                      icon: const FushiIcon(FushiIcons.copy, size: 18),
+                      label: Text(t.copy_error),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: widget.detail));
+                        FushiToast.show(
+                          msg: t.error_copied,
+                          severity: ToastSeverity.success,
+                        );
+                      },
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 8),
-              FushiTextButton.icon(
-                icon: const FushiIcon(Icons.copy, size: 18),
-                label: Text(t.copy_error),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: widget.detail));
-                  FushiToast.show(
-                    msg: t.error_copied,
-                    severity: ToastSeverity.success,
-                  );
-                },
-              ),
-            ],
-          ],
         ),
-      ),
+      ],
     );
   }
 }
