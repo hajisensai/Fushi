@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2719 条。点号进各自文件。
+> 共 2724 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
+| [BUG-2960](bugs/BUG-2960-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |
+| [BUG-2959](bugs/BUG-2959-md3-large-app-bar-title.md) | ✅ | ✅ | MD3 大标题顶栏展开态被主题钉成 titleLarge 小字（设置页标题上方大片空白） |
+| [BUG-2958](bugs/BUG-2958-md3-settings-search-capsule.md) | ✅ | ✅ | MD3 设置页搜索栏被压成 12 圆角方框（胶囊判据认不出包了 Padding 的放大镜） |
+| [BUG-2957](bugs/BUG-2957-android-liquid-glass-bar.md) | ✅ | ✅ | Android 设计系统 Apple（液态玻璃）底栏渲染成灰色矩形 |
 | [BUG-2956](bugs/BUG-2956-jimaku-key-not-found.md) | ✅ | ✅ | Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕 |
 | [BUG-2955](bugs/BUG-2955-video-cover-online-search.md) | ✅ | ✅ | 视频设置封面只能选本地文件，在线搜索封面入口丢失 |
 | [BUG-2954](bugs/BUG-2954-reader-live-hooks-cleared.md) | ✅ | ✅ | 阅读器按钮布局等实时设置在切卷/叠开阅读器后改了不生效，须退出重进 |

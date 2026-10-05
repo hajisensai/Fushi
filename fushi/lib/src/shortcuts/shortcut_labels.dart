@@ -209,6 +209,19 @@ extension ShortcutActionLabel on ShortcutAction {
   }
 }
 
+/// 按钮 / 菜单文案后缀快捷键提示（`插图画廊 · G`）。只在 [keyboardHints] 为 true
+/// （桌面：键盘是常规输入）时追加；触屏平台（Android / iOS）不挂——手机、平板上
+/// 菜单里写「有声书 · B」是噪声（BUG-2960）。键名走 [InputBinding.displayLabel]，
+/// 不用持久化 token（`Ctrl+KeyF`）。
+String labelWithShortcutHint(
+  String label,
+  List<InputBinding> keyboardBindings, {
+  required bool keyboardHints,
+}) {
+  if (!keyboardHints || keyboardBindings.isEmpty) return label;
+  return '$label · ${keyboardBindings.first.displayLabel}';
+}
+
 /// Localised label for a [ShortcutScope].
 extension ShortcutScopeLabel on ShortcutScope {
   String get label {

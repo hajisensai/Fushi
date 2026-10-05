@@ -98,6 +98,8 @@ class FushiGlassBackdrop extends StatelessWidget {
           child: enabled
               ? IgnorePointer(
                   child: GlassContainer(
+                    // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+                    useOwnLayer: true,
                     shape: fushiGlassShapeOf(borderRadius),
                     quality: fushiGlassQuality(context, prominent: prominent),
                     settings: tint == null
@@ -4817,6 +4819,8 @@ class FushiPopupSurface extends StatelessWidget {
           ),
         ),
         child: GlassContainer(
+          // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+          useOwnLayer: true,
           shape: fushiGlassShapeOf(radius),
           quality: fushiGlassQuality(context, prominent: true),
           settings:

@@ -309,7 +309,7 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiTagChip, 'Ctrl+KeyB'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Ctrl+B'), findsOneWidget);
   });
 
   testWidgets(
@@ -341,7 +341,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.keyQ);
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FushiTagChip, 'KeyQ'), findsOneWidget);
+    expect(find.widgetWithText(FushiTagChip, 'Q'), findsOneWidget);
     expect(find.text(t.shortcut_press_key), findsNothing);
     expect(find.byType(ShortcutBindingEditDialog), findsOneWidget);
   });

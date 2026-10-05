@@ -2045,9 +2045,13 @@ ThemeData buildFushiThemeData({
             ),
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
-      titleTextStyle: appleDesign
-          ? null
-          : tt.titleLarge?.copyWith(color: cs.onSurface),
+      // 不在主题里钉 titleTextStyle：M3 默认就是 titleLarge / onSurface，而主题级
+      // titleTextStyle 会同时盖掉 SliverAppBar.medium / .large 展开态的
+      // headlineSmall / headlineMedium 大标题（Flutter 展开态取
+      // `titleTextStyle ?? appBarTheme.titleTextStyle ?? 大标题默认`），
+      // 大标题顶栏只剩一行 22 号小字压在 152 高的空带底部（BUG-2959：Android
+      // MD3 设置页「设置」上方大片空白）。
+      titleTextStyle: null,
       iconTheme: appleDesign
           ? null
           : IconThemeData(color: cs.onSurface, size: 24),

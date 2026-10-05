@@ -839,11 +839,29 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         ],
       );
     }
+    // 底部导航直达的根设置页（没有返回出口）：M3 大标题栏的 64 高工具栏行
+    // 只装返回箭头 / 操作，这里两样都没有，展开态等于标题上方一整行空白再加
+    // 大标题区的余量（BUG-2959）。根页与书架等其它根 Tab 一样把标题放进
+    // 工具栏行；带返回出口的全屏设置仍用大标题栏（工具栏行有箭头）。
+    final bool rootPage = widget.onBack == null &&
+        !(ModalRoute.of(context)?.impliesAppBarDismissal ?? false);
     return Material(
       color: tokens.surfaces.page,
       child: CustomScrollView(
         slivers: <Widget>[
-          if (showAppBar)
+          if (showAppBar && rootPage)
+            SliverAppBar(
+              key: const ValueKey<String>('settings_home_root_app_bar'),
+              pinned: true,
+              automaticallyImplyLeading: false,
+              title: Text(t.settings),
+              titleTextStyle: Theme.of(context)
+                  .textTheme
+                  .headlineSmall
+                  ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
+              backgroundColor: tokens.surfaces.page,
+            )
+          else if (showAppBar)
             SliverAppBar.large(
               title: Text(t.settings),
               backgroundColor: tokens.surfaces.page,

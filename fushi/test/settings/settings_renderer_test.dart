@@ -1215,6 +1215,54 @@ void main() {
     },
   );
 
+  // BUG-2959：底部导航直达的 MD3 根设置页没有返回出口，大标题栏 64 高的
+  // 工具栏行整行空着，「设置」被压到一大片空白下面。根页标题进工具栏行；带
+  // 返回出口的设置仍是大标题栏。
+  for (final bool root in <bool>[true, false]) {
+    testWidgets(
+      'MD3 narrow settings home: ${root ? 'root tab puts the title in the '
+                'toolbar row' : 'page with a back exit keeps the large app bar'}',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(400, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final AppModel appModel = await _prefsBackedAppModel(db);
+        await tester.pumpWidget(
+          _harness(
+            platform: TargetPlatform.android,
+            appModel: appModel,
+            builder: (SettingsContext _) =>
+                SettingsHomePage(onBack: root ? null : () {}),
+          ),
+        );
+        await tester.pump();
+
+        final Finder rootBar = find.byKey(
+          const ValueKey<String>('settings_home_root_app_bar'),
+        );
+        expect(rootBar, root ? findsOneWidget : findsNothing);
+        final Finder title = find.text(t.settings);
+        expect(title, findsWidgets);
+        final double titleTop = tester.getTopLeft(title.first).dy;
+        if (root) {
+          expect(
+            titleTop,
+            lessThan(kToolbarHeight),
+            reason: '根页标题在工具栏行里，上方没有空行',
+          );
+        } else {
+          expect(
+            titleTop,
+            greaterThan(kToolbarHeight),
+            reason: '大标题栏：工具栏行放返回箭头，大标题在其下',
+          );
+          expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+        }
+      },
+    );
+  }
+
   // 宽屏设置在**第一帧**就已经选中并渲染了 destinations.first（= 外观）的详情
   // 面板：settings_home_page.dart 在 _selectedDestinationId 为 null 时无条件落到
   // destinations.first.id，material_settings_renderer 的 `selected:` 也不区分窄/
