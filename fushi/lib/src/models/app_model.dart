@@ -4955,11 +4955,13 @@ class AppModel with ChangeNotifier {
     } else if (_torrentDhtRunningSince == null) {
       _torrentDhtRunningSince = DateTime.now();
       await _refreshTorrentFakeIpBypass(host);
+      // DoH 探测期间 AppModel 可能已 dispose（host 置 null、notifier 已释放）
+      // 或 host 被换掉：此时 host 与通知器都不再归本轮所有，不得再写。
+      if (!identical(host, _embeddedTorrentHost)) return;
     }
     if (status.dhtRunning &&
         !_torrentBypassFed &&
-        _torrentFakeIpBypass.dhtNodes.isNotEmpty &&
-        identical(host, _embeddedTorrentHost)) {
+        _torrentFakeIpBypass.dhtNodes.isNotEmpty) {
       host.addDhtNodes(_torrentFakeIpBypass.dhtNodes);
       _torrentBypassFed = true;
     }
