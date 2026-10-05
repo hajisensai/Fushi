@@ -523,7 +523,9 @@ void main() {
       expect((icon.center.dy - label.center.dy).abs(), lessThan(2));
     });
 
-    testWidgets('glass collapsed sidebar is an icon-only strip', (
+    // 2026-10-05 用户反馈「所有文字不要隐藏」：窄条不再只有图标，图标下方恒
+    // 显示标签（与 MD3 收起 rail 一致），总宽不变。
+    testWidgets('glass collapsed sidebar strip shows icon + label', (
       WidgetTester tester,
     ) async {
       await pumpRail(tester, glass: true, extended: false);
@@ -531,8 +533,9 @@ void main() {
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
         kAdaptiveNavRailWidth,
       );
-      expect(find.text('Books'), findsNothing);
+      expect(find.text('Books'), findsOneWidget);
       expect(_fushiIcon(Icons.book), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('glass sidebar row: focus + Enter selects', (
