@@ -158,4 +158,33 @@ void main() {
     expect(bar, isNot(contains('selectionTop')));
     expect(bar, isNot(contains('selectionBottom')));
   });
+
+  // 新字段的发送端要有守卫咬住：删掉这一行时，行为 harness（37 场景）仍然全绿 —— 所以
+  // 「harness 绿」不能证明 emit→parse→map 这条新链路被锁住（HBK-AUDIT-200 同批发现）。
+  test('selection menu payload carries per-grip boxes', () {
+    final String scripts = File(
+      'lib/src/reader/reader_selection_scripts.dart',
+    ).readAsStringSync();
+    final int send = scripts.indexOf(
+      'payload.handlesBoxes = this.selectionHandlesBoxes();',
+    );
+    expect(
+      send,
+      greaterThanOrEqualTo(0),
+      reason: 'onSelectionMenu payload 必须带出两球各自的盒',
+    );
+    final int dev = scripts.indexOf('payload.handlesRect = this.selectionHandlesRect();');
+    expect(dev, greaterThanOrEqualTo(0));
+    expect(
+      scripts.indexOf('handlesBoxes', dev),
+      greaterThan(send),
+      reason: 'handlesBoxes 必须紧跟同一段 payload 装配，不散落他处',
+    );
+    final String boxes = scripts.substring(
+      scripts.indexOf('selectionHandlesBoxes: function('),
+      scripts.indexOf('showSelectionHandles: function('),
+    );
+    expect(boxes, contains('getBoundingClientRect()'));
+    expect(boxes, contains('boxes.push('));
+  });
 }

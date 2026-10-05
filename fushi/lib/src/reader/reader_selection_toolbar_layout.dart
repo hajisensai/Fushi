@@ -5,19 +5,18 @@ import 'package:flutter/rendering.dart';
 /// Positions the non-modal selection action bar next to the selected text while
 /// keeping it clear of the two grip hit boxes.
 ///
-/// 锚点是**选区正文**（[selectionRect] = 选区首字的 rect，与原实现同源）：正常情况面板
-/// 贴在选区首行上方一格 [gap]。手柄触控盒（[gripBoxes]）只是**要避开的障碍**，不再当作
-/// 锚点 —— 把它当锚点会两头错：
-///   - 横排时两球挂在字**下方**，并集的 `top` 落在正文里面，"放在并集上方"算出来就是
-///     压在选区首行上；
-///   - 竖排时起点球在字**上方**，页顶选区的"上方"永远放不下，于是翻到并集**底端**（末字
-///     手柄下方），面板从选区头部掉到选区尾部下方（用户报「面板往下了」）。
+/// 锚点是**选区正文**（[selectionRect] = 选区首字的 rect，与原实现同源）：首选位置是选区首行
+/// 上方一格 [gap]。手柄触控盒（[gripBoxes]）是**要避开的障碍**，但**不参与定锚**，而且：
+///   - 用两球的并集 bbox 当锚点：横排时并集 `top` 落在正文里（面板被算到正文上），竖排页顶
+///     放不下时会翻到并集**底端**（末字球下方）—— 面板从选区头部掉到选区尾部下方；
+///   - 用**所有球的全局 top/bottom** 判断"上方/下方"同样错：竖排跨列时（起点在右列中部、
+///     终点在下一列顶部）两球的 y 顺序与选区起止顺序**相反**，末端球贴页顶就会被误判成
+///     "选区头部上方没空间"，于是白白翻到下方。
 ///
-/// 障碍必须**按单个球**算（[gripBoxes] 而不是并集）：两个球在竖排长选区里可以离得很远，
-/// 用它们的外接矩形会让中间那一大片正文空白也变成障碍，面板于是被挤到 bbox 之外。
-///
-/// 保留本轮既有改进：子元件先测量（不用假定 48px 高度）；两个矩形在调用方经真实缩放链换
-/// 成 Overlay 画布坐标，本类只做纯几何。
+/// 因此这里按**逐个球**的上下边界生成候选，选"合法（在视口内、且不与正文/任一球相交）"
+/// 中离首选位置最近的那个；最后再对最终位置复验一次碰撞。只有当候选里**确实没有**合法
+/// 位置时才显式降级到碰撞面积最小的候选 —— `clamp` 只用于把结果收进视口，绝不当作
+/// "不撞障碍"的保证。
 class ReaderSelectionToolbarLayout extends SingleChildLayoutDelegate {
   const ReaderSelectionToolbarLayout({
     required this.selectionRect,
@@ -30,7 +29,7 @@ class ReaderSelectionToolbarLayout extends SingleChildLayoutDelegate {
   /// 选区正文锚点（选区首字 rect，已映射到 Overlay 画布空间）。
   final Rect selectionRect;
 
-  /// 两端手柄 32px 触控盒（已映射，顺序无关）；空 = 没有手柄信息。
+  /// 两端手柄 32px 触控盒（已映射；顺序无关，与选区起止顺序**无必然对应**）。
   final List<Rect> gripBoxes;
 
   final EdgeInsets safeInsets;
@@ -58,53 +57,74 @@ class ReaderSelectionToolbarLayout extends SingleChildLayoutDelegate {
       minTop,
       size.height - safeInsets.bottom - gap - childSize.height,
     );
+    // 首选位置 = 原实现：选区首行上方一格 gap。
+    final double preferred = selectionRect.top - gap - childSize.height;
 
     bool fits(double top) => top >= minTop && top <= maxTop;
-    // 面板既不能压住选区正文，也不能盖住任一手柄盒（两边都留一格 gap）。
-    bool blocked(double top) {
+
+    /// 面板与正文 / 任一手柄盒的相交总面积（两边都留一格 [gap] 才算不相交）。
+    double overlapArea(double top) {
       final Rect bar = Rect.fromLTWH(
         left,
         top,
         childSize.width,
         childSize.height,
       );
-      if (bar.overlaps(selectionRect.inflate(gap))) return true;
+      double area = _intersectionArea(bar, selectionRect.inflate(gap));
       for (final Rect box in gripBoxes) {
-        if (!box.isEmpty && bar.overlaps(box.inflate(gap))) return true;
+        if (box.isEmpty) continue;
+        area += _intersectionArea(bar, box.inflate(gap));
       }
-      return false;
+      return area;
     }
 
-    // 1) 原实现的位置：选区首行上方一格 gap。
-    double top = selectionRect.top - gap - childSize.height;
-    bool placed = fits(top) && !blocked(top);
-    // 2) 被手柄盒挡住：让到**最靠上那个**手柄盒上方 —— 仍贴着选区头部，不换边、不压字。
-    if (!placed && gripBoxes.isNotEmpty) {
-      double topmost = gripBoxes.first.top;
-      for (final Rect box in gripBoxes) {
-        topmost = math.min(topmost, box.top);
-      }
-      final double aboveGrips = topmost - gap - childSize.height;
-      if (fits(aboveGrips) && !blocked(aboveGrips)) {
-        top = aboveGrips;
-        placed = true;
+    // 候选 = 首选位置 + **每个球各自的**上下边 + 正文下方 + 视口两端（矮视口只剩边缘空隙时）。
+    // 刻意不取所有球的全局 min/max：那正是跨列竖排被误判的来源。
+    final List<double> candidates = <double>[preferred];
+    for (final Rect box in gripBoxes) {
+      if (box.isEmpty) continue;
+      candidates.add(box.top - gap - childSize.height);
+      candidates.add(box.bottom + gap);
+    }
+    candidates
+      ..add(selectionRect.bottom + handleReserve)
+      ..add(minTop)
+      ..add(maxTop);
+
+    // 1) 合法候选里取离首选位置最近的 —— 保证"只要存在无碰撞位置就不会压到字或球"。
+    double? best;
+    double bestDistance = double.infinity;
+    for (final double candidate in candidates) {
+      if (!fits(candidate)) continue;
+      if (overlapArea(candidate) > 0) continue;
+      final double distance = (candidate - preferred).abs();
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = candidate;
       }
     }
-    // 3) 上方确实没有空间（页顶选区）：落到选区正文下方 + 手柄预留。基准是**正文底**，
-    //    不是手柄盒底 —— 后者会把面板推到选区尾部。只有真与某个球相撞才让开。
-    if (!placed) {
-      top = selectionRect.bottom + handleReserve;
-      if (blocked(top) && gripBoxes.isNotEmpty) {
-        double lowest = gripBoxes.first.bottom;
-        for (final Rect box in gripBoxes) {
-          lowest = math.max(lowest, box.bottom);
-        }
-        top = lowest + gap;
+    if (best != null) return Offset(left, best);
+
+    // 2) 一个合法位置都没有（障碍铺满可用区间，或视口比工具条还矮）：显式降级 ——
+    //    先按碰撞面积、再按离首选位置的距离挑，最后才 clamp 进视口。
+    double degraded = preferred.clamp(minTop, maxTop);
+    double worstScore = double.infinity;
+    for (final double candidate in candidates) {
+      final double clamped = candidate.clamp(minTop, maxTop);
+      final double score =
+          overlapArea(clamped) + (clamped - preferred).abs() * 0.001;
+      if (score < worstScore) {
+        worstScore = score;
+        degraded = clamped;
       }
     }
-    // 视口边缘只夹紧，绝不靠"翻到另一边"来逃避。
-    top = top.clamp(minTop, maxTop);
-    return Offset(left, top);
+    return Offset(left, degraded);
+  }
+
+  static double _intersectionArea(Rect a, Rect b) {
+    final double w = math.min(a.right, b.right) - math.max(a.left, b.left);
+    final double h = math.min(a.bottom, b.bottom) - math.max(a.top, b.top);
+    return (w > 0 && h > 0) ? w * h : 0;
   }
 
   @override

@@ -33,7 +33,13 @@ void main() {
       expect(bar, contains('OverlayEntry('));
       expect(bar, contains('overlay.insert(entry)'));
       expect(bar, contains('markNeedsBuild()'));
-      expect(bar, contains('data.handlesRect ?? data.rect'));
+      // 锚点契约（2026-10-05）：正文 rect 与逐球手柄盒**分开**传给布局器。合并成一个矩形
+      //（旧写法 `data.handlesRect ?? data.rect`）会把锚点也换成手柄并集 —— 横排时并集 top
+      // 落在正文里、竖排页顶放不下时会翻到并集底端，面板于是压正文或掉到选区尾部下方。
+      expect(bar, contains('mapToOverlay(data.rect)'));
+      expect(bar, contains('mapToOverlay(data.handlesRect)'));
+      expect(bar, contains('gripBoxes: gripBoxes'));
+      expect(bar, isNot(contains('handlesRect ?? data.rect')));
       expect(bar, contains('ReaderSelectionToolbarLayout('));
     });
 
