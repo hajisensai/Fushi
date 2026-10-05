@@ -30,3 +30,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Material Symbols (Rounded)
+
+The icon glyph paths in `icons.js` are a subset of Google's Material Symbols
+Rounded (weight 400, FILL 0), taken verbatim from the `@material-symbols/svg-400`
+package (`rounded/<name>.svg`).
+
+- Source: https://github.com/google/material-design-icons
+- License: Apache License, Version 2.0
+- License text: https://www.apache.org/licenses/LICENSE-2.0
+
+Copyright 2022 Google LLC. Licensed under the Apache License, Version 2.0 (the
+"License"); you may not use these files except in compliance with the License.
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.

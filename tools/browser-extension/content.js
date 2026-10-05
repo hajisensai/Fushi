@@ -1081,7 +1081,8 @@ function fushiResolveTheme(fallback) {
 // 页内 Fushi 浮层（查词弹窗宿主 / toast）据此写 data-style，content.css 里两套外观按它分流。
 function fushiExtensionStyle() {
   const t = window.fushiTheme;
-  return t && t.style === 'm3e' ? 'm3e' : 'glass';
+  // 缺省 M3E（用户 2026-10-06「浏览器扩展也统一成 m3e」）；只有显式选了液态玻璃才走玻璃。
+  return t && t.style === 'glass' ? 'glass' : 'm3e';
 }
 
 // ── Netflix 回放录制（DRM）：由 content 驱动，capture 经 background/offscreen（beginClip/endClip）──
@@ -2947,6 +2948,11 @@ function fushiApplyTheme(c, theme, applyBox) {
   // 不支持 backdrop-filter 的回落由 content.css 自己的 @media / @supports 负责。
   fushiApplyGlass(c, theme['--fushi-glass'] !== '0' && fushiExtensionStyle() === 'glass',
     theme['--fushi-radius-card']);
+  // M3E 视觉层（popup.css html.fushi-m3e → content.css :where(#entries-container).fushi-m3e）：与 app
+  // 内弹窗同一套 M3E 卡片 / 标签 / 按钮；墨水屏不挂。
+  if (window.fushiTheme && typeof window.fushiTheme.applyPopupStyle === 'function') {
+    window.fushiTheme.applyPopupStyle(c, theme['--fushi-glass'] === '0');
+  }
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经

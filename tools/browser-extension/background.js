@@ -308,6 +308,10 @@ const APP_THEME_MIRROR_KEYS = [
   '--text-color', '--background-color', '--md-primary', '--md-on-primary',
   '--md-surface-container', '--md-surface-container-high', '--md-on-surface',
   '--md-on-surface-variant', '--md-outline-variant',
+  // M3 容器 / tertiary / 错误角色（新 app 随 theme 下发；扩展「跟随 Fushi」时 M3E 色块与 app 同色）。
+  '--md-primary-container', '--md-on-primary-container', '--md-secondary-container',
+  '--md-on-secondary-container', '--md-tertiary', '--md-on-tertiary', '--md-tertiary-container',
+  '--md-on-tertiary-container', '--md-surface-container-highest', '--md-error',
 ];
 let appThemeMirror = null;
 let appThemeMirrorLoaded = null;

@@ -1037,14 +1037,14 @@ function bindSectionNav() {
 }
 bindSectionNav();
 
-// ── 外观风格（extensionStyle：液态玻璃 / M3E；theme.js 读同一把键写根 data-style）──
+// ── 外观风格（extensionStyle：M3E 缺省 / 液态玻璃；theme.js 读同一把键写根 data-style）──
 // 两张单选卡（原生 radio，键盘方向键切换）；与配色正交，切换只换形状 / 材质 / 动效。
 function bindStyleChoice() {
   if (typeof document.querySelectorAll !== 'function') return;
   const radios = Array.from(document.querySelectorAll('input[name="extensionStyle"]'));
   if (!radios.length) return;
   const sync = (v) => {
-    const value = v === 'm3e' ? 'm3e' : 'glass';
+    const value = v === 'glass' ? 'glass' : 'm3e';
     for (const r of radios) r.checked = r.value === value;
   };
   chrome.storage.local.get(['extensionStyle']).then((s) => sync(s && s.extensionStyle), () => sync(null));

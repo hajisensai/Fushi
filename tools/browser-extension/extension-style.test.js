@@ -6,7 +6,7 @@ const vm = require('node:vm');
 
 // 扩展的外观风格（用户 2026-10-05：「浏览器插件重写样式两套样式 M3E 和液态玻璃，而且配置项现在很多
 // 信息过载，重新设计」）。取代 2026-10-04「液态玻璃是唯一材质」的守卫。本测试钉住：
-//  ① theme.js：extensionStyle（glass 缺省 / m3e）是唯一决议点，扩展页面根写 data-style，与明暗 /
+//  ① theme.js：extensionStyle（m3e 缺省——用户 2026-10-06「浏览器扩展也统一成 m3e」/ glass）是唯一决议点，扩展页面根写 data-style，与明暗 /
 //     调色板正交；宿主网页的 <html> 不碰；退役的 extensionMaterial / appGlassMirror 照旧只清理；
 //  ② 页内查词弹窗：玻璃风格挂玻璃钩子，M3E 不挂、宿主 data-style=m3e（实色卡），墨水屏两者都不透；
 //     嵌套子层与第一层同一套 M3E 圆角 / 投影；toast / 拖放提示随风格；
@@ -66,17 +66,34 @@ function loadTheme(opts) {
 
 // ───────── ① theme.js：风格决议 ─────────
 
-test('theme.js：extensionStyle 缺省 = 玻璃，m3e 生效，非法值回落玻璃；扩展页面根写 data-style', () => {
+test('theme.js：extensionStyle 缺省 = M3E，glass 生效，非法值回落 M3E；扩展页面根写 data-style', () => {
   const def = loadTheme({});
-  assert.strictEqual(def.theme.style, 'glass');
-  assert.strictEqual(def.theme.usesGlass(), true);
-  assert.strictEqual(def.rootAttrs['data-style'], 'glass');
-  const m3e = loadTheme({ stored: { extensionStyle: 'm3e' } });
-  assert.strictEqual(m3e.theme.style, 'm3e');
-  assert.strictEqual(m3e.theme.usesGlass(), false);
-  assert.strictEqual(m3e.rootAttrs['data-style'], 'm3e');
+  assert.strictEqual(def.theme.style, 'm3e');
+  assert.strictEqual(def.theme.usesGlass(), false);
+  assert.strictEqual(def.rootAttrs['data-style'], 'm3e');
+  const glass = loadTheme({ stored: { extensionStyle: 'glass' } });
+  assert.strictEqual(glass.theme.style, 'glass');
+  assert.strictEqual(glass.theme.usesGlass(), true);
+  assert.strictEqual(glass.rootAttrs['data-style'], 'glass');
   const bad = loadTheme({ stored: { extensionStyle: 'solid' } });
-  assert.strictEqual(bad.theme.style, 'glass', '旧「实心」等未知值回落玻璃');
+  assert.strictEqual(bad.theme.style, 'm3e', '旧「实心」等未知值回落 M3E');
+});
+
+test('theme.js：applyPopupStyle 在 M3E 下给弹窗根挂 .fushi-m3e（墨水屏不挂），stampStyle 给浮层写 data-style', () => {
+  const h = loadTheme({});
+  const classes = new Set();
+  const c = { classList: { contains: (n) => classes.has(n), toggle: (n, on) => { if (on) classes.add(n); else classes.delete(n); } } };
+  h.theme.applyPopupStyle(c, false);
+  assert.ok(classes.has('fushi-m3e'));
+  assert.ok(!classes.has('fushi-reduced-motion'), '测试壳 matchMedia 恒 false');
+  h.theme.applyPopupStyle(c, true);
+  assert.ok(!classes.has('fushi-m3e'), '墨水屏不挂 M3E 视觉层');
+  h.set({ extensionStyle: 'glass' });
+  h.theme.applyPopupStyle(c, false);
+  assert.ok(!classes.has('fushi-m3e'), '液态玻璃下不挂');
+  const attrs = {};
+  h.theme.stampStyle({ setAttribute: (k, v) => { attrs[k] = v; } });
+  assert.strictEqual(attrs['data-style'], 'glass');
 });
 
 test('theme.js：改设置即切风格，与明暗 / 调色板互不影响', () => {
@@ -164,8 +181,16 @@ function fakePopup() {
 }
 
 
+test('查词弹窗：没装 theme.js 时按 M3E（缺省），不挂玻璃钩子', () => {
+  const s = loadContent(null);
+  const p = fakePopup();
+  s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'dark', '--fushi-glass': '1' }, false);
+  assert.ok(!p.classes.has('fushi-glass'));
+  assert.strictEqual(p.hostAttrs['data-style'], 'm3e');
+});
+
 test('查词弹窗：玻璃风格上玻璃钩子 + 宿主 data-style=glass', () => {
-  for (const theme of [null, { style: 'glass', resolve: (f) => f || 'light' }]) {
+  for (const theme of [{ style: 'glass', resolve: (f) => f || 'light' }]) {
     const s = loadContent(theme);
     const p = fakePopup();
     s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'dark', '--fushi-glass': '1' }, false);
@@ -175,11 +200,13 @@ test('查词弹窗：玻璃风格上玻璃钩子 + 宿主 data-style=glass', () 
   }
 });
 
-test('查词弹窗：M3E 风格不挂玻璃钩子，宿主 data-style=m3e；同一弹窗切回玻璃即时恢复', () => {
-  const theme = { style: 'm3e', resolve: (f) => f || 'light' };
+test('查词弹窗：M3E 风格不挂玻璃钩子，宿主 data-style=m3e、弹窗根交给 applyPopupStyle；同一弹窗切回玻璃即时恢复', () => {
+  const styled = [];
+  const theme = { style: 'm3e', resolve: (f) => f || 'light', applyPopupStyle: (c, eink) => styled.push(eink) };
   const s = loadContent(theme);
   const p = fakePopup();
   s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '1' }, false);
+  assert.deepStrictEqual(styled, [false], 'M3E 视觉层开关每次套主题都重算（墨水屏 = --fushi-glass 0）');
   assert.ok(!p.classes.has('fushi-glass'));
   assert.ok(!('data-fushi-glass' in p.hostAttrs));
   assert.strictEqual(p.hostAttrs['data-style'], 'm3e');
@@ -190,7 +217,7 @@ test('查词弹窗：M3E 风格不挂玻璃钩子，宿主 data-style=m3e；同�
 });
 
 test('查词弹窗：墨水屏（--fushi-glass: 0）两种风格都不上玻璃', () => {
-  const s = loadContent(null);
+  const s = loadContent({ style: 'glass', resolve: (f) => f || 'light' });
   const p = fakePopup();
   s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '1' }, false);
   s.fushiApplyTheme(p.c, { '--fushi-color-scheme': 'light', '--fushi-glass': '0' }, false);
@@ -241,29 +268,55 @@ function block(css, selector) {
   return css.slice(at, css.indexOf('}', at));
 }
 
-test('theme.css：两套风格的形状 / 材质 / 动效 token 都在这里；M3E 块排在玻璃明暗块与兼容层之后', () => {
+test('theme.css：两套风格的形状 / 材质 / 动效 token 都在这里；M3E 是 :root 缺省，玻璃块排在其后、兼容层压过玻璃暗色块', () => {
   const css = stripComments(THEME_CSS);
   for (const t of ['--fushi-shape-card', '--fushi-shape-control', '--fushi-shape-control-pressed', '--fushi-shape-field',
     '--fushi-shape-menu', '--fushi-ease', '--fushi-ease-spatial', '--fushi-dur-medium', '--fushi-mat-fill', '--fushi-mat-filter']) {
     assert.match(css, new RegExp(t + ':'), '缺 token ' + t);
   }
-  assert.match(css, /--fushi-mat-filter:\s*blur\(20px\) saturate\([\d.]+\)/, '玻璃模糊与 app kFushiGlassBlurSigma 同源');
-  const m3e = block(css, ':root[data-style="m3e"]');
-  assert.match(m3e, /--fushi-mat-filter:\s*none/);
-  assert.match(m3e, /--fushi-mat-fill:\s*var\(--fushi-surface\)/);
-  assert.match(m3e, /--fushi-mat-orb-strength:\s*0%/);
-  assert.match(m3e, /--fushi-shape-control-pressed:\s*\d+px/, 'M3E 按压形变');
-  assert.match(m3e, /--fushi-ease-spatial:\s*cubic-bezier\(/);
-  const at = css.indexOf(':root[data-style="m3e"]');
-  assert.ok(at > css.lastIndexOf(':root[data-theme="dark"]'), 'M3E 块要压得过玻璃暗色块');
-  assert.ok(at > css.lastIndexOf('@media (prefers-reduced-transparency: reduce)'), 'M3E 块要压得过玻璃兼容层');
-  // 兼容层：不支持 backdrop-filter / 减少透明度 → 玻璃填充回实心。
+  // 缺省（:root）= M3E：实色、无模糊、按压形变、弹簧缓动，全部取 --md-sys-*。
+  const styleRoot = /:root \{\s*\/?\*?[^{}]*--fushi-shape-card:[^{}]*\}/.exec(css);
+  assert.ok(styleRoot, '缺 :root 风格块');
+  assert.match(styleRoot[0], /--fushi-mat-filter:\s*none/);
+  assert.match(styleRoot[0], /--fushi-mat-orb-strength:\s*0%/);
+  assert.match(styleRoot[0], /--fushi-shape-control-pressed:\s*var\(--md-sys-shape-corner-medium\)/, 'M3E 按压形变');
+  assert.match(styleRoot[0], /--fushi-ease-spatial:\s*var\(--md-sys-motion-spring-fast-spatial\)/);
+  const glass = block(css, ':root[data-style="glass"]');
+  assert.match(glass, /--fushi-mat-filter:\s*blur\(20px\) saturate\([\d.]+\)/, '玻璃模糊与 app kFushiGlassBlurSigma 同源');
+  assert.ok(css.indexOf(':root[data-style="glass"] {') > css.indexOf('--fushi-shape-card:'), '玻璃块排在 M3E 缺省之后');
+  assert.match(css, /:root\[data-style="glass"\]\[data-theme="dark"\]/);
+  // 兼容层：不支持 backdrop-filter / 减少透明度 → 玻璃填充回实心；排在玻璃暗色块之后。
   const supportsNot = /@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)\s*\{([\s\S]*?)\n\}/.exec(css);
   assert.ok(supportsNot);
+  assert.match(supportsNot[1], /:root\[data-style="glass"\]:is\(\[data-theme\], :not\(\[data-theme\]\)\)/);
   assert.match(supportsNot[1], /--fushi-mat-fill:\s*var\(--fushi-surface\)/);
   const reduced = /@media \(prefers-reduced-transparency: reduce\)\s*\{([\s\S]*?)\n\}/.exec(css);
   assert.ok(reduced);
   assert.match(reduced[1], /--fushi-mat-filter:\s*none/);
+  assert.ok(css.indexOf('@supports not') > css.lastIndexOf(':root[data-style="glass"][data-theme="dark"]'));
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/, '减弱动态效果降级');
+});
+
+test('theme.css 的 --md-sys-* 与查词弹窗 m3e-tokens.css 同名：颜色角色全覆盖且只别名 --fushi-*，形状 / 字阶 / 状态 / 高度 / 动效逐项同值', () => {
+  const css = stripComments(THEME_CSS);
+  const tokens = stripComments(fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'assets', 'popup', 'm3e-tokens.css'), 'utf8'));
+  const block = tokens.slice(tokens.indexOf('html {'), tokens.indexOf('}', tokens.indexOf('html {')));
+  const decl = (src) => {
+    const out = new Map();
+    for (const m of src.matchAll(/(--md-sys-[a-z0-9-]+):\s*([^;]+);/g)) out.set(m[1], m[2].trim());
+    return out;
+  };
+  const ours = decl(css);
+  const theirs = decl(block);
+  assert.ok(theirs.size > 60);
+  for (const [k, v] of theirs) {
+    assert.ok(ours.has(k), 'theme.css 缺 ' + k);
+    if (k.startsWith('--md-sys-color-')) {
+      assert.match(ours.get(k), /var\(--fushi-/, k + ' 只能别名到调色板 --fushi-*');
+    } else {
+      assert.strictEqual(ours.get(k), v, k + ' 与 m3e-tokens.css 不一致');
+    }
+  }
 });
 
 test('material.css：全部从 :root 起、只消费 token（不写风格数值），模糊带 -webkit-，有减少动态效果归零', () => {
@@ -309,7 +362,7 @@ const OPTIONS_JS = fs.readFileSync(path.join(__dirname, 'options.js'), 'utf8');
 
 test('options：外观组有两张风格单选卡（glass / m3e），options.js 写 extensionStyle；文案在 en.js', () => {
   const values = [...OPTIONS_HTML.matchAll(/<input type="radio" name="extensionStyle" value="([^"]+)">/g)].map((m) => m[1]);
-  assert.deepStrictEqual(values, ['glass', 'm3e']);
+  assert.deepStrictEqual(values, ['m3e', 'glass'], 'M3E 是缺省，排第一');
   assert.match(OPTIONS_JS, /chrome\.storage\.local\.set\(\{ extensionStyle: r\.value \}\)/);
   assert.doesNotMatch(OPTIONS_HTML + OPTIONS_JS, /extensionMaterial/);
   const en = fs.readFileSync(path.join(__dirname, 'locales', 'en.js'), 'utf8');

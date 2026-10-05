@@ -1032,7 +1032,7 @@
     if (typeof st.dropHint.setAttribute === 'function') {
       st.dropHint.setAttribute('data-theme', resolveTheme());
       // 外观风格（液态玻璃 / M3E），与 content.js toast 同一判据。
-      st.dropHint.setAttribute('data-style', window.fushiTheme && window.fushiTheme.style === 'm3e' ? 'm3e' : 'glass');
+      st.dropHint.setAttribute('data-style', window.fushiTheme && window.fushiTheme.style === 'glass' ? 'glass' : 'm3e');
     }
     var parent = parentForOverlay();
     if (st.dropHint.parentNode !== parent) parent.appendChild(st.dropHint);

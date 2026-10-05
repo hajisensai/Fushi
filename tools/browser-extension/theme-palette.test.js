@@ -189,10 +189,26 @@ test('跟随 Fushi：app 镜像色（cssRgb 的 rgb() 串）映射到 --fushi-*�
   assert.strictEqual(P.tokensFromAppTheme({ '--text-color': '#191c1a', '--background-color': '#f7f9f4', '--md-primary': '#386a58' })['--fushi-primary'], '#386a58');
   const pv = P.popupVarsFromTokens(P.derive(P.specFor('ecru-theme'), 'dark'));
   assert.deepStrictEqual(Object.keys(pv).sort(), [
-    '--background-color', '--fushi-card-bg-rgb', '--fushi-primary-highlight', '--md-on-primary',
-    '--md-on-surface', '--md-on-surface-variant', '--md-outline-variant', '--md-primary',
-    '--md-surface-container', '--md-surface-container-high', '--text-color',
+    '--background-color', '--fushi-card-bg-rgb', '--fushi-primary-highlight', '--md-error',
+    '--md-inverse-on-surface', '--md-inverse-surface', '--md-on-primary', '--md-on-primary-container',
+    '--md-on-secondary-container', '--md-on-surface', '--md-on-surface-variant', '--md-on-tertiary',
+    '--md-on-tertiary-container', '--md-outline', '--md-outline-variant', '--md-primary',
+    '--md-primary-container', '--md-secondary-container', '--md-surface-container',
+    '--md-surface-container-high', '--md-surface-container-highest', '--md-surface-container-low',
+    '--md-tertiary', '--md-tertiary-container', '--text-color',
   ]);
+  // 新增的 M3 容器 / tertiary 角色键必须是 app 真会下发的键（popup_theme_css.dart），否则弹窗读不到。
+  const dartVars = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'utils', 'popup_theme_css.dart'), 'utf8');
+  for (const k of Object.keys(pv)) {
+    if (k.startsWith('--md-')) assert.ok(dartVars.includes("'" + k + "'"), k + ' 不是 app 下发的键');
+  }
+  // 跟随 Fushi：app 下发了容器角色就原样采用（与 app 同色），缺了按主色派生。
+  const withRoles = P.tokensFromAppTheme(Object.assign({}, mirror, {
+    '--md-primary-container': 'rgb(187, 236, 216)', '--md-tertiary': 'rgb(61, 99, 115)',
+  }));
+  assert.strictEqual(withRoles['--fushi-primary-soft'], '#bbecd8');
+  assert.strictEqual(withRoles['--fushi-tertiary'], '#3d6373');
+  assert.match(t['--fushi-tertiary'], HEX, '旧 app 缺 tertiary 时派生');
   assert.match(pv['--fushi-card-bg-rgb'], /^\d+, \d+, \d+$/, 'popup.css 的 rgba(var(--fushi-card-bg-rgb), a) 需要裸三元组');
   assert.match(pv['--fushi-primary-highlight'], /^rgba\(\d+, \d+, \d+, 0\.35\)$/);
 });

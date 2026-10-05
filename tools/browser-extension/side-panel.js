@@ -346,6 +346,10 @@
     if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
       window.fushiTheme.applyPopupPalette(lookupContainer, scheme);
     }
+    // M3E 视觉层（与页面弹窗同一开关，见 theme.js applyPopupStyle）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupStyle === 'function') {
+      window.fushiTheme.applyPopupStyle(lookupContainer, theme['--fushi-glass'] === '0');
+    }
     var columns = theme['--dict-columns'];
     if (typeof columns === 'string' && columns) {
       document.documentElement.style.setProperty('--dict-columns', columns);
