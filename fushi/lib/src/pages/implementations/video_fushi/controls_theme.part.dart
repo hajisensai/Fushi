@@ -40,6 +40,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     return MaterialDesktopVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),
+      // M3E 浮动工具栏：顶栏胶囊离播放区上沿留一点呼吸（左右沿用 fork 默认 16）。
+      topButtonBarMargin: apple
+          ? fork.topButtonBarMargin
+          : const EdgeInsets.fromLTRB(16, 8, 16, 0),
       // 中途缓冲圈带网络流读取速度（本地文件与 fork 默认外观一致）。
       bufferingIndicatorBuilder: (_) => VideoBufferingIndicator(
         readSpeed: _networkReadSpeedOf(controller),
@@ -146,9 +150,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 透明——很淡的顶 / 底暗化与底栏玻璃胶囊由 [VideoAppleChromeBackdrop] 在控制条
       // 下面画；进度条是 AVKit 的圆头细轨（4，悬停 / 拖动加粗到 10，无滑块），已播放
       // 白、缓冲浅白、未播灰；进度条与按钮行收进胶囊（左右内缩 + 整体抬离底边
-      // [_appleBottomLift]）。MD3 分支全部取 fork 默认值，像素不变。
-      backdropColor:
-          apple ? const Color(0x00000000) : fork.backdropColor,
+      // [_floatingChromeBottomLift]）。MD3 分支全部取 fork 默认值，像素不变。
+      // M3E 浮动工具栏（2026-10-05）：同样不要整屏暗化——控件是悬浮胶囊、自带底色，
+      // 画面不被任何贴边实体栏或渐变遮挡；控件隐藏后就是纯画面。
+      backdropColor: const Color(0x00000000),
       seekBarRadius: apple ? 999 : fork.seekBarRadius,
       seekBarHeight: apple ? _videoSeekBarTrackHeight : fork.seekBarHeight,
       seekBarHoverHeight: apple
@@ -161,9 +166,8 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       seekBarBufferColor:
           apple ? const Color(0x66FFFFFF) : fork.seekBarBufferColor,
       seekBarThumbSize: apple ? 0 : fork.seekBarThumbSize,
-      seekBarMargin: apple
-          ? EdgeInsets.symmetric(horizontal: _videoSeekBarSideInset)
-          : fork.seekBarMargin,
+      // 两套设计系统都内缩到浮动底栏里（Apple 玻璃胶囊 / M3E 轨道槽对齐胶囊外缘）。
+      seekBarMargin: EdgeInsets.symmetric(horizontal: _videoSeekBarSideInset),
       // MD3 Expressive：进度条轨道交给宿主画（波浪已播段 / 竖条手柄 / 时间气泡 /
       // 字幕密度刻度，[VideoM3eSeekTrack]）；手势、seek 落点与上面的回调仍归 fork。
       seekBarTrackBuilder: apple
@@ -175,9 +179,14 @@ extension _VideoControlsTheme on _VideoFushiPageState {
               _videoAppleButtonBarSideInset,
               0,
               _videoAppleButtonBarSideInset,
-              _appleBottomLift,
+              _floatingChromeBottomLift,
             )
-          : fork.bottomButtonBarMargin,
+          : EdgeInsets.fromLTRB(
+              _VideoFushiPageState._videoM3eFloatingSideInset,
+              0,
+              _VideoFushiPageState._videoM3eFloatingSideInset,
+              _floatingChromeBottomLift,
+            ),
       // 控制条几何随密度档缩小（小窗 / 窄窗，见 video_controls_density.dart）。
       // 字幕避让的 reserve 乘的是同一个 [_controlsDensityScale]，两边同一口径。
       buttonBarHeight: _videoButtonBarHeight * _controlsDensityScale,
@@ -321,11 +330,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // 进度条 / 底部按钮条的底部留白（BUG-184）：基线 + 系统导航栏/手势栏 inset，
     // 让进度条回到「底部按钮条同一基线、抬离屏幕物理最底」的控制条惯例位置，而不是
     // 用 media_kit 构造器默认的 `bottom: 0` 贴在屏幕最下面。
-    // Apple：底栏玻璃胶囊把整组控件再抬一点（[_appleBottomLift]，MD3 恒 0）。
+    // Apple：底栏玻璃胶囊把整组控件再抬一点（[_floatingChromeBottomLift]，MD3 恒 0）。
     final double bottomChromeInset =
         _VideoFushiPageState._videoBottomChromeBaseline +
             _videoBottomSystemInset() +
-            _appleBottomLift;
+            _floatingChromeBottomLift;
     // 同桌面 theme：Apple 分支只覆盖外观字段，MD3 回填 fork 构造器默认值。
     final bool apple = _appleChrome;
     const MaterialVideoControlsThemeData fork = MaterialVideoControlsThemeData();
@@ -435,9 +444,14 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       ),
       // 底部按钮条留在系统栏上方基线（沿用 media_kit 默认的左右 16/8）。Apple 下
       // 按钮行收进玻璃胶囊，左右对称内缩。
+      // M3E 浮动工具栏左右对称（胶囊外缘 = [_videoM3eFloatingSideInset]）。
       bottomButtonBarMargin: EdgeInsets.only(
-        left: apple ? _videoAppleButtonBarSideInset : 16,
-        right: apple ? _videoAppleButtonBarSideInset : 8,
+        left: apple
+            ? _videoAppleButtonBarSideInset
+            : _VideoFushiPageState._videoM3eFloatingSideInset,
+        right: apple
+            ? _videoAppleButtonBarSideInset
+            : _VideoFushiPageState._videoM3eFloatingSideInset,
         bottom: bottomChromeInset,
       ),
       // 进度条触摸热区 / 滑块 / 轨道整体抬高（TODO-157/BUG-218）：media_kit 默认
@@ -458,7 +472,8 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // Apple（同桌面 theme）：整屏 40% 黑 backdrop 换成透明（很淡的暗化与胶囊玻璃
       // 由 [VideoAppleChromeBackdrop] 画）；圆头细轨，按住加粗（iOS 26 scrubber），
       // 已播放白、缓冲浅白、未播灰。
-      backdropColor: apple ? const Color(0x00000000) : fork.backdropColor,
+      // 同桌面：两套设计系统都不画整屏 backdrop（M3E 浮动工具栏自带胶囊底色）。
+      backdropColor: const Color(0x00000000),
       seekBarRadius: apple ? 999 : fork.seekBarRadius,
       seekBarActiveHeight: apple
           ? _VideoFushiPageState._videoAppleSeekBarActiveHeightBase *
@@ -637,12 +652,17 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoPlayerController controller,
     VideoSeekBarVisual visual,
   ) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return VideoM3eSeekTrack(
       visual: visual,
-      color: _videoChromeAccent(Theme.of(context).colorScheme),
+      color: _videoChromeAccent(cs),
       scale: _videoUiScale * _controlsDensityScale,
       hoverBubble: _thumbnailPreview == null,
       cueDensity: _m3eCueDensity(controller, visual.duration),
+      // 浮动工具栏上方的悬浮轨道槽（与底栏胶囊同色）；墨水屏不画（轨道本就高对比）。
+      lane: isEinkTheme(context)
+          ? null
+          : videoM3eFloatingColor(videoM3eChromeScheme(cs)),
     );
   }
 
