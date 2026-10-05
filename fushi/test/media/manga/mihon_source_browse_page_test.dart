@@ -364,6 +364,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      // M3E 详情骨架：「在网站打开」在 hero 的「⋯」菜单里。
+      await tester.tap(find.byKey(const ValueKey<String>('online_work_more')));
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('manga_series_open_website')),
       );

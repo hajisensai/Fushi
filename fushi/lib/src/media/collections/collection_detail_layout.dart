@@ -1,20 +1,28 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingToolbarSurface;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
-/// 作品详情页的**共享布局**：hero（背景轮换 / 海报卡 / logo / 徽标 / 标签 / 人物 /
-/// 简介 / 续播 / 播放）、作品详情区、「选集」标题、季 tab 条、hayase 式宽集卡。
+/// 作品详情页的**共享布局**（2026-10 M3E 重做）：hero（fanart / 封面模糊 + 色晕
+/// scrim 大背景、2:3 封面卡、Display 级标题 / logo、原名、元信息 chip 行、主操作
+/// 按钮组、续播行、可展开简介）、作品资料区、「选集」区块标题、浮动胶囊季分段、
+/// hayase 式宽集卡（缩略图 + 集号胶囊 + 播出日 / 时长 + 观看进度 + 已看对勾）。
 ///
 /// 本地系列（`MediaCollectionDetailPage`）与媒体服务器（Jellyfin / Emby，
 /// `MediaServerDetailView`）两个详情页**同一套视觉**：这里只吃纯值（标题 / 文案 /
-/// ImageProvider / 回调），不知道数据来自 Drift 行还是远端 DTO。视觉代码是从
-/// 本地详情页逐行搬来的，本地页面改为消费本文件后必须逐像素不变；两边任何一处
-/// 想改样式都改这里，不再各画一份。
+/// ImageProvider / 回调），不知道数据来自 Drift 行还是远端 DTO。两边任何一处想改
+/// 样式都改这里，不再各画一份。视觉积木来自作品详情共享骨架
+/// （`media_detail_kit.dart`：背景、封面卡、chip、按钮组、简介、区块标题）。
 ///
 /// 数据求值（续播是哪一集、徽标有哪些、缩略图 provider 怎么来）留在各自页面：
 /// 那部分绑的是各自的数据源，抽进来只会让本文件长出两套 if。
@@ -27,20 +35,43 @@ class CollectionHeroCredit {
   final String name;
 }
 
-/// hero 上的数字 / 标签 / 人物胶囊描边：Apple 的 hero 元信息是无描边的
-/// 半透明胶囊（描边是 MD3 outlined chip 的语言），玻璃下去掉描边。
+/// 横版 fanart 当大背景时的模糊强度：轻一点，保留画面气质。
+const double kCollectionHeroBackdropBlur = 16;
+
+/// 没有 fanart、拿 2:3 封面垫底时的模糊强度：重一点，只留色彩。
+const double kCollectionHeroCoverBlur = 32;
+
+/// hero 大背景该用哪张图：横版 fanart 优先，没有就拿封面模糊垫底。
+/// 两栏布局（[MediaDetailLayout]）把背景画在整页后面时与 hero 同一判据。
+ImageProvider? collectionHeroBackdropImage({
+  ImageProvider? backdrop,
+  ImageProvider? cover,
+}) => backdrop ?? cover;
+
+/// 与 [collectionHeroBackdropImage] 配套的模糊强度。
+double collectionHeroBackdropBlur({ImageProvider? backdrop}) => backdrop != null
+    ? kCollectionHeroBackdropBlur
+    : kCollectionHeroCoverBlur;
+
+/// hero 上的数字 / 标签胶囊描边（发现页详情仍在用的白字胶囊）：Apple 的 hero
+/// 元信息是无描边的半透明胶囊（描边是 MD3 outlined chip 的语言），玻璃下去掉描边。
 Border? _heroChipBorder(BuildContext context, double alpha) =>
     isGlassDesign(context)
     ? null
     : Border.all(color: Colors.white.withValues(alpha: alpha));
 
-/// 详情页 hero：60% 视口高（460–680）。
+/// 作品详情 hero（M3E）：
 ///
-/// 背景分两条路（BUG-1298）：有横版 [backdrop] → cover 铺满 + 左侧独立 2:3 海报卡
-/// （宽度 ≥ 900 才放）；没有 → 只有 [cover]，交给 [LandscapeCoverImage] 判朝向
-/// （横图铺满，竖版海报模糊垫底 + 靠右完整显示），此时不再另放海报卡。
-///
-/// 多张背景轮换由调用方推进 [backdropIndex]（内层 key 随它变化驱动交叉淡入）。
+/// - 大背景：有横版 [backdrop]（fanart）→ 轻模糊铺满（key
+///   `collection-hero-backdrop`，多张轮换由调用方推进 [backdropIndex]、交叉淡入）；
+///   没有 → 拿 [cover] 重模糊垫底（key `collection-hero-cover`）。两者之上是色晕 +
+///   可读性 scrim，底部落到页面底色（[MediaDetailBackdrop]）。
+/// - 2:3 封面卡（key `collection-hero-poster`）：[PortraitCoverImage] 按朝向分流，
+///   横版截帧不会被裁成中间一条（BUG-1298 / BUG-1299 的同一条纪律）。
+/// - 宽（≥ [kMediaDetailHeroWideMinWidth]）：封面在起始侧、信息靠底；窄：上下堆叠
+///   居中；在 [MediaDetailLayout] 的两栏左栏里恒为窄式、不画自己的背景（整页背景
+///   由布局画在两栏后面）。
+/// - 高度随内容（不再钳死 60% 视口），长标题 / 长简介不会撑爆。
 class CollectionDetailHero extends StatelessWidget {
   const CollectionDetailHero({
     required this.title,
@@ -53,23 +84,29 @@ class CollectionDetailHero extends StatelessWidget {
     this.originalTitle,
     this.airDate,
     this.badgeParts = const <String>[],
+    this.chips,
     this.tagNames = const <String>[],
     this.credits = const <CollectionHeroCredit>[],
     this.summary,
+    this.selectableSummary = true,
     this.continueLabel,
     this.playLabel,
+    this.playIcon,
     this.playButtonKey,
     this.secondaryAction,
+    this.secondaryActions = const <Widget>[],
+    this.moreItems = const <MediaDetailMenuItem>[],
+    this.footer,
     super.key,
   });
 
   /// 横版背景（多张轮换时传当前那张）。
   final ImageProvider? backdrop;
 
-  /// 轮换下标：变化时 [AnimatedSwitcher] 交叉淡入到新图。
+  /// 轮换下标：变化时背景交叉淡入到新图。
   final int backdropIndex;
 
-  /// 2:3 海报（有 [backdrop] 时作左侧海报卡；否则作整块背景）。
+  /// 2:3 海报（封面卡；没有 [backdrop] 时也拿它模糊垫底）。
   final ImageProvider? cover;
 
   /// 标题 logo：有则替代文字大标题（Jellyfin `.detailLogo` 同款），解码失败回落文字。
@@ -88,334 +125,368 @@ class CollectionDetailHero extends StatelessWidget {
   final String? airDate;
 
   /// 徽标行（数字事实：`全 12 话` / `★ 8.1` / `已看 3/12`），逐项存在才出。
+  /// [chips] 非 null 时以它为准（可带图标 / 语气）。
   final List<String> badgeParts;
+
+  /// 带图标 / 语气的元信息 chip；null = 由 [badgeParts] 生成中性 chip。
+  final List<MediaDetailChip>? chips;
 
   /// 作品标签（题材，调用方已裁到前 6 个）。
   final List<String> tagNames;
 
-  /// 人物 chips（一条横向轨道）。
+  /// 人物 chips（一条横向轨道，key `collection-hero-credits`）。
   final List<CollectionHeroCredit> credits;
 
-  /// 简介（hero 内两行省略；有全宽详情区时调用方传 null）。
+  /// 简介（可展开，spring）；null / 空不占位。
   final String? summary;
+
+  /// 简介可选中（留给划词查词）；可选中时只能点「展开」按钮切换。
+  final bool selectableSummary;
 
   /// 续播行文案（`继续看 第 3 集  ·  集名`）；null 不占位。
   final String? continueLabel;
 
-  /// 播放按钮文案（缺省 `t.collection_play`）。
+  /// 主按钮文案（缺省 `t.collection_play`）。
   final String? playLabel;
 
-  /// 播放按钮的 key（测试定位用）。
+  /// 主按钮图标（缺省播放）。
+  final IconData? playIcon;
+
+  /// 主按钮的 key（落在按钮本体上，测试定位用）。
   final Key? playButtonKey;
 
   final VoidCallback? onPlay;
 
-  /// 播放按钮旁的次按钮（如媒体服务器详情的「下载到本机」）；null 不占位。
+  /// 主按钮旁的次按钮（兼容旧调用：单个 widget）；null 不占位。
   final Widget? secondaryAction;
+
+  /// 更多次按钮（tonal，[MediaDetailSecondaryButton]）。
+  final List<Widget> secondaryActions;
+
+  /// 「⋯」菜单项；空 = 不出「⋯」。
+  final List<MediaDetailMenuItem> moreItems;
+
+  /// 简介下方的附加内容（用户标签等）。
+  final Widget? footer;
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Size screen = MediaQuery.sizeOf(context);
-    final double height = (screen.height * 0.60).clamp(460.0, 680.0);
-    final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    // 可读性渐变：压在封面之上、竖版海报前景之下（层序由 [LandscapeCoverImage]
-    // 保证，见该组件文档）。无封面时直接铺在底色上。
-    final List<Widget> overlays = <Widget>[
-      const DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            stops: <double>[0, 0.48, 1],
-            colors: <Color>[
-              Color(0x52000000),
-              Color(0x22000000),
-              Color(0xE8000000),
-            ],
+    final bool inSidePane = MediaDetailLayout.isSidePane(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool wide =
+            !inSidePane &&
+            constraints.maxWidth * FushiAppUiScale.of(context) >=
+                kMediaDetailHeroWideMinWidth;
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+        final double page = tokens.spacing.page;
+        final Widget content = Padding(
+          padding: EdgeInsets.fromLTRB(
+            page,
+            wide ? tokens.spacing.section * 2 : tokens.spacing.section,
+            page,
+            tokens.spacing.section,
           ),
-        ),
-      ),
-      DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: rtl ? Alignment.centerRight : Alignment.centerLeft,
-            end: rtl ? Alignment.centerLeft : Alignment.centerRight,
-            stops: const <double>[0, 0.66, 1],
-            colors: const <Color>[
-              Color(0xC9000000),
-              Color(0x26000000),
-              Color(0x7A000000),
-            ],
-          ),
-        ),
-      ),
-    ];
+          child: wide ? _buildWide(context) : _buildNarrow(context),
+        );
+        return SizedBox(
+          key: const ValueKey<String>('video-work-hero-card'),
+          width: double.infinity,
+          child: inSidePane
+              ? content
+              : Stack(
+                  children: <Widget>[
+                    Positioned.fill(child: _buildBackdrop()),
+                    content,
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  /// 大背景：fanart 轻模糊 / 封面重模糊垫底（key 区分两条路，测试据此断言）。
+  Widget _buildBackdrop() {
     final ImageProvider? backdrop = this.backdrop;
+    if (backdrop != null) {
+      return KeyedSubtree(
+        key: const ValueKey<String>('collection-hero-backdrop'),
+        child: MediaDetailBackdrop(
+          image: backdrop,
+          imageKey: backdropIndex,
+          blurSigma: kCollectionHeroBackdropBlur,
+        ),
+      );
+    }
     final ImageProvider? cover = this.cover;
-    return SizedBox(
-      key: const ValueKey<String>('video-work-hero-card'),
-      width: double.infinity,
-      height: height,
-      child: ClipRect(
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            ColoredBox(color: cs.surfaceContainerHighest),
-            if (backdrop != null) ...<Widget>[
-              // v68：多张背景 10 秒轮换（Jellyfin 详情页同款）。外层 key 恒定供
-              // 测试定位；内层 key 随轮换下标变化驱动 AnimatedSwitcher 交叉淡入。
-              // gaplessPlayback：新图解码完成前保留旧帧，避免轮换瞬间闪底色。
-              KeyedSubtree(
-                key: const ValueKey<String>('collection-hero-backdrop'),
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 700),
-                  // AnimatedSwitcher 缺省 layoutBuilder 是宽松 Stack，Image 会按
-                  // 原图尺寸居中而不铺满；SizedBox.expand 给它 hero 的紧约束，
-                  // 小于 hero 的 backdrop（服务器缩略图、高 dpr 大屏）也按 cover 铺满。
-                  child: SizedBox.expand(
-                    key: ValueKey<int>(backdropIndex),
-                    child: Image(
-                      image: backdrop,
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
-                      gaplessPlayback: true,
-                      // 首帧淡入：解码完成那一帧从底色渐显；同步命中缓存的
-                      // 直接出图。时长走动效令牌（墨水屏 / 减弱动效归零）。
-                      frameBuilder: (BuildContext context, Widget child,
-                              int? frame, bool wasSynchronouslyLoaded) =>
-                          wasSynchronouslyLoaded
-                              ? child
-                              : AnimatedOpacity(
-                                  opacity: frame == null ? 0 : 1,
-                                  duration: fushiMotionDuration(
-                                    context,
-                                    FushiMotion.long,
-                                  ),
-                                  curve: FushiMotion.standard,
-                                  child: child,
-                                ),
-                      errorBuilder: (_, __, ___) =>
-                          ColoredBox(color: cs.surfaceContainerHighest),
-                    ),
-                  ),
-                ),
-              ),
-              ...overlays,
-            ] else if (cover != null)
-              LandscapeCoverImage(
-                key: const ValueKey<String>('collection-hero-cover'),
-                image: cover,
-                overlays: overlays,
-                // 竖版海报避让顶部 AppBar 与底部内容区，靠右不压左下标题/播放按钮。
-                foregroundPadding: EdgeInsetsDirectional.only(
-                  top: tokens.spacing.gap,
-                  bottom: tokens.spacing.section,
-                  end: tokens.spacing.page,
-                ),
-                errorBuilder: (BuildContext _) =>
-                    ColoredBox(color: cs.surfaceContainerHighest),
-              )
-            else
-              ...overlays,
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.section,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final Widget info = ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 680),
-                    child: _buildInfo(context, tokens),
-                  );
-                  // 海报卡只在「有横版背景 + 宽度够」时出现：窄屏放不下 2:3 卡还要
-                  // 留 680 给文字，挤压的结果是标题被压成一列竖排字。
-                  final bool showPoster =
-                      backdrop != null &&
-                      cover != null &&
-                      constraints.maxWidth >= 900;
-                  if (!showPoster) {
-                    return Align(
-                      alignment: AlignmentDirectional.bottomStart,
-                      child: info,
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: <Widget>[
-                      _buildPosterCard(cover, height),
-                      SizedBox(width: tokens.spacing.section),
-                      Expanded(
-                        child: Align(
-                          alignment: AlignmentDirectional.bottomStart,
-                          child: info,
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
+    if (cover == null) return const MediaDetailBackdrop();
+    return KeyedSubtree(
+      key: const ValueKey<String>('collection-hero-cover'),
+      child: MediaDetailBackdrop(
+        image: cover,
+        blurSigma: kCollectionHeroCoverBlur,
+      ),
+    );
+  }
+
+  /// 2:3 封面卡（无封面 → null，不占位）。
+  Widget? _buildCoverCard(double width) {
+    final ImageProvider? cover = this.cover;
+    if (cover == null) return null;
+    return MediaDetailCoverFrame(
+      width: width,
+      child: SizedBox.expand(
+        key: const ValueKey<String>('collection-hero-poster'),
+        child: PortraitCoverImage(
+          image: cover,
+          errorBuilder: (BuildContext _) =>
+              const MediaDetailCoverPlaceholder(icon: FushiIcons.video),
         ),
       ),
     );
   }
 
-  /// hero 左侧的竖版海报卡（仅在有横版背景时出现）。2:3 是海报的正确槽向。
-  Widget _buildPosterCard(ImageProvider cover, double heroHeight) {
-    final double posterHeight = (heroHeight * 0.78).clamp(280.0, 500.0);
-    // M3E 形状分级：封面属小件档（12，与书架封面框同形）。
-    return ClipRRect(
-      borderRadius: FushiM3eShape.smallRadius,
-      child: SizedBox(
-        key: const ValueKey<String>('collection-hero-poster'),
-        height: posterHeight,
-        width: posterHeight * 2 / 3,
-        child: PortraitCoverImage(image: cover),
-      ),
+  Widget _buildWide(BuildContext context) {
+    final Widget? cover = _buildCoverCard(220);
+    final Widget info = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 760),
+      child: _buildInfo(context, centered: false, wide: true),
     );
-  }
-
-  /// hero 文字区：日期 / logo 或标题 / 原名 / 徽标 / 标签 / 人物 / 简介 / 续播 / 播放。
-  /// 缺的逐项跳过（不占位、不显示「未知」）。
-  Widget _buildInfo(BuildContext context, FushiDesignTokens tokens) {
-    final TextTheme text = Theme.of(context).textTheme;
-    final String? airDate = this.airDate?.trim();
-    final String? originalTitle = this.originalTitle;
-    final String? summary = this.summary?.trim();
-    final ImageProvider? logo = this.logo;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+    if (cover == null) {
+      return Align(alignment: AlignmentDirectional.bottomStart, child: info);
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
-        // 放送日期行（hayase 式：小字压在大标题上方）。
-        if (airDate != null && airDate.isNotEmpty) ...<Widget>[
-          Text(
-            airDate,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.labelMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-        ],
-        // v68：有标题 logo 时替代纯文字大标题。Semantics 保留名字——logo 是图，
-        // 读屏与测试都还能按名字找到它；logo 解码失败回落文字标题。
-        if (logo != null)
-          Semantics(
-            label: semanticsName ?? title,
-            image: true,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 110, maxWidth: 460),
-              child: Image(
-                key: const ValueKey<String>('collection-hero-logo'),
-                image: logo,
-                fit: BoxFit.contain,
-                alignment: AlignmentDirectional.bottomStart,
-                errorBuilder: (_, __, ___) => _buildTitleText(text),
-              ),
-            ),
-          )
-        else
-          _buildTitleText(text),
-        // 原名与标题相同就不重复占一行。
-        if (originalTitle != null &&
-            originalTitle.isNotEmpty &&
-            originalTitle != title) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(
-            originalTitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.72),
-            ),
-          ),
-        ],
-        SizedBox(height: tokens.spacing.gap),
-        CollectionHeroBadgeChips(parts: badgeParts),
-        if (tagNames.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          CollectionHeroTagChips(names: tagNames),
-        ],
-        if (credits.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          CollectionHeroCreditChips(credits: credits),
-        ],
-        if (summary != null && summary.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.card),
-          // Flexible + ellipsis：简介长度不可控，hero 高度是钳死的，必须让它先收缩
-          // 再截断，否则长简介直接把 Column 撑出 RenderFlex overflow。
-          Flexible(
-            child: Text(
-              summary,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: text.bodyMedium?.copyWith(
-                color: Colors.white.withValues(alpha: 0.78),
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-        if (continueLabel != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.card),
-          Text(
-            continueLabel!,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: text.labelLarge?.copyWith(
-              color: Colors.white.withValues(alpha: 0.82),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-        SizedBox(height: tokens.spacing.card),
-        // 主按钮「播放 / 继续」+ 可选次按钮；窄屏放不下时次按钮换行。
-        Wrap(
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: <Widget>[
-            FushiFilledButton.icon(
-              key: playButtonKey,
-              icon: const FushiIcon(Icons.play_arrow_rounded),
-              label: Text(playLabel ?? t.collection_play),
-              onPressed: onPlay,
-              // Apple：压在 hero 深色渐变上，固定白底黑字（Apple TV 播放钮）。
-              overImage: true,
-            ),
-            if (secondaryAction != null) secondaryAction!,
-          ],
+        FushiStaggeredEntrance(index: 0, child: cover),
+        const SizedBox(width: 32),
+        Expanded(
+          child: Align(alignment: AlignmentDirectional.bottomStart, child: info),
         ),
       ],
     );
   }
 
-  /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）。
-  Widget _buildTitleText(TextTheme text) {
+  Widget _buildNarrow(BuildContext context) {
+    final Widget? cover = _buildCoverCard(168);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (cover != null) ...<Widget>[
+          Center(child: FushiStaggeredEntrance(index: 0, child: cover)),
+          const SizedBox(height: 20),
+        ],
+        _buildInfo(context, centered: true, wide: false),
+      ],
+    );
+  }
+
+  /// hero 文字区：日期 / logo 或标题 / 原名 / chip 行 / 标签 / 人物 / 续播 / 按钮组 /
+  /// 简介 / 页脚。缺的逐项跳过（不占位、不显示「未知」）。
+  Widget _buildInfo(
+    BuildContext context, {
+    required bool centered,
+    required bool wide,
+  }) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final String? airDate = this.airDate?.trim();
+    final String? originalTitle = this.originalTitle?.trim();
+    final String? summary = this.summary?.trim();
+    final ImageProvider? logo = this.logo;
+    final TextAlign align = centered ? TextAlign.center : TextAlign.start;
+    final CrossAxisAlignment cross = centered
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
+    final WrapAlignment wrap = centered
+        ? WrapAlignment.center
+        : WrapAlignment.start;
+    final Widget titleText = _buildTitleText(context, align: align, wide: wide);
+    final List<MediaDetailChip> chips =
+        this.chips ??
+        <MediaDetailChip>[
+          for (final String part in badgeParts) MediaDetailChip(part),
+        ];
+    final String? continueLabel = this.continueLabel;
+    return Column(
+      crossAxisAlignment: cross,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiStaggeredEntrance(
+          index: 1,
+          child: Column(
+            crossAxisAlignment: cross,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // 放送日期行（hayase 式：小字压在大标题上方）。
+              if (airDate != null && airDate.isNotEmpty) ...<Widget>[
+                Text(
+                  airDate,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: align,
+                  style: type.labelLargeEmphasized.tabular.copyWith(
+                    color: cs.primary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+              // v68：有标题 logo 时替代纯文字大标题。Semantics 保留名字——logo 是
+              // 图，读屏与测试都还能按名字找到它；logo 解码失败回落文字标题。
+              if (logo != null)
+                Semantics(
+                  label: semanticsName ?? title,
+                  image: true,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: wide ? 120 : 88,
+                      maxWidth: 460,
+                    ),
+                    child: Image(
+                      key: const ValueKey<String>('collection-hero-logo'),
+                      image: logo,
+                      fit: BoxFit.contain,
+                      alignment: centered
+                          ? Alignment.bottomCenter
+                          : AlignmentDirectional.bottomStart,
+                      errorBuilder: (_, _, _) => titleText,
+                    ),
+                  ),
+                )
+              else
+                titleText,
+              // 原名与标题相同就不重复占一行。
+              if (originalTitle != null &&
+                  originalTitle.isNotEmpty &&
+                  originalTitle != title) ...<Widget>[
+                const SizedBox(height: 6),
+                Text(
+                  originalTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: align,
+                  style: type.titleMedium.copyWith(color: cs.onSurfaceVariant),
+                ),
+              ],
+              if (chips.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 14),
+                MediaDetailChipRow(chips: chips, alignment: wrap),
+              ],
+              if (tagNames.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                MediaDetailChipRow(
+                  alignment: wrap,
+                  chips: <MediaDetailChip>[
+                    for (final String name in tagNames)
+                      MediaDetailChip(
+                        name,
+                        tone: MediaDetailChipTone.secondary,
+                      ),
+                  ],
+                ),
+              ],
+              if (credits.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                CollectionHeroCreditChips(credits: credits),
+              ],
+            ],
+          ),
+        ),
+        if (continueLabel != null) ...<Widget>[
+          const SizedBox(height: 16),
+          FushiStaggeredEntrance(
+            index: 2,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiIcon(FushiIcons.history, size: 18, color: cs.primary),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    continueLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: type.labelLargeEmphasized.copyWith(
+                      color: cs.onSurface,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        FushiStaggeredEntrance(
+          index: 2,
+          child: MediaDetailActionBar(
+            alignment: wrap,
+            primary: MediaDetailPrimaryButton(
+              icon: playIcon ?? FushiIcons.play,
+              label: playLabel ?? t.collection_play,
+              onPressed: onPlay,
+              buttonKey: playButtonKey,
+            ),
+            secondary: <Widget>[?secondaryAction, ...secondaryActions],
+            more: moreItems.isEmpty
+                ? null
+                : MediaDetailMoreButton(
+                    key: const ValueKey<String>('collection-hero-more'),
+                    items: moreItems,
+                  ),
+          ),
+        ),
+        if ((summary != null && summary.isNotEmpty) || footer != null)
+          FushiStaggeredEntrance(
+            index: 3,
+            child: Column(
+              crossAxisAlignment: cross,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (summary != null && summary.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 20),
+                  MediaDetailSynopsis(
+                    key: const ValueKey<String>('collection-hero-summary'),
+                    text: summary,
+                    selectable: selectableSummary,
+                    textAlign: align,
+                  ),
+                ],
+                if (footer != null) ...<Widget>[
+                  const SizedBox(height: 12),
+                  footer!,
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// hero 纯文字大标题（无 logo 的常态路径 / logo 解码失败回落共用）：宽屏
+  /// Display、窄屏 Headline（Emphasized）。
+  Widget _buildTitleText(
+    BuildContext context, {
+    required TextAlign align,
+    required bool wide,
+  }) {
+    final FushiTypography type = context.fushiType;
     return Text(
       title,
-      maxLines: 2,
+      maxLines: 3,
       overflow: TextOverflow.ellipsis,
-      style: text.displaySmall?.copyWith(
-        color: Colors.white,
-        fontWeight: FontWeight.w700,
-        height: 1.08,
-      ),
+      textAlign: align,
+      style: (wide ? type.displaySmallEmphasized : type.headlineMediumEmphasized)
+          .copyWith(
+            color: Theme.of(context).colorScheme.onSurface,
+            height: 1.1,
+          ),
     );
   }
 }
 
-/// 徽标 chips（hayase 式胶囊）：这排是**数字事实**——话数/评分/进度。
+/// 徽标 chips（hayase 式白字胶囊，压在深色封面图上）：这排是**数字事实**——
+/// 话数/评分/进度。发现页详情仍用它；作品详情 hero 已换 [MediaDetailChipRow]。
 class CollectionHeroBadgeChips extends StatelessWidget {
   const CollectionHeroBadgeChips({required this.parts, super.key});
 
@@ -451,7 +522,7 @@ class CollectionHeroBadgeChips extends StatelessWidget {
   }
 }
 
-/// 作品标签 chips（题材）。[Wrap] 而不是单行：标签长短不一。
+/// 作品标签 chips（题材，白字胶囊，发现页详情用）。[Wrap] 而不是单行：标签长短不一。
 class CollectionHeroTagChips extends StatelessWidget {
   const CollectionHeroTagChips({required this.names, super.key});
 
@@ -486,67 +557,39 @@ class CollectionHeroTagChips extends StatelessWidget {
   }
 }
 
-/// 人物 chips：固定高 hero 内只占一条横向轨道。
+/// 人物 chips：hero 内只占一条横向轨道（M3E 元信息 chip 同款）。
 class CollectionHeroCreditChips extends StatelessWidget {
   const CollectionHeroCreditChips({required this.credits, super.key});
 
   final List<CollectionHeroCredit> credits;
 
   static IconData iconFor(String creditKind) => switch (creditKind) {
-    'director' => Icons.movie_creation_outlined,
-    'voice_actor' => Icons.record_voice_over_outlined,
-    _ => Icons.person_outline,
+    'director' => FushiIcons.video,
+    'voice_actor' => FushiIcons.voice,
+    _ => FushiIcons.person,
   };
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       key: const ValueKey<String>('collection-hero-credits'),
-      height: 28,
+      height: 34,
       child: HorizontalDragScrollable(
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
             children: <Widget>[
               for (int index = 0; index < credits.length; index++) ...<Widget>[
-                if (index > 0) const SizedBox(width: 6),
-                DecoratedBox(
-                  key: ValueKey<String>(
-                    'collection-hero-credit-${credits[index].kind}-$index',
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.32),
-                    borderRadius: BorderRadius.circular(999),
-                    border: _heroChipBorder(context, 0.24),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 9,
-                      vertical: 3,
+                if (index > 0) const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 240),
+                  child: MediaDetailChipView(
+                    key: ValueKey<String>(
+                      'collection-hero-credit-${credits[index].kind}-$index',
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        FushiIcon(
-                          iconFor(credits[index].kind),
-                          size: 13,
-                          color: Colors.white.withValues(alpha: 0.76),
-                        ),
-                        const SizedBox(width: 5),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 220),
-                          child: Text(
-                            credits[index].name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(
-                                  height: 1.2,
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                ),
-                          ),
-                        ),
-                      ],
+                    chip: MediaDetailChip(
+                      credits[index].name,
+                      icon: iconFor(credits[index].kind),
                     ),
                   ),
                 ),
@@ -559,26 +602,33 @@ class CollectionHeroCreditChips extends StatelessWidget {
   }
 }
 
-/// 作品详情区：`作品资料` 标题 + 可选择的全文简介 + 「标签 : 值」事实行。
+/// 作品详情区：`作品资料` 区块标题 + 可展开可选中的简介 + 「标签 : 值」事实卡。
 ///
 /// 两者都空时：[pendingText] 非空 → 画一张「资料待补」卡；否则整块不渲染。
+/// [showOverview] = false：简介已在 hero 里展示，这里只用它判空（有简介就不是
+/// 「资料待补」），不再重复渲染。
 class CollectionWorkDetailsSection extends StatelessWidget {
   const CollectionWorkDetailsSection({
     this.overview,
     this.facts = const <(String, String)>[],
     this.pendingText,
+    this.showOverview = true,
     super.key,
   });
 
   final String? overview;
   final List<(String, String)> facts;
   final String? pendingText;
+  final bool showOverview;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
     final String? overview = this.overview?.trim();
-    if ((overview == null || overview.isEmpty) && facts.isEmpty) {
+    final bool hasOverview = overview != null && overview.isNotEmpty;
+    if (!hasOverview && facts.isEmpty) {
       final String? pending = pendingText;
       if (pending == null) return const SizedBox.shrink();
       return Padding(
@@ -591,18 +641,24 @@ class CollectionWorkDetailsSection extends StatelessWidget {
         ),
         child: FushiCard(
           padding: EdgeInsets.all(tokens.spacing.section),
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                t.video_work_details,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              SizedBox(height: tokens.spacing.card),
-              Text(
-                pending,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              FushiIcon(FushiIcons.info, color: cs.onSurfaceVariant),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(t.video_work_details, style: type.titleMediumEmphasized),
+                    const SizedBox(height: 4),
+                    Text(
+                      pending,
+                      style: type.bodyMedium.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -610,77 +666,93 @@ class CollectionWorkDetailsSection extends StatelessWidget {
         ),
       );
     }
+    final bool renderOverview = showOverview && hasOverview;
+    if (!renderOverview && facts.isEmpty) return const SizedBox.shrink();
     return Padding(
       key: const ValueKey<String>('video-work-details'),
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.section,
-        tokens.spacing.page,
-        0,
-      ),
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            t.video_work_details,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          if (overview != null && overview.isNotEmpty) ...<Widget>[
-            SizedBox(height: tokens.spacing.card),
-            SelectableText(
-              overview,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyLarge?.copyWith(height: 1.55),
+          MediaDetailSectionHeader(t.video_work_details),
+          if (renderOverview)
+            MediaDetailSynopsis(
+              text: overview!,
+              selectable: true,
+              collapsedLines: 6,
             ),
-          ],
-          for (final (String label, String value) in facts)
-            Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.card),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          if (facts.isNotEmpty) ...<Widget>[
+            if (renderOverview) SizedBox(height: tokens.spacing.card),
+            FushiCard(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  SizedBox(
-                    width: 116,
-                    child: Text(
-                      label,
-                      style: Theme.of(context).textTheme.labelLarge,
+                  for (final (String label, String value) in facts)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          SizedBox(
+                            width: 116,
+                            child: Text(
+                              label,
+                              style: type.labelLargeEmphasized.copyWith(
+                                color: cs.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: SelectableText(
+                              value,
+                              style: type.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  Expanded(child: SelectableText(value)),
                 ],
               ),
             ),
+          ],
         ],
       ),
     );
   }
 }
 
-/// 「选集」一类区块标题：委托共享 [FushiSectionTitle]（内容区块层级），
-/// 只带页边距、上下间距由调用方的 gap 决定。
+/// 「选集」一类区块标题：M3E 区块标题（titleLarge Emphasized + 计数胶囊 + 行尾
+/// 动作），只带页边距、上下间距由调用方决定。
 class CollectionSectionTitle extends StatelessWidget {
-  const CollectionSectionTitle(this.text, {super.key});
+  const CollectionSectionTitle(this.text, {this.count, this.trailing, super.key});
 
   final String text;
+  final int? count;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiSectionTitle(
+    return MediaDetailSectionHeader(
       text,
+      count: count,
+      trailing: trailing,
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
     );
   }
 }
 
-/// 季 tab 条（MD3 可滚动 [TabBar]）：紧贴「选集」标题、在集列表之上。
-/// 单季不该渲染本条（由调用方门控）。
+/// 季分段（M3E 浮动胶囊）：贴合内容宽的 floating toolbar 胶囊里一排可滚动页签，
+/// 选中段是 secondaryContainer 全胶囊、切换时弹性滑过去；季多到放不下时胶囊吃满
+/// 可用宽、页签在里面横滑。Apple 走玻璃分段页签。紧贴「选集」标题、在集列表
+/// 之上。单季不该渲染本条（由调用方门控）。
 class CollectionSeasonTabBar extends StatelessWidget {
   const CollectionSeasonTabBar({
     required this.controller,
     required this.labels,
     required this.tabKeys,
+    this.onTap,
     super.key,
   });
 
@@ -690,36 +762,110 @@ class CollectionSeasonTabBar extends StatelessWidget {
   /// 与 [labels] 等长；测试按 `collection-season-tab-<groupKey>` 定位。
   final List<Key> tabKeys;
 
+  /// 页签被点（Enter / 手柄 A 同样走这里）；控制器的 index 已由 TabBar 推进。
+  final ValueChanged<int>? onTap;
+
+  /// 胶囊内边距（四周）。
+  static const double _framePadding = 4;
+
+  /// 单个页签文字两侧的内边距（框架 TabBar 的默认 labelPadding）。
+  static const double _labelPadding = 16;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     assert(labels.length == tabKeys.length);
+    final List<Widget> tabs = <Widget>[
+      for (int i = 0; i < labels.length; i++)
+        Tab(key: tabKeys[i], text: labels[i]),
+    ];
+    final Widget bar;
+    if (isGlassDesign(context)) {
+      bar = FushiTabBar(
+        controller: controller,
+        trackInset: 0,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        dividerHeight: 0,
+        onTap: onTap,
+        tabs: tabs,
+      );
+    } else {
+      final TextStyle labelStyle = context.fushiType.titleSmallEmphasized;
+      bar = LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double natural = _naturalWidth(context, labelStyle);
+          // +2：量尺取整的余量，免得刚好摆得下时多出一丝滚动范围。
+          final double wanted = natural + _framePadding * 2 + 2;
+          final double width = constraints.maxWidth.isFinite
+              ? math.min(wanted, constraints.maxWidth)
+              : wanted;
+          return Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: SizedBox(
+              width: width,
+              child: FushiFloatingToolbarSurface(
+                height: 48,
+                padding: const EdgeInsets.all(_framePadding),
+                child: FushiTabBar(
+                  controller: controller,
+                  track: false,
+                  padding: EdgeInsets.zero,
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  dividerHeight: 0,
+                  labelStyle: labelStyle,
+                  unselectedLabelStyle: context.fushiType.titleSmall,
+                  onTap: onTap,
+                  indicator: ShapeDecoration(
+                    shape: const StadiumBorder(),
+                    color: cs.secondaryContainer,
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicatorAnimation: TabIndicatorAnimation.elastic,
+                  labelColor: cs.onSecondaryContainer,
+                  unselectedLabelColor: cs.onSurfaceVariant,
+                  splashBorderRadius: const BorderRadius.all(
+                    Radius.circular(999),
+                  ),
+                  tabs: tabs,
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    }
     return Padding(
       key: const ValueKey<String>('collection-season-tabs'),
-      // 轨道左右缘与「选集」标题、集列表同一条页边（trackInset: 0，轨道
-      // 不再自己多缩 12）。
+      // 胶囊左缘与「选集」标题、集列表同一条页边。
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
         tokens.spacing.gap,
         tokens.spacing.page,
         0,
       ),
-      child: FushiTabBar(
-        controller: controller,
-        trackInset: 0,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        labelColor: cs.primary,
-        unselectedLabelColor: cs.onSurfaceVariant,
-        indicatorColor: cs.primary,
-        dividerColor: Colors.transparent,
-        tabs: <Widget>[
-          for (int i = 0; i < labels.length; i++)
-            Tab(key: tabKeys[i], text: labels[i]),
-        ],
-      ),
+      child: bar,
     );
+  }
+
+  /// 整排页签的自然宽（不含胶囊内边距）：逐个量文字 + 两侧 label 内边距。
+  double _naturalWidth(BuildContext context, TextStyle style) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextDirection direction = Directionality.of(context);
+    double width = 0;
+    for (final String label in labels) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        maxLines: 1,
+        textDirection: direction,
+        textScaler: scaler,
+      )..layout();
+      width += painter.width + _labelPadding * 2;
+      painter.dispose();
+    }
+    return width;
   }
 }
 
@@ -776,14 +922,69 @@ Widget collectionEpisodeThumbPlaceholder(double w, double h, ColorScheme cs) =>
         color: cs.surfaceContainerHighest,
         borderRadius: FushiBorderRadius.card,
       ),
-      child: FushiIcon(Icons.movie_outlined, color: cs.onSurfaceVariant, size: 20),
+      child: FushiIcon(FushiIcons.video, color: cs.onSurfaceVariant, size: 22),
     );
 
-/// 单张集卡：左 16:9 缩略图 + 右「N. 集名」/集简介两行/观看状态，底部进度条。
+/// 集号胶囊（压在集缩略图左上角）：常态 secondaryContainer，续播那一集 primary
+/// 实色。Apple 用半透明系统底 / 强调色。
+class CollectionEpisodeNumberPill extends StatelessWidget {
+  const CollectionEpisodeNumberPill({
+    required this.number,
+    this.current = false,
+    super.key,
+  });
+
+  final String number;
+  final bool current;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool apple = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final Color fill = current
+        ? cs.primary
+        : (apple
+              ? cs.surface.withValues(alpha: 0.86)
+              : cs.secondaryContainer);
+    final Color fg = current
+        ? cs.onPrimary
+        : (apple ? cs.onSurface : cs.onSecondaryContainer);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 30),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: eink ? cs.surface : fill,
+          borderRadius: const BorderRadius.all(Radius.circular(999)),
+          border: eink ? Border.all(color: cs.outline) : null,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+          child: Text(
+            number,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            style: context.fushiType.labelLargeEmphasized.tabular.copyWith(
+              color: eink ? cs.onSurface : fg,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 单张集卡（M3E）：左 16:9 缩略图（集号胶囊 + 云 / 下载角标）+ 右集名 / AniDB
+/// 编号 / 播出日 · 时长 / 集简介 / 观看状态，底部观看进度条。
 ///
-/// 进度条只画**真实事实**：看完 → 满格；看了一半算不出百分比时不造假条，改在
-/// 状态行给「看到 mm:ss」。纯视觉（手势归外层网格 / 焦点目标），整卡
-/// [IgnorePointer]，调用方自己包 [FushiFocusTarget] / [Actions]。
+/// - 续播那一集整卡 primaryContainer 高亮（Apple 抬一阶 raised 底）；
+/// - 已看完：tertiary 实心对勾、集名降为 onSurfaceVariant；
+/// - 看了一半：知道总时长（[progress]）→ 底部 primary 进度条；算不出百分比时
+///   不造假条，改在状态行给「看到 mm:ss」。
+///
+/// 纯视觉（手势归外层网格 / 焦点目标），整卡 [IgnorePointer]，调用方自己包
+/// [FushiFocusTarget] / [Actions]。
 class CollectionEpisodeCard extends StatelessWidget {
   const CollectionEpisodeCard({
     required this.thumb,
@@ -792,6 +993,8 @@ class CollectionEpisodeCard extends StatelessWidget {
     this.summary,
     this.completed = false,
     this.positionMs = 0,
+    this.progress,
+    this.meta = const <String>[],
     this.isContinue = false,
     this.isRemote = false,
     this.downloadBadge,
@@ -804,20 +1007,26 @@ class CollectionEpisodeCard extends StatelessWidget {
   /// 定尺的缩略图（用 [collectionEpisodeThumb] 造）。
   final Widget thumb;
 
-  /// 显示序号（`3` / `S01E03`），前面会拼 `. `。
+  /// 显示序号（`3` / `S01E03`），画在缩略图左上角的集号胶囊里。
   final String number;
   final String title;
   final String? summary;
   final bool completed;
 
   /// 文件身份给出的**另一套**编号（`AniDB 第 04 集`）：Shoko 同时暴露 AniDB
-  /// 原生编号与 TMDB 季集，这里作为序号行下的小字并存，不改 [number]。
+  /// 原生编号与 TMDB 季集，这里作为集名下的小字并存，不改 [number]。
   final String? identityLabel;
 
-  /// 看到的位置（ms）；>0 且未看完时显示「看到 mm:ss」。
+  /// 看到的位置（ms）；>0 且未看完时显示进度条或「看到 mm:ss」。
   final int positionMs;
 
-  /// 续播那一集（底色高亮）。
+  /// 观看进度 0..1（总时长已知时）；null = 算不出，不画进度条。
+  final double? progress;
+
+  /// 元信息（播出日 / 时长），逐项存在才出。
+  final List<String> meta;
+
+  /// 续播那一集（整卡高亮）。
   final bool isContinue;
 
   /// 只在对端 / 远端（缩略图右下角云角标）。
@@ -835,20 +1044,65 @@ class CollectionEpisodeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final bool apple = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
     final bool started = positionMs > 0 && !completed;
-    final String? summary = this.summary;
+    final bool highlight = isContinue && !eink;
+    // Apple：primaryContainer 在单色强调色下就是灰填充，续播集认不出来；改用
+    // 高一阶的实色 raised 底（iOS 选中行同款）。M3E：续播集 = primaryContainer
+    // 饱和色块。卡圆角走 M3E 卡档 20（内边距 10 + 缩略图 12 近似同心）。
+    final Color container = highlight
+        ? (apple ? cs.surfaceContainerHigh : cs.primaryContainer)
+        : cs.surfaceContainerLow;
+    final Color fg = highlight && !apple ? cs.onPrimaryContainer : cs.onSurface;
+    final Color fgVariant = highlight && !apple
+        ? cs.onPrimaryContainer.withValues(alpha: 0.78)
+        : cs.onSurfaceVariant;
+    final double? progress = this.progress;
+    final double? fraction = started && progress != null && progress > 0
+        ? progress.clamp(0.0, 1.0)
+        : null;
+    final List<String> meta = <String>[
+      for (final String part in this.meta)
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+    final String? summary = this.summary?.trim();
+    final Widget statusRow = Row(
+      children: <Widget>[
+        if (completed)
+          FushiIcon(
+            FushiIcons.filled(FushiIcons.success),
+            key: const ValueKey<String>('collection-episode-completed'),
+            color: apple ? cs.primary : cs.tertiary,
+            size: 18,
+          )
+        else if (started && fraction == null) ...<Widget>[
+          FushiIcon(FushiIcons.playCircle, color: fgVariant, size: 16),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              t.collection_episode_watched_at(
+                position: formatVideoPosition(positionMs),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: type.labelMedium.tabular.copyWith(color: fgVariant),
+            ),
+          ),
+        ],
+        if (trailingStatus != null)
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: trailingStatus,
+            ),
+          ),
+      ],
+    );
     return IgnorePointer(
       child: Material(
-        // Apple：primaryContainer 在单色强调色下就是灰填充，再乘 0.35 后与卡片底
-        // 几乎同色，续播集认不出来；改用高一阶的实色 raised 底（iOS 选中行同款）。
-        // MD3（M3E）：续播集 = 当前项口径 secondaryContainer 实色块（不再是
-        // primaryContainer 35% 淡染）；卡圆角走 M3E 卡档 20（内边距 10 + 缩略
-        // 图 10 的嵌套圆角正好同心）。
-        color: isContinue
-            ? (isGlassDesign(context)
-                  ? cs.surfaceContainerHigh
-                  : cs.secondaryContainer)
-            : cs.surfaceContainerLow,
+        color: container,
         borderRadius: FushiM3eShape.cardRadius,
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -861,6 +1115,14 @@ class CollectionEpisodeCard extends StatelessWidget {
                   Stack(
                     children: <Widget>[
                       thumb,
+                      PositionedDirectional(
+                        start: 6,
+                        top: 6,
+                        child: CollectionEpisodeNumberPill(
+                          number: number,
+                          current: isContinue,
+                        ),
+                      ),
                       // 进行中 → 铺满缩略图的压暗 + 进度环；失败 → 右下角标。
                       if (downloadBadge case final Widget badge)
                         positionRemoteDownloadBadge(
@@ -872,7 +1134,7 @@ class CollectionEpisodeCard extends StatelessWidget {
                         const Positioned(
                           right: 4,
                           bottom: 4,
-                          child: CoverBadge(icon: Icons.cloud_outlined),
+                          child: CoverBadge(icon: FushiIcons.cloud),
                         ),
                     ],
                   ),
@@ -882,10 +1144,19 @@ class CollectionEpisodeCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Text(
-                          '$number. $title',
+                          title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
+                          style:
+                              (isContinue
+                                      ? type.titleMediumEmphasized
+                                      : type.titleMedium)
+                                  .copyWith(
+                                    color: completed && !isContinue
+                                        ? fgVariant
+                                        : fg,
+                                    height: 1.3,
+                                  ),
                         ),
                         if (identityLabel case final String label
                             when label.isNotEmpty)
@@ -893,67 +1164,60 @@ class CollectionEpisodeCard extends StatelessWidget {
                             label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(
-                                  height: 1.3,
-                                  color: cs.onSurfaceVariant,
-                                ),
+                            style: type.labelSmall.copyWith(
+                              height: 1.3,
+                              color: fgVariant,
+                            ),
                           ),
-                        if (summary != null && summary.isNotEmpty) ...<Widget>[
-                          SizedBox(height: tokens.spacing.gap / 2),
-                          Text(
-                            summary,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: tokens.type.metadata.copyWith(height: 1.3),
+                        if (meta.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              meta.join('  ·  '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: type.labelMedium.tabular.copyWith(
+                                color: fgVariant,
+                              ),
+                            ),
                           ),
-                        ],
-                        const Spacer(),
-                        Row(
-                          children: <Widget>[
-                            if (completed)
-                              FushiIcon(
-                                Icons.check_circle,
-                                color: cs.primary,
-                                size: 16,
-                              )
-                            else if (started) ...<Widget>[
-                              FushiIcon(
-                                Icons.play_circle_outline,
-                                color: cs.onSurfaceVariant,
-                                size: 16,
-                              ),
-                              SizedBox(width: tokens.spacing.gap / 2),
-                              Text(
-                                t.collection_episode_watched_at(
-                                  position: formatVideoPosition(positionMs),
-                                ),
-                                style: tokens.type.metadata,
-                              ),
-                            ],
-                            if (trailingStatus != null)
-                              Flexible(
-                                child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: trailingStatus,
+                        // 简介吃剩余高度（放不下就省略），卡高恒定不溢出。
+                        if (summary != null && summary.isNotEmpty)
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Align(
+                                alignment: AlignmentDirectional.topStart,
+                                child: Text(
+                                  summary,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: type.bodySmall.copyWith(
+                                    color: fgVariant,
+                                    height: 1.3,
+                                  ),
                                 ),
                               ),
-                          ],
-                        ),
+                            ),
+                          )
+                        else
+                          const Spacer(),
+                        statusRow,
                       ],
                     ),
                   ),
                 ],
               ),
             ),
-            if (completed)
+            if (fraction != null)
               Positioned(
                 left: 0,
                 right: 0,
                 bottom: 0,
                 child: FushiLinearProgressIndicator(
-                  value: 1,
-                  minHeight: 3,
+                  key: const ValueKey<String>('collection-episode-progress'),
+                  value: fraction,
+                  minHeight: 4,
                   backgroundColor: Colors.transparent,
                   color: cs.primary,
                 ),
