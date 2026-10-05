@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
@@ -1503,11 +1504,7 @@ class _CustomFontCatalogTileState extends State<CustomFontCatalogTile> {
       message: t.custom_fonts_drag_hint,
       child: Padding(
         padding: EdgeInsets.only(right: tokens.spacing.gap),
-        child: FushiIcon(
-          Icons.drag_indicator,
-          size: 20,
-          color: scheme.onSurfaceVariant,
-        ),
+        child: const FushiDragHandle(),
       ),
     );
     final Widget actions = Row(

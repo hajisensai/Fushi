@@ -722,7 +722,8 @@ html {
   background-color: ${colors.textColor};
   background-clip: padding-box;
   border: 2px solid transparent;
-  border-radius: 8px;
+  /* M3E：全圆头拇指（与 app 内 Flutter 滚动条同一形状）。 */
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-corner {
   background: transparent;

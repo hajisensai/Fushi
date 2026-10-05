@@ -14,6 +14,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
@@ -618,11 +619,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              FushiIcon(
-                Icons.drag_handle,
-                size: 18,
-                color: tokens.surfaces.onVariant,
-              ),
+              const FushiDragHandle(size: 18),
               SizedBox(width: tokens.spacing.gap),
               Expanded(
                 child: Column(

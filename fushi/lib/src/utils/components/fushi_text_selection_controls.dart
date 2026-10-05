@@ -223,12 +223,10 @@ class _FushiSelectionToolbarState extends State<_FushiSelectionToolbar> {
     return TextSelectionToolbar(
       anchorAbove: widget.anchorAbove,
       anchorBelow: widget.anchorBelow,
-      // 选区工具条是浮在内容上的控件层：MD3 = 浮层面（surfaceContainer + 轻投影
-      // + 柔和描边），Apple = iOS 26 编辑菜单的玻璃胶囊（不是实色卡片）。
+      // 选区工具条是浮在内容上的控件层：MD3 = M3E 浮动工具条（浮层面全胶囊，
+      // 与 floating toolbar 同一形状语言），Apple = iOS 26 编辑菜单的玻璃胶囊。
       toolbarBuilder: (context, child) => FushiPopupSurface(
-        borderRadius: isGlassDesign(context)
-            ? const BorderRadius.all(Radius.circular(22))
-            : null,
+        borderRadius: const BorderRadius.all(Radius.circular(22)),
         child: child,
       ),
       children: [

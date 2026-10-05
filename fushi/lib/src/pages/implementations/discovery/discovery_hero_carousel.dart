@@ -26,6 +26,7 @@ import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart'
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/src/utils/components/fushi_carousel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -192,6 +193,15 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
     }
   }
 
+  /// 第 [index] 页相对当前滚动位置的偏移（项序号 − 当前页，连续值）。
+  double _offsetOf(int index) {
+    if (_controller.hasClients && _controller.position.haveDimensions) {
+      final double? page = _controller.page;
+      if (page != null) return index - page;
+    }
+    return (index - _page).toDouble();
+  }
+
   static ValueKey<String> _pageKey(int index) =>
       ValueKey<String>('discovery-hero-page-$index');
 
@@ -289,7 +299,17 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
               key: _pageKey(index),
               child: Listener(
                 onPointerSignal: _onPointerSignal,
-                child: widget.itemBuilder(context, index),
+                // M3E carousel：项按离当前页的距离收缩 / 压暗，背景图视差
+                // （FushiParallax 在 DiscoveryHeroBackdrop 里读这份偏移）。
+                child: AnimatedBuilder(
+                  animation: _controller,
+                  child: widget.itemBuilder(context, index),
+                  builder: (BuildContext context, Widget? child) =>
+                      FushiCarouselItemOffset(
+                        offset: _offsetOf(index),
+                        child: FushiCarouselItemTransform(child: child!),
+                      ),
+                ),
               ),
             ),
           ),

@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 // ===========================================================================
 // 骨架屏
@@ -42,19 +43,16 @@ class FushiSkeleton extends StatelessWidget {
   });
 
   /// 文字条：高 [height]（默认 12）、全圆头、宽占父级的 [widthFactor]。
-  static Widget line({
-    double widthFactor = 1,
-    double height = 12,
-    Key? key,
-  }) => FractionallySizedBox(
-    key: key,
-    widthFactor: widthFactor,
-    alignment: AlignmentDirectional.centerStart,
-    child: FushiSkeleton(
-      height: height,
-      borderRadius: BorderRadius.all(Radius.circular(height / 2)),
-    ),
-  );
+  static Widget line({double widthFactor = 1, double height = 12, Key? key}) =>
+      FractionallySizedBox(
+        key: key,
+        widthFactor: widthFactor,
+        alignment: AlignmentDirectional.centerStart,
+        child: FushiSkeleton(
+          height: height,
+          borderRadius: BorderRadius.all(Radius.circular(height / 2)),
+        ),
+      );
 
   final double? width;
   final double? height;
@@ -371,6 +369,62 @@ class FushiRichTooltip extends StatelessWidget {
         waitDuration: waitDuration,
         triggerMode: triggerMode,
         child: child,
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// 拖拽把手
+// ===========================================================================
+
+/// 拖拽重排把手：M3 drag_indicator 图标（onSurfaceVariant），桌面悬停时出现
+/// 一圈 8% 状态层圆底并换成「抓手」光标。只是视觉与光标——拖拽手势仍由外层
+/// 重排组件（`FushiReorderableColumn` 等）负责。Apple 用三横线（UITableView
+/// 重排控件），墨水屏无状态层。
+class FushiDragHandle extends StatefulWidget {
+  const FushiDragHandle({this.size = 20, this.color, super.key});
+
+  final double size;
+  final Color? color;
+
+  @override
+  State<FushiDragHandle> createState() => _FushiDragHandleState();
+}
+
+class _FushiDragHandleState extends State<FushiDragHandle> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool apple = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final Color color =
+        widget.color ??
+        (apple ? appleColorsOf(context).tertiaryLabel : cs.onSurfaceVariant);
+    final double box = widget.size + 12;
+    return MouseRegion(
+      cursor: SystemMouseCursors.grab,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: AnimatedContainer(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        width: box,
+        height: box,
+        alignment: Alignment.center,
+        decoration: ShapeDecoration(
+          shape: const CircleBorder(),
+          color: _hovering && !eink
+              ? color.withValues(alpha: 0.08)
+              : color.withValues(alpha: 0),
+        ),
+        child: FushiIcon(
+          apple ? Icons.drag_handle_rounded : Icons.drag_indicator_rounded,
+          size: widget.size,
+          color: color,
+        ),
       ),
     );
   }

@@ -11,9 +11,10 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 /// 拖拽重排中「被抬起的那一项」的统一浮层（[FushiReorderableColumn] /
 /// `FushiReorderableGrid` 的自绘浮层；页面里自写的拖拽代理也应套它）。
 ///
-/// - MD3 Expressive：拖拽态 = 浮起面（tokens.surfaces.search）+ elevation 6 投影、无
-///   surface tint，圆角默认 16（M3E 列表行的「按下 / 拖拽」形变档
-///   [FushiM3eShape.listActive]），并轻微放大 1.02（与 Apple 抬起同一手感）。
+/// - MD3 Expressive：拖拽态 = 浮起面（tokens.surfaces.search）叠 dragged 状态层
+///   + elevation 8 投影、无 surface tint，圆角默认 16（M3E 列表行的「按下 / 拖拽」
+///   形变档 [FushiM3eShape.listActive]）；抬起瞬间用 expressive spatial 弹簧放大到
+///   1.03（带过冲），像被手指捏起来。
 /// - Apple（iOS 26 / macOS 26）：抬起的行是实色二级分组底（不是玻璃）+ 一圈
 ///   柔和的大半径阴影 + 轻微放大 1.02（UITableView 拖拽 lift 的观感），圆角默认 10。
 /// - 墨水屏：无阴影（灰阶抖动），改一圈实描边标出抬起项。
@@ -55,13 +56,26 @@ class FushiReorderDragProxy extends StatelessWidget {
         alpha: cs.brightness == Brightness.dark ? 0.6 : 0.22,
       );
     } else {
-      // surfaceContainerHigh（搜索 / 浮起面那一阶），比页面与卡片都高一层。
-      fill = FushiDesignTokens.of(context).surfaces.search;
-      elevation = eink ? 0 : 6;
+      // surfaceContainerHigh（搜索 / 浮起面那一阶）叠 M3 dragged 状态层
+      // （onSurface 16%），比页面与卡片都高一层。
+      fill = eink
+          ? FushiDesignTokens.of(context).surfaces.search
+          : Color.alphaBlend(
+              cs.onSurface.withValues(alpha: 0.16 * 0.5),
+              FushiDesignTokens.of(context).surfaces.search,
+            );
+      elevation = eink ? 0 : 8;
       shadowColor = cs.shadow;
     }
-    return Transform.scale(
-      scale: fushiMotionEnabled(context) ? 1.02 : 1.0,
+    final bool animate = fushiMotionEnabled(context);
+    final double liftScale = !animate ? 1.0 : (apple ? 1.02 : 1.03);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: animate ? 1.0 : liftScale, end: liftScale),
+      duration: animate ? const Duration(milliseconds: 350) : Duration.zero,
+      // MD3：expressive fast spatial（带过冲）；Apple：平滑无过冲。
+      curve: apple ? Curves.easeOutCubic : const Cubic(0.42, 1.67, 0.21, 0.90),
+      builder: (BuildContext context, double scale, Widget? child) =>
+          Transform.scale(scale: scale, child: child),
       child: Material(
         type: MaterialType.canvas,
         color: transparent ? Colors.transparent : fill,
