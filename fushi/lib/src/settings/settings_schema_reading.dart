@@ -1093,12 +1093,18 @@ Widget buildReaderControlLayoutEditor(SettingsContext context) {
           style: controlLayoutEditorHintStyle(context.context),
         ),
       ),
-      ReaderControlLayoutEditor(
-        layout: context.appModel.readerControlLayout,
-        onLayoutChanged: (ReaderControlLayout layout) async {
-          await context.appModel.setReaderControlLayout(layout);
+      ReaderControlLayoutTargetEditor(
+        read: (bool compact) =>
+            context.appModel.readerControlLayoutFor(compact: compact),
+        write: (bool compact, ReaderControlLayout layout) async {
+          if (compact) {
+            await context.appModel.setReaderCompactControlLayout(layout);
+          } else {
+            await context.appModel.setReaderControlLayout(layout);
+          }
           notifyReaderChromeReanchored(context);
         },
+        floating: context.appModel.readerToolbarStyle != 'docked',
         isTouchControls: !isDesktopPlatform,
       ),
     ],

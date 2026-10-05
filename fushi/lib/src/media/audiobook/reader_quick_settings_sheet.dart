@@ -981,6 +981,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 桌面端居中「有声书」面板：外壳与三个 tab 在 [ReaderAudiobookPanel]；「设置」
   /// tab 的内容仍由本 sheet 提供（音量 / 速度 / 延迟等行的写路径在这里）。
   Widget _buildAudiobookPanel(BuildContext context, ThemeData theme) {
+    return ReaderSideSheet(
+      title: t.section_audiobook,
+      subtitle: widget.chapterLabel,
+      icon: Icons.headphones_rounded,
+      scrollable: false,
+      onClose: _sideSheetClose(context),
+      child: _buildAudiobookPanelBody(context),
+    );
+  }
+
+  Widget _buildAudiobookPanelBody(BuildContext context) {
     return ReaderAudiobookPanel(
       controller: widget.controller,
       toc: widget.toc,

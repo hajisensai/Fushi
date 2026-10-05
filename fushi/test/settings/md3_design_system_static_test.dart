@@ -1138,14 +1138,6 @@ void main() {
           'pill exactly — same reviewed exception class as '
           'reader_fushi/chrome.part.dart. The 3px progress track / 2px edge '
           'line round their own height (chart content, not page chrome).',
-      'lib/src/reader/reader_audiobook_panel.dart':
-          'Audiobook cue list is dense reader content (tonal cue track + cue '
-          'row corners) — same reviewed exception class as '
-          'reader_fushi/chrome.part.dart.',
-      'lib/src/reader/reader_statistics_sheet.dart':
-          'Reading-position progress bars are chart content (progress-track '
-          'surface + clipped track corners) — same reviewed exception class '
-          'as reading_statistics_page / video_statistics_page.',
       'lib/src/reader/reader_settings_preview.dart':
           'Reading-settings live preview renders sample BOOK TEXT at the '
           "reader's own (scaled) font size — reader content, not page chrome; "
@@ -1511,6 +1503,9 @@ void main() {
       },
       'lib/src/reader/reader_navigation_widgets.dart': <String>{
         'BorderRadius.circular(',
+      },
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
+        'VisualDensity.compact',
       },
       'lib/src/reader/reader_settings_preview.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
