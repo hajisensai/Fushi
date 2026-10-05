@@ -44,9 +44,9 @@ const double kReaderDesktopHeaderTitleFontSize = 14;
 /// 悬浮工具栏样式（M3E floating toolbar，默认）下胶囊离窗口边 / 状态行的外边距。
 const double kReaderFloatingBarMargin = 8;
 
-/// 悬浮样式顶部胶囊行的整段外框高（上外边距 + 48 高胶囊 + 下外边距）：挤压态
+/// 悬浮样式顶部胶囊行的整段外框高（上外边距 8 + 56 高胶囊 + 下外边距 8）：挤压态
 /// （不点空白隐藏）据此给正文预留，正文不排到胶囊下面。
-const double kReaderFloatingHeaderExtent = 64;
+const double kReaderFloatingHeaderExtent = 72;
 
 /// 悬浮样式底部（迷你播放条 / 悬浮工具栏）的最大宽度：宽屏上不拉成整条，
 /// 居中成一块胶囊组。

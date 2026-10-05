@@ -44,8 +44,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 /// M3E 悬浮工具栏容器高（规格 64）。阅读器手机底栏带标签时用它。
 const double kFushiFloatingToolbarExtent = 64;
 
-/// 紧凑悬浮条高（顶部胶囊 / 不带标签的桌面工具栏）：48 = 40 按压面 + 上下 4。
-const double kFushiFloatingToolbarCompactExtent = 48;
+/// 紧凑悬浮条高（顶部胶囊 / 不带标签的桌面工具栏）：56 = 48 触控目标 + 上下 4。
+const double kFushiFloatingToolbarCompactExtent = 56;
 
 /// 工具栏内边距（规格 8）。紧凑形态收到 4。
 const double kFushiFloatingToolbarPadding = 8;
@@ -398,7 +398,7 @@ class FushiFloatingToolbar extends StatelessWidget {
   /// 等宽图标 + 小字标签（手机底栏，拇指区）。只对横向生效。
   final bool showLabels;
 
-  /// 紧凑高度（48）——桌面顶部 / 纵向侧栏用；默认 64（规格）。
+  /// 紧凑高度（56）——顶部胶囊 / 纵向侧栏用；默认 64（规格）。
   final bool compact;
 
   /// 纯指针面：整个工具栏不进焦点遍历池（阅读器 chrome 的不变式）。
@@ -584,7 +584,7 @@ class FushiFloatingTopBar extends StatelessWidget {
                 excludeFromSemantics: true,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
-                    minHeight: kFushiFloatingToolbarCompactExtent - 8,
+                    minHeight: kFushiFloatingToolbarCompactExtent,
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -642,11 +642,15 @@ class FushiFloatingTopBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
         ],
-        if (titlePill != null)
-          Flexible(child: titlePill)
-        else
-          const SizedBox.shrink(),
-        const Spacer(),
+        // 标题胶囊按内容收缩、最多吃满中间剩余宽度（超长书名省略号）。
+        Expanded(
+          child: titlePill == null
+              ? const SizedBox.shrink()
+              : Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: titlePill,
+                ),
+        ),
         if (hasActions) ...<Widget>[
           const SizedBox(width: 8),
           FushiFloatingToolbar(
