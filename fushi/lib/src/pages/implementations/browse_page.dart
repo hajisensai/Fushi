@@ -103,6 +103,26 @@ bool browseHandOffRealignsSections(BrowseTab from, BrowseTab to) {
   return !(isOnline(from) && isOnline(to));
 }
 
+/// 测试入口：直接挂一份浏览页的「二级标签 + 横滑页面」（真页面要起 Mihon /
+/// LNReader manager，widget 测试挂不起来）。
+@visibleForTesting
+Widget debugBrowseSwipeSections<T extends Object>({
+  required List<LibrarySectionTab<T>> tabs,
+  required T selected,
+  required Widget Function(T value) pageBuilder,
+  Widget? trailing,
+}) =>
+    _BrowseSwipeSections<T>(
+      pickerKey: const ValueKey<String>('debug-browse-swipe-sections'),
+      tabs: tabs,
+      selected: selected,
+      onChanged: (T _) {},
+      focusIdPrefix: 'debug-browse-swipe-sections',
+      pageBuilder: pageBuilder,
+      onEdgeOverscroll: (int _) {},
+      trailing: trailing,
+    );
+
 /// 「下载」页签里的两段。
 enum BrowseDownloadsSection { tasks, subscriptions }
 
@@ -1045,31 +1065,39 @@ class _BrowseSwipeSectionsState<T extends Object>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TabController controller = _syncController();
+    // 只剩一个段（其余内容域被模块开关 / 平台门关掉）：一排只有一个标签的二级
+    // 页签既不能切换、又占一整行纵向空间，还会被误读成标题。此时不画标签条，
+    // 只在有尾随动作时留下那一行放动作。
+    final bool showTabs = widget.tabs.length > 1;
     return Column(
       children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.gap,
+        if (showTabs || widget.trailing != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              0,
+              tokens.spacing.page,
+              tokens.spacing.gap,
+            ),
+            child: Row(
+              children: <Widget>[
+                if (showTabs)
+                  Expanded(
+                    child: LibrarySectionTabs<T>.controlled(
+                      key: widget.pickerKey,
+                      tabs: widget.tabs,
+                      controller: controller,
+                      focusIdPrefix: widget.focusIdPrefix,
+                      secondary: true,
+                      fill: true,
+                    ),
+                  )
+                else
+                  const Spacer(),
+                if (widget.trailing != null) widget.trailing!,
+              ],
+            ),
           ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: LibrarySectionTabs<T>.controlled(
-                  key: widget.pickerKey,
-                  tabs: widget.tabs,
-                  controller: controller,
-                  focusIdPrefix: widget.focusIdPrefix,
-                  secondary: true,
-                  fill: true,
-                ),
-              ),
-              if (widget.trailing != null) widget.trailing!,
-            ],
-          ),
-        ),
         Expanded(
           child: NotificationListener<ScrollNotification>(
             onNotification: _handleScroll,
