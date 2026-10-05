@@ -385,7 +385,8 @@ void main() {
     // 2026-09-27：手机的有声书面板也走右侧侧栏，不再有底部抽屉分支。
     expect(route, isNot(contains('readerAudiobookUsesSideSheet(')));
     expect(route, contains('showReaderSideSheet<void>('));
-    expect(route, contains('ReaderSideSheetSide.left'));
+    // 2026-10 整合：四类侧板同一外壳、同一停靠边，开着时原地切换。
+    expect(route, contains('switcher: _readerPanelSwitcher('));
     expect(route, contains('ReaderSideSheetSide.right'));
     expect(route, isNot(contains('ReaderQuickSettingsPresentation.sheet')));
     expect(route, isNot(contains('FushiDialogFrame(')));

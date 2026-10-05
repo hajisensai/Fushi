@@ -483,6 +483,8 @@ class _WidePanel extends StatelessWidget {
                     masked: data.lyricsMasked,
                     onPressed: callbacks.onToggleMask,
                   ),
+                  if (callbacks.onTypography != null)
+                    _TypographyButton(onTypography: callbacks.onTypography!),
                   FushiIconButtonControl(
                     tooltip: t.reading_statistics,
                     onPressed: callbacks.onOpenStatistics,
@@ -1497,6 +1499,34 @@ class _MaskButton extends StatelessWidget {
 }
 
 /// ⋯ 更多：把按钮的全局矩形与 context 交给页面锚定菜单（菜单从它取主题）。
+/// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
+class _TypographyButton extends StatelessWidget {
+  const _TypographyButton({required this.onTypography});
+
+  final ValueChanged<LyricsMenuAnchor> onTypography;
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (BuildContext anchor) => FushiIconButtonControl(
+        key: const ValueKey<String>('lyrics_typography_button'),
+        tooltip: t.lyrics_typography_title,
+        onPressed: () {
+          final RenderObject? box = anchor.findRenderObject();
+          if (box is! RenderBox || !box.hasSize) return;
+          onTypography(
+            LyricsMenuAnchor(
+              rect: box.localToGlobal(Offset.zero) & box.size,
+              context: anchor,
+            ),
+          );
+        },
+        icon: const FushiIcon(Icons.text_fields_rounded),
+      ),
+    );
+  }
+}
+
 class _MoreButton extends StatelessWidget {
   const _MoreButton({required this.onMore});
 
@@ -1582,6 +1612,8 @@ class _NarrowTopBar extends StatelessWidget {
           masked: data.lyricsMasked,
           onPressed: callbacks.onToggleMask,
         ),
+        if (callbacks.onTypography != null)
+          _TypographyButton(onTypography: callbacks.onTypography!),
         FushiIconButtonControl(
           tooltip: t.reading_statistics,
           onPressed: callbacks.onOpenStatistics,

@@ -103,10 +103,11 @@ void main() {
         '  Widget _buildDesktopHeader() {',
         '  /// 顶部工具栏「统计」',
       );
-      expect(
-          header,
-          contains(
-              'leading: _readerControlActionsIn(ReaderControlSlot.topLeft)'));
+      expect(header,
+          contains('_readerControlActionsIn(ReaderControlSlot.topLeft)'));
+      // 2026-10：布局的「更多」槽恒进 ⋮；悬浮样式顶栏同样从槽位取按钮。
+      expect(header, contains('overflowActions: _overflowControlActions()'));
+      expect(header, contains('_renderableControlsIn(ReaderControlSlot.topRight)'));
       expect(
           header,
           contains(

@@ -6587,5 +6587,20 @@
   "shelf_toolbar_filters": "Filters",
   "reader_nav_progress_book": "全書",
   "reader_nav_progress_chapter": "第 $current / $total 章",
-  "reader_nav_progress_chars": "$current / $total 字"
+  "reader_nav_progress_chars": "$current / $total 字",
+  "lyrics_typography_title": "歌詞文字",
+  "lyrics_typography_font_follows_reader": "字型跟隨閱讀器字型。",
+  "lyrics_typography_more_settings": "更多歌詞設定",
+  "reader_control_zone_pinned": "常駐",
+  "reader_control_zone_pinned_hint": "始終顯示在工具列上",
+  "reader_control_zone_overflow_hint": "收進 ⋯ 選單，仍可使用",
+  "reader_control_zone_hidden": "隱藏",
+  "reader_control_zone_hidden_hint": "不在閱讀器中顯示",
+  "reader_control_zone_bottom_toolbar": "底部工具列",
+  "reader_control_restore_defaults": "恢復預設",
+  "reader_control_move_to": "移到",
+  "reader_control_move_earlier": "前移",
+  "reader_control_move_later": "後移",
+  "reader_control_show_title": "顯示書名",
+  "reader_control_editor_drag_hint": "拖動按鈕（觸控長按）即可排序或換區；用鍵盤時在按鈕上按 Enter 選擇位置。改動立即生效。"
 }

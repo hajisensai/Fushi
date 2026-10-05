@@ -17,6 +17,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
   required PrefStore preferences,
   required WidgetBuilder builder,
   bool bottomSheetWhenCompact = false,
+  ReaderPanelSwitcher? switcher,
 }) {
   final ReaderSideSheetSide side =
       preferences.getPref(kReaderSettingsPanelSidePref) == 'left'
@@ -29,6 +30,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
     side: side,
     sideController: controller,
     bottomSheetWhenCompact: bottomSheetWhenCompact,
+    switcher: switcher,
     builder: (BuildContext context) => _ReaderSettingsSideSession(
       controller: controller,
       preferences: preferences,

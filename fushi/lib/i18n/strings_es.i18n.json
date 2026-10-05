@@ -6587,5 +6587,20 @@
   "shelf_toolbar_filters": "Filters",
   "reader_nav_progress_book": "of book",
   "reader_nav_progress_chapter": "Ch. $current / $total",
-  "reader_nav_progress_chars": "$current / $total chars"
+  "reader_nav_progress_chars": "$current / $total chars",
+  "lyrics_typography_title": "Lyrics text",
+  "lyrics_typography_font_follows_reader": "The font follows the reader font.",
+  "lyrics_typography_more_settings": "More lyrics settings",
+  "reader_control_zone_pinned": "Always shown",
+  "reader_control_zone_pinned_hint": "Always on the toolbars",
+  "reader_control_zone_overflow_hint": "Tucked into the ⋯ menu, still available",
+  "reader_control_zone_hidden": "Hidden",
+  "reader_control_zone_hidden_hint": "Not shown in the reader",
+  "reader_control_zone_bottom_toolbar": "Bottom toolbar",
+  "reader_control_restore_defaults": "Restore defaults",
+  "reader_control_move_to": "Move to",
+  "reader_control_move_earlier": "Move earlier",
+  "reader_control_move_later": "Move later",
+  "reader_control_show_title": "Show book title",
+  "reader_control_editor_drag_hint": "Drag a button (long-press on touch) to reorder it or move it to another area. With a keyboard, press Enter on a button to choose where it goes. Changes apply right away."
 }
