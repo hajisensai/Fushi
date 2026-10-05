@@ -691,6 +691,9 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.audio_volume',
             title: t.lookup_audio_volume,
             icon: Icons.volume_up_outlined,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 11),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.lookupAudioVolume.toDouble(),
@@ -918,6 +921,9 @@ SettingsDestination buildLookupDestination() {
             max: PreferencesRepository.kPopupInstantScrollStepMax,
             divisions: 18,
             titleReadout: true,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
+            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
+            commitOnRelease: true,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 18),
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
@@ -938,6 +944,9 @@ SettingsDestination buildLookupDestination() {
             max: PreferencesRepository.kPopupInstantScrollStepMax,
             divisions: 18,
             titleReadout: true,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库并重建整个
+            // 阅读设置面板（Android 上压着正文平台视图拖动掉帧）。
+            commitOnRelease: true,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 19),
             visible: (SettingsContext settingsContext) =>
                 settingsContext.appModel.popupInstantScroll,
@@ -996,6 +1005,9 @@ SettingsDestination buildLookupDestination() {
             min: 0.1,
             max: 1,
             divisions: 9,
+            // 拖动只跟手预览、松手提交一次：逐 tick 写穿会每帧写库 + 推正文
+            // WebView 重注样式 / 重建阅读器页，Android 上压着平台视图拖动掉帧。
+            commitOnRelease: true,
             reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 14),
             value: (SettingsContext settingsContext) =>
                 settingsContext.readerSource.dismissSwipeSensitivity,
