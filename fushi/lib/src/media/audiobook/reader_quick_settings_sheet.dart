@@ -713,8 +713,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ? ((rp.$1 + 1) / rp.$2).clamp(0.0, 1.0)
             : null;
     final String? chapter = widget.chapterLabel?.trim();
+    // 百分比只出现一个：有字数进度时卡片右上角就是全书字数百分比，读数行改报
+    // 字数；只有章节进度时才用「第 n / N 章 · x%」。
     final List<String> readouts = <String>[
-      if (rp != null && rp.$2 > 0)
+      if (cp != null && cp.$2 > 0)
+        t.jump_to_char_current(current: cp.$1, total: cp.$2)
+      else if (rp != null && rp.$2 > 0)
         t.chapter_progress(
           idx: rp.$1 + 1,
           total: rp.$2,
@@ -2680,7 +2684,12 @@ class _InBookTocRow extends StatelessWidget {
     );
     // 当前章：整行内嵌一块选中底（MD3 secondaryContainer；Apple / Cupertino 强调色
     // 14%；墨水屏改描边），配合行尾的勾——长目录里一眼就能找到读到哪了。
-    final Widget body = selected
+    final Widget indented = Padding(
+      padding: EdgeInsetsDirectional.only(start: indent),
+      child: row,
+    );
+    // 选中底铺满整段（缩进留在底块里面），层级缩进不会把选中底也挤歪。
+    return selected
         ? Padding(
             padding: EdgeInsets.all(tokens.spacing.gap / 4),
             child: DecoratedBox(
@@ -2696,14 +2705,10 @@ class _InBookTocRow extends StatelessWidget {
                     ? Border.all(color: theme.colorScheme.outline)
                     : null,
               ),
-              child: row,
+              child: indented,
             ),
           )
-        : row;
-    return Padding(
-      padding: EdgeInsetsDirectional.only(start: indent),
-      child: body,
-    );
+        : indented;
   }
 }
 

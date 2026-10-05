@@ -24,8 +24,8 @@ class _MemoryPrefs implements PrefStore {
 }
 
 Widget _app(Widget Function(BuildContext) body) => MaterialApp(
-      home: Scaffold(body: Builder(builder: body)),
-    );
+  home: Scaffold(body: Builder(builder: body)),
+);
 
 Future<BuildContext> _pumpHost(WidgetTester tester, Size size) async {
   tester.view.physicalSize = size;
@@ -34,10 +34,12 @@ Future<BuildContext> _pumpHost(WidgetTester tester, Size size) async {
   tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 20);
   addTearDown(tester.view.reset);
   late BuildContext context;
-  await tester.pumpWidget(_app((BuildContext ctx) {
-    context = ctx;
-    return const SizedBox.expand();
-  }));
+  await tester.pumpWidget(
+    _app((BuildContext ctx) {
+      context = ctx;
+      return const SizedBox.expand();
+    }),
+  );
   return context;
 }
 
@@ -98,8 +100,9 @@ void main() {
     });
   });
 
-  testWidgets('窄窗 + bottomSheetWhenCompact：从底部升起、铺满宽度、带拖动把手',
-      (WidgetTester tester) async {
+  testWidgets('窄窗 + bottomSheetWhenCompact：从底部升起、铺满宽度、带拖动把手', (
+    WidgetTester tester,
+  ) async {
     final BuildContext context = await _pumpHost(tester, const Size(420, 900));
     showReaderSideSheet<void>(
       context: context,
@@ -114,7 +117,10 @@ void main() {
     expect(panel.left, 0);
     expect(panel.width, 420);
     expect(panel.bottom, 900);
-    expect(panel.height, closeTo(900 * kReaderPanelBottomSheetHeightFraction, 0.5));
+    expect(
+      panel.height,
+      closeTo(900 * kReaderPanelBottomSheetHeightFraction, 0.5),
+    );
     expect(
       find.byKey(const ValueKey<String>('fushi_side_sheet_drag_handle')),
       findsOneWidget,
@@ -142,8 +148,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('底部 sheet：页头向下拖过阈值即关闭，拖一点松手弹回',
-      (WidgetTester tester) async {
+  testWidgets('底部 sheet：页头向下拖过阈值即关闭，拖一点松手弹回', (WidgetTester tester) async {
     final BuildContext context = await _pumpHost(tester, const Size(420, 900));
     showReaderSideSheet<void>(
       context: context,
@@ -151,10 +156,12 @@ void main() {
       builder: (BuildContext ctx) => _sheet(ctx),
     );
     await tester.pumpAndSettle();
-    final Finder handle =
-        find.byKey(const ValueKey<String>('fushi_side_sheet_drag_handle'));
-    final Finder panel =
-        find.byKey(const ValueKey<String>('fushi_reader_side_sheet'));
+    final Finder handle = find.byKey(
+      const ValueKey<String>('fushi_side_sheet_drag_handle'),
+    );
+    final Finder panel = find.byKey(
+      const ValueKey<String>('fushi_reader_side_sheet'),
+    );
     final double top = tester.getRect(panel).top;
 
     await tester.drag(handle, const Offset(0, 40));
@@ -174,8 +181,9 @@ void main() {
       builder: (BuildContext ctx) => _sheet(ctx),
     );
     await tester.pumpAndSettle();
-    final Finder panel =
-        find.byKey(const ValueKey<String>('fushi_reader_side_sheet'));
+    final Finder panel = find.byKey(
+      const ValueKey<String>('fushi_reader_side_sheet'),
+    );
     expect(tester.getRect(panel).right, 1600);
     expect(tester.getRect(panel).width, kReaderSideSheetWidth);
     expect(
@@ -257,7 +265,10 @@ void main() {
     ).readAsStringSync();
     final int at = src.indexOf('Future<void> _presentSideSheet(');
     expect(at, greaterThan(-1));
-    final String body = src.substring(at, src.indexOf('bool _closeSideSheetForWebViewPointer'));
+    final String body = src.substring(
+      at,
+      src.indexOf('bool _closeSideSheetForWebViewPointer'),
+    );
     expect(body, contains('_focusOwnership.guardOverlay'));
     expect(
       'bottomSheetWhenCompact: true'.allMatches(body).length,
@@ -275,21 +286,20 @@ void main() {
       expect(readerPreviewFontWeight(720), FontWeight.w700);
     });
 
-    testWidgets('改字号 / 主题后预览即时变化（动画结束后落到新值）',
-        (WidgetTester tester) async {
+    testWidgets('改字号 / 主题后预览即时变化（动画结束后落到新值）', (WidgetTester tester) async {
       Widget card(double size, Color bg) => MaterialApp(
-            home: Scaffold(
-              body: ReaderSettingsPreviewCard(
-                sample: '吾輩は猫である。',
-                background: bg,
-                foreground: Colors.black,
-                readerFontSize: size,
-                lineHeight: 1.6,
-                fontWeight: 400,
-                vertical: false,
-              ),
-            ),
-          );
+        home: Scaffold(
+          body: ReaderSettingsPreviewCard(
+            sample: '吾輩は猫である。',
+            background: bg,
+            foreground: Colors.black,
+            readerFontSize: size,
+            lineHeight: 1.6,
+            fontWeight: 400,
+            vertical: false,
+          ),
+        ),
+      );
       await tester.pumpWidget(card(20, Colors.white));
       await tester.pumpWidget(card(40, const Color(0xFFF2E8D5)));
       await tester.pumpAndSettle();

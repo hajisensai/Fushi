@@ -26,10 +26,7 @@ class _FakeInAppWebViewController implements InAppWebViewController {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-Future<AppModel> _testAppModel(
-  WidgetTester tester,
-  FushiDatabase db,
-) async {
+Future<AppModel> _testAppModel(WidgetTester tester, FushiDatabase db) async {
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -54,12 +51,12 @@ Future<AppModel> _testAppModel(
 }
 
 void main() {
-  testWidgets('歌词模式：歌词页置首、三组控件、版式默认折叠、高亮色写穿偏好',
-      (WidgetTester tester) async {
+  testWidgets('歌词模式：歌词页置首、三组控件、版式默认折叠、高亮色写穿偏好', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final FushiDatabase db =
-        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
     final AppModel model = await _testAppModel(tester, db);
     final ReaderSettings? previous = ReaderFushiSource.readerSettings;
     ReaderFushiSource.readerSettings = ReaderSettings(db)
@@ -75,22 +72,22 @@ void main() {
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>
                   ReaderQuickSettingsSheet(
-                controller: null,
-                toc: const [],
-                readerProgress: const (1, 3),
-                onJumpSection: (_, __) async {},
-                onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
-                appModel: model,
-                ref: ref,
-                isFushiReader: true,
-                lyricsMode: true,
-                onToggleLyricsMode: () {},
-                presentation:
-                    ReaderQuickSettingsPresentation.sideSheetAppearance,
-                onStyleChanged: () async => styleChanges++,
-                onThemeChanged: () async {},
-              ),
+                    controller: null,
+                    toc: const [],
+                    readerProgress: const (1, 3),
+                    onJumpSection: (_, __) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    lyricsMode: true,
+                    onToggleLyricsMode: () {},
+                    presentation:
+                        ReaderQuickSettingsPresentation.sideSheetAppearance,
+                    onStyleChanged: () async => styleChanges++,
+                    onThemeChanged: () async {},
+                  ),
             ),
           ),
         ),
@@ -98,12 +95,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
-        matching: find.byType(TabBar),
+    final TabBar tabBar = tester.widget<TabBar>(
+      glassUnwrap<TabBar>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+          matching: find.byType(TabBar),
+        ),
       ),
-    ));
+    );
     expect(tabBar.controller!.index, 0);
     expect(
       find.descendant(
@@ -113,12 +112,17 @@ void main() {
       findsOneWidget,
       reason: '歌词模式下「歌词模式」页置首并默认选中',
     );
-    expect(find.text(t.reader_panel_tab_layout), findsNothing,
-        reason: '歌词页不读正文排版项');
+    expect(
+      find.text(t.reader_panel_tab_layout),
+      findsNothing,
+      reason: '歌词页不读正文排版项',
+    );
 
     // 模式切换行 + 三组。
-    expect(find.byKey(const ValueKey<String>('fushi_lyrics_mode_toggle')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_lyrics_mode_toggle')),
+      findsOneWidget,
+    );
     expect(find.text(t.reader_panel_lyrics_section_text), findsOneWidget);
     expect(find.text(t.lyrics_font_size), findsOneWidget);
     expect(find.text(t.lyrics_text_color), findsOneWidget);
@@ -152,12 +156,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('书籍模式：没有有声书时不出歌词页，默认落「主题与字体」并有实时预览',
-      (WidgetTester tester) async {
+  testWidgets('书籍模式：没有有声书时不出歌词页，默认落「主题与字体」并有实时预览', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final FushiDatabase db =
-        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
     final AppModel model = await _testAppModel(tester, db);
     final ReaderSettings? previous = ReaderFushiSource.readerSettings;
     ReaderFushiSource.readerSettings = ReaderSettings(db)
@@ -172,23 +176,25 @@ void main() {
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>
                   ReaderQuickSettingsSheet(
-                controller: null,
-                toc: const [],
-                readerProgress: const (1, 3),
-                onJumpSection: (_, __) async {},
-                onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
-                appModel: model,
-                ref: ref,
-                isFushiReader: true,
-                onToggleLyricsMode: () {},
-                readerPaperColors: () =>
-                    (bg: const Color(0xFFF2E8D5), fg: const Color(0xFF333333)),
-                presentation:
-                    ReaderQuickSettingsPresentation.sideSheetAppearance,
-                onStyleChanged: () async {},
-                onThemeChanged: () async {},
-              ),
+                    controller: null,
+                    toc: const [],
+                    readerProgress: const (1, 3),
+                    onJumpSection: (_, __) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    onToggleLyricsMode: () {},
+                    readerPaperColors: () => (
+                      bg: const Color(0xFFF2E8D5),
+                      fg: const Color(0xFF333333),
+                    ),
+                    presentation:
+                        ReaderQuickSettingsPresentation.sideSheetAppearance,
+                    onStyleChanged: () async {},
+                    onThemeChanged: () async {},
+                  ),
             ),
           ),
         ),
@@ -203,8 +209,10 @@ void main() {
       ),
       findsNothing,
     );
-    expect(find.byKey(const ValueKey<String>('reader_settings_preview')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('reader_settings_preview')),
+      findsOneWidget,
+    );
     expect(find.text(t.reader_theme), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

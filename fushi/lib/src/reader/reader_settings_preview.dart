@@ -65,11 +65,14 @@ class ReaderSettingsPreviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final TextStyle style = TextStyle(
-      fontSize: readerPreviewFontSize(readerFontSize),
-      height: lineHeight.clamp(1.0, 3.0),
-      fontWeight: readerPreviewFontWeight(fontWeight),
-      color: foreground,
+    // 在环境文字样式上合并（保留字体族 / 字形回退），只覆盖预览要表达的维度。
+    final TextStyle style = DefaultTextStyle.of(context).style.merge(
+      TextStyle(
+        fontSize: readerPreviewFontSize(readerFontSize),
+        height: lineHeight.clamp(1.0, 3.0),
+        fontWeight: readerPreviewFontWeight(fontWeight),
+        color: foreground,
+      ),
     );
     final Widget text = vertical
         ? _VerticalSample(sample: sample, style: style, duration: duration)
@@ -91,9 +94,7 @@ class ReaderSettingsPreviewCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: background,
             borderRadius: fushiNeutralBlockRadius(context),
-            border: Border.all(
-              color: foreground.withValues(alpha: 0.12),
-            ),
+            border: Border.all(color: foreground.withValues(alpha: 0.12)),
           ),
           clipBehavior: Clip.antiAlias,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -149,8 +150,7 @@ class _VerticalSample extends StatelessWidget {
         runSpacing: columnGap,
         clipBehavior: Clip.hardEdge,
         children: <Widget>[
-          for (final int rune in sample.runes)
-            Text(String.fromCharCode(rune)),
+          for (final int rune in sample.runes) Text(String.fromCharCode(rune)),
         ],
       ),
     );

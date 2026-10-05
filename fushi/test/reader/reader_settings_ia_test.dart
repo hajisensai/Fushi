@@ -61,7 +61,11 @@ void main() {
 
     test('记忆的页存在就用它（旧 id behavior 映射到翻页与手势）', () {
       expect(
-        readerSettingsInitialTab(book, remembered: 'behavior', lyricsMode: false),
+        readerSettingsInitialTab(
+          book,
+          remembered: 'behavior',
+          lyricsMode: false,
+        ),
         ReaderSettingsTab.gestures,
       );
       expect(
@@ -72,7 +76,11 @@ void main() {
 
     test('歌词模式里记忆的是书籍模式专属页时落歌词页', () {
       expect(
-        readerSettingsInitialTab(lyrics, remembered: 'layout', lyricsMode: true),
+        readerSettingsInitialTab(
+          lyrics,
+          remembered: 'layout',
+          lyricsMode: true,
+        ),
         ReaderSettingsTab.lyrics,
       );
     });
@@ -115,8 +123,11 @@ void main() {
       final Map<String, String> owner = <String, String>{};
       for (final ReaderSettingsSectionSpec s in kReaderSettingsSections) {
         for (final String id in s.itemIds) {
-          expect(owner.containsKey(id), isFalse,
-              reason: '$id 同时登记在 ${owner[id]} 与 ${s.id}');
+          expect(
+            owner.containsKey(id),
+            isFalse,
+            reason: '$id 同时登记在 ${owner[id]} 与 ${s.id}',
+          );
           owner[id] = s.id;
         }
       }

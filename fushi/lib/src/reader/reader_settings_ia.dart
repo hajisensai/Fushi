@@ -339,8 +339,7 @@ List<SettingsSection> buildReaderSettingsSections(
   }
 
   final List<SettingsItem> all = <SettingsItem>[
-    for (final ReaderGroup group in ReaderGroup.values)
-      ...?grouped[group],
+    for (final ReaderGroup group in ReaderGroup.values) ...?grouped[group],
   ];
   final Map<String, ReaderGroup> groupOf = <String, ReaderGroup>{
     for (final ReaderGroup group in ReaderGroup.values)
@@ -358,13 +357,14 @@ List<SettingsSection> buildReaderSettingsSections(
     claimed.addAll(items.map((SettingsItem item) => item.id));
     if (homeOf(spec.tab) != tab || items.isEmpty) continue;
     // 稳定排序：显式 id 按表序，前缀族保持 schema 序。
-    final List<(int, int, SettingsItem)> ranked = <(int, int, SettingsItem)>[
-      for (final (int i, SettingsItem item) in items.indexed)
-        (spec.rankOf(item.id), i, item),
-    ]..sort(((int, int, SettingsItem) a, (int, int, SettingsItem) b) {
-        final int byRank = a.$1.compareTo(b.$1);
-        return byRank != 0 ? byRank : a.$2.compareTo(b.$2);
-      });
+    final List<(int, int, SettingsItem)> ranked =
+        <(int, int, SettingsItem)>[
+          for (final (int i, SettingsItem item) in items.indexed)
+            (spec.rankOf(item.id), i, item),
+        ]..sort(((int, int, SettingsItem) a, (int, int, SettingsItem) b) {
+          final int byRank = a.$1.compareTo(b.$1);
+          return byRank != 0 ? byRank : a.$2.compareTo(b.$2);
+        });
     final bool demoted = spec.tab != homeOf(spec.tab);
     sections.add(
       SettingsSection(
