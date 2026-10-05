@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
@@ -1178,6 +1179,7 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                                             AlignmentDirectional.centerStart,
                                         minWidth: full,
                                         maxWidth: full,
+                                        fit: OverflowBoxFit.deferToChild,
                                         child: widget.capsule,
                                       ),
                                     ),
