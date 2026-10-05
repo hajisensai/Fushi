@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 
@@ -236,7 +237,7 @@ class FushiListLeadingIcon extends StatelessWidget {
               borderRadius: BorderRadius.circular(tile * 0.26),
             ),
           ),
-          child: Icon(
+          child: FushiIcon(
             icon,
             size: iconSize ?? tile * 0.64,
             color: tone == FushiCardTone.error || tone == FushiCardTone.tertiary
@@ -263,7 +264,7 @@ class FushiListLeadingIcon extends StatelessWidget {
             side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
           ),
         ),
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: iconSize ?? 24,
           color: eink ? cs.onSurface : colors.onContainer,
@@ -409,7 +410,7 @@ class FushiSwipeActionBackground extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, color: fg),
+              FushiIcon(icon, color: fg),
               if (text != null && text.isNotEmpty) ...<Widget>[
                 const SizedBox(width: 8),
                 Text(

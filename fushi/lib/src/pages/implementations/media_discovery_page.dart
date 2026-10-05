@@ -1233,7 +1233,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   ) {
     return switch (entry) {
       DiscoveryFolder() => FushiListItem(
-          leading: const FushiIcon(Icons.folder_outlined),
+          leading: const FushiListLeadingIcon(
+            Icons.folder_outlined,
+            shape: FushiLeadingShape.square,
+          ),
           title: Text(entry.title),
           // 目录条目不带来源名，用户看不出这是哪个站的目录。
           subtitle: Text(

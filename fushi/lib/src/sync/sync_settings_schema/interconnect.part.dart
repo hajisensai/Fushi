@@ -1836,7 +1836,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
                 style: Theme.of(context).textTheme.bodySmall),
           for (final FushiDevice device in _devices)
             FushiListItem(
-              leading: const FushiIcon(Icons.devices_outlined, size: 20),
+              leading: const FushiListLeadingIcon(Icons.devices_outlined),
               // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
               titleMaxLines: 2,
               title: Text(device.name),

@@ -120,14 +120,21 @@ class _AddToCollectionDialog extends StatelessWidget {
           children: <Widget>[
             FushiListItem(
               key: const ValueKey<String>('add_to_collection_create_new'),
-              leading: const FushiIcon(Icons.add),
+              // M3E 行首形状底：新建 = primary 饱和色块，与已有合集区分。
+              leading: const FushiListLeadingIcon(
+                Icons.add,
+                tone: FushiCardTone.primary,
+              ),
               title: Text(t.create_series),
               onTap: () => Navigator.pop(context, createNewSentinel),
             ),
             for (final MediaCollectionRow collection in collections)
               FushiListItem(
                 key: ValueKey<String>('add_to_collection_${collection.id}'),
-                leading: const FushiIcon(Icons.collections_bookmark_outlined),
+                leading: const FushiListLeadingIcon(
+                  Icons.collections_bookmark_outlined,
+                  shape: FushiLeadingShape.square,
+                ),
                 title: Text(collection.name),
                 subtitle: Text(
                   t.series_item_count(n: memberCounts[collection.id] ?? 0),

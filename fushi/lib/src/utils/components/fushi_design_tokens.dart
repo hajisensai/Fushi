@@ -117,9 +117,11 @@ class FushiRadii {
 
   // Single value source for the radii scale (used by both these field defaults
   // and [FushiBorderRadius]'s const BorderRadius objects).
-  // Editorial scale: sharper, more geometric than M3 default (was 12/12/16/8/12/28/28).
-  static const double groupValue = 10;
-  static const double cardValue = 10;
+  // M3E 形状分级（2026-10-05 列表 / 卡片统一，见 FushiM3eShape）：分组容器 =
+  // 卡档 20（与 FushiCard 同形），card = 小件档 12（历史名：调用点多是卡内的
+  // 缩略图 / 小块 / 预览框，与书架封面框 12 同形）。旧编辑刻度是 10 / 10。
+  static const double groupValue = 20;
+  static const double cardValue = 12;
   static const double controlValue = 12;
   static const double chipValue = 6;
   static const double menuValue = 16; // M3E 菜单容器圆角（large，2026-10-05 浮层统一）
@@ -257,8 +259,8 @@ class FushiSurfaceColors {
 }
 
 /// FushiCard 的真实外圆角（拖拽浮层 / 预览框要与卡片同形时用它，别用
-/// [FushiRadii.cardRadius]——那是 10 的旧编辑刻度，和卡片实际圆角对不上）：
-/// MD3 = [kFushiMd3CardRadius]（16）；Apple = inset grouped 分组圆角
+/// [FushiRadii.cardRadius]——那是小件档 12，和卡片实际圆角对不上）：
+/// MD3 = [kFushiMd3CardRadius]（M3E 卡档 20）；Apple = inset grouped 分组圆角
 /// （[FushiAppleMetrics.groupBorderRadius]，iOS 24 / 桌面 12）。
 BorderRadius fushiCardBorderRadius(BuildContext context) {
   if (isGlassDesign(context)) {
