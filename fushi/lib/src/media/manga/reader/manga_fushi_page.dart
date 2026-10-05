@@ -4974,9 +4974,26 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             );
           }
         },
+        // 面板切到「全局」时的写入：稀疏补丁合进**偏好里的**全局默认（不是上面
+        // 那份叠了窗口全屏 / 常亮运行态的副本），再按本书覆盖重应用。
+        onGlobalChanged: (Map<String, Object?> patch) async {
+          await appModel.setMangaReaderPreferences(
+            appModel.mangaReaderPreferences.copyWithJson(patch),
+          );
+          try {
+            await _reapplyReaderPreferences();
+          } on Object catch (error, stack) {
+            ErrorLogService.instance.log(
+              'MangaFushiPage.readerSettingsApply',
+              error,
+              stack,
+            );
+          }
+        },
         ocrSettings: Consumer(
           builder: (BuildContext context, WidgetRef ocrRef, Widget? child) =>
               MangaOcrSettingsSection(
+                presentation: MangaOcrSettingsPresentation.readerPanel,
                 service: ocrRef.watch(mangaOcrServiceProvider),
                 enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
                 enginePreferenceSetter: (String value) async {

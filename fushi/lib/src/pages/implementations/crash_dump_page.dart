@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 
@@ -77,7 +78,7 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
   Widget build(BuildContext context) {
     // 设置子页统一壳（settings kit）：浮动页头 + 动作组胶囊，与 schema 详情页一致。
     return SettingsKitScaffold(
-      leadingIcon: Icons.bug_report_outlined,
+      leadingIcon: FushiIcons.warning,
       leadingTone: SettingsIconTone.gray,
       title: t.crash_dump_label(n: _dumps.length),
       actions: <Widget>[

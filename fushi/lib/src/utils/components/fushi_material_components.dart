@@ -37,6 +37,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -3435,9 +3437,22 @@ class FushiPageHeader extends StatelessWidget {
             (titleWidget != null || shellShowsTitle)
         ? FushiShellTitleScope.maybeActionsSlotOf(context)
         : null;
+    // 库页外壳里的页头：主位是外壳给的零尺寸占位（页签由外壳浮动工具栏画），
+    // 动作也登记进外壳的悬浮动作组——这一行什么都不画。此时不再留页头的上下
+    // 内边距，否则页签胶囊与下面的搜索行 / 列表之间平白多一段空白（用户
+    // 2026-10-06 截图「页签行→搜索框间距过大」「标题下方一条空白带」）。
+    final Widget? slotTitle = titleWidget;
+    final bool emptyRow = padding == null &&
+        leading == null &&
+        bottom == null &&
+        slotTitle is SizedBox &&
+        slotTitle.child == null &&
+        slotTitle.width == 0 &&
+        slotTitle.height == 0 &&
+        (actions.isEmpty || shellActions != null);
 
     return Padding(
-      padding: resolvedPadding,
+      padding: emptyRow ? EdgeInsets.zero : resolvedPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -4128,11 +4143,38 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                 ),
               ),
               Expanded(
-                child: NotificationListener<Notification>(
-                  onNotification: (Notification notification) =>
-                      floatingChrome &&
-                      _chrome.handleNotification(notification),
-                  child: widget.body,
+                // 页头收起只上移淡出、占位高度不变（不改正文视口，BUG-2975），
+                // 正文顶边因此停在一段空白下沿；收起时在正文顶边加一道渐隐，
+                // 内容柔和淡出而不是被硬切。正文是任意组件、无法统一加滚动
+                // 内边距，所以页头不叠放到正文上。
+                child: Stack(
+                  fit: StackFit.passthrough,
+                  children: <Widget>[
+                    NotificationListener<Notification>(
+                      onNotification: (Notification notification) =>
+                          floatingChrome &&
+                          _chrome.handleNotification(notification),
+                      child: widget.body,
+                    ),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: ListenableBuilder(
+                        listenable: _chrome,
+                        builder: (BuildContext context, Widget? scrim) =>
+                            AnimatedOpacity(
+                          opacity: floatingChrome && _chrome.hidden ? 1 : 0,
+                          duration: fushiMotionDuration(
+                            context,
+                            FushiMotion.short,
+                          ),
+                          child: scrim,
+                        ),
+                        child: const FushiTopFadeScrim(solidHeight: 0),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

@@ -412,7 +412,7 @@ void main() {
           pillOf(Icons.menu_book_outlined).decoration! as BoxDecoration;
       expect(
         settled.color,
-        ThemeData().colorScheme.secondaryContainer,
+        ThemeData().colorScheme.tertiary,
         reason: '静止后与目标色逐值相同',
       );
       // 取消选中的那一格收拢成透明。

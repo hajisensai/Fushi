@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -116,3 +117,40 @@ extension FushiTextStyleFigures on TextStyle {
     return copyWith(fontFeatures: features);
   }
 }
+
+/// 把应用字阶 [textTheme] 解析成**与 `Theme.of(context).textTheme` 同一基底**的
+/// 完整 TextTheme：Typography.material2021 的颜色档（[scheme] 明暗对应 black /
+/// white）+ 按 UI 语言取的几何档（CJK = dense，其余 = englishLike），再叠上
+/// 应用字阶（字号 / 字重 / 行高 / 字体链）。
+///
+/// 为什么必须在主题工厂里先解析：ThemeData 工厂与 MaterialApp 的本地化会把
+/// textTheme 依次 merge 进 Typography 的颜色档（inherit: true）与几何档
+/// （inherit: false），所以 `Theme.of(context).textTheme` 全是 inherit: false；
+/// 而工厂里各组件主题（导航栏标签、按钮、滑条气泡……）若直接用**未解析**的
+/// 字阶（inherit: true），组件在主题样式与框架默认样式（取自 Theme.of）之间
+/// 做 [TextStyle.lerp]、以及切换主题 / 明暗 / 设计系统时 AnimatedTheme 插值，
+/// 都会撞上「Failed to interpolate TextStyles with different inherit values」。
+/// 解析后的样式是 inherit: false 的完整样式；ThemeData 工厂与本地化对它再做
+/// merge 是恒等的（merge 遇 inherit: false 直接返回它），全链路同一基底。
+///
+/// 幂等：传入已解析的（例如 `Theme.of(context).textTheme`）原样得到它。
+TextTheme fushiResolveTextTheme(
+  TextTheme textTheme, {
+  required ColorScheme scheme,
+  TargetPlatform? platform,
+}) {
+  final Typography typography = Typography.material2021(
+    platform: platform ?? defaultTargetPlatform,
+    colorScheme: scheme,
+  );
+  final TextTheme colors = scheme.brightness == Brightness.dark
+      ? typography.white
+      : typography.black;
+  final TextStyle? probe = textTheme.bodyMedium;
+  final bool cjk = probe != null && fushiTypeIsCjk(probe);
+  final TextTheme geometry = typography.geometryThemeFor(
+    cjk ? ScriptCategory.dense : ScriptCategory.englishLike,
+  );
+  return geometry.merge(colors.merge(textTheme));
+}
+

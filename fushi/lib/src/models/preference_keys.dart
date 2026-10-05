@@ -265,6 +265,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // bool（默认 true）：MD3 悬浮底栏图标下是否显示标签。
+  'nav_bar_labels_visible',
   // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
   // collapsed）。描述本机窗口布局，不进 Profile 快照。
   'nav_rail_expanded',

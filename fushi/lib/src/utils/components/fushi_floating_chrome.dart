@@ -6,6 +6,9 @@ import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart'
+    show FushiHeaderLabelScope;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
@@ -15,6 +18,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot;
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
+    show SmoothWheelScrollScope;
 
 // 库页的 M3 Expressive 浮动工具栏（2026-10-05「视频库页面也用浮动工具栏统一」）。
 //
@@ -63,6 +68,9 @@ class FushiFloatingChromeController extends ChangeNotifier {
   BuildContext? _lastContext;
   double? _lastViewportDimension;
 
+  /// 驱动显隐的滚动区深度（见过的最浅竖向滚动区）。
+  int? _ownerDepth;
+
   /// 工具栏此刻应当显示。
   bool get visible => _visible;
 
@@ -81,6 +89,18 @@ class FushiFloatingChromeController extends ChangeNotifier {
   bool handleScrollNotification(ScrollNotification notification) {
     final ScrollMetrics metrics = notification.metrics;
     if (metrics.axis != Axis.vertical) return false;
+    // 平滑滚轮补间的「拉回起点」不是用户在往回滚（见
+    // [SmoothWheelScrollScope.isRewinding]）：不当方向、也不当手势结束。
+    if (SmoothWheelScrollScope.isRewinding) return false;
+    // 只认最外层的竖向滚动区：卡片里嵌套的竖向列表（展开的源列表、弹层里的
+    // 小列表）有自己的位置与方向，混进来会和主列表互相打架。
+    final int depth = notification.depth;
+    final int? owner = _ownerDepth;
+    if (owner != null && depth > owner) return false;
+    if (notification is ScrollUpdateNotification &&
+        (owner == null || depth < owner)) {
+      _ownerDepth = depth;
+    }
     final bool sameScrollable = identical(notification.context, _lastContext);
     final bool viewportChanged =
         sameScrollable &&
@@ -88,10 +108,9 @@ class FushiFloatingChromeController extends ChangeNotifier {
         _lastViewportDimension != metrics.viewportDimension;
     _lastContext = notification.context;
     _lastViewportDimension = metrics.viewportDimension;
-    if (notification is ScrollEndNotification) {
-      _accumulated = 0;
-      return false;
-    }
+    // 不在 [ScrollEndNotification] 清零：滚轮每一档都是一组完整的
+    // start / update / end，高精度滚轮一档只有十来 px，逐档清零就永远攒不到
+    // 阈值。累计只在反向时清零（滞回），以及在顶部「不许收起」的区间里不攒。
     if (notification is! ScrollUpdateNotification) return false;
     if (metrics.pixels <= metrics.minScrollExtent + 0.5) {
       show();
@@ -107,6 +126,10 @@ class FushiFloatingChromeController extends ChangeNotifier {
     if (delta < 0 && metrics.extentAfter <= 0.5) return false;
     if (_accumulated != 0 && delta.sign != _accumulated.sign) {
       _accumulated = 0;
+    }
+    if (delta > 0 && metrics.pixels <= _kHideAfterOffset) {
+      _accumulated = 0;
+      return false;
     }
     _accumulated += delta;
     if (_accumulated > _kHideDistance && metrics.pixels > _kHideAfterOffset) {
@@ -130,6 +153,11 @@ class FushiFloatingChromeScope
   /// 最近的浮动工具栏 controller；不在库页浮动外壳里为 null。
   static FushiFloatingChromeController? maybeOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<FushiFloatingChromeScope>()
+      ?.notifier;
+
+  /// 同 [maybeOf]，但不建立依赖（initState / 回调里取用）。
+  static FushiFloatingChromeController? peek(BuildContext context) => context
+      .getInheritedWidgetOfExactType<FushiFloatingChromeScope>()
       ?.notifier;
 }
 
@@ -170,9 +198,34 @@ class FushiFloatingChromeInsetPadding extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double top = FushiFloatingChromeInset.of(context);
+    final FushiFloatingChromeController? controller =
+        FushiFloatingChromeScope.maybeOf(context);
+    final Widget inner = FushiFloatingChromeInset(top: 0, child: child);
     return Padding(
       padding: EdgeInsets.only(top: top),
-      child: FushiFloatingChromeInset(top: 0, child: child),
+      // 工具区收起后上方让出的那段是空的，内容在它下沿被齐刷刷切断；给下沿
+      // 加一道渐隐（只在收起时出现——显示时工具区自己的遮罩已经盖住这里），
+      // 让内容柔和地淡出而不是硬切。版面不动。
+      // 结构只随「有没有作用域」变（恒定），inset 首帧为 0 时只是不显示，
+      // 不会因为高度回报而重挂子树。
+      child: controller == null
+          ? inner
+          : Stack(
+              fit: StackFit.passthrough,
+              children: <Widget>[
+                inner,
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: AnimatedOpacity(
+                    opacity: controller.visible || top <= 0 ? 0 : 1,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: const FushiTopFadeScrim(solidHeight: 0),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -202,10 +255,44 @@ class FushiFloatingChromeOverlay extends StatefulWidget {
       _FushiFloatingChromeOverlayState();
 }
 
-class _FushiFloatingChromeOverlayState
-    extends State<FushiFloatingChromeOverlay> {
+class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
+    with SingleTickerProviderStateMixin {
   /// 工具区的实测高度（展开态的版面高度；收起不改它）。
   double _chromeHeight = 0;
+
+  /// 1 = 完全显示，0 = 收起。M3E default spatial 弹簧，重定向带着速度续上。
+  /// 只在挂着作用域时创建（首次 [didChangeDependencies] 里按当时的显隐定初值）。
+  FushiSpring? _shown;
+
+  FushiFloatingChromeController? _controller;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final FushiFloatingChromeController? controller =
+        FushiFloatingChromeScope.maybeOf(context);
+    _controller = controller;
+    if (controller == null) return;
+    final FushiSpring? spring = _shown;
+    if (spring == null) {
+      _shown = FushiSpring(
+        vsync: this,
+        initial: controller.visible ? 1 : 0,
+        spring: fushiExpressiveDefaultSpatial,
+      );
+    } else {
+      spring.animateTo(
+        controller.visible ? 1 : 0,
+        animate: fushiExpressiveMotionEnabled(context),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _shown?.dispose();
+    super.dispose();
+  }
 
   void _onChromeHeight(double height) {
     if (!mounted || height == _chromeHeight) return;
@@ -214,9 +301,9 @@ class _FushiFloatingChromeOverlayState
 
   @override
   Widget build(BuildContext context) {
-    final FushiFloatingChromeController? controller =
-        FushiFloatingChromeScope.maybeOf(context);
-    if (controller == null) {
+    final FushiFloatingChromeController? controller = _controller;
+    final FushiSpring? spring = _shown;
+    if (controller == null || spring == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -226,136 +313,155 @@ class _FushiFloatingChromeOverlayState
       );
     }
     final double outer = FushiFloatingChromeInset.of(context);
+    final double travel = outer + _chromeHeight;
+    final Widget chrome = Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: (bool focused) {
+        if (focused) controller.show();
+      },
+      child: FushiHeightReporter(
+        onHeight: _onChromeHeight,
+        child: widget.chrome,
+      ),
+    );
     return Stack(
       children: <Widget>[
         Positioned.fill(
-          child: FushiFloatingChromeInset(
-            top: outer + _chromeHeight,
-            child: widget.child,
-          ),
+          child: FushiFloatingChromeInset(top: travel, child: widget.child),
         ),
-        Positioned(
-          top: outer,
-          left: 0,
-          right: 0,
-          child: Focus(
-            canRequestFocus: false,
-            skipTraversal: true,
-            onFocusChange: (bool focused) {
-              if (focused) controller.show();
-            },
-            child: _FloatingChromeSlide(
-              visible: controller.visible,
-              travel: outer + _chromeHeight,
-              child: _HeightReporter(
-                onHeight: _onChromeHeight,
-                // 实色底：内容滚到工具区底下时不从胶囊缝隙里透出来。
-                child: ColoredBox(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  child: widget.chrome,
+        // 顶部渐隐遮罩 + 工具区：同一弹簧驱动。遮罩只盖「此刻看得见的工具区」
+        // 再往下渐隐一段，收起后只剩顶边一条柔和淡出——不再有整块实色底带把
+        // 内容齐刷刷切掉。胶囊自己有表面色与投影，不靠底色遮挡内容。
+        AnimatedBuilder(
+          animation: spring.animation,
+          child: chrome,
+          builder: (BuildContext context, Widget? chrome) {
+            final double value = spring.value;
+            final double shown = value.clamp(0.0, 1.0);
+            final bool hidden = shown <= 0.001;
+            return Stack(
+              children: <Widget>[
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: FushiTopFadeScrim(solidHeight: shown * travel),
                 ),
-              ),
-            ),
-          ),
+                Positioned(
+                  top: outer,
+                  left: 0,
+                  right: 0,
+                  child: ExcludeSemantics(
+                    excluding: hidden,
+                    child: IgnorePointer(
+                      // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
+                      ignoring: hidden || !controller.visible,
+                      child: Opacity(
+                        opacity: hidden ? 0 : shown,
+                        child: Transform.translate(
+                          // 用未截断的弹簧值：轻微回弹体现在位置上。
+                          offset: Offset(0, -(1 - value) * travel),
+                          child: chrome,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ],
     );
   }
 }
 
-/// 工具区的显隐动画：只做位移 + 淡出，不改版面。收起时向上滑过 [travel]
-/// （= 工具区底边到叠放区顶边的距离），整段移出画面。树结构恒定：显隐来回切
-/// 不会重建工具区里的输入框 / 菜单锚点。
-class _FloatingChromeSlide extends StatefulWidget {
-  const _FloatingChromeSlide({
-    required this.visible,
-    required this.travel,
-    required this.child,
+/// 浮动工具区背后的顶部渐隐遮罩（M3E 浮动工具栏：内容滚到工具栏底下时柔和
+/// 淡出，而不是被一条实色底带硬切）。
+///
+/// 自顶向下：[solidHeight] 内是近实色的页面底色（约 90%→80%），其后 [fadeExtent]
+/// 内渐变到全透明。不接指针、不参与语义。颜色取 [color]，缺省为页面底色
+/// （[ThemeData.scaffoldBackgroundColor]）。
+class FushiTopFadeScrim extends StatelessWidget {
+  const FushiTopFadeScrim({
+    required this.solidHeight,
+    this.fadeExtent = kFushiTopFadeExtent,
+    this.color,
+    super.key,
   });
 
-  final bool visible;
-  final double travel;
-  final Widget child;
-
-  @override
-  State<_FloatingChromeSlide> createState() => _FloatingChromeSlideState();
-}
-
-class _FloatingChromeSlideState extends State<_FloatingChromeSlide>
-    with SingleTickerProviderStateMixin {
-  late final FushiSpring _spring = FushiSpring(
-    vsync: this,
-    initial: widget.visible ? 1 : 0,
-    spring: fushiExpressiveDefaultSpatial,
-  );
-
-  @override
-  void didUpdateWidget(covariant _FloatingChromeSlide oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.visible != widget.visible) {
-      _spring.animateTo(
-        widget.visible ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context),
-      );
-    }
-  }
-
-  @override
-  void dispose() {
-    _spring.dispose();
-    super.dispose();
-  }
+  final double solidHeight;
+  final double fadeExtent;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _spring.animation,
-      child: widget.child,
-      builder: (BuildContext context, Widget? child) {
-        final double value = _spring.value;
-        final double shown = value.clamp(0.0, 1.0);
-        final bool hidden = shown <= 0.001;
-        return ExcludeSemantics(
-          excluding: hidden,
-          child: IgnorePointer(
-            // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
-            ignoring: hidden || !widget.visible,
-            child: Opacity(
-              opacity: hidden ? 0 : shown,
-              child: Transform.translate(
-                // 用未截断的弹簧值：轻微回弹体现在位置上。
-                offset: Offset(0, -(1 - value) * widget.travel),
-                child: child,
+    final double solid = math.max(0.0, solidHeight);
+    final double height = solid + fadeExtent;
+    if (height <= 0) return const SizedBox.shrink();
+    final Color base = color ?? fushiTopFadeScrimColor(context);
+    final double solidStop = solid / height;
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: SizedBox(
+          height: height,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  base.withValues(alpha: base.a * 0.92),
+                  base.withValues(alpha: base.a * 0.8),
+                  base.withValues(alpha: 0),
+                ],
+                stops: <double>[0, solidStop, 1],
               ),
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
-/// 版面完成后把子组件高度报给 [onHeight]（变了才报，下一帧前回调）。
-class _HeightReporter extends SingleChildRenderObjectWidget {
-  const _HeightReporter({required this.onHeight, required super.child});
+/// 顶部渐隐遮罩的缺省颜色：页面底色。玻璃主题下脚手架底色可能是半透明的，
+/// 退回设计 token 的页面底色，免得遮罩形同虚设。
+Color fushiTopFadeScrimColor(BuildContext context) {
+  final Color scaffold = Theme.of(context).scaffoldBackgroundColor;
+  if (scaffold.a >= 1) return scaffold;
+  return FushiDesignTokens.of(context).surfaces.page;
+}
+
+/// [FushiTopFadeScrim] 渐隐段的默认长度（胶囊下沿再往下 20）。
+const double kFushiTopFadeExtent = 20;
+
+/// 版面完成后把子组件高度报给 [onHeight]（变了才报，本帧结束后回调）。
+class FushiHeightReporter extends SingleChildRenderObjectWidget {
+  const FushiHeightReporter({
+    required this.onHeight,
+    required super.child,
+    super.key,
+  });
 
   final ValueChanged<double> onHeight;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderHeightReporter(onHeight);
+      _RenderFushiHeightReporter(onHeight);
 
   @override
   void updateRenderObject(
     BuildContext context,
-    _RenderHeightReporter renderObject,
+    _RenderFushiHeightReporter renderObject,
   ) {
     renderObject.onHeight = onHeight;
   }
 }
 
-class _RenderHeightReporter extends RenderProxyBox {
-  _RenderHeightReporter(this.onHeight);
+class _RenderFushiHeightReporter extends RenderProxyBox {
+  _RenderFushiHeightReporter(this.onHeight);
 
   ValueChanged<double> onHeight;
   double? _reported;
@@ -607,7 +713,30 @@ class _FloatingActionsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget content;
-    if (isGlassDesign(context) && actions is FushiShellHeaderActions) {
+    if (!isGlassDesign(context) && actions is FushiShellHeaderActions) {
+      // MD3：[FushiShellHeaderActions] 自己会再包一颗按钮组胶囊，放进这颗悬浮
+      // 胶囊里就成了胶囊套胶囊——比旁边的页签胶囊高一截、投影叠两层（用户
+      // 2026-10-06 截图）。直接把按钮排进这一颗胶囊，与页签胶囊同高同表面。
+      content = HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const ClampingScrollPhysics(),
+          // 一律纯图标（文案是 tooltip），与 [FushiShellHeaderActions] 同口径。
+          child: FushiHeaderLabelScope(
+            expandLabels: false,
+            child: IconTheme.merge(
+              data: IconThemeData(
+                color: fushiFloatingToolbarPalette(context).foreground,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: (actions as FushiShellHeaderActions).actions,
+              ),
+            ),
+          ),
+        ),
+      );
+    } else if (isGlassDesign(context) && actions is FushiShellHeaderActions) {
       // Apple：外壳动作组自带一层玻璃胶囊（[FushiToolbar]），放进悬浮胶囊里会
       // 叠出两圈边。直接把按钮排进胶囊，并告诉它们「已在胶囊组里」（不再各自
       // 带玻璃底）；放不下时横滑兜底。
