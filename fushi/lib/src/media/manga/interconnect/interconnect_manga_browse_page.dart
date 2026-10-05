@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
@@ -184,7 +185,7 @@ class _InterconnectMangaBrowsePageState
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return RefreshIndicator(
+        return FushiRefreshIndicator(
           onRefresh: _load,
           child: FushiEntranceScope(
             child: GridView.builder(

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -688,7 +689,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               _buildSearchRegion(),
               const SyncProgressBanner(),
               Expanded(
-                child: RefreshIndicator(
+                child: FushiRefreshIndicator(
                   onRefresh: _pullToRefreshDictionary,
                   child: _buildHistoryOrPlaceholder(),
                 ),
@@ -925,7 +926,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       // （[_clearSearchFromResultPull]），两个手势不能抢同一个下拉。
       return _buildQueryBody();
     }
-    return RefreshIndicator(
+    return FushiRefreshIndicator(
       onRefresh: _pullToRefreshDictionary,
       child: _buildHistoryOrPlaceholder(),
     );
