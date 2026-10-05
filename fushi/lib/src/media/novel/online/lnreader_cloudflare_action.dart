@@ -6,6 +6,7 @@ import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 插件请求被 Cloudflare 拦下后，给用户的「站点验证」按钮。
 ///
@@ -68,7 +69,7 @@ class LnReaderCloudflareAction extends StatelessWidget {
     return FushiFilledButton.tonalIcon(
       key: ValueKey<String>('novel_source_cloudflare_verify_$pluginId'),
       onPressed: () => _verify(context),
-      icon: const FushiIcon(Icons.verified_user_outlined),
+      icon: const FushiIcon(FushiIcons.shield),
       label: Text(t.manga_source_cloudflare_verify_title),
     );
   }
