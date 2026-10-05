@@ -57,7 +57,6 @@ class UpdateAvailableDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
 
     return FushiDialogFrame(
       maxWidth: 520,
@@ -105,7 +104,11 @@ class UpdateAvailableDialog extends StatelessWidget {
                     mode: LaunchMode.externalApplication,
                   );
                 },
-                styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+                // flutter_markdown 0.6 未迁 material_ui，只收 SDK 旧 ThemeData：经
+                // LegacyDesignCompatibility 桥出来的旧主题（与 app 主题同色同字）。
+                styleSheet: MarkdownStyleSheet.fromTheme(
+                  legacy.Theme.of(context),
+                ).copyWith(
                   p: tokens.type.listSubtitle,
                 ),
               ),

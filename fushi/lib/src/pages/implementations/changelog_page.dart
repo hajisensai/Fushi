@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart' as legacy show Theme;
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -223,7 +224,11 @@ class _ReleaseCard extends StatelessWidget {
                   mode: LaunchMode.externalApplication,
                 );
               },
-              styleSheet: MarkdownStyleSheet.fromTheme(theme).copyWith(
+              // flutter_markdown 0.6 未迁 material_ui，只收 SDK 旧 ThemeData：经
+              // LegacyDesignCompatibility 桥出来的旧主题（与 app 主题同色同字）。
+              styleSheet: MarkdownStyleSheet.fromTheme(
+                legacy.Theme.of(context),
+              ).copyWith(
                 p: tokens.type.listSubtitle,
               ),
             ),

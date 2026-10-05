@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';

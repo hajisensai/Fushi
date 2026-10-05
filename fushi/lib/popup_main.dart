@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -224,8 +225,11 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       // 配色 / 渲染档位（GlassTheme）要在这里自己挂一层，否则弹窗里的玻璃
       // 按钮 / 浮层吃库默认参数，与主 app 不一致。结构恒定（MD3 下也挂，见
       // [FushiGlassScope] 类注释）。
-      child: FushiGlassScope(
-        child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+      child: LegacyDesignCompatibility(
+        child: FushiGlassScope(
+          child:
+              SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+        ),
       ),
     );
   }
