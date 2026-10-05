@@ -14,7 +14,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -1108,7 +1111,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_apiKeyCollapsed && _apiKeyCtrl.text.trim().isNotEmpty) {
       return Row(
         children: <Widget>[
-          const FushiIcon(Icons.vpn_key, size: 18),
+          const FushiIcon(FushiIcons.key, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1169,8 +1172,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             dense: true,
             visualDensity: VisualDensity.compact,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+            // M3E：选中行 16 圆角（listActive），与分段列表选中同一形状档。
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(
+                Radius.circular(FushiM3eShape.listActive),
+              ),
             ),
             selected: _selectedSeriesId == media.id,
             selectedTileColor: theme.colorScheme.secondaryContainer,
@@ -1283,7 +1289,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               labelText: t.video_jimaku_episode,
               hintText: t.video_jimaku_episode_hint,
               isDense: true,
-              prefixIcon: const FushiIcon(Icons.tag, size: 18),
+              prefixIcon: const FushiIcon(FushiIcons.tag, size: 18),
             ),
             onSubmitted: (_) => _search(),
           ),
@@ -1298,7 +1304,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               decoration: InputDecoration(
                 labelText: t.video_jimaku_filter,
                 isDense: true,
-                prefixIcon: const FushiIcon(Icons.filter_list, size: 18),
+                prefixIcon: const FushiIcon(FushiIcons.filterList, size: 18),
               ),
               onChanged: (String v) => setState(() => _filter = v),
             ),
@@ -1357,7 +1363,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (error != null) {
       return _noticeBanner(
         theme,
-        icon: Icons.error_outline,
+        severity: FushiNoticeSeverity.error,
         message: error,
         onRetry: null,
       );
@@ -1365,7 +1371,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_seriesLookupFailed && !_searching) {
       return _noticeBanner(
         theme,
-        icon: Icons.warning_amber_outlined,
+        severity: FushiNoticeSeverity.warning,
         message: jimakuSeriesLookupNotice(_seriesLookupKind),
         onRetry: _search,
       );
@@ -1377,46 +1383,50 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 可选重试。
   Widget _noticeBanner(
     ThemeData theme, {
-    required IconData icon,
+    required FushiNoticeSeverity severity,
     required String message,
     required VoidCallback? onRetry,
   }) {
+    // 走全 app 唯一的提示横幅（FushiInlineNotice）：中性块 + 语义色图标，
+    // Apple / 墨水屏各自分支；重试是横幅自带的动作位。
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      // 中性信息块，错误语义只上在单色图标上（不再整块 errorContainer）。
-      child: Material(
+      child: FushiInlineNotice(
         key: kSubtitleNoticeBannerKey,
-        color: fushiNeutralBlockColor(context),
-        borderRadius: fushiNeutralBlockRadius(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FushiIcon(
-                icon,
-                size: 18,
-                color: fushiStatusColor(context, FushiStatusTone.error),
+        severity: severity,
+        icon: severity == FushiNoticeSeverity.error
+            ? FushiIcons.error
+            : FushiIcons.warning,
+        message: message,
+        actionsInline: true,
+        actions: <Widget>[
+          if (onRetry != null)
+            FushiTextButton(
+              onPressed: _searching ? null : onRetry,
+              child: Text(t.retry),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 搜索中的骨架：五条分段卡片形状的占位（首尾大圆角、行间 2），有界扫光；
+  /// 墨水屏 / 减弱动态效果由共享骨架自行降级为静态块。
+  Widget _buildResultsSkeleton() {
+    const int rows = 5;
+    return FushiSkeletonShimmer(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        children: <Widget>[
+          for (int i = 0; i < rows; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: FushiSkeleton(
+                height: 72,
+                borderRadius: fushiGroupedItemRadius(context, i, rows),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  message,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: fushiNeutralBlockForeground(context),
-                  ),
-                ),
-              ),
-              if (onRetry != null) ...<Widget>[
-                const SizedBox(width: 8),
-                FushiTextButton(
-                  onPressed: _searching ? null : onRetry,
-                  child: Text(t.retry),
-                ),
-              ],
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
@@ -1426,25 +1436,24 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   /// 滚动，保留 BUG-279 不变量。
   Widget _buildResultsBody(ThemeData theme) {
     if (_searching) {
-      return buildLoading();
+      return _buildResultsSkeleton();
     }
     if (_searched && _candidates.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.video_jimaku_no_results, textAlign: TextAlign.center),
+        child: SingleChildScrollView(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.searchOff,
+            message: t.video_jimaku_no_results,
             // 带了集数却 0 结果：Jimaku 文件名启发式可能误伤整季打包字幕，给一键
             // 「显示全部集」逃生口（清集数框重搜）。
-            if (_searchedWithEpisode) ...<Widget>[
-              const SizedBox(height: 8),
-              FushiTextButton.icon(
-                onPressed: _showAllEpisodes,
-                icon: const FushiIcon(Icons.list, size: 18),
-                label: Text(t.video_jimaku_show_all_episodes),
-              ),
-            ],
-          ],
+            action: _searchedWithEpisode
+                ? FushiFilledButton.tonalIcon(
+                    onPressed: _showAllEpisodes,
+                    icon: const FushiIcon(FushiIcons.listView, size: 18),
+                    label: Text(t.video_jimaku_show_all_episodes),
+                  )
+                : null,
+          ),
         ),
       );
     }
@@ -1452,7 +1461,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       // 未搜索的初始态（宽屏右栏占位）：淡图标示意结果将显示在这里，不引入新文案。
       return Center(
         child: FushiIcon(
-          Icons.subtitles_outlined,
+          FushiIcons.subtitles,
           size: 48,
           color: theme.colorScheme.outlineVariant,
         ),
@@ -1601,7 +1610,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
                 key: const ValueKey<String>('subtitle-batch-download'),
                 enabled: _busyName == null,
                 tooltip: t.video_jimaku_batch_download,
-                icon: Icons.download_outlined,
+                icon: FushiIcons.download,
                 onTap: () => unawaited(_downloadSelected()),
               ),
             ],
@@ -1626,7 +1635,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               ),
             FushiFilledButton.icon(
               onPressed: _searching ? null : _search,
-              icon: const FushiIcon(Icons.search),
+              icon: const FushiIcon(FushiIcons.search),
               label: Text(t.video_jimaku_search),
             ),
           ],
@@ -1675,45 +1684,59 @@ class JimakuCandidateList extends StatelessWidget {
     // 不用 shrinkWrap：外层 [ConstrainedBox] 给了有界 maxHeight，普通 ListView 会
     // 填满该高度并在内容超出时正常滚动。shrinkWrap 反而会让它贴合内容/不产生可滚
     // 余量（maxScrollExtent=0），正是「滚不动」的来源。
-    return ListView.builder(
-      itemCount: shown.length,
-      itemBuilder: (BuildContext context, int i) {
-        final JimakuCandidate c = shown[i];
-        final bool busy = busyName == c.name;
-        // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
-        // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
-        // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
-        return FushiListTileControl(
-          contentPadding: const EdgeInsets.symmetric(vertical: 4),
-          isThreeLine: true,
-          leading: const FushiIcon(Icons.subtitles_outlined),
-          title: Text(
-            c.name,
-            maxLines: 3,
-            softWrap: true,
-            overflow: TextOverflow.fade,
-          ),
-          subtitle: Text(
-            switch (c.source) {
-              final VideoSubtitleCandidate source
-                  when source.isArchivePack =>
-                '${subtitleArchivePackLabel(source)} · ${c.entryName}',
-              _ => c.entryName,
-            },
-            maxLines: 2,
-            softWrap: true,
-            overflow: TextOverflow.fade,
-          ),
-          trailing: busy
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              : const FushiIcon(Icons.download),
-          onTap: onDownload == null ? null : () => onDownload!(c),
-        );
-      },
+    // M3E 分段卡片（首尾大圆角、行间 2），错峰进场；结果集换了（重搜 / 改筛选）
+    // 重开进场窗口。
+    return FushiEntranceScope(
+      replayKey: shown.length,
+      child: ListView.builder(
+        itemCount: shown.length,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          final JimakuCandidate c = shown[i];
+          final bool busy = busyName == c.name;
+          // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
+          // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
+          // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
+          return FushiGroupedListItem(
+            index: i,
+            count: shown.length,
+            onTap: onDownload == null ? null : () => onDownload!(c),
+            child: FushiListItem(
+              isThreeLine: true,
+              titleMaxLines: 3,
+              leading: FushiListLeadingIcon(
+                FushiIcons.subtitles,
+                shape: FushiLeadingShape.square,
+                tone: busy ? FushiCardTone.primary : FushiCardTone.secondary,
+              ),
+              title: Text(
+                c.name,
+                maxLines: 3,
+                softWrap: true,
+                overflow: TextOverflow.fade,
+              ),
+              subtitle: Text(
+                switch (c.source) {
+                  final VideoSubtitleCandidate source
+                      when source.isArchivePack =>
+                    '${subtitleArchivePackLabel(source)} · ${c.entryName}',
+                  _ => c.entryName,
+                },
+                maxLines: 2,
+                softWrap: true,
+                overflow: TextOverflow.fade,
+              ),
+              trailing: busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const FushiIcon(FushiIcons.download),
+            ),
+          );
+        }),
+      ),
     );
+
   }
 }
