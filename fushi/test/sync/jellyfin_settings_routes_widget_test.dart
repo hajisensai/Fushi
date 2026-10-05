@@ -32,6 +32,7 @@ import 'package:fushi/src/sync/remote_library_cache.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -229,7 +230,7 @@ void main() {
     expect(
       find.descendant(
         of: _routeRow(_lan),
-        matching: find.byIcon(Icons.delete_outline),
+        matching: find.byIcon(FushiIcons.delete),
       ),
       findsNothing,
       reason: '登录地址是身份锚，不可删',
@@ -323,7 +324,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: _routeRow(_wan),
-        matching: find.byIcon(Icons.delete_outline),
+        matching: find.byIcon(FushiIcons.delete),
       ),
     );
     await _settle(tester);
