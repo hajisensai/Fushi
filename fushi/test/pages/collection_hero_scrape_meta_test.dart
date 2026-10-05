@@ -20,8 +20,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// 本文件锁三件事：
 ///  1. 有资料 → hero 渲染年份/话数/评分/评分人数/标签/简介/原名；
 ///  2. 无资料 → 保留标题 + 进度 + 播放，并明确提示从来源重试刮削；
-///  3. 背景槽向：有横版 backdrop 用它（正确槽向），无则回落 [LandscapeCoverImage]，
-///     且两种情况下海报卡的出现与否互斥（同一张图不得在同屏出现两次）。
+///  3. 背景槽向（2026-10 M3E 重做）：有横版 backdrop 用它轻模糊铺满，无则拿封面
+///     重模糊垫底；2:3 封面恒在独立封面卡里清晰显示（[PortraitCoverImage] 按朝向
+///     分流），不再把海报硬塞进宽幅槽（BUG-1298）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -118,7 +119,7 @@ void main() {
         ),
       );
 
-  /// 屏够宽才会出海报卡（窄屏刻意不出，见 `_buildHero` 的 LayoutBuilder）。
+  /// 宽屏（≥ 1080）走两栏：hero 在左栏（独立滚动 = sticky），右栏选集。
   Future<void> pumpWide(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -127,6 +128,39 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
   }
+
+  /// 单列（< 1080）但 hero 够宽（≥ 640）：封面卡在左、信息在右，hero 自己画大背景。
+  Future<void> pumpSingleColumn(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1000, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('宽屏两栏：hero 在左栏，大背景由布局画在整页后面', (WidgetTester tester) async {
+    await saveMeta(backdropPath: '/covers/collections/1_backdrop.jpg');
+    await pumpWide(tester);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('media-detail-side-pane')),
+        matching: find.byKey(const ValueKey<String>('video-work-hero-card')),
+      ),
+      findsOneWidget,
+      reason: '宽屏 hero 信息住左栏（独立滚动 = sticky），右栏放选集',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection-hero-backdrop')),
+      findsNothing,
+      reason: '两栏时 hero 不重复画自己的背景（整页背景由 MediaDetailLayout 画）',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection-hero-poster')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('有刮削资料 → hero 渲染放送日期/话数/评分/标签/简介/原名',
       (WidgetTester tester) async {
@@ -200,14 +234,14 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('collection-hero-poster')),
       findsNothing,
-      reason: '没有横版背景就不出海报卡（海报由 LandscapeCoverImage 显示）',
+      reason: '没有任何封面就不出封面卡（不画空框）',
     );
   });
 
   testWidgets('有横版 backdrop → 背景用 backdrop + 左侧独立海报卡',
       (WidgetTester tester) async {
     await saveMeta(backdropPath: '/covers/collections/1_backdrop.jpg');
-    await pumpWide(tester);
+    await pumpSingleColumn(tester);
 
     expect(
       find.byKey(const ValueKey<String>('collection-hero-backdrop')),
@@ -223,16 +257,15 @@ void main() {
       find.byKey(const ValueKey<String>('video-work-hero-card')),
     );
     expect(hero.left, 0, reason: '大背景必须从内容区左边缘开始，不能居中留白');
-    expect(hero.right, 1600, reason: '大背景必须平铺到内容区右边缘');
-    expect(hero.height, greaterThanOrEqualTo(460));
+    expect(hero.right, 1000, reason: '大背景必须平铺到内容区右边缘');
     expect(
       tester
           .getSize(
             find.byKey(const ValueKey<String>('collection-hero-poster')),
           )
           .height,
-      greaterThanOrEqualTo(400),
-      reason: '桌面宽屏使用大竖版海报，不再缩成 hero 角落的小卡',
+      greaterThanOrEqualTo(300),
+      reason: '宽 hero 使用大竖版封面卡，不再缩成角落的小卡',
     );
     expect(
       find.byType(LandscapeCoverImage),
@@ -268,7 +301,7 @@ void main() {
       ],
     );
 
-    await pumpWide(tester);
+    await pumpSingleColumn(tester);
 
     expect(
       find.byKey(const ValueKey<String>('collection-hero-backdrop')),
@@ -301,15 +334,15 @@ void main() {
     );
   });
 
-  testWidgets('无横版 backdrop → 回落 LandscapeCoverImage，且不重复出海报卡',
+  testWidgets('无横版 backdrop → 封面模糊垫底 + 封面卡清晰显示',
       (WidgetTester tester) async {
     await saveMeta();
-    await pumpWide(tester);
+    await pumpSingleColumn(tester);
 
     expect(
-      find.byType(LandscapeCoverImage),
+      find.byKey(const ValueKey<String>('collection-hero-cover')),
       findsOneWidget,
-      reason: '历史资料没有横版图时必须保留本地封面回退路径',
+      reason: '历史资料没有横版图时拿本地封面模糊垫底',
     );
     expect(
       find.byKey(const ValueKey<String>('collection-hero-backdrop')),
@@ -317,8 +350,13 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('collection-hero-poster')),
+      findsOneWidget,
+      reason: '封面恒在独立封面卡里清晰显示（背景只是模糊色彩）',
+    );
+    expect(
+      find.byType(LandscapeCoverImage),
       findsNothing,
-      reason: '此时海报已由 LandscapeCoverImage 清晰显示，再放一张卡就是同图两现',
+      reason: '不再把 2:3 海报铺进宽幅槽（BUG-1298）',
     );
   });
 }
