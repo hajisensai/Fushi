@@ -6606,5 +6606,16 @@
   "reader_audiobook_sleep_timer": "睡眠定时",
   "reader_audiobook_sleep_off": "关闭",
   "reader_audiobook_sleep_remaining": "$n 分钟后停止",
-  "home_nav_more": "更多"
+  "home_nav_more": "更多",
+  "browser_extension_hero_setup_hint": "按安装引导装好扩展后，点「检测连接」确认。",
+  "browser_extension_hero_connected_hint": "浏览器里的查词会直接交给 Fushi。",
+  "browser_extension_port_label": "端口 $port",
+  "browser_extension_guide_title": "安装引导",
+  "browser_extension_guide_reinstall": "重新安装 / 更新扩展",
+  "browser_extension_guide_reinstall_hint": "重新展开安装步骤，加载最新的扩展文件。",
+  "browser_extension_guide_progress": "第 $current 步，共 $total 步",
+  "browser_extension_browser_default": "默认浏览器",
+  "browser_extension_open_page_action": "尝试打开",
+  "browser_extension_open_page_failed": "无法自动打开，请复制地址后粘贴到浏览器地址栏。",
+  "browser_extension_folder_not_ready": "先准备扩展文件，文件夹路径会显示在这里。"
 }
