@@ -208,12 +208,10 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       ],
       floatingActionButton: apple
           ? null
-          : FushiGlassFab(
-              child: FloatingActionButton(
-                onPressed: _createTag,
-                tooltip: t.tag_new,
-                child: const FushiIcon(Icons.add),
-              ),
+          : FushiFab(
+              onPressed: _createTag,
+              tooltip: t.tag_new,
+              icon: const FushiIcon(Icons.add),
             ),
       body: _tags.isEmpty
           ? Center(

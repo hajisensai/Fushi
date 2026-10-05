@@ -19,7 +19,11 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiPlainButton, fushiClearGlassBezel, fushiClearGlassSettings;
+    show
+        FushiIconButtonControl,
+        FushiPlainButton,
+        fushiClearGlassBezel,
+        fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show showFushiMenu;
@@ -3798,7 +3802,7 @@ class _SettingsStepButton extends StatelessWidget {
         child: FushiIcon(icon, size: 18),
       );
     }
-    return IconButton(
+    return FushiIconButtonControl(
       icon: FushiIcon(icon, size: 18),
       tooltip: tooltip,
       visualDensity: VisualDensity.compact,

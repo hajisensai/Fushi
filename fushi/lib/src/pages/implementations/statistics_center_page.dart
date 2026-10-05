@@ -360,7 +360,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           children: <Widget>[
             Text(t.error_load_failed, style: tokens.type.metadata),
             SizedBox(height: tokens.spacing.gap),
-            TextButton.icon(
+            FushiTextButton.icon(
               key: const ValueKey<String>('stat-overview-retry'),
               onPressed: _retryLoad,
               icon: const Icon(Icons.refresh),

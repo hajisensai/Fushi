@@ -1560,7 +1560,7 @@ class DictionaryPopupLayer extends StatelessWidget {
           child: pick != null && pick.busy
               ? const SizedBox.square(
                   dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.more_horiz, size: 20),
         ),
