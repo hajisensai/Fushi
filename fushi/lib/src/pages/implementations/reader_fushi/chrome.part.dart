@@ -1726,9 +1726,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// 悬浮胶囊的配色：跟随阅读纸色调和（纸色上叠一层正文色），让胶囊落在米色 /
   /// 夜间纸上不突兀；选中态取主题（secondaryContainer / Apple 强调色）。
+  ///
+  /// 「跟随主题」时（非玻璃设计）改用 M3E 阅读配色的 [FushiReaderPalette.chromeContainer]
+  /// （neutral 92 / 17，surfaceContainerHigh 一族）：与纸色同色相、层级分明，
+  /// 不再是正文色叠灰。
   FushiFloatingToolbarColors _floatingToolbarColors() {
     final Color bg = _themeBackgroundColor();
     final Color fg = _themeTextColor();
+    final FushiReaderPalette? palette = _followThemePalette;
+    if (palette != null && !isGlassDesign(context)) {
+      return FushiFloatingToolbarColors(
+        container: palette.chromeContainer,
+        foreground: fg,
+      );
+    }
     return FushiFloatingToolbarColors(
       container: Color.alphaBlend(
         fg.withValues(alpha: isGlassDesign(context) ? 0.05 : 0.08),
@@ -3662,6 +3673,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
       customOverrides: _customReaderThemeOverrides,
       // TODO-977：全局音频高亮色覆盖（与主题解耦），对所有主题生效。
       audioHighlightOverride: appModel.audioHighlightColor,
+    );
+  }
+
+  /// 「跟随主题」时的 M3E 阅读配色（[readerFollowThemePalette]）：注音色、原生
+  /// 选区、工具栏底色这些五角色之外的槽位从这里取。预设纸色 / 自定义钉了纸色 /
+  /// 墨水屏时为 null，各调用点保持旧行为。
+  FushiReaderPalette? get _followThemePalette {
+    if (appModel.einkMode) return null;
+    return readerFollowThemePalette(
+      themeKey: appModel.appThemeKey,
+      presetMap: _themeMap,
+      scheme: appModel.buildColorScheme(
+        appModel.isDarkMode ? Brightness.dark : Brightness.light,
+      ),
+      customOverrides: _customReaderThemeOverrides,
     );
   }
 

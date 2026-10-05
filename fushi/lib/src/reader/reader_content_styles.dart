@@ -153,6 +153,8 @@ class ReaderContentStyles {
     String? selectionColor,
     String? sentenceAudioHighlightColor,
     String? linkColor,
+    String? rubyColor,
+    String? nativeSelectionColor,
     String? themeOverride,
     bool einkMode = false,
     bool einkDark = false,
@@ -168,6 +170,8 @@ class ReaderContentStyles {
       selectionColor: selectionColor,
       sentenceAudioHighlightColor: sentenceAudioHighlightColor,
       linkColor: linkColor,
+      rubyColor: rubyColor,
+      nativeSelectionColor: nativeSelectionColor,
       themeOverride: themeOverride,
       einkMode: einkMode,
       einkDark: einkDark,
@@ -400,6 +404,11 @@ body::after {
     String? selectionColor,
     String? sentenceAudioHighlightColor,
     String? linkColor,
+    // 「跟随主题」M3E 阅读配色（FushiReaderPalette）才有的两个槽位：注音字色与
+    // 桌面鼠标拖选的原生 ::selection 底色。null = 不写规则（预设 / 用户钉纸色 /
+    // 墨水屏保持旧行为：rt 继承正文色、原生选区用引擎默认）。
+    String? rubyColor,
+    String? nativeSelectionColor,
     String? themeOverride,
     // 墨水屏模式：强制纯黑白正文 + 线式高亮 + 关过渡（叠加在任意主题之上，见
     // 文件末尾 _einkOverrideCss）。einkDark 决定黑底白字还是白底黑字，取自 app
@@ -435,6 +444,12 @@ body::after {
     final String selectionBase = selectionColor ?? colors.selectionColor;
     final String selectionOpaque =
         composeOpaqueColor(selectionBase, colors.backgroundColor);
+    final String themedRubyCss = !einkMode && rubyColor != null
+        ? 'ruby > rt, ruby > rtc { color: $rubyColor; }\n'
+        : '';
+    final String nativeSelectionCss = !einkMode && nativeSelectionColor != null
+        ? '::selection { background-color: $nativeSelectionColor; }\n'
+        : '';
 
     final String resolvedFontFaces;
     final String resolvedFontFamily;
@@ -887,7 +902,7 @@ ${_touchNativeSelectionCss()}/* BUG-765 续：移动端选区起止手柄的强�
    颜色自动更新，无需 JS 感知主题。用主题 linkColor（各主题的饱和强调色）而非查词高亮
    色（0.35 低透明 tint，太淡不适合实心抓手）。 */
 :root { --fushi-sel-handle: ${linkColor ?? colors.linkColor}; }
-/* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
+$themedRubyCss$nativeSelectionCss/* BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。JS 侧给该 Highlight 设
    priority=1，使其叠在音频(sentenceAudioHighlight, 默认 priority=0)之上 → 重叠处只显示这一层。 */
 ::highlight(fushi-selection) {
   background-color: $selectionOpaque;

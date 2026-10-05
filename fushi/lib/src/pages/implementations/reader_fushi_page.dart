@@ -28,6 +28,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -396,6 +397,36 @@ ReaderThemeColors resolveReaderThemeColors({
   );
 }
 
+/// [FushiReaderPalette] 落成阅读器五角色：当前句 = tertiaryContainer 一族、
+/// 查词高亮（selection 角色）= primaryContainer 一族，色相错开不混淆。
+ReaderThemeColors readerThemeColorsFromPalette(FushiReaderPalette palette) {
+  return (
+    bg: palette.background,
+    fg: palette.text,
+    sentenceAudioHighlight: palette.sentenceHighlight,
+    selection: palette.lookupHighlight,
+    link: palette.link,
+    dark: palette.dark,
+  );
+}
+
+/// 当前主题是否走「跟随主题」的 M3E 阅读配色（而不是手调预设纸色 / 用户钉的纸色）。
+/// 是则返回那套配色，供 CSS 注音色 / 原生选区 / 工具栏底色这些五角色之外的槽位用；
+/// 预设命中、或自定义主题钉了纸色（注音 / 工具栏按主题纸色算会与用户纸色脱节）
+/// 时返回 null，调用方保持旧行为。
+FushiReaderPalette? readerFollowThemePalette({
+  required String themeKey,
+  required Map<String, ReaderThemeColors> presetMap,
+  required ColorScheme scheme,
+  ReaderThemeOverrides? customOverrides,
+}) {
+  if (presetMap.containsKey(themeKey)) return null;
+  if (customOverrides?.bg != null && ThemeNotifier.isCustomThemeKey(themeKey)) {
+    return null;
+  }
+  return fushiReaderPaletteFor(scheme, scheme.brightness);
+}
+
 /// 墨水屏下阅读器的 Dart 侧角色色：底 / 字 / 链接与正文 CSS 的墨水屏分支
 /// （[ReaderContentStyles.css] `einkMode`）同值——纯黑白、方向跟 app 明暗，
 /// 无视阅读主题 key。Scaffold 底、桌面自绘顶栏、阅读器工具栏都读它；按预设
@@ -426,19 +457,13 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   if (preset != null) {
     return preset;
   }
-  // light-theme / system-theme / 自定义 / 未覆盖的 key：跟随真实 ColorScheme。
-  final bool dark = scheme.brightness == Brightness.dark;
-  final ReaderThemeColors fromScheme = (
-    bg: scheme.surface,
-    fg: scheme.onSurface,
-    sentenceAudioHighlight: scheme.primary.withValues(
-      alpha: dark ? 0.34 : 0.40,
-    ),
-    // selection 用 tertiary：与 sasayaki(primary) 错开色相，查词高亮 ≠ 跟读高亮。
-    selection: scheme.tertiary.withValues(alpha: dark ? 0.35 : 0.40),
-    link: scheme.primary,
-    dark: dark,
-  );
+  // light-theme / system-theme / 自定义 / 未覆盖的 key：跟随真实 ColorScheme，
+  // 经 M3E 阅读配色 [fushiReaderPaletteFor] 派生（纸色 neutral 98 / 6、正文
+  // neutral 12 / 90、查词 = primaryContainer、当前句 = tertiaryContainer），
+  // 编辑页「跟随主题」显示的值也走这里——单一真源。
+  final FushiReaderPalette palette =
+      fushiReaderPaletteFor(scheme, scheme.brightness);
+  final ReaderThemeColors fromScheme = readerThemeColorsFromPalette(palette);
   if (customOverrides == null || !ThemeNotifier.isCustomThemeKey(themeKey)) {
     return fromScheme;
   }
@@ -3906,6 +3931,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// beginStyleReanchor 下发的 CSS 漂移）。两个包装分别包 <style> 标签 / jsonEncode。
   String _currentReaderCss() {
     final ReaderThemeColors rc = _readerThemeColors;
+    final FushiReaderPalette? palette = _followThemePalette;
     return ReaderContentStyles.css(
       settings: _settings!,
       themeOverride: appModel.appThemeKey,
@@ -3924,6 +3950,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       selectionColor: _colorToCssRgba(rc.selection),
       sentenceAudioHighlightColor: _colorToCssRgba(rc.sentenceAudioHighlight),
       linkColor: _colorToCssRgba(rc.link),
+      // 跟随主题的 M3E 阅读配色才写注音色 / 原生选区；预设与钉纸色保持旧行为。
+      // 分页 / 滚动 / VN 三种布局共用这一份 CSS，取色同源。
+      rubyColor: palette == null ? null : _colorToCssRgba(palette.rubyText),
+      nativeSelectionColor:
+          palette == null ? null : _colorToCssRgba(palette.nativeSelection),
       // 墨水屏模式：全局单开关叠加在阅读器主题之上（纯黑白+线式高亮+关过渡），
       // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
       einkMode: appModel.einkMode,

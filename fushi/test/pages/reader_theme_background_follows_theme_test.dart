@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_page.dart';
 
 /// BUG-208 / TODO-143 —— 「书籍背景没吃主题」。
@@ -43,6 +44,9 @@ void main() {
         seedColor: const Color(0xFF1F4959),
         brightness: Brightness.light,
       );
+  // 跟随主题分支走 M3E 阅读配色（2026-10-06）：断言与 [fushiReaderPaletteFor] 同源。
+  FushiReaderPalette paletteOf(ColorScheme scheme) =>
+      fushiReaderPaletteFor(scheme, scheme.brightness);
 
   group('TODO-143 · 阅读器背景跟随主题（resolveReaderThemeColors）', () {
     test('preset 命中：用手调底色（向后兼容，零变化）', () {
@@ -56,7 +60,7 @@ void main() {
       expect(colors.dark, isFalse);
     });
 
-    test('system-theme（默认主题）：背景跟随 scheme.surface，不再恒白', () {
+    test('system-theme（默认主题）：背景跟随主题派生的 M3E 纸色，不再恒白', () {
       final ColorScheme scheme = darkScheme();
       final ReaderThemeColors colors = resolveReaderThemeColors(
         themeKey: 'system-theme',
@@ -64,10 +68,10 @@ void main() {
         scheme: scheme,
       );
       // 暗色系统主题下背景必须是 scheme 的深色 surface，而非硬编码白。
-      expect(colors.bg, scheme.surface);
+      expect(colors.bg, paletteOf(scheme).background);
       expect(colors.bg, isNot(const Color(0xFFFFFFFF)),
           reason: '暗色 system-theme 背景恒白 = 没吃主题（BUG-208）');
-      expect(colors.fg, scheme.onSurface);
+      expect(colors.fg, paletteOf(scheme).text);
       expect(colors.dark, isTrue);
     });
 
@@ -78,8 +82,8 @@ void main() {
         presetMap: presetMap,
         scheme: scheme,
       );
-      expect(colors.bg, scheme.surface);
-      expect(colors.fg, scheme.onSurface);
+      expect(colors.bg, paletteOf(scheme).background);
+      expect(colors.fg, paletteOf(scheme).text);
       expect(colors.dark, isFalse);
     });
 
@@ -90,7 +94,7 @@ void main() {
         presetMap: presetMap,
         scheme: scheme,
       );
-      expect(colors.bg, scheme.surface);
+      expect(colors.bg, paletteOf(scheme).background);
       expect(colors.dark, isTrue);
     });
 
@@ -116,7 +120,7 @@ void main() {
       // 当前句高亮不在覆盖集合里：跟随 scheme（primary@alpha）。
       expect(
         colors.sentenceAudioHighlight,
-        lightScheme().primary.withValues(alpha: 0.40),
+        paletteOf(lightScheme()).sentenceHighlight,
       );
     });
   });
@@ -135,9 +139,9 @@ void main() {
         presetMap: presetMap,
         scheme: scheme,
       );
-      expect(c.sentenceAudioHighlight, scheme.primary.withValues(alpha: 0.40));
-      expect(c.selection, scheme.tertiary.withValues(alpha: 0.40));
-      expect(c.link, scheme.primary);
+      expect(c.sentenceAudioHighlight, paletteOf(scheme).sentenceHighlight);
+      expect(c.selection, paletteOf(scheme).lookupHighlight);
+      expect(c.link, paletteOf(scheme).link);
       // 关键回归断言：不再是旧硬编码默认色。
       expect(c.sentenceAudioHighlight, isNot(const Color(0x6687CEEB)),
           reason: '旧默认 sentenceAudioHighlight 天蓝 = 没吃强调色（BUG-396）');
@@ -147,16 +151,16 @@ void main() {
           reason: '旧默认 link 蓝 = 没吃强调色');
     });
 
-    test('暗色 system-theme：高亮/选区 alpha 用 dark 档', () {
+    test('暗色 system-theme：高亮/选区取暗档 container 色', () {
       final ColorScheme scheme = darkScheme();
       final ReaderThemeColors c = resolveReaderThemeColors(
         themeKey: 'system-theme',
         presetMap: presetMap,
         scheme: scheme,
       );
-      expect(c.sentenceAudioHighlight, scheme.primary.withValues(alpha: 0.34));
-      expect(c.selection, scheme.tertiary.withValues(alpha: 0.35));
-      expect(c.link, scheme.primary);
+      expect(c.sentenceAudioHighlight, paletteOf(scheme).sentenceHighlight);
+      expect(c.selection, paletteOf(scheme).lookupHighlight);
+      expect(c.link, paletteOf(scheme).link);
     });
 
     test('preset 命中：selection/link 透传 presetMap（零变化）', () {
@@ -189,12 +193,12 @@ void main() {
       );
       expect(c.sentenceAudioHighlight, kOverride);
       expect(c.sentenceAudioHighlight,
-          isNot(scheme.primary.withValues(alpha: 0.40)),
+          isNot(paletteOf(scheme).sentenceHighlight),
           reason: '设了全局音频高亮色后不应再用主题主色（BUG-464）');
       // 其它角色色不受影响。
-      expect(c.selection, scheme.tertiary.withValues(alpha: 0.40));
-      expect(c.link, scheme.primary);
-      expect(c.bg, scheme.surface);
+      expect(c.selection, paletteOf(scheme).lookupHighlight);
+      expect(c.link, paletteOf(scheme).link);
+      expect(c.bg, paletteOf(scheme).background);
     });
 
     test('preset 主题：override 也写穿 sentenceAudioHighlight（覆盖手调底色）', () {
@@ -236,7 +240,7 @@ void main() {
         scheme: scheme,
         audioHighlightOverride: null,
       );
-      expect(c.sentenceAudioHighlight, scheme.primary.withValues(alpha: 0.40));
+      expect(c.sentenceAudioHighlight, paletteOf(scheme).sentenceHighlight);
     });
   });
 }

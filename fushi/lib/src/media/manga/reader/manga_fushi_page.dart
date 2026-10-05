@@ -24,6 +24,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_module.dart';
+import 'package:fushi/src/models/fushi_reader_palette.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
@@ -2704,8 +2705,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       case '#2b2b2b':
         return const Color(0xFF2B2B2B);
       default:
-        return Theme.of(context).colorScheme.surface;
+        return _themedMangaBackground;
     }
+  }
+
+  /// 「跟随主题」档的漫画底色：M3E 阅读配色的 [FushiReaderPalette.mangaBackground]
+  /// （neutral 95 / 4——比小说纸色压一档，页图四周更沉、不抢画面，仍与 app 表面
+  /// 同一色相家族）。Scaffold 与 WebView 文档底色都从这里取，保证同源。
+  Color get _themedMangaBackground {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 全局墨水屏：表面已塌成纯黑白，不再派生带色调的中性灰（会被抖动）。
+    if (isEinkTheme(context)) return scheme.surface;
+    return fushiReaderPaletteFor(scheme, scheme.brightness).mangaBackground;
   }
 
   /// 桌面自绘顶栏该跟的颜色＝本页最顶上一排像素。2026-10 重设计后顶栏是离页顶
@@ -2733,7 +2744,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (_readerPreferences.einkMode) return '#fff';
     final String? fixed = _background.fixedCss;
     if (fixed != null) return fixed;
-    final Color c = Theme.of(context).colorScheme.surface;
+    final Color c = _themedMangaBackground;
     final int r = (c.r * 255.0).round().clamp(0, 255);
     final int g = (c.g * 255.0).round().clamp(0, 255);
     final int b = (c.b * 255.0).round().clamp(0, 255);
