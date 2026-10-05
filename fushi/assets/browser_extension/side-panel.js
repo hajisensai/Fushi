@@ -74,12 +74,19 @@
       var foldBtn = document.createElement('button');
       foldBtn.type = 'button';
       foldBtn.className = 'hdr-fold';
-      foldBtn.textContent = '▾';
       foldBtn.title = tr('sp_fold_title');
       foldBtn.setAttribute('aria-label', tr('sp_fold_aria_label'));
+      // 折叠钮字形：Material Symbols Rounded（icons.js 先于本文件装入）；拿不到时退回文字三角。
+      var setFoldGlyph = function (folded) {
+        var glyph = typeof window.fushiIcon === 'function'
+          ? window.fushiIcon(folded ? 'chevron_right' : 'expand_more', { size: 18 }) : null;
+        foldBtn.textContent = glyph ? '' : (folded ? '▸' : '▾');
+        if (glyph) foldBtn.appendChild(glyph);
+      };
+      setFoldGlyph(false);
       var applyFold = function (folded) {
         document.body.classList.toggle('hdr-folded', folded);
-        foldBtn.textContent = folded ? '▸' : '▾';
+        setFoldGlyph(folded);
       };
       foldBtn.addEventListener('click', function () {
         var folded = !document.body.classList.contains('hdr-folded');
@@ -1258,6 +1265,7 @@
   autoButton.addEventListener('click', function () {
     autoScroll = !autoScroll;
     autoButton.classList.toggle('is-on', autoScroll);
+    autoButton.setAttribute('aria-pressed', autoScroll ? 'true' : 'false');
     if (autoScroll) { scrollIndex = -1; updateCurrent(currentState && currentState.currentTimeMs); }
   });
   document.getElementById('settings').addEventListener('click', function () {
@@ -1308,6 +1316,7 @@
   function stopAutoScroll() {
     autoScroll = false;
     autoButton.classList.toggle('is-on', false);
+    autoButton.setAttribute('aria-pressed', 'false');
   }
   listEl.addEventListener('wheel', stopAutoScroll, { passive: true });
   listEl.addEventListener('touchmove', stopAutoScroll, { passive: true });

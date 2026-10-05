@@ -353,3 +353,282 @@ html.fushi-embed body.hdr-folded .track-select,
 html.fushi-embed body.hdr-folded #offset,
 html.fushi-embed body.hdr-folded #subs-row,
 html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
+
+/* ── 图标（Material Symbols Rounded，icons.js 内联 SVG）：工具排 / 时轴重置 / 抽屉折叠钮 ── */
+.msr-slot { display: inline-flex; flex: none; align-items: center; justify-content: center; }
+.msr-slot svg, svg.msr { display: block; flex: none; }
+.toolbar button,
+#offset-reset,
+.hdr-fold {
+  display: inline-grid;
+  place-items: center;
+}
+
+/* ══ M3E（缺省风格；液态玻璃 data-style="glass" 不吃这一段）══
+   色角色 / 形状 / 字阶 / 动效全取 theme.css 的 --md-sys-*；material.css 管两套风格共有的材质，
+   这里只补 M3E 的结构差异（选择器带 :not([data-style="glass"])，特异性压过 material.css 的通用按钮规则）：
+   ① 页眉是平的 surface，工具排是一条 surface-container 全圆角的浮动工具栏（40px 图标钮，
+      自动滚动是切换钮：选中 = secondary-container + 圆形形变成圆角方）；
+   ② 时轴偏移是两组相连按钮组（组内相邻边小圆角、外侧全圆角）+ 独立的重置钮；
+   ③ 当前句是 secondary-container 大圆角块，时间戳是 assist chip（label-medium）；
+   ④ 按压：弹簧缩放 + 圆角收拢；减弱动态效果时只留颜色变化。
+   抽屉嵌入（html.fushi-embed）的尺寸规格（30/32/34px 触摸档）不动，尺寸类规则都带 :not(.fushi-embed)。 */
+:root:not([data-style="glass"]) body {
+  background: var(--md-sys-color-surface);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--md-sys-typescale-font);
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+}
+
+:root:not([data-style="glass"]) .panel-header {
+  border: 0;
+  border-radius: 0;
+  background: var(--md-sys-color-surface);
+  background-image: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-style="glass"]) h1 {
+  font-size: var(--md-sys-typescale-title-large-size);
+  line-height: var(--md-sys-typescale-title-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+:root:not([data-style="glass"]) #video-status {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-body-small-size);
+  line-height: var(--md-sys-typescale-body-small-line-height);
+}
+
+/* ① 标题在上、工具栏整宽在下（侧栏窄，标题与六颗 40px 钮并排会把标题挤成一列字）。 */
+:root:not([data-style="glass"]):not(.fushi-embed) .title-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+:root:not([data-style="glass"]):not(.fushi-embed) .toolbar {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 2px;
+  margin: 0;
+  padding: 4px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container);
+}
+
+:root:not([data-style="glass"]):not(.fushi-embed) .toolbar button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+}
+
+:root:not([data-style="glass"]) :is(.toolbar button, .hdr-fold) {
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-surface-variant);
+  transition:
+    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+    transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+:root:not([data-style="glass"]) :is(.toolbar button, .hdr-fold):hover {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+  color: var(--md-sys-color-on-surface);
+}
+
+/* 切换钮（自动滚动）选中：secondary-container，圆形形变成圆角方（M3E toggle icon button）。 */
+:root:not([data-style="glass"]) .toolbar button.is-on,
+:root:not([data-style="glass"]) .toolbar button.is-on:hover {
+  border-radius: var(--md-sys-shape-corner-medium);
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+:root:not([data-style="glass"]) .toolbar button.is-on:hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) :is(.toolbar button, .offset-row button, .hdr-fold, .timestamp):active {
+  border-radius: var(--md-sys-shape-corner-small);
+  transform: scale(0.92);
+}
+
+:root:not([data-style="glass"]) :is(.toolbar button, .offset-row button, .hdr-fold, .timestamp):focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* ② 时轴偏移：[−0.5|−0.1] 数值 [+0.1|+0.5] 重置 ——两组相连按钮组，组内相邻边小圆角。 */
+:root:not([data-style="glass"]) .offset-row {
+  column-gap: 2px;
+  row-gap: 6px;
+}
+
+:root:not([data-style="glass"]) .offset-row button {
+  border: 0;
+  background: var(--md-sys-color-secondary-container);
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-secondary-container);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  transition:
+    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+    transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+:root:not([data-style="glass"]):not(.fushi-embed) .offset-row button { min-height: 40px; }
+
+:root:not([data-style="glass"]) .offset-row button:hover {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) .offset-row button:is([data-offset="-500"], [data-offset="100"]) {
+  border-radius: var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-full);
+}
+
+:root:not([data-style="glass"]) .offset-row button:is([data-offset="-100"], [data-offset="500"]) {
+  border-radius: var(--md-sys-shape-corner-small) var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-full) var(--md-sys-shape-corner-small);
+}
+
+:root:not([data-style="glass"]) .offset-row #offset-reset {
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+:root:not([data-style="glass"]):not(.fushi-embed) .offset-row #offset-reset { margin-left: 6px; }
+
+:root:not([data-style="glass"]) .offset-row #offset-reset:hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) .offset-row button:active,
+:root:not([data-style="glass"]) .offset-row #offset-reset:active {
+  border-radius: var(--md-sys-shape-corner-small);
+}
+
+:root:not([data-style="glass"]) #offset-value {
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+/* 查字幕结果：分段色块列表。 */
+:root:not([data-style="glass"]) .subs-results { gap: 2px; }
+
+:root:not([data-style="glass"]) .subs-item {
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-small);
+  background: var(--md-sys-color-surface-container);
+  background-image: none;
+  box-shadow: none;
+}
+
+:root:not([data-style="glass"]) .subs-item:first-child {
+  border-top-left-radius: var(--md-sys-shape-corner-large);
+  border-top-right-radius: var(--md-sys-shape-corner-large);
+}
+
+:root:not([data-style="glass"]) .subs-item:last-of-type {
+  border-bottom-left-radius: var(--md-sys-shape-corner-large);
+  border-bottom-right-radius: var(--md-sys-shape-corner-large);
+}
+
+:root:not([data-style="glass"]) .subs-item:hover {
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container));
+}
+
+:root:not([data-style="glass"]) :is(.subs-item-meta, .subs-empty, .empty) { color: var(--md-sys-color-on-surface-variant); }
+
+/* ③ 字幕列表：行是大圆角块，当前句 secondary-container 更大圆角；时间戳是 assist chip。 */
+:root:not([data-style="glass"]) .subtitle-row {
+  grid-template-columns: minmax(52px, max-content) minmax(0, 1fr);
+  gap: 12px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-large);
+  transition:
+    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    border-radius var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
+}
+
+:root:not([data-style="glass"]):not(.fushi-embed) .subtitle-row { padding: 10px 12px 10px 10px; }
+
+:root:not([data-style="glass"]) .subtitle-row:hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) .subtitle-row.is-current {
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-extra-large);
+  background-color: var(--md-sys-color-secondary-container);
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+:root:not([data-style="glass"]) .timestamp {
+  min-width: 52px;
+  padding: 0 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-typescale-label-medium-size);
+  line-height: var(--md-sys-typescale-label-medium-line-height);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+    transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+:root:not([data-style="glass"]):not(.fushi-embed) .timestamp { min-height: 32px; }
+
+:root:not([data-style="glass"]) .timestamp:hover {
+  border-color: var(--md-sys-color-outline-variant);
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) .subtitle-row.is-current .timestamp {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) 12%, transparent);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+/* 底部 toast：M3 snackbar（inverse-surface）。 */
+:root:not([data-style="glass"]) .toast {
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-small);
+  background: var(--md-sys-color-inverse-surface);
+  color: var(--md-sys-color-inverse-on-surface);
+  box-shadow: var(--md-sys-elevation-level3);
+  transition:
+    opacity var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root :is(.toolbar button, .offset-row button, .hdr-fold, .timestamp):active { transform: none; }
+}
