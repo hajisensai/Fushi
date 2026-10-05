@@ -6379,5 +6379,12 @@
   "video_skip_opening": "Skip opening",
   "video_skip_ending": "Skip ending",
   "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
-  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers."
+  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
+  "shelf_collection_layout_title": "Collections",
+  "shelf_collection_layout_rows": "Expanded rows",
+  "shelf_collection_layout_cards": "One tile each",
+  "shelf_sort_and_view": "Sort & view",
+  "shelf_collection_volume_count": "$n vols",
+  "shelf_collection_series_label": "Series",
+  "collection_name_taken_other_library": "Another library already has a collection named \"$name\". Pick a different name."
 }

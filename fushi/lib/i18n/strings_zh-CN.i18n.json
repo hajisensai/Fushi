@@ -6379,5 +6379,12 @@
   "video_skip_opening": "跳过片头",
   "video_skip_ending": "跳过片尾",
   "download_network_fake_ip_udp_blocked": "当前代理（fake-ip / TUN 模式）不转发 UDP：DHT 与 UDP tracker 找不到 peer，任务可能一直 0 连接。请在代理里换支持 UDP 的节点，或让 Fushi 走直连（DIRECT 规则）。",
-  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。"
+  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。",
+  "shelf_collection_layout_title": "合集显示",
+  "shelf_collection_layout_rows": "整行展开",
+  "shelf_collection_layout_cards": "单个格子",
+  "shelf_sort_and_view": "排序与显示",
+  "shelf_collection_volume_count": "$n 册",
+  "shelf_collection_series_label": "系列",
+  "collection_name_taken_other_library": "其他媒体库已有名为「$name」的合集，请换个名字。"
 }

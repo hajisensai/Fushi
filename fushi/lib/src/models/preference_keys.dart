@@ -314,6 +314,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // String：书架合集呈现方式（ShelfCollectionLayout.name：rows 横排行 / cards
+  // 单个格子），默认 rows。
+  'shelf_collection_layout',
   // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
   'shelf_read_status_filter',
   'shelf_sort_mode',
