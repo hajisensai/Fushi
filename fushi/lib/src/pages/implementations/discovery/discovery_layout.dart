@@ -26,6 +26,7 @@ import 'package:fushi/src/media/collections/collection_detail_layout.dart'
     show CollectionHeroBadgeChips;
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -275,8 +276,8 @@ class DiscoveryCoverCard extends StatelessWidget {
 
 /// 骨架卡：与 [DiscoveryCoverCard] 同几何的静态占位（封面块 + 两条文字条）。
 ///
-/// 有意**不做**闪烁动画：重复动画会让 `pumpAndSettle` 永不收敛，墨水屏上也是
-/// 持续局部刷新。
+/// M3E 闪光是**有界**的（[FushiSkeletonShimmer] 扫三轮就停）：常驻的重复动画会
+/// 让 `pumpAndSettle` 永不收敛；墨水屏 / 减弱动态效果下不扫。
 class DiscoverySkeletonCard extends StatelessWidget {
   const DiscoverySkeletonCard({
     this.shape = DiscoveryCoverShape.portrait,
@@ -288,37 +289,28 @@ class DiscoverySkeletonCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final BorderRadius radius = discoveryCoverRadius(context);
-    final Color bar = isGlassDesign(context)
-        ? appleColorsOf(context).tertiaryFill
-        : FushiDesignTokens.of(context).surfaces.group;
-    Widget line(double widthFactor) => FractionallySizedBox(
-      widthFactor: widthFactor,
-      alignment: AlignmentDirectional.centerStart,
-      child: Container(
-        height: 10,
-        decoration: BoxDecoration(
-          color: bar,
-          borderRadius: BorderRadius.circular(5),
-        ),
-      ),
-    );
+    // M3E：文字条是 [FushiSkeleton] 胶囊，整卡外包一层有界闪光（扫三轮停）。
+    Widget line(double widthFactor) =>
+        FushiSkeleton.line(widthFactor: widthFactor, height: 10);
     return ExcludeSemantics(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          AspectRatio(
-            aspectRatio: shape.aspectRatio,
-            child: ClipRRect(
-              borderRadius: radius,
-              child: const DiscoveryCoverPlaceholder(showIcon: false),
+      child: FushiSkeletonShimmer(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AspectRatio(
+              aspectRatio: shape.aspectRatio,
+              child: ClipRRect(
+                borderRadius: radius,
+                child: const DiscoveryCoverPlaceholder(showIcon: false),
+              ),
             ),
-          ),
-          const SizedBox(height: _kCardTextGap + 2),
-          line(0.86),
-          const SizedBox(height: 6),
-          line(0.5),
-        ],
+            const SizedBox(height: _kCardTextGap + 2),
+            line(0.86),
+            const SizedBox(height: 6),
+            line(0.5),
+          ],
+        ),
       ),
     );
   }
