@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -45,19 +46,19 @@ String _moduleItemId(ModuleId module) => switch (module) {
   return switch (module) {
     ModuleId.listening => (
       label: t.settings_destination_listening,
-      icon: Icons.headphones_outlined,
+      icon: FushiIcons.audiobook,
     ),
     ModuleId.cardCreation => (
       label: t.settings_destination_card_creation,
-      icon: Icons.style_outlined,
+      icon: FushiIcons.ankiCard,
     ),
     ModuleId.services => (
       label: t.settings_destination_services,
-      icon: Icons.cloud_outlined,
+      icon: FushiIcons.cloud,
     ),
     ModuleId.sync => (
       label: t.settings_destination_sync_backup,
-      icon: Icons.sync,
+      icon: FushiIcons.sync,
     ),
     // 上面 homeTabOfModule 已经把有 tab 的七个消化掉了；这里补齐 switch 让编译器
     // 在新增模块时强制点名，而不是静默落进一个 default 里显示错标签。
@@ -104,7 +105,7 @@ SettingsDestination buildAppearanceDestination() {
     id: SettingsDestinationId.appearance,
     title: t.settings_destination_appearance_interaction,
     summary: t.design_system_hint,
-    icon: Icons.palette_outlined,
+    icon: FushiIcons.appearance,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'appearance.section.interface',
@@ -115,7 +116,7 @@ SettingsDestination buildAppearanceDestination() {
           // 进入设置搜索（主题/语言/明暗等此前搜不到）。
           SettingsCustomItem(
             id: 'appearance.design_system',
-            icon: Icons.devices_outlined,
+            icon: FushiIcons.devices,
             searchTitle: t.design_system_label,
             builder: buildDesignSystemSelector,
           ),
@@ -224,7 +225,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsNavigationItem(
             id: 'appearance.font_catalog',
             title: t.custom_fonts_catalog_title,
-            icon: Icons.font_download_outlined,
+            icon: FushiIcons.font,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,
@@ -249,7 +250,7 @@ SettingsDestination buildAppearanceDestination() {
               return '${t.settings_content_language_title} · $label';
             },
             subtitle: t.settings_content_language_description,
-            icon: Icons.translate,
+            icon: FushiIcons.language,
             onTap: (SettingsContext settingsContext) async {
               final String current =
                   settingsContext.appModel.prefsRepo.defaultContentLanguage;
@@ -306,7 +307,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsNavigationItem(
             id: 'appearance.app_icon',
             title: t.app_icon_label,
-            icon: Icons.widgets_outlined,
+            icon: FushiIcons.widgets,
             visible: (_) => Platform.isAndroid || Platform.isWindows,
             builder: (_) => const MiscellaneousSettingsPage(),
           ),

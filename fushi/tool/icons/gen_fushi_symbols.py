@@ -189,6 +189,15 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("voice", "record_voice_over", "record_voice_over_outlined", "record_voice_over", "朗读 / 人声"),
     ("travelExplore", "travel_explore", "travel_explore", "travel_explore", "在线发现"),
     ("readingMode", "auto_stories", "auto_stories_outlined", "auto_stories", "阅读 / 翻页"),
+    ("aiAssistant", "smart_toy", "smart_toy_outlined", "smart_toy", "AI 助手 / AI 设置"),
+    ("floatingBall", "blur_circular", "blur_circular_outlined", "blur_circular", "悬浮球"),
+    ("modelTraining", "model_training", "model_training_outlined", "model_training", "模型 / 训练"),
+    ("profiles", "manage_accounts", "manage_accounts_outlined", "manage_accounts", "档案管理"),
+    ("sdStorage", "sd_storage", "sd_storage_outlined", "sd_storage", "存储位置"),
+    ("system", "settings_suggest", "settings_suggest_outlined", "settings_suggest", "系统 / 通用"),
+    ("tracking", "auto_awesome_motion", "auto_awesome_motion_outlined", "auto_awesome_motion", "进度追踪"),
+    ("fingerprint", "fingerprint", "fingerprint", "fingerprint", "身份 / 指纹"),
+    ("moveFile", "drive_file_move", "drive_file_move_outline", "drive_file_move", "移动文件"),
     # ── 播放 ─────────────────────────────────────────────────────────
     ("play", "play_arrow", "play_arrow_outlined", "play_arrow", "播放"),
     ("pause", "pause", "pause_outlined", "pause", "暂停"),
@@ -225,6 +234,12 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "wifi": ("wifi", "wifi"),
     "imageSearch": ("photo", "photo_fill"),
     "voice": ("waveform", "waveform"),
+    "aiAssistant": ("sparkles", "sparkles"),
+    "floatingBall": ("smallcircle_circle", "smallcircle_fill_circle"),
+    "modelTraining": ("arrow_2_circlepath", "arrow_2_circlepath"),
+    "sdStorage": ("tray_full", "tray_full_fill"),
+    "tracking": ("rectangle_stack", "rectangle_stack_fill"),
+    "fingerprint": ("lock_shield", "lock_shield_fill"),
 }
 
 

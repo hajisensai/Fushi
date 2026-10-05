@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart'
@@ -20,7 +21,7 @@ SettingsDestination buildCardCreationDestination() {
     ),
     title: t.settings_destination_card_creation,
     summary: t.anki_settings_label,
-    icon: Icons.style_outlined,
+    icon: FushiIcons.ankiCard,
     body: (_) => const AnkiSettingsBody(),
     bodyBeforeSections: true,
     sections: <SettingsSection>[
@@ -239,7 +240,7 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
   return SettingsDestination(
     id: SettingsDestinationId.cardCreation,
     title: title,
-    icon: Icons.style_outlined,
+    icon: FushiIcons.ankiCard,
     sections: const <SettingsSection>[],
     body: (_) => AnkiSettingsBody(panel: panel),
     bodySearchEntries: <SettingsBodySearchEntry>[

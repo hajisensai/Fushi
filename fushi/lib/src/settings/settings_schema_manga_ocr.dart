@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart'
     show createInterconnectMangaOcrRunner, mangaAiOcrProviderReady;
@@ -28,7 +29,7 @@ SettingsSection buildMangaOcrSection() {
         id: 'manga.ocr',
         title: t.manga_ocr_section,
         subtitle: t.manga_ocr_section_summary,
-        icon: Icons.document_scanner_outlined,
+        icon: FushiIcons.ocr,
         child: _buildMangaOcrDestination,
       ),
     ],
@@ -39,7 +40,7 @@ SettingsDestination _buildMangaOcrDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.manga,
     title: t.manga_ocr_section,
-    icon: Icons.document_scanner_outlined,
+    icon: FushiIcons.ocr,
     sections: const <SettingsSection>[],
     body: (SettingsContext c) => MangaOcrSettingsSection(
       service: c.ref.watch(mangaOcrServiceProvider),
@@ -78,7 +79,7 @@ SettingsSection buildMangaCatalogSection() {
       SettingsTextItem(
         id: 'manga.online_catalog_base_url',
         title: t.manga_online_base_url_label,
-        icon: Icons.cloud_outlined,
+        icon: FushiIcons.cloud,
         keyboardType: TextInputType.url,
         placeholder: kMokuroMoeDefaultBaseUrl,
         value: (SettingsContext settingsContext) =>
@@ -92,7 +93,7 @@ SettingsSection buildMangaCatalogSection() {
         id: 'manga.cover_cache_max_age',
         title: t.manga_cover_cache_max_age,
         subtitle: t.manga_cover_cache_max_age_subtitle,
-        icon: Icons.image_outlined,
+        icon: FushiIcons.image,
         min: kMangaCoverCacheMinDays.toDouble(),
         max: kMangaCoverCacheMaxDays.toDouble(),
         divisions: (kMangaCoverCacheMaxDays - kMangaCoverCacheMinDays) ~/ 30,

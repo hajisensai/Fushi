@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -224,57 +225,57 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
   switch (tab) {
     case HomeTab.home:
       return AdaptiveNavItem(
-        icon: Icons.home_outlined,
-        selectedIcon: Icons.home,
+        icon: FushiIcons.home,
+        selectedIcon: FushiIcons.filled(FushiIcons.home),
         label: t.nav_home,
       );
     case HomeTab.books:
       return AdaptiveNavItem(
-        icon: Icons.menu_book_outlined,
-        selectedIcon: Icons.menu_book,
+        icon: FushiIcons.books,
+        selectedIcon: FushiIcons.filled(FushiIcons.books),
         label: t.books,
       );
     case HomeTab.manga:
       return AdaptiveNavItem(
-        icon: Icons.photo_library_outlined,
-        selectedIcon: Icons.photo_library,
+        icon: FushiIcons.manga,
+        selectedIcon: FushiIcons.filled(FushiIcons.manga),
         label: t.manga_library,
       );
     case HomeTab.video:
       return AdaptiveNavItem(
-        icon: Icons.movie_outlined,
-        selectedIcon: Icons.movie,
+        icon: FushiIcons.video,
+        selectedIcon: FushiIcons.filled(FushiIcons.video),
         label: t.nav_video,
       );
     case HomeTab.browse:
       // Mihon 的 Browse：来源 / 扩展 / 发现 / 下载（2026-09-27 由「下载」改名）。
       return AdaptiveNavItem(
-        icon: Icons.explore_outlined,
-        selectedIcon: Icons.explore,
+        icon: FushiIcons.browse,
+        selectedIcon: FushiIcons.filled(FushiIcons.browse),
         label: t.nav_browse,
       );
     case HomeTab.dictionaries:
       return AdaptiveNavItem(
-        icon: Icons.search_outlined,
-        selectedIcon: Icons.search,
+        icon: FushiIcons.lookup,
+        selectedIcon: FushiIcons.filled(FushiIcons.lookup),
         label: t.nav_lookup,
       );
     case HomeTab.games:
       return AdaptiveNavItem(
-        icon: Icons.sports_esports_outlined,
-        selectedIcon: Icons.sports_esports,
+        icon: FushiIcons.games,
+        selectedIcon: FushiIcons.filled(FushiIcons.games),
         label: t.nav_game,
       );
     case HomeTab.browserExtension:
       return AdaptiveNavItem(
-        icon: Icons.extension_outlined,
-        selectedIcon: Icons.extension,
+        icon: FushiIcons.browserExtension,
+        selectedIcon: FushiIcons.filled(FushiIcons.browserExtension),
         label: t.nav_browser_extension,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
-        icon: Icons.tune_outlined,
-        selectedIcon: Icons.tune,
+        icon: FushiIcons.settings,
+        selectedIcon: FushiIcons.filled(FushiIcons.settings),
         label: t.settings,
       );
   }

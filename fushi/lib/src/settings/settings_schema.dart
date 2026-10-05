@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -185,7 +186,7 @@ SettingsDestination buildReaderGroupDestination(
   return SettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
     title: title,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[SettingsSection(items: items)],
   );
 }
@@ -257,7 +258,7 @@ SettingsDestination buildVideoGroupDestination(
   return SettingsDestination(
     id: SettingsDestinationId.videoQuickSettings,
     title: title,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: sections.isEmpty
         ? <SettingsSection>[const SettingsSection(items: <SettingsItem>[])]
         : sections,
@@ -281,7 +282,7 @@ SettingsDestination buildReaderQuickSettingsDestination(
     id: SettingsDestinationId.readerQuickSettings,
     title: t.reader_settings_section,
     summary: t.source_description_epub,
-    icon: Icons.tune_outlined,
+    icon: FushiIcons.settings,
     sections: <SettingsSection>[
       sectionFor(ReaderGroup.layout, t.section_layout),
       sectionFor(ReaderGroup.behavior, t.settings_destination_reading_controls),
