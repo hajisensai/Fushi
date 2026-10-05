@@ -265,8 +265,8 @@ const double _kM3eRowGap = 2;
 /// 时间戳胶囊上下内边距之和。
 const double _kM3eChipPadVertical = 4;
 
-/// 收藏星与时间戳胶囊的间距。
-const double _kM3eStarGap = 4;
+/// 收藏行右侧给常驻实心星让出的额外宽度（星 + 左右留白，不含星本身）。
+const double _kM3eStarGap = 6;
 
 /// 分段列表首尾卡的大圆角 / 中间卡的小圆角。
 const double _kM3eRowOuterRadius = 18;
@@ -605,13 +605,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       subtitleTimestampColumnWidth(_effectiveFontSize, _hasHourTimestamps);
 
   /// 行内字幕文本列的可用宽度（与 [_buildRow] 的实际布局同源，见 [subtitleRowTextWidth]）。
-  double _rowTextWidth(double rowWidth) {
+  double _rowTextWidth(double rowWidth, {bool favorited = false}) {
     if (_m3e) {
       final double width = rowWidth -
           _kM3eRowPadLeft -
           _kM3eRowPadRight -
           _timestampColumnWidth -
-          kSubtitleRowTimestampGap;
+          kSubtitleRowTimestampGap -
+          (favorited ? _m3eStarSize + _kM3eStarGap : 0);
       return width < 48 ? 48 : width;
     }
     return subtitleRowTextWidth(
@@ -628,8 +629,23 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       ? widget.width - 2 * _kM3ePanelMargin - 2 * _kM3eListPaddingH
       : widget.width;
 
-  /// M3E 收藏星的尺寸（时间戳胶囊下方常驻）。
+  /// M3E 收藏星的尺寸（收藏行右上角常驻，正文右侧为它让位）。
   double get _m3eStarSize => _effectiveFontSize - 1;
+
+  /// M3E 时间戳胶囊的文字样式。测量与渲染**同一份**（显式行高 + 字重），不吃
+  /// DefaultTextStyle 的行高——否则单行行里胶囊比测得的高 2px，整行 RenderFlex
+  /// 溢出、胶囊被裁。
+  TextStyle _m3eChipTextStyle({Color? color}) => TextStyle(
+        color: color,
+        fontSize: _effectiveFontSize - 1,
+        height: 1.25,
+        fontWeight: FontWeight.w500,
+        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      );
+
+  /// 胶囊文字统一的行高行为（测量与渲染同源）。
+  static const TextHeightBehavior _kM3eChipHeightBehavior =
+      TextHeightBehavior();
 
   /// 行内字幕文本的样式。测量（[_measureRowExtent]）与渲染（[_buildRowText]）共用，
   /// 保证 `itemExtentBuilder` 给出的行高与真实换行结果一致（BUG-1034）。
@@ -688,7 +704,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final double textHeight = _measureTextHeight(
       text: text,
       style: _rowTextStyle(bold: bold),
-      maxWidth: _rowTextWidth(rowWidth),
+      maxWidth: _rowTextWidth(rowWidth, favorited: favorited),
     );
     // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标。
     double content = textHeight;
@@ -698,10 +714,17 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       maxWidth: double.infinity,
     );
     if (_m3e) {
-      // M3E 行：时间戳胶囊（+ 收藏星）与文本取最大；动作是叠层，不占行高。
-      double leading = timestampHeight + _kM3eChipPadVertical;
-      if (favorited) leading += _kM3eStarGap + _m3eStarSize;
-      if (content < leading) content = leading;
+      // M3E 行：行高 = max(时间戳胶囊高, 正文高, 收藏星) + 内边距；动作是叠层，
+      // 不占行高。胶囊高按渲染同款样式真量（[_m3eChipTextStyle]）。
+      final double chip = _measureTextHeight(
+            text: '0:00',
+            style: _m3eChipTextStyle(),
+            maxWidth: double.infinity,
+            heightBehavior: _kM3eChipHeightBehavior,
+          ) +
+          _kM3eChipPadVertical;
+      if (content < chip) content = chip;
+      if (favorited && content < _m3eStarSize) content = _m3eStarSize;
       return _kM3eRowPadVertical + content + _kM3eRowGap;
     }
     if (content < timestampHeight) content = timestampHeight;
@@ -720,12 +743,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     required String text,
     required TextStyle style,
     required double maxWidth,
+    TextHeightBehavior? heightBehavior,
   }) {
     final TextPainter painter = TextPainter(
       text: TextSpan(text: text, style: style),
       textAlign: TextAlign.start,
       textDirection: _textDirection,
       textScaler: _textScaler,
+      textHeightBehavior: heightBehavior,
       maxLines: null,
     );
     try {
@@ -2215,75 +2240,91 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             ],
           ),
           const SizedBox(height: 12),
-          // 工具行：窄面板（最窄 240）放不下时整组换到下一行，按钮永不被挤压变形。
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  toolButton(
-                    icon: _searchOpen ? Icons.search_off : Icons.search,
-                    tooltip: t.video_subtitle_list_search,
-                    selected: _searchOpen,
-                    onPressed: () => _toggleSearch(),
-                  ),
-                  const SizedBox(width: 4),
-                  toolButton(
-                    icon: _autoScroll
-                        ? Icons.vertical_align_center
-                        : Icons.pause_circle_outline,
-                    tooltip: t.video_subtitle_list_auto_scroll,
-                    selected: _autoScroll,
-                    onPressed: _toggleAutoScroll,
-                  ),
-                  const SizedBox(width: 4),
-                  fontStepper,
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  filter,
-                  if (_filter == VideoSubtitleListFilter.favorites) ...<Widget>[
-                    const SizedBox(width: 8),
-                    Text(
-                      t.video_favorite_count(count: _favoriteCueCount(cues)),
-                      maxLines: 1,
-                      softWrap: false,
-                      style: TextStyle(
-                        color: cs.primary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (widget.onExportFavorites != null)
-                      FushiTooltip(
-                        message: t.video_subtitle_list_export_favorites,
-                        child: IconButton(
-                          onPressed: _favoriteCueCount(cues) == 0
-                              ? null
-                              : () => widget.onExportFavorites!(
-                                    _favoriteCuesForExport(
-                                      widget.controller.cues,
-                                    ),
+          // 固定两行，状态切换不跳：第一行 = 工具按钮组；第二行 = 「全部 / 收藏」
+          // 分段（左）+ 收藏计数与导出（右，仅收藏态出现，行高固定）。
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                toolButton(
+                  icon: _searchOpen ? Icons.search_off : Icons.search,
+                  tooltip: t.video_subtitle_list_search,
+                  selected: _searchOpen,
+                  onPressed: () => _toggleSearch(),
+                ),
+                const SizedBox(width: 4),
+                toolButton(
+                  icon: _autoScroll
+                      ? Icons.vertical_align_center
+                      : Icons.pause_circle_outline,
+                  tooltip: t.video_subtitle_list_auto_scroll,
+                  selected: _autoScroll,
+                  onPressed: _toggleAutoScroll,
+                ),
+                const SizedBox(width: 4),
+                fontStepper,
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 40,
+            child: Row(
+              children: <Widget>[
+                filter,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _filter == VideoSubtitleListFilter.favorites
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: <Widget>[
+                            Flexible(
+                              child: Text(
+                                t.video_favorite_count(
+                                  count: _favoriteCueCount(cues),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: cs.primary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (widget.onExportFavorites != null)
+                              FushiTooltip(
+                                message: t.video_subtitle_list_export_favorites,
+                                child: IconButton(
+                                  onPressed: _favoriteCueCount(cues) == 0
+                                      ? null
+                                      : () => widget.onExportFavorites!(
+                                            _favoriteCuesForExport(
+                                              widget.controller.cues,
+                                            ),
+                                          ),
+                                  style: IconButton.styleFrom(
+                                    fixedSize: const Size.square(36),
+                                    minimumSize: const Size.square(36),
+                                    padding: EdgeInsets.zero,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                   ),
-                          style: IconButton.styleFrom(
-                            fixedSize: const Size.square(36),
-                            minimumSize: const Size.square(36),
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          color: cs.onSurfaceVariant,
-                          icon: const FushiIcon(Icons.share_outlined, size: 20),
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            ],
+                                  color: cs.onSurfaceVariant,
+                                  icon: const FushiIcon(
+                                    Icons.share_outlined,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
           ),
           // 搜索：展开成 M3E 搜索栏（收起时不占高度）。
           AnimatedSize(
@@ -2348,12 +2389,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
     final Widget leading = SizedBox(
       width: _timestampColumnWidth,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          // 时间戳：小 tonal 胶囊。
-          AnimatedContainer(
+      child: Align(
+        alignment: Alignment.topLeft,
+        // 时间戳：小 tonal 胶囊。
+        child: AnimatedContainer(
             duration: stateDuration,
             curve: FushiMotion.standard,
             padding: const EdgeInsets.symmetric(
@@ -2373,27 +2412,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 formatCueTimestamp(cue.startMs),
                 maxLines: 1,
                 softWrap: false,
-                style: TextStyle(
-                  color: secondary,
-                  fontSize: _effectiveFontSize - 1,
-                  fontWeight: FontWeight.w500,
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                ),
+                textHeightBehavior: _kM3eChipHeightBehavior,
+                style: _m3eChipTextStyle(color: secondary),
               ),
             ),
           ),
-          if (favorited) ...<Widget>[
-            const SizedBox(height: _kM3eStarGap),
-            // 已收藏：常驻实心星。
-            FushiIcon(
-              Icons.star_rounded,
-              size: _m3eStarSize,
-              color: selected ? cs.onPrimaryContainer : cs.tertiary,
-            ),
-          ],
-        ],
       ),
     );
 
@@ -2405,18 +2428,21 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ignoring: !showActions,
         child: ExcludeFocus(
           excluding: !showActions,
+          // 与行同色的左侧渐隐底：浮出的动作盖住正文末尾时，被盖的字渐隐进行色，
+          // 不再与图标叠字。
           child: DecoratedBox(
-            decoration: ShapeDecoration(
-              color: selected
-                  ? cs.primaryContainer
-                  : cs.surfaceContainerHighest,
-              shape: const StadiumBorder(),
-              shadows: const <BoxShadow>[
-                BoxShadow(color: Color(0x33000000), blurRadius: 6),
-              ],
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: <Color>[
+                  background.withValues(alpha: 0),
+                  background,
+                  background,
+                ],
+                stops: const <double>[0, 0.28, 1],
+              ),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              padding: const EdgeInsets.fromLTRB(24, 2, 2, 2),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
@@ -2505,28 +2531,42 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                                 textKey,
                               ),
                             ),
+                            // 已收藏：行尾常驻实心星（正文为它让位，测量同源）。
+                            if (favorited) ...<Widget>[
+                              const SizedBox(width: _kM3eStarGap),
+                              FushiIcon(
+                                Icons.star_rounded,
+                                size: _m3eStarSize,
+                                color: selected
+                                    ? cs.onPrimaryContainer
+                                    : cs.tertiary,
+                              ),
+                            ],
                           ],
                         ),
                       ),
-                      // 当前句：左侧 4px 指示条（弹簧淡入 + 伸展）。
+                      // 当前句：贴色块左缘的 4px 指示条（上下留 8，弹簧淡入）。
                       Positioned(
-                        left: 4,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: AnimatedContainer(
-                            duration: stateDuration,
-                            curve: FushiMotion.standard,
-                            width: 4,
-                            height: selected ? 28 : 0,
+                        left: 0,
+                        top: 8,
+                        bottom: 8,
+                        width: 4,
+                        child: AnimatedOpacity(
+                          opacity: selected ? 1 : 0,
+                          duration: stateDuration,
+                          curve: FushiMotion.standard,
+                          child: DecoratedBox(
                             decoration: BoxDecoration(
                               color: cs.primary,
-                              borderRadius: BorderRadius.circular(2),
+                              borderRadius: const BorderRadius.horizontal(
+                                right: Radius.circular(2),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      // 行尾动作：悬停 / 聚焦才浮出，不占文本列宽。
+                      // 行尾动作：悬停 / 聚焦才浮出，不占文本列宽；同色渐隐底盖住正文
+                      // 末尾，不叠字。
                       Positioned(top: 4, right: 6, child: actions),
                     ],
                   ),
