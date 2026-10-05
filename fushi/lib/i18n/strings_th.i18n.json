@@ -6728,5 +6728,6 @@
   "download_task_add_options": "Download options",
   "download_subscription_summary": "$n subscriptions · $enabled enabled",
   "subscription_rules_title": "Rules",
-  "subscription_history_title": "Match history"
+  "subscription_history_title": "Match history",
+  "asr_models_badge_partial": "Partially downloaded"
 }

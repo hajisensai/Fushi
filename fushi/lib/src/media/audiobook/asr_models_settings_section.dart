@@ -351,7 +351,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
                   )
                 : status.obtainedBytes > 0
                     ? (
-                        t.download_task_status_paused,
+                        t.asr_models_badge_partial,
                         FushiIcons.pending,
                         FushiTagTone.warning,
                       )
