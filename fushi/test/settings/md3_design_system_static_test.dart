@@ -3375,7 +3375,9 @@ void main() {
     );
 
     expect(tileSource, contains('FushiListItem('));
-    expect(tileSource, contains('FushiTagChip('));
+    // 2026-10 重设计：绑定渲染成键帽胶囊（_BindingKeycap，键盘拆成单枚键帽、
+    // 手柄用品牌按钮图标、鼠标 / 滚轮复用 _InputIconChip），不再是文字 tag chip。
+    expect(tileSource, contains('_BindingKeycap('));
     expect(tileSource, isNot(contains('ListTile(')));
     expect(tileSource, isNot(contains('=> Chip(')));
     expect(tileSource, isNot(contains('child: Chip(')));
@@ -3387,20 +3389,30 @@ void main() {
     // through the unified settings detail shell — the bespoke primary-coloured
     // _ScopeSectionHeader and the standalone FushiPageScaffold/ListView are
     // gone. Reset is an in-card AdaptiveSettingsRow action.
+    // 2026-10 单页重设计：分组卡仍是 AdaptiveSettingsSection，分组标题改成吸顶的
+    // _GroupHeader（scope.label + 计数 + 恢复默认），由浏览器 part 渲染。
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
     ).readAsStringSync();
-    final String scopeSections = _functionSource(
-      source,
-      'Widget _buildScopeSections(BuildContext context)',
-      '  @override',
+    final String browser = File(
+      'lib/src/pages/implementations/shortcut_settings/'
+      'shortcut_browser.part.dart',
+    ).readAsStringSync();
+    final String scopeSections = _sectionSource(
+      browser,
+      'Widget _buildResults(',
+      'Widget _buildRow(',
     );
 
     expect(scopeSections, contains('AdaptiveSettingsSection('));
-    expect(scopeSections, contains('title: scope.label'));
-    expect(scopeSections, contains('AdaptiveSettingsRow('));
-    expect(scopeSections, contains('t.shortcut_reset_defaults'));
-    expect(scopeSections, contains('_ActionTile('));
+    expect(scopeSections, contains('PinnedHeaderSliver('));
+    expect(scopeSections, contains('_GroupHeader('));
+    expect(scopeSections, contains('_buildRow('));
+    expect(browser, contains('scope.label'));
+    expect(browser, contains('t.shortcut_reset_defaults'));
+    expect(browser, contains('_ActionTile('));
+    expect(source, contains('AdaptiveSettingsRow('));
+    expect(source, contains('bodyFillsViewport: true'));
 
     // Converged: no bespoke section-header class, no standalone scaffold/list.
     expect(source, isNot(contains('class _ScopeSectionHeader')));

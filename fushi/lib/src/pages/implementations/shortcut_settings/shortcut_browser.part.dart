@@ -901,6 +901,7 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
   /// 免得与键位图切换、溢出菜单挤成一行放不下。
   Widget _buildDeviceSelector(BuildContext context, {required bool compact}) {
     return FushiAdjustableSegmented<ShortcutInputDevice>(
+      key: const Key('shortcut_device_toggle'),
       focusIdPrefix: 'shortcut-device',
       values: ShortcutInputDevice.values,
       selected: _device,
