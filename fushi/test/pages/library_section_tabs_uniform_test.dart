@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiThemeData;
 import 'package:fushi/utils.dart';
 
 import '../helpers/source_guard.dart';
@@ -129,6 +131,63 @@ void main() {
         // 没画出来的段必须能从「更多」里够到，而不是凭空消失。
         expect(find.byIcon(Icons.expand_more), findsOneWidget,
             reason: '$width 宽下有段没画出来，却没有「更多」入口');
+      }
+    }
+  });
+
+  testWidgets('Apple 设计下窄屏四段不被渐隐截断（浏览页「在线源」）', (
+    WidgetTester tester,
+  ) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 2026-10-05 用户截图：手机上浏览页顶部「发现 / 在线源 / 扩展 / 下载」放得下，
+    // 「在线源」却被 Tab 自带的渐隐切掉。根因：Apple 文字页签在 label 内边距
+    // 之内文字两侧各还有一圈内衬（kFushiAppleTabContentInset），铺满判据漏算，
+    // 判「等分放得下」，实际每格比文字窄。扫一段宽度，凡画出来的段都必须完整。
+    const List<String> labels = <String>['发现', '在线源', '扩展', '下载'];
+    for (double width = 240; width <= 420; width += 6) {
+      await tester.binding.setSurfaceSize(Size(width, 400));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(
+              seedColor: Colors.teal,
+              brightness: Brightness.dark,
+            ),
+            textTheme: Typography.material2021().white,
+            glass: FushiGlassMaterial.frosted,
+            glassDesign: true,
+          ),
+          themeAnimationDuration: Duration.zero,
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: LibrarySectionTabs<int>(
+                tabs: <LibrarySectionTab<int>>[
+                  for (int i = 0; i < labels.length; i++)
+                    LibrarySectionTab<int>(value: i, label: labels[i]),
+                ],
+                selected: 0,
+                onChanged: (int _) {},
+                focusIdPrefix: 'apple-inset-test',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (final String label in labels) {
+        final Finder text = find.text(label);
+        if (text.evaluate().isEmpty) continue;
+        final RenderParagraph paragraph =
+            tester.renderObject<RenderParagraph>(text);
+        expect(
+          paragraph.size.width,
+          greaterThanOrEqualTo(
+            paragraph.getMaxIntrinsicWidth(double.infinity) - 0.5,
+          ),
+          reason: '$width 宽下「$label」被压窄（渐隐截断）',
+        );
       }
     }
   });
