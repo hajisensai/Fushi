@@ -9628,7 +9628,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   Widget _buildSpeedSidePanel() {
-    final ColorScheme cs = _videoChromeColorScheme(context);
     final List<double> speedPresets = _speedMenuPresets();
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -9636,6 +9635,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       itemBuilder: (BuildContext ctx, int i) {
         final double speed = speedPresets[i];
         final bool selected = (speed - _playbackSpeed).abs() < 0.001;
+        // 勾读侧板内部主题（M3E 下是中性深色方案的 primary），不读页面主题——
+        // 浅色主题的 cs.primary 压在深色面板上发暗。
+        final ColorScheme cs = Theme.of(ctx).colorScheme;
         return FushiListTileControl(
           dense: true,
           title: Text('${speed}x'),
