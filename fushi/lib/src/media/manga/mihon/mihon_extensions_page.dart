@@ -180,9 +180,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   Future<bool> _confirmInsecureUrl(String url) => showFushiConfirmDialog(
     context: context,
     title: t.mihon_store_add,
-    message: '${t.mihon_extension_warning}
-
-$url',
+    message: '${t.mihon_extension_warning}\n\n$url',
     icon: Icons.warning_amber_rounded,
     confirmLabel: t.dialog_ok,
     destructive: true,
@@ -427,8 +425,7 @@ $url',
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
       title: t.mihon_store_remove,
-      message: '${store.name}
-${store.indexUrl}',
+      message: '${store.name}\n${store.indexUrl}',
       icon: Icons.delete_outline,
       confirmLabel: t.dialog_delete,
       destructive: true,
