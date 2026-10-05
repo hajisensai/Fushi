@@ -1,0 +1,13 @@
+## BUG-2975 · 视频库滚轮上下滚动回弹滚不动
+- **报告**：2026-10-06（用户：shishamo 反馈，Windows 桌面鼠标滚轮「在视频模块滚轮往下拖老是会有回弹，导致无法向下滚」，补充「向上也是」）
+- **真实性**：✅ 真 bug（代码路径推导，未在真机复现录证）。2026-10-05 新加的「滚动收起」浮动工具栏按**高度**收起：
+  - `fushi/lib/src/utils/components/fushi_floating_chrome.dart:223`（修复前）`FushiSpringReveal` 用 `Align(heightFactor)` 把工具区高度收到 0；`video_library_shell.dart:276-278`（工具栏行与内容竖排）与 `home_video_page.dart:3775`（页头 + 搜索筛选 + 标签行）都在 Column 里排在滚动视图上方 → 收起 / 弹回直接改变内容滚动视口的高度；
+  - 视口一变，`maxScrollExtent` 跟着变，滚动位置被夹紧（内容只比视口略长、或靠近底部时尤甚），内容在屏幕上整体跳动；
+  - `fushi_floating_chrome.dart:82`（修复前）`handleScrollNotification` 把**所有** `ScrollUpdateNotification.scrollDelta` 都当成用户方向，夹紧产生的反向位移被判成「往回滚」→ 弹回 → 视口又变矮 → 又被判成下滚 → 收起……双向自激，滚轮离散大步长最易触发，表现为上下都「回弹、滚不动」；
+  - 共享页头 `fushi_floating_page_chrome.dart:295`（修复前）`FushiScrollAwayChrome` 同样用 heightFactor 收起，`FushiPageScaffold` 里页头与正文竖排，存在同一类反馈（内容略长于视口时收起后夹回顶部 → `extentBefore<=0` 弹回）。
+- **[x] ① 已修复** — `8bf41805db9`：
+  - 新增 `FushiFloatingChromeOverlay`：工具区叠在内容上（Stack），收起只做位移 + 淡出，内容区尺寸恒定；内容经 `FushiFloatingChromeInset` 拿到恒定的顶部让位高度（工具区实测高度，不随显隐变），视频库主 `CustomScrollView` 把它加成顶部 sliver（内容滚到工具区底下），其它分区用 `FushiFloatingChromeInsetPadding` 整体让开；嵌套（外壳工具栏 + 页面页头）按外层 inset 叠放、一起滑出；
+  - 控制器只认用户滚动：同一视图视口高度变化那一帧、底部夹紧（停在底部仍在往回走）、越界回弹的位移都不计方向；回顶仍立即显示，离顶 64 内不收起；
+  - `FushiScrollAwayChrome` 收起不再改版面高度（只位移 + 淡出），`FushiPageScaffold` / M3E AppBar 的页头因此不再改变正文视口。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/fushi_floating_chrome_test.dart`（叠放显隐不改内容尺寸、inset 恒定；视口变化 / 底部夹紧不切显隐）、`fushi/test/pages/video_library_shell_test.dart`（下滚收起 / 上滚弹回时内容视口高度不变）。按 2026-10-06 用户指示未运行，待主代理合并后统一跑。
+- **备注**：`FushiPageScaffold` 的页头收起后原位留空（正文是任意 widget，无法统一加滚动内边距，故不叠放）。外壳大标题条（`FushiShellLargeTitleBar`，MD3 桌面 56→52 / 移动 64→52）仍按高度收起，二值 + 滞回，只在内容恰好比视口长不到几像素时可能抖，未改。需在 Windows 真机用滚轮上下验：视频库首页 / 系列 / 全部视频、靠近底部与内容略长于一屏两种情形。
