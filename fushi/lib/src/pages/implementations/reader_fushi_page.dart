@@ -107,6 +107,7 @@ import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
@@ -2074,10 +2075,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-1052 / BUG-1107 的形状）。页面不再持有任何可被重锚的会话计数字段。
   StudyClock? _studyClock;
 
-  /// 用户点底部状态行左侧的计时器手动暂停了会话计时。为 true 时 [_ensureStudyClock] /
-  /// 生命周期 resumed 都不再 `start()`，直到用户再点一次继续；切屏自动暂停
-  /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
-  bool _studyClockManualPause = false;
+  /// 阅读计时开始方式（手动 / 打开即开始 / 翻页后开始）与手动暂停旗的唯一持有者。
+  /// 打开书那一刻按设置定初值（[initState] 里建），会话内改设置不影响已打开的书。
+  late final ReaderStudyClockStartGate _studyClockStartGate;
+
+  /// 会话计时被手动暂停（用户点状态行计时器 / 统计侧栏 / 快捷键 P，或开始方式为
+  /// 「手动」/「翻页后开始」而尚未开始）。为 true 时 [_ensureStudyClock] / 生命周期
+  /// resumed 都不再 `start()`，直到用户点继续或（翻页后开始）首次向前翻页；切屏自动
+  /// 暂停（BUG-892）与之正交——账仍只在 [StudyClock] 一本。
+  bool get _studyClockManualPause => _studyClockStartGate.manualPause;
 
   /// app 切后台 / 桌面失焦期间为 true（`didChangeAppLifecycleState`）。BUG-2209：
   /// 后台听书跟随会经 [_ensureStudyClock] 反复到达，必须有一枚生命周期旗让它知道
@@ -2470,6 +2476,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewWasActive = _sourceReviewActive;
     _suppressPositionPersist = _sourceReviewActive;
     _sourceReviewSession?.addListener(_onSourceReviewChanged);
+    // 阅读计时开始方式：打开书这一刻定初值（手动 / 翻页后开始 = 先暂停）。
+    _studyClockStartGate = ReaderStudyClockStartGate(
+      appModelNoUpdate.readerStudyClockStartMode,
+    );
     // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
     _chrome.addListener(_onChromeControllerChanged);
     // 应用内悬浮球开关变了（设置 → 悬浮球、备份恢复、同步）：栏关掉只在球开着时

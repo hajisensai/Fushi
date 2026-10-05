@@ -2865,8 +2865,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// （`_SessionClock`，侧栏不遮正文故不停表）。
   void _toggleStudyClockManualPause() {
     _ensureStudyClock();
-    final bool pause = !_studyClockManualPause;
-    _rebuild(() => _studyClockManualPause = pause);
+    // 开始方式门持有暂停旗：手动停 / 续同时结束「翻页后开始」的等待（用户已亲手决定）。
+    _rebuild(() => _studyClockStartGate.toggleManualPause());
     // 统一判据（BUG-2209）：切后台期间点「继续」只是清旗、回前台再起表。
     _syncStudyClockRunState();
   }

@@ -67,3 +67,68 @@ bool readerStudyClockTurnAdvanced({
   final int midpoint = prevStart + (prevEnd - prevStart) ~/ 2;
   return start > prevStart && start >= midpoint;
 }
+
+/// 阅读器一次会话（一个阅读器 State）里「手动暂停旗 + 等首次翻页」两枚状态的唯一
+/// 持有者。页面的 `_studyClockManualPause` 只读它的 [manualPause]；任何翻转后由页面
+/// 调 `_syncStudyClockRunState()` 把时钟运行态对齐回 `studyClockMayRun`。
+///
+///  * 打开书：[ReaderStudyClockStartMode.startsPaused] 决定初始是否暂停；
+///  * 用户手动停 / 续（计时键 / 统计侧栏 / 快捷键 P）：[toggleManualPause]，同时结束
+///    「等首次翻页」——用户已亲手决定，之后翻页不再替他起表；
+///  * 「翻页后开始」：[noteUnitArrival] 见到一次向前推进（[readerStudyClockTurnAdvanced]）
+///    或 [noteAudiobookPlaying] 见到有声书开始出声，就清掉暂停旗，只触发一次。
+class ReaderStudyClockStartGate {
+  ReaderStudyClockStartGate(this.mode)
+      : _manualPause = mode.startsPaused,
+        _awaitingFirstTurn = mode.awaitsFirstPageTurn;
+
+  /// 本次会话打开时的开始方式（会话内改设置不影响已打开的书）。
+  final ReaderStudyClockStartMode mode;
+
+  bool _manualPause;
+  bool _awaitingFirstTurn;
+
+  /// 时钟此刻是否被（用户 / 开始方式）暂停——喂 `studyClockMayRun(manualPause:)`。
+  bool get manualPause => _manualPause;
+
+  /// 是否仍在等首次翻页自动起表。
+  bool get awaitingFirstTurn => _awaitingFirstTurn;
+
+  /// 用户手动停 / 续；返回翻转后的暂停态。
+  bool toggleManualPause() {
+    _awaitingFirstTurn = false;
+    _manualPause = !_manualPause;
+    return _manualPause;
+  }
+
+  /// 阅读位置从 [previous] 落定到 `[start, end)`。「翻页后开始」且这是一次向前推进时
+  /// 清暂停旗并返回 true（调用方随即 sync 时钟）；其余一律 false、不改状态。
+  bool noteUnitArrival({
+    required (int, int)? previous,
+    required int start,
+    required int end,
+  }) {
+    if (!_awaitingFirstTurn) return false;
+    if (!readerStudyClockTurnAdvanced(
+      previous: previous,
+      start: start,
+      end: end,
+    )) {
+      return false;
+    }
+    return _autoStart();
+  }
+
+  /// 有声书播放态。「翻页后开始」下开始出声（用户按了播放）同样算开始阅读；
+  /// 返回 true 表示刚刚自动起表。
+  bool noteAudiobookPlaying(bool playing) {
+    if (!_awaitingFirstTurn || !playing) return false;
+    return _autoStart();
+  }
+
+  bool _autoStart() {
+    _awaitingFirstTurn = false;
+    _manualPause = false;
+    return true;
+  }
+}
