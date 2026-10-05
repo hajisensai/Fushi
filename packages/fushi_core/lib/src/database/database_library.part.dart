@@ -818,6 +818,59 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     };
   }
 
+  /// 首页 dashboard 专用：**只为本机库里还存在的条目**（视频 / EPUB / SRT 书 /
+  /// 游戏）一次查出折叠归属主合集（与 [getPrimaryCollectionIdByEntry] 同口径的
+  /// MIN(collection_id)）及其在该主合集里的组内 sortIndex。
+  ///
+  /// 为什么不直接 [getPrimaryCollectionIdByEntry] + [getAllCollectionItems]：两者
+  /// 都是全表物化。成员表可以远大于本机库——在线源 / 播放列表合集会把成百上千个
+  /// 本机并不存在的集数挂进成员表（实测开发库 3160 个合集、84,735 行成员，本机
+  /// 视频只有 216 个），首页为了几十张卡把八万多行跨 isolate 搬进 Dart 再建两张
+  /// Map，单这两步就是 640–950 ms，正是首屏「内容出来得慢」的大头。这里先在
+  /// SQL 侧按本机条目收窄，再按主键 (collection_id, media_type, entry_key) 回查
+  /// sortIndex，结果行数 = 本机已入合集的条目数。
+  ///
+  /// EPUB 成员键 v83 起是 `epub_books.uid`，旧行可能仍是 bookKey，两种都收。
+  /// 键形同 [getPrimaryCollectionIdByEntry]：`'<mediaType>|<entryKey>'`。
+  Future<Map<String, ({int collectionId, int sortIndex})>>
+      getLocalPrimaryCollectionMembership() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.media_type, i.entry_key, i.collection_id, i.sort_index '
+      'FROM ('
+      '  SELECT media_type, entry_key, MIN(collection_id) AS cid '
+      '  FROM media_collection_items '
+      "  WHERE (media_type = 'video' "
+      '         AND entry_key IN (SELECT book_uid FROM video_books)) '
+      "     OR (media_type = 'epub' "
+      '         AND (entry_key IN (SELECT uid FROM epub_books) '
+      '              OR entry_key IN (SELECT book_key FROM epub_books))) '
+      "     OR (media_type = 'srt' "
+      '         AND entry_key IN (SELECT uid FROM srt_books)) '
+      "     OR (media_type = 'game' "
+      '         AND entry_key IN (SELECT CAST(id AS TEXT) FROM galgames)) '
+      '  GROUP BY media_type, entry_key'
+      ') p '
+      'JOIN media_collection_items i '
+      '  ON i.collection_id = p.cid '
+      ' AND i.media_type = p.media_type '
+      ' AND i.entry_key = p.entry_key',
+      readsFrom: {
+        mediaCollectionItems,
+        videoBooks,
+        epubBooks,
+        srtBooks,
+        galgames,
+      },
+    ).get();
+    return <String, ({int collectionId, int sortIndex})>{
+      for (final QueryRow r in rows)
+        '${r.read<String>('media_type')}|${r.read<String>('entry_key')}': (
+          collectionId: r.read<int>('collection_id'),
+          sortIndex: r.read<int>('sort_index'),
+        ),
+    };
+  }
+
   Future<int> _nextCollectionSortIndex(int collectionId) async {
     final MediaCollectionItemRow? last = await (select(mediaCollectionItems)
           ..where((t) => t.collectionId.equals(collectionId))

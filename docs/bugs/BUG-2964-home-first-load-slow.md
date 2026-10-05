@@ -1,0 +1,16 @@
+## BUG-2964 · 首页首屏加载慢：合集成员表全表物化 + 串行读
+- **报告**：2026-10-05（用户：协作者 shishamo 反馈「首屏加载性能有问题」，首页各区先挂菊花 / 空态几百毫秒才出内容，切回首页每次重来一遍）
+- **真实性**：✅ 真 bug。按阶段计时（开发数据根 DB 拷贝，3160 个合集 / 84,735 行合集成员、本机视频 216 个）：
+  - `fushi/lib/src/pages/implementations/home_dashboard_page.dart` `_loadDashboardDataUnsafe`（修复前）为了几十张「继续」卡，调 `getPrimaryCollectionIdByEntry()` + `getAllCollectionItems()` 把整张成员表两次全表物化进 Dart 再建两张 Map——在线源 / 播放列表合集把成员表撑到八万多行，单这两步 640–950 ms，是首屏「内容出来得慢」的大头；
+  - 游戏库 `galgameRepo.load()` 与 Bangumi 追踪状态 `loadStatus()` 排在整批 `Future.wait` 之后串行等待（追踪状态在 setState 前又被同步再查一次）；
+  - 首页不在 keep-alive 名单，每次切回首页都重建、`initState` 重跑整批聚合，期间各区只能挂加载态。
+- **[x] ① 已修复** —
+  - `packages/fushi_core/lib/src/database/database_library.part.dart` 新增 `getLocalPrimaryCollectionMembership()`：SQL 侧先按本机库（video_books / epub_books 的 uid 与旧 bookKey / srt_books / galgames）收窄，再按主键回查主合集 sortIndex，一次查回，结果行数 = 本机已入合集的条目数；
+  - 首页加载改用它，游戏库与追踪状态并进同一批 `Future.wait`，追踪状态只查一次；
+  - 本地聚合结果按数据库实例做快照（`_HomeDashboardSnapshot` + `Expando`），页面重建时首帧直接用上一轮快照渲染，后台重拉后整体替换；首次进入时各区挂同轮廓骨架（`home_dashboard_widgets.dart`）而不是菊花 / 空态。
+  - 提交：见 git log（`perf(home): …`）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/database/media_collections_dao_test.dart`「BUG-2964 getLocalPrimaryCollectionMembership」：与旧两步逐键一致、本机不存在的成员被挡掉、EPUB 旧 bookKey 行照收；
+  - `fushi/test/tools/load_paths_perf_guard_test.dart`「_loadDashboardDataUnsafe fans out its reads」：钉住新查询、禁回两次全表物化、游戏 / 追踪进同一批、追踪只查一次、快照写入；
+  - `fushi/test/pages/home_dashboard_page_test.dart`「BUG-2964 · 切回首页（页面重建）首帧直接用上一轮快照」：同一 ProviderScope 卸载再挂页面，第一帧无骨架、内容已在。
+- **备注**：修前修后分阶段数据见下（`test/_perf_tmp` 临时计时脚手架，不入库）。
