@@ -6,8 +6,10 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 一台服务器的首页（2026-10 重做）：页头（连接状态点 + 服务器名 + 切换服务器
@@ -173,54 +175,57 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
-    return Scaffold(
-      body: Column(
-        children: <Widget>[
-          FushiPageHeader.customTitle(
-            title: _buildTitle(context, tokens),
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.gap,
+    final FushiMotionScheme motion = context.fushiMotion;
+    // 本视图是嵌套 Navigator 里的一条路由：页面外壳自带 Scaffold（Material 祖先）
+    // 与 M3E 悬浮页头（随滚动收起）。
+    return MediaServerPageFrame(
+      header: FushiPageHeader.customTitle(
+        title: _buildTitle(context, tokens),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.gap,
+        ),
+        leading: widget.showBackButton
+            ? BackButton(onPressed: () => Navigator.of(context).maybePop())
+            : null,
+        actions: <Widget>[
+          FushiIconButton(
+            key: const ValueKey<String>('media-server-home-search'),
+            icon: FushiIcons.search,
+            tooltip: t.search,
+            label: t.search,
+            focusId: FushiFocusId('${widget.session.serverId}-home-search'),
+            onTap: () => openMediaServerGrid(
+              context,
+              widget.session,
+              parentId: null,
+              title: t.search,
             ),
-            leading: widget.showBackButton
-                ? BackButton(onPressed: () => Navigator.of(context).maybePop())
-                : null,
-            actions: <Widget>[
-              FushiIconButton(
-                key: const ValueKey<String>('media-server-home-search'),
-                icon: Icons.search_rounded,
-                tooltip: t.search,
-                label: t.search,
-                focusId: FushiFocusId('${widget.session.serverId}-home-search'),
-                onTap: () => openMediaServerGrid(
-                  context,
-                  widget.session,
-                  parentId: null,
-                  title: t.search,
-                ),
-              ),
-              FushiIconButton(
-                key: const ValueKey<String>('media-server-home-refresh'),
-                icon: Icons.refresh_rounded,
-                tooltip: t.refresh,
-                focusId: FushiFocusId(
-                  '${widget.session.serverId}-home-refresh',
-                ),
-                onTap: () => unawaited(_load()),
-              ),
-            ],
           ),
-          Expanded(child: _buildBody()),
+          FushiIconButton(
+            key: const ValueKey<String>('media-server-home-refresh'),
+            icon: FushiIcons.refresh,
+            tooltip: t.refresh,
+            focusId: FushiFocusId('${widget.session.serverId}-home-refresh'),
+            onTap: () => unawaited(_load()),
+          ),
         ],
+      ),
+      // 骨架 / 错误 / 正文之间交叉淡入（effects 弹簧，不过冲）。
+      body: AnimatedSwitcher(
+        duration: motion.effectsDefault.duration,
+        switchInCurve: motion.effectsDefault.curve,
+        switchOutCurve: motion.effectsDefault.curve,
+        child: _buildBody(),
       ),
     );
   }
 
-  /// 页头标题：状态点 + 服务器名（Apple 大标题粗体收字距 / MD3 页面标题）+
-  /// 多台服务器时的「切换服务器」菜单钮。
+  /// 页头标题：状态点 + 服务器名 + 多台服务器时的「切换服务器」菜单钮。
+  /// Material（M3E）下整组装进一枚标题胶囊（与其它页头的标题胶囊同形同字阶）；
+  /// Apple 是大标题粗体收字距。
   Widget _buildTitle(BuildContext context, FushiDesignTokens tokens) {
     final bool apple = isGlassDesign(context);
     final TextStyle style = apple
@@ -228,10 +233,11 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
             fontWeight: FontWeight.w700,
             letterSpacing: -0.4,
           )
-        : tokens.type.pageTitle;
+        : FushiPageChromeTitle.titleStyleOf(context);
     final ValueChanged<MediaServerBrowser>? onSwitch = widget.onSwitchServer;
     final bool canSwitch = onSwitch != null && widget.servers.length > 1;
-    return Row(
+    final Widget row = Row(
+      mainAxisSize: apple ? MainAxisSize.max : MainAxisSize.min,
       children: <Widget>[
         MediaServerStatusDot(status: _status),
         SizedBox(width: tokens.spacing.gap + 2),
@@ -248,7 +254,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
             key: const ValueKey<String>('media-server-home-switch'),
             tooltip: t.media_server_servers_title,
             icon: FushiIcon(
-              Icons.unfold_more_rounded,
+              FushiIcons.expandMore,
               color: apple
                   ? appleColorsOf(context).secondaryLabel
                   : tokens.surfaces.onVariant,
@@ -275,6 +281,14 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           ),
       ],
     );
+    if (apple) return row;
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: FushiPageChromeCapsule(
+        padding: EdgeInsetsDirectional.fromSTEB(20, 4, canSwitch ? 4 : 20, 4),
+        child: DefaultTextStyle.merge(style: style, child: row),
+      ),
+    );
   }
 
   Widget _buildBody() {
@@ -282,22 +296,25 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
     final Object? error = _librariesError;
     if (error != null) {
       return FushiPlaceholderMessage(
-        icon: Icons.cloud_off_outlined,
+        key: const ValueKey<String>('media-server-home-error'),
+        icon: FushiIcons.cloudOff,
+        tone: FushiPlaceholderTone.error,
         message: t.jellyfin_libraries_load_failed,
         detail: '$error',
         action: FushiFilledButton.icon(
           key: const ValueKey<String>('media-server-home-retry'),
           onPressed: () => unawaited(_load()),
-          icon: const FushiIcon(Icons.refresh_rounded),
+          icon: const FushiIcon(FushiIcons.refresh),
           label: Text(t.retry),
         ),
       );
     }
     final List<MediaServerLibrary>? libraries = _libraries;
-    if (libraries == null) return const FushiLoadingView();
+    if (libraries == null) return _buildSkeleton(tokens);
     final String prefix = widget.session.serverId;
     final double cardHeight = mediaServerRowCardHeight(context);
     return FushiEntranceScope(
+      key: const ValueKey<String>('media-server-home-content'),
       replayKey: _generation,
       child: CustomScrollView(
         key: PageStorageKey<String>('$prefix-home'),
@@ -322,7 +339,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
           if (libraries.isEmpty)
             SliverToBoxAdapter(
               child: FushiPlaceholderMessage(
-                icon: Icons.video_library_outlined,
+                icon: FushiIcons.collection,
                 message: t.media_server_items_empty,
               ),
             )
@@ -346,6 +363,74 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
             top: false,
             sliver: SliverToBoxAdapter(
               child: SizedBox(height: tokens.spacing.section),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 加载骨架：「媒体库」标题条 + 一排库卡块 + 一条海报横滚行，与正文同几何
+  /// （库卡 16:9 外卡、海报 2:3 + 两行文字），数据回来时版面不跳。
+  Widget _buildSkeleton(FushiDesignTokens tokens) {
+    final double cardHeight = mediaServerRowCardHeight(context);
+    final bool narrow = MediaQuery.sizeOf(context).width < 600;
+    Widget titleBar() => Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: FushiSkeleton(
+        width: 120,
+        height: 18,
+        borderRadius: BorderRadius.circular(9),
+      ),
+    );
+    return FushiSkeletonShimmer(
+      key: const ValueKey<String>('media-server-home-skeleton'),
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.card,
+          tokens.spacing.page,
+          tokens.spacing.section,
+        ),
+        children: <Widget>[
+          titleBar(),
+          SizedBox(height: tokens.spacing.gap),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) {
+              final double cell = narrow
+                  ? kMediaServerLibraryCardWidth
+                  : kMediaServerLibraryCardWidth + 80;
+              final int columns =
+                  ((box.maxWidth + tokens.spacing.card) /
+                          (cell + tokens.spacing.card))
+                      .ceil()
+                      .clamp(1, 6)
+                      .toInt();
+              return Row(
+                children: <Widget>[
+                  for (int i = 0; i < columns; i++) ...<Widget>[
+                    if (i > 0) SizedBox(width: tokens.spacing.card),
+                    const Expanded(child: MediaServerLibraryCardSkeleton()),
+                  ],
+                ],
+              );
+            },
+          ),
+          SizedBox(height: tokens.spacing.section),
+          titleBar(),
+          SizedBox(height: tokens.spacing.gap),
+          SizedBox(
+            height: cardHeight,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 8,
+              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
+              itemBuilder: (BuildContext context, int index) => const SizedBox(
+                width: kMediaServerRowCardWidth,
+                child: MediaServerPosterSkeleton(),
+              ),
             ),
           ),
         ],
