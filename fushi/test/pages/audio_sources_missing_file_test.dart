@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/utils.dart';
@@ -166,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.local_audio_file_reselect));
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_up).last);
+    await tester.tap(find.byIcon(FushiIcons.expandLess).last);
     await tester.pump();
     await tester.tap(find.byType(Switch).last);
     await tester.pump();
