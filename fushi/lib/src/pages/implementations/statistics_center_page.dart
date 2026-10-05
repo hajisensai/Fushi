@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
+import 'package:fushi/src/pages/implementations/stat_overview.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
@@ -145,10 +146,27 @@ class _StatsOverviewTab extends ConsumerStatefulWidget {
 class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   bool _loading = true;
   String? _error;
+
+  /// 完整跨域日面（`StatFacts.daily`）：目标分子的输入（目标是跨域的每日学习
+  /// 目标，不随媒体筛选变口径），也是重新筛选的源。
+  List<StatFact> _allDaily = <StatFact>[];
+
+  /// 当前媒体筛选（[_filter]）下的日面：时段卡 / 关键指标 / 范围区块都吃它。
+  /// 「全部」档与 [_allDaily] 同一批行。
   List<StatFact> _daily = <StatFact>[];
 
   /// 跨域会话流（`StatFacts.sessions`：书 / 视频 / 游戏混排，按结束时刻倒序）。
+  List<StudySession> _allSessions = <StudySession>[];
+
+  /// 当前筛选下的会话流。
   List<StudySession> _sessions = <StudySession>[];
+
+  /// 本轮加载的计数面（查词 / 制卡 / 收藏），换筛选时按 [StatMediaFilterX.source]
+  /// 重新切——与三个域 tab 同一个切分判据。
+  StatCounterFacts _counters = StatCounterFacts.empty;
+
+  /// 总览的媒体类型筛选（2026-10 重设计）：只活在本 tab，重进统计中心回到「全部」。
+  StatMediaFilter _filter = StatMediaFilter.all;
   Map<String, String> _bookKeyByTitle = <String, String>{};
   Set<String> _ambiguousBookTitles = <String>{};
   Map<String, String> _epubUidByBookKey = <String, String>{};
@@ -197,6 +215,39 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (mounted) setState(() {});
   }
 
+  /// 按 [_filter] 从本轮加载的完整数据重切一遍（不重查库）。
+  ///
+  /// 「全部」= 不传 source（三个域 tab 各传自己的那一个），所以总览的数字恒等于
+  /// 三个 tab 之和；单域档与对应域 tab 同一个 source——同一批行、同一个分桶函数，
+  /// 没有第二条口径。分桶的「现在」取本轮窗口（[_window]，BUG-2219）。
+  void _applyFilter() {
+    final StatSourceKind? source = _filter.source;
+    final DateTime now = _window.now;
+    _daily = filterStatFacts(_allDaily, _filter);
+    _byDay = sumStatDaysByKey(_daily);
+    _sessions = filterStudySessions(_allSessions, _filter);
+    _lookupEvents = _counters.lookupEvents(source: source).toList();
+    _minedEvents = _counters.minedEvents(source: source).toList();
+    _lookup = bucketActivityByDateKey(_lookupEvents, now);
+    _mined = bucketActivityByDateKey(_minedEvents, now);
+    _favorited = bucketActivityByDateKey(
+      _counters.favoriteWordEvents(source: source),
+      now,
+    );
+    _favoritedSentences = bucketActivityByDateKey(
+      _counters.favoriteSentenceEvents(source: source),
+      now,
+    );
+  }
+
+  void _selectFilter(StatMediaFilter filter) {
+    if (filter == _filter) return;
+    setState(() {
+      _filter = filter;
+      _applyFilter();
+    });
+  }
+
   /// 加载失败后的重试：先回到加载态（按钮不可连点），再重新聚合。
   void _retryLoad() {
     setState(() {
@@ -222,23 +273,11 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         activityLimit: 0,
         includeCounters: true,
       );
-      _daily = facts.daily;
-      _byDay = sumStatDaysByKey(_daily);
-      _sessions = facts.sessions;
-      // 跨域 = 不传 source（三个域 tab 各传自己的那一个），所以总览的四个数字
-      // 恒等于三个 tab 之和：同一批行、同一个分桶函数，没有第二条口径。
-      final DateTime now = DateTime.now();
-      _window = StatWindow(now);
-      final StatCounterFacts counters = facts.counters;
-      _lookupEvents = counters.lookupEvents().toList();
-      _minedEvents = counters.minedEvents().toList();
-      _lookup = bucketActivityByDateKey(counters.lookupEvents(), now);
-      _mined = bucketActivityByDateKey(counters.minedEvents(), now);
-      _favorited = bucketActivityByDateKey(counters.favoriteWordEvents(), now);
-      _favoritedSentences = bucketActivityByDateKey(
-        counters.favoriteSentenceEvents(),
-        now,
-      );
+      _allDaily = facts.daily;
+      _allSessions = facts.sessions;
+      _counters = facts.counters;
+      _window = StatWindow(DateTime.now());
+      _applyFilter();
       // BUG-2216：同名 ≥2 本的 title 不进反查表（贴给任意一本都是错贴）。
       _bookKeyByTitle = uniqueBookKeyByTitle(facts.epubRows);
       _ambiguousBookTitles = ambiguousBookTitles(facts.epubRows);
@@ -281,8 +320,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 四个 tab 的动作行**逐颗同形**（用户 2026-09-10「所有界面都要统一」）：
     // 目标 → 刷新 → 清空全部统计。此前是四种排列（总览无清空、观看 / 游戏无目标），
-    // 横着切 tab 时按钮在原地变意思。目标入口的理由与 BUG-970 同：目标卡在未设目标
-    // 时整卡隐藏（[_buildGoalCard]），没有常驻入口就永远设不了第一个目标。
+    // 横着切 tab 时按钮在原地变意思。目标入口的理由与 BUG-970 同：没有常驻入口就
+    // 永远设不了第一个目标（2026-10 起总览的目标面板未设时也显示引导、可点）。
     // 本 tab 是跨域视图，所以这里的「清空」= 三个域一起清（[_confirmAndClearAll]）。
     final List<Widget> actions = <Widget>[
       FushiIconButton(
@@ -330,66 +369,78 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         ),
       );
     }
+    return _buildOverviewBody(tokens);
+  }
+
+  /// 总览主体：数据切片 + 各区块的装配；排布（宽 / 窄、错峰进场、空数据态）
+  /// 由 [StatOverviewBody] 一处决定，信息架构见那里的文档。
+  Widget _buildOverviewBody(FushiDesignTokens tokens) {
     final StatWindow w = _window;
     final StatRange range = _range;
-    StatPaneSliver box(StatPane pane, Widget child) =>
-        StatPaneSliver(pane, SliverToBoxAdapter(child: child));
-    // 与三个域 tab 同一套自适应主体：竖屏自上而下，横屏左「目标 / 时段卡 / 范围」
-    // 右「跨域会话流」。BUG-2440 的底部安全区让开由 [buildStatTailSliver] 统一补。
-    return buildStatAdaptiveScrollView(
-      context,
-      sections: (double _) => <StatPaneSliver>[
-        box(StatPane.overview, _buildGoalCard(tokens, w)),
-        box(StatPane.overview, _buildSummaryCards(w)),
-        box(
-          StatPane.overview,
-          StatRangeBar(range: range, onChanged: _selectRange),
+    final bool empty = _daily.isEmpty && _sessions.isEmpty;
+    final Widget filterBar = StatMediaFilterBar(
+      selected: _filter,
+      onChanged: _selectFilter,
+    );
+    final Widget hero = StatOverviewHero(
+      kpis: computeStatOverviewKpis(_daily, w),
+      goalChars: ref.read(appProvider).readingGoalDailyChars,
+      goalProgressChars: studyGoalCharsForDay(_allDaily, w.todayKey),
+      onEditGoal: _loading ? null : () => unawaited(_editGoals()),
+    );
+    if (empty) {
+      return StatOverviewBody(
+        replayKey: _filter,
+        filterBar: filterBar,
+        hero: hero,
+        emptyState: const StatOverviewEmpty(),
+        tail: buildStatTailSliver(context),
+      );
+    }
+    return StatOverviewBody(
+      replayKey: _filter,
+      filterBar: filterBar,
+      hero: hero,
+      tail: buildStatTailSliver(context),
+      trend: <Widget>[
+        StatRangeBar(range: range, onChanged: _selectRange),
+        buildStatRangeChartSection(context, range, _byDay),
+        buildStatRangeSummary(
+          context,
+          range,
+          _byDay,
+          extraLines: <StatSummaryLine>[
+            if (statBookCphOf(_daily, range.contains) case final String cph)
+              StatSummaryLine(label: t.stat_reading_speed, value: cph),
+            StatSummaryLine(
+              label: t.stat_lookup,
+              value: '${sumStatEventsInRange(_lookupEvents, range)}',
+            ),
+            StatSummaryLine(
+              label: t.stat_mined,
+              value: '${sumStatEventsInRange(_minedEvents, range)}',
+            ),
+          ],
         ),
-        box(
-          StatPane.overview,
-          buildStatRangeCalendarSection(
-            context,
-            byDay: _byDay,
-            now: w.now,
-            onDaySelected: _selectDay,
-          ),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: w.now,
+          onDaySelected: _selectDay,
         ),
-        box(
-          StatPane.overview,
-          buildStatRangeChartSection(context, range, _byDay),
-        ),
-        box(
-          StatPane.overview,
-          buildStatRangeSummary(
-            context,
-            range,
-            _byDay,
-            extraLines: <StatSummaryLine>[
-              if (statBookCphOf(_daily, range.contains) case final String cph)
-                StatSummaryLine(label: t.stat_reading_speed, value: cph),
-              StatSummaryLine(
-                label: t.stat_lookup,
-                value: '${sumStatEventsInRange(_lookupEvents, range)}',
-              ),
-              StatSummaryLine(
-                label: t.stat_mined,
-                value: '${sumStatEventsInRange(_minedEvents, range)}',
-              ),
-            ],
-          ),
-        ),
-        box(
-          StatPane.detail,
-          buildStatSessionSection(
-            context,
-            sessions: _sessions,
-            titleOf: _sessionTitle,
-            collectionOf: _sessionCollectionName,
-            coverOf: _sessionCover,
-            onDelete: _deleteSession,
-            onEdit: _editSession,
-            onClearAll: _clearSessions,
-          ),
+      ],
+      details: <Widget>[
+        StatOverviewSectionHeader(title: t.stat_overview_periods),
+        _buildSummaryCards(w),
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: _sessionTitle,
+          collectionOf: _sessionCollectionName,
+          coverOf: _sessionCover,
+          onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
         ),
       ],
     );
@@ -401,7 +452,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       context,
       ref.read(appProvider),
       recentDailyAverage:
-          statRecentDailyAverageChars(_daily, _window.lastDayKeys(7)),
+          statRecentDailyAverageChars(_allDaily, _window.lastDayKeys(7)),
     );
     if (saved && mounted) setState(() {});
   }
@@ -527,50 +578,6 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Future<void> _clearSessions(List<StudySession> batch) async {
     await deleteStudySessions(ref.read(appProvider).database, batch);
     if (mounted) await _load();
-  }
-
-  /// 跨域「今日目标」进度卡。目标未设时整卡隐藏（动作行的旗标按钮是常驻入口）。
-  /// 2026-10 体验优化：卡片本身可点，直接进目标编辑（此前只读，用户找不到改法）。
-  Widget _buildGoalCard(FushiDesignTokens tokens, StatWindow w) {
-    final int goal = ref.read(appProvider).readingGoalDailyChars;
-    if (goal <= 0) return const SizedBox.shrink();
-    final int todayChars = studyGoalCharsForDay(_daily, w.todayKey);
-    final double fraction = (todayChars / goal).clamp(0.0, 1.0);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.card,
-        tokens.spacing.card,
-        tokens.spacing.card,
-        0,
-      ),
-      child: FushiCard(
-        onTap: _loading ? null : () => unawaited(_editGoals()),
-        child: Row(
-          children: <Widget>[
-            Text(t.stat_goal, style: tokens.type.metadata),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: ClipRRect(
-                borderRadius: tokens.radii.chipRadius,
-                child: FushiLinearProgressIndicator(
-                  value: fraction,
-                  minHeight: 6,
-                  // 轨道不传 surfaces.card：它与外层 FushiCard 同一档面色，整条
-                  // 隐形；用进度条默认轨道（MD3 secondaryContainer / Apple
-                  // systemFill）。
-                  color: statChartColorsOf(context).series,
-                ),
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            Text(
-              t.stat_goal_progress(read: todayChars, goal: goal),
-              style: tokens.type.metadata,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   /// 四张跨域时段卡：主值=学习总时长，副行=学习总字数 + 查词 / 制卡 / 收藏词 /

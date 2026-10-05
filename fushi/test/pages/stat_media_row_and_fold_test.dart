@@ -138,11 +138,16 @@ void main() {
     );
     expect(find.text(t.stat_analysis), findsOneWidget);
     expect(find.text('INSIDE'), findsNothing, reason: '默认收起');
+    // 2026-10 重设计：chevron 恒为 expand_more，展开时经 AnimatedRotation 转半圈。
     expect(find.byIcon(Icons.expand_more), findsOneWidget);
+    double turns() => tester
+        .widget<AnimatedRotation>(find.byType(AnimatedRotation))
+        .turns;
+    expect(turns(), 0);
     await tester.tap(find.text(t.stat_analysis));
     await tester.pumpAndSettle();
     expect(find.text('INSIDE'), findsOneWidget);
-    expect(find.byIcon(Icons.expand_less), findsOneWidget);
+    expect(turns(), 0.5);
     await tester.tap(find.text(t.stat_analysis));
     await tester.pumpAndSettle();
     expect(find.text('INSIDE'), findsNothing);

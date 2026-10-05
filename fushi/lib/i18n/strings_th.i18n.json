@@ -6440,5 +6440,20 @@
   "game_workbench_thread_choose": "Choose dialogue thread",
   "game_workbench_hook_code": "Hook code",
   "game_workbench_detail_close": "Close line details",
-  "game_workbench_detail_open": "Line audio"
+  "game_workbench_detail_open": "Line audio",
+  "stat_overview_today_time": "Today",
+  "stat_overview_week_time": "This week",
+  "stat_overview_today_chars": "Characters today",
+  "stat_overview_vs_last_week": "$delta vs last week",
+  "stat_overview_week_chars": "$value this week",
+  "stat_overview_active_days": "Active $n of the last 7 days",
+  "stat_overview_goal_unset": "No daily goal yet",
+  "stat_overview_goal_unset_hint": "Set a goal to track your daily progress here.",
+  "stat_overview_goal_remaining": "$value to go",
+  "stat_overview_periods": "By period",
+  "stat_overview_empty": "No study records yet. Read, watch or play and your statistics will show up here.",
+  "stat_center_media_filter": "Media type",
+  "stat_axis_hours": "${n}h",
+  "stat_axis_minutes": "${n}m",
+  "stat_axis_seconds": "${n}s"
 }

@@ -6440,5 +6440,20 @@
   "game_workbench_thread_choose": "选择台词线程",
   "game_workbench_hook_code": "特殊码",
   "game_workbench_detail_close": "收起本句详情",
-  "game_workbench_detail_open": "查看本句音轨"
+  "game_workbench_detail_open": "查看本句音轨",
+  "stat_overview_today_time": "今日时长",
+  "stat_overview_week_time": "本周时长",
+  "stat_overview_today_chars": "今日字数",
+  "stat_overview_vs_last_week": "较上周 $delta",
+  "stat_overview_week_chars": "本周 $value",
+  "stat_overview_active_days": "近 7 日活跃 $n 天",
+  "stat_overview_goal_unset": "还没有设定每日目标",
+  "stat_overview_goal_unset_hint": "设定目标后，这里会显示每天的完成进度。",
+  "stat_overview_goal_remaining": "还差 $value",
+  "stat_overview_periods": "时段明细",
+  "stat_overview_empty": "还没有学习记录。阅读、观看或游玩之后，统计会出现在这里。",
+  "stat_center_media_filter": "媒体类型",
+  "stat_axis_hours": "${n}小时",
+  "stat_axis_minutes": "${n}分",
+  "stat_axis_seconds": "${n}秒"
 }

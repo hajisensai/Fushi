@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
@@ -191,32 +194,52 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
             tokens.spacing.card,
             0,
           ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              borderRadius: FushiBorderRadius.card,
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        t.stat_analysis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+          // 2026-10 统计中心重设计：折叠头是一张可聚焦的卡（键盘 / 手柄 Enter
+          // 展开），chevron 随展开转半圈、内容按 FushiMotion 时长展开——减弱
+          // 动态效果时两者瞬间到位。
+          child: FushiCard(
+            onTap: () => setState(() => _expanded = !_expanded),
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card,
+              vertical: tokens.spacing.gap,
+            ),
+            child: Semantics(
+              expanded: _expanded,
+              child: Row(
+                children: <Widget>[
+                  FushiIcon(Icons.insights_outlined, color: colors.primary),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      t.stat_analysis,
+                      style: statSectionTitleStyle(context),
                     ),
-                    FushiIcon(
-                      _expanded ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  AnimatedRotation(
+                    turns: _expanded ? 0.5 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.medium),
+                    curve: FushiMotion.standard,
+                    child: FushiIcon(
+                      Icons.expand_more,
                       color: colors.onSurfaceVariant,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
-        if (_expanded) ...widget.children,
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: FushiMotion.enter,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: widget.children,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
       ],
     );
   }
@@ -252,6 +275,109 @@ Widget buildStatPageBody({
 /// 汇总卡上「无数据」的统一占位（2026-10 体验优化：速度等可能算不出的行不再
 /// 时有时无，统一渲染并显示该占位，四张卡行数一致）。
 const String kStatEmptyValue = '—';
+
+/// 统计页区块卡内标题的统一字重（2026-10 统计中心重设计）：MD3 = titleMedium
+/// w600 onSurface；Apple = 同字号 label 色。卡外的大区块标题走 [FushiSectionTitle]。
+TextStyle statSectionTitleStyle(BuildContext context) {
+  final ThemeData theme = Theme.of(context);
+  final TextStyle base = theme.textTheme.titleMedium ?? const TextStyle();
+  return base.copyWith(
+    fontWeight: FontWeight.w600,
+    color: isGlassDesign(context)
+        ? appleColorsOf(context).label
+        : theme.colorScheme.onSurface,
+  );
+}
+
+/// 统计中心的区块卡（2026-10 重设计）：一张 [FushiCard]，卡头 = 可选图标 +
+/// 标题 + 可选副标题 / 尾部控件，卡身 = [child]。图表、日历、范围汇总共用这
+/// 一种外框，两套设计系统的卡面、圆角、内边距由 [FushiCard] 一处决定。
+class StatSectionCard extends StatelessWidget {
+  const StatSectionCard({
+    required this.title,
+    required this.child,
+    super.key,
+    this.icon,
+    this.subtitle,
+    this.trailing,
+    this.margin,
+  });
+
+  final String title;
+  final Widget child;
+  final IconData? icon;
+
+  /// 标题下的一行说明（如所选区间、区间总时长）。
+  final String? subtitle;
+
+  /// 卡头行尾控件。
+  final Widget? trailing;
+
+  /// 卡外边距；null = 左右上 [FushiSpacingTokens.card]、下 0（区块纵向堆叠时
+  /// 两卡之间的间距由下一张卡的上边距提供）。
+  final EdgeInsetsGeometry? margin;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String? sub = subtitle;
+    return Padding(
+      padding: margin ??
+          EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.card,
+            tokens.spacing.card,
+            0,
+          ),
+      child: FushiCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Semantics(
+              header: true,
+              child: Row(
+                children: <Widget>[
+                  if (icon != null) ...<Widget>[
+                    FushiIcon(icon, size: 20, color: colors.primary),
+                    SizedBox(width: tokens.spacing.gap),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: statSectionTitleStyle(context),
+                        ),
+                        if (sub != null && sub.isNotEmpty)
+                          Text(
+                            sub,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.metadata.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (trailing != null) trailing!,
+                ],
+              ),
+            ),
+            SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 /// 汇总周期卡的一条次级指标。[label] 为空时只显示值（如阅读卡主字数下的时长）。
 class StatSummaryLine {
@@ -372,49 +498,83 @@ Widget buildStatAdaptiveScrollView(
   BuildContext context, {
   required List<StatPaneSliver> Function(double columnWidth) sections,
 }) {
-  return LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) {
-      if (!useStatLandscapeLayout(constraints.biggest)) {
-        return CustomScrollView(
-          slivers: <Widget>[
-            for (final StatPaneSliver s in sections(constraints.maxWidth))
-              s.sliver,
-            buildStatTailSliver(context),
-          ],
+  // 2026-10 统计中心重设计：区块错峰进场（一屏一次，见 [FushiEntranceScope]）。
+  // 横屏两栏各自从 0 数，两栏同时落位而不是右栏等左栏播完。
+  return FushiEntranceScope(
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!useStatLandscapeLayout(constraints.biggest)) {
+          final List<StatPaneSliver> all = sections(constraints.maxWidth);
+          return CustomScrollView(
+            slivers: <Widget>[
+              for (int i = 0; i < all.length; i++)
+                statStaggeredSliver(all[i].sliver, i),
+              buildStatTailSliver(context),
+            ],
+          );
+        }
+        return _buildStatLandscapePanes(
+          context,
+          sections((constraints.maxWidth - 1) / 2),
         );
+      },
+    ),
+  );
+}
+
+/// 给一个统计区块套上错峰进场：[SliverToBoxAdapter] 包的区块（统计页的绝大
+/// 多数区块）把盒子包进 [FushiStaggeredEntrance]；列表类 sliver（按媒体列表）
+/// 原样返回——长列表的行在滚动中出现，不该逐行淡入。
+Widget statStaggeredSliver(Widget sliver, int index) {
+  if (sliver is SliverToBoxAdapter && sliver.child != null) {
+    return SliverToBoxAdapter(
+      key: sliver.key,
+      child: FushiStaggeredEntrance(index: index, child: sliver.child!),
+    );
+  }
+  return sliver;
+}
+
+/// 横屏双栏（见 [buildStatAdaptiveScrollView]）。
+Widget _buildStatLandscapePanes(
+  BuildContext context,
+  List<StatPaneSliver> all,
+) {
+  List<Widget> paneSlivers(StatPane pane) {
+    final List<Widget> out = <Widget>[];
+    for (final StatPaneSliver s in all) {
+      if (s.pane == pane) {
+        out.add(statStaggeredSliver(s.sliver, out.length));
       }
-      final List<StatPaneSliver> all = sections((constraints.maxWidth - 1) / 2);
-      List<Widget> paneSlivers(StatPane pane) => <Widget>[
-            for (final StatPaneSliver s in all)
-              if (s.pane == pane) s.sliver,
-            buildStatTailSliver(context),
-          ];
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(
-            child: CustomScrollView(
-              key: const ValueKey<String>('stat-landscape-overview'),
-              slivers: paneSlivers(StatPane.overview),
-            ),
-          ),
-          FushiVerticalDivider(
-            width: 1,
-            thickness: 1,
-            color: Theme.of(context).colorScheme.outlineVariant,
-          ),
-          Expanded(
-            // 两栏都挂 PrimaryScrollController 时（移动端默认继承），状态栏点按回顶
-            // 会撞「一个控制器挂两个视图」；主栏留给左侧概览。
-            child: CustomScrollView(
-              key: const ValueKey<String>('stat-landscape-detail'),
-              primary: false,
-              slivers: paneSlivers(StatPane.detail),
-            ),
-          ),
-        ],
-      );
-    },
+    }
+    out.add(buildStatTailSliver(context));
+    return out;
+  }
+
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      Expanded(
+        child: CustomScrollView(
+          key: const ValueKey<String>('stat-landscape-overview'),
+          slivers: paneSlivers(StatPane.overview),
+        ),
+      ),
+      FushiVerticalDivider(
+        width: 1,
+        thickness: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+      Expanded(
+        // 两栏都挂 PrimaryScrollController 时（移动端默认继承），状态栏点按回顶
+        // 会撞「一个控制器挂两个视图」；主栏留给左侧概览。
+        child: CustomScrollView(
+          key: const ValueKey<String>('stat-landscape-detail'),
+          primary: false,
+          slivers: paneSlivers(StatPane.detail),
+        ),
+      ),
+    ],
   );
 }
 
@@ -571,18 +731,34 @@ class _StatPeriodSummaryCard extends StatelessWidget {
     final double? valueMaxWidth = cardWidth != null && cardWidth.isFinite
         ? (cardWidth - padding * 2) * 0.6
         : null;
-    final Widget card = FushiCard(
+    // 2026-10 统计中心重设计：可点卡直接走 FushiCard.onTap——两套设计系统的
+    // 按压下沉 / 焦点环 / Enter 激活一处给齐（原 InkWell 外包没有按压反馈）。
+    return FushiCard(
       padding: EdgeInsets.all(padding),
+      onTap: summary.onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            summary.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  summary.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                ),
+              ),
+              // 可点卡给一个去向提示（点开 = 该时段按作品的明细）。
+              if (summary.onTap != null)
+                FushiIcon(
+                  Icons.chevron_right,
+                  size: 18,
                   color: colorScheme.onSurfaceVariant,
                 ),
+            ],
           ),
           SizedBox(height: tokens.spacing.gap),
           FittedBox(
@@ -609,12 +785,6 @@ class _StatPeriodSummaryCard extends StatelessWidget {
           ],
         ],
       ),
-    );
-    if (summary.onTap == null) return card;
-    return InkWell(
-      onTap: summary.onTap,
-      borderRadius: FushiBorderRadius.card,
-      child: card,
     );
   }
 }
@@ -678,45 +848,92 @@ class _StatSummaryLineRow extends StatelessWidget {
 
 /// 时长柱状图（四个统计 tab 共用）。[title] 缺省为「近 30 天」；范围图表经
 /// `buildStatRangeChartSection` 传区间标题与按柱数稀疏的 [labelEvery]。
+///
+/// 2026-10 统计中心重设计：整块是一张 [StatSectionCard]（标题 + 区间 / 合计副标题），
+/// 柱子经 [StatChartEntrance] 从 0 长到满高；换范围 / 换筛选（数据签名变了）时重播。
 Widget buildStatDailyDurationChartSection(
   BuildContext context,
   List<StatDayData> daily, {
   String? title,
+  String? subtitle,
   int labelEvery = 5,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          title ?? t.stat_last_30_days,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-        SizedBox(
-          height: 160,
-          child: CustomPaint(
-            size: Size.infinite,
-            painter: StatBarChartPainter(
-              data: daily,
-              barColor: colorScheme.primary,
-              barRadius: tokens.radii.chipCorner,
-              labelColor: colorScheme.onSurfaceVariant,
-              labelStyle: tokens.type.metadata.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              valueOf: statMsValue,
-              axisScaleOf: statDurationAxisScale,
-              labelEvery: labelEvery,
+  final StatChartColors chartColors = statChartColorsOf(context);
+  return StatSectionCard(
+    title: title ?? t.stat_last_30_days,
+    subtitle: subtitle,
+    icon: Icons.bar_chart_rounded,
+    child: SizedBox(
+      height: 168,
+      child: StatChartEntrance(
+        replayKey: statDayDataSignature(daily),
+        builder: (BuildContext context, double progress) => CustomPaint(
+          size: Size.infinite,
+          painter: StatBarChartPainter(
+            data: daily,
+            barColor: chartColors.series,
+            barRadius: tokens.radii.chipCorner,
+            labelColor: colorScheme.onSurfaceVariant,
+            labelStyle: tokens.type.metadata.copyWith(
+              color: colorScheme.onSurfaceVariant,
             ),
+            valueOf: statMsValue,
+            axisScaleOf: statDurationAxisScale,
+            labelEvery: labelEvery,
+            progress: progress,
           ),
         ),
-      ],
+      ),
     ),
   );
+}
+
+/// 纯函数：一组柱数据的签名（柱数 + 首尾键 + 时长 / 字数合计）。[StatChartEntrance]
+/// 拿它当重播键：同一份数据重建（父级 setState）不重播，换了范围 / 筛选才重播。
+Object statDayDataSignature(List<StatDayData> data) {
+  int ms = 0;
+  int chars = 0;
+  for (final StatDayData d in data) {
+    ms += d.ms;
+    chars += d.chars;
+  }
+  return Object.hash(
+    data.length,
+    data.isEmpty ? '' : data.first.dateKey,
+    data.isEmpty ? '' : data.last.dateKey,
+    ms,
+    chars,
+  );
+}
+
+/// 图表进场动画（2026-10 统计中心重设计）：把 0→1 的进度喂给 [builder]，柱高 /
+/// 环弧随之长满。时长取 [FushiMotion.long]、曲线 [FushiMotion.enter]——两套设计
+/// 系统共用；墨水屏 / 系统「减弱动态效果」下 [fushiMotionDuration] 归零，图表
+/// 直接画满。[replayKey] 变化时重播一次。
+class StatChartEntrance extends StatelessWidget {
+  const StatChartEntrance({
+    required this.replayKey,
+    required this.builder,
+    super.key,
+  });
+
+  final Object replayKey;
+  final Widget Function(BuildContext context, double progress) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration duration = fushiMotionDuration(context, FushiMotion.long);
+    return TweenAnimationBuilder<double>(
+      key: ValueKey<Object>(replayKey),
+      tween: Tween<double>(begin: duration == Duration.zero ? 1 : 0, end: 1),
+      duration: duration,
+      curve: FushiMotion.enter,
+      builder: (BuildContext context, double value, Widget? _) =>
+          builder(context, value),
+    );
+  }
 }
 
 /// v76 读取端身份分组（v39「读取端按 title 回退」的成文契约）：把带可空身份的
@@ -1375,16 +1592,21 @@ Widget _buildStatHourlyChartSection(
   required List<StatHourlyFormatBand> legendBands,
   required bool showUnattributedNote,
 }) {
-  final tokens = FushiDesignTokens.of(context);
-  final colorScheme = Theme.of(context).colorScheme;
-  return Padding(
-    padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final ColorScheme colorScheme = Theme.of(context).colorScheme;
+  // 2026-10 统计中心重设计：与范围时长图同一张区块卡外框（[StatSectionCard]）。
+  return StatSectionCard(
+    title: t.stat_today_hourly,
+    icon: Icons.schedule_outlined,
+    margin: EdgeInsets.fromLTRB(
+      tokens.spacing.card,
+      0,
+      tokens.spacing.card,
+      tokens.spacing.card,
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(t.stat_today_hourly,
-            style: Theme.of(context).textTheme.titleMedium),
-        SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
+      children: <Widget>[
         SizedBox(
           height: 140,
           child: CustomPaint(
@@ -1419,7 +1641,6 @@ Widget _buildStatHourlyChartSection(
             ),
           ),
         ],
-        SizedBox(height: tokens.spacing.card + tokens.spacing.gap),
       ],
     ),
   );
