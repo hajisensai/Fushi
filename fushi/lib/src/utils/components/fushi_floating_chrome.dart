@@ -683,12 +683,17 @@ class FushiFloatingChromeBar extends StatelessWidget {
     required this.tabs,
     required this.slot,
     this.padding,
+    this.leading,
     super.key,
   });
 
   final Widget tabs;
   final FushiShellActionsSlot slot;
   final EdgeInsetsGeometry? padding;
+
+  /// 页签胶囊左边的前导（独立 push 进来的页面的返回键，一枚圆胶囊）；与
+  /// 页签胶囊同一行、间距 [kFushiFloatingChromeGap]。
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -715,6 +720,10 @@ class FushiFloatingChromeBar extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
+                if (leading != null) ...<Widget>[
+                  leading!,
+                  const SizedBox(width: kFushiFloatingChromeGap),
+                ],
                 Expanded(child: tabs),
                 const SizedBox(width: kFushiFloatingChromeGap),
                 ConstrainedBox(

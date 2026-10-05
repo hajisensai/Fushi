@@ -12,6 +12,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/utils.dart';
 
 /// 「全部来源」哨兵 id（`DropdownMenu` 泛型不便用 null）。真实来源 id 不得为空串。
@@ -30,7 +31,7 @@ class DiscoverySourceOption {
 
 /// 发现页头部（四个域统一）：
 ///
-/// - 宽屏：来源下拉 + 搜索胶囊（MD3 填充 / Apple 玻璃，[FushiSearchField]）
+/// - 宽屏：来源下拉 + 搜索胶囊（M3E search bar / Apple 玻璃，[FushiSearchBar]）
 ///   + 行尾动作（✨ AI 下载、刷新…）同一行；
 /// - 窄屏（[isCompactWidth]）：搜索框独占整行，来源下拉 + 行尾动作排下一行；
 /// - 最后一行：筛选（[leading]，媒体域分段 / 筛选 chip）左对齐**单行**，放不下横滑。
@@ -160,15 +161,17 @@ class DiscoveryHeaderControls extends StatelessWidget {
     );
   }
 
+  /// M3E 搜索栏（[FushiSearchBar]）：与库页工具行同一枚搜索胶囊。查询的
+  /// 防抖由各域发现页自己做（[onSearchChanged]），这里零防抖原样交出。
   Widget _buildSearchField() {
-    return FushiSearchField(
+    return FushiSearchBar(
       fieldKey: const ValueKey<String>('discovery_search_field'),
       clearButtonKey: const ValueKey<String>('discovery_search_clear'),
       focusId: searchFocusId,
       controller: searchController,
       focusNode: searchFocusNode,
       hintText: searchHintText,
-      onChanged: onSearchChanged ?? (String _) {},
+      onQueryChanged: onSearchChanged,
       onSubmitted: onSearchSubmitted,
       onClear: onSearchCleared,
     );

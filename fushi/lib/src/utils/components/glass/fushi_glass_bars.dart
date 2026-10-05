@@ -1733,6 +1733,9 @@ const double kFushiAppleTabContentInset = 6.0;
 /// 量页签宽度的调用方（`LibrarySectionTabs` 的铺满判据）必须扣掉两侧这一截。
 const double kFushiM3eTabTrackInset = 16.0;
 
+/// 轨道贴齐页边（`trackInset: 0`）时每侧只剩轨道内 TabBar 内边距这一截。
+const double kFushiM3eFlushTabTrackInset = 4.0;
+
 /// [TabBar] 的设计系统分派版（含 `.secondary`）。实现 [PreferredSizeWidget]
 /// 供 `AppBar.bottom` 使用，[preferredSize] 与同参 TabBar 一致（两套设计系统
 /// 下高度相同，切换不跳布局）。
@@ -1771,6 +1774,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.textScaler,
     this.indicatorAnimation,
     this.track = true,
+    this.trackInset,
   }) : _secondary = false;
 
   const FushiTabBar.secondary({
@@ -1807,6 +1811,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
     this.textScaler,
     this.indicatorAnimation,
     this.track = true,
+    this.trackInset,
   }) : _secondary = true;
 
   final List<Widget> tabs;
@@ -1846,6 +1851,12 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
   /// false：只画胶囊里的 TabBar 本体，不再叠第二层轨道——胶囊套胶囊会出两圈
   /// 圆角与底色，内层还会被外层裁掉两端。Apple 设计系统下忽略。
   final bool track;
+
+  /// Material（M3E）分段胶囊轨道离左右边缘的距离；null = 默认 12（轨道在
+  /// 一块没有页边的全宽区域里时留的呼吸位）。调用方已经按页边内缩（页签与
+  /// 页面大标题 / 内容共用同一条页边）时传 0，轨道左缘才与标题左缘对齐——
+  /// 否则轨道比标题多缩进 12（2026-10-06 用户截图「浏览顶部左边没对齐」）。
+  final double? trackInset;
   final bool _secondary;
 
   /// MD3（2026-10 页签统一，Material 3 Expressive）：调用方没显式给的值按
@@ -2103,8 +2114,8 @@ class _FushiM3eSegmentedTabs extends StatelessWidget {
     return SizedBox(
       height: bar.preferredSize.height,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: kFushiM3eTabTrackInset - 4,
+        padding: EdgeInsets.symmetric(
+          horizontal: bar.trackInset ?? kFushiM3eTabTrackInset - 4,
           vertical: 3,
         ),
         child: DecoratedBox(
