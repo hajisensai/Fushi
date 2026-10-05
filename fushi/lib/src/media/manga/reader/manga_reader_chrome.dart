@@ -1573,11 +1573,13 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     // 一页一格的离散滑块在 40 页上会画出 40 颗刻度点：数值气泡由本栏自己画，
     // 刻度点与系统气泡都关掉。
     return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        tickMarkShape: SliderTickMarkShape.noTickMark,
-        showValueIndicator: ShowValueIndicator.never,
-        trackHeight: 16,
-      ),
+      // 共享 M3E 滑块尺寸档 xs（16 粗轨道 + 4×44 竖条把手，按下 / 拖动时把手
+      // 收窄到 2——与视频进度条、有声书进度同一套控件规格）。
+      data: fushiSliderSizeTheme(SliderTheme.of(context), FushiSliderSize.xs)
+          .copyWith(
+            tickMarkShape: SliderTickMarkShape.noTickMark,
+            showValueIndicator: ShowValueIndicator.never,
+          ),
       child: slider,
     );
   }
