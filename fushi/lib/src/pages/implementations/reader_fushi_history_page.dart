@@ -1600,9 +1600,28 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     // 过滤隐藏的合集连同成员从 shelfGroups 移除（成员随合集隐藏，符合按合集标签显隐
     // 语义）；散书由 filteredBookIdsProvider / filteredSrtBookIdsProvider 另行过滤。
     // collectionFilter 已在 srt 过滤前读取（BUG-940 成员救回共用同一集）。
+    // BUG-2968：成员自己命中标签的组也要留（书打了标签、合集没打），否则那本书
+    // 活过成员级过滤、折进合集组后又随组被删，按标签筛选就找不到它。
     if (collectionFilter != null) {
+      final Set<String>? epubTagged =
+          ref.read(filteredBookIdsProvider).valueOrNull;
+      bool memberMatched(CollectionOrderingItem<_ShelfBookSlot> it) {
+        final _ShelfBookSlot slot = it.payload;
+        final SrtBook? srt = slot.srt;
+        if (srt != null) return srtFilterSet?.contains(srt.uid) ?? false;
+        final MediaItem? epub = slot.epub;
+        if (epub == null) return false;
+        final String? key = _parseBookKey(epub.mediaIdentifier);
+        return key != null && (epubTagged?.contains(key) ?? false);
+      }
+
       shelfGroups.removeWhere((CollectionGroup<_ShelfBookSlot> g) =>
-          g.collection != null && !collectionFilter.contains(g.collection!.id));
+          g.collection != null &&
+          !keepCollectionGroupUnderTagFilter(
+            collectionId: g.collection!.id,
+            collectionFilter: collectionFilter,
+            anyMemberMatched: g.items.any(memberMatched),
+          ));
     }
     // 块2：记录本帧渲染成横排行的合集 id（供全选/反选把可见合集纳入整选集）。
     _visibleCollectionIds = <int>[
@@ -2019,6 +2038,8 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           collection: collection,
           memberCardBuilder: _buildCollectionMemberCard,
           onOpenMember: _openCollectionMember,
+          // BUG-2969：成员右键 / 长按与书架卡同一个菜单（含标签）。
+          onShowMemberMenu: _showCollectionMemberMenu,
           onChanged: () {
             _shelfMapsFuture = _loadShelfMaps();
             if (mounted) setState(() {});
@@ -2452,39 +2473,92 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           item: item,
         );
       },
-      onLongPress: () async {
-        await showAppDialog(
-          context: context,
-          builder: (BuildContext dialogCtx) => MediaItemDialogPage(
-            item: item,
-            isHistory: isHistory,
-            showLaunchAction: false,
-            extraActions: removeFromCollection == null
-                ? extraActions
-                : (MediaItem it) => <DialogAction>[
-                      // 合集详情页成员卡语境：隐藏「加入合集」（同一条目在详情页
-                      // 语境下再加合集没有意义），只补「移出合集」。
-                      ..._epubExtraActions(it, inCollectionDetail: true),
-                      DialogListAction(
-                        label: t.collection_remove_member,
-                        icon: Icons.remove_circle_outline,
-                        onPressed: () {
-                          Navigator.pop(dialogCtx);
-                          removeFromCollection();
-                        },
-                      ),
-                    ],
-          ),
-        );
-        if (isHistory) {
-          setState(() {});
-        }
-      },
+      onLongPress: () =>
+          _showEpubItemMenu(item, removeFromCollection: removeFromCollection),
       child: buildMediaItemContent(item),
     );
     // 仅 EPUB 书卡作为字幕/音频拖放目标；SRT 卡/视频卡不在 books 表面范围内。
     if (bookKey == null) return card;
     return CardDropZone<String>(meta: bookKey, child: card);
+  }
+
+  /// EPUB / 漫画 / PDF 书卡的长按 / 右键菜单（书架卡与合集详情页成员卡**同一个**
+  /// 入口，BUG-2969）。[removeFromCollection] 非空 = 合集详情页语境：隐藏「加入
+  /// 合集」（同一条目在详情页语境下再加合集没有意义），只补「移出合集」。
+  Future<void> _showEpubItemMenu(
+    MediaItem item, {
+    VoidCallback? removeFromCollection,
+  }) async {
+    await showAppDialog(
+      context: context,
+      builder: (BuildContext dialogCtx) => MediaItemDialogPage(
+        item: item,
+        isHistory: isHistory,
+        showLaunchAction: false,
+        extraActions: removeFromCollection == null
+            ? extraActions
+            : (MediaItem it) => <DialogAction>[
+                  ..._epubExtraActions(it, inCollectionDetail: true),
+                  ..._removeFromCollectionActions(
+                    dialogCtx,
+                    removeFromCollection,
+                  ),
+                ],
+      ),
+    );
+    if (isHistory && mounted) {
+      setState(() {});
+    }
+  }
+
+  /// 合集详情页成员的右键 / 长按菜单（BUG-2969）：按 (mediaType, entryKey) 找到与
+  /// 书架同一张卡，打开**同一个**菜单（[_showEpubItemMenu] / [_showSrtBookDialog] /
+  /// 远端占位的 [_showRemoteBookDialog] / [_showRemoteSrtDialog]），只多一条「移出
+  /// 合集」。此前详情页自绘「打开 / 移出」两项菜单，合集内既选不了标签、也和外面
+  /// 对不上。成员解析与 [_buildCollectionMemberCard] 同口径（uid / bookKey 双判据）。
+  Future<void> _showCollectionMemberMenu(
+    String mediaType,
+    String entryKey, {
+    required VoidCallback onRemoveFromCollection,
+  }) async {
+    final MediaKind? kind = MediaKind.tryParse(mediaType);
+    if (kind == MediaKind.srt) {
+      for (final SrtBook book in _visibleSrtBooks) {
+        if (book.uid == entryKey) {
+          return _showSrtBookDialog(
+            book,
+            removeFromCollection: onRemoveFromCollection,
+          );
+        }
+      }
+      final RemoteAudiobookInfo? remoteSrt = _remoteSrtForEntry(entryKey);
+      if (remoteSrt != null) {
+        _showRemoteSrtDialog(
+          remoteSrt,
+          removeFromCollection: onRemoveFromCollection,
+        );
+      }
+      return;
+    }
+    if (kind == MediaKind.epub) {
+      for (final MediaItem item in _visibleEpubBooks) {
+        final String? bookKey = _parseBookKey(item.mediaIdentifier);
+        if (bookKey == null) continue;
+        if (bookKey == entryKey || _epubUidByKey[bookKey] == entryKey) {
+          return _showEpubItemMenu(
+            item,
+            removeFromCollection: onRemoveFromCollection,
+          );
+        }
+      }
+      final RemoteBookInfo? remote = _remoteBookForEntry(entryKey);
+      if (remote != null) {
+        _showRemoteBookDialog(
+          remote,
+          removeFromCollection: onRemoveFromCollection,
+        );
+      }
+    }
   }
 
   @override

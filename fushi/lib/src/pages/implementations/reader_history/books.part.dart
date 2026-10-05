@@ -238,16 +238,9 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         icon: Icons.drive_file_rename_outline,
         onPressed: () => _renameBook(dialogContext, item),
       ),
-      // 合集详情页成员卡：给可聚焦长按对话框补「移出合集」（键盘/手柄移出入口）。
-      if (removeFromCollection != null)
-        DialogListAction(
-          label: t.collection_remove_member,
-          icon: Icons.remove_circle_outline,
-          onPressed: () {
-            Navigator.pop(dialogContext);
-            removeFromCollection();
-          },
-        ),
+      // 合集详情页成员卡：补「移出合集」（网格右键 / 长按与键盘/手柄长按 A 都走这
+      // 一个菜单，BUG-2969）。
+      ..._removeFromCollectionActions(dialogContext, removeFromCollection),
       // 单卡「加入合集」：与 EPUB 卡菜单对称，纯字幕书（bookKey 为空）也可加入；
       // entryKey 编码与 shelfSelectionToEntry 对 'srt_<uid>' 选择键的解码一致（= uid）。
       // 合集详情页成员卡语境（已注入「移出合集」）不显示——同一条目在详情页语境下

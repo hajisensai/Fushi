@@ -4957,14 +4957,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 合集卡（及其成员）按此显隐；散卡由 filteredVideoBookUidsProvider 另行过滤。
     final Set<int>? collectionFilter =
         ref.watch(filteredCollectionIdsProvider).valueOrNull;
-    bool collectionVisible(int collectionId) =>
-        collectionFilter == null || collectionFilter.contains(collectionId);
+    // BUG-2968：成员自己命中标签的合集也要留（视频打了标签、合集没打），否则该
+    // 视频活过成员级过滤、折进合集后又随合集被藏，按标签筛选就找不到它。
+    final Set<String>? memberTagged =
+        ref.watch(filteredVideoBookUidsProvider).valueOrNull;
+    bool collectionVisible(CollectionGroup<_VideoSlot> group) =>
+        keepCollectionGroupUnderTagFilter(
+          collectionId: group.collection!.id,
+          collectionFilter: collectionFilter,
+          anyMemberMatched: group.items.any(
+            (CollectionOrderingItem<_VideoSlot> it) =>
+                memberTagged?.contains(it.payload.local?.bookUid) ?? false,
+          ),
+        );
     // 块2：记录本帧渲染成封面卡的合集 id（供全选/反选把可见合集纳入整选集）。
     // 被标签过滤隐藏的合集不计入可见集，避免全选勾中隐藏合集。
     _visibleCollectionIds = <int>[
       for (final CollectionGroup<_VideoSlot> g in groups)
-        if (g.collection != null && collectionVisible(g.collection!.id))
-          g.collection!.id,
+        if (g.collection != null && collectionVisible(g)) g.collection!.id,
     ];
     // 合集卡在前（保持排序模式的组间序）、散卡（本地 + 未归属远端占位）在后，
     // 全部并入同一个网格（cell 逐像素同尺寸）。
@@ -4982,7 +4992,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           ),
           selectionKey: _videoSlotSelectionKey(slot),
         ));
-      } else if (collectionVisible(group.collection!.id)) {
+      } else if (collectionVisible(group)) {
         collectionGroups.add(group);
       }
       // 标签过滤隐藏的合集：整卡连同成员一并跳过（成员随合集隐藏，符合按合集标签显隐语义）。

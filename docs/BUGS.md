@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2718 条。点号进各自文件。
+> 共 2721 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2974](bugs/BUG-2974-collection-picker-cross-domain.md) | 🚧 | 🚧 | 书的加入合集列表里出现视频合集（合集未按媒体库隔离） |
+| [BUG-2969](bugs/BUG-2969-collection-member-menu-mismatch.md) | 🚧 | 🚧 | 合集详情页成员右键菜单与书架不一致且没有标签 |
+| [BUG-2968](bugs/BUG-2968-tag-filter-hides-collection-members.md) | 🚧 | 🚧 | 标签筛选时合集内打了标签的书找不到 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
 | [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
 | [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |

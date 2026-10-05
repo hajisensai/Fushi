@@ -29,6 +29,7 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     required this.memberCardBuilder,
     required this.onChanged,
     this.onOpenMember,
+    this.onShowMemberMenu,
     this.onDeleteMembersMedia,
     this.deleteMembersStatisticsSubtitle,
     super.key,
@@ -55,6 +56,17 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   /// 手势被 [IgnorePointer] 屏蔽（避免其内部 long-press 与网格触摸拖拽争用），故「打开」
   /// 统一经此回调，由调用方按 (mediaType, entryKey) 找到条目并打开。
   final void Function(String mediaType, String entryKey)? onOpenMember;
+
+  /// 成员卡的上下文菜单（网格右键 / 触摸长按松手）。非 null 时整个菜单交给调用方：
+  /// 书架传入与库页书卡**同一个**菜单构建（标签 / 标记读完 / 删除 / 重命名…再补
+  /// 「移出合集」，[onRemoveFromCollection] 即本页的移出流程），合集内外右键一致
+  /// （BUG-2969：此前合集内只有「打开 / 移出」两项，选不了标签、也读不出这是同一本书）。
+  /// null = 本页自带的「打开 / 移出」精简菜单（游戏库等没有卡片级菜单的调用方）。
+  final Future<void> Function(
+    String mediaType,
+    String entryKey, {
+    required VoidCallback onRemoveFromCollection,
+  })? onShowMemberMenu;
 
   /// 改名 / 删除 / 移出成员后刷新书架。
   final VoidCallback onChanged;
@@ -246,6 +258,20 @@ class _MediaCollectionGridDetailPageState
   /// 范式（书卡 onLongPress/onSecondaryTap 弹条目动作）。
   Future<void> _showMemberMenu(
       MediaCollectionItemRow row, Offset globalPosition) async {
+    final Future<void> Function(
+      String mediaType,
+      String entryKey, {
+      required VoidCallback onRemoveFromCollection,
+    })? shared = widget.onShowMemberMenu;
+    if (shared != null) {
+      // BUG-2969：调用方的卡片菜单（与库页同一份），移出合集仍走本页流程。
+      await shared(
+        row.mediaType,
+        row.entryKey,
+        onRemoveFromCollection: () => _removeMember(row),
+      );
+      return;
+    }
     final RenderObject? overlay =
         Overlay.of(context).context.findRenderObject();
     if (overlay is! RenderBox) return;
