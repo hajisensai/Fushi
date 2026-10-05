@@ -421,7 +421,8 @@ class MediaDetailHero extends StatelessWidget {
         final Widget content = Padding(
           padding: EdgeInsets.fromLTRB(
             page,
-            wide ? tokens.spacing.section * 1.5 : tokens.spacing.section,
+            MediaDetailLayout.heroTopInset(context) +
+                (wide ? tokens.spacing.section * 1.5 : tokens.spacing.section),
             page,
             tokens.spacing.section,
           ),
@@ -1497,72 +1498,157 @@ class MediaDetailLayout extends StatelessWidget {
   static bool isTwoPane(BuildContext context, double maxWidth) =>
       maxWidth * FushiAppUiScale.of(context) >= kMediaDetailTwoPaneMinWidth;
 
+  /// 顶栏（浮动胶囊，[Scaffold.extendBodyBehindAppBar]）+ 状态栏占掉的高度：
+  /// 背景铺满到窗口顶端，hero 内容从这条线下开始排。由布局按
+  /// `MediaQuery.paddingOf(context).top` 下发，不在两栏左栏 / 单列 hero 之外生效。
+  static double heroTopInset(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_MediaDetailTopInsetScope>()
+          ?.top ??
+      0;
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool twoPane =
-            constraints.maxWidth * FushiAppUiScale.of(context) >=
-            twoPaneMinWidth;
-        final Widget bottom = SliverSafeArea(
-          top: false,
-          sliver: SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
-        );
-        if (!twoPane) {
-          return CustomScrollView(
-            controller: controller,
-            slivers: <Widget>[
-              SliverToBoxAdapter(child: header),
-              ...slivers,
-              bottom,
-            ],
+    // 页面以 extendBodyBehindAppBar 挂在浮动顶栏之下时，Scaffold 把顶栏高度折进
+    // MediaQuery 顶部 padding。背景必须从窗口顶端画起（顶栏只是几颗悬浮胶囊，
+    // 不画任何整宽底带），内容自己让开这段——所以这里读出来、往下自己用，并从
+    // 子树里摘掉，免得滚动视图 / hero 再让一次。
+    final double topInset = MediaQuery.paddingOf(context).top;
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool twoPane =
+              constraints.maxWidth * FushiAppUiScale.of(context) >=
+              twoPaneMinWidth;
+          final Widget bottom = SliverSafeArea(
+            top: false,
+            sliver: SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
           );
-        }
-        return Stack(
-          children: <Widget>[
-            Positioned.fill(
-              child: MediaDetailBackdrop(
-                image: backdrop,
-                imageKey: backdropKey,
-                blurSigma: backdropBlur,
-              ),
-            ),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          // 顶部柔和 scrim：内容滚到浮动顶栏之下时渐隐，无硬边（不是实色底带）。
+          final Widget topScrim = Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: _MediaDetailTopScrim(height: topInset),
+          );
+          if (!twoPane) {
+            return Stack(
               children: <Widget>[
-                SizedBox(
-                  width: sidePaneWidth,
-                  child: _MediaDetailSidePaneScope(
-                    child: SingleChildScrollView(
-                      key: const ValueKey<String>('media-detail-side-pane'),
-                      // 左栏不接 PrimaryScrollController：右栏是主滚动视图，两个
-                      // 都挂上会撞「controller attached to multiple scroll views」。
-                      primary: false,
-                      padding: EdgeInsets.only(
-                        bottom:
-                            bottomPadding +
-                            MediaQuery.paddingOf(context).bottom,
+                CustomScrollView(
+                  controller: controller,
+                  slivers: <Widget>[
+                    SliverToBoxAdapter(
+                      child: _MediaDetailTopInsetScope(
+                        top: topInset,
+                        child: header,
                       ),
-                      child: header,
+                    ),
+                    ...slivers,
+                    bottom,
+                  ],
+                ),
+                if (topInset > 0) topScrim,
+              ],
+            );
+          }
+          return Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: MediaDetailBackdrop(
+                  image: backdrop,
+                  imageKey: backdropKey,
+                  blurSigma: backdropBlur,
+                ),
+              ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  SizedBox(
+                    width: sidePaneWidth,
+                    child: _MediaDetailSidePaneScope(
+                      child: SingleChildScrollView(
+                        key: const ValueKey<String>('media-detail-side-pane'),
+                        // 左栏不接 PrimaryScrollController：右栏是主滚动视图，两个
+                        // 都挂上会撞「controller attached to multiple scroll views」。
+                        primary: false,
+                        padding: EdgeInsets.only(
+                          top: topInset,
+                          bottom:
+                              bottomPadding +
+                              MediaQuery.paddingOf(context).bottom,
+                        ),
+                        child: header,
+                      ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: CustomScrollView(
-                    key: const ValueKey<String>('media-detail-main-pane'),
-                    controller: controller,
-                    slivers: <Widget>[
-                      const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                      ...slivers,
-                      bottom,
-                    ],
+                  Expanded(
+                    child: CustomScrollView(
+                      key: const ValueKey<String>('media-detail-main-pane'),
+                      controller: controller,
+                      slivers: <Widget>[
+                        SliverToBoxAdapter(
+                          child: SizedBox(height: topInset + 8),
+                        ),
+                        ...slivers,
+                        bottom,
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
+              if (topInset > 0) topScrim,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// 布局下发给单列 hero 的顶部让位高度（见 [MediaDetailLayout.heroTopInset]）。
+class _MediaDetailTopInsetScope extends InheritedWidget {
+  const _MediaDetailTopInsetScope({required this.top, required super.child});
+
+  final double top;
+
+  @override
+  bool updateShouldNotify(_MediaDetailTopInsetScope oldWidget) =>
+      top != oldWidget.top;
+}
+
+/// 浮动顶栏背后的柔和渐隐：页面底色自顶 55% 渐到全透明，长度 = 顶栏让位 + 24。
+/// 不接指针、不参与语义；墨水屏不画（底色本来就是实色，渐变在墨水屏上是脏点）。
+class _MediaDetailTopScrim extends StatelessWidget {
+  const _MediaDetailTopScrim({required this.height});
+
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    if (height <= 0 || isEinkTheme(context)) return const SizedBox.shrink();
+    final Color base = Theme.of(context).colorScheme.surface;
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: SizedBox(
+          height: height + 24,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  base.withValues(alpha: 0.55),
+                  base.withValues(alpha: 0.28),
+                  base.withValues(alpha: 0),
+                ],
+                stops: const <double>[0, 0.6, 1],
+              ),
             ),
-          ],
-        );
-      },
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1592,7 +1678,13 @@ class MediaDetailSkeleton extends StatelessWidget {
       child: ListView(
         key: const ValueKey<String>('media-detail-skeleton'),
         physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(page, tokens.spacing.section, page, page),
+        // 页面以 extendBodyBehindAppBar 挂在浮动顶栏下时，让开顶栏。
+        padding: EdgeInsets.fromLTRB(
+          page,
+          tokens.spacing.section + MediaQuery.paddingOf(context).top,
+          page,
+          page,
+        ),
         children: <Widget>[
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,

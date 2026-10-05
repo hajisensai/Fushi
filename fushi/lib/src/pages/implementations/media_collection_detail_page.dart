@@ -2497,6 +2497,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       );
     }
     final Widget page = Scaffold(
+      // 背景铺满到窗口顶端，浮动顶栏只是几颗胶囊（不画整宽底带）；正文 / 骨架 /
+      // 空态各自按 MediaQuery 顶部 padding 让位（[MediaDetailLayout] /
+      // [MediaDetailSkeleton] / SafeArea）。
+      extendBodyBehindAppBar: true,
       appBar: _buildAppBar(),
       // 加载骨架 → 正文 / 空态交叉淡入（时长走动效令牌，墨水屏 / 减弱动效归零）。
       body: AnimatedSwitcher(

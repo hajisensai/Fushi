@@ -322,6 +322,9 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     final ImageProvider? cover = mediaServerCoverImage(_browser, _detail);
     // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
     return Scaffold(
+      // 背景铺满到窗口顶端，浮动顶栏只是几颗胶囊（不画整宽底带）；让位由
+      // [MediaDetailLayout] 按 MediaQuery 顶部 padding 自己处理。
+      extendBodyBehindAppBar: true,
       appBar: FushiAppBar(
         title: Text(
           t.video_work_details,

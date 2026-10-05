@@ -183,7 +183,8 @@ class CollectionDetailHero extends StatelessWidget {
         final Widget content = Padding(
           padding: EdgeInsets.fromLTRB(
             page,
-            wide ? tokens.spacing.section * 2 : tokens.spacing.section,
+            MediaDetailLayout.heroTopInset(context) +
+                (wide ? tokens.spacing.section * 2 : tokens.spacing.section),
             page,
             tokens.spacing.section,
           ),

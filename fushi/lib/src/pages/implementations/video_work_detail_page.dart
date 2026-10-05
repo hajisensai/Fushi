@@ -329,6 +329,8 @@ class _StandaloneVideoWorkDetailState
     // M3E 作品详情：宽屏两栏（左 hero sticky、右规格 / 资料 / 人物 / 附件），
     // 窄屏单列。大背景 fanart 优先、没有就拿海报模糊垫底（与系列详情同一判据）。
     return Scaffold(
+      // 背景铺满到窗口顶端（浮动顶栏下不留整宽底带），让位由布局处理。
+      extendBodyBehindAppBar: true,
       appBar: FushiAppBar(),
       body: FushiEntranceScope(
         child: MediaDetailLayout(
