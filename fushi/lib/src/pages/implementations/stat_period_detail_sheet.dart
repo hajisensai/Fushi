@@ -362,7 +362,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
             SizedBox(width: tokens.spacing.gap),
             Text(meta, style: tokens.type.metadata),
             if (canDelete)
-              IconButton(
+              FushiIconButtonControl(
                 tooltip: t.stat_delete_title,
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () => unawaited(_confirmAndDelete(e)),

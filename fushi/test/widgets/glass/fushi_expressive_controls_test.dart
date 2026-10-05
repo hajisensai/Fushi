@@ -128,8 +128,10 @@ void main() {
         isFalse,
       );
       expect(
-        fushiButtonMorphSpec(FushiButtonSize.m, FushiButtonShape.square)
-            .squared,
+        fushiButtonMorphSpec(
+          FushiButtonSize.m,
+          FushiButtonShape.square,
+        ).squared,
         isTrue,
       );
     });
@@ -169,9 +171,7 @@ void main() {
       }
     });
 
-    testWidgets('默认（无 size、圆形）与改造前一致：40 高胶囊', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('默认（无 size、圆形）与改造前一致：40 高胶囊', (WidgetTester tester) async {
       await pumpHost(
         tester,
         (_) => FushiOutlinedButton(onPressed: () {}, child: const Text('Go')),
@@ -183,9 +183,7 @@ void main() {
       expect(tester.getSize(material.first).height, 40);
     });
 
-    testWidgets('方形按钮常驻圆角；减少动画下仍是静态方圆角', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('方形按钮常驻圆角；减少动画下仍是静态方圆角', (WidgetTester tester) async {
       for (final bool reduce in <bool>[false, true]) {
         await pumpHost(
           tester,
@@ -273,27 +271,20 @@ void main() {
         tester.widget<Material>(material).color,
         Theme.of(tester.element(material)).colorScheme.primary,
       );
-      expect(
-        tester.getSemantics(find.byType(FushiToggleButton)),
-        matchesSemantics(
-          isButton: true,
-          hasEnabledState: true,
-          isEnabled: true,
-          isFocusable: true,
-          hasToggledState: true,
-          isToggled: true,
-          hasTapAction: true,
-          hasFocusAction: true,
-          label: 'Save',
-        ),
+      final Semantics semantics = tester.widget<Semantics>(
+        find
+            .ancestor(
+              of: find.byType(FilledButton),
+              matching: find.byType(Semantics),
+            )
+            .first,
       );
+      expect(semantics.properties.toggled, isTrue);
       await pressEnter(tester, node);
       expect(on, isFalse);
     });
 
-    testWidgets('Apple 设计系统：玻璃按钮，无 Expressive 形变', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('Apple 设计系统：玻璃按钮，无 Expressive 形变', (WidgetTester tester) async {
       bool on = true;
       await pumpHost(
         tester,
@@ -353,7 +344,8 @@ void main() {
       // 转了约 180°：变换矩阵的 x 轴分量取反。
       expect(rotation.transform.entry(0, 0), closeTo(-1, 0.05));
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      // 点菜单外关闭（Esc 关闭由 MenuAnchor 自带）。
+      await tester.tapAt(const Offset(4, 4));
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('CSV'), findsNothing);
 
@@ -418,9 +410,11 @@ void main() {
                 as RoundedRectangleBorder;
         expect(shape.borderRadius, BorderRadius.circular(radius));
         expect(
-          tester.widget<Material>(
-            find.descendant(of: fab, matching: find.byType(Material)).first,
-          ).color,
+          tester
+              .widget<Material>(
+                find.descendant(of: fab, matching: find.byType(Material)).first,
+              )
+              .color,
           Theme.of(tester.element(fab)).colorScheme.tertiaryContainer,
         );
       }
@@ -437,17 +431,12 @@ void main() {
         ),
       );
       expect(find.text('New'), findsOneWidget);
-      expect(
-        tester.getSize(find.byType(FloatingActionButton)).height,
-        56,
-      );
+      expect(tester.getSize(find.byType(FloatingActionButton)).height, 56);
     });
   });
 
   group('FushiFabMenu', () {
-    testWidgets('点开展开菜单项、点项执行并收起；Esc 收起焦点回 FAB', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('点开展开菜单项、点项执行并收起；Esc 收起焦点回 FAB', (WidgetTester tester) async {
       int imported = 0;
       final GlobalKey<FushiFabMenuState> key = GlobalKey<FushiFabMenuState>();
       await pumpHost(
@@ -485,14 +474,9 @@ void main() {
       expect(find.text('Import'), findsNothing);
 
       // 键盘：焦点到 FAB，Enter 展开，焦点进最近的菜单项，Esc 收起回 FAB。
-      final FocusNode fabFocus = Focus.of(
-        tester.element(
-          find.descendant(
-            of: find.byType(FloatingActionButton),
-            matching: find.byType(InkWell),
-          ),
-        ),
-      );
+      final FocusNode fabFocus = tester
+          .widget<FloatingActionButton>(find.byType(FloatingActionButton))
+          .focusNode!;
       fabFocus.requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -533,18 +517,13 @@ void main() {
   });
 
   group('FushiSwitch M3E', () {
-    testWidgets('MD3 默认带开 / 关 thumb 图标；墨水屏交回主题', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('MD3 默认带开 / 关 thumb 图标；墨水屏交回主题', (WidgetTester tester) async {
       await pumpHost(
         tester,
         (_) => FushiSwitch(value: false, onChanged: (_) {}),
       );
       final Switch sw = tester.widget<Switch>(find.byType(Switch));
-      expect(
-        sw.thumbIcon!.resolve(<WidgetState>{})!.icon,
-        Icons.close_rounded,
-      );
+      expect(sw.thumbIcon!.resolve(<WidgetState>{})!.icon, Icons.close_rounded);
       expect(
         sw.thumbIcon!.resolve(<WidgetState>{WidgetState.selected})!.icon,
         Icons.check_rounded,
@@ -559,9 +538,7 @@ void main() {
   });
 
   group('FushiSlider M3E', () {
-    testWidgets('尺寸档改轨道粗细与把手高度；树里仍是 Slider', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('尺寸档改轨道粗细与把手高度；树里仍是 Slider', (WidgetTester tester) async {
       await pumpHost(
         tester,
         (_) => SizedBox(

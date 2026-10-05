@@ -91,7 +91,7 @@ Widget buildStatMediaRow(
         // 2026-10 体验优化：删除入口统一为可见按钮（与会话列表一致），长按 /
         // 右键仍保留作快捷方式。
         if (onDelete != null)
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.stat_delete_title,
             icon: const Icon(Icons.delete_outline),
             onPressed: onDelete,
