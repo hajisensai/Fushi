@@ -99,7 +99,8 @@ void main() {
     });
 
     test('游戏保留单件入口（无扫描根概念，无文件夹管线）', () {
-      expect(game, contains('label: t.game_add'));
+      // M3E 拖放区卡片里的主按钮（不再经共享 QuickImportSection 的 tonal 钮）。
+      expect(game, contains('label: Text(t.game_add)'));
       expect(game, contains('addGameViaFilePicker'));
     });
 
