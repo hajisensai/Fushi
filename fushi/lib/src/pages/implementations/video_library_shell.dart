@@ -191,17 +191,17 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value: VideoLibrarySection.allVideos,
           label: t.video_library_all_videos,
         ),
-        // 媒体服务器是用户自己的库（只是远端的），排在本地库视图之后；随后是
-        // 「往库里加东西」的发现 / 来源 / 扩展，最后是管理类分区。
-        LibrarySectionTab<VideoLibrarySection>(
-          value: VideoLibrarySection.mediaServers,
-          label: t.video_library_media_servers,
-        ),
+        // 发现紧跟本地库视图（2026-10-05 用户要求与媒体服务器对调）；媒体服务器
+        // 是用户自己的远端库，排在发现之后；随后是来源 / 扩展，最后是管理类分区。
         if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           LibrarySectionTab<VideoLibrarySection>(
             value: VideoLibrarySection.discover,
             label: t.library_view_discover,
           ),
+        LibrarySectionTab<VideoLibrarySection>(
+          value: VideoLibrarySection.mediaServers,
+          label: t.video_library_media_servers,
+        ),
         if (online)
           LibrarySectionTab<VideoLibrarySection>(
             value: VideoLibrarySection.onlineSources,

@@ -151,11 +151,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。媒体服务器（用户
-  // 自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图之后；随后是
-  // 「往库里加东西」的发现 / 来源 / 扩展（与「浏览」模块同一组组件，2026-10-01
-  // 加回库页），最后是导入与设置。测试宿主不是 iOS，合规门与视频源宿主门都开。
-  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、发现、来源、扩展、导入、设置',
+  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。发现紧跟本地库
+  // 视图（2026-10-05 用户要求与媒体服务器对调），随后是媒体服务器（用户自己登录的
+  // Jellyfin/Emby，远端的自有库）、来源 / 扩展（与「浏览」模块同一组组件），最后
+  // 是导入与设置。测试宿主不是 iOS，合规门与视频源宿主门都开。
+  testWidgets('页签顺序固定为首页、系列、全部视频、发现、媒体服务器、来源、扩展、导入、设置',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
@@ -171,8 +171,8 @@ void main() {
         VideoLibrarySection.home,
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
-        VideoLibrarySection.mediaServers,
         VideoLibrarySection.discover,
+        VideoLibrarySection.mediaServers,
         if (isVideoOnlineSourcesAvailable) VideoLibrarySection.onlineSources,
         if (isVideoOnlineSourcesAvailable) VideoLibrarySection.extensions,
         VideoLibrarySection.sources,
@@ -256,7 +256,8 @@ void main() {
         reason: '首页已是首位，向右甩无事发生');
   });
 
-  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进媒体服务器', (WidgetTester tester) async {
+  testWidgets('触屏横滑跨到非本地分区：全部视频向左甩进发现，不顺带构建媒体服务器',
+      (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
     await select(tester, VideoLibrarySection.allVideos);
@@ -265,9 +266,12 @@ void main() {
     await tester.fling(find.text('local leaf'), const Offset(-260, 0), 1000);
     await tester.pumpAndSettle();
 
-    expect(mediaServerInitCount, 1, reason: '横滑与页签同一条 _select 路径，'
-        '首次进入媒体服务器才惰性构建');
-    expect(find.text('media server leaf'), findsOneWidget);
+    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
+      find.byType(FushiSectionTabBar<VideoLibrarySection>),
+    );
+    expect(strip.selected, VideoLibrarySection.discover,
+        reason: '横滑与页签同一条 _select 路径，全部视频的下一个分区是发现');
+    expect(mediaServerInitCount, 0, reason: '媒体服务器排在发现之后，未访问不得构建');
   });
 
   testWidgets('媒体服务器未访问不构建，访问后切走保活、退出焦点遍历', (WidgetTester tester) async {
@@ -317,13 +321,14 @@ void main() {
         reason: '页签必须是同一个 State 换父节点，而不是新挂一份');
     final TabController controller =
         tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
-    expect(controller.index, 3);
+    // 发现排在媒体服务器前（2026-10-05 对调），媒体服务器是第 5 个页签。
+    expect(controller.index, 4);
     expect(controller.animation!.value, greaterThan(0));
-    expect(controller.animation!.value, lessThan(3),
+    expect(controller.animation!.value, lessThan(4),
         reason: '指示条应正从「首页」滑向「媒体服务器」，而不是直接落位');
 
     await tester.pumpAndSettle();
-    expect(controller.animation!.value, 3);
+    expect(controller.animation!.value, 4);
   });
 
   // 反向切换：目标分区在布局序里排在旧分区前面，新位置的 LayoutBuilder 先布局，
