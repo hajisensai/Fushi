@@ -2380,11 +2380,10 @@ void main() {
       'Widget buildPlaceholder()',
       'Widget buildMediaItemContent(MediaItem item)',
     );
-    final String batchTagIntentRow = _sectionSource(
-      source,
-      'class _BatchTagIntentRow',
-      source.length,
-    );
+    // 批量打标签已收敛到共享标签选择器（tag_picker_sheet.dart），间距令牌在那里断言。
+    final String batchTagIntentRow = File(
+      'lib/src/media/tags/tag_picker_sheet.dart',
+    ).readAsStringSync();
 
     // 批量操作栏的 chrome（含全部间距）已收敛到共享 [BatchActionBar]，所以令牌
     // 用法要到那份实现里断言；调用点只剩动作按钮，仍不得出现硬编码间距。
@@ -2466,23 +2465,17 @@ void main() {
       'class ReaderHistoryDeleteDialog',
       'class _BookProfileDialog',
     );
-    final String batchTagDialog = _sectionSource(
-      source,
-      'class _BatchTagPickerDialog',
-      'enum _BatchTagIntent',
-    );
+    // 批量 / 单条打标签统一走共享标签选择器 [TagPickerPanel]：窄屏 sheet、宽屏
+    // FushiDialogFrame 弹层，主体是 FushiModalSheetFrame（MD3 chrome 闭环）。
+    final String batchTagDialog = File(
+      'lib/src/media/tags/tag_picker_sheet.dart',
+    ).readAsStringSync();
 
     expect(deleteDialog, contains('FushiDialogFrame('));
     expect(deleteDialog, contains('FushiModalSheetFrame('));
-    // 批量标签对话框的 MD3 chrome 已抽到与视频 tab 共用的
-    // BatchTagPickerDialogFrame；切片断言走共享外壳，再对共享外壳文件
-    // 断言真实 chrome，保证 MD3 保证传递闭环。
-    expect(batchTagDialog, contains('BatchTagPickerDialogFrame('));
-    final String sharedBatchTagFrame = File(
-      'lib/src/utils/components/batch_tag_dialog_frame.dart',
-    ).readAsStringSync();
-    expect(sharedBatchTagFrame, contains('FushiDialogFrame('));
-    expect(sharedBatchTagFrame, contains('FushiModalSheetFrame('));
+    expect(batchTagDialog, contains('FushiDialogFrame('));
+    expect(batchTagDialog, contains('FushiModalSheetFrame('));
+    expect(source, isNot(contains('class _BatchTagPickerDialog')));
     for (final String dialogSource in <String>[deleteDialog, batchTagDialog]) {
       expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
     }

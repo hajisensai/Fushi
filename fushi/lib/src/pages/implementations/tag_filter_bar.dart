@@ -4,11 +4,13 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
+import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/utils.dart';
 
 /// 书架 / 视频 tab 共享的标签筛选栏：横向 tag chip（点选筛选、长按拖拽重排）+ 末尾
@@ -101,18 +103,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       child: _tagBarAction(
         icon: Icons.settings_outlined,
         tooltip: t.tag_manage,
-        onTap: () {
-          Navigator.push(
-            context,
-            adaptivePageRoute(
-              context: context,
-              builder: (_) => const TagManagementPage(),
-            ),
-          ).then((_) {
-            ref.invalidate(allTagsProvider);
-            widget.onTagsChanged?.call();
-          });
-        },
+        onTap: () => _openTagManagement(context),
       ),
     );
     // 末尾动作：先「管理标签」，再可选「批量选择」。
@@ -154,6 +145,27 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     // 拆出的标签段不钉住动作：齿轮跟在标签后面滚动。
     final bool pinned = widget.pinActions && !tagsOnly;
 
+    // 拆段形态（库页标签栏）：行首一枚「管理」chip（新建 / 改名 / 改色 / 合并 /
+    // 排序的入口），有筛选时行尾一枚「清除」chip。
+    final List<Widget> leadingChips = <Widget>[
+      if (tagsOnly && widget.showTagManagement)
+        _TagBarActionChip(
+          key: const ValueKey<String>('library_tag_manage_chip'),
+          icon: Icons.tune_rounded,
+          label: t.tag_manage,
+          onTap: () => _openTagManagement(context),
+        ),
+    ];
+    final List<Widget> trailingChips = <Widget>[
+      if (tagsOnly && selectedIds.isNotEmpty)
+        _TagBarActionChip(
+          key: const ValueKey<String>('library_tag_clear_chip'),
+          icon: Icons.filter_alt_off_outlined,
+          label: t.tag_clear_filter,
+          onTap: () => ref.read(selectedTagIdsProvider.notifier).state = <int>{},
+        ),
+    ];
+    final int lead = leadingChips.length;
     final Widget tags = HorizontalDragScrollable(
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
@@ -163,11 +175,19 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           vertical: tokens.spacing.gap * 0.75,
         ),
         // 非钉住形态：整组动作作为**一个**工具栏项跟在标签后面滚动。
-        itemCount: widget.tags.length +
+        itemCount: lead +
+            widget.tags.length +
+            trailingChips.length +
             (pinned || trailing.isEmpty ? 0 : 1),
         separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
-        itemBuilder: (context, index) {
+        itemBuilder: (context, rawIndex) {
+          if (rawIndex < lead) return Center(child: leadingChips[rawIndex]);
+          final int index = rawIndex - lead;
           if (index >= widget.tags.length) {
+            final int extra = index - widget.tags.length;
+            if (extra < trailingChips.length) {
+              return Center(child: trailingChips[extra]);
+            }
             return Center(child: FushiToolbar(dense: true, children: trailing));
           }
           final BookTagRow tag = widget.tags[index];
@@ -228,10 +248,11 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     );
     if (tagsOnly) {
       // 拆段形态：紧跟在库页工具行下面，与内容之间靠留白分隔，不画分隔线。
-      return SizedBox(height: tokens.spacing.gap * 5.5, child: tags);
+      // M3E 标签 chip 高 36 + 上下各 gap*0.75 的留白。
+      return SizedBox(height: 36 + tokens.spacing.gap * 1.5, child: tags);
     }
     return Container(
-      height: widget.pinActions ? 48 : tokens.spacing.gap * 5.5,
+      height: widget.pinActions ? 48 : 36 + tokens.spacing.gap * 1.5,
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
@@ -258,6 +279,21 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             )
           : tags,
     );
+  }
+
+  /// 打开标签管理页；返回后刷新标签池与调用方的标签映射。
+  void _openTagManagement(BuildContext context) {
+    Navigator.push(
+      context,
+      adaptivePageRoute(
+        context: context,
+        builder: (_) => const TagManagementPage(),
+      ),
+    ).then((_) {
+      if (!mounted) return;
+      ref.invalidate(allTagsProvider);
+      widget.onTagsChanged?.call();
+    });
   }
 
   Widget _tagBarAction({
@@ -435,13 +471,75 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     required bool isDimmed,
     VoidCallback? onTap,
   }) {
-    return FushiTagChip(
+    // M3E 彩色 filter chip（选中饱和标签色 + 勾号、胶囊→圆角方弹簧形变）；Apple
+    // 下它委托给 FushiTagChip( 玻璃胶囊 + 色点 )。
+    return FushiTagToggleChip(
       label: tag.name,
       color: Color(tag.colorValue),
-      selected: isSelected,
+      state: isSelected ? TagCheckState.all : TagCheckState.none,
       dimmed: isDimmed,
-      tone: FushiTagChipTone.surface,
       onTap: onTap,
+    );
+  }
+}
+
+/// 标签栏首尾的动作 chip（「管理」「清除」）：M3E 是 secondaryContainer 色块的
+/// 圆角方 chip（与彩色标签 chip 一眼区分），Apple 是玻璃胶囊。
+class _TagBarActionChip extends StatelessWidget {
+  const _TagBarActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return FushiTagChip(label: label, onTap: onTap);
+    }
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Color fill = eink ? scheme.surface : scheme.secondaryContainer;
+    final Color fg = eink ? scheme.onSurface : scheme.onSecondaryContainer;
+    final OutlinedBorder shape = RoundedRectangleBorder(
+      borderRadius: const BorderRadius.all(Radius.circular(12)),
+      side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+    );
+    return FushiPressScale(
+      scale: 0.94,
+      child: Material(
+        color: fill,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          customBorder: shape,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.fromSTEB(10, 6, 14, 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  FushiIcon(icon, size: 18, color: fg),
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: (Theme.of(context).textTheme.labelLarge ??
+                            const TextStyle())
+                        .copyWith(color: fg, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

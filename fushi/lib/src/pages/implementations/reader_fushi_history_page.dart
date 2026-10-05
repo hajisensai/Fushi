@@ -28,6 +28,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -117,7 +118,6 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 
@@ -3125,14 +3125,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 失效标签 map 与筛选 provider，卡面 chip 与标签过滤立即刷新。
   Future<void> _openMediaTagPicker(MediaRef media) async {
     Navigator.pop(context);
-    await Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => TagPickerPage(media: media),
-      ),
-    );
+    await showTagPicker(context, targets: TagTargets(media: <MediaRef>[media]));
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     ref.invalidate(filteredSrtBookUidsProvider);

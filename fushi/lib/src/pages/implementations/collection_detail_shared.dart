@@ -1,9 +1,9 @@
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -69,10 +69,9 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
   /// collectionId）；返回后自增刷新计数，触发 [buildDetailTagChips] 的
   /// FutureBuilder 重取，chip 行立即反映新增/移除。
   Future<void> editDetailCollectionTags() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => TagPickerPage(collectionId: detailCollection.id),
-      ),
+    await showTagPicker(
+      context,
+      targets: TagTargets(collectionIds: <int>[detailCollection.id]),
     );
     if (!mounted) return;
     setState(() => detailTagsRefresh++);
