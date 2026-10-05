@@ -11,6 +11,16 @@ const String kJaFontSpecimenGlyphs = 'Ag 永あア漢';
 /// 标点位置。
 const String kJaFontSampleSentence = '吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。';
 
+/// 字体库样张卡的三种样例文字（日文 / 中文 / 西文）。
+enum FontSampleScript { japanese, chinese, latin }
+
+/// 样张卡默认文字：日文取《吾輩は猫である》开头、中文取《千字文》、西文取全字母句。
+String fontSampleSentence(FontSampleScript script) => switch (script) {
+  FontSampleScript.japanese => '吾輩は猫である。名前はまだ無い。',
+  FontSampleScript.chinese => '天地玄黄，宇宙洪荒。日月盈昃，辰宿列张。',
+  FontSampleScript.latin => 'The quick brown fox jumps over the lazy dog.',
+};
+
 /// 字体库条目（系统族名或导入的文件）→ 引擎里可用的族名。
 ///
 /// 系统字体直接用族名；文件字体经 [AppFontLoader] 注册（幂等，与 app 字体链、
