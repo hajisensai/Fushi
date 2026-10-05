@@ -1,6 +1,8 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for selecting segmented units of a source
@@ -66,7 +68,7 @@ class _TextSegmentationDialogPage
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.text_segmentation,
-        leadingIcon: Icons.text_fields_outlined,
+        leadingIcon: FushiIcons.textFields,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -99,7 +101,22 @@ class _TextSegmentationDialogPage
         controller: _scrollController,
         child: SingleChildScrollView(
           controller: _scrollController,
-          child: Wrap(children: getTextWidgets()),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _buildSelectionPreview(),
+              SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
+              // 分词 chip 错峰进场；行列间距走 token，不再挤成一团。
+              FushiEntranceScope(
+                child: Wrap(
+                  spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+                  runSpacing: FushiDesignTokens.of(context).spacing.gap / 2,
+                  children: getTextWidgets(),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -120,10 +137,57 @@ class _TextSegmentationDialogPage
         },
       );
 
-      widgets.add(widget);
+      widgets.add(FushiStaggeredEntrance(index: index, child: widget));
     });
 
     return widgets;
+  }
+
+  /// 当前选中片段的预览：M3E secondaryContainer 色块，随 chip 选择实时更新；
+  /// 未选时显示原文（弱化色），让用户一眼看到「将要取出 / 查询的是什么」。
+  Widget _buildSelectionPreview() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    return ListenableBuilder(
+      listenable: Listenable.merge(_valuesSelected.values.toList()),
+      builder: (BuildContext context, Widget? child) {
+        final StringBuffer picked = StringBuffer();
+        widget.segmentedText.forEachIndexed((int index, String segment) {
+          if (_valuesSelected[index]!.value) picked.write(segment);
+        });
+        final bool hasPick = picked.isNotEmpty;
+        final Color background = glass
+            ? fushiNeutralBlockColor(context)
+            : (hasPick
+                ? colors.secondaryContainer
+                : fushiNeutralBlockColor(context));
+        final Color foreground = glass
+            ? (hasPick ? colors.primary : tokens.surfaces.onVariant)
+            : (hasPick
+                ? colors.onSecondaryContainer
+                : tokens.surfaces.onVariant);
+        final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
+        return AnimatedContainer(
+          duration: spring.duration,
+          curve: spring.curve,
+          padding: EdgeInsets.all(tokens.spacing.card),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: FushiM3eShape.cardRadius,
+          ),
+          child: Text(
+            hasPick ? picked.toString().trim() : widget.sourceText,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+            style: hasPick
+                ? context.fushiType.titleMediumEmphasized
+                    .copyWith(color: foreground)
+                : tokens.type.listSubtitle.copyWith(color: foreground),
+          ),
+        );
+      },
+    );
   }
 
   void _toggleSegment(int index) {
@@ -182,6 +246,7 @@ class _TextSegmentationDialogPage
   Widget buildSelectButton() {
     return adaptiveDialogAction(
       context: context,
+      isDefaultAction: true,
       onPressed: executeSelect,
       child: Text(t.dialog_select),
     );
