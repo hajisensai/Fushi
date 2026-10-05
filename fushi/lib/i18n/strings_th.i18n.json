@@ -6426,5 +6426,19 @@
   "dict_order_position_clamped": "Out of range — will move to position $n",
   "discovery_hero_previous": "Previous",
   "discovery_hero_next": "Next",
-  "discovery_hero_page_indicator": "Item ${index} of ${count}"
+  "discovery_hero_page_indicator": "Item ${index} of ${count}",
+  "game_lookup_attached_status_disabled": "Off",
+  "game_lookup_attached_status_resolving_target": "Finding game window",
+  "game_lookup_attached_status_waiting_body_thread": "Waiting for dialogue thread",
+  "game_lookup_attached_status_needs_risk_acceptance": "Click risk needs confirming",
+  "game_lookup_attached_status_needs_calibration": "Needs calibration",
+  "game_lookup_attached_status_calibrating": "Calibrating",
+  "game_lookup_attached_status_active_native": "On · native layout",
+  "game_lookup_attached_status_active_attached": "On · calibrated layer",
+  "game_lookup_attached_status_suspended": "Paused",
+  "game_lookup_attached_status_fallback": "Fallback",
+  "game_workbench_thread_choose": "Choose dialogue thread",
+  "game_workbench_hook_code": "Hook code",
+  "game_workbench_detail_close": "Close line details",
+  "game_workbench_detail_open": "Line audio"
 }
