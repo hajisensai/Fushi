@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -126,7 +127,16 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           children: [
             _buildTitleBar(),
             _buildSearchBar(),
-            Expanded(child: _buildResults()),
+            // 搜索中 / 无结果 / 结果三态之间淡入淡出（effects 弹簧，不过冲）。
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: context.fushiMotion.effectsDefault.duration,
+                child: KeyedSubtree(
+                  key: ValueKey<String>(_resultsStateKey),
+                  child: _buildResults(),
+                ),
+              ),
+            ),
             _buildResizeHandle(),
           ],
         ),
@@ -153,10 +163,20 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
         ),
         child: Row(
           children: [
+            // M3E：标题前的语义图标（主色），标题 titleSmall emphasized；整条仍是
+            // 拖动窗口的把手。
+            FushiIcon(
+              FushiIcons.dictionary,
+              size: 18,
+              color: tokens.surfaces.primary,
+            ),
+            SizedBox(width: tokens.spacing.gap),
             Expanded(
               child: Text(
                 t.floating_dict_title,
-                style: tokens.type.listTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: context.fushiType.titleSmallEmphasized,
               ),
             ),
             SizedBox(
@@ -164,7 +184,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
               height: 28,
               child: FushiIconButtonControl(
                 icon: FushiIcon(
-                  Icons.close,
+                  FushiIcons.close,
                   size: 16,
                   color: tokens.surfaces.onVariant,
                 ),
@@ -196,6 +216,15 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     );
   }
 
+  /// 结果区当前处于哪一态（给 [AnimatedSwitcher] 区分子树）。
+  String get _resultsStateKey {
+    if (_isSearching) return 'searching';
+    if (_result == null || _result!.entries.isEmpty) {
+      return _lastSearch.isEmpty ? 'idle' : 'empty';
+    }
+    return 'results';
+  }
+
   Widget _buildResults() {
     if (_isSearching) {
       return Center(
@@ -207,11 +236,15 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
       );
     }
     if (_result == null || _result!.entries.isEmpty) {
-      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+      if (_lastSearch.isEmpty) return const SizedBox.shrink();
+      // 无结果：M3E 空状态（色块图标 + 文案），而不是一行小灰字。
       return Center(
-        child: Text(
-          _lastSearch.isEmpty ? '' : t.no_results_found,
-          style: tokens.type.metadata,
+        child: SingleChildScrollView(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.searchOff,
+            message: t.no_results_found,
+            iconSize: 28,
+          ),
         ),
       );
     }
@@ -246,7 +279,7 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
           height: 20,
           alignment: Alignment.bottomRight,
           child: FushiIcon(
-            Icons.drag_handle,
+            FushiIcons.dragHandle,
             size: 14,
             color: cs.outlineVariant,
           ),
