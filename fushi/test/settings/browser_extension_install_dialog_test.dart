@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/lookup/browser_default_detector.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/utils.dart';
@@ -46,27 +47,63 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('renders numbered steps + every browser extensions url + path',
+  testWidgets(
+      'renders numbered steps, one chip per browser, one url at a time + path',
       (WidgetTester tester) async {
     const String path = r'/data/fushi/fushi-browser-extension';
     await pumpSteps(tester, serverEnabled: true, hasToken: true, path: path);
 
-    // 分步编号 1..5 都在。
+    // 分步编号 1..5 都在（stepper 初始停在第 1 步，后面都还是数字）。
     for (final String n in <String>['1', '2', '3', '4', '5']) {
       expect(find.text(n), findsOneWidget, reason: 'missing step $n');
     }
-    // 每个受支持浏览器的扩展页地址都作为可复制字段文本存在（步骤 1 按枚举遍历渲染，
-    // 新增 BrowserKind 时这里自动跟着要求它出现在引导里，不会漏渲染）。
+    // 每个受支持浏览器一枚 chip（步骤 1 按枚举遍历渲染，新增 BrowserKind 时这里
+    // 自动跟着要求它出现在引导里，不会漏渲染）；地址只显示选中的那一个。
     expect(BrowserKind.values, hasLength(greaterThanOrEqualTo(2)));
     for (final BrowserKind kind in BrowserKind.values) {
-      expect(find.text(browserExtensionsPageUrl(kind)), findsOneWidget,
-          reason: '$kind 的扩展页地址没渲染出来');
+      expect(find.text(browserDisplayName(kind)), findsOneWidget,
+          reason: '$kind 的浏览器 chip 没渲染出来');
     }
-    // 扩展文件夹路径存在且可选中/复制。
+    final BrowserKind first = BrowserKind.values.first;
+    expect(find.text(browserExtensionsPageUrl(first)), findsOneWidget);
+    for (final BrowserKind kind in BrowserKind.values.skip(1)) {
+      expect(find.text(browserExtensionsPageUrl(kind)), findsNothing,
+          reason: '未选中的浏览器不该再各占一行地址');
+    }
+    // 点另一个浏览器 chip → 地址换成它的。
+    final BrowserKind second = BrowserKind.values[1];
+    await tester.tap(find.text(browserDisplayName(second)));
+    await tester.pumpAndSettle();
+    expect(find.text(browserExtensionsPageUrl(second)), findsOneWidget);
+    expect(find.text(browserExtensionsPageUrl(first)), findsNothing);
+
+    // 第 4 步展开后：扩展文件夹路径卡（可选中 / 复制）出现。
+    expect(find.text(path), findsNothing);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('browser-extension-step-3')));
+    await tester.pumpAndSettle();
     expect(find.text(path), findsOneWidget);
-    // 可复制字段 = 每个浏览器一个 + 扩展路径一个，各带一个复制按钮。
-    expect(
-        find.byIcon(Icons.copy), findsNWidgets(BrowserKind.values.length + 1));
+  });
+
+  testWidgets('detected default browser is preselected',
+      (WidgetTester tester) async {
+    final BrowserKind detected = BrowserKind.values.last;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: buildBrowserExtensionInstallStepsForTest(
+              path: '/x',
+              serverEnabled: true,
+              hasToken: true,
+              detectedBrowser: detected,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(browserExtensionsPageUrl(detected)), findsOneWidget);
   });
 
   testWidgets('copy button writes the extensions url to the clipboard',
@@ -94,12 +131,14 @@ void main() {
       'ready state hides the redundant banner (done text only at step 5)',
       (WidgetTester tester) async {
     await pumpSteps(tester, serverEnabled: true, hasToken: true);
-    // 就绪时不再显示顶部横幅：既没有提醒文案，也没有横幅的实心对勾图标。
+    // 就绪时不再显示顶部横幅。
     expect(find.text(t.browser_extension_enable_server_first), findsNothing);
-    expect(find.byIcon(Icons.check_circle), findsNothing);
-    // 「完成」文案只在步骤 5 出现一次（步骤 5 用的是描边对勾 check_circle_outline）。
+    // 「完成」文案只在最后一步（验证连接）展开后出现一次。
+    expect(find.text(t.browser_extension_step_done_auto), findsNothing);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('browser-extension-step-4')));
+    await tester.pumpAndSettle();
     expect(find.text(t.browser_extension_step_done_auto), findsOneWidget);
-    expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
   });
 
   testWidgets('banner nudges to enable server when not ready',

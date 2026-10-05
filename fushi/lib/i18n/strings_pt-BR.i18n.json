@@ -6634,5 +6634,16 @@
   "manga_reader_custom_color": "Custom color",
   "manga_ocr_ai_mode_low_confidence_short": "Uncertain",
   "manga_ocr_ai_mode_all_short": "All",
-  "home_nav_bar_labels": "Show navigation bar labels"
+  "home_nav_bar_labels": "Show navigation bar labels",
+  "browser_extension_hero_setup_hint": "Follow the install guide, then check the connection.",
+  "browser_extension_hero_connected_hint": "Lookups from your browser go straight to Fushi.",
+  "browser_extension_port_label": "Port $port",
+  "browser_extension_guide_title": "Install guide",
+  "browser_extension_guide_reinstall": "Reinstall or update the extension",
+  "browser_extension_guide_reinstall_hint": "Open the install steps again to load the latest files.",
+  "browser_extension_guide_progress": "Step $current of $total",
+  "browser_extension_browser_default": "Default browser",
+  "browser_extension_open_page_action": "Try to open",
+  "browser_extension_open_page_failed": "Couldn't open it automatically. Copy the address and paste it into the address bar.",
+  "browser_extension_folder_not_ready": "Prepare the extension files first; the folder path will appear here."
 }
