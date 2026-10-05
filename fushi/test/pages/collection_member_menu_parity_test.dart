@@ -5,6 +5,8 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
+    show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -24,6 +26,9 @@ void main() {
     for (final String k in <String>['k1', 'k2', 'k3']) {
       await db.addToCollection(cid, MediaKind.epub, k);
     }
+    // 长按→共享菜单是手动序拖排网格的行为（默认卷号序下长按是多选）。
+    await db.setPref(
+        collectionDetailSortPrefKey(cid), kCollectionDetailManualSortValue);
     return (db: db, col: (await db.getMediaCollectionById(cid))!);
   }
 

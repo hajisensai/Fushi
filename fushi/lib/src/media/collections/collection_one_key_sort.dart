@@ -107,6 +107,22 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
     );
 }
 
+/// 合集详情页「成员排序方式」的每合集偏好键前缀（值 = `CollectionMemberSort.name`）。
+///
+/// 没有这条偏好时详情页默认按**卷号**（显示名 natural）排——成员表的 sortIndex 是
+/// 加入顺序（逐本加入 / 目录自动合集按扫描序），不是用户排出来的序；只有用户
+/// 明确选过「手动」、拖拽过或「存为手动顺序 / 一键整理」落过盘，才写 `manual`，
+/// 此后默认走手动序。键里是本机合集自增 id，属于设备本地状态，不进 Profile 快照
+/// （见 `ProfileKeys._excludedPrefPrefixes`）。
+const String kCollectionDetailSortPrefPrefix = 'collection_detail_sort_';
+
+/// 合集 [collectionId] 的详情页排序偏好键。
+String collectionDetailSortPrefKey(int collectionId) =>
+    '$kCollectionDetailSortPrefPrefix$collectionId';
+
+/// 偏好里「用户保存过手动顺序」的取值。
+const String kCollectionDetailManualSortValue = 'manual';
+
 /// 从库页合集右键菜单触发的一键整理：取成员 → [sortedCollectionRows] →
 /// 一次落盘 sortIndex。成员少于 2 个时无序可整，直接返回（不空写库）。
 Future<void> applyCollectionOneKeySort({
@@ -125,6 +141,11 @@ Future<void> applyCollectionOneKeySort({
       for (final MediaCollectionItemRow r in next)
         (mediaType: r.mediaType, entryKey: r.entryKey),
     ],
+  );
+  // 一键整理落盘的就是用户要的手动序：详情页此后默认按手动序展示。
+  await db.setPref(
+    collectionDetailSortPrefKey(collectionId),
+    kCollectionDetailManualSortValue,
   );
 }
 

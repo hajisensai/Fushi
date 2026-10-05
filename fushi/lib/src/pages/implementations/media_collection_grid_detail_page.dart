@@ -13,7 +13,11 @@ import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show ShelfReadStatus;
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
-    show loadCollectionMemberMeta, sortedCollectionRows;
+    show
+        collectionDetailSortPrefKey,
+        kCollectionDetailManualSortValue,
+        loadCollectionMemberMeta,
+        sortedCollectionRows;
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'
     show unifiedShelfCardLayout;
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
@@ -154,7 +158,15 @@ class _MediaCollectionGridDetailPageState
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   final ScrollController _scroll = ScrollController();
-  CollectionMemberSort _sort = CollectionMemberSort.manual;
+
+  /// 默认按卷号：成员表 sortIndex 只是加入顺序（逐本加入、目录扫描序），不是
+  /// 用户排出来的序——直接按它展示就是「21, 25, 24, 23, 22」。每合集偏好
+  /// （[collectionDetailSortPrefKey]）记着用户选过的排序；用户保存过手动顺序
+  /// （选「手动」/ 拖拽 / 存为手动顺序 / 一键整理）后才默认走手动序。
+  CollectionMemberSort _sort = CollectionMemberSort.volume;
+
+  /// 排序偏好只在首次加载时读一次；之后成员增删的 reload 不覆盖本页当前选择。
+  bool _sortPrefLoaded = false;
   CollectionMemberViewMode _viewMode = CollectionMemberViewMode.grid;
   Set<int> _tagFilter = <int>{};
   ShelfReadStatus? _statusFilter;
@@ -204,8 +216,26 @@ class _MediaCollectionGridDetailPageState
     final List<BookTagRow> allTags = await db.getAllTags();
     final List<BookTagRow> collectionTags =
         await db.getTagsForCollection(widget.collection.id);
+    CollectionMemberSort? savedSort;
+    if (!_sortPrefLoaded) {
+      final String? raw =
+          await db.getPref(collectionDetailSortPrefKey(widget.collection.id));
+      for (final CollectionMemberSort s in CollectionMemberSort.values) {
+        if (s.name == raw) savedSort = s;
+      }
+      // 阅读时间排序要靠调用方给的最后阅读时刻；没有就回落默认卷号。
+      if (savedSort == CollectionMemberSort.read &&
+          widget.memberInfoOf == null) {
+        savedSort = null;
+      }
+    }
     if (!mounted) return;
+    final CollectionMemberSort? restoredSort = savedSort;
     setState(() {
+      if (!_sortPrefLoaded) {
+        _sortPrefLoaded = true;
+        if (restoredSort != null) _sort = restoredSort;
+      }
       _rows = rows;
       _meta = meta;
       _memberTagIds = tagIds;
@@ -219,6 +249,20 @@ class _MediaCollectionGridDetailPageState
       );
     });
   }
+
+  /// 切换排序方式并记进本合集的排序偏好（下次打开沿用）。
+  void _setSort(CollectionMemberSort sort) {
+    setState(() => _sort = sort);
+    _persistSort(sort);
+  }
+
+  Future<void> _persistSort(CollectionMemberSort sort) =>
+      widget.database.setPref(
+        collectionDetailSortPrefKey(widget.collection.id),
+        sort == CollectionMemberSort.manual
+            ? kCollectionDetailManualSortValue
+            : sort.name,
+      );
 
   /// 「存为手动顺序」（原一键整理，排序交互重设计层次 B2）：把当前视图排序写穿
   /// sortIndex（`reorderCollectionItems`），库页合集行同源立即同序。阅读时间排序
@@ -250,6 +294,7 @@ class _MediaCollectionGridDetailPageState
       _rows = next;
       _sort = CollectionMemberSort.manual;
     });
+    await _persistSort(CollectionMemberSort.manual);
     await widget.database.reorderCollectionItems(
       widget.collection.id,
       <CollectionMemberKey>[
@@ -335,6 +380,7 @@ class _MediaCollectionGridDetailPageState
       _rows = next;
       _visibleRows = visible;
     });
+    await _persistSort(CollectionMemberSort.manual);
     await widget.database.reorderCollectionItems(
       widget.collection.id,
       <CollectionMemberKey>[
@@ -959,7 +1005,7 @@ class _MediaCollectionGridDetailPageState
                   ? const FushiIcon(Icons.check_rounded, size: 20)
                   : null,
               autofocus: s == _sort,
-              onPressed: () => setState(() => _sort = s),
+              onPressed: () => _setSort(s),
               child: Text(label(s)),
             ),
         const FushiDivider(),
@@ -977,7 +1023,7 @@ class _MediaCollectionGridDetailPageState
         key: const ValueKey<String>('collection_detail_sort'),
         icon: Icons.sort_rounded,
         tooltip: t.sort_by,
-        selected: _sort != CollectionMemberSort.manual,
+        selected: _sort != CollectionMemberSort.volume,
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
       ),
     );
