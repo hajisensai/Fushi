@@ -5,7 +5,7 @@ import 'package:fushi/src/sync/game_stream_client.dart';
 class _RejectingTransport implements GameStreamTransport {
   _RejectingTransport(this.error);
 
-  final Object error;
+  final Exception error;
   final List<String> paths = <String>[];
 
   @override
