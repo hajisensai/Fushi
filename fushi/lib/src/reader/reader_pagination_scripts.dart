@@ -1276,6 +1276,19 @@ window.__fushiInstallShell = function(C) {
   noteUserScroll: function() {
     this.clearImageLateAnchor();
     this._setRestoreCharAnchor(null);
+    this._clearSelectionOnViewportChange();
+  },
+  // 视口换了（翻页 / 用户滚动 / 拖滚动条 / 方向键原生滚动 / 查词弹窗遮罩转发的滚动）——
+  // 上一次划词的高亮与两端手柄必须跟着消失，否则它们会留在**新页面**上：app 自绘选区
+  // （`this.selection` + CSS highlight / wrapper + 手柄 + 浏览器原生 range）全部属于旧页面
+  // 的内容，跨页残留既脏又误导（用户报「选中的时候上下翻页，选择的条还在」）。
+  // 这是两件不同的事：句子音频 cue 的清除（`applySentenceAudioCues`）只对有声书路径生效，
+  // 与翻页无关，所以不能靠它。
+  // 拖选中途不打断：那时 `dragAnchor` 还在（手指没松），视口变化是手势的一部分。
+  _clearSelectionOnViewportChange: function() {
+    var s = window.fushiSelection;
+    if (!s || s.dragAnchor) return;
+    if (typeof s.clearSelection === 'function') s.clearSelection();
   },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
@@ -3081,6 +3094,7 @@ $kSentenceAudioRubyGapJs
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
       if (targetForward <= stepScroll + 1) return "limit";
       this.setPagePosition(context, targetForward);
+      this._clearSelectionOnViewportChange();
       return "scrolled";
     } else {
       var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
@@ -3088,6 +3102,7 @@ $kSentenceAudioRubyGapJs
       if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
       if (targetBack >= stepScroll - 1) return "limit";
       this.setPagePosition(context, targetBack);
+      this._clearSelectionOnViewportChange();
       return "scrolled";
     }
   },
@@ -3818,6 +3833,7 @@ $kSentenceAudioRubyGapJs
     }
     var after = vertical ? window.scrollX : root.scrollTop;
     var moved = Math.abs(after - before) > 1;
+    if (moved) this._clearSelectionOnViewportChange();
     return moved ? "scrolled" : "limit";
   },
   getFirstVisibleCharOffset: function() {

@@ -379,6 +379,8 @@ window.__fushiCssHighlightsSupported = !!(window.CSS && CSS.highlights && window
 window.fushiSelection = {
   selection: null,
   // TODO-1317: mobile long-press selection anchor.
+  // 本次修复把它扩成**区间**：{node, offset, endNode, endOffset}，空格分词词里长按定下的
+  // 是整词（词首..词末），其它脚本是单字（首尾同一位置）。见 selectionAnchorAtHit。
   dragAnchor: null,
   // TODO-1366: start/end drag handles (touch grips) for the app-drawn selection.
   // Elements are lazily created and parented to <html> (like the caret ring),
@@ -714,6 +716,277 @@ window.fushiSelection = {
       }
     }
     return null;
+  },
+  // ---- 坐标 -> 文本位置（选区拖动端点解析层） --------------------------------
+  //
+  // 根因（用户报「长按拖选 / 拖手柄到字缝、行尾、段间空白，手柄就卡住、松手再拖也过不
+  // 去」）：拖动路径原来**只**认几何命中 `getSelectableCharacterAtPoint`——它要求手指压
+  // 在某个字符矩形上（先精确、再 ±6px）。字缝、行距、行尾/行首空白（text-indent、两端
+  // 对齐的伸缩空隙、段间 margin）上没有任何字符矩形盖住手指，命中返回 null；于是
+  // `updateRangeSelection` 把端点钉回锚点（整段选区当场塌回锚点字）、`moveSelectionHandle`
+  // 直接 return（手柄视觉冻结）。修法不是把 ±6px 调大——那只是把卡住的位置推迟到下一个
+  // 缝隙。这里补一层真正的「坐标 -> 文本位置」解析，语义与 Android
+  // `TextView.getOffsetForPosition()` / Flutter `TextPainter.getPositionForOffset()` 一致：
+  //
+  //   手指坐标 -> 最近 caret（字符之间的位置）-> 方向修正 -> 端点字符 -> collectRangeBetween
+  //
+  // 三级解析（每级都过 BUG-1797 的可见性收口：分页页边距带里被 clip 掉的相邻页字符永不
+  // 参与竞争，否则手柄会被拉到看不见的另一页文字上）：
+  //   ① 原生 caret API（`caretPositionFromPoint` / `caretRangeFromPoint`）：Chrome WebView
+  //      与 WKWebView 都实现了「最近 caret」语义（落在行距/字缝/行尾会按最近行盒 clamp），
+  //      O(1)，绝大多数帧走这条。只认文本节点结果（BUG-765：手柄 div / documentElement
+  //      的命中不可信），并复核相邻字符可见。
+  //   ② 原生不可用 / 命中被遮挡 / 结果不可见时，在命中元素所在的**文本块**里逐字符几何
+  //      扫描：交叉轴（横排 = y，竖排 = x）先定行，行内轴再按字符矩形中点规则定 caret
+  //      （与 `Layout.getOffsetForHorizontal` 同判据）。扫描有界于块、有字符数上限。
+  //   ③ 都失败 -> null。调用方保持旧端点（不收缩、不清高亮），旧路径零回归。
+  //
+  // 字符 (node, offset) 的 Range（按码点算 1~2 个 UTF-16 单元）。越界 / 非文本节点返回 null。
+  charRangeAt: function(node, offset) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var text = node.textContent || '';
+    if (offset < 0 || offset >= text.length) return null;
+    var codePoint = text.codePointAt(offset);
+    var length = (codePoint !== undefined && codePoint > 0xffff) ? 2 : 1;
+    var range = document.createRange();
+    range.setStart(node, offset);
+    range.setEnd(node, Math.min(offset + length, text.length));
+    return range;
+  },
+  // 字符矩形的交叉轴 / 行内轴区间（横排：交叉轴 = y、行内轴 = x；竖排 vertical-rl：
+  // 交叉轴 = x、行内轴 = y）。阅读方向（列内从上到下 / 行内从左到右）与偏移增长方向
+  // 一致，故中点规则两个轴向共用一套判据。
+  charAxisBounds: function(rect, vertical) {
+    return {
+      crossLo: vertical ? rect.left : rect.top,
+      crossHi: vertical ? rect.right : rect.bottom,
+      inlineLo: vertical ? rect.top : rect.left,
+      inlineHi: vertical ? rect.bottom : rect.right,
+    };
+  },
+  // 两个文本位置 (node, offset) 的文档序：-1 在前 / 0 同一位置 / 1 在后。判据与
+  // collectRangeBetween 的端点排序同源（compareDocumentPosition）。
+  compareTextPosition: function(nodeA, offsetA, nodeB, offsetB) {
+    if (nodeA === nodeB) return offsetA < offsetB ? -1 : (offsetA > offsetB ? 1 : 0);
+    if (!nodeA || !nodeB) return 0;
+    return (nodeA.compareDocumentPosition(nodeB) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+  },
+  // 空格分词词的边界 [start, end)（`isSpaceDelimitedLetter` + 词内撇号，与扫描模型同一套
+  // 真值）。`index` 处的字符不属于这样的词（CJK / 标点 / 空白）时返回 null。
+  spaceDelimitedWordBounds: function(text, index) {
+    if (!text || index < 0 || index >= text.length) return null;
+    if (!this.isSpaceDelimitedLetter(text[index])) return null;
+    var start = index;
+    var end = index + 1;
+    while (start > 0 &&
+        (this.isSpaceDelimitedLetter(text[start - 1]) || this.isIntraWordApostrophe(text, start - 1))) {
+      start--;
+    }
+    while (end < text.length &&
+        (this.isSpaceDelimitedLetter(text[end]) || this.isIntraWordApostrophe(text, end))) {
+      end++;
+    }
+    return { start: start, end: end };
+  },
+  // 端点规范化：collectRangeBetween 的游走用 createWalker（REJECT 纯空白节点与振假名），
+  // 端点若落在被跳过的节点里，游走永远匹配不到 endNode —— 会一路扫到文末、选区暴涨。故先把
+  // 端点挪到游走会访问的正文节点：正向顺延到下一个正文节点的首字，反向回退到上一个正文
+  // 节点的末字；两个方向都没有正文时返回 null（调用方保持旧端点）。
+  normalizeEndpoint: function(node, offset, forward) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var text = node.textContent || '';
+    var walkable = text.length > 0 && !this.isFurigana(node) && !/^[\s　]*$/.test(text);
+    if (walkable) return { node: node, offset: Math.min(offset, text.length - 1) };
+    var walker = this.createWalker(document.body);
+    walker.currentNode = node;
+    if (forward) {
+      var next = walker.nextNode();
+      while (next) {
+        if (next.textContent.length > 0) return { node: next, offset: 0 };
+        next = walker.nextNode();
+      }
+    }
+    var back = this.createWalker(document.body);
+    back.currentNode = node;
+    var prev = back.previousNode();
+    while (prev) {
+      if (prev.textContent.length > 0) return { node: prev, offset: prev.textContent.length - 1 };
+      prev = back.previousNode();
+    }
+    return null;
+  },
+  // caret (node, offset) 相邻字符里有没有可见的（BUG-1797 可见性收口）。相邻 = caret 左右
+  // 各一个字；都不在（节点首尾 / 都不可见）时返回 false，交给几何兜底再试。
+  caretHasVisibleNeighbour: function(node, offset, box) {
+    var offsets = [offset - 1, offset];
+    for (var i = 0; i < offsets.length; i++) {
+      var range = this.charRangeAt(node, offsets[i]);
+      if (!range) continue;
+      if (this.charRangeVisible(range, box)) return true;
+    }
+    return false;
+  },
+  // ① 原生 caret 快路。返回 {node, offset}（caret 语义，offset ∈ [0, len]）或 null。
+  nativeCaretAtPoint: function(x, y, box) {
+    var node = null;
+    var offset = 0;
+    try {
+      if (document.caretPositionFromPoint) {
+        var pos = document.caretPositionFromPoint(x, y);
+        if (pos && pos.offsetNode && pos.offsetNode.nodeType === Node.TEXT_NODE) {
+          node = pos.offsetNode;
+          offset = pos.offset;
+        }
+      } else if (document.caretRangeFromPoint) {
+        var range = document.caretRangeFromPoint(x, y);
+        if (range && range.startContainer &&
+            range.startContainer.nodeType === Node.TEXT_NODE) {
+          node = range.startContainer;
+          offset = range.startOffset;
+        }
+      }
+    } catch (err) {
+      return null;
+    }
+    if (!node || this.isFurigana(node)) return null;
+    if (!this.caretHasVisibleNeighbour(node, offset, box)) return null;
+    return { node: node, offset: offset };
+  },
+  // 命中测试取「手指下方第一个非手柄元素」。手柄是挂在 <html> 下的 32×32 透明触控盒
+  // （`data-fushi-sel-handle`，pointer-events:auto）：它盖住手指时 elementFromPoint 返回的
+  // 是手柄**自身**（一个 div），拿它当文本块会扫不到任何字符 —— 这正是「手指压在手柄上就
+  // 解析不出端点」的那条路。elementsFromPoint 能拿到整个元素栈，跳过手柄及其内部节点取真正
+  // 承载文字的那个元素；老 WebView 没有 elementsFromPoint 时退回 elementFromPoint，并显式
+  // 判掉手柄自身（返回 null = 这个点没有可解析的文本，调用方保持旧端点即可）。
+  //
+  // 这一层是**兜底**：moveSelectionHandle 已经在「手柄对命中测试透明」的窗口内解析（那才是
+  // 主路径）；updateRangeSelection 完全不碰 pointer-events，手指滑到端点附近被手柄盖住时
+  // 只有靠这里才解析得出来。
+  _hitElementUnderPoint: function(x, y) {
+    var isHandle = function(candidate) {
+      return !!(candidate && candidate.closest &&
+        candidate.closest('[data-fushi-sel-handle]'));
+    };
+    if (document.elementsFromPoint) {
+      var stack = document.elementsFromPoint(x, y) || [];
+      for (var i = 0; i < stack.length; i++) {
+        if (isHandle(stack[i])) continue;
+        if (stack[i]) return stack[i];
+      }
+      return null;
+    }
+    var single = document.elementFromPoint(x, y);
+    if (isHandle(single)) return null;
+    return single;
+  },
+  // ② 几何兜底：在命中元素所在的文本块里逐字符扫描，按「交叉轴最近 -> 行内轴最近」定
+  // caret。交叉轴优先是关键：行距/段距里的点必须先归到最近的**行**，否则拖到行尾右侧时
+  // 下一行的字在内联轴上贴着手指、交叉轴只差一个行距，端点会跳行。行内轴按字符矩形的
+  // 中点规则取前沿/后沿：落在字符前的空隙取前沿、字符后的空隙取后沿 -> 行尾右侧空白
+  // clamp 到行尾（最后一个字被包含）、行首左侧空白 clamp 到行首。
+  // 有界：根 = 命中元素所在的块（绝不落到整个 body），并且有字符数上限。
+  geometricCaretAtPoint: function(x, y, box) {
+    var el = this._hitElementUnderPoint(x, y);
+    if (!el) return null;
+    var container = (el.closest && el.closest('p, div, span, ruby, a')) || document.body;
+    if (!container) return null;
+    var vertical = this._selectionVertical();
+    var inlineCoord = vertical ? y : x;
+    var crossCoord = vertical ? x : y;
+    var walker = this.createWalker(container);
+    var best = null;
+    var scanned = 0;
+    var node;
+    while ((node = walker.nextNode()) && scanned < 4000) {
+      var text = node.textContent || '';
+      for (var i = 0; i < text.length && scanned < 4000;) {
+        var codePoint = text.codePointAt(i);
+        var charLength = (codePoint !== undefined && codePoint > 0xffff) ? 2 : 1;
+        var charRange = this.charRangeAt(node, i);
+        scanned++;
+        if (charRange && this.charRangeVisible(charRange, box)) {
+          var rects = charRange.getClientRects();
+          for (var r = 0; r < rects.length; r++) {
+            var rect = rects[r];
+            if (!rect || !(rect.width > 0) || !(rect.height > 0)) continue;
+            var bounds = this.charAxisBounds(rect, vertical);
+            var crossDist = crossCoord < bounds.crossLo ? bounds.crossLo - crossCoord
+              : (crossCoord > bounds.crossHi ? crossCoord - bounds.crossHi : 0);
+            var inlineDist = inlineCoord < bounds.inlineLo ? bounds.inlineLo - inlineCoord
+              : (inlineCoord > bounds.inlineHi ? inlineCoord - bounds.inlineHi : 0);
+            if (best && (crossDist > best.crossDist ||
+                (crossDist === best.crossDist && inlineDist >= best.inlineDist))) continue;
+            // 中点规则：点越过字符中线（或已在其后沿之外）-> 取后沿（下一个字符的前面 /
+            // 行尾）；否则取前沿。
+            var afterGlyph = inlineCoord > bounds.inlineHi ||
+              (inlineCoord >= bounds.inlineLo &&
+               inlineCoord >= (bounds.inlineLo + bounds.inlineHi) / 2);
+            best = {
+              node: node,
+              offset: afterGlyph ? i + charLength : i,
+              crossDist: crossDist,
+              inlineDist: inlineDist
+            };
+          }
+        }
+        i += charLength;
+      }
+    }
+    return best ? { node: best.node, offset: best.offset } : null;
+  },
+  // 坐标 -> caret：原生快路 -> 几何兜底 -> null。[box] 由调用方复用（一次拖动只在需要时量
+  // 一次几何）；不传时自己算一份。
+  caretPositionAtPoint: function(x, y, box) {
+    if (box === undefined) box = this.visibleContentBox();
+    var native = this.nativeCaretAtPoint(x, y, box);
+    if (native) return native;
+    return this.geometricCaretAtPoint(x, y, box);
+  },
+  // 拖动入口的端点解析（唯一出口）：
+  //   [strictHit] 严格几何命中的字符（getSelectableCharacterAtPoint 的结果，可为 null）；
+  //   (refNode, refOffset) 定锚端，用来判定这次拖动是向锚点之后扩（forward）还是之前缩。
+  // 返回 {node, offset, forward}，或 null（解析失败 -> 调用方保持旧选区，绝不收缩）。
+  // 严格命中优先 = 旧行为零回归（手指压在字符矩形上时端点就是那个字）；只有严格命中落空
+  // （字缝 / 行距 / 行尾 / 行首等没有字符矩形盖住手指的点）才走「坐标 -> 文本位置」解析。
+  resolveSelectionEndpoint: function(x, y, strictHit, refNode, refOffset) {
+    var node = null;
+    var offset = 0;
+    var forward = true;
+    if (strictHit) {
+      node = strictHit.node;
+      offset = strictHit.offset;
+      forward = this.compareTextPosition(node, offset, refNode, refOffset) >= 0;
+    } else {
+      var box = this.visibleContentBox();
+      var caret = this.caretPositionAtPoint(x, y, box);
+      if (!caret) return null;
+      forward = this.compareTextPosition(caret.node, caret.offset, refNode, refOffset) > 0;
+      // caret 是**字符之间**的位置：正向（往锚点之后拖）取 caret 前一个字符，反向取 caret
+      // 所在字符 —— 与 collectRangeBetween「端点字符计入区间」的语义配套。
+      var neighbour = forward
+        ? this.charBefore(caret.node, caret.offset)
+        : this.charAt(caret.node, caret.offset);
+      if (!neighbour || !neighbour.node) return null;
+      node = neighbour.node;
+      offset = neighbour.offset;
+      // BUG-1797：端点必须是**可见**字符。分页页边距带里被 clip 掉的相邻页字符可以被
+      // clamp 命中（布局期几何仍在），但用户看不见它 —— 那种点解析不出端点，保持旧端点，
+      // 绝不把选区拉到看不见的另一页文字上。
+      var endpointRange = this.charRangeAt(node, offset);
+      if (!endpointRange || !this.charRangeVisible(endpointRange, box)) return null;
+    }
+    var endpoint = this.normalizeEndpoint(node, offset, forward) ||
+      { node: node, offset: offset };
+    return { node: endpoint.node, offset: endpoint.offset, forward: forward };
+  },
+  // 长按定锚的锚点区间：空格分词词里长按 -> 整词锚点（词首..词末），原地长按即选中整词、
+  // 向两侧拖动都不丢词尾；CJK / 标点 / 空白 -> 单字锚点（与 BUG-609 起的老行为一致）。
+  selectionAnchorAtHit: function(hit) {
+    var bounds = this.spaceDelimitedWordBounds(hit.node.textContent, hit.offset);
+    if (!bounds) {
+      return { node: hit.node, offset: hit.offset, endNode: hit.node, endOffset: hit.offset };
+    }
+    return { node: hit.node, offset: bounds.start, endNode: hit.node, endOffset: bounds.end - 1 };
   },
   getSentenceContext: function(startNode, startOffset) {
     var container = this.findParagraph(startNode) || document.body;
@@ -1499,21 +1772,52 @@ window.fushiSelection = {
     var hit = this.getSelectableCharacterAtPoint(x, y);
     if (!hit) return false;
     this.clearSelection();
-    this.dragAnchor = { node: hit.node, offset: hit.offset };
+    // 锚点区间：空格分词词里长按定的是整词（原地长按即选中整词 —— 浏览器 / Android 长按
+    // 的语义），CJK / 标点 / 空白定的是单字（与 BUG-609 起的老行为一致）。
+    var anchor = this.selectionAnchorAtHit(hit);
+    this.dragAnchor = {
+      node: anchor.node, offset: anchor.offset,
+      endNode: anchor.endNode, endOffset: anchor.endOffset
+    };
     // Establish and paint the anchor glyph immediately. This is the feedback the
     // native Android selection path gives at long-press time; the old path only
     // armed an anchor and made selection contingent on a later drag.
-    this.updateRangeSelection(x, y);
+    //
+    // 这里**直接画锚点区间**，不经过端点解析：手指此刻还压在这次长按的锚点上，解析会把
+    // 端点收到手指所在的那一个字、把刚定下的词截成半截。浏览器同理——不拖就不动；拖动
+    // 由 touchmove 的 updateRangeSelection 负责，那边端点逐字跟随手指（不再有词边界吸附），
+    // 所以拉丁文本照样能选到词内的任意字符。
+    var built = this.collectRangeBetween(
+      anchor.node, anchor.offset, anchor.endNode, anchor.endOffset);
+    if (built) {
+      this.selection = {
+        startNode: built.startNode, startOffset: built.startOffset,
+        ranges: built.ranges, text: built.text
+      };
+      this.renderSelectionHighlight();
+    }
     return true;
   },
   updateRangeSelection: function(x, y) {
     if (!this.dragAnchor) return null;
+    var anchor = this.dragAnchor;
     var hit = this.getSelectableCharacterAtPoint(x, y);
-    // Over a gap/blank while dragging, keep the anchor as the end (no shrink).
-    var endNode = hit ? hit.node : this.dragAnchor.node;
-    var endOffset = hit ? hit.offset : this.dragAnchor.offset;
-    var built = this.collectRangeBetween(
-      this.dragAnchor.node, this.dragAnchor.offset, endNode, endOffset);
+    // 端点**始终**跟随手指：压在字符矩形上就用那个字，落在字缝 / 行距 / 行尾 / 行首等没有
+    // 字符矩形的位置就走「坐标 -> 文本位置」解析（Android TextView.getOffsetForPosition 语义），
+    // 端点才能连续跟随手指。锚点区间只是长按那一刻选中的初始范围（浏览器语义：不拖不动），
+    // 拖动可以自由收缩到词内、也可以越过词尾向外扩 —— 这里刻意**不**保留「落在锚点区间内
+    // 就维持锚点」的粘滞判定：那会让拉丁词永远只按整词进退、选不到词内的任意字符（用户
+    // 报「拉丁语言没法随意选择字符」的根因，与网上的实现不一致）。
+    var endpoint = this.resolveSelectionEndpoint(x, y, hit, anchor.node, anchor.offset);
+    var built;
+    if (endpoint) {
+      built = endpoint.forward
+        ? this.collectRangeBetween(anchor.node, anchor.offset, endpoint.node, endpoint.offset)
+        : this.collectRangeBetween(endpoint.node, endpoint.offset, anchor.endNode, anchor.endOffset);
+    } else {
+      // 解析失败 / 手指仍在锚点区间内：重建锚点选区（不收缩、不清高亮）。
+      built = this.collectRangeBetween(anchor.node, anchor.offset, anchor.endNode, anchor.endOffset);
+    }
     if (!built) return null;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
@@ -1529,7 +1833,9 @@ window.fushiSelection = {
   // this.selection (highlight stays up) and hands Dart a menu so a plain-text
   // range selection (copy) and lookup/mining coexist instead of forcing lookup.
   endRangeSelection: function(x, y) {
-    this.updateRangeSelection(x, y);
+    // 刻意**不**在这里再解析一次端点：touchmove 已经把端点跟到最后一次移动处，而为一次
+    // 原地长按（没有任何移动）再解析一次，会把刚定下的整词截成手指所在的那一个字。
+    // 浏览器同理——没拖过就直接确认长按选中的范围。
     this.dragAnchor = null;
     if (!this.selection || !this.selection.text) {
       this.clearSelection();
@@ -1665,6 +1971,13 @@ window.fushiSelection = {
   moveSelectionHandle: function(which, x, y) {
     var eps = this.selectionEndpoints();
     if (!eps) return;
+    // 定锚端（对侧端点）：拖 end 手柄时锚点是选区起点，拖 start 手柄时锚点是选区终点。
+    var anchorNode, anchorOffset;
+    if (which === 'end') {
+      anchorNode = eps.startNode; anchorOffset = eps.startOffset;
+    } else {
+      anchorNode = eps.endNode; anchorOffset = eps.endOffset;
+    }
     // The grip div sits directly under the finger (pointer-events:auto, top
     // z-index). A hit-test at the raw finger point resolves elementFromPoint /
     // caretPositionFromPoint to the grip element (an ELEMENT_NODE, not a text
@@ -1683,18 +1996,24 @@ window.fushiSelection = {
     // 手柄拖动是在调整**选区范围**，不是查词：用选择命中，才能把选区端点停在标点
     // 或句读上（旧实现走查词命中，拖到句号处 hit 为 null → 手柄卡住不动）。
     var hit = this.getSelectableCharacterAtPoint(x, y);
+    // 字缝 / 行距 / 行尾/行首空白处严格命中为 null —— 回退到「坐标 -> 文本位置」解析
+    // （本次修复），端点才能连续跟随手指；旧实现在这里直接 return，手柄视觉冻结、松手
+    // 再拖也过不去那一段空白。
+    //
+    // 🔴 解析必须留在上面那个「手柄对命中测试透明」的窗口**里面**：解析层的两条路
+    // （caretPositionFromPoint / elementFromPoint）与命中测试同源。手柄一恢复
+    // pointer-events:auto，原生快路就会拿到手柄元素（ELEMENT_NODE，不是文本节点）而返回
+    // null，几何兜底又会把手柄**自身**当成文本块（它是 div，closest('div') 命中自己）而扫
+    // 不到任何字符——两条路同时失效，手指还在 32×32 触控盒里的那几帧端点不前进，手柄看起
+    // 来就是卡住的。旧实现只在窗口内取严格命中，所以那个窗口够用；引入解析层之后必须把它
+    // 一起框进来。
+    var endpoint = this.resolveSelectionEndpoint(x, y, hit, anchorNode, anchorOffset);
     if (handles) {
       handles.start.style.pointerEvents = savedStartPe || 'auto';
       handles.end.style.pointerEvents = savedEndPe || 'auto';
     }
-    if (!hit) return;
-    var anchorNode, anchorOffset;
-    if (which === 'end') {
-      anchorNode = eps.startNode; anchorOffset = eps.startOffset;
-    } else {
-      anchorNode = eps.endNode; anchorOffset = eps.endOffset;
-    }
-    var built = this.collectRangeBetween(anchorNode, anchorOffset, hit.node, hit.offset);
+    if (!endpoint) return;
+    var built = this.collectRangeBetween(anchorNode, anchorOffset, endpoint.node, endpoint.offset);
     if (!built) return;
     this.selection = {
       startNode: built.startNode, startOffset: built.startOffset,
@@ -1926,6 +2245,8 @@ window.fushiSelection = {
     }
     this.hideSelectionHandles();
     this.selection = null;
+    // 锚点是「一次长按拖选」的会话状态：选区清掉就复位，下次长按重新建立。
+    this.dragAnchor = null;
   }
 };
 """;

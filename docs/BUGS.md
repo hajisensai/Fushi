@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2711 条。点号进各自文件。
+> 共 2715 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2952](bugs/BUG-2952-reader-selection-persists-across-page-turn.md) | 🚧 | 🚧 | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
+| [BUG-2951](bugs/BUG-2951-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
 | [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
 | [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |
 | [BUG-2948](bugs/BUG-2948-macos-shortcut-key-identity.md) | ✅ | ✅ | macOS 上 Shift+符号键与系统保留默认键导致快捷键无法识别 |
