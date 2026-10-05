@@ -1592,7 +1592,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           else
             FushiPageHeader(
               title: t.game_capture_workbench,
-              subtitle: t.game_capture_description,
               leading: widget.onShowLibrary == null
                   ? null
                   : FushiIconButton(
@@ -2195,50 +2194,58 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               children: <Widget>[
                 const FushiIcon(Icons.forum_outlined, size: 20),
                 const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    '${t.game_live_lines} · ${lines.length}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                if (_unreadLines > 0)
-                  // 补 onTertiaryContainer 前景（此前继承默认前景，深色主题下
-                  // 对比不足）；点击 = 跳到最新一行并清零未读。
-                  // chip 统一（2026-10-04）：可点的胶囊与其它 chip 同一语言——
-                  // MD3 secondaryContainer + onSecondaryContainer，Apple 是无
-                  // bezel 的 plain 按钮（强调色字、不铺 systemFill 灰底）；13 号 w500。
-                  FushiPressScale(
-                    child: Material(
-                      color: isGlassDesign(context)
-                          ? Colors.transparent
-                          : theme.colorScheme.secondaryContainer,
-                      borderRadius: BorderRadius.circular(999),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: _jumpToLatestAndClearUnread,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: Text(
-                            '${t.game_unread_lines} $_unreadLines',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: isGlassDesign(context)
-                                  ? appleColorsOf(context).accent
-                                  : theme.colorScheme.onSecondaryContainer,
+                // 标题 + 未读占满剩余宽度：Flexible 与 Spacer 并列会平分空余，
+                // 把「跟随实时」推到列表头中间。
+                Expanded(
+                  child: Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          '${t.game_live_lines} · ${lines.length}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (_unreadLines > 0)
+                        // 补 onTertiaryContainer 前景（此前继承默认前景，深色主题下
+                        // 对比不足）；点击 = 跳到最新一行并清零未读。
+                        // chip 统一（2026-10-04）：可点的胶囊与其它 chip 同一语言——
+                        // MD3 secondaryContainer + onSecondaryContainer，Apple 是无
+                        // bezel 的 plain 按钮（强调色字、不铺 systemFill 灰底）；13 号 w500。
+                        FushiPressScale(
+                          child: Material(
+                            color: isGlassDesign(context)
+                                ? Colors.transparent
+                                : theme.colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(999),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: _jumpToLatestAndClearUnread,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                child: Text(
+                                  '${t.game_unread_lines} $_unreadLines',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: isGlassDesign(context)
+                                        ? appleColorsOf(context).accent
+                                        : theme.colorScheme.onSecondaryContainer,
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
+                    ],
                   ),
-                const Spacer(),
+                ),
+                const SizedBox(width: 8),
                 Text(t.game_follow_live, style: theme.textTheme.labelLarge),
                 const SizedBox(width: 4),
                 FushiSwitch(
