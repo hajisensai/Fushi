@@ -1,0 +1,334 @@
+/*
+ *  m3e-tokens.css — Fushi 网页端 Material 3 Expressive 设计令牌（唯一真源）。
+ *
+ *  谁在用：
+ *    · app 内 / app 外查词弹窗：popup.css 里 `@m3e-tokens:begin` ~ `@m3e-tokens:end`
+ *      之间是本文件同名区块的**逐字副本**（弹窗 CSS 由 Dart 读成一整份内联，加载器只认
+ *      popup.css 一个文件；守卫 fushi/test/build/popup_m3e_tokens_parity_guard_test.dart
+ *      钉住两处一致——改令牌先改这里，再把区块原样拷进 popup.css）。
+ *    · 浏览器扩展自有页面（options / action popup / 侧边栏）：直接 <link> 本文件，
+ *      或把区块并进扩展 theme.css；变量名保持稳定，见下方清单。
+ *
+ *  颜色角色：全部优先读 Flutter 注入的 `--md-*`（popup_theme_css.dart
+ *  buildPopupThemeCssVars 生成，与 app 的 ColorScheme 同源；扩展经查词响应 theme 字段
+ *  下发同一组），缺席时按 `--md-primary` / `--text-color` / `--background-color` 推导回退。
+ *  区块选择器用 `html`：popup.css 的扩展生成器（generate-content-css.mjs）把文档级
+ *  `html` 规则重根到 `:where(#entries-container)`，`:root` 会被它拒收。
+ *
+ *  组件类（.m3e-btn / .m3e-icon-btn / .m3e-chip / .m3e-card / .m3e-tooltip …）只在本
+ *  文件里，给扩展页面复用；弹窗 DOM 用自己的既有类名，在 popup.css 的
+ *  「M3E 视觉层」（html.fushi-m3e 开头）里吃同一组令牌。
+ *
+ *  不用 @media（生成器不处理嵌套 at-rule）：减弱动态效果由宿主给 <html> 挂
+ *  `.fushi-reduced-motion`，本文件末尾把组件过渡归零。
+ *  SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+/* @m3e-tokens:begin */
+html {
+    /* ── 颜色角色（M3 color roles）── */
+    --md-sys-color-primary: var(--md-primary, var(--primary-color, #386A58));
+    --md-sys-color-on-primary: var(--md-on-primary, #ffffff);
+    --md-sys-color-primary-container: var(--md-primary-container, color-mix(in srgb, var(--md-sys-color-primary) 24%, var(--background-color, #ffffff)));
+    --md-sys-color-on-primary-container: var(--md-on-primary-container, var(--text-color, #1a1c19));
+    --md-sys-color-secondary-container: var(--md-secondary-container, color-mix(in srgb, var(--md-sys-color-primary) 14%, var(--background-color, #ffffff)));
+    --md-sys-color-on-secondary-container: var(--md-on-secondary-container, var(--text-color, #1a1c19));
+    --md-sys-color-tertiary: var(--md-tertiary, var(--md-sys-color-primary));
+    --md-sys-color-on-tertiary: var(--md-on-tertiary, var(--md-sys-color-on-primary));
+    --md-sys-color-tertiary-container: var(--md-tertiary-container, var(--md-sys-color-secondary-container));
+    --md-sys-color-on-tertiary-container: var(--md-on-tertiary-container, var(--md-sys-color-on-secondary-container));
+    --md-sys-color-error: var(--md-error, #ba1a1a);
+    --md-sys-color-surface: var(--background-color, #ffffff);
+    --md-sys-color-on-surface: var(--md-on-surface, var(--text-color, #1a1c19));
+    --md-sys-color-on-surface-variant: var(--md-on-surface-variant, var(--on-surface-variant, #44483f));
+    --md-sys-color-surface-container-low: var(--md-surface-container-low, color-mix(in srgb, var(--md-sys-color-on-surface) 3%, var(--md-sys-color-surface)));
+    --md-sys-color-surface-container: var(--md-surface-container, color-mix(in srgb, var(--md-sys-color-on-surface) 5%, var(--md-sys-color-surface)));
+    --md-sys-color-surface-container-high: var(--md-surface-container-high, color-mix(in srgb, var(--md-sys-color-on-surface) 8%, var(--md-sys-color-surface)));
+    --md-sys-color-surface-container-highest: var(--md-surface-container-highest, color-mix(in srgb, var(--md-sys-color-on-surface) 11%, var(--md-sys-color-surface)));
+    --md-sys-color-outline: var(--md-outline, color-mix(in srgb, var(--md-sys-color-on-surface) 45%, transparent));
+    --md-sys-color-outline-variant: var(--md-outline-variant, var(--outline-variant, color-mix(in srgb, var(--md-sys-color-on-surface) 18%, transparent)));
+    --md-sys-color-inverse-surface: var(--md-inverse-surface, var(--md-sys-color-on-surface));
+    --md-sys-color-inverse-on-surface: var(--md-inverse-on-surface, var(--md-sys-color-surface));
+
+    /* ── 形状（M3E shape scale）── */
+    --md-sys-shape-corner-none: 0px;
+    --md-sys-shape-corner-extra-small: 4px;
+    --md-sys-shape-corner-small: 8px;
+    --md-sys-shape-corner-medium: 12px;
+    --md-sys-shape-corner-large: 16px;
+    --md-sys-shape-corner-large-increased: 20px;
+    --md-sys-shape-corner-extra-large: 28px;
+    --md-sys-shape-corner-extra-large-increased: 32px;
+    --md-sys-shape-corner-extra-extra-large: 48px;
+    --md-sys-shape-corner-full: 999px;
+
+    /* ── 字阶（px；size / line-height / weight）。emphasized = M3E 强调字重 ── */
+    --md-sys-typescale-display-small-size: 36px;
+    --md-sys-typescale-display-small-line-height: 44px;
+    --md-sys-typescale-headline-small-size: 24px;
+    --md-sys-typescale-headline-small-line-height: 32px;
+    --md-sys-typescale-title-large-size: 22px;
+    --md-sys-typescale-title-large-line-height: 28px;
+    --md-sys-typescale-title-medium-size: 16px;
+    --md-sys-typescale-title-medium-line-height: 24px;
+    --md-sys-typescale-title-small-size: 14px;
+    --md-sys-typescale-title-small-line-height: 20px;
+    --md-sys-typescale-body-large-size: 16px;
+    --md-sys-typescale-body-large-line-height: 24px;
+    --md-sys-typescale-body-medium-size: 14px;
+    --md-sys-typescale-body-medium-line-height: 20px;
+    --md-sys-typescale-body-small-size: 12px;
+    --md-sys-typescale-body-small-line-height: 16px;
+    --md-sys-typescale-label-large-size: 14px;
+    --md-sys-typescale-label-large-line-height: 20px;
+    --md-sys-typescale-label-medium-size: 12px;
+    --md-sys-typescale-label-medium-line-height: 16px;
+    --md-sys-typescale-label-small-size: 11px;
+    --md-sys-typescale-label-small-line-height: 16px;
+    --md-sys-typescale-weight-regular: 400;
+    --md-sys-typescale-weight-medium: 500;
+    --md-sys-typescale-weight-emphasized: 600;
+
+    /* ── 状态层不透明度 ── */
+    --md-sys-state-hover-opacity: 8%;
+    --md-sys-state-focus-opacity: 10%;
+    --md-sys-state-pressed-opacity: 10%;
+    --md-sys-state-dragged-opacity: 16%;
+    --md-sys-state-disabled-content-opacity: 0.38;
+    --md-sys-state-disabled-container-opacity: 12%;
+
+    /* ── 高度（投影）── */
+    --md-sys-elevation-level1: 0 1px 2px rgba(0, 0, 0, 0.18), 0 1px 3px 1px rgba(0, 0, 0, 0.08);
+    --md-sys-elevation-level2: 0 1px 2px rgba(0, 0, 0, 0.2), 0 2px 6px 2px rgba(0, 0, 0, 0.1);
+    --md-sys-elevation-level3: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 8px 3px rgba(0, 0, 0, 0.1);
+
+    /* ── 动效：M3E 弹簧的 cubic-bezier 近似（spatial 带过冲，effects 不过冲）── */
+    --md-sys-motion-spring-fast-spatial: cubic-bezier(0.42, 1.67, 0.21, 0.90);
+    --md-sys-motion-spring-fast-spatial-duration: 350ms;
+    --md-sys-motion-spring-default-spatial: cubic-bezier(0.38, 1.21, 0.22, 1.00);
+    --md-sys-motion-spring-default-spatial-duration: 500ms;
+    --md-sys-motion-spring-slow-spatial: cubic-bezier(0.39, 1.29, 0.35, 0.98);
+    --md-sys-motion-spring-slow-spatial-duration: 650ms;
+    --md-sys-motion-spring-fast-effects: cubic-bezier(0.31, 0.94, 0.34, 1.00);
+    --md-sys-motion-spring-fast-effects-duration: 150ms;
+    --md-sys-motion-spring-default-effects: cubic-bezier(0.34, 0.80, 0.34, 1.00);
+    --md-sys-motion-spring-default-effects-duration: 200ms;
+    --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+}
+/* @m3e-tokens:end */
+
+/* ======================================================================
+ * 组件类（扩展自有页面复用；弹窗不使用这些类名）
+ * ====================================================================== */
+
+/* 按钮：全胶囊、40 高、label-large emphasized；按下收成 12 圆角 + 0.96 缩放，松手弹回。 */
+.m3e-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-sizing: border-box;
+    min-height: 40px;
+    padding: 0 20px;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    font: inherit;
+    font-size: var(--md-sys-typescale-label-large-size);
+    line-height: var(--md-sys-typescale-label-large-line-height);
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+    color: var(--md-sys-color-on-primary);
+    background-color: var(--md-sys-color-primary);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        background-color var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+        box-shadow var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects);
+}
+
+.m3e-btn:hover {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-primary) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary));
+}
+
+.m3e-btn:focus-visible {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: 2px;
+}
+
+.m3e-btn:active {
+    border-radius: var(--md-sys-shape-corner-medium);
+    transform: scale(0.96);
+}
+
+.m3e-btn:disabled {
+    cursor: default;
+    transform: none;
+    color: color-mix(in srgb, var(--md-sys-color-on-surface) 38%, transparent);
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-disabled-container-opacity), transparent);
+}
+
+.m3e-btn--tonal {
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+}
+
+.m3e-btn--tonal:hover {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+.m3e-btn--outlined {
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px var(--md-sys-color-outline-variant);
+}
+
+.m3e-btn--outlined:hover,
+.m3e-btn--text:hover {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+.m3e-btn--text {
+    padding: 0 14px;
+    color: var(--md-sys-color-primary);
+    background-color: transparent;
+}
+
+/* 图标按钮：40×40 圆，标准 = 无容器；--tonal / --filled 带容器。按下变 12 圆角方块。 */
+.m3e-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-full);
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: transparent;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
+        background-color var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects);
+}
+
+.m3e-icon-btn:hover {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+}
+
+.m3e-icon-btn:active {
+    border-radius: var(--md-sys-shape-corner-medium);
+    transform: scale(0.92);
+}
+
+.m3e-icon-btn--tonal {
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+}
+
+.m3e-icon-btn--filled {
+    color: var(--md-sys-color-on-primary);
+    background-color: var(--md-sys-color-primary);
+}
+
+/* chip：32 高、8 圆角（M3 chip 规格）；选中 = secondaryContainer 填充。 */
+.m3e-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 0 16px;
+    border: none;
+    border-radius: var(--md-sys-shape-corner-small);
+    font: inherit;
+    font-size: var(--md-sys-typescale-label-large-size);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: var(--md-sys-color-surface-container-high);
+    cursor: pointer;
+    transition: background-color var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+        border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
+}
+
+.m3e-chip:hover {
+    background-color: color-mix(in srgb, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high));
+}
+
+.m3e-chip--selected,
+.m3e-chip[aria-pressed="true"],
+.m3e-chip[aria-selected="true"] {
+    border-radius: var(--md-sys-shape-corner-medium);
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+}
+
+/* 小标签（词性 / 词典名这类只读 tag）：24 高的 label-small 胶囊。 */
+.m3e-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--md-sys-shape-corner-small);
+    font-size: var(--md-sys-typescale-label-small-size);
+    font-weight: var(--md-sys-typescale-weight-medium);
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+}
+
+/* 卡片：容器 20、色块分层不描边。--hero 为强调色块（primaryContainer）。 */
+.m3e-card {
+    border-radius: var(--md-sys-shape-corner-large-increased);
+    padding: 16px;
+    color: var(--md-sys-color-on-surface);
+    background-color: var(--md-sys-color-surface-container);
+}
+
+.m3e-card--hero {
+    border-radius: var(--md-sys-shape-corner-extra-large);
+    color: var(--md-sys-color-on-primary-container);
+    background-color: var(--md-sys-color-primary-container);
+}
+
+/* 提示：plain = 反色小块（4 圆角）；rich = surfaceContainer 卡（12 圆角 + level2）。 */
+.m3e-tooltip {
+    padding: 4px 8px;
+    border-radius: var(--md-sys-shape-corner-extra-small);
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+    color: var(--md-sys-color-inverse-on-surface);
+    background-color: var(--md-sys-color-inverse-surface);
+}
+
+.m3e-tooltip--rich {
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-medium);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+    color: var(--md-sys-color-on-surface-variant);
+    background-color: var(--md-sys-color-surface-container);
+    box-shadow: var(--md-sys-elevation-level2);
+}
+
+/* 空状态图标底：56 方块、20 圆角的 secondaryContainer 色块。 */
+.m3e-empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--md-sys-shape-corner-large-increased);
+    color: var(--md-sys-color-on-secondary-container);
+    background-color: var(--md-sys-color-secondary-container);
+}
+
+html.fushi-reduced-motion .m3e-btn,
+html.fushi-reduced-motion .m3e-icon-btn,
+html.fushi-reduced-motion .m3e-chip {
+    transition: none;
+}
+
+html.fushi-reduced-motion .m3e-btn:active,
+html.fushi-reduced-motion .m3e-icon-btn:active {
+    transform: none;
+}
