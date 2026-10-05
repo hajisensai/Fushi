@@ -2491,7 +2491,10 @@
     /* 按钮组单钮尺寸：宽屏 40（M3 标准图标按钮），阅读器 / 视频里的窄弹窗收到 32，
        四五颗按钮不至于把词头挤成横向滚动。 */
     --fushi-m3e-action-size: clamp(32px, 9vw, 40px);
-    gap: 12px;
+    /* 词头 + 按钮组放不下一行时整组换到下一行（仍右对齐），不去挤压词头。 */
+    flex-wrap: wrap;
+    column-gap: 12px;
+    row-gap: 4px;
     padding-top: 0;
     min-height: 48px;
 }
@@ -2510,13 +2513,14 @@
 }
 
 /* ── 词头 button group：发音 / 收藏 / 在 Anki 打开 = tonal 40 圆钮，制卡 = filled 主按钮。
-   紧贴词头（不再 margin-left:auto 甩到行尾），按钮之间 4px。状态层画在按钮自身的
+   右对齐在每个词条的右上角（margin-left:auto，用户 10-06 定案），按钮之间 4px；窄弹窗
+   一行放不下时整组换到词头下一行、仍右对齐。状态层画在按钮自身的
    background-image 上（不再外扩 box-shadow 圈），按下形变成 12 圆角方块并 spring 回弹。 */
 /* 垂直居中对的是**大字那一行**，不是整个词头盒：词头盒顶上还压着 0.66em 的注音预留，
    盒心比字心高出约 0.33em，align-items:center 会让按钮整排浮在字的上半截。按钮组贴
    行底，再抬起「字行高 − 按钮高」的一半，正好与大字同一条中线。 */
 :where(#entries-container).fushi-m3e .header-buttons {
-    margin-left: 0;
+    margin-left: auto;
     gap: 4px;
     align-self: flex-end;
     margin-bottom: max(0px, calc((var(--fushi-m3e-headword-size) * 1.2 - var(--fushi-m3e-action-size)) / 2));
