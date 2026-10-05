@@ -7,6 +7,7 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
@@ -337,11 +338,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     final Widget body = buildStatPageBody(
       loading: _loading,
       error: _error,
-      isEmpty: !_hasData,
       loadingBuilder: () =>
           buildLoading(size: 25, color: theme.colorScheme.primary),
       errorBuilder: (String error) => buildError(error: error),
-      emptyMessage: t.video_stat_no_data,
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, actions, body);
@@ -352,113 +351,97 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
     );
   }
 
+  /// 骨架与总览 / 阅读 / 游戏 tab 同一套（2026-10 统计中心重设计，
+  /// [StatDashboardBody]）：关键指标区（四张指标卡）→ 趋势栏（时间窗口分段 +
+  /// 日期翻页 → 范围时长图 → 所选范围卡 → 学习日历 → 「分析」折叠里的小时分布）
+  /// → 明细栏（时段卡 → 最近会话 → 按视频列表）。宽屏两栏，窄屏单栏。
   Widget _buildContent() {
-    final tokens = FushiDesignTokens.of(context);
-
-    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频；
-    // 横屏时会话与按视频列表拆到右栏（[buildStatAdaptiveScrollView]）。
-    return buildStatAdaptiveScrollView(
-      context,
-      sections: (double _) => <StatPaneSliver>[
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildSummaryCards()),
+    final Widget hero = StatHero(
+      tiles: buildStatKpiTiles(context, computeStatKpis(_videoFacts, _window)),
+    );
+    if (!_hasData) {
+      return StatDashboardBody(
+        hero: hero,
+        emptyState: StatDashboardEmpty(message: t.video_stat_no_data),
+        tail: buildStatTailSliver(context),
+      );
+    }
+    return StatDashboardBody(
+      hero: hero,
+      tail: buildStatTailSliver(context),
+      trend: <Widget>[
+        ..._buildRangeSection(),
+        StatAnalysisFold(
+          children: <Widget>[buildStatHourlyChartSection(context, _hourlyMs)],
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(child: _buildRangeSection()),
+      ],
+      details: <Widget>[
+        StatSectionHeader(title: t.stat_overview_periods),
+        _buildSummaryCards(),
+        buildStatSessionSection(
+          context,
+          sessions: _sessions,
+          titleOf: (StudySession s) => s.title,
+          collectionOf: _sessionCollectionName,
+          coverOf: _sessionCover,
+          onDelete: _deleteSession,
+          onEdit: _editSession,
+          onClearAll: _clearSessions,
         ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: buildStatSessionSection(
-              context,
-              sessions: _sessions,
-              titleOf: (StudySession s) => s.title,
-              collectionOf: _sessionCollectionName,
-              coverOf: _sessionCover,
-              onDelete: _deleteSession,
-              onEdit: _editSession,
-              onClearAll: _clearSessions,
-            ),
+        Padding(
+          padding: EdgeInsets.only(
+            bottom: FushiDesignTokens.of(context).spacing.gap,
+          ),
+          child: StatSectionHeader(
+            title: t.video_stat_by_video,
+            subtitle: formatStatRange(_range),
           ),
         ),
-        StatPaneSliver(
-          StatPane.overview,
-          SliverToBoxAdapter(
-            child: StatAnalysisFold(
-              children: <Widget>[
-                buildStatHourlyChartSection(context, _hourlyMs),
-              ],
-            ),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.card + tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              child: Text(
-                '${t.video_stat_by_video} · ${formatStatRange(_range)}',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-          ),
-        ),
-        StatPaneSliver(
-          StatPane.detail,
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildVideoTile(_rangeVideos[index]),
-              childCount: _rangeVideos.length,
-            ),
+      ],
+      detailSlivers: <Widget>[
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => _buildVideoTile(_rangeVideos[index]),
+            childCount: _rangeVideos.length,
           ),
         ),
       ],
     );
   }
 
-  /// 范围区块：范围条 → 学习日历 → 范围时长图 → 所选范围卡（与阅读 / 游戏 /
-  /// 总览 tab 同形）。
-  Widget _buildRangeSection() {
+  /// 范围区块：范围条（时间窗口分段 + 日期翻页）→ 范围时长图 → 所选范围卡 →
+  /// 学习日历（与总览 / 阅读 / 游戏 tab 同序）。
+  List<Widget> _buildRangeSection() {
     final StatRange range = _range;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        StatRangeBar(
-          range: range,
-          onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
-        ),
-        buildStatRangeCalendarSection(
-          context,
-          byDay: _byDay,
-          now: _window.now,
-          onDaySelected: (String dateKey) => _rangeSelection.value =
-              StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
-        ),
-        buildStatRangeChartSection(context, range, _byDay),
-        buildStatRangeSummary(
-          context,
-          range,
-          _byDay,
-          extraLines: <StatSummaryLine>[
-            StatSummaryLine(
-              label: t.stat_lookup,
-              value: '${sumStatEventsInRange(_lookupEvents, range)}',
-            ),
-            StatSummaryLine(
-              label: t.stat_mined,
-              value: '${sumStatEventsInRange(_minedEvents, range)}',
-            ),
-          ],
-        ),
-      ],
-    );
+    return <Widget>[
+      StatRangeBar(
+        range: range,
+        onChanged: (StatRangeSelection s) => _rangeSelection.value = s,
+      ),
+      buildStatRangeChartSection(context, range, _byDay),
+      buildStatRangeSummary(
+        context,
+        range,
+        _byDay,
+        extraLines: <StatSummaryLine>[
+          StatSummaryLine(
+            label: t.stat_lookup,
+            value: '${sumStatEventsInRange(_lookupEvents, range)}',
+          ),
+          StatSummaryLine(
+            label: t.stat_mined,
+            value: '${sumStatEventsInRange(_minedEvents, range)}',
+          ),
+        ],
+      ),
+      buildStatRangeCalendarSection(
+        context,
+        byDay: _byDay,
+        now: _window.now,
+        onDaySelected: (String dateKey) => _rangeSelection.value =
+            StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey),
+      ),
+    ];
   }
 
   Widget _buildSummaryCards() {
