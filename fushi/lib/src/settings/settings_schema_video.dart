@@ -20,6 +20,7 @@ import 'package:fushi/src/media/video/video_subtitle_style.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
 import 'package:fushi/src/settings/settings_context.dart';
@@ -48,7 +49,8 @@ SettingsDestination buildVideoDestination() {
     ),
     title: t.settings_destination_video,
     summary: t.video_settings_summary,
-    icon: Icons.movie_outlined,
+    // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
+    icon: homeNavItemFor(HomeTab.video).icon,
     sections: <SettingsSection>[
       // 分组顺序（2026-10 重排）：播放 → 显示与画质（下接四个折叠的 mpv 进阶组）→
       // 字幕外观 → 字幕行为与来源 → 音频 → 控制与手势 → 截图与片段 → 弹幕 → 媒体库 →

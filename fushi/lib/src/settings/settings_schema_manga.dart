@@ -7,6 +7,7 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_settings.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
@@ -33,7 +34,8 @@ SettingsDestination buildMangaDestination() {
     ),
     title: t.manga_library,
     summary: t.settings_destination_manga_summary,
-    icon: Icons.auto_stories_outlined,
+    // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
+    icon: homeNavItemFor(HomeTab.manga).icon,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'manga.section.viewing',

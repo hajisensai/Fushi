@@ -133,22 +133,23 @@ Future<void> _terminatePortOwnerAndRetry(
 
 /// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
 SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
+  // 图标取各模块底栏 tab 的同一真值（homeNavItemFor）。
   final ({String title, IconData icon}) identity = switch (module) {
     ModuleId.books => (
         title: t.popup_bottom_docked_books,
-        icon: Icons.menu_book_outlined,
+        icon: homeNavItemFor(HomeTab.books).icon,
       ),
     ModuleId.manga => (
         title: t.popup_bottom_docked_manga,
-        icon: Icons.auto_stories_outlined,
+        icon: homeNavItemFor(HomeTab.manga).icon,
       ),
     ModuleId.video => (
         title: t.popup_bottom_docked_video,
-        icon: Icons.movie_outlined,
+        icon: homeNavItemFor(HomeTab.video).icon,
       ),
     ModuleId.games => (
         title: t.popup_bottom_docked_games,
-        icon: Icons.sports_esports_outlined,
+        icon: homeNavItemFor(HomeTab.games).icon,
       ),
     _ => throw StateError('$module 没有底部停靠细分开关'),
   };
@@ -222,7 +223,8 @@ SettingsDestination buildLookupDestination() {
     id: SettingsDestinationId.lookup,
     title: t.settings_destination_lookup,
     summary: t.dictionary_settings,
-    icon: Icons.manage_search_outlined,
+    // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
+    icon: homeNavItemFor(HomeTab.dictionaries).icon,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'lookup.section.dictionaries',

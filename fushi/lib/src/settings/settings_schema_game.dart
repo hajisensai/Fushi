@@ -40,7 +40,8 @@ SettingsDestination buildGameDestination() {
     id: SettingsDestinationId.game,
     title: t.nav_game,
     summary: t.game_home_subtitle,
-    icon: Icons.sports_esports_outlined,
+    // 图标与底栏 / 侧栏同一真值（homeNavItemFor），不在设置里另写一份。
+    icon: homeNavItemFor(HomeTab.games).icon,
     // 本分类的三条导航项与全部配置都属于本机 galgame 库（hook / 捕获工作台 /
     // 兼容性诊断）；Android 的 games 模块是串流接收端，这里一条都用不上。
     visible: (SettingsContext c) =>
