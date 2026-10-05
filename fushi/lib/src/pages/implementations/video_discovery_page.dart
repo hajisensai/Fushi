@@ -84,6 +84,9 @@ class VideoDiscoveryPage extends StatefulWidget {
   State<VideoDiscoveryPage> createState() => _VideoDiscoveryPageState();
 }
 
+/// 首屏 Hero 轮播最多放几条热门（其余进下方「热门」横滑行）。
+const int _kHeroCount = 5;
+
 class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   // 与分类 chip 同一视觉高度（同处一条单行筛选行）。
   static const double _filterControlHeight = 36;
@@ -122,11 +125,15 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   /// Hero 简介与详情页同一份数据：列表条目的简介是来源原文（动画卡片来自
   /// AniList / MAL，恒英文），详情经 [VideoDiscoveryActions.loadDetails] 按资料
   /// 语言合并（含 TMDB 交叉引用）。Hero 是发现页唯一显示简介的地方，所以对
-  /// Hero 这一条预取详情、用详情的简介；详情回来前不显示简介，免得先闪一段
-  /// 英文再换成中文。
-  String? _heroDetailKey;
-  bool _heroDetailPending = false;
-  String? _heroDetailOverview;
+  /// Hero 轮播的当前页与下一页预取详情、用详情的简介；详情回来前不显示简介，
+  /// 免得先闪一段英文再换成中文。
+  ///
+  /// 作品 key → 详情简介（值为 null = 详情取回了但没有简介 / 取失败，退回列表
+  /// 条目自带的简介）。
+  final Map<String, String?> _heroOverviews = <String, String?>{};
+
+  /// 详情在途的作品 key。
+  final Set<String> _heroOverviewsPending = <String>{};
 
   VideoDiscoveryController get _controller =>
       widget.controller ?? const EmptyVideoDiscoveryController();
@@ -188,7 +195,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     unawaited(_detailsUpdates?.cancel());
     _detailsUpdates = widget.actions.detailsUpdates?.listen((_) {
       if (!mounted || _popular.isEmpty || _hasActiveSearchOrFilter) return;
-      unawaited(_hydrateHero(_popular.first, refresh: true));
+      for (final discovery.VideoDiscoveryItem item in _heroItems) {
+        unawaited(_hydrateHero(item, refresh: true));
+      }
     });
   }
 
@@ -254,9 +263,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       _hasMore = false;
       // 换控制器（资料语言 / key 变了）或换筛选都重取：详情按资料语言合并，
       // 留着上一轮的简介就是旧语言。重复取同一条由传输层缓存兜住。
-      _heroDetailKey = null;
-      _heroDetailPending = false;
-      _heroDetailOverview = null;
+      _heroOverviews.clear();
+      _heroOverviewsPending.clear();
     });
 
     if (_hasActiveSearchOrFilter) {
@@ -320,7 +328,23 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       _totalFailure = merged.isTotalFailure;
       _loading = false;
     });
-    if (_popular.isNotEmpty) unawaited(_hydrateHero(_popular.first));
+    _hydrateHeroAround(0);
+  }
+
+  /// Hero 轮播的条目：热门前 [_kHeroCount] 条（搜索 / 筛选态没有 Hero）。
+  List<discovery.VideoDiscoveryItem> get _heroItems => _hasActiveSearchOrFilter
+      ? const <discovery.VideoDiscoveryItem>[]
+      : _popular.take(_kHeroCount).toList(growable: false);
+
+  /// 轮播停在 [page]：预取这一页与下一页的详情简介（下一页提前取，切过去时
+  /// 简介已经到位，不闪空）。
+  void _hydrateHeroAround(int page) {
+    final List<discovery.VideoDiscoveryItem> items = _heroItems;
+    if (items.isEmpty) return;
+    unawaited(_hydrateHero(items[page % items.length]));
+    if (items.length > 1) {
+      unawaited(_hydrateHero(items[(page + 1) % items.length]));
+    }
   }
 
   /// [refresh]：数据源变好后的重取——当前简介留着，新的到了再换。
@@ -331,37 +355,35 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     final VideoDiscoveryDetailLoader? loader = widget.actions.loadDetails;
     final String key = item.reference.canonicalIdentityKey;
     if (loader == null) return;
+    if (_heroOverviewsPending.contains(key)) return;
+    if (refresh != _heroOverviews.containsKey(key)) return;
+    final int generation = _generation;
     if (refresh) {
-      if (_heroDetailKey != key || _heroDetailPending) return;
+      _heroOverviewsPending.add(key);
     } else {
-      if (_heroDetailKey == key) return;
-      setState(() {
-        _heroDetailKey = key;
-        _heroDetailPending = true;
-        _heroDetailOverview = null;
-      });
+      setState(() => _heroOverviewsPending.add(key));
     }
     String? overview;
+    bool failed = false;
     try {
       overview = (await loader(item)).item.overview;
     } on Object {
       // 详情取不到：退回列表条目自带的简介（重取失败则保留当前的）。
-      if (refresh) return;
-      overview = null;
+      failed = true;
     }
-    if (!mounted || _heroDetailKey != key) return;
+    if (!mounted || generation != _generation) return;
     setState(() {
-      _heroDetailPending = false;
-      _heroDetailOverview = overview;
+      _heroOverviewsPending.remove(key);
+      if (!(failed && refresh)) _heroOverviews[key] = overview;
     });
   }
 
   String? _heroSummary(discovery.VideoDiscoveryItem item) {
-    if (_heroDetailKey != item.reference.canonicalIdentityKey) {
-      return item.overview;
-    }
-    if (_heroDetailPending) return null;
-    final String? detailed = _heroDetailOverview?.trim();
+    if (widget.actions.loadDetails == null) return item.overview;
+    final String key = item.reference.canonicalIdentityKey;
+    // 还没取回（在途或尚未轮到）：先不显示，免得先闪英文原文。
+    if (!_heroOverviews.containsKey(key)) return null;
+    final String? detailed = _heroOverviews[key]?.trim();
     return detailed == null || detailed.isEmpty ? item.overview : detailed;
   }
 
@@ -464,7 +486,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         children: <Widget>[
           if (_headerVisible) _buildHeader(),
           _buildControls(),
-          Expanded(child: _buildBody()),
+          Expanded(child: DiscoveryScrollTopFade(child: _buildBody())),
         ],
       ),
     );
@@ -595,48 +617,11 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   entry,
                 ],
               ];
-              if (compact) {
-                // 窄屏两行：搜索框独占一整行，日历 / AI / 筛选排第二行靠右——与
-                // 书 / 漫画发现页的 DiscoveryHeaderControls 窄屏形态同构（那边第二
-                // 行左侧是来源下拉）。此前四个控件挤一行，搜索提示被截成「搜索
-                // 电影…」，另外两个域又是另一种挤法（2026-10-04 用户截图）。
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    search,
-                    SizedBox(height: tokens.spacing.gap),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: <Widget>[
-                        ...trailing,
-                        SizedBox(width: tokens.spacing.gap),
-                        FushiIconButtonControl.filledTonal(
-                          // 与搜索框等高：搜索框已统一为
-                          // kFushiSearchFieldHeight（40），原来的 44 会高出一截。
-                          constraints: const BoxConstraints(
-                            minWidth: kFushiSearchFieldHeight,
-                            minHeight: kFushiSearchFieldHeight,
-                          ),
-                          key: const ValueKey<String>(
-                            'video-discovery-open-filters',
-                          ),
-                          tooltip: t.game_filter,
-                          onPressed: _openFilterSheet,
-                          icon: FushiBadgeControl.count(
-                            count: (_year != 0 ? 1 : 0) +
-                                (_region.isNotEmpty ? 1 : 0) +
-                                (_genre.isNotEmpty ? 1 : 0),
-                            isLabelVisible: _year != 0 ||
-                                _region.isNotEmpty ||
-                                _genre.isNotEmpty,
-                            child: const FushiIcon(Icons.tune_rounded),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              }
+              // 窄屏：搜索框独占一整行（四个控件挤一行时搜索提示被截成「搜索
+              // 电影…」，2026-10-04 用户截图）；日历 / AI / 筛选入口不再单占一行
+              // （那一行左半边恒空，白占一行纵向空间，2026-10-05 用户截图），
+              // 并进下面分类 chip 行的行尾、与排序同排。
+              if (compact) return search;
               // 非手机宽度：搜索行只留搜索 + 行尾入口，年份 / 地区 / 题材 /
               // 排序挪进下面那条单行横滑筛选行（四个域发现页同一信息架构）。
               if (trailing.isEmpty) return search;
@@ -705,6 +690,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 ),
               ),
               if (compact) ...<Widget>[
+                ..._compactEntries(tokens),
                 SizedBox(width: tokens.spacing.gap),
                 _buildSortMenu(compact: true),
               ],
@@ -713,6 +699,53 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
         ],
       ),
     );
+  }
+
+  /// 窄屏分类 chip 行行尾的入口：放送日历（页头不渲染时）/ AI 下视频（宿主
+  /// 接线时）/ 高级筛选面板。宽屏下前两个在搜索行、筛选控件直接铺在 chip 行里。
+  List<Widget> _compactEntries(FushiDesignTokens tokens) {
+    const BoxConstraints size = BoxConstraints(
+      minWidth: kFushiSearchFieldHeight,
+      minHeight: kFushiSearchFieldHeight,
+    );
+    final ValueChanged<String?>? onAiAcquire = widget.actions.onAiAcquire;
+    final int activeFilters = (_year != 0 ? 1 : 0) +
+        (_region.isNotEmpty ? 1 : 0) +
+        (_genre.isNotEmpty ? 1 : 0);
+    return <Widget>[
+      if (!_headerVisible) ...<Widget>[
+        SizedBox(width: tokens.spacing.gap),
+        FushiIconButtonControl.filledTonal(
+          constraints: size,
+          key: const ValueKey<String>('video-discovery-open-calendar'),
+          tooltip: t.download_airing_calendar_title,
+          onPressed: _openCalendar,
+          icon: const FushiIcon(Icons.calendar_month_outlined),
+        ),
+      ],
+      if (onAiAcquire != null) ...<Widget>[
+        SizedBox(width: tokens.spacing.gap),
+        FushiIconButtonControl.filledTonal(
+          constraints: size,
+          key: const ValueKey<String>('video-discovery-ai-acquire'),
+          tooltip: t.ai_video_acquire_entry,
+          onPressed: () => onAiAcquire(_searchController.text),
+          icon: const FushiIcon(Icons.auto_awesome_outlined),
+        ),
+      ],
+      SizedBox(width: tokens.spacing.gap),
+      FushiIconButtonControl.filledTonal(
+        constraints: size,
+        key: const ValueKey<String>('video-discovery-open-filters'),
+        tooltip: t.game_filter,
+        onPressed: _openFilterSheet,
+        icon: FushiBadgeControl.count(
+          count: activeFilters,
+          isLabelVisible: activeFilters > 0,
+          child: const FushiIcon(Icons.tune_rounded),
+        ),
+      ),
+    ];
   }
 
   Future<void> _openFilterSheet() async {
@@ -1005,10 +1038,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     }
 
     final bool searchMode = _hasActiveSearchOrFilter;
-    final discovery.VideoDiscoveryItem? hero =
-        !searchMode && _popular.isNotEmpty ? _popular.first : null;
+    final List<discovery.VideoDiscoveryItem> heroItems = _heroItems;
     final List<discovery.VideoDiscoveryItem> popularRest =
-        hero == null ? _popular : _popular.sublist(1);
+        _popular.sublist(heroItems.length);
     return CustomScrollView(
       key: const PageStorageKey<String>('video-discovery-scroll'),
       controller: _scrollController,
@@ -1021,15 +1053,21 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               displayNameFor: _controller.displayNameFor,
             ),
           ),
-        // 首屏：Hero 推荐（热门第一条）+ 其余热门的横滑行。外层一个 key 承载
-        // 「热门」整段，只有一条热门时 Hero 独自占位、行收起，标题不重复出现。
-        if (hero != null)
+        // 首屏：Hero 轮播（热门前几条）+ 其余热门的横滑行。外层一个 key 承载
+        // 「热门」整段，热门全进了轮播时行收起，标题不重复出现。
+        if (heroItems.isNotEmpty)
           SliverToBoxAdapter(
             child: Column(
               key: const ValueKey<String>('video-discovery-popular'),
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                _buildHero(hero),
+                DiscoveryHeroCarousel(
+                  key: const ValueKey<String>('video-discovery-hero-carousel'),
+                  itemCount: heroItems.length,
+                  itemBuilder: (BuildContext context, int index) =>
+                      _buildHero(heroItems[index]),
+                  onPageChanged: _hydrateHeroAround,
+                ),
                 if (popularRest.isNotEmpty)
                   _DiscoveryShelf(
                     title: t.video_discovery_hot,
@@ -1111,7 +1149,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     );
   }
 
-  /// 首屏 Hero：热门第一条，横版剧照优先、只有海报时模糊垫底 + 尾侧海报。
+  /// 首屏 Hero 轮播的一页：横版剧照优先、只有海报时模糊垫底 + 尾侧海报。
   Widget _buildHero(discovery.VideoDiscoveryItem item) {
     final bool hasBackdrop = item.backdropUrl?.trim().isNotEmpty == true;
     final ImageProvider? backdrop = hasBackdrop

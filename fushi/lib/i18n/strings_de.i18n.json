@@ -6379,5 +6379,8 @@
   "video_skip_opening": "Skip opening",
   "video_skip_ending": "Skip ending",
   "download_network_fake_ip_udp_blocked": "Your proxy (fake-ip / TUN mode) doesn't forward UDP, so DHT and UDP trackers can't find peers and tasks may stay at 0 connections. Switch to a proxy node that supports UDP, or route Fushi directly (DIRECT rule).",
-  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers."
+  "download_network_dht_unreachable": "DHT can't reach any nodes: outbound UDP may be blocked by a firewall or the network, so peers can only be found through HTTP trackers.",
+  "discovery_hero_previous": "Previous",
+  "discovery_hero_next": "Next",
+  "discovery_hero_page_indicator": "Item ${index} of ${count}"
 }

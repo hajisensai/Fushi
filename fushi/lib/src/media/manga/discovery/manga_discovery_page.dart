@@ -124,9 +124,10 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 刷新与切换来源时清空：行随之重新挂载、重新拉取，旧失败不该挂在新一轮上。
   final Map<String, Object> _rowFailures = <String, Object>{};
 
-  /// 首屏 Hero：本代第一个加载出 ≥ 2 条的来源行的首条（那一条随之从该行里
-  /// 拿掉，同一作品不在首屏出现两次）。刷新 / 切换来源时清空。
-  _MangaHero? _hero;
+  /// 首屏 Hero 轮播：本代最先加载出 ≥ 2 条的前 [_kHeroCount] 个来源行各取
+  /// 首条（那一条随之从该行里拿掉，同一作品不在首屏出现两次）。按到达顺序
+  /// 追加，已在看的页不会被挤走。刷新 / 切换来源时清空。
+  final List<_MangaHero> _heroes = <_MangaHero>[];
 
   /// 本代是否已有任何一行回报（成功或失败）：首个回报前 Hero 位画骨架占位，
   /// 之后没有合格的行就收起。
@@ -192,7 +193,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     setState(() {
       _generation++;
       _rowFailures.clear();
-      _hero = null;
+      _heroes.clear();
       _anyRowSettled = false;
     });
     if (!_injected && AidokuRuntimeFactory.isSupported) {
@@ -212,16 +213,18 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     setState(() => _rowFailures[feedId] = error);
   }
 
-  /// 热门行拿到条目：本代还没有 Hero 时，取第一个 ≥ 2 条的行的首条做 Hero
-  /// （只有 1 条的行不拆：拆完行就空了，行头悬着一条空卡片带）。
+  /// 热门行拿到条目：Hero 轮播未满 [_kHeroCount] 页、且这一行还没出过 Hero
+  /// 时，取它的首条追加一页（只有 1 条的行不拆：拆完行就空了，行头悬着一条
+  /// 空卡片带）。
   void _onRowItems(
     int generation,
     MangaDiscoverySourceFeed feed,
     List<MangaDiscoverySourceItem> items,
   ) {
     if (!mounted || generation != _generation) return;
-    if (_hero != null || items.length < 2) return;
-    setState(() => _hero = _MangaHero(feed: feed, item: items.first));
+    if (_heroes.length >= _kHeroCount || items.length < 2) return;
+    if (_heroes.any((_MangaHero hero) => hero.feed.id == feed.id)) return;
+    setState(() => _heroes.add(_MangaHero(feed: feed, item: items.first)));
   }
 
   /// 来源热门行清单：测试注入优先，否则按平台从 Mihon 宿主取。
@@ -431,7 +434,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                 _selectedSourceId = id;
                 _rowFailures.clear();
                 // 回到「全部来源」时各行重新挂载、重新拉取，Hero 跟着重选。
-                _hero = null;
+                _heroes.clear();
                 _anyRowSettled = false;
               }),
               searchController: _searchController,
@@ -441,7 +444,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               onSearchSubmitted: (String query) =>
                   _submitSearch(query, catalog, selected),
             ),
-          Expanded(child: _buildBody(catalog, selected)),
+          Expanded(
+            child: DiscoveryScrollTopFade(child: _buildBody(catalog, selected)),
+          ),
         ],
       ),
     );
@@ -496,8 +501,13 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         feedsById[feedId]?.displayName ?? feedId;
     final bool allFailed = feeds.isNotEmpty && failures.length == feeds.length;
     final int generation = _generation;
-    final _MangaHero? hero =
-        _hero != null && feedsById.containsKey(_hero!.feed.id) ? _hero : null;
+    final List<_MangaHero> heroes = <_MangaHero>[
+      for (final _MangaHero hero in _heroes)
+        if (feedsById.containsKey(hero.feed.id)) hero,
+    ];
+    final Set<String> heroFeedIds = <String>{
+      for (final _MangaHero hero in heroes) hero.feed.id,
+    };
     return CustomScrollView(
       key: const PageStorageKey<String>('manga-discovery-scroll'),
       slivers: <Widget>[
@@ -515,8 +525,13 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         // 会让下面不带 key 的 sliver 错位重挂，热门行因此重新拉取。
         SliverToBoxAdapter(
           key: const ValueKey<String>('manga_discovery_hero_slot'),
-          child: hero != null
-              ? _buildHero(hero)
+          child: heroes.isNotEmpty
+              ? DiscoveryHeroCarousel(
+                  key: const ValueKey<String>('manga-discovery-hero-carousel'),
+                  itemCount: heroes.length,
+                  itemBuilder: (BuildContext context, int index) =>
+                      _buildHero(heroes[index]),
+                )
               : !_anyRowSettled && feeds.isNotEmpty
                   ? const DiscoveryHeroSkeleton()
                   : const SizedBox.shrink(),
@@ -540,7 +555,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                   'manga_discovery_source_${feed.id}#$generation',
                 ),
                 feed: feed,
-                excludeFirst: hero?.feed.id == feed.id,
+                excludeFirst: heroFeedIds.contains(feed.id),
                 onItems: (List<MangaDiscoverySourceItem> items) =>
                     _onRowItems(generation, feed, items),
                 onResult: (Object? error) =>
@@ -572,8 +587,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  /// 首屏 Hero 横幅：来源自带的封面 widget 模糊垫底 + 尾侧完整封面，左下标题 +
-  /// 「详情」主按钮（键盘 / 手柄焦点落在按钮上）。
+  /// 首屏 Hero 轮播的一页：来源自带的封面 widget 模糊垫底 + 尾侧完整封面，
+  /// 左下标题 + 「详情」主按钮（键盘 / 手柄焦点落在按钮上）。
   Widget _buildHero(_MangaHero hero) {
     return Builder(
       builder: (BuildContext context) => DiscoveryHeroBanner(
@@ -695,6 +710,9 @@ class _SourceItemCard extends StatelessWidget {
 /// 横滑行卡宽：手机 120、更宽 140（与书架 / 视频发现的竖版卡同一量级）。
 double _sourceCardWidth(BuildContext context) =>
     MediaQuery.sizeOf(context).width < 600 ? 120 : 140;
+
+/// 首屏 Hero 轮播最多几页（每页出自不同的来源行）。
+const int _kHeroCount = 5;
 
 /// 首屏 Hero 的来源条目（连同它出自哪一行）。
 class _MangaHero {
