@@ -996,8 +996,8 @@ class JellyfinApi {
     int startIndex = 0,
     int limit = 200,
     String fields = 'ProductionYear',
-    String sortBy = 'SortName',
-    String sortOrder = 'Ascending',
+    String? sortBy = 'SortName',
+    String? sortOrder = 'Ascending',
   }) async {
     assert(!(includeItemType?.contains(',') ?? false),
         'IncludeItemTypes 必须单值（BUG-2254）');
@@ -1010,8 +1010,9 @@ class JellyfinApi {
       'StartIndex': '$startIndex',
       'Limit': '$limit',
       'Fields': fields,
-      'SortBy': sortBy,
-      'SortOrder': sortOrder,
+      // null = 不指定排序，交给服务器（带 SearchTerm 时就是相关度序）。
+      if (sortBy != null) 'SortBy': sortBy,
+      if (sortOrder != null) 'SortOrder': sortOrder,
     });
     return parseItemsPage(json);
   }
@@ -2618,6 +2619,12 @@ class JellyfinVideoClient
           startIndex: localStart,
           limit: enough ? 1 : kSearchServerPageSize,
           fields: 'ProductionYear,OriginalTitle',
+          // BUG-2970：搜索**不能**按名称排序。带 SearchTerm 时 Emby / Jellyfin /
+          // 兼容层缺省按相关度排；强制 SortName 会把真命中按字母序打散到几千行
+          // 沾边结果里——短查询（1~3 字）在按字模糊的服务器上回的沾边行最多，
+          // 真命中落在 [kSearchScanLimit] 之外，于是「少于四个字都搜不到」。
+          sortBy: null,
+          sortOrder: null,
         );
         roundTotal = page.totalCount;
         if (enough || localStart >= roundTotal || page.items.isEmpty) break;
