@@ -42,6 +42,9 @@ class StatRangeBar extends StatelessWidget {
     ),
   );
 
+  Widget _periodNavigator(BuildContext context, Widget row) =>
+      isGlassDesign(context) ? row : FushiPageChromeCapsule(child: row);
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -90,7 +93,11 @@ class StatRangeBar extends StatelessWidget {
             runSpacing: tokens.spacing.gap,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: <Widget>[
-              Row(
+              // M3E（2026-10-05 浮动工具栏统一）：期间导航「‹ 区间 ›」是一枚
+              // 悬浮胶囊按钮组；Apple 保持原样。
+              _periodNavigator(
+                context,
+                Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   FushiIconButton(
@@ -126,6 +133,7 @@ class StatRangeBar extends StatelessWidget {
                     onTap: () => onChanged(range.shifted(1)),
                   ),
                 ],
+              ),
               ),
               // 2026-10 体验优化：学习日历点某天会把范围切到单日，原先只能再点
               // 「月」+ 连按箭头才回得去。单日态下给一个显眼的「本月」快捷

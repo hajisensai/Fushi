@@ -34,6 +34,7 @@ import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -2992,7 +2993,24 @@ class FushiPageHeader extends StatelessWidget {
         );
     final String? resolvedSubtitle =
         subtitle == null || subtitle!.trim().isEmpty ? null : subtitle;
+    // 2026-10-05「全部用浮动工具栏统一」：Material（M3 Expressive）下页头不再
+    // 是一条平铺的文字行，而是浮在内容上的几颗分离胶囊——返回键一枚圆胶囊、
+    // 标题一枚标题胶囊（titleLarge 加粗）、动作收进一枚按钮组胶囊（见
+    // [_FushiPageHeaderRow]）。Apple 设计系统保持既有玻璃形态。
+    final bool floatingChrome = !isGlassDesign(context);
+    final Widget? floatingTitle =
+        floatingChrome && titleWidget == null && !shellShowsTitle
+        ? Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FushiPageChromeTitle(
+              title: Text(title!),
+              subtitle:
+                  resolvedSubtitle == null ? null : Text(resolvedSubtitle),
+            ),
+          )
+        : null;
     final Widget resolvedTitle = titleWidget ??
+        floatingTitle ??
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
@@ -3041,9 +3059,10 @@ class FushiPageHeader extends StatelessWidget {
         children: <Widget>[
           _FushiPageHeaderRow(
             tokens: tokens,
-            leading: leading,
+            leading: floatingChrome ? fushiFloatingLeading(leading) : leading,
             title: resolvedTitle,
             actionItems: actions,
+            floatingActions: floatingChrome,
             shellActions: shellActions,
             // 只有 customTitle（标题位是分段导航等自报宽度的组件）才启用
             // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
@@ -3112,10 +3131,14 @@ class _FushiPageHeaderRow extends StatefulWidget {
     required this.leading,
     required this.actionItems,
     required this.collapseWhenCramped,
+    this.floatingActions = false,
     this.shellActions,
   });
 
   final FushiDesignTokens tokens;
+
+  /// Material（M3E）下把动作行装进一枚悬浮按钮组胶囊。
+  final bool floatingActions;
   final Widget title;
   final Widget? leading;
   final List<Widget> actionItems;
@@ -3274,7 +3297,8 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
               constraints.maxWidth.isFinite) {
             final double needed = _titleNaturalWidth! +
                 actionsGap +
-                _estimateActionsWidth(actionItems);
+                _estimateActionsWidth(actionItems) +
+                (widget.floatingActions ? 8 : 0);
             final List<FushiIconButton> collapsible = actionItems
                 .whereType<FushiIconButton>()
                 .where((FushiIconButton b) => b.onTap != null)
@@ -3299,7 +3323,11 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
                     physics: const ClampingScrollPhysics(),
                     child: FushiHeaderLabelScope(
                       expandLabels: expandLabels,
-                      child: _buildActionRow(resolvedItems),
+                      child: widget.floatingActions
+                          ? FushiPageChromeCapsule(
+                              child: _buildActionRow(resolvedItems),
+                            )
+                          : _buildActionRow(resolvedItems),
                     ),
                   ),
                 ),
@@ -3435,13 +3463,17 @@ class FushiShellHeaderActions extends StatelessWidget {
             _headerOverflowMenuButton(collapsible),
           ];
         }
+        // MD3（M3E）：动作收进一枚悬浮按钮组胶囊，与页头 / 顶栏同一形态。
+        final Widget toolbar = isGlassDesign(context)
+            ? FushiToolbar(children: items)
+            : FushiPageChromeCapsule(child: FushiToolbar(children: items));
         return FushiHeaderLabelScope(
           expandLabels: false,
           child: HorizontalDragScrollable(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               physics: const ClampingScrollPhysics(),
-              child: FushiToolbar(children: items),
+              child: toolbar,
             ),
           ),
         );
@@ -3518,6 +3550,10 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   // geometry (e.g. reading statistics), where D-pad edge takeover can't help.
   final ScrollController _scrollController = ScrollController();
 
+  /// M3E 悬浮页头「内容往下滚收起、往回滚出现」（Apple 设计系统不喂通知，
+  /// 页头恒在）。
+  final FushiScrollAwayController _chrome = FushiScrollAwayController();
+
   @override
   void initState() {
     super.initState();
@@ -3533,6 +3569,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   void dispose() {
     PageScrollRegistry.pop(_scrollController);
     _scrollController.dispose();
+    _chrome.dispose();
     super.dispose();
   }
 
@@ -3541,6 +3578,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? effectiveLeading = widget.leading ??
         (widget.automaticallyImplyLeading ? _defaultLeading(context) : null);
+    final bool floatingChrome = !isGlassDesign(context);
     return PrimaryScrollController(
       controller: _scrollController,
       // Inherit on EVERY platform. The default is mobile-only, which would
@@ -3575,15 +3613,28 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              FushiPageHeader(
-                title: widget.title,
-                subtitle: widget.subtitle,
-                leading: effectiveLeading,
-                actions: widget.actions,
-                bottom: widget.headerBottom,
-                compact: widget.headerCompact ?? effectiveLeading != null,
+              // 结构恒定：两套设计系统都挂着收起外壳与滚动监听，Apple 下只是
+              // 不喂通知（页头恒显示）。
+              FushiScrollAwayChrome(
+                controller: _chrome,
+                enabled: floatingChrome,
+                child: FushiPageHeader(
+                  title: widget.title,
+                  subtitle: widget.subtitle,
+                  leading: effectiveLeading,
+                  actions: widget.actions,
+                  bottom: widget.headerBottom,
+                  compact: widget.headerCompact ?? effectiveLeading != null,
+                ),
               ),
-              Expanded(child: widget.body),
+              Expanded(
+                child: NotificationListener<Notification>(
+                  onNotification: (Notification notification) =>
+                      floatingChrome &&
+                      _chrome.handleNotification(notification),
+                  child: widget.body,
+                ),
+              ),
             ],
           ),
         ),
@@ -3685,7 +3736,9 @@ class FushiToolScaffold extends StatelessWidget {
                 borderRadius: const BorderRadius.all(Radius.circular(22)),
                 prominent: true,
                 child: SizedBox(
-                  height: 44,
+                  // MD3（M3E 悬浮工具条）：返回键 / 标题 / 动作各是一枚 48 高的
+                  // 悬浮胶囊，行高 52；Apple 保持 44 的玻璃胶囊条。
+                  height: isGlassDesign(context) ? 44 : 52,
                   // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
                   // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
                   // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
@@ -3695,8 +3748,12 @@ class FushiToolScaffold extends StatelessWidget {
                     builder:
                         (BuildContext context, BoxConstraints constraints) {
                       final double gapHalf = tokens.spacing.gap / 2;
-                      final double leadingWidth =
-                          effectiveLeading != null ? 40 + gapHalf : 0;
+                      final bool floating = !isGlassDesign(context);
+                      final double leadingExtent =
+                          floating ? kFushiPageChromeExtent : 40;
+                      final double leadingWidth = effectiveLeading != null
+                          ? leadingExtent + gapHalf
+                          : 0;
                       final double titleFloor = constraints.maxWidth.isFinite
                           ? math.min(
                               96.0 * MediaQuery.textScalerOf(context).scale(1),
@@ -3715,13 +3772,25 @@ class FushiToolScaffold extends StatelessWidget {
                         children: <Widget>[
                           if (effectiveLeading != null) ...<Widget>[
                             SizedBox.square(
-                              dimension: 40,
-                              child: effectiveLeading,
+                              dimension: leadingExtent,
+                              child: floating
+                                  ? FushiPageChromeCircle(
+                                      child: effectiveLeading,
+                                    )
+                                  : effectiveLeading,
                             ),
                             SizedBox(width: gapHalf),
                           ],
                           Expanded(
-                            child: _buildTitle(tokens),
+                            child: floating
+                                ? Align(
+                                    alignment:
+                                        AlignmentDirectional.centerStart,
+                                    child: FushiPageChromeTitle(
+                                      title: _buildTitle(tokens),
+                                    ),
+                                  )
+                                : _buildTitle(tokens),
                           ),
                           if (actions.isNotEmpty) ...<Widget>[
                             SizedBox(width: gapHalf),
@@ -3732,10 +3801,17 @@ class FushiToolScaffold extends StatelessWidget {
                                 child: SingleChildScrollView(
                                   scrollDirection: Axis.horizontal,
                                   reverse: true,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: actions,
-                                  ),
+                                  child: floating
+                                      ? FushiPageChromeCapsule(
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: actions,
+                                          ),
+                                        )
+                                      : Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: actions,
+                                        ),
                                 ),
                               ),
                             ),
