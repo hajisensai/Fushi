@@ -1534,6 +1534,9 @@ class MediaDetailLayout extends StatelessWidget {
                   child: _MediaDetailSidePaneScope(
                     child: SingleChildScrollView(
                       key: const ValueKey<String>('media-detail-side-pane'),
+                      // 左栏不接 PrimaryScrollController：右栏是主滚动视图，两个
+                      // 都挂上会撞「controller attached to multiple scroll views」。
+                      primary: false,
                       padding: EdgeInsets.only(
                         bottom:
                             bottomPadding +
