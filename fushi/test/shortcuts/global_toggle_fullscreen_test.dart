@@ -50,7 +50,6 @@ void main() {
       for (final TargetPlatform platform in <TargetPlatform>[
         TargetPlatform.windows,
         TargetPlatform.linux,
-        TargetPlatform.macOS,
       ]) {
         final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
             platform)[ShortcutAction.globalToggleFullscreen]!;
@@ -59,6 +58,18 @@ void main() {
         expect(binding.key, LogicalKeyboardKey.f11);
         expect(binding.modifiers, isEmpty);
       }
+    });
+
+    // BUG-2948：F11 在 macOS 是「显示桌面」（系统先截走），macOS 用标准全屏键。
+    test('macOS default keyboard binding == Ctrl+Cmd+F', () {
+      final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
+          TargetPlatform.macOS)[ShortcutAction.globalToggleFullscreen]!;
+      expect(set.keyboardBindings, const <InputBinding>[
+        InputBinding(
+          key: LogicalKeyboardKey.keyF,
+          modifiers: <ModifierKey>{ModifierKey.ctrl, ModifierKey.meta},
+        ),
+      ]);
     });
 
     test('all 3 platform tables register the action', () {

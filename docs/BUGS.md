@@ -35,6 +35,7 @@
 |---|:--:|:--:|---|
 | [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
 | [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |
+| [BUG-2948](bugs/BUG-2948-macos-shortcut-key-identity.md) | ✅ | ✅ | macOS 上 Shift+符号键与系统保留默认键导致快捷键无法识别 |
 | [BUG-2947](bugs/BUG-2947-mobile-ffmpeg-kit-av1-hwaccel-only.md) | ✅ | ✅ | 移动端 AV1 视频制卡截帧/动图失败：ffmpeg-kit 缺 libdav1d |
 | [BUG-2946](bugs/BUG-2946-youtube-watchpage-spof.md) | ✅ | ✅ | YouTube 制卡/播放：watch 页被降级时 5 个 client 全部报「视频不可用」 |
 | [BUG-2945](bugs/BUG-2945-host-delete-book-no-tombstone.md) | ✅ | ✅ | 互联「从所有设备删除」对书/有声书不生效：host 删除不写墓碑 |
