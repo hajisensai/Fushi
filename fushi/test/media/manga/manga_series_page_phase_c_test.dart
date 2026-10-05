@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -302,7 +303,7 @@ const ValueKey<String> _moreKey = ValueKey<String>('online_work_more');
 Finder _chapterMenu(String chapterName) => find.descendant(
   of: find.ancestor(
     of: find.text(chapterName),
-    matching: find.byType(FushiListItem),
+    matching: find.byType(MediaDetailItemRow),
   ),
   matching: find.byType(FushiOverflowMenu<String>),
 );

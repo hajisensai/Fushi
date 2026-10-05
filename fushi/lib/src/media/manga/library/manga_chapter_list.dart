@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
@@ -37,6 +40,10 @@ String mangaChapterDownloadFailedLabel(String? lastError) {
 /// 作品页和阅读器里的「章节」弹层用**同一个** widget：两处对「已读怎么显示、
 /// 当前章怎么高亮、排序默认哪个方向、下载状态怎么标」的答案必须一致，各写一份
 /// 必然漂移。
+///
+/// 2026-10 M3E：行是作品详情骨架的分段列表行（[MediaDetailItemRow]）——话数
+/// 序号胶囊、已读 = tertiary 对勾 + 标题降调、读了一半 = 行内进度条、当前章整行
+/// primaryContainer、下载状态图标（排队 / 转圈 / 已下载 / 失败）；错峰进场。
 class MangaChapterList extends StatelessWidget {
   const MangaChapterList({
     required this.entry,
@@ -130,19 +137,20 @@ class MangaChapterList extends StatelessWidget {
         entry?.chapters ?? const <OnlineMangaChapter>[];
     final List<OnlineMangaChapter> visible = _visibleChapters(chapters);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        if (showHeader) ...<Widget>[
-          _buildHeader(context, chapters.length),
-          const SizedBox(height: 8),
-        ],
+        if (showHeader) _buildHeader(context, chapters.length),
         if (chapters.isEmpty)
           _buildEmptyChapters(context)
         else if (visible.isEmpty)
-          _buildEmpty(context, t.manga_series_all_read)
+          _buildEmpty(
+            context,
+            t.manga_series_all_read,
+            icon: FushiIcons.success,
+          )
         else
-          for (final OnlineMangaChapter chapter in visible)
-            _buildRow(context, chapter),
+          for (int i = 0; i < visible.length; i++)
+            _buildRow(context, visible[i], i, visible.length),
       ],
     );
   }
@@ -158,38 +166,39 @@ class MangaChapterList extends StatelessWidget {
     return ordered.reversed.toList(growable: false);
   }
 
+  /// 区块标题：「章节」+ 计数胶囊，行尾排序与只看未读。
   Widget _buildHeader(BuildContext context, int total) {
-    final ThemeData theme = Theme.of(context);
-    return Row(
-      children: <Widget>[
-        Expanded(
-          child: Text(
-            '${t.mihon_chapters_title}  $total',
-            style: theme.textTheme.titleLarge,
-          ),
-        ),
-        if (onSortToggled != null)
-          FushiTextButton.icon(
-            key: const ValueKey<String>('manga_chapter_sort'),
-            onPressed: onSortToggled,
-            icon: FushiIcon(newestFirst ? Icons.arrow_downward : Icons.arrow_upward),
-            label: Text(
-              newestFirst
-                  ? t.manga_series_sort_newest
-                  : t.manga_series_sort_oldest,
+    return MediaDetailSectionHeader(
+      t.mihon_chapters_title,
+      count: total,
+      padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (onSortToggled != null)
+            FushiTextButton.icon(
+              key: const ValueKey<String>('manga_chapter_sort'),
+              onPressed: onSortToggled,
+              icon: const FushiIcon(FushiIcons.sort),
+              label: Text(
+                newestFirst
+                    ? t.manga_series_sort_newest
+                    : t.manga_series_sort_oldest,
+              ),
             ),
-          ),
-        if (onUnreadOnlyToggled != null)
-          FushiSelectableChip(
-            key: const ValueKey<String>('manga_chapter_unread_only'),
-            label: t.manga_series_unread_only,
-            selected: unreadOnly,
-            onSelected: (_) => onUnreadOnlyToggled!(),
-          ),
-      ],
+          if (onUnreadOnlyToggled != null) ...<Widget>[
+            const SizedBox(width: 4),
+            FushiSelectableChip(
+              key: const ValueKey<String>('manga_chapter_unread_only'),
+              label: t.manga_series_unread_only,
+              selected: unreadOnly,
+              onSelected: (_) => onUnreadOnlyToggled!(),
+            ),
+          ],
+        ],
+      ),
     );
   }
-
   Widget _buildEmptyChapters(BuildContext context) {
     final OnlineMangaSourceLanguageScope? scope = languageScope;
     if (scope == null) return _buildEmpty(context, t.manga_series_no_chapters);
@@ -239,66 +248,77 @@ class MangaChapterList extends StatelessWidget {
     );
   }
 
-  Widget _buildEmpty(BuildContext context, String message) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 24),
-    child: Center(
-      child: Text(message, style: Theme.of(context).textTheme.bodyMedium),
-    ),
-  );
+  Widget _buildEmpty(
+    BuildContext context,
+    String message, {
+    IconData icon = FushiIcons.manga,
+  }) => FushiPlaceholderMessage(icon: icon, message: message);
 
-  Widget _buildRow(BuildContext context, OnlineMangaChapter chapter) {
-    final ThemeData theme = Theme.of(context);
+  Widget _buildRow(
+    BuildContext context,
+    OnlineMangaChapter chapter,
+    int index,
+    int count,
+  ) {
     final MangaChapterStateRow? state = states[chapter.key];
     final bool read = state?.readAt != null;
     final bool current = chapter.key == currentChapterKey;
     // 「读了一半」= 有状态行、没读完、且真的翻过页。开了一下就退出（lastPage 0）
     // 不算进度，显示成「读到 1/24 页」只会误导。
-    final bool partial = !read && state != null && state.lastPage > 0;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiCard(
-      // 相邻卡片外边距为 0 时，10px 圆角在行间漏出一串页面底色缺口，长章节
-      // 表看着像锯齿。章节动辄几百条，间距取 gap 的一半就够分辨。
-      margin: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
-      // 当前章此前只有 trailing 一个播放图标，滚动中根本扫不到；整行底色是
-      // 唯一能一眼定位的信号。
-      selected: current,
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        // 章节行只有「标题 + 一行元信息」，standard 密度（56 下限 + 上下 12）
-        // 是给两行副标题留的余量，几百条累计出的空白比内容还多。
-        density: FushiListDensity.compact,
-        padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal - 4,
-          vertical: tokens.spacing.gap / 2,
-        ),
-        title: Text(
-          chapter.name,
-          style: read
-              ? theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                )
+    final int lastPage = state?.lastPage ?? 0;
+    final bool partial = !read && state != null && lastPage > 0;
+    final int? pageCount = state?.pageCount;
+    final _ChapterDownloadState download = _downloadStateOf(chapter);
+    final MangaDownloadJobRow? job = jobsByChapterKey[chapter.key];
+    final int pagesTotal = job?.pagesTotal ?? 0;
+    // 下载状态位的 key 挂在整行外层：图标由分段行自己画（状态位一眼能扫到，
+    // 文字在副标题里），测试 / 探针按 key 数各状态的行数。
+    return KeyedSubtree(
+      key: ValueKey<String>('manga_chapter_download_${download.name}'),
+      child: FushiStaggeredEntrance(
+        index: index,
+        child: MediaDetailItemRow(
+          index: index,
+          count: count,
+          title: chapter.name,
+          number: _numberLabel(chapter),
+          subtitle: _buildSubtitle(chapter, state, partial),
+          // 几百话的表里一个行尾小图标扫不到，整行底色才是能一眼定位的信号。
+          current: current,
+          completed: read,
+          progress: partial && pageCount != null && pageCount > 0
+              ? (lastPage + 1) / pageCount
               : null,
+          downloadState: switch (download) {
+            _ChapterDownloadState.notDownloaded =>
+              MediaDetailDownloadState.none,
+            _ChapterDownloadState.queued => MediaDetailDownloadState.queued,
+            _ChapterDownloadState.downloading =>
+              MediaDetailDownloadState.downloading,
+            _ChapterDownloadState.downloaded =>
+              MediaDetailDownloadState.downloaded,
+            _ChapterDownloadState.failed => MediaDetailDownloadState.failed,
+          },
+          downloadProgress:
+              download == _ChapterDownloadState.downloading && pagesTotal > 0
+              ? ((job?.pagesDone ?? 0) / pagesTotal).clamp(0.0, 1.0)
+              : null,
+          trailing: _buildMenu(chapter, download),
+          onTap: () => onChapterTap(chapter),
         ),
-        subtitle: _buildSubtitle(context, chapter, state, partial),
-        leading: FushiIcon(
-          read
-              ? Icons.check_circle_outline
-              : partial
-              ? Icons.incomplete_circle
-              : Icons.circle_outlined,
-          size: 20,
-          color: read
-              ? theme.colorScheme.onSurfaceVariant
-              : theme.colorScheme.primary,
-        ),
-        trailing: _buildTrailing(context, chapter, current),
-        onTap: () => onChapterTap(chapter),
       ),
     );
   }
 
-  Widget? _buildSubtitle(
-    BuildContext context,
+  /// 序号胶囊里的话数：整数话不带小数点；源没给（Mihon 用 -1 表示未知）就不画。
+  static String? _numberLabel(OnlineMangaChapter chapter) {
+    final double? number = chapter.number;
+    if (number == null || number < 0) return null;
+    if (number == number.truncateToDouble()) return '${number.toInt()}';
+    return '$number';
+  }
+
+  String? _buildSubtitle(
     OnlineMangaChapter chapter,
     MangaChapterStateRow? state,
     bool partial,
@@ -341,20 +361,14 @@ class MangaChapterList extends StatelessWidget {
               ),
     ];
     if (parts.isEmpty) return null;
-    return Text(
-      parts.join(' · '),
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-    );
+    return parts.join(' · ');
   }
 
-  Widget _buildTrailing(
-    BuildContext context,
+  /// 行尾溢出菜单（已读 / 下载 / 识别）；一个动作都没接（阅读器章节弹层）时不画。
+  Widget? _buildMenu(
     OnlineMangaChapter chapter,
-    bool current,
+    _ChapterDownloadState download,
   ) {
-    final ThemeData theme = Theme.of(context);
-    final _ChapterDownloadState download = _downloadStateOf(chapter);
     final bool hasMenu =
         onToggleRead != null ||
         onMarkUpToRead != null ||
@@ -362,112 +376,65 @@ class MangaChapterList extends StatelessWidget {
         onDeleteDownload != null ||
         onRetryDownload != null ||
         onOcr != null;
-    final List<Widget> children = <Widget>[
-      _buildDownloadIndicator(context, download),
-      if (current)
-        FushiIcon(Icons.play_circle_outline, color: theme.colorScheme.primary),
-      if (hasMenu)
-        FushiOverflowMenu<String>(
-          items: <PopupMenuEntry<String>>[
-            if (onToggleRead != null)
-              FushiPopupMenuItem<String>(
-                value: 'toggle-read',
-                label: states[chapter.key]?.readAt != null
-                    ? t.manga_series_mark_unread
-                    : t.manga_series_mark_read,
-              ),
-            if (onMarkUpToRead != null)
-              FushiPopupMenuItem<String>(
-                value: 'mark-up-to',
-                label: t.manga_series_mark_previous_read,
-              ),
-            if (onDownload != null &&
-                download == _ChapterDownloadState.notDownloaded)
-              FushiPopupMenuItem<String>(
-                value: 'download',
-                label: t.manga_chapter_download_action,
-              ),
-            if (onRetryDownload != null &&
-                download == _ChapterDownloadState.failed)
-              FushiPopupMenuItem<String>(
-                value: 'retry-download',
-                label: t.manga_chapter_download_retry_action,
-              ),
-            if (onOcr != null &&
-                download == _ChapterDownloadState.downloaded &&
-                chapter.key != ocrRunningChapterKey &&
-                !ocrQueuedChapterKeys.contains(chapter.key))
-              FushiPopupMenuItem<String>(
-                key: const ValueKey<String>('manga_chapter_ocr'),
-                value: 'ocr',
-                label: t.manga_chapter_ocr_action,
-              ),
-            if (onDeleteDownload != null &&
-                download == _ChapterDownloadState.downloaded)
-              FushiPopupMenuItem<String>(
-                value: 'delete-download',
-                label: t.manga_chapter_download_delete_action,
-              ),
-          ],
-          onSelected: (String value) {
-            switch (value) {
-              case 'toggle-read':
-                onToggleRead?.call(chapter);
-              case 'mark-up-to':
-                onMarkUpToRead?.call(chapter);
-              case 'download':
-                onDownload?.call(chapter);
-              case 'retry-download':
-                onRetryDownload?.call(chapter);
-              case 'delete-download':
-                onDeleteDownload?.call(chapter);
-              case 'ocr':
-                onOcr?.call(chapter);
-            }
-          },
-        ),
-    ];
-    if (children.isEmpty) return const FushiIcon(Icons.chevron_right);
-    return Row(mainAxisSize: MainAxisSize.min, children: children);
-  }
-
-  /// 行尾的下载状态位：图标一眼能扫到，文字在副标题里。
-  Widget _buildDownloadIndicator(
-    BuildContext context,
-    _ChapterDownloadState download,
-  ) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Widget icon = switch (download) {
-      _ChapterDownloadState.downloaded => FushiIcon(
-        Icons.download_done,
-        size: 20,
-        color: scheme.primary,
-      ),
-      _ChapterDownloadState.queued => FushiIcon(
-        Icons.schedule,
-        size: 20,
-        color: scheme.onSurfaceVariant,
-      ),
-      _ChapterDownloadState.downloading => const SizedBox(
-        width: 16,
-        height: 16,
-        child: FushiCircularProgressIndicator(strokeWidth: 2),
-      ),
-      _ChapterDownloadState.failed => FushiIcon(
-        Icons.error_outline,
-        size: 20,
-        color: scheme.error,
-      ),
-      _ChapterDownloadState.notDownloaded => FushiIcon(
-        Icons.cloud_outlined,
-        size: 20,
-        color: scheme.onSurfaceVariant,
-      ),
-    };
-    return Padding(
-      key: ValueKey<String>('manga_chapter_download_${download.name}'),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: icon,
+    if (!hasMenu) return null;
+    return FushiOverflowMenu<String>(
+      items: <PopupMenuEntry<String>>[
+        if (onToggleRead != null)
+          FushiPopupMenuItem<String>(
+            value: 'toggle-read',
+            label: states[chapter.key]?.readAt != null
+                ? t.manga_series_mark_unread
+                : t.manga_series_mark_read,
+          ),
+        if (onMarkUpToRead != null)
+          FushiPopupMenuItem<String>(
+            value: 'mark-up-to',
+            label: t.manga_series_mark_previous_read,
+          ),
+        if (onDownload != null &&
+            download == _ChapterDownloadState.notDownloaded)
+          FushiPopupMenuItem<String>(
+            value: 'download',
+            label: t.manga_chapter_download_action,
+          ),
+        if (onRetryDownload != null &&
+            download == _ChapterDownloadState.failed)
+          FushiPopupMenuItem<String>(
+            value: 'retry-download',
+            label: t.manga_chapter_download_retry_action,
+          ),
+        if (onOcr != null &&
+            download == _ChapterDownloadState.downloaded &&
+            chapter.key != ocrRunningChapterKey &&
+            !ocrQueuedChapterKeys.contains(chapter.key))
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_ocr'),
+            value: 'ocr',
+            label: t.manga_chapter_ocr_action,
+          ),
+        if (onDeleteDownload != null &&
+            download == _ChapterDownloadState.downloaded)
+          FushiPopupMenuItem<String>(
+            value: 'delete-download',
+            label: t.manga_chapter_download_delete_action,
+          ),
+      ],
+      onSelected: (String value) {
+        switch (value) {
+          case 'toggle-read':
+            onToggleRead?.call(chapter);
+          case 'mark-up-to':
+            onMarkUpToRead?.call(chapter);
+          case 'download':
+            onDownload?.call(chapter);
+          case 'retry-download':
+            onRetryDownload?.call(chapter);
+          case 'delete-download':
+            onDeleteDownload?.call(chapter);
+          case 'ocr':
+            onOcr?.call(chapter);
+        }
+      },
     );
   }
 
