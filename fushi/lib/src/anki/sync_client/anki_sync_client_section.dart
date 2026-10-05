@@ -8,6 +8,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 「Anki 同步（无需安装 Anki）」设置节：选后端、登录同步服务器、看同步状态。
@@ -94,14 +95,17 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
         ),
         if (enabled) ...<Widget>[
           AdaptiveSettingsRow(
+            // 状态行首图标按阶段换语义：同步中 / 受阻 / 失败 / 已同步 / 未登录。
+            icon: _statusIcon(state),
+            showIcon: true,
             title: _statusTitle(),
             subtitle: _statusDetail(state),
             titleMaxLines: 2,
             subtitleMaxLines: 6,
             trailing: busy
                 ? const SizedBox.square(
-                    dimension: 20,
-                    child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    dimension: 24,
+                    child: FushiCircularProgressIndicator(strokeWidth: 3),
                   )
                 : null,
           ),
@@ -139,14 +143,14 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     ),
     AdaptiveSettingsRow(
       title: t.anki_sync_client_sign_in,
-      icon: Icons.login,
+      icon: FushiIcons.login,
       showIcon: true,
       onTap: busy ? null : _signIn,
     ),
     if (_account != null)
       AdaptiveSettingsRow(
         title: t.cancel,
-        icon: Icons.close,
+        icon: FushiIcons.close,
         showIcon: true,
         onTap: () => setState(() => _relogin = false),
       ),
@@ -155,23 +159,35 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   List<Widget> _signedInRows(bool busy) => <Widget>[
     AdaptiveSettingsRow(
       title: t.anki_sync_client_sync_now,
-      icon: Icons.sync,
+      icon: FushiIcons.sync,
       showIcon: true,
       onTap: busy ? null : _syncNow,
     ),
     AdaptiveSettingsRow(
       title: t.anki_sync_client_relogin,
-      icon: Icons.key,
+      icon: FushiIcons.key,
       showIcon: true,
       onTap: busy ? null : () => setState(() => _relogin = true),
     ),
     AdaptiveSettingsRow(
       title: t.anki_sync_client_sign_out,
-      icon: Icons.logout,
+      icon: FushiIcons.logout,
       showIcon: true,
       onTap: busy ? null : _signOut,
     ),
   ];
+
+  IconData _statusIcon(AnkiSyncState? state) {
+    if (_account == null) return FushiIcons.cloudOff;
+    return switch (state?.phase) {
+      AnkiSyncPhase.busy => FushiIcons.cloudSync,
+      AnkiSyncPhase.blocked => FushiIcons.warning,
+      AnkiSyncPhase.failed => FushiIcons.error,
+      _ => (state?.unsynced ?? 0) == 0
+          ? FushiIcons.success
+          : FushiIcons.cloudUpload,
+    };
+  }
 
   String _statusTitle() {
     final AnkiSyncAccount? account = _account;
@@ -277,25 +293,16 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     await _loadAccount();
   }
 
-  Future<bool> _confirmDiscard(int count) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        content: Text(t.anki_sync_client_discard_confirm(count: count)),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.anki_sync_client_discard_action),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
-  }
+  /// 破坏性确认：M3E 对话框 + errorContainer 图标徽标 + error 色确认键。
+  Future<bool> _confirmDiscard(int count) => showFushiConfirmDialog(
+        context: context,
+        title: t.anki_sync_client_sign_out,
+        message: t.anki_sync_client_discard_confirm(count: count),
+        cancelLabel: t.cancel,
+        confirmLabel: t.anki_sync_client_discard_action,
+        icon: FushiIcons.logout,
+        destructive: true,
+      );
 
   Future<bool> _confirmAnkiWeb() => showFushiConfirmDialog(
         context: context,
@@ -303,6 +310,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
         message: t.anki_sync_client_ankiweb_body,
         cancelLabel: t.cancel,
         confirmLabel: t.anki_sync_client_ankiweb_confirm,
+        icon: FushiIcons.cloud,
       );
 
   void _toast(String msg) {
