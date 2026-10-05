@@ -20,6 +20,7 @@ import 'package:fushi/src/models/fushi_m3e_misc_themes.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
@@ -1915,7 +1916,14 @@ ThemeData buildFushiThemeData({
   final ColorScheme cs = appleDesign
       ? appleColorScheme(scheme, monochrome: monochromeAccent)
       : scheme;
-  final TextTheme tt = appleDesign ? appleTextTheme(textTheme) : textTheme;
+  // 字阶先解析到与 Theme.of(context).textTheme 同一基底（Typography 2021 颜色档
+  // + 几何档，inherit: false）：下面组件主题里的文字样式与框架默认样式、以及切换
+  // 主题 / 明暗 / 设计系统时 AnimatedTheme 的插值都在同一基底上做 TextStyle.lerp，
+  // 不再撞 inherit 不一致的断言（见 fushiResolveTextTheme）。
+  final TextTheme tt = fushiResolveTextTheme(
+    appleDesign ? appleTextTheme(textTheme) : textTheme,
+    scheme: cs,
+  );
   final FushiAppleColors? appleColors = appleDesign
       ? FushiAppleColors.of(cs.brightness, cs.primary)
       : null;
@@ -1998,6 +2006,10 @@ ThemeData buildFushiThemeData({
     useMaterial3: true,
     colorScheme: cs,
     textTheme: tt,
+    primaryTextTheme: tt.apply(
+      bodyColor: cs.onPrimary,
+      displayColor: cs.onPrimary,
+    ),
     // M3E 语义图标（FushiIcons，Material Symbols 可变字体）的全局轴默认：opsz 24
     // 对应常规 24dp 图标（框架兜底是 48，24dp 下笔画发细）；深色主题 GRAD -25 抵消
     // 浅色图标的光晕。颜色沿用框架默认（black87 / white），旧 MaterialIcons 与
