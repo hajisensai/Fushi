@@ -29,12 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2729 条。点号进各自文件。
+> 共 2732 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2970](bugs/BUG-2970-emby-short-query-search.md) | ✅ | ✅ | Emby 媒体服务器搜索少于四个字搜不到 |
 | [BUG-2967](bugs/BUG-2967-android-first-lookup-after-idle-anki-main-thread.md) | ✅ | ✅ | Android 空闲后首次查词卡顿：AnkiDroid 制卡态探测在主线程冷启动 AnkiDroid |
+| [BUG-2966](bugs/BUG-2966-home-ja-untranslated.md) | ✅ | ✅ | 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译 |
+| [BUG-2965](bugs/BUG-2965-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
+| [BUG-2964](bugs/BUG-2964-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
 | [BUG-2963](bugs/BUG-2963-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
 | [BUG-2960](bugs/BUG-2960-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |

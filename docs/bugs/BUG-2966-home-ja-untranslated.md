@@ -1,0 +1,6 @@
+## BUG-2966 · 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译
+- **报告**：2026-10-05（用户：协作者 shishamo 的 iOS 截图，日文 UI 首页学习卡与「継続から」区出现英文）
+- **真实性**：✅ 真 bug。`fushi/lib/i18n/strings_ja.i18n.json:3120`（`stat_goal` = "Daily Goal"）、`:3121`（`stat_goal_daily`）、`:3126`（`stat_goal_set` = "Set Goal"）、`:3127`（`stat_goal_weekly`）、`:6288`（`home_continue_empty` = "Nothing to continue yet"）；同批 `book_continue_reading` / `video_continue_watching` 也是英文。另外 14 种语言（ar / de / es / fr / id / it / ko / nl / pt-BR / ru / th / tr / vi / zh-HK）同样是英文值。根因：这些 key 当初经 `i18n_sync --add` 新增时，除 zh 外的语言一律先填英文值占位，此后没人补译；Slang 只校验 key 齐全、不校验值是否翻译，所以一直没被发现。
+- **[x] ① 已修复** — 16 种非英文语言补上真译文（`stat_goal` / `stat_goal_daily` / `stat_goal_set` / `stat_goal_weekly` / `home_continue_empty` / `book_continue_reading` / `video_continue_watching`），只换值、保留 key 位置；首页「继续」/「活动」空态同时收成统一的 `HomeEmptyState` 件（`home_dashboard_widgets.dart`）。提交：见 git log（`fix(i18n): translate home dashboard strings`）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_dashboard_i18n_guard_test.dart`：扫 `home_dashboard_page.dart` / `home_dashboard_widgets.dart` / `updates_dashboard_banner.dart` 里用到的全部 `t.<key>`，逐语言断言值不等于英文原值（仅 de/nl/pt-BR/fr 少数真同形词进白名单）。新增首页文案若再用英文占位会在这里变红。
+- **备注**：同类问题在首页以外的页面可能仍存在（守卫只覆盖首页扫描面）；要全应用覆盖需要另立一条按「英文同值率」的全量审计。

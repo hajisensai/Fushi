@@ -6461,5 +6461,6 @@
   "reading_stats_clock_start_mode_hint": "打开书后阅读计时何时开始（下次打开书生效）。随时可用计时按钮或 P 键暂停 / 继续。",
   "reading_stats_clock_start_manual": "手动",
   "reading_stats_clock_start_on_open": "打开即开始",
-  "reading_stats_clock_start_on_page_turn": "翻页后开始"
+  "reading_stats_clock_start_on_page_turn": "翻页后开始",
+  "home_updates_dismiss": "关闭"
 }

@@ -33,6 +33,7 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
+import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
@@ -84,21 +85,23 @@ bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
       ShelfReadStatus.reading;
 }
 
-/// 首页仪表盘（阅读向），参考 ReinaManager 首页改造：
+/// 首页仪表盘（阅读向），参考 ReinaManager 首页改造；2026-10 按 M3E 重设计：
 ///
-/// - 区块 1：学习活动热力图（复用 [StatContributionHeatmap]），置顶；带来源筛选
-///   （全部/阅读/观看/游戏）、「今日目标」行与点选日明细 sheet。
-/// - 区块 2：「继续」——把在读的书与在看的视频合并成横向滑动卡片行（Jellyfin 式：
-///   封面 + 底部进度条 + 标题/副标题），分段切换全部/阅读/观看。
-/// - 区块 3：Activity 时间轴——把 [ActivityEventRow] 事件流经纯函数
-///   [aggregateActivityEvents] 聚合成「按日期分组」的时间线，顶部按类别筛选。
+/// - 「继续」（首屏主角）：最近一条在读 / 在看 / 在玩的条目放大成主角卡
+///   [HomeContinueHero]（大封面 + 进度 + 「继续阅读 / 继续观看」主按钮），其余
+///   条目是下方的横向滑动卡片行（Jellyfin 式），分段切换全部/阅读/观看/游戏。
+/// - 学习紧凑卡：目标环 + 今日字数 + 统计中心 / 排行榜入口一行，下面是来源筛选
+///   与学习活动热力图（复用 [StatContributionHeatmap]，点选日明细 sheet）。
+/// - 最近添加：横滑行。
+/// - Activity 时间轴（降级为次要信息，首屏只露 8 条）：[ActivityEventRow] 事件流
+///   经纯函数 [aggregateActivityEvents] 聚合成「按日期分组」的时间线。
+/// - 更新提醒：可关闭的小横幅（[UpdatesDashboardBanner]）。
 ///
-/// 分栏（BUG-1073 后）：宽屏（`constraints.maxWidth >= 900`）= 主列（flex 3：学习活动
-/// → 继续 → 最近添加）+ 侧列（flex 2：Activity 时间轴），随窗口铺满（旧 1600px
-/// 限宽居中已撤——用户实报「首页左右强制的间距」）；窄屏单列堆叠。书与阅读位置走
-/// Riverpod provider
-/// （响应式）；视频与活动事件在 [initState] 一次性异步载入到本地状态（视频列表天然是
-/// Future）。
+/// 分栏（BUG-1073 骨架）：宽屏（`constraints.maxWidth >= 900`）= 主列（flex 3：继续
+/// → 最近添加）+ 侧列（flex 2：学习卡 → 追踪 → 活动），随窗口铺满；窄屏单列
+/// （继续 → 学习 → 最近添加 → 追踪 → 活动）。书与阅读位置走 Riverpod provider
+/// （响应式）；视频 / 统计 / 活动等本地聚合在 [initState] 一次并发载入，结果按
+/// 数据库实例做快照（BUG-2964），重建时首帧直接用快照渲染。
 class HomeDashboardPage extends BaseModuleTabPage {
   const HomeDashboardPage({
     super.key,
@@ -207,6 +210,71 @@ class _ContinueEntry {
 
   /// 互联 host 上的在读书/在看视频（本地无此条目时的远端补位，「继续也走互联」）。
   final RemoteContinueCandidate? remote;
+}
+
+/// 首页本地聚合的一次完整结果（[_HomeDashboardPageState._loadDashboardDataUnsafe]
+/// 的产物），按数据库实例缓存在 [_HomeDashboardPageState._snapshots]。
+///
+/// BUG-2964：首页不在 keep-alive 名单里，每次切回首页都整页重建、`initState`
+/// 重跑整批聚合——几百毫秒里各区只能挂骨架。快照让重建的首帧直接用上一轮的结果
+/// 渲染（旧数据先上屏），后台照常重拉一轮再替换，体感从「每次都等」变成「瞬开」。
+/// 只存本地聚合，远端补位（互联）仍由 [_loadRemoteDashboardData] 增量到达。
+class _HomeDashboardSnapshot {
+  const _HomeDashboardSnapshot({
+    required this.statWindow,
+    required this.ambiguousBookTitles,
+    required this.videos,
+    required this.games,
+    required this.tracking,
+    required this.activityEvents,
+    required this.charsByDay,
+    required this.timeMsByDay,
+    required this.readChars,
+    required this.readTimeMs,
+    required this.watchChars,
+    required this.watchTimeMs,
+    required this.gameChars,
+    required this.gameTimeMs,
+    required this.readingRows,
+    required this.watchRows,
+    required this.gameRows,
+    required this.collectionNamesById,
+    required this.primaryCollectionByEntry,
+    required this.mediaImagesByCollection,
+    required this.mediaImagesByBookUid,
+    required this.bookKeyByTitle,
+    required this.epubUidByBookKey,
+    required this.epubImportedAtByKey,
+    required this.memberSortIndex,
+    required this.videoWatchAtByUid,
+  });
+
+  final StatWindow statWindow;
+  final Set<String> ambiguousBookTitles;
+  final List<VideoBookRow> videos;
+  final List<GalgameEntry> games;
+  final MediaTrackingStatus tracking;
+  final List<ActivityEventRow> activityEvents;
+  final Map<String, int> charsByDay;
+  final Map<String, int> timeMsByDay;
+  final Map<String, int> readChars;
+  final Map<String, int> readTimeMs;
+  final Map<String, int> watchChars;
+  final Map<String, int> watchTimeMs;
+  final Map<String, int> gameChars;
+  final Map<String, int> gameTimeMs;
+  final List<StatFact> readingRows;
+  final List<StatFact> watchRows;
+  final List<StatFact> gameRows;
+  final Map<int, String> collectionNamesById;
+  final Map<String, int> primaryCollectionByEntry;
+  final Map<int, List<MediaImageRow>> mediaImagesByCollection;
+  final Map<String, List<MediaImageRow>> mediaImagesByBookUid;
+  final Map<String, String> bookKeyByTitle;
+  final Map<String, String> epubUidByBookKey;
+  final Map<String, int> epubImportedAtByKey;
+  final Map<String, int> memberSortIndex;
+  final Map<String, int> videoWatchAtByUid;
 }
 
 class _BangumiWatchedDialog extends StatefulWidget {
@@ -335,7 +403,9 @@ const int _kTrackingUnlinkedLimit = 5;
 
 class _HomeDashboardPageState
     extends BaseModuleTabPageState<HomeDashboardPage> {
-  static const int _kActivityPageSize = 24;
+  /// 活动时间轴每页条数。2026-10 重设计把时间轴降为次要信息（首屏让给「继续」
+  /// 主角卡与学习卡），首屏只露 8 条，其余按「加载更多」分页展开。
+  static const int _kActivityPageSize = 8;
 
   /// 首页主纵向滚动区自己的控制器。滚轮平滑由根部 `SmoothWheelScrollScope`
   /// 统一处理（BUG-2834），这里不再需要特制控制器。
@@ -499,13 +569,27 @@ class _HomeDashboardPageState
   ///
   /// 2026-10 体验优化：此前首帧各区块拿空数据直接渲染，用户先看到一闪
   /// 「暂无活动记录」/ 空热力图，几百毫秒后才换成真实内容，像是数据丢了。
-  /// 完成前「继续」/ 热力图 / 动态区块显示加载指示，之后的防抖重载不再回到
-  /// 加载态（旧数据先留着，避免每次写库都闪一下）。
+  /// 完成前「继续」/ 学习卡 / 动态区块挂同轮廓骨架（home_dashboard_widgets），
+  /// 之后的防抖重载不再回到骨架（旧数据先留着，避免每次写库都闪一下）；有
+  /// [_snapshots] 快照时重建首帧直接视为已完成。
   bool _initialLoadDone = false;
+
+  /// 按数据库实例缓存的上一轮本地聚合（BUG-2964，见 [_HomeDashboardSnapshot]）。
+  /// [Expando] 随数据库实例回收，换库 / 测试各自建库天然隔离。
+  static final Expando<_HomeDashboardSnapshot> _snapshots =
+      Expando<_HomeDashboardSnapshot>('home-dashboard-snapshot');
 
   @override
   void initState() {
     super.initState();
+    // 有上一轮快照：首帧直接用它渲染（骨架只在「本进程第一次进首页」出现），
+    // 下面的整批重拉照常跑、到达后整体替换。
+    final _HomeDashboardSnapshot? snapshot =
+        _snapshots[ref.read(appProvider).database];
+    if (snapshot != null) {
+      _applySnapshot(snapshot);
+      _initialLoadDone = true;
+    }
     unawaited(_loadDashboardData());
     // 阅读/观看/导入写库 → 表级变更 → 防抖后重查聚合，首页自动刷新（竞态无关：
     // 信号在写入 commit 后才发，重查读到的是已落库数据）。
@@ -595,19 +679,6 @@ class _HomeDashboardPageState
     }
   }
 
-  /// 区块首载占位（2026-10 体验优化，见 [_initialLoadDone]）。
-  Widget _sectionLoadingPlaceholder(FushiDesignTokens tokens) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
-      child: const Center(
-        child: SizedBox.square(
-          dimension: 24,
-          child: CircularProgressIndicator(strokeWidth: 2.5),
-        ),
-      ),
-    );
-  }
-
   /// 到下一个本地午夜整页重拉（每次加载重新排一次；页面已卸载则不动）。
   void _armMidnightReload(DateTime now) {
     _midnightReload?.cancel();
@@ -631,18 +702,32 @@ class _HomeDashboardPageState
     final Future<StatFacts> factsF = loadStatFacts(db);
     final Future<List<MediaCollectionRow>> collectionsF =
         db.getAllMediaCollections();
-    final Future<Map<String, int>> primaryByEntryF =
-        db.getPrimaryCollectionIdByEntry();
+    // 折叠归属主合集 + 组内 sortIndex 一次查回，且只查本机库里还在的条目
+    // （BUG-2964：原先 getPrimaryCollectionIdByEntry + getAllCollectionItems 两次
+    // 全表物化，在线源 / 播放列表合集把成员表撑到八万行时单这两步 640–950 ms）。
+    final Future<Map<String, ({int collectionId, int sortIndex})>>
+        membershipF = db.getLocalPrimaryCollectionMembership();
     final Future<List<MediaImageRow>> mediaImagesF = db.getAllMediaImages();
-    final Future<List<MediaCollectionItemRow>> collectionItemsF =
-        db.getAllCollectionItems();
+    // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
+    // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
+    // 后 isLoaded=true，不再形成回环。与其余读并发发出（此前排在整批之后串行）。
+    final GalgameRepository galgameRepo = appModel.galgameRepo;
+    final Future<List<GalgameEntry>> gamesF = galgameRepo.isLoaded
+        ? Future<List<GalgameEntry>>.value(galgameRepo.games)
+        : galgameRepo.load();
+    // Bangumi 追踪状态（映射 + 待办 + 上次同步结果）。读的是本地库与偏好，不发
+    // 网络请求，可以和其它聚合一起进首屏。临时下线期间卡不挂载，状态也不必查。
+    final Future<MediaTrackingStatus> trackingF = kMediaTrackingEnabled
+        ? appModel.mediaTrackingService.loadStatus()
+        : Future<MediaTrackingStatus>.value(MediaTrackingStatus.empty);
     await Future.wait<Object?>(<Future<Object?>>[
       videosF,
       factsF,
       collectionsF,
-      primaryByEntryF,
+      membershipF,
       mediaImagesF,
-      collectionItemsF,
+      gamesF,
+      trackingF,
     ]);
     final List<VideoBookRow> videos = await videosF;
     final StatFacts facts = await factsF;
@@ -653,17 +738,18 @@ class _HomeDashboardPageState
     // added 导入事件）∪ v92 段映射行 ∪ galgame_sessions 合成的游玩事件，按时刻倒序
     // 截 200（与旧 getRecentActivityEvents(limit: 200) 对齐）。
     final List<ActivityEventRow> events = facts.activityRows;
-    // P4：游戏库整表（日明细/时间轴的游戏显示名反查）。仓储缓存与表恒一致，
-    // 未载入过才真查 DB（毫秒级）；load() 会 notify → 本页监听器防抖重载一次
-    // 后 isLoaded=true，不再形成回环。
-    final GalgameRepository galgameRepo = appModel.galgameRepo;
-    final List<GalgameEntry> games =
-        galgameRepo.isLoaded ? galgameRepo.games : await galgameRepo.load();
+    final List<GalgameEntry> games = await gamesF;
     // 合集归属映射（统计页/书架同源）：显示名规则「非合集上下文拼合集名」用。
     final Map<int, String> collectionNamesById = <int, String>{
       for (final MediaCollectionRow c in await collectionsF) c.id: c.name,
     };
-    final Map<String, int> primaryByEntry = await primaryByEntryF;
+    final Map<String, ({int collectionId, int sortIndex})> membership =
+        await membershipF;
+    final Map<String, int> primaryByEntry = <String, int>{
+      for (final MapEntry<String, ({int collectionId, int sortIndex})> e
+          in membership.entries)
+        e.key: e.value.collectionId,
+    };
     // v68 附加图组：一次全表查询按归属分桶（续播区视频横卡选图链）。
     final Map<int, List<MediaImageRow>> imagesByCollection =
         <int, List<MediaImageRow>>{};
@@ -678,14 +764,12 @@ class _HomeDashboardPageState
       }
     }
     // 组内序：条目在其主折叠合集里的 sortIndex（视频页/书架 _loadShelfMaps 同
-    // 口径——一次 getAllCollectionItems 内存分组，只记归属主合集的行）。
-    final Map<String, int> memberSortIndex = <String, int>{};
-    for (final MediaCollectionItemRow m in await collectionItemsF) {
-      final String key = '${m.mediaType}|${m.entryKey}';
-      if (primaryByEntry[key] == m.collectionId) {
-        memberSortIndex[key] = m.sortIndex;
-      }
-    }
+    // 口径——只记归属主合集的行；SQL 侧已按主键回查好）。
+    final Map<String, int> memberSortIndex = <String, int>{
+      for (final MapEntry<String, ({int collectionId, int sortIndex})> e
+          in membership.entries)
+        e.key: e.value.sortIndex,
+    };
     // legacy 阅读事实行无身份时按 title 反查 bookKey（日明细拼合集前缀，阅读统计
     // 页 _collectionNameForBook 同范式）。书表由事实面加载时顺带取回，同批再取
     // importedAt 喂「最近添加」行（一次查询两用）。
@@ -749,44 +833,75 @@ class _HomeDashboardPageState
       }
     }
 
-    // Bangumi 追踪状态（映射 + 待办 + 上次同步结果）。读的是本地库与偏好，不发
-    // 网络请求，可以和其它聚合一起进首屏。临时下线期间卡不挂载，状态也不必查。
-    final MediaTrackingStatus tracking = kMediaTrackingEnabled
-        ? await appModel.mediaTrackingService.loadStatus()
-        : MediaTrackingStatus.empty;
+    final MediaTrackingStatus tracking = await trackingF;
 
+    final _HomeDashboardSnapshot snapshot = _HomeDashboardSnapshot(
+      statWindow: statWindow,
+      ambiguousBookTitles: ambiguousTitles,
+      videos: videos,
+      games: games,
+      tracking: tracking,
+      activityEvents: events,
+      charsByDay: charsByDay,
+      timeMsByDay: timeMsByDay,
+      readChars: readChars,
+      readTimeMs: readTimeMs,
+      watchChars: watchChars,
+      watchTimeMs: watchTimeMs,
+      gameChars: gameChars,
+      gameTimeMs: gameTimeMs,
+      readingRows: reading,
+      watchRows: watch,
+      gameRows: game,
+      collectionNamesById: collectionNamesById,
+      primaryCollectionByEntry: primaryByEntry,
+      mediaImagesByCollection: imagesByCollection,
+      mediaImagesByBookUid: imagesByBookUid,
+      bookKeyByTitle: bookKeyByTitle,
+      epubUidByBookKey: epubUidByBookKey,
+      epubImportedAtByKey: epubImportedAtByKey,
+      memberSortIndex: memberSortIndex,
+      videoWatchAtByUid: watchAt,
+    );
+    _snapshots[db] = snapshot;
     if (!mounted) return;
-    setState(() {
-      _statWindow = statWindow;
-      _ambiguousBookTitles = ambiguousTitles;
-      _videos = videos;
-      _games = games;
-      _tracking = tracking;
-      _localActivityEvents = events;
-      _activityEvents = events;
-      _readingCharsByDay = charsByDay;
-      _readingTimeMsByDay = timeMsByDay;
-      _readCharsByDay = readChars;
-      _readTimeMsByDay = readTimeMs;
-      _watchCharsByDay = watchChars;
-      _watchTimeMsByDay = watchTimeMs;
-      _gameCharsByDay = gameChars;
-      _gameTimeMsByDay = gameTimeMs;
-      _readingRows = reading;
-      _watchRows = watch;
-      _gameRows = game;
-      _collectionNamesById = collectionNamesById;
-      _primaryCollectionByEntry = primaryByEntry;
-      _mediaImagesByCollection = imagesByCollection;
-      _mediaImagesByBookUid = imagesByBookUid;
-      _bookKeyByTitle = bookKeyByTitle;
-      _epubUidByBookKey = epubUidByBookKey;
-      _epubImportedAtByKey = epubImportedAtByKey;
-      _memberSortIndex = memberSortIndex;
-      _videoWatchAtByUid = watchAt;
-    });
+    setState(() => _applySnapshot(snapshot));
     // 本地渲染先行，互联数据到达后再增量补位（不阻塞首屏）。
     unawaited(_loadRemoteDashboardData());
+  }
+
+  /// 把一轮聚合结果灌进页面状态（加载完成与重建时从快照恢复共用）。远端混排
+  /// 状态不在快照里：[_activityEvents] 先回到纯本地，远端到达后再混排。
+  void _applySnapshot(_HomeDashboardSnapshot s) {
+    _statWindow = s.statWindow;
+    _ambiguousBookTitles = s.ambiguousBookTitles;
+    _videos = s.videos;
+    _games = s.games;
+    _tracking = s.tracking;
+    _localActivityEvents = s.activityEvents;
+    _activityEvents = _remoteActivityRows.isEmpty
+        ? s.activityEvents
+        : mergeActivityEvents(s.activityEvents, _remoteActivityRows.toList());
+    _readingCharsByDay = s.charsByDay;
+    _readingTimeMsByDay = s.timeMsByDay;
+    _readCharsByDay = s.readChars;
+    _readTimeMsByDay = s.readTimeMs;
+    _watchCharsByDay = s.watchChars;
+    _watchTimeMsByDay = s.watchTimeMs;
+    _gameCharsByDay = s.gameChars;
+    _gameTimeMsByDay = s.gameTimeMs;
+    _readingRows = s.readingRows;
+    _watchRows = s.watchRows;
+    _gameRows = s.gameRows;
+    _collectionNamesById = s.collectionNamesById;
+    _primaryCollectionByEntry = s.primaryCollectionByEntry;
+    _mediaImagesByCollection = s.mediaImagesByCollection;
+    _mediaImagesByBookUid = s.mediaImagesByBookUid;
+    _bookKeyByTitle = s.bookKeyByTitle;
+    _epubUidByBookKey = s.epubUidByBookKey;
+    _epubImportedAtByKey = s.epubImportedAtByKey;
+    _memberSortIndex = s.memberSortIndex;
+    _videoWatchAtByUid = s.videoWatchAtByUid;
   }
 
   /// 把一组事实行按 dateKey 累加进 [chars] / [timeMs] 两张日映射（热力图分档数据源）。
@@ -983,11 +1098,10 @@ class _HomeDashboardPageState
         final bool wide = constraints.maxWidth >= 900;
         final Widget body;
         if (wide) {
-          // BUG-1073：宽屏改成「主列 + 侧列」两栏。此前是「热力图通栏 → 继续|活动
-          // 两栏 → 最近添加通栏」的三明治：热力图和最近添加各自被拉到 1700px 宽
-          // （内容却只有几百 px），继续区一行只 4 张卡右侧全空，活动列又比左列高
-          // 出一大截。现在把三个「宽度用不满」的区块（学习活动 / 继续 / 最近添加）
-          // 竖着塞进主列，天然长的活动时间轴独占侧列，两列高度也就对齐了。
+          // 2026-10 重设计（沿用 BUG-1073 的「主列 + 侧列」两栏骨架）：主列
+          // = 「继续」主角卡 + 最近添加——首屏主角是「接着读 / 接着看」；侧列 =
+          // 学习紧凑卡（目标环 + 热力图）→ 追踪卡 → 活动时间轴（降级为次要
+          // 信息，天然最长，放侧列底部）。
           //
           // 整页在纵向滚动的 ListView 里，Row 收到的高度约束是无界（h=Infinity）；
           // 用 CrossAxisAlignment.start 让两列各自收敛到内容高度，避免 stretch 被
@@ -1001,9 +1115,7 @@ class _HomeDashboardPageState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    FushiStaggeredEntrance(index: 0, child: heatmapCard),
-                    SizedBox(height: tokens.spacing.card),
-                    FushiStaggeredEntrance(index: 1, child: continueCard),
+                    FushiStaggeredEntrance(index: 0, child: continueCard),
                     // 空库不占位（用户反馈「底部很空」的填充提案）。
                     if (recentCard != null) ...<Widget>[
                       SizedBox(height: tokens.spacing.card),
@@ -1021,12 +1133,14 @@ class _HomeDashboardPageState
                   children: <Widget>[
                     // 侧列与主列并排：按各自列内的视觉顺序错峰（从 1 起，
                     // 晚主列首块一拍，读作「先左后右」）。
+                    FushiStaggeredEntrance(index: 1, child: heatmapCard),
                     if (trackingCard != null) ...<Widget>[
-                      FushiStaggeredEntrance(index: 1, child: trackingCard),
                       SizedBox(height: tokens.spacing.card),
+                      FushiStaggeredEntrance(index: 2, child: trackingCard),
                     ],
+                    SizedBox(height: tokens.spacing.card),
                     FushiStaggeredEntrance(
-                      index: trackingCard != null ? 2 : 1,
+                      index: trackingCard != null ? 3 : 2,
                       child: activityCard,
                     ),
                   ],
@@ -1035,16 +1149,17 @@ class _HomeDashboardPageState
             ],
           );
         } else {
+          // 窄屏单列：继续（主角）→ 学习紧凑卡 → 最近添加 → 追踪 → 活动。
+          // 最近添加压在活动时间轴之上：时间轴天然很长，压在下面用户要滚到底
+          // 才看得见新入库的条目。
           body = Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiStaggeredEntrance(index: 0, child: heatmapCard),
+              FushiStaggeredEntrance(index: 0, child: continueCard),
               SizedBox(height: tokens.spacing.card),
-              FushiStaggeredEntrance(index: 1, child: continueCard),
+              FushiStaggeredEntrance(index: 1, child: heatmapCard),
               SizedBox(height: tokens.spacing.card),
-              // 与宽屏主列同序（继续 → 最近添加）：窄屏单列把最近添加压在活动
-              // 时间轴之下，时间轴天然很长，用户要滚到底才看得见新入库的条目。
               if (recentCard != null) ...<Widget>[
                 FushiStaggeredEntrance(index: 2, child: recentCard),
                 SizedBox(height: tokens.spacing.card),
@@ -1273,13 +1388,67 @@ class _HomeDashboardPageState
               options: filterOptions,
             )
           : null,
-      // 2026-10 体验优化：空态用「继续」自己的文案（此前误用动态区的「暂无
-      // 活动记录」）；首载未结束时显示加载占位而不是空态。
+      // 2026-10 重设计：最近一条放大成主角卡（首屏主角），其余条目仍是下方
+      // 的横滑卡片行。空态用「继续」自己的文案 + 与其它分区一致的空态件；首载
+      // 未结束时挂同轮廓骨架，而不是先闪空态再跳成真数据。
       child: filtered.isEmpty
           ? (_initialLoadDone
-              ? Text(t.home_continue_empty, style: tokens.type.metadata)
-              : _sectionLoadingPlaceholder(tokens))
-          : _continueCardsRow(tokens, appModel, filtered, videoLandscape: true),
+              ? HomeEmptyState(
+                  icon: Icons.play_circle_outline,
+                  message: t.home_continue_empty,
+                )
+              : const HomeContinueHeroSkeleton())
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _buildContinueHero(tokens, appModel, filtered.first),
+                if (filtered.length > 1) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  _continueCardsRow(
+                    tokens,
+                    appModel,
+                    filtered.sublist(1),
+                    videoLandscape: true,
+                  ),
+                ],
+              ],
+            ),
+    );
+  }
+
+  /// 「继续」主角卡（2026-10 重设计）：最近一条在读 / 在看 / 在玩的条目。标题 /
+  /// 副标题与横滑卡同一显示名规则（[_continueCardTitles]），封面走同一条
+  /// [_continueCover] 取图链——视频按 16:9 横槽（竖版海报自动模糊垫底），书 /
+  /// 游戏竖槽。
+  Widget _buildContinueHero(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry,
+  ) {
+    final (String title, String subtitle) = _continueCardTitles(entry);
+    final bool landscape = entry.isVideo;
+    final int recent = entry.recentMs;
+    return HomeContinueHero(
+      cover: _continueCover(tokens, appModel, entry, landscapeSlot: landscape),
+      landscapeCover: landscape,
+      eyebrow: recent > 0 ? _relativeTimeLabel(recent, DateTime.now()) : null,
+      title: title,
+      subtitle: subtitle,
+      progress: entry.progress,
+      actionLabel: switch (entry.kind) {
+        MediaKind.video => t.video_continue_watching,
+        MediaKind.epub || MediaKind.srt => t.book_continue_reading,
+        // 游戏卡落地是切到游戏库（启动走那边的确认链），文案说「打开」；
+        // 不用「继续」——会与分区标题撞成同一个词。
+        MediaKind.game => t.collection_open,
+      },
+      actionIcon: switch (entry.kind) {
+        MediaKind.video => Icons.play_arrow_rounded,
+        MediaKind.epub || MediaKind.srt => Icons.menu_book_rounded,
+        MediaKind.game => Icons.sports_esports_outlined,
+      },
+      onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
     );
   }
 
@@ -1599,25 +1768,7 @@ class _HomeDashboardPageState
   }) {
     final double coverWidth =
         landscape ? _kContinueCoverHeight * 16 / 9 : _kContinueCoverWidth;
-    // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
-    // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
-    String status = switch (entry.kind) {
-      MediaKind.video => t.home_filter_watch,
-      MediaKind.game => t.home_filter_game,
-      MediaKind.epub ||
-      MediaKind.srt =>
-        '${t.home_filter_read} · ${entry.percent}%',
-    };
-    if (entry.remote != null) {
-      // 标明设备来源：优先 host 设备名（配对时存下），取不到回退通用「远端」。
-      status = '$status · ${_remoteDeviceName ?? t.home_remote_source}';
-    }
-    // 「最近添加」行覆盖状态段（类型 · 相对时间）；继续区恒 null 走上面默认。
-    status = entry.subtitleOverride ?? status;
-    final String? collectionName = entry.collectionName;
-    final String title = collectionName ?? entry.title;
-    final String subtitle =
-        collectionName != null ? '${entry.title} · $status' : status;
+    final (String title, String subtitle) = _continueCardTitles(entry);
     return SizedBox(
       width: coverWidth,
       child: InkWell(
@@ -1670,6 +1821,33 @@ class _HomeDashboardPageState
           ],
         ),
       ),
+    );
+  }
+
+  /// 继续卡 / 主角卡共用的显示名规则：(标题, 副标题)。非合集上下文拼合集名——
+  /// 合集成员标题=合集名、副标题=「条目名 · 状态」；散卡标题=条目名、副标题=
+  /// 状态。状态：书=「阅读 · x%」/ 视频=「观看」/ 游戏=「游戏」，远端条目再缀
+  /// 设备名；「最近添加」行用 [_ContinueEntry.subtitleOverride] 覆盖状态段。
+  (String, String) _continueCardTitles(_ContinueEntry entry) {
+    // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
+    // 书的「阅读 · x%」——否则一律显示「阅读 · 0%」。
+    String status = switch (entry.kind) {
+      MediaKind.video => t.home_filter_watch,
+      MediaKind.game => t.home_filter_game,
+      MediaKind.epub ||
+      MediaKind.srt =>
+        '${t.home_filter_read} · ${entry.percent}%',
+    };
+    if (entry.remote != null) {
+      // 标明设备来源：优先 host 设备名（配对时存下），取不到回退通用「远端」。
+      status = '$status · ${_remoteDeviceName ?? t.home_remote_source}';
+    }
+    // 「最近添加」行覆盖状态段（类型 · 相对时间）；继续区恒 null 走上面默认。
+    status = entry.subtitleOverride ?? status;
+    final String? collectionName = entry.collectionName;
+    return (
+      collectionName ?? entry.title,
+      collectionName != null ? '${entry.title} · $status' : status,
     );
   }
 
@@ -1965,20 +2143,11 @@ class _HomeDashboardPageState
       title: t.reading_activity,
       // 统计入口的唯一落点（用户定案 2026-09-01：各媒体页头的「xx统计」全部
       // 撤掉，统一从首页热力图卡右上进统计中心总览）。
-      header: Row(
-        children: <Widget>[
-          Expanded(
-            // 只剩一个真实档时整行不渲染（留一排「全部/阅读」是两个同义 chip）。
-            child: filterOptions.length > 2
-                ? _filterChips<int>(
-                    tokens: tokens,
-                    selected: activeFilter,
-                    onSelected: (int v) => setState(() => _heatmapFilter = v),
-                    options: filterOptions,
-                  )
-                : const SizedBox.shrink(),
-          ),
-          SizedBox(width: tokens.spacing.gap),
+      // 2026-10 重设计：学习进度与每日目标合并成一张紧凑卡——顶部「目标环 +
+      // 今日字数 + 统计入口」一行，筛选条与热力图在下。
+      // 统计入口挂在标题行尾，目标行独占一整行（窄屏下与入口挤一行会把
+      // 今日字数截成省略号）。
+      trailing: <Widget>[
           FushiIconButton(
             tooltip: t.stat_center_title,
             label: t.stat_center_title,
@@ -1993,14 +2162,29 @@ class _HomeDashboardPageState
             icon: Icons.emoji_events_outlined,
             onTap: _openLeaderboard,
           ),
-        ],
-      ),
+      ],
+      header: _initialLoadDone
+          ? _buildDailyGoalRow(tokens)
+          : const HomeGoalSkeleton(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          // 只剩一个真实档时整行不渲染（留一排「全部/阅读」是两个同义 chip）。
+          if (filterOptions.length > 2) ...<Widget>[
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: _filterChips<int>(
+                tokens: tokens,
+                selected: activeFilter,
+                onSelected: (int v) => setState(() => _heatmapFilter = v),
+                options: filterOptions,
+              ),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+          ],
           if (!_initialLoadDone)
-            _sectionLoadingPlaceholder(tokens)
+            const HomeHeatmapSkeleton()
           else
             StatContributionHeatmap(
               valueByDateKey: charsByDay,
@@ -2028,8 +2212,6 @@ class _HomeDashboardPageState
               onDaySelected: (String dateKey, int _) =>
                   unawaited(_showDayDetailSheet(dateKey)),
             ),
-          SizedBox(height: tokens.spacing.gap),
-          _buildDailyGoalRow(tokens),
         ],
       ),
     );
@@ -2085,84 +2267,65 @@ class _HomeDashboardPageState
   /// 字数目标（与阅读统计页目标卡同一持久化 [AppModel.readingGoalDailyChars]、
   /// 同一分子函数 [studyGoalCharsForDay]，不随热力图筛选变）。v92 曾把分子收窄
   /// 成只算阅读域，纯视频/游戏日与上方热力图「全部」档对不上（BUG-1993）。
-  /// 目标为 0 → 只留设定入口按钮；否则进度条 + 「X / Y 字」，点击行弹编辑对话框。
+  /// 目标为 0 → 旗子环 + 今日字数 + 设定入口按钮；否则进度环 + 「X / Y 字」，
+  /// 点击整行弹编辑对话框。
   Widget _buildDailyGoalRow(FushiDesignTokens tokens) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
-    if (goal <= 0) {
-      // BUG-1073 病灶 2：此前是热力图下方孤零零一个左对齐按钮。改成与已设目标态
-      // 同构的一整行（图标 + 标签 + 右侧入口），视觉上属于这张卡。口径说明按用户要求
-      // 删除，标签退回「每日目标」本名。
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
-          children: <Widget>[
-            FushiIcon(
-              Icons.flag_outlined,
-              size: 18,
-              color: tokens.type.metadata.color,
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              child: Text(
-                t.stat_goal_daily,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: tokens.type.metadata,
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            FushiTextButton(
-              onPressed: () => unawaited(_editDailyGoal()),
-              child: Text(t.stat_goal_set),
-            ),
-          ],
-        ),
-      );
-    }
     // BUG-2219：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
     final String todayKey = _statWindow.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
-    final double fraction = (todayChars / goal).clamp(0.0, 1.0);
+    // 2026-10 重设计：目标并进学习卡头部，环形进度（MD3 Expressive 波浪环 /
+    // Apple 原生环）+ 两行文字，整行可点开编辑对话框。未设目标（goal=0）时环
+    // 里放旗子、副行写今日字数，右侧保留「设定目标」入口（BUG-1073 病灶 2：
+    // 未设态与已设态同构，都属于这张卡）。
+    final bool hasGoal = goal > 0;
+    final double? fraction =
+        hasGoal ? (todayChars / goal).clamp(0.0, 1.0) : null;
+    final ThemeData theme = Theme.of(context);
+    final Widget texts = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          hasGoal ? t.stat_goal : t.stat_goal_daily,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.type.metadata,
+        ),
+        Text(
+          hasGoal
+              ? t.stat_goal_progress(read: todayChars, goal: goal)
+              : '${t.stat_today} · ${formatStatChars(todayChars)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: (theme.textTheme.titleMedium ?? tokens.type.listTitle)
+              .copyWith(
+            color: tokens.surfaces.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
     return InkWell(
-      onTap: () => unawaited(_editDailyGoal()),
+      key: const ValueKey<String>('home-goal-row'),
+      // 已设目标：整行即入口；未设：入口在右侧按钮上，行本身不占焦点停靠点。
+      onTap: hasGoal ? () => unawaited(_editDailyGoal()) : null,
+      canRequestFocus: hasGoal,
       borderRadius: FushiBorderRadius.card,
       child: Padding(
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
           children: <Widget>[
-            Text(t.stat_goal, style: tokens.type.metadata),
-            SizedBox(width: tokens.spacing.gap),
-            Expanded(
-              // eink：card 轨道色 == 页面底色，未完成段和 0% 态都看不见，进度条
-              // 像一截长度不明的短棍；描一圈边把轨道全长画出来。
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: tokens.radii.chipRadius,
-                  border: isEinkTheme(context)
-                      ? Border.all(color: tokens.surfaces.outline)
-                      : null,
-                ),
-                child: ClipRRect(
-                  borderRadius: tokens.radii.chipRadius,
-                  child: FushiLinearProgressIndicator(
-                    value: fraction,
-                    minHeight: 6,
-                    // 非墨水屏不传 surfaces.card：它与分区卡底（group）只差一档
-                    // （Apple 下两者同色），轨道整条隐形；交给进度条默认轨道
-                    // （MD3 secondaryContainer / Apple systemFill）。
-                    backgroundColor: isEinkTheme(context)
-                        ? tokens.surfaces.card
-                        : null,
-                    color: tokens.surfaces.primary,
-                  ),
-                ),
+            HomeGoalRing(fraction: fraction, size: 52),
+            SizedBox(width: tokens.spacing.card),
+            Expanded(child: texts),
+            if (!hasGoal) ...<Widget>[
+              SizedBox(width: tokens.spacing.gap),
+              FushiTextButton(
+                onPressed: () => unawaited(_editDailyGoal()),
+                child: Text(t.stat_goal_set),
               ),
-            ),
-            SizedBox(width: tokens.spacing.gap),
-            Text(
-              t.stat_goal_progress(read: todayChars, goal: goal),
-              style: tokens.type.metadata,
-            ),
+            ],
           ],
         ),
       ),
@@ -2394,8 +2557,11 @@ class _HomeDashboardPageState
           : null,
       child: groups.isEmpty
           ? (_initialLoadDone
-              ? Text(t.home_activity_empty, style: tokens.type.metadata)
-              : _sectionLoadingPlaceholder(tokens))
+              ? HomeEmptyState(
+                  icon: Icons.history_rounded,
+                  message: t.home_activity_empty,
+                )
+              : const HomeActivitySkeleton())
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -3180,6 +3346,7 @@ class _HomeDashboardPageState
     required String title,
     required Widget child,
     Widget? header,
+    List<Widget> trailing = const <Widget>[],
   }) {
     // eink：group 面层塌缩成页面底色，四张分区卡（学习活动 / 继续 / 最近添加 /
     // 动态）的边界全没了，整页读成一根连续的列；补 1px 描边（FushiCard 同款）。
@@ -3207,7 +3374,20 @@ class _HomeDashboardPageState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(title, style: tokens.type.sectionLabel),
+            if (trailing.isEmpty)
+              Text(title, style: tokens.type.sectionLabel)
+            else
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(title, style: tokens.type.sectionLabel),
+                  ),
+                  for (final Widget w in trailing) ...<Widget>[
+                    SizedBox(width: tokens.spacing.gap),
+                    w,
+                  ],
+                ],
+              ),
             if (header != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               Align(alignment: Alignment.centerLeft, child: header),

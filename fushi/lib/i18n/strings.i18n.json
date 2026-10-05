@@ -6461,5 +6461,6 @@
   "reading_stats_clock_start_mode_hint": "When the reading timer starts after you open a book (applies the next time a book is opened). You can pause or resume it anytime with the timer button or P.",
   "reading_stats_clock_start_manual": "Manual",
   "reading_stats_clock_start_on_open": "On open",
-  "reading_stats_clock_start_on_page_turn": "After page turn"
+  "reading_stats_clock_start_on_page_turn": "After page turn",
+  "home_updates_dismiss": "Dismiss"
 }
