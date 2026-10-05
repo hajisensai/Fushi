@@ -202,8 +202,8 @@ Widget buildDesignSystemSelector(SettingsContext settingsContext) {
       ),
       const ButtonSegment<String>(
         value: 'material',
-        label: Text('MD3'),
-        tooltip: 'Material Design 3',
+        label: Text('M3E'),
+        tooltip: 'Material 3 Expressive',
       ),
       ButtonSegment<String>(
         value: 'glass',

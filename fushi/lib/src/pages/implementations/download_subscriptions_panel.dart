@@ -1,6 +1,7 @@
 import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
@@ -143,7 +144,7 @@ class _DownloadSubscriptionsPanelState
             Expanded(
               child: _subscriptions.isEmpty
                   ? _buildEmptyState(context)
-                  : RefreshIndicator(
+                  : FushiRefreshIndicator(
                       onRefresh: _checkAll,
                       child: ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

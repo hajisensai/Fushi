@@ -556,7 +556,8 @@ class ShelfCoverPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         color: fill,
         border: eink ? Border.all(color: tokens.surfaces.outline) : null,
-        borderRadius: tokens.radii.cardRadius,
+        // 与封面框同形（MD3 12 / Apple 10），占位换成真封面时轮廓不跳。
+        borderRadius: shelfCoverRadius(context),
       ),
       child: Center(
         child: label == null || label.isEmpty

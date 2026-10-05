@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -21,7 +22,6 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatSessionRange, formatStatTime;
@@ -179,30 +179,16 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 2026-10 体验优化：原先垃圾桶一点即删、不可撤销，会话又直接参与总时长 /
   /// 每日折线统计，误触就丢数据——先确认（标出是哪一次），删完给 Toast。
   Future<void> _deleteSession(GalgameSessionRow row) async {
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-            title: Text(t.game_stat_delete_session),
-            content: Text(
-              '${formatGalgameSessionRange(row)}'
-              ' · ${formatStatTime(row.durationSeconds * 1000)}',
-            ),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.game_stat_delete_session,
+      message:
+          '${formatGalgameSessionRange(row)}'
+          ' · ${formatStatTime(row.durationSeconds * 1000)}',
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed || !mounted) return;
     await _repo.deleteSession(row.id);
     await _load();
@@ -579,13 +565,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   }
 
   Future<void> _editUserTags(GalgameEntry game) async {
-    await Navigator.push(
+    await showTagPicker(
       context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => TagPickerPage(
-          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
-        ),
+      targets: TagTargets(
+        media: <MediaRef>[MediaRef(kind: MediaKind.game, entryKey: game.id)],
       ),
     );
     if (!mounted) return;

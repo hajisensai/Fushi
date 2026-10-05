@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
@@ -38,6 +39,7 @@ import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 
 /// 「番剧下载」选种对话框：搜番（AniList）→ 选种（Nyaa）→ 确认字幕（Jimaku）→
 /// 推送 qBittorrent + 落盘 [AnimeDownloadPlan]（完成后由常驻服务自动入库挂合集）。
@@ -1392,13 +1394,9 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         Row(
           children: <Widget>[
             Expanded(
-              child: FushiTextFieldControl(
+              child: FushiSearchBar(
                 controller: _animeQueryCtrl,
-                decoration: InputDecoration(
-                  labelText: t.anime_download_search_hint,
-                  isDense: true,
-                  prefixIcon: const FushiIcon(Icons.search, size: 18),
-                ),
+                hintText: t.anime_download_search_hint,
                 onSubmitted: (_) => _searchAnime(),
               ),
             ),
@@ -2829,7 +2827,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             ),
       );
     }
-    return RefreshIndicator(
+    return FushiRefreshIndicator(
       onRefresh: _refreshPlans,
       child: _plans.isEmpty
           ? ListView(

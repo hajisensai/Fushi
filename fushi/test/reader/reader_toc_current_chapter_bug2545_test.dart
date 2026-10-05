@@ -12,7 +12,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/ttu_toc_flatten.dart';
-import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -168,16 +168,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.check), findsOneWidget,
-        reason: '修复前一行都没有勾 = 用户报的「没显示当前章节」');
-    final Finder currentRow = find.ancestor(
-      of: find.text('一章'),
-      matching: find.byType(AdaptiveSettingsRow),
-    );
+    // 2026-10 导航重做：当前章 = ReaderTocRow 的 current 态（强调色块 + 形状
+    // 图标），不再是行尾的勾。
+    final List<ReaderTocRow> current = tester
+        .widgetList<ReaderTocRow>(find.byType(ReaderTocRow))
+        .where((ReaderTocRow r) => r.state == ReaderTocRowState.current)
+        .toList();
+    expect(current, hasLength(1), reason: '修复前一行都没有标当前章 = 用户报的「没显示当前章节」');
+    expect(current.single.title, '一章', reason: '当前章标记必须落在当前章那一行，而不是别的章');
     expect(
-      find.descendant(of: currentRow, matching: find.byIcon(Icons.check)),
+      find.byKey(const ValueKey<String>('reader_toc_current_fill')),
       findsOneWidget,
-      reason: '勾必须落在当前章那一行，而不是别的章',
     );
   });
 }

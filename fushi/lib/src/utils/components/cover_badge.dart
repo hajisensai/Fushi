@@ -73,7 +73,6 @@ class CoverBadge extends StatelessWidget {
               style: (Theme.of(context).textTheme.labelSmall ??
                       const TextStyle())
                   .copyWith(
-                fontSize: 11,
                 fontWeight: FontWeight.w600,
                 height: 1.25,
                 color: foreground,

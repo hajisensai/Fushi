@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -1683,6 +1684,202 @@ void main() {
       reached = focusedOnAction();
     }
     expect(reached, isTrue, reason: '主角卡主按钮必须是 Tab 可达的焦点停靠点');
+  });
+
+  // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
+
+  Finder dashboardList() => find.byWidgetPredicate(
+      (Widget w) => w is ListView && w.scrollDirection == Axis.vertical);
+  HomeFloatingToolbar toolbar(WidgetTester tester) =>
+      tester.widget<HomeFloatingToolbar>(find.byType(HomeFloatingToolbar));
+  HomeResumeFab resumeFab(WidgetTester tester) =>
+      tester.widget<HomeResumeFab>(find.byType(HomeResumeFab));
+  bool excludedFromFocus(WidgetTester tester, Finder target) => tester
+      .widgetList<ExcludeFocus>(
+          find.ancestor(of: target, matching: find.byType(ExcludeFocus)))
+      .any((ExcludeFocus w) => w.excluding);
+
+  /// 滚动后跑完弹簧（default spatial 约 0.5 s 收敛）。
+  Future<void> settleSpring(WidgetTester tester) async {
+    for (int i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+  }
+
+  testWidgets('浮动工具栏：标题胶囊 + 更新/统计/排行榜按钮组常驻首页顶部，统计入口不再挂在学习卡里',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(HomeFloatingToolbar), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
+        findsOneWidget);
+    for (final String key in <String>[
+      'home-toolbar-updates',
+      'home-toolbar-stats',
+      'home-toolbar-leaderboard',
+    ]) {
+      final Finder button = find.byKey(ValueKey<String>(key));
+      expect(button, findsOneWidget, reason: key);
+      // 栏浮在内容之上：按钮顶边在第一张分区卡标题之上。
+      expect(tester.getTopLeft(button).dy,
+          lessThan(tester.getTopLeft(find.text(t.home_continue)).dy));
+    }
+    // 统计中心 / 排行榜从学习卡标题行尾挪进了工具栏：卡里不再有第二份入口。
+    expect(
+      inSection(t.reading_activity, find.byIcon(Icons.bar_chart_outlined)),
+      findsNothing,
+    );
+    expect(
+      inSection(t.reading_activity, find.byIcon(Icons.emoji_events_outlined)),
+      findsNothing,
+    );
+    // 首屏主角卡在视野里：FAB 不出现（不与主角卡主按钮重复）。
+    expect(resumeFab(tester).visible, isFalse);
+  });
+
+  testWidgets('浮动工具栏：Tab 可达三颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    bool focusedIn(Finder target) {
+      final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+      if (ctx == null) return false;
+      final Element el = tester.element(target);
+      if (identical(ctx, el)) return true;
+      bool hit = false;
+      ctx.visitAncestorElements((Element e) {
+        if (identical(e, el)) hit = true;
+        return !hit;
+      });
+      return hit;
+    }
+
+    final Set<String> reached = <String>{};
+    const List<String> keys = <String>[
+      'home-toolbar-updates',
+      'home-toolbar-stats',
+      'home-toolbar-leaderboard',
+    ];
+    for (int i = 0; i < 40 && reached.length < keys.length; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      for (final String key in keys) {
+        if (focusedIn(find.byKey(ValueKey<String>(key)))) reached.add(key);
+      }
+    }
+    expect(reached, keys.toSet());
+  });
+
+  testWidgets('浮动工具栏随滚动：下滚退场（不可聚焦），回滚弹回；主角卡滚出后出现「继续」FAB',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(420, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedAllSections();
+    final List<String> opened = <String>[];
+    await tester.pumpWidget(buildApp(
+      openVideoOverride: (
+        BuildContext _,
+        VideoBookRepository __,
+        String bookUid,
+        int? ___,
+      ) async {
+        opened.add(bookUid);
+      },
+    ));
+    await pumpDashboard(tester);
+
+    expect(toolbar(tester).visible, isTrue);
+    // 退场后栏在 Offstage 里（FushiChromeReveal），查找要带上 offstage。
+    final Finder stats = find.byKey(
+        const ValueKey<String>('home-toolbar-stats'),
+        skipOffstage: false);
+    expect(excludedFromFocus(tester, stats), isFalse);
+
+    // 下滚：越过主角卡 → 栏退场，FAB 出现。
+    await tester.drag(dashboardList(), const Offset(0, -500));
+    await settleSpring(tester);
+    expect(toolbar(tester).visible, isFalse);
+    expect(excludedFromFocus(tester, stats), isTrue,
+        reason: '退场中的栏不能还被 Tab 到');
+    expect(resumeFab(tester).visible, isTrue);
+
+    // 回滚一小段：栏弹回，FAB 仍在（主角卡还没回到视野）。
+    await tester.drag(dashboardList(), const Offset(0, 120));
+    await settleSpring(tester);
+    expect(toolbar(tester).visible, isTrue);
+    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(resumeFab(tester).visible, isTrue);
+
+    // FAB 续开的是「继续」主角卡那一条（同一出口）。
+    await tester.tap(find.byKey(const ValueKey<String>('home-resume-fab')));
+    await tester.pump();
+    expect(opened, <String>['video/keep-watching']);
+
+    // 回到顶部：栏恒显示、FAB 退场。
+    await tester.drag(dashboardList(), const Offset(0, 3000));
+    await settleSpring(tester);
+    expect(toolbar(tester).visible, isTrue);
+    expect(resumeFab(tester).visible, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('HomeToolbarScrollState：只认主列表纵向滚动，带回差切换显隐', () {
+    final HomeToolbarScrollState state = HomeToolbarScrollState();
+    addTearDown(state.dispose);
+    ScrollUpdateNotification update({
+      required double pixels,
+      required double delta,
+      Axis axis = Axis.vertical,
+    }) =>
+        ScrollUpdateNotification(
+          metrics: FixedScrollMetrics(
+            minScrollExtent: 0,
+            maxScrollExtent: 5000,
+            pixels: pixels,
+            viewportDimension: 800,
+            axisDirection: axis == Axis.vertical
+                ? AxisDirection.down
+                : AxisDirection.right,
+            devicePixelRatio: 1,
+          ),
+          context: null,
+          scrollDelta: delta,
+        );
+
+    // 横滑行（卡片里的横向列表）：不影响。
+    state.handle(update(pixels: 900, delta: 200, axis: Axis.horizontal));
+    expect(state.visible, isTrue);
+    expect(state.pastHero, isFalse);
+    // 主列表下滚一段（超过回差）→ 退场。
+    state.handle(update(pixels: 400, delta: 40));
+    expect(state.visible, isFalse);
+    expect(state.pastHero, isTrue);
+    // 小幅回滚（未过回差）→ 仍隐藏；继续回滚 → 出现。
+    state.handle(update(pixels: 390, delta: -10));
+    expect(state.visible, isFalse);
+    state.handle(update(pixels: 360, delta: -30));
+    expect(state.visible, isTrue);
+    // 顶部一屏栏高之内恒显示，FAB 条件解除。
+    state.handle(update(pixels: 60, delta: 40));
+    expect(state.visible, isTrue);
+    expect(state.pastHero, isFalse);
   });
 
   // BUG-1220：追踪链路原本零可观测（成功即删 outbox 行、失败只进错误日志并退避、

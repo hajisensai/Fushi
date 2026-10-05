@@ -492,6 +492,10 @@ class _PlayerPanel extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             _MaskButton(data: data, callbacks: callbacks),
+            if (callbacks.onTypography != null) ...<Widget>[
+              const SizedBox(width: 10),
+              _TypographyButton(onTypography: callbacks.onTypography!),
+            ],
             const SizedBox(width: 10),
             _LyricsIconButton(
               icon: CupertinoIcons.rectangle,
@@ -890,6 +894,10 @@ class _NarrowChrome extends StatelessWidget {
                                 onChanged: callbacks.onSpeedChanged,
                               ),
                               _MaskButton(data: data, callbacks: callbacks),
+                              if (callbacks.onTypography != null)
+                                _TypographyButton(
+                                  onTypography: callbacks.onTypography!,
+                                ),
                             ],
                           ),
                         ),
@@ -1208,6 +1216,24 @@ class _MaskButton extends StatelessWidget {
       iconSize: 19,
       tooltip: t.lyrics_blur,
       onPressed: callbacks.onToggleMask,
+    );
+  }
+}
+
+/// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
+class _TypographyButton extends StatelessWidget {
+  const _TypographyButton({required this.onTypography});
+
+  final ValueChanged<LyricsMenuAnchor> onTypography;
+
+  @override
+  Widget build(BuildContext context) {
+    return _LyricsIconButton(
+      icon: CupertinoIcons.textformat_size,
+      diameter: 34,
+      iconSize: 19,
+      tooltip: t.lyrics_typography_title,
+      onPressedWithRect: onTypography,
     );
   }
 }

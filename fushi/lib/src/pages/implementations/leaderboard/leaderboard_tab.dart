@@ -9,6 +9,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
@@ -406,7 +407,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final LeaderboardService service = ref.watch(leaderboardServiceProvider);
-    return RefreshIndicator(
+    return FushiRefreshIndicator(
       onRefresh: () async {
         await Future.wait(<Future<void>>[_refreshSelf(), _reload()]);
       },

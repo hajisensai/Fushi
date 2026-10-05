@@ -19,6 +19,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_navigation_widgets.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/reader/reader_settings_ia.dart';
 import 'package:fushi/src/reader/reader_settings_preview.dart';
 import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
@@ -279,10 +281,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   /// 导航抽屉里当前章那一行的 key：打开时滚到它。
   final GlobalKey _currentTocRowKey = GlobalKey();
 
-  /// 目录里手动展开的父节（按父节 label）；深度 >= 2 的子节默认折叠，当前章所在的
-  /// 父节自动展开。
+  /// 目录里手动展开的父节（按父节 label）；子节默认折叠，当前章所在的父节自动
+  /// 展开（层级见 [readerTocHierarchy]）。
   late final Set<String> _expandedTocParents =
       widget.expandedTocParents ?? <String>{};
+
+  /// 用户手动收起的「当前章所在父项」（它们默认自动展开）。本面板会话内有效。
+  final Set<String> _collapsedTocParents = <String>{};
 
   /// 目录区当前查看的卷（初值 = 当前卷）。只影响列表内容，不影响阅读器。
   late int _viewedVolume = widget.volumeSwitch?.currentIndex ?? 0;
@@ -567,6 +572,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     }
     final EdgeInsets pagePadding = ReaderSideSheet.defaultPadding.copyWith(
       top: tokens.spacing.gap + tokens.spacing.gap / 2,
+      left: tokens.spacing.page - tokens.spacing.gap / 2,
+      right: tokens.spacing.page - tokens.spacing.gap / 2,
     );
     Widget page(_ReaderNavTab tab, Widget child) => SingleChildScrollView(
           key: PageStorageKey<String>('fushi_nav_tab_${tab.name}'),
@@ -575,71 +582,86 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             child: FushiStaggeredEntrance(index: 0, child: child),
           ),
         );
-    return ReaderSideSheet(
-      title: t.section_navigation,
-      icon: Icons.menu_book_outlined,
-      subtitle: widget.epubBook?.title,
-      onClose: _sideSheetClose(context),
-      scrollable: false,
-      bottom: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap / 2,
-              tokens.spacing.page,
-              tokens.spacing.gap,
-            ),
-            child: _buildNavProgressCard(context, theme),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // 矮面板（底部 sheet 半屏档 / 横屏手机）：进度 hero 收成单行，把高度
+        // 让给列表。sheet 拖到另一档时外壳按新高度重新布局，这里随之换档。
+        final bool compact = constraints.maxHeight.isFinite &&
+            constraints.maxHeight < kReaderNavCompactHeroBelow;
+        return ReaderSideSheet(
+          title: t.section_navigation,
+          icon: Icons.menu_book_outlined,
+          subtitle: widget.epubBook?.title,
+          onClose: _sideSheetClose(context),
+          scrollable: false,
+          bottom: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap / 2,
+                  tokens.spacing.page,
+                  tokens.spacing.gap + tokens.spacing.gap / 2,
+                ),
+                child: AnimatedSize(
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  curve: FushiMotion.release,
+                  alignment: Alignment.topCenter,
+                  child: _buildNavProgressCard(context, theme, compact: compact),
+                ),
+              ),
+              if (_navTabs.length > 1)
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    0,
+                    tokens.spacing.page,
+                    tokens.spacing.gap / 2,
+                  ),
+                  child: ReaderPanelTabs(
+                    key: const ValueKey<String>('fushi_nav_tabs'),
+                    controller: controller,
+                    tabs: <ReaderPanelTab>[
+                      for (final _ReaderNavTab tab in _navTabs)
+                        ReaderPanelTab(
+                          key: ValueKey<String>('reader-nav-tab-${tab.name}'),
+                          label: _navTabLabel(tab),
+                          icon: switch (tab) {
+                            _ReaderNavTab.contents => Icons.toc_rounded,
+                            _ReaderNavTab.favorites => Icons.star_rounded,
+                            _ReaderNavTab.search => Icons.search_rounded,
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+            ],
           ),
-          if (_navTabs.length > 1)
-            Padding(
-              padding: EdgeInsetsDirectional.only(
-                start: tokens.spacing.gap / 2,
-                end: tokens.spacing.gap / 2,
-              ),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: LibrarySectionTabs<String>.controlled(
-                  key: const ValueKey<String>('fushi_nav_tabs'),
-                  tabs: <LibrarySectionTab<String>>[
-                    for (final _ReaderNavTab tab in _navTabs)
-                      LibrarySectionTab<String>(
-                        value: tab.name,
-                        label: _navTabLabel(tab),
-                      ),
-                  ],
-                  controller: controller,
-                  focusIdPrefix: 'reader-nav-tab',
-                ),
-              ),
-            ),
-          const FushiDividerControl(height: 1),
-        ],
-      ),
-      child: TabBarView(
-        controller: controller,
-        children: <Widget>[
-          for (final _ReaderNavTab tab in _navTabs)
-            switch (tab) {
-              _ReaderNavTab.contents =>
-                page(tab, _buildTocSection(context, theme)),
-              _ReaderNavTab.favorites => page(
-                  tab,
-                  _favorites.isEmpty
-                      ? _buildNavEmptyState(
-                          theme,
-                          icon: Icons.star_outline_rounded,
-                          message: t.reader_nav_favorites_empty,
-                        )
-                      : _buildFavoritesSection(context, theme),
-                ),
-              _ReaderNavTab.search => page(tab, _buildNavSearchPage(theme)),
-            },
-        ],
-      ),
+          child: TabBarView(
+            controller: controller,
+            children: <Widget>[
+              for (final _ReaderNavTab tab in _navTabs)
+                switch (tab) {
+                  _ReaderNavTab.contents =>
+                    page(tab, _buildTocSection(context, theme)),
+                  _ReaderNavTab.favorites => page(
+                      tab,
+                      _favorites.isEmpty
+                          ? _buildNavEmptyState(
+                              theme,
+                              icon: Icons.star_outline_rounded,
+                              message: t.reader_nav_favorites_empty,
+                            )
+                          : _buildFavoritesSection(context, theme),
+                    ),
+                  _ReaderNavTab.search => page(tab, _buildNavSearchPage(theme)),
+                },
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -653,57 +675,39 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       children: <Widget>[
         if (canSearch) _buildSearchSection(theme),
         if (canSearch &&
+            !_isSearching &&
             _searchResults.isEmpty &&
             !_searchFailed &&
             _searchController.text.trim().isEmpty)
-          Padding(
-            padding: EdgeInsets.only(top: tokens.spacing.gap),
-            child: Text(
-              t.reader_nav_search_empty_hint,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: fushiNeutralSecondaryForeground(context),
-              ),
-            ),
+          ReaderPanelEmpty(
+            icon: Icons.manage_search_rounded,
+            message: t.reader_nav_search_empty_hint,
           ),
         if (widget.onJumpToCharOffset != null) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap * 3),
+          SizedBox(height: tokens.spacing.gap * 2),
           _buildCharJumpSection(theme),
         ],
       ],
     );
   }
 
-  /// 分页空态：中性图标 + 一句说明（不铺彩色底块，见 fushi_neutral_decor.dart）。
+  /// 分页空态：形状底大图标 + 一句说明（[ReaderPanelEmpty]）。
   Widget _buildNavEmptyState(
     ThemeData theme, {
     required IconData icon,
     required String message,
   }) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      key: const ValueKey<String>('reader_nav_empty'),
-      padding: EdgeInsets.symmetric(vertical: tokens.spacing.section),
-      child: Column(
-        children: <Widget>[
-          FushiNeutralIconBadge(icon: icon, size: 56),
-          SizedBox(height: tokens.spacing.gap * 1.5),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: fushiNeutralSecondaryForeground(context),
-            ),
-          ),
-        ],
-      ),
-    );
+    return ReaderPanelEmpty(icon: icon, message: message);
   }
 
-  /// 导航页头下的「阅读进度」卡：当前章名 + 全书进度条 + 章 / 页 / 字数读数
-  /// （有声书在场时加一行音频进度）。卡片底色取设置分组卡的同一档表面色。
-  Widget _buildNavProgressCard(BuildContext context, ThemeData theme) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool glass = isGlassDesign(context);
+  /// 导航页头下的「阅读进度」hero（[ReaderNavProgressHero]）：当前章名 + 全书
+  /// 百分比 + 波浪全书进度条 + 章 / 页 / 字数读数（有声书在场时加一行音频进度）。
+  /// [compact] = 矮面板单行档。
+  Widget _buildNavProgressCard(
+    BuildContext context,
+    ThemeData theme, {
+    bool compact = false,
+  }) {
     final (int, int)? rp = widget.readerProgress;
     final (int, int)? cp = widget.charProgress;
     final (int, int)? pp = widget.pageProgress;
@@ -713,19 +717,17 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ? ((rp.$1 + 1) / rp.$2).clamp(0.0, 1.0)
             : null;
     final String? chapter = widget.chapterLabel?.trim();
-    // 百分比只出现一个：有字数进度时卡片右上角就是全书字数百分比，读数行改报
-    // 字数；只有章节进度时才用「第 n / N 章 · x%」。
+    final NumberFormat count = NumberFormat.decimalPattern();
+    // 百分比只出现一个（hero 大数字）；读数行只报位置，不再重复百分比。
     final List<String> readouts = <String>[
-      if (cp != null && cp.$2 > 0)
-        t.jump_to_char_current(current: cp.$1, total: cp.$2)
-      else if (rp != null && rp.$2 > 0)
-        t.chapter_progress(
-          idx: rp.$1 + 1,
-          total: rp.$2,
-          suffix: '',
-          pct: ((rp.$1 + 1) / rp.$2 * 100).toStringAsFixed(1),
-        ),
+      if (rp != null && rp.$2 > 0)
+        t.reader_nav_progress_chapter(current: rp.$1 + 1, total: rp.$2),
       if (pp != null && pp.$2 > 0) t.page_progress(current: pp.$1, total: pp.$2),
+      if (cp != null && cp.$2 > 0)
+        t.reader_nav_progress_chars(
+          current: count.format(cp.$1),
+          total: count.format(cp.$2),
+        ),
     ];
     final AudiobookPlayerController? ctrl = widget.controller;
     if (fraction == null &&
@@ -734,99 +736,15 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         ctrl == null) {
       return const SizedBox.shrink();
     }
-    final Color accent = fushiAccentForeground(context);
-    return DecoratedBox(
-      key: const ValueKey<String>('reader_nav_progress_card'),
-      decoration: BoxDecoration(
-        color: glass
-            ? appleColorsOf(context).secondaryGroupedBackground
-            : theme.colorScheme.surfaceContainer,
-        borderRadius: const BorderRadius.all(
-          Radius.circular(kSettingsSegmentOuterRadius),
-        ),
-        border: isEinkTheme(context)
-            ? Border.all(color: theme.colorScheme.outline)
-            : null,
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.rowHorizontal),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    chapter == null || chapter.isEmpty
-                        ? t.reading_progress
-                        : chapter,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: fushiNeutralBlockForeground(context),
-                    ),
-                  ),
-                ),
-                if (fraction != null)
-                  Text(
-                    '${(fraction * 100).toStringAsFixed(1)}%',
-                    key: const ValueKey<String>('reader_nav_progress_percent'),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: accent,
-                      fontWeight: FontWeight.w700,
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            if (fraction != null) ...<Widget>[
-              SizedBox(height: tokens.spacing.gap),
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0, end: fraction),
-                duration: fushiMotionDuration(context, FushiMotion.long),
-                curve: FushiMotion.enter,
-                // 阅读位置是静态读数：不用 Expressive 波浪进度条（它的波纹恒在
-                // 流动，是「正在进行」的语义，且让面板永远处于动画中）。
-                builder: (BuildContext context, double value, Widget? _) =>
-                    ClipRRect(
-                  key: const ValueKey<String>('reader_nav_progress_bar'),
-                  borderRadius: tokens.radii.chipRadius,
-                  child: SizedBox(
-                    height: 6,
-                    child: ColoredBox(
-                      color: glass
-                          ? appleColorsOf(context).fill
-                          : theme.colorScheme.secondaryContainer,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: FractionallySizedBox(
-                          widthFactor: value,
-                          heightFactor: 1,
-                          child: ColoredBox(color: accent),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            if (readouts.isNotEmpty) ...<Widget>[
-              SizedBox(height: tokens.spacing.gap),
-              Text(
-                readouts.join('  ·  '),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: fushiNeutralSecondaryForeground(context),
-                ),
-              ),
-            ],
-            if (ctrl != null) _buildAudioProgressLine(theme, ctrl),
-          ],
-        ),
-      ),
+    return ReaderNavProgressHero(
+      fraction: fraction,
+      chapter: chapter,
+      fallbackTitle: t.reading_progress,
+      caption: t.reader_nav_progress_book,
+      readouts: readouts,
+      coverPath: widget.coverPath,
+      compact: compact,
+      footer: ctrl == null ? null : _buildAudioProgressLine(theme, ctrl),
     );
   }
 
@@ -924,7 +842,13 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               padding: ReaderSideSheet.defaultPadding.copyWith(
                 top: tokens.spacing.gap + tokens.spacing.gap / 2,
               ),
-              child: _buildSettingsTabContent(context, tab),
+              // 内容自成重绘边界：SingleChildScrollView 的子树不是边界，滚动每帧
+              // 都要把整页设置重录一遍；隔开后滚动只平移已录好的层。Android 上
+              // 面板压在 Hybrid Composition 的正文 WebView 之上，每帧 UI 线程省下
+              // 的这段直接决定滚动跟不跟手。
+              child: RepaintBoundary(
+                child: _buildSettingsTabContent(context, tab),
+              ),
             ),
         ],
       ),
@@ -1496,13 +1420,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   Widget _buildSearchSection(ThemeData theme) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool navPanel = widget.presentation ==
+        ReaderQuickSettingsPresentation.sideSheetNavigation;
+    final bool glass = isGlassDesign(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SettingsSectionHeader(
-          t.book_search,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
+        // 导航侧板的页签已经写着「搜索」，只在设置 sheet 的定位子页补小节标题。
+        if (!navPanel)
+          SettingsSectionHeader(
+            t.book_search,
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+          ),
         Row(
           children: [
             Expanded(
@@ -1510,31 +1439,51 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 controller: _searchController,
                 autofocus: widget.autofocusSearch,
                 hintText: t.book_search_hint,
+                prefixIcon: navPanel
+                    ? FushiIcon(
+                        Icons.search_rounded,
+                        size: 20,
+                        color: fushiNeutralSecondaryForeground(context),
+                      )
+                    : null,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: tokens.spacing.rowHorizontal,
                   vertical: tokens.spacing.rowVertical,
                 ),
-                style: theme.textTheme.bodyMedium,
+                style: theme.textTheme.bodyLarge,
                 onSubmitted: (_) => _doSearch(),
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
             SizedBox.square(
-              dimension: 40,
+              dimension: 48,
               child: Center(
                 child: _isSearching
                     ? SizedBox(
-                        width: 18,
-                        height: 18,
+                        width: 22,
+                        height: 22,
                         child:
                             adaptiveIndicator(context: context, strokeWidth: 2),
                       )
                     : FushiIconButton(
-                        icon: Icons.search,
-                        size: 20,
-                        backgroundColor: theme.colorScheme.secondaryContainer,
-                        enabledColor: theme.colorScheme.onSecondaryContainer,
-                        padding: EdgeInsets.all(tokens.spacing.gap),
+                        icon: Icons.arrow_forward_rounded,
+                        size: 22,
+                        // M3E：主操作用强调色实心圆角方块（形状对比于胶囊输入框）；
+                        // Apple：强调色实心圆。
+                        backgroundColor: glass
+                            ? appleColorsOf(context).accent
+                            : theme.colorScheme.primary,
+                        enabledColor: glass
+                            ? appleColorsOf(context).onAccent
+                            : theme.colorScheme.onPrimary,
+                        shapeBorder: glass
+                            ? const CircleBorder()
+                            : const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(16),
+                                ),
+                              ),
+                        padding: EdgeInsets.all(tokens.spacing.gap + 4),
                         tooltip: t.search,
                         onTap: _doSearch,
                       ),
@@ -1543,58 +1492,50 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           ],
         ),
         if (_searchResults.isNotEmpty) ...[
-          SizedBox(height: tokens.spacing.gap),
-          Text(
+          SizedBox(height: tokens.spacing.gap * 2),
+          ReaderPanelSectionLabel(
             t.book_search_results(n: _searchResults.length),
-            style: theme.textTheme.bodySmall,
+            trailing: '「$_searchResultsQuery」',
           ),
-          SizedBox(height: tokens.spacing.gap / 2),
           ConstrainedBox(
             // 导航侧板的「搜索」是独立分页，结果直接随页滚动；窄窗 sheet 里搜索与
             // 目录同列，结果框限高自滚。
             constraints: BoxConstraints(
-              maxHeight: widget.presentation ==
-                      ReaderQuickSettingsPresentation.sideSheetNavigation
-                  ? double.infinity
-                  : 280,
+              maxHeight: navPanel ? double.infinity : 280,
             ),
-            child: ListView.builder(
+            child: ListView.separated(
               shrinkWrap: true,
-              physics: widget.presentation ==
-                      ReaderQuickSettingsPresentation.sideSheetNavigation
-                  ? const NeverScrollableScrollPhysics()
-                  : null,
+              padding: EdgeInsets.zero,
+              physics: navPanel ? const NeverScrollableScrollPhysics() : null,
               itemCount: _searchResults.length,
+              separatorBuilder: (_, __) => SizedBox(height: tokens.spacing.gap),
               itemBuilder: (_, i) {
                 final BookSearchResult r = _searchResults[i];
                 final String query = _searchResultsQuery;
                 final int rawIdx = r.sectionIndex;
                 final List<TtuTocEntry> toc = widget.toc;
-                final TtuTocEntry? tocEntry =
-                    toc.cast<TtuTocEntry?>().firstWhere(
-                          (e) => e!.index == rawIdx,
-                          orElse: () => null,
-                        );
-                final String chapterLabel =
-                    tocEntry?.label ?? t.go_to_chapter(n: rawIdx + 1);
-
-                final String before = r.context.substring(0, r.matchStart);
+                // 目录是 spine 的稀疏映射：结果所在章用 floor 口径反查章名
+                // （与当前章判据同一函数），落在目录未直接指向的 spine 位置上
+                // 也能报出所属章。
+                final int? tocRow = resolveCurrentTocEntry(toc, rawIdx, null);
+                final String chapterLabel = tocRow != null
+                    ? toc[tocRow].label
+                    : t.go_to_chapter(n: rawIdx + 1);
                 final int matchEnd =
                     (r.matchStart + query.length).clamp(0, r.context.length);
-                final String match =
-                    r.context.substring(r.matchStart, matchEnd);
-                final String after = r.context.substring(matchEnd);
-
-                return _InBookSearchResultRow(
-                  chapterLabel: chapterLabel,
-                  before: before,
-                  match: match,
-                  after: after,
-                  onTap: () async {
-                    final String q = _searchResultsQuery;
-                    Navigator.pop(context);
-                    await widget.onSearchJump?.call(r, q);
-                  },
+                return FushiStaggeredEntrance(
+                  index: i,
+                  child: _InBookSearchResultRow(
+                    chapterLabel: chapterLabel,
+                    text: r.context,
+                    matchStart: r.matchStart,
+                    matchEnd: matchEnd,
+                    onTap: () async {
+                      final String q = _searchResultsQuery;
+                      Navigator.pop(context);
+                      await widget.onSearchJump?.call(r, q);
+                    },
+                  ),
                 );
               },
             ),
@@ -1619,11 +1560,11 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ],
           ),
         ] else if (!_isSearching &&
-            _searchController.text.trim().isNotEmpty) ...[
-          SizedBox(height: tokens.spacing.gap),
-          Text(
-            t.book_search_no_results,
-            style: theme.textTheme.bodySmall,
+            _searchController.text.trim().isNotEmpty &&
+            _searchResultsQuery.isNotEmpty) ...[
+          ReaderPanelEmpty(
+            icon: Icons.search_off_rounded,
+            message: t.book_search_no_results,
           ),
         ],
       ],
@@ -1635,22 +1576,37 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final int? total = widget.charProgress?.$2;
     final bool hasProgress = current != null && total != null && total > 0;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool navPanel = widget.presentation ==
+        ReaderQuickSettingsPresentation.sideSheetNavigation;
+    final NumberFormat count = NumberFormat.decimalPattern();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    final Widget body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SettingsSectionHeader(
-          t.jump_to_char,
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-        ),
-        if (hasProgress)
-          Padding(
+        if (navPanel)
+          ReaderPanelSectionLabel(
+            t.jump_to_char,
+            trailing: hasProgress
+                ? t.reader_nav_progress_chars(
+                    current: count.format(current),
+                    total: count.format(total),
+                  )
+                : null,
+          )
+        else ...[
+          SettingsSectionHeader(
+            t.jump_to_char,
             padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            child: Text(
-              t.jump_to_char_current(current: current, total: total),
-              style: theme.textTheme.bodySmall,
-            ),
           ),
+          if (hasProgress)
+            Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: Text(
+                t.jump_to_char_current(current: current, total: total),
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+        ],
         Row(
           children: [
             Expanded(
@@ -1668,14 +1624,19 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             ),
             SizedBox(width: tokens.spacing.gap),
             SizedBox.square(
-              dimension: 40,
+              dimension: 48,
               child: Center(
                 child: FushiIconButton(
-                  icon: Icons.arrow_forward,
-                  size: 20,
+                  icon: Icons.arrow_forward_rounded,
+                  size: 22,
                   backgroundColor: theme.colorScheme.secondaryContainer,
                   enabledColor: theme.colorScheme.onSecondaryContainer,
-                  padding: EdgeInsets.all(tokens.spacing.gap),
+                  shapeBorder: isGlassDesign(context)
+                      ? const CircleBorder()
+                      : const RoundedRectangleBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(16)),
+                        ),
+                  padding: EdgeInsets.all(tokens.spacing.gap + 4),
                   tooltip: t.jump_to_char,
                   onTap: () => _doCharJump(context),
                 ),
@@ -1684,6 +1645,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           ],
         ),
       ],
+    );
+    if (!navPanel) return body;
+    // 导航侧板：按字数跳转收进一张内卡，和上面的搜索结果分开。
+    return ReaderPanelCard(
+      key: const ValueKey<String>('reader_nav_char_jump_card'),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.gap + 4,
+        tokens.spacing.gap + 4,
+        tokens.spacing.gap,
+        tokens.spacing.gap + 4,
+      ),
+      child: body,
     );
   }
 
@@ -1766,7 +1739,6 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       // index 只用来区分 header（<0 = 标题行不可点）；本行是可点动作行，回调
       // 自带卷号，不读 index。
       entry: TtuTocEntry(index: 0, label: t.reader_volume_open),
-      selected: false,
       onTap: () => unawaited(jump(null)),
     );
     return FutureBuilder<List<TtuTocEntry>>(
@@ -1800,21 +1772,24 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           );
         } else {
           final List<TtuTocEntry> toc = snap.data!;
+          final List<int> levels = readerTocHierarchy(toc).levels;
           for (int i = 0; i < toc.length; i++) {
-            if (toc[i].depth >= 2) continue; // 兄弟卷只列顶层章，够定位即可。
+            if (levels[i] > 0) continue; // 兄弟卷只列顶层章，够定位即可。
             rows.add(
               _InBookTocRow(
                 entry: toc[i],
-                selected: false,
                 onTap:
                     toc[i].isHeader ? null : () => unawaited(jump(toc[i].index)),
               ),
             );
           }
         }
-        return AdaptiveSettingsSection(
-          title: volumes.labels[volume],
-          children: rows,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            ReaderPanelSectionLabel(volumes.labels[volume]),
+            ...rows,
+          ],
         );
       },
     );
@@ -1838,57 +1813,93 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       widget.readerProgress?.$1,
       widget.readerCharOffset,
     );
-    // 折叠规则：深度 >= 2 的条目挂在其 parent 下，parent 未展开则不画；当前章所在链
-    // 上的父节自动视为展开。父节是否有可折叠子节：看下一条的深度是否更深且 >= 2。
-    final Set<String> autoExpanded = <String>{};
-    if (currentRow != null && toc[currentRow].depth >= 2) {
-      final String? parent = toc[currentRow].parent;
-      if (parent != null) autoExpanded.add(parent);
+    // 层级与折叠（[readerTocHierarchy]）：旧口径 depth >= 2 与真实 EPUB 压平后
+    // 只剩的 `parent` 链两套来源取其一；子项挂在父项下，任一祖先未展开则不画。
+    // 当前章所在的祖先链自动展开。
+    final ({List<int> levels, List<int> parents}) tree =
+        readerTocHierarchy(toc);
+    final Set<int> autoExpanded = <int>{};
+    if (currentRow != null) {
+      for (int p = tree.parents[currentRow]; p >= 0; p = tree.parents[p]) {
+        autoExpanded.add(p);
+      }
     }
     bool hasFoldableChildren(int i) =>
-        i + 1 < toc.length &&
-        toc[i + 1].depth > toc[i].depth &&
-        toc[i + 1].depth >= 2;
-    bool isExpanded(TtuTocEntry parent) =>
-        _expandedTocParents.contains(parent.label) ||
-        autoExpanded.contains(parent.label);
+        i + 1 < toc.length && tree.parents[i + 1] == i;
+    bool isExpanded(int i) =>
+        _expandedTocParents.contains(toc[i].label) ||
+        (autoExpanded.contains(i) &&
+            !_collapsedTocParents.contains(toc[i].label));
+    bool isVisible(int i) {
+      for (int p = tree.parents[i]; p >= 0; p = tree.parents[p]) {
+        if (!isExpanded(p)) return false;
+      }
+      return true;
+    }
+
     // 「当前章那一行」只能有**一行**：`_currentTocRowKey` 是 GlobalKey，同一个
     // key 挂到两个在场 widget 上，debug 直接抛 `Multiple widgets used the same
     // GlobalKey`，release 则由 `Element._retakeInactiveElement` 把 element 从前
     // 一行手里抢走——那一行被摘出渲染树，**目录里真的少一行**。
     // [resolveCurrentTocEntry] 返回的就是唯一一条的下标。
-    return AdaptiveSettingsSection(
-      title: t.toc_section(n: toc.length),
-      children: [
-        for (int i = 0; i < toc.length; i++)
-          if (toc[i].depth < 2 ||
-              (toc[i].parent != null &&
-                  (_expandedTocParents.contains(toc[i].parent!) ||
-                      autoExpanded.contains(toc[i].parent!))))
-            _InBookTocRow(
-              key: i == currentRow ? _currentTocRowKey : null,
-              entry: toc[i],
-              selected: i == currentRow,
-              foldable: hasFoldableChildren(i),
-              expanded: hasFoldableChildren(i) && isExpanded(toc[i]),
-              onToggleExpanded: hasFoldableChildren(i)
-                  ? () => setState(() {
-                        final String label = toc[i].label;
-                        if (!_expandedTocParents.remove(label)) {
-                          _expandedTocParents.add(label);
-                        }
-                      })
-                  : null,
-              onTap: toc[i].isHeader
-                  ? null
-                  : () async {
-                      Navigator.of(context).pop();
-                      await widget.onJumpSection(
-                        toc[i].index,
-                        toc[i].fragment,
-                      );
-                    },
-            ),
+    final List<Widget> rows = <Widget>[
+      for (int i = 0; i < toc.length; i++)
+        if (isVisible(i))
+          _InBookTocRow(
+            key: i == currentRow ? _currentTocRowKey : null,
+            entry: toc[i],
+            level: tree.levels[i],
+            state: currentRow == null
+                ? ReaderTocRowState.unread
+                : i == currentRow
+                    ? ReaderTocRowState.current
+                    : i < currentRow
+                        ? ReaderTocRowState.read
+                        : ReaderTocRowState.unread,
+            foldable: hasFoldableChildren(i),
+            expanded: hasFoldableChildren(i) && isExpanded(i),
+            onToggleExpanded: hasFoldableChildren(i)
+                ? () => setState(() {
+                      final String label = toc[i].label;
+                      // 当前章所在的父项默认展开；收起它记进 _collapsedTocParents，
+                      // 否则下次 build 又被自动展开。
+                      if (isExpanded(i)) {
+                        _expandedTocParents.remove(label);
+                        _collapsedTocParents.add(label);
+                      } else {
+                        _expandedTocParents.add(label);
+                        _collapsedTocParents.remove(label);
+                      }
+                    })
+                : null,
+            onTap: toc[i].isHeader
+                ? null
+                : () async {
+                    Navigator.of(context).pop();
+                    await widget.onJumpSection(
+                      toc[i].index,
+                      toc[i].fragment,
+                    );
+                  },
+          ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 导航侧板的页签已经写着「目录」，只在别处（设置 sheet 的定位子页）
+        // 才补小节标题。
+        if (widget.presentation !=
+            ReaderQuickSettingsPresentation.sideSheetNavigation)
+          ReaderPanelSectionLabel(t.toc_section(n: toc.length)),
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: FushiMotion.enter,
+          alignment: Alignment.topCenter,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: rows,
+          ),
+        ),
       ],
     );
   }
@@ -2438,52 +2449,76 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
 
   /// 收藏行副标题：`书名 - 章节 - 时间`，末尾追加阅读位置百分比（解析成功时）。
   String _favoriteMetaLabel(FavoriteSentence favorite, DateFormat fmt) {
-    final String base =
-        '${favorite.bookTitle}${favorite.chapterLabel != null ? ' - ${favorite.chapterLabel}' : ''} - ${fmt.format(favorite.createdAt)}';
+    // 面板就在这本书里：不再重复书名，只报 章名 · 时间 · 位置。
     final String? position = widget.favoritePositionLabel?.call(favorite);
-    return position == null ? base : '$base · $position';
+    return <String>[
+      if (favorite.chapterLabel != null && favorite.chapterLabel!.isNotEmpty)
+        favorite.chapterLabel!,
+      fmt.format(favorite.createdAt),
+      if (position != null) position,
+    ].join(' · ');
   }
 
   Widget _buildFavoritesSection(BuildContext context, ThemeData theme) {
     final DateFormat fmt = DateFormat('MM/dd HH:mm');
-    return AdaptiveSettingsSection(
-      title: t.favorites(n: _favorites.length),
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<FavoriteSentence> favorites = _favorites;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final FavoriteSentence favorite in _favorites)
-          if (_pendingFavoriteDeletes.containsKey(favorite))
-            _InBookFavoriteUndoRow(
-              favorite: favorite,
-              onUndo: () => _undoFavoriteDelete(favorite),
-            )
-          else
-            _InBookFavoriteRow(
-              favorite: favorite,
-              // BUG-875 附带（用户反馈）：收藏行右侧加「阅读位置」百分比（如 78.6%），
-              // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
-              // 失败（章字符账本未就绪）时不追加、只显示原元信息。
-              metaLabel: _favoriteMetaLabel(favorite, fmt),
-              color: _highlightColor(favorite.color),
-              onPlay: widget.onPlayFavorite == null
-                  ? null
-                  : () async => widget.onPlayFavorite?.call(favorite),
-              onJump: favorite.sectionIndex == null ||
-                      widget.onJumpToFavorite == null
-                  ? null
-                  : () async {
-                      Navigator.of(context).pop();
-                      await widget.onJumpToFavorite?.call(favorite);
-                    },
-              onCopy: () {
-                Clipboard.setData(ClipboardData(text: favorite.text));
-                // 2026-10 体验优化：提示文案是「已复制」而不是动作名「复制」。
-                FushiToast.show(
-                  msg: t.copied_to_clipboard,
-                  severity: ToastSeverity.success,
-                );
-              },
-              onDelete: () => _markFavoriteDeleted(favorite),
+        ReaderPanelSectionLabel(t.favorites(n: favorites.length)),
+        for (int i = 0; i < favorites.length; i++)
+          Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+            child: FushiStaggeredEntrance(
+              index: i,
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                child: _pendingFavoriteDeletes.containsKey(favorites[i])
+                    ? _InBookFavoriteUndoRow(
+                        favorite: favorites[i],
+                        onUndo: () => _undoFavoriteDelete(favorites[i]),
+                      )
+                    : _buildFavoriteRow(context, favorites[i], fmt),
+              ),
             ),
+          ),
       ],
+    );
+  }
+
+  Widget _buildFavoriteRow(
+    BuildContext context,
+    FavoriteSentence favorite,
+    DateFormat fmt,
+  ) {
+    return _InBookFavoriteRow(
+      favorite: favorite,
+      // BUG-875 附带（用户反馈）：收藏行加「阅读位置」百分比（如 78.6%），
+      // 让用户不放音频 / 不复制文本也能一眼看出这条收藏在书里的位置。位置解析
+      // 失败（章字符账本未就绪）时不追加、只显示原元信息。
+      metaLabel: _favoriteMetaLabel(favorite, fmt),
+      color: _highlightColor(favorite.color),
+      onPlay: widget.onPlayFavorite == null
+          ? null
+          : () async => widget.onPlayFavorite?.call(favorite),
+      onJump: favorite.sectionIndex == null || widget.onJumpToFavorite == null
+          ? null
+          : () async {
+              Navigator.of(context).pop();
+              await widget.onJumpToFavorite?.call(favorite);
+            },
+      onCopy: () {
+        Clipboard.setData(ClipboardData(text: favorite.text));
+        // 2026-10 体验优化：提示文案是「已复制」而不是动作名「复制」。
+        FushiToast.show(
+          msg: t.copied_to_clipboard,
+          severity: ToastSeverity.success,
+        );
+      },
+      onDelete: () => _markFavoriteDeleted(favorite),
     );
   }
 
@@ -2602,7 +2637,8 @@ class _InBookTocRow extends StatelessWidget {
   const _InBookTocRow({
     super.key,
     required this.entry,
-    required this.selected,
+    this.level = 0,
+    this.state = ReaderTocRowState.unread,
     this.onTap,
     this.foldable = false,
     this.expanded = false,
@@ -2610,206 +2646,71 @@ class _InBookTocRow extends StatelessWidget {
   });
 
   final TtuTocEntry entry;
-  final bool selected;
+
+  /// 层级（0 = 顶层），见 [readerTocHierarchy]。
+  final int level;
+  final ReaderTocRowState state;
   final VoidCallback? onTap;
 
-  /// 有深度 >= 2 的子节可折叠时，行尾给一个展开 / 收起箭头。
+  /// 有子节可折叠时，行尾给一个展开 / 收起箭头（旋转动画）。
   final bool foldable;
   final bool expanded;
   final VoidCallback? onToggleExpanded;
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final String title = entry.label.isEmpty ? t.untitled_chapter : entry.label;
-    final double indent = entry.depth * tokens.spacing.card;
-
-    if (entry.isHeader) {
-      final ThemeData theme = Theme.of(context);
-      return Padding(
-        padding: EdgeInsetsDirectional.only(
-          start: (cupertino
-                  ? tokens.spacing.rowHorizontal
-                  : tokens.spacing.gap + tokens.spacing.gap / 2) +
-              indent,
-          top: tokens.spacing.gap + tokens.spacing.gap / 2,
-          bottom: tokens.spacing.gap / 2,
-        ),
-        child: Text(
-          title,
-          style: theme.textTheme.labelLarge?.copyWith(
-            color: theme.colorScheme.primary,
-          ),
-        ),
-      );
-    }
-
-    final ThemeData theme = Theme.of(context);
-    final Color selectedColor = cupertino
-        ? CupertinoTheme.of(context).primaryColor
-        : fushiAccentForeground(context);
-
-    final Widget row = AdaptiveSettingsRow(
-        title: title,
-        // TOC chapter names can be long; on a narrow phone the default 2-line
-        // clamp clips them. Allow a few wrapped lines (still finite so pathological
-        // titles can't blow up the row) before ellipsizing (TODO-1055).
-        titleMaxLines: 4,
-        // 章节行不再带书本 / 小节图标：层级靠缩进（indent）表达即可。
-        showIcon: false,
-        onTap: onTap,
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (selected)
-              FushiIcon(
-                cupertino ? CupertinoIcons.check_mark : Icons.check,
-                size: 18,
-                color: selectedColor,
-              ),
-            if (foldable)
-              FushiIconButtonControl(
-                key: ValueKey<String>('fushi_toc_fold_${entry.label}'),
-                visualDensity: VisualDensity.compact,
-                iconSize: 20,
-                tooltip: expanded
-                    ? MaterialLocalizations.of(context).collapsedIconTapHint
-                    : MaterialLocalizations.of(context).expandedIconTapHint,
-                icon: FushiIcon(expanded ? Icons.expand_less : Icons.expand_more),
-                onPressed: onToggleExpanded,
-              ),
-          ],
-        ),
+    // 视觉见 [ReaderTocRow]：层级缩进 + 引导线、当前章色块 + M3E 形状图标、
+    // 已读淡化；章节名最多 [ReaderTocRow.titleMaxLines] 行（TODO-1055）。
+    return ReaderTocRow(
+      title: entry.label.isEmpty ? t.untitled_chapter : entry.label,
+      level: level,
+      header: entry.isHeader,
+      state: state,
+      foldable: foldable,
+      expanded: expanded,
+      onToggleExpanded: onToggleExpanded,
+      foldKey: ValueKey<String>('fushi_toc_fold_${entry.label}'),
+      onTap: onTap,
     );
-    // 当前章：整行内嵌一块选中底（MD3 secondaryContainer；Apple / Cupertino 强调色
-    // 14%；墨水屏改描边），配合行尾的勾——长目录里一眼就能找到读到哪了。
-    final Widget indented = Padding(
-      padding: EdgeInsetsDirectional.only(start: indent),
-      child: row,
-    );
-    // 选中底铺满整段（缩进留在底块里面），层级缩进不会把选中底也挤歪。
-    return selected
-        ? Padding(
-            padding: EdgeInsets.all(tokens.spacing.gap / 4),
-            child: DecoratedBox(
-              key: const ValueKey<String>('reader_toc_current_fill'),
-              decoration: BoxDecoration(
-                color: isEinkTheme(context)
-                    ? null
-                    : cupertino || isGlassDesign(context)
-                        ? selectedColor.withValues(alpha: 0.14)
-                        : theme.colorScheme.secondaryContainer,
-                borderRadius: tokens.radii.controlRadius,
-                border: isEinkTheme(context)
-                    ? Border.all(color: theme.colorScheme.outline)
-                    : null,
-              ),
-              child: indented,
-            ),
-          )
-        : indented;
   }
 }
 
 class _InBookSearchResultRow extends StatelessWidget {
   const _InBookSearchResultRow({
     required this.chapterLabel,
-    required this.before,
-    required this.match,
-    required this.after,
+    required this.text,
+    required this.matchStart,
+    required this.matchEnd,
     required this.onTap,
   });
 
   final String chapterLabel;
-  final String before;
-  final String match;
-  final String after;
+
+  /// 命中前后文与命中区间（[matchStart], [matchEnd]）。
+  final String text;
+  final int matchStart;
+  final int matchEnd;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bool cupertino = isCupertinoPlatform(context);
-    final ThemeData theme = Theme.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color primary = cupertino
-        ? CupertinoTheme.of(context).primaryColor
-        : theme.colorScheme.primary;
-    final Color highlight = cupertino
-        ? primary.withValues(alpha: 0.14)
-        : theme.colorScheme.primaryContainer;
-    final Widget child = Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.gap + tokens.spacing.gap / 2,
-        vertical: tokens.spacing.gap + tokens.spacing.gap / 8,
+    // 引文卡：上标章名、正文命中词高亮（[readerHighlightSpans]），整卡可点、
+    // 焦点可遍历（登记为 reader-search-result 可激活目标）。
+    return ReaderQuoteCard(
+      overline: chapterLabel,
+      quote: Text.rich(
+        readerHighlightSpans(
+          context,
+          text: text,
+          start: matchStart,
+          end: matchEnd,
+        ),
+        key: const ValueKey<String>('reader_search_result_text'),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FushiIcon(
-            cupertino ? CupertinoIcons.search : Icons.search,
-            size: 18,
-            color: primary,
-          ),
-          SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  chapterLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(color: primary),
-                ),
-                SizedBox(height: tokens.spacing.gap / 4),
-                Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(text: before),
-                      TextSpan(
-                        text: match,
-                        style: TextStyle(
-                          backgroundColor: highlight,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      TextSpan(text: after),
-                    ],
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (cupertino) {
-      return CupertinoButton(
-        padding: EdgeInsets.zero,
-        onPressed: onTap,
-        child: Align(alignment: Alignment.centerLeft, child: child),
-      );
-    }
-
-    final Widget button = InkWell(
-      borderRadius: tokens.radii.controlRadius,
       onTap: onTap,
-      // FushiFocusRoot 下由下面登记的焦点目标做唯一停靠点（与 _actionBtn 同理），
-      // 否则 InkWell 自己可聚焦（Tab 遍历）。
-      canRequestFocus: FushiFocusRoot.maybeControllerOf(context) == null,
-      child: child,
-    );
-    if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
-    return FushiActivatableFocusTarget(
       focusIdPrefix: 'reader-search-result',
-      onTap: onTap,
-      child: button,
     );
   }
 }
@@ -2836,58 +2737,41 @@ class _InBookFavoriteRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AdaptiveSettingsRow(
-      title: favorite.text,
-      subtitle: metaLabel,
-      icon: isCupertinoPlatform(context)
-          ? CupertinoIcons.quote_bubble
-          : Icons.format_quote_outlined,
+    // 引文卡：左侧细色条 = 收藏高亮色；整卡点击跳到该句（单独的跳转图标与之
+    // 重复，已移除）；右下 播放 / 复制 / 删除。
+    return ReaderQuoteCard(
+      key: ValueKey<String>('in_book_favorite_${favorite.id}'),
+      accent: color,
+      quote: Text(favorite.text, maxLines: 6, overflow: TextOverflow.ellipsis),
+      meta: metaLabel,
       onTap: onJump,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildColorRail(context, color),
-          SizedBox(width: tokens.spacing.gap * 0.75),
-          // 跳转按钮已移除：整行点击 (onTap) 已经跳转到该收藏句子，
-          // 单独的跳转图标与之重复，反而把按钮挤在一起。
-          if (onPlay != null) ...[
-            _InBookIconButton(
-              materialIcon: Icons.volume_up_outlined,
-              cupertinoIcon: CupertinoIcons.speaker_2,
-              tooltip: t.play,
-              onPressed: onPlay!,
-            ),
-            // 2026-10 体验优化：按钮间距 ≥ 8，避免复制 / 删除误触。
-            SizedBox(width: tokens.spacing.gap),
-          ],
+      focusIdPrefix: 'reader-favorite',
+      actions: <Widget>[
+        if (onPlay != null) ...[
           _InBookIconButton(
-            materialIcon: Icons.copy_outlined,
-            cupertinoIcon: CupertinoIcons.doc_on_doc,
-            tooltip: t.copy,
-            onPressed: onCopy,
+            materialIcon: Icons.volume_up_outlined,
+            cupertinoIcon: CupertinoIcons.speaker_2,
+            tooltip: t.play,
+            onPressed: onPlay!,
           ),
+          // 2026-10 体验优化：按钮间距 ≥ 8，避免复制 / 删除误触。
           SizedBox(width: tokens.spacing.gap),
-          _InBookIconButton(
-            materialIcon: Icons.delete_outline,
-            cupertinoIcon: CupertinoIcons.delete,
-            tooltip: t.options_delete,
-            destructive: true,
-            onPressed: onDelete,
-          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildColorRail(BuildContext context, Color railColor) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Container(
-      width: 4,
-      height: 32,
-      decoration: BoxDecoration(
-        color: railColor,
-        borderRadius: tokens.radii.chipRadius,
-      ),
+        _InBookIconButton(
+          materialIcon: Icons.copy_outlined,
+          cupertinoIcon: CupertinoIcons.doc_on_doc,
+          tooltip: t.copy,
+          onPressed: onCopy,
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        _InBookIconButton(
+          materialIcon: Icons.delete_outline,
+          cupertinoIcon: CupertinoIcons.delete,
+          tooltip: t.options_delete,
+          destructive: true,
+          onPressed: onDelete,
+        ),
+      ],
     );
   }
 }

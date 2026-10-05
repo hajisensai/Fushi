@@ -28,6 +28,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/image_archive_probe.dart';
 import 'package:fushi/src/media/tags/tag_drop.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -117,7 +118,6 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 
@@ -212,6 +212,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   MediaType get mediaType => mediaSource.mediaType;
+
+  /// 本页自己的滚动控制器。书架与漫画库是同一个页面类、取同一个
+  /// `ReaderFushiSource.instance.mediaType`，两个 tab 保活并存；共用
+  /// `mediaType.scrollController` 会让一个控制器附着两个位置，`thumbVisibility`
+  /// 常显的 [RawScrollbar] 每次依赖变化都断言（BUG-1181 遗留）。
+  final ScrollController _shelfScrollController = ScrollController();
 
   @override
   ReaderFushiSource get mediaSource => ReaderFushiSource.instance;
@@ -607,6 +613,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   @override
   void dispose() {
     _searchController.dispose();
+    _shelfScrollController.dispose();
     mediaType.tabRefreshNotifier.removeListener(_reloadShelfMapsOnTabRefresh);
     _collectionTablesSub?.cancel();
     _collectionsReloadDebounce?.cancel();
@@ -1772,13 +1779,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       child: RawScrollbar(
         thumbVisibility: true,
         thickness: 3,
-        controller: mediaType.scrollController,
+        controller: _shelfScrollController,
         child: LayoutBuilder(
           // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
           builder: (context, constraints) => RefreshIndicator(
             onRefresh: _pullToRefreshBooks,
             child: CustomScrollView(
-              controller: mediaType.scrollController,
+              controller: _shelfScrollController,
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
@@ -3118,14 +3125,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 失效标签 map 与筛选 provider，卡面 chip 与标签过滤立即刷新。
   Future<void> _openMediaTagPicker(MediaRef media) async {
     Navigator.pop(context);
-    await Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => TagPickerPage(media: media),
-      ),
-    );
+    await showTagPicker(context, targets: TagTargets(media: <MediaRef>[media]));
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
     ref.invalidate(bookTagMapProvider);
     ref.invalidate(filteredBookIdsProvider);
     ref.invalidate(filteredSrtBookUidsProvider);

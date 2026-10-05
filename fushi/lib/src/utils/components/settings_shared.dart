@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
         FushiPlainButton,
         fushiClearGlassBezel,
         fushiClearGlassSettings;
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show showFushiMenu;
@@ -2885,7 +2886,10 @@ class SettingsFormField extends StatelessWidget {
       padding: EdgeInsets.only(bottom: bottomSpacing),
       child: SizedBox(
         width: double.infinity,
-        child: TextFormField(
+        // 共享 M3E 输入框（FushiTextFormFieldControl → fushiMd3FieldDecoration）：
+        // 填充底、静止无描边、聚焦 2px 主色、悬停状态层，与其它输入框同一形态；
+        // 此前这里是裸 TextFormField + 灰色细描边方框。
+        child: FushiTextFormFieldControl(
           initialValue: initialValue,
           controller: controller,
           focusNode: focusNode,

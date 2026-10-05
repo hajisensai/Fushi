@@ -245,3 +245,16 @@ flutter:
     - assets/popup/
     - assets/transforms/
     - assets/transforms/i18n/
+
+  # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
+  # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在
+  # 只能传 IconData 的 API 里也能表达。release 构建的图标树摇只留用到的码位。
+  # 刻意不放进上面的 assets/fonts/（那个目录整体登记为普通 asset，供阅读器 WebView
+  # 按 URL 取用，不会被树摇）。
+  fonts:
+    - family: FushiSymbols
+      fonts:
+        - asset: assets/icon_fonts/FushiSymbolsRounded.ttf
+    - family: FushiSymbolsFilled
+      fonts:
+        - asset: assets/icon_fonts/FushiSymbolsRoundedFilled.ttf

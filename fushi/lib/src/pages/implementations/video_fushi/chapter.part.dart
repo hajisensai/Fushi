@@ -89,7 +89,7 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
       buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
@@ -161,7 +161,7 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
       buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
@@ -245,7 +245,7 @@ extension _VideoChapter on _VideoFushiPageState {
     final double bottom = _videoBottomSystemInset() +
         (_videoButtonBarHeight + _videoSeekBarContainerHeight) *
             _controlsDensityScale +
-        _appleBottomLift +
+        _floatingChromeBottomLift +
         20 * scale;
     return Positioned(
       right: 24 * scale,

@@ -127,11 +127,13 @@ void main() {
           reason: '统计入口已收敛到首页 dashboard，视频页头不再挂');
       expect(containsCodeLine(shelfHeader, 'Icons.bar_chart_outlined'), isFalse,
           reason: '统计入口已收敛到首页 dashboard，书架页头不再挂');
-      // 参照物没有凭空消失：统计中心入口必须真的落在首页 dashboard 页头。
+      // 参照物没有凭空消失：统计中心入口必须真的落在首页 dashboard（2026-10 起
+      // 在顶部浮动工具栏的按钮组里）。
       final String dashboard =
           read('lib/src/pages/implementations/home_dashboard_page.dart');
       expect(
-          containsCodeLine(dashboard, 'onTap: _openStatisticsCenter'), isTrue,
+          containsCodeLine(dashboard, 'onPressed: _openStatisticsCenter'),
+          isTrue,
           reason: '统计中心入口必须在首页 dashboard 可达');
       expect(containsCodeLine(dashboard, 'icon: Icons.bar_chart_outlined'),
           isTrue);

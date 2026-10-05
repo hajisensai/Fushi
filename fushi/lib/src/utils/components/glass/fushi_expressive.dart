@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 
 // Material 3 Expressive（Google 2025-05，Android 16）的按钮动效：Flutter 3.44
@@ -18,17 +19,20 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 //   2px 缝、外端全圆角、内侧小圆角，选中段弹成全胶囊，按下的段变宽、邻段让出。
 // - [FushiButtonGroup]：标准按钮组。一排按钮，按下的变宽、邻居被挤窄。
 //
-// 弹簧取 M3 Expressive 的 motion scheme：按压用「fast spatial」（刚度 1400、
-// 阻尼比 0.9），选中形变用「default spatial」（刚度 700、阻尼比 0.9）。墨水屏与
-// 系统「减少动画」下不做任何形变（保持原有胶囊），见 [fushiExpressiveMotionEnabled]。
+// 弹簧取 M3 Expressive 的 motion scheme（[FushiSprings]，唯一真相源在
+// fushi_motion_tokens.dart）：按压用 spatial fast（刚度 800、阻尼比 0.6），选中
+// 形变用 spatial default（刚度 380、阻尼比 0.8）。2026-10-05 前这里写的是
+// 0.9 / 1400 与 0.9 / 700——那是 M3 **standard** motion scheme 的数值，不是
+// Expressive。墨水屏与系统「减少动画」下不做任何形变（保持原有胶囊），见
+// [fushiExpressiveMotionEnabled]。
 
 /// M3 Expressive「fast spatial」弹簧：按压形变 / 宽度挤压。
 final SpringDescription fushiExpressiveFastSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 1400, ratio: 0.9);
+    FushiSprings.spatialFast.description;
 
 /// M3 Expressive「default spatial」弹簧：选中态形变（比按压慢半拍）。
 final SpringDescription fushiExpressiveDefaultSpatial =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 700, ratio: 0.9);
+    FushiSprings.spatialDefault.description;
 
 /// 是否做 Expressive 形变动效：墨水屏（残影 + 刷新慢）与系统「减少动画」下
 /// 一律不做——两者都要求界面静止，形变只是装饰，不承载信息。

@@ -13,7 +13,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -153,7 +153,7 @@ void main() {
     expect(find.text(t.game_empty), findsNothing);
   });
 
-  testWidgets('卡片菜单有「标签」项，点开进共享 TagPickerPage 并真写穿 DB',
+  testWidgets('卡片菜单有「标签」项，点开进共享标签选择器并真写穿 DB',
       (WidgetTester tester) async {
     final (AppModel appModel, FushiDatabase db) = await buildModel();
     final int tagId = await db.createTag('神作', 0xFFEF5350);
@@ -168,11 +168,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.tag_label));
     await tester.pumpAndSettle();
-    expect(find.byType(TagPickerPage), findsOneWidget,
+    expect(find.byType(TagPickerPanel), findsOneWidget,
         reason: '复用书/视频/合集那张选择器，不另做一套游戏专用的');
 
     // 勾上标签：必须真落 galgame_tag_mappings（不是只改本地 state）。
-    await tester.tap(find.text('神作'));
+    await tester.tap(find.descendant(
+      of: find.byType(TagPickerPanel),
+      matching: find.text('神作'),
+    ));
     await tester.pumpAndSettle();
 
     final List<BookTagRow> tags = await db.getTagsForGame('g1');

@@ -265,6 +265,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'module_games_enabled',
   'module_manga_enabled',
   'module_video_enabled',
+  // String：宽屏主导航 rail 手动展开 / 收起（'' 跟随窗口尺寸 / expanded /
+  // collapsed）。描述本机窗口布局，不进 Profile 快照。
+  'nav_rail_expanded',
   // String：全局公网出口模式 auto / direct / manual（BUG-1980）。
   'network_proxy_mode',
   // bool：P2P（torrent）传输是否也走全局代理（旧键，冻结；三态 mode 键未写过
@@ -301,8 +304,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'qb_connection_config',
   // 阅读器顶栏 / 底栏按钮布局 JSON（ReaderControlLayout，v1 槽位表）。
   'reader_control_layout',
+  // 窄窗（手机竖屏）按钮布局 JSON（同 reader_control_layout 形；空 = 沿用宽窗那份）。
+  'reader_control_layout_compact',
   // String 'left' | 'right'：小说 / 漫画阅读设置侧边弹窗停靠在哪一侧（与翻页方向无关）。
   'reader_settings_panel_side',
+  // String 'floating' | 'docked'：阅读器工具栏样式（M3E 悬浮工具栏 / 贴边实体条）。
+  'reader_toolbar_style',
   'reading_goal_daily_chars',
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',

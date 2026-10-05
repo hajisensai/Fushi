@@ -1274,6 +1274,21 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 宽屏主导航 rail（MD3 / M3 Expressive）用户手动选的展开 / 收起：
+  /// `''` = 未选过（按窗口尺寸档：expanded 档展开、medium 档收起）、
+  /// `'expanded'` / `'collapsed'`。由 rail 顶部的菜单钮切换并记忆。
+  bool? get navRailExpanded {
+    final String value =
+        getPref('nav_rail_expanded', defaultValue: '') as String;
+    if (value == 'expanded') return true;
+    if (value == 'collapsed') return false;
+    return null;
+  }
+
+  Future<void> setNavRailExpanded(bool expanded) async {
+    await setPref('nav_rail_expanded', expanded ? 'expanded' : 'collapsed');
+  }
+
   bool get reverseReaderBottomBar =>
       getPref('reverse_reader_bottom_bar', defaultValue: false) as bool;
 
@@ -1981,6 +1996,44 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setReaderControlLayout(ReaderControlLayout layout) async {
     await setPref('reader_control_layout', layout.encode());
+    notifyListeners();
+  }
+
+  /// 窄窗（手机竖屏）的按钮布局（2026-10：手机与桌面分别可配）。持久化键
+  /// `reader_control_layout_compact`。兼容存量：没存过窄窗布局、但存过（宽窗）
+  /// 布局的用户——此前一份布局两端共用——继续沿用那份自定义，不丢；两份都没有
+  /// 才落窄窗出厂布局 [ReaderControlLayout.compactDefaults]。
+  ReaderControlLayout get readerCompactControlLayout {
+    final String compact =
+        getPref('reader_control_layout_compact', defaultValue: '') as String;
+    if (compact.trim().isNotEmpty) {
+      return ReaderControlLayout.decode(
+        compact,
+        fallback: ReaderControlLayout.compactDefaults,
+      );
+    }
+    final String wide =
+        getPref('reader_control_layout', defaultValue: '') as String;
+    if (wide.trim().isNotEmpty) return ReaderControlLayout.decode(wide);
+    return ReaderControlLayout.compactDefaults;
+  }
+
+  Future<void> setReaderCompactControlLayout(ReaderControlLayout layout) async {
+    await setPref('reader_control_layout_compact', layout.encode());
+    notifyListeners();
+  }
+
+  /// 阅读器工具栏样式（2026-10，M3 Expressive toolbars）：`floating`（默认：
+  /// 悬浮胶囊 + 底部悬浮工具栏，正文满屏）/ `docked`（贴边整宽实体条，旧形态）。
+  /// 未知值按默认。
+  String get readerToolbarStyle {
+    final String v =
+        getPref('reader_toolbar_style', defaultValue: 'floating') as String;
+    return v == 'docked' ? 'docked' : 'floating';
+  }
+
+  Future<void> setReaderToolbarStyle(String style) async {
+    await setPref('reader_toolbar_style', style == 'docked' ? 'docked' : 'floating');
     notifyListeners();
   }
 

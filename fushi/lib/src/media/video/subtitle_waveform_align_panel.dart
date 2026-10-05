@@ -585,8 +585,8 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     }
     _listController.animateTo(
       target,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
+      duration: FushiMotion.medium,
+      curve: FushiSpringCurve.effects,
     );
   }
 
@@ -622,8 +622,8 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     }
     _scrollController.animateTo(
       target,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
+      duration: FushiMotion.medium,
+      curve: FushiSpringCurve.effects,
     );
   }
 
