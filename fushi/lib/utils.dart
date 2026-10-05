@@ -6,6 +6,7 @@ export 'src/utils/components/cache_image_provider.dart';
 export 'src/utils/components/copy_feedback.dart';
 export 'src/utils/components/fushi_gamepad_keyboard.dart';
 export 'src/utils/components/fushi_icon_button.dart';
+export 'src/utils/components/fushi_floating_page_chrome.dart';
 export 'src/utils/components/fushi_toolbar.dart';
 export 'src/utils/components/fushi_reorderable_column.dart';
 export 'src/utils/components/fushi_reorder_drag_listener.dart';
