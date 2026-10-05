@@ -220,6 +220,39 @@ void main() {
       expect(presses, 1);
     });
 
+    testWidgets('center paused hint is a small, plate-less, dimmed icon', (
+      WidgetTester tester,
+    ) async {
+      int presses = 0;
+      await tester.pumpWidget(
+        _host(VideoCenterPausedHint(extent: 44, onPressed: () => presses++)),
+      );
+      final Icon icon = tester.widget<Icon>(find.byType(Icon));
+      expect(icon.icon, Icons.play_arrow_rounded);
+      expect(icon.size, 44);
+      expect(icon.color!.a, lessThan(1));
+      // 不再有半透明大圆块：提示子树里没有任何带底色的 DecoratedBox / Material。
+      expect(
+        find.descendant(
+          of: find.byType(VideoCenterPausedHint),
+          matching: find.byType(DecoratedBox),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(VideoCenterPausedHint),
+          matching: find.byType(Material),
+        ),
+        findsNothing,
+      );
+      // 命中区不小于 48dp，且不超出图标太多（不吃掉画面中央的单击切控制栏）。
+      final Size hit = tester.getSize(find.byType(VideoCenterPausedHint));
+      expect(hit, const Size.square(48));
+      await tester.tap(find.byType(VideoCenterPausedHint));
+      expect(presses, 1);
+    });
+
     testWidgets('seek track paints for every state without throwing', (
       WidgetTester tester,
     ) async {
