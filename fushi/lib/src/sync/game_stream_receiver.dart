@@ -137,6 +137,27 @@ class GameStreamStatsSample {
   }
 }
 
+/// Routes stream audio as media playback instead of a voice call.
+///
+/// flutter_webrtc defaults Android to a call: the playout AudioTrack is built
+/// with USAGE_VOICE_COMMUNICATION, and when the remote track arrives its
+/// AudioSwitchManager puts the device into MODE_IN_COMMUNICATION -- game audio
+/// then rides the call volume and the earpiece/call route. The receiver never
+/// opens a microphone; it is a media player.
+///
+/// The two halves are configured separately by the plugin: the AudioTrack
+/// attributes only through `initialize` (read once, when the first WebRTC call
+/// builds the factory), the audio mode and focus only through
+/// [Helper.setAndroidAudioConfiguration]. Both must say "media", and the first
+/// must run before any other WebRTC call in the process.
+Future<void> prepareGameStreamMediaAudio() async {
+  final AndroidAudioConfiguration media = AndroidAudioConfiguration.media;
+  await WebRTC.initialize(
+    options: <String, dynamic>{'androidAudioConfiguration': media.toMap()},
+  );
+  await Helper.setAndroidAudioConfiguration(media);
+}
+
 /// Android receiver for an already joined Fushi session. The host owns SDP
 /// negotiation and creates the reliable, ordered `fushi-game-control` channel.
 class FushiGameStreamReceiver extends ChangeNotifier
@@ -148,9 +169,11 @@ class FushiGameStreamReceiver extends ChangeNotifier
     RTCVideoRenderer? videoRenderer,
     GameStreamPeerFactory? peerFactory,
     Future<RTCRtpCapabilities> Function()? codecCapabilities,
+    Future<void> Function()? prepareAudio,
   }) : _client = client,
        renderer = videoRenderer ?? RTCVideoRenderer(),
        _peerFactory = peerFactory ?? _createPeer,
+       _prepareAudio = prepareAudio ?? prepareGameStreamMediaAudio,
        _codecCapabilities =
            codecCapabilities ?? (() => getRtpReceiverCapabilities('video')) {
     WidgetsBinding.instance.addObserver(this);
@@ -176,6 +199,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
 
   final FushiGameStreamClient _client;
   final GameStreamPeerFactory _peerFactory;
+  final Future<void> Function() _prepareAudio;
   final Future<RTCRtpCapabilities> Function() _codecCapabilities;
   final ValueChanged<GameStreamTextEvent>? onTextEvent;
   final ValueChanged<GameStreamInputAck>? onInputAck;
@@ -267,6 +291,10 @@ class FushiGameStreamReceiver extends ChangeNotifier
     _error = null;
     _notify();
     try {
+      // Must precede the renderer: its initialize() is the first WebRTC call
+      // and would otherwise build the audio stack with call defaults.
+      await _prepareAudio();
+      if (!_isCurrent(generation)) return;
       await (_rendererInit ??= _initializeRenderer());
       if (!_isCurrent(generation)) return;
       final RTCPeerConnection connection = await _peerFactory();
