@@ -509,7 +509,7 @@ class GamepadService {
         // 行为不变：命中才 pop，未绑定仍是无操作。
         if (registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
             ShortcutAction.globalBack) {
-          // BUG-2951：查词浮层自带导航层里开着菜单时只关菜单（菜单不在根栈上）。
+          // BUG-2953：查词浮层自带导航层里开着菜单时只关菜单（菜单不在根栈上）。
           if (LookupOverlayNavigator.popActiveMenu()) return;
           navigatorKey.currentState?.maybePop();
         }

@@ -1,4 +1,4 @@
-// BUG-2951 第二段：查词浮层自带导航层（[LookupOverlayNavigator]）里开着菜单时，
+// BUG-2953 第二段：查词浮层自带导航层（[LookupOverlayNavigator]）里开着菜单时，
 // 「返回」只关菜单，再按一次才关浮层——与菜单还在根 Navigator 上时的行为一致。
 //
 // 菜单住进内层 Navigator 后，所有返回入口仍只认根 Navigator：系统返回键经

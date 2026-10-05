@@ -2550,7 +2550,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!mounted || _overlayInert) return const SizedBox.shrink();
     // 本浮层插在 root Overlay，不是 TexthookerPage 页面子树的后代；键盘接线由
     // 页面生命周期内的 HardwareKeyboard handler 承担，不再依赖浮层 Focus 链。
-    // BUG-2951：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
     return LookupOverlayNavigator(
       child: FushiAppUiScaleNeutralizer(
         child: Theme(

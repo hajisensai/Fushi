@@ -33,8 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
 | [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
-| [BUG-2951](bugs/BUG-2951-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
 | [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |
 | [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
 | [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |

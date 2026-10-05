@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
-/// BUG-2951：根 Overlay 查词浮层的**自带导航层**——浮层里唤出的菜单必须画在浮层之上，
+/// BUG-2953：根 Overlay 查词浮层的**自带导航层**——浮层里唤出的菜单必须画在浮层之上，
 /// 而「返回」必须先关菜单、再关浮层。
 ///
 /// ## 层级
