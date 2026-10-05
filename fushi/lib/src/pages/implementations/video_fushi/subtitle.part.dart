@@ -390,7 +390,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           ),
           // 图形轨整轨 OCR 成文字字幕：生成后播放中就能直接点字查词，不必暂停。
           if (source.isGraphicEmbedded && source.streamIndex != null)
-            ListTile(
+            FushiListTileControl(
               leading: const Icon(Icons.document_scanner_outlined),
               title: Text(t.video_subtitle_graphic_ocr_track),
               subtitle: Text(t.video_subtitle_graphic_ocr_track_hint),
