@@ -179,30 +179,16 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// 2026-10 体验优化：原先垃圾桶一点即删、不可撤销，会话又直接参与总时长 /
   /// 每日折线统计，误触就丢数据——先确认（标出是哪一次），删完给 Toast。
   Future<void> _deleteSession(GalgameSessionRow row) async {
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-            title: Text(t.game_stat_delete_session),
-            content: Text(
-              '${formatGalgameSessionRange(row)}'
-              ' · ${formatStatTime(row.durationSeconds * 1000)}',
-            ),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.game_stat_delete_session,
+      message:
+          '${formatGalgameSessionRange(row)}'
+          ' · ${formatStatTime(row.durationSeconds * 1000)}',
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed || !mounted) return;
     await _repo.deleteSession(row.id);
     await _load();

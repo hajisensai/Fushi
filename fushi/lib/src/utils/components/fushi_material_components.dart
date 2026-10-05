@@ -34,7 +34,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiDialogHeroIcon;
+    show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
@@ -2643,21 +2643,17 @@ List<Widget> narrowAwareAppBarActions({
   }
   return <Widget>[
     ...alwaysVisible,
-    PopupMenuButton<int>(
+    // 共享菜单路由（M3E 面板 / Apple 菜单），不再裸用 PopupMenuButton。
+    FushiPopupMenuButton<int>(
       tooltip: t.common_more_actions,
       icon: const FushiIcon(Icons.more_vert),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         for (int i = 0; i < collapsible.length; i++)
-          PopupMenuItem<int>(
+          FushiPopupMenuItem<int>(
             value: i,
             enabled: collapsible[i].onPressed != null,
-            child: Row(
-              children: <Widget>[
-                FushiIcon(collapsible[i].icon, size: 20),
-                const SizedBox(width: 12),
-                Expanded(child: Text(collapsible[i].label)),
-              ],
-            ),
+            icon: collapsible[i].icon,
+            label: collapsible[i].label,
           ),
       ],
       onSelected: (int index) => collapsible[index].onPressed?.call(),
@@ -4405,7 +4401,7 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
       padding: widget.padding,
       splashRadius: widget.splashRadius,
       position: PopupMenuPosition.under,
-      popUpAnimationStyle: fushiMd3MenuAnimationStyle,
+      popUpAnimationStyle: fushiM3eMenuAnimationStyle,
       onSelected: widget.onSelected,
       itemBuilder: (BuildContext context) => widget.items,
       child: widget.child,
@@ -4474,15 +4470,22 @@ class _FushiPopupMenuItemState<T>
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    const BorderRadius radius = BorderRadius.all(Radius.circular(8));
+    const BorderRadius radius = BorderRadius.all(Radius.circular(12));
+    // M3E 菜单（2026-10-05 浮层统一）：选中项常驻 secondaryContainer 圆角块
+    // （内缩、不横贯容器），其上的悬停 / 焦点 / 按下叠 onSurface 状态层。
+    final bool selected = widget.selected && !isEinkTheme(context);
+    final Color hover = selected
+        ? cs.onSecondaryContainer.withValues(alpha: 0.08)
+        : cs.secondaryContainer;
     // 与 PopupMenuItemState.build 同一套语义 / 焦点 / 点击（handleTap：先
     // onTap 再带值关菜单），只把整行高亮换成内缩的圆角块。
     return MergeSemantics(
       child: Semantics(
         enabled: widget.enabled,
+        selected: widget.selected,
         button: true,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Material(
             type: MaterialType.transparency,
             child: InkWell(
@@ -4490,14 +4493,22 @@ class _FushiPopupMenuItemState<T>
               canRequestFocus: widget.enabled,
               mouseCursor: widget.mouseCursor,
               borderRadius: radius,
-              hoverColor: cs.secondaryContainer,
-              focusColor: cs.secondaryContainer,
-              highlightColor: cs.secondaryContainer,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Opacity(
-                  opacity: widget.enabled ? 1 : 0.38,
-                  child: buildChild(),
+              hoverColor: hover,
+              focusColor: selected
+                  ? cs.onSecondaryContainer.withValues(alpha: 0.12)
+                  : cs.secondaryContainer,
+              highlightColor: hover,
+              child: Ink(
+                decoration: BoxDecoration(
+                  color: selected ? cs.secondaryContainer : null,
+                  borderRadius: radius,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Opacity(
+                    opacity: widget.enabled ? 1 : 0.38,
+                    child: buildChild(),
+                  ),
                 ),
               ),
             ),

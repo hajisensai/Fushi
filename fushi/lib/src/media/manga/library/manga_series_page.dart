@@ -438,27 +438,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<void> _deleteChapterDownload(OnlineMangaChapter chapter) async {
     final EpubBookRow? row = _row;
     if (row == null) return;
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-            title: Text(t.manga_chapter_download_delete_action),
-            content: Text(chapter.name),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.manga_chapter_download_delete_action,
+      message: chapter.name,
+      icon: Icons.delete_outline,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed || !mounted) return;
     try {
       await deleteChapterDownload(

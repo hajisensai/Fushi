@@ -2980,7 +2980,9 @@ void main() {
       'lib/src/sync/sync_compare_dialog.dart',
     ).readAsStringSync();
 
-    expect(dialog, contains('animationStyle: fushiMd3DialogAnimationStyle'));
+    // 2026-10-05 浮层统一成 M3E：三个浮层动效换成弹簧 token（定义在
+    // fushi_m3e_overlays.dart），旧 fushiMd3*AnimationStyle 仍留在 motion 文件里。
+    expect(dialog, contains('animationStyle: fushiM3eDialogAnimationStyle'));
     // adaptiveModalSheet 先按系统「减少动态效果」把共享 sheet 动效收成一个局部
     // sheetMotion（关动效 = AnimationStyle.noAnimation，否则恒为
     // fushiMd3SheetAnimationStyle），三条 showModalBottomSheet 分支（Apple 液态
@@ -2996,7 +2998,7 @@ void main() {
       contains(
         RegExp(
           r'AnimationStyle sheetMotion = noMotion\s*\?\s*'
-          r'AnimationStyle\.noAnimation\s*:\s*fushiMd3SheetAnimationStyle;',
+          r'AnimationStyle\.noAnimation\s*:\s*fushiM3eSheetAnimationStyle;',
         ),
       ),
     );
@@ -3013,7 +3015,7 @@ void main() {
       RegExp(r'sheetAnimationStyle:\s*AnimationStyle\(').hasMatch(modalSheet),
       isFalse,
     );
-    expect(menu, contains('popUpAnimationStyle: fushiMd3MenuAnimationStyle'));
+    expect(menu, contains('popUpAnimationStyle: fushiM3eMenuAnimationStyle'));
     expect(home, contains('showAppDialog<bool>('));
     expect(sync, contains('showAppDialog<int>('));
     expect(home, isNot(contains('showDialog<bool>(')));
