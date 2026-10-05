@@ -1677,6 +1677,10 @@ class FushiShellLargeTitleBar extends StatelessWidget {
 /// 算进去，否则判「放得下」的一档实际会把文字挤到渐隐截断。
 const double kFushiAppleTabContentInset = 6.0;
 
+/// M3E 分段胶囊页签每侧吃掉的水平宽：轨道离边 12 + 轨道内 TabBar 内边距 4。
+/// 量页签宽度的调用方（`LibrarySectionTabs` 的铺满判据）必须扣掉两侧这一截。
+const double kFushiM3eTabTrackInset = 16.0;
+
 /// [TabBar] 的设计系统分派版（含 `.secondary`）。实现 [PreferredSizeWidget]
 /// 供 `AppBar.bottom` 使用，[preferredSize] 与同参 TabBar 一致（两套设计系统
 /// 下高度相同，切换不跳布局）。
@@ -2015,7 +2019,7 @@ class FushiTabBar extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-/// M3E 分段胶囊页签：一条 surfaceContainerHigh 全胶囊轨道，里面是
+/// M3E 分段胶囊页签：一条悬浮页头同色（standard 面）的全胶囊轨道，里面是
 /// [FushiTabBar._segmentedMaterial]（框架 TabBar：焦点、Enter / 方向键、
 /// TabController 双向同步、横滑跟手都是框架原生行为）。总高与
 /// [FushiTabBar.preferredSize] 相同（放在 `AppBar.bottom` 里不跳布局），轨道
@@ -2033,10 +2037,13 @@ class _FushiM3eSegmentedTabs extends StatelessWidget {
     return SizedBox(
       height: bar.preferredSize.height,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+        padding: const EdgeInsets.symmetric(
+          horizontal: kFushiM3eTabTrackInset - 4,
+          vertical: 3,
+        ),
         child: DecoratedBox(
           decoration: ShapeDecoration(
-            color: cs.surfaceContainerHigh,
+            color: fushiPageChromeColor(context),
             shape: StadiumBorder(
               side: eink
                   ? BorderSide(color: cs.outline)
