@@ -12,6 +12,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
@@ -668,7 +669,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
       debugLabel: 'video-import-dialog',
       onDrop: _handleDialogDrop,
       child: ImportDialogFrame(
-        leadingIcon: Icons.movie_outlined,
+        leadingIcon: FushiIcons.video,
         title: t.video_import_title,
         body: Column(
           mainAxisSize: MainAxisSize.min,
@@ -684,7 +685,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
               decoration: InputDecoration(
                 labelText: t.video_import_stream_url_field,
                 hintText: 'https://...',
-                prefixIcon: const FushiIcon(Icons.link),
+                prefixIcon: const FushiIcon(FushiIcons.link),
                 isDense: true,
               ),
               onChanged: (_) => setState(() {}),
@@ -704,13 +705,11 @@ class _VideoImportDialogState extends State<VideoImportDialog>
             if (isKnownWebPageVideoUrl(_streamUrlController.text) &&
                 !isYoutubeUrl(_streamUrlController.text)) ...<Widget>[
               const SizedBox(height: 4),
-              Text(
-                shouldOpenInWebVideoPlayer(_streamUrlController.text)
+              FushiInlineNotice(
+                message: shouldOpenInWebVideoPlayer(_streamUrlController.text)
                     ? t.web_video_import_hint
                     : t.web_video_player_unavailable,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+                icon: FushiIcons.globe,
               ),
             ],
             const SizedBox(height: 8),
@@ -722,7 +721,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
               decoration: InputDecoration(
                 labelText: t.video_import_stream_subtitle_url_field,
                 hintText: 'https://...',
-                prefixIcon: const FushiIcon(Icons.subtitles_outlined),
+                prefixIcon: const FushiIcon(FushiIcons.subtitles),
                 isDense: true,
               ),
             ),
@@ -734,33 +733,47 @@ class _VideoImportDialogState extends State<VideoImportDialog>
                     ? null
                     : () => setState(() =>
                         _streamAdvancedExpanded = !_streamAdvancedExpanded),
-                icon: FushiIcon(_streamAdvancedExpanded
-                    ? Icons.expand_less
-                    : Icons.expand_more),
+                icon: AnimatedRotation(
+                  turns: _streamAdvancedExpanded ? 0.5 : 0,
+                  duration: context.fushiMotion.spatialFast.duration,
+                  curve: context.fushiMotion.spatialFast.curve,
+                  child: const FushiIcon(FushiIcons.expandMore),
+                ),
                 label: Text(t.video_import_stream_advanced),
               ),
             ),
-            if (_streamAdvancedExpanded) ...<Widget>[
-              FushiTextFieldControl(
-                controller: _streamRefererController,
-                enabled: !importing,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: t.video_import_stream_referer,
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              FushiTextFieldControl(
-                controller: _streamUserAgentController,
-                enabled: !importing,
-                autocorrect: false,
-                decoration: InputDecoration(
-                  labelText: t.video_import_stream_user_agent,
-                  isDense: true,
-                ),
-              ),
-            ],
+            AnimatedSize(
+              duration: context.fushiMotion.spatialDefault.duration,
+              curve: context.fushiMotion.spatialDefault.curve,
+              alignment: AlignmentDirectional.topStart,
+              child: !_streamAdvancedExpanded
+                  ? const SizedBox(width: double.infinity)
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        FushiTextFieldControl(
+                          controller: _streamRefererController,
+                          enabled: !importing,
+                          autocorrect: false,
+                          decoration: InputDecoration(
+                            labelText: t.video_import_stream_referer,
+                            isDense: true,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        FushiTextFieldControl(
+                          controller: _streamUserAgentController,
+                          enabled: !importing,
+                          autocorrect: false,
+                          decoration: InputDecoration(
+                            labelText: t.video_import_stream_user_agent,
+                            isDense: true,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
             const FushiDividerControl(height: 24),
             // 旧「导入文件夹（自动分组剧集）」「选择 m3u8 播放列表」按钮已删
             // （用户 2026-08-19 指令）：文件夹导入统一走导入页「导入文件夹」
@@ -768,7 +781,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
             // 本对话框只管单件：URL 流 / 单个视频文件（可选外挂字幕）。
             FushiOutlinedButton.icon(
               onPressed: importing ? null : _pickVideo,
-              icon: const FushiIcon(Icons.movie_outlined),
+              icon: const FushiIcon(FushiIcons.video),
               label: Text(
                 _videoPath == null
                     ? t.video_import_pick_video
@@ -779,7 +792,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
             const SizedBox(height: 8),
             FushiOutlinedButton.icon(
               onPressed: importing ? null : _pickSubtitle,
-              icon: const FushiIcon(Icons.subtitles_outlined),
+              icon: const FushiIcon(FushiIcons.subtitles),
               label: Text(
                 _subtitlePath == null
                     ? t.video_import_pick_subtitle
