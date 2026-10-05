@@ -28,7 +28,7 @@ Fushi is maintained by [hajisensai](https://github.com/hajisensai). Contact: [ha
 |---|---|---|
 | Android | ✅ | Material Design 3 |
 | Windows | ✅ | Material Design 3 |
-| macOS | ✅ | Material Design 3 |
+| macOS | ✅ (Apple Silicon only) | Material Design 3 |
 | Linux | 🔧 (build from source) | Material Design 3 |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Material Design 3 |
 
@@ -40,7 +40,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 ## Installation
 
-Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt release yet; build it from source.
+Download the latest release from the [Fushi website](https://fushi.moe/) — Android APK, Windows installer, and macOS builds (Apple Silicon only; Intel Macs are not supported) are available; iOS is installed through [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux has no prebuilt release yet; build it from source.
 
 > Requires Android 7.0 (API 24) or higher.
 

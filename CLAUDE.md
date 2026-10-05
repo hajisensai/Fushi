@@ -55,13 +55,13 @@
 
 - Flutter 版本**只有一个：`3.44.0`**——`fushi/.fvmrc` 与所有 workflow 的 `flutter-version` 同钉（守卫 `fushi/test/build/flutter_version_single_source_guard_test.dart`），本地 analyze / test / `pub get` 一律用它：版本不同 analyzer 与 lint 的结论就不同，CI 会红在本地没红的地方（2026-09-30 前这里写的是「本地 3.41.6、CI 3.44.0」）；`tool/pre_push_check.dart` 第 0 步强制比对。升级时 `.fvmrc` 与全部 workflow 一起改。pubspec 的 `flutter: "^3.41.6"` 只是下限，不是钉版；Dart SDK 约束 `>=3.5.0 <4.0.0`。最低 Android API 24，`compileSdk 36` / `targetSdk 35`。
 - 状态管理 Riverpod；音频 just_audio（桌面经 just_audio_media_kit）；录音 record 6.0.0；视频播放走 **media_kit**（third_party vendored 全套）+ youtube_explode_dart。
-- torrent 走内部包 `packages/fushi_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/fushi_torrent/`；Windows 预编译 DLL / macOS universal 静态 dylib（`Contents/Frameworks`）/ Android arm64 `.so` / Linux 静态链 `.so`（copy-if-present）随包，缺失时回退外接 qBittorrent；iOS 无内置引擎）。
+- torrent 走内部包 `packages/fushi_torrent`（libtorrent 2.x C ABI FFI，native 在 `native/fushi_torrent/`；Windows 预编译 DLL / macOS arm64 静态 dylib（`Contents/Frameworks`；macOS 版只出 Apple Silicon，不再支持 Intel Mac）/ Android arm64 `.so` / Linux 静态链 `.so`（copy-if-present）随包，缺失时回退外接 qBittorrent；iOS 无内置引擎）。
 - 主存储是 Drift SQLite（`FushiDatabase`，schema v114），偏好落 Drift `preferences` 表 + `profile_settings` 每 Profile 快照。**已无 Isar/Hive 依赖**；旧注释里的 Isar/Hive 不代表当前事实，先查代码再判断。
 - EPUB 阅读器走 reader_fushi 实现（见仓库地图）。`reader_ttu` key、`setTtu*` 方法、`ttu_*` i18n 只是旧数据兼容残留，不代表还有 TTU 阅读器；没有迁移方案别随手改这些持久化 key。（旧文档提过的 `ttuBookId` 列在当前 schema 已不存在，只活在迁移阶梯里。）
 - 旧 TTU 迁移代码已移除（develop `90c37b472`：`TtuMigrationServer` / `TtuIdbReader` / `assets/ttu-ebook-reader` 均已删除）；只剩上述命名残留作旧数据兼容。阅读器渲染/交互问题按 reader_fushi 路径修，不要去上游 ttu fork 仓库改。
 - 词典导入/查询核心走 `hoshidicts` C++ FFI；格式 UI 或旧 Dart format 类不一定是真实导入路径。
 - 国际化用 Slang，源文件 `fushi/lib/i18n/*.i18n.json`（17 种语言），生成文件 `strings.g.dart`。
-- 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。桌面端 EPUB 渲染：Windows 依赖 fork 的 `flutter_inappwebview_windows`；Linux 依赖 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，薄注册层运行时 dlopen 实现库，缺 WPE / 不允许 user namespace 时 app 照常启动、WebView 位置显示原因）。**Linux App 是社区维护平台**：CI 不构建 Linux App（只有 `linux-server`），构建 / 运行依赖与 Docker 验证法见 [docs/agent/build.md](docs/agent/build.md)「Linux 桌面（社区维护）」。
+- 5 平台均出包（Android/iOS/macOS/Windows/Linux）：`auto` 下五个平台统一走 Material Design 3；Cupertino / macOS renderer 仅保留为隐藏内部能力。桌面端 EPUB 渲染：Windows 依赖 fork 的 `flutter_inappwebview_windows`；Linux 依赖 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，薄注册层运行时 dlopen 实现库，缺 WPE / 不允许 user namespace 时 app 照常启动、WebView 位置显示原因）。**Linux App 是社区维护平台**：CI 不构建 Linux App（只有 `linux-server`），构建 / 运行依赖与 Docker 验证法见 [docs/agent/build.md](docs/agent/build.md)「Linux 桌面（社区维护）」。**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac**（Runner `EXCLUDED_ARCHS = x86_64`，随包原生件全部只出 arm64，见 build.md「平台与 SDK」）。
 - **iOS 版按 App Store 合规少三类能力**，其余四平台不受影响：① 内置外部发现源与「浏览」模块的「发现」页签、各库页的「发现」子标签（含用户自配 OPDS、视频域资源索引器与在线发现 provider）；② 在线漫画源宿主（Aidoku 仓库 / Mihon 扩展 / mokuro.moe 卷下载）与在线视频源宿主（Aniyomi 扩展，`onlineVideoSource`）、在线小说源宿主（LNReader 插件，`onlineNovelSource`）；③ 下载中心（torrent / 磁力 / 直链队列，含外接 qBittorrent）。理由都不是「iOS 做不到」而是审核指南不允许，所以判据**只在 `fushi/lib/src/models/store_compliance.dart` 的 `StoreRestrictedCapability` 写一次**，`ModuleId.browse`（原「下载」模块）的 `availableOn` 委托到它，消费端一律问这两处、不各自写 `Platform.isIOS`。Aidoku 的 iOS 宿主（内嵌 Rust 静态库 + Swift 桥 + Xcode build phase + CI rust target）与 macOS 宿主（`fushi-aidoku-runtime` 子进程 CLI + `tool/aidoku/` 打包脚本 + 两条 macOS workflow 的 bundle 步骤）已先后整条移除，**当前没有任何平台带 Aidoku 宿主**，`AidokuRuntimeFactory.isSupported` 恒 false、Dart 功能层保留门控；漫画/视频/书的本地库与阅读播放能力一概保留。守卫 `fushi/test/build/ios_store_compliance_guard_test.dart`——这条边界失效是静默的（本地与 CI 全绿、上架才被拒），改动这三块前先读它。
 
 ## 命名术语表（2026-07 定案，新代码遵守）
@@ -180,7 +180,7 @@
 | `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |
 | `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
 | `native/fushidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`fushidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](native/fushidicts/UPSTREAM.md) |
-| `native/fushi_torrent/` | C++ | libtorrent 2.x C ABI bridge；FFI，Windows 预编译 DLL / macOS universal dylib / Android arm64 `.so` 随包 | [README.md](native/fushi_torrent/README.md) |
+| `native/fushi_torrent/` | C++ | libtorrent 2.x C ABI bridge；FFI，Windows 预编译 DLL / macOS arm64 dylib / Android arm64 `.so` 随包 | [README.md](native/fushi_torrent/README.md) |
 | `services/log-backend/log-collector/` | Go | 报错日志接收端（自有服务器 + EdgeOne 版）；独立部署（原 `server/`，改名消与同步层 `fushi_sync_server.dart`/`SyncBackendType.hibikiServer` 的三义撞词） | [README.md](services/log-backend/log-collector/README.md) |
 | `services/log-backend/cf-worker/` | JS | 报错日志接收端（Cloudflare Worker + D1 版，与 Go 版择一）；独立部署 | [README.md](services/log-backend/cf-worker/README.md) |
 | `tools/browser-extension/` | JS | 浏览器查词扩展（根级 `tools/`，非 `tool/`） | — |

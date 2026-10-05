@@ -668,7 +668,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.macos == 'true'
     runs-on: macos-latest
-    # 120：内置 torrent 引擎 bridge 未命中持久库时要冷编两个架构的 vcpkg 依赖（几十分钟）；
+    # 120：内置 torrent 引擎 bridge 未命中持久库时要冷编 vcpkg 依赖（几十分钟）；
     # 命中后与原先一样。
     timeout-minutes: 120
     permissions:
@@ -677,7 +677,7 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v6
-      # 名字的唯一算法见 linux-server job 同名步骤。p2p universal dylib 与 release-desktop.yml
+      # 名字的唯一算法见 linux-server job 同名步骤。p2p arm64 dylib 与 release-desktop.yml
       # macos job 同名（同一脚本、同一产物），develop 上的发布构建存的件这里直接复用；
       # anki-sync debug 是 PR 专用变体，由 native-cache-warm.yml 在 develop 上预存。
       - name: Resolve native artifact store names
@@ -729,9 +729,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
-      # 互联 P2P 隧道（iroh）universal dylib：Runner 的「Bundle fushi_p2p dylib」构建阶段
+      # 互联 P2P 隧道（iroh）dylib：Runner 的「Bundle fushi_p2p dylib」构建阶段
       # （fushi/macos/bundle_fushi_p2p.sh）copy-if-present 进 Contents/Frameworks。
-      # 编 universal 而不是只编本机架构：发布包是 universal，x86_64 切片在 PR 上也要编一遍。
+      # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac，所以只编 arm64。
       # 持久库命中时跳过 Rust 工具链与 cargo；ABI 校验与出包后的 dylib 核对照跑。
       - name: Restore fushi_p2p dylib from native artifact store
         id: p2p_store
@@ -745,14 +745,14 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
-      - name: Build fushi_p2p (macOS universal dylib)
+      - name: Build fushi_p2p (macOS arm64 dylib)
         shell: bash
         env:
           STORE_HIT: ${{ steps.p2p_store.outputs.hit }}
@@ -762,11 +762,11 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
-      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
+      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段（fushi/macos/bundle_fushi_torrent.sh）
       # copy-if-present 进 Contents/Frameworks。此前 macOS 从没编过它，app 把 macOS 算作
       # 支持内置引擎的平台、加载失败后却只能判不可用（BUG-2865）。持久库与
-      # release-desktop.yml macos job 同名；命中时整段 vcpkg 冷编（两个架构）跳过，
+      # release-desktop.yml macos job 同名；命中时整段 vcpkg 冷编跳过，
       # ABI 校验、出包核对与 FFI 测试照跑在还原出来的 dylib 上。
       - name: Restore torrent bridge dylib from native artifact store
         id: torrent_store
@@ -803,7 +803,7 @@ jobs:
           key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
-      - name: Build embedded torrent bridge (macOS universal dylib, static)
+      - name: Build embedded torrent bridge (macOS arm64 dylib, static)
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
@@ -857,8 +857,8 @@ jobs:
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
-      # fushi-anki-sync：PR 门只编本机架构 debug 抓编译断裂；universal（--universal，
-      # arm64 + x86_64 lipo）由 release-desktop.yml 的发布构建负责。放置与签名同发布包。
+      # fushi-anki-sync：PR 门只编本机架构（arm64）debug 抓编译断裂；release 由
+      # release-desktop.yml 的发布构建负责。放置与签名同发布包。
       # 持久库命中只跳工具链与 cargo；安装、SOURCE.txt、version 冒烟与签名校验照跑。
       - name: Restore fushi-anki-sync from native artifact store
         id: anki_sync_store
@@ -927,9 +927,11 @@ jobs:
           app_dir="build/macos/Build/Products/Debug/fushi.app"
           dylib="$app_dir/Contents/Frameworks/libfushi_p2p.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
-          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          # otool -D 首行是「path:」表头，其余是 id。
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
           lipo -info "$dylib"
+          # macOS 版只出 arm64：多出 x86_64 切片说明还原了旧的 universal 件或脚本回退了。
+          test "$(lipo -archs "$dylib")" = "arm64"
           otool -L "$dylib"
           bash ../native/fushi_p2p/verify_abi.sh "$dylib" nm
           DYLIB_PATH="$dylib" python3 - <<'PY'
@@ -959,8 +961,7 @@ jobs:
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
           lipo -info "$dylib"
-          lipo -archs "$dylib" | grep -qw arm64
-          lipo -archs "$dylib" | grep -qw x86_64
+          test "$(lipo -archs "$dylib")" = "arm64"
           # 静态链的意义是「用户机不装任何 libtorrent/ssl/boost」：依赖只许是系统库。
           otool -L "$dylib" | grep -E '^[[:space:]]' | awk '{ print $1 }' > "$RUNNER_TEMP/torrent_otool.txt"
           if grep -v -e '^@rpath/libfushi_torrent_ffi\.dylib$' -e '^/usr/lib/' -e '^/System/' "$RUNNER_TEMP/torrent_otool.txt"; then

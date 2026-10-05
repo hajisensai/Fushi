@@ -6,6 +6,8 @@
 
 5 平台均出包：Android / iOS / macOS / Windows / Linux（`auto` 下五个平台统一走 Material 3；Cupertino / macOS renderer 仅保留为隐藏内部能力；桌面 EPUB 渲染：Windows 靠 fork 的 `flutter_inappwebview_windows`，Linux 靠 vendored 的 `packages/flutter_inappwebview_linux`（WPE WebKit，见下「Linux 桌面（社区维护）」）。Android：`compileSdk 36` / `minSdkVersion 24` / `targetSdk 35`。
 
+**macOS 只出 Apple Silicon（arm64），不再支持 Intel Mac（2026-10 起）。** `flutter build macos --release` 默认出 universal，靠 `fushi/macos/Runner.xcodeproj` 工程级 `EXCLUDED_ARCHS = x86_64`（Flutter 把它透传给 xcodebuild；`fushi/macos/Podfile` 的 `post_install` 给 Pods 钉同一份）收成 arm64；`release-desktop.yml` 的「Verify macOS app is arm64-only」门钉住 app 本体恰好是 arm64，随包原生件（`libfushi_p2p.dylib` / `libfushi_torrent_ffi.dylib` / `fushi-anki-sync` / ffmpeg-min / Mihon `runtime-macos-arm64`）一律只出 arm64，并按 app 本体的 `lipo -archs` 核对。iOS 模拟器的 x86_64 切片、Windows / Linux / Android 的 x64 不在此列。Intel Mac 上的开发构建同样不再支持（`build_desktop_runtime.sh` / `script/build_and_run.sh` 在 Intel 宿主上直接报错）。
+
 ## Linux 桌面（社区维护）
 
 **定位**：Linux App 由社区维护——CI 不构建 Linux App（`build-multiplatform.yml` 只有 `linux-server`，所有者 2026-09-30 决定），也没有 Linux 发布产物。下面是让社区能自己编、自己验的全部前提；改动 Linux 相关代码时按「验证」一节在 Docker 里自证。
@@ -77,9 +79,9 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 ## 互联 P2P 隧道原生库 fushi_p2p（Rust / iroh）
 
-- 源码 `native/fushi_p2p/`（Rust crate，C ABI）+ 纯 Dart FFI 包 `packages/fushi_p2p/`。每端一个构建脚本，产物落 `native/fushi_p2p/prebuilt/<平台>/`（不入库）：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（universal）/ `build_ios_staticlib.sh`（staticlib + xcconfig 片段）。
+- 源码 `native/fushi_p2p/`（Rust crate，C ABI）+ 纯 Dart FFI 包 `packages/fushi_p2p/`。每端一个构建脚本，产物落 `native/fushi_p2p/prebuilt/<平台>/`（不入库）：`build_windows_dll.ps1` / `build_android_so.{ps1,sh}` / `build_linux_so.sh` / `build_macos_dylib.sh`（只出 arm64）/ `build_ios_staticlib.sh`（staticlib + xcconfig 片段）。
 - **五端都是「prebuilt 有则随包」**：Windows / Linux CMake、Android `jniLibs.srcDirs`、macOS Runner 构建阶段 `fushi/macos/bundle_fushi_p2p.sh`、iOS 经 `fushi/ios/Flutter/*.xcconfig` 可选 `#include?` 生成的 xcconfig 给 `OTHER_LDFLAGS` 加 `$(FUSHI_P2P_LDFLAGS)`（`-force_load` 静态库，Dart 侧 `DynamicLibrary.process()`）。没装 Rust 的机器照常出包，P2P 能力判不可用——与内置 libtorrent 不同，Windows CMake **故意不在 Release 强制**，因为缺库只隐藏能力、不会「宣称有后端却打不开」。
-- **发布包的保证在 CI**：`release.yml`（Android arm64-v8a / armeabi-v7a / x86_64）、`release-desktop.yml`（Windows / macOS universal / iOS device）、`release-server.yml`（Linux / Windows）都在出包前跑 Rust 构建，**失败即 job 失败**（与 libtorrent 同口径），出包后再核对库真的进了包（APK 每个带 `libflutter.so` 的 ABI、Windows bundle、macOS Frameworks 双架构、iOS Runner 导出 `fp2p_*`、服务端拿 bundle 里那份跑真隧道测试）。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS 三个 app 端与 Linux 服务端 bundle（`linux-server`；Linux、Windows 还跑 `packages/fushi_p2p` 真隧道测试；改到 `native/fushi_p2p/**` 或 `packages/fushi_p2p/**` 时路径门四个 job 全开），`native-p2p-gate.yml` 补 Android 三 ABI 交叉编译。Rust 钉 1.95.0，cargo-ndk 钉 4.1.2。
+- **发布包的保证在 CI**：`release.yml`（Android arm64-v8a / armeabi-v7a / x86_64）、`release-desktop.yml`（Windows / macOS arm64 / iOS device）、`release-server.yml`（Linux / Windows）都在出包前跑 Rust 构建，**失败即 job 失败**（与 libtorrent 同口径），出包后再核对库真的进了包（APK 每个带 `libflutter.so` 的 ABI、Windows bundle、macOS Frameworks 里的 dylib 恰好是 arm64、iOS Runner 导出 `fp2p_*`、服务端拿 bundle 里那份跑真隧道测试）。PR 上 `build-multiplatform.yml` 覆盖 Windows / macOS / iOS 三个 app 端与 Linux 服务端 bundle（`linux-server`；Linux、Windows 还跑 `packages/fushi_p2p` 真隧道测试；改到 `native/fushi_p2p/**` 或 `packages/fushi_p2p/**` 时路径门四个 job 全开），`native-p2p-gate.yml` 补 Android 三 ABI 交叉编译。Rust 钉 1.95.0，cargo-ndk 钉 4.1.2。
 - 真隧道测试在库加载失败时**整组 skip 且退出码 0**，CI 因此额外断言日志里没有 skip 原因；`native/fushi_p2p/verify_abi.sh` 按 Dart 绑定 lookup 的 `fp2p_*` 名核对导出表。细节见 [native/fushi_p2p/README.md](../../native/fushi_p2p/README.md)。
 
 ## 发布通道
@@ -237,8 +239,8 @@ vcpkg 的两条 actions/cache 只在 libtorrent 持久库 miss 时才挂。
 cargo-ndk 与两次交叉编（2026-09-30 实测合计约 13 min），恢复件与现编件过同一组产物校验
 （`verify_torrent_abi.sh` + AArch64 + 16KB 对齐；`verify_abi.sh` 逐 ABI）。
 
-同一个持久库也覆盖 macOS / iOS / Linux：fushi_p2p（macOS universal dylib、iOS device
-staticlib、Linux .so）、fushi-anki-sync（macOS universal release / 各平台 PR 用的 debug）、
+同一个持久库也覆盖 macOS / iOS / Linux：fushi_p2p（macOS arm64 dylib、iOS device
+staticlib、Linux .so）、fushi-anki-sync（macOS arm64 release / 各平台 PR 用的 debug）、
 Linux 静态 torrent bridge。规则：
 
 - **名字只有一种算法**：`.github/actions/native-store-names/names.sh`（已提交树的
