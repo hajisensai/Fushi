@@ -73,6 +73,10 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           child: _chromeIconButton(
             icon: _volumeIconFor(value),
             desktop: desktop,
+            // M3E：静音时音量键亮 error tonal 色块。
+            tone: value <= 0
+                ? VideoM3eButtonTone.error
+                : VideoM3eButtonTone.neutral,
             onPressed: () => _toggleControlPopover(
               _VideoControlPopoverKind.volume,
               popoverLink: popoverLink,
@@ -460,7 +464,7 @@ extension _VideoControlsPopover on _VideoFushiPageState {
           // 浮层 alpha 两档制的实底档（UI 巡检 PR-4）。
           // M3E：与悬浮胶囊同一无色相中性表面（[videoM3eFloatingColor]）。
           color: neutral
-              ? videoM3eFloatingColor()
+              ? videoM3eFloatingColor(Theme.of(context).colorScheme)
               : cs.surfaceContainerHighest
                   .withValues(alpha: kVideoOverlaySolidAlpha),
           borderRadius: FushiBorderRadius.menu,

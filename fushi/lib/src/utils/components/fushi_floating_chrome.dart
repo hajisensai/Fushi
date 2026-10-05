@@ -6,8 +6,6 @@ import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart'
-    show FushiHeaderLabelScope;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions;
@@ -749,30 +747,7 @@ class _FloatingActionsBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget content;
-    if (!isGlassDesign(context) && actions is FushiShellHeaderActions) {
-      // MD3：[FushiShellHeaderActions] 自己会再包一颗按钮组胶囊，放进这颗悬浮
-      // 胶囊里就成了胶囊套胶囊——比旁边的页签胶囊高一截、投影叠两层（用户
-      // 2026-10-06 截图）。直接把按钮排进这一颗胶囊，与页签胶囊同高同表面。
-      content = HorizontalDragScrollable(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const ClampingScrollPhysics(),
-          // 一律纯图标（文案是 tooltip），与 [FushiShellHeaderActions] 同口径。
-          child: FushiHeaderLabelScope(
-            expandLabels: false,
-            child: IconTheme.merge(
-              data: IconThemeData(
-                color: fushiFloatingToolbarPalette(context).foreground,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: (actions as FushiShellHeaderActions).actions,
-              ),
-            ),
-          ),
-        ),
-      );
-    } else if (isGlassDesign(context) && actions is FushiShellHeaderActions) {
+    if (isGlassDesign(context) && actions is FushiShellHeaderActions) {
       // Apple：外壳动作组自带一层玻璃胶囊（[FushiToolbar]），放进悬浮胶囊里会
       // 叠出两圈边。直接把按钮排进胶囊，并告诉它们「已在胶囊组里」（不再各自
       // 带玻璃底）；放不下时横滑兜底。
@@ -790,10 +765,11 @@ class _FloatingActionsBody extends StatelessWidget {
         ),
       );
     } else if (actions is FushiShellHeaderActions) {
-      // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊、文字
-      // 动作画成同高的 tonal 胶囊按钮（[fushiFloatingHeaderActionGroups]）。
-      // 再套一层悬浮面就是「胶囊包胶囊」：两圈投影、组比页签胶囊高出 8、
-      // 文字按钮被关进组里（2026-10-06 用户截图「开始串流」）。
+      // MD3（M3E）：外壳动作组自己就把图标收进一枚 56 高的按钮组胶囊（与页签
+      // 胶囊同高同表面）、文字动作画成同高的 tonal 胶囊按钮
+      // （[fushiFloatingHeaderActionGroups]）。这里**不能**再套悬浮面，也不能
+      // 把全部按钮直接排进一颗悬浮面——前者是两圈胶囊、后者把「开始串流」
+      // 这类文字按钮关进图标组里（2026-10-06 用户两次截图「胶囊包胶囊」）。
       return actions;
     } else {
       content = actions;

@@ -28,20 +28,32 @@ class FushiHeaderLabelScope extends InheritedWidget {
   const FushiHeaderLabelScope({
     required this.expandLabels,
     required super.child,
+    this.pillHeight,
     super.key,
   });
 
   /// 本作用域内的带 [FushiIconButton.label] 按钮是否展开成图标+文字药丸。
   final bool expandLabels;
 
+  /// 展开药丸的最小高；null = 默认 40。M3E 悬浮页头里的文字动作是一颗与
+  /// 按钮组胶囊、页签胶囊同高（56）的独立 tonal 胶囊（见
+  /// `FushiFloatingTextAction`）。
+  final double? pillHeight;
+
   /// 就近作用域的展开开关；无祖先返回 null（由调用方回退整窗判定）。
   static bool? maybeOf(BuildContext context) => context
       .dependOnInheritedWidgetOfExactType<FushiHeaderLabelScope>()
       ?.expandLabels;
 
+  /// 就近作用域给的药丸高；无祖先或未指定为 null。
+  static double? pillHeightOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<FushiHeaderLabelScope>()
+      ?.pillHeight;
+
   @override
   bool updateShouldNotify(FushiHeaderLabelScope oldWidget) =>
-      expandLabels != oldWidget.expandLabels;
+      expandLabels != oldWidget.expandLabels ||
+      pillHeight != oldWidget.pillHeight;
 }
 
 /// BUG-1033：纯图标按钮气泡的悬停延迟。
@@ -470,7 +482,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
             onTap: _tapHandler,
             onTapDown: widget.onTapDown,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 40),
+              constraints: BoxConstraints(
+                minHeight: FushiHeaderLabelScope.pillHeightOf(context) ?? 40,
+              ),
               child: Padding(
                 padding: EdgeInsetsDirectional.only(
                   start: tokens.spacing.rowHorizontal - 4,

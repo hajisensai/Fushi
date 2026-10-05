@@ -31,6 +31,7 @@ Future<void> _pumpPanel(
   await tester.pumpWidget(
     _wrap(
       VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},

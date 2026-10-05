@@ -7249,6 +7249,12 @@ class AppModel with ChangeNotifier {
       dictRepo.updateDictionaryResultScrollIndex(
           result: result, newIndex: newIndex);
 
+  /// 从查词历史里移除一条（首页查词左栏行尾「⋯」菜单）。
+  void removeFromDictionaryHistory({required String searchTerm}) {
+    dictRepo.removeHistoryResult(searchTerm);
+    dictionaryEntriesNotifier.notifyListeners();
+  }
+
   Future<void> clearDictionaryHistory() async {
     await dictRepo.clearDictionaryHistory();
     dictionaryEntriesNotifier.notifyListeners();

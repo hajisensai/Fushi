@@ -127,6 +127,7 @@ void main() {
         width: 360,
         height: 600,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect rect) => anchor = rect,

@@ -48,6 +48,7 @@ Widget _wrap(Widget child) => MaterialApp(
 
 Widget _panel(VideoPlayerController controller, {required bool autoScroll}) =>
     VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},

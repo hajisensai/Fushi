@@ -7500,6 +7500,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required bool desktop,
     bool tonal = false,
     bool selected = false,
+    VideoM3eButtonTone tone = VideoM3eButtonTone.neutral,
     double? appleIconSize,
   }) {
     if (_appleChrome) {
@@ -7525,6 +7526,92 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       iconSize: extent * 0.54,
       tonal: tonal,
       selected: selected,
+      tone: tone,
+    );
+  }
+
+  /// 状态型按钮的 tonal 强调档（M3E「中性面 + 关键处 tonal 色块」）：面板 / 列表
+  /// 已打开、字幕已开 → secondary；当前句已收藏 → tertiary；其余中性。
+  VideoM3eButtonTone _videoControlItemTone(VideoControlItem item) {
+    if (!_m3eChrome) return VideoM3eButtonTone.neutral;
+    final _VideoSidePanelKind? panel = _videoSidePanel.value?.kind;
+    bool on;
+    switch (item) {
+      case VideoControlItem.subtitleList:
+        on = _subtitleListVisible.value;
+      case VideoControlItem.episodeList:
+        on = _episodeListVisible.value;
+      case VideoControlItem.chapterList:
+        on = panel == _VideoSidePanelKind.chapters;
+      case VideoControlItem.settings:
+        on = panel == _VideoSidePanelKind.settings;
+      case VideoControlItem.subtitleTrack:
+        {
+          final String? source = _currentSubtitleSource;
+          on = source != null &&
+              source.isNotEmpty &&
+              source != SubtitleSource.offSentinel;
+        }
+      case VideoControlItem.favoriteSentence:
+        {
+          final AudioCue? cue = _controller?.currentCue;
+          return cue != null && _isCueFavorited(cue)
+              ? VideoM3eButtonTone.tertiary
+              : VideoM3eButtonTone.neutral;
+        }
+      default:
+        on = false;
+    }
+    return on ? VideoM3eButtonTone.secondary : VideoM3eButtonTone.neutral;
+  }
+
+  /// 驱动 [_videoControlItemTone] 的状态源（面板 / 列表开关）。字幕源与收藏随页面
+  /// setState / 控制器通知重建。
+  late final Listenable _videoChromeToneListenable = Listenable.merge(
+    <Listenable>[_subtitleListVisible, _episodeListVisible, _videoSidePanel],
+  );
+
+  /// 倍速≠1.0 时倍速按钮换成显示数值的 secondary tonal 胶囊（M3E）。
+  Widget _m3eSpeedValueButton({
+    required VoidCallback onPressed,
+  }) {
+    final ColorScheme chrome =
+        videoM3eChromeScheme(Theme.of(context).colorScheme);
+    final double extent = _m3eButtonExtent;
+    final String label = _playbackSpeed == _playbackSpeed.roundToDouble()
+        ? '${_playbackSpeed.toStringAsFixed(1)}x'
+        : '${_playbackSpeed.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}x';
+    return FushiTooltip(
+      message: _videoControlItemTooltip(VideoControlItem.speed),
+      child: SizedBox(
+        height: extent,
+        child: Material(
+          color: chrome.secondaryContainer,
+          shape: const StadiumBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: extent * 0.3),
+              child: Center(
+                widthFactor: 1,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: chrome.onSecondaryContainer,
+                    fontSize: 14 * _videoUiScale * _controlsDensityScale,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -7956,16 +8043,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }) {
     return FushiTooltip(
       message: _videoControlItemTooltip(item),
-      child: _chromeIconButton(
-        icon: _videoControlItemIcon(item),
-        desktop: desktop,
-        // MD3 Expressive：上 / 下一集与底栏播放键连成一组（tonal 圆钮夹着主色宽
-        // 播放键，[_m3ePlayPauseButton]）；其余按钮的底色由所在浮动胶囊提供。
-        tonal:
-            item == VideoControlItem.previousEpisode ||
-            item == VideoControlItem.nextEpisode,
-        onPressed: () =>
-            _activateVideoControlItem(item, controller, sourceSlot: slot),
+      child: ListenableBuilder(
+        listenable: _videoChromeToneListenable,
+        builder: (BuildContext _, Widget? __) => _chromeIconButton(
+          icon: _videoControlItemIcon(item),
+          desktop: desktop,
+          // MD3 Expressive：上 / 下一集与底栏播放键连成一组（tonal 圆钮夹着主色宽
+          // 播放键，[_m3ePlayPauseButton]）；其余按钮的底色由所在浮动胶囊提供。
+          tonal:
+              item == VideoControlItem.previousEpisode ||
+              item == VideoControlItem.nextEpisode,
+          tone: _videoControlItemTone(item),
+          onPressed: () =>
+              _activateVideoControlItem(item, controller, sourceSlot: slot),
+        ),
       ),
     );
   }
@@ -8123,15 +8214,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : null;
       final Widget button = FushiTooltip(
         message: _videoControlItemTooltip(item),
-        child: _chromeIconButton(
-          icon: _videoControlItemIcon(item),
-          desktop: desktop,
-          // M3E：按钮组整体是一枚浮动胶囊，组内按钮不再各带 tonal 圆底。
-          onPressed: () => _activateVideoControlItem(
-            item,
-            controller,
-            popoverLink: popoverLink,
-            sourceSlot: slot,
+        child: ListenableBuilder(
+          listenable: _videoChromeToneListenable,
+          builder: (BuildContext _, Widget? __) => _chromeIconButton(
+            icon: _videoControlItemIcon(item),
+            desktop: desktop,
+            // M3E：按钮组整体是一枚浮动胶囊；当前打开的面板对应的按钮亮
+            // secondary 选中色块，其余中性。
+            tone: _videoControlItemTone(item),
+            onPressed: () => _activateVideoControlItem(
+              item,
+              controller,
+              popoverLink: popoverLink,
+              sourceSlot: slot,
+            ),
           ),
         ),
       );
@@ -8637,7 +8733,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_m3eChrome && player != null) {
       // MD3 Expressive：等宽数字（跳秒不左右抖）、中性前景，点按切「已播 / 剩余」
       // （偏好 [_videoTimeShowsRemaining]，见 [_toggleVideoTimeRemaining]）。
-      return ValueListenableBuilder<bool>(
+      // 时间读数是一枚 secondary tonal 小胶囊（半透明，M3E 关键处色块）；墨水屏
+      // 保持纯白字。
+      final bool eink = isEinkTheme(context);
+      final ColorScheme chrome =
+          videoM3eChromeScheme(Theme.of(context).colorScheme);
+      final double k = _videoUiScale * _controlsDensityScale;
+      final Widget indicator = ValueListenableBuilder<bool>(
         valueListenable: _videoTimeShowsRemaining,
         builder: (BuildContext _, bool remaining, __) =>
             VideoM3ePositionIndicator(
@@ -8647,11 +8749,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               onToggle: _toggleVideoTimeRemaining,
               style: TextStyle(
                 height: 1.0,
-                fontSize: 13.0 * _videoUiScale * _controlsDensityScale,
-                fontWeight: FontWeight.w500,
-                color: videoChromeNeutralForeground,
+                fontSize: 13.0 * k,
+                fontWeight: FontWeight.w600,
+                color: eink
+                    ? videoChromeNeutralForeground
+                    : chrome.onSecondaryContainer,
               ),
             ),
+      );
+      if (eink) return indicator;
+      return Padding(
+        padding: EdgeInsets.symmetric(horizontal: 4 * k),
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: chrome.secondaryContainer.withValues(alpha: 0.6),
+            shape: const StadiumBorder(),
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 6 * k, vertical: 2 * k),
+            child: indicator,
+          ),
+        ),
       );
     }
     return desktop
@@ -8792,14 +8910,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final LayerLink? popoverLink = button == VideoControlButton.speed
         ? _controlPopoverLinkFor(slot, VideoControlItem.speed)
         : null;
-    final Widget controlButton = _chromeIconButton(
-      icon: _videoControlButtonIcon(button),
-      desktop: desktop,
-      onPressed: () => _activateVideoControlButton(
-        button,
-        popoverLink: popoverLink,
-        sourceSlot: slot,
-      ),
+    void onPressed() => _activateVideoControlButton(
+          button,
+          popoverLink: popoverLink,
+          sourceSlot: slot,
+        );
+    final VideoControlItem? item = VideoControlItem.fromLegacy(button);
+    final Widget controlButton = ListenableBuilder(
+      listenable: _videoChromeToneListenable,
+      builder: (BuildContext _, Widget? __) {
+        // M3E：倍速≠1.0 时直接显示数值 tonal 胶囊。
+        if (_m3eChrome &&
+            button == VideoControlButton.speed &&
+            (_playbackSpeed - 1.0).abs() > 0.001) {
+          return _m3eSpeedValueButton(onPressed: onPressed);
+        }
+        return _chromeIconButton(
+          icon: _videoControlButtonIcon(button),
+          desktop: desktop,
+          tone: item == null
+              ? VideoM3eButtonTone.neutral
+              : _videoControlItemTone(item),
+          onPressed: onPressed,
+        );
+      },
     );
     if (popoverLink == null) return controlButton;
     return _controlPopoverAnchor(

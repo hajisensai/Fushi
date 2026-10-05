@@ -4,7 +4,8 @@ import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
+import 'package:flutter/services.dart'
+    show Clipboard, KeyDownEvent, KeyEvent;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -102,6 +103,9 @@ enum DictionaryFocusIntent {
 
 /// 搜索区建议面板最多列几条最近搜索（MD3 chip）。
 const int _kRecentSearchLimit = 8;
+
+/// M3E 最近搜索 chip 高度（suggestion chip 32）。
+const double _kRecentChipHeight = 32;
 
 /// Apple 建议面板是 inset grouped 行，比 chip 占高，只列这么多条。
 const int _kRecentSearchAppleRows = 5;
@@ -733,16 +737,34 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         padding: EdgeInsets.zero,
         borderRadius: _resultCardRadius(),
         pressScale: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: isGlassDesign(context)
-                ? CupertinoIcons.search
-                : Icons.manage_search,
-            message: t.floating_ball_lookup_hint,
-          ),
-        ),
+        child: isGlassDesign(context) || isEinkTheme(context)
+            ? Center(
+                child: FushiPlaceholderMessage(
+                  icon: isGlassDesign(context)
+                      ? CupertinoIcons.search
+                      : Icons.manage_search,
+                  message: t.floating_ball_lookup_hint,
+                ),
+              )
+            : _LookupIdleState(
+                recents: _recentSearches().take(6).toList(growable: false),
+                onLookupClipboard: _lookupClipboard,
+                onPickRecent: _search,
+              ),
       ),
     );
+  }
+
+  /// 空态「粘贴剪贴板查词」：读剪贴板纯文本填进搜索框并查（与搜索框回车同路径）。
+  Future<void> _lookupClipboard() async {
+    final String text = (await Clipboard.getData('text/plain'))?.text ?? '';
+    if (!mounted) return;
+    final String trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      FushiToast.show(msg: t.floating_ball_clipboard_empty);
+      return;
+    }
+    _search(trimmed);
   }
 
   void _handleDictionaryHomeDrop(List<String> paths, Offset globalPosition) {
@@ -859,7 +881,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            child: FushiSearchField(
+            child: _SearchFocusLift(
+              enabled: !glass && !isEinkTheme(context),
+              focused: _searchRegionFocused,
+              child: FushiSearchField(
               fieldKey: const ValueKey<String>('home_dictionary_search_field'),
               clearButtonKey: const ValueKey<String>(
                 'home_dictionary_search_clear_button',
@@ -900,6 +925,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                         onTap: appModel.showDictionaryMenu,
                       ),
                     ],
+              ),
             ),
           ),
           // 结构恒定：AnimatedSize 一直在，只换里面是「取消」还是零尺寸。
@@ -1302,6 +1328,48 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
               reading.isNotEmpty && reading != word && reading != searchTerm;
           final dictCount =
               result.entries.map((e) => e.dictionaryName).toSet().length;
+          final bool rowSelected =
+              _hasActiveQuery && _lastQuery == searchTerm;
+          void openRow() {
+            _controller.text = searchTerm;
+            _controller.selection =
+                TextSelection.collapsed(offset: searchTerm.length);
+            _showCachedResult(result);
+          }
+
+          if (!glass) {
+            // M3E：titleMedium 词 + bodySmall 读音，行尾 tonal 计数
+            // 胶囊；没有箭头（整行可点，状态层 / 选中 secondaryContainer + 形变由
+            // 分段外壳负责）；悬停 / 聚焦时行尾露出「⋯」（收藏 / 移出历史）。
+            return FushiGroupedListItem(
+              index: row,
+              count: count,
+              margin: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              selected: rowSelected,
+              onTap: openRow,
+              child: _LookupHistoryRow(
+                term: searchTerm.replaceAll('\n', ' '),
+                subtitle: hasWordInfo || hasReading
+                    ? <String>[
+                        if (hasWordInfo) word,
+                        if (hasReading) reading,
+                      ].join('  ')
+                    : null,
+                dictionaryCount: dictCount,
+                selected: rowSelected,
+                onFavorite: () => unawaited(
+                  onFavoriteEntry(<String, String>{
+                    'expression': word.isNotEmpty ? word : searchTerm,
+                    'reading': reading,
+                    'glossary': first.plainMeaning,
+                  }),
+                ),
+                onRemove: () => appModel.removeFromDictionaryHistory(
+                  searchTerm: result.searchTerm,
+                ),
+              ),
+            );
+          }
           // 整段历史读作一个分组，而不是一摞各自独立的圆角卡（与词典管理页的
           // 词典列表同口径）：MD3 分段分组 / Apple inset grouped，见共享外壳
           // [FushiGroupedListItem]。宽屏主从下当前右栏显示的那条标为选中。
@@ -2041,6 +2109,385 @@ class HomeDictionaryClearHistoryDialog extends StatelessWidget {
               onPressed: onConfirm,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// 搜索栏聚焦时的 M3E 抬升：spring 微放大 + level2 投影；失焦落回。墨水屏 / 减弱
+/// 动态效果下瞬间到位（[fushiMotionDuration] 归零）。Apple 设计系统不套（enabled=false
+/// 时原样返回 child，不多一层）。
+class _SearchFocusLift extends StatelessWidget {
+  const _SearchFocusLift({
+    required this.enabled,
+    required this.focused,
+    required this.child,
+  });
+
+  final bool enabled;
+  final bool focused;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!enabled) return child;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return AnimatedScale(
+      scale: focused ? 1.012 : 1.0,
+      duration: duration,
+      curve: FushiSpringCurve.spatial,
+      child: AnimatedContainer(
+        duration: duration,
+        curve: FushiMotion.standard,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: focused
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: cs.shadow.withValues(alpha: 0.18),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                  BoxShadow(
+                    color: cs.shadow.withValues(alpha: 0.10),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : const <BoxShadow>[],
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// M3E 最近搜索 chip：32 高、8 圆角、outlineVariant 描边的 suggestion chip。整枚可点
+/// （查这个词）；× 只在悬停或焦点落在 chip 内时出现，键盘可 Tab 到 × 删除这一条。
+class _RecentSearchChip extends StatefulWidget {
+  const _RecentSearchChip({
+    required this.label,
+    required this.onTap,
+    this.onDeleted,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  /// null = 纯快捷入口（空态里的最近词），不出 ×。
+  final VoidCallback? onDeleted;
+
+  @override
+  State<_RecentSearchChip> createState() => _RecentSearchChipState();
+}
+
+class _RecentSearchChipState extends State<_RecentSearchChip> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final TextTheme tt = Theme.of(context).textTheme;
+    final bool reveal = widget.onDeleted != null && (_hovered || _focused);
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    const BorderRadius radius = BorderRadius.all(Radius.circular(8));
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: (bool focused) {
+        if (focused != _focused) setState(() => _focused = focused);
+      },
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: BorderSide(color: cs.outlineVariant),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: radius,
+            child: SizedBox(
+              height: _kRecentChipHeight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const SizedBox(width: 12),
+                  FushiIcon(
+                    Icons.history,
+                    size: 18,
+                    color: cs.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: Text(
+                      widget.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.labelLarge?.copyWith(color: cs.onSurface),
+                    ),
+                  ),
+                  // 悬停或焦点落在 chip 上才长出 ×（AnimatedSize 弹开）；chip 持焦时
+                  // × 已显形，Tab 一下即可落到 × 上删除这一条。
+                  AnimatedSize(
+                    duration: duration,
+                    curve: FushiSpringCurve.spatial,
+                    child: AnimatedOpacity(
+                      duration: duration,
+                      curve: FushiMotion.standard,
+                      opacity: reveal ? 1 : 0,
+                      child: reveal
+                          ? Padding(
+                              padding: const EdgeInsetsDirectional.only(
+                                start: 2,
+                                end: 2,
+                              ),
+                              child: FushiIconButton(
+                                tooltip: t.lookup_history_remove,
+                                icon: Icons.close,
+                                size: 16,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 28,
+                                  height: 28,
+                                ),
+                                onTap: widget.onDeleted,
+                              ),
+                            )
+                          : const SizedBox(width: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// M3E 查词历史行：titleMedium 词 + bodySmall 读音、行尾
+/// tonal 计数胶囊；悬停 / 焦点时露出「⋯」菜单（收藏 / 移出历史）。行点击、状态层、
+/// 选中色块与形变由外层 [FushiGroupedListItem] 负责。
+class _LookupHistoryRow extends StatefulWidget {
+  const _LookupHistoryRow({
+    required this.term,
+    required this.subtitle,
+    required this.dictionaryCount,
+    required this.selected,
+    required this.onFavorite,
+    required this.onRemove,
+  });
+
+  final String term;
+  final String? subtitle;
+  final int dictionaryCount;
+  final bool selected;
+  final VoidCallback onFavorite;
+  final VoidCallback onRemove;
+
+  @override
+  State<_LookupHistoryRow> createState() => _LookupHistoryRowState();
+}
+
+class _LookupHistoryRowState extends State<_LookupHistoryRow> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final TextTheme tt = Theme.of(context).textTheme;
+    final TextStyle? titleBase = tt.titleMedium;
+    final TextStyle? subtitleBase = tt.bodySmall;
+    final bool reveal = _hovered || _focused;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: FushiListItem(
+        // 只给字号 / 字重，不写死颜色：选中行的未着色文字由分段外壳切到
+        // onSecondaryContainer。
+        title: Text(
+          widget.term,
+          style: TextStyle(
+            fontSize: titleBase?.fontSize,
+            fontWeight: titleBase?.fontWeight,
+            height: titleBase?.height,
+            letterSpacing: titleBase?.letterSpacing,
+          ),
+        ),
+        subtitle: widget.subtitle == null
+            ? null
+            : Text(
+                widget.subtitle!,
+                style: TextStyle(
+                  fontSize: subtitleBase?.fontSize,
+                  height: subtitleBase?.height,
+                  letterSpacing: subtitleBase?.letterSpacing,
+                ),
+              ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              constraints: const BoxConstraints(minWidth: 24),
+              height: 20,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              alignment: Alignment.center,
+              decoration: ShapeDecoration(
+                shape: const StadiumBorder(),
+                color: widget.selected ? cs.surface : cs.secondaryContainer,
+              ),
+              child: Text(
+                '${widget.dictionaryCount}',
+                style: tt.labelSmall?.copyWith(
+                  color: widget.selected
+                      ? cs.onSurface
+                      : cs.onSecondaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            // 「⋯」始终挂在树里（菜单打开期间按钮不能被卸载，否则选中项会被
+            // PopupMenuButton 因 !mounted 丢弃），只按悬停 / 焦点换透明度；藏起来时
+            // 仍可 Tab 到，焦点进来即显形。
+            Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              onFocusChange: (bool focused) {
+                if (focused != _focused) setState(() => _focused = focused);
+              },
+              child: AnimatedOpacity(
+                duration: duration,
+                curve: FushiMotion.standard,
+                opacity: reveal ? 1 : 0,
+                child: FushiOverflowMenu<String>(
+                  tooltip: t.lookup_history_more,
+                  icon: Icons.more_horiz,
+                  iconSize: 20,
+                  items: <PopupMenuEntry<String>>[
+                    PopupMenuItem<String>(
+                      value: 'favorite',
+                      child: Text(t.lookup_history_favorite),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'remove',
+                      child: Text(t.lookup_history_remove),
+                    ),
+                  ],
+                  onSelected: (String value) {
+                    if (value == 'favorite') {
+                      widget.onFavorite();
+                    } else if (value == 'remove') {
+                      widget.onRemove();
+                    }
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 宽屏右栏还没有查询时的 M3E 空态：花形色块图标弹入、标题 + 提示、「粘贴剪贴板
+/// 查词」tonal 按钮，以及几个最近词 chip 快捷入口。各块错峰进场。
+class _LookupIdleState extends StatelessWidget {
+  const _LookupIdleState({
+    required this.recents,
+    required this.onLookupClipboard,
+    required this.onPickRecent,
+  });
+
+  final List<String> recents;
+  final Future<void> Function() onLookupClipboard;
+  final void Function(String term) onPickRecent;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final TextTheme tt = Theme.of(context).textTheme;
+    final List<Widget> blocks = <Widget>[
+      SizedBox.square(
+        dimension: 112,
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            color: cs.primaryContainer,
+            shape: fushiLeadingShapeBorder(FushiLeadingShape.flower),
+          ),
+          child: FushiIcon(
+            Icons.manage_search,
+            size: 48,
+            color: cs.onPrimaryContainer,
+          ),
+        ),
+      ),
+      const SizedBox(height: 24),
+      Text(
+        t.lookup_idle_title,
+        textAlign: TextAlign.center,
+        style: tt.headlineSmall?.copyWith(
+          color: cs.onSurface,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      const SizedBox(height: 8),
+      ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Text(
+          t.lookup_idle_hint,
+          textAlign: TextAlign.center,
+          style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+        ),
+      ),
+      const SizedBox(height: 24),
+      FushiFilledButton.tonalIcon(
+        key: const ValueKey<String>('home_dictionary_idle_clipboard'),
+        onPressed: () => unawaited(onLookupClipboard()),
+        icon: const FushiIcon(Icons.content_paste, size: 18),
+        label: Text(t.floating_ball_action_clipboard),
+      ),
+      if (recents.isNotEmpty) ...<Widget>[
+        const SizedBox(height: 24),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 480),
+          child: Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: <Widget>[
+              for (final String term in recents)
+                _RecentSearchChip(
+                  label: term.replaceAll('\n', ' '),
+                  onTap: () => onPickRecent(term),
+                ),
+            ],
+          ),
+        ),
+      ],
+    ];
+    return FushiEntranceScope(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int i = 0; i < blocks.length; i++)
+                FushiStaggeredEntrance(index: i, child: blocks[i]),
+            ],
+          ),
         ),
       ),
     );

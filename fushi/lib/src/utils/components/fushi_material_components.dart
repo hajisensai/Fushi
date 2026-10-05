@@ -40,6 +40,8 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -3726,6 +3728,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
                           ? fushiFloatingHeaderActionGroups(
                               resolvedItems,
                               _buildActionRow,
+                              expandLabels: expandLabels,
                             )
                           : _buildActionRow(resolvedItems),
                     ),
@@ -3781,11 +3784,15 @@ double _estimateHeaderActionsWidth(
 /// 页头动作里自带一枚按钮胶囊的「文字动作」（图标 + 文字的 outlined / text /
 /// filled / split 按钮）。它们本身就是胶囊，再包进按钮组胶囊就是「胶囊包胶囊」
 /// （2026-10-06 用户截图：游戏库「开始串流」）。
-bool fushiIsStandaloneHeaderAction(Widget item) =>
+///
+/// [expandLabels] 时带 [FushiIconButton.label] 的图标按钮也展开成「图标 + 文字」
+/// 的 tonal 药丸（如统计中心「重置时刻」），同样算文字动作。
+bool fushiIsStandaloneHeaderAction(Widget item, {bool expandLabels = false}) =>
     item is FushiOutlinedButton ||
     item is FushiTextButton ||
     item is FushiFilledButton ||
-    item is FushiSplitButton;
+    item is FushiSplitButton ||
+    (expandLabels && item is FushiIconButton && item.label != null);
 
 /// M3E 悬浮页头的动作区：连续的图标动作收进一枚按钮组胶囊
 /// （[FushiPageChromeCapsule]，56 高），文字动作（[fushiIsStandaloneHeaderAction]）
@@ -3793,8 +3800,9 @@ bool fushiIsStandaloneHeaderAction(Widget item) =>
 /// 与按钮组并排、间距 8。原顺序保留：动作被切成「图标段 / 文字动作」交替的几段。
 Widget fushiFloatingHeaderActionGroups(
   List<Widget> items,
-  Widget Function(List<Widget> icons) iconGroup,
-) {
+  Widget Function(List<Widget> icons) iconGroup, {
+  bool expandLabels = false,
+}) {
   final List<Widget> segments = <Widget>[];
   List<Widget> run = <Widget>[];
   void flushRun() {
@@ -3804,7 +3812,7 @@ Widget fushiFloatingHeaderActionGroups(
   }
 
   for (final Widget item in items) {
-    if (fushiIsStandaloneHeaderAction(item)) {
+    if (fushiIsStandaloneHeaderAction(item, expandLabels: expandLabels)) {
       flushRun();
       segments.add(FushiFloatingTextAction(child: item));
     } else {
@@ -3871,6 +3879,21 @@ class FushiFloatingTextAction extends StatelessWidget {
     );
     ButtonStyle over(ButtonStyle? base) =>
         floating.merge(base ?? const ButtonStyle());
+    if (child is FushiIconButton) {
+      // 展开成药丸的 [FushiIconButton]：药丸自己就是 tonal 胶囊，这里只把它
+      // 撑到与按钮组同高、补上悬浮投影；不再外包任何胶囊。
+      return DecoratedBox(
+        decoration: fushiFloatingPillDecoration(
+          context,
+          color: eink ? Colors.transparent : cs.secondaryContainer,
+        ),
+        child: FushiHeaderLabelScope(
+          expandLabels: true,
+          pillHeight: kFushiPageChromeExtent,
+          child: child,
+        ),
+      );
+    }
     return Theme(
       data: theme.copyWith(
         outlinedButtonTheme: OutlinedButtonThemeData(
