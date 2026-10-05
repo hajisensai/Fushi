@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
@@ -155,19 +156,17 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       debugLabel: 'manga-import-dialog',
       onDrop: _handleDialogDrop,
       child: ImportDialogFrame(
-        leadingIcon: Icons.auto_stories_outlined,
+        leadingIcon: FushiIcons.books,
         title: t.manga_import_action,
         body: _buildForm(),
         actions: <Widget>[
-          adaptiveDialogAction(
-            context: context,
+          FushiDialogAction(
+            label: t.manga_ocr_wizard_title,
             onPressed: importing ? null : _openOcrWizard,
-            child: Text(t.manga_ocr_wizard_title),
           ),
-          adaptiveDialogAction(
-            context: context,
+          FushiDialogAction(
+            label: t.dialog_cancel,
             onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
           ),
           buildImportAction(context, onImport: _doImport),
         ],
@@ -207,19 +206,19 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     return FushiFilePickerRow(
       title: t.manga_import_pick_file,
       subtitle: _pathName,
-      icon: Icons.auto_stories_outlined,
+      icon: FushiIcons.books,
       onTap: _pickFile,
       actions: <Widget>[
         // 漫画载体可以是**文件**（.cbz/.zip/.mokuro）也可以是**目录**（一卷页图），
         // 两种选择器在系统层是两个不同的对话框，故并列两个入口而非合成一个。
         FushiIconButton(
-          icon: Icons.folder_open_outlined,
+          icon: FushiIcons.folderOpen,
           tooltip: t.manga_import_pick_folder,
           isWideTapArea: true,
           onTap: _pickFolder,
         ),
         FushiIconButton(
-          icon: Icons.insert_drive_file_outlined,
+          icon: FushiIcons.file,
           tooltip: t.manga_import_pick_file,
           isWideTapArea: true,
           onTap: _pickFile,
