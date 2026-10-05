@@ -1,8 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -215,50 +216,43 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
     final String summary = totalMs > 0
         ? '${formatStatChars(totalChars)} · ${formatStatTime(totalMs)}'
         : formatStatChars(totalChars);
+    // 2026-10 统计中心重设计：头部与页面同一套 [StatSheetHeader]，每个来源节是
+    // 一张 [StatSectionCard]（图标 + 来源名 + 小计），各节错峰进场。
+    final List<Widget> sections = <Widget>[
+      for (final (String label, IconData icon, String kind)
+          in <(String, IconData, String)>[
+        (t.home_filter_read, Icons.menu_book_outlined, kActivityMediaBook),
+        (t.home_filter_watch, Icons.movie_outlined, kActivityMediaVideo),
+        (t.home_filter_game, Icons.sports_esports_outlined, kActivityMediaGame),
+      ])
+        if (_section(context, tokens, label, icon, kind) case final Widget w) w,
+    ];
     return SafeArea(
-      child: SingleChildScrollView(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(widget.periodLabel, style: tokens.type.sectionLabel),
-            SizedBox(height: tokens.spacing.gap / 2),
-            Text(summary, style: tokens.type.metadata),
-            ..._section(
-              context,
-              tokens,
-              t.home_filter_read,
-              Icons.menu_book,
-              kActivityMediaBook,
-            ),
-            ..._section(
-              context,
-              tokens,
-              t.home_filter_watch,
-              Icons.movie,
-              kActivityMediaVideo,
-            ),
-            ..._section(
-              context,
-              tokens,
-              t.home_filter_game,
-              Icons.videogame_asset,
-              kActivityMediaGame,
-            ),
-            if (_entries.isEmpty) ...<Widget>[
-              SizedBox(height: tokens.spacing.card),
-              Text(t.stat_detail_empty, style: tokens.type.metadata),
+      child: FushiEntranceScope(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              StatSheetHeader(title: widget.periodLabel, subtitle: summary),
+              for (int i = 0; i < sections.length; i++)
+                FushiStaggeredEntrance(index: i + 1, child: sections[i]),
+              if (_entries.isEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.card),
+                Text(t.stat_detail_empty, style: tokens.type.metadata),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 
-  /// 一个来源节：节头 → 合集组（组头名在左 + 组小计在右，组间按小计时长倒序）
-  /// → 组内条目按时长倒序 → 未分组条目殿后（有组时加「未分组」头）。
-  List<Widget> _section(
+  /// 一个来源节（一张卡，无条目时 null）：卡头 → 合集组（组头名在左 + 组小计
+  /// 在右，组间按小计时长倒序）→ 组内条目按时长倒序 → 未分组条目殿后（有组时
+  /// 加「未分组」头）。
+  Widget? _section(
     BuildContext context,
     FushiDesignTokens tokens,
     String label,
@@ -267,7 +261,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
   ) {
     final List<_PeriodEntry> rows =
         _entries.where((_PeriodEntry e) => e.mediaKind == mediaKind).toList();
-    if (rows.isEmpty) return const <Widget>[];
+    if (rows.isEmpty) return null;
     final Map<String, List<_PeriodEntry>> byCollection =
         <String, List<_PeriodEntry>>{};
     final List<_PeriodEntry> ungrouped = <_PeriodEntry>[];
@@ -288,26 +282,29 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
       g.value.sort((a, b) => b.ms.compareTo(a.ms));
     }
     ungrouped.sort((a, b) => b.ms.compareTo(a.ms));
-    return <Widget>[
-      SizedBox(height: tokens.spacing.card),
-      Row(
+    final int totalMs = groupMs(rows);
+    return StatSectionCard(
+      icon: icon,
+      title: label,
+      subtitle: totalMs > 0 ? formatStatTime(totalMs) : null,
+      margin: EdgeInsets.only(top: tokens.spacing.card),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiIcon(icon, size: 16, color: tokens.type.metadata.color),
-          SizedBox(width: tokens.spacing.gap / 2),
-          Text(label, style: tokens.type.metadata),
+          for (final MapEntry<String, List<_PeriodEntry>> g
+              in groups) ...<Widget>[
+            _groupHeader(tokens, g.key, groupMs(g.value)),
+            for (final _PeriodEntry e in g.value) _entryRow(context, tokens, e),
+          ],
+          if (ungrouped.isNotEmpty) ...<Widget>[
+            if (groups.isNotEmpty)
+              _groupHeader(tokens, t.stat_detail_ungrouped, groupMs(ungrouped)),
+            for (final _PeriodEntry e in ungrouped)
+              _entryRow(context, tokens, e),
+          ],
         ],
       ),
-      SizedBox(height: tokens.spacing.gap / 2),
-      for (final MapEntry<String, List<_PeriodEntry>> g in groups) ...<Widget>[
-        _groupHeader(tokens, g.key, groupMs(g.value)),
-        for (final _PeriodEntry e in g.value) _entryRow(context, tokens, e),
-      ],
-      if (ungrouped.isNotEmpty) ...<Widget>[
-        if (groups.isNotEmpty)
-          _groupHeader(tokens, t.stat_detail_ungrouped, groupMs(ungrouped)),
-        for (final _PeriodEntry e in ungrouped) _entryRow(context, tokens, e),
-      ],
-    ];
+    );
   }
 
   Widget _groupHeader(FushiDesignTokens tokens, String name, int ms) {
