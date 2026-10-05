@@ -1251,6 +1251,10 @@ window.__fushiInstallShell = function(C) {
     }
   },
   clearImageLateAnchor: function() {
+    // 明确导航替换语义落点；分页的旧几何回调不能再把用户拉回去。
+    if (typeof this._invalidateGeometryReanchor === 'function') {
+      this._invalidateGeometryReanchor();
+    }
     this.__imgReanchorProgress = null;
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
@@ -1283,6 +1287,13 @@ window.__fushiInstallShell = function(C) {
     return typeof this.scrollToChapterEnd === 'function';
   },
   reapplyImageLateAnchor: function() {
+    // 迟到图片按已登记目标重新定位；旧的几何采样锚不再拥有当前位置。
+    if ((this.__imgReanchorTarget || this.__imgReanchorFragment ||
+        (typeof this.__imgReanchorCharOffset === 'number' && this.__imgReanchorCharOffset > 0) ||
+        typeof this.__imgReanchorProgress === 'number') &&
+        typeof this._invalidateGeometryReanchor === 'function') {
+      this._invalidateGeometryReanchor();
+    }
     // BUG-2744：程序化揭示的目标——对齐回这个目标本身（分页落到它起始边所在页；连续按
     // 跟读同一套安全带判据滚回可见），绝不回退到开章落点。
     var target = this.__imgReanchorTarget;
@@ -2968,6 +2979,7 @@ $kSentenceAudioRubyGapJs
     }, 16);
   },
   restoreProgress: async function(progress) {
+    this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
     // TODO-1349（续）：往前翻到章末(>=0.99)先强制 load 仍 lazy 的尾图（打破「尾图离屏永不
@@ -2991,6 +3003,7 @@ $kSentenceAudioRubyGapJs
   // restoreProgress/scrollToProgressPaged（alignToPage 取整落相邻页）。charOffset<0
   // （旧存档无精确锚）回退章首；调用方在 initialCharOffset<0 时改走 restoreProgress。
   restoreToCharOffset: async function(charOffset) {
+    this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
     // BUG-492 (TODO-1053 Bug A) 越界兜底：旧脏收藏 charAnchor 属于相邻错章，恢复加载
@@ -3029,6 +3042,7 @@ $kSentenceAudioRubyGapJs
     return true;
   },
   jumpToFragment: async function(fragment) {
+    this._invalidateGeometryReanchor();
     await document.fonts.ready;
     var context = this.getScrollContext();
     if (!this.alignToFragmentTarget(fragment)) {
@@ -3044,6 +3058,8 @@ $kSentenceAudioRubyGapJs
     return true;
   },
   paginate: function(direction) {
+    // 相对翻页先落定自己的几何补偿；reflow 若暂时把 scroll 归零，不能从章首翻。
+    this._settleGeometryReanchor();
     // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
     // 拽回恢复锚（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
     this.clearImageLateAnchor();
@@ -3216,33 +3232,72 @@ $kSentenceAudioRubyGapJs
     }
     this.setPagePosition(context, aligned);
   },
+  // 几何变化保留“读到哪里”，直到明确导航或样式变更。不能在每个已落定的
+  // inset 事件重新采页首：临时安全区往返会先把锚量化到临时页首，
+  // 再把临时页首量化回原排版，形成每轮退一页。字符锚和原逻辑页必须一起保留；
+  // 只保其中一个仍会被 scrollToCharOffset 的 ±1 页 hint 再次量化。
+  _captureGeometryReanchorAnchor: function() {
+    if (this._geometryReanchorAnchor) return this._geometryReanchorAnchor;
+    var charOffset = this.getFirstVisibleCharOffset();
+    if (charOffset < 0) return null;
+    var context = this.getScrollContext();
+    var scroll = this.getPagePosition(context);
+    // 尾部插图页的扫描锚可能等于全文字数，没有对应文本节点；保留其页面/章尾语义。
+    var hasTextAnchor = charOffset <= 0 || this.charOffsetInRange(charOffset);
+    this._geometryReanchorAnchor = {
+      charOffset: charOffset,
+      hasTextAnchor: hasTextAnchor,
+      atEnd: !hasTextAnchor && this.isAtEnd(),
+      page: context.pageSize > 0 ? Math.round(scroll / context.pageSize) : null,
+      scroll: scroll
+    };
+    return this._geometryReanchorAnchor;
+  },
+  _invalidateGeometryReanchor: function() {
+    this._geometryReanchorAnchor = null;
+    // token 与长期锚分开：取消旧回调只能清自己拥有的 pending，不能清样式重锚的旗。
+    if (this._geometryReanchorToken) {
+      this._geometryReanchorToken = null;
+      this._setReanchorPending(false);
+    }
+  },
+  _settleGeometryReanchor: function() {
+    var token = this._geometryReanchorToken;
+    if (!token) return;
+    var anchor = token.anchor;
+    try {
+      var context = this.getScrollContext();
+      var hint = anchor.page !== null && context.pageSize > 0
+        ? anchor.page * context.pageSize : anchor.scroll;
+      if (!anchor.hasTextAnchor) {
+        this.setPagePosition(context,
+          anchor.atEnd ? this.contentLastPageScroll(context) : hint);
+      } else {
+        // 保留 BUG-2205 防跳字校验，不能靠强留页号把锚字跳过去。
+        this.scrollToCharOffset(anchor.charOffset, hint);
+      }
+    } finally {
+      if (this._geometryReanchorToken === token) {
+        this._geometryReanchorToken = null;
+        this._setReanchorPending(false);
+      }
+    }
+  },
+  _queueGeometryReanchor: function(anchor) {
+    if (!anchor) return;
+    var token = { anchor: anchor };
+    this._geometryReanchorToken = token;
+    this._setReanchorPending(true);
+    var self = this;
+    this._reanchorFrame(function() {
+      if (self._geometryReanchorToken === token) self._settleGeometryReanchor();
+    });
+  },
   setChromeInsets: function(topPx, bottomPx) {
-    // BUG-2652：inset 与图片盒都没变 = 没有重排可补偿，见 _chromeInsetsUnchanged。
+    // 无几何变化时不采样、不重锚（BUG-2652）。已有回调负责串行重排，期间不读瞬态页首。
     if (this._chromeInsetsUnchanged(topPx, bottomPx)) return;
-    // Re-anchoring (after a chrome-inset OR a page-size change) is serialised
-    // through one shared in-flight flag, _reanchorPending. A layout change
-    // transiently resets scrollTop to 0; if a re-anchor rAF is already pending
-    // (from this handler or updatePageSize), reading a fresh char offset now
-    // would sample that reset as the chapter start and snap there. So when one
-    // is in flight we only apply the new CSS and let the pending rAF restore
-    // position once the layout settles. This serialises without masking via a
-    // delay, and covers both rapid toggles and toggle/resize interleaving.
-    // (HBK-REG-004)
     var inFlight = this._reanchorPending === true;
-    var charOffset = inFlight ? -1 : this.getFirstVisibleCharOffset();
-    var contextBefore = inFlight ? null : this.getScrollContext();
-    var scrollBefore = contextBefore ? this.getPagePosition(contextBefore) : 0;
-    // hintScroll is interpreted by scrollToCharOffset using the *current*
-    // pageSize. Chrome inset changes can change that pitch (especially
-    // vertical pagination, where top/bottom safe-area insets change the
-    // column height). Carrying raw pixels across the reflow therefore changes
-    // the implied page number: e.g. page 40 at an 800px pitch becomes page 39
-    // when the new pitch is 824px. Android lock/unlock can toggle those system
-    // insets, turning that mismatch into a one-page-back ratchet. Preserve the
-    // old logical page number and rematerialize its hint in the new pitch.
-    var hintPageBefore = contextBefore && contextBefore.pageSize > 0
-      ? Math.round(scrollBefore / contextBefore.pageSize)
-      : null;
+    var anchor = inFlight ? null : this._captureGeometryReanchorAnchor();
     document.documentElement.style.setProperty('--chrome-top-inset', topPx + 'px');
     document.documentElement.style.setProperty('--chrome-bottom-inset', bottomPx + 'px');
     // Chrome insets participate in the paginated column-width/pageStep CSS.
@@ -3260,20 +3315,8 @@ $kSentenceAudioRubyGapJs
     // of the previous page, the middle on its own page, a strip at the top of
     // the next. Re-derive it here, before the re-anchor samples the new layout.
     this._resetImageMaxVars();
-    if (inFlight || charOffset < 0) return;
-    this._setReanchorPending(true);
-    var self = this;
-    this._reanchorFrame(function() {
-      try {
-        var contextAfter = self.getScrollContext();
-        var hintScroll = hintPageBefore !== null && contextAfter.pageSize > 0
-          ? hintPageBefore * contextAfter.pageSize
-          : scrollBefore;
-        self.scrollToCharOffset(charOffset, hintScroll);
-      } finally {
-        self._setReanchorPending(false);
-      }
-    });
+    if (inFlight) return;
+    this._queueGeometryReanchor(anchor);
   },
   // TODO-736 B-1 续（分页缺席根因修复，BUG-849）：样式变更两阶段重锚在分页 shell 曾整体
   // 缺席，导致 beginStyleReanchorInvocation 恒走 `:-1` 兜底、CSS 从不换 → 分页模式下改
@@ -3287,6 +3330,8 @@ $kSentenceAudioRubyGapJs
     document.documentElement.style.setProperty('--fushi-image-max-height', box.h + 'px');
   },
   beginStyleReanchor: function(styleEl, css) {
+    // 显式样式变化开启新基线；在飞回调仍持有旧锚完成这次补偿，不取消其 token。
+    this._geometryReanchorAnchor = null;
     if (!this.didInitialize) { if (styleEl) styleEl.textContent = css; return -1; }
     if (this._reanchorPending === true) {
       if (styleEl) styleEl.textContent = css;
@@ -3381,12 +3426,9 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = newViewportHeight + $bottomOverlapPx;
   var newWidth = Math.round(cssWidth);
   if (newHeight === this.pageHeight && newWidth === this.pageWidth) return;
-  // Shares the _reanchorPending flag with setChromeInsets (see there). If a
-  // re-anchor rAF is already pending, reading calculateProgress now would read a
-  // transiently reset scrollTop as progress 0 and snap to the chapter start, so
-  // we only update the page metrics and let the pending rAF restore position.
+  // 与 inset 变化共用精确语义锚，不能退回节点粒度 progress（高度往返会再量化）。
   var inFlight = this._reanchorPending === true;
-  var progress = inFlight ? 0 : this.calculateProgress();
+  var anchor = inFlight ? null : this._captureGeometryReanchorAnchor();
   document.documentElement.style.setProperty('--page-height', newHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
@@ -3399,15 +3441,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   this.pageWidth = newWidth;
   this.paginationMetrics = null;
   if (inFlight) return;
-  this._setReanchorPending(true);
-  var self = this;
-  this._reanchorFrame(function() {
-    try {
-      self.scrollToProgressPaged(self.getScrollContext(), progress);
-    } finally {
-      self._setReanchorPending(false);
-    }
-  });
+  this._queueGeometryReanchor(anchor);
 };
 $_sharedInitBoot
 };
