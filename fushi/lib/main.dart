@@ -2470,7 +2470,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       // macOS 明明已经隐藏了系统标题栏与交通灯，却拿不到替代顶栏
                       // ——窗口既没有标题也没有最小化/关闭按钮。
                       if (FushiDesktopTitleBar.isEnabled) {
-                        navigation = ValueListenableBuilder<bool>(
+                        navigation = ListenableBuilder(
                           // The home rail is only on screen while the home
                           // shell is the top route; opening a media item
                           // covers it — the same signal the macOS shell uses
@@ -2478,19 +2478,29 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           // un-indent with it. `navigation` is passed through
                           // as the unchanging `child`, so flipping this never
                           // rebuilds the navigator subtree.
-                          valueListenable: appModel.mediaOpenNotifier,
-                          builder: (BuildContext context, bool mediaOpen,
-                              Widget? child) {
+                          listenable: Listenable.merge(<Listenable>[
+                            appModel.mediaOpenNotifier,
+                            appModel.navRailExpandedNotifier,
+                          ]),
+                          builder: (BuildContext context, Widget? child) {
+                            final bool mediaOpen =
+                                appModel.mediaOpenNotifier.value;
                             final WindowSizeClass sizeClass =
                                 windowSizeClassForWidth(viewport.width);
                             final bool railVisible = !mediaOpen &&
                                 sizeClass != WindowSizeClass.compact;
-                            // expanded 档是展开侧栏（玻璃 224 悬浮侧栏 / MD3
-                            // 240 展开 rail，adaptiveNavRail extended），标题
-                            // 跟着它缩进。
+                            // 展开侧栏（玻璃 208 悬浮侧栏 / MD3 220 展开
+                            // rail）与收起 rail 宽度不同，标题跟着它缩进；
+                            // 展开态与首页 rail 同一判据（尺寸档 + MD3 菜单钮
+                            // 手动切换的记忆）。
                             final double railWidth = adaptiveNavRailWidthFor(
                               context,
-                              extended: sizeClass == WindowSizeClass.expanded,
+                              extended: adaptiveNavRailExtended(
+                                context,
+                                sizeClass: sizeClass,
+                                userExpanded:
+                                    appModel.navRailExpandedNotifier.value,
+                              ),
                             );
                             return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI

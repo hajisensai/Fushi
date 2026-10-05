@@ -485,9 +485,9 @@ void main() {
       return tapped;
     }
 
-    // MD3 Expressive：宽窗口是图标 + 文字横排的展开 rail（200），窄窗口收成
-    // 80 宽的收起 rail；与标题栏缩进用的 adaptiveNavRailWidthFor 同一口径。
-    testWidgets('MD3 rail: expanded 200 when extended, 80 when collapsed', (
+    // MD3 Expressive：展开 rail（220，图标 + 文字横排）/ 收起 rail（96）；
+    // 与标题栏缩进用的 adaptiveNavRailWidthFor 同一口径。
+    testWidgets('MD3 rail: expanded 220 when extended, 96 when collapsed', (
       WidgetTester tester,
     ) async {
       await pumpRail(tester, glass: false, extended: true);
@@ -495,12 +495,15 @@ void main() {
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
         kMaterialNavRailExpandedWidth,
       );
+      expect(kMaterialNavRailExpandedWidth, 220);
       expect(liquidWidgets(), findsNothing);
       await pumpRail(tester, glass: false, extended: false);
+      await tester.pumpAndSettle();
       expect(
         tester.getSize(find.byKey(fushiMaterialNavKey)).width,
-        kAdaptiveNavRailWidth,
+        kMaterialNavRailCollapsedWidth,
       );
+      expect(kMaterialNavRailCollapsedWidth, 96);
       expect(liquidWidgets(), findsNothing);
     });
 
