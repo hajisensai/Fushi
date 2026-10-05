@@ -1305,8 +1305,6 @@ class FushiProgressDialogHandle {
   void _finish() {
     _closed = true;
     if (!_done.isCompleted) _done.complete();
-    progress.dispose();
-    message.dispose();
   }
 }
 
@@ -1372,7 +1370,13 @@ class _FushiProgressDialogState extends State<_FushiProgressDialog> {
     if (!mounted) return;
     final ModalRoute<Object?>? route = ModalRoute.of(context);
     if (route == null || !route.isActive) return;
-    Navigator.of(context).removeRoute(route);
+    // 在栈顶时走 pop（带退场动效；pop 不经 PopScope 拦截），被别的路由压住时
+    // 直接摘掉。
+    if (route.isCurrent) {
+      Navigator.of(context).pop();
+    } else {
+      Navigator.of(context).removeRoute(route);
+    }
   }
 
   void _cancel() {

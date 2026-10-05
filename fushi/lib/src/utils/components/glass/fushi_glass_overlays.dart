@@ -12,7 +12,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
+    show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -459,6 +459,7 @@ bool _isPlainTextContent(Widget? content) =>
 /// 动作是不是按钮：全部是按钮时才按 iOS 26 alert 排成撑满的胶囊（两个并排、
 /// 其余竖排）；夹了 Spacer / 复选框等自定义控件就保留调用方的横排布局。
 bool _isAlertButton(Widget w) =>
+    w is FushiDialogAction ||
     w is FushiTextButton ||
     w is FushiFilledButton ||
     w is FushiOutlinedButton ||
