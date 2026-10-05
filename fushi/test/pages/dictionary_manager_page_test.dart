@@ -7,6 +7,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
+import 'package:fushi/utils.dart' show FushiIconButton;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -350,5 +351,166 @@ void main() {
     expect(find.byKey(const ValueKey<String>('dict-empty-download')),
         findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+  // ── 移到第几位 ─────────────────────────────────────────────────────────
+
+  List<Dictionary> sixTerms() => <Dictionary>[
+        for (int i = 0; i < 6; i++)
+          Dictionary(name: 'Dict ${i + 1}', formatKey: 'yomichan', order: i),
+      ];
+
+  Future<void> openMoveTo(WidgetTester tester, String name) async {
+    await tester.tap(find.text(name));
+    await _settle(tester);
+    final Finder row =
+        find.byKey(const ValueKey<String>('dict-detail-move-to'));
+    await tester.ensureVisible(row);
+    await tester.tap(row);
+    await _settle(tester);
+    expect(find.byType(DictionaryPositionDialog), findsOneWidget);
+  }
+
+  Finder positionField() => find.descendant(
+        of: find.byKey(const ValueKey<String>('dict-position-field')),
+        matching: find.byType(EditableText),
+      );
+
+  test('parseDictionaryPosition clamps out of range and rejects non-numbers',
+      () {
+    expect(parseDictionaryPosition('5', 6), 5);
+    expect(parseDictionaryPosition(' 0 ', 6), 1);
+    expect(parseDictionaryPosition('-3', 6), 1);
+    expect(parseDictionaryPosition('99', 6), 6);
+    expect(parseDictionaryPosition('', 6), isNull);
+    expect(parseDictionaryPosition('abc', 6), isNull);
+  });
+
+  testWidgets('move the first dictionary to position 5; focus follows it', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      size: const Size(1280, 800),
+      dictionaries: sixTerms(),
+    );
+    await openMoveTo(tester, 'Dict 1');
+
+    await tester.enterText(positionField(), '5');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+
+    expect(find.byType(DictionaryPositionDialog), findsNothing);
+    expect(model.orderWrites, 1);
+    expect(_termOrder(model),
+        <String>['Dict 2', 'Dict 3', 'Dict 4', 'Dict 5', 'Dict 1', 'Dict 6']);
+    // 详情跟着刷新，焦点落在移动后的那一行。
+    expect(find.text('Position 5 / 6'), findsOneWidget);
+    final FocusNode? focused = FocusManager.instance.primaryFocus;
+    expect(
+      find.descendant(
+        of: find.byElementPredicate(
+          (Element e) => identical(e, focused!.context),
+        ),
+        matching: find.text('Dict 1'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('arrow keys step the position inside the field', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      size: const Size(1280, 800),
+      dictionaries: sixTerms(),
+    );
+    await openMoveTo(tester, 'Dict 1');
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pump();
+    expect(
+      tester.widget<EditableText>(positionField()).controller.text,
+      '3',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    expect(_termOrder(model).indexOf('Dict 1'), 2);
+  });
+
+  testWidgets('out-of-range input is clamped; non-numbers are rejected', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      size: const Size(1280, 800),
+      dictionaries: sixTerms(),
+    );
+    await openMoveTo(tester, 'Dict 2');
+
+    // 非数字：确认置灰、回车不提交。
+    await tester.enterText(positionField(), 'abc');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    expect(find.byType(DictionaryPositionDialog), findsOneWidget);
+    expect(model.orderWrites, 0);
+
+    // 越界：提示夹到最后一位，提交即移到末尾。
+    await tester.enterText(positionField(), '99');
+    await _settle(tester);
+    expect(find.text('Out of range — will move to position 6'), findsOneWidget);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    expect(_termOrder(model).last, 'Dict 2');
+    expect(model.orderWrites, 1);
+  });
+
+  testWidgets('cancel leaves the order unchanged', (WidgetTester tester) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      size: const Size(1280, 800),
+      dictionaries: sixTerms(),
+    );
+    await openMoveTo(tester, 'Dict 1');
+    await tester.enterText(positionField(), '4');
+    await tester.tap(find.text('CANCEL'));
+    await _settle(tester);
+    expect(find.byType(DictionaryPositionDialog), findsNothing);
+    expect(model.orderWrites, 0);
+    expect(_termOrder(model).first, 'Dict 1');
+  });
+
+  testWidgets('batch bar offers move-to only with exactly one selected', (
+    WidgetTester tester,
+  ) async {
+    final _FakeAppModel model = await _pumpPage(
+      tester,
+      size: const Size(1280, 800),
+      dictionaries: sixTerms(),
+    );
+    await tester
+        .tap(find.byKey(const ValueKey<String>('dict-selection-toggle')));
+    await _settle(tester);
+    FushiIconButton moveButton() => tester.widget<FushiIconButton>(
+          find.byKey(const ValueKey<String>('dict-batch-move-to')),
+        );
+    expect(moveButton().enabled, isFalse);
+
+    await tester.tap(find.text('Dict 6'));
+    await _settle(tester);
+    expect(moveButton().enabled, isTrue);
+    await tester.tap(find.text('Dict 1'));
+    await _settle(tester);
+    expect(moveButton().enabled, isFalse);
+    await tester.tap(find.text('Dict 1'));
+    await _settle(tester);
+
+    await tester.tap(find.byKey(const ValueKey<String>('dict-batch-move-to')));
+    await _settle(tester);
+    await tester.enterText(positionField(), '1');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await _settle(tester);
+    expect(_termOrder(model).first, 'Dict 6');
   });
 }

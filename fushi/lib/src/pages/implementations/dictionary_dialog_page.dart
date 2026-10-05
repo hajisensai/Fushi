@@ -2172,6 +2172,25 @@ class _DictionaryDialogPageState extends BasePageState {
     _reorderDictionaries(from, to, dictionaries);
   }
 
+  /// 「移到第几位」：弹位置输入框，确认后走与拖动 / 上下移同一条
+  /// [_reorderDictionaries] 写入路径，焦点跟着被移动的词典走（列表所在路由是
+  /// 当前路由时——窄屏从底部 sheet 里移动时焦点留在 sheet，sheet 内容自己刷新）。
+  Future<void> _promptMoveDictionary(Dictionary dictionary) async {
+    final List<Dictionary> dictionaries = _dictionariesForType(dictionary.type);
+    final int from =
+        dictionaries.indexWhere((Dictionary d) => d.name == dictionary.name);
+    if (from < 0 || dictionaries.length < 2) return;
+    final int? to = await showDictionaryPositionDialog(
+      context: context,
+      name: dictionary.effectiveDisplayName,
+      position: from,
+      count: dictionaries.length,
+    );
+    if (!mounted || to == null) return;
+    _moveDictionaryTo(dictionary, to);
+    _focusRowAfterFrame(dictionary.name);
+  }
+
   FocusNode _rowFocusNode(String name) => _rowFocusNodes.putIfAbsent(
         name,
         () => FocusNode(debugLabel: 'dict-row-$name'),
@@ -2214,6 +2233,8 @@ class _DictionaryDialogPageState extends BasePageState {
   void _focusRowAfterFrame(String name) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      // 上面还压着 sheet / 对话框时不越级抢焦点（那会把键盘从覆盖层里拽走）。
+      if (!(ModalRoute.of(context)?.isCurrent ?? true)) return;
       final FocusNode? row = _rowFocusNodes[name];
       if (row == null) return;
       // 逐层（广度优先）找最浅的可聚焦节点——整行点击面，而不是行尾的开关 /
@@ -2339,6 +2360,7 @@ class _DictionaryDialogPageState extends BasePageState {
           ? _updateSingleDictionary(dictionary)
           : _updateDictionaryFromFile(dictionary),
       onMoveTo: (int to) => _moveDictionaryTo(dictionary, to),
+      onMoveToPrompt: () => _promptMoveDictionary(dictionary),
       onDelete: onDeleteRequested,
     );
   }
@@ -2461,6 +2483,15 @@ class _DictionaryDialogPageState extends BasePageState {
     final List<Dictionary> visible = _dictionariesForType(_selectedType);
     final bool any = _selectedNames.isNotEmpty;
     final bool compact = MediaQuery.sizeOf(context).width < 480;
+    // 只选了一本时可「移到第几位」（多本没有单一目标位置，置灰）。
+    final List<Dictionary> picked = _selectedDictionaries;
+    final Widget moveTo = FushiIconButton(
+      key: const ValueKey<String>('dict-batch-move-to'),
+      icon: Icons.format_list_numbered,
+      tooltip: t.dict_order_position_move,
+      enabled: picked.length == 1 && visible.length > 1,
+      onTap: () => _promptMoveDictionary(picked.single),
+    );
     final Widget delete = FushiIconButton(
       key: const ValueKey<String>('dict-batch-delete'),
       icon: Icons.delete_outline,
@@ -2501,6 +2532,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 enabled: any,
                 onTap: () => _batchSetEnabled(false),
               ),
+              moveTo,
               delete,
             ]
           : <Widget>[
@@ -2516,6 +2548,7 @@ class _DictionaryDialogPageState extends BasePageState {
                 icon: const FushiIcon(Icons.visibility_off_outlined, size: 18),
                 label: Text(t.dict_batch_disable),
               ),
+              moveTo,
               delete,
             ],
     );
