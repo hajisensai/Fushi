@@ -659,9 +659,15 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       style: style,
       strutStyle: _c.strutStyle,
       textAlign: _c.textAlign,
+      // 多行框必须显式顶对齐（BUG-2973）：CupertinoTextField 在有占位符时把
+      // 缺省的竖直对齐当成 center，而它的占位符栈高度取「占位符全部行」与
+      // 「编辑区一行」的并集——空框里一行高的编辑区被居中进两行高的栈，占位符
+      // 再按基线贴到编辑区上，于是整段占位符下沉半行、第二行掉出框外被裁。
+      // 顶对齐时编辑区与占位符都从栈顶开始，外层壳（对称内边距 + 行内竖直
+      // 居中）负责把整块内容放在框的中线上。
       textAlignVertical:
           _c.textAlignVertical ??
-          (_c.maxLines == 1 ? TextAlignVertical.center : null),
+          (_c.maxLines == 1 ? TextAlignVertical.center : TextAlignVertical.top),
       textDirection: _c.textDirection,
       readOnly: _c.readOnly,
       showCursor: _c.showCursor,
