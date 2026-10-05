@@ -6630,5 +6630,7 @@
   "manga_reader_scope_overridden": "当前作品已单独设置",
   "manga_reader_scope_hint": "改动对所有未单独设置的作品生效",
   "manga_reader_more_info": "说明",
-  "manga_reader_custom_color": "自定义颜色"
+  "manga_reader_custom_color": "自定义颜色",
+  "manga_ocr_ai_mode_low_confidence_short": "低置信度",
+  "manga_ocr_ai_mode_all_short": "全部"
 }

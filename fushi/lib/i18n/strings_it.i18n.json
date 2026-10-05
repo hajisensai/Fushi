@@ -6630,5 +6630,7 @@
   "manga_reader_scope_overridden": "This title uses its own value",
   "manga_reader_scope_hint": "Changes apply to every title without its own value",
   "manga_reader_more_info": "More info",
-  "manga_reader_custom_color": "Custom color"
+  "manga_reader_custom_color": "Custom color",
+  "manga_ocr_ai_mode_low_confidence_short": "Uncertain",
+  "manga_ocr_ai_mode_all_short": "All"
 }
