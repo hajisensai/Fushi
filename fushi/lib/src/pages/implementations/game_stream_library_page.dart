@@ -928,20 +928,16 @@ class _HostHeroBadge extends StatelessWidget {
         ),
       );
     }
+    // 切换曲线用 effects（临界阻尼、不过冲）：同一条动画还驱动透明度，
+    // 过冲会让 opacity 越界。
     return AnimatedSwitcher(
-      duration: motion.spatialFast.duration,
-      switchInCurve: motion.spatialFast.curve,
-      switchOutCurve: motion.effectsFast.curve,
+      duration: motion.effectsDefault.duration,
+      switchInCurve: motion.effectsDefault.curve,
+      switchOutCurve: motion.effectsDefault.curve,
       transitionBuilder: (Widget child, Animation<double> animation) =>
           ScaleTransition(
-            scale: animation,
-            child: FadeTransition(
-              opacity: CurvedAnimation(
-                parent: animation,
-                curve: motion.effectsFast.curve,
-              ),
-              child: child,
-            ),
+            scale: Tween<double>(begin: 0.6, end: 1).animate(animation),
+            child: FadeTransition(opacity: animation, child: child),
           ),
       child: KeyedSubtree(
         key: ValueKey<Object>(Object.hash(icon, tone)),
