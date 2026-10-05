@@ -8,6 +8,8 @@ import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -145,8 +147,12 @@ class DownloadTaskBrowser extends StatefulWidget {
     this.onAddTask,
     this.executionDeviceLabel,
     this.onOpenExecutionSettings,
+    this.header,
   });
   final List<DownloadTaskEntry> tasks;
+
+  /// 列表最上方（汇总之前）随列表一起滚动的一块（网络问题横幅 / 加载失败提示）。
+  final Widget? header;
 
   /// 首个数据快照还没到：画骨架而不是「暂无任务」。
   final bool loading;
@@ -878,11 +884,22 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
             itemBuilder: rowAt,
           );
 
+    // 叠放的浮动头部（浏览页一二级页签行）让出的高度：主滚动视图自己在顶部
+    // 占位，内容滚到头部之下（BUG-2975）；不在浮动头部下时为 0。
+    final double chromeInset = FushiFloatingChromeInset.of(context);
+
     Widget scroller({required bool withControls}) => FushiEntranceScope(
       replayKey: _statusFilter,
       child: CustomScrollView(
         key: const PageStorageKey<String>('download-task-list'),
         slivers: <Widget>[
+          SliverToBoxAdapter(child: SizedBox(height: chromeInset)),
+          if (widget.header != null)
+            SliverPadding(
+              // 横幅自带上边距、无内容时零高度：这里只给页边。
+              padding: EdgeInsets.symmetric(horizontal: page),
+              sliver: SliverToBoxAdapter(child: widget.header),
+            ),
           if (withControls)
             SliverPadding(
               padding: EdgeInsets.fromLTRB(page, tokens.spacing.gap, page, 4),
@@ -936,7 +953,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                       key: const ValueKey<String>('download-task-side-pane'),
                       padding: EdgeInsets.fromLTRB(
                         0,
-                        tokens.spacing.gap,
+                        chromeInset + tokens.spacing.gap,
                         page,
                         page,
                       ),

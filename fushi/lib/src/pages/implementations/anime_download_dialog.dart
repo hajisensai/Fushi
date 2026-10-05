@@ -2856,10 +2856,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     if (widget.tasksOnly) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: _buildTasksPage(theme),
-      );
+      // 统一任务列表自己按页边（spacing.page）排版，这里不再叠一层内边距。
+      return _buildTasksPage(theme);
     }
     final Widget stage;
     if (_selectedMedia == null) {

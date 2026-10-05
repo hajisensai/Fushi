@@ -262,6 +262,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     this.onAddTask,
     this.executionDeviceLabel,
     this.onOpenExecutionSettings,
+    this.header,
   });
 
   factory VideoDownloadJobsPanel.database({
@@ -285,6 +286,7 @@ class VideoDownloadJobsPanel extends StatefulWidget {
     VoidCallback? onAddTask,
     String? executionDeviceLabel,
     VoidCallback? onOpenExecutionSettings,
+    Widget? header,
   }) =>
       VideoDownloadJobsPanel(
         key: key,
@@ -309,7 +311,11 @@ class VideoDownloadJobsPanel extends StatefulWidget {
         onAddTask: onAddTask,
         executionDeviceLabel: executionDeviceLabel,
         onOpenExecutionSettings: onOpenExecutionSettings,
+        header: header,
       );
+
+  /// 统一列表顶部随列表滚动的一块（网络问题横幅等）。
+  final Widget? header;
 
   /// 统一列表（[unified]）的添加任务入口：给了就挂 FAB / 空状态按钮。
   final VoidCallback? onAddTask;
@@ -482,12 +488,23 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
           AsyncSnapshot<List<VideoDownloadJobRow>> snapshot,
         ) {
           if (widget.unified) {
+            // 加载失败提示与宿主给的横幅进列表顶部（随列表滚到浮动头部之下）。
+            final Widget? header = snapshot.hasError || widget.header != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (snapshot.hasError) Text(t.error_load_failed),
+                      if (widget.header != null) widget.header!,
+                    ],
+                  )
+                : null;
             return Column(children: <Widget>[
-              if (snapshot.hasError) Text(t.error_load_failed),
               Expanded(
                   key: const ValueKey<String>('unified-download-tasks'),
                   child: _buildJobList(
                     snapshot.data ?? const <VideoDownloadJobRow>[],
+                    header: header,
                     // 首个快照未到且别的来源也还没东西：画骨架，不闪「暂无任务」。
                     loading: !snapshot.hasData &&
                         !snapshot.hasError &&
@@ -639,10 +656,15 @@ class _VideoDownloadJobsPanelState extends State<VideoDownloadJobsPanel> {
         VideoDownloadJobSort.statusGroup => t.download_task_sort_status,
       };
 
-  Widget _buildJobList(List<VideoDownloadJobRow> jobs, {bool loading = false}) {
+  Widget _buildJobList(
+    List<VideoDownloadJobRow> jobs, {
+    bool loading = false,
+    Widget? header,
+  }) {
     return _VideoDownloadJobList(
       jobs: jobs,
       loading: loading,
+      header: header,
       onAddTask: widget.onAddTask,
       executionDeviceLabel: widget.executionDeviceLabel,
       onOpenExecutionSettings: widget.onOpenExecutionSettings,
@@ -740,8 +762,10 @@ class _VideoDownloadJobList extends StatefulWidget {
     this.onAddTask,
     this.executionDeviceLabel,
     this.onOpenExecutionSettings,
+    this.header,
   });
 
+  final Widget? header;
   final bool loading;
   final VoidCallback? onAddTask;
   final String? executionDeviceLabel;
@@ -907,6 +931,7 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
         onAddTask: widget.onAddTask,
         executionDeviceLabel: widget.executionDeviceLabel,
         onOpenExecutionSettings: widget.onOpenExecutionSettings,
+        header: widget.header,
       );
     }
     return ListView.separated(

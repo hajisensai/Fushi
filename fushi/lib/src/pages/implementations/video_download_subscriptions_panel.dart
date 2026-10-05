@@ -4,6 +4,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -579,20 +581,42 @@ class _VideoDownloadSubscriptionsViewState
   /// 宽于此值时订阅卡两列网格。
   static const double _kGridBreakpoint = 900;
 
-  Widget _buildList(List<VideoDownloadSubscriptionRow> visible) {
+  @override
+  Widget build(BuildContext context) {
+    final List<VideoDownloadSubscriptionRow> visible =
+        sortedVideoDownloadSubscriptions(
+      filterVideoDownloadSubscriptions(widget.subscriptions, _searchQuery),
+      _sort,
+    );
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
     final double gap = tokens.spacing.gap;
+    // 叠放的浮动头部（浏览页一二级页签行）让出的高度：整页是一个滚动视图，
+    // 顶部自己占位，汇总 / 搜索 / 卡片都滚到头部之下（BUG-2975）。
+    final double chromeInset = FushiFloatingChromeInset.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final int columns = constraints.maxWidth >= _kGridBreakpoint ? 2 : 1;
         final int rowCount = (visible.length + columns - 1) ~/ columns;
-        return FushiEntranceScope(
-          replayKey: _sort,
-          child: FushiRefreshIndicator(
-            onRefresh: widget.onCheckAll,
-            child: ListView.builder(
-              padding: EdgeInsets.fromLTRB(page, gap, page, 24),
+        final Widget body;
+        if (widget.subscriptions.isEmpty || visible.isEmpty) {
+          body = SliverFillRemaining(
+            hasScrollBody: false,
+            child: widget.subscriptions.isEmpty
+                ? _VideoDownloadSubscriptionMessage(
+                    icon: FushiIcons.notifications,
+                    title: t.download_subscription_empty_title,
+                    body: t.download_subscription_empty_body,
+                  )
+                : _VideoDownloadSubscriptionMessage(
+                    icon: FushiIcons.searchOff,
+                    title: t.subscription_no_match,
+                  ),
+          );
+        } else {
+          body = SliverPadding(
+            padding: EdgeInsets.fromLTRB(page, gap, page, 24),
+            sliver: SliverList.builder(
               itemCount: rowCount,
               itemBuilder: fushiStaggeredItemBuilder((
                 BuildContext context,
@@ -620,40 +644,26 @@ class _VideoDownloadSubscriptionsViewState
                 );
               }),
             ),
+          );
+        }
+        return FushiEntranceScope(
+          replayKey: _sort,
+          child: FushiRefreshIndicator(
+            onRefresh: widget.onCheckAll,
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverToBoxAdapter(child: SizedBox(height: chromeInset)),
+                SliverToBoxAdapter(child: _buildHeader()),
+                if (widget.remoteSection != null)
+                  SliverToBoxAdapter(child: widget.remoteSection),
+                if (widget.subscriptions.isNotEmpty)
+                  SliverToBoxAdapter(child: _buildToolbar()),
+                body,
+              ],
+            ),
           ),
         );
       },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final List<VideoDownloadSubscriptionRow> visible =
-        sortedVideoDownloadSubscriptions(
-      filterVideoDownloadSubscriptions(widget.subscriptions, _searchQuery),
-      _sort,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _buildHeader(),
-        if (widget.remoteSection != null) widget.remoteSection!,
-        if (widget.subscriptions.isNotEmpty) _buildToolbar(),
-        Expanded(
-          child: widget.subscriptions.isEmpty
-              ? _VideoDownloadSubscriptionMessage(
-                  icon: FushiIcons.notifications,
-                  title: t.download_subscription_empty_title,
-                  body: t.download_subscription_empty_body,
-                )
-              : visible.isEmpty
-                  ? _VideoDownloadSubscriptionMessage(
-                      icon: FushiIcons.searchOff,
-                      title: t.subscription_no_match,
-                    )
-                  : _buildList(visible),
-        ),
-      ],
     );
   }
 }

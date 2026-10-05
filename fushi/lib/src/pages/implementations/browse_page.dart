@@ -754,6 +754,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       focusIdPrefix: 'browse-downloads-section',
       onEdgeOverscroll: (int delta) =>
           _handOffFrom(BrowseTab.downloads, delta),
+      // 任务 / 订阅两页的主滚动视图自己在顶部为浮动头部占位（内容滚到头部之下）。
+      pageHandlesInset: true,
       pageBuilder: (BrowseDownloadsSection section) => switch (section) {
         BrowseDownloadsSection.tasks => _buildTasks(),
         BrowseDownloadsSection.subscriptions =>
@@ -765,28 +767,24 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   Widget _buildTasks() {
     // 有声书「转录后入库」任务包在最外层：它的条目经闭包并进下面统一列表的
     // additionalTasks，与各下载来源并列排序/筛选。
-    final Widget tasks = AudiobookTranscribeTasksSection(
-      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
-          _buildTaskSources(transcribe),
-    );
     // BUG-2950：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
-    // 顶部说明原因；无问题时横幅零高度，任务列表布局不变。
-    return Column(
-      children: <Widget>[
-        ValueListenableBuilder<TorrentNetworkIssue>(
-          valueListenable: ref.read(appProvider).torrentNetworkIssue,
-          builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
-              TorrentNetworkIssueBanner(
-            issue: issue,
-            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          ),
-        ),
-        Expanded(child: tasks),
-      ],
+    // 顶部说明原因；无问题时横幅零高度。横幅作为任务列表的顶部一块随列表滚动
+    // （列表自己在最上方为浮动头部占位，横幅不会被头部盖住）。
+    final Widget banner = ValueListenableBuilder<TorrentNetworkIssue>(
+      valueListenable: ref.read(appProvider).torrentNetworkIssue,
+      builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
+          TorrentNetworkIssueBanner(
+        issue: issue,
+        margin: const EdgeInsets.only(top: 12),
+      ),
+    );
+    return AudiobookTranscribeTasksSection(
+      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
+          _buildTaskSources(transcribe, banner),
     );
   }
 
-  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe) {
+  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe, Widget banner) {
     return AnimeDownloadDialog(
                         embedded: true,
                         tasksOnly: true,
@@ -827,6 +825,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                 ...transcribe,
                               ],
                               database: ref.read(appProvider).database,
+                              header: banner,
                               onAddTask: _openManualTaskDialog,
                               executionDeviceLabel: _executionDeviceLabel,
                               onOpenExecutionSettings: _openDownloadSettings,
