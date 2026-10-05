@@ -15,7 +15,7 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-2937 macOS 真机取证：快捷键「无法识别」。
+/// BUG-2948 macOS 真机取证：快捷键「无法识别」。
 ///
 /// 输入经 macOS Runner 的 `app.fushi.test/input` 钩子（`FUSHI_TEST_INPUT` 门控）投
 /// **真实 keyDown/keyUp NSEvent**（`NSApp.postEvent` → sendEvent → key equivalent /
@@ -90,7 +90,7 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'BUG-2937: macOS shortcuts via real NSEvents',
+    'BUG-2948: macOS shortcuts via real NSEvents',
     timeout: const Timeout(Duration(minutes: 12)),
     (WidgetTester tester) async {
       await runFushiItest(

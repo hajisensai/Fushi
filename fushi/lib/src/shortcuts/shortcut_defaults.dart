@@ -589,7 +589,7 @@ class ShortcutDefaults {
     ),
   };
 
-  /// BUG-2937：桌面默认里在 macOS 上**被系统先截走**、app 永远收不到的键，换成
+  /// BUG-2948：桌面默认里在 macOS 上**被系统先截走**、app 永远收不到的键，换成
   /// macOS 上空闲的同义键（只换键盘通道，手柄 / 鼠标照桌面默认）。
   /// * 有声书播放 / 暂停：桌面 Ctrl+Space 经 Ctrl→Meta 换成 Cmd+Space = Spotlight；
   ///   Ctrl+Space 本身又是 macOS「切换输入法」（日语学习者必开）。Option+Space 空闲。

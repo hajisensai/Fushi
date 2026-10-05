@@ -305,7 +305,7 @@ class InputBinding {
   /// 覆盖。表外的物理键（numpad、F13+、game*）保持 `process` 原样返回，由调用方的
   /// 既有流程处理，不猜。
   ///
-  /// BUG-2937：第二条归一——引擎给出的逻辑键**不在 [_knownKeys] 里**、而物理键在
+  /// BUG-2948：第二条归一——引擎给出的逻辑键**不在 [_knownKeys] 里**、而物理键在
   /// 覆盖表里时，按物理键取逻辑键。macOS 嵌入层对符号键按「当前修饰下产出的字符」
   /// 定逻辑键：Shift+/ 报 `question`、Shift+[ 报 `braceLeft`、Shift+= 报 `plus`
   /// （Mac 真机 NSEvent 实测；Windows 同一按键报 `slash` / `bracketLeft` /
@@ -361,7 +361,7 @@ class InputBinding {
   /// video player can keep its press-edge-only keys (e.g. subtitle blur toggle)
   /// non-repeating while everything else honours OS key-repeat.
   ///
-  /// BUG-2937：不是裸 [SingleActivator]——macOS 上 Shift+/ 的逻辑键是 `question`，
+  /// BUG-2948：不是裸 [SingleActivator]——macOS 上 Shift+/ 的逻辑键是 `question`，
   /// 而 [SingleActivator] 的 `triggers` 只有 `slash`（[CallbackShortcuts] 先按
   /// triggers 过滤，`accepts` 都轮不到），
   /// `SingleActivator(slash, shift: true)` 永远不认。精确匹配不中时再按
@@ -412,7 +412,7 @@ class InputBinding {
 }
 
 /// [InputBinding.toActivator] 的产物：先按原始逻辑键走 [exact]（[SingleActivator]），
-/// 不中再按 [InputBinding.normalizeCapturedKey] 归一后的键比一次（BUG-2937）。
+/// 不中再按 [InputBinding.normalizeCapturedKey] 归一后的键比一次（BUG-2948）。
 class InputBindingActivator extends ShortcutActivator {
   InputBindingActivator(this.binding, {bool includeRepeats = true})
       : exact = SingleActivator(

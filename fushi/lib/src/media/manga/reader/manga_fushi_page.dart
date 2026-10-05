@@ -3456,7 +3456,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 注册表解析 → 跨页方向校正 → 上下文门控。键盘路径与 WebView 桥回传路径共用，
   /// 保证「改键」对两条路径同时生效（否则改了键，WebView 持焦时又变回默认键位）。
   ///
-  /// [physicalKey] 只由 Flutter 键盘路径传入（BUG-2937：macOS 上 Shift+/ 的逻辑键是
+  /// [physicalKey] 只由 Flutter 键盘路径传入（BUG-2948：macOS 上 Shift+/ 的逻辑键是
   /// `question`，由注册表按物理键收拢）；WebView 桥回传的是按 DOM `code` 拼的注册表
   /// token，本就是表内键名，不需要。
   MangaReaderInputAction? _resolveMangaKeyAction(

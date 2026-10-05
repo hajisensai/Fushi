@@ -284,7 +284,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
     // 也绝不误伤任何既有绑定。与 v3→v4 新增 globalExternalLookup 完全同构，这里只
     // bump 版本保持「快照版本 < 当前 ⇒ 跑迁移」不变式诚实，循环体为空。
     //
-    // v12 -> v13（BUG-2937）：macOS 上两个默认键被系统先截走、app 永远收不到——
+    // v12 -> v13（BUG-2948）：macOS 上两个默认键被系统先截走、app 永远收不到——
     // audiobookPlayPause 的 Cmd+Space（Spotlight）与 globalToggleFullscreen 的 F11
     // （显示桌面）。macOS 默认改成 Option+Space / Ctrl+Cmd+F（见
     // `ShortcutDefaults._macOSKeyboardOverrides`）。只在 macOS、只换**键盘**、且只换
@@ -577,7 +577,7 @@ class FushiShortcutRegistry extends ChangeNotifier {
       }
     }
     // 物理键回退：与录入侧同一契约 [InputBinding.normalizeCapturedKey]——IME 的
-    // `process`（TODO-847）与表外逻辑键（BUG-2937：macOS 上 Shift+/ 报 `question`）
+    // `process`（TODO-847）与表外逻辑键（BUG-2948：macOS 上 Shift+/ 报 `question`）
     // 都按物理键收拢回表内键再比一次。正常路径（上面精确相等）已先尝试，存量的
     // `#<keyId>` 绑定不受影响。调用方在文本框 composing 时传 null 关闭回退。
     if (physicalKey != null) {

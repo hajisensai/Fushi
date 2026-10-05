@@ -60,7 +60,7 @@ void main() {
       }
     });
 
-    // BUG-2937：F11 在 macOS 是「显示桌面」（系统先截走），macOS 用标准全屏键。
+    // BUG-2948：F11 在 macOS 是「显示桌面」（系统先截走），macOS 用标准全屏键。
     test('macOS default keyboard binding == Ctrl+Cmd+F', () {
       final ShortcutBindingSet set = ShortcutDefaults.forPlatform(
           TargetPlatform.macOS)[ShortcutAction.globalToggleFullscreen]!;

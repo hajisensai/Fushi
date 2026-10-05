@@ -7,7 +7,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
-/// BUG-2937：macOS 上快捷键「无法识别」。
+/// BUG-2948：macOS 上快捷键「无法识别」。
 ///
 /// ① Shift+符号键的逻辑键在 macOS 上是**该修饰下产出的字符**（Mac 真机 NSEvent 实测：
 ///    Shift+/ → `question`，Shift+[ → `braceLeft`），Windows 同一按键是
