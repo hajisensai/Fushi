@@ -3,6 +3,7 @@ import 'dart:convert' show utf8;
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -3772,13 +3773,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             kind: DesktopContentKind.readerShelf,
             child: Column(
               children: <Widget>[
-                if (!isCupertinoPlatform(context)) _buildPageHeader(),
-                // 搜索 + 筛选 + 多选 / 排序收成一条库页工具行（2026-10-04），
-                // 标签 chip 只在有标签时另起一行。
-                if (widget.section != VideoLibrarySection.home)
-                  _buildVideoSearchBar(allTags),
-                if (widget.section != VideoLibrarySection.home)
-                  _buildTagFilterBar(allTags),
+                // 页头 / 搜索筛选行 / 标签行与视频库外壳的浮动工具栏是同一组
+                // 工具区：往下滚一起收起、往上滚一起弹回（同一个
+                // [FushiFloatingChromeController]）；不在外壳里时原样常驻。
+                FushiFloatingChromeReveal(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      if (!isCupertinoPlatform(context)) _buildPageHeader(),
+                      // 搜索 + 筛选 + 多选 / 排序收成一条库页工具行（2026-10-04），
+                      // 标签 chip 只在有标签时另起一行。
+                      if (widget.section != VideoLibrarySection.home)
+                        _buildVideoSearchBar(allTags),
+                      if (widget.section != VideoLibrarySection.home)
+                        _buildTagFilterBar(allTags),
+                    ],
+                  ),
+                ),
                 // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
                 const SyncProgressBanner(),
                 VideoOnlineServicesBanner(
@@ -3816,7 +3827,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     child: _buildVideoLibraryBody(),
                   ),
                 ),
-                if (_selectionMode) _buildBatchActionBar(),
+                // 批量栏是多选态的底部浮动工具栏：弹簧从底边浮起 / 沉下。
+                FushiSpringReveal(
+                  visible: _selectionMode,
+                  edge: VerticalDirection.down,
+                  maintainState: false,
+                  // 退出多选后沉下去的那一程还画着上一帧的批量栏（只是不再接
+                  // 指针），沉到底才卸掉。
+                  child: _selectionMode
+                      ? (_lastBatchActionBar = _buildBatchActionBar())
+                      : (_lastBatchActionBar ?? const SizedBox.shrink()),
+                ),
               ],
             ),
           ),
@@ -6224,15 +6245,45 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     ];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
+      // 多选态是浮动工具栏的上下文切换（M3E floating toolbar）：悬浮动作组换成
+      // 「已选 N · 退出多选」，批量动作在底部浮起的批量栏里；退出后原样换回。
+      // 动作组按成员身份做形变交叉切换（[FushiFloatingActionsPill]）。
       return FushiPageHeader.customTitle(
         title: navigation,
-        actions: actions,
+        actions: _selectionMode ? _selectionHeaderActions() : actions,
       );
     }
     return FushiPageHeader(
       title: t.nav_video,
       actions: actions,
     );
+  }
+
+  /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条
+  /// [_exitSelectionMode] 路径）。计数随勾选变化，但两项的 key 不变，悬浮动作组
+  /// 不会因为数字变了而重播切换动效。
+  List<Widget> _selectionHeaderActions() {
+    final ThemeData theme = Theme.of(context);
+    return <Widget>[
+      Padding(
+        key: const ValueKey<String>('video-selection-count'),
+        padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
+        child: Text(
+          t.batch_selected_count(
+            n: _selectedUids.length + _selectedCollectionIds.length,
+          ),
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      FushiIconButton(
+        key: const ValueKey<String>('video-selection-exit'),
+        tooltip: t.action_exit,
+        icon: Icons.close,
+        onTap: _exitSelectionMode,
+      ),
+    ];
   }
 
   /// 长按 / 桌面右键远端视频卡：弹与本地视频卡一致的封面背景动作面板
@@ -7985,6 +8036,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   /// 批量操作栏（底部，仅选择态显示）：选中计数 + 全选 / 反选 + 打标签 + 删除。
   /// chrome 收敛到共享 [BatchActionBar]（与书架同一实现），本页只提供动作按钮与可用态。
+  /// 最近一次构建的批量栏：退出多选时的下沉动画画它（见 build）。
+  Widget? _lastBatchActionBar;
+
   Widget _buildBatchActionBar() {
     final ThemeData theme = Theme.of(context);
     // 块2/3/4：计数与按钮可用态涵盖散卡选中集 + 合集选中集。

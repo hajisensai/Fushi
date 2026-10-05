@@ -7,6 +7,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingToolbarSurface;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -118,6 +120,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required this.focusIdPrefix,
     this.secondary = false,
     this.fill = true,
+    this.floating = false,
     super.key,
   }) : controller = null;
 
@@ -135,11 +138,19 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required this.focusIdPrefix,
     this.secondary = false,
     this.fill = true,
+    this.floating = false,
     super.key,
   }) : selected = null,
        onChanged = null;
 
   final List<LibrarySectionTab<T>> tabs;
+
+  /// M3 Expressive 浮动页签胶囊（2026-10-05 视频库浮动工具栏）：整排收进一枚
+  /// 悬浮的 floating toolbar 胶囊（[FushiFloatingToolbarSurface]），按自然宽贴左、
+  /// 摆不下时在胶囊里横滑；选中段是 secondaryContainer 全胶囊，切换时弹性
+  /// 拉伸滑过去（[TabIndicatorAnimation.elastic]）。Apple 设计系统是一枚
+  /// 液态玻璃胶囊。焦点 / 投影 / 跟随契约与常规形态完全相同。
+  final bool floating;
 
   /// MD3 secondary tabs：页面内、primary tabs 之下的二级分区（如「浏览」页签里
   /// 再分小说 / 漫画 / 视频）。与 primary 同一套焦点、滚动与投影契约，只换
@@ -191,6 +202,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
           onChanged: onSelect,
           secondary: secondary,
           fill: fill,
+          floating: floating,
         ),
       );
     }
@@ -213,6 +225,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
             controller: host,
             secondary: secondary,
             fill: fill,
+            floating: floating,
           ),
         );
       },
@@ -234,6 +247,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required ValueChanged<T> this.onChanged,
     this.secondary = false,
     this.fill = true,
+    this.floating = false,
     super.key,
   }) : controller = null;
 
@@ -244,6 +258,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required TabController this.controller,
     this.secondary = false,
     this.fill = true,
+    this.floating = false,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -258,6 +273,9 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 
   /// 见 [LibrarySectionTabs.fill]。
   final bool fill;
+
+  /// 见 [LibrarySectionTabs.floating]。
+  final bool floating;
 
   @override
   State<FushiSectionTabBar<T>> createState() => _FushiSectionTabBarState<T>();
@@ -460,7 +478,7 @@ class _FushiSectionTabBarState<T extends Object>
     // dragDevices 不含 mouse，故恒包 [HorizontalDragScrollable]（不可滚动档里它
     // 只是一层 ScrollConfiguration，无副作用）。两侧渐隐只在可滚动档出现
     // （BUG-1971），由冒泡的 scroll metrics 驱动，不需要拿 TabBar 的内部 controller。
-    return LayoutBuilder(
+    final Widget bar = LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final _SectionTabLayout layout = _resolveLayout(
           context,
@@ -498,29 +516,56 @@ class _FushiSectionTabBarState<T extends Object>
               ),
             ),
             if (scrollFit && _showLeadingOverflowCue)
-              const PositionedDirectional(
+              PositionedDirectional(
                 start: 0,
                 top: 0,
                 bottom: 0,
                 child: _SectionTabOverflowFade(
                   key: _kSectionTabLeadingOverflowCueKey,
                   leading: true,
+                  floating: widget.floating,
                 ),
               ),
             if (scrollFit && _showTrailingOverflowCue)
-              const PositionedDirectional(
+              PositionedDirectional(
                 end: 0,
                 top: 0,
                 bottom: 0,
                 child: _SectionTabOverflowFade(
                   key: _kSectionTabTrailingOverflowCueKey,
                   leading: false,
+                  floating: widget.floating,
                 ),
               ),
           ],
         );
       },
     );
+    if (!widget.floating) return bar;
+    return _FloatingSectionTabsFrame(
+      naturalWidth: _floatingNaturalWidth(context),
+      child: bar,
+    );
+  }
+
+  /// 浮动胶囊里整排页签的自然宽：与 [_resolveLayout] 同一把量尺（真实字体
+  /// 量文字进距），加上各段内边距（Apple 还有文字内衬与页签条两端外边距）。
+  double _floatingNaturalWidth(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final List<double> widths = _measureLabels(
+      context,
+      _labelStyleBase(
+        context,
+      ).copyWith(fontSize: _baseFontSize(context, apple)),
+    );
+    final double perTab = apple
+        ? _kSectionTabAppleLabelPadding * 2 + kFushiAppleTabContentInset * 2
+        : _kSectionTabHorizontalPadding * 2;
+    double total = apple ? 16.0 : 0.0;
+    for (final double width in widths) {
+      total += width + perTab;
+    }
+    return total;
   }
 
   /// 真正选中的段下标（全量段序）：宿主持有形态是宿主 controller 的下标，自持
@@ -562,7 +607,9 @@ class _FushiSectionTabBarState<T extends Object>
   /// `fill: false` 的调用方维持旧的贴左可滚动形态。
   _SectionTabLayout _resolveLayout(BuildContext context, double maxWidth) {
     final int n = widget.tabs.length;
-    if (!widget.fill || !maxWidth.isFinite || n == 0) {
+    // 浮动胶囊按自然宽贴左、摆不下在胶囊里横滑（M3E floating toolbar 的
+    // 内容就是可横滑的一排），不走铺满 / 收紧 / 「更多」三档。
+    if (!widget.fill || widget.floating || !maxWidth.isFinite || n == 0) {
       return const _SectionTabLayout(fit: _SectionTabFit.scroll);
     }
     final bool apple = isGlassDesign(context);
@@ -799,6 +846,32 @@ class _FushiSectionTabBarState<T extends Object>
     final TabAlignment alignment = scrollable
         ? TabAlignment.start
         : TabAlignment.fill;
+    if (widget.floating && !widget.secondary) {
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      return FushiTabBar(
+        controller: controller,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        dividerHeight: 0,
+        labelStyle: labelStyle,
+        unselectedLabelStyle: unselectedLabelStyle,
+        labelPadding: labelPadding,
+        onTap: onTap,
+        // M3E：选中段是一枚 secondaryContainer 全胶囊，切换时弹性拉伸着滑过去
+        // （elastic = 先伸长够到目标段、再收回，形状随位移变形）。
+        indicator: ShapeDecoration(
+          shape: const StadiumBorder(),
+          color: cs.secondaryContainer,
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicatorPadding: const EdgeInsets.symmetric(vertical: 4),
+        indicatorAnimation: TabIndicatorAnimation.elastic,
+        labelColor: cs.onSecondaryContainer,
+        unselectedLabelColor: cs.onSurfaceVariant,
+        splashBorderRadius: const BorderRadius.all(Radius.circular(999)),
+        tabs: tabs,
+      );
+    }
     if (widget.secondary) {
       return FushiTabBar.secondary(
         controller: controller,
@@ -894,15 +967,24 @@ class _SectionTabMoreButton extends StatelessWidget {
 /// 不可交互的边缘渐隐：用当前 scaffold 背景盖住离屏方向的 tab 尾端，形成“内容仍在
 /// 延伸”的视觉线索。方向走 [PositionedDirectional]，RTL 下同样按逻辑首尾工作。
 class _SectionTabOverflowFade extends StatelessWidget {
-  const _SectionTabOverflowFade({required this.leading, super.key});
+  const _SectionTabOverflowFade({
+    required this.leading,
+    this.floating = false,
+    super.key,
+  });
 
   final bool leading;
+
+  /// 在浮动胶囊里：渐隐要用胶囊底色才盖得住。
+  final bool floating;
 
   @override
   Widget build(BuildContext context) {
     // eink：渐隐是一条灰阶过渡带 = 抖动噪点；去掉，尾端 tab 直接截断（横向拖滚照常）。
     if (isEinkTheme(context)) return const SizedBox.shrink();
-    final Color background = Theme.of(context).scaffoldBackgroundColor;
+    final Color background = floating
+        ? FushiFloatingToolbarSurface.colorOf(context)
+        : Theme.of(context).scaffoldBackgroundColor;
     return IgnorePointer(
       child: SizedBox(
         width: _kSectionTabOverflowFadeWidth,
@@ -916,6 +998,48 @@ class _SectionTabOverflowFade extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 浮动页签胶囊的外框：按页签自然宽（加胶囊内边距）贴左，最宽不超过可用宽；
+/// 超出时胶囊吃满可用宽、页签在里面横滑。
+class _FloatingSectionTabsFrame extends StatelessWidget {
+  const _FloatingSectionTabsFrame({
+    required this.naturalWidth,
+    required this.child,
+  });
+
+  /// 整排页签的自然宽（不含胶囊内边距）。
+  final double naturalWidth;
+  final Widget child;
+
+  static const double _horizontalPadding = 6;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // +2：量尺取整的余量，免得刚好摆得下时多出一丝滚动范围亮起渐隐。
+        final double wanted = naturalWidth + _horizontalPadding * 2 + 2;
+        final double width = constraints.maxWidth.isFinite
+            ? math.min(wanted, constraints.maxWidth)
+            : wanted;
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          widthFactor: constraints.maxWidth.isFinite ? null : 1,
+          child: SizedBox(
+            width: width,
+            child: FushiFloatingToolbarSurface(
+              padding: const EdgeInsets.symmetric(
+                horizontal: _horizontalPadding,
+                vertical: 4,
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
     );
   }
 }
