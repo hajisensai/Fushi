@@ -11,6 +11,9 @@ import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 漫画库「导入」视图：本地来源的管理处。
@@ -52,7 +55,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
   }
 
   Widget _sectionTitle(String title) =>
-      Text(title, style: Theme.of(context).textTheme.titleLarge);
+      Text(title, style: context.fushiType.titleLargeEmphasized);
 
   /// 页头。与 `MediaSourcesPage` 同一范式：库页视图导航条存在时它就是页头主位，
   /// **不再另渲染一个页面大标题**——导航条自己已经标明了当前在哪个视图，标题只是
@@ -78,55 +81,88 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
         // 快速导入区：单卷 / 单文件入口（与书 / 视频「导入」视图同构同位；
         // 对话框内含文件 / 文件夹 / OCR 向导）。
         QuickImportSection(
+          heroIcon: FushiIcons.manga,
+          formats: const <String>['CBZ', 'ZIP', 'PDF', 'MOKURO', 'JPG', 'PNG'],
           actions: <QuickImportAction>[
             QuickImportAction(
-              icon: Icons.auto_stories_outlined,
+              icon: FushiIcons.manga,
               label: t.manga_import_action,
               onTap: _importManga,
             ),
             QuickImportAction(
-              icon: Icons.drive_folder_upload_outlined,
+              icon: FushiIcons.folder,
               label: t.media_import_folder,
               onTap: () async => _localSourcesKey.currentState?.importFolder(),
             ),
           ],
-        ),
-        const SizedBox(height: 28),
-        Row(
-          children: <Widget>[
-            Expanded(child: _sectionTitle(t.media_source_section_title)),
-            FushiIconButton(
-              tooltip: t.media_source_add,
-              label: t.media_source_add,
-              icon: Icons.create_new_folder_outlined,
-              onTap: () => _localSourcesKey.currentState?.addSource(),
+          // 网络来源也是一种导入方式：与「常驻来源」区头的添加按钮同一个入口。
+          extraActions: <QuickImportAction>[
+            QuickImportAction(
+              icon: FushiIcons.cloud,
+              label: t.media_source_add_network,
+              description: t.media_source_network_subtitle,
+              onTap: () async => _localSourcesKey.currentState?.addSource(),
             ),
           ],
         ),
+        const SizedBox(height: 28),
+        FushiStaggeredEntrance(
+          index: 4,
+          child: Row(
+            children: <Widget>[
+              Expanded(child: _sectionTitle(t.media_source_section_title)),
+              FushiIconButton(
+                tooltip: t.media_source_add,
+                label: t.media_source_add,
+                icon: FushiIcons.add,
+                onTap: () => _localSourcesKey.currentState?.addSource(),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 8),
-        MediaSourcesView(key: _localSourcesKey, mediaKind: 'manga'),
+        FushiStaggeredEntrance(
+          index: 5,
+          child: MediaSourcesView(key: _localSourcesKey, mediaKind: 'manga'),
+        ),
       ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
           if (!isCupertinoPlatform(context)) _buildHeader(),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: <Widget>[
-                _buildLocalSegment(),
-                const SizedBox(height: 28),
-                _sectionTitle(t.media_import_segment_sources),
-                const SizedBox(height: 8),
-                // 互联那一行不受商店合规边界约束，iOS 上照常提供。
-                const InterconnectMangaSourceRow(),
-              ],
+            // 顶部让出库页壳浮动工具区的高度（不在壳里时为 0）：内容滚到工具区
+            // 底下，工具区收起后上方不再留一条空白。
+            child: FushiEntranceScope(
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  FushiFloatingChromeInset.of(context) + tokens.spacing.gap,
+                  tokens.spacing.page,
+                  tokens.spacing.page,
+                ),
+                children: <Widget>[
+                  _buildLocalSegment(),
+                  const SizedBox(height: 28),
+                  FushiStaggeredEntrance(
+                    index: 6,
+                    child: _sectionTitle(t.media_import_segment_sources),
+                  ),
+                  const SizedBox(height: 8),
+                  // 互联那一行不受商店合规边界约束，iOS 上照常提供。
+                  const FushiStaggeredEntrance(
+                    index: 7,
+                    child: InterconnectMangaSourceRow(),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
