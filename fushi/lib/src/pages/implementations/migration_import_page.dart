@@ -11,7 +11,9 @@ import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show backupImportRestart;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show fushiDatabaseFileName, PrefCodec;
@@ -119,6 +121,10 @@ class _MigrationImportPageState extends State<MigrationImportPage>
     await showAppDialog<void>(
       context: context,
       builder: (BuildContext ctx) => FushiAlertDialog(
+        icon: const FushiDialogHeroIcon(
+          icon: FushiIcons.error,
+          tone: FushiHeroTone.destructive,
+        ),
         title: Text(t.migration_import_entry),
         content: SingleChildScrollView(
           child: Column(
@@ -288,83 +294,148 @@ class _MigrationImportPageState extends State<MigrationImportPage>
   @override
   Widget build(BuildContext context) {
     final MigrationScanResult? scan = _scan;
-    return Scaffold(
-      appBar: FushiAppBar(title: Text(t.migration_import_entry)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          Text(t.migration_import_entry_subtitle),
-          const SizedBox(height: 16),
-          if (scan == null)
-            Column(
-              children: <Widget>[
-                // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
-                FushiLoadingView(
-                    message: _scanningLabel ?? t.migration_import_verifying_hint),
-                if (_scanningLabel != null) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    t.migration_import_verifying_hint,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ],
-            )
-          else if (!scan.storagePermissionGranted)
-            // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
-            // 共享提示块（标题 + 正文 + 动作），MD3 中性底 / Apple 系统灰底，
-            // 不再手搭卡片 + 内边距。
-            FushiInlineNotice(
-              severity: FushiNoticeSeverity.warning,
-              icon: Icons.folder_off_outlined,
-              title: t.migration_import_permission_title,
-              message: t.migration_import_permission_body,
-              actions: <Widget>[
-                FushiFilledButton(
-                  onPressed: _requestPermission,
-                  child: Text(t.migration_import_permission_grant),
-                ),
-              ],
-            )
-          else if (!scan.hasAnything)
-            Text(t.migration_import_nothing)
-          else ...<Widget>[
-            for (final MigrationImportBatch batch in scan.ready)
-              FushiListItem(
-                density: FushiListDensity.compact,
-                leading: const FushiIcon(Icons.inventory_2_outlined),
-                title: Text(_batchLabel(batch.batch)),
-              ),
-            for (final MapEntry<String, List<String>> e
-                in scan.problems.entries)
-              FushiListItem(
-                density: FushiListDensity.compact,
-                leading: FushiIcon(Icons.error_outline,
-                    color: Theme.of(context).colorScheme.error),
-                title: Text(t.migration_import_verify_failed(
-                    batch: e.key, detail: e.value.join('; '))),
-                titleMaxLines: 3,
-              ),
-            const SizedBox(height: 8),
-            // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
-            if (_error != null)
-              FushiInlineNotice(
-                severity: FushiNoticeSeverity.error,
-                message: _error!,
-              ),
-            if (_status != null) Text(_status!),
-            const SizedBox(height: 8),
-            FushiFilledButton(
-              onPressed: _running || scan.ready.isEmpty ? null : _runImport,
-              child: Text(t.migration_import_start),
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final List<Widget> sections = <Widget>[
+      Text(
+        t.migration_import_entry_subtitle,
+        style: type.bodyLarge.copyWith(color: colors.onSurfaceVariant),
+      ),
+      if (scan == null)
+        Column(
+          children: <Widget>[
+            // 只给转圈＝用户无法把「正在校验」和「卡死」区分开。
+            FushiLoadingView(
+              message: _scanningLabel ?? t.migration_import_verifying_hint,
             ),
+            if (_scanningLabel != null) ...<Widget>[
+              const SizedBox(height: 4),
+              Text(
+                t.migration_import_verifying_hint,
+                textAlign: TextAlign.center,
+                style: type.bodySmall.copyWith(color: colors.onSurfaceVariant),
+              ),
+            ],
+          ],
+        )
+      else if (!scan.storagePermissionGranted)
+        // 根因面：没权限时该请求权限，不是报「清单损坏」再让用户自己去翻设置。
+        FushiInlineNotice(
+          severity: FushiNoticeSeverity.warning,
+          icon: FushiIcons.folder,
+          title: t.migration_import_permission_title,
+          message: t.migration_import_permission_body,
+          actions: <Widget>[
+            FushiFilledButton(
+              onPressed: _requestPermission,
+              child: Text(t.migration_import_permission_grant),
+            ),
+          ],
+        )
+      else if (!scan.hasAnything)
+        // 空状态：中转目录里什么都没有。
+        FushiPlaceholderMessage(
+          icon: FushiIcons.folderOpen,
+          message: t.migration_import_nothing,
+          action: FushiTextButton(
+            onPressed: _running ? null : _rescan,
+            child: Text(t.retry),
+          ),
+        )
+      else ...<Widget>[
+        // 待导入批次（可导入 = primary 勾、校验未过 = error 色块）一组分段卡片。
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < scan.ready.length; i++)
+              FushiGroupedListItem(
+                index: i,
+                count: scan.ready.length + scan.problems.length,
+                child: FushiListItem(
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.downloadDone,
+                    tone: FushiCardTone.primary,
+                  ),
+                  title: Text(_batchLabel(scan.ready[i].batch)),
+                ),
+              ),
+            for (final (int i, MapEntry<String, List<String>> e)
+                in scan.problems.entries.indexed)
+              FushiGroupedListItem(
+                index: scan.ready.length + i,
+                count: scan.ready.length + scan.problems.length,
+                child: FushiListItem(
+                  leading: const FushiListLeadingIcon(
+                    FushiIcons.error,
+                    tone: FushiCardTone.error,
+                  ),
+                  title: Text(
+                    t.migration_import_verify_failed(
+                      batch: e.key,
+                      detail: e.value.join('; '),
+                    ),
+                  ),
+                  titleMaxLines: 3,
+                ),
+              ),
+          ],
+        ),
+        // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
+        if (_error != null)
+          FushiInlineNotice(
+            severity: FushiNoticeSeverity.error,
+            message: _error!,
+          ),
+        if (_status != null)
+          FushiInlineNotice(
+            severity: FushiNoticeSeverity.info,
+            message: _status!,
+          ),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
             FushiTextButton(
               onPressed: _running ? null : _rescan,
               child: Text(t.retry),
             ),
+            FushiFilledButton.icon(
+              size: FushiButtonSize.m,
+              onPressed: _running || scan.ready.isEmpty ? null : _runImport,
+              icon: const FushiIcon(FushiIcons.importFile),
+              label: Text(t.migration_import_start),
+            ),
           ],
-        ],
+        ),
+      ],
+    ];
+    return FushiPageScaffold(
+      title: t.migration_import_entry,
+      body: FushiEntranceScope(
+        // 扫描结果落地时重开进场窗口，让结果那一屏也错峰进场。
+        replayKey: scan,
+        child: ListView(
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap,
+              tokens.spacing.page,
+              tokens.spacing.section,
+            ),
+          ),
+          children: <Widget>[
+            for (int i = 0; i < sections.length; i++)
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: i == sections.length - 1 ? 0 : tokens.spacing.card,
+                ),
+                child: FushiStaggeredEntrance(index: i, child: sections[i]),
+              ),
+          ],
+        ),
       ),
     );
   }
