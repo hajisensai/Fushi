@@ -25,6 +25,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
@@ -134,9 +135,16 @@ String _themeVariablesJs({
             highContrast: WidgetsBinding
                 .instance.platformDispatcher.accessibilityFeatures.highContrast,
           ));
+  // Apple 设计系统（色板扩展 [FushiAppleColors] 只挂在 Apple 主题上）：popup.css 的
+  // `html.fushi-glass-host.fushi-apple` 把顶栏 tonal 按钮（「调整上下文」）换成 Apple
+  // 胶囊口径（系统灰填充 + 按下变暗、不做形状变形）；MD3 下走 M3 Expressive 的按压
+  // 形状变形。只随玻璃宿主挂（墨水屏 / 桌面全局查词窗不挂）；toggle 同上要能摘除。
+  final bool appleDesign =
+      glassHost && theme.extension<FushiAppleColors>() != null;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
-      "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n";
+      "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
+      "document.documentElement.classList.toggle('fushi-apple', $appleDesign);\n";
   return '''
       $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
