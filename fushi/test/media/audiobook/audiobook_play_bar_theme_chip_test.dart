@@ -15,6 +15,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/reader/reader_navigation_widgets.dart';
+import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/utils.dart';
@@ -604,6 +606,8 @@ void main() {
     expect(find.textContaining('A highlighted sentence'), findsOneWidget);
     expect(find.byType(ListTile), findsNothing);
     expect(find.byType(ExpansionTile), findsNothing);
-    expect(find.byType(AdaptiveSettingsSection), findsWidgets);
+    // 2026-10 导航重做：目录是 M3E 分层行（ReaderTocRow），收藏是引文卡。
+    expect(find.byType(ReaderTocRow), findsWidgets);
+    expect(find.byType(ReaderQuoteCard), findsWidgets);
   });
 }
