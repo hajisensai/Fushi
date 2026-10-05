@@ -3291,11 +3291,11 @@ void main() {
       'Widget buildBrightnessSelector(SettingsContext settingsContext)',
     );
 
-    // Theme circles preview the generated scheme (primary/secondary/tertiary/
-    // surface) via the four-quadrant FushiSchemeSwatch, not a single seed
-    // colour — see fushiSchemeSwatchColors.
-    expect(themeSelector, contains('FushiSchemeSwatch('));
-    expect(themeSelector, contains('fushiSchemeSwatchColors('));
+    // 2026-10 M3E：主题是色板网格卡（种子色块 + primary/secondary/tertiary
+    // 三色条 + 名称），三色条取自按当前明暗生成的真实 scheme，不是单一种子色。
+    expect(themeSelector, contains('FushiThemePresetCard('));
+    expect(themeSelector, contains('scheme: AppModel.buildPresetColorScheme('));
+    expect(themeSelector, isNot(contains('entry.value.brightness')));
     expect(source, isNot(contains('class _ColorSwatch')));
     expect(themeSelector, isNot(contains('_ColorSwatch(')));
     expect(themeSelector, isNot(contains('Container(')));

@@ -3987,7 +3987,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // CSS 的 `_themeColors` 对预设 key 用写死纸色、忽略 customBg：预设明暗与 app
       // 不符（[readerPresetFor] 返回 null）时不能再把预设 key 传进去，否则 Dart 侧
       // 已回落到派生深色、正文却仍是浅纸。走 default 分支吃 customBg/customFg。
-      themeOverride: _readerPresetApplies ? appModel.appThemeKey : 'system-theme',
+      themeOverride: _readerPresetApplies ? appModel.readerThemeKey : 'system-theme',
       // 正文字体按**书自己的语言**选链（与界面语言无关）：中文界面下打开日文书，
       // 界面该是中文字形、正文该是日文字形，两个独立的正确答案。
       contentLanguage: _contentLanguage,
