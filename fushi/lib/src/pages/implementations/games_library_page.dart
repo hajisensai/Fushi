@@ -64,6 +64,7 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 游戏进合集（统一媒体库）：mediaType 用 [MediaKind.game]（P5 枚举地基，取代旧
 // 常量 kGameCollectionMediaType）。entryKey = `galgames.id`（添加时刻微秒时间戳
@@ -345,7 +346,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.game_play_status,
-            leadingIcon: Icons.flag_outlined,
+            leadingIcon: FushiIcons.flag,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.gap,
@@ -360,20 +361,31 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                   ...kGalgamePlayStatusMenuOrder,
                   GalgamePlayStatus.unset,
                 ])
+                  // M3E：行首是该状态自己的语义图标（形状底），当前状态用饱和
+                  // primary 色块 + cookie 形 + 行选中底 + 行尾勾——一眼看出当前
+                  // 状态，而不是两个同色圆圈比形状。Apple 落 iOS 设置式图标方块。
                   FushiListItem(
                     density: FushiListDensity.compact,
-                    leading: FushiIcon(
-                      game.playStatus == status
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      size: 18,
-                      // 选中项走强调色（MD3 primary / Apple accent），未选中保持
-                      // 中性——一眼看出当前状态，而不是两个同色圆圈比形状。
-                      color: game.playStatus == status
-                          ? Theme.of(ctx).colorScheme.primary
-                          : null,
+                    selected: game.playStatus == status,
+                    leading: FushiListLeadingIcon(
+                      galgamePlayStatusIcon(status),
+                      size: 36,
+                      iconSize: 20,
+                      shape: game.playStatus == status
+                          ? FushiLeadingShape.cookie
+                          : FushiLeadingShape.circle,
+                      tone: game.playStatus == status
+                          ? FushiCardTone.primary
+                          : FushiCardTone.secondary,
                     ),
                     title: Text(galgamePlayStatusLabel(status)),
+                    trailing: game.playStatus == status
+                        ? FushiIcon(
+                            FushiIcons.check,
+                            size: 20,
+                            color: Theme.of(ctx).colorScheme.primary,
+                          )
+                        : null,
                     onTap: () => Navigator.of(ctx).pop(status),
                   ),
               ],
@@ -723,12 +735,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       appBar: FushiAppBar(
         title: Text(t.games),
       ),
-      floatingActionButton: FushiGlassFab(
-        child: FloatingActionButton.extended(
-          onPressed: _addGame,
-          icon: const FushiIcon(Icons.add),
-          label: Text(t.game_add),
-        ),
+      floatingActionButton: FushiFab(
+        icon: const FushiIcon(FushiIcons.add),
+        label: Text(t.game_add),
+        tooltip: t.game_add,
+        onPressed: _addGame,
       ),
       body: body,
     );
@@ -812,14 +823,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           FushiIconButton(
             tooltip: t.scrape_all,
             label: t.scrape_all,
-            icon: Icons.manage_search_outlined,
+            icon: FushiIcons.manageSearch,
             onTap: _scrapeAllGames,
           ),
         ],
         <Widget>[
           FushiPopupMenuButton<GalgameSortField>(
             tooltip: t.game_sort,
-            icon: const FushiIcon(Icons.sort),
+            icon: const FushiIcon(FushiIcons.sort),
             onSelected: _selectSortField,
             itemBuilder: (BuildContext context) =>
                 <PopupMenuEntry<GalgameSortField>>[
@@ -859,8 +870,11 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return FushiIconButtonControl(
       tooltip: t.game_filter,
       onPressed: () => unawaited(_showFilterSheet()),
+      // 有筛选生效：实心字形 + 强调色（M3E 的「激活」= FILL 1）。
       icon: FushiIcon(
-        _view.hasActiveFilter ? Icons.filter_alt : Icons.filter_alt_outlined,
+        _view.hasActiveFilter
+            ? FushiIcons.filled(FushiIcons.filter)
+            : FushiIcons.filter,
         color: _view.hasActiveFilter ? colors.primary : null,
       ),
     );
@@ -871,7 +885,9 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
     return FushiPopupMenuButton<Object>(
       key: const ValueKey<String>('games_toolbar_overflow'),
       tooltip: t.common_more_actions,
-      icon: const FushiIcon(Icons.more_vert),
+      icon: FushiIcon(
+        isGlassDesign(context) ? FushiIcons.moreHoriz : FushiIcons.more,
+      ),
       onSelected: (Object value) {
         if (value is GalgameSortField) {
           _selectSortField(value);
@@ -884,7 +900,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
           value: _GamesToolbarOverflowAction.scrapeAll,
           child: Row(
             children: <Widget>[
-              const FushiIcon(Icons.manage_search_outlined, size: 20),
+              const FushiIcon(FushiIcons.manageSearch, size: 20),
               const SizedBox(width: 12),
               Expanded(child: Text(t.scrape_all)),
             ],
@@ -1040,7 +1056,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
 
             return FushiModalSheetFrame(
               title: t.game_filter,
-              leadingIcon: Icons.filter_alt_outlined,
+              leadingIcon: FushiIcons.filter,
               scrollable: true,
               bodyPadding:
                   EdgeInsets.symmetric(horizontal: tokens.spacing.page),
@@ -1053,8 +1069,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     spacing: tokens.spacing.gap,
                     runSpacing: tokens.spacing.gap,
                     children: <Widget>[
-                      FushiSelectableChip(
-                        label: t.game_filter_all,
+                      // M3E：单选维度用 choice chip、多选维度（标签）用 filter
+                      // chip；状态 chip 带各自的语义图标（与封面角标同一套）。
+                      FushiChoiceChip(
+                        label: Text(t.game_filter_all),
                         selected: _view.status == null,
                         onSelected: (_) =>
                             apply(_view.copyWith(clearStatus: true)),
@@ -1064,8 +1082,12 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                         ...kGalgamePlayStatusMenuOrder,
                         GalgamePlayStatus.unset,
                       ])
-                        FushiSelectableChip(
-                          label: galgamePlayStatusLabel(status),
+                        FushiChoiceChip(
+                          avatar: FushiIcon(
+                            galgamePlayStatusIcon(status),
+                            size: 18,
+                          ),
+                          label: Text(galgamePlayStatusLabel(status)),
                           selected: _view.status == status,
                           onSelected: (bool selected) => apply(
                             selected
@@ -1082,8 +1104,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                     children: <Widget>[
                       for (final GalgameLocalFilter filter
                           in GalgameLocalFilter.values)
-                        FushiSelectableChip(
-                          label: galgameLocalFilterLabel(filter),
+                        FushiChoiceChip(
+                          label: Text(galgameLocalFilterLabel(filter)),
                           selected: _view.localFilter == filter,
                           onSelected: (_) =>
                               apply(_view.copyWith(localFilter: filter)),
@@ -1097,8 +1119,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                       runSpacing: tokens.spacing.gap,
                       children: <Widget>[
                         for (final String tag in allTags)
-                          FushiSelectableChip(
-                            label: tag,
+                          FushiFilterChip(
+                            label: Text(tag),
                             selected: _view.tags.contains(tag),
                             onSelected: (bool selected) {
                               final Set<String> next =
@@ -1145,19 +1167,19 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 手写一套图标 + 文案 + 按钮的列。
   Widget _buildEmpty(BuildContext context) {
     return FushiPlaceholderMessage(
-      icon: Icons.videogame_asset_outlined,
+      icon: FushiIcons.games,
       message: t.game_empty,
       // 嵌壳时空态引导去「导入」分段（唯一入库位置）；独立使用时直接选 exe。
       action: widget.embedded
           ? FushiFilledButton.icon(
               onPressed: () =>
                   gameSectionNotifier.value = GameSection.importGames,
-              icon: const FushiIcon(Icons.library_add_outlined),
+              icon: const FushiIcon(FushiIcons.libraryAdd),
               label: Text(t.library_empty_go_import),
             )
           : FushiFilledButton.icon(
               onPressed: _addGame,
-              icon: const FushiIcon(Icons.add),
+              icon: const FushiIcon(FushiIcons.add),
               label: Text(t.game_add),
             ),
     );
@@ -1167,12 +1189,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 附「重置筛选」直达动作，省得用户再去找筛选面板底部的按钮。
   Widget _buildNoMatch(BuildContext context) {
     return FushiPlaceholderMessage(
-      icon: Icons.search_off,
+      icon: FushiIcons.searchOff,
       message: t.game_no_match,
       action: _view.hasActiveFilter
-          ? FushiTextButton(
+          ? FushiFilledButton.tonalIcon(
               onPressed: () => _setView(_view.clearFilters()),
-              child: Text(t.game_filter_reset),
+              icon: const FushiIcon(FushiIcons.filterList),
+              label: Text(t.game_filter_reset),
             )
           : null,
     );
@@ -2017,7 +2040,7 @@ class _GameCard extends StatelessWidget {
       height: 120,
       child: Center(
         child: FushiIcon(
-          Icons.videogame_asset,
+          FushiIcons.games,
           size: 40,
           color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
@@ -2034,61 +2057,61 @@ class _GameCard extends StatelessWidget {
         (
           action: 'detail',
           label: t.game_view_detail,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           danger: false,
         ),
         (
           action: 'status',
           label: t.game_play_status,
-          icon: Icons.flag_outlined,
+          icon: FushiIcons.flag,
           danger: false,
         ),
         (
           action: 'stats',
           label: t.media_stats_action,
-          icon: Icons.insights_outlined,
+          icon: FushiIcons.statistics,
           danger: false,
         ),
         (
           action: 'rename',
           label: t.game_rename,
-          icon: Icons.drive_file_rename_outline,
+          icon: FushiIcons.rename,
           danger: false,
         ),
         (
           action: 'cover',
           label: t.game_set_cover,
-          icon: Icons.image_outlined,
+          icon: FushiIcons.image,
           danger: false,
         ),
         (
           action: 'autocover',
           label: t.game_auto_cover,
-          icon: Icons.image_search,
+          icon: FushiIcons.imageSearch,
           danger: false,
         ),
         (
           action: 'scrape',
           label: t.game_scrape,
-          icon: Icons.cloud_download_outlined,
+          icon: FushiIcons.cloudDownload,
           danger: false,
         ),
         (
           action: 'collect',
           label: t.add_to_collection,
-          icon: Icons.collections_bookmark_outlined,
+          icon: FushiIcons.collection,
           danger: false,
         ),
         (
           action: 'tags',
           label: t.tag_label,
-          icon: Icons.sell_outlined,
+          icon: FushiIcons.tag,
           danger: false,
         ),
         (
           action: 'language',
           label: t.book_language_action,
-          icon: Icons.translate,
+          icon: FushiIcons.language,
           danger: false,
         ),
         // 窗口超分：**每个游戏各自一档**，这里是它唯一的入口（BUG-1191 删掉了那个
@@ -2123,13 +2146,13 @@ class _GameCard extends StatelessWidget {
           (
             action: 'file_location',
             label: t.media_file_location_open,
-            icon: Icons.folder_open_outlined,
+            icon: FushiIcons.folderOpen,
             danger: false,
           ),
         (
           action: 'remove',
           label: t.game_remove,
-          icon: Icons.delete_outline,
+          icon: FushiIcons.delete,
           danger: true,
         ),
       ];
@@ -2232,7 +2255,7 @@ class _GameCard extends StatelessWidget {
           color: coverBadgeScrim(context),
         ),
         child: FushiIcon(
-          isGlassDesign(context) ? Icons.more_horiz : Icons.more_vert,
+          isGlassDesign(context) ? FushiIcons.moreHoriz : FushiIcons.more,
           size: 18,
           color: coverBadgeForeground(context),
         ),
@@ -2269,7 +2292,7 @@ class GameCoverThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Widget placeholder = ShelfCoverPlaceholder(
-      icon: Icons.videogame_asset,
+      icon: FushiIcons.games,
       iconSize: 48,
       backgroundColor: colors.surfaceContainerHighest,
     );
@@ -2292,23 +2315,89 @@ String? galgameCardMetaLabel(GalgameEntry game) {
 
 /// 游玩状态图标（封面角标 / 详情页状态胶囊共用）。
 IconData galgamePlayStatusIcon(GalgamePlayStatus status) => switch (status) {
-      GalgamePlayStatus.unset => Icons.flag_outlined,
-      GalgamePlayStatus.wantToPlay => Icons.bookmark_border,
-      GalgamePlayStatus.playing => Icons.play_arrow_rounded,
-      GalgamePlayStatus.played => Icons.check_rounded,
-      GalgamePlayStatus.onHold => Icons.pause_rounded,
-      GalgamePlayStatus.dropped => Icons.close_rounded,
+      GalgamePlayStatus.unset => FushiIcons.flag,
+      GalgamePlayStatus.wantToPlay => FushiIcons.bookmark,
+      GalgamePlayStatus.playing => FushiIcons.play,
+      GalgamePlayStatus.played => FushiIcons.check,
+      GalgamePlayStatus.onHold => FushiIcons.pause,
+      GalgamePlayStatus.dropped => FushiIcons.close,
     };
 
-/// 封面左上角的游玩状态角标（[CoverBadge]：MD3 scrim / Apple 磨砂暗底）；
-/// 未设置状态不画（满屏「未设置」只是噪音）。
+/// 游玩状态对应的 M3E 饱和色块档：在玩 = primary（最强调）、玩过 = tertiary、
+/// 想玩 = secondary、弃坑 = error；搁置 / 未设置 = null（中性）。
+FushiCardTone? galgamePlayStatusTone(GalgamePlayStatus status) =>
+    switch (status) {
+      GalgamePlayStatus.playing => FushiCardTone.primary,
+      GalgamePlayStatus.played => FushiCardTone.tertiary,
+      GalgamePlayStatus.wantToPlay => FushiCardTone.secondary,
+      GalgamePlayStatus.dropped => FushiCardTone.error,
+      GalgamePlayStatus.onHold || GalgamePlayStatus.unset => null,
+    };
+
+/// 封面左上角的游玩状态角标（[GalgameStatusBadge]：MD3 = M3E 饱和色块胶囊；
+/// Apple / 墨水屏 = 共享 [CoverBadge] 磨砂暗底 / 实色）；未设置状态不画（满屏
+/// 「未设置」只是噪音）。
 Widget? galgamePlayStatusBadge(GalgamePlayStatus status) {
   if (status == GalgamePlayStatus.unset) return null;
-  return CoverBadge(
-    icon: galgamePlayStatusIcon(status),
-    label: galgamePlayStatusLabel(status),
-    iconSize: 12,
-  );
+  return GalgameStatusBadge(status: status);
+}
+
+/// 游玩状态角标。
+///
+/// MD3（M3E）：全圆角胶囊，底色是状态对应的饱和 container 色块（[galgamePlayStatusTone]：
+/// 在玩 primaryContainer / 玩过 tertiaryContainer / 想玩 secondaryContainer / 弃坑
+/// errorContainer / 搁置 surfaceContainerHighest）+ onContainer 图标与 labelSmall
+/// Emphasized 文字——压在封面上也读得出「是哪种状态」，而不是一排同色暗角标比字。
+/// Apple 与墨水屏沿用共享 [CoverBadge]（iOS 磨砂暗底 / 墨水屏实色），不在封面上
+/// 放 15% 淡染块（Apple tone 是为页面底设计的，压在照片上读不出）。
+class GalgameStatusBadge extends StatelessWidget {
+  const GalgameStatusBadge({required this.status, super.key});
+
+  final GalgamePlayStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData icon = galgamePlayStatusIcon(status);
+    final String label = galgamePlayStatusLabel(status);
+    if (isGlassDesign(context) || isEinkTheme(context)) {
+      return CoverBadge(icon: icon, label: label, iconSize: 12);
+    }
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiCardTone? tone = galgamePlayStatusTone(status);
+    final FushiCardColors? toned =
+        tone == null ? null : fushiCardToneColors(context, tone);
+    final Color container = toned?.container ?? cs.surfaceContainerHighest;
+    final Color onContainer = toned?.onContainer ?? cs.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 3, 8, 3),
+      decoration: ShapeDecoration(
+        color: container,
+        shape: const StadiumBorder(),
+        shadows: <BoxShadow>[
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.18),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIcon(icon, size: 14, color: onContainer),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.fushiType.labelSmallEmphasized.copyWith(
+              color: onContainer,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// 「继续游戏」横版卡（Apple Arcade / Game Center「继续玩」式）：封面模糊放大铺
@@ -2397,8 +2486,10 @@ class _ContinuePlayCard extends StatelessWidget {
             children: <Widget>[
               AspectRatio(
                 aspectRatio: 3 / 4,
+                // M3E 形状分级：卡内缩略图走 small（12），与外层封面框拉开
+                // 形状对比。
                 child: ClipRRect(
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  borderRadius: FushiM3eShape.smallRadius,
                   child: GameCoverThumb(game: game),
                 ),
               ),
@@ -2417,9 +2508,8 @@ class _ContinuePlayCard extends StatelessWidget {
                       game.displayName,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium?.copyWith(
+                      style: context.fushiType.titleLargeEmphasized.copyWith(
                         color: foreground,
-                        fontWeight: FontWeight.w700,
                         height: 1.25,
                       ),
                     ),
@@ -2430,8 +2520,8 @@ class _ContinuePlayCard extends StatelessWidget {
                           meta.join(' · '),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium
-                              ?.copyWith(color: secondary),
+                          style: context.fushiType.labelMedium.tabular
+                              .copyWith(color: secondary),
                         ),
                       ),
                   ],
@@ -2452,9 +2542,10 @@ class _ContinuePlayCard extends StatelessWidget {
   }
 }
 
-/// 「继续游戏」卡右下的播放圆钮（装饰；整卡点击即启动）。MD3 = primaryContainer
-/// 圆底；Apple = 白色实心圆 + 黑色播放符（Arcade / TV 的「播放」钮）；墨水屏 =
-/// 前景色描边圆。
+/// 「继续游戏」卡右下的播放钮（装饰；整卡点击即启动）。MD3 = M3E 饱和 primary
+/// 色块 + 四瓣 cookie 形（形状对比：卡是圆角矩形、钮是 cookie），悬停卡片时
+/// 弹簧转半圈；Apple = 白色实心圆 + 黑色播放符（Arcade / TV 的「播放」钮）；
+/// 墨水屏 = 前景色描边圆。
 class _ContinuePlayGlyph extends StatelessWidget {
   const _ContinuePlayGlyph({required this.eink});
 
@@ -2464,28 +2555,43 @@ class _ContinuePlayGlyph extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool apple = isGlassDesign(context) && !eink;
+    final bool m3e = !eink && !apple;
     final Color fill = eink
         ? cs.surface
         : apple
             ? Colors.white
-            : cs.primaryContainer;
+            : cs.primary;
     final Color glyph = eink
         ? cs.onSurface
         : apple
             ? Colors.black
-            : cs.onPrimaryContainer;
+            : cs.onPrimary;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool lifted = m3e && FushiHoverLift.liftedOf(context);
+    final ShapeBorder shape = m3e
+        ? const FushiCookieBorder(lobes: 4, depth: 0.12)
+        : CircleBorder(
+            side: BorderSide(
+              color: eink ? cs.onSurface : Colors.transparent,
+            ),
+          );
     return IgnorePointer(
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: fill,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: eink ? cs.onSurface : Colors.transparent,
+      child: AnimatedRotation(
+        turns: lifted ? 0.125 : 0,
+        duration: motion.spatialDefault.duration,
+        curve: motion.spatialDefault.curve,
+        child: Container(
+          width: m3e ? 40 : 36,
+          height: m3e ? 40 : 36,
+          decoration: ShapeDecoration(color: fill, shape: shape),
+          child: AnimatedRotation(
+            // 反向转回：形状在转，播放符保持正立。
+            turns: lifted ? -0.125 : 0,
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            child: FushiIcon(FushiIcons.play, size: 22, color: glyph),
           ),
         ),
-        child: FushiIcon(Icons.play_arrow_rounded, size: 22, color: glyph),
       ),
     );
   }

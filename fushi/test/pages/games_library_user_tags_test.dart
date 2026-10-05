@@ -17,6 +17,7 @@ import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-1113「游戏没有标签」的 UI 侧守卫：游戏库页必须接上书架 / 视频页那套**共享**
 /// 用户标签体系——同一个 [FushiTagFilterBar]、同一个标签池、同一套 AND 筛选、
@@ -159,7 +160,7 @@ void main() {
     final int tagId = await db.createTag('神作', 0xFFEF5350);
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byIcon(Icons.more_vert).first);
+    await tester.tap(find.byIcon(FushiIcons.more).first);
     await tester.pumpAndSettle();
     expect(find.text(t.tag_label), findsOneWidget);
 
