@@ -384,6 +384,9 @@ class DictionaryImportManager {
     }
   }
 
+  /// 整合包内层 zip 递归解包的最大深度（外层不计）。
+  static const int _kMaxNestedBundleDepth = 4;
+
   /// BUG-1903：把一个装了多本词典的压缩包拆开、逐本导入。
   ///
   /// 解压保持原有目录层级：MDX 的样式表 / 资源（`.css` / `.mdd`）就躺在它自己那本
@@ -403,7 +406,17 @@ class DictionaryImportManager {
     // BUG-2952：整合包里的内层 zip 自己也可能是一包多典，会递归回到这里。递归层
     // 必须用外层工作目录**里面**的独立目录——共用同一个固定目录会在外层还在逐本
     // 导入时把它整个删掉。外层 finally 删目录时连带清掉。
-    final Directory work = path.isWithin(baseWork, archive.path)
+    final bool nested = path.isWithin(baseWork, archive.path);
+    // 自包含 / 恶意深层嵌套的包会无限递归、一层层解压直到磁盘写满：限深，超限这一本
+    // 按失败处理（外层逐本循环照常汇总）。
+    if (nested &&
+        '.extracted'
+                .allMatches(path.relative(archive.path, from: baseWork))
+                .length >=
+            _kMaxNestedBundleDepth) {
+      throw StateError('Dictionary bundle nested too deeply: ${archive.path}');
+    }
+    final Directory work = nested
         ? Directory('${archive.path}.extracted')
         : Directory(baseWork);
     if (work.existsSync()) work.deleteSync(recursive: true);
@@ -430,10 +443,25 @@ class DictionaryImportManager {
           .map((File f) => f.parent)
           .toList();
       if (yomitanRoots.length > 1 || dictionaries.isNotEmpty) {
+        // 根目录本身就可能是一个 Yomitan 根（根上有 index.json、旁边还有内层 zip / MDX）：
+        // 打包时必须避开别的词典（内层 zip / MDX / MDD / DSL、嵌套的其它 Yomitan 根、
+        // 先打好的临时包与正在写的这份 zip 自己），否则整包重复进这一本的 media。
+        final Set<String> mddFiles = <String>{
+          for (final File f in work.listSync(recursive: true).whereType<File>())
+            if (path.extension(f.path).toLowerCase() == '.mdd') f.path,
+        };
         for (int i = 0; i < yomitanRoots.length; i++) {
           final String packed = path.join(work.path, '_bundle_dict_$i.zip');
           final String root = yomitanRoots[i].path;
-          await Isolate.run(() => packDirectoryToZip(root, packed));
+          final Set<String> skipPaths = <String>{
+            ...mddFiles,
+            for (final File f in dictionaries) f.path,
+            for (final Directory d in yomitanRoots)
+              if (d.path != root) d.path,
+          };
+          await Isolate.run(
+            () => packDirectoryToZip(root, packed, skipPaths: skipPaths),
+          );
           dictionaries.add(File(packed));
         }
       }
@@ -801,8 +829,17 @@ class DictionaryImportManager {
   /// （TODO-082：避免大目录的同步读取+压缩卡死主 isolate）。暴露给测试以在 host
   /// 上验证打包正确性（无需 native FFI）。
   @visibleForTesting
-  static void packDirectoryToZip(String srcDirPath, String zipPath) {
+  static void packDirectoryToZip(
+    String srcDirPath,
+    String zipPath, {
+    Set<String> skipPaths = const <String>{},
+  }) {
     final Directory directory = Directory(srcDirPath);
+    // [skipPaths] 里的文件、以及落在其中某个目录下的文件一律不打进来；输出 zip 若就在
+    // 源目录里（整合包根即词典根），它自己也不能被打进自己。
+    bool skipped(String p) =>
+        path.equals(p, zipPath) ||
+        skipPaths.any((String s) => path.equals(p, s) || path.isWithin(s, p));
     // STORE（不压缩）+ 逐文件流式写盘：这个 zip 只是给 native 导入器当输入的
     // 临时容器，native 拿到后立刻 inflate——在 Dart 里 deflate 一遍纯属白干（几百
     // MB 的 MDX/MDD 目录要压好几秒）。以前还把整个目录读进内存组 Archive、再
@@ -814,7 +851,7 @@ class DictionaryImportManager {
     try {
       for (final FileSystemEntity entity
           in directory.listSync(recursive: true)) {
-        if (entity is File) {
+        if (entity is File && !skipped(entity.path)) {
           final String relativePath =
               path.relative(entity.path, from: directory.path);
           final InputFileStream fileStream = InputFileStream(entity.path);

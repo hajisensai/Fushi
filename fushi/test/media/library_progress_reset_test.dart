@@ -3,6 +3,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -71,6 +72,18 @@ Future<Map<String, StudySegmentRow>> _segments(FushiDatabase db) async =>
 
 void main() {
   group('resetBookReadingState', () {
+    test('带有声书时音频位置一并归零（开书以音频位置为主，BUG-2390）', () async {
+      final FushiDatabase db = await _openDb();
+      await _insertBook(db, 'ab');
+      final AudiobookRepository audio = AudiobookRepository(db);
+      await audio.ensureAudiobook('ab');
+      await audio.updatePositionMs(bookKey: 'ab', positionMs: 123456);
+
+      await resetBookReadingState(db: db, bookKey: 'ab', title: 'Book ab');
+
+      expect(await audio.readPositionMs('ab'), 0);
+    });
+
     test('位置写回开头且 updatedAt 严格变新，读完标记清空，统计默认不动', () async {
       final FushiDatabase db = await _openDb();
       final String uid = await _insertBook(db, 'bk');

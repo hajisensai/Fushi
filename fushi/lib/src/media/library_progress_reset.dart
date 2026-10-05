@@ -25,6 +25,7 @@
 library;
 
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -119,6 +120,12 @@ Future<void> resetBookReadingState({
     }
   }
   await db.setEpubBookCompleted(bookKey, null);
+  // 带有声书时开书以音频位置为主（BUG-2390），只回写阅读位置会被音频位置原样拉回去、
+  // 再被阅读器落库成「在读」；音频位置一并归零（带时间戳，互联 LWW 随之推送）。
+  final AudiobookRepository audiobooks = AudiobookRepository(db);
+  if (await audiobooks.findByBookKey(bookKey) != null) {
+    await audiobooks.updatePositionMs(bookKey: bookKey, positionMs: 0);
+  }
 
   final Set<String> statKeys = <String>{
     bookKey,

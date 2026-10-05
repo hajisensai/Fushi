@@ -80,7 +80,10 @@ void main() {
         src.contains("ext == '.mdx' || ext == '.dsl' || ext == '.zip'"),
         isTrue,
       );
-      expect(src.contains('packDirectoryToZip(root, packed)'), isTrue);
+      expect(
+        src.contains('packDirectoryToZip(root, packed, skipPaths: skipPaths)'),
+        isTrue,
+      );
       expect(
         src.contains("Directory('\${archive.path}.extracted')"),
         isTrue,
