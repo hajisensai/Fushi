@@ -200,6 +200,18 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 结果被判过期，长度也就到不了这里，不再需要第二个发号器（那正是它被摘掉的原因）。
   SourceLookupHighlight? _sourceHighlight;
 
+  /// 源文本条是否与结果卡的词头重复（整段源文本恰好就是命中的那个词）。
+  ///
+  /// 搜索框直接查一个词时，源文本条上是同一个词、整段都被扫描高亮框住，紧接着结果卡
+  /// 的词头又把它（带注音）大字画一遍——用户看到的是「绿色色块大字 + 词头大字」两份
+  /// 同一个词。条的价值在于对整句做 Yomitan 式扫描，整段即命中的那个词时它没有可
+  /// 扫描的余地，此时收起。
+  ///
+  /// 只在扫描高亮落地时（与结果同一帧）重算；新查询在途时沿用上一次的判定，避免旧
+  /// 结果还挂着、新高亮未到的那几十毫秒里条先冒出来再缩回去。默认收起：首次查询在
+  /// 结果到来前结果卡本就不在场。
+  bool _sourceStripRedundant = true;
+
   bool _historyWritten = false;
 
   /// 搜索区（搜索栏 + 其下的「最近搜索」面板）是否持有焦点。决定 SearchView 式
@@ -523,6 +535,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _allLoaded = false;
     _sourceLookupText = '';
     _sourceHighlight = null;
+    _sourceStripRedundant = true;
     _historyWritten = false;
     setState(() {});
   }
@@ -1645,7 +1658,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 弹窗 push/pop 都走 setState → 重 build → 本同步，使根 Overlay 总反映当前栈。
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncPopupOverlay());
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool hasSourceText = _sourceLookupText.trim().isNotEmpty;
+    final bool hasSourceText =
+        _sourceLookupText.trim().isNotEmpty && !_sourceStripRedundant;
     // 结果区是一张内容卡（MD3 surfaceContainerLow / 28 圆角；Apple 实色二级分组底 /
     // inset grouped 圆角）：源文本条是卡头，结果 WebView 是卡身。WebView 文档背景
     // 透明（popup.css `html.fushi-glass-host`），词条直接落在卡面上。卡片不裁剪
@@ -1914,6 +1928,10 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         language: JapaneseLanguage.instance,
       ),
       leadingStripUnits: appModel.lookupLeadingStripUnits(anchor.query),
+    );
+    _sourceStripRedundant = isSourceStripRedundant(
+      text: _sourceLookupText,
+      highlight: _sourceHighlight,
     );
   }
 
