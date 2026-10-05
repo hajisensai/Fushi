@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
 ///
@@ -548,7 +549,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                 : FilledButton.tonalIcon(
                     key: const ValueKey<String>('manga_discovery_open_sources'),
                     onPressed: openSources,
-                    icon: const Icon(Icons.extension_outlined),
+                    // 2026-10 体验优化：与全局搜索空态同一「导入」图标；拼图块
+                    // 暗示「扩展」入口，而库页里没有叫「扩展」的按钮。
+                    icon: const Icon(Icons.library_add_outlined),
                     label: Text(t.manga_discovery_empty_action),
                   ),
           ),
@@ -858,10 +861,12 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         child: FushiPlaceholderMessage(
           icon: Icons.cloud_off_outlined,
           message: t.manga_discovery_load_failed,
-          action: FilledButton.tonal(
+          // 2026-10 体验优化：重试按钮统一 FilledButton.icon(refresh_rounded)。
+          action: FilledButton.icon(
             key: const ValueKey<String>('manga_discovery_retry'),
             onPressed: () => unawaited(_loadFirst()),
-            child: Text(t.retry),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(t.retry),
           ),
         ),
       );
@@ -876,18 +881,24 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         ),
       );
     } else {
-      body = SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-        sliver: SliverGrid.builder(
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 160,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 0.6,
+      // 2026-10 动效重做：首屏结果卡错峰淡入，翻页补进来的卡瞬间出现。
+      body = FushiEntranceScope(
+        child: SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: 160,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.6,
+            ),
+            itemCount: loaded.length,
+            itemBuilder: (BuildContext context, int index) =>
+                FushiStaggeredEntrance(
+              index: index,
+              child: _SourceItemCard(item: loaded[index]),
+            ),
           ),
-          itemCount: loaded.length,
-          itemBuilder: (BuildContext context, int index) =>
-              _SourceItemCard(item: loaded[index]),
         ),
       );
     }

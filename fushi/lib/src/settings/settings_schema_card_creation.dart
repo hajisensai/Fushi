@@ -319,6 +319,28 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           hasRevealTarget: true,
           visible: (_) => Platform.isWindows,
         ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.desktop_auto_launch',
+          title: t.anki_desktop_auto_launch,
+          subtitle: t.anki_desktop_auto_launch_hint,
+          hasRevealTarget: true,
+          visible: (_) =>
+              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.desktop_executable',
+          title: t.anki_desktop_executable,
+          hasRevealTarget: true,
+          visible: (_) =>
+              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.desktop_launch',
+          title: t.anki_desktop_launch,
+          hasRevealTarget: true,
+          visible: (_) =>
+              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+        ),
       ],
       if (panel == AnkiSettingsPanel.media) ...[
         SettingsBodySearchEntry(

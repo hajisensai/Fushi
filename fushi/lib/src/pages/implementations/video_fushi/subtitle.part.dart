@@ -362,7 +362,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ),
             ),
       if (!_isRemote)
-        for (final SubtitleSource source in _menuSubtitleSources)
+        for (final SubtitleSource source in _menuSubtitleSources) ...<Widget>[
           _withSubtitleFileMenu(
             context,
             controller,
@@ -388,6 +388,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   : () => unawaited(_selectSubtitleSource(controller, source)),
             ),
           ),
+          // 图形轨整轨 OCR 成文字字幕：生成后播放中就能直接点字查词，不必暂停。
+          if (source.isGraphicEmbedded && source.streamIndex != null)
+            ListTile(
+              leading: const Icon(Icons.document_scanner_outlined),
+              title: Text(t.video_subtitle_graphic_ocr_track),
+              subtitle: Text(t.video_subtitle_graphic_ocr_track_hint),
+              contentPadding: const EdgeInsetsDirectional.only(
+                start: 56,
+                end: 16,
+              ),
+              enabled: !_subtitleLoadingShown && !_graphicSubtitleOcrRunning,
+              onTap: _subtitleLoadingShown || _graphicSubtitleOcrRunning
+                  ? null
+                  : () => unawaited(
+                      _generateSubtitleFromGraphicTrack(controller, source),
+                    ),
+            ),
+        ],
       // TODO-857 / TODO-1312 视频双字幕：副字幕入口。副字幕走 Flutter overlay 副层
       // cue 流（可逐字符查词）。TODO-2837：远端也支持（host sidecar / host 内嵌轨
       // 抽取 / 本地文件，见 [_buildSecondarySubtitleRows] 远端分支）。
@@ -1984,6 +2002,117 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _showOsd(
         t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
       );
+    }
+  }
+
+  /// 把图形字幕轨（PGS）整轨 OCR 成文字 SRT 并当外挂字幕加载：抽轨 → 解析位图 →
+  /// 逐条识别（低置信度交 AI，与漫画同一开关）→ 合并相邻同文。产物落字幕目录，
+  /// 与 ASR 产物同口径，之后播放中直接点字查词。
+  Future<void> _generateSubtitleFromGraphicTrack(
+    VideoPlayerController controller,
+    SubtitleSource source,
+  ) async {
+    final int? streamIndex = source.streamIndex;
+    final String? videoPath = _currentVideoPath;
+    if (streamIndex == null || videoPath == null) return;
+    if (_graphicSubtitleOcrRunning) return;
+    final int loadSeq = _episodeLoadSeq;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _currentVideoPath == videoPath;
+
+    _rebuild(() => _graphicSubtitleOcrRunning = true);
+    final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+      prepare: _prepareGraphicSubtitleOcr,
+    );
+    Directory? work;
+    try {
+      _showOsd(t.video_subtitle_graphic_ocr_extracting);
+      work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
+      final String supPath = p.join(work.path, 'track.sup');
+      final bool extracted = await extractGraphicSubtitleTrackToSup(
+        videoPath: videoPath,
+        streamIndex: streamIndex,
+        supPath: supPath,
+        onFailure: (String summary) => ErrorLogService.instance.log(
+          'video.graphicSubtitleOcr.extract',
+          summary,
+          StackTrace.current,
+        ),
+      );
+      if (!isCurrent()) return;
+      if (!extracted) {
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
+        return;
+      }
+      final List<PgsCue> cues = PgsSubtitleParser.parse(
+        await File(supPath).readAsBytes(),
+      );
+      if (!isCurrent()) return;
+      if (cues.isEmpty) {
+        _showOsd(t.video_subtitle_graphic_ocr_empty);
+        return;
+      }
+      int lastDecile = -1;
+      final List<GraphicSubtitleTextCue>? texts =
+          await recognizeGraphicSubtitleCues(
+            cues: cues,
+            session: session,
+            isCancelled: () => !isCurrent(),
+            onProgress: (int done, int total) {
+              // 每 10% 报一次，别把 OSD 刷成跑马灯。
+              final int decile = done * 10 ~/ total;
+              if (decile == lastDecile) return;
+              lastDecile = decile;
+              _showOsd(
+                t.video_subtitle_graphic_ocr_progress(done: done, total: total),
+              );
+            },
+            onRefineError: (Object error, StackTrace stack) => ErrorLogService
+                .instance
+                .log('video.graphicSubtitleOcr.refine', error, stack),
+          );
+      if (texts == null || !isCurrent()) return;
+      final String srt = buildGraphicSubtitleSrt(texts);
+      if (srt.isEmpty) {
+        _showOsd(t.video_subtitle_graphic_ocr_empty);
+        return;
+      }
+      final Directory directory = await AppPaths.videoSubtitlesDirectory();
+      final String videoKey = sha256
+          .convert(utf8.encode('${widget.bookUid}|$videoPath|$_currentEpisode'))
+          .toString()
+          .substring(0, 12);
+      final String target = p.join(
+        directory.path,
+        'graphic-ocr-$videoKey-s$streamIndex-'
+        '${DateTime.now().microsecondsSinceEpoch}.srt',
+      );
+      await directory.create(recursive: true);
+      await File(target).writeAsString(srt, flush: true);
+      if (!isCurrent()) return;
+      await _importExternalSubtitle(controller, target);
+      if (!isCurrent()) return;
+      if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
+        await _setDelayMs(0);
+      }
+    } on GraphicSubtitleOcrUnavailable catch (error) {
+      if (isCurrent()) _reportGraphicSubtitleOcrUnavailable(error.reason);
+    } catch (error, stack) {
+      ErrorLogService.instance.log('video.graphicSubtitleOcr', error, stack);
+      if (isCurrent()) {
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
+      }
+    } finally {
+      await session.close();
+      try {
+        await work?.delete(recursive: true);
+      } on FileSystemException {
+        // 临时目录，删不掉留给系统清理。
+      }
+      if (mounted) _rebuild(() => _graphicSubtitleOcrRunning = false);
     }
   }
 

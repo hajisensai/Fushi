@@ -1866,6 +1866,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
               imagePath: imageFile.path,
               audioPath: audioClip.path,
               outputPath: videoFile.path,
+              // BUG-2940：时长取裁音频用的同一对毫秒值，不靠 `-shortest`。
+              durationMs: clipEndMs - clipStartMs,
               width: layout.width,
               height: layout.height,
               // TODO-2357：全平台 libx264，色度统一 yuv420p（编码器参数内定）。
@@ -2104,6 +2106,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           framesDir: framesDir.path,
           audioPath: audioClip.path,
           outputPath: videoFile.path,
+          // BUG-2940：帧计划与音频裁剪是同一对毫秒值（见 _runAudiobookClipPipeline）。
+          durationMs: plan.globalEndMs - plan.globalStartMs,
           width: layout.width,
           height: layout.height,
           fps: fps,

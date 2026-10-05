@@ -1,6 +1,10 @@
 #!/bin/bash
 # Rebuild Android ffmpeg-kit (arthenica v6.0): libx264 (GPL, TODO-2357) + openssl/cert-pin
-# (BUG-891) + libvpx/libopus (inline WebM clip export).
+# (BUG-891) + libvpx/libopus (inline WebM clip export) + dav1d (BUG-2947: FFmpeg's native
+# `av1` decoder is a hwaccel-only shell, and --disable-mediacodec leaves no hwaccel, so every
+# AV1 source failed frame/GIF extraction with "doesn't support hardware accelerated AV1").
+#
+# dav1d is built with meson + ninja (scripts/android/dav1d.sh), so both must be on PATH.
 #
 # Two callers, one recipe:
 #   - Mac build box: run with no env -> uses ~/ffmpegkit-build layout + local proxy (as before).
@@ -27,10 +31,14 @@ FFMPEG_KIT_DIR="${FFMPEG_KIT_DIR:-$HOME/ffmpegkit-build/ffmpeg-kit}"
 echo "=== prepare src/ffmpeg (clone n6.0 if absent + cert-pin patch) ==="
 bash "${HERE}/prepare_ffmpeg_src.sh" "${FFMPEG_KIT_DIR}"
 
+for tool in meson ninja; do
+  command -v "${tool}" >/dev/null || { echo "(*) ${tool} not found in PATH (needed by dav1d)"; exit 6; }
+done
+
 cd "${FFMPEG_KIT_DIR}"
-echo "=== android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus START $(date) ==="
+echo "=== android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d START $(date) ==="
 rc=0
-./android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus \
+./android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d \
   --disable-x86 --disable-x86-64 --api-level=24 || rc=$?
 echo "ANDROID_BUILD_EXIT=${rc}"
 if [ "${rc}" -ne 0 ]; then

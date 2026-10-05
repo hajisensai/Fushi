@@ -1646,7 +1646,7 @@ $sharedInitViewport
   // BUG-2905：二分只认「装得下」，切点落在哪个字上全凭运气——段落恰好多出一个「。」
   // 就切出一屏孤零零的「。」，「…しょうな！」」切成「…しょうな！」+「」」。同一段被切
   // 开时，下一屏不得以行首禁则字开头、本屏不得以开括号收尾（与正文 `line-break:
-  // strict` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、
+  // normal` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、
   // 不往前进，所以退完的屏一定仍装得下。若退过本屏起点都找不到合规切点（连续禁则字比
   // 一整屏还长，如「ーーーー…」「っっっ」「！？！？…」），禁则在本屏内无解：放弃禁则、
   // 用二分得到的最宽切点 end（与浏览器 line-break 遇到无法满足的禁则时照常断开一致），
@@ -1666,9 +1666,10 @@ $sharedInitViewport
     var item = items[first ? 0 : items.length - 1];
     return String(item && item.char || '');
   },
-  lineStartProhibitedChars: '、。，．,.・：；:;？！?!‼⁇⁈⁉゛゜ヽヾゝゞ々〻ー－‐゠–〜～' +
-    '」』）〕］｝〉》】〙〗〟’”｠»)]}' +
-    'ぁぃぅぇぉっゃゅょゎゕゖァィゥェォッャュョヮヵヶㇰㇱㇲㇳㇴㇵㇶㇷㇸㇹㇺㇻㇼㇽㇾㇿ…‥',
+  // 与正文 `line-break: normal` 对齐（BUG-2929）：CJ 类（小假名与长音 ー）允许出现在行首 / 屏首，
+  // 不在此表；`strict` 才禁它们，见 reader_content_styles.dart 的 gridCss。
+  lineStartProhibitedChars: '、。，．,.・：；:;？！?!‼⁇⁈⁉゛゜ヽヾゝゞ々〻－‐゠–〜～' +
+    '」』）〕］｝〉》】〙〗〟’”｠»)]}…‥',
   lineEndProhibitedChars: '「『（〔［｛〈《【〘〖〝‘“｟«([{',
   isLineStartProhibitedChar: function(char) {
     return !!char && this.lineStartProhibitedChars.indexOf(char) >= 0;

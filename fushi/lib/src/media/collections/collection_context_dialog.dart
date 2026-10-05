@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
@@ -56,7 +57,21 @@ Future<void> showCollectionContextDialog({
   DeletionDisclosure? deleteMembersDisclosure,
   List<DialogListAction> extraListActions = const <DialogListAction>[],
   Widget? cover,
+  ImageProvider? coverImage,
 }) async {
+  // [coverImage]：合集封面图源（自设封面 / 首个有封面的成员）。只给图源时由这里
+  // 画前景（contain，整幅可见），同时作为封面块两侧的模糊垫底
+  // （[MediaItemDialogFrame.coverBackdrop]）——此前合集菜单根本没有封面，一眼
+  // 认不出是哪个合集（2026-10-04 用户截图）。
+  final ImageProvider? coverSource = coverImage;
+  final Widget? effectiveCover = cover ??
+      (coverSource == null
+          ? null
+          : Image(
+              image: coverSource,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ));
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
@@ -66,7 +81,8 @@ Future<void> showCollectionContextDialog({
       }
 
       return MediaItemDialogFrame(
-        cover: cover,
+        cover: effectiveCover,
+        coverBackdrop: coverSource,
         title: collection.name,
         // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
         launchLabel: t.collection_view_all,
@@ -238,6 +254,8 @@ Future<void> _deleteCollection({
 }) async {
   final List<MediaCollectionItemRow> members =
       await db.getCollectionItems(collection.id);
+  final CollectionOwnedSubscriptions subscriptions =
+      await CollectionOwnedSubscriptions.load(db, <int>[collection.id]);
   if (!context.mounted) return;
   final bool canDeleteMembers =
       onDeleteMembersMedia != null && members.isNotEmpty;
@@ -254,9 +272,12 @@ Future<void> _deleteCollection({
       statisticsSubtitle:
           canDeleteMembers ? deleteMembersStatisticsSubtitle : null,
       checkedDisclosure: canDeleteMembers ? deleteMembersDisclosure : null,
+      deleteSubscriptionsLabel: subscriptions.deleteLabel,
     ),
   );
   if (result == null || !context.mounted) return;
+  // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
+  if (result.deleteSubscriptions) await subscriptions.delete(db);
   if (result.checked && onDeleteMembersMedia != null) {
     await onDeleteMembersMedia(
       List<MediaCollectionItemRow>.of(members),

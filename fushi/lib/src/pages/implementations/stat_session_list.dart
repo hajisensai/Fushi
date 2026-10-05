@@ -243,6 +243,8 @@ class _StatSessionListState extends State<StatSessionList> {
           FushiListItem(
             key: ValueKey<String>(s.key),
             density: FushiListDensity.compact,
+            // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
+            minHeight: kStatRowMinHeight,
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
             leading: _buildLeading(s, colors),
             // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），

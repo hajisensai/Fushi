@@ -330,10 +330,42 @@ void FloatingBallWindow::Stop() {
   timer_running_ = false;
   progress_ = 0;
   expand_target_ = false;
+  hidden_for_capture_ = false;
 }
 
 bool FloatingBallWindow::IsRunning() const {
   return ball_hwnd_ != nullptr && IsWindow(ball_hwnd_);
+}
+
+void FloatingBallWindow::HideForCapture() {
+  if (!IsRunning()) {
+    return;
+  }
+  hidden_for_capture_ = true;
+  HideTooltip();
+  // 只改可见性：分层窗的像素与位置都留着，动画计时器照跑（UpdateLayeredWindow
+  // 不会把隐藏的窗口显示出来），恢复时就是那一刻该有的样子。
+  ShowWindow(ball_hwnd_, SW_HIDE);
+  if (menu_hwnd_ != nullptr) {
+    ShowWindow(menu_hwnd_, SW_HIDE);
+  }
+}
+
+void FloatingBallWindow::RestoreAfterCapture() {
+  if (!hidden_for_capture_) {
+    return;
+  }
+  hidden_for_capture_ = false;
+  if (!IsRunning()) {
+    return;
+  }
+  SetWindowPos(ball_hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  if (menu_hwnd_ != nullptr) {
+    // 与 EnsureMenuWindow 同序：按钮窗紧贴在球窗下面。
+    SetWindowPos(menu_hwnd_, ball_hwnd_, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+  }
 }
 
 // ── 展开 / 收起 ─────────────────────────────────────────────────────────────
@@ -494,7 +526,8 @@ void FloatingBallWindow::EnsureMenuWindow() {
   // 按钮从球心「钻出来」，球始终盖在上面；透明像素点击穿透到球窗。
   RenderMenu();
   SetWindowPos(menu_hwnd_, ball_hwnd_, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                   (hidden_for_capture_ ? 0 : SWP_SHOWWINDOW));
 }
 
 void FloatingBallWindow::DestroyMenuWindow() {
