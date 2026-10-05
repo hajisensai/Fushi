@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
 import 'dart:convert' show utf8;
 import 'dart:io';
@@ -103,7 +104,6 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -126,7 +126,6 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
-import 'package:fushi/src/utils/components/batch_tag_dialog_frame.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -1993,29 +1992,27 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     await WidgetsBinding.instance.endOfFrame;
   }
 
-  /// 批量打标签：弹 [_VideoBatchTagPickerDialog]（每个标签三态：保持/添加/移除），
-  /// 应用到所有选中视频书（经 [FushiDatabase.addTagToVideoBook] /
-  /// [FushiDatabase.removeTagFromVideoBook]），关闭后刷新映射。
+  /// 批量打标签：共享标签选择器 [showTagPicker]（每个标签三态：全有/部分/全无），
+  /// 应用到所有选中视频书（落库经 addTagToVideoBook / removeTagFromVideoBook）与
+  /// 选中合集（合集本身 / 合集内全部条目二选一），关闭后刷新映射。
   Future<void> _batchShowTagPicker() async {
     // 幽灵键会让 bookTags 的外键插入抛异常，而弹窗把落库 await 在 loading 态里，
     // 一抛就永远转圈（卡死）。必须在开弹窗前剔干净。
     if (!await _pruneStaleSelection() || !mounted) return;
     final Set<String> localUids = _selectedLocalUids;
-    if (localUids.isEmpty) return;
-    final List<BookTagRow>? allTags = ref.read(allTagsProvider).valueOrNull;
-    if (allTags == null || allTags.isEmpty) {
-      FushiToast.show(msg: t.tag_no_tags_hint, severity: ToastSeverity.info);
-      return;
-    }
-    await showAppDialog<void>(
-      context: context,
-      builder: (_) => _VideoBatchTagPickerDialog(
-        allTags: allTags,
-        selectedUids: localUids,
-        database: ref.read(appProvider).database,
-      ),
+    final TagTargets targets = TagTargets(
+      media: <MediaRef>[
+        for (final String uid in localUids)
+          MediaRef(kind: MediaKind.video, entryKey: uid),
+      ],
+      collectionIds: _selectedCollectionIds.toList()..sort(),
     );
+    if (targets.isEmpty) return;
+    await showTagPicker(context, targets: targets);
     if (!mounted) return;
+    ref.invalidate(allTagsProvider);
+    ref.invalidate(collectionTagMapProvider);
+    ref.invalidate(filteredCollectionIdsProvider);
     _refreshAfterTagChange();
   }
 
@@ -3452,13 +3449,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   }
 
   Future<void> _editTags(VideoBookRow book) async {
-    await Navigator.push(
+    await showTagPicker(
       context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => TagPickerPage(
-          media: MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
-        ),
+      targets: TagTargets(
+        media: <MediaRef>[
+          MediaRef(kind: MediaKind.video, entryKey: book.bookUid),
+        ],
       ),
     );
     if (mounted) _refreshAfterTagChange();
@@ -8025,8 +8021,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           tooltip: t.combine_into_series,
         ),
         FushiIconButton(
-          // 打标签只作用于散卡媒体（合集无直接标签），故按本地散卡选中集可用态。
-          enabled: localUids.isNotEmpty,
+          // 散卡与合集都能打标签（合集在选择器里二选一：合集本身 / 合集内全部条目）。
+          key: const ValueKey<String>('home_video_batch_tag'),
+          enabled: localUids.isNotEmpty || _selectedCollectionIds.isNotEmpty,
           onTap: _batchShowTagPicker,
           icon: Icons.sell_outlined,
           tooltip: t.tag_label,
@@ -8155,195 +8152,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 /// 保留 1 位小数（B 档不带小数）。委托 [FushiByteFormat]（G4 收敛），纯函数，
 /// 测试同源。
 String formatRemoteVideoSize(int bytes) => FushiByteFormat.bytes(bytes);
-
-/// 视频批量打标签的三态意图：保持不变 / 添加该标签 / 移除该标签。
-enum _VideoBatchTagIntent { keep, add, remove }
-
-/// 视频 tab 批量打标签对话框（TODO-063）。对一组选中视频书（扁平 bookUid）逐标签
-/// 设三态意图，应用时对每个 bookUid 调 [FushiDatabase.addTagToVideoBook] /
-/// [FushiDatabase.removeTagFromVideoBook]。与书架的 `_BatchTagPickerDialog` 同语义，
-/// 但视频是单一 uid 集合（无 epub `mediaIdentifier` + `srt_` 双类分支），故独立、更简单。
-class _VideoBatchTagPickerDialog extends StatefulWidget {
-  const _VideoBatchTagPickerDialog({
-    required this.allTags,
-    required this.selectedUids,
-    required this.database,
-  });
-
-  final List<BookTagRow> allTags;
-  final Set<String> selectedUids;
-  final FushiDatabase database;
-
-  @override
-  State<_VideoBatchTagPickerDialog> createState() =>
-      _VideoBatchTagPickerDialogState();
-}
-
-class _VideoBatchTagPickerDialogState
-    extends State<_VideoBatchTagPickerDialog> {
-  final Set<int> _addTagIds = <int>{};
-  final Set<int> _removeTagIds = <int>{};
-
-  Future<void> _apply() async {
-    final FushiDatabase db = widget.database;
-
-    for (final int tagId in _addTagIds) {
-      for (final String bookUid in widget.selectedUids) {
-        await db.addTagToVideoBook(bookUid, tagId);
-      }
-    }
-    for (final int tagId in _removeTagIds) {
-      for (final String bookUid in widget.selectedUids) {
-        await db.removeTagFromVideoBook(bookUid, tagId);
-      }
-    }
-
-    if (!mounted) return;
-    for (final int tagId in _addTagIds) {
-      final BookTagRow tag =
-          widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
-      FushiToast.show(
-        msg: t.batch_tag_added_video(
-          name: tag.name,
-          n: widget.selectedUids.length,
-        ),
-        severity: ToastSeverity.success,
-      );
-    }
-    for (final int tagId in _removeTagIds) {
-      final BookTagRow tag =
-          widget.allTags.firstWhere((BookTagRow row) => row.id == tagId);
-      FushiToast.show(
-        msg: t.batch_tag_removed_video(
-          name: tag.name,
-          n: widget.selectedUids.length,
-        ),
-        severity: ToastSeverity.success,
-      );
-    }
-    Navigator.pop(context);
-  }
-
-  void _setTagIntent(BookTagRow tag, _VideoBatchTagIntent intent) {
-    setState(() {
-      _addTagIds.remove(tag.id);
-      _removeTagIds.remove(tag.id);
-      switch (intent) {
-        case _VideoBatchTagIntent.keep:
-          break;
-        case _VideoBatchTagIntent.add:
-          _addTagIds.add(tag.id);
-        case _VideoBatchTagIntent.remove:
-          _removeTagIds.add(tag.id);
-      }
-    });
-  }
-
-  _VideoBatchTagIntent _tagIntent(BookTagRow tag) {
-    if (_addTagIds.contains(tag.id)) return _VideoBatchTagIntent.add;
-    if (_removeTagIds.contains(tag.id)) return _VideoBatchTagIntent.remove;
-    return _VideoBatchTagIntent.keep;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 对话框 chrome（520 宽 / 取消·应用底栏）与书架批量打标签弹窗共用
-    // [BatchTagPickerDialogFrame]；此处只注入视频侧的三态标签行与 apply 落库回调。
-    return BatchTagPickerDialogFrame(
-      canApply: _addTagIds.isNotEmpty || _removeTagIds.isNotEmpty,
-      onApply: _apply,
-      body: ListView.builder(
-        shrinkWrap: true,
-        itemCount: widget.allTags.length,
-        itemBuilder: (BuildContext _, int i) {
-          final BookTagRow tag = widget.allTags[i];
-          return _VideoBatchTagIntentRow(
-            tag: tag,
-            selected: _tagIntent(tag),
-            onChanged: (_VideoBatchTagIntent intent) =>
-                _setTagIntent(tag, intent),
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// 单行：标签名 + 三态 segmented（保持 / 添加 / 移除）。Material 图标统一（视频
-/// tab 无需 Cupertino 分支）。
-class _VideoBatchTagIntentRow extends StatelessWidget {
-  const _VideoBatchTagIntentRow({
-    required this.tag,
-    required this.selected,
-    required this.onChanged,
-  });
-
-  final BookTagRow tag;
-  final _VideoBatchTagIntent selected;
-  final ValueChanged<_VideoBatchTagIntent> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final Color tagColor = Color(tag.colorValue);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-
-    return AdaptiveSettingsRow(
-      title: tag.name,
-      icon: Icons.sell_outlined,
-      controlBelow: true,
-      trailing: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 220),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: tagColor,
-                shape: BoxShape.circle,
-              ),
-              child: const SizedBox(width: 12, height: 12),
-            ),
-            SizedBox(width: tokens.spacing.gap + tokens.spacing.gap / 2),
-            Flexible(
-              child: adaptiveSegmentedButton<_VideoBatchTagIntent>(
-                context: context,
-                segments: <ButtonSegment<_VideoBatchTagIntent>>[
-                  ButtonSegment<_VideoBatchTagIntent>(
-                    value: _VideoBatchTagIntent.keep,
-                    tooltip: t.batch_tag_keep,
-                    icon: const FushiIcon(Icons.horizontal_rule_outlined, size: 16),
-                  ),
-                  ButtonSegment<_VideoBatchTagIntent>(
-                    value: _VideoBatchTagIntent.add,
-                    tooltip: t.batch_tag_add,
-                    icon: const FushiIcon(Icons.add, size: 16),
-                  ),
-                  ButtonSegment<_VideoBatchTagIntent>(
-                    value: _VideoBatchTagIntent.remove,
-                    tooltip: t.batch_tag_remove,
-                    icon: FushiIcon(
-                      Icons.remove,
-                      size: 16,
-                      color: selected == _VideoBatchTagIntent.remove
-                          ? theme.colorScheme.error
-                          : null,
-                    ),
-                  ),
-                ],
-                selected: <_VideoBatchTagIntent>{selected},
-                onSelectionChanged: (Set<_VideoBatchTagIntent> values) {
-                  if (values.isNotEmpty) onChanged(values.first);
-                },
-                style: kSettingsSegmentedStyle,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// 多端库联合视图（spec §2.1）：视频库散卡区一个待渲染单元 = 排序键 + 墙格。
 /// 本地散卡（[_buildCard]）与远端占位卡（[_buildRemoteVideoCard]）用同一列表按当前

@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -21,7 +22,6 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart'
     show formatGalgameDate, galgamePlayStatusLabel;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show allTagsProvider, filteredGameIdsProvider, gameTagMapProvider;
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart'
     show formatStatSessionRange, formatStatTime;
@@ -579,13 +579,10 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   }
 
   Future<void> _editUserTags(GalgameEntry game) async {
-    await Navigator.push(
+    await showTagPicker(
       context,
-      adaptivePageRoute(
-        context: context,
-        builder: (_) => TagPickerPage(
-          media: MediaRef(kind: MediaKind.game, entryKey: game.id),
-        ),
+      targets: TagTargets(
+        media: <MediaRef>[MediaRef(kind: MediaKind.game, entryKey: game.id)],
       ),
     );
     if (!mounted) return;
