@@ -35,6 +35,7 @@ import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
@@ -1259,37 +1260,44 @@ class _HomeDashboardPageState
   /// 可达、滚动时让位。
   Widget _buildFloatingToolbar() {
     final AppModel appModel = ref.read(appProvider);
-    final AdaptiveNavItem home = homeNavItemFor(HomeTab.home);
+    final String title = homeNavItemFor(HomeTab.home).label;
+    final HomeUpdateCount? updateCount = _updateCount;
     return ListenableBuilder(
-      listenable: _toolbarScroll,
-      builder: (BuildContext context, Widget? _) => HomeFloatingToolbar(
-        title: home.label,
-        icon: home.selectedIcon ?? home.icon,
-        visible: _toolbarScroll.visible,
-        compact: _toolbarScroll.compact,
-        actions: <HomeToolbarAction>[
-          HomeToolbarAction(
-            key: const ValueKey<String>('home-toolbar-updates'),
-            icon: Icons.notifications_outlined,
-            label: t.updates_center_title,
-            badgeCount: _updateCount,
-            onPressed: () => unawaited(_openUpdates(appModel)),
-          ),
-          HomeToolbarAction(
-            key: const ValueKey<String>('home-toolbar-stats'),
-            icon: Icons.bar_chart_outlined,
-            label: t.stat_center_title,
-            onPressed: _openStatisticsCenter,
-          ),
-          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
-          HomeToolbarAction(
-            key: const ValueKey<String>('home-toolbar-leaderboard'),
-            icon: Icons.emoji_events_outlined,
-            label: t.leaderboard_title,
-            onPressed: _openLeaderboard,
-          ),
-        ],
-      ),
+      listenable: Listenable.merge(<Listenable?>[_toolbarScroll, updateCount]),
+      builder: (BuildContext context, Widget? _) {
+        final int unseen = updateCount?.value ?? 0;
+        return HomeFloatingToolbar(
+          title: title,
+          visible: _toolbarScroll.visible,
+          actions: <FushiToolbarItem>[
+            // 有未读时换成「响铃」字形并把未读数写进 tooltip / 语义标签（共享
+            // 工具栏按钮没有角标槽；逐域未读明细仍在下方更新横幅里）。
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-updates'),
+              icon: unseen > 0
+                  ? Icons.notifications_active
+                  : Icons.notifications_outlined,
+              label: unseen > 0
+                  ? '${t.updates_center_title} ($unseen)'
+                  : t.updates_center_title,
+              onPressed: () => unawaited(_openUpdates(appModel)),
+            ),
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-stats'),
+              icon: Icons.bar_chart_outlined,
+              label: t.stat_center_title,
+              onPressed: _openStatisticsCenter,
+            ),
+            // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-leaderboard'),
+              icon: Icons.emoji_events_outlined,
+              label: t.leaderboard_title,
+              onPressed: _openLeaderboard,
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -1304,7 +1312,6 @@ class _HomeDashboardPageState
       builder: (BuildContext context, Widget? _) => HomeResumeFab(
         key: const ValueKey<String>('home-resume-fab'),
         visible: entry != null && _toolbarScroll.pastHero,
-        extended: _toolbarScroll.visible,
         icon: entry == null
             ? Icons.play_arrow_rounded
             : _resumeActionIcon(entry),
