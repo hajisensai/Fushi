@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -55,7 +56,7 @@ void main() {
   testWidgets('无 iconUrl 时用占位图标，不发任何请求', (WidgetTester tester) async {
     await pumpTile(tester, iconUrl: null);
     expect(find.byType(Image), findsNothing);
-    expect(find.byIcon(Icons.extension_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.browserExtension), findsOneWidget);
   });
 
   test('AppHttpImage 以 url+scale 为缓存键：同 url 相等，异 url 不等', () {

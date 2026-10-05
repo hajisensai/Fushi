@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -168,7 +169,7 @@ void main() {
       manager.available = <MihonAvailableExtension>[_extension()];
       await pump(tester);
 
-      final Finder edit = find.byIcon(Icons.edit_outlined);
+      final Finder edit = find.byIcon(FushiIcons.edit);
       expect(edit, findsOneWidget, reason: 'BUG-1806 之前只有删除按钮');
 
       await tester.tap(edit);
@@ -188,7 +189,7 @@ void main() {
       manager.available = <MihonAvailableExtension>[_extension()];
       await pump(tester);
 
-      await tester.tap(find.byIcon(Icons.edit_outlined));
+      await tester.tap(find.byIcon(FushiIcons.edit));
       await tester.pumpAndSettle();
 
       final EditableText field =
@@ -205,7 +206,7 @@ void main() {
       await pump(tester);
 
       // 空态里另有一个同图标的添加按钮，这里要的是工具栏那个。
-      await tester.tap(find.byIcon(Icons.add_link).first);
+      await tester.tap(find.byIcon(FushiIcons.link).first);
       await tester.pumpAndSettle();
 
       final EditableText field =
