@@ -399,6 +399,7 @@ class SettingsActionItem extends SettingsItem {
     required super.id,
     required super.title,
     required this.onTap,
+    this.destructive = false,
     super.subtitle,
     super.subtitleBuilder,
     super.icon,
@@ -408,6 +409,11 @@ class SettingsActionItem extends SettingsItem {
   });
 
   final SettingsItemAction onTap;
+
+  /// true = 不可撤销的危险动作（清空 / 删除 / 重置），渲染成 error 色调的
+  /// 危险操作行（settings_kit 的 SettingsDangerRow）。只影响外观，确认框仍由
+  /// [onTap] 自己负责。
+  final bool destructive;
 }
 
 class SettingsSwitchItem extends SettingsItem {
@@ -422,10 +428,17 @@ class SettingsSwitchItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
+    this.defaultValue,
   });
 
   final SettingsSwitchGetter value;
   final SettingsSwitchChanged onChanged;
+
+  /// 出厂默认值；非 null 时渲染层在值偏离默认时标「已改过」并提供单项恢复默认
+  /// （见 settings_kit 的 settingsResetSpecFor）。只是 UI 元数据，与持久化无关——
+  /// 必须与读取端（AppModel getter 的 defaultValue）保持一致，守卫见
+  /// test/settings/settings_default_values_test.dart。
+  final bool? defaultValue;
 }
 
 class SettingsSegmentOption<T extends Object> {
@@ -456,7 +469,11 @@ class SettingsSegmentedItem<T extends Object> extends SettingsItem {
     super.video,
     this.controlBelow = true,
     this.dropdown = false,
+    this.defaultValue,
   });
+
+  /// 出厂默认选项；语义同 [SettingsSwitchItem.defaultValue]。
+  final T? defaultValue;
 
   final List<SettingsSegmentOption<T>> options;
   final SettingsValueGetter<T> selected;
@@ -493,6 +510,7 @@ class SettingsSliderItem extends SettingsItem {
     this.step,
     this.titleReadout = false,
     this.commitOnRelease = false,
+    this.defaultValue,
   }) : assert(
          !commitOnRelease || onChangeEnd == null,
          'commitOnRelease 滑条松手统一走 onChanged 提交，不得再声明 onChangeEnd',
@@ -519,6 +537,9 @@ class SettingsSliderItem extends SettingsItem {
   /// rebuild 掉帧）且拖动过程无实时预览意义的滑条；键盘/手柄步进仍每按即提交。
   /// 与 [onChangeEnd] 互斥（松手提交统一走 [onChanged]）。
   final bool commitOnRelease;
+
+  /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
+  final double? defaultValue;
 }
 
 class SettingsStepperItem extends SettingsItem {
@@ -536,7 +557,11 @@ class SettingsStepperItem extends SettingsItem {
     super.visible,
     super.reader,
     super.video,
+    this.defaultValue,
   });
+
+  /// 出厂默认值；语义同 [SettingsSwitchItem.defaultValue]。
+  final double? defaultValue;
 
   final double Function(SettingsContext context) value;
   final double step;
