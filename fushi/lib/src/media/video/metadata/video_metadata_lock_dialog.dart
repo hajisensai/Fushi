@@ -6,6 +6,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -67,45 +69,56 @@ class _VideoMetadataLockDialogState extends State<_VideoMetadataLockDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.lock),
       title: Text(t.video_work_locked_fields),
       content: SizedBox(
         width: 420,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Text(t.video_work_locked_fields_hint),
-              for (final VideoMetadataLockableField field
-                  in VideoMetadataLockableField.values)
-                AdaptiveSettingsSwitchRow(
-                  key: ValueKey<String>('video-work-lock-${field.name}'),
-                  title: videoMetadataLockableFieldLabel(field),
-                  value: _selected.contains(field),
-                  onChanged: (bool value) => setState(() {
-                    if (value) {
-                      _selected.add(field);
-                    } else {
-                      _selected.remove(field);
-                    }
-                  }),
+              Text(
+                t.video_work_locked_fields_hint,
+                style: context.fushiType.bodyMedium.copyWith(
+                  color: cs.onSurfaceVariant,
                 ),
+              ),
+              const SizedBox(height: 16),
+              // 分段卡片组（M3E：首尾大圆角、行间 2px；Apple：inset grouped）。
+              AdaptiveSettingsSection(
+                children: <Widget>[
+                  for (final VideoMetadataLockableField field
+                      in VideoMetadataLockableField.values)
+                    AdaptiveSettingsSwitchRow(
+                      key: ValueKey<String>('video-work-lock-${field.name}'),
+                      title: videoMetadataLockableFieldLabel(field),
+                      value: _selected.contains(field),
+                      onChanged: (bool value) => setState(() {
+                        if (value) {
+                          _selected.add(field);
+                        } else {
+                          _selected.remove(field);
+                        }
+                      }),
+                    ),
+                ],
+              ),
             ],
           ),
         ),
       ),
       actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
+        FushiDialogAction(
+          label: t.dialog_cancel,
           onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
         ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
+        FushiDialogAction(
+          kind: FushiDialogActionKind.primary,
+          label: t.dialog_save,
           onPressed: () => Navigator.pop(context, _selected),
-          child: Text(t.dialog_save),
         ),
       ],
     );
