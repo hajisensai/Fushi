@@ -1166,11 +1166,16 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     this.icon,
     this.showIcon = false,
     this.horizontalPadding,
+    this.subtitleMaxLines,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
+
+  /// 透传给 [AdaptiveSettingsRow.subtitleMaxLines]：null = 说明完整换行（默认），
+  /// 给值时超出部分省略号截断（调用方负责把完整说明放进提示里）。
+  final int? subtitleMaxLines;
 
   /// 与 [AdaptiveSettingsNavigationRow.showIcon] 同款开关：true 且 [icon] 非空
   /// 才渲染左栏图标徽章。schema 层的 `showIcons` 经此透传（此前只转发 icon 不
@@ -1185,6 +1190,7 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
     return AdaptiveSettingsRow(
       title: title,
       subtitle: subtitle,
+      subtitleMaxLines: subtitleMaxLines,
       icon: icon,
       showIcon: showIcon,
       horizontalPadding: horizontalPadding,

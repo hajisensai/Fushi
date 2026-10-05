@@ -6469,5 +6469,6 @@
   "shelf_sort_and_view": "Sort & view",
   "shelf_collection_volume_count": "$n vols",
   "shelf_collection_series_label": "Series",
-  "collection_name_taken_other_library": "Another library already has a collection named \"$name\". Pick a different name."
+  "collection_name_taken_other_library": "Another library already has a collection named \"$name\". Pick a different name.",
+  "theme_ai_card_desc": "Describe the look you want — AI fills the colors into this draft."
 }

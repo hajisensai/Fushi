@@ -6469,5 +6469,6 @@
   "shelf_sort_and_view": "並べ替えと表示",
   "shelf_collection_volume_count": "$n 冊",
   "shelf_collection_series_label": "シリーズ",
-  "collection_name_taken_other_library": "別のライブラリに「$name」という名前のコレクションがあります。別の名前にしてください。"
+  "collection_name_taken_other_library": "別のライブラリに「$name」という名前のコレクションがあります。別の名前にしてください。",
+  "theme_ai_card_desc": "Describe the look you want — AI fills the colors into this draft."
 }

@@ -6469,5 +6469,6 @@
   "shelf_sort_and_view": "排序與顯示",
   "shelf_collection_volume_count": "$n 冊",
   "shelf_collection_series_label": "系列",
-  "collection_name_taken_other_library": "其他媒體庫已有名為「$name」的合集，請換個名字。"
+  "collection_name_taken_other_library": "其他媒體庫已有名為「$name」的合集，請換個名字。",
+  "theme_ai_card_desc": "Describe the look you want — AI fills the colors into this draft."
 }

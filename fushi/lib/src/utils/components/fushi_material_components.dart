@@ -1250,7 +1250,15 @@ class _FushiTextFieldState extends State<FushiTextField> {
         hintText: widget.hintText,
         labelText: widget.labelText,
         suffixText: widget.suffixText,
-        hintStyle: glass ? null : tokens.type.listSubtitle,
+        // 占位符与正文同一字号 / 行高（M3 规格：placeholder 只换颜色）。
+        // BUG-2973：此前用更小的 listSubtitle，InputDecorator 把占位符的首行
+        // 基线对齐到正文首行基线，两种行高的 ascent 差让占位符整体下沉——
+        // 多行占位符在框里偏下 5px、下边距只剩上边距的一半。
+        hintStyle: glass
+            ? null
+            : (widget.style ?? tokens.type.listTitle).copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         labelStyle: glass ? null : tokens.type.metadata,
         floatingLabelStyle: glass ? null : tokens.type.sectionLabel,
         contentPadding: widget.contentPadding ??

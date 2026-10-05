@@ -143,7 +143,19 @@ Finder _settingsSwitch(int index) => find
     )
     .at(index);
 
+/// 编辑列表是懒构建的（2026-10 重设计后开关行在页头卡、AI 卡与色板之下），
+/// 先滚到最后一只开关「派生色中性灰」的标题，三只开关才都已构建。
+Future<void> _scrollToSwitches(WidgetTester tester) async {
+  await tester.scrollUntilVisible(
+    find.text(t.theme_neutral_derived),
+    120,
+    scrollable: _verticalScrollable,
+  );
+  await tester.pumpAndSettle();
+}
+
 Future<void> _tapSettingsSwitch(WidgetTester tester, int index) async {
+  await _scrollToSwitches(tester);
   final Finder toggle = _settingsSwitch(index);
   await tester.scrollUntilVisible(toggle, 120, scrollable: _verticalScrollable);
   await tester.pumpAndSettle();
@@ -293,6 +305,7 @@ void main() {
         _host(appModel, const CustomThemePage(themeId: 'ct-2')),
       );
       await tester.pumpAndSettle();
+      await _scrollToSwitches(tester);
       final Switch autoTone = tester.widget<Switch>(glassUnwrap<Switch>(_settingsSwitch(1)));
       expect(autoTone.value, isTrue);
 

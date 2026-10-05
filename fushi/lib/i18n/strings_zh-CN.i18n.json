@@ -6469,5 +6469,6 @@
   "shelf_sort_and_view": "排序与显示",
   "shelf_collection_volume_count": "$n 册",
   "shelf_collection_series_label": "系列",
-  "collection_name_taken_other_library": "其他媒体库已有名为「$name」的合集，请换个名字。"
+  "collection_name_taken_other_library": "其他媒体库已有名为「$name」的合集，请换个名字。",
+  "theme_ai_card_desc": "描述想要的观感，AI 会把配色填进当前草稿"
 }
