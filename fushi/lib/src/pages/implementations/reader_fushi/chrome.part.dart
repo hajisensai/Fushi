@@ -3654,7 +3654,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (appModel.einkMode) {
       final bool dark = appModel.isDarkMode;
       final ReaderThemeColors themed = resolveReaderThemeColors(
-        themeKey: appModel.appThemeKey,
+        themeKey: appModel.readerThemeKey,
         presetMap: _themeMap,
         scheme: appModel.buildColorScheme(
           dark ? Brightness.dark : Brightness.light,
@@ -3665,7 +3665,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return einkReaderThemeColors(themed, dark: dark);
     }
     return resolveReaderThemeColors(
-      themeKey: appModel.appThemeKey,
+      themeKey: appModel.readerThemeKey,
       presetMap: _themeMap,
       scheme: appModel.buildColorScheme(
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -3682,7 +3682,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   FushiReaderPalette? get _followThemePalette {
     if (appModel.einkMode) return null;
     return readerFollowThemePalette(
-      themeKey: appModel.appThemeKey,
+      themeKey: appModel.readerThemeKey,
       presetMap: _themeMap,
       scheme: appModel.buildColorScheme(
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -3695,7 +3695,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// [readerPresetFor]）；墨水屏下 CSS 另走纯黑白，这里只管非墨水屏。
   bool get _readerPresetApplies =>
       readerPresetFor(
-        themeKey: appModel.appThemeKey,
+        themeKey: appModel.readerThemeKey,
         presetMap: _themeMap,
         scheme: appModel.buildColorScheme(
           appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -3750,7 +3750,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // HBK-AUDIT-117: persist the reader theme here, in the theme-change flow,
     // instead of as a hidden side effect of _applyChapterHighlights (which only
     // ran when the chapter had favorites).
-    await _settings?.setTheme(appModel.appThemeKey);
+    await _settings?.setTheme(appModel.readerThemeKey);
     _syncDictionaryTheme();
     if (appModel.showFloatingLyric) {
       // reader 主题变了：让 session 用新的 reader 样式重刷悬浮窗
