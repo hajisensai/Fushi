@@ -113,6 +113,10 @@ import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
+import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
+import 'package:fushi_engine/media/torrent/public_trackers.dart';
+import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
+import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -4827,6 +4831,11 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
+  /// BUG-2950：内置引擎会话级网络诊断（fake-ip 掐断 UDP / DHT 不可达）。
+  /// 下载页横幅与种子详情的网络行照此展示；host 未建时恒为 none。
+  final ValueNotifier<TorrentNetworkIssue> torrentNetworkIssue =
+      ValueNotifier<TorrentNetworkIssue>(TorrentNetworkIssue.none);
+
   TrackerSubscriptionService? _trackerSubscriptionService;
   TrackerSubscriptionService get _trackers =>
       _trackerSubscriptionService ??= TrackerSubscriptionService(
@@ -4896,7 +4905,108 @@ class AppModel with ChangeNotifier {
     _embeddedTorrentHost = host;
     // 建好即把已保存的资源限制/会话设置铺上（不必等用户改设置）。
     _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
+    _startTorrentNetworkMonitor();
     return host;
+  }
+
+  // ── BUG-2950：fake-ip 绕行 + 会话级网络诊断 ──────────────────────────────
+  //
+  // DHT 每次从停到跑（host 按有无下载/做种任务启停 DHT）时：重新判一次系统 DNS
+  // 是否 fake-ip；是就经 DoH 拿 DHT 引导点与公共 UDP tracker 的真实 IP，节点灌进
+  // 路由表、tracker 追加到所有任务。诊断按 DHT 实际运行状态算，DHT 闲置时不报。
+
+  Timer? _torrentNetworkTimer;
+  bool _torrentFakeIpDetected = false;
+  FakeIpTorrentBypass _torrentFakeIpBypass = FakeIpTorrentBypass.empty;
+  DateTime? _torrentDhtRunningSince;
+  bool _torrentBypassFed = false;
+  bool _torrentFakeIpProbing = false;
+
+  static const Duration _kTorrentNetworkTick = Duration(seconds: 20);
+
+  void _startTorrentNetworkMonitor() {
+    _torrentNetworkTimer?.cancel();
+    _torrentNetworkTimer = Timer.periodic(
+      _kTorrentNetworkTick,
+      (_) => unawaited(_torrentNetworkTick()),
+    );
+    unawaited(_torrentNetworkTick());
+  }
+
+  void _stopTorrentNetworkMonitor() {
+    _torrentNetworkTimer?.cancel();
+    _torrentNetworkTimer = null;
+    _torrentDhtRunningSince = null;
+    _torrentBypassFed = false;
+    torrentNetworkIssue.value = TorrentNetworkIssue.none;
+  }
+
+  Future<void> _torrentNetworkTick() async {
+    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    if (host == null) {
+      torrentNetworkIssue.value = TorrentNetworkIssue.none;
+      return;
+    }
+    final FtSessionStatus? status = host.sessionStatus();
+    if (status == null) return;
+    if (!status.dhtRunning) {
+      _torrentDhtRunningSince = null;
+      _torrentBypassFed = false;
+    } else if (_torrentDhtRunningSince == null) {
+      _torrentDhtRunningSince = DateTime.now();
+      await _refreshTorrentFakeIpBypass(host);
+      // DoH 探测期间 AppModel 可能已 dispose（host 置 null、notifier 已释放）
+      // 或 host 被换掉：此时 host 与通知器都不再归本轮所有，不得再写。
+      if (!identical(host, _embeddedTorrentHost)) return;
+    }
+    if (status.dhtRunning &&
+        !_torrentBypassFed &&
+        _torrentFakeIpBypass.dhtNodes.isNotEmpty) {
+      host.addDhtNodes(_torrentFakeIpBypass.dhtNodes);
+      _torrentBypassFed = true;
+    }
+    final DateTime? since = _torrentDhtRunningSince;
+    torrentNetworkIssue.value = diagnoseTorrentNetwork(
+      dhtEnabled: status.dhtRunning,
+      dhtNodes: status.dhtNodes,
+      sessionAge:
+          since == null ? Duration.zero : DateTime.now().difference(since),
+      fakeIpDetected: _torrentFakeIpDetected,
+    );
+  }
+
+  Future<void> _refreshTorrentFakeIpBypass(EmbeddedTorrentHost host) async {
+    if (_torrentFakeIpProbing) return;
+    _torrentFakeIpProbing = true;
+    try {
+      _torrentFakeIpDetected = await isFakeIpDnsActive();
+      if (!_torrentFakeIpDetected) {
+        _torrentFakeIpBypass = FakeIpTorrentBypass.empty;
+        return;
+      }
+      final http.Client client = createAppHttpIoClient();
+      try {
+        _torrentFakeIpBypass = await resolveFakeIpTorrentBypass(
+          doh: DohResolver(client: client),
+          udpTrackers: kPublicTrackers,
+        );
+      } finally {
+        client.close();
+      }
+      _torrentBypassFed = false;
+      if (identical(host, _embeddedTorrentHost)) {
+        host.setExtraTrackers(_torrentFakeIpBypass.trackers);
+      }
+      debugPrint(
+        '[torrent] fake-ip DNS detected; real-IP bypass: '
+        '${_torrentFakeIpBypass.dhtNodes.length} DHT nodes, '
+        '${_torrentFakeIpBypass.trackers.length} UDP trackers',
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.torrentFakeIpBypass', e, stack);
+    } finally {
+      _torrentFakeIpProbing = false;
+    }
   }
 
   /// 默认下载根（未解析完成前为空串）。
@@ -7736,8 +7846,10 @@ class AppModel with ChangeNotifier {
     // 用最近一次 tick 缓存的计划 id 集合剪枝 —— dispose 是同步的，不能在这里
     // await 一次 `store.loadAll()`；缓存最多落后一个 tick（20s），代价只是某个
     // 刚删掉的计划多留一轮 resume 文件，下次启动的剪枝会立刻清掉它。
+    _stopTorrentNetworkMonitor();
     _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
     _embeddedTorrentHost = null;
+    torrentNetworkIssue.dispose();
     super.dispose();
   }
 

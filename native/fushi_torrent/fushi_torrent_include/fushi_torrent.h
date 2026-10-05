@@ -285,6 +285,15 @@ HT_EXPORT char* ht_torrent_trackers(void* session, const char* info_hash);
 HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
                               const char* tracker_urls);
 
+// BUG-2950：运行期向 DHT 补节点（lt::session::add_dht_node），用于 fake-ip
+// DNS 下建号时的引导点主机名被解析成假地址、路由表永远 0 节点的场景——调用方
+// 先用可信解析（DoH）拿到真实 IP 再喂进来。[nodes] 为 UTF-8 换行分隔列表，
+// 每行 "host:port"（IPv4 / 主机名；IPv6 写 "[addr]:port"），port 1..65535；
+// 空行与非法行跳过。不修改建号时的引导点设置。返回成功添加的条数（>=0），
+// -1 = session 为空或发生异常。老版本预编译库没有此符号，Dart 侧按可选符号
+// 探测（hasAddDhtNodes），缺失时降级、不得崩溃。
+HT_EXPORT int ht_add_dht_nodes(void* session, const char* nodes);
+
 // 每个文件的下载优先级（详情页 Files tab）：
 // {"ok":true,"priorities":[4,0,7,...]}（下标 = 文件 index；libtorrent
 // download_priority 值域 0~7：0 = 不下载、4 = 默认、7 = 最高）。
