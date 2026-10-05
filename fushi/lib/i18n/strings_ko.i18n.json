@@ -6513,5 +6513,7 @@
   "text_field_password_hide": "Hide password",
   "search_view_suggestions_title": "Suggestions",
   "search_view_recent_title": "Recent searches",
-  "search_view_recent_remove": "Remove from history"
+  "search_view_recent_remove": "Remove from history",
+  "home_nav_rail_expand": "Expand navigation",
+  "home_nav_rail_collapse": "Collapse navigation"
 }

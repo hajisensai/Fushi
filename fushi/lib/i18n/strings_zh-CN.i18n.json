@@ -6513,5 +6513,7 @@
   "text_field_password_hide": "隐藏密码",
   "search_view_suggestions_title": "建议",
   "search_view_recent_title": "最近搜索",
-  "search_view_recent_remove": "从记录中移除"
+  "search_view_recent_remove": "从记录中移除",
+  "home_nav_rail_expand": "展开导航栏",
+  "home_nav_rail_collapse": "收起导航栏"
 }
