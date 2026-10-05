@@ -106,6 +106,7 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         isYoutubeUrl;
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
+import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart';
@@ -10245,19 +10246,28 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 走到这里若仍处沉浸锁定态，则必为 full 模式（其余模式已在上方
     // [_immersiveAllowsDoubleTapSeek] 门控早返回：shortcutAndLookup 的跳转改由快捷键
     // 完成，触摸双击不再 seek，也不落入暂停 / 全屏 fallback）。
-    // BUG-221: 双击命中（中带）后按平台分流。
+    // BUG-221: 双击落空（中带，或双击快退快进关闭时任意位置）按平台 + 指针类型分流，
+    // 判据见 [resolveVideoDoubleTapCenterAction]：
     // - 移动端：双击 = 播放/暂停。原先双击 → [_toggleVideoFullscreen] → media_kit 全屏路由，
     //   退出时弹回竖屏，用户感知为「双击 = 竖屏」。移动端横屏沉浸态即唯一形态、无「全屏」
     //   语义，双击应等同原生播放器的暂停手势。
-    // - 桌面：保留双击全屏（窗口全屏有意义，走 native window 不碰设备方向）。
-    if (_isDesktopVideoControls) {
-      unawaited(_toggleVideoFullscreen(controlsContext));
-    } else {
-      // 用户设置关掉「点击画面播放/暂停」后，移动端双击中带不再切播放态（与桌面单击
-      // 的 playAndPauseOnTap 读同一个开关，两端语义一致）。桌面双击 = 全屏，与播放态
-      // 无关，故不受本开关影响。
-      if (!_asbConfig.tapTogglesPlayback) return;
-      unawaited(_controller?.playOrPause() ?? Future<void>.value());
+    // - 桌面鼠标：保留双击全屏（窗口全屏有意义，走 native window 不碰设备方向）。
+    // - 桌面触屏 / 触控笔（Surface，用户 2026-10-05 拍板）：与移动端一致 = 播放/暂停，
+    //   不再切全屏（全屏走控制栏按钮）。
+    // 播放/暂停受「点击画面播放/暂停」开关（[_asbConfig.tapTogglesPlayback]）门控，
+    // 与桌面鼠标单击的 playAndPauseOnTap 读同一个开关；鼠标双击 = 全屏，与播放态无关，
+    // 不受本开关影响。
+    switch (resolveVideoDoubleTapCenterAction(
+      desktopControls: _isDesktopVideoControls,
+      touchLikePointer: isTouchLikePointerKind(event.kind),
+      tapTogglesPlayback: _asbConfig.tapTogglesPlayback,
+    )) {
+      case VideoDoubleTapCenterAction.toggleFullscreen:
+        unawaited(_toggleVideoFullscreen(controlsContext));
+      case VideoDoubleTapCenterAction.togglePlayback:
+        unawaited(_controller?.playOrPause() ?? Future<void>.value());
+      case VideoDoubleTapCenterAction.none:
+        break;
     }
   }
 

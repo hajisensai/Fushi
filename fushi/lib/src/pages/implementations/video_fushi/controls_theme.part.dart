@@ -111,6 +111,29 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 快进与中带双击由页面外层 Listener（[_handleVideoPointerUp]）处理，本就不分指针
       // 类型；这里让单击不再改播放态，双击 seek 才不会顺带暂停又恢复。
       touchTapTogglesControls: true,
+      // 触屏滑动手势（用户 2026-10-05 拍板，Surface）：与移动控制条同一套口径——横滑
+      // seek 同一 resolver（[_resolveTouchSeekDelta]）、同一相对基准快照、同一居中
+      // HUD（[_buildSeekIndicator]）；右半竖滑调音量同一回调 / HUD 与用户开关；左半
+      // 竖滑调亮度只在 [ScreenBrightnessController.canControl] 为真时开（桌面恒为假
+      // ——Windows / macOS 无窗口级背光 API，诚实降级为只有音量，不做画面暗化层冒充
+      // 亮度）。fork 侧只认 touch / stylus 指针（[TouchSwipeGestureLayer]），鼠标拖动
+      // 一律不进这些识别器；手势层在控制条下方、起点落在按钮 / 进度条上时让给控件。
+      touchSeekGesture: true,
+      horizontalSeekResolver: _resolveTouchSeekDelta,
+      relativeSeekBasePosition: () =>
+          Duration(milliseconds: controller.captureRelativeSeekBaseMs() ?? 0),
+      seekIndicatorBuilder: (BuildContext context, Duration delta) =>
+          _buildSeekIndicator(controller, delta),
+      touchVolumeGesture: _asbConfig.volumeSwipeGesture,
+      onVolumeChanged: _onMediaKitVolumeChanged,
+      currentVolume: () =>
+          (controller.volume / 100.0).clamp(0.0, 1.0).toDouble(),
+      touchBrightnessGesture:
+          _brightness.canControl && _asbConfig.brightnessSwipeGesture,
+      onBrightnessChanged: _onMediaKitBrightnessChanged,
+      currentBrightness: () => _enterBrightness ?? 0.5,
+      verticalGestureSensitivity:
+          _VideoFushiPageState._videoVerticalGestureSensitivity,
       toggleFullscreenOnDoublePress: false,
       // 播放器 chrome 前景固定亮色（UI 巡检 PR-4 P1）：控制条压在 fork 固定深色
       // scrim（material_desktop.dart 0x61000000）上，表面固定深色 OSD 体系不随
@@ -261,6 +284,23 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     );
   }
 
+  /// 触屏横滑 seek 的增量换算（移动控制条与桌面触屏共用，BUG-1485）：
+  /// [VideoHorizontalSeekGesture]「拖过整屏 = 固定一段时长」，档位现读
+  /// [_asbConfig.dragSeekSensitivity]，设置改完立即生效。
+  Duration _resolveTouchSeekDelta({
+    required double dragDx,
+    required double surfaceWidth,
+    required Duration duration,
+    required Duration position,
+  }) =>
+      VideoHorizontalSeekGesture.resolveDelta(
+        dragDx: dragDx,
+        surfaceWidth: surfaceWidth,
+        duration: duration,
+        position: position,
+        sensitivity: _asbConfig.dragSeekSensitivity,
+      );
+
   /// media_kit 移动控制主题（Android/iOS）：[AdaptiveVideoControls] 在移动端渲染
   /// [MaterialVideoControls]（读本主题），桌面端渲染 [MaterialDesktopVideoControls]
   /// （读 [MaterialDesktopVideoControlsTheme]），两套互斥，故两层主题都配置安全。
@@ -336,7 +376,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       onSeekDispatched: controller.noteExternalSeekDispatched,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
-      // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
+      // [_desktopControlsTheme]（鼠标无此手势；触屏经 touch* 字段复用同一套口径，屏幕亮度桌面不可控只开音量）。横滑 seek
       // 见下方 [seekGesture] + [horizontalSeekResolver]（TODO-916 症状①；换算已在
       // BUG-1485 改成「拖过整屏 = 固定一段时长」的 [VideoHorizontalSeekGesture]，与
       // 视频总时长**解耦**——这里原先写着「按时长比例换算」，那正是被换掉的旧公式，
@@ -370,19 +410,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // [VideoHorizontalSeekGesture] 改成「拖过整屏 = 固定一段时长」（与总时长解耦）
       // + 超长/超短片钳制 + 幂函数阻尼，档位由用户设置 [_asbConfig.dragSeekSensitivity]
       // 决定。闭包每次调用现读 `_asbConfig`，设置改完立即生效（无需重开播放页）。
-      horizontalSeekResolver: ({
-        required double dragDx,
-        required double surfaceWidth,
-        required Duration duration,
-        required Duration position,
-      }) =>
-          VideoHorizontalSeekGesture.resolveDelta(
-        dragDx: dragDx,
-        surfaceWidth: surfaceWidth,
-        duration: duration,
-        position: position,
-        sensitivity: _asbConfig.dragSeekSensitivity,
-      ),
+      horizontalSeekResolver: _resolveTouchSeekDelta,
       // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
       // 播放器手感）。builder 每帧随拖动重建，以本次横滑开始时快照的相对 seek 基准
       // （controller.lastRelativeSeekBaseMs，有在途 seek 时是其目标）+ 增量算目标时间

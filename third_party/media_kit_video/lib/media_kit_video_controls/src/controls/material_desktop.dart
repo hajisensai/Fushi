@@ -78,6 +78,25 @@ class MaterialDesktopVideoControlsThemeData {
   /// behaviour. See [MaterialDesktopTapRouter] and PATCHES.md.
   final bool touchTapTogglesControls;
 
+  /// Hibiki patch (touch on desktop): the mobile controls' swipe gestures for
+  /// touch / stylus pointers only ([TouchSwipeGestureLayer]); mouse drags never
+  /// reach them. Horizontal drag scrubs (needs [horizontalSeekResolver]),
+  /// right-half vertical drag sets the volume ([onVolumeChanged]), left-half
+  /// vertical drag the brightness ([onBrightnessChanged]). All default off =
+  /// upstream behaviour. Same semantics as the mobile theme's fields of the
+  /// same names. See PATCHES.md.
+  final bool touchSeekGesture;
+  final bool touchVolumeGesture;
+  final bool touchBrightnessGesture;
+  final HorizontalSeekResolver? horizontalSeekResolver;
+  final Duration Function()? relativeSeekBasePosition;
+  final Widget Function(BuildContext, Duration)? seekIndicatorBuilder;
+  final void Function(double)? onVolumeChanged;
+  final double Function()? currentVolume;
+  final void Function(double)? onBrightnessChanged;
+  final double Function()? currentBrightness;
+  final double verticalGestureSensitivity;
+
   /// Keyboards shortcuts.
   final Map<ShortcutActivator, VoidCallback>? keyboardShortcuts;
 
@@ -304,6 +323,17 @@ class MaterialDesktopVideoControlsThemeData {
     this.toggleFullscreenOnDoublePress = true,
     this.playAndPauseOnTap = false,
     this.touchTapTogglesControls = false,
+    this.touchSeekGesture = false,
+    this.touchVolumeGesture = false,
+    this.touchBrightnessGesture = false,
+    this.horizontalSeekResolver,
+    this.relativeSeekBasePosition,
+    this.seekIndicatorBuilder,
+    this.onVolumeChanged,
+    this.currentVolume,
+    this.onBrightnessChanged,
+    this.currentBrightness,
+    this.verticalGestureSensitivity = 100.0,
     this.modifyVolumeOnScroll = true,
     this.keyboardShortcuts,
     this.visibleOnMount = false,
@@ -367,6 +397,17 @@ class MaterialDesktopVideoControlsThemeData {
     bool? toggleFullscreenOnDoublePress,
     bool? playAndPauseOnTap,
     bool? touchTapTogglesControls,
+    bool? touchSeekGesture,
+    bool? touchVolumeGesture,
+    bool? touchBrightnessGesture,
+    HorizontalSeekResolver? horizontalSeekResolver,
+    Duration Function()? relativeSeekBasePosition,
+    Widget Function(BuildContext, Duration)? seekIndicatorBuilder,
+    void Function(double)? onVolumeChanged,
+    double Function()? currentVolume,
+    void Function(double)? onBrightnessChanged,
+    double Function()? currentBrightness,
+    double? verticalGestureSensitivity,
     bool? modifyVolumeOnScroll,
     Map<ShortcutActivator, VoidCallback>? keyboardShortcuts,
     bool? visibleOnMount,
@@ -422,6 +463,21 @@ class MaterialDesktopVideoControlsThemeData {
       playAndPauseOnTap: playAndPauseOnTap ?? this.playAndPauseOnTap,
       touchTapTogglesControls:
           touchTapTogglesControls ?? this.touchTapTogglesControls,
+      touchSeekGesture: touchSeekGesture ?? this.touchSeekGesture,
+      touchVolumeGesture: touchVolumeGesture ?? this.touchVolumeGesture,
+      touchBrightnessGesture:
+          touchBrightnessGesture ?? this.touchBrightnessGesture,
+      horizontalSeekResolver:
+          horizontalSeekResolver ?? this.horizontalSeekResolver,
+      relativeSeekBasePosition:
+          relativeSeekBasePosition ?? this.relativeSeekBasePosition,
+      seekIndicatorBuilder: seekIndicatorBuilder ?? this.seekIndicatorBuilder,
+      onVolumeChanged: onVolumeChanged ?? this.onVolumeChanged,
+      currentVolume: currentVolume ?? this.currentVolume,
+      onBrightnessChanged: onBrightnessChanged ?? this.onBrightnessChanged,
+      currentBrightness: currentBrightness ?? this.currentBrightness,
+      verticalGestureSensitivity:
+          verticalGestureSensitivity ?? this.verticalGestureSensitivity,
       modifyVolumeOnScroll: modifyVolumeOnScroll ?? this.modifyVolumeOnScroll,
       keyboardShortcuts: keyboardShortcuts ?? this.keyboardShortcuts,
       visibleOnMount: visibleOnMount ?? this.visibleOnMount,
@@ -733,6 +789,36 @@ class _MaterialDesktopVideoControlsState
     _timer?.cancel();
   }
 
+  /// Hibiki patch (touch on desktop): see [TouchSwipeGestureLayer].
+  Widget _buildTouchSwipeLayer(BuildContext context) {
+    final theme = _theme(context);
+    return TouchSwipeGestureLayer(
+      seekGesture: theme.touchSeekGesture,
+      horizontalSeekResolver: theme.horizontalSeekResolver,
+      duration: () => controller(context).player.state.duration,
+      seekBase: () =>
+          theme.relativeSeekBasePosition?.call() ??
+          controller(context).player.state.position,
+      onSeek: (Duration target) {
+        // Same commit path as the seek bar / mobile swipe (BUG-796 follow-up,
+        // BUG-2731): surface the target, then hand the dispatch to the host.
+        _theme(context).onSeekEnd?.call(target);
+        final Future<void> seek = controller(context).player.seek(target);
+        _theme(context).onSeekDispatched?.call(seek);
+      },
+      seekIndicatorBuilder: theme.seekIndicatorBuilder,
+      volumeGesture: theme.touchVolumeGesture,
+      currentVolume: () =>
+          theme.currentVolume?.call() ??
+          controller(context).player.state.volume / 100.0,
+      onVolumeChanged: theme.onVolumeChanged,
+      brightnessGesture: theme.touchBrightnessGesture,
+      currentBrightness: () => theme.currentBrightness?.call() ?? 0.5,
+      onBrightnessChanged: theme.onBrightnessChanged,
+      verticalGestureSensitivity: theme.verticalGestureSensitivity,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Theme(
@@ -894,6 +980,21 @@ class _MaterialDesktopVideoControlsState
                     onExit: (_) => onExit(),
                     child: Stack(
                       children: [
+                        // Hibiki patch (touch on desktop): mobile-style swipe
+                        // gestures for touch / stylus, below the bars so a
+                        // gesture that starts on a button / the seek bar goes
+                        // to that control. Same 16px edge + bottom-bar inset
+                        // as the mobile drag layer. See PATCHES.md.
+                        if (_theme(context).touchSeekGesture ||
+                            _theme(context).touchVolumeGesture ||
+                            _theme(context).touchBrightnessGesture)
+                          Positioned.fill(
+                            left: 16.0,
+                            top: 16.0,
+                            right: 16.0,
+                            bottom: 16.0 + subtitleVerticalShiftOffset,
+                            child: _buildTouchSwipeLayer(context),
+                          ),
                         AnimatedOpacity(
                           curve: Curves.easeInOut,
                           opacity: visible ? 1.0 : 0.0,
@@ -910,8 +1011,15 @@ class _MaterialDesktopVideoControlsState
                             alignment: Alignment.bottomCenter,
                             children: [
                               // Top gradient.
+                              // Hibiki patch (touch on desktop): the scrims are
+                              // pure decoration; IgnorePointer so they no longer
+                              // swallow hits meant for the touch swipe layer
+                              // underneath (a gradient BoxDecoration hit-tests
+                              // true). Ancestors (tap router / MouseRegion) are
+                              // unaffected.
                               if (_theme(context).topButtonBar.isNotEmpty)
-                                Container(
+                                IgnorePointer(
+                                    child: Container(
                                   // Hibiki patch (glass design system): scrim
                                   // colour from the theme (default 0x61000000).
                                   decoration: BoxDecoration(
@@ -928,10 +1036,11 @@ class _MaterialDesktopVideoControlsState
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               // Bottom gradient.
                               if (_theme(context).bottomButtonBar.isNotEmpty)
-                                Container(
+                                IgnorePointer(
+                                    child: Container(
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
@@ -946,7 +1055,7 @@ class _MaterialDesktopVideoControlsState
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               if (mount)
                                 Padding(
                                   padding: _theme(context).padding ??

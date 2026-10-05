@@ -270,7 +270,7 @@ void main() {
           reason: '_desktopControlsTheme 必须开启 touchTapTogglesControls');
     });
 
-    test('页面双击判定不按指针类型过滤（触屏双击左/右照样 seek）', () {
+    test('双击左/右 seek 不看指针类型；指针类型只决定落空双击（中带）的动作', () {
       final int start = corpus.indexOf(
         'void _handleVideoPointerUp(PointerUpEvent event) {',
       );
@@ -278,11 +278,14 @@ void main() {
       final int end = corpus.indexOf('void _handleVideoWheelSignal(', start);
       expect(end, greaterThan(start));
       final String body = corpus.substring(start, end);
-      expect(body.contains('_handleDoubleTapSeek('), isTrue);
-      expect(body.contains('PointerDeviceKind'), isFalse,
-          reason: '双击左/右 seek 必须对 touch 与 mouse 同样生效');
-      expect(body.contains('event.kind'), isFalse,
-          reason: '双击左/右 seek 必须对 touch 与 mouse 同样生效');
+      final int seekIdx = body.indexOf('_handleDoubleTapSeek(');
+      final int kindIdx = body.indexOf('event.kind');
+      expect(seekIdx, greaterThanOrEqualTo(0));
+      expect(kindIdx, greaterThan(seekIdx),
+          reason: '双击左/右 seek 必须对 touch 与 mouse 同样生效（先于指针类型判定）');
+      expect('event.kind'.allMatches(body).length, 1);
+      expect(body.contains('isTouchLikePointerKind(event.kind)'), isTrue,
+          reason: '指针类型只经 isTouchLikePointerKind 喂给中带判据');
     });
   });
 }

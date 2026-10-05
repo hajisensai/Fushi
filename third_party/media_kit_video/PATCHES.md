@@ -762,3 +762,40 @@ Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.d
 Tests: `fushi/test/pages/video_desktop_touch_tap_router_test.dart` (widget
 test of the router with real touch / mouse taps) and
 `fushi/test/pages/video_play_pause_tap_arena_guard_test.dart` (BUG-374 shape).
+
+## Touch on desktop (Surface): mobile swipe gestures for touch / stylus (`touchSeekGesture` / `touchVolumeGesture` / `touchBrightnessGesture`)
+
+`lib/media_kit_video_controls/src/controls/widgets/touch_swipe_gesture_layer.dart`
+(new, exported from `media_kit_video_controls.dart`) and the desktop theme data
+class / control State in `material_desktop.dart`.
+
+`TouchSwipeGestureLayer` carries the mobile controls' swipe arithmetic —
+horizontal drag scrubs through the host `HorizontalSeekResolver` measured from
+one base snapshotted at drag start (`relativeSeekBasePosition`, BUG-2731
+follow-up) and commits on release through `onSeekEnd` + `onSeekDispatched`
+(same commit path as the seek bar); right-half vertical drag moves the volume
+and left-half vertical drag the brightness by `-dy / verticalGestureSensitivity`
+from the current level (`currentVolume` / `currentBrightness`). Feedback is the
+host's: `seekIndicatorBuilder` while scrubbing, the host HUD behind
+`onVolumeChanged` / `onBrightnessChanged`. Its recognizers are restricted with
+`GestureDetector.supportedDevices` to touch / stylus, so mouse drags never enter
+them.
+
+The desktop State mounts the layer (only when one of the three `touch*Gesture`
+fields is on — all default `false` = upstream) as the bottom child of its
+controls `Stack`, inset like the mobile drag layer (16px edges, bottom
+`16 + subtitleVerticalShiftOffset`): a drag that starts on a bar button or the
+seek bar hits that control first and never reaches the layer. The two scrim
+gradients are wrapped in `IgnorePointer` — a gradient `BoxDecoration`
+hit-tests `true` and would otherwise swallow every hit above the layer; they
+are pure decoration, and the ancestors (tap router, `MouseRegion`) still see
+the pointer.
+
+Consumer: `_desktopControlsTheme` in
+`fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
+(same resolver / HUD / callbacks / sensitivity constant as `_mobileControlsTheme`;
+brightness only where `ScreenBrightnessController.canControl`, i.e. never on
+desktop).
+
+Test: `fushi/test/pages/video_desktop_touch_swipe_test.dart` (real touch /
+stylus / mouse drags).
