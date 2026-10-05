@@ -10,6 +10,9 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -127,64 +130,88 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 默认排序 + 每个 episode group 各一格分段卡；选中格 secondaryContainer。
+    final List<(String?, Widget)> options = <(String?, Widget)>[
+      (
+        null,
+        FushiRadioListTile<String?>(
+          key: const ValueKey<String>('video-tmdb-ordering-default'),
+          value: null,
+          groupValue: _selected,
+          title: Text(t.collection_tmdb_ordering_default),
+          onChanged: (String? value) => setState(() => _selected = value),
+        ),
+      ),
+      for (final VideoMetadataEpisodeGroupSummary group in widget.groups)
+        (
+          group.id,
+          FushiRadioListTile<String?>(
+            key: ValueKey<String>('video-tmdb-ordering-${group.id}'),
+            value: group.id,
+            groupValue: _selected,
+            title: Text(group.name),
+            subtitle: Text(
+              <String>[
+                if (group.groupCount != null || group.episodeCount != null)
+                  t.collection_tmdb_ordering_counts(
+                    groups: group.groupCount ?? 0,
+                    episodes: group.episodeCount ?? 0,
+                  ),
+                if (group.description?.trim().isNotEmpty ?? false)
+                  group.description!.trim(),
+              ].join('\n'),
+            ),
+            isThreeLine:
+                (group.description?.trim().isNotEmpty ?? false) &&
+                (group.groupCount != null || group.episodeCount != null),
+            onChanged: (String? value) => setState(() => _selected = value),
+          ),
+        ),
+    ];
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.sort),
       title: Text(t.collection_tmdb_ordering),
       content: SizedBox(
         width: 460,
         child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(t.collection_tmdb_ordering_hint),
-              FushiRadioListTile<String?>(
-                key: const ValueKey<String>('video-tmdb-ordering-default'),
-                value: null,
-                groupValue: _selected,
-                title: Text(t.collection_tmdb_ordering_default),
-                onChanged: (String? value) => setState(() => _selected = value),
-              ),
-              for (final VideoMetadataEpisodeGroupSummary group
-                  in widget.groups)
-                FushiRadioListTile<String?>(
-                  key: ValueKey<String>('video-tmdb-ordering-${group.id}'),
-                  value: group.id,
-                  groupValue: _selected,
-                  title: Text(group.name),
-                  subtitle: Text(
-                    <String>[
-                      if (group.groupCount != null ||
-                          group.episodeCount != null)
-                        t.collection_tmdb_ordering_counts(
-                          groups: group.groupCount ?? 0,
-                          episodes: group.episodeCount ?? 0,
-                        ),
-                      if (group.description?.trim().isNotEmpty ?? false)
-                        group.description!.trim(),
-                    ].join('\n'),
+          child: FushiEntranceScope(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  t.collection_tmdb_ordering_hint,
+                  style: context.fushiType.bodyMedium.copyWith(
+                    color: cs.onSurfaceVariant,
                   ),
-                  isThreeLine:
-                      (group.description?.trim().isNotEmpty ?? false) &&
-                      (group.groupCount != null || group.episodeCount != null),
-                  onChanged: (String? value) =>
-                      setState(() => _selected = value),
                 ),
-            ],
+                const SizedBox(height: 16),
+                for (int i = 0; i < options.length; i++)
+                  FushiStaggeredEntrance(
+                    index: i,
+                    child: FushiGroupedListItem(
+                      index: i,
+                      count: options.length,
+                      selected: _selected == options[i].$1,
+                      child: options[i].$2,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
       actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
+        FushiDialogAction(
+          label: t.dialog_cancel,
           onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
         ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
+        FushiDialogAction(
+          kind: FushiDialogActionKind.primary,
+          label: t.dialog_save,
           onPressed: () =>
               Navigator.pop(context, VideoTmdbOrderingChoice(_selected)),
-          child: Text(t.dialog_save),
         ),
       ],
     );
