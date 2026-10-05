@@ -72,7 +72,7 @@ struct ProcessedFile {
 
 void setup_stream_exceptions(std::ofstream& stream) { stream.exceptions(std::ios::failbit | std::ios::badbit); }
 
-// Failure-path cleanup (BUG-2948). It runs *after* a failed import -- often a
+// Failure-path cleanup (BUG-2952). It runs *after* a failed import -- often a
 // failed import on a full disk -- so it must never throw: the throwing
 // std::filesystem::remove_all overload, and on Windows even building the path
 // from a title that is not valid UTF-8, used to turn a clean "import failed"
@@ -1587,7 +1587,7 @@ ImportResult import_mdx(const std::string& mdx_path, const std::string& output_d
       // Media is best-effort (see above), and that has to include a write
       // failure: a disk that fills up while media.bin is being written threw
       // straight out of import_mdx -- past the dictionary it had just finished
-      // -- and left a truncated media store behind (BUG-2948). Drop the partial
+      // -- and left a truncated media store behind (BUG-2952). Drop the partial
       // store; the dictionary itself is complete and stays.
       const std::string dict_dir = output_dir + "/" + result.title;
       try {
@@ -1645,7 +1645,7 @@ ImportResult import_mdx_from_zip(Zip& zip, const std::string& output_dir) {
     return true;
   };
   // The extraction below writes the whole .mdx (+ media) into the temp dir; on a
-  // full disk that write throws, and the temp dir must not outlive it (BUG-2948).
+  // full disk that write throws, and the temp dir must not outlive it (BUG-2952).
   try {
   extract(mdx_index, mdx_filename);
   for (size_t i = 0; i < zip.entries.size(); i++) {
@@ -1764,7 +1764,7 @@ std::string sanitize_title(const std::string& raw) {
   // cannot be converted to a Windows path at all (libc++ throws "locale not
   // supported" from the path constructor) and makes utf8::distance below throw
   // on long titles -- either way a malformed index.json title used to fail the
-  // import with a meaningless message (BUG-2948, found by fuzzing). Repair it
+  // import with a meaningless message (BUG-2952, found by fuzzing). Repair it
   // to U+FFFD instead; the user still sees a recognisable name.
   if (!utf8::is_valid(title.begin(), title.end())) {
     title = utf8::replace_invalid(title);
@@ -2226,7 +2226,7 @@ ImportResult import_dispatch(const std::string& file_path, const std::string& ou
 // iostream_category error"), a map_rw ENOSPC, a zstd/temp-file error. None of
 // those tell the user what to do. Tag the failure with the stable marker
 // kStorageFullMarker when the cause is the disk, so the Dart side can show a
-// "free up storage" message instead (BUG-2948).
+// "free up storage" message instead (BUG-2952).
 //
 // "The cause is the disk" = an ENOSPC actually reached us, or the volume the
 // dictionary was being written to is now nearly out of space. The partial
@@ -2257,7 +2257,7 @@ bool mentions_enospc(const ImportResult& r) {
 }
 }  // namespace
 
-// The public entry is the importer's exception boundary (BUG-2948). Every
+// The public entry is the importer's exception boundary (BUG-2952). Every
 // format path is supposed to turn its own failures into ImportResult::errors,
 // but several did not (MDX extraction, the post-success MDD media write, the
 // failure-path cleanup), and an exception escaping here goes straight into the

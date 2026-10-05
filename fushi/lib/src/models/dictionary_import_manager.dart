@@ -32,7 +32,7 @@ class DictionaryImportManager {
   ///
   /// 大小写与路径分隔符已由 [_readZipFileNames] 归一（全小写）。
   ///
-  /// BUG-2948：「词典整合包」——zip 里再套 zip（`01_英汉/COBUILD10.zip` …），或
+  /// BUG-2952：「词典整合包」——zip 里再套 zip（`01_英汉/COBUILD10.zip` …），或
   /// 根下多个子目录各带一份 `index.json`——同样是一包多典。内层 `.zip` 一个算一本；
   /// `index.json` 只在出现**两份以上**时才按所在目录各算一本（只有一份就是普通
   /// Yomitan 包，绝不能拆）。以前这种包整个丢给 native：内层 zip 不是词典数据，
@@ -52,7 +52,7 @@ class DictionaryImportManager {
     ];
   }
 
-  /// BUG-2948：一包多典（见 [archivedDictionaryEntries]）里是否含有「本身不能直接
+  /// BUG-2952：一包多典（见 [archivedDictionaryEntries]）里是否含有「本身不能直接
   /// 喂给 native」的条目——内层 zip 或多份 index.json。这种包哪怕只有一本也必须先
   /// 解开：native 不会递归进内层 zip。
   @visibleForTesting
@@ -60,7 +60,7 @@ class DictionaryImportManager {
       archivedEntries.length > 1 ||
       archivedEntries.any((String e) => e.endsWith('.zip'));
 
-  /// BUG-2948：native 导入失败时给用户看的原因。native 在「写盘时卷空间不足」
+  /// BUG-2952：native 导入失败时给用户看的原因。native 在「写盘时卷空间不足」
   /// 时把稳定标记 `FUSHI_ERR_STORAGE_FULL` 放在错误首行（`importer.hpp`
   /// `kStorageFullMarker`）——那种失败的原始文本是 iostream / errno 碎片
   /// （`ios_base::clear: unspecified iostream_category error`），用户看了无从下手。
@@ -400,7 +400,7 @@ class DictionaryImportManager {
   }) async {
     final String baseWork =
         path.join(_resourceDirectory.path, 'import_multi_temp');
-    // BUG-2948：整合包里的内层 zip 自己也可能是一包多典，会递归回到这里。递归层
+    // BUG-2952：整合包里的内层 zip 自己也可能是一包多典，会递归回到这里。递归层
     // 必须用外层工作目录**里面**的独立目录——共用同一个固定目录会在外层还在逐本
     // 导入时把它整个删掉。外层 finally 删目录时连带清掉。
     final Directory work = path.isWithin(baseWork, archive.path)
@@ -418,7 +418,7 @@ class DictionaryImportManager {
         final String ext = path.extension(f.path).toLowerCase();
         return ext == '.mdx' || ext == '.dsl' || ext == '.zip';
       }).toList();
-      // BUG-2948：多份 index.json 的整合包——每个带 index.json 的目录是一本
+      // BUG-2952：多份 index.json 的整合包——每个带 index.json 的目录是一本
       // Yomitan 散文件词典，打成临时 zip 后走同一条 [importFromFile]。只有一份
       // index.json 且没有别的词典时不会走到这里（[isDictionaryBundle]）；只有
       // 一份但旁边还有内层 zip / MDX 时它也是整合包里的一本，同样要导。

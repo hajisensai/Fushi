@@ -16,7 +16,7 @@ struct mapped_file {
 
 mapped_file map_rd(const std::string& path);
 // Creates [path] with exactly [file_size] bytes and maps it writable. The bytes
-// are *reserved on disk before the mapping is returned* (BUG-2948): a writable
+// are *reserved on disk before the mapping is returned* (BUG-2952): a writable
 // MAP_SHARED mapping over a sparse file defers block allocation to the first
 // page fault, and when the volume is full that fault is delivered as SIGBUS
 // (Windows: EXCEPTION_IN_PAGE_ERROR) -- a process kill no try/catch can see.

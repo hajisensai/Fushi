@@ -27,7 +27,7 @@ struct SimpleEntry {
 
 namespace dictionary_importer {
 // First entry of ImportResult::errors when an import failed because the volume
-// it was writing to ran out of space (BUG-2948). A stable token, not prose:
+// it was writing to ran out of space (BUG-2952). A stable token, not prose:
 // the Dart side matches on it to show a localized "free up storage" message.
 inline constexpr const char* kStorageFullMarker = "FUSHI_ERR_STORAGE_FULL";
 

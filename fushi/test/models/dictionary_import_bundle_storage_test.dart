@@ -1,4 +1,4 @@
-// BUG-2948：词典导入导致 native 崩溃（磁盘写满 SIGBUS）与词典整合包。
+// BUG-2952：词典导入导致 native 崩溃（磁盘写满 SIGBUS）与词典整合包。
 //
 // native 侧的根因与修复由 `native/fushidicts/tests/import_failure_boundary_test.cpp`
 // 钉住（map_rw 预留块、异常边界、kanji 逐条容错）。这里钉 Dart 侧两件事：
@@ -13,7 +13,7 @@ import 'package:fushi/src/models/dictionary_import_manager.dart';
 import 'package:fushi/utils.dart';
 
 void main() {
-  group('BUG-2948 整合包判据', () {
+  group('BUG-2952 整合包判据', () {
     test('zip 里套多个词典 zip（用户的「英语词典整理」形态）= 整合包，逐个算一本', () {
       final List<String> entries =
           DictionaryImportManager.archivedDictionaryEntries(<String>[
@@ -93,7 +93,7 @@ void main() {
     });
   });
 
-  group('BUG-2948 存储空间不足的错误回传', () {
+  group('BUG-2952 存储空间不足的错误回传', () {
     test('带标记的 native 错误换成可读文案', () {
       expect(
         DictionaryImportManager.nativeImportErrorMessage(

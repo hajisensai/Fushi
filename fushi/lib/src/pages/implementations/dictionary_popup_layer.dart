@@ -16,7 +16,7 @@ import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
-// BUG-2947：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
+// BUG-2951：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
 export 'package:fushi/src/lookup/lookup_overlay_navigator.dart'
     show LookupOverlayNavigator;
 // 占位单例的 canonical 声明已收口到 dictionary_popup_controller.dart（controller

@@ -496,7 +496,7 @@ void main([List<String> args = const <String>[]]) {
     /// 必须在 runApp 之前挂上：install 会立刻同步一次，冷启动第一帧起就生效。
     WindowsImeGuard.install();
 
-    /// BUG-2947：查词浮层自带导航层里开着菜单时，系统返回键只关菜单。observer 按注册
+    /// BUG-2951：查词浮层自带导航层里开着菜单时，系统返回键只关菜单。observer 按注册
     /// 顺序被询问，必须排在 runApp 里 WidgetsApp 注册的那个之前，否则返回先被根
     /// Navigator 交给页面 PopScope、把浮层连同菜单一起关掉。
     LookupOverlayNavigator.installSystemBackInterceptor();

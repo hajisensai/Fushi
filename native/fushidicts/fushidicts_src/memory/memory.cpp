@@ -199,7 +199,7 @@ mapped_file map_rw(const std::string& path, size_t file_size) {
   // store into each mapped page has to allocate a block. On a full volume that
   // allocation fails inside the page-fault handler and the kernel answers with
   // SIGBUS -- the hash/bloom build then kills the whole app mid-import
-  // (BUG-2948, user log "native 词典导入未返回" on a nearly full phone).
+  // (BUG-2952, user log "native 词典导入未返回" on a nearly full phone).
   const int reserve_rc = reserve_blocks(fd, file_size);
   if (reserve_rc != 0) {
     g_last_error = reserve_rc;

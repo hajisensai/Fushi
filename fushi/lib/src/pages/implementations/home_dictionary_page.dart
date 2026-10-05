@@ -1806,7 +1806,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // 会红屏（BUG-121）。State 失效 / 销毁期标志置位则空渲染兜底；Theme 用 entry 自己的
     // overlayContext（与本 entry 同寿命）而非更短命的 State context。
     if (!mounted || _overlayInert) return const SizedBox.shrink();
-    // BUG-2947：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    // BUG-2951：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
     return LookupOverlayNavigator(
      child: FushiAppUiScaleNeutralizer(
       child: Theme(

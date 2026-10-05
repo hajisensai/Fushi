@@ -1,4 +1,4 @@
-// BUG-2948 guard: a dictionary import must end with an ImportResult, never with
+// BUG-2952 guard: a dictionary import must end with an ImportResult, never with
 // a dead process.
 //
 // The user-visible report was "DictImport.crashRecovered ... native 词典导入未返回"

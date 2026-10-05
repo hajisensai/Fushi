@@ -1,4 +1,4 @@
-// BUG-2947：视频页查词弹窗里右键「复制」，菜单跑到查词框后面。
+// BUG-2951：视频页查词弹窗里右键「复制」，菜单跑到查词框后面。
 //
 // 根因：视频页 / 网页视频 / 首页词典 / texthooker 把查词浮层用 `overlay.insert` 手动挂进
 // 根 Navigator 的 Overlay；之后 Navigator 每次 push 都 `overlay.rearrange(路由 entries)`，
@@ -179,7 +179,7 @@ Future<void> _rightClick(WidgetTester tester, Offset at) async {
 }
 
 void main() {
-  testWidgets('BUG-2947: menu opened from the root-overlay popup is above it', (
+  testWidgets('BUG-2951: menu opened from the root-overlay popup is above it', (
     WidgetTester tester,
   ) async {
     final _Probe probe = _Probe();
@@ -290,7 +290,7 @@ void main() {
       expect(
         wrap,
         isNonNegative,
-        reason: '$path 的根 Overlay 浮层必须包 LookupOverlayNavigator（BUG-2947）',
+        reason: '$path 的根 Overlay 浮层必须包 LookupOverlayNavigator（BUG-2951）',
       );
       expect(
         wrap,

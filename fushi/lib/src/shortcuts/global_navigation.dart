@@ -278,7 +278,7 @@ KeyEventResult _handleGlobalBack(
     }
   }
   if (action != ShortcutAction.globalBack) return KeyEventResult.ignored;
-  // BUG-2947：查词浮层自带导航层里开着菜单时，「返回」只关这一层菜单——它在根
+  // BUG-2951：查词浮层自带导航层里开着菜单时，「返回」只关这一层菜单——它在根
   // Navigator 之外，根 maybePop 会落到页面 PopScope、把浮层连同菜单一起关掉。
   if (LookupOverlayNavigator.popActiveMenu()) return KeyEventResult.handled;
   final NavigatorState? nav = navigatorKey.currentState;
@@ -324,7 +324,7 @@ KeyEventResult _handleEscapeWithoutRegistry(
   if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.escape) {
     return KeyEventResult.ignored;
   }
-  // BUG-2947：查词浮层菜单先关（同 [_handleGlobalBack]）。
+  // BUG-2951：查词浮层菜单先关（同 [_handleGlobalBack]）。
   if (LookupOverlayNavigator.popActiveMenu()) return KeyEventResult.handled;
   final NavigatorState? nav = navigatorKey.currentState;
   if (nav == null) return KeyEventResult.ignored;
@@ -545,7 +545,7 @@ bool _executeGlobalMouseAction(
 ) {
   switch (action) {
     case ShortcutAction.globalBack:
-      // BUG-2947：查词浮层菜单先关（同 [_handleGlobalBack]）。
+      // BUG-2951：查词浮层菜单先关（同 [_handleGlobalBack]）。
       if (LookupOverlayNavigator.popActiveMenu()) return true;
       final NavigatorState? nav = navigatorKey.currentState;
       if (nav == null || !nav.canPop()) return false;

@@ -1,4 +1,4 @@
-## BUG-2948 · 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包）
+## BUG-2952 · 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包）
 - **报告**：2026-10-05（用户 Android 真机日志，经上游所有者转来：「不应该崩溃，你修一下」）。两条 `DictImport.crashRecovered`：① 在线下载的 `[Kanji] mozc Kanji Variants.zip`，native 最后步骤=`yomitan: kanji_bank #0 / kanji_bank_1.json`；② 从整合包「英语词典整理.zip」里解出来逐个导入的 `牛津英语习语词典.zip`（MDX 词典，没有 native 步进面包屑——MDX 路径本来不写）。用户另述：直接导整合包只报「导入失败」不崩；解开后逐个导，**部分**内层 zip 会崩。
 - **真实性**：✅ 真 bug，但触发条件不是词典内容，而是**导入时存储卷写满**。
   - 两个文件本身完全正常：用 clang 编的引擎驱动在 Windows x64、Android x86_64 模拟器（CLI + 真 app 2.9.0 界面导入）、Android arm64 真机（CLI，`/data/local/tmp`，不碰已装 app）、macOS arm64（含 ASan/UBSan）上逐个导入，mozc（1317 字，`stats` 全是 `{}`、`meanings` 里含 `""`、4 字节字 𠮟）与 牛津习语（MDX 5.3 MB + MDD 8.8 MB）全部成功；整合包里另外 9 本也全部成功；结构化 fuzz（深嵌套 1e6 层 structured-content / kanji stats / meta / index / tag；随机变异 term/kanji/meta/tag bank JSON 与 zip 字节，约 2 万例）零崩溃。
