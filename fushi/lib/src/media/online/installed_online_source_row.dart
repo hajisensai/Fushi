@@ -71,7 +71,7 @@ List<String> onlineSourceLanguages(Iterable<String> languages) {
   return result;
 }
 
-/// 一个源是否通过当前筛选（[language] 为 null = 不限语言，比较不分大小写）。
+/// 一个源是否通过当前筛选（[languageFilter] 为 null = 不限语言，比较不分大小写）。
 bool matchesOnlineSourceFilter({
   required bool enabled,
   required String language,
