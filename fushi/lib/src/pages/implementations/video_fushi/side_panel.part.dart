@@ -91,6 +91,22 @@ extension _VideoSidePanel on _VideoFushiPageState {
     }
   }
 
+  /// 侧栏页头图标（M3E 下画成标题前的饼干形徽标；Apple / 墨水屏不画）。
+  IconData _videoSidePanelIcon(_VideoSidePanelKind kind) {
+    switch (kind) {
+      case _VideoSidePanelKind.speed:
+        return Icons.speed;
+      case _VideoSidePanelKind.settings:
+        return Icons.tune;
+      case _VideoSidePanelKind.chapters:
+        return Icons.bookmarks_outlined;
+      case _VideoSidePanelKind.quality:
+        return Icons.high_quality_outlined;
+      case _VideoSidePanelKind.danmakuMatch:
+        return Icons.forum_outlined;
+    }
+  }
+
   double _videoSidePanelWidth(_VideoSidePanelKind kind) {
     switch (kind) {
       case _VideoSidePanelKind.settings:
@@ -176,6 +192,7 @@ extension _VideoSidePanel on _VideoFushiPageState {
     final _VideoSidePanelKind kind = panelState.kind;
     final Widget panel = VideoTranslucentSidePanel(
       title: _videoSidePanelTitle(kind),
+      icon: _videoSidePanelIcon(kind),
       width: _videoSidePanelWidth(kind),
       alignment: panelState.alignment,
       onClose: _hideVideoSidePanel,

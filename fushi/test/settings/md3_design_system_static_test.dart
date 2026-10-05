@@ -949,6 +949,15 @@ void main() {
           'surfaceContainerHigh is the translucent dark-scheme container of '
           'the centre transport. Same reviewed media-page overlay class as '
           'video_apple_chrome / video_volume_overlays.',
+      'lib/src/media/video/video_m3e_panel_theme.dart':
+          '2026-10-06 M3 Expressive player panel theme: the player settings / '
+          'track / quality / chapter panels float over the video on the fixed '
+          'neutral dark chrome surface, so this file builds the panel '
+          'ColorScheme (hue-free grey container ramp lifted one step above the '
+          '#2D2D2D panel, white foreground) and re-runs the theme factory with '
+          'it. The surfaceContainer* names are ColorScheme.copyWith role '
+          'assignments of that scheme, not page chrome decisions — same '
+          'reviewed media-page overlay class as video_m3e_chrome.',
       'lib/src/media/video/video_quick_settings_sheet.dart':
           'Video settings sheet category bar (2026-10-05 M3E connected button '
           'group): the segment corner radii (10 idle / pill selected), the '
@@ -1249,9 +1258,10 @@ void main() {
           'the video-subsystem player chrome.',
       'lib/src/media/video/video_side_panel.dart':
           'Shared floating side panel of the video player (subtitle / audio / '
-          'chapter panels): MD3 Expressive side-panel surface (surfaceContainerLow '
-          '+ panel radius) and the Apple sheet title (17 / 15 semibold) are the '
-          'player overlay chrome, drawn over video, not ordinary page chrome.',
+          'chapter panels): the e-ink side-panel surface (surfaceContainerLow '
+          '+ panel radius; M3E uses the neutral player chrome surface) and the '
+          'Apple sheet title (17 / 15 semibold) are the player overlay chrome, '
+          'drawn over video, not ordinary page chrome.',
       'lib/src/onboarding/recommended_pack_download_mini_bar.dart':
           'Recommended-pack download mini-bar mirrors the now-listening mini-bar '
           'tone-for-tone (MD3 floating surfaceContainerHigh card, Apple 28 clear '
@@ -1365,6 +1375,12 @@ void main() {
         'BorderRadius.circular(',
         'surfaceContainerHigh',
         'fontSize:',
+      },
+      'lib/src/media/video/video_m3e_panel_theme.dart': <String>{
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_quick_settings_sheet.dart': <String>{
         'BorderRadius.circular(',
