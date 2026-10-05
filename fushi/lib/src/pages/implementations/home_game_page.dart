@@ -407,7 +407,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
             Expanded(
               // M3E 导入视图：区标题 + 一张大圆角虚线拖放区（主按钮「添加游戏」+
               // 拖放提示 + 导入中波浪进度），错峰进场。
+              // IndexedStack 急切构建：切到导入子区时重开进场窗口。
               child: FushiEntranceScope(
+                replayKey: _section == GameSection.importGames,
                 child: SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(
                     tokens.spacing.page,
