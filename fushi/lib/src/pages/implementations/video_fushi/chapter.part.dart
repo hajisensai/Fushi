@@ -220,15 +220,18 @@ extension _VideoChapter on _VideoFushiPageState {
     final int current = controller.chapterIndexForPosition(
       controller.positionMs ?? 0,
     );
-    return VideoChapterPanel(
-      controller: controller,
-      currentIndex: current,
-      colorScheme: _videoChromeColorScheme(context),
-      emptyHint: t.video_chapters_empty,
-      onTapChapter: (VideoChapter chapter) {
-        _pokeControlsVisible();
-        unawaited(controller.seekToChapter(chapter.index));
-      },
+    // 配色读侧栏表面**内部**的主题（M3E = 面板中性深色主题），不是页面主题。
+    return Builder(
+      builder: (BuildContext panelContext) => VideoChapterPanel(
+        controller: controller,
+        currentIndex: current,
+        colorScheme: Theme.of(panelContext).colorScheme,
+        emptyHint: t.video_chapters_empty,
+        onTapChapter: (VideoChapter chapter) {
+          _pokeControlsVisible();
+          unawaited(controller.seekToChapter(chapter.index));
+        },
+      ),
     );
   }
 

@@ -385,7 +385,12 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 浏览剧集卡片后关面板，焦点滞留在 opacity=0 的卡片 InkWell 上，焦点环在画面上
   /// 画出一个空框）。× / Esc / 控制条按钮仍全部经 [_closeEpisodeList]，关闭副作用不分叉。
   Widget _episodeOverlayPanel(bool visible) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
+    // M3E：剧集轨道与设置侧板同一层播放器 chrome——无色相中性深色渐变底 +
+    // 面板中性主题（季 chip、卡片文字读白前景，强调色仍是 app 主色）；Apple /
+    // 墨水屏照旧跟页面主题。
+    final bool neutral = videoM3ePanelNeutral(context);
+    final ColorScheme pageCs = _videoChromeColorScheme(context);
+    final ColorScheme cs = neutral ? videoM3ePanelScheme(pageCs) : pageCs;
     final double panelHeight = (220 * _videoUiScale).clamp(200.0, 360.0);
     final Duration duration =
         einkSafeDuration(context, const Duration(milliseconds: 220));
@@ -411,18 +416,20 @@ extension _VideoEpisode on _VideoFushiPageState {
                 visible: visible,
                 restoreFocus: () =>
                     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
-                child: VideoEpisodePanel(
-                  key: const ValueKey<String>('video-episode-panel'),
-                  episodes: _episodePanelEntries(),
-                  currentIndex: _currentEpisode,
-                  onTapEpisode: _handleEpisodeListTap,
-                  onClose: _closeEpisodeList,
-                  colorScheme: cs,
-                  title: t.video_episode_list,
-                  emptyHint: t.video_episode_list_empty,
-                  seasonLabelOf: _episodeSeasonLabel,
-                  fontSize: 14 * _videoUiScale,
-                  height: panelHeight,
+                child: VideoM3ePanelTheme(
+                  child: VideoEpisodePanel(
+                    key: const ValueKey<String>('video-episode-panel'),
+                    episodes: _episodePanelEntries(),
+                    currentIndex: _currentEpisode,
+                    onTapEpisode: _handleEpisodeListTap,
+                    onClose: _closeEpisodeList,
+                    colorScheme: cs,
+                    title: t.video_episode_list,
+                    emptyHint: t.video_episode_list_empty,
+                    seasonLabelOf: _episodeSeasonLabel,
+                    fontSize: 14 * _videoUiScale,
+                    height: panelHeight,
+                  ),
                 ),
               ),
             ),

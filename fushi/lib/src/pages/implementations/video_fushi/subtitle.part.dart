@@ -175,7 +175,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// TODO-1351：字幕轨/字幕源切换区，收进设置面板「字幕」分类顶部（取代原来外面浮的
-  /// 字幕轨侧栏）。用 [Builder] 让配色随设置面板浅色 MD3 主题解析（而非视频 chrome 深色）；
+  /// 字幕轨侧栏）。用 [Builder] 让配色随设置面板自身主题解析（M3E 面板中性深色主题）；
   /// 行内容（自动获取字幕 / 打开字幕文件 / 关闭 / 本地内嵌+外挂源 / 远端 YouTube+内嵌+host
   /// / 副字幕入口）与选择逻辑与旧侧栏逐行一致，数据随视频页 `_rebuild` 重建。
   Widget _buildSubtitleTrackSettingsSection(VideoPlayerController controller) {
@@ -189,7 +189,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     BuildContext context,
     VideoPlayerController controller,
   ) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
+    // onSecondaryContainer），Apple 照旧强调色。
+    final Color? selectedFg = videoPanelSelectedForeground(context);
     final String? hostSub = _remoteSubtitlePath;
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const FushiLinearProgressIndicator(),
@@ -264,7 +266,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         selected:
             SubtitleSource.isOff(_currentSubtitleSource) ||
             (_isRemote && _currentSubtitleSource == null),
-        selectedColor: cs.primary,
+        selectedColor: selectedFg,
         enabled: !_subtitleLoadingShown,
         onTap: _subtitleLoadingShown
             ? null
@@ -284,7 +286,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             leading: const FushiIcon(Icons.closed_caption_outlined),
             title: Text(_youtubeCaptionTrackLabel(track)),
             selected: _currentSubtitleSource == track.trackKey,
-            selectedColor: cs.primary,
+            selectedColor: selectedFg,
             enabled: !_subtitleLoadingShown,
             onTap: _subtitleLoadingShown
                 ? null
@@ -296,7 +298,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           title: Text(t.video_subtitle_remote_host),
           subtitle: Text(p.basename(hostSub)),
           selected: _currentSubtitleSource == hostSub,
-          selectedColor: cs.primary,
+          selectedColor: selectedFg,
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
@@ -322,7 +324,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             enabled: track.isText && !_subtitleLoadingShown,
             selected:
                 _currentSubtitleSource == _remoteEmbeddedSubtitleSource(track),
-            selectedColor: cs.primary,
+            selectedColor: selectedFg,
             onTap: track.isText && !_subtitleLoadingShown
                 ? () =>
                       unawaited(_applyRemoteEmbeddedSubtitle(controller, track))
@@ -348,7 +350,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   source,
                   _currentSubtitleSource,
                 ),
-                selectedColor: cs.primary,
+                selectedColor: selectedFg,
                 enabled: !_subtitleLoadingShown,
                 onTap: _subtitleLoadingShown
                     ? null
@@ -381,7 +383,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 source,
                 _currentSubtitleSource,
               ),
-              selectedColor: cs.primary,
+              selectedColor: selectedFg,
               enabled: !_subtitleLoadingShown,
               onTap: _subtitleLoadingShown
                   ? null
@@ -442,7 +444,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     BuildContext context,
     VideoPlayerController controller,
   ) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
+    // onSecondaryContainer），Apple 照旧强调色。
+    final Color? selectedFg = videoPanelSelectedForeground(context);
     // TODO-2837 远端分支：可用源 = host sidecar（已下载在 [_remoteSubtitlePath]）+
     // host 内嵌文本轨（抽取下载）+ 本地字幕文件导入；全部归一成本地文件 → cue →
     // setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
@@ -455,7 +459,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           selected:
               _currentSecondarySubtitleSource == null ||
               SubtitleSource.isOff(_currentSecondarySubtitleSource),
-          selectedColor: cs.primary,
+          selectedColor: selectedFg,
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
@@ -478,7 +482,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             title: Text(t.video_subtitle_remote_host),
             subtitle: Text(p.basename(hostSub)),
             selected: _currentSecondarySubtitleSource == hostSub,
-            selectedColor: cs.primary,
+            selectedColor: selectedFg,
             enabled: !_subtitleLoadingShown,
             onTap: _subtitleLoadingShown
                 ? null
@@ -504,7 +508,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             selected:
                 _currentSecondarySubtitleSource ==
                 _remoteEmbeddedSubtitleSource(track),
-            selectedColor: cs.primary,
+            selectedColor: selectedFg,
             onTap: track.isText && !_subtitleLoadingShown
                 ? () => unawaited(
                     _applyRemoteEmbeddedSecondarySubtitle(controller, track),
@@ -529,7 +533,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   source,
                   _currentSecondarySubtitleSource,
                 ),
-                selectedColor: cs.primary,
+                selectedColor: selectedFg,
                 enabled: !_subtitleLoadingShown,
                 onTap: _subtitleLoadingShown
                     ? null
@@ -553,7 +557,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         selected:
             SubtitleSource.isOff(_currentSecondarySubtitleSource) ||
             _currentSecondarySubtitleSource == null,
-        selectedColor: cs.primary,
+        selectedColor: selectedFg,
         enabled: !_subtitleLoadingShown,
         onTap: _subtitleLoadingShown
             ? null
@@ -576,7 +580,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
             ),
             title: Text(source.label),
             selected: source.matchesPersisted(_currentSecondarySubtitleSource),
-            selectedColor: cs.primary,
+            selectedColor: selectedFg,
             enabled: !_subtitleLoadingShown,
             onTap: _subtitleLoadingShown
                 ? null
