@@ -20,6 +20,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 按域组装后端。[includeOnlineSources] 由浏览页按「来源」页签同一门
 /// （模块开关 + 平台 / 合规）算好传入；漫画在线源另需 Mihon 运行时。
@@ -305,7 +308,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
                   FushiFilledButton.icon(
                     key: const ValueKey<String>('ai-media-acquire-send'),
                     onPressed: _busy ? null : () => unawaited(_submit()),
-                    icon: const FushiIcon(Icons.auto_awesome_outlined),
+                    icon: const FushiIcon(FushiIcons.ai),
                     label: Text(t.ai_media_acquire_send),
                   ),
                 ],
@@ -334,7 +337,10 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
               ),
             if (_busy) ...<Widget>[
               const SizedBox(height: 8),
-              const FushiLinearProgressIndicator(),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: FushiLinearProgressIndicator(),
+              ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 child: Text(switch (_phase) {
@@ -356,8 +362,17 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     if (_phase == _Phase.done && _candidates.isEmpty) {
       return FushiPlaceholderMessage(
         key: const ValueKey<String>('ai-media-acquire-empty'),
-        icon: Icons.search_off_rounded,
+        icon: FushiIcons.searchOff,
         message: t.ai_media_acquire_no_results,
+      );
+    }
+    // 还没搜出任何候选：空闲时是引导态，忙时是与结果行同轮廓的骨架。
+    if (_candidates.isEmpty) {
+      if (_busy) return _buildSkeleton();
+      return FushiPlaceholderMessage(
+        key: const ValueKey<String>('ai-media-acquire-idle'),
+        icon: FushiIcons.ai,
+        message: t.ai_media_acquire_hint,
       );
     }
     final List<MediaAcquisitionCandidate> picked = <MediaAcquisitionCandidate>[
@@ -371,48 +386,94 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     // 推荐 / 其它各是一个共享分组列表（MD3 分段卡 / Apple inset grouped），
     // 组标题缩进到行文字起点。
     const EdgeInsets groupPadding = EdgeInsets.symmetric(horizontal: 16);
-    return ListView(
-      key: const ValueKey<String>('ai-media-acquire-results'),
-      padding: const EdgeInsets.only(bottom: 24),
-      children: <Widget>[
-        if (picked.isNotEmpty) ...<Widget>[
-          _sectionLabel(theme, t.ai_media_acquire_recommended),
-          FushiGroupedList(
-            padding: groupPadding,
-            children: <Widget>[
-              for (final MediaAcquisitionCandidate c in picked)
-                _candidateTile(theme, c, recommended: true),
-            ],
-          ),
+    int order = 0;
+    // 错峰进场：AI 挑完（推荐分组出现）时重开窗口，新一屏再播一次。
+    return FushiEntranceScope(
+      replayKey: _picks.isEmpty ? _generation : -_generation,
+      child: ListView(
+        key: const ValueKey<String>('ai-media-acquire-results'),
+        padding: EdgeInsets.only(bottom: 24 + bottomSafeInsetOf(context)),
+        children: <Widget>[
+          if (picked.isNotEmpty) ...<Widget>[
+            _sectionLabel(theme, t.ai_media_acquire_recommended),
+            FushiStaggeredEntrance(
+              index: order++,
+              child: FushiGroupedList(
+                padding: groupPadding,
+                children: <Widget>[
+                  for (final MediaAcquisitionCandidate c in picked)
+                    _candidateTile(theme, c, recommended: true),
+                ],
+              ),
+            ),
+          ],
+          if (others.isNotEmpty && picked.isNotEmpty)
+            _sectionLabel(theme, t.ai_media_acquire_others),
+          if (others.isNotEmpty)
+            FushiStaggeredEntrance(
+              index: order++,
+              child: FushiGroupedList(
+                padding: groupPadding,
+                children: <Widget>[
+                  for (final MediaAcquisitionCandidate c in others)
+                    _candidateTile(theme, c, recommended: false),
+                ],
+              ),
+            ),
         ],
-        if (others.isNotEmpty && picked.isNotEmpty)
-          _sectionLabel(theme, t.ai_media_acquire_others),
-        if (others.isNotEmpty)
-          FushiGroupedList(
-            padding: groupPadding,
-            children: <Widget>[
-              for (final MediaAcquisitionCandidate c in others)
-                _candidateTile(theme, c, recommended: false),
-            ],
-          ),
-      ],
+      ),
     );
   }
 
-  // 分组标题（与设置分组同口径）：MD3 = titleSmall 主色 w600；Apple = 13 号
-  // semibold secondaryLabel 灰字（inset grouped 的 section header 不上强调色）。
-  Widget _sectionLabel(ThemeData theme, String label) => Padding(
-    padding: const EdgeInsets.fromLTRB(32, 16, 32, 6),
-    child: Text(
-      label,
-      style: isGlassDesign(context)
-          ? settingsAppleSectionTitleStyle(context)
-          : theme.textTheme.titleSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
+  /// 搜索中、尚无候选时的骨架：与结果行同轮廓（行首色块 + 两条文字 + 按钮位）。
+  Widget _buildSkeleton() {
+    Widget row() => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: <Widget>[
+          const FushiSkeleton(width: 40, height: 40, circle: true),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FushiSkeleton.line(widthFactor: 0.7, height: 14),
+                const SizedBox(height: 8),
+                FushiSkeleton.line(widthFactor: 0.45),
+              ],
             ),
-    ),
-  );
+          ),
+          const SizedBox(width: 16),
+          FushiSkeleton(
+            width: 72,
+            height: 36,
+            borderRadius: BorderRadius.circular(18),
+          ),
+        ],
+      ),
+    );
+    return FushiSkeletonShimmer(
+      child: ListView(
+        key: const ValueKey<String>('ai-media-acquire-skeleton'),
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(top: 8),
+        children: <Widget>[
+          FushiGroupedList(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: <Widget>[for (int i = 0; i < 4; i++) row()],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 分组标题走共享 [FushiSectionTitle.group]（M3E titleSmall 强调 / Apple
+  // 13 号 secondaryLabel），缩进到行文字起点。
+  Widget _sectionLabel(ThemeData theme, String label) =>
+      FushiSectionTitle.group(
+        label,
+        padding: const EdgeInsets.fromLTRB(32, 16, 32, 6),
+      );
 
   Widget _candidateTile(
     ThemeData theme,
@@ -430,7 +491,10 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     } else if (acquired) {
       action = FushiTooltip(
         message: t.ai_media_acquire_started,
-        child: FushiIcon(Icons.check_circle, color: theme.colorScheme.primary),
+        child: FushiIcon(
+          FushiIcons.filled(FushiIcons.success),
+          color: theme.colorScheme.primary,
+        ),
       );
     } else if (recommended) {
       action = FushiFilledButton(
@@ -445,9 +509,14 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     }
     return FushiListItem(
       key: ValueKey<String>('ai-media-acquire-candidate-${c.id}'),
+      // 推荐行：cookie 形 primary 色块里的 ✨；其余行：中性圆底的下载图标。
       leading: recommended
-          ? FushiIcon(Icons.auto_awesome, color: theme.colorScheme.primary)
-          : null,
+          ? const FushiListLeadingIcon(
+              FushiIcons.ai,
+              shape: FushiLeadingShape.cookie,
+              tone: FushiCardTone.primary,
+            )
+          : const FushiListLeadingIcon(FushiIcons.download),
       title: Text(c.title),
       titleMaxLines: 2,
       subtitle: Text(<String>[c.sourceLabel, ...c.details].join(' · ')),

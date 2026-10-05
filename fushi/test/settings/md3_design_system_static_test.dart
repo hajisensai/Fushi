@@ -1431,7 +1431,6 @@ void main() {
       'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
-        'surfaceContainerHighest',
         'fontSize:',
       },
       // BUG-2187 重设计后预览区改用的 token：SegmentedButton 的紧凑密度与
