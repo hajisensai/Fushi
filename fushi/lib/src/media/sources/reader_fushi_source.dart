@@ -217,6 +217,22 @@ class DeleteBookResult {
   final LocalFileDeleteReport localFiles;
 }
 
+/// 一个阅读器页登记给 [ReaderFushiSource] 的一组实时 hook（BUG-2954）。按对象
+/// 身份登记 / 注销，见 [ReaderFushiSource.attachLiveHooks]。
+class ReaderLiveHooks {
+  const ReaderLiveHooks({
+    required this.settingsChanged,
+    required this.layoutReload,
+    required this.chromeReload,
+    required this.chromeReanchor,
+  });
+
+  final VoidCallback settingsChanged;
+  final VoidCallback layoutReload;
+  final VoidCallback chromeReload;
+  final VoidCallback chromeReanchor;
+}
+
 /// 阅读器媒体源的**持久化身份键**（DB pref 前缀 `src:reader_fushi:`、
 /// media_items 的 sourceKey 行都用它）。历史值 `reader_ttu` 已由 v70 Drift 迁移
 /// （W2-1）一次性改写为本值；旧字面量只允许活在 fushi_core 的迁移阶梯里。
@@ -1246,6 +1262,40 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// continuous-mode scroll position is preserved when the reserve changes (the
   /// reflow would otherwise zero `window.scrollY` and bounce to chapter start).
   static VoidCallback? onChromeReanchorLive;
+
+  /// 四个实时 hook 的持有者栈（BUG-2954）。同一时刻可能挂着不止一个阅读器页：
+  /// 切卷走 `pushReplacement`，新页 initState 注册 hook 时旧页要等转场结束才
+  /// dispose；卡片来源也可能在一个阅读器上再叠开一个。旧实现由各页 dispose
+  /// 无条件把四个 hook 置 null，后销毁的那一页会把仍在显示的阅读器的 hook 一起
+  /// 抹掉——之后改按钮布局等设置偏好照写、阅读器却收不到通知，退出重进才生效。
+  /// 现在每页只登记 / 注销自己那一组，hook 恒指向栈顶（最上层、仍存活的那页）。
+  static final List<ReaderLiveHooks> _liveHookOwners = <ReaderLiveHooks>[];
+
+  /// 阅读器页 initState 登记自己的实时 hook；成为栈顶，四个 hook 指向它。
+  static void attachLiveHooks(ReaderLiveHooks hooks) {
+    _liveHookOwners.remove(hooks);
+    _liveHookOwners.add(hooks);
+    _applyTopLiveHooks();
+  }
+
+  /// 阅读器页 dispose 注销自己那一组（按身份）；hook 回落到剩下的栈顶，栈空时
+  /// 置 null（不让静态 hook 泄漏到已销毁页）。注销非栈顶的一组不影响当前 hook。
+  static void detachLiveHooks(ReaderLiveHooks hooks) {
+    _liveHookOwners.remove(hooks);
+    _applyTopLiveHooks();
+  }
+
+  static void _applyTopLiveHooks() {
+    final ReaderLiveHooks? top =
+        _liveHookOwners.isEmpty ? null : _liveHookOwners.last;
+    onSettingsChangedLive = top?.settingsChanged;
+    onLayoutReloadLive = top?.layoutReload;
+    onChromeReloadLive = top?.chromeReload;
+    onChromeReanchorLive = top?.chromeReanchor;
+  }
+
+  @visibleForTesting
+  static int get debugLiveHookOwnerCount => _liveHookOwners.length;
 
   /// 手柄按钮图显示品牌（TODO-1113 / TODO-612）。纯**显示偏好**：只决定快捷键设置页
   /// 里手柄面键渲染成 Xbox A/B/X/Y、PlayStation ✕○□△ 还是 Nintendo Switch B/A/Y/X，
