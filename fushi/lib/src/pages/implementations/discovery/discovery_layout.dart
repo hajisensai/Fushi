@@ -26,6 +26,7 @@ import 'package:fushi/src/media/collections/collection_detail_layout.dart'
     show CollectionHeroBadgeChips;
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/utils/components/fushi_carousel.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -399,11 +400,15 @@ class DiscoveryHeroBackdrop extends StatelessWidget {
       image = Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          Image(
-            image: backdrop,
-            fit: BoxFit.cover,
-            gaplessPlayback: true,
-            errorBuilder: (_, __, ___) => fallback,
+          // M3E carousel 视差：在 DiscoveryHeroCarousel 里随翻页反向慢移；
+          // 单独使用（详情页 hero）时原样。
+          FushiParallax(
+            child: Image(
+              image: backdrop,
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => fallback,
+            ),
           ),
           ...overlays,
         ],
