@@ -104,6 +104,7 @@ SettingsSection buildMangaCatalogSection() {
             c.appModel.mangaCoverCacheMaxAgeDays.toDouble(),
         onChanged: (SettingsContext c, double value) =>
             c.appModel.setMangaCoverCacheMaxAgeDays(value.round()),
+        defaultValue: kMangaCoverCacheDefaultMaxAgeDays.toDouble(),
       ),
     ],
   );

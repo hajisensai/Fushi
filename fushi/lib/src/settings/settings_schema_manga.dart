@@ -82,6 +82,7 @@ SettingsDestination buildMangaDestination() {
                     : value,
               }),
             ),
+            defaultValue: 'auto',
           ),
           SettingsSegmentedItem<String>(
             id: 'manga.reader_scale',
@@ -109,6 +110,7 @@ SettingsDestination buildMangaDestination() {
                 <String, Object?>{'scaleType': value},
               ),
             ),
+            defaultValue: MangaScaleType.fitScreen.key,
           ),
           // 阅读方向：偏好是新书的默认值，已打开的书仍按自身状态走。
           SettingsSegmentedItem<String>(
@@ -128,6 +130,7 @@ SettingsDestination buildMangaDestination() {
             selected: (SettingsContext c) => c.appModel.mangaReadingDirection,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaReadingDirection(value),
+            defaultValue: 'rtl',
           ),
           SettingsSliderItem(
             id: 'manga.default_zoom',
@@ -145,6 +148,7 @@ SettingsDestination buildMangaDestination() {
                 .toDouble(),
             onChanged: (SettingsContext c, double value) =>
                 c.appModel.setMangaZoomPercent(value.round()),
+            defaultValue: 100,
           ),
           // 灵敏度：滚轮/捏合每一步缩放多少的倍率。旧实现丢弃滚轮 delta 幅值、
           // 恒定 ±10 个百分点，触控板与鼠标同等对待，是「缩放极其不灵敏」的主因；
@@ -166,6 +170,7 @@ SettingsDestination buildMangaDestination() {
                 .toDouble(),
             onChanged: (SettingsContext c, double value) =>
                 c.appModel.setMangaZoomSensitivity(value.round()),
+            defaultValue: kMangaZoomSensitivityDefault.toDouble(),
           ),
           SettingsSegmentedItem<String>(
             id: 'manga.page_animation',
@@ -190,6 +195,7 @@ SettingsDestination buildMangaDestination() {
             ).key,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaPageAnimation(value),
+            defaultValue: MangaPageAnimation.slide.key,
           ),
           // 跨页偏移：封面算不算「第 0 页」各家扫描不统一，选错整卷左右页全反。
           SettingsSegmentedItem<int>(
@@ -211,6 +217,7 @@ SettingsDestination buildMangaDestination() {
                 c.appModel.mangaSpreadOffset >= 1 ? 1 : 0,
             onChanged: (SettingsContext c, int value) =>
                 c.appModel.setMangaSpreadOffset(value),
+            defaultValue: kMangaSpreadOffsetDefault,
           ),
           SettingsSwitchItem(
             id: 'manga.wide_page_solo',
@@ -220,6 +227,7 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaWidePageSolo,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaWidePageSolo(value),
+            defaultValue: kMangaWidePageSoloDefault,
           ),
           SettingsNavigationItem(
             id: 'manga.panel_model',
@@ -243,6 +251,7 @@ SettingsDestination buildMangaDestination() {
                 c.appModel.mangaPanelNavigationEnabled,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaPanelNavigationEnabled(value),
+            defaultValue: kMangaPanelNavigationDefault,
           ),
           // 底色：此前恒黑，两处硬编码（WebView 文档的 html,body 与页面 Scaffold）。
           SettingsSegmentedItem<String>(
@@ -271,6 +280,7 @@ SettingsDestination buildMangaDestination() {
                 MangaBackgroundKey.fromKey(c.appModel.mangaBackground).key,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaBackground(value),
+            defaultValue: kMangaBackgroundDefault,
           ),
           SettingsSwitchItem(
             id: 'manga.tap_zone_paging',
@@ -280,6 +290,7 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaTapZonePaging,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaTapZonePaging(value),
+            defaultValue: true,
           ),
           // 热区布局只在点击翻页开启时才有意义，故随开关显隐——关着还留一排预设
           // 会让人以为选了就能用。
@@ -312,6 +323,7 @@ SettingsDestination buildMangaDestination() {
             ).key,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.setMangaTapZoneLayout(value),
+            defaultValue: kMangaTapZoneLayoutDefault,
           ),
           // 顶栏悬浮/常驻：与 EPUB 阅读器「点空白隐藏控制栏」同一模型（悬浮 = 不占
           // 布局、默认收起、点页面中央或顶边悬停唤出后自动收起；关 = 常驻并让位）。
@@ -323,6 +335,7 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaChromeFloating,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaChromeFloating(value),
+            defaultValue: true,
           ),
           // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
           // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。
@@ -335,6 +348,7 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaVolumeKeyPaging,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaVolumeKeyPaging(value),
+            defaultValue: true,
           ),
         ],
       ),
