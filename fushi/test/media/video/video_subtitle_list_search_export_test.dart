@@ -61,6 +61,7 @@ void main() {
     ValueListenable<int>? searchRequests,
   }) =>
       VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},

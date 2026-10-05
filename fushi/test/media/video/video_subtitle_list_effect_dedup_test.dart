@@ -44,6 +44,7 @@ void main() {
     ]);
 
     await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},
@@ -74,6 +75,7 @@ void main() {
     AudioCue? tapped;
 
     await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (AudioCue cue) => tapped = cue,
       onClose: () {},
@@ -106,6 +108,7 @@ void main() {
     controller.debugUpdateCueForPosition(t + 500);
 
     await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},

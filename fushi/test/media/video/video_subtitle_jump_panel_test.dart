@@ -197,6 +197,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -226,6 +227,7 @@ void main() {
       AudioCue? tapped;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (AudioCue cue) => tapped = cue,
         onClose: () {},
@@ -258,6 +260,7 @@ void main() {
       AudioCue? tapped;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (AudioCue cue) => tapped = cue,
         onClose: () {},
@@ -299,6 +302,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -325,6 +329,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -364,6 +369,7 @@ void main() {
       controller.setCues(const <AudioCue>[]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -394,6 +400,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -427,6 +434,7 @@ void main() {
       controller.setCues(const <AudioCue>[]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -452,6 +460,7 @@ void main() {
       controller.debugSetSubtitleCuesLoadingForTesting(true);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -481,6 +490,7 @@ void main() {
       int closes = 0;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () => closes++,
@@ -513,6 +523,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -541,6 +552,7 @@ void main() {
       AudioCue? copied;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (AudioCue c) {
@@ -576,6 +588,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         // 与两个真实实现（`_copyCueText` / 网页页 `_copyCue`）同契约：空句返回 false。
@@ -625,6 +638,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
@@ -670,6 +684,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
@@ -699,6 +714,7 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'copy me')]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
@@ -729,6 +745,7 @@ void main() {
       bool isFav = false;
 
       VideoSubtitleJumpPanel panel() => VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
             controller: controller,
             onTapCue: (_) {},
             onCopyCue: (_) => true,
@@ -767,6 +784,7 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -801,6 +819,7 @@ void main() {
         width: 520,
         height: 620,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
@@ -836,6 +855,7 @@ void main() {
         width: 520,
         height: 620,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect ___) {},
@@ -872,6 +892,7 @@ void main() {
         width: 520,
         height: 620,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
@@ -945,6 +966,7 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onLookupCue: (AudioCue _, int __, Rect ___) {},
@@ -979,6 +1001,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         // onLookupCue omitted → whole sentence is a single Text, still wraps.
@@ -1015,6 +1038,7 @@ void main() {
       Offset? tapPoint;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (AudioCue c) => seeked = c,
         onLookupCue: (AudioCue c, int i, Rect r) {
@@ -1059,6 +1083,7 @@ void main() {
       int? lookupIndex;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onLookupCue: (AudioCue _, int i, Rect __) => lookupIndex = i,
@@ -1092,6 +1117,7 @@ void main() {
       AudioCue? lookedUp;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (AudioCue c) => seeked = c,
         onLookupCue: (AudioCue c, int _, Rect __) => lookedUp = c,
@@ -1129,6 +1155,7 @@ void main() {
         width: 520,
         height: 620,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onLookupCue: (AudioCue _, int __, Rect ___) {},
@@ -1190,6 +1217,7 @@ void main() {
       AudioCue? seeked;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (AudioCue c) => seeked = c,
         // onLookupCue intentionally omitted (null).
@@ -1220,6 +1248,7 @@ void main() {
       const ColorScheme cs = ColorScheme.dark();
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -1263,6 +1292,7 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -1301,6 +1331,7 @@ void main() {
         width: 320,
         height: 400,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
@@ -1349,6 +1380,7 @@ void main() {
         width: 360,
         height: 400,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
@@ -1400,6 +1432,7 @@ void main() {
       // pumpAndSettle / async DB round-trip needed — that is the TODO-566 fix
       // (panel-open no longer re-queries the DB and makes stars appear late).
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -1428,6 +1461,7 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -1456,6 +1490,7 @@ void main() {
       final List<bool> changes = <bool>[];
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -1495,6 +1530,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},
@@ -1551,6 +1587,7 @@ void main() {
         width: 520,
         height: 600,
         child: VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
           controller: controller,
           onTapCue: (_) {},
           onClose: () {},
@@ -1610,6 +1647,7 @@ void main() {
       // 种子档位 = 最大档（下标 6 = 2.0×），基准 fontSize 14 → 有效 28。旧上限只到 1.3×
       // （最大 18.2），撤修复 → 数组不含 2.0 / 种子回默认 → 字号回 14 → 红。
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         key: const ValueKey<String>('seed-max'),
         controller: controller,
         onTapCue: (_) {},
@@ -1650,6 +1688,7 @@ void main() {
       // 下标 10 = 3.0×，基准 14 → 42。撤掉追加的四档 → 种子被 clamp 回下标 6（2.0×）
       // → 字号 28 → 红。
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         key: const ValueKey<String>('seed-max-2156'),
         controller: controller,
         onTapCue: (_) {},
@@ -1682,6 +1721,7 @@ void main() {
       final List<int> changes = <int>[];
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onCopyCue: (_) => true,
@@ -1715,6 +1755,7 @@ void main() {
       int? lookupIndex;
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onLookupCue: (AudioCue c, int i, Rect r) {
@@ -1862,6 +1903,7 @@ void main() {
       ]);
 
       await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
         controller: controller,
         onTapCue: (_) {},
         onClose: () {},

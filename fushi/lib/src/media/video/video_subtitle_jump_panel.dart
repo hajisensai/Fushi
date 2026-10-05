@@ -8,7 +8,11 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart'
+    show videoM3eFloatingColor;
+import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -233,6 +237,41 @@ const List<double> _kFontScaleSteps = <double>[
 /// 的 `videoSubtitleListFontScaleIndex` 默认值一致。
 const int _kDefaultFontScaleIndex = 1;
 
+// ---------------------------------------------------------------------------
+// M3E 行几何（2026-10-06 字幕列表 M3E 重做）。与 Apple / 墨水屏的旧行
+// （[SubtitleTranscriptRow]）分开：M3E 行是分段列表卡，行尾动作改成悬停 / 聚焦才
+// 浮出的叠层（不占文本列宽），收藏星落在时间戳胶囊下方。测量与渲染共用这些常量
+// （BUG-1034：itemExtentBuilder 是硬约束）。
+// ---------------------------------------------------------------------------
+
+/// 浮动面板离侧栏列四边的距离。
+const double _kM3ePanelMargin = 12;
+
+/// 列表左右内边距（行卡不贴面板边；滚动条落在这条通道里）。
+const double _kM3eListPaddingH = 8;
+
+/// 行卡左内边距（含 4px 当前句指示条与它右侧 4 的留白）。
+const double _kM3eRowPadLeft = 14;
+
+/// 行卡右内边距。
+const double _kM3eRowPadRight = 10;
+
+/// 行卡上下内边距之和（上 9 + 下 9）。
+const double _kM3eRowPadVertical = 18;
+
+/// 行卡之间的间距（分段列表）。
+const double _kM3eRowGap = 2;
+
+/// 时间戳胶囊上下内边距之和。
+const double _kM3eChipPadVertical = 4;
+
+/// 收藏星与时间戳胶囊的间距。
+const double _kM3eStarGap = 4;
+
+/// 分段列表首尾卡的大圆角 / 中间卡的小圆角。
+const double _kM3eRowOuterRadius = 18;
+const double _kM3eRowInnerRadius = 6;
+
 /// 头部五枚图标按钮（搜索 / 字号 ± / 自动滚动 / 关闭）的 MD3 外形：40×40 命中区、
 /// 不再外扩到 48。MD3 Expressive 的 XS 图标按钮默认把点按区补到 48，五枚就是
 /// 240 + 组间 8，面板最窄档（240，移动端 panelWidth 下限）的头部放不下、整行右溢；
@@ -282,6 +321,11 @@ class VideoSubtitleListHitTester {
       _impl?.call(globalPos, exactOnly: exactOnly);
 }
 
+/// 字幕列表的版式。[auto] = 按设计系统：M3E（非 Apple、非墨水屏）走中性深色浮动
+/// 面板 + 分段列表卡，否则走经典行（[SubtitleTranscriptRow]，Apple / 墨水屏的生产
+/// 路径）。[classic] / [m3e] 显式钉死一种（经典行的几何守卫测试钉 [classic]）。
+enum VideoSubtitleListLayout { auto, m3e, classic }
+
 enum VideoSubtitleListFilter {
   all,
   favorites,
@@ -313,7 +357,11 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onExportFavorites,
     this.searchActivators = const <ShortcutActivator>[],
     this.searchRequests,
+    this.layout = VideoSubtitleListLayout.auto,
   });
+
+  /// 见 [VideoSubtitleListLayout]。
+  final VideoSubtitleListLayout layout;
 
   final VideoPlayerController controller;
   final void Function(AudioCue cue) onTapCue;
@@ -444,6 +492,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   bool _lastSubtitleCuesLoading = false;
   int? _scrollTargetRawIndex;
   int _hoveredIndex = -1;
+
+  /// M3E：焦点落在哪一行（含行内动作钮）——聚焦时行尾动作叠层常显，手柄 / Tab 能
+  /// 走到它们（BUG-2040 之后列表只在用户把焦点带进来时才有焦点）。
+  int _focusWithinIndex = -1;
+
+  /// 本帧是否走 M3E 中性深色面板（[videoM3ePanelNeutral]），测量与渲染同源。
+  bool _m3e = false;
   late bool _autoScroll = widget.initialAutoScroll;
   bool _scrollPostFrameScheduled = false;
   // BUG-878：字号档位以持久化初值为种子（clamp 防越界），不再每次重开都回默认档。
@@ -550,11 +605,31 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       subtitleTimestampColumnWidth(_effectiveFontSize, _hasHourTimestamps);
 
   /// 行内字幕文本列的可用宽度（与 [_buildRow] 的实际布局同源，见 [subtitleRowTextWidth]）。
-  double _rowTextWidth(double rowWidth) => subtitleRowTextWidth(
-        rowWidth: rowWidth,
-        effectiveFontSize: _effectiveFontSize,
-        timestampColumnWidth: _timestampColumnWidth,
-      );
+  double _rowTextWidth(double rowWidth) {
+    if (_m3e) {
+      final double width = rowWidth -
+          _kM3eRowPadLeft -
+          _kM3eRowPadRight -
+          _timestampColumnWidth -
+          kSubtitleRowTimestampGap;
+      return width < 48 ? 48 : width;
+    }
+    return subtitleRowTextWidth(
+      rowWidth: rowWidth,
+      effectiveFontSize: _effectiveFontSize,
+      timestampColumnWidth: _timestampColumnWidth,
+    );
+  }
+
+  /// 列表行实际拿到的宽度（与 `itemExtentBuilder` 的 crossAxisExtent 同源）：M3E 面板
+  /// 四周留 [_kM3ePanelMargin]、列表左右再内缩 [_kM3eListPaddingH]。自动滚动的估算
+  /// 必须用同一个宽度，否则行高缓存会在两种宽度之间来回作废。
+  double get _listRowWidth => _m3e
+      ? widget.width - 2 * _kM3ePanelMargin - 2 * _kM3eListPaddingH
+      : widget.width;
+
+  /// M3E 收藏星的尺寸（时间戳胶囊下方常驻）。
+  double get _m3eStarSize => _effectiveFontSize - 1;
 
   /// 行内字幕文本的样式。测量（[_measureRowExtent]）与渲染（[_buildRowText]）共用，
   /// 保证 `itemExtentBuilder` 给出的行高与真实换行结果一致（BUG-1034）。
@@ -592,15 +667,24 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       _rowExtentCacheFontSize = _effectiveFontSize;
       _rowExtentCacheScaler = _textScaler;
     }
-    final String key = '${bold ? 1 : 0}\u0000${cue.text}';
+    // M3E：收藏行在时间戳胶囊下多一颗星，行高可能变高——收藏态进缓存键。
+    final bool favorited = _m3e && widget.isCueFavorited(cue);
+    final String key =
+        '${_m3e ? 'm' : 'c'}${bold ? 1 : 0}${favorited ? 1 : 0}\u0000${cue.text}';
     final double? cached = _rowExtentCache[key];
     if (cached != null) return cached;
-    final double extent = _measureRowExtent(cue.text, rowWidth, bold);
+    final double extent =
+        _measureRowExtent(cue.text, rowWidth, bold, favorited: favorited);
     _rowExtentCache[key] = extent;
     return extent;
   }
 
-  double _measureRowExtent(String text, double rowWidth, bool bold) {
+  double _measureRowExtent(
+    String text,
+    double rowWidth,
+    bool bold, {
+    bool favorited = false,
+  }) {
     final double textHeight = _measureTextHeight(
       text: text,
       style: _rowTextStyle(bold: bold),
@@ -613,6 +697,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       style: TextStyle(fontSize: _effectiveFontSize - 1),
       maxWidth: double.infinity,
     );
+    if (_m3e) {
+      // M3E 行：时间戳胶囊（+ 收藏星）与文本取最大；动作是叠层，不占行高。
+      double leading = timestampHeight + _kM3eChipPadVertical;
+      if (favorited) leading += _kM3eStarGap + _m3eStarSize;
+      if (content < leading) content = leading;
+      return _kM3eRowPadVertical + content + _kM3eRowGap;
+    }
     if (content < timestampHeight) content = timestampHeight;
     final double actionHeight = _effectiveFontSize + 6;
     if (content < actionHeight) content = actionHeight;
@@ -904,7 +995,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       return;
     }
     final double viewport = _scrollController.position.viewportDimension;
-    final double rowWidth = widget.width;
+    final double rowWidth = _listRowWidth;
     final double rowOffset = _estimatedScrollOffsetForVisibleIndex(
       visibleIndex,
       visibleIndexes,
@@ -1254,7 +1345,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       contextIndex,
       visibleIndexes,
       cues,
-      widget.width,
+      _listRowWidth,
     );
   }
 
@@ -1295,6 +1386,30 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // BUG-1034：行高测量必须用与渲染一致的排版环境（文字缩放 / 书写方向）。
     _textDirection = Directionality.of(context);
     _textScaler = MediaQuery.textScalerOf(context);
+    final bool m3e = switch (widget.layout) {
+      VideoSubtitleListLayout.m3e => true,
+      VideoSubtitleListLayout.classic => false,
+      VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
+    };
+    if (m3e != _m3e) {
+      _m3e = m3e;
+      _rowExtentCache.clear();
+      _rowExtentCacheWidth = -1;
+    }
+    if (m3e) {
+      // M3E：中性深色浮动面板（与设置侧板同一外壳），内部控件读面板主题。
+      final Widget m3ePanel = VideoM3ePanelTheme(
+        child: Builder(builder: _buildM3ePanel),
+      );
+      if (widget.searchActivators.isEmpty) return m3ePanel;
+      return CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          for (final ShortcutActivator a in widget.searchActivators)
+            a: () => _toggleSearch(open: true),
+        },
+        child: m3ePanel,
+      );
+    }
     final ColorScheme cs = widget.colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
@@ -1800,6 +1915,824 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           onPressed: () => widget.onFavoriteCue(cue),
         ),
       ],
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // M3E（2026-10-06 字幕列表重做）
+  // -------------------------------------------------------------------------
+
+  Widget _buildM3ePanel(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final List<AudioCue> cues = widget.controller.cues;
+    final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    final int currentIndex =
+        _representativeRaw(widget.controller.currentCueIndex);
+    _retainRowKeyFor(currentIndex >= 0 ? currentIndex : _scrollTargetRawIndex);
+    final bool showLoading =
+        cues.isEmpty && widget.controller.isSubtitleCuesLoading;
+    final Widget body;
+    if (showLoading) {
+      body = _buildM3eLoading(cs);
+    } else if (cues.isEmpty || visibleIndexes.isEmpty) {
+      body = _buildM3eEmpty(cs, cuesLoaded: cues.isNotEmpty);
+    } else {
+      final int count = visibleIndexes.length;
+      body = ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(
+          _kM3eListPaddingH,
+          8,
+          _kM3eListPaddingH,
+          16,
+        ),
+        physics: _zoomModifierHeld
+            ? const NeverScrollableScrollPhysics()
+            : null,
+        itemExtentBuilder: (int i, SliverLayoutDimensions dimensions) {
+          if (i < 0 || i >= count) return null;
+          final int rawIndex = visibleIndexes[i];
+          return _rowExtentForCue(
+            _rowCue(cues, rawIndex),
+            dimensions.crossAxisExtent,
+            bold: _isRowBold(rawIndex),
+          );
+        },
+        itemCount: count,
+        itemBuilder: (BuildContext _, int i) {
+          final int rawIndex = visibleIndexes[i];
+          final AudioCue cue = _rowCue(cues, rawIndex);
+          final bool selected = rawIndex == currentIndex;
+          final bool trackKey = selected || rawIndex == _scrollTargetRawIndex;
+          final Key rowKey = trackKey
+              ? _rowKeys.putIfAbsent(rawIndex, GlobalKey.new)
+              : ValueKey<int>(rawIndex);
+          return KeyedSubtree(
+            key: rowKey,
+            child: _buildM3eRow(
+              context,
+              cs,
+              cue,
+              i,
+              rawIndex,
+              selected,
+              first: i == 0,
+              last: i == count - 1,
+            ),
+          );
+        },
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(_kM3ePanelMargin),
+      child: Material(
+        type: MaterialType.transparency,
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: ShapeDecoration(
+            color: videoM3eFloatingColor(),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(28)),
+            ),
+            shadows: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x40000000),
+                blurRadius: 18,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildM3eHeader(context, cs, cues),
+              Expanded(
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerSignal: _handleZoomWheel,
+                  onPointerHover: _handleListShiftHover,
+                  // 列表区受面板约束（Expanded），上下各 16 渐隐，行不再溢出面板。
+                  child: ShaderMask(
+                    blendMode: BlendMode.dstIn,
+                    shaderCallback: (Rect rect) {
+                      final double h = rect.height <= 0 ? 1 : rect.height;
+                      final double edge = (16 / h).clamp(0.0, 0.5);
+                      return LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: const <Color>[
+                          Color(0x00000000),
+                          Color(0xFF000000),
+                          Color(0xFF000000),
+                          Color(0x00000000),
+                        ],
+                        stops: <double>[0, edge, 1 - edge, 1],
+                      ).createShader(rect);
+                    },
+                    child: body,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildM3eHeader(
+    BuildContext context,
+    ColorScheme cs,
+    List<AudioCue> cues,
+  ) {
+    final bool canSmaller = _fontScaleIndex > 0;
+    final bool canLarger = _fontScaleIndex < _kFontScaleSteps.length - 1;
+    Widget toolButton({
+      required IconData icon,
+      required String tooltip,
+      required VoidCallback? onPressed,
+      bool selected = false,
+    }) {
+      return FushiTooltip(
+        message: tooltip,
+        child: IconButton(
+          onPressed: onPressed,
+          isSelected: selected,
+          style: IconButton.styleFrom(
+            fixedSize: const Size.square(36),
+            minimumSize: const Size.square(36),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: cs.onSurface,
+            backgroundColor: selected
+                ? cs.primaryContainer
+                : cs.surfaceContainerHigh,
+            disabledForegroundColor: cs.onSurface.withValues(alpha: 0.38),
+            disabledBackgroundColor: cs.surfaceContainerHigh,
+          ),
+          color: selected ? cs.onPrimaryContainer : cs.onSurface,
+          icon: FushiIcon(icon, size: 20),
+        ),
+      );
+    }
+
+    // 字号 −/+ 合成一枚分段步进器：两端是按钮，中间是当前倍率。
+    final Widget fontStepper = DecoratedBox(
+      decoration: ShapeDecoration(
+        color: cs.surfaceContainerHigh,
+        shape: const StadiumBorder(),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiTooltip(
+            message: t.video_subtitle_list_font_smaller,
+            child: IconButton(
+              onPressed: canSmaller ? () => _stepFont(-1) : null,
+              style: IconButton.styleFrom(
+                fixedSize: const Size.square(36),
+                minimumSize: const Size.square(36),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              color: cs.onSurface,
+              icon: const FushiIcon(Icons.remove, size: 18),
+            ),
+          ),
+          SizedBox(
+            width: 40,
+            child: Text(
+              '${(_fontScaleSteps * 100).round()}%',
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                fontFeatures: const <FontFeature>[
+                  FontFeature.tabularFigures(),
+                ],
+              ),
+            ),
+          ),
+          FushiTooltip(
+            message: t.video_subtitle_list_font_larger,
+            child: IconButton(
+              onPressed: canLarger ? () => _stepFont(1) : null,
+              style: IconButton.styleFrom(
+                fixedSize: const Size.square(36),
+                minimumSize: const Size.square(36),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              color: cs.onSurface,
+              icon: const FushiIcon(Icons.add, size: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // 「全部 / 收藏」贴合内容宽的分段控件，标签不换行。
+    final Widget filter = FushiSegmentedButton<VideoSubtitleListFilter>(
+      showSelectedIcon: false,
+      segments: VideoSubtitleListFilter.values
+          .map(
+            (VideoSubtitleListFilter f) => ButtonSegment<VideoSubtitleListFilter>(
+              value: f,
+              label: Text(
+                _filterLabel(f),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.visible,
+              ),
+            ),
+          )
+          .toList(growable: false),
+      selected: <VideoSubtitleListFilter>{_filter},
+      onSelectionChanged: _setFilter,
+      style: SegmentedButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        textStyle: const TextStyle(fontSize: 13),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 10, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              // 图标徽标（M3E 饼干形容器）。
+              Container(
+                width: 36,
+                height: 36,
+                decoration: ShapeDecoration(
+                  color: cs.primaryContainer,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: FushiIcon(
+                  Icons.subtitles_outlined,
+                  size: 20,
+                  color: cs.onPrimaryContainer,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: cs.onSurface,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
+                  ),
+                ),
+              ),
+              FushiTooltip(
+                message: MaterialLocalizations.of(context).closeButtonTooltip,
+                child: IconButton(
+                  onPressed: widget.onClose,
+                  style: IconButton.styleFrom(
+                    fixedSize: const Size.square(40),
+                    minimumSize: const Size.square(40),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor: cs.surfaceContainerHigh,
+                  ),
+                  color: cs.onSurface,
+                  icon: const FushiIcon(Icons.close, size: 20),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // 工具行：窄面板（最窄 240）放不下时整组换到下一行，按钮永不被挤压变形。
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  toolButton(
+                    icon: _searchOpen ? Icons.search_off : Icons.search,
+                    tooltip: t.video_subtitle_list_search,
+                    selected: _searchOpen,
+                    onPressed: () => _toggleSearch(),
+                  ),
+                  const SizedBox(width: 4),
+                  toolButton(
+                    icon: _autoScroll
+                        ? Icons.vertical_align_center
+                        : Icons.pause_circle_outline,
+                    tooltip: t.video_subtitle_list_auto_scroll,
+                    selected: _autoScroll,
+                    onPressed: _toggleAutoScroll,
+                  ),
+                  const SizedBox(width: 4),
+                  fontStepper,
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  filter,
+                  if (_filter == VideoSubtitleListFilter.favorites) ...<Widget>[
+                    const SizedBox(width: 8),
+                    Text(
+                      t.video_favorite_count(count: _favoriteCueCount(cues)),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: cs.primary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (widget.onExportFavorites != null)
+                      FushiTooltip(
+                        message: t.video_subtitle_list_export_favorites,
+                        child: IconButton(
+                          onPressed: _favoriteCueCount(cues) == 0
+                              ? null
+                              : () => widget.onExportFavorites!(
+                                    _favoriteCuesForExport(
+                                      widget.controller.cues,
+                                    ),
+                                  ),
+                          style: IconButton.styleFrom(
+                            fixedSize: const Size.square(36),
+                            minimumSize: const Size.square(36),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          color: cs.onSurfaceVariant,
+                          icon: const FushiIcon(Icons.share_outlined, size: 20),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+          // 搜索：展开成 M3E 搜索栏（收起时不占高度）。
+          AnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.standard,
+            alignment: Alignment.topCenter,
+            child: _searchOpen
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10, right: 6),
+                    child: FushiSearchBar(
+                      hintText: t.video_subtitle_list_search_hint,
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      onQueryChanged: _onSearchChanged,
+                      onSubmitted: _onSearchChanged,
+                      escapeBehavior:
+                          FushiSearchEscapeBehavior.clearThenUnfocus,
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildM3eRow(
+    BuildContext context,
+    ColorScheme cs,
+    AudioCue cue,
+    int index,
+    int rawIndex,
+    bool selected, {
+    required bool first,
+    required bool last,
+  }) {
+    final GlobalKey? textKey = widget.onLookupCue == null
+        ? null
+        : _rowTextKeys.putIfAbsent(index, GlobalKey.new);
+    if (textKey != null) _rowHitCues[index] = cue;
+    final bool hovered = index == _hoveredIndex;
+    final bool focusWithin = index == _focusWithinIndex;
+    final bool favorited = widget.isCueFavorited(cue);
+    final bool copied = rawIndex == _copiedRawIndex;
+    final bool showActions = hovered || focusWithin || copied;
+    final Duration stateDuration =
+        fushiMotionDuration(context, FushiMotion.medium);
+    final Color background = selected
+        ? cs.primaryContainer
+        : hovered
+            ? cs.surfaceContainer
+            : cs.surfaceContainerLow;
+    final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
+    final Color secondary =
+        selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
+    final BorderRadius radius = BorderRadius.vertical(
+      top: Radius.circular(first ? _kM3eRowOuterRadius : _kM3eRowInnerRadius),
+      bottom:
+          Radius.circular(last ? _kM3eRowOuterRadius : _kM3eRowInnerRadius),
+    );
+    final double iconSize = _effectiveFontSize + 2;
+
+    final Widget leading = SizedBox(
+      width: _timestampColumnWidth,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          // 时间戳：小 tonal 胶囊。
+          AnimatedContainer(
+            duration: stateDuration,
+            curve: FushiMotion.standard,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 6,
+              vertical: _kM3eChipPadVertical / 2,
+            ),
+            decoration: ShapeDecoration(
+              color: selected
+                  ? cs.onPrimaryContainer.withValues(alpha: 0.12)
+                  : cs.surfaceContainerHighest,
+              shape: const StadiumBorder(),
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                formatCueTimestamp(cue.startMs),
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  color: secondary,
+                  fontSize: _effectiveFontSize - 1,
+                  fontWeight: FontWeight.w500,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (favorited) ...<Widget>[
+            const SizedBox(height: _kM3eStarGap),
+            // 已收藏：常驻实心星。
+            FushiIcon(
+              Icons.star_rounded,
+              size: _m3eStarSize,
+              color: selected ? cs.onPrimaryContainer : cs.tertiary,
+            ),
+          ],
+        ],
+      ),
+    );
+
+    final Widget actions = AnimatedOpacity(
+      opacity: showActions ? 1 : 0,
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: IgnorePointer(
+        ignoring: !showActions,
+        child: ExcludeFocus(
+          excluding: !showActions,
+          child: DecoratedBox(
+            decoration: ShapeDecoration(
+              color: selected
+                  ? cs.primaryContainer
+                  : cs.surfaceContainerHighest,
+              shape: const StadiumBorder(),
+              shadows: const <BoxShadow>[
+                BoxShadow(color: Color(0x33000000), blurRadius: 6),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SubtitleTranscriptAction(
+                    icon: Icons.play_arrow_rounded,
+                    tooltip: t.video_subtitle_list_jump,
+                    color: secondary,
+                    size: iconSize,
+                    onPressed: () => widget.onTapCue(cue),
+                  ),
+                  SubtitleTranscriptAction(
+                    icon: copied ? Icons.check : Icons.content_copy_outlined,
+                    tooltip: copied ? t.copied : t.copy,
+                    color: copied ? cs.primary : secondary,
+                    size: iconSize,
+                    onPressed: () {
+                      if (widget.onCopyCue(cue)) _markCueCopied(rawIndex);
+                    },
+                  ),
+                  SubtitleTranscriptAction(
+                    icon: favorited ? Icons.star_rounded : Icons.star_border,
+                    tooltip: t.collection_sentence,
+                    color: favorited ? cs.tertiary : secondary,
+                    size: iconSize,
+                    onPressed: () => widget.onFavoriteCue(cue),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _kM3eRowGap),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (bool has) {
+          if (has) {
+            if (_focusWithinIndex != index) {
+              setState(() => _focusWithinIndex = index);
+            }
+          } else if (_focusWithinIndex == index) {
+            setState(() => _focusWithinIndex = -1);
+          }
+        },
+        child: MouseRegion(
+          onEnter: (_) => setState(() => _hoveredIndex = index),
+          onExit: (_) {
+            if (_hoveredIndex == index) setState(() => _hoveredIndex = -1);
+          },
+          child: GestureDetector(
+            // 触屏没有悬停：长按行弹出同一组动作（跳到这句 / 复制 / 收藏）。
+            onLongPressStart: (LongPressStartDetails details) =>
+                _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+            child: AnimatedContainer(
+              duration: stateDuration,
+              curve: FushiMotion.standard,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(color: background, borderRadius: radius),
+              child: Material(
+                type: MaterialType.transparency,
+                child: InkWell(
+                  onTap: () => widget.onTapCue(cue),
+                  child: Stack(
+                    children: <Widget>[
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          _kM3eRowPadLeft,
+                          _kM3eRowPadVertical / 2,
+                          _kM3eRowPadRight,
+                          _kM3eRowPadVertical / 2,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            leading,
+                            const SizedBox(width: kSubtitleRowTimestampGap),
+                            Expanded(
+                              child: _buildRowText(
+                                cue,
+                                textColor,
+                                selected,
+                                textKey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // 当前句：左侧 4px 指示条（弹簧淡入 + 伸展）。
+                      Positioned(
+                        left: 4,
+                        top: 0,
+                        bottom: 0,
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: stateDuration,
+                            curve: FushiMotion.standard,
+                            width: 4,
+                            height: selected ? 28 : 0,
+                            decoration: BoxDecoration(
+                              color: cs.primary,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // 行尾动作：悬停 / 聚焦才浮出，不占文本列宽。
+                      Positioned(top: 4, right: 6, child: actions),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showM3eRowMenu(
+    BuildContext context,
+    AudioCue cue,
+    int rawIndex,
+    Offset globalPosition,
+  ) async {
+    final RenderObject? overlay =
+        Overlay.maybeOf(context)?.context.findRenderObject();
+    if (overlay is! RenderBox) return;
+    final Offset local = overlay.globalToLocal(globalPosition);
+    final bool favorited = widget.isCueFavorited(cue);
+    final int? choice = await showFushiMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(local.dx, local.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: <PopupMenuEntry<int>>[
+        PopupMenuItem<int>(
+          value: 0,
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(Icons.play_arrow_rounded, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(t.video_subtitle_list_jump)),
+            ],
+          ),
+        ),
+        PopupMenuItem<int>(
+          value: 1,
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(Icons.content_copy_outlined, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(t.copy)),
+            ],
+          ),
+        ),
+        PopupMenuItem<int>(
+          value: 2,
+          child: Row(
+            children: <Widget>[
+              FushiIcon(
+                favorited ? Icons.star_rounded : Icons.star_border,
+                size: 20,
+              ),
+              const SizedBox(width: 12),
+              Flexible(child: Text(t.collection_sentence)),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 0:
+        widget.onTapCue(cue);
+      case 1:
+        if (widget.onCopyCue(cue)) _markCueCopied(rawIndex);
+      case 2:
+        await widget.onFavoriteCue(cue);
+      default:
+        break;
+    }
+  }
+
+  Widget _buildM3eEmpty(ColorScheme cs, {required bool cuesLoaded}) {
+    final bool searching = _searchQuery.trim().isNotEmpty;
+    final IconData icon = !cuesLoaded
+        ? Icons.subtitles_off_outlined
+        : searching
+            ? Icons.search_off
+            : _filter == VideoSubtitleListFilter.favorites
+                ? Icons.star_border_rounded
+                : Icons.subtitles_outlined;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 56,
+              height: 56,
+              decoration: ShapeDecoration(
+                color: cs.surfaceContainerHigh,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(18)),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: FushiIcon(icon, size: 28, color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              _emptyHintForFilter(cuesLoaded: cuesLoaded),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: cs.onSurfaceVariant,
+                fontSize: _effectiveFontSize,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 加载骨架：几条与真实行同形的分段卡（呼吸透明度；减弱动态时静止）。
+  Widget _buildM3eLoading(ColorScheme cs) {
+    final bool motion = fushiMotionEnabled(context);
+    Widget skeleton(int i) {
+      final bool first = i == 0;
+      final bool last = i == 5;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: _kM3eRowGap),
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.fromLTRB(_kM3eRowPadLeft, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerLow,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(
+                first ? _kM3eRowOuterRadius : _kM3eRowInnerRadius,
+              ),
+              bottom: Radius.circular(
+                last ? _kM3eRowOuterRadius : _kM3eRowInnerRadius,
+              ),
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 18,
+                decoration: ShapeDecoration(
+                  color: cs.surfaceContainerHighest,
+                  shape: const StadiumBorder(),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: <double>[0.9, 0.7, 0.8, 0.6, 0.85, 0.5][i],
+                  child: Container(
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(7),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final Widget rows = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[for (int i = 0; i < 6; i++) skeleton(i)],
+    );
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(
+        _kM3eListPaddingH,
+        8,
+        _kM3eListPaddingH,
+        16,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (motion)
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0.45, end: 1),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeInOut,
+              builder: (BuildContext _, double v, Widget? child) =>
+                  Opacity(opacity: v, child: child),
+              child: rows,
+            )
+          else
+            rows,
+          const SizedBox(height: 12),
+          Text(
+            widget.loadingHint ?? widget.emptyHint,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+          ),
+        ],
+      ),
     );
   }
 }

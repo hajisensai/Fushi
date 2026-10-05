@@ -72,6 +72,7 @@ Widget _panel({
   int fontScaleIndex = 1,
 }) =>
     VideoSubtitleJumpPanel(
+        layout: VideoSubtitleListLayout.classic,
       controller: controller,
       onTapCue: (_) {},
       onClose: () {},
