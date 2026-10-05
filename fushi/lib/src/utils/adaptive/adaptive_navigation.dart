@@ -927,20 +927,34 @@ class _MaterialNavCluster extends StatelessWidget {
                       // 过矮时滚动。
                       Expanded(
                         child: SingleChildScrollView(
-                          child: Column(
-                            children: <Widget>[
-                              const SizedBox(height: 8),
-                              for (final Widget tile
-                                  in buildTiles(cellWidth: null))
-                                Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: glassDesign
-                                        ? 1
-                                        : (railExtended ? 0 : 6),
+                          // 侧栏同样只有一枚在项间纵向滑动的指示器（2026-10-06
+                          // 用户「侧边栏也要有切换动画」）：收起 rail 的 56×32
+                          // 药丸、展开 rail 的整行药丸都由它滑过去，选中项超出
+                          // 可视区时自动滚进来。Apple 设计系统的行不登记药丸槽，
+                          // 滑块不画。
+                          child: _SlidingIndicatorScope(
+                            selectedId:
+                                currentIndex >= 0 && currentIndex < items.length
+                                    ? FushiFocusId('$idPrefix-$currentIndex')
+                                    : null,
+                            color: isEinkTheme(context)
+                                ? colors.onSurface
+                                : colors.secondaryContainer,
+                            child: Column(
+                              children: <Widget>[
+                                const SizedBox(height: 8),
+                                for (final Widget tile
+                                    in buildTiles(cellWidth: null))
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: glassDesign
+                                          ? 1
+                                          : (railExtended ? 0 : 6),
+                                    ),
+                                    child: tile,
                                   ),
-                                  child: tile,
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1532,7 +1546,33 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
       // build 内直接改字段：紧接着的 build 就用新值（不能 setState）。
       _from = animate ? from : null;
       _sliding = animate;
+      _revealSelected();
     }
+  }
+
+  /// 选中项在可滚动的侧栏里超出可视区时滚进来（底栏没有 Scrollable，空操作）。
+  void _revealSelected() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final BuildContext? slot =
+          _slots[widget.selectedId]?.currentContext;
+      if (slot == null || !slot.mounted) return;
+      final Duration duration = fushiMotionDuration(slot, FushiMotion.medium);
+      await Scrollable.ensureVisible(
+        slot,
+        duration: duration,
+        curve: FushiMotion.standard,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+      if (!slot.mounted) return;
+      await Scrollable.ensureVisible(
+        slot,
+        duration: duration,
+        curve: FushiMotion.standard,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      );
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
 
   @override
@@ -2747,11 +2787,20 @@ class _FushiNavTile extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
     final bool eink = isEinkTheme(context);
-    final Color pillColor = eink ? colors.onSurface : colors.secondaryContainer;
+    final _SlidingIndicatorRegistry? slider =
+        _SlidingIndicatorScope.maybeOf(context);
+    // 滑块正在纵向滑：本行先不填色；有滑块时填色瞬间切换（动效由滑块给），
+    // 否则落定交接处会多一段淡入。
+    final bool sliding = slider?.sliding ?? false;
+    final Color pillColor = sliding
+        ? Colors.transparent
+        : (eink ? colors.onSurface : colors.secondaryContainer);
     final Color fg = selected
         ? (eink ? colors.surface : colors.onSecondaryContainer)
         : colors.onSurfaceVariant;
-    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final Duration duration = slider != null
+        ? Duration.zero
+        : fushiMotionDuration(context, FushiMotion.short);
     final IconData icon =
         selected ? (item.selectedIcon ?? item.icon) : item.icon;
     // 选中药丸撑满整行（2026-10-05 用户反馈「这个条的长度不对」）：旧实现药丸
@@ -2759,6 +2808,8 @@ class _FushiNavTile extends StatelessWidget {
     // 就叠出一枚短的强调色药丸 + 一条更长的灰色底。现在两者同宽同圆角；选中时
     // 药丸实底盖住其下的状态层，只剩一个指示器。
     return AnimatedContainer(
+      // 滑动指示器的终点读这一行的真实矩形。
+      key: indicatorKey,
       duration: duration,
       curve: FushiMotion.standard,
       width: double.infinity,
