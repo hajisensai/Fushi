@@ -502,9 +502,13 @@ class _DownloadOverlay extends StatelessWidget {
                   children: [
                     ValueListenableBuilder<String>(
                       valueListenable: status,
+                      // M3E：状态行 titleLarge emphasized。
                       builder: (_, s, __) => Text(
                         s,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleLarge
+                            ?.copyWith(fontWeight: FontWeight.w600),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -532,11 +536,24 @@ class _DownloadOverlay extends StatelessWidget {
                         return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
+                            // M3E：百分比是 Display 级大数字（primary），
+                            // 下方波浪进度条（MD3 下 Fushi 包装画波浪）。
+                            Text(
+                              '${(clamped * 100).toStringAsFixed(0)}%',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .displaySmall
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: isGlassDesign(context)
+                                        ? null
+                                        : Theme.of(context).colorScheme.primary,
+                                  ),
+                            ),
+                            SizedBox(height: tokens.spacing.gap),
                             FushiLinearProgressIndicator(
                               value: clamped > 0 ? clamped : null,
                             ),
-                            SizedBox(height: tokens.spacing.gap / 2),
-                            Text('${(clamped * 100).toStringAsFixed(0)}%'),
                           ],
                         );
                       },
