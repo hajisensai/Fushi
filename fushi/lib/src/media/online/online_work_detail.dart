@@ -17,6 +17,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
