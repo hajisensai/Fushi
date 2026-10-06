@@ -2885,6 +2885,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 词典样式统一：查词弹窗把导入词典自带的颜色（styles.css / 结构化内容 inline
+  // style）按语义重映射到当前 ColorScheme（M3E）。默认 true；关掉 = 保留词典原样式。
+  // popup.js 读 window.__fushiDictUnifiedStyle。
+  bool get dictionaryUnifiedStyle =>
+      getPref('popup_dictionary_unified_style', defaultValue: true) as bool;
+
+  void toggleDictionaryUnifiedStyle() async {
+    await setPref('popup_dictionary_unified_style', !dictionaryUnifiedStyle);
+    notifyListeners();
+  }
+
   // ── custom CSS ───────────────────────────────────────────────────────
 
   Map<String, String> get customDictCSS {
