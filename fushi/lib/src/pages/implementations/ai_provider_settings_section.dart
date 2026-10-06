@@ -269,6 +269,8 @@ class _AiProviderSettingsSectionState
       title: draft.displayName,
       leadingIcon: FushiIcons.ai,
       leadingTone: SettingsIconTone.purple,
+      // 正文滚到叠放的页头底下：顶部内边距加上壳的页头让位。
+      bodyConsumesTopPadding: true,
       bodyBuilder:
           (
             BuildContext context,
@@ -279,7 +281,7 @@ class _AiProviderSettingsSectionState
         key: ValueKey<String>('ai-provider-editor-${draft.id}'),
         padding: EdgeInsets.fromLTRB(
           inset,
-          tokens.spacing.gap,
+          tokens.spacing.gap + MediaQuery.paddingOf(context).top,
           inset,
           tokens.spacing.page + bottomSafeInsetOf(pageContext),
         ),

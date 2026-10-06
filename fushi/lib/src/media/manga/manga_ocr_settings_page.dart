@@ -38,6 +38,8 @@ class MangaOcrSettingsPage extends ConsumerWidget {
       title: t.manga_ocr_section,
       leadingIcon: FushiIcons.ocr,
       leadingTone: SettingsIconTone.purple,
+      // 正文滚到叠放的页头底下：顶部内边距加上壳的页头让位。
+      bodyConsumesTopPadding: true,
       bodyBuilder:
           (
             BuildContext context,
@@ -48,7 +50,7 @@ class MangaOcrSettingsPage extends ConsumerWidget {
             controller: controller,
             padding: EdgeInsets.fromLTRB(
               tokens.spacing.page,
-              tokens.spacing.gap,
+              tokens.spacing.gap + MediaQuery.paddingOf(context).top,
               tokens.spacing.page,
               tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
             ),

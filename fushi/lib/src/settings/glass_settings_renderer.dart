@@ -77,9 +77,11 @@ class GlassSettingsRenderer implements SettingsRenderer {
       onDestinationSelected: onDestinationSelected,
     );
     if (embedded) return list;
+    // 分类列表的内边距按外层 context 算、不含页头让位：整体让开页头（Apple
+    // 设计系统本就上下排，这里与 M3E 渲染器同一写法）。
     return FushiPageScaffold(
       title: settingsContext.context.t.settings,
-      body: list,
+      body: SafeArea(bottom: false, child: list),
     );
   }
 
@@ -188,6 +190,9 @@ class GlassSettingsRenderer implements SettingsRenderer {
       actions: showBack
           ? const <Widget>[SettingsSearchAction()]
           : const <Widget>[],
+      // 同 M3E 渲染器：schema 详情的滚动内边距加上壳的页头让位（Apple 设计
+      // 系统下壳仍上下排，让位为 0）。
+      bodyConsumesTopPadding: true,
       bodyBuilder:
           (
             BuildContext context,
@@ -197,14 +202,17 @@ class GlassSettingsRenderer implements SettingsRenderer {
           // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平
           // 内边距与顶部一点呼吸，正文占满剩余视口（吸顶工具区 / 两栏导航 /
           // 粘性分组标题都靠这一点）；底部安全区由正文自己的滚动视图负责。
-          ? Padding(
-              padding: EdgeInsets.fromLTRB(
-                detailHorizontalInset(context),
-                12,
-                detailHorizontalInset(context),
-                0,
+          ? SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  detailHorizontalInset(context),
+                  12,
+                  detailHorizontalInset(context),
+                  0,
+                ),
+                child: destination.body!(settingsContext),
               ),
-              child: destination.body!(settingsContext),
             )
           : _detailBody(
               settingsContext: settingsContext,
@@ -214,6 +222,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
               inlineHeader: false,
               shrinkWrap: false,
               insetHorizontally: true,
+              topInset: MediaQuery.paddingOf(context).top,
             ),
     );
   }
@@ -252,6 +261,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
     required bool shrinkWrap,
     required bool insetHorizontally,
     bool consumeTopPadding = false,
+    double topInset = 0,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiAppleColors apple = appleColorsOf(context);
@@ -265,7 +275,8 @@ class GlassSettingsRenderer implements SettingsRenderer {
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal,
       (inlineHeader ? (metrics.desktop ? 22 : 12) : 12) +
-          (consumeTopPadding ? MediaQuery.paddingOf(context).top : 0),
+          (consumeTopPadding ? MediaQuery.paddingOf(context).top : 0) +
+          topInset,
       horizontal,
       24 + MediaQuery.of(context).padding.bottom,
     );

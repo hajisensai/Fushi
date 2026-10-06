@@ -63,9 +63,11 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       onDestinationSelected: onDestinationSelected,
     );
     if (embedded) return list;
+    // 分类列表的内边距按外层 context 算、不含页头让位：整体让开叠放的页头
+    // （FushiPageScaffold 默认正文铺到页头底下）。
     return FushiPageScaffold(
       title: settingsContext.context.t.settings,
-      body: list,
+      body: SafeArea(bottom: false, child: list),
     );
   }
 
@@ -196,6 +198,9 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       actions: showBack
           ? const <Widget>[SettingsSearchAction()]
           : const <Widget>[],
+      // 正文滚到叠放的页头底下：schema 详情的滚动内边距加上页头让位
+      // （bodyBuilder 的 context 在壳的让位 MediaQuery 之下）。
+      bodyConsumesTopPadding: true,
       bodyBuilder:
           (
             BuildContext context,
@@ -205,14 +210,18 @@ class MaterialSettingsRenderer implements SettingsRenderer {
           // 正文自管滚动（见 SettingsDestination.bodyFillsViewport）：只给水平
           // 内边距与顶部一点呼吸，正文占满剩余视口（吸顶工具区 / 两栏导航 /
           // 粘性分组标题都靠这一点）；底部安全区由正文自己的滚动视图负责。
-          ? Padding(
-              padding: EdgeInsets.fromLTRB(
-                detailHorizontalInsets(FushiDesignTokens.of(context)).left,
-                FushiDesignTokens.of(context).spacing.gap,
-                detailHorizontalInsets(FushiDesignTokens.of(context)).right,
-                0,
+          // 固定版面：整体让开叠放的页头（SafeArea），不滚到页头底下。
+          ? SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  detailHorizontalInsets(FushiDesignTokens.of(context)).left,
+                  FushiDesignTokens.of(context).spacing.gap,
+                  detailHorizontalInsets(FushiDesignTokens.of(context)).right,
+                  0,
+                ),
+                child: destination.body!(settingsContext),
               ),
-              child: destination.body!(settingsContext),
             ) : _detailBody(
             settingsContext: settingsContext,
             destination: destination,
@@ -221,6 +230,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             inlineHeader: false,
             shrinkWrap: false,
             insetHorizontally: true,
+            topInset: MediaQuery.paddingOf(context).top,
           ),
     );
   }
@@ -259,6 +269,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required bool shrinkWrap,
     required bool insetHorizontally,
     bool consumeTopPadding = false,
+    double topInset = 0,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -283,7 +294,11 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         : EdgeInsets.zero;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal.left,
-      tokens.spacing.gap + (consumeTopPadding ? mediaPadding.top : 0),
+      // [topInset]：kit 壳叠放页头的让位（由调用方从壳内 context 读入；
+      // settingsContext.context 在壳之上读不到）。
+      tokens.spacing.gap +
+          (consumeTopPadding ? mediaPadding.top : 0) +
+          topInset,
       horizontal.right,
       tokens.spacing.page + mediaPadding.bottom,
     );

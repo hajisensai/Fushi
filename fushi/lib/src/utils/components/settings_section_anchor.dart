@@ -1,8 +1,53 @@
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeVisibleExtent, fushiRevealBelowFloatingChrome;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+
+/// 盖在 [target] 所在视口顶上的浮动页头高度：库页浮动工具区下取工具区此刻的
+/// 可见下沿（[FushiFloatingChromeVisibleExtent]）；否则取 MediaQuery 顶部
+/// padding——独立设置页（SettingsKitScaffold）的页头 + 跳转条叠放在正文上，
+/// 让位高度就在这里；上下排形态下 SafeArea 已把它清零。不建立依赖（滚动
+/// 回调 / 跳转时调用，不在 build 里）。
+double _floatingHeaderOcclusionOf(BuildContext target) {
+  final double? chrome = FushiFloatingChromeVisibleExtent.maybeOf(
+    target,
+  )?.value;
+  if (chrome != null) return chrome;
+  return target.getInheritedWidgetOfExactType<MediaQuery>()?.data.padding.top ??
+      0;
+}
+
+/// 把 [target] 滚到视口顶 + [occlusion]（叠放页头的下沿）再隔 [gap] 处。
+/// 定位失败（未挂载 / 不在可滚动视图里）返回 false。
+bool _revealBelowOcclusion(
+  BuildContext target, {
+  required double occlusion,
+  required Duration duration,
+  double gap = 8,
+}) {
+  final RenderObject? object = target.findRenderObject();
+  final ScrollableState? scrollable = Scrollable.maybeOf(target);
+  if (object == null || scrollable == null || !object.attached) return false;
+  final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+    object,
+  );
+  if (viewport == null) return false;
+  final ScrollPosition position = scrollable.position;
+  final double reveal = viewport.getOffsetToReveal(object, 0).offset;
+  final double to = (reveal - occlusion - gap).clamp(
+    position.minScrollExtent,
+    position.maxScrollExtent,
+  );
+  if (duration == Duration.zero) {
+    position.jumpTo(to);
+  } else {
+    position.animateTo(to, duration: duration, curve: FushiMotion.standard);
+  }
+  return true;
+}
 
 /// 设置页内的分组锚点登记 + 滚动高亮（scroll spy）。
 ///
@@ -113,9 +158,9 @@ class SettingsSectionSpy extends ChangeNotifier {
       if (anchor == null) continue;
       final double? top = _topOf(anchor);
       if (top == null) continue;
-      // 浮动工具区盖着视口顶的那一段：「到顶」判据跟着工具区可见下沿下移。
+      // 浮动工具区 / 叠放页头盖着视口顶的那一段：「到顶」判据跟着下移。
       final double chrome = anchor.mounted
-          ? FushiFloatingChromeVisibleExtent.valueOf(anchor.context)
+          ? _floatingHeaderOcclusionOf(anchor.context)
           : 0;
       if (top <= activationOffset + chrome) {
         active = id;
@@ -144,7 +189,17 @@ class SettingsSectionSpy extends ChangeNotifier {
     final _SettingsSectionAnchorState? anchor = _anchors[id];
     if (anchor == null || !anchor.mounted) return;
     // 在浮动工具区下：落到工具区可见下沿之下，而不是被胶囊挡住的视口顶。
-    if (!fushiRevealBelowFloatingChrome(anchor.context, duration: duration)) {
+    // 不在工具区下但页头叠放在正文上（独立设置页）：落到页头下沿之下。
+    final double occlusion = _floatingHeaderOcclusionOf(anchor.context);
+    final bool revealed =
+        fushiRevealBelowFloatingChrome(anchor.context, duration: duration) ||
+        (occlusion > 0 &&
+            _revealBelowOcclusion(
+              anchor.context,
+              occlusion: occlusion,
+              duration: duration,
+            ));
+    if (!revealed) {
       FushiFocusScroll.ensureVisible(
         anchor.context,
         alignment: 0,

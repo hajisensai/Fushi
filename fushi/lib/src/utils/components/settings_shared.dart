@@ -184,6 +184,8 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
       return SettingsKitScaffold(
         title: titleWidget.data!,
         actions: actions ?? const <Widget>[],
+        // 列表滚到叠放的页头底下：顶部内边距加上壳的页头让位。
+        bodyConsumesTopPadding: true,
         bodyBuilder:
             (
               BuildContext context,
@@ -192,7 +194,9 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
             ) {
               final Widget list = ListView(
                 controller: controller,
-                padding: listPadding,
+                padding: listPadding.add(
+                  EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+                ),
                 children: children,
               );
               return bottom == null

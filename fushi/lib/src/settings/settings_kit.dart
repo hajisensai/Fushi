@@ -14,6 +14,12 @@ import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiHeightReporter,
+        FushiTopFadeScrim,
+        kFushiTopFadeExtent,
+        kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -1495,6 +1501,7 @@ class SettingsKitScaffold extends StatefulWidget {
     this.showBack = true,
     this.sections = const <(String, String)>[],
     this.floatingActionButton,
+    this.bodyConsumesTopPadding = false,
   });
 
   final String title;
@@ -1513,6 +1520,15 @@ class SettingsKitScaffold extends StatefulWidget {
   /// 定位；嵌在宽屏右窗格时叠在右下角。
   final Widget? floatingActionButton;
 
+  /// M3E 下页头 + 跳转条叠放在正文上（2026-10-06 结构收口：此前上下排，页头
+  /// 下沿把正文硬切）。正文的 `MediaQuery.paddingOf(context).top` = 状态栏 +
+  /// 页头 + 跳转条的让位高度（[bodyBuilder] 的 context 在这层 MediaQuery 之下）。
+  ///
+  /// true = 正文的滚动视图自己把这段让位加进内容内边距，内容往下滚时滚到页头
+  /// 底下；false（默认，固定版面 / 尚未迁移的正文）= 壳替正文整体让开（不能滚到
+  /// 页头底下，但也不会被挡）。Apple 设计系统仍是上下排，两者等价。
+  final bool bodyConsumesTopPadding;
+
   final Widget Function(
     BuildContext context,
     ScrollController controller,
@@ -1528,11 +1544,41 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   final ScrollController _controller = ScrollController();
   final SettingsSectionSpy _spy = SettingsSectionSpy();
 
+  /// 叠放形态下页头（展开态）与跳转条的实测高度：正文顶部让位 = 状态栏 + 两者。
+  double _headerHeight = 0;
+  double _jumpBarHeight = 0;
+
+  /// 正文已滚离顶部（内容在页头底下）：驱动共享顶部渐隐。
+  final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
+
+  /// 页头只在展开态（内容在顶，与 [SettingsFloatingHeader] 同一阈值）记高度：
+  /// 收缩态的胶囊高度不同，若跟着改让位，正文会在滚动中跳一下。
+  bool get _headerAtRest =>
+      !_controller.hasClients || _controller.positions.first.pixels <= 12;
+
+  void _onHeaderHeight(double height) {
+    if (!mounted || height == _headerHeight) return;
+    if (_headerHeight > 0 && !_headerAtRest) return;
+    setState(() => _headerHeight = height);
+  }
+
+  void _onJumpBarHeight(double height) {
+    if (!mounted || height == _jumpBarHeight) return;
+    setState(() => _jumpBarHeight = height);
+  }
+
+  void _onScroll() {
+    // 只看第一个附着位置（同 [SettingsFloatingHeader]：转场期间偶有两个）。
+    _scrolledUnder.value =
+        _controller.hasClients && _controller.positions.first.pixels > 0;
+  }
+
   @override
   void initState() {
     super.initState();
     _spy.attach(_controller);
     _spy.addListener(_onSpy);
+    _controller.addListener(_onScroll);
     // 独立路由页登记为当前页滚动控制器：手柄 LB / RB 翻屏兜底够得到正文
     // （与 FushiPageScaffold 同一约定）。嵌在宽屏右窗格时不登记——那里由宿主页负责。
     if (widget.showBack) PageScrollRegistry.push(_controller);
@@ -1543,7 +1589,9 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     if (widget.showBack) PageScrollRegistry.pop(_controller);
     _spy.removeListener(_onSpy);
     _spy.dispose();
+    _controller.removeListener(_onScroll);
     _controller.dispose();
+    _scrolledUnder.dispose();
     super.dispose();
   }
 
@@ -1567,58 +1615,62 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     for (final (String id, String title) in sections) {
       if (id == _spy.activeId) activeTitle = title;
     }
-    final Widget body = widget.bodyBuilder(context, _controller, _spy);
-    final Widget column = SafeArea(
-      bottom: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          SettingsFloatingHeader(
-            title: widget.title,
-            subtitle: jump ? activeTitle : null,
-            leadingIcon: widget.leadingIcon,
-            leadingTone: widget.leadingTone,
-            scrollController: _controller,
-            onBack: canPop ? () => Navigator.of(context).maybePop() : null,
-            actions: widget.actions,
-          ),
-          // 跳转条吸在页头下方（不随正文滚动），出现 / 消失走尺寸 + 淡入过渡。
-          // 与下方第一个分组标题之间留一档 gap：此前胶囊底紧贴分组标题，两排
-          // 文字读成一行。
-          AnimatedSize(
-            duration: fushiMotionDuration(context, FushiMotion.medium),
-            curve: FushiMotion.enter,
-            alignment: Alignment.topCenter,
-            child: jump
-                ? Padding(
-                    padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-                    child: SettingsSectionJumpBar(
-                      sections: sections,
-                      activeId: _spy.activeId,
-                      onSelected: (String id) => _spy.jumpTo(
-                        id,
-                        duration: fushiMotionDuration(
-                          context,
-                          FushiMotion.long,
-                        ),
-                      ),
-                    ),
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
-          Expanded(
-            child: SettingsSectionSpyScope(
-              spy: _spy,
-              child: PrimaryScrollController(
-                controller: _controller,
-                automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-                child: body,
-              ),
-            ),
-          ),
-        ],
+    // 正文在 Builder 里构建：[bodyBuilder] 拿到的 context 在下面的 MediaQuery
+    // 让位之下（叠放形态）/ SafeArea 之下（上下排），读顶部 padding 才对。
+    final Widget body = SettingsSectionSpyScope(
+      spy: _spy,
+      child: PrimaryScrollController(
+        controller: _controller,
+        automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+        child: Builder(
+          builder: (BuildContext context) =>
+              widget.bodyBuilder(context, _controller, _spy),
+        ),
       ),
     );
+    final Widget header = SettingsFloatingHeader(
+      title: widget.title,
+      subtitle: jump ? activeTitle : null,
+      leadingIcon: widget.leadingIcon,
+      leadingTone: widget.leadingTone,
+      scrollController: _controller,
+      onBack: canPop ? () => Navigator.of(context).maybePop() : null,
+      actions: widget.actions,
+    );
+    // 跳转条吸在页头下方（不随正文滚动），出现 / 消失走尺寸 + 淡入过渡。
+    // 与下方第一个分组标题之间留一档 gap：此前胶囊底紧贴分组标题，两排
+    // 文字读成一行。
+    final Widget jumpBar = AnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.enter,
+      alignment: Alignment.topCenter,
+      child: jump
+          ? Padding(
+              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+              child: SettingsSectionJumpBar(
+                sections: sections,
+                activeId: _spy.activeId,
+                onSelected: (String id) => _spy.jumpTo(
+                  id,
+                  duration: fushiMotionDuration(context, FushiMotion.long),
+                ),
+              ),
+            )
+          : const SizedBox(width: double.infinity),
+    );
+    final Widget column = apple || isGlassDesign(context)
+        ? SafeArea(
+            bottom: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                header,
+                jumpBar,
+                Expanded(child: body),
+              ],
+            ),
+          )
+        : _buildOverlaid(context, header: header, jumpBar: jumpBar, body: body);
     // 独立路由页用 Scaffold（SnackBar / 键盘避让都要它）；嵌在宽屏右窗格时
     // 只铺 Material，不再套第二层 Scaffold。
     if (widget.showBack) {
@@ -1643,6 +1695,71 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// M3E 叠放形态（与 [FushiPageScaffold] 的 extendBodyBehindHeader 同一约定）：
+  /// 正文占满整页，页头 + 跳转条浮在它上面；正文的 MediaQuery 顶部 padding =
+  /// 状态栏 + 两者实测高度。内容滚离顶部后的可读性只靠共享顶部渐隐，不画底带。
+  Widget _buildOverlaid(
+    BuildContext context, {
+    required Widget header,
+    required Widget jumpBar,
+    required Widget body,
+  }) {
+    final MediaQueryData media = MediaQuery.of(context);
+    final double statusTop = media.padding.top;
+    final double inset = statusTop + _headerHeight + _jumpBarHeight;
+    return SafeArea(
+      top: false,
+      bottom: false,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: MediaQuery(
+              data: media.copyWith(
+                padding: media.padding.copyWith(top: inset, left: 0, right: 0),
+                viewPadding: media.viewPadding.copyWith(top: inset),
+              ),
+              child: widget.bodyConsumesTopPadding
+                  ? body
+                  : SafeArea(bottom: false, child: body),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _scrolledUnder,
+              builder: (BuildContext context, bool under, Widget? scrim) =>
+                  AnimatedOpacity(
+                    opacity: under && widget.bodyConsumesTopPadding ? 1 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: scrim,
+                  ),
+              child: FushiTopFadeScrim(
+                solidHeight: 0,
+                fadeExtent: inset + kFushiTopFadeExtent,
+                topOpacity: kFushiTopScrimOverlayOpacity,
+              ),
+            ),
+          ),
+          Positioned(
+            top: statusTop,
+            left: 0,
+            right: 0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                FushiHeightReporter(onHeight: _onHeaderHeight, child: header),
+                FushiHeightReporter(onHeight: _onJumpBarHeight, child: jumpBar),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
