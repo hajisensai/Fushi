@@ -1230,27 +1230,70 @@ class MihonManager extends ChangeNotifier {
       sources,
       counts,
     );
-    for (int index = 0; index < ordered.length; index++) {
-      final MangaOnlineSourceRow row = ordered[index];
-      if (row.sortOrder == index) continue;
-      await database.updateMangaOnlineSourceSettings(
-        extensionPackage: row.extensionPackage,
-        sourceId: row.sourceId,
-        sortOrder: index,
-      );
-    }
-    await reload();
+    // 与拖拽重排同一条串行写入路径：不会与在飞的拖拽互相覆盖。
+    await reorderSources(ordered);
     return true;
   }
 
   /// 拖拽重排（「来源」列表组内拖拽 / 菜单上移下移）：按 [ordered] 的先后把
   /// `sort_order` 重写成 0..n-1，一次 reload。调用方传完整列表（置顶组在前、
   /// 其余组在后，组内即用户排出的顺序），与 `pinned desc, sort_order` 的查询序
-  /// 一致；没变的行不写。
-  Future<void> reorderSources(List<MangaOnlineSourceRow> ordered) async {
+  /// 一致；与**当前存储**相同的行不写。
+  ///
+  /// HBK-AUDIT-016：连续重排（A0/B1 拖成 BA，保存未完再拖回 AB）曾经并发执行、
+  /// 并按调用方手里旧行的 `sortOrder` 判「没变」——第二次全部跳过写入，库里
+  /// 停在 BA。现在所有排序意图串行提交，且只提交**最后一次**意图（中间被覆盖的
+  /// 不再写）；比较基准是写入前现读的存储顺序，不是调用方快照。返回的 Future
+  /// 在本次意图（或覆盖它的更新意图）落库并 reload 之后完成。
+  Future<void> reorderSources(List<MangaOnlineSourceRow> ordered) {
+    _queuedReorder = List<MangaOnlineSourceRow>.of(ordered);
+    return _reorderWorker ??= _drainReorders();
+  }
+
+  /// 最近一次尚未落库的排序意图；新意图直接覆盖旧意图。
+  List<MangaOnlineSourceRow>? _queuedReorder;
+
+  /// 正在串行落库的 worker；空闲时为 null。
+  Future<void>? _reorderWorker;
+
+  Future<void> _drainReorders() async {
+    Object? lastError;
+    StackTrace? lastStack;
+    try {
+      while (true) {
+        final List<MangaOnlineSourceRow>? next = _queuedReorder;
+        if (next == null) break;
+        _queuedReorder = null;
+        try {
+          await _writeSourceOrder(next);
+          // 后来的意图成功落库，先前被它覆盖的失败不再有意义。
+          lastError = null;
+          lastStack = null;
+        } on Object catch (error, stack) {
+          lastError = error;
+          lastStack = stack;
+        }
+      }
+    } finally {
+      // 与「队列已空」的判定同步执行：之后到来的意图会起新 worker。
+      _reorderWorker = null;
+    }
+    if (lastError != null) {
+      Error.throwWithStackTrace(lastError, lastStack ?? StackTrace.current);
+    }
+  }
+
+  Future<void> _writeSourceOrder(List<MangaOnlineSourceRow> ordered) async {
+    final Map<(String, String), int> stored = <(String, String), int>{
+      for (final MangaOnlineSourceRow row
+          in await database.getMangaOnlineSources(mediaKind: kind.dbValue))
+        (row.extensionPackage, row.sourceId): row.sortOrder,
+    };
     for (int index = 0; index < ordered.length; index++) {
       final MangaOnlineSourceRow row = ordered[index];
-      if (row.sortOrder == index) continue;
+      if (stored[(row.extensionPackage, row.sourceId)] == index) {
+        continue;
+      }
       await database.updateMangaOnlineSourceSettings(
         extensionPackage: row.extensionPackage,
         sourceId: row.sourceId,

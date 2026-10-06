@@ -65,6 +65,10 @@ class _MihonInstalledSourcesSectionState
   /// 拖拽落点后、回写完成前的乐观顺序（行身份 [_keyOf]）；null = 用 manager 的。
   List<String>? _pendingOrder;
 
+  /// 每次提交排序意图 +1：只有最新一次意图结束时才撤掉乐观顺序
+  /// （HBK-AUDIT-016：先前的保存先完成时不能把显示弹回中间态）。
+  int _reorderGeneration = 0;
+
   @override
   void initState() {
     super.initState();
@@ -211,6 +215,7 @@ class _MihonInstalledSourcesSectionState
     final List<MangaOnlineSourceRow> full = pinned
         ? <MangaOnlineSourceRow>[...group, ...otherGroup]
         : <MangaOnlineSourceRow>[...otherGroup, ...group];
+    final int generation = ++_reorderGeneration;
     setState(() {
       _pendingOrder = <String>[
         for (final MangaOnlineSourceRow row in full) _keyOf(row),
@@ -230,7 +235,9 @@ class _MihonInstalledSourcesSectionState
         );
       }
     } finally {
-      if (mounted) setState(() => _pendingOrder = null);
+      if (mounted && generation == _reorderGeneration) {
+        setState(() => _pendingOrder = null);
+      }
     }
   }
 
