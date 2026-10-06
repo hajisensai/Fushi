@@ -258,9 +258,10 @@ void main() {
         // 底下、无实色带。只有确实无法让内容滚到页头底下的页面才能退回竖排，
         // 且必须在调用处写明理由；新增退回要先加进这里（只许减不许加）。
         const Map<String, int> allowed = <String, int>{
-          // Mokuro 卷列表 ×2：push 出去的子页正文是定高网格 + 自带分页条。
+          // Mokuro 目录（固定搜索行 + 网格 + 底部动作行的竖排）与 OPDS 目录
+        // （正文 MediaDiscoveryPage 自带浮动工具区，脚手架不下发作用域）。
           'lib/src/media/manga/discovery/manga_discovery_page.dart': 2,
-          // OPDS 目录：正文是带自己浮动工具区的 MediaDiscoveryPage。
+          // Mokuro 目录（同上）。
           'lib/src/media/manga/manga_online_sources_view.dart': 1,
           // Mihon 登录：整页 WebView。
           'lib/src/media/manga/mihon/mihon_web_login_page.dart': 1,
