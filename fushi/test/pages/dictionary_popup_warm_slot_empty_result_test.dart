@@ -71,6 +71,8 @@ class _WarmSlotAppModel extends AppModel {
   @override
   bool get compactGlossaries => false;
   @override
+  bool get dictionaryUnifiedStyle => true;
+  @override
   int get popupDictionaryColumns => 1;
   @override
   int get popupAutoExpandDictionaries => 0;
