@@ -909,6 +909,9 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   Widget _buildSheet(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
+    final Widget sourceInput = _source == _ManualTaskSource.magnet
+        ? _buildMagnetInput(context)
+        : _buildTorrentDropZone(context);
     final InspectedTorrentMetainfo? metainfo = _metainfo;
     final String? error = _error;
     return FushiModalSheetFrame(
@@ -923,19 +926,22 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
           _buildSourceSwitch(),
           SizedBox(height: tokens.spacing.gap + 4),
           // 两种输入形态之间：尺寸弹簧 + 交叉淡入（透明度走 effects 弹簧）。
-          AnimatedSize(
-            duration: motion.spatialDefault.duration,
-            curve: motion.spatialDefault.curve,
-            alignment: Alignment.topCenter,
-            child: AnimatedSwitcher(
-              duration: motion.effectsDefault.duration,
-              switchInCurve: motion.effectsDefault.curve,
-              switchOutCurve: motion.effectsDefault.curve,
-              child: _source == _ManualTaskSource.magnet
-                  ? _buildMagnetInput(context)
-                  : _buildTorrentDropZone(context),
+          // 零时长的 AnimatedSize 会在 performLayout 中同步通知布局变化；
+          // 减弱动态效果 / 墨水屏直接替换输入，正常模式保留尺寸与淡入动画。
+          if (!motion.enabled)
+            sourceInput
+          else
+            AnimatedSize(
+              duration: motion.spatialDefault.duration,
+              curve: motion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
+              child: AnimatedSwitcher(
+                duration: motion.effectsDefault.duration,
+                switchInCurve: motion.effectsDefault.curve,
+                switchOutCurve: motion.effectsDefault.curve,
+                child: sourceInput,
+              ),
             ),
-          ),
           if (error != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
             _buildError(context, error),
