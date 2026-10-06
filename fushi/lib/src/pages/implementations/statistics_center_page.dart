@@ -95,57 +95,51 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
       child: Builder(
         builder: (BuildContext context) {
           final TabController tabs = DefaultTabController.of(context);
-          final double page = FushiDesignTokens.of(context).spacing.page;
-          final Widget body = Column(
+          // 页签行随页头一起浮动、收起（[FushiPageScaffold.headerBottom]）：留在
+          // 正文里时它在页头下沿把下面的 KPI 卡硬切、页头收起后顶部是一整块
+          // 实色空白（用户 2026-10-06 截图）。各 tab 的滚动视图自己消费
+          // `MediaQuery.paddingOf(context).top`（[StatDashboardBody]）。
+          final Widget tabBar = LibrarySectionTabs<StatsCenterTab>.controlled(
+            tabs: <LibrarySectionTab<StatsCenterTab>>[
+              for (final StatsCenterTab tab in StatsCenterTab.values)
+                LibrarySectionTab<StatsCenterTab>(
+                  value: tab,
+                  label: _tabLabel(tab),
+                ),
+            ],
+            controller: tabs,
+            focusIdPrefix: 'stats-center-tab',
+            floating: true,
+          );
+          final Widget body = TabBarView(
             children: <Widget>[
-              Padding(
-                padding: EdgeInsets.fromLTRB(page, 0, page, 4),
-                child: LibrarySectionTabs<StatsCenterTab>.controlled(
-                  tabs: <LibrarySectionTab<StatsCenterTab>>[
-                    for (final StatsCenterTab tab in StatsCenterTab.values)
-                      LibrarySectionTab<StatsCenterTab>(
-                        value: tab,
-                        label: _tabLabel(tab),
-                      ),
-                  ],
-                  controller: tabs,
-                  focusIdPrefix: 'stats-center-tab',
-                  floating: true,
+              StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.overview.index,
+                child: _StatsOverviewTab(rangeSelection: _rangeSelection),
+              ),
+              StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.reading.index,
+                child: ReadingStatisticsPage(
+                  embedded: true,
+                  rangeSelection: _rangeSelection,
                 ),
               ),
-              Expanded(
-                child: TabBarView(
-                  children: <Widget>[
-                    StatCenterTabScope(
-                      registry: _tabActions,
-                      index: StatsCenterTab.overview.index,
-                      child: _StatsOverviewTab(rangeSelection: _rangeSelection),
-                    ),
-                    StatCenterTabScope(
-                      registry: _tabActions,
-                      index: StatsCenterTab.reading.index,
-                      child: ReadingStatisticsPage(
-                        embedded: true,
-                        rangeSelection: _rangeSelection,
-                      ),
-                    ),
-                    StatCenterTabScope(
-                      registry: _tabActions,
-                      index: StatsCenterTab.video.index,
-                      child: VideoStatisticsPage(
-                        embedded: true,
-                        rangeSelection: _rangeSelection,
-                      ),
-                    ),
-                    StatCenterTabScope(
-                      registry: _tabActions,
-                      index: StatsCenterTab.game.index,
-                      child: GameStatisticsPage(
-                        embedded: true,
-                        rangeSelection: _rangeSelection,
-                      ),
-                    ),
-                  ],
+              StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.video.index,
+                child: VideoStatisticsPage(
+                  embedded: true,
+                  rangeSelection: _rangeSelection,
+                ),
+              ),
+              StatCenterTabScope(
+                registry: _tabActions,
+                index: StatsCenterTab.game.index,
+                child: GameStatisticsPage(
+                  embedded: true,
+                  rangeSelection: _rangeSelection,
                 ),
               ),
             ],
@@ -173,6 +167,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
                       showStatDayResetHourDialog(context, ref.read(appProvider)),
                 ),
               ],
+              headerBottom: tabBar,
               body: child!,
             ),
           );
@@ -399,25 +394,30 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   }
 
   Widget _buildBody(FushiDesignTokens tokens) {
+    // 不滚动的加载 / 错误态让开叠放在上面的页头（[FushiPageScaffold] 正文铺到
+    // 页头底下，顶部让位在 MediaQuery padding 里）。
     if (_loading) {
-      return const FushiLoadingView();
+      return const SafeArea(bottom: false, child: FushiLoadingView());
     }
     if (_error != null) {
       // 2026-10 体验优化：不再把异常原文（英文堆栈片段）直接甩给用户；原文已在
       // [_load] 写进错误日志，这里显示本地化的「加载出错」+ 重试。
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.error_load_failed, style: tokens.type.metadata),
-            SizedBox(height: tokens.spacing.gap),
-            FushiTextButton.icon(
-              key: const ValueKey<String>('stat-overview-retry'),
-              onPressed: _retryLoad,
-              icon: const Icon(Icons.refresh),
-              label: Text(t.retry),
-            ),
-          ],
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.error_load_failed, style: tokens.type.metadata),
+              SizedBox(height: tokens.spacing.gap),
+              FushiTextButton.icon(
+                key: const ValueKey<String>('stat-overview-retry'),
+                onPressed: _retryLoad,
+                icon: const Icon(Icons.refresh),
+                label: Text(t.retry),
+              ),
+            ],
+          ),
         ),
       );
     }

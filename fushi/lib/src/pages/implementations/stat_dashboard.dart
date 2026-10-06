@@ -77,6 +77,12 @@ class StatDashboardBody extends StatelessWidget {
             child: FushiStaggeredEntrance(index: index, child: child),
           );
           final List<Widget> slivers = <Widget>[
+            // 正文铺到浮动页头底下（[FushiPageScaffold] 默认）：首屏让开页头，
+            // 往下滚时内容滚进页头胶囊底下（统计中心 2026-10-06 截图：页头
+            // 下沿硬切 KPI 卡）。不在浮动页头下时这段 padding 是状态栏 / 0。
+            SliverToBoxAdapter(
+              child: SizedBox(height: MediaQuery.paddingOf(context).top),
+            ),
             if (header case final Widget h)
               box(
                 Padding(

@@ -258,8 +258,12 @@ Widget buildStatPageBody({
   required Widget Function(String error) errorBuilder,
   required Widget Function() contentBuilder,
 }) {
-  if (loading) return loadingBuilder();
-  if (error != null) return errorBuilder(error);
+  // 不滚动的加载 / 错误态让开叠放在上面的浮动页头（正文铺到页头底下时顶部
+  // 让位在 MediaQuery padding 里）；滚动内容自己消费（[StatDashboardBody]）。
+  if (loading) return SafeArea(bottom: false, child: loadingBuilder());
+  if (error != null) {
+    return SafeArea(bottom: false, child: errorBuilder(error));
+  }
   return contentBuilder();
 }
 
@@ -483,17 +487,22 @@ Widget buildEmbeddedStatTab(
     );
   }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-  return Column(
-    children: <Widget>[
-      Padding(
-        padding: EdgeInsets.only(right: tokens.spacing.card),
-        child: Align(
-          alignment: Alignment.centerRight,
-          child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+  // 动作行不滚动：整体让开顶部 padding（SafeArea 同时把它从正文里移除，滚动
+  // 视图不再重复让位）。
+  return SafeArea(
+    bottom: false,
+    child: Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.only(right: tokens.spacing.card),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
+          ),
         ),
-      ),
-      Expanded(child: body),
-    ],
+        Expanded(child: body),
+      ],
+    ),
   );
 }
 
