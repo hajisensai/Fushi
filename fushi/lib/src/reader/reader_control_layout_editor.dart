@@ -794,6 +794,9 @@ class _ReaderToolbarPreview extends StatelessWidget {
               _items(ReaderControlSlot.topRight),
             ],
             overflow: overflow,
+            // 槽位预览：「更多」槽里的按钮恒画在 ⋯ 里，与实际阅读器的按宽度
+            // 自适应无关（编辑的是槽位归属，不是此刻放不放得下）。
+            adaptiveOverflow: false,
           )
         : _DockedPreviewBar(
             leading: _items(ReaderControlSlot.topLeft),

@@ -537,7 +537,15 @@ class _GroupDivider extends StatelessWidget {
 ///
 /// 三块各自独立成胶囊、不占满宽；标题胶囊吃掉中间剩余宽度但内容居左、宽度按内容
 /// 收缩（[Flexible]），点它触发 [onTitleTap]（阅读器 = 打开导航）。
-class FushiFloatingTopBar extends StatelessWidget {
+///
+/// **按宽度自适应溢出**（[adaptiveOverflow]，默认开；用户 2026-10-06「默认展开，
+/// 不够空间才折叠更多」）：[actions] 与 [overflow] 按给出顺序（= 优先级，[overflow]
+/// 最低）先全部平铺成图标按钮；放不下时从**最低优先级**起依次收进「⋯」，全放得下
+/// 就不画「⋯」。标题胶囊保底 [kFushiFloatingTopBarTitleMinWidth]（可省略号压缩），
+/// 保底优先于高优先级动作。展开方向带 [kFushiFloatingTopBarOverflowHysteresis] 的
+/// 回差，窗口在临界宽度附近缩放时不来回跳；按钮数变化时动作胶囊宽度走
+/// [AnimatedSize] 平滑过渡。
+class FushiFloatingTopBar extends StatefulWidget {
   const FushiFloatingTopBar({
     super.key,
     this.leading = const <FushiToolbarItem>[],
@@ -549,6 +557,7 @@ class FushiFloatingTopBar extends StatelessWidget {
     this.overflow = const <FushiToolbarItem>[],
     this.colors,
     this.excludeFocus = false,
+    this.adaptiveOverflow = true,
   });
 
   final List<FushiToolbarItem> leading;
@@ -557,11 +566,150 @@ class FushiFloatingTopBar extends StatelessWidget {
   final VoidCallback? onTitleTap;
   final String? titleTooltip;
 
-  /// 右侧动作按钮组（分组，组间分隔）。
+  /// 右侧动作按钮组（分组，组间分隔），按优先级从高到低排。
   final List<List<FushiToolbarItem>> actions;
+
+  /// 最低优先级的动作：[adaptiveOverflow] 时宽度够也平铺，否则恒在「⋯」里。
   final List<FushiToolbarItem> overflow;
   final FushiFloatingToolbarColors? colors;
   final bool excludeFocus;
+
+  /// false = 旧行为：[actions] 恒平铺、[overflow] 恒进「⋯」（布局编辑器的槽位预览用）。
+  final bool adaptiveOverflow;
+
+  @override
+  State<FushiFloatingTopBar> createState() => _FushiFloatingTopBarState();
+}
+
+/// 顶部悬浮条标题胶囊的保底宽度：动作再多也先保它（书名至少露出几个字）。
+const double kFushiFloatingTopBarTitleMinWidth = 160;
+
+/// 自适应溢出的展开回差：多放出一颗按钮需要比「刚好放得下」再多出这么多宽度。
+const double kFushiFloatingTopBarOverflowHysteresis = 24;
+
+/// 紧凑工具栏里一颗图标按钮占的横向宽度（48 触控目标 + 4 项间距）。偏大估计——
+/// 宁可早一颗收进「⋯」，也不让动作胶囊把标题挤没或溢出。
+const double _kTopBarActionSlot = 48 + kFushiFloatingToolbarItemGap;
+
+/// 组间分隔（1 宽 + 两侧各 6）。
+const double _kTopBarGroupDivider = 13;
+
+/// 动作胶囊左右内边距（紧凑形态 4 + 4）。
+const double _kTopBarActionsPadding = 8;
+
+/// 一个返回类前置胶囊（48 按钮 + 胶囊内边距 8）+ 其后的 8 间距。
+const double _kTopBarLeadingSlot = 48 + 8 + 8;
+
+/// 把 [groups]（高 → 低优先级）+ [overflow]（最低）切成「平铺前 [visible] 颗、
+/// 其余进 ⋯」。纯函数，供布局与测试共用。
+({List<List<FushiToolbarItem>> groups, List<FushiToolbarItem> overflow})
+fushiTopBarSplitActions(
+  List<List<FushiToolbarItem>> groups,
+  List<FushiToolbarItem> overflow,
+  int visible,
+) {
+  final List<List<FushiToolbarItem>> all = <List<FushiToolbarItem>>[
+    for (final List<FushiToolbarItem> g in groups)
+      if (g.isNotEmpty) g,
+    if (overflow.isNotEmpty) overflow,
+  ];
+  final List<List<FushiToolbarItem>> shown = <List<FushiToolbarItem>>[];
+  final List<FushiToolbarItem> rest = <FushiToolbarItem>[];
+  int left = visible;
+  for (final List<FushiToolbarItem> g in all) {
+    if (left >= g.length) {
+      shown.add(g);
+      left -= g.length;
+    } else {
+      if (left > 0) shown.add(g.sublist(0, left));
+      rest.addAll(g.sublist(left < 0 ? 0 : left));
+      left = 0;
+    }
+  }
+  return (groups: shown, overflow: rest);
+}
+
+/// 平铺 [visible] 颗时动作胶囊的估计宽度（含「⋯」）。纯函数。
+double fushiTopBarActionsWidth(
+  List<List<FushiToolbarItem>> groups,
+  List<FushiToolbarItem> overflow,
+  int visible,
+) {
+  final ({List<List<FushiToolbarItem>> groups, List<FushiToolbarItem> overflow})
+  split = fushiTopBarSplitActions(groups, overflow, visible);
+  int items = 0;
+  for (final List<FushiToolbarItem> g in split.groups) {
+    items += g.length;
+  }
+  final int buttons = items + (split.overflow.isEmpty ? 0 : 1);
+  if (buttons == 0) return 0;
+  final int dividers = split.groups.length > 1 ? split.groups.length - 1 : 0;
+  return _kTopBarActionsPadding +
+      buttons * _kTopBarActionSlot +
+      dividers * _kTopBarGroupDivider;
+}
+
+/// 在 [budget] 宽度里最多能平铺几颗（总数 [total]）。
+int fushiTopBarFitCount(
+  List<List<FushiToolbarItem>> groups,
+  List<FushiToolbarItem> overflow,
+  int total,
+  double budget,
+) {
+  for (int k = total; k > 0; k--) {
+    if (fushiTopBarActionsWidth(groups, overflow, k) <= budget) return k;
+  }
+  return 0;
+}
+
+class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
+  List<FushiToolbarItem> get leading => widget.leading;
+  String get title => widget.title;
+  String get subtitle => widget.subtitle;
+  VoidCallback? get onTitleTap => widget.onTitleTap;
+  String? get titleTooltip => widget.titleTooltip;
+  List<List<FushiToolbarItem>> get actions => widget.actions;
+  List<FushiToolbarItem> get overflow => widget.overflow;
+  FushiFloatingToolbarColors? get colors => widget.colors;
+  bool get excludeFocus => widget.excludeFocus;
+
+  /// 上一次布局平铺了几颗（回差的参照）；动作总数变了就作废。
+  int? _lastVisible;
+  int? _lastTotal;
+
+  /// 按可用宽度定平铺颗数（带展开回差）。
+  int _visibleFor(double maxWidth, {required bool hasTitle}) {
+    int total = 0;
+    for (final List<FushiToolbarItem> g in actions) {
+      total += g.length;
+    }
+    total += overflow.length;
+    if (!widget.adaptiveOverflow) {
+      return total - overflow.length;
+    }
+    if (!maxWidth.isFinite) return total;
+    final double budget =
+        maxWidth -
+        leading.length * _kTopBarLeadingSlot -
+        (hasTitle ? kFushiFloatingTopBarTitleMinWidth : 0) -
+        8;
+    final int fit = fushiTopBarFitCount(actions, overflow, total, budget);
+    final int? last = _lastTotal == total ? _lastVisible : null;
+    int visible = fit;
+    if (last != null && fit > last) {
+      // 展开：多出来的那几颗要连回差一起放得下才放出来，否则维持原样。
+      final int strict = fushiTopBarFitCount(
+        actions,
+        overflow,
+        total,
+        budget - kFushiFloatingTopBarOverflowHysteresis,
+      );
+      visible = strict > last ? strict : last;
+    }
+    _lastVisible = visible;
+    _lastTotal = total;
+    return visible;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -634,40 +782,60 @@ class FushiFloatingTopBar extends StatelessWidget {
               ),
             ),
           );
-    final Widget row = Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        for (final FushiToolbarItem item in leading) ...<Widget>[
-          FushiFloatingPill(
-            color: palette.container,
-            child: FushiToolbarButton(
-              item: item,
-              foreground: palette.foreground,
-              selectedContainer: palette.selectedContainer,
-              selectedForeground: palette.selectedForeground,
-            ),
-          ),
-          const SizedBox(width: 8),
-        ],
-        // 标题胶囊按内容收缩、最多吃满中间剩余宽度（超长书名省略号）。
-        Expanded(
-          child: titlePill == null
-              ? const SizedBox.shrink()
-              : Align(
-                  alignment: AlignmentDirectional.centerStart,
-                  child: titlePill,
+    final Widget row = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int visible = _visibleFor(
+          constraints.maxWidth,
+          hasTitle: titlePill != null,
+        );
+        final ({
+          List<List<FushiToolbarItem>> groups,
+          List<FushiToolbarItem> overflow,
+        })
+        split = widget.adaptiveOverflow
+            ? fushiTopBarSplitActions(actions, overflow, visible)
+            : (groups: actions, overflow: overflow);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            for (final FushiToolbarItem item in leading) ...<Widget>[
+              FushiFloatingPill(
+                color: palette.container,
+                child: FushiToolbarButton(
+                  item: item,
+                  foreground: palette.foreground,
+                  selectedContainer: palette.selectedContainer,
+                  selectedForeground: palette.selectedForeground,
                 ),
-        ),
-        if (hasActions) ...<Widget>[
-          const SizedBox(width: 8),
-          FushiFloatingToolbar(
-            groups: actions,
-            overflow: overflow,
-            colors: colors,
-            compact: true,
-          ),
-        ],
-      ],
+              ),
+              const SizedBox(width: 8),
+            ],
+            // 标题胶囊按内容收缩、最多吃满中间剩余宽度（超长书名省略号）。
+            Expanded(
+              child: titlePill == null
+                  ? const SizedBox.shrink()
+                  : Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: titlePill,
+                    ),
+            ),
+            if (hasActions) ...<Widget>[
+              const SizedBox(width: 8),
+              AnimatedSize(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                curve: FushiMotion.standard,
+                alignment: AlignmentDirectional.centerEnd,
+                child: FushiFloatingToolbar(
+                  groups: split.groups,
+                  overflow: split.overflow,
+                  colors: colors,
+                  compact: true,
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
     return excludeFocus ? ExcludeFocus(child: row) : row;
   }
