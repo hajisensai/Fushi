@@ -6,8 +6,10 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 一台已登录的媒体服务器（浏览器 + 展示用账号名 + 线路）。账号名与线路都不在
@@ -65,8 +67,14 @@ class _MediaServerListViewState extends State<MediaServerListView> {
   /// 最近一次取回的服务器清单：首页页头的「切换服务器」菜单从这里取。
   List<MediaServerEntry> _servers = const <MediaServerEntry>[];
 
+  /// 每次重取 +1：状态块（骨架 / 列表 / 空态 / 错误）的 key 带上它，交叉淡入时
+  /// 上一轮还在淡出的同态块与新一块不会撞 key（[AnimatedSwitcher] 按子 key 包
+  /// 过渡层）。
+  int _epoch = 0;
+
   void _reload() {
     setState(() {
+      _epoch += 1;
       _future = widget.loadServers();
     });
   }
@@ -123,55 +131,92 @@ class _MediaServerListViewState extends State<MediaServerListView> {
 
   @override
   Widget build(BuildContext context) {
-    // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
-    return Scaffold(
-      body: Column(
-        children: <Widget>[
-          // 分区页签归外层浏览页（画在嵌套 Navigator 之上），这里与首页 / 网格同构，
-          // 只出本层的紧凑页头。
-          FushiPageHeader(
-            title: t.media_server_servers_title,
-            compact: true,
-            actions: <Widget>[
-              FushiIconButton(
-                key: const ValueKey<String>('media-server-list-refresh'),
-                icon: Icons.refresh_rounded,
-                tooltip: t.refresh,
-                focusId: const FushiFocusId('media-server-list-refresh'),
-                onTap: _reload,
-              ),
-            ],
+    // 本视图是嵌套 Navigator 里的一条路由：页面外壳自带 Scaffold（Material 祖先）
+    // 与 M3E 悬浮页头（随滚动收起）。分区页签归外层浏览页（画在嵌套 Navigator
+    // 之上），这里与首页 / 网格同构，只出本层的紧凑页头。
+    return MediaServerPageFrame(
+      header: FushiPageHeader(
+        title: t.media_server_servers_title,
+        compact: true,
+        actions: <Widget>[
+          FushiIconButton(
+            key: const ValueKey<String>('media-server-list-refresh'),
+            icon: FushiIcons.refresh,
+            tooltip: t.refresh,
+            focusId: const FushiFocusId('media-server-list-refresh'),
+            onTap: _reload,
           ),
-          Expanded(
-            child: FutureBuilder<List<MediaServerEntry>>(
-              future: _future,
-              builder:
-                  (
-                    BuildContext context,
-                    AsyncSnapshot<List<MediaServerEntry>> snapshot,
-                  ) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const FushiLoadingView();
-                    }
-                    if (snapshot.hasError) {
-                      return FushiPlaceholderMessage(
-                        icon: Icons.cloud_off_outlined,
-                        message: t.media_server_items_load_failed,
-                        detail: '${snapshot.error}',
-                        action: FushiFilledButton.icon(
-                          onPressed: _reload,
-                          icon: const FushiIcon(Icons.refresh_rounded),
-                          label: Text(t.retry),
-                        ),
-                      );
-                    }
-                    final List<MediaServerEntry> servers =
-                        snapshot.data ?? const <MediaServerEntry>[];
-                    _servers = servers;
-                    if (servers.isEmpty) return _buildEmpty();
-                    _maybeAutoEnter(servers);
-                    return _buildList(servers);
-                  },
+        ],
+      ),
+      body: FutureBuilder<List<MediaServerEntry>>(
+        future: _future,
+        builder:
+            (
+              BuildContext context,
+              AsyncSnapshot<List<MediaServerEntry>> snapshot,
+            ) {
+              // 三态之间交叉淡入（effects 弹簧，不过冲）：骨架 → 列表 / 空态 /
+              // 错误不硬切。
+              final FushiMotionScheme motion = context.fushiMotion;
+              final Widget child;
+              if (snapshot.connectionState != ConnectionState.done) {
+                child = _buildSkeleton();
+              } else if (snapshot.hasError) {
+                child = FushiPlaceholderMessage(
+                  key: ValueKey<String>('media-server-list-error-$_epoch'),
+                  icon: FushiIcons.cloudOff,
+                  tone: FushiPlaceholderTone.error,
+                  message: t.media_server_items_load_failed,
+                  detail: '${snapshot.error}',
+                  action: FushiFilledButton.icon(
+                    onPressed: _reload,
+                    icon: const FushiIcon(FushiIcons.refresh),
+                    label: Text(t.retry),
+                  ),
+                );
+              } else {
+                final List<MediaServerEntry> servers =
+                    snapshot.data ?? const <MediaServerEntry>[];
+                _servers = servers;
+                if (servers.isEmpty) {
+                  child = _buildEmpty();
+                } else {
+                  _maybeAutoEnter(servers);
+                  child = _buildList(servers);
+                }
+              }
+              return AnimatedSwitcher(
+                duration: motion.effectsDefault.duration,
+                switchInCurve: motion.effectsDefault.curve,
+                switchOutCurve: motion.effectsDefault.curve,
+                child: child,
+              );
+            },
+      ),
+    );
+  }
+
+  /// 加载骨架：与真实列表同宽同形的两行分段卡（行首方块 + 两行文字条）。
+  Widget _buildSkeleton() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiSkeletonShimmer(
+      key: ValueKey<String>('media-server-list-skeleton-$_epoch'),
+      child: ListView(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.page,
+          vertical: tokens.spacing.gap,
+        ),
+        children: <Widget>[
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: const Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  MediaServerListRowSkeleton(index: 0, count: 2),
+                  MediaServerListRowSkeleton(index: 1, count: 2),
+                ],
+              ),
             ),
           ),
         ],
@@ -181,12 +226,13 @@ class _MediaServerListViewState extends State<MediaServerListView> {
 
   Widget _buildEmpty() {
     return FushiPlaceholderMessage(
-      icon: Icons.dns_outlined,
+      key: ValueKey<String>('media-server-list-empty-$_epoch'),
+      icon: FushiIcons.server,
       message: t.media_server_servers_empty_hint,
       action: FushiFilledButton.tonalIcon(
         key: const ValueKey<String>('media-server-list-go-settings'),
         onPressed: widget.onOpenSettings,
-        icon: const FushiIcon(Icons.settings_outlined),
+        icon: const FushiIcon(FushiIcons.settingsGear),
         label: Text(t.media_server_servers_go_settings),
       ),
     );
@@ -196,6 +242,7 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int count = servers.length;
     return FushiEntranceScope(
+      key: ValueKey<String>('media-server-list-body-$_epoch'),
       child: ListView(
         key: const PageStorageKey<String>('media-server-list'),
         padding: EdgeInsets.symmetric(
@@ -292,12 +339,13 @@ class _ServerRow extends StatelessWidget {
         ),
         child: Row(
           children: <Widget>[
-            // 类型图标走中性徽标（MD3 圆角方底 / Apple 无底单色）。
-            FushiNeutralIconBadge(
-              icon: mediaServerFamilyIcon(family),
+            // 类型图标走 M3E 行首形状底（secondaryContainer 方圆角；Apple 是
+            // iOS 设置式彩色圆角方块；墨水屏描边无底）。
+            FushiListLeadingIcon(
+              mediaServerFamilyIcon(family),
+              shape: FushiLeadingShape.square,
               size: badge,
               iconSize: 22,
-              circle: false,
             ),
             SizedBox(width: rowPad),
             Expanded(
@@ -344,7 +392,7 @@ class _ServerRow extends StatelessWidget {
                   'media-server-route-switch-${browser.serverId}',
                 ),
                 tooltip: t.media_server_route_switch,
-                icon: const FushiIcon(Icons.alt_route_rounded),
+                icon: const FushiIcon(FushiIcons.swap),
                 initialValue: browser.serverUrl,
                 onSelected: (String url) {
                   if (url != browser.serverUrl) unawaited(onSwitchRoute(url));
@@ -363,7 +411,7 @@ class _ServerRow extends StatelessWidget {
               const FushiAppleChevron()
             else
               FushiIcon(
-                Icons.chevron_right_rounded,
+                FushiIcons.chevronRight,
                 color: tokens.surfaces.onVariant,
               ),
           ],
@@ -373,7 +421,8 @@ class _ServerRow extends StatelessWidget {
   }
 }
 
-/// 组下方的「去设置添加服务器」行：强调色加号 + 文字（iOS 设置「添加账户」口径）。
+/// 组下方的「去设置添加服务器」行：primary 色块圆底加号 + 强调色文字（iOS 设置
+/// 「添加账户」口径）。
 class _AddServerRow extends StatelessWidget {
   const _AddServerRow();
 
@@ -386,11 +435,15 @@ class _AddServerRow extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: tokens.spacing.rowHorizontal,
-        vertical: tokens.spacing.rowVertical + 2,
+        vertical: tokens.spacing.rowVertical,
       ),
       child: Row(
         children: <Widget>[
-          FushiIcon(Icons.add_circle_outline_rounded, color: accent, size: 22),
+          const FushiListLeadingIcon(
+            FushiIcons.add,
+            tone: FushiCardTone.primary,
+            iconSize: 22,
+          ),
           SizedBox(width: tokens.spacing.rowHorizontal),
           Expanded(
             child: Text(

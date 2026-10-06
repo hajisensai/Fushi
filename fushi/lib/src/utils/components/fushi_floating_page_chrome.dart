@@ -80,8 +80,13 @@ Widget? fushiFloatingLeading(Widget? leading) {
   return leading;
 }
 
-/// 一枚悬浮胶囊：标题胶囊 / 动作按钮组胶囊共用。高至少
-/// [kFushiPageChromeExtent]，内容竖向居中。
+/// 一枚悬浮胶囊：标题胶囊 / 动作按钮组胶囊共用。高恒为
+/// [kFushiPageChromeExtent]（与返回圆、库页页签胶囊、按钮组同高），内容竖向居中。
+///
+/// 高度是**定值**而不是「至少」：页头槽位（AppBar toolbar 56、收起标题行、页头
+/// 工具条）都按 [kFushiPageChromeExtent] 排，胶囊一旦比它高就会被槽位的
+/// ClipRect 截掉下半截（下圆角消失、底边成一条直线）。[padding] 只取横向；
+/// 竖向空间由定高 + 居中给出，不叠加在高度上。
 class FushiPageChromeCapsule extends StatelessWidget {
   const FushiPageChromeCapsule({
     required this.child,
@@ -94,21 +99,18 @@ class FushiPageChromeCapsule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(
-        minHeight: kFushiPageChromeExtent,
-        minWidth: kFushiPageChromeExtent,
-      ),
-      child: FushiFloatingPill(
-        color: fushiPageChromeColor(context),
-        padding: padding,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: kFushiPageChromeExtent),
+    final EdgeInsets resolved = padding.resolve(Directionality.of(context));
+    return SizedBox(
+      height: kFushiPageChromeExtent,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: kFushiPageChromeExtent),
+        child: FushiFloatingPill(
+          color: fushiPageChromeColor(context),
+          padding: EdgeInsets.only(left: resolved.left, right: resolved.right),
           child: IconTheme.merge(
             data: IconThemeData(color: fushiPageChromeForeground(context)),
             child: Align(
               widthFactor: 1,
-              heightFactor: 1,
               alignment: AlignmentDirectional.centerStart,
               child: child,
             ),
@@ -121,11 +123,16 @@ class FushiPageChromeCapsule extends StatelessWidget {
 
 /// 页面标题的悬浮胶囊：M3E Emphasized 字阶（titleLarge 加粗），可带一行副标题。
 /// [title] 原样渲染（调用方给的 Text 照用），只经 [DefaultTextStyle] 供默认字阶。
+/// 单行省略、竖向居中；行高固定（[_kTitleLineHeight] + 强制 strut），字阶 /
+/// 调用方 TextStyle 的行高都撑不高胶囊。
 class FushiPageChromeTitle extends StatelessWidget {
   const FushiPageChromeTitle({required this.title, super.key, this.subtitle});
 
   final Widget title;
   final Widget? subtitle;
+
+  /// 标题行的固定行高倍数（字号 × 1.2）。
+  static const double _kTitleLineHeight = 1.2;
 
   /// 标题胶囊里的标题字阶。
   static TextStyle titleStyleOf(BuildContext context) {
@@ -133,35 +140,109 @@ class FushiPageChromeTitle extends StatelessWidget {
     return (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
       fontWeight: FontWeight.w700,
       color: theme.colorScheme.onSurface,
-      height: 1.2,
+      height: _kTitleLineHeight,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+  }
+
+  /// 把一行文字的行盒钉死在 `fontSize × height`：[forceStrutHeight] 让调用方
+  /// Text 自带的 height / 字体度量都不再改变行盒高度。
+  static Widget _fixedLine(Widget child, TextStyle style) {
+    final double fontSize = style.fontSize ?? 14;
+    return DefaultTextStyle.merge(
+      style: style,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+      textHeightBehavior: const TextHeightBehavior(
+        leadingDistribution: TextLeadingDistribution.even,
+      ),
+      child: _StrutScope(
+        strut: StrutStyle(
+          fontSize: fontSize,
+          height: style.height ?? _kTitleLineHeight,
+          leadingDistribution: TextLeadingDistribution.even,
+          forceStrutHeight: true,
+        ),
+        child: child,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final TextStyle subtitleStyle =
+        (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1.25,
+          leadingDistribution: TextLeadingDistribution.even,
+        );
     return FushiPageChromeCapsule(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          DefaultTextStyle.merge(
-            style: titleStyleOf(context),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            child: title,
-          ),
-          if (subtitle != null)
-            DefaultTextStyle.merge(
-              style: (theme.textTheme.labelMedium ?? const TextStyle())
-                  .copyWith(color: theme.colorScheme.onSurfaceVariant),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              child: subtitle!,
-            ),
+          _fixedLine(title, titleStyleOf(context)),
+          if (subtitle != null) _fixedLine(subtitle!, subtitleStyle),
         ],
       ),
+    );
+  }
+}
+
+/// 给子树里没显式写 strutStyle 的 [Text] 下发固定行盒：[Text] 不读继承的
+/// strut，所以这里把子 [Text] 换成带 [strut] 的同一份 [Text]；其它 widget
+/// 原样返回（它们自己负责行高）。
+class _StrutScope extends StatelessWidget {
+  const _StrutScope({required this.strut, required this.child});
+
+  final StrutStyle strut;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget current = child;
+    if (current is! Text || current.strutStyle != null) return current;
+    if (current.textSpan != null) {
+      return Text.rich(
+        current.textSpan!,
+        key: current.key,
+        style: current.style,
+        strutStyle: strut,
+        textAlign: current.textAlign,
+        textDirection: current.textDirection,
+        locale: current.locale,
+        softWrap: current.softWrap,
+        overflow: current.overflow,
+        textScaler: current.textScaler,
+        maxLines: current.maxLines,
+        semanticsLabel: current.semanticsLabel,
+        semanticsIdentifier: current.semanticsIdentifier,
+        textWidthBasis: current.textWidthBasis,
+        textHeightBehavior: current.textHeightBehavior,
+        selectionColor: current.selectionColor,
+      );
+    }
+    return Text(
+      current.data!,
+      key: current.key,
+      style: current.style,
+      strutStyle: strut,
+      textAlign: current.textAlign,
+      textDirection: current.textDirection,
+      locale: current.locale,
+      softWrap: current.softWrap,
+      overflow: current.overflow,
+      textScaler: current.textScaler,
+      maxLines: current.maxLines,
+      semanticsLabel: current.semanticsLabel,
+      semanticsIdentifier: current.semanticsIdentifier,
+      textWidthBasis: current.textWidthBasis,
+      textHeightBehavior: current.textHeightBehavior,
+      selectionColor: current.selectionColor,
     );
   }
 }

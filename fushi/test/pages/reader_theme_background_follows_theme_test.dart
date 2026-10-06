@@ -60,6 +60,39 @@ void main() {
       expect(colors.dark, isFalse);
     });
 
+    test('浅色纸预设遇深色 app：不再铺浅纸，回落按 seed 派生的深色阅读配色', () {
+      // 2026-10-06：米色预设 + 全局明暗「跟随系统」= 深色，旧实现阅读器仍是
+      // #F7F6EB 浅纸黑字，与暖棕深色外壳相反。
+      final ColorScheme scheme = darkScheme();
+      final ReaderThemeColors colors = resolveReaderThemeColors(
+        themeKey: 'ecru-theme',
+        presetMap: presetMap,
+        scheme: scheme,
+      );
+      expect(colors.bg, isNot(const Color(0xFFF7F6EB)));
+      expect(colors.bg, paletteOf(scheme).background);
+      expect(colors.dark, isTrue);
+      expect(
+        readerPresetFor(
+          themeKey: 'ecru-theme',
+          presetMap: presetMap,
+          scheme: scheme,
+        ),
+        isNull,
+      );
+    });
+
+    test('深色纸预设遇浅色 app：同理回落浅色派生', () {
+      final ColorScheme scheme = lightScheme();
+      final ReaderThemeColors colors = resolveReaderThemeColors(
+        themeKey: 'black-theme',
+        presetMap: presetMap,
+        scheme: scheme,
+      );
+      expect(colors.bg, paletteOf(scheme).background);
+      expect(colors.dark, isFalse);
+    });
+
     test('system-theme（默认主题）：背景跟随主题派生的 M3E 纸色，不再恒白', () {
       final ColorScheme scheme = darkScheme();
       final ReaderThemeColors colors = resolveReaderThemeColors(

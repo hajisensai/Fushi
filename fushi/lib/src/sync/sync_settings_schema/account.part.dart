@@ -61,11 +61,28 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
 
   @override
   Widget build(BuildContext context) {
+    // 三态（检查中 / 已登录 / 未登录）之间走 effects 弹簧交叉淡入，不再硬切；
+    // 墨水屏与「减弱动态效果」下时长归零、瞬间到位。
+    final FushiSpringSpec fade = context.fushiMotion.effectsDefault;
+    return AnimatedSwitcher(
+      duration: fade.duration,
+      switchInCurve: fade.curve,
+      switchOutCurve: fade.curve,
+      child: KeyedSubtree(
+        key: ValueKey<int>(
+          !_initialCheckDone ? 0 : (_isAuthenticated ? 1 : 2),
+        ),
+        child: _buildRow(context),
+      ),
+    );
+  }
+
+  Widget _buildRow(BuildContext context) {
     if (!_initialCheckDone) {
       return AdaptiveSettingsRow(
         title: t.sync_account,
         subtitle: t.sync_checking_account,
-        icon: Icons.account_circle_outlined,
+        icon: FushiIcons.account,
         controlBelow: true,
         trailing: SizedBox(
           width: 24,
@@ -82,7 +99,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       return AdaptiveSettingsRow(
         title: _email ?? t.sync_signed_in,
         subtitle: subtitle,
-        icon: Icons.check_circle_outline,
+        icon: FushiIcons.verified,
         controlBelow: true,
         trailing: _signOutButton(context),
       );
@@ -91,7 +108,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
     return AdaptiveSettingsRow(
       title: t.sync_account,
       subtitle: subtitle,
-      icon: Icons.account_circle_outlined,
+      icon: FushiIcons.account,
       controlBelow: true,
       trailing: _signInButton(context),
     );
@@ -114,7 +131,7 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
       onPressed: _isLoading ? null : _signIn,
       icon: _isLoading
           ? SizedBox(width: 16, height: 16, child: progress)
-          : const FushiIcon(Icons.login),
+          : const FushiIcon(FushiIcons.login),
       label: Text(t.sync_sign_in),
     );
   }
@@ -128,12 +145,14 @@ class _SyncAccountWidgetState extends State<_SyncAccountWidget> {
         child: Text(t.sync_sign_out),
       );
     }
-    return FushiTextButton(
-      style: TextButton.styleFrom(
+    // M3E：退出登录是次要操作，用描边按钮 + 图标（与登录的实心按钮成对）。
+    return FushiOutlinedButton.icon(
+      style: OutlinedButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       onPressed: _isLoading ? null : _signOut,
-      child: Text(t.sync_sign_out),
+      icon: const FushiIcon(FushiIcons.logout),
+      label: Text(t.sync_sign_out),
     );
   }
 

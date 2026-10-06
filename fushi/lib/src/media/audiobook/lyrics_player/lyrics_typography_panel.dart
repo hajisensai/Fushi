@@ -19,11 +19,15 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 歌词字号范围（与阅读设置「歌词模式」页的步进器一致）。
 const double kLyricsFontSizeMin = 8;
@@ -48,7 +52,8 @@ Future<void> showLyricsTypographyPanel({
   required ValueChanged<bool> onVerticalChanged,
   required VoidCallback onOpenMore,
 }) {
-  Widget panel(BuildContext ctx) => LyricsTypographyPanel(
+  Widget panel(BuildContext ctx, {bool framed = true}) => LyricsTypographyPanel(
+    framed: framed,
     fontSize: fontSize,
     vertical: vertical,
     onFontSizeChanged: onFontSizeChanged,
@@ -59,14 +64,14 @@ Future<void> showLyricsTypographyPanel({
     },
   );
   if (MediaQuery.sizeOf(anchorContext).width < 600) {
-    return showModalBottomSheet<void>(
+    // 窄屏走全应用唯一的底部弹层入口（M3E 上两角 28 + 拖动条 + 弹簧进出；
+    // Apple 悬浮玻璃 sheet）。sheet 自己就是表面，面板不再自垫一层玻璃。
+    return adaptiveModalSheet<void>(
       context: anchorContext,
-      showDragHandle: true,
-      isScrollControlled: true,
       builder: (BuildContext ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-          child: panel(ctx),
+          child: panel(ctx, framed: false),
         ),
       ),
     );
@@ -83,7 +88,11 @@ class LyricsTypographyPanel extends StatefulWidget {
     required this.onFontSizeChanged,
     required this.onVerticalChanged,
     required this.onOpenMore,
+    this.framed = true,
   });
+
+  /// true = 自带悬浮面板表面（锚定 popover）；false = 已在 sheet 里，不再垫底。
+  final bool framed;
 
   final double fontSize;
   final bool vertical;
@@ -127,8 +136,14 @@ class _LyricsTypographyPanelState extends State<LyricsTypographyPanel> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              FushiIcon(Icons.text_fields_rounded, color: fg, size: 22),
-              const SizedBox(width: 10),
+              // M3E 行首形状底（cookie + primaryContainer）；Apple 自动退成
+              // iOS 设置式彩色圆角方块。
+              const FushiListLeadingIcon(
+                FushiIcons.textFields,
+                shape: FushiLeadingShape.cookie,
+                tone: FushiCardTone.primary,
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   t.lyrics_font_size,
@@ -180,7 +195,7 @@ class _LyricsTypographyPanelState extends State<LyricsTypographyPanel> {
                 onPressed: _size >= kLyricsFontSizeMax
                     ? null
                     : () => _setSize(_size + 1),
-                icon: const FushiIcon(Icons.add_rounded),
+                icon: const FushiIcon(FushiIcons.add),
               ),
             ],
           ),
@@ -189,24 +204,29 @@ class _LyricsTypographyPanelState extends State<LyricsTypographyPanel> {
             t.lyrics_typography_font_follows_reader,
             style: theme.textTheme.bodySmall?.copyWith(color: secondary),
           ),
-          const SizedBox(height: 8),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  t.lyrics_vertical_writing,
-                  style: theme.textTheme.bodyLarge?.copyWith(color: fg),
+          const SizedBox(height: 12),
+          // 竖排开关落在一张独立的填充卡里（M3E 分区：滑块区与开关区分层）。
+          FushiCard(
+            pressScale: false,
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 8, 4),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    t.lyrics_vertical_writing,
+                    style: theme.textTheme.bodyLarge?.copyWith(color: fg),
+                  ),
                 ),
-              ),
-              FushiSwitch(
-                key: const ValueKey<String>('lyrics_typography_vertical'),
-                value: _vertical,
-                onChanged: (bool v) {
-                  setState(() => _vertical = v);
-                  widget.onVerticalChanged(v);
-                },
-              ),
-            ],
+                FushiSwitch(
+                  key: const ValueKey<String>('lyrics_typography_vertical'),
+                  value: _vertical,
+                  onChanged: (bool v) {
+                    setState(() => _vertical = v);
+                    widget.onVerticalChanged(v);
+                  },
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
           Align(
@@ -214,13 +234,16 @@ class _LyricsTypographyPanelState extends State<LyricsTypographyPanel> {
             child: FushiTextButton.icon(
               key: const ValueKey<String>('lyrics_typography_more'),
               onPressed: widget.onOpenMore,
-              icon: const FushiIcon(Icons.tune_rounded),
+              icon: const FushiIcon(FushiIcons.settings),
               label: Text(t.lyrics_typography_more_settings),
             ),
           ),
         ],
       ),
     );
+    if (!widget.framed) {
+      return Material(type: MaterialType.transparency, child: body);
+    }
     return Material(
       type: MaterialType.transparency,
       child: FushiGlassSurface(

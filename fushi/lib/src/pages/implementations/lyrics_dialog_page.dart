@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// Used by the Reader Lyrics Source.
@@ -56,7 +57,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.lyrics_mode,
-        leadingIcon: Icons.lyrics_outlined,
+        leadingIcon: FushiIcons.lyrics,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -104,7 +105,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                   size: 18,
                   tooltip: t.clear,
                   onTap: _titleController.clear,
-                  icon: Icons.clear,
+                  icon: FushiIcons.close,
                 ),
               ),
               SizedBox(height: tokens.spacing.gap),
@@ -115,7 +116,7 @@ class _LyricsDialogPageState extends BasePageState<LyricsDialogPage> {
                   size: 18,
                   tooltip: t.clear,
                   onTap: _artistController.clear,
-                  icon: Icons.clear,
+                  icon: FushiIcons.close,
                 ),
               ),
             ],

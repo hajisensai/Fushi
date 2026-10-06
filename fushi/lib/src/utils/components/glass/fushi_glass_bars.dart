@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiTopFadeScrim, kFushiTopFadeExtent;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope;
@@ -508,8 +510,16 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
         child: _M3eAppBarScrollAway(
           enabled: floating,
           notificationPredicate: notificationPredicate,
-          builder: (FushiScrollAwayController chrome) =>
-              _buildBar(context, glass, floating ? chrome : null),
+          builder:
+              (
+                FushiScrollAwayController chrome,
+                ValueListenable<bool> scrolledUnder,
+              ) => _buildBar(
+                context,
+                glass,
+                floating ? chrome : null,
+                scrolledUnder,
+              ),
         ),
       ),
     );
@@ -519,8 +529,11 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     BuildContext context,
     bool glass,
     FushiScrollAwayController? floating,
+    ValueListenable<bool> scrolledUnder,
   ) {
-    if (floating != null) return _buildFloating(context, floating);
+    if (floating != null) {
+      return _buildFloating(context, floating, scrolledUnder);
+    }
     return AppBar(
       leading: glass
           ? _glassLeading(
@@ -584,6 +597,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
   Widget _buildFloating(
     BuildContext context,
     FushiScrollAwayController chrome,
+    ValueListenable<bool> scrolledUnder,
   ) {
     final Widget? resolvedLeading = leading != null
         ? fushiFloatingLeading(leading)
@@ -603,7 +617,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     final List<Widget>? finalActions = resolvedActions;
     final bool desktop = _isDesktopBar(context);
     final double edge = desktop ? 12 : 16;
-    return AppBar(
+    final Widget bar = AppBar(
       leading: resolvedLeading == null
           ? null
           : Align(
@@ -656,9 +670,40 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       systemOverlayStyle: systemOverlayStyle,
       forceMaterialTransparency: forceMaterialTransparency,
       useDefaultSemanticsOrder: useDefaultSemanticsOrder,
-      clipBehavior: clipBehavior,
+      // AppBar 默认用 Clip.hardEdge 把工具栏裁在 toolbarHeight 里；悬浮胶囊与
+      // 返回圆正好占满这 56（[kFushiPageChromeExtent]），它们的悬浮投影（向下
+      // 3 + 模糊 8）落在栏外，被裁掉就成了「胶囊 / 返回圆底边被一刀切平」。
+      // 栏本身透明无底，不裁也不会有内容溢出可见。
+      clipBehavior: clipBehavior ?? Clip.none,
       actionsPadding: actionsPadding,
       animateColor: animateColor,
+    );
+    // 栏透明、正文视口顶边就是栏下沿：内容滚到栏底下时在这条线上被一刀硬切
+    // （「头部下沿硬切线」）。内容已滚离顶部时，在栏下沿往下铺一段页面底色渐隐
+    // （与 [FushiPageScaffold] 收起页头时的 [FushiTopFadeScrim] 同一份），
+    // 内容柔和淡出。渐隐画在栏外（Stack 不裁），不占正文版面、不接指针。
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        bar,
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: -kFushiTopFadeExtent,
+          height: kFushiTopFadeExtent,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: scrolledUnder,
+            builder: (BuildContext context, bool under, Widget? scrim) =>
+                AnimatedOpacity(
+                  opacity: under ? 1 : 0,
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  child: scrim,
+                ),
+            child: const FushiTopFadeScrim(solidHeight: 0),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -757,7 +802,11 @@ class _M3eAppBarScrollAway extends StatefulWidget {
 
   final bool enabled;
   final ScrollNotificationPredicate notificationPredicate;
-  final Widget Function(FushiScrollAwayController chrome) builder;
+  final Widget Function(
+    FushiScrollAwayController chrome,
+    ValueListenable<bool> scrolledUnder,
+  )
+  builder;
 
   @override
   State<_M3eAppBarScrollAway> createState() => _M3eAppBarScrollAwayState();
@@ -765,6 +814,9 @@ class _M3eAppBarScrollAway extends StatefulWidget {
 
 class _M3eAppBarScrollAwayState extends State<_M3eAppBarScrollAway> {
   final FushiScrollAwayController _chrome = FushiScrollAwayController();
+
+  /// 正文是否已滚离顶部（内容在栏底下）：驱动栏下沿的渐隐遮罩。
+  final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
   ScrollNotificationObserverState? _observer;
 
   @override
@@ -778,6 +830,12 @@ class _M3eAppBarScrollAwayState extends State<_M3eAppBarScrollAway> {
   void _handle(ScrollNotification notification) {
     if (!widget.enabled || !widget.notificationPredicate(notification)) return;
     _chrome.handleNotification(notification);
+    // ScrollNotificationObserver 把视口尺寸变化（ScrollMetricsNotification）
+    // 也转成 ScrollUpdateNotification 转发，这一支就够了。
+    if (notification is ScrollUpdateNotification &&
+        notification.metrics.axis == Axis.vertical) {
+      _scrolledUnder.value = notification.metrics.extentBefore > 0;
+    }
   }
 
   @override
@@ -785,11 +843,12 @@ class _M3eAppBarScrollAwayState extends State<_M3eAppBarScrollAway> {
     _observer?.removeListener(_handle);
     _observer = null;
     _chrome.dispose();
+    _scrolledUnder.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.builder(_chrome);
+  Widget build(BuildContext context) => widget.builder(_chrome, _scrolledUnder);
 }
 
 /// [SliverAppBar] 的变体：普通 / medium / large（M3 可收起的大标题栏）。
@@ -1531,17 +1590,22 @@ class FushiShellLargeTitleBar extends StatelessWidget {
     // 展开 / 收起高度。Apple：iOS 大标题行 52、内联栏 44；桌面大标题小一号，
     // 收起后贴着窗口控制条只留一条 32 的内联标题行。MD3：标题行 + large app
     // bar 的下边距（移动 64 / 桌面 56），收起成紧凑的 titleLarge 行。
-    final double expandedHeight = apple
+    final double baseExpandedHeight = apple
         ? (desktop ? 46 : 52)
         : (desktop ? 56 : 64);
     // 标题行右侧挂着动作时，收起后也要容得下一排 44 的按钮（桌面 Apple 的
     // 32 内联行放不下）。
-    // MD3（M3E 悬浮页头）：收起后标题是一枚 48 高的悬浮标题胶囊，行高至少
-    // 容得下胶囊 + 上下 2。
+    // MD3（M3E 悬浮页头）：收起后标题是一枚 [kFushiPageChromeExtent] 高的
+    // 悬浮标题胶囊，行高 = 胶囊 + 上下各 4（行外层有 ClipRect，行高小于胶囊
+    // 就会把胶囊下半截裁平）。
+    const double md3CollapsedHeight = kFushiPageChromeExtent + 8;
     final double collapsedHeight = math.max(
-      apple ? (desktop ? 32 : 44) : 52,
-      trailing == null ? 0.0 : (apple ? 44.0 : 52.0),
+      apple ? (desktop ? 32 : 44) : md3CollapsedHeight,
+      trailing == null ? 0.0 : (apple ? 44.0 : md3CollapsedHeight),
     );
+    // 展开态不得比收起态矮（桌面 MD3 展开 56 < 胶囊行 64），否则「收起」反而
+    // 长高。
+    final double expandedHeight = math.max(baseExpandedHeight, collapsedHeight);
     final TextStyle largeStyle = apple
         ? _glassLargeTitleStyle(context)
         // M3E Emphasized 字阶：展开态大标题加粗。
