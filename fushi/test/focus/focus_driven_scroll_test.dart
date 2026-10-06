@@ -21,6 +21,8 @@ void main() {
               height: 120,
               child: ListView.builder(
                 controller: controller,
+                // ensureVisible 需要已挂载的 context；缓存目标行但仍保持离屏。
+                scrollCacheExtent: const ScrollCacheExtent.pixels(800),
                 itemExtent: 40,
                 itemCount: 20,
                 itemBuilder: (BuildContext context, int index) =>
