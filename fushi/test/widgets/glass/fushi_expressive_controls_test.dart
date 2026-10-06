@@ -535,7 +535,7 @@ void main() {
       await advance(tester, 800);
       expect(key.currentState!.isOpen, isTrue);
       expect(find.text('Import'), findsOneWidget);
-      expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      expect(find.byIcon(FushiIcons.close), findsOneWidget);
       await tester.tap(find.text('Import'));
       await advance(tester, 800);
       expect(imported, 1);
@@ -592,10 +592,10 @@ void main() {
         (_) => FushiSwitch(value: false, onChanged: (_) {}),
       );
       final Switch sw = tester.widget<Switch>(find.byType(Switch));
-      expect(sw.thumbIcon!.resolve(<WidgetState>{})!.icon, Icons.close_rounded);
+      expect(sw.thumbIcon!.resolve(<WidgetState>{})!.icon, FushiIcons.close);
       expect(
         sw.thumbIcon!.resolve(<WidgetState>{WidgetState.selected})!.icon,
-        Icons.check_rounded,
+        FushiIcons.check,
       );
       await pumpHost(
         tester,
