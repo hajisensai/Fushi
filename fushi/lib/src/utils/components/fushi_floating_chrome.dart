@@ -370,7 +370,15 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
       },
       child: FushiHeightReporter(
         onHeight: _onChromeHeight,
-        child: widget.chrome,
+        // 嵌套工具行（页面自己的搜索 / 筛选行）与上一层页签胶囊之间统一隔
+        // [kFushiFloatingChromeGap]（加上外壳工具栏底边的 4 合计 12，M3E 组
+        // 间距），不再各页自己凑、贴在一起。
+        child: nested
+            ? Padding(
+                padding: const EdgeInsets.only(top: kFushiFloatingChromeGap),
+                child: widget.chrome,
+              )
+            : widget.chrome,
       ),
     );
     return Stack(

@@ -15,6 +15,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -190,18 +191,20 @@ class MangaSourceCatalogSection extends StatelessWidget {
             // HorizontalDragScrollable（横向滚动守卫）。
             SizedBox(
               height: stripHeight,
-              child: HorizontalDragScrollable(
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  // 与区块标题、下方横滑行同一页边距，左缘对齐。
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.page,
+              child: FushiHorizontalEdgeFade(
+                child: HorizontalDragScrollable(
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    // 与区块标题、下方横滑行同一页边距，左缘对齐。
+                    padding: EdgeInsets.symmetric(
+                      horizontal: tokens.spacing.page,
+                    ),
+                    itemCount: tiles.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        SizedBox(width: tokens.spacing.gap),
+                    itemBuilder: (BuildContext context, int index) =>
+                        tiles[index],
                   ),
-                  itemCount: tiles.length,
-                  separatorBuilder: (BuildContext context, int index) =>
-                      SizedBox(width: tokens.spacing.gap),
-                  itemBuilder: (BuildContext context, int index) =>
-                      tiles[index],
                 ),
               ),
             ),

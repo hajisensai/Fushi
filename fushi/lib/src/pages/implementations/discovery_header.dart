@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -113,10 +114,13 @@ class DiscoveryHeaderControls extends StatelessWidget {
           // 往下推）。
           if (filterRow != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            HorizontalDragScrollable(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: filterRow,
+            FushiHorizontalEdgeFade(
+              extent: 16,
+              child: HorizontalDragScrollable(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: filterRow,
+                ),
               ),
             ),
           ],
