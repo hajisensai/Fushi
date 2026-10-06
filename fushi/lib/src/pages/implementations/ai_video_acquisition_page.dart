@@ -523,13 +523,16 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           bottom: false,
           child: Stack(
             children: <Widget>[
+              // 页头浮在对话流上（脚手架默认 extendBodyBehindHeader）：顶部让位
+              // 从 body 子树的 context 读（State 的 context 在脚手架之上）。
               Positioned.fill(
-                child: ListView(
+                child: Builder(
+                  builder: (BuildContext bodyContext) => ListView(
                   key: const ValueKey<String>('ai-video-acquire-transcript'),
                   controller: _scroll,
                   padding: EdgeInsets.fromLTRB(
                     tokens.spacing.page,
-                    tokens.spacing.gap,
+                    tokens.spacing.gap + MediaQuery.paddingOf(bodyContext).top,
                     tokens.spacing.page,
                     _kComposerReserve + bottomSafeInsetOf(context),
                   ),
@@ -592,6 +595,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                         ),
                       ),
                   ],
+                ),
                 ),
               ),
               // 结束后照样能打字：直接说下一部就是「再下一部」。
