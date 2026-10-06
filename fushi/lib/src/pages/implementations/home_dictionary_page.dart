@@ -1812,6 +1812,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
                       onScrolledToBottom: _allLoaded ? null : _loadMore,
                       onTopPullReleased: _clearSearchFromResultPull,
+                      // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
+                      // 转发给外壳，底栏随下滑收起与库页 ListView 同一台状态机。
+                      forwardScrollToHost: true,
                       // TODO-1152：结果区 WebView 填满 [Expanded]（全高固定大区域）。
                       // Windows 上 WebView2 内容在 put_Bounds 撑高后 render 完即 idle 无
                       // damage，宿主 WGC 帧池采不到新暴露下半区（下半屏黑）。渲染完补一次

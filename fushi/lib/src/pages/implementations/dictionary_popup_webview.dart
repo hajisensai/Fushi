@@ -35,6 +35,7 @@ import 'package:fushi/src/shortcuts/reader_space_override.dart'
     show readerShouldHandleDesktopCopy;
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
+import 'package:fushi/src/utils/misc/webview_scroll_notification_bridge.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
@@ -240,6 +241,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onOpenSentenceContextModal,
     this.onScrolledToBottom,
     this.onScrolledUnderChanged,
+    this.forwardScrollToHost = false,
     this.onTopPullReleased,
     this.onRendered,
     this.onContentMetrics,
@@ -381,6 +383,12 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
   /// 取代顶栏与正文之间那条常驻硬分隔线。只在跨过 0 时回调一次。
   final ValueChanged<bool>? onScrolledUnderChanged;
+
+  /// BUG-3064：把正文（WebView 文档）的纵向滚动以 Flutter [ScrollNotification]
+  /// 冒泡给宿主树。WebView 原生滚动不产生 Flutter 滚动通知，首页外壳的底栏
+  /// 随下滑收起 / 大标题收起都靠通知驱动；首页查词结果卡打开它，与库页
+  /// ListView 走同一台状态机（[WebViewScrollNotificationBridge]）。
+  final bool forwardScrollToHost;
   final VoidCallback? onTopPullReleased;
 
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
@@ -433,6 +441,10 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
 class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     with WidgetsBindingObserver {
   InAppWebViewController? _controller;
+
+  /// BUG-3064：正文滚动 → Flutter 滚动通知（[DictionaryPopupWebView.forwardScrollToHost]）。
+  final WebViewScrollNotificationBridge _hostScrollBridge =
+      WebViewScrollNotificationBridge();
 
   /// 制卡态失效通知的订阅（见 [MinedStateSignal]）。
   StreamSubscription<MinedStateChange>? _minedStateSubscription;
@@ -1681,9 +1693,11 @@ JSON.stringify((function(){
       $entriesJs
       ${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};
       window.__fushiRenderToken = $renderToken;
+      ${isLoadMore ? '' : kWebViewHostScrollDisarmJs}
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
       ${widget.onScrolledUnderChanged != null ? _scrolledUnderJs : ""}
+      ${widget.forwardScrollToHost ? kWebViewHostScrollReportJs : ""}
     ''');
     // 诊断（2026-09-22）：注入量是「查词为什么卡」的直接证据。冷建 WebView 时
     // staticChanged 恒为真 ⇒ 数十 KB 的静态设置段要跟着每次查词一起发；命中热槽时它
@@ -2381,6 +2395,25 @@ JSON.stringify((function(){
                 widget.onScrolledUnderChanged?.call(
                   args.isNotEmpty && args.first == true,
                 );
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'popupHostScroll',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupHostScroll',
+              null,
+              ErrorLogService.instance,
+              () {
+                if (!widget.forwardScrollToHost || !mounted) return null;
+                final WebViewScrollSample? sample = WebViewScrollSample.fromJs(
+                  args.isEmpty ? null : args.first,
+                );
+                if (sample != null) _hostScrollBridge.dispatch(context, sample);
                 return null;
               },
             );
