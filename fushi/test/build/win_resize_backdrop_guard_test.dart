@@ -150,7 +150,7 @@ void main() {
       expect(header.contains('HBRUSH backdrop_brush_ = nullptr;'), isTrue);
       expect(
         cpp.contains(
-          'backdrop_brush_(CreateSolidBrush(kSplashBackgroundColor))',
+          'backdrop_brush_(CreateSolidBrush(kInitialBackdropColor))',
         ),
         isTrue,
         reason: 'TODO-959 cold-start splash fill must survive.',

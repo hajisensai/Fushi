@@ -413,6 +413,8 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
+  'appearance/Glass material':
+      'test/widgets/fushi_glass_material_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
   // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
   // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，
@@ -436,9 +438,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/floating_ball/app_floating_ball_host_test.dart: 只显示为当前场景勾选的按钮 / 各场景的勾选互不影响',
   'floatingBall/Look up clipboard':
       'test/floating_ball/app_floating_ball_host_test.dart: 剪贴板查词把剪贴板文字交给应用内查词弹窗 + 场景勾选',
+  'floatingBall/Sync now':
+      'test/floating_ball/app_floating_ball_host_test.dart: 立即同步走与设置页同一个手动同步入口 / 唤起主窗再走手动同步入口 / Android openSync',
   // 应用外开关（2026-09-30 起桌面也可见）：生效点是宿主起停原生系统球。
   'floatingBall/Show over other apps':
       'test/floating_ball/app_floating_ball_host_test.dart: 桌面应用外球：打开开关即起原生球…；Android 原生服务见 BUG-2793 真机记录',
+  // 关闭后自动恢复三态：生效点是宿主处理「关闭」与回到前台。
+  'floatingBall/Auto-restore floating ball':
+      'test/floating_ball/app_floating_ball_host_test.dart: 自动恢复含应用内 / 不自动恢复 / 桌面应用外球「应用内外」三条',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案
@@ -474,6 +481,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 无 reader/appearance 探针；由专项纯函数 + widget 测试覆盖。
   'lookup/Bottom-docked popup':
       'test/pages/dictionary_popup_layer_test.dart + test/settings/popup_bottom_docked_switch_test.dart',
+  // 「只在小说中底部停靠」：总开关关着时出现的小说专属入口，写的是同一组停靠键
+  // （总开关 + 四个模块细分），生效点同上；只翻小说有效值的语义由专项测试咬住。
+  'lookup/Dock only in novels':
+      'test/settings/reader_lookup_popup_size_settings_test.dart',
+  // AI 按句意挑词条的自动开关：生效点在 BaseSourcePage 查词完成后的 AI 重排（不进
+  // reader CSS / 主题树），由 widget 测试覆盖开 / 关 / 未指派提供商不发请求三种。
+  'lookup/Pick meaning from context with AI':
+      'test/pages/base_source_page_ai_pick_test.dart: 自动判断开着：查词后 AI 回来即换到最前 / 没指派提供商：自动开着也不发请求',
   // 持久化/焦点/写穿由 settings_flatten_anki_profile_test 覆盖；真正加标签的消费点在
   // 制卡路径 reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart 的
   // bookTitleTag（读 appModel.autoAddBookNameToTags）。原 tags_field_auto_add_book_test
@@ -538,6 +553,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 开着时制卡不碰后端、一律入队；行为由专项测试咬死。
   'cardCreation/Batch mining':
       'test/anki/pending_mining_anki_repository_test.dart (批量模式)',
+  // issue #1949「启动 Fushi 时自动启动 Anki」：同上写 AnkiSettings，故 changed=false。
+  // 生效点在 main() 启动后的 AnkiDesktopLauncher.autoLaunchOnStartup（拉起外部进程，
+  // harness 里无从探测）；开关默认关 / 同步客户端后端与远程 AnkiConnect 不启动 /
+  // 本机已监听不重复启动 / 路径解析与回填由专项测试咬死。
+  'cardCreation/Launch Anki when Fushi starts':
+      '../packages/fushi_anki/test/anki_desktop_launcher_test.dart',
   // 本机作为制卡落地设备：写同步域设备本地偏好（认领时刻），生效点在下一轮同步的
   // 跨设备中转（harness 里没有同步后端可探）；认领 / 上传 / 收卡 / 回执全流程由
   // 专项测试用内存资产层两台设备对跑咬死。
@@ -797,6 +818,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'downloads/Ban progress cheat':
       'test/media/torrent/anime_download_config_backend_test.dart',
   'downloads/Ban relative progress cheat':
+      'test/media/torrent/anime_download_config_backend_test.dart',
+  // 「对等加密」2026-10 起从自绘分段条换成标准分段设置行，焦点遍历开始能驱动它；
+  // 生效点同样在 native session 下发，由编解码测试覆盖。
+  'downloads/Peer encryption':
       'test/media/torrent/anime_download_config_backend_test.dart',
   // 设备/集成 backlog（消费点真机/WebView/Android-only，widget 测不到）
   'reading/Spread direction': 'DEVICE: spread page order in WebView',
@@ -1627,6 +1652,19 @@ Future<ItemVerdict> _verifyFocusedNode({
     if (_mapsEqual(before, await db.getAllPrefs())) {
       await driver.adjust(steps: -4);
       await tester.pump(const Duration(milliseconds: 50));
+    }
+    // MD3 重设计：选项多 / 文字长 / 行太窄时分段行退回 Android 16 ListPreference
+    // 形态的菜单选择行（SettingsChoiceMenuRow，settingsChoiceUsesSegments 判据）。
+    // 它的焦点模型与下拉行相同：Enter 开菜单 → 方向键选项 → Enter 确认，左右键
+    // 不逐段切换。仍按真实焦点序列驱动，不放宽「改了能写穿 DB」的判据。
+    if (row.kind == _RowKind.segmented &&
+        _mapsEqual(before, await db.getAllPrefs())) {
+      await _driveDropdownRow(
+        tester: tester,
+        driver: driver,
+        db: db,
+        before: before,
+      );
     }
   }
   if (LocaleSettings.currentLocale != localeBefore) {

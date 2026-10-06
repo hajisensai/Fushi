@@ -91,7 +91,11 @@ void main() {
 
     test('开头明文、中段密文 → 加密（抽样不止看开头）', () async {
       expect(
-        await check(<Uint8List>[_bdavUnit(), _encryptedUnit(), _encryptedUnit()]),
+        await check(<Uint8List>[
+          _bdavUnit(),
+          _encryptedUnit(),
+          _encryptedUnit(),
+        ]),
         isTrue,
       );
     });
@@ -116,20 +120,23 @@ void main() {
     expect(isBdavStreamPath('/v/a.mkv'), isFalse);
   });
 
-  test('播放前拦截接线：load() 探测、页面按类型给出原因', () {
+  test('播放前解密接线：load() 使用会话，页面按配置错误给出原因', () {
     final String controller = File(
       'lib/src/media/video/video_player_controller.dart',
     ).readAsStringSync();
-    final int check = controller.indexOf('isAacsEncryptedStreamFile(');
+    final int check = controller.indexOf('aacsSession.playbackSource(');
     final int open = controller.indexOf('await player.open(');
     expect(check, greaterThan(0));
-    expect(controller, contains('throw BlurayEncryptedStreamException('));
+    expect(
+      controller,
+      isNot(contains('throw BlurayEncryptedStreamException(')),
+    );
     expect(check, lessThan(open), reason: '必须在交给 libmpv 之前判');
 
     final String page = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
     ).readAsStringSync();
-    expect(page, contains('error is BlurayEncryptedStreamException'));
-    expect(page, contains('t.video_bluray_stream_encrypted'));
+    expect(page, contains('error is AacsConfigurationException'));
+    expect(page, contains('t.video_bluray_config_no_match'));
   });
 }

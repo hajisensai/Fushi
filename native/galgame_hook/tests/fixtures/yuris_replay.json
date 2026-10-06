@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "engine_id": "yuris",
+  "status": "implemented_unverified",
+  "config": {
+    "selected_thread": 1,
+    "pair_tolerance_ms": 300,
+    "resource_late_wait_ms": 500
+  },
+  "events": [
+    {"kind": "resource_audio", "id": "yuris-voice-a", "timestamp_ms": 724, "available_at_ms": 760, "format": "ogg"},
+    {"kind": "text", "id": "yuris-line-a", "timestamp_ms": 1000, "thread": 1, "text": "synthetic yuris message a"},
+    {"kind": "text", "id": "yuris-ui-string", "timestamp_ms": 1005, "thread": 2, "text": "synthetic yuris string command"},
+    {"kind": "text", "id": "yuris-line-a-redraw", "timestamp_ms": 1300, "thread": 1, "text": "synthetic yuris message a"},
+    {"kind": "text", "id": "yuris-line-b", "timestamp_ms": 2400, "thread": 1, "text": "synthetic yuris unvoiced narration b"},
+    {"kind": "resource_audio", "id": "yuris-voice-c", "timestamp_ms": 3912, "available_at_ms": 3950, "format": "ogg"},
+    {"kind": "text", "id": "yuris-line-c", "timestamp_ms": 4000, "thread": 1, "text": "synthetic yuris message c"},
+    {"kind": "session_end", "timestamp_ms": 5000}
+  ],
+  "expected": {
+    "cards": [
+      {"text_id": "yuris-line-a", "audio_backend": "resource_audio", "audio_id": "yuris-voice-a"},
+      {"text_id": "yuris-line-b", "audio_backend": null, "audio_id": null},
+      {"text_id": "yuris-line-c", "audio_backend": "resource_audio", "audio_id": "yuris-voice-c"}
+    ],
+    "duplicate_text_events": 1,
+    "thread_filtered_events": 1,
+    "session_clean": true
+  }
+}

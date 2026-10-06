@@ -31,11 +31,50 @@ class DictionaryImportManager {
   /// 词典」，同一个包里出现两个就是两本。
   ///
   /// 大小写与路径分隔符已由 [_readZipFileNames] 归一（全小写）。
-  static List<String> archivedDictionaryEntries(List<String> zipEntryNames) =>
-      <String>[
-        for (final String name in zipEntryNames)
-          if (name.endsWith('.mdx') || name.endsWith('.dsl')) name,
-      ];
+  ///
+  /// BUG-2952：「词典整合包」——zip 里再套 zip（`01_英汉/COBUILD10.zip` …），或
+  /// 根下多个子目录各带一份 `index.json`——同样是一包多典。内层 `.zip` 一个算一本；
+  /// `index.json` 只在出现**两份以上**时才按所在目录各算一本（只有一份就是普通
+  /// Yomitan 包，绝不能拆）。以前这种包整个丢给 native：内层 zip 不是词典数据，
+  /// 多份 index.json 只认得到第一份，结果是一句含糊的「导入失败」。
+  static List<String> archivedDictionaryEntries(List<String> zipEntryNames) {
+    final List<String> indexRoots = <String>[
+      for (final String name in zipEntryNames)
+        if (name == 'index.json' || name.endsWith('/index.json')) name,
+    ];
+    return <String>[
+      for (final String name in zipEntryNames)
+        if (name.endsWith('.mdx') ||
+            name.endsWith('.dsl') ||
+            name.endsWith('.zip'))
+          name,
+      if (indexRoots.length > 1) ...indexRoots,
+    ];
+  }
+
+  /// BUG-2952：一包多典（见 [archivedDictionaryEntries]）里是否含有「本身不能直接
+  /// 喂给 native」的条目——内层 zip 或多份 index.json。这种包哪怕只有一本也必须先
+  /// 解开：native 不会递归进内层 zip。
+  @visibleForTesting
+  static bool isDictionaryBundle(List<String> archivedEntries) =>
+      archivedEntries.length > 1 ||
+      archivedEntries.any((String e) => e.endsWith('.zip'));
+
+  /// BUG-2952：native 导入失败时给用户看的原因。native 在「写盘时卷空间不足」
+  /// 时把稳定标记 `FUSHI_ERR_STORAGE_FULL` 放在错误首行（`importer.hpp`
+  /// `kStorageFullMarker`）——那种失败的原始文本是 iostream / errno 碎片
+  /// （`ios_base::clear: unspecified iostream_category error`），用户看了无从下手。
+  @visibleForTesting
+  static String nativeImportErrorMessage(String error) {
+    if (error.contains(kNativeStorageFullMarker)) {
+      return t.dict_import_storage_full;
+    }
+    return error.isNotEmpty ? error : t.import_failed;
+  }
+
+  /// 与 native `dictionary_importer::kStorageFullMarker` 逐字一致。
+  @visibleForTesting
+  static const String kNativeStorageFullMarker = 'FUSHI_ERR_STORAGE_FULL';
 
   DictionaryFormat detectFormat(File file) {
     final ext = path.extension(file.path).toLowerCase();
@@ -256,8 +295,7 @@ class DictionaryImportManager {
         _logImportResultSummary('dir:${directory.path}', result);
 
         if (!result.success) {
-          throw Exception(
-              result.error.isNotEmpty ? result.error : t.import_failed);
+          throw Exception(nativeImportErrorMessage(result.error));
         }
 
         final name = _sanitizeTitle(result.title);
@@ -346,6 +384,9 @@ class DictionaryImportManager {
     }
   }
 
+  /// 整合包内层 zip 递归解包的最大深度（外层不计）。
+  static const int _kMaxNestedBundleDepth = 4;
+
   /// BUG-1903：把一个装了多本词典的压缩包拆开、逐本导入。
   ///
   /// 解压保持原有目录层级：MDX 的样式表 / 资源（`.css` / `.mdd`）就躺在它自己那本
@@ -360,8 +401,24 @@ class DictionaryImportManager {
     required bool lowMemoryMode,
     VoidCallback? onMemoryError,
   }) async {
-    final Directory work =
-        Directory(path.join(_resourceDirectory.path, 'import_multi_temp'));
+    final String baseWork =
+        path.join(_resourceDirectory.path, 'import_multi_temp');
+    // BUG-2952：整合包里的内层 zip 自己也可能是一包多典，会递归回到这里。递归层
+    // 必须用外层工作目录**里面**的独立目录——共用同一个固定目录会在外层还在逐本
+    // 导入时把它整个删掉。外层 finally 删目录时连带清掉。
+    final bool nested = path.isWithin(baseWork, archive.path);
+    // 自包含 / 恶意深层嵌套的包会无限递归、一层层解压直到磁盘写满：限深，超限这一本
+    // 按失败处理（外层逐本循环照常汇总）。
+    if (nested &&
+        '.extracted'
+                .allMatches(path.relative(archive.path, from: baseWork))
+                .length >=
+            _kMaxNestedBundleDepth) {
+      throw StateError('Dictionary bundle nested too deeply: ${archive.path}');
+    }
+    final Directory work = nested
+        ? Directory('${archive.path}.extracted')
+        : Directory(baseWork);
     if (work.existsSync()) work.deleteSync(recursive: true);
     work.createSync(recursive: true);
     try {
@@ -372,9 +429,48 @@ class DictionaryImportManager {
       final List<File> dictionaries =
           work.listSync(recursive: true).whereType<File>().where((File f) {
         final String ext = path.extension(f.path).toLowerCase();
-        return ext == '.mdx' || ext == '.dsl';
-      }).toList()
-            ..sort((File a, File b) => a.path.compareTo(b.path));
+        return ext == '.mdx' || ext == '.dsl' || ext == '.zip';
+      }).toList();
+      // BUG-2952：多份 index.json 的整合包——每个带 index.json 的目录是一本
+      // Yomitan 散文件词典，打成临时 zip 后走同一条 [importFromFile]。只有一份
+      // index.json 且没有别的词典时不会走到这里（[isDictionaryBundle]）；只有
+      // 一份但旁边还有内层 zip / MDX 时它也是整合包里的一本，同样要导。
+      final List<Directory> yomitanRoots = work
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) =>
+              path.basename(f.path).toLowerCase() == 'index.json')
+          .map((File f) => f.parent)
+          .toList();
+      if (yomitanRoots.length > 1 || dictionaries.isNotEmpty) {
+        // 根目录本身就可能是一个 Yomitan 根（根上有 index.json、旁边还有内层 zip / MDX）：
+        // 打包时必须避开别的词典（内层 zip / MDX / MDD / DSL、嵌套的其它 Yomitan 根、
+        // 先打好的临时包与正在写的这份 zip 自己），否则整包重复进这一本的 media。
+        final Set<String> mddFiles = <String>{
+          for (final File f in work.listSync(recursive: true).whereType<File>())
+            if (path.extension(f.path).toLowerCase() == '.mdd') f.path,
+        };
+        for (int i = 0; i < yomitanRoots.length; i++) {
+          final String packed = path.join(work.path, '_bundle_dict_$i.zip');
+          final String root = yomitanRoots[i].path;
+          final Set<String> skipPaths = <String>{
+            ...mddFiles,
+            for (final File f in dictionaries) f.path,
+            for (final Directory d in yomitanRoots)
+              if (d.path != root) d.path,
+          };
+          await Isolate.run(
+            () => packDirectoryToZip(root, packed, skipPaths: skipPaths),
+          );
+          dictionaries.add(File(packed));
+        }
+      }
+      dictionaries.sort((File a, File b) => a.path.compareTo(b.path));
+      if (dictionaries.length > 1) {
+        progressNotifier.value =
+            t.dict_import_bundle_detected(n: dictionaries.length);
+        await Future<void>.delayed(Duration.zero);
+      }
 
       final List<DictionaryTaskFailure> failedNames =
           <DictionaryTaskFailure>[];
@@ -467,7 +563,7 @@ class DictionaryImportManager {
         path.extension(file.path).toLowerCase() == '.zip') {
       final List<String> archived =
           archivedDictionaryEntries(_readZipFileNames(file));
-      if (archived.length > 1) {
+      if (isDictionaryBundle(archived)) {
         await _importArchivedDictionaries(
           archive: file,
           progressNotifier: progressNotifier,
@@ -507,8 +603,7 @@ class DictionaryImportManager {
       _logImportResultSummary('file:${file.path}', result);
 
       if (!result.success) {
-        throw Exception(
-            result.error.isNotEmpty ? result.error : t.import_failed);
+        throw Exception(nativeImportErrorMessage(result.error));
       }
 
       final name = _sanitizeTitle(result.title);
@@ -734,8 +829,17 @@ class DictionaryImportManager {
   /// （TODO-082：避免大目录的同步读取+压缩卡死主 isolate）。暴露给测试以在 host
   /// 上验证打包正确性（无需 native FFI）。
   @visibleForTesting
-  static void packDirectoryToZip(String srcDirPath, String zipPath) {
+  static void packDirectoryToZip(
+    String srcDirPath,
+    String zipPath, {
+    Set<String> skipPaths = const <String>{},
+  }) {
     final Directory directory = Directory(srcDirPath);
+    // [skipPaths] 里的文件、以及落在其中某个目录下的文件一律不打进来；输出 zip 若就在
+    // 源目录里（整合包根即词典根），它自己也不能被打进自己。
+    bool skipped(String p) =>
+        path.equals(p, zipPath) ||
+        skipPaths.any((String s) => path.equals(p, s) || path.isWithin(s, p));
     // STORE（不压缩）+ 逐文件流式写盘：这个 zip 只是给 native 导入器当输入的
     // 临时容器，native 拿到后立刻 inflate——在 Dart 里 deflate 一遍纯属白干（几百
     // MB 的 MDX/MDD 目录要压好几秒）。以前还把整个目录读进内存组 Archive、再
@@ -747,7 +851,7 @@ class DictionaryImportManager {
     try {
       for (final FileSystemEntity entity
           in directory.listSync(recursive: true)) {
-        if (entity is File) {
+        if (entity is File && !skipped(entity.path)) {
           final String relativePath =
               path.relative(entity.path, from: directory.path);
           final InputFileStream fileStream = InputFileStream(entity.path);

@@ -189,6 +189,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -221,6 +223,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -251,6 +255,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -276,6 +282,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 
@@ -301,6 +309,8 @@ void main() {
       find.byType(ListView),
       const Offset(0, 120),
     );
+    // ensureVisible 的跳转要下一帧才落到布局上，先 settle 再点。
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.game_edit_save));
     await tester.pumpAndSettle();
 

@@ -21,7 +21,7 @@
 
 `startSystemBall` 参数：
 
-- `actions: List<String>` — 用户勾选的动作 id（桌面只会出现 `lookup` / `popup_lookup` / `clipboard`），按自上而下顺序。
+- `actions: List<String>` — 用户勾选的动作 id（桌面只会出现 `lookup` / `popup_lookup` / `clipboard` / `screen_ocr` / `sync`），按自上而下顺序。
 - `labels: Map<String, String>` — 按钮文案 / tooltip，键为动作 id 加 `open_app` / `close` / `ball`。
 - `iconImages: Map<String, Uint8List>` — 每颗按钮（含 `open_app` / `close`）的图标 PNG：正方形 66×66px（= 22 逻辑像素 × 3），前景色已按主题 `onSurface` 着色、背景透明。原生按当前 DPI 缩放到 22 DIP / pt 画在按钮正中。
 - `ballImage: Uint8List` — 球面 PNG（`assets/meta/icon.png` 原图字节）。
@@ -32,7 +32,7 @@
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
-| `systemBallAction` | `{id: String, anchor: [left, top, right, bottom]}` | 用户点了 `lookup` / `popup_lookup` / `clipboard` / `open_app`。`anchor` = 球在屏幕上的矩形，**物理像素、左上原点**（与 `global_lookup` 通道同一约定），供查词卡锚在球旁边；Dart 经 `GlobalLookupPhysicalPlacement`（物理像素通道）交给覆盖窗，**不能**当逻辑像素的 `anchorScreenRect` 再乘主窗 DPR。原生先收起菜单再报。 |
+| `systemBallAction` | `{id: String, anchor: [left, top, right, bottom]}` | 用户点了 `lookup` / `popup_lookup` / `clipboard` / `sync` / `open_app`。`anchor` = 球在屏幕上的矩形，**物理像素、左上原点**（与 `global_lookup` 通道同一约定），供查词卡锚在球旁边；Dart 经 `GlobalLookupPhysicalPlacement`（物理像素通道）交给覆盖窗，**不能**当逻辑像素的 `anchorScreenRect` 再乘主窗 DPR。原生先收起菜单再报。 |
 | `systemBallClosedByUser` | — | 用户点了 `close`：原生已自行销毁窗口，Dart 把「应用外显示」开关关掉。 |
 | `systemBallPositionChanged` | `{dock: 'left'|'right', fraction: double}` | 拖动松手吸附后报一次，Dart 落库。 |
 
@@ -64,8 +64,46 @@
 ## 设置
 
 - 「应用外显示」开关在 Android / Windows / macOS 可见（iOS 不提供）；桌面文案不提「显示在其他应用上层」权限。
-- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）。截屏识字 / 拍照查词桌面不提供。`lookup` 与 `popup_lookup` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口、全局查词不启动）；模块开关一变，宿主重新同步球的按钮。
+- 应用外按钮组在桌面可选：`lookup`（唤起主窗并打开查词页）、`popup_lookup`（查前台程序当前选中的文字 = 全局查词热键同一路径）、`clipboard`（查剪贴板文字，卡片锚在球旁）、`screen_ocr`（截屏识字，见下节）、`sync`（唤起主窗并跑一轮手动同步，结果在主窗里给）。拍照查词桌面不提供。`lookup`、`popup_lookup` 与 `screen_ocr` 只在「查词」模块开着时可选、也只在那时下发给原生（模块关着查词页没有入口、全局查词不启动）；模块开关一变，宿主重新同步球的按钮。
 - 位置偏好：`floating_ball.system_dock` / `floating_ball.system_y`（与应用内球的 `floating_ball.dock` / `floating_ball.y` 分开——两颗球可以同时在）。
+
+## 截屏识字（2026-10-04 补齐）
+
+用户 2026-10-04 指出：桌面应用外球没有截屏识字（Android / iOS 有）。桌面形态 = **冻结画面选字层**：点球上的「截屏识字」→ 截球所在的那块显示器 → 原生立刻用这张截图盖满该显示器（画面「定格」，提示识别中）→ Dart 跑系统 OCR → 原生在截图上画行框 → 用户点字，Dart 命中测试后用**全局查词覆盖窗**（与「应用外查词」同一张卡）锚在被点的字旁边弹卡。点行框外 / Esc / 右键 / 关闭钮退出，球随之恢复。
+
+### OCR
+
+- macOS：沿用 `app.fushi.reader/system_ocr`（`apple/FushiSystemOcr.swift`，Vision）。
+- Windows：本次补上 `app.fushi.reader/system_ocr` 的 Windows 实现（`Windows.Media.Ocr`，WRL/ABI，不用 C++/WinRT 投影——runner 以 `_HAS_EXCEPTIONS=0` 编译）。`isAvailable` = 本机有任何可用识别语言；`recognize` 按 `language` 建引擎，该语言识别器没装时报 `PlatformException(code: 'LANGUAGE_UNAVAILABLE')`，Dart 映射成 `SystemOcrUnavailableException('language_unavailable')` 并提示去「设置 → 时间和语言 → 语言」装日语（含 OCR 组件）。行框 = 该行所有词框的并集；CJK 词之间不插空格（Windows OCR 会把日文按词拆开）。识别在工作线程跑，结果投回平台线程回话。副作用（有意）：漫画「设备自带 OCR」引擎在 Windows 上也随之可用。
+
+### 通道补充（Dart → 原生）
+
+| 方法 | 参数 | 返回 | 说明 |
+|---|---|---|---|
+| `startScreenOcrCapture` | `{anchor: [l,t,r,b] \| null, labels: {recognizing, hint, close}, colors: {primary, surface, onSurface}}` | `{png: Uint8List, screen: [l,t,r,b]}`；失败 `{error: String}`（`permission_denied` / `capture_failed`） | 选 anchor 中心所在显示器（null 取光标所在）；先藏起球与按钮列（不销毁），等合成后截**整块显示器**（物理像素，PNG 宽高 = screen 宽高），然后立刻显示冻结层并显示 `labels.recognizing`。失败时球已恢复、不显示冻结层。 |
+| `updateScreenOcrOverlay` | `{lines: [[l,t,r,b], …], message: String?}` | — | `lines` 是截图像素坐标；画行框（primary 描边 + 12% 填充）。`message` 非空时替换顶部提示文字（识别失败 / 没识别到字 / 语言没装），为 null 时显示 `labels.hint`。 |
+| `stopScreenOcr` | — | — | 关冻结层、恢复球。Dart 主动关不回调。 |
+
+### 通道补充（原生 → Dart）
+
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `screenOcrTap` | `{x, y}` | 冻结层上左键点下（不含关闭钮）：截图像素坐标（= 相对 screen 左上的物理像素）。 |
+| `screenOcrDismissed` | — | Esc / 右键 / 关闭钮：原生已关层、已恢复球。 |
+
+坐标约定同上文：物理像素、左上原点（macOS 按 `backingScaleFactor` 与 AppKit 左下原点换算，同 `GlobalLookupOverlay.swift`）。
+
+### 冻结层窗口
+
+- 必须在**查词卡之下**：卡在冻结层之上弹出、点卡外时卡自己收起，冻结层同时收到那一记点击（可能就是查下一个字）。
+- Windows：`WS_POPUP`，`WS_EX_TOPMOST | WS_EX_TOOLWINDOW`，覆盖显示器整块（含任务栏）；显示时取一次前台（为了收 Esc——点球是本进程收到的最后一次输入，`SetForegroundWindow` 允许），之后 `WM_MOUSEACTIVATE` 回 `MA_NOACTIVATE`，点击不改 Z 序（查词卡 `HWND_TOPMOST` 后到者在上）。类名 `FushiScreenOcrWindow`，标题不得是 "Fushi"。
+- macOS：`NSPanel` 无边框，level `.statusBar`（卡是 `.popUpMenu`，在其上），`canBecomeKey` 以收 Esc，`collectionBehavior` 同球（含 `.fullScreenAuxiliary`）。截屏：macOS 14+ 用 ScreenCaptureKit `SCScreenshotManager`（只排除球的面板，不排除主窗），13.x 回落 `CGDisplayCreateImage`；没有「屏幕录制」权限时 `CGRequestScreenCaptureAccess()` 并返回 `permission_denied`，Dart 唤起主窗提示。
+
+### Dart 侧
+
+- `screen_ocr` 在桌面应用外球上可选，条件同 `popup_lookup`（查词模块开着：结果要用全局查词卡）。拍照查词桌面仍不提供。
+- 点字：`screenOcrHitTest`（scale 1）→ 查 `line.text` 从被点字起的后缀、`sentence = line.text`，`GlobalLookupPhysicalPlacement(anchorScreenRect: 字框 + screen 左上)`。点在行外 → `stopScreenOcr` 并收起查词卡。
+- 开始前先收起已开的查词卡（否则它会被截进图里）。
 
 ## 验证记录（2026-09-30）
 

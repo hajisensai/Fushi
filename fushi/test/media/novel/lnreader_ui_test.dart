@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
@@ -125,16 +126,12 @@ void main() {
     expect(find.textContaining(t.novel_store_builtin_label), findsOneWidget);
     expect(find.byTooltip(t.mihon_store_remove), findsNothing);
     expect(find.byTooltip(t.mihon_store_edit), findsNothing);
-    expect(
-      find.byWidgetPredicate(
-        (Widget w) => w is FushiIconButton && w.label == t.mihon_store_add,
-      ),
-      findsOneWidget,
-    );
+    // 「添加仓库」是仓库页顶部的主操作按钮。
+    expect(find.text(t.mihon_store_add), findsOneWidget);
     expect(find.byType(MangaExtensionManagementTile), findsNothing);
   });
 
-  testWidgets('扩展段：共享扩展行 + 已装排前 + 有更新显示版本跳变 + 语言筛选生效', (
+  testWidgets('扩展段：共享扩展行 + 无下载量时按名字排 + 有更新显示版本跳变 + 语言筛选生效', (
     WidgetTester tester,
   ) async {
     await pumpSlivers(tester, <Widget>[
@@ -147,9 +144,16 @@ void main() {
     final Finder tiles = find.byType(MangaExtensionManagementTile);
     expect(tiles, findsNWidgets(3));
     expect(
-      tester.widget<MangaExtensionManagementTile>(tiles.first).title,
-      'syosetu',
-      reason: '已装的排在目录最前。',
+      tester
+          .widgetList<MangaExtensionManagementTile>(tiles)
+          .map((MangaExtensionManagementTile tile) => tile.title)
+          .toList(),
+      <String>['kakuyomu', 'royalroad', 'syosetu'],
+      reason: '与漫画 / 视频同口径：组内按下载量排，没有数据的同档按名字排。',
+    );
+    expect(
+      find.text(t.mihon_extension_download_count_unknown),
+      findsNWidgets(3),
     );
     expect(find.text('日本語 · 1.0.0 → 1.2.0 · syosetu.example'), findsOneWidget);
     expect(find.text(t.mihon_extension_update), findsOneWidget);
@@ -210,6 +214,70 @@ void main() {
       findsNothing,
       reason: '一键更新与漫画 / 视频一样放在筛选区，不在顶部动作行',
     );
+  });
+
+  testWidgets('扩展段：下载量排行 + 行内下载量 + 最低下载量筛选 + 一键更新先确认', (
+    WidgetTester tester,
+  ) async {
+    LnReaderRepoPlugin counted(String id, int? downloads) =>
+        repoPlugin(id, 'English').withDownloadCount(downloads);
+    manager.debugSetAvailable(<LnReaderRepoPlugin>[
+      counted('cold', 3),
+      counted('unknown', null),
+      counted('hot', 1500),
+      counted('warm', 80),
+      repoPlugin('syosetu', '日本語', version: '1.2.0').withDownloadCount(60),
+    ]);
+    await pumpSlivers(tester, <Widget>[
+      LnReaderExtensionsSection(
+        manager: manager,
+        showStores: false,
+        showCatalog: true,
+      ),
+    ]);
+    List<String> titles() => tester
+        .widgetList<MangaExtensionManagementTile>(
+          find.byType(MangaExtensionManagementTile),
+        )
+        .map((MangaExtensionManagementTile tile) => tile.title)
+        .toList();
+    expect(titles(), <String>['hot', 'warm', 'syosetu', 'cold', 'unknown']);
+    expect(
+      find.text(t.mihon_extension_download_count(count: '1.5k')),
+      findsOneWidget,
+    );
+    expect(find.text(t.mihon_extension_download_count_unknown), findsOneWidget);
+
+    // 与漫画 / 视频同一个动作行：下载量门槛 + 批量安装 + 一键更新。
+    expect(find.byType(ExtensionCatalogActions), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('novel_extension_min_downloads')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .byKey(const ValueKey<String>('novel_extension_min_downloads_50'))
+          .last,
+    );
+    await tester.pumpAndSettle();
+    expect(titles(), <String>[
+      'hot',
+      'warm',
+      'syosetu',
+    ], reason: '设了门槛时没有数据的一律排除');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('novel_extension_update_all')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.mihon_extension_update_all_confirm(count: 1)),
+      findsOneWidget,
+      reason: '一键更新与漫画 / 视频一样先弹确认框，不再直接开装',
+    );
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(runtime.calls, isEmpty);
   });
 
   test('buildLnReaderGroupedRows：按仓库表顺序分组，孤儿仓库兜底，收起只留表头', () {

@@ -1144,7 +1144,9 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
     executablePath,
   );
   final String lowerBasename = basename.toLowerCase();
-  if (lowerBasename == 'manosaba.exe' || lowerBasename == 'siglusengine.exe') {
+  // SiglusEngine.exe 是引擎本体的发行名（不是某一款游戏），按名认可；Unity 一律走下面的
+  // 目录结构判据，不按单个游戏 exe 名开。
+  if (lowerBasename == 'siglusengine.exe') {
     return true;
   }
 
@@ -1526,7 +1528,12 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// 最近一次 [start] 失败的结构化诊断；成功后为 [GalHookInjectorFailure.none]。
   GalHookInjectorDiagnostics get lastFailure => _lastFailure;
 
-  bool _japaneseLocaleApplied = false;
+  bool _japaneseLocaleRequested = false;
+
+  /// 本局命令行是否带了 `--japanese-locale`——这是**请求**，不是结果。injector 拿不到
+  /// Locale Emulator 运行时（x64 helper 不随包）或 `LeCreateProcess` 失败时会退回普通
+  /// CreateProcess，游戏照样起来，只是没转区。
+  bool get japaneseLocaleRequested => _japaneseLocaleRequested;
 
   /// 本局**实际**是否给游戏套了日文区域（CP932），而不是用户选了哪个档位。
   ///
@@ -1538,13 +1545,22 @@ class EngineHookGalAudioSource implements GalAudioSource {
   /// [resolveJapaneseLocale] 的注释已经论证过 `auto` 不可能总判对、真正兜底的是用户
   /// 手动选 [GalJapaneseLocaleMode.off]。可兜底的前提是用户够得着：先得知道本局到底
   /// 转没转。所以这个事实必须离开本类，一路走到会话状态与诊断里。
-  bool get japaneseLocaleApplied => _japaneseLocaleApplied;
+  ///
+  /// 所以它只认 injector 的回报（`LAUNCH … locale=1`），不认命令行（BUG-2891）：
+  /// 请求了却退回普通启动时，把请求当事实报「已转区」，用户看着乱码的界面会被引向
+  /// 别处排查。还没收到 LAUNCH 行（含进程根本没建起来）时同样为 false。
+  bool get japaneseLocaleApplied =>
+      _japaneseLocaleRequested && _launchObservation?.localeLaunch == true;
+
+  /// 请求了转区、injector 已回报进程建好、却没走 Locale Emulator。
+  bool get _japaneseLocaleFellBack =>
+      _japaneseLocaleRequested && _launchObservation?.localeLaunch == false;
 
   GalJapaneseLocaleVerdict? _japaneseLocaleVerdict;
 
   /// `auto` 档本局的判定结论与证据；attach / `on` / `off` 不判定，为 null。
   ///
-  /// 与 [japaneseLocaleApplied] 在 [start] 的同一处赋值：命令行里的 `--japanese-locale`
+  /// 与 [japaneseLocaleRequested] 在 [start] 的同一处赋值：命令行里的 `--japanese-locale`
   /// 是按这个结论算出来的，会话卡上列的「判据」必须就是它，不能另算一份。
   GalJapaneseLocaleVerdict? get japaneseLocaleVerdict => _japaneseLocaleVerdict;
 
@@ -1552,8 +1568,11 @@ class EngineHookGalAudioSource implements GalAudioSource {
 
   /// `auto` 档判定后没转区的原因（语义门 / 工程门）；转了、或不是 `auto`，为 null。
   /// 与 [japaneseLocaleVerdict] 同处赋值、同处复位。
+  /// 请求了却落空时（任何档位）为 [GalJapaneseLocaleSkipReason.runtimeUnavailable]。
   GalJapaneseLocaleSkipReason? get japaneseLocaleSkipReason =>
-      _japaneseLocaleSkipReason;
+      _japaneseLocaleFellBack
+      ? GalJapaneseLocaleSkipReason.runtimeUnavailable
+      : _japaneseLocaleSkipReason;
 
   /// 探测器抛了也只是「没答上来」：结论 unknown ⇒ 不转区，启动照常。
   Future<GalJapaneseLocaleVerdict> _judgeJapaneseLocaleNeed(String exe) async {
@@ -1850,7 +1869,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     _readyFormat = null;
     _launchedPid = 0;
     _launchObservation = null;
-    _japaneseLocaleApplied = false;
+    _japaneseLocaleRequested = false;
     _japaneseLocaleVerdict = null;
     _japaneseLocaleSkipReason = null;
     _diagnosticsBuffer.clear();
@@ -1917,7 +1936,7 @@ class EngineHookGalAudioSource implements GalAudioSource {
     );
     // 在传给 injector 的同一处记账：命令行里的 `--japanese-locale` 与这三个字段必须同源，
     // 否则「诊断说没转区、进程其实转了」这种分叉比不诊断更糟。
-    _japaneseLocaleApplied = japaneseLocale;
+    _japaneseLocaleRequested = japaneseLocale;
     _japaneseLocaleVerdict = verdict;
     _japaneseLocaleSkipReason = verdict == null || japaneseLocale
         ? null
@@ -2988,6 +3007,11 @@ class GalHookedLine {
       5 => 'sgre',
       6 => 'smash',
       7 => 'bgi',
+      8 => 'artemis',
+      9 => 'yuris',
+      10 => 'fvp',
+      11 => 'kogado',
+      15 => 'malie',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -3005,6 +3029,11 @@ class GalHookedLine {
             5 => 'SGRE exact',
             6 => 'smash exact',
             7 => 'BGI exact',
+            8 => 'Artemis exact',
+            9 => 'YU-RIS exact',
+            10 => 'FVP exact',
+            11 => 'Kogado Hy exact',
+            15 => 'Malie exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

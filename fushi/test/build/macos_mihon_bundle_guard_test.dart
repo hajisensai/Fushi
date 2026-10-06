@@ -27,7 +27,11 @@ void main() {
     expect(script, contains('corretto.aws/downloads/resources'));
     expect(script, contains('x64_archive_sha256='));
     expect(script, contains('arm64_archive_sha256='));
-    expect(script, contains('shasum -a 256 --check'));
+    // 按宿主选工具：macOS 14+ 的 /sbin/sha256sum 是 BSD 版、不认 GNU 的
+    // --status，按「PATH 里有没有 sha256sum」探测会在 macOS 上全判失败。
+    expect(script, contains('Darwin) sha256_tool=(shasum -a 256)'));
+    expect(script, contains(r'"${sha256_tool[@]}" --check'));
+    expect(script, isNot(contains('--check --status')));
     expect(script, contains('--continue-at -'));
   });
 

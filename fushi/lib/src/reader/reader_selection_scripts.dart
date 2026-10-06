@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:ui';
 
+import 'package:fushi/src/reader/reader_settings.dart';
+
 /// TODO-393：阅读器 DOM 里「当前查词句」前后一条上下文句的解析结果。
 /// [normOffset]/[normLength] 是整书归一化偏移（有 [window.fushiReader] 时才有值），
 /// 供有声书把这句映射到音频区间；纯阅读时为 null（只合文本）。
@@ -62,16 +64,22 @@ class ReaderSelectionScripts {
   /// 单独一个 IIFE、只挂 document 上的 touch 监听，与图片长按（`onImageLongPress`，
   /// 550ms，仅命中图片才 arm）按命中元素天然互斥；多指触摸（缩放）直接不 arm。
   ///
-  /// BUG-长按选择不灵敏：[delayMs] 原为 400、[slop] 原为 10，两个都偏严。
-  /// * 400ms：同一个 app 的查词弹窗长按已因「等待时间太长」从 500 调到 250
-  ///   （BUG-536），阅读器这条却一直没跟。280ms 仍远高于轻点（轻点松手 timer 还没
-  ///   fire 就被 touchend 清掉），也仍早于 WebView 自己的原生长按（~500ms）。
-  /// * 10px：是全仓最紧的触摸容差——tap 判据 [ReaderSettings.tapSlopPx] 是 10 但只
-  ///   需维持到松手，连续模式边界手势是 12px，翻页是 24px，而这里要求手指在整整
-  ///   一个长按时限内**始终**停在 10px 半径内，实际上比单击还难触发。放宽到 16px，
-  ///   仍小于翻页距离阈值（24px），所以「想滑动翻页」的手势照样能在 arm 阶段被
-  ///   slop 取消，两者不会互抢。
-  static String longPressDragGestureScript({int delayMs = 280, int slop = 16}) {
+  /// BUG-2919（长按抢走翻页滑动）：长按与滑动翻页是两个并行识别器，同一次触摸
+  /// 两者都可能接受——长按判据是「[delayMs] 内位移不超过 [slop]」，翻页判据是
+  /// 「松手时位移 ≥ 24px」（**不限时**，慢滑也翻页）。重叠区 = 手指在 [delayMs]
+  /// 内走不出 [slop]：先按住停顿一下再滑、或滑得慢于 slop/delay，计时器先 fire，
+  /// 置 `__fushiTextSelectDragActive` 后翻页让路，于是「翻页变成选中」。BUG-2563
+  /// 把参数从 400/10 放宽到 280/16，重叠速度从 25px/s 抬到 57px/s、停顿窗口缩到
+  /// 280ms（比 Android 平台长按时限 `ViewConfiguration` 400ms 还短），用户翻页
+  /// 时的自然停顿就落进去了。所以：
+  /// * [delayMs] 取 Android 平台长按时限 400ms——用户对「长按」的肌肉记忆就是它。
+  /// * [slop] 取单击判据同一个真值 [ReaderSettings.tapSlopPx]：「没动」只有一个
+  ///   定义，长按不该比单击更宽容地吞掉位移。
+  /// BUG-2563「长按不灵敏」的真根因是命中判定（已另行修复，不受此处影响）。
+  static String longPressDragGestureScript({
+    int delayMs = 400,
+    int slop = ReaderSettings.tapSlopPx,
+  }) {
     final int slopSq = slop * slop;
     return '''
 (function() {
@@ -1227,7 +1235,7 @@ window.fushiSelection = {
       return null;
     }
     this.clearSelection();
-    return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y);
+    return this.selectFromPosition(hit.node, hit.offset, maxLength, x, y, fromHover);
   },
   // Build the dictionary selection starting at (node, offset): expand a
   // non-Japanese hit left to its token start, scan forward up to maxLength
@@ -1236,7 +1244,7 @@ window.fushiSelection = {
   // caret path. x/y are optional — the caret path omits them, in which case the
   // selection rect falls back to the first character's bounding box. The caller
   // is responsible for clearing any prior selection first.
-  selectFromPosition: function(node, offset, maxLength, x, y) {
+  selectFromPosition: function(node, offset, maxLength, x, y, fromHover) {
     var startNode = node;
     var startOffset = offset;
     var hitContent = startNode.textContent;
@@ -1286,7 +1294,7 @@ window.fushiSelection = {
     }
     if (!text) return null;
     this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
-    return this.fireTextSelected(x, y);
+    return this.fireTextSelected(x, y, fromHover);
   },
   // Build the onTextSelected/onSelectionMenu payload for the current
   // this.selection. Extracted verbatim from selectFromPosition's tail so the
@@ -1401,9 +1409,13 @@ window.fushiSelection = {
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and
   // the caret/keyboard path). Goes straight to the dictionary/mining popup.
-  fireTextSelected: function(x, y) {
+  // fromHover tells the host this lookup came from a pointer sweep (Shift-hover /
+  // hover lookup), not an explicit tap — the host skips paid per-lookup work
+  // (AI headword pick) for those; see ReaderSelectionData.fromHover.
+  fireTextSelected: function(x, y, fromHover) {
     var payload = this.buildSelectionPayload(x, y);
     if (!payload) return null;
+    payload.fromHover = !!fromHover;
     window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
     return payload.text;
   },

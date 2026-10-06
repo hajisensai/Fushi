@@ -19,6 +19,8 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -101,7 +103,8 @@ class _MangaOnlineSourcesViewState
         _aidokuError = null;
       });
       unawaited(_refreshAidokuRepositories());
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('Aidoku.repositories.load', error, stack);
       if (!mounted) return;
       setState(() => _aidokuError = error);
     }
@@ -164,7 +167,7 @@ class _MangaOnlineSourcesViewState
     final bool acceptedRisk =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text(t.aidoku_extension_import),
             content: Text(t.aidoku_extension_warning),
             actions: <Widget>[
@@ -209,7 +212,7 @@ class _MangaOnlineSourcesViewState
       final bool confirmed =
           await showAppDialog<bool>(
             context: context,
-            builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
               title: Text(t.aidoku_extension_confirm_title),
               content: Text(
                 '${info['name']}\n${info['id']}\n'
@@ -249,8 +252,8 @@ class _MangaOnlineSourcesViewState
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('Aidoku.install.local', error, stack);
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -293,8 +296,8 @@ class _MangaOnlineSourcesViewState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -321,8 +324,8 @@ class _MangaOnlineSourcesViewState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -354,7 +357,8 @@ class _MangaOnlineSourcesViewState
             ),
           );
       if (mounted) setState(() => _aidokuIndexes = indexes);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('Aidoku.repositories.fetch', error, stack);
       if (mounted) setState(() => _aidokuError = error);
     } finally {
       if (mounted) setState(() => _aidokuBusy = false);
@@ -391,7 +395,7 @@ class _MangaOnlineSourcesViewState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text(t.aidoku_repository_remove),
             content: Text('${repository.name}\n${repository.indexUrl}'),
             actions: <Widget>[
@@ -427,7 +431,10 @@ class _MangaOnlineSourcesViewState
       }
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -436,7 +443,7 @@ class _MangaOnlineSourcesViewState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text(t.aidoku_extension_remove),
             content: Text(package.name),
             actions: <Widget>[
@@ -463,7 +470,10 @@ class _MangaOnlineSourcesViewState
       if (mounted) setState(() => _aidokuPackages = packages);
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -480,7 +490,10 @@ class _MangaOnlineSourcesViewState
       if (mounted) setState(() => _aidokuPackages = packages);
     } on Object catch (error) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -490,7 +503,7 @@ class _MangaOnlineSourcesViewState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text('${t.aidoku_repository_install}: ${source.name}'),
             content: Text(t.aidoku_extension_warning),
             actions: <Widget>[
@@ -558,8 +571,8 @@ class _MangaOnlineSourcesViewState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _aidokuError = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (temporaryDirectory != null && await temporaryDirectory.exists()) {
@@ -572,7 +585,7 @@ class _MangaOnlineSourcesViewState
   Widget _sectionTitle(String title) =>
       Text(title, style: Theme.of(context).textTheme.titleLarge);
 
-  /// 扩展宿主不可用时统一的占位（iOS / Linux）。结构不变，只是这一节没内容。
+  /// 扩展宿主不可用时统一的占位（iOS）。结构不变，只是这一节没内容。
   Widget _unavailableNote() => Padding(
     padding: const EdgeInsets.all(24),
     child: Text(t.mihon_runtime_unavailable, textAlign: TextAlign.center),
@@ -616,24 +629,24 @@ class _MangaOnlineSourcesViewState
             margin: EdgeInsets.only(bottom: tokens.spacing.gap),
             padding: EdgeInsets.zero,
             child: FushiListItem(
-              leading: const Icon(Icons.cloud_outlined),
+              leading: const FushiIcon(Icons.cloud_outlined),
               title: Text(repository.name),
               subtitle: Text(mangaSourceHostLabel(repository.indexUrl)),
               trailing: Wrap(
                 children: <Widget>[
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.aidoku_repository_browse,
                     onPressed: _aidokuBusy
                         ? null
                         : () => unawaited(_browseAidokuRepository(repository)),
-                    icon: const Icon(Icons.view_list_outlined),
+                    icon: const FushiIcon(Icons.view_list_outlined),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.aidoku_repository_remove,
                     onPressed: _aidokuBusy
                         ? null
                         : () => unawaited(_removeAidokuRepository(repository)),
-                    icon: const Icon(Icons.delete_outline),
+                    icon: const FushiIcon(Icons.delete_outline),
                   ),
                 ],
               ),
@@ -648,13 +661,13 @@ class _MangaOnlineSourcesViewState
     if (_aidokuBusy || (_aidokuPackages == null && _aidokuError == null))
       const Padding(
         padding: EdgeInsets.only(top: 8),
-        child: LinearProgressIndicator(),
+        child: FushiLinearProgressIndicator(),
       ),
     if (_aidokuError != null)
       Padding(
         padding: const EdgeInsets.only(top: 8),
         child: Text(
-          '$_aidokuError',
+          describeOnlineSourceError(_aidokuError!),
           style: TextStyle(color: Theme.of(context).colorScheme.error),
         ),
       ),
@@ -789,7 +802,9 @@ class _MangaOnlineSourcesViewState
                     ? t.aidoku_repository_install
                     : update
                     ? t.aidoku_repository_update
-                    : t.aidoku_extension_remove,
+                    // 2026-10 体验优化：行内按钮与 Mihon / LNReader 同叫「卸载」，
+                    // 长文案「移除 Aidoku 扩展」只留给确认框标题。
+                    : t.mihon_extension_uninstall,
                 onPrimary: _aidokuInstallingSourceId != null
                     ? null
                     : package == null || update
@@ -811,7 +826,7 @@ class _MangaOnlineSourcesViewState
             enabled: package.enabled,
             onEnabledChanged: (bool value) =>
                 unawaited(_setAidokuEnabled(package, value)),
-            primaryLabel: t.aidoku_extension_remove,
+            primaryLabel: t.mihon_extension_uninstall,
             onPrimary: () => unawaited(_removeAidoku(package)),
           ),
         if (available.isEmpty && installed.isEmpty && !_aidokuBusy)
@@ -935,7 +950,7 @@ class _AidokuRepositoryUrlDialogState
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => FushiAlertDialog(
     title: Text(t.aidoku_repository_add),
     content: SizedBox(
       width: 560,
@@ -945,14 +960,14 @@ class _AidokuRepositoryUrlDialogState
         children: <Widget>[
           Text(t.aidoku_repository_hint),
           const SizedBox(height: 12),
-          TextField(
+          FushiTextFieldControl(
             key: const ValueKey<String>('aidoku_repository_url'),
             controller: _controller,
             autofocus: true,
             keyboardType: TextInputType.url,
             decoration: InputDecoration(
               labelText: t.aidoku_repository_url,
-              prefixIcon: const Icon(Icons.link),
+              prefixIcon: const FushiIcon(Icons.link),
             ),
             onSubmitted: (_) => _submit(),
           ),
@@ -1026,7 +1041,7 @@ class _AidokuRepositorySourcesDialogState
     final bool confirmed =
         await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+          builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
             title: Text('${t.aidoku_repository_install}: ${source.name}'),
             content: Text(t.aidoku_extension_warning),
             actions: <Widget>[
@@ -1092,8 +1107,8 @@ class _AidokuRepositorySourcesDialogState
         stack,
       );
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _error = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     } finally {
       if (temporaryDirectory != null && await temporaryDirectory.exists()) {
@@ -1112,8 +1127,8 @@ class _AidokuRepositorySourcesDialogState
       await widget.onInstalled();
     } on Object catch (error) {
       if (mounted) {
+        // 2026-10 体验优化：错误已在行内画出，不再叠同文 toast。
         setState(() => _error = error);
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
       }
     }
   }
@@ -1121,7 +1136,7 @@ class _AidokuRepositorySourcesDialogState
   @override
   Widget build(BuildContext context) {
     final List<AidokuRepositorySource> sources = _visibleSources;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text('${widget.index.name} · ${t.aidoku_repository_sources}'),
       content: SizedBox(
         width: 760,
@@ -1129,11 +1144,11 @@ class _AidokuRepositorySourcesDialogState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            TextField(
+            FushiTextFieldControl(
               key: const ValueKey<String>('aidoku_repository_search'),
               decoration: InputDecoration(
                 labelText: t.aidoku_repository_search,
-                prefixIcon: const Icon(Icons.search),
+                prefixIcon: const FushiIcon(Icons.search),
               ),
               onChanged: (String value) => setState(() => _query = value),
             ),
@@ -1141,7 +1156,7 @@ class _AidokuRepositorySourcesDialogState
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '$_error',
+                  describeOnlineSourceError(_error!),
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ),
@@ -1199,7 +1214,7 @@ class _AidokuRepositorySourcesDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _installingSourceId == null
               ? () => Navigator.pop(context)
               : null,

@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "Seguir o sistema",
   "opt_extensionTheme_option_light": "Claro",
   "opt_extensionTheme_option_dark": "Escuro",
+  "opt_page_subtitle": "As configurações ficam salvas apenas neste navegador; a maioria das mudanças vale na hora.",
+  "opt_section_nav_aria_label": "Seções das configurações",
+  "opt_connection_section_heading": "Conexão e diagnóstico",
   "opt_palette_title": "Tema de cores",
   "opt_palette_desc": "O mesmo modelo de tema do Fushi: seguir as cores atuais do Fushi, uma predefinição ou um tema personalizado (uma cor de destaque deriva as paletas clara e escura). Vale para a página de configurações, o painel lateral de legendas, o menu da barra, a gaveta de legendas, a caixa de legendas sobre o vídeo e o pop-up de consulta.",
   "opt_extensionBrightness_title": "Claro / escuro",
@@ -297,7 +300,6 @@
   "ctx_confirm": "Criar cartão",
   "ctx_cancel": "Cancelar",
   "gen_youtube_queue_empty": "A fila do YouTube está vazia: ative as legendas → Shift+passe o mouse sobre uma palavra → pressione “minerar” no popup para enfileirar, depois gere",
-  "gen_ext_updated_refresh": "A extensão foi atualizada; recarregue a página (F5) e tente de novo",
   "gen_progress": "Gerando… {done}/{total}",
   "gen_partial_anki_unconfigured": "Gerado parcialmente: o Anki não está configurado — configure o Anki no Fushi e tente de novo (processados {done}, mantidos {kept})",
   "gen_partial_anki_unconfigured_kept": "Gerado parcialmente: o Anki não está configurado — configure o Anki no Fushi e tente de novo (mantidos {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "Os cartões na fila vêm de sites sem geração em lote; remova-os um por um ou limpe a fila",
   "ap_gen_start_record_n": "Começar a gravar e gerar ({n} cartões)",
   "ap_gen_start_n": "Começar a gerar ({n} cartões)",
-  "ap_gen_other_youtube_hint": "Mais {n} no YouTube — vá para uma página do YouTube para gerá-los",
+  "ap_gen_other_youtube_hint": "Mais {n} do YouTube — abra este menu em qualquer página que não seja a Netflix para gerá-los",
   "ap_gen_other_netflix_hint": "Mais {n} na Netflix — vá para uma página de reprodução da Netflix para gerá-los",
   "ap_gen_site_count": "{site} {n} cartões",
   "ap_gen_wrong_site_hint": "Pendentes: {pending} — clique em um item da fila para ir à página do vídeo e depois gere",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "Limpar tudo?",
   "ap_queue_open_video_hint": "Clique para abrir a página do vídeo",
   "ap_queue_remove_title": "Remover da fila",
-  "np_fushi_nested_close_aria_label": "Fechar esta camada de consulta",
   "theme_palette_app": "Seguir o Fushi",
   "theme_palette_app_pending": "As cores do Fushi chegam na primeira consulta com o Fushi aberto",
   "theme_preset_fushi": "Verde Fushi",
@@ -426,5 +427,5 @@
   "pc_style_more": "Todas as configurações",
   "pc_hint_site_track": "Este vídeo está reproduzindo a faixa de legendas do próprio site, então a camada do Fushi fica oculta. Toque para mostrar as legendas do Fushi no lugar.",
   "opt_playerControls_title": "Botão de legendas dentro do player",
-  "opt_playerControls_desc": "Adiciona um botão do Fushi à própria barra de controles do player (YouTube e Netflix; em outros sites aparece um botão redondo no canto inferior direito do vídeo enquanto o ponteiro está sobre ele). O menu muda as mesmas configurações desta página — legendas do Fushi, substituir as do site, ocultá-las, o ajuste de tempo e a aparência — sem sair do vídeo."
+  "opt_playerControls_desc": "Adiciona um botão do Fushi à própria barra de controles do player (YouTube e Netflix; em outros sites aparece um botão redondo no canto superior direito do vídeo enquanto o ponteiro está sobre ele). O menu muda as mesmas configurações desta página — legendas do Fushi, substituir as do site, ocultá-las, o ajuste de tempo e a aparência — sem sair do vídeo."
 }

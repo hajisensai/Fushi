@@ -236,5 +236,19 @@ void main() {
         'fushi-manga://manga.local/img/vol%201/p%2001.jpg',
       );
     });
+
+    test('页会话代次进查询串：换章后同名页 URL 不同，拦截器解析不受影响', () {
+      final String chapter1 =
+          MangaFushiPage.mangaImageUrl('images/page-000001.png', version: 1);
+      final String chapter2 =
+          MangaFushiPage.mangaImageUrl('images/page-000001.png', version: 2);
+      expect(chapter1, 'https://manga.local/img/page-000001.png?v=1');
+      expect(chapter2, isNot(chapter1));
+      expect(Uri.parse(chapter2).path, '/img/page-000001.png');
+      expect(
+          MangaFushiPage.decodeMangaImagePath(
+              Uri.parse(chapter2).path.substring('/img/'.length)),
+          'page-000001.png');
+    });
   });
 }

@@ -4,6 +4,7 @@ import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 会话编辑弹窗（用户 2026-09-10：「里面的每个会话做成可编辑，日期和字符都能编辑」）。
 ///
@@ -28,7 +29,7 @@ String _fieldText(WidgetTester tester, String key) => tester
 Finder get _saveButton => find.widgetWithText(FilledButton, t.dialog_save);
 
 bool _saveEnabled(WidgetTester tester) =>
-    tester.widget<FilledButton>(_saveButton).onPressed != null;
+    tester.widget<FilledButton>(glassUnwrap<FilledButton>(_saveButton)).onPressed != null;
 
 /// 直接把弹窗挂在 Scaffold 上（只看渲染 / 校验，不点保存——那要 Navigator）。
 Future<void> _pumpDialog(

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show SettingsRowIconProbe, settingsRowHasLeadingIcon;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 
@@ -238,7 +240,11 @@ class SettingsSearchReveal {
 }
 
 /// Real row anchor for both schema controls and custom configuration forms.
-class SettingsSearchTarget extends StatelessWidget {
+///
+/// 不改变行外观，所以实现 [SettingsRowIconProbe]：分组判 Apple 分隔线缩进时
+/// 看穿本落点包装。
+class SettingsSearchTarget extends StatelessWidget
+    implements SettingsRowIconProbe {
   const SettingsSearchTarget({
     super.key,
     required this.id,
@@ -247,6 +253,9 @@ class SettingsSearchTarget extends StatelessWidget {
 
   final String id;
   final Widget child;
+
+  @override
+  bool get settingsRowHasIcon => settingsRowHasLeadingIcon(child);
 
   @override
   Widget build(BuildContext context) {

@@ -95,7 +95,11 @@ List<String> buildSynchronizedVideoClipArgs({
     ...synchronizedClipVideoArgs(format),
     ...synchronizedClipAudioArgs(format, audioChannels: audioChannels),
     '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1',
-    '-t', duration, '-shortest',
+    // No `-shortest`: every input is already bounded by its own `-t`, and on
+    // FFmpeg 6.0 (Android / iOS ffmpeg-kit) its sync queue swallows every frame of
+    // a raw ADTS input — the trimmed sentence `.aac` — so the clip came out with a
+    // declared but empty audio track, exit code 0 (#1951; fixed upstream in 6.1).
+    '-t', duration,
     if (format == MiningClipFormat.mp4H264)
       ...buildClipFaststartArgs(outputPath),
     '-f', format.fileExtension, outputPath,
@@ -339,15 +343,19 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
           ),
           timeout,
         );
-    if (result.isSuccess && output.existsSync() && output.lengthSync() > 0) {
-      return VideoClipExportResult.success(outputPath);
+    if (!result.isSuccess) {
+      _deletePartial(output);
+      return VideoClipExportResult.failure(
+        VideoClipExportFailure.ffmpegFailed,
+        detail: result.failureSummary,
+      );
     }
+    final String? missing = _missingSynchronizedOutput(output, result.output);
+    if (missing == null) return VideoClipExportResult.success(outputPath);
     _deletePartial(output);
     return VideoClipExportResult.failure(
-      result.isSuccess
-          ? VideoClipExportFailure.outputMissing
-          : VideoClipExportFailure.ffmpegFailed,
-      detail: result.failureSummary,
+      VideoClipExportFailure.outputMissing,
+      detail: '$missing; ${result.failureSummary}',
     );
   } on ProcessException catch (error) {
     _deletePartial(output);
@@ -366,6 +374,48 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
 
 bool _isRemote(String path) =>
     path.startsWith('https://') || path.startsWith('http://');
+
+/// 退出码 0 的这次导出还缺什么；什么都不缺返回 null。
+///
+/// #1951：只看「文件存在且非空」会放过一份声明了 Opus 音轨、却一个音频包都没有的
+/// webm（容器头本身就有几十 KB）——卡片照常落地，用户拿到的是没声音的同步片段。
+/// 两路都是必选映射（`-map 0:v:0` / `-map 1:a:N`），判据就是两路都真的写进了数据。
+/// 证据取这次 ffmpeg 自己的收尾统计行，不另起探测进程：移动端 ffmpeg-kit 与桌面 CLI
+/// 都会把它交回 [FfmpegRunResult.output]，也不依赖平台上有没有 ffprobe。
+String? _missingSynchronizedOutput(File output, String log) {
+  if (!output.existsSync() || output.lengthSync() == 0) {
+    return 'output file is empty';
+  }
+  return missingMuxedVideoAndAudio(log);
+}
+
+/// 一次「画面 + 声音都必选」的 ffmpeg 合成，按它自己的收尾统计行判还缺哪一路；
+/// 两路都写进了数据返回 null。统计行缺失也算缺——没有证据不当成功。
+String? missingMuxedVideoAndAudio(String log) {
+  final FfmpegMuxedBytes? muxed = parseFfmpegMuxedBytes(log);
+  if (muxed == null) return 'ffmpeg final stats missing';
+  if (muxed.videoKiB <= 0) return 'no video data muxed';
+  if (muxed.audioKiB <= 0) return 'no audio data muxed';
+  return null;
+}
+
+/// ffmpeg 收尾统计行里各类流写进输出的数据量（KiB，ffmpeg 自己四舍五入到整数）。
+typedef FfmpegMuxedBytes = ({double videoKiB, double audioKiB});
+
+/// 解析 ffmpeg 收尾统计行：6.x 印 `video:85kB audio:24kB subtitle:0kB …`，7.x 起单位
+/// 改成 `KiB`。日志里可能有多个输出 / 多次运行，取最后一行。流信息行里的
+/// `Audio: aac` 后面不跟数字，不会误命中。没有这行（被截断、日志级别压低）返回 null。
+FfmpegMuxedBytes? parseFfmpegMuxedBytes(String log) {
+  final RegExpMatch? match = RegExp(
+    r'video:\s*(\d+(?:\.\d+)?)\s*(?:kB|KiB)\s+'
+    r'audio:\s*(\d+(?:\.\d+)?)\s*(?:kB|KiB)',
+  ).allMatches(log).lastOrNull;
+  if (match == null) return null;
+  return (
+    videoKiB: double.parse(match.group(1)!),
+    audioKiB: double.parse(match.group(2)!),
+  );
+}
 
 void _deletePartial(File output) {
   try {

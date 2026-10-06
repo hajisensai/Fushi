@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 顶部 KPI 概览的单项数据：图标 + 大数值 + 标签 + 可选环比。
 class StatKpiItem {
@@ -100,7 +102,7 @@ class StatKpiStrip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(item.icon, size: 18, color: scheme.primary),
+          FushiIcon(item.icon, size: 18, color: scheme.primary),
           SizedBox(height: tokens.spacing.gap),
           // 数值优先完整显示：宽度不够时 scaleDown 缩小字号，而不是 ellipsis 截没
           // （TODO-1253 手机窄屏「看不到数字」的兜底；正常宽度不缩放）。
@@ -129,7 +131,9 @@ class StatKpiStrip extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: item.deltaUp ? scheme.primary : scheme.error,
+                      color: item.deltaUp
+                          ? statChartColorsOf(context).up
+                          : statChartColorsOf(context).down,
                       fontWeight: FontWeight.w600,
                     ),
               ),

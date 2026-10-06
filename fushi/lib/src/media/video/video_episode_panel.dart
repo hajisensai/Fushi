@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_episode_rail.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 export 'package:fushi/src/media/video/video_episode_rail.dart'
     show VideoEpisodeEntry, VideoEpisodeRail;
@@ -206,9 +208,9 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
               ],
             ),
           ),
-          IconButton(
+          FushiIconButtonControl(
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: Icon(Icons.close, size: iconSize),
+            icon: FushiIcon(Icons.close, size: iconSize),
             color: cs.onSurfaceVariant,
             onPressed: widget.onClose,
             visualDensity: VisualDensity.compact,
@@ -236,7 +238,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
           separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (BuildContext context, int i) {
             final String key = _sections[i].groupKey;
-            return ChoiceChip(
+            return FushiChoiceChip(
               key: ValueKey<String>('video-episode-season-chip-$key'),
               label: Text(_labelOf(key)),
               labelStyle: TextStyle(fontSize: widget.fontSize - 1),

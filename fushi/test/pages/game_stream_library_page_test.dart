@@ -228,6 +228,76 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
+  testWidgets('a host refusing plaintext says to turn on HTTPS, not update', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTransport transport = _FakeTransport(
+      (String path, Map<String, dynamic> body) =>
+          throw const GameStreamRequestError(
+            statusCode: 403,
+            code: 'https_required',
+          ),
+    );
+    await _pump(tester, transport: transport);
+
+    expect(find.text(t.game_stream_host_https_required), findsOneWidget);
+    expect(find.text(t.game_stream_host_outdated), findsNothing);
+  });
+
+  testWidgets('a host with game stream off says to turn it on, not update', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTransport transport = _FakeTransport(
+      (String path, Map<String, dynamic> body) =>
+          throw const GameStreamRequestError(
+            statusCode: 404,
+            code: 'game_stream_off',
+          ),
+    );
+    await _pump(tester, transport: transport);
+
+    expect(find.text(t.game_stream_host_stream_off), findsOneWidget);
+    expect(find.text(t.game_stream_host_outdated), findsNothing);
+  });
+
+  testWidgets('a host refusing an unpaired credential says to re-pair', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTransport transport = _FakeTransport(
+      (String path, Map<String, dynamic> body) =>
+          throw const GameStreamRequestError(
+            statusCode: 403,
+            code: 'unauthorized_peer',
+          ),
+    );
+    await _pump(tester, transport: transport);
+
+    expect(find.text(t.game_stream_host_unauthorized), findsOneWidget);
+    expect(find.text(t.game_stream_host_outdated), findsNothing);
+  });
+
+  testWidgets('a current host without a library says so and keeps sessions', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTransport transport = _FakeTransport(
+      (String path, Map<String, dynamic> body) => switch (path) {
+        '/api/game-stream/sessions' => <String, dynamic>{
+          'sessions': <Object>[_sessionJson('s-1')],
+        },
+        '/api/game-stream/library' => throw const GameStreamRequestError(
+          statusCode: 404,
+          code: 'library_off',
+        ),
+        _ => throw StateError('unexpected $path'),
+      },
+    );
+    await _pump(tester, transport: transport);
+
+    expect(find.text(t.game_stream_host_library_off), findsOneWidget);
+    expect(find.text(t.game_stream_host_outdated), findsNothing);
+    expect(find.byKey(GameStreamLibraryPage.sessionKey('s-1')), findsOneWidget);
+  });
+
   testWidgets('an old host without the library route still offers sessions', (
     WidgetTester tester,
   ) async {

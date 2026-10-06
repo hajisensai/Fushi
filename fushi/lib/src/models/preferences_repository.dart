@@ -19,6 +19,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -462,6 +463,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 书架搜索栏「阅读状态」筛选的 [ShelfReadStatus] `.name`（unread/reading/
+  /// finished）；空串 = 全部。跨重启保留（与游戏库页游玩状态筛选同一决定）。
+  String get shelfReadStatusFilterName =>
+      getPref('shelf_read_status_filter', defaultValue: '') as String;
+
+  Future<void> setShelfReadStatusFilterName(String name) async {
+    await setPref('shelf_read_status_filter', name);
+  }
+
   /// 视频库排序方式 `.name`。默认 recent（最近观看，用户拍板；一键可切回导入时间）。
   String get videoSortModeName =>
       getPref('video_sort_mode', defaultValue: 'recent') as String;
@@ -735,6 +745,18 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setFloatingBallSystem(bool value) async {
     await setPref('floating_ball.system', value);
+    notifyListeners();
+  }
+
+  /// 关掉的悬浮球回到 Fushi 时自动恢复哪些（见 [FloatingBallAutoRestore]）。
+  /// 默认「仅应用内」：与引入本设置前的行为一致。
+  FloatingBallAutoRestore get floatingBallAutoRestore =>
+      FloatingBallAutoRestore.fromStorage(
+        getPref('floating_ball.auto_restore', defaultValue: null),
+      );
+
+  Future<void> setFloatingBallAutoRestore(FloatingBallAutoRestore value) async {
+    await setPref('floating_ball.auto_restore', value.storageValue);
     notifyListeners();
   }
 
@@ -1405,6 +1427,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 播放器底栏时间显示「剩余时长」（`-12:34 / 24:00`）而不是已播时长。
+  /// 默认 false；点按底栏时间切换并记住。
+  bool get videoTimeDisplayRemaining =>
+      getPref('video_time_display_remaining', defaultValue: false) as bool;
+
+  Future<void> setVideoTimeDisplayRemaining(bool value) async {
+    await setPref('video_time_display_remaining', value);
+    notifyListeners();
+  }
+
   /// 旧本地封面补齐开关。现只控制 sidecar / 本地封面 sweep，不会发起元数据
   /// 网络请求；保留该偏好用于兼容已有设备设置。在线刮削统一由
   /// `VideoSourceScrapeCoordinator` 管理。
@@ -1579,6 +1611,35 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 用户自配的 Audiobookshelf 服务器清单（设备本地；含 base64 令牌）。
+  /// 逐条容错同 [discoveryOpdsServers]。
+  List<AudiobookshelfServerConfig> get discoveryAudiobookshelfServers {
+    final String raw =
+        getPref('discovery_audiobookshelf_servers', defaultValue: '')
+            as String;
+    if (raw.trim().isEmpty) return const <AudiobookshelfServerConfig>[];
+    try {
+      return decodeAudiobookshelfServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.discoveryAudiobookshelfServers.decode',
+        error,
+        stack,
+      );
+      return const <AudiobookshelfServerConfig>[];
+    }
+  }
+
+  Future<void> setDiscoveryAudiobookshelfServers(
+    Iterable<AudiobookshelfServerConfig> servers,
+  ) async {
+    await setPref(
+      'discovery_audiobookshelf_servers',
+      encodeAudiobookshelfServerConfigs(servers),
+    );
+    notifyListeners();
+  }
+
   /// 用户自配的 AI 提供商清单（设备本地；含 base64 API key）。
   ///
   /// 与 [discoveryOpdsServers] 同范式：逐条容错在 [decodeAiProviderConfigs] 里，
@@ -1617,6 +1678,38 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setAiFeatureAssignments(AiFeatureAssignments value) async {
     await setPref('ai_feature_providers', value.toJson());
     notifyListeners();
+  }
+
+  /// [resolveAiFeatureProvider] 的解码缓存，键是两份**原始**偏好串。
+  ({
+    String? providersRaw,
+    String? assignmentsRaw,
+    List<AiProviderConfig> providers,
+    AiFeatureAssignments assignments,
+  })? _aiResolveCache;
+
+  /// 「[feature] 当前该用哪家 AI」，与
+  /// `aiFeatureAssignments.resolve(feature, aiProviders)` 同义。
+  ///
+  /// 查词弹窗每次构建都要问一遍（决定画不画 ✨），而 [aiProviders] 每读一次都要
+  /// 解 JSON + base64。这里以 `ai_providers` / `ai_feature_providers` 的原始串为
+  /// 缓存键：任何写入（[setPref]、[loadFromDb] 换整份缓存、跨进程刷新）都会换串，
+  /// 串一变就重新解码——判据就是数据本身，不存在漏掉失效通知而读到陈旧值的路径。
+  AiProviderConfig? resolveAiFeatureProvider(AiFeature feature) {
+    final String? providersRaw = _prefCache['ai_providers'];
+    final String? assignmentsRaw = _prefCache['ai_feature_providers'];
+    var cache = _aiResolveCache;
+    if (cache == null ||
+        cache.providersRaw != providersRaw ||
+        cache.assignmentsRaw != assignmentsRaw) {
+      cache = _aiResolveCache = (
+        providersRaw: providersRaw,
+        assignmentsRaw: assignmentsRaw,
+        providers: aiProviders,
+        assignments: aiFeatureAssignments,
+      );
+    }
+    return cache.assignments.resolve(feature, cache.providers);
   }
 
   /// OpenSubtitles 的设备本地配置。登录 token 只存在 client 内存中，绝不写入本键。
@@ -3441,6 +3534,39 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 查词时自动让 AI 按句意挑词条（`ai_lookup_context_assistant.dart`）。默认关：
+  /// 每次查词一个请求、按量计费；关着时弹窗顶栏的 ✨ 按钮照样可以手动点。设备
+  /// 本地，理由同 [mangaOcrAiMode]。
+  bool get lookupAiContextAuto =>
+      getPref('lookup_ai_context_auto', defaultValue: false) as bool;
+
+  Future<void> setLookupAiContextAuto(bool value) async {
+    await setPref('lookup_ai_context_auto', value);
+    notifyListeners();
+  }
+
+  /// 漫画 OCR 的大模型识别档位（`MangaAiOcrMode.storageKey`）：`off`（默认）/
+  /// `low_confidence`（只重读本地低置信度块）/ `all`（全部块）。用哪家模型走
+  /// 「设置 › AI」的功能指派 `AiFeature.mangaOcr`。设备本地：这是「上传漫画页并
+  /// 按量计费」的开关，不能随同步漂到别的设备上自动生效。
+  String get mangaOcrAiMode =>
+      getPref('manga_ocr_ai_mode', defaultValue: 'off') as String;
+
+  Future<void> setMangaOcrAiMode(String value) async {
+    await setPref('manga_ocr_ai_mode', value);
+    notifyListeners();
+  }
+
+  /// 引擎选「Fushi 互联服务端」时点名服务端跑的模型（`MangaOcrLocalModel.key`）；
+  /// 空串 = 服务端自己当前的选择。
+  String get mangaOcrPairedHostModel =>
+      getPref('manga_ocr_paired_host_model', defaultValue: '') as String;
+
+  Future<void> setMangaOcrPairedHostModel(String value) async {
+    await setPref('manga_ocr_paired_host_model', value);
+    notifyListeners();
+  }
+
   /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
   /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
   ///
@@ -3477,6 +3603,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAsrTranscribeLanguage(String value) async {
     await setPref('asr_transcribe_language', value);
+    notifyListeners();
+  }
+
+  /// 只有音频的有声书下载完成后是否自动转录入库（默认开）。
+  bool get audiobookAutoTranscribe =>
+      getPref('audiobook_auto_transcribe', defaultValue: true) as bool;
+
+  Future<void> setAudiobookAutoTranscribe({required bool value}) async {
+    await setPref('audiobook_auto_transcribe', value);
     notifyListeners();
   }
 

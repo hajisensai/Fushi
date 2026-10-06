@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart'
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -29,6 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -416,7 +418,7 @@ void main() {
     // 书卡封面底部进度条 = percent/100（50/100 → 0.5）；目标未设（goal=0）时
     // 页面上没有其它 LinearProgressIndicator。
     final LinearProgressIndicator bar = tester
-        .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator));
+        .widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)));
     expect(bar.value, 0.5);
     // 散卡：标题=书名，副标题=「阅读 · 50%」。
     expect(find.text('横滑测试书'), findsOneWidget);
@@ -509,14 +511,20 @@ void main() {
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
     expect(find.text(t.stat_goal_set), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsNothing);
+    // 目标进度条走设计系统分派版（MD3 下是 Expressive 波浪条，不是原生控件）。
+    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
     // 点设定入口 → 对话框输入 1000 → 保存（_editDailyGoal 真实写回 +
     // setState 刷新，与阅读统计页同一持久化）。
     await tester.tap(find.text(t.stat_goal_set));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.enterText(find.byType(TextField), '1000');
+    // 2026-10 体验优化：首页与统计页目标对话框合并，对话框里有每日 + 每周两个
+    // 输入框，按 key 定位每日那一个。
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('stat-goal-daily-field')),
+      '1000',
+    );
     await tester.tap(find.text(t.dialog_save));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
@@ -527,7 +535,7 @@ void main() {
       find.text(t.stat_goal_progress(read: 800, goal: 1000)),
       findsOneWidget,
     );
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
   });
 
   testWidgets('点热力图某日弹当日明细 sheet：按类型分节列出条目', (WidgetTester tester) async {
@@ -1380,13 +1388,16 @@ void main() {
     final Finder dialog = find.byType(AlertDialog);
     // 单位（suffixText）+ 近 7 日日均：用户「不知道该填什么」的解药。口径说明行按用户
     // 要求删除，这里守卫它不再出现（i18n key 也已下线）。
+    // 2026-10 体验优化：合并后的对话框有每日 + 每周两个输入框，单位后缀各一个。
     expect(
       find.descendant(of: dialog, matching: find.text(t.stat_goal_unit_chars)),
-      findsOneWidget,
+      findsNWidgets(2),
     );
-    final TextField dailyField = tester.widget<TextField>(
-      find.descendant(of: dialog, matching: find.byType(TextField)).first,
-    );
+    // key 挂在设计系统分派包装（FushiTextFieldControl）上，解包到它渲染的
+    // TextField 再读字段。
+    final Finder dailyFinder = glassUnwrap<TextField>(
+        find.byKey(const ValueKey<String>('stat-goal-daily-field')));
+    final TextField dailyField = tester.widget<TextField>(dailyFinder);
     expect(dailyField.decoration?.helperText, isNull);
     // 参考值：与目标同口径（全来源合计）的近 7 日日均。
     expect(
@@ -1400,10 +1411,7 @@ void main() {
     // 预设 chip 点一下就填进输入框。
     await tester.tap(find.widgetWithText(ActionChip, '5000'));
     await tester.pump();
-    expect(
-      tester.widget<TextField>(find.byType(TextField)).controller?.text,
-      '5000',
-    );
+    expect(tester.widget<TextField>(dailyFinder).controller?.text, '5000');
 
     // 保存后目标行按填入值生效（与阅读统计页同一持久化）。
     await tester.tap(find.text(t.dialog_save));

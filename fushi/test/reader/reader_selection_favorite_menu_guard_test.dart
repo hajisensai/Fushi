@@ -99,7 +99,7 @@ void main() {
       expect(capture, greaterThanOrEqualTo(0));
       expect(
         capture,
-        lessThan(body.indexOf('await showMenu<String>(')),
+        lessThan(body.indexOf('await showFushiMenu<String>(')),
         reason: '菜单抢焦点前必须快照原生拖选范围',
       );
       final String favorite = _between(

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:fushi/src/focus/focus_geometry.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 /// App-level overlay that paints a high-contrast ring around the widget that
 /// currently holds primary focus — but ONLY in keyboard/gamepad highlight mode
@@ -271,6 +273,7 @@ class _FushiFocusRingState extends State<FushiFocusRing>
     // zoom-in instead of growing it with the control. See focus_geometry.dart.
     final Rect? rect = globalRectOfContext(ctx);
     if (rect == null) return null;
+    _updateTargetShape(ctx);
     // Don't ring a (near) full-screen focusable: the ring would sit at/beyond the
     // window edge — clipped, and occluded by any overlaid chrome (e.g. a reader
     // bottom bar). Such a node draws its own inset focus indicator instead.
@@ -303,16 +306,43 @@ class _FushiFocusRingState extends State<FushiFocusRing>
     );
   }
 
+  /// 焦点控件自身的外形（只换算一次：同一节点、同一尺寸时沿用缓存，逐帧跟踪
+  /// 不重复遍历渲染树）。null = 探不到形状，回退通用圆角。
+  _FocusTargetShape? _targetShape;
+  RenderObject? _targetShapeOwner;
+  Size? _targetShapeSize;
+
+  void _updateTargetShape(BuildContext ctx) {
+    final RenderObject? ro = ctx.findRenderObject();
+    if (ro is! RenderBox || !ro.hasSize) {
+      _targetShape = null;
+      _targetShapeOwner = null;
+      _targetShapeSize = null;
+      return;
+    }
+    if (identical(ro, _targetShapeOwner) && ro.size == _targetShapeSize) {
+      return;
+    }
+    _targetShapeOwner = ro;
+    _targetShapeSize = ro.size;
+    _targetShape = _probeTargetShape(ro);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color color = Theme.of(context).colorScheme.primary;
+    // 环色：MD3 主色、Apple 强调色（单色主题下就是黑 / 白）。
+    final Color color = isGlassDesign(context)
+        ? appleColorsOf(context).accent
+        : Theme.of(context).colorScheme.primary;
     // _rect is already expressed in this Stack's local coordinate system. The
     // Stack sits inside FushiAppUiScale, so inflate by 2 / scale to retain a
     // constant 2px visual gap after the outer transform magnifies it.
     final double scale = FushiAppUiScale.of(context);
+    final double gap = 2 / scale;
     final Rect? localRect = widget.enabled ? _rect : null;
-    final Rect? ringRect = localRect?.inflate(2 / scale);
+    // 环的定位矩形 = 控件外框外扩 2px 间隙；2px 线描在矩形外侧
+    // （strokeAlignOutside），于是线与控件轮廓之间恰好空出 2px。
+    final Rect? ringRect = localRect?.inflate(gap);
     return Stack(
       key: _stackKey,
       children: <Widget>[
@@ -326,13 +356,157 @@ class _FushiFocusRingState extends State<FushiFocusRing>
             child: IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: tokens.radii.chipRadius,
-                  border: Border.all(color: color, width: 2.5),
+                  // 圆角取控件自身外形再加上间隙，与控件轮廓等距（胶囊仍是
+                  // 胶囊、圆钮仍是圆）。
+                  borderRadius: _ringRadius(_targetShape, ringRect.size, gap),
+                  border: Border.all(
+                    color: color,
+                    width: _kRingWidth / scale,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
                 ),
               ),
             ),
           ),
       ],
     );
+  }
+}
+
+/// 焦点环线宽（逻辑像素，MD3 焦点指示器 2dp）。
+const double _kRingWidth = 2;
+
+/// 探不到控件形状时的通用圆角（控件外沿口径）。
+const double _kFallbackRadius = 8;
+
+/// 焦点控件的外形，统一成两类：圆、四角半径（胶囊 = 足够大的半径）。
+sealed class _FocusTargetShape {
+  const _FocusTargetShape();
+}
+
+class _CircleShape extends _FocusTargetShape {
+  const _CircleShape();
+}
+
+class _RadiiShape extends _FocusTargetShape {
+  const _RadiiShape(this.radius);
+  final BorderRadius radius;
+}
+
+/// 在焦点控件的渲染子树里找「与控件同尺寸」的形状载体：Material 的
+/// [RenderPhysicalShape] / [RenderPhysicalModel]、装饰盒、圆角 / 椭圆裁剪。
+/// 只认尺寸与控件外框相差 ≤4px 的节点——内部小图标的圆底不能代表整个控件。
+/// 广度优先、最多看 [_kShapeProbeBudget] 个节点，逐帧跟踪下也是常数开销。
+_FocusTargetShape? _probeTargetShape(RenderBox root) {
+  final Size target = root.size;
+  bool sameSize(RenderObject node) =>
+      node is RenderBox &&
+      node.hasSize &&
+      (node.size.width - target.width).abs() <= 4 &&
+      (node.size.height - target.height).abs() <= 4;
+
+  final List<RenderObject> queue = <RenderObject>[root];
+  int visited = 0;
+  while (queue.isNotEmpty && visited < _kShapeProbeBudget) {
+    final RenderObject node = queue.removeAt(0);
+    visited++;
+    if (sameSize(node)) {
+      final _FocusTargetShape? shape = _shapeOfRenderObject(node);
+      if (shape != null) return shape;
+    }
+    node.visitChildren((RenderObject child) {
+      // 子树里比控件小一圈以上的节点不再往下找（已经进了内容层）。
+      if (child is RenderBox &&
+          child.hasSize &&
+          (child.size.width < target.width - 4 ||
+              child.size.height < target.height - 4)) {
+        return;
+      }
+      queue.add(child);
+    });
+  }
+  return null;
+}
+
+const int _kShapeProbeBudget = 48;
+
+_FocusTargetShape? _shapeOfRenderObject(RenderObject node) {
+  if (node is RenderPhysicalShape) {
+    final CustomClipper<Path>? clipper = node.clipper;
+    if (clipper is ShapeBorderClipper) return _fromShapeBorder(clipper.shape);
+    return null;
+  }
+  if (node is RenderPhysicalModel) {
+    if (node.shape == BoxShape.circle) return const _CircleShape();
+    final BorderRadius? radius = node.borderRadius?.resolve(TextDirection.ltr);
+    return radius == null ? null : _RadiiShape(radius);
+  }
+  if (node is RenderClipOval) return const _CircleShape();
+  if (node is RenderClipRRect) {
+    return _RadiiShape(node.borderRadius.resolve(TextDirection.ltr));
+  }
+  if (node is RenderClipPath) {
+    final CustomClipper<Path>? clipper = node.clipper;
+    if (clipper is ShapeBorderClipper) return _fromShapeBorder(clipper.shape);
+    return null;
+  }
+  if (node is RenderDecoratedBox) {
+    final Decoration decoration = node.decoration;
+    if (decoration is ShapeDecoration) {
+      return _fromShapeBorder(decoration.shape);
+    }
+    if (decoration is BoxDecoration) {
+      if (decoration.shape == BoxShape.circle) return const _CircleShape();
+      final BorderRadius? radius =
+          decoration.borderRadius?.resolve(TextDirection.ltr);
+      return radius == null ? null : _RadiiShape(radius);
+    }
+  }
+  return null;
+}
+
+_FocusTargetShape? _fromShapeBorder(ShapeBorder shape) {
+  if (shape is CircleBorder) return const _CircleShape();
+  if (shape is StadiumBorder) return const _RadiiShape(_kStadiumRadius);
+  if (shape is RoundedRectangleBorder) {
+    return _RadiiShape(shape.borderRadius.resolve(TextDirection.ltr));
+  }
+  if (shape is ContinuousRectangleBorder) {
+    // 连续曲率边的视觉圆角约为标称值的一半。
+    final BorderRadius r = shape.borderRadius.resolve(TextDirection.ltr);
+    return _RadiiShape(r * 0.5);
+  }
+  if (shape is RoundedSuperellipseBorder) {
+    return _RadiiShape(shape.borderRadius.resolve(TextDirection.ltr));
+  }
+  return null;
+}
+
+/// 「足够大」的圆角：画到任何矩形上都是胶囊（按短边一半截断）。
+const BorderRadius _kStadiumRadius = BorderRadius.all(Radius.circular(9999));
+
+/// 环（定位矩形 = 控件外框外扩 [gap]）的圆角：控件外形的每个角放大 [gap]，
+/// 环与控件轮廓等距；圆形控件取半个短边（正方形即正圆，非正方形退成胶囊）；
+/// 探不到形状时用通用圆角。线描在外侧，外沿圆角由绘制自然再放大一个线宽。
+BorderRadius _ringRadius(_FocusTargetShape? target, Size ringSize, double gap) {
+  final double cap = ringSize.shortestSide / 2;
+  switch (target) {
+    case _CircleShape():
+      return BorderRadius.all(Radius.circular(cap));
+    case _RadiiShape(:final BorderRadius radius):
+      Radius grow(Radius r) => r.x <= 0 && r.y <= 0
+          ? Radius.zero
+          : Radius.elliptical(
+              (r.x + gap).clamp(0.0, cap),
+              (r.y + gap).clamp(0.0, cap),
+            );
+      return BorderRadius.only(
+        topLeft: grow(radius.topLeft),
+        topRight: grow(radius.topRight),
+        bottomLeft: grow(radius.bottomLeft),
+        bottomRight: grow(radius.bottomRight),
+      );
+    case null:
+      return BorderRadius.all(Radius.circular(_kFallbackRadius + gap));
   }
 }

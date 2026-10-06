@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import '../helpers/glass_unwrap.dart';
 
 const Key _leadingCue = ValueKey<String>(
   'library-section-tabs-leading-overflow-cue',
@@ -35,6 +36,9 @@ void main() {
                 ],
                 selected: 0,
                 onChanged: (_) {},
+                // 2026-10-04 起 fill 默认 true（铺满 → 收紧 → 「更多」三档）；
+                // 两侧渐隐只属于 fill: false 的可滚动形态，这里显式钉住它。
+                fill: false,
               ),
             ),
           ),
@@ -109,7 +113,7 @@ void main() {
     await pumpFillTabs(tester, width: 480, labels: <String>['小说', '漫画', long]);
 
     expect(
-      tester.widget<TabBar>(find.byType(TabBar)).isScrollable,
+      tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable,
       isTrue,
       reason: '最宽段放不进等分格时必须退回可滚动形态',
     );
@@ -126,25 +130,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('先窄出尾部渐隐、再放宽进入 fill 后渐隐必须消失', (WidgetTester tester) async {
+  // 2026-10-04 起 fill 形态窄窗不再横滑截断，而是「前 N 段 + 末尾『更多』下拉」：
+  // 离屏段的提示由「更多」按钮承担，渐隐不再出现；窄 ↔ 宽来回切换时既不能残留
+  // 渐隐盖在最后一段上，也不能丢掉「更多」入口。
+  testWidgets('先窄出「更多」溢出入口、再放宽进入 fill 后渐隐与入口都必须消失', (WidgetTester tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     const List<String> labels = <String>['首页', '系列', '全部视频', '发现', '来源', '设置'];
+    final Finder moreButton = find.byIcon(Icons.expand_more);
 
     await pumpFillTabs(tester, width: 240, labels: labels);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isTrue);
-    expect(find.byKey(_trailingCue), findsOneWidget, reason: '窄窗溢出时应有尾部渐隐');
+    expect(moreButton, findsOneWidget, reason: '窄窗溢出时末尾应有「更多」入口提示后续段');
+    expect(find.byKey(_leadingCue), findsNothing);
+    expect(find.byKey(_trailingCue), findsNothing, reason: '溢出档的提示是「更多」入口，不叠渐隐');
 
     await pumpFillTabs(tester, width: 1200, labels: labels);
-    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isFalse);
+    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isFalse);
     expect(find.byKey(_leadingCue), findsNothing);
     expect(
       find.byKey(_trailingCue),
       findsNothing,
       reason: '铺满形态没有离屏内容，残留渐隐会盖在最后一段上',
     );
+    expect(moreButton, findsNothing, reason: '铺满形态全部段可见，不需要「更多」');
 
-    // 再窄回去：新 Scrollable 的首条 metrics 通知重新给出真值。
+    // 再窄回去：「更多」入口重新出现。
     await pumpFillTabs(tester, width: 240, labels: labels);
-    expect(find.byKey(_trailingCue), findsOneWidget);
+    expect(moreButton, findsOneWidget);
+    expect(find.byKey(_trailingCue), findsNothing);
   });
 }

@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
+import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
+    show resolveMineSentence;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show MinePopupResult;
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
@@ -17,6 +21,7 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   const PopupDictionaryPage({
     required this.searchTerm,
     this.searchGeneration = 0,
+    this.sourceCharIndex = -1,
     this.anchorRect,
     this.subtitleWindowRect,
     this.closeInApp,
@@ -26,6 +31,12 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   });
 
   final String searchTerm;
+
+  /// BUG-2899：被点字在 [searchTerm] 里的 UTF-16 下标。>= 0 表示 [searchTerm] 是
+  /// 被点字所在的**整行原文**（截屏识字 / 悬浮字幕点字）：源文本条保留整行，首查
+  /// 从被点字起做扫描查词，之后还能在条上点同一行的别的字；整行同时作为制卡
+  /// `{sentence}`（BUG-2900）。-1 = 整串就是查询（系统 PROCESS_TEXT / fushi://lookup）。
+  final int sourceCharIndex;
 
   /// TODO-872：app 外悬浮字幕条点字传来的「被查字屏幕矩形」（逻辑像素，与本全屏查词
   /// 窗同坐标系）。非空 → 卡片贴被查字旁定位（[computeFloatingLyricPopupRect]）；为 null
@@ -70,6 +81,17 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   bool _isClosing = false;
   String _sourceLookupText = '';
 
+  /// BUG-2900：外部入口带来的整行原文，基础层制卡时补进 `{sentence}`。只在
+  /// [PopupDictionaryPage.sourceCharIndex] >= 0 时非空；用户在搜索栏另查别的词即清空
+  /// （那时结果已与这行无关）。
+  String _sourceSentence = '';
+
+  /// 最近一次「出自这一行」的基础层查询串：宿主推来整行时的首查（[_lookupWidgetSource]）
+  /// 与源文本条点字两个入口记下，[_withSourceSentence] 用**相等**判定基础层当前词条是否
+  /// 仍出自这一行。不能用「是这行的子串」判：释义里的词头 / 汉字链接原地跳转后，跳到的
+  /// 词（如「天」）恰好也是行的子串，就会把整行误填进无关词条的 `{sentence}`。
+  String _sourceLineQuery = '';
+
   /// 源文本条上「这次查的是哪几个字」的扫描高亮，与首页词典 tab 同一口径。
   ///
   /// 顶层查词（宿主推来新词 / 搜索栏提交 / 开页自动查词）会把 [_sourceLookupText]
@@ -110,6 +132,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
     attachLookupCounter(_popup);
     _sourceLookupText = widget.searchTerm.trim();
+    _sourceSentence = _sentenceOf(widget);
+    _sourceLineQuery = '';
     // TODO-951 症状C：开页 seed 一个常驻隐藏热槽，弹窗 WebView 冷加载一次后全程复用
     // （与 reader/video/首页查词同范式），消除「每次查词重建 WebView 露白屏一瞬」。
     // appModel 未初始化时 seedWarmSlot 内部据 lowMemory 早退前先设真值；此处与首页
@@ -121,9 +145,44 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     if (widget.autoSearchOnOpen && appModel.isInitialised) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _pushSearch(widget.searchTerm, Rect.zero, reuseWarmSlot: true);
+        _lookupWidgetSource();
       });
     }
+  }
+
+  static String _sentenceOf(PopupDictionaryPage page) =>
+      page.sourceCharIndex >= 0 ? page.searchTerm.trim() : '';
+
+  /// 宿主推来的这一次查词：整串入口直接查整串；带被点字下标的整行入口（BUG-2899）
+  /// 把整行放上源文本条，从被点字起扫描查词——与在条上点那个字同一条路径。
+  void _lookupWidgetSource() {
+    final String text = widget.searchTerm;
+    final int unitIndex = widget.sourceCharIndex;
+    final ({String suffix, int start})? scan = unitIndex < 0
+        ? null
+        : sourceLookupSuffixAt(
+            text,
+            sourceGraphemeIndexOfUnit(text, unitIndex),
+          );
+    if (scan == null) {
+      _sourceLineQuery = '';
+      _pushSearch(text, Rect.zero, reuseWarmSlot: true);
+      return;
+    }
+    _sourceLineQuery = scan.suffix.trim();
+    final String line = text.trim();
+    _searchController.text = line;
+    _searchController.selection = TextSelection.collapsed(offset: line.length);
+    setState(() => _sourceLookupText = line);
+    _pushSearch(
+      scan.suffix,
+      Rect.zero,
+      reuseWarmSlot: true,
+      scan: SourceLookupScan.fromSuffix(
+        suffix: scan.suffix,
+        charIndex: scan.start,
+      ),
+    );
   }
 
   /// TODO-951 症状C：seed 常驻隐藏热槽。低内存模式 [DictionaryPopupController.seedWarmSlot]
@@ -143,6 +202,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // generation 任一变化都重查（同词连续查词靠 generation 触发）。
     final bool changed = oldWidget.searchTerm != widget.searchTerm ||
         oldWidget.searchGeneration != widget.searchGeneration ||
+        oldWidget.sourceCharIndex != widget.sourceCharIndex ||
         oldWidget.anchorRect != widget.anchorRect ||
         oldWidget.subtitleWindowRect != widget.subtitleWindowRect;
     if (!changed) return;
@@ -153,6 +213,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 闭锁早退卡死（弹窗打开后关不掉）。每次「重开」在此复位闭锁，让每轮查词都能正常关闭。
     // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
     _isClosing = false;
+    _sourceSentence = _sentenceOf(widget);
+    _sourceLineQuery = '';
     final String trimmed = widget.searchTerm.trim();
     if (trimmed.isEmpty) {
       // 悬浮球「查词」/ 剪贴板为空：宿主有意推来空词，常驻热页回到只有搜索栏的
@@ -172,7 +234,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     if (!appModel.isInitialised) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _pushSearch(trimmed, Rect.zero, reuseWarmSlot: true);
+      _lookupWidgetSource();
     });
   }
 
@@ -244,6 +306,23 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     });
   }
 
+  /// 源文本条点字 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），条上的整句与
+  /// 搜索框里的整句都留着，只有高亮跨度跟着挪。条上是外部入口那一行时，这次查询串
+  /// 记作「出自这一行」（BUG-2900 制卡句子的判据）。
+  Future<void> _lookupFromSourceStrip(
+    String query,
+    Rect rect,
+    int charIndex,
+  ) {
+    _sourceLineQuery = _sourceSentence.isEmpty ? '' : query.trim();
+    return _pushSearch(
+      query,
+      rect,
+      reuseWarmSlot: true,
+      scan: SourceLookupScan.fromSuffix(suffix: query, charIndex: charIndex),
+    );
+  }
+
   void _popAt(int index) {
     if (index <= 0) return;
     popNestedPopupAt(index, _popup);
@@ -307,11 +386,38 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   void _onSearchSubmit(String text) {
     if (text.trim().isEmpty) return;
     _searchFocusNode.unfocus();
+    _sourceSentence = '';
+    _sourceLineQuery = '';
     // TODO-951 症状C：保留常驻热槽（pruneToWarmSlot），别 clear 掉热 WebView；
     // 顶层重查走 reuseWarmSlot 原地复用。
     setState(_popup.pruneToWarmSlot);
     _pushSearch(text.trim(), Rect.zero, reuseWarmSlot: true);
   }
+
+  /// BUG-2900：基础层的结果来自外部入口那一行，制卡 / 覆写时用整行补 `{sentence}`
+  /// （JS 送来的非空句子仍优先）。嵌套层查的是释义里的词，句子不再是这行，走原路径。
+  /// 基础层原地跳到释义里的别的词（链接 / 词头 / 汉字）后，当前词条不再出自这行，同样
+  /// 不补；判据是「基础层当前查询串**等于**最近一次出自这行的查询串」
+  /// （[_sourceLineQuery]），后退回原词条时自然又成立。
+  Map<String, String> _withSourceSentence(Map<String, String> fields) {
+    if (_sourceSentence.isEmpty || _sourceLineQuery.isEmpty) return fields;
+    final String baseTerm =
+        _popup.entries.isEmpty ? '' : _popup.entries.first.searchTerm.trim();
+    if (baseTerm != _sourceLineQuery) return fields;
+    return <String, String>{
+      ...fields,
+      'sentence': resolveMineSentence(fields, _sourceSentence),
+    };
+  }
+
+  Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
+      onMineEntry(_withSourceSentence(fields));
+
+  Future<MinePopupResult> _updateBaseEntry(
+    int noteId,
+    Map<String, String> fields,
+  ) =>
+      onUpdateEntry(noteId, _withSourceSentence(fields));
 
   @override
   Widget build(BuildContext context) {
@@ -437,6 +543,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     final Widget card = FushiPopupSurface(
       color: (appModel.overrideDictionaryColor ?? tokens.surfaces.page)
           .withValues(alpha: 1.0),
+      // 独立的系统查词浮窗：Apple 下玻璃采不到窗口背后的其它 app，画不透明面板。
+      standaloneWindow: true,
       child: Column(
         children: [
           // TODO-951 症状B：关闭是「结果」，滑动只是其中一种「触发行为」，二者解耦。
@@ -460,7 +568,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
                 _buildCloseButton(),
               ],
             ),
-          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+          FushiDividerControl(height: 1, thickness: 1, color: tokens.surfaces.outline),
           if (_sourceLookupText.trim().isNotEmpty)
             SourceLookupTextPanel(
               text: _sourceLookupText,
@@ -469,15 +577,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
               highlight: _sourceHighlight,
               // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
               // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
-              onLookup: (String query, Rect rect, int charIndex) => _pushSearch(
-                query,
-                rect,
-                reuseWarmSlot: true,
-                scan: SourceLookupScan.fromSuffix(
-                  suffix: query,
-                  charIndex: charIndex,
-                ),
-              ),
+              onLookup: _lookupFromSourceStrip,
             ),
           Expanded(child: _buildStack(context)),
         ],
@@ -639,8 +739,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
       // 来回）。释义正文点词（onTextSelected）仍叠子层。
       onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
-      onMineEntry: onMineEntry,
-      onUpdateEntry: onUpdateEntry,
+      onMineEntry: isBase ? _mineBaseEntry : onMineEntry,
+      onUpdateEntry: isBase ? _updateBaseEntry : onUpdateEntry,
       onDuplicateCheck: checkDuplicate,
       onOverwriteTargetNoteId: findOverwriteTargetNoteId,
     );

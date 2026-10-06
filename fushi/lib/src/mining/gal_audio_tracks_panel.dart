@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 会话音轨面板（共享内容组件）：轨列表 + 逐轨试听 + 设为语音轨 + 排除 BGM/恢复。
@@ -57,13 +58,13 @@ class GalAudioTracksPanel extends StatelessWidget {
           _PanelHintBox(icon: Icons.info_outline, text: backendHint),
         // 「自动选择」只对引擎 PCM 有意义；其余后端不渲染它，免得暗示能选。
         if (selectionEffective)
-          RadioListTile<int>(
+          FushiRadioListTile<int>(
             contentPadding: EdgeInsets.zero,
             value: 0,
             groupValue: state.selectedAudioSourcePtr,
             onChanged: (int? value) => onSelectVoice(value ?? 0),
             title: Text(t.game_track_auto),
-            secondary: const Icon(Icons.auto_awesome_outlined),
+            secondary: const FushiIcon(Icons.auto_awesome_outlined),
           ),
         if (state.audioTracks.isEmpty && backendHint == null)
           Padding(
@@ -143,7 +144,7 @@ class GalTrackTile extends StatelessWidget {
         child: FushiListItem(
           padding: EdgeInsets.zero,
           selected: selected,
-          leading: Icon(
+          leading: FushiIcon(
             excluded ? Icons.music_off_outlined : Icons.graphic_eq,
           ),
           title: Text(
@@ -205,27 +206,10 @@ class _PanelHintBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Container(
-      margin: EdgeInsets.only(top: tokens.spacing.gap),
-      padding: EdgeInsets.all(tokens.spacing.gap + 2),
-      decoration: BoxDecoration(
-        color: colors.secondaryContainer,
-        borderRadius: tokens.radii.cardRadius,
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: colors.onSecondaryContainer, size: 18),
-          SizedBox(width: tokens.spacing.gap),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: colors.onSecondaryContainer),
-            ),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.gap),
+      child: FushiInlineNotice(icon: icon, message: text),
     );
   }
 }

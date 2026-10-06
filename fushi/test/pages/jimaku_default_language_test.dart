@@ -18,6 +18,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 「设置 → 视频 → 字幕 → 默认字幕语言」的生效链路专项测试
 /// （`settings_schema_coverage_test` 的 `kCoveredElsewhere` 指向本文件）。
@@ -197,7 +198,7 @@ Future<void> _pumpDialog(WidgetTester tester, String language) async {
 
 bool _chipSelected(WidgetTester tester, String label) {
   final Iterable<ChoiceChip> chips = tester
-      .widgetList<ChoiceChip>(find.byType(ChoiceChip))
+      .widgetList<ChoiceChip>(glassUnwrapAll<ChoiceChip>(find.byType(ChoiceChip)))
       .where((ChoiceChip c) => (c.label as Text).data == label);
   expect(chips, isNotEmpty, reason: '语言 chip「$label」应存在');
   return chips.first.selected;

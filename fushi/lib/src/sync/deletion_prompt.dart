@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
@@ -320,7 +321,7 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
                     return AdaptiveSettingsRow(
                       title: v.title,
                       onTap: () => _toggle(i),
-                      trailing: Icon(
+                      trailing: FushiIcon(
                         _checked.contains(i)
                             ? Icons.check_box
                             : Icons.check_box_outline_blank,

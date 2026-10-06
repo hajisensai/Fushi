@@ -32,6 +32,103 @@
     zoom: var(--fushi-popup-zoom, 1);
 }
 
+/* 玻璃材质（扩展唯一的材质；只有 app 开墨水屏时随查词响应 theme 下发 --fushi-glass: '0' 关掉）。
+   为什么只在扩展这里写、不进共享的 popup.css：backdrop-filter 只能模糊**同一文档**里画在
+   它后面的东西。扩展弹窗挂在网页文档的 shadow root 里，背后就是网页本身，能真模糊；
+   app 内查词弹窗是独立 WebView（热槽）浮在 Flutter 画面上，WebView 文档里卡片背后
+   什么都没有（Flutter 画面在另一个合成层），backdrop-filter 采样不到，开了也只是空转。
+   content.js fushiApplyGlass 给弹窗根 #entries-container 挂 .fushi-glass（半透明填充），
+   给 shadow 宿主 #hibiki-popup-host 挂 data-fushi-glass="light|dark"（模糊 + 圆角 + 细描边）。
+   模糊放在宿主上而不是容器上：宿主才是固定尺寸、内部滚动的那只「卡」，容器随内容变高、
+   在宿主里滚动；backdrop-filter 落在宿主自己的圆角盒上最稳，容器的半透明填充再被宿主的
+   overflow 圆角裁掉。数值与 Flutter 侧同源（fushi_glass_surface.dart）：模糊 sigma 20、
+   填充不透明度亮 0.72 / 暗 0.62、描边黑/白 8%。整段包在 @supports 里：不支持
+   backdrop-filter 的内核什么都不改，卡片保持原来的不透明底；系统要求减少透明度时同样回落
+   不透明、不模糊（兼容层，不是可选样式）；墨水屏时两个钩子都不存在。 */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :host([data-fushi-glass]) {
+        border-radius: var(--fushi-radius-card, 10px);
+        -webkit-backdrop-filter: blur(20px) saturate(1.4);
+        backdrop-filter: blur(20px) saturate(1.4);
+        /* outline 画在内容之上、贴圆角：不占布局（border 会把宿主撑宽 2px，影响落点计算）。 */
+        outline: 1px solid rgba(0, 0, 0, 0.08);
+        outline-offset: -1px;
+        /* 投影与嵌套子层逐字相同（nested-popup-host.js fushiNestedLayerSkin）：每一层查词卡
+           外观都与第一层一致，不随层深加重、填充也不另立下限（用户 2026-10-05 拍板）。 */
+        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+    }
+
+    :host([data-fushi-glass="dark"]) {
+        outline-color: rgba(255, 255, 255, 0.08);
+    }
+
+    #entries-container.fushi-glass:not(.eink) {
+        background-color: rgba(var(--fushi-card-bg-rgb, 255, 255, 255), 0.72);
+    }
+
+    #entries-container.fushi-glass:not(.eink)[data-theme="dark"] {
+        background-color: rgba(var(--fushi-card-bg-rgb, 0, 0, 0), 0.62);
+    }
+
+    /* 页内 toast（content.js fushiToast）与拖放提示（subtitle-panel.js）：玻璃胶囊。不支持
+       backdrop-filter 时保持段外的实色底（见下方 #fushi-toast / #fushi-subtitle-drop-hint）。 */
+    html #fushi-toast,
+    html #fushi-subtitle-drop-hint {
+        background-color: color-mix(in oklch, var(--fushi-surface) 74%, transparent);
+        -webkit-backdrop-filter: blur(24px) saturate(1.8);
+        backdrop-filter: blur(24px) saturate(1.8);
+    }
+
+    html #fushi-toast[data-theme="dark"],
+    html #fushi-subtitle-drop-hint[data-theme="dark"] {
+        background-color: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 60%, black) 62%, transparent);
+    }
+
+    @media (prefers-reduced-transparency: reduce) {
+        :host([data-fushi-glass]) {
+            -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+        }
+
+        #entries-container.fushi-glass:not(.eink),
+        #entries-container.fushi-glass:not(.eink)[data-theme="dark"] {
+            background-color: rgb(var(--fushi-card-bg-rgb, 255, 255, 255));
+        }
+
+        html #fushi-toast,
+        html #fushi-toast[data-theme="dark"],
+        html #fushi-subtitle-drop-hint,
+        html #fushi-subtitle-drop-hint[data-theme="dark"] {
+            -webkit-backdrop-filter: none;
+            backdrop-filter: none;
+        }
+
+        html #fushi-toast,
+        html #fushi-toast[data-theme="dark"],
+        html #fushi-subtitle-drop-hint,
+        html #fushi-subtitle-drop-hint[data-theme="dark"] {
+            background-color: var(--fushi-surface);
+        }
+    }
+}
+
+/* toast 的实色外观（玻璃版在上面的 @supports 段里覆盖填充与模糊）。定位 / 显隐 / 可点态是 JS
+   的行内样式；#fushi-toast 在 theme.css 重根宿主清单里，data-theme 由 JS 按扩展主题写。 */
+#fushi-toast {
+    border-radius: 20px;
+    color: var(--fushi-text);
+    background-color: var(--fushi-surface);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.3), transparent 50%);
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 16px 40px -12px rgba(0, 0, 0, 0.45);
+}
+
+#fushi-toast[data-theme="dark"] {
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 50%);
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+}
+
 /* 制卡队列浮动 chip（TODO-1184）：头部 pill（计数 + 生成）+ 可展开列表（逐项删除）。
    #fushi-queue-chip 是 content.js 挂在宿主页 body 上的独立元素（不在 #entries-container 内），
    用具体 ID 选择器，绝不污染宿主页其它节点。 */
@@ -321,12 +418,14 @@
     z-index: 2147483646;
     display: flex;
     align-items: center;
-    padding: 8px 14px;
-    border: 1px solid var(--md-primary, #9dd7b8);
+    padding: 9px 16px;
+    /* 胶囊外观跟扩展明暗 / 调色板（data-theme 由 subtitle-panel.js 写）；这里是实色版，
+       玻璃版（半透明 + 模糊）在文件开头的 @supports 段里覆盖。 */
+    border: 1px solid color-mix(in oklch, var(--fushi-primary) 35%, transparent);
     border-radius: 999px;
-    color: var(--md-on-primary-container, #b9f2cf);
-    background: rgba(12, 20, 16, 0.92);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    color: var(--fushi-text);
+    background-color: var(--fushi-surface);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 10px 28px -10px rgba(0, 0, 0, 0.45);
     font: 600 13px/1.3 "Hiragino Sans", "Yu Gothic UI", sans-serif;
     letter-spacing: 0.02em;
     white-space: nowrap;
@@ -554,7 +653,7 @@
     opacity: 1;
 }
 
-/* 通用站点（没有已知控制栏锚点）：按钮自己浮在画面右下角，鼠标离开视频即淡出——
+/* 通用站点（没有已知控制栏锚点）：按钮自己浮在画面右上角（右下角会压住站点的进度条/音量/全屏），鼠标离开视频即淡出——
    常驻一颗不透明按钮压在画面上，比没有按钮更烦人。 */
 #fushi-player-btn.is-floating {
     position: fixed;

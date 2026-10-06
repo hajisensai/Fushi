@@ -82,8 +82,8 @@ enum FloatingBallScope {
   ];
 
   /// 出厂按钮：阅读器是阅读计时开关 + 有声书的上一句 / 播放暂停 / 下一句（后三颗
-  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；各场景都带全部
-  /// 全局按钮。
+  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；各场景都带出厂
+  /// 勾上的全局按钮（[FloatingBallGlobalAction.onByDefault]）。
   List<String> get defaultButtons => <String>[
     ...switch (this) {
       reader => <String>[
@@ -96,7 +96,7 @@ enum FloatingBallScope {
     },
     for (final FloatingBallGlobalAction action
         in FloatingBallGlobalAction.values)
-      action.storageValue,
+      if (action.onByDefault) action.storageValue,
   ];
 
   /// 逗号分隔的持久化值 → 按钮 id（保持目录顺序、去掉未知值与重复）。
@@ -157,11 +157,20 @@ enum FloatingBallGlobalAction {
 
   /// 相机拍照（纸质书、招牌、别的设备的屏幕）→ 系统 OCR → 点字查词。应用外球
   /// 把 Fushi 唤到前台再开相机（拍照与识别都在主窗里做）。
-  cameraOcr('camera_ocr');
+  cameraOcr('camera_ocr'),
+
+  /// 立即同步：与设置页「立即同步」、媒体页下拉刷新同一个入口
+  /// （`runManualSyncWithFeedback`）。应用外球把 Fushi 唤到前台再同步——结果、
+  /// 冲突裁决与重新登录提示都在主窗里给。
+  sync('sync');
 
   const FloatingBallGlobalAction(this.storageValue);
 
   final String storageValue;
+
+  /// 出厂勾不勾上。同步不勾：多数人没配同步后端，出厂就塞一颗点了只会说「同步
+  /// 不可用」的按钮是噪音；配了同步的人在 设置 → 悬浮球 里自己勾。
+  bool get onByDefault => this != sync;
 
   static FloatingBallGlobalAction? fromStorage(String raw) {
     for (final FloatingBallGlobalAction action in values) {
@@ -184,12 +193,13 @@ enum FloatingBallGlobalAction {
 
   /// 在某个场景的球上有没有这颗按钮。只有桌面的应用外球与众不同：它浮在别的程序
   /// 上面，「应用外查词」在那里就是查前台程序当前选中的文字（与全局查词热键同一条
-  /// 路径），截屏识字 / 拍照查词桌面不提供；其余场景同 [availableOn]。
+  /// 路径），截屏识字是截球所在的显示器、在冻结画面上点字（结果用同一张全局查词
+  /// 卡），拍照查词桌面不提供；其余场景同 [availableOn]。
   ///
   /// [lookupModuleEnabled]：「查词」模块开着没有。桌面应用外球的「查词」（打开
-  /// 查词页）与「应用外查词」（全局查词覆盖窗）都挂在这个模块上——模块关着时查词
-  /// 页没有入口、全局查词也不启动，按钮点了没反应，所以干脆不出现。剪贴板查词在
-  /// 覆盖窗不可用时退回主窗查词弹窗，不受影响。
+  /// 查词页）、「应用外查词」与「截屏识字」（都用全局查词覆盖窗）都挂在这个模块
+  /// 上——模块关着时查词页没有入口、全局查词也不启动，按钮点了没反应，所以干脆
+  /// 不出现。剪贴板查词在覆盖窗不可用时退回主窗查词弹窗，不受影响。
   bool availableIn(
     FloatingBallScope scope, {
     required bool isAndroid,
@@ -200,12 +210,45 @@ enum FloatingBallGlobalAction {
     if (scope == FloatingBallScope.system && isDesktop) {
       return switch (this) {
         FloatingBallGlobalAction.lookup ||
-        FloatingBallGlobalAction.popupLookup => lookupModuleEnabled,
+        FloatingBallGlobalAction.popupLookup ||
+        FloatingBallGlobalAction.screenOcr => lookupModuleEnabled,
         FloatingBallGlobalAction.clipboard => true,
-        FloatingBallGlobalAction.screenOcr ||
         FloatingBallGlobalAction.cameraOcr => false,
+        FloatingBallGlobalAction.sync => true,
       };
     }
     return availableOn(isAndroid: isAndroid, isIOS: isIOS);
   }
+}
+
+/// 用户点了「关闭悬浮球」之后，哪些球在回到 Fushi 时自动重新出现。
+///
+/// - [both]：应用内与应用外都恢复——应用外球的关闭只管到下次打开 Fushi（冷启动
+///   或切回前台）为止，不动「应用外显示」开关。
+/// - [inApp]（出厂）：只有应用内球恢复（换页 / 回到 Fushi 即重现）；应用外球的
+///   关闭等于关掉「应用外显示」。
+/// - [off]：都不恢复——应用内球的关闭也等于关掉「应用内显示」，要到设置里重开。
+enum FloatingBallAutoRestore {
+  both('both'),
+  inApp('in_app'),
+  off('off');
+
+  const FloatingBallAutoRestore(this.storageValue);
+
+  final String storageValue;
+
+  static const FloatingBallAutoRestore fallback = inApp;
+
+  static FloatingBallAutoRestore fromStorage(Object? raw) {
+    for (final FloatingBallAutoRestore value in values) {
+      if (value.storageValue == raw) return value;
+    }
+    return fallback;
+  }
+
+  /// 关掉的应用内球在换页 / 回到 Fushi 时重现。
+  bool get restoresInApp => this != off;
+
+  /// 关掉的应用外球在打开 Fushi 时重新拉起（而不是关掉「应用外显示」）。
+  bool get restoresSystem => this == both;
 }

@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import '../helpers/glass_unwrap.dart';
 
 class _Resource extends VideoResourceCandidate {
   _Resource(String id, String title)
@@ -160,12 +161,10 @@ void main() {
       findsOneWidget,
     );
     // 没资源的行勾选框禁用。
-    final Checkbox disabled = tester.widget<Checkbox>(
-      find.descendant(
+    final Checkbox disabled = tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.descendant(
         of: find.byKey(const ValueKey<String>('ai-video-acquire-franchise-1')),
         matching: find.byType(Checkbox),
-      ),
-    );
+      )),);
     expect(disabled.onChanged, isNull);
 
     await tester.tap(
@@ -207,9 +206,7 @@ void main() {
     await tester.pumpWidget(harness(service));
     await tester.pumpAndSettle();
 
-    final TextField input = tester.widget<TextField>(
-      find.byKey(const ValueKey<String>('ai-video-acquire-input')),
-    );
+    final TextField input = tester.widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('ai-video-acquire-input'))),);
     expect(input.enabled, isTrue);
     await tester.tap(
       find.byKey(const ValueKey<String>('ai-video-acquire-restart')),
@@ -234,9 +231,7 @@ void main() {
     addTearDown(service.dispose);
     await tester.pumpWidget(harness(service));
     await tester.pump();
-    final IconButton cancel = tester.widget<IconButton>(
-      find.byKey(const ValueKey<String>('ai-video-acquire-cancel')),
-    );
+    final IconButton cancel = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(const ValueKey<String>('ai-video-acquire-cancel'))),);
     expect(cancel.onPressed, isNull);
   });
 

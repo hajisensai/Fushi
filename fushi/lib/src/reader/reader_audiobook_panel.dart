@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
@@ -182,9 +183,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
               style: theme.textTheme.titleMedium,
             ),
           ),
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('fushi_audiobook_panel_close'),
-            icon: const Icon(Icons.close),
+            icon: const FushiIcon(Icons.close),
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
             onPressed: () => Navigator.of(context).maybePop(),
           ),
@@ -257,14 +258,14 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Icon(icon, size: 18),
+                FushiIcon(icon, size: 18),
                 const SizedBox(width: 6),
                 Text(label),
               ],
             ),
           ),
         );
-    return TabBar(
+    return FushiTabBar(
       controller: _tabController,
       labelPadding: const EdgeInsets.symmetric(horizontal: 4),
       onTap: (int index) {
@@ -323,8 +324,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
         : widget.onAudioImport != null
             ? Align(
                 alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
-                  icon: const Icon(Icons.headphones_outlined),
+                child: FushiFilledButton.tonalIcon(
+                  icon: const FushiIcon(Icons.headphones_outlined),
                   label: Text(t.audio_import),
                   onPressed: () {
                     Navigator.of(context).pop();
@@ -333,9 +334,14 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                 ),
               )
             : null;
+    // Apple：信息卡是内容层的实色分组底（secondarySystemGroupedBackground），
+    // 不是半透明灰——与下方设置分组同一层级，不发灰发脏。
+    final bool glass = isGlassDesign(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        color: glass
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Padding(
@@ -355,7 +361,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                   children: <Widget>[
                     if (coverPath != null) ...<Widget>[
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(glass ? 8 : 6),
                         child: Image.file(
                           File(coverPath),
                           key: const ValueKey<String>('fushi_audiobook_cover'),
@@ -437,9 +443,11 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               ),
-              child: Slider(
+              child: FushiSlider(
                 key: const ValueKey<String>('fushi_audiobook_panel_slider'),
                 value: value,
+                // Apple 滑块不走 SliderTheme 的 trackShape：章首刻度经参数传入。
+                ticks: ticks,
                 // 拖动期间只更新本地目标（不发 seek），松手一次性 seek；落定前拇指
                 // 留在目标处（见 _effectiveScrubMs）。
                 onChangeStart: durMs > 0
@@ -477,35 +485,35 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
               alignment: WrapAlignment.center,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: <Widget>[
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: '-10s',
-                  icon: const Icon(Icons.replay_10_outlined),
+                  icon: const FushiIcon(Icons.replay_10_outlined),
                   onPressed: () => unawaited(ctrl.seekRelative(-10)),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.prev_sentence,
-                  icon: const Icon(Icons.skip_previous_outlined),
+                  icon: const FushiIcon(Icons.skip_previous_outlined),
                   onPressed: () => unawaited(ctrl.skipToPrevCue()),
                 ),
-                IconButton.filledTonal(
+                FushiIconButtonControl.filledTonal(
                   key: const ValueKey<String>('fushi_audiobook_panel_play'),
                   iconSize: 28,
                   tooltip: ctrl.isPlaying ? t.pause : t.play,
-                  icon: Icon(
+                  icon: FushiIcon(
                     ctrl.isPlaying
                         ? Icons.pause_outlined
                         : Icons.play_arrow_outlined,
                   ),
                   onPressed: () => unawaited(ctrl.togglePlayPause()),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.next_sentence,
-                  icon: const Icon(Icons.skip_next_outlined),
+                  icon: const FushiIcon(Icons.skip_next_outlined),
                   onPressed: () => unawaited(ctrl.skipToNextCue()),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: '+10s',
-                  icon: const Icon(Icons.forward_10_outlined),
+                  icon: const FushiIcon(Icons.forward_10_outlined),
                   onPressed: () => unawaited(ctrl.seekRelative(10)),
                 ),
               ],

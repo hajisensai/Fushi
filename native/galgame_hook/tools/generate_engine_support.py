@@ -51,6 +51,9 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "smash_fzmedia",
     "cmvs",
     "unity_mono",
+    "yuris",
+    "fvp",
+    "kogado_hy",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -127,6 +130,22 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdBgi",
     ): ("bgi_ethornell", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdYuris",
+    ): ("yuris", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdMalie",
+    ): ("malie_libp", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdFvp",
+    ): ("fvp", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdKogadoHy",
+    ): ("kogado_hy", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",
@@ -162,6 +181,13 @@ STATUS_RANK = {
 # Existing claims predate the structured evidence contract. Keep these exact
 # hashes only for backward compatibility; changed/new claims must link a
 # release-eligible evidence document. Never refresh hashes to bypass evidence.
+# malie_libp left every legacy table on 2026-10-03 (PR #1917): its only
+# grandfathered audio claim was the title-keyed CFI archive lane
+# (malie_libp_cfi_voice_resource), which was removed together with its single
+# verified game (Amantes). Keeping the "partial" status / prefix pins would let
+# a later edit re-promote the engine without evidence, so it is now treated
+# like any engine without history: every partial/verified claim needs a
+# support_evidence ledger.
 LEGACY_ENGINE_STATUSES = {
     "siglus": "verified",
     "reallive": "implemented_unverified",
@@ -172,7 +198,6 @@ LEGACY_ENGINE_STATUSES = {
     "bgi_ethornell": "implemented_unverified",
     "artemis_pfs": "partial",
     "catsystem2": "partial",
-    "malie_libp": "partial",
     "qlie_filepack": "partial",
     "unity_il2cpp": "verified",
 }
@@ -193,7 +218,6 @@ LEGACY_CAPABILITY_CLAIM_HASHES = {
     "catsystem2:audio:catsystem2_unencrypted_kif_voice_resource": "f92f831a9a4e85d9f3a699f3d35d9467e0fbdcae5e7a8881d33405dd3d41fcb9",
     "catsystem2:audio:directsound_pcm": "9b248c5ff2544381130989338bb4bc31f3828f4cf673b5a77f7bb54c9f74d450",
     "catsystem2:audio:process_loopback": "c47de17dc5977323136fd947e33eddfe08a316b268122083d14a114e2c9620ee",
-    "malie_libp:audio:malie_libp_cfi_voice_resource": "d421dc04a4d26d4a794bf266c4b776b723c55367cd91b7ac48d3adc0c1ede47f",
     "malie_libp:audio:directsound_pcm": "d728a4f98d6f934d2a510c4c61165c4902ad9c0b0460cf9f8a179747488b0c43",
     "malie_libp:audio:process_loopback": "c47de17dc5977323136fd947e33eddfe08a316b268122083d14a114e2c9620ee",
     "qlie_filepack:audio:qlie_wuvorbis_per_source_pcm": "3428a1638a385e599eb41947a7735278b48fd13d648047c267e9437f4a9de217",
@@ -215,7 +239,6 @@ LEGACY_VERIFIED_GAMES_PREFIX = {
     "bgi_ethornell": (0, "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"),
     "artemis_pfs": (1, "365d343225f191a042b2ac53a1fe7d5c32f74549f47283559fe87c1b0fe85929"),
     "catsystem2": (1, "0b684b6ad4e64b0b176c205c5cbb909fa321c8a837eb40f2df0216af1c8c1cbf"),
-    "malie_libp": (1, "c966c0bb70fad0782773029ea60a746108f1ff8b18f4bd04c045f01fc1ce40bc"),
     "qlie_filepack": (1, "845cb384721c48998090baacd6cfcb689a0a3e8ab5f0f0b5bfcf926d3551d813"),
     "unity_il2cpp": (1, "a9c89a1ef1fa43b3c86ec78949ab68c16ce105d34905f856126a5af3ad641e32"),
 }
@@ -279,7 +302,6 @@ LEGACY_LIMITATIONS_PREFIX = {
     "bgi_ethornell": (3, "5bdc14013a2445fa536df7804144f0e3aa0f3cfc3dcdb73efbc3817b10060704"),
     "artemis_pfs": (3, "0c0312f436e89709ff33de1ee70f29fd8e4e616a629e865c94231dd0135b7c8c"),
     "catsystem2": (3, "a17301396c6262267057addbb544f14c1d4f3d6d657edd0f4968a21e3e5ca641"),
-    "malie_libp": (4, "4f05408bc11967c2955bc59e4dab6aeb8e7fa9ae4f3443e13924b49179ba2407"),
     "qlie_filepack": (5, "f9b3e48194780e35ddc878464f7f5185f48b41504c387cdbbdf62f50edf2140c"),
     "unity_il2cpp": (3, "1de6daa5058f3b2a37a5d28ed5b4b6b6686d47945f7e5caf10109c5f3ae4e8ff"),
 }
@@ -287,6 +309,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "artemis_pf8_voice_resource": "resource_observed",
     "bgi_arc20_voice_resource": "resource_observed",
     "catsystem2_unencrypted_kif_voice_resource": "resource_observed",
+    "fvp_decoder_input_ogg_resource": "resource_observed",
     "directsound_buffer_pcm": "pcm_observed",
     "directsound_pcm": "pcm_observed",
     "ffmpeg54_decoder_pcm": "pcm_observed",
@@ -294,7 +317,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "kirikiri_decoder_pcm": "pcm_observed",
     "kirikiri_resource_stream": "resource_observed",
     "leaf_lac_voice_resource": "resource_observed",
-    "malie_libp_cfi_voice_resource": "resource_observed",
+    "malie_ogg_decoder_input_voice_resource": "resource_observed",
     "process_loopback": "loopback_observed",
     "qlie_wuvorbis_float_per_source_pcm": "pcm_observed",
     "qlie_wuvorbis_per_source_pcm": "pcm_observed",
@@ -306,6 +329,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "visual_arts_ovk_resource": "resource_observed",
     "xaudio2_or_directsound_pcm": "pcm_observed",
     "xaudio2_source_voice_pcm": "pcm_observed",
+    "yuris_decoder_input_voice_resource": "resource_observed",
 }
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -1126,7 +1150,8 @@ def validate_manifest(
                 )
     _require(
         lookup_ids == LOOKUP_ACCEPTANCE_ENGINE_IDS,
-        "lookup_support must contain exactly the fixed 16-engine matrix; "
+        "lookup_support must contain exactly the fixed "
+        f"{len(LOOKUP_ACCEPTANCE_ENGINE_IDS)}-engine matrix; "
         "xaudio2_directsound is an audio backend, not an engine",
     )
     # Temporary evidence-test roots contain only synthetic evidence ledgers.

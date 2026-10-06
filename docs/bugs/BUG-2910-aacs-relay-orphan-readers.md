@@ -1,0 +1,11 @@
+## BUG-2910 · AACS 解密中继：客户端放弃的 Range 请求继续读盘到文件尾，光驱被抢读导致只能播开头
+- **报告**：2026-10-03（用户：「Cosmic Princess Kaguya! 这个 bd 盘导入以后只能看开头」——物理 BD 光驱 E:，`E:\BDMV\PLAYLIST\00001.mpls`，单段 41 GB 正片 `00001.m2ts`，全程 AACS 加密）
+- **真实性**：✅ 真 bug。根因 `packages/fushi_engine/lib/media/video/bluray/aacs_stream_relay.dart` `_respond` 的写循环：客户端断开后 `response.add()` / `flush()` 照常成功，循环只看 `isClosing()`、从不看连接是否还在，于是每个被播放器放弃的 Range 请求（探测 / 寻址 / 续播 seek）都继续「读盘 → 解密」直到文件尾（正片 41 GB）。孤儿读者在光驱上与真正的播放请求抢读、来回寻道，首段缓冲耗尽后就断粮。
+  - 实测（硬盘副本）：客户端读 8 MB 后断开，中继继续以 ~90 MB/s 读了 20 s（1.8 GB），直到 relay 关闭。
+  - 实测（光驱 E:，同一 relay 连续 5 次 seek 请求）：6.8 → 14.6 → 0.8 → 0.3 → 0.1 MB/s；光驱裸读 8.4–8.8 MB/s，单请求新进程 9.8 MB/s——瓶颈不是光驱也不是解密。
+  - 实测（mpv 经 relay 真解码，从开头 60 s 后再从 50% 60 s）：修前第二段 14 次 Enter buffering，60 s 内容耗时 110 s。
+- **[x] ① 已修复**（`04b46fd013`）— 读 → 解密 → 产出改为按需拉取的 `async*` 生成器 `AacsStreamRelay.decryptedRange`（取消订阅即停在挂起的 `yield`、`finally` 关文件句柄；解密失败在产出该单元之前抛错）。正文改写在 `detachSocket()` 拿到的裸 socket 上（`Connection: close`）——实测 dart:io 的 `HttpResponse.add/flush/addStream/done` 在对端断开后都吞掉写失败、不报错，裸 socket 的 `flush` 则会抛错，循环随之结束、生成器被取消。解密失败 / 写失败一律 `socket.destroy()`：正文被截断，绝不补发密文。入站方向用 `drain` 消费（否则 `socket.close()` 永不完成）。detach 后的 socket 不归 `HttpServer` 管，中继关闭时由 `_serve` 自己逐个 destroy（登记后再查一次关闭标志，堵住「关闭扫描发生在 detach 与登记之间」的窗口），暂停的播放器不会让 `relay.close()` 挂住。
+  - 修后实测（硬盘副本）：读 8 MB 后断开，进程读取量停在 ~70 MB 不再增长（修前 20 s 多读 1.8 GB）；变异实测——把写入包进 `try {} catch (_) {}` 吞掉写失败——20 s 内读到 1.9–2.9 GB，确认停读靠的就是写失败上浮。光驱上 5 次 seek 均为 8–9 MB/s（或命中系统缓存）。mpv 经 relay 真解码：开头段 0 次缓冲；50% 段只有起播寻址时 1 次 0.64 s 缓冲，60 s 内容墙钟 62 s（修前 14 次缓冲 / 110 s）。
+  - 中间方案 `response.addStream(decryptedRange(...))` 被既有测试否决：头部写出时机与生成器错误竞态（损坏单元时响应正常完成而非截断），且 `relay.close()` 后旧连接仍可用。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/aacs_stream_relay_test.dart`：「decrypted range is pulled on demand and cancelling it closes the file」（暂停的消费者只拿到一块、取消后 Windows 上文件可立即删除）与「decrypted range fails before emitting a unit it cannot decrypt」。
+- **备注**：用户报告时装的是 `codex/bluray-aacs-input` 分支的构建；该分支的解密中继已随 `29c9cbe5b2`（feat(video): decrypt AACS Blu-ray inputs across native platforms）并入 develop，因此 develop 同样受影响，本修复面向 develop。

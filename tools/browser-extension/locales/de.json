@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "System folgen",
   "opt_extensionTheme_option_light": "Hell",
   "opt_extensionTheme_option_dark": "Dunkel",
+  "opt_page_subtitle": "Einstellungen werden nur in diesem Browser gespeichert; die meisten Änderungen gelten sofort.",
+  "opt_section_nav_aria_label": "Einstellungsbereiche",
+  "opt_connection_section_heading": "Verbindung und Diagnose",
   "opt_palette_title": "Farbschema",
   "opt_palette_desc": "Dasselbe Themenmodell wie Fushi selbst: den aktuellen Fushi-Farben folgen, eine eingebaute Vorlage oder ein eigenes Design (eine Akzentfarbe leitet Hell- und Dunkelpalette ab). Gilt für Einstellungsseite, Untertitel-Seitenleiste, Symbolleistenmenü, Untertitel-Schublade, das Untertitelfeld auf dem Video und das Nachschlage-Popup.",
   "opt_extensionBrightness_title": "Hell / Dunkel",
@@ -297,7 +300,6 @@
   "ctx_confirm": "Karte erstellen",
   "ctx_cancel": "Abbrechen",
   "gen_youtube_queue_empty": "YouTube-Warteschlange ist leer: Untertitel einschalten → mit Shift über ein Wort fahren → im Popup „Mining“ drücken, um es einzureihen, dann erzeugen",
-  "gen_ext_updated_refresh": "Die Erweiterung wurde aktualisiert; lade die Seite neu (F5) und versuche es erneut",
   "gen_progress": "Wird erzeugt… {done}/{total}",
   "gen_partial_anki_unconfigured": "Teilweise erzeugt: Anki ist nicht konfiguriert — richte Anki in Fushi ein und versuche es erneut (verarbeitet {done}, behalten {kept})",
   "gen_partial_anki_unconfigured_kept": "Teilweise erzeugt: Anki ist nicht konfiguriert — richte Anki in Fushi ein und versuche es erneut (behalten {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "Die eingereihten Karten stammen von Seiten ohne Stapelerzeugung; entferne sie einzeln oder leere die Warteschlange",
   "ap_gen_start_record_n": "Aufnehmen & Erzeugen starten ({n} Karten)",
   "ap_gen_start_n": "Erzeugen starten ({n} Karten)",
-  "ap_gen_other_youtube_hint": "{n} weitere auf YouTube — wechsle zu einer YouTube-Seite, um sie zu erzeugen",
+  "ap_gen_other_youtube_hint": "{n} weitere von YouTube – öffne dieses Menü auf einer beliebigen Seite außer Netflix, um sie zu erstellen",
   "ap_gen_other_netflix_hint": "{n} weitere auf Netflix — wechsle zu einer Netflix-Wiedergabeseite, um sie zu erzeugen",
   "ap_gen_site_count": "{site} {n} Karten",
   "ap_gen_wrong_site_hint": "Ausstehend: {pending} — klicke auf einen Eintrag der Warteschlange, um zu seiner Videoseite zu springen, dann erzeugen",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "Alles leeren?",
   "ap_queue_open_video_hint": "Klicken, um die Videoseite zu öffnen",
   "ap_queue_remove_title": "Aus der Warteschlange entfernen",
-  "np_fushi_nested_close_aria_label": "Diese Nachschlage-Ebene schließen",
   "theme_palette_app": "Fushi folgen",
   "theme_palette_app_pending": "Die Fushi-Farben kommen mit dem ersten Nachschlagen, während Fushi läuft",
   "theme_preset_fushi": "Fushi-Grün",
@@ -426,5 +427,5 @@
   "pc_style_more": "Alle Einstellungen",
   "pc_hint_site_track": "Dieses Video spielt den Untertitel-Track der Website ab, daher bleibt die Fushi-Ebene ausgeblendet. Tippen, um stattdessen Fushi-Untertitel anzuzeigen.",
   "opt_playerControls_title": "Untertitel-Schaltfläche im Player",
-  "opt_playerControls_desc": "Setzt eine Fushi-Schaltfläche in die Steuerleiste des Players (YouTube und Netflix; auf anderen Seiten erscheint eine runde Schaltfläche unten rechts im Video, solange der Zeiger darüber liegt). Ihr Menü schaltet dieselben Einstellungen wie diese Seite – Fushi-Untertitel, Untertitel der Website ersetzen, ausblenden, Zeitversatz und Untertitel-Aussehen – ohne das Video zu verlassen."
+  "opt_playerControls_desc": "Setzt eine Fushi-Schaltfläche in die Steuerleiste des Players (YouTube und Netflix; auf anderen Seiten erscheint eine runde Schaltfläche oben rechts im Video, solange der Zeiger darüber liegt). Ihr Menü schaltet dieselben Einstellungen wie diese Seite – Fushi-Untertitel, Untertitel der Website ersetzen, ausblenden, Zeitversatz und Untertitel-Aussehen – ohne das Video zu verlassen."
 }

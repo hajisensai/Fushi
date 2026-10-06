@@ -43,7 +43,7 @@ class MokuroMoeSourceRow extends ConsumerWidget {
       padding: EdgeInsets.zero,
       child: FushiListItem(
         onTap: enabled ? onOpen : null,
-        leading: Switch.adaptive(
+        leading: FushiSwitch.adaptive(
           value: enabled,
           onChanged: ready
               ? (bool value) =>

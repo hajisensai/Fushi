@@ -45,7 +45,9 @@ void main() {
   test('宿主窗 = 非激活工具窗 popup，不被主窗拥有（owned 窗永远在 owner 之上）', () {
     expect(host, contains('WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW'));
     expect(host, contains('WS_POPUP'));
-    expect(host, contains('return MA_NOACTIVATE'));
+    // 鼠标与触摸激活请求统一交给共用策略（MA_NOACTIVATE / PA_NOACTIVATE 在
+    // window_activation_policy.h 里，BUG-2889）。
+    expect(host, contains('return OverlayNoActivateReply(message);'));
     final RegExp create = RegExp(r'CreateWindowExW\([^;]*?\);', dotAll: true);
     final String call = create.firstMatch(host)!.group(0)!;
     // hWndParent 参数必须是 nullptr（第 8 个实参）。
@@ -104,6 +106,36 @@ void main() {
       reason: '页面上报色必须先叠到 surface 上，标题行恒不透明',
     );
     expect(rowHead, contains('color: captionFill,'));
+  });
+
+  test('字幕层 HDR 亮度归一：runner 回报 SDR 白电平、激活时重读、两层图形都包上', () {
+    // SDR 白电平只有 DisplayConfig 给，DXGI GetDesc1 没有。
+    expect(host, contains('DISPLAYCONFIG_DEVICE_INFO_GET_SDR_WHITE_LEVEL'));
+    expect(host, contains('QuerySdrWhiteNits(desc.DeviceName)'));
+    final String dart = _read(
+      '${_fushiDir()}/lib/src/media/video/video_hdr_output.dart',
+    );
+    expect(window, contains('"sdrWhiteNits"'));
+    expect(dart, contains("value['sdrWhiteNits']"));
+    // 改「SDR 内容亮度」滑块没有窗口消息：主窗重新激活（宿主窗在时）也要通知重判。
+    expect(window, contains('host_activated'));
+    expect(window, contains('message == WM_DISPLAYCHANGE || host_activated'));
+    // 弹幕与字幕都在视频平面上，必须都经 _hdrGraphicsWhiteLevel。
+    final String layout = _read(
+      '${_fushiDir()}/lib/src/pages/implementations/video_fushi/layout.part.dart',
+    );
+    for (final String overlay in <String>[
+      'VideoDanmakuOverlay(',
+      'VideoSubtitleOverlay(',
+    ]) {
+      final int at = layout.indexOf(overlay);
+      expect(at, greaterThan(0), reason: overlay);
+      expect(
+        layout.substring(at - 120, at),
+        contains('_hdrGraphicsWhiteLevel('),
+        reason: overlay,
+      );
+    }
   });
 
   test('通道名与 Dart 侧一致', () {

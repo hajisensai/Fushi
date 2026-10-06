@@ -619,9 +619,9 @@ Future<Color?> _pickGalHookColor(
 }) async {
   Color picked = initial;
   bool confirmed = false;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(title),
       content: SingleChildScrollView(
         child: ColorPicker(
@@ -639,11 +639,11 @@ Future<Color?> _pickGalHookColor(
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: () {
             confirmed = true;
             Navigator.of(dialogContext).pop();
@@ -693,5 +693,5 @@ void _showGameSettingsSnackBar(
     SettingsContext settingsContext, String message) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
-  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
 }

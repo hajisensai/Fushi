@@ -14,6 +14,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
 // `flutter test --dart-define=SLANG_MOCK=true` and a conditional
 // import.  For now we import the real generated file:
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   late Directory tmpDir;
@@ -39,11 +41,12 @@ void main() {
   // file IO only advances under `runAsync`, but the `await` continuations in
   // `_reload` are bound to the test's fake-async zone and only run on `pump()`.
   // Alternating the two drains the discover→read chain; we stop once the
-  // loading `CircularProgressIndicator` clears (pumpAndSettle can't be used —
-  // it spins forever on the spinner's indefinite animation).
+  // loading indicator (MD3 Expressive `FushiExpressiveLoadingIndicator`) clears
+  // (pumpAndSettle can't be used — it spins forever on the indicator's
+  // indefinite animation).
   Future<void> settleAsyncLoad(WidgetTester tester) async {
     for (int i = 0; i < 50; i++) {
-      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) return;
+      if (find.byType(FushiExpressiveLoadingIndicator).evaluate().isEmpty) return;
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
       );
@@ -112,18 +115,18 @@ void main() {
       // UI thread, so the page must NOT have synchronously populated its tabs
       // (that synchronous populate is exactly the freeze we removed).
       await tester.pump();
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
       expect(find.text('a.css'), findsNothing);
 
       // Drive the real async file IO until the loading spinner clears.
       await settleAsyncLoad(tester);
 
       // After the off-thread load resolves, tabs + editor content appear.
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(FushiExpressiveLoadingIndicator), findsNothing);
       expect(find.text('a.css'), findsOneWidget);
       expect(find.text('b.css'), findsOneWidget);
       final TextField tf =
-          tester.widget<TextField>(find.byType(TextField).first);
+          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
       expect(tf.controller!.text, 'aaa');
     },
   );
@@ -161,7 +164,7 @@ void main() {
 
       // First chip should still be selected (editor still shows modified text)
       final TextField tf =
-          tester.widget<TextField>(find.byType(TextField).first);
+          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
       expect(tf.controller!.text, 'modified');
     },
   );
@@ -215,7 +218,7 @@ void main() {
 
       // Editor should be back to disk content
       final TextField tf =
-          tester.widget<TextField>(find.byType(TextField).first);
+          tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField).first));
       expect(tf.controller!.text, 'original content');
 
       // No .original file should exist on disk

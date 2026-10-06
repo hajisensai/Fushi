@@ -41,7 +41,7 @@ class _StatDayResetHourDialogState extends State<StatDayResetHourDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.stat_center_day_reset_action),
       contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
       // 设置行默认活在无界高的列表里；弹窗给的是有界高，不套滚动容器它会把
@@ -65,7 +65,7 @@ class _StatDayResetHourDialogState extends State<StatDayResetHourDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
@@ -79,7 +79,7 @@ Future<void> showStatDayResetHourDialog(
   BuildContext context,
   AppModel appModel,
 ) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) =>
         StatDayResetHourDialog(appModel: appModel),

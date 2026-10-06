@@ -128,12 +128,20 @@ void main() {
       // 漏掉这项就退回「只让一个按钮行高」、字幕重新压住热区上缘 20px 带。
       '_activeSeekBarButtonBarOverlap',
       '_videoSubtitleSeekBarBreathingGap',
-      '_videoBottomChromeBaseline',
+      // Apple 底栏胶囊抬升后，移动端离底基线经 _videoGeometryBottomBaseline
+      // （= _videoBottomChromeBaseline + 抬升，见下方断言）。
+      '_videoGeometryBottomBaseline',
       '_videoBottomSystemInset()',
     ]) {
       expect(body, contains(getter),
           reason: 'reserve 必须由真实控制条几何项 $getter 加总（随缩放、盖过移动进度条）');
     }
+    expect(
+        RegExp(r'double get _videoGeometryBottomBaseline =>\s*'
+                r'_videoBottomChromeBaseline \+')
+            .hasMatch(src),
+        isTrue,
+        reason: '离底基线必须仍以 _videoBottomChromeBaseline 为底再叠抬升');
     expect(body, contains('_isDesktopVideoControls'),
         reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条热区上缘）');
     // BUG-901 防回退：reserve 计算不应再只用**可见轨道高**（那会让字幕落进轨道上方那段

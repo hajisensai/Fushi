@@ -39,11 +39,17 @@ void main() {
     // [_subtitleLoadingShown] 标记把面板所有行 `enabled: !_subtitleLoadingShown`
     // 置灰（点不动 = 不可关/不可误触），并显示进度圈，与旧 barrierDismissible:false
     // 遮罩同义。
-    expect(src.contains('enabled: !_subtitleLoadingShown'), isTrue,
-        reason: '抽取期间面板行必须 disabled，避免中途误触切别的源');
+    expect(
+      src.contains('enabled: !_subtitleLoadingShown'),
+      isTrue,
+      reason: '抽取期间面板行必须 disabled，避免中途误触切别的源',
+    );
     expect(src.contains('CircularProgressIndicator'), isTrue);
-    expect(src.contains('LinearProgressIndicator'), isTrue,
-        reason: '面板抽取期显示进度条');
+    expect(
+      src.contains('LinearProgressIndicator'),
+      isTrue,
+      reason: '面板抽取期显示进度条',
+    );
   });
 
   test('_selectSubtitleSource 在抽取前后包裹遮罩（show…try/finally hide）', () {
@@ -53,10 +59,13 @@ void main() {
     // try/finally 到 hide 之间多写两行（如加一条 OSD 提示）就会把 hide 挤出旧
     // 窗口，要求型断言凭空变红。下界仍保持在 show 处，「show 之后才出现的
     // try/finally/hide」这条语义不放松（不是拿整个方法体去 contains）。
-    final String method =
-        methodBody(src, 'Future<bool> _selectSubtitleSource(');
-    final int loadAt =
-        method.indexOf('loadSubtitleCueResult(source, videoPath');
+    final String method = methodBody(
+      src,
+      'Future<bool> _selectSubtitleSource(',
+    );
+    final int loadAt = method.indexOf(
+      'loadSubtitleCueResult(source, videoPath',
+    );
     expect(loadAt, greaterThan(-1), reason: '缺 loadSubtitleCueResult 抽取调用');
 
     final int showAt = method.indexOf('_showSubtitleLoadingOverlay();');
@@ -65,10 +74,16 @@ void main() {
 
     final String afterShow = method.substring(showAt);
     expect(afterShow.contains('try {'), isTrue, reason: '抽取应在 try 块内');
-    expect(afterShow.contains('} finally {'), isTrue,
-        reason: '遮罩应在 finally 中收起');
-    expect(afterShow.contains('_hideSubtitleLoadingOverlay();'), isTrue,
-        reason: 'finally 必须调用 hide，避免任何路径残留死遮罩');
+    expect(
+      afterShow.contains('} finally {'),
+      isTrue,
+      reason: '遮罩应在 finally 中收起',
+    );
+    expect(
+      afterShow.contains('_hideSubtitleLoadingOverlay();'),
+      isTrue,
+      reason: 'finally 必须调用 hide，避免任何路径残留死遮罩',
+    );
   });
 
   test('防重复弹出/错误 pop 的状态位', () {
@@ -82,14 +97,24 @@ void main() {
     // 锚点跟随真实判据：BUG-2587 起统计采集器按本页身份建（远端也采集），
     // 不再有 _bookRow / !_isRemote 门。
     final int watchAt = src.indexOf(
-        'final (String uid, int episodeIndex) = _watchStatsIdentity;', start);
+      'final (String uid, int episodeIndex) = _watchStatsIdentity;',
+      start,
+    );
     final int prewarmAt = src.indexOf(
-        'unawaited(prewarmEmbeddedSubtitleCache(videoPath));', start);
+      'unawaited(prewarmEmbeddedSubtitleCache(videoPath));',
+      start,
+    );
     expect(prewarmAt, greaterThan(seedAt), reason: '预抽应在视频打开成功后的 warmup 区域触发');
-    expect(prewarmAt, lessThan(watchAt),
-        reason: '预抽不应混进统计初始化，保持 fire-and-forget 入口清晰');
-    expect(src.substring(seedAt, prewarmAt), contains('if (videoPath != null)'),
-        reason: '远程流没有本地容器文件，不应触发内封字幕预抽');
+    expect(
+      prewarmAt,
+      lessThan(watchAt),
+      reason: '预抽不应混进统计初始化，保持 fire-and-forget 入口清晰',
+    );
+    expect(
+      src.substring(seedAt, prewarmAt),
+      contains('if (videoPath != null)'),
+      reason: '远程流没有本地容器文件，不应触发内封字幕预抽',
+    );
   });
 
   test('TODO-572: controller 内封字幕首载经协调器做就绪后重试，不退回弱判据/单次', () {
@@ -105,9 +130,10 @@ void main() {
 
     // load() 触发时必须传 player + loadToken（不再是弱判据的无参触发）。
     expect(
-      csrc.contains('unawaited(_loadEmbeddedSubtitleIfNeeded(\n'
-          '        player: player,\n'
-          '        loadToken: loadToken,'),
+      RegExp(
+        r'unawaited\(\s*_loadEmbeddedSubtitleIfNeeded\(\s*'
+        r'player:\s*player,\s*loadToken:\s*loadToken,',
+      ).hasMatch(csrc),
       isTrue,
       reason: 'load() 触发内封字幕自动加载必须传 player + loadToken，供过期判据与就绪重试',
     );
@@ -117,8 +143,10 @@ void main() {
     // 上数括号：注释或字符串里的 `{` / `}` 一样参与配对，方法体里出现一句
     // `// 这里 } 收口` 就会提前闭合。共享 methodBody 先做词法掩码再配对，
     // 参数表圆括号也由它统一跳过，语义相同且不再被注释带偏。
-    final String body =
-        methodBody(csrc, 'Future<void> _loadEmbeddedSubtitleIfNeeded({');
+    final String body = methodBody(
+      csrc,
+      'Future<void> _loadEmbeddedSubtitleIfNeeded({',
+    );
 
     expect(
       body.contains('loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry('),
@@ -127,7 +155,8 @@ void main() {
     );
     expect(
       body.contains(
-          'waitForReady: () => _waitUntilSubtitleTracksReady(player)'),
+        'waitForReady: () => _waitUntilSubtitleTracksReady(player)',
+      ),
       isTrue,
       reason: '就绪信号必须是 libmpv 字幕轨就绪（容器已 demux），而非固定延迟',
     );

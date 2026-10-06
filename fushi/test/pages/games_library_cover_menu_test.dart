@@ -120,7 +120,10 @@ void main() {
     ]);
     await pumpPage(tester, appModel);
 
-    await tester.tap(find.byType(PopupMenuButton<String>));
+    // 设计系统包装 FushiPopupMenuButton 是 PopupMenuButton 的子类，byType 按
+    // 精确运行时类型匹配会漏掉它。
+    await tester.tap(
+        find.byWidgetPredicate((Widget w) => w is PopupMenuButton<String>));
     await tester.pumpAndSettle();
 
     // 限定在溢出菜单项内找：工具栏的「游玩状态」下拉 chip 与菜单项同文案，

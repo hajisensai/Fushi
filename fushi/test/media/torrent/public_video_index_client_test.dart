@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -257,20 +258,17 @@ void main() {
         '2012',
       ]) {
         expect(
-          publicVideoIndexSearchQuery(
-            VideoResourceSearchRequest(query: q),
-          ),
+          publicVideoIndexSearchQuery(VideoResourceSearchRequest(query: q)),
           q,
-          reason: '$q 有拉丁词可匹配，apibay 对它并不退化；'
+          reason:
+              '$q 有拉丁词可匹配，apibay 对它并不退化；'
               '含一个汉字就整条拦是过度拦截，实现范围大于实测证据范围',
         );
       }
       // 反向：没有拉丁词、也不是纯 ASCII，且拿不到媒体身份 → 表达不了。
       for (final String q in <String>['薬屋のひとりごと 第2期', 'ﾎﾟｹﾓﾝ', '오징어 게임']) {
         expect(
-          publicVideoIndexSearchQuery(
-            VideoResourceSearchRequest(query: q),
-          ),
+          publicVideoIndexSearchQuery(VideoResourceSearchRequest(query: q)),
           isNull,
           reason: '$q 没有拉丁词，送进去只会拿回热门榜',
         );
@@ -294,9 +292,11 @@ void main() {
           aliases: const <String>['Kusuriya no Hitorigoto Season 2'],
         ),
       );
-      expect(publicVideoIndexSearchQuery(request),
-          'Kusuriya no Hitorigoto Season 2',
-          reason: '全角数字不折，isKnownTitle 就失配，别名降级白做');
+      expect(
+        publicVideoIndexSearchQuery(request),
+        'Kusuriya no Hitorigoto Season 2',
+        reason: '全角数字不折，isKnownTitle 就失配，别名降级白做',
+      );
     });
 
     test('BUG-1985 CJK 标题命中媒体身份时改用可信拉丁别名', () {
@@ -389,11 +389,17 @@ void main() {
       // 「表达不了」是未参与，不是失败。表达成 failure 会让订阅 / 下载流水线
       // 每一轮定时任务都 throw（那两条路径重建 media 时结构上拿不到别名），
       // 也会让 UI 弹「加载失败 + 重试」——而重试永远不可能成功。
-      expect(result.failures, isEmpty,
-          reason: 'unsupported 不得表达成 provider failure');
+      expect(
+        result.failures,
+        isEmpty,
+        reason: 'unsupported 不得表达成 provider failure',
+      );
       expect(result.successfulProviderCount, 0);
-      expect(result.hasNoActiveProvider, isTrue,
-          reason: '要落进既有的第三态，让聚合层与 UI 拿到「这家没参与」而不是「炸了」');
+      expect(
+        result.hasNoActiveProvider,
+        isTrue,
+        reason: '要落进既有的第三态，让聚合层与 UI 拿到「这家没参与」而不是「炸了」',
+      );
       expect(result.isTotalFailure, isFalse);
     });
 
@@ -425,9 +431,13 @@ void main() {
             ),
           );
 
-      expect(queries, <String>['薬屋のひとりごと 第2期'],
-          reason: 'Knaben 的 search_type:100% 是硬标题过滤，对 CJK 返回正确的 0 条；'
-              '把它一起拦掉是纯功能删除，删的正是它相对 apibay 的价值');
+      expect(
+        queries,
+        <String>['薬屋のひとりごと 第2期'],
+        reason:
+            'Knaben 的 search_type:100% 是硬标题过滤，对 CJK 返回正确的 0 条；'
+            '把它一起拦掉是纯功能删除，删的正是它相对 apibay 的价值',
+      );
       expect(result.failures, isEmpty);
     });
 
@@ -523,6 +533,35 @@ void main() {
       expect(
         () => resolvePublicVideoIndexCandidate(mine, kKnabenResourceProviderId),
         throwsA(isA<ExternalProviderFailure>()),
+      );
+    });
+  });
+
+  // BUG-2933：连上之后不回包的请求必须按总时限失败，而不是把整轮资源搜索
+  // （注册表 `Future.wait`）一起挂住。
+  group('总时限', () {
+    MockClient hangingClient() =>
+        MockClient((http.Request request) => Completer<http.Response>().future);
+
+    test('apibay 请求挂住时按 requestTimeout 抛 TimeoutException', () async {
+      final ApibayClient client = ApibayClient(
+        client: hangingClient(),
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        client.search('Inception', categories: const <int>[201]),
+        throwsA(isA<TimeoutException>()),
+      );
+    });
+
+    test('Knaben 请求挂住时按 requestTimeout 抛 TimeoutException', () async {
+      final KnabenClient client = KnabenClient(
+        client: hangingClient(),
+        requestTimeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        client.search('Inception', categories: const <int>[3000000]),
+        throwsA(isA<TimeoutException>()),
       );
     });
   });

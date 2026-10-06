@@ -129,6 +129,18 @@ abstract interface class LineOcrRecognizer implements OcrRecognizer {
   });
 }
 
+/// 补检：页面文字检测器没过正式阈值的文字（低分的装饰性标题等），由实现方复核后
+/// 补回来（`page_text_sweep.dart`）。[candidates] 是检测器的弱候选
+/// （[PageDetections.weakTextRegions]），[covered] 是已有文字块的框，落在里面的
+/// 不再补；返回的块自带行几何，页面坐标。
+abstract interface class OcrPageTextSweeper {
+  Future<List<OcrBlock>> sweep(
+    img.Image page, {
+    required List<DetectedTextRegion> candidates,
+    required List<OcrRect> covered,
+  });
+}
+
 /// 竖排判定的长宽比阈值：高 > 宽 * 阈值 视为竖排。
 ///
 /// 检测器返回的是轴对齐框，倾斜竖排会被横向外接矩形拉宽；1.5 会把真实封面上
@@ -174,11 +186,14 @@ class MangaOcrPipeline {
     required OcrRecognizer recognizer,
     this.cache,
     this.rightToLeft = true,
+    OcrPageTextSweeper? sweeper,
   })  : _detector = detector,
-        _recognizer = recognizer;
+        _recognizer = recognizer,
+        _sweeper = sweeper;
 
   final OcrDetector _detector;
   final OcrRecognizer _recognizer;
+  final OcrPageTextSweeper? _sweeper;
   final OcrPageCache? cache;
 
   /// 阅读方向（日漫 RTL 默认）。
@@ -295,6 +310,7 @@ class MangaOcrPipeline {
             lineBoxes: hasLayout ? laidOut.lineBoxes : null,
             score: block.score,
             insideBubble: block.insideBubble,
+            confidence: block.confidence,
           ),
         );
       }
@@ -369,6 +385,7 @@ class MangaOcrPipeline {
             lineBoxes: hasLayout ? recognition.lineBoxes : null,
             score: region.score,
             insideBubble: region.insideBubble,
+            confidence: recognition.confidence,
           ),
         );
       }
@@ -377,8 +394,43 @@ class MangaOcrPipeline {
       pageIndex: pageIndex,
       imageWidth: image.width,
       imageHeight: image.height,
-      blocks: _suppressRecognizedContainedBlocks(blocks),
+      blocks: await _withSweptBlocks(
+        image,
+        _suppressRecognizedContainedBlocks(blocks),
+        candidates: detections.weakTextRegions,
+        // 识别为空的检测框也算覆盖：检测器认过、识别器读不出的地方，补检再读一遍
+        // 多半也是同一团笔触。
+        covered: boxes,
+        cancelToken: cancelToken,
+      ),
     );
+  }
+
+  /// 有补检器时把补回的块并进来，再按全部块重排阅读序；没补到块时原样返回。
+  Future<List<OcrBlock>> _withSweptBlocks(
+    img.Image image,
+    List<OcrBlock> blocks, {
+    required List<DetectedTextRegion> candidates,
+    required List<OcrRect> covered,
+    OcrCancelToken? cancelToken,
+  }) async {
+    final OcrPageTextSweeper? sweeper = _sweeper;
+    if (sweeper == null || candidates.isEmpty) return blocks;
+    cancelToken?.throwIfCancelled();
+    final List<OcrBlock> swept = await sweeper.sweep(
+      image,
+      candidates: candidates,
+      covered: covered,
+    );
+    if (swept.isEmpty) return blocks;
+    final List<OcrBlock> all = <OcrBlock>[...blocks, ...swept];
+    return <OcrBlock>[
+      for (final int index in computeReadingOrder(
+        <OcrRect>[for (final OcrBlock block in all) block.box],
+        rightToLeft: rightToLeft,
+      ))
+        all[index],
+    ];
   }
 
   /// 块方向只有一个拥有者：识别器定了（[OrientedOcrRecognizer]）就用它的，
@@ -393,6 +445,18 @@ class MangaOcrPipeline {
     ];
     if (recognizer is OrientedOcrRecognizer) {
       return recognizer.recognizeOriented(image, boxes);
+    }
+    if (recognizer is ScoredOcrRecognizer &&
+        recognizer is! BatchOcrRecognizer) {
+      final ScoredOcrText scored =
+          await recognizer.recognizeScored(image, boxes.single);
+      return <OcrRecognition>[
+        OcrRecognition(
+          text: scored.text,
+          vertical: isVerticalBlock(boxes.single),
+          confidence: scored.confidence,
+        ),
+      ];
     }
     final List<String> texts = recognizer is BatchOcrRecognizer
         ? await recognizer.recognizeBatch(image, boxes)

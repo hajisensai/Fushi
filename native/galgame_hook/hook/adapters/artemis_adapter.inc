@@ -1,5 +1,6 @@
 // Artemis Engine PF8 clean voice capture. The PF8 index is parsed once on the
-// hook worker before the game resumes. ReadFile callbacks only binary-search an
+// hook worker before the game resumes, for every archive of the set (.pfs,
+// .pfs.000, ...). ReadFile callbacks only binary-search an
 // immutable table and enqueue bounded {entry, tick} metadata. File IO, XOR
 // decryption, Ogg validation and output remain on AdapterRegistry::Poll.
 // The in-game lookup provider (glyph geometry + click claim) lives in
@@ -9,7 +10,8 @@
 
 constexpr size_t kArtemisPathChars = 520;
 constexpr size_t kArtemisNameBytes = 192;
-constexpr int kArtemisHandleSlots = 8;
+constexpr int kArtemisArchiveSlots = 16;
+constexpr int kArtemisHandleSlots = 16;
 constexpr int kArtemisTaskSlots = 32;
 constexpr size_t kArtemisSha1Bytes = 20;
 
@@ -19,24 +21,42 @@ struct ArtemisVoiceRange {
   char name[kArtemisNameBytes] = {0};
 };
 
+// One archive of the game's archive set (`<name>.pfs`, `<name>.pfs.000`, ...).
+// Offsets are relative to its own file and PF8 keys are per index, so a voice
+// read is resolved against the archive whose handle it came from.  Filled on
+// the worker before g_artemis_enabled is set; immutable while enabled.
+struct ArtemisArchive {
+  wchar_t path[kArtemisPathChars] = {0};
+  uint8_t key[kArtemisSha1Bytes] = {0};
+  bool encrypted = false;
+  ArtemisVoiceRange* ranges = nullptr;
+  LONG range_count = 0;
+};
+
+// A handle slot being filled; never equal to a real file handle.
+const HANDLE kArtemisSlotReserved =
+    reinterpret_cast<HANDLE>(static_cast<intptr_t>(-3));
+
 struct ArtemisPfsHandle {
   HANDLE handle = INVALID_HANDLE_VALUE;
+  volatile LONG archive = 0;  // written before `handle` is published
 };
 
 struct ArtemisVoiceTask {
   volatile LONG state = 0;
   uint64_t tick_ms = 0;
+  uint32_t archive = 0;
   uint32_t entry_index = 0;
+  uint64_t selected_thread_id = 0;  // text selection when the read happened
+  uint64_t baseline_text_seq = 0;   // text_write_count when the read happened
 };
 
+ArtemisArchive g_artemis_archives[kArtemisArchiveSlots];
+volatile LONG g_artemis_archive_count = 0;
 ArtemisPfsHandle g_artemis_handles[kArtemisHandleSlots];
 ArtemisVoiceTask g_artemis_tasks[kArtemisTaskSlots];
-ArtemisVoiceRange* g_artemis_ranges = nullptr;
-volatile LONG g_artemis_range_count = 0;
 volatile LONG g_artemis_enabled = 0;
-wchar_t g_artemis_pfs_path[kArtemisPathChars] = {0};
-uint8_t g_artemis_key[kArtemisSha1Bytes] = {0};
-bool g_artemis_encrypted = false;
+uint32_t g_artemis_last_archive = UINT32_MAX;
 uint64_t g_artemis_last_offset = UINT64_MAX;
 uint64_t g_artemis_last_tick = 0;
 
@@ -139,6 +159,9 @@ bool LoadArtemisPfsIndex(const wchar_t* path,
   return valid;
 }
 
+// Indexes every voice-bearing archive of the set next to the executable.
+// Stopping at the first one misses the dialogue voices whenever they live in
+// a continuation archive.
 bool FindAndLoadArtemisPfs() {
   wchar_t executable[kArtemisPathChars] = {0};
   if (GetModuleFileNameW(nullptr, executable, kArtemisPathChars) == 0) {
@@ -147,33 +170,36 @@ bool FindAndLoadArtemisPfs() {
   wchar_t* slash = wcsrchr(executable, L'\\');
   if (slash == nullptr) return false;
   *slash = 0;
-  const std::wstring pattern = std::wstring(executable) + L"\\*.pfs";
+  const std::wstring pattern = std::wstring(executable) + L"\\*.pfs*";
   WIN32_FIND_DATAW found = {};
   HANDLE search = FindFirstFileW(pattern.c_str(), &found);
   if (search == INVALID_HANDLE_VALUE) return false;
-  bool loaded = false;
+  LONG loaded = 0;
   do {
-    if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+    if ((found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
+        !fushi_voice_hook::artemis::IsArchiveSetLeaf(found.cFileName)) {
+      continue;
+    }
     const std::wstring path = std::wstring(executable) + L"\\" + found.cFileName;
+    if (path.size() >= kArtemisPathChars) continue;
     std::vector<ArtemisVoiceRange> ranges;
-    uint8_t key[kArtemisSha1Bytes] = {0};
-    bool encrypted = false;
-    if (!LoadArtemisPfsIndex(path.c_str(), &ranges, key, &encrypted)) continue;
-    auto* published = static_cast<ArtemisVoiceRange*>(
+    ArtemisArchive& archive = g_artemis_archives[loaded];
+    if (!LoadArtemisPfsIndex(path.c_str(), &ranges, archive.key,
+                             &archive.encrypted)) {
+      continue;
+    }
+    archive.ranges = static_cast<ArtemisVoiceRange*>(
         malloc(ranges.size() * sizeof(ArtemisVoiceRange)));
-    if (published == nullptr) continue;
-    memcpy(published, ranges.data(), ranges.size() * sizeof(ArtemisVoiceRange));
-    g_artemis_ranges = published;
-    memcpy(g_artemis_key, key, sizeof(g_artemis_key));
-    g_artemis_encrypted = encrypted;
-    wcsncpy_s(g_artemis_pfs_path, path.c_str(), _TRUNCATE);
-    InterlockedExchange(&g_artemis_range_count,
-                        static_cast<LONG>(ranges.size()));
-    loaded = true;
-    break;
-  } while (FindNextFileW(search, &found));
+    if (archive.ranges == nullptr) continue;
+    memcpy(archive.ranges, ranges.data(),
+           ranges.size() * sizeof(ArtemisVoiceRange));
+    archive.range_count = static_cast<LONG>(ranges.size());
+    wcsncpy_s(archive.path, path.c_str(), _TRUNCATE);
+    ++loaded;
+  } while (loaded < kArtemisArchiveSlots && FindNextFileW(search, &found));
   FindClose(search);
-  return loaded;
+  InterlockedExchange(&g_artemis_archive_count, loaded);
+  return loaded != 0;
 }
 
 const wchar_t* ArtemisPathLeaf(const wchar_t* path) {
@@ -186,44 +212,58 @@ const wchar_t* ArtemisPathLeaf(const wchar_t* path) {
   return slash == nullptr ? path : slash + 1;
 }
 
-bool IsTargetArtemisPfsPath(const wchar_t* path) {
-  if (path == nullptr || *path == 0 || g_artemis_pfs_path[0] == 0) {
-    return false;
+// Index of the loaded archive `path` names, or -1.
+LONG FindArtemisArchive(const wchar_t* path) {
+  if (path == nullptr || *path == 0) return -1;
+  const LONG count = InterlockedCompareExchange(&g_artemis_archive_count, 0, 0);
+  for (LONG i = 0; i < count; ++i) {
+    const wchar_t* loaded = g_artemis_archives[i].path;
+    if (_wcsicmp(path, loaded) == 0 ||
+        _wcsicmp(ArtemisPathLeaf(path), ArtemisPathLeaf(loaded)) == 0) {
+      return i;
+    }
   }
-  return _wcsicmp(path, g_artemis_pfs_path) == 0 ||
-         _wcsicmp(ArtemisPathLeaf(path),
-                  ArtemisPathLeaf(g_artemis_pfs_path)) == 0;
+  return -1;
 }
 
 void RememberArtemisPfs(HANDLE handle, const wchar_t* path) {
   if (InterlockedCompareExchange(&g_artemis_enabled, 0, 0) == 0 ||
-      handle == INVALID_HANDLE_VALUE || !IsTargetArtemisPfsPath(path)) {
+      handle == INVALID_HANDLE_VALUE) {
     return;
   }
+  const LONG archive = FindArtemisArchive(path);
+  if (archive < 0) return;
   for (int i = 0; i < kArtemisHandleSlots; ++i) {
     auto* slot = reinterpret_cast<PVOID volatile*>(
         &g_artemis_handles[i].handle);
     const HANDLE current = static_cast<HANDLE>(
         InterlockedCompareExchangePointer(slot, nullptr, nullptr));
     if (current == handle) return;
-    if (current == INVALID_HANDLE_VALUE &&
-        InterlockedCompareExchangePointer(
-            slot, handle, INVALID_HANDLE_VALUE) == INVALID_HANDLE_VALUE) {
-      return;
+    // Reserve the slot, then fill `archive`, then publish the handle: a
+    // reader that matches the handle always sees its own archive.
+    if (current != INVALID_HANDLE_VALUE ||
+        InterlockedCompareExchangePointer(slot, kArtemisSlotReserved,
+                                          INVALID_HANDLE_VALUE) !=
+            INVALID_HANDLE_VALUE) {
+      continue;
     }
+    InterlockedExchange(&g_artemis_handles[i].archive, archive);
+    InterlockedExchangePointer(slot, handle);
+    return;
   }
 }
 
-bool IsArtemisPfsHandle(HANDLE handle) {
-  if (handle == INVALID_HANDLE_VALUE) return false;
+// Archive index of a remembered handle, or -1.
+LONG FindArtemisPfsHandle(HANDLE handle) {
+  if (handle == INVALID_HANDLE_VALUE) return -1;
   for (int i = 0; i < kArtemisHandleSlots; ++i) {
     auto* slot = reinterpret_cast<PVOID volatile*>(
         &g_artemis_handles[i].handle);
     if (InterlockedCompareExchangePointer(slot, nullptr, nullptr) == handle) {
-      return true;
+      return InterlockedCompareExchange(&g_artemis_handles[i].archive, 0, 0);
     }
   }
-  return false;
+  return -1;
 }
 
 void ForgetArtemisPfs(HANDLE handle) {
@@ -238,21 +278,32 @@ void ForgetArtemisPfs(HANDLE handle) {
   }
 }
 
-void QueueArtemisVoice(uint32_t entry_index) {
+void QueueArtemisVoice(uint32_t archive, uint32_t entry_index) {
   for (int i = 0; i < kArtemisTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_artemis_tasks[i].state, 1, 0) != 0) {
       continue;
     }
     g_artemis_tasks[i].tick_ms = GetTickCount64();
+    g_artemis_tasks[i].archive = archive;
     g_artemis_tasks[i].entry_index = entry_index;
+    const uint64_t selected = fushi_voice_hook::SelectedTextThreadId(g_header);
+    g_artemis_tasks[i].selected_thread_id = selected;
+    g_artemis_tasks[i].baseline_text_seq =
+        selected != 0 && g_header != nullptr
+            ? fushi_voice_hook::AtomicLoadPreview64(&g_header->text_write_count)
+            : 0;
     InterlockedExchange(&g_artemis_tasks[i].state, 2);
     return;
   }
 }
 
 void ObserveArtemisPfsRead(HANDLE file, DWORD done, LPOVERLAPPED overlapped) {
-  if (InterlockedCompareExchange(&g_artemis_enabled, 0, 0) == 0 || done == 0 ||
-      !IsArtemisPfsHandle(file)) {
+  if (InterlockedCompareExchange(&g_artemis_enabled, 0, 0) == 0 || done == 0) {
+    return;
+  }
+  const LONG archive = FindArtemisPfsHandle(file);
+  if (archive < 0 ||
+      archive >= InterlockedCompareExchange(&g_artemis_archive_count, 0, 0)) {
     return;
   }
   uint64_t start = 0;
@@ -268,56 +319,62 @@ void ObserveArtemisPfsRead(HANDLE file, DWORD done, LPOVERLAPPED overlapped) {
     }
     start = static_cast<uint64_t>(current.QuadPart) - done;
   }
-  const uint64_t end = start + done;
-  const LONG count = InterlockedCompareExchange(&g_artemis_range_count, 0, 0);
-  ArtemisVoiceRange* ranges = g_artemis_ranges;
-  if (ranges == nullptr || count <= 0) return;
-  LONG low = 0;
-  LONG high = count;
-  while (low < high) {
-    const LONG middle = low + (high - low) / 2;
-    if (ranges[middle].offset < start) {
-      low = middle + 1;
-    } else {
-      high = middle;
-    }
-  }
-  LONG candidate = low;
-  if (candidate > 0 &&
-      ranges[candidate - 1].offset + ranges[candidate - 1].size > start) {
-    --candidate;
-  }
-  if (candidate < count && ranges[candidate].offset < end &&
-      ranges[candidate].offset + ranges[candidate].size > start) {
-    QueueArtemisVoice(static_cast<uint32_t>(candidate));
+  const long entry = fushi_voice_hook::artemis::FindRangeStartingAt(
+      g_artemis_archives[archive].ranges,
+      g_artemis_archives[archive].range_count, start);
+  if (entry >= 0) {
+    QueueArtemisVoice(static_cast<uint32_t>(archive),
+                      static_cast<uint32_t>(entry));
   }
 }
 
-void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
-  const LONG count = InterlockedCompareExchange(&g_artemis_range_count, 0, 0);
-  if (task == nullptr || task->entry_index >= static_cast<uint32_t>(count) ||
-      g_artemis_ranges == nullptr) {
-    return;
+// Artemis runs a block's {"vo"} before drawing its text, so the voice member
+// is read shortly before the line is published (kArtemisFollowingTextWindowMs).
+// Returns false while that line may still arrive; the task then stays queued.
+bool ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
+  const LONG archives =
+      InterlockedCompareExchange(&g_artemis_archive_count, 0, 0);
+  if (task == nullptr || task->archive >= static_cast<uint32_t>(archives)) {
+    return true;
   }
-  const ArtemisVoiceRange range = g_artemis_ranges[task->entry_index];
+  const ArtemisArchive& archive = g_artemis_archives[task->archive];
+  if (archive.ranges == nullptr ||
+      task->entry_index >= static_cast<uint32_t>(archive.range_count)) {
+    return true;
+  }
+  const ArtemisVoiceRange range = archive.ranges[task->entry_index];
   if (range.offset == g_artemis_last_offset &&
+      task->archive == g_artemis_last_archive &&
+      task->tick_ms >= g_artemis_last_tick &&
       task->tick_ms - g_artemis_last_tick <= 2000) {
-    return;
+    return true;
+  }
+  fushi_voice_hook::VoiceTextCandidate
+      candidates[fushi_voice_hook::kTextLaneSlotCount] = {};
+  const size_t candidate_count =
+      CollectSelectedLaneCandidates(task->selected_thread_id, candidates);
+  const auto decision = fushi_voice_hook::ResolveFollowingSelectedText(
+      task->tick_ms,
+      task->tick_ms + fushi_voice_hook::kArtemisFollowingTextWindowMs,
+      GetTickCount64(), task->selected_thread_id, task->baseline_text_seq,
+      candidates, candidate_count);
+  if (decision.state == fushi_voice_hook::VoiceResourcePairState::kWait) {
+    return false;
   }
   HANDLE file = g_orig_CreateFileW(
-      g_artemis_pfs_path, GENERIC_READ,
+      archive.path, GENERIC_READ,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file == INVALID_HANDLE_VALUE) return;
+  if (file == INVALID_HANDLE_VALUE) return true;
   LARGE_INTEGER at = {};
   at.QuadPart = range.offset;
   uint8_t* ogg = static_cast<uint8_t*>(malloc(range.size));
   bool valid = ogg != nullptr &&
                SetFilePointerEx(file, at, nullptr, FILE_BEGIN) != FALSE &&
                ReadExact(file, ogg, range.size);
-  if (valid && g_artemis_encrypted) {
+  if (valid && archive.encrypted) {
     for (uint32_t i = 0; i < range.size; ++i) {
-      ogg[i] ^= g_artemis_key[i % kArtemisSha1Bytes];
+      ogg[i] ^= archive.key[i % kArtemisSha1Bytes];
     }
   }
   valid = valid &&
@@ -332,8 +389,9 @@ void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
                           static_cast<int>(kArtemisNameBytes));
     }
     WriteVoiceOggAt(ogg, range.size, name[0] == 0 ? L"voice.ogg" : name,
-                    task->tick_ms);
+                    task->tick_ms, decision.text_event_id);
     g_artemis_last_offset = range.offset;
+    g_artemis_last_archive = task->archive;
     g_artemis_last_tick = task->tick_ms;
     if (g_header != nullptr) {
       g_header->hook_diagnostics |=
@@ -342,13 +400,14 @@ void ProcessArtemisVoiceTask(ArtemisVoiceTask* task) {
   }
   free(ogg);
   g_orig_CloseHandle(file);
+  return true;
 }
 
 void ProcessArtemisVoiceTasks() {
   for (int i = 0; i < kArtemisTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_artemis_tasks[i].state, 3, 2) == 2) {
-      ProcessArtemisVoiceTask(&g_artemis_tasks[i]);
-      InterlockedExchange(&g_artemis_tasks[i].state, 0);
+      const bool done = ProcessArtemisVoiceTask(&g_artemis_tasks[i]);
+      InterlockedExchange(&g_artemis_tasks[i].state, done ? 0 : 2);
     }
   }
 }
@@ -371,9 +430,11 @@ void StopArtemisPfsVoice() {
         reinterpret_cast<PVOID volatile*>(&g_artemis_handles[i].handle),
         INVALID_HANDLE_VALUE);
   }
-  free(g_artemis_ranges);
-  g_artemis_ranges = nullptr;
-  InterlockedExchange(&g_artemis_range_count, 0);
+  const LONG count = InterlockedExchange(&g_artemis_archive_count, 0);
+  for (LONG i = 0; i < count; ++i) {
+    free(g_artemis_archives[i].ranges);
+    g_artemis_archives[i] = ArtemisArchive();
+  }
 }
 
 class ArtemisPfsAdapter final : public fushi_voice_hook::EngineAdapter {

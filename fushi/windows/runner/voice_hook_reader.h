@@ -434,7 +434,8 @@ class VoiceHookReader {
       int32_t anchor_x, int32_t anchor_y, uint32_t card_width,
       uint32_t card_height, uint32_t view_width, uint32_t view_height,
       int32_t glyph_x, int32_t glyph_y, uint32_t glyph_w, uint32_t glyph_h,
-      uint32_t* out_client_width, uint32_t* out_client_height)>;
+      uint32_t* out_client_width, uint32_t* out_client_height,
+      int32_t* out_root_client_x, int32_t* out_root_client_y)>;
   // 把一条游戏侧转发来的输入喂给离屏 WebView2（接
   // [GlobalLookupWindow::InjectLookupInput]）。
   using LookupInputSink = std::function<bool(uint32_t kind, int32_t x,

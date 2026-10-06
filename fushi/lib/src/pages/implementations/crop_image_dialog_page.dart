@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:crop_image/crop_image.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi/pages.dart';
@@ -120,7 +121,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
   Widget buildContent() {
     if (_decodeError != null) {
       return Center(
-        child: Icon(
+        child: FushiIcon(
           Icons.broken_image_outlined,
           size: 64,
           color: Theme.of(context).colorScheme.onSurfaceVariant,

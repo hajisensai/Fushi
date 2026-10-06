@@ -36,9 +36,17 @@ void main() {
       reason: '移动端 body 与 bottomNavigationBar 各需一个 '
           'FocusTraversalGroup（共 2 个）以隔离左右遍历（TODO-713）',
     );
+    // 底栏外面可以再套一层重建器（Apple 玻璃底栏随滚动收起要监听 chrome 状态，
+    // 见 `ListenableBuilder(listenable: _appleChrome ...)`），但从
+    // `bottomNavigationBar:` 到真正的底栏 `adaptiveBottomBar(` 之间必须有一个
+    // FocusTraversalGroup 把整条底栏包成闭合遍历块。
+    final int navStart = mobileBody.indexOf('bottomNavigationBar:');
+    expect(navStart, isNonNegative, reason: '移动端应有 bottomNavigationBar');
+    final int barStart = mobileBody.indexOf('adaptiveBottomBar(', navStart);
+    expect(barStart, greaterThan(navStart), reason: '底栏应由 adaptiveBottomBar 构建');
     expect(
-      mobileBody.indexOf('bottomNavigationBar: FocusTraversalGroup('),
-      isNonNegative,
+      mobileBody.substring(navStart, barStart).contains('FocusTraversalGroup('),
+      isTrue,
       reason: '移动端 bottomNavigationBar 必须被 FocusTraversalGroup 隔离（TODO-713）',
     );
   });

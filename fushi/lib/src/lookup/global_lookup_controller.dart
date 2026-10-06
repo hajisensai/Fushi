@@ -33,6 +33,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart'
     show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
+import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
     show swipeDismissThreshold;
@@ -311,6 +312,10 @@ class GlobalLookupController {
   // window-local for the host shell. 0 = native did not report a work area.
   double _cursorWorkX = 0;
   double _cursorWorkY = 0;
+  // BUG-2921 — the monitor dpr that converted the work area above to CSS px.
+  // [adoptGalDirectLayoutViewport] reuses it so the client-domain viewport the
+  // runner reports later lands in the SAME CSS scale the cards render in.
+  double _workDpr = 0;
 
   /// 让覆盖窗跟随查词模块：现在开着就起；会话中途才打开查词模块也沿同一条
   /// [start] 补起（此前只在启动时判一次，中途打开模块要等下次启动，桌面悬浮球
@@ -898,6 +903,56 @@ class GlobalLookupController {
         : (w: workWidth, h: workHeight, x: workOriginX, y: workOriginY);
   }
 
+  /// BUG-2921 — 游戏内查词卡直连上屏后，把嵌套子卡的布局视口换成**真实客户区**。
+  ///
+  /// [setPhysicalCap] 交来的视口与原点是**画布**域（位图回退按画布 1:1 贴卡，只能这么
+  /// 排）。直连路径的卡片却是屏幕物理 px 的真窗口，根卡由 runner 按字形在客户区里居中、
+  /// 零间隙地贴放：画布尺寸、画布里的根卡原点与真实画面在放大/缩小运行的游戏里都对不上。
+  /// 子卡按画布域排出的「上方空间」比真实的多，落到屏幕上就越出客户区顶边、标题栏被裁。
+  /// runner 在 present 回执里报回根卡在客户区里的真实左上角，这里把它和客户区尺寸换成
+  /// CSS px 写进级联布局域；之后的嵌套渲染就在真实画面里排版。
+  ///
+  /// 只对仍有效的 galCard route 生效；四个参数都是物理 px。
+  void adoptGalDirectLayoutViewport({
+    required GlobalLookupRoute route,
+    required int clientWidth,
+    required int clientHeight,
+    required int rootClientX,
+    required int rootClientY,
+  }) {
+    if (route.source != 'galCard' ||
+        !GlobalLookupChannel.isRouteValid(route) ||
+        clientWidth <= 0 ||
+        clientHeight <= 0 ||
+        _workDpr <= 0) {
+      return;
+    }
+    _screenWorkW = clientWidth / _workDpr;
+    _screenWorkH = clientHeight / _workDpr;
+    _cursorWorkX = rootClientX / _workDpr;
+    _cursorWorkY = rootClientY / _workDpr;
+  }
+
+  /// 嵌套布局当前使用的视口与根卡原点（CSS px）。
+  @visibleForTesting
+  ({double w, double h, double x, double y}) get debugCascadeLayoutDomain =>
+      (w: _screenWorkW, h: _screenWorkH, x: _cursorWorkX, y: _cursorWorkY);
+
+  @visibleForTesting
+  void debugSeedCascadeLayoutDomain({
+    required double workDpr,
+    required double width,
+    required double height,
+    required double originX,
+    required double originY,
+  }) {
+    _workDpr = workDpr;
+    _screenWorkW = width;
+    _screenWorkH = height;
+    _cursorWorkX = originX;
+    _cursorWorkY = originY;
+  }
+
   /// 把逻辑尺寸夹到 [_physicalCap]。等比缩小而不是各轴独立裁剪：独立裁剪会改变
   /// 卡片的宽高比，排版跟着变形；等比缩小只是变小。
   /// 当前 route 所属形态的「有效最大宽高」。
@@ -1269,6 +1324,7 @@ class GlobalLookupController {
       // reserve-to-edge clamp invariant). Fall back to the main dpr when the
       // native monitor query failed (monitorDpr 0).
       final double workDpr = shown.monitorDpr > 0 ? shown.monitorDpr : dpr;
+      _workDpr = workDpr;
       if (anchorPhysical != null && _stack.frames.isNotEmpty) {
         // The existing root-frame layout chooses above/below the hit and fits
         // the card to that side. Its anchor is window-local CSS pixels; the
@@ -1885,6 +1941,17 @@ class GlobalLookupController {
       _dispatchNestedLookup(message);
       return;
     }
+    // BUG-2868 — popup.js hands every http(s) dictionary link (Pixiv
+    // 「pixivで読む」, MDX raw-HTML anchors, …) to `openLink` after
+    // preventDefault. Only the in-app popup registered it; here the message was
+    // dropped, so external links in the overlay / galgame card did nothing.
+    if (handler == 'openLink') {
+      final Object? args = message['args'];
+      if (args is List && args.isNotEmpty && args.first != null) {
+        unawaited(openDictionaryExternalLink(args.first.toString()));
+      }
+      return;
+    }
     // BUG-2054 — the parent realm's whole-word bbox report; completes the wait
     // `_lookupNested` is holding before it places the child card.
     if (_maybeHandleNestedWordAnchor(handler, message)) {
@@ -2371,6 +2438,11 @@ class GlobalLookupController {
       // viewport. Match the in-app child popup's above/below fitting there while
       // preserving the desktop global-lookup cascade.
       fitNestedHeightToAnchorSide: route.source == 'galCard',
+      // BUG-2921 — the game card's root is placed by the runner (glyph-anchored
+      // in the client area); the layout root is only the coordinate origin for
+      // the children and must not be nudged inside the window-local frame, or
+      // the runner's pinned root/bbox relationship would no longer hold.
+      clampRootShellToWorkArea: route.source != 'galCard',
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
     );
@@ -2495,6 +2567,7 @@ class GlobalLookupController {
           geometryEpoch: geometryEpoch,
           left: ratcheted.left,
           top: ratcheted.top,
+          rootHeight: rootHeight,
         ),
       );
       _notifyAfterResizeReady(
@@ -2538,6 +2611,7 @@ class GlobalLookupController {
           geometryEpoch: geometryEpoch,
           left: ratcheted.left,
           top: ratcheted.top,
+          rootHeight: rootHeight,
         ),
       );
       _notifyAfterResizeReady(

@@ -15,6 +15,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_book.dart' show EpubImageRef;
 
@@ -148,7 +151,7 @@ void main() {
         await tester.pump();
         expect(tocCalls, 1);
         expect(find.text('Cur-1'), findsNothing);
-        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
         expect(
           find.byKey(const ValueKey<String>('reader-toc-volume-open-1')),
           findsOneWidget,
@@ -311,7 +314,7 @@ void main() {
         );
         await tester.pump();
         // 装载中主体转圈。
-        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(find.byType(FushiLoadingView), findsOneWidget);
 
         sibling.complete(
           ReaderGalleryVolumeImages(

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show Uint8List;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
@@ -51,7 +52,7 @@ void main() {
     // dimmed background hidden behind a readability scrim (TODO-557 regression).
     expect(
       source,
-      contains('maxHeight: screenHeight * _coverHeightFactor'),
+      contains('screenHeight * _coverHeightFactor'),
       reason: 'the cover must be a height-capped top block, not a background',
     );
     expect(
@@ -255,4 +256,53 @@ void main() {
     await tester.pump();
     expect(launched, 1);
   });
+
+  // 2026-10-04 用户反馈：竖版封面 contain 后两侧大片纯色空白。传入图源时封面块
+  // 背后铺同图模糊垫底，前景封面几何不变、仍画在最上层；不传时维持纯色 letterbox。
+  testWidgets('coverBackdrop fills the letterbox sides behind the cover',
+      (WidgetTester tester) async {
+    const Key coverKey = ValueKey<String>('fg-cover');
+    const Key backdropKey =
+        ValueKey<String>('media_item_dialog_cover_backdrop');
+    Future<Rect> pumpFrame({ImageProvider? backdrop}) async {
+      await tester.pumpWidget(
+        buildApp(
+          MediaItemDialogFrame(
+            // 模拟竖版封面 BoxFit.contain 后只占块中间（两侧留白）。
+            cover: const Center(
+              child: SizedBox(key: coverKey, width: 120, height: 180),
+            ),
+            coverBackdrop: backdrop,
+            title: 'Backdrop',
+          ),
+        ),
+      );
+      await tester.pump();
+      return tester.getRect(find.byKey(coverKey));
+    }
+
+    final Rect plain = await pumpFrame();
+    expect(find.byKey(backdropKey), findsNothing);
+
+    final Rect withBackdrop =
+        await pumpFrame(backdrop: MemoryImage(_onePixelPng));
+    expect(tester.takeException(), isNull);
+    expect(find.byKey(backdropKey), findsOneWidget);
+    expect(withBackdrop, plain, reason: '垫底不得改变前景封面几何');
+
+    // 垫底铺满整个封面块宽度（覆盖两侧留白），前景封面只占中间。
+    final Rect backdropRect = tester.getRect(find.byKey(backdropKey));
+    expect(backdropRect.left, lessThan(withBackdrop.left));
+    expect(backdropRect.right, greaterThan(withBackdrop.right));
+  });
 }
+
+/// 1x1 透明 PNG。
+final Uint8List _onePixelPng = Uint8List.fromList(<int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, //
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, //
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, //
+  0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, //
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, //
+  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82, //
+]);

@@ -355,6 +355,27 @@ constexpr uint32_t kTextSourceSgre = 5;
 constexpr uint32_t kTextSourceSmashFzmedia = 6;
 // BGI/Ethornell exact text published by the native message SetTextImpl hook.
 constexpr uint32_t kTextSourceBgi = 7;
+// Artemis exact text: the fully revealed newest Layer::CreateGlyph run.
+constexpr uint32_t kTextSourceArtemis = 8;
+// YU-RIS exact text: the message line the engine's per-character text step
+// draws, read from its message state at the line's first character.
+constexpr uint32_t kTextSourceYuris = 9;
+// Kogado "Hy" exact text: the script page the message window's row renderer
+// shows, rows joined, speaker row removed.
+constexpr uint32_t kTextSourceKogadoHy = 11;
+// Text source ids 12-14: reserved, unassigned. The Malie adapter took 15 while
+// other engine adapters were in flight; no branch in this repository uses
+// 12-14 (checked 2026-10-03 across all local refs). The host maps unknown kinds
+// to the generic 'hook:' lane, so a new kind must be registered here AND in
+// GalHookedLine.textThreadKey/textThreadLabel (fushi/lib/src/mining/
+// galgame_audio_source.dart) in the same change; register the number here
+// first.
+// Malie exact text: the click unit the message window's segment parser hands
+// to the RICHTEXT3D reveal (voice tag and ruby removed).
+constexpr uint32_t kTextSourceMalie = 15;
+// FVP (Favorite View Point) exact text published by the native TextPrint
+// (text object Print) hook.
+constexpr uint32_t kTextSourceFvp = 10;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -896,6 +917,25 @@ constexpr uint32_t kLookupGeometryProviderIdCatSystem2 = 19u;
 constexpr uint32_t kLookupGeometryProviderIdUnityMono = 20u;
 // BGI/Ethornell message-page exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdBgi = 21u;
+// YU-RIS message-layer exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdYuris = 22u;
+// Kogado "Hy" message-window row layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdKogadoHy = 24u;
+// Provider ids 25-27: reserved, unassigned. The Malie adapter took 28 while
+// other engine adapters were in flight; no branch in this repository uses
+// 25-27 (checked 2026-10-04 across all local refs and upstream/develop).
+// Every production pair is whitelisted in three places that must change
+// together: IsProductionProviderPair
+// (fushi/windows/runner/lookup_hit_validation.h),
+// isGalLookupProductionProviderPair (fushi/lib/src/platform/
+// gal_hook_text_overlay_channel.dart) and its contract test
+// (fushi/test/lookup/gal_ingame_lookup_contract_test.dart, which pins 25-27 as
+// rejected). Register a new id here first.
+// Malie RICHTEXT3D message exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
+// FVP (Favorite View Point) text-buffer print exact layout provider
+// (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;
@@ -2147,6 +2187,28 @@ inline uint32_t ReadAdapterReports(const SharedHeader* header,
     return static_cast<uint32_t>(take);
   }
   return 0u;
+}
+
+// 引擎身份查询：本会话里是否有 id 为 `adapter_id` 的 adapter 报告 probe() 成立。
+// 这是 host 侧按**引擎识别结果**（而不是 exe 哈希 / 文件名）切换行为的唯一入口：
+// adapter 的 probe() 本身就是结构判据，这里只读它发布的结论。seq==0（hook 还没上报）
+// 与「上报了但没有该引擎」同样返回 false——调用方需要的是「已确认是该引擎」，
+// 还不知道时保持默认行为。读取是有界的（最多 kAdapterReportSlots 槽、栈上拷贝）。
+inline bool AdapterReportsClaimEngine(const SharedHeader* header,
+                                      const char* adapter_id) {
+  if (header == nullptr || adapter_id == nullptr || adapter_id[0] == 0) {
+    return false;
+  }
+  AdapterReportSlot slots[kAdapterReportSlots] = {};
+  const uint32_t count =
+      ReadAdapterReports(header, slots, kAdapterReportSlots);
+  for (uint32_t i = 0; i < count; ++i) {
+    if (slots[i].applicable != 0u &&
+        std::strncmp(slots[i].id, adapter_id, kAdapterReportIdChars) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline NativeLoopbackRequestSnapshot ReadNativeLoopbackRequest(

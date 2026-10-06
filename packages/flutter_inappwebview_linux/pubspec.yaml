@@ -1,0 +1,37 @@
+name: flutter_inappwebview_linux
+resolution: workspace
+description: "Linux implementation of flutter_inappwebview plugin using WPE WebKit (vendored, backported to platform_interface 1.3.0)."
+# 上游 0.1.0-beta.1（pub.dev，2026-02-04）。上游这版要求
+# flutter_inappwebview_platform_interface ^1.4.0-beta.3，也就是把整套
+# flutter_inappwebview 升到 6.2.0-beta.3；本仓 Windows / Android 实现都是基于
+# 6.1.5 / 1.3.0 的 fork，整体升 beta 会波及五个平台的阅读器与查词。所以只把
+# Linux 实现 vendor 进来、把 Dart 层降到 1.3.0 接口（改动清单见 UPSTREAM.md），
+# 原生 WPE WebKit 部分保持上游原样。fushi 直接依赖本包完成注册
+# （6.1.5 的 flutter_inappwebview 不 endorse Linux）。
+version: 0.1.0-beta.1+fushi.1
+homepage: https://inappwebview.dev/
+repository: https://github.com/pichillilorenzo/flutter_inappwebview/tree/master/flutter_inappwebview_linux
+publish_to: none
+
+environment:
+  sdk: ">=3.8.0 <4.0.0"
+  flutter: ">=3.32.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_inappwebview_platform_interface: ^1.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # 与 fushi / flutter_inappwebview_windows 对齐（workspace 共用一份解析）。
+  flutter_lints: ^2.0.1
+
+flutter:
+  plugin:
+    implements: flutter_inappwebview
+    platforms:
+      linux:
+        pluginClass: FlutterInappwebviewLinuxPlugin
+        dartPluginClass: LinuxInAppWebViewPlatform

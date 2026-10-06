@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -291,7 +292,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
       SizedBox(height: tokens.spacing.card),
       Row(
         children: <Widget>[
-          Icon(icon, size: 16, color: tokens.type.metadata.color),
+          FushiIcon(icon, size: 16, color: tokens.type.metadata.color),
           SizedBox(width: tokens.spacing.gap / 2),
           Text(label, style: tokens.type.metadata),
         ],
@@ -341,27 +342,38 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
             ? '${formatStatChars(e.chars)} · ${formatStatTime(e.ms)}'
             : formatStatTime(e.ms))
         : formatStatChars(e.chars);
-    final Widget row = Padding(
-      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-      child: Row(
-        children: <Widget>[
-          // 合集组内条目缩进一档，让「合集名在左」的层级读得出来。
-          SizedBox(width: hasCollections ? tokens.spacing.card : 0),
-          Expanded(
-            child: Text(
-              e.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: tokens.type.listTitle,
-            ),
-          ),
-          SizedBox(width: tokens.spacing.gap),
-          Text(meta, style: tokens.type.metadata),
-        ],
-      ),
-    );
     final Future<void> Function(String, String)? onTap = _resolvers.onEntryTap;
     final bool canDelete = _resolvers.onEntryDelete != null;
+    // 2026-10 体验优化：删除入口统一成可见按钮（会话列表本就有），不再只藏在
+    // 长按 / 右键里；行最小高度 48，满足触控目标。长按 / 右键仍保留。
+    final Widget row = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: kStatRowMinHeight),
+      child: Padding(
+        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
+        child: Row(
+          children: <Widget>[
+            // 合集组内条目缩进一档，让「合集名在左」的层级读得出来。
+            SizedBox(width: hasCollections ? tokens.spacing.card : 0),
+            Expanded(
+              child: Text(
+                e.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.listTitle,
+              ),
+            ),
+            SizedBox(width: tokens.spacing.gap),
+            Text(meta, style: tokens.type.metadata),
+            if (canDelete)
+              IconButton(
+                tooltip: t.stat_delete_title,
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => unawaited(_confirmAndDelete(e)),
+              ),
+          ],
+        ),
+      ),
+    );
     if (onTap == null && !canDelete) return row;
     // 桌面端右键**不能**直接接 `InkWell.onSecondaryTap`（BUG-2111）：那是把鼠标次按钮
     // 硬绑死，绕过绑定表——用户把任何动作绑到右键，一次按下会同时触发那个动作和这里的

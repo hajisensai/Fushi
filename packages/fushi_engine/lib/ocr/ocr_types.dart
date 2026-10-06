@@ -107,12 +107,20 @@ class DetectedTextRegion {
 
 /// 单页检测结果。
 class PageDetections {
-  const PageDetections({required this.textRegions, required this.bubbles});
+  const PageDetections({
+    required this.textRegions,
+    required this.bubbles,
+    this.weakTextRegions = const <DetectedTextRegion>[],
+  });
 
   final List<DetectedTextRegion> textRegions;
 
   /// bubble（类别 0）框，仅用于内/外判定与后续 UI 需要。
   final List<OcrRect> bubbles;
+
+  /// 没过正式阈值、但过了弱阈值的文字框（未做 NMS）：不直接识别，只给补检
+  /// （`page_text_sweep.dart`）当候选——字距稀疏的装饰性标题常落在这一档。
+  final List<DetectedTextRegion> weakTextRegions;
 }
 
 /// 识别 + 排序之后的最终文字块（供上层消费 / 缓存序列化）。
@@ -124,6 +132,7 @@ class OcrBlock {
     this.lineBoxes,
     this.score = 0,
     this.insideBubble = false,
+    this.confidence,
   });
 
   final OcrRect box;
@@ -143,6 +152,11 @@ class OcrBlock {
   final double score;
   final bool insideBubble;
 
+  /// 识别置信度（0–1，越高越可信）；null = 识别器没给（旧缓存 / 不出分的
+  /// 识别器）。与检测分 [score] 是两回事：那个说「这里有字」，这个说「字读对了」。
+  /// 口径见 [OcrRecognition.confidence]。
+  final double? confidence;
+
   /// 整块文本（各行按阅读序拼接）。
   String get text => lines.join();
 
@@ -156,6 +170,7 @@ class OcrBlock {
           ],
         'score': score,
         'insideBubble': insideBubble,
+        if (confidence != null) 'confidence': confidence,
       };
 
   static OcrBlock fromJson(Map<String, dynamic> json) {
@@ -176,6 +191,7 @@ class OcrBlock {
       lineBoxes: lineBoxes,
       score: (json['score'] as num?)?.toDouble() ?? 0,
       insideBubble: json['insideBubble'] as bool? ?? false,
+      confidence: (json['confidence'] as num?)?.toDouble(),
     );
   }
 }
@@ -221,6 +237,24 @@ abstract interface class OcrRecognizer {
   Future<String> recognize(img.Image page, OcrRect box);
 }
 
+/// [ScoredOcrRecognizer.recognizeScored] 的结果。
+typedef ScoredOcrText = ({String text, double? confidence});
+
+/// 可选能力：识别时顺带给出置信度（见 [OcrRecognition.confidence]）。
+///
+/// 与 [OcrRecognizer.recognize] 必须读出同一段文字——它只是多交一个分数，
+/// 调用方不会因为要分数而换一条解码路径。
+abstract interface class ScoredOcrRecognizer implements OcrRecognizer {
+  Future<ScoredOcrText> recognizeScored(img.Image page, OcrRect box);
+}
+
+/// 两个可空置信度取较小者（null 视作「不知道」，不拉低另一个）。
+double? minOcrConfidence(double? a, double? b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return a < b ? a : b;
+}
+
 /// 可选的同页批识别能力；没有实现此接口的识别器仍按单框调用。
 ///
 /// 输出必须与 [boxes] 严格同长、同序；未认出文字也用空串占住原位置，
@@ -236,10 +270,28 @@ class OcrRecognition {
     required this.vertical,
     this.lines,
     this.lineBoxes,
+    this.confidence,
   }) : assert((lines == null) == (lineBoxes == null));
 
   final String text;
   final bool vertical;
+
+  /// 识别置信度（0–1）；null = 识别器不出分。
+  ///
+  /// 口径按识别器不同，只用来挑「可能读错的块」，不跨识别器比大小：逐列 CTC 取
+  /// 各吐字帧 softmax 概率的**最小值**（一个字读糊就该被挑出来），manga-ocr 取
+  /// beam 结果的逐 token 概率**几何平均**（beam 只留下了整句对数概率）。多行块取
+  /// 各行最小值。
+  final double? confidence;
+
+  /// 换掉置信度的副本（路由层把子识别器的分数挂回排版结果）。
+  OcrRecognition withConfidence(double? value) => OcrRecognition(
+        text: text,
+        vertical: vertical,
+        lines: lines,
+        lineBoxes: lineBoxes,
+        confidence: value,
+      );
 
   /// 按行切开的 [text]（阅读序，`lines.join() == text`），与 [lineBoxes]
   /// 等长；null = 识别器没给行几何，pipeline 落成整块单行。

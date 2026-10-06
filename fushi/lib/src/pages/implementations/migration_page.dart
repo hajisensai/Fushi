@@ -7,6 +7,7 @@ import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
@@ -155,7 +156,7 @@ class _MigrationPageState extends State<MigrationPage> {
       if (_includeLocalAudio) MigrationBatch.localAudio,
     ];
     return Scaffold(
-      appBar: AppBar(title: Text(t.migration_settings_entry)),
+      appBar: FushiAppBar(title: Text(t.migration_settings_entry)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: <Widget>[
@@ -171,12 +172,12 @@ class _MigrationPageState extends State<MigrationPage> {
           if (_target == _TargetState.missing) ...<Widget>[
             Text(t.migration_target_missing),
             const SizedBox(height: 8),
-            FilledButton(
+            FushiFilledButton(
               onPressed: () => launchUrl(Uri.parse(kFushiReleasesUrl),
                   mode: LaunchMode.externalApplication),
               child: Text(t.migration_download_fushi),
             ),
-            TextButton(
+            FushiTextButton(
               onPressed: _refreshTarget,
               child: Text(t.retry),
             ),
@@ -194,14 +195,14 @@ class _MigrationPageState extends State<MigrationPage> {
               FushiListItem(
                 density: FushiListDensity.compact,
                 leading: _doneBatches.contains(batch.name)
-                    ? const Icon(Icons.check_circle_outline)
+                    ? const FushiIcon(Icons.check_circle_outline)
                     : (_currentBatch == batch.name
                         ? const SizedBox(
                             width: 20,
                             height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                            child: FushiCircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.radio_button_unchecked)),
+                        : const FushiIcon(Icons.radio_button_unchecked)),
                 title: Text(_batchLabel(batch)),
               ),
             const SizedBox(height: 8),
@@ -216,16 +217,16 @@ class _MigrationPageState extends State<MigrationPage> {
             if (_allDone) ...<Widget>[
               Text(t.migration_export_done),
               const SizedBox(height: 8),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: _running ? null : () => _channel.launchFushi(),
                 child: Text(t.migration_open_fushi),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: _running ? null : () => _run(fresh: true),
                 child: Text(t.migration_reexport),
               ),
             ] else
-              FilledButton(
+              FushiFilledButton(
                 onPressed: _running ? null : () => _run(fresh: false),
                 child: _running
                     ? Text(

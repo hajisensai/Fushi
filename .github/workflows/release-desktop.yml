@@ -1235,7 +1235,9 @@ jobs:
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
     if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
-    timeout-minutes: 90
+    # 120：内置 torrent 引擎 bridge 冷编（两个架构的 boost + openssl + libtorrent）要几十分钟，
+    # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
+    timeout-minutes: 120
     permissions:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
@@ -1519,6 +1521,65 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
+      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
+      # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
+      # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
+      # 在 macOS 上恒不可用（BUG-2865）。失败口径同 p2p：构建失败即 job 失败；出包后再核对。
+      # 持久库与 build-multiplatform.yml macos job 同名：这里（develop push）存的件就是 PR 门
+      # 首跑命中的那一份；命中时跳过两个架构的 vcpkg 冷编。
+      - name: Restore torrent bridge dylib from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/macos
+      - name: Resolve vcpkg cache identity (macOS torrent)
+        id: vcpkg_cache_id_macos
+        if: steps.torrent_store.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Cache vcpkg source distfiles (libtorrent macos)
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-
+      - name: Cache vcpkg binary archives (libtorrent macos)
+        if: steps.torrent_store.outputs.hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
+      - name: Build embedded torrent bridge (macOS universal dylib, static)
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+          STORE_HIT: ${{ steps.torrent_store.outputs.hit }}
+        run: |
+          set -euo pipefail
+          if [ "$STORE_HIT" != "true" ]; then
+            vcpkg_root="${VCPKG_INSTALLATION_ROOT:-}"
+            if [ ! -f "$vcpkg_root/scripts/buildsystems/vcpkg.cmake" ]; then
+              vcpkg_root="$RUNNER_TEMP/vcpkg"
+              git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$vcpkg_root"
+              "$vcpkg_root/bootstrap-vcpkg.sh" -disableMetrics
+            fi
+            mkdir -p "$VCPKG_DOWNLOADS"
+            bash native/fushi_torrent/build_macos_dylib.sh "$vcpkg_root"
+          fi
+          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/macos/libfushi_torrent_ffi.dylib nm
       - name: Build macOS release
         working-directory: fushi
         run: >-
@@ -1548,6 +1609,33 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.p2p }}
           path: native/fushi_p2p/prebuilt/macos
+      - name: Verify fushi_torrent is in the macOS bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib"
+          test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
+          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上内置引擎静默不可用。
+          archs=" $(lipo -archs "$dylib") "
+          for arch in arm64 x86_64; do
+            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
+          done
+          # 依赖只许是系统库（静态链真生效）。
+          otool -L "$dylib" | grep -E '^[[:space:]]' | awk '{ print $1 }' > "$RUNNER_TEMP/torrent_otool.txt"
+          if grep -v -e '^@rpath/libfushi_torrent_ffi\.dylib$' -e '^/usr/lib/' -e '^/System/' "$RUNNER_TEMP/torrent_otool.txt"; then
+            echo "::error::$dylib links non-system libraries (static vcpkg link did not take effect)"
+            exit 1
+          fi
+          bash .github/scripts/verify_torrent_abi.sh "$dylib" nm
+      - name: Save torrent bridge dylib to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native/fushi_torrent/prebuilt/macos
       # 缓存理由与 key 契约见 build-multiplatform.yml macos job 同名步骤（key 逐字一致）。
       # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
       - name: Restore pinned Mihon desktop runtimes

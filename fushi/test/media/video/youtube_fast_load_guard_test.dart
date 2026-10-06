@@ -119,12 +119,15 @@ void main() {
       reason: 'A1：必须有多 client 兜底顺序常量',
     );
     expect(
-      resolverSrc.contains('_getManifestWithClientFallback(client, videoId'),
+      resolverSrc
+          .contains('_getManifestWithClientFallback(client, http, videoId'),
       isTrue,
       reason: 'A1：resolveYoutubeSource 必须经逐个兜底 helper 取 manifest',
     );
     expect(
-      resolverSrc.contains('ytClients: <yt.YoutubeApiClient>[api]'),
+      // BUG-2946：单个 client 先经 withIdentity 派生（visionOS 带 visitor 身份）再取。
+      resolverSrc.contains(
+          'ytClients: <yt.YoutubeApiClient>[await withIdentity(api)]'),
       isTrue,
       reason: 'A1：必须对单一 client 逐个取，避免多 client 流合并致选中 403 直链',
     );

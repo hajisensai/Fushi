@@ -99,14 +99,8 @@ void main() {
       isFalse,
       reason: '横滚行卡不得绕过槽向组件直接构造 Image',
     );
-    final String heroPage =
-        _stripLineComments(_functionSource(source, 'Widget _buildHeroPage('));
-    expect(
-      heroPage,
-      contains('LandscapeCoverImage('),
-      reason: 'hero 轮播背景必须走 LandscapeCoverImage（竖版海报模糊垫底 + '
-          'overlays 层序保文字可读，BUG-1298 血缘）',
-    );
+    // hero 轮播页的 LandscapeCoverImage 断言已删（2026-10-04）：轮播随 #792
+    // dashboard 化不再渲染，`_buildHeroPage` 作为死代码一并移除。
   });
 
   test('合集详情单集缩略图：走 PortraitCoverImage 横槽自适应', () {

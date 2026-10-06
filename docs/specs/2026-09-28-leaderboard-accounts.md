@@ -64,7 +64,8 @@ ShelfEntry {
 ```
 
 - 读完时刻来源：书/漫画/PDF `EpubBooks.completedAt`；视频 `VideoBooks.completedAt`（合集取成员最晚完成，全部完成才算）；**游戏新增 `Galgames.completedAt`**（见 3.5）。
-- Profile 口径：本机只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时只上传**当前 Profile 有学习记录（stat facts）**的作品（`buildLocalShelf` 判定）。
+- Profile 口径：本机只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时**别的 Profile 有学习记录、当前 Profile 没有**的作品不上传；哪个 Profile 都没有记录的作品照常上传（BUG-2870，`buildLocalShelf` 判定）。
+  - 作品维度去重（BUG-2870）：同机 Profile 共享一个库，「哪个 Profile 都没有记录」的作品会被每个开了上传的 Profile 各报一次。这类作品只由**同机代表 Profile**（开着上传、未被别的设备顶掉的 Profile 里 id 最小的，`leaderboardUnattributedOwner`）计入作品读者数；其余 Profile 上传时带 `counted: false`。`counted: false` 的行照常上架、照常计入该账户自己的读完数与计分，只不计入作品读者数 / 作品人气 / 作品周月榜 / 作品页读者列表（服务端 `shelf.counted` 列，迁移 `0002_shelf_counted.sql`）。有学习记录的作品归记录所在 Profile，照常计入——同一本书换个 Profile 再读完一遍不去重。`counted` 只在为 false 时进上报 JSON，已有条目的内容哈希不变、不触发重传。
 - 另上传按天字数汇总 `DailyChars { dateKey, chars }` 用于字数榜的周/月切窗（不带作品）。
 - 上报是**幂等 upsert**：同一 `(account, work)` 覆盖；每次整份重传书架（有变更才传，按内容 hash 判），无增量游标。
 - 每个条目本地可设「不公开」，被排除的作品从不上传，已上传的会被删除。
@@ -118,7 +119,7 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 ## 5. 页面（全部在 App 内；另有只读网页版）
 
-- **排行榜**（统计中心新 tab「排行」）：全局/好友 × 周/月/总 × {书, 漫画, 视频, 游戏, 字数}；每行：名次、头像、昵称、数值。另一个子页「作品人气」：名次、封面、标题、作者、读者数、读者头像墙。
+- **排行榜**（原为统计中心 tab「排行」；2026-10-01 改为首页统计中心入口旁的独立按钮 + 独立页 `LeaderboardPage`）：全局/好友 × 周/月/总 × {书, 漫画, 视频, 游戏, 字数}；每行：名次、头像、昵称、数值。另一个子页「作品人气」：名次、封面、标题、作者、读者数、读者头像墙。
 - **用户详情页**（萌メーター形态）：左侧卡片 = 头像、昵称、各类读完数（及名次）、字数（及名次）、注册日、首条记录日；右侧 = 按读完时间倒序的书架：封面、标题、作者、读完日期、「N 人」、读过此作品的其他用户头像墙（好友优先，最多 8 个）。点作品 → **作品页**：封面、标题、作者、读者数、读者列表（头像/昵称/读完日期）。
 - **好友**：输入好友码申请 → 对方接受；删除、屏蔽；可见性 `friends` 时书架只对好友可见（仍计入数量榜，但榜上点进去看不到书架）。
 - **分享卡片**：客户端渲染「本月读完 N 部 + 封面拼图 + 字数」PNG（`RepaintBoundary`，本地生成），附 `https://<域名>/u/<id>` 链接，经 `share_plus` 分享。

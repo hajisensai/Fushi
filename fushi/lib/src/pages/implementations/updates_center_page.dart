@@ -1,6 +1,7 @@
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -92,7 +93,7 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     await _load();
     if (!mounted) return;
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(t.updates_history_cleared(count: removed))),
+      FushiSnackBar(content: Text(t.updates_history_cleared(count: removed))),
     );
   }
 
@@ -161,7 +162,7 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   Widget _filterChip({required String label, required UpdateFeedKind? kind}) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
+      child: FushiChoiceChip(
         label: Text(label),
         selected: _filter == kind,
         onSelected: (bool selected) {
@@ -231,6 +232,13 @@ class _UpdateEntryTile extends StatelessWidget {
           DateTime.fromMillisecondsSinceEpoch(publishedAt),
         ),
     ].join(' · ');
+    // 已读图标：MD3 = outline；Apple 下 colorScheme.outline 映射成分隔线色，
+    // 作图标几乎看不见，改用 tertiaryLabel（iOS 弱化图标的系统色）。
+    final Color iconColor = unseen
+        ? theme.colorScheme.primary
+        : (isGlassDesign(context)
+              ? appleColorsOf(context).tertiaryLabel
+              : theme.colorScheme.outline);
     // 走共享的 FushiListItem 而不是裸 ListTile：普通页面外壳的 MD3 决策收口在
     // 组件层（md3_design_system_static_test 守着这条），每页自己拼一遍 ListTile
     // 正是那条守卫要拦的东西。
@@ -250,24 +258,20 @@ class _UpdateEntryTile extends StatelessWidget {
                     'UpdatesCenterPage.coverDecode',
                     '$imagePath: $error',
                   );
-                  return Icon(
+                  return FushiIcon(
                     kind == null
                         ? Icons.notifications_outlined
                         : updateFeedKindIcon(kind),
-                    color: unseen
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.outline,
+                    color: iconColor,
                   );
                 },
               ),
             )
-          : Icon(
+          : FushiIcon(
               kind == null
                   ? Icons.notifications_outlined
                   : updateFeedKindIcon(kind),
-              color: unseen
-                  ? theme.colorScheme.primary
-                  : theme.colorScheme.outline,
+              color: iconColor,
             ),
       title: Text(
         entry.title,
@@ -279,7 +283,7 @@ class _UpdateEntryTile extends StatelessWidget {
       subtitleMaxLines: 1,
       // 未读点：与「加粗 = 未读」同一个事实的第二个可见表征，不靠字重也能分辨。
       trailing: unseen
-          ? Icon(Icons.circle, size: 8, color: theme.colorScheme.primary)
+          ? FushiIcon(Icons.circle, size: 8, color: theme.colorScheme.primary)
           : null,
       onTap: onTap,
     );
@@ -293,31 +297,12 @@ class _UpdatesEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(
-              Icons.notifications_none_outlined,
-              size: 48,
-              color: theme.colorScheme.outline,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Text(t.updates_center_empty, style: theme.textTheme.titleMedium),
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.updates_center_empty_hint,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.outline,
-              ),
-            ),
-          ],
-        ),
-      ),
+    // 统一空态：MD3 中性分组底块 / Apple 无底块大图标 + 灰字，各自在
+    // FushiPlaceholderMessage 里分派；提示语作次级说明。
+    return FushiPlaceholderMessage(
+      icon: Icons.notifications_none_outlined,
+      message: t.updates_center_empty,
+      detail: t.updates_center_empty_hint,
     );
   }
 }

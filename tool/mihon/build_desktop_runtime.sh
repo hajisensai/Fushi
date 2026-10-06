@@ -34,11 +34,43 @@ case "$requested_architectures" in
   *) echo "FUSHI_MIHON_ARCHS must be 'all' or 'host'" >&2; exit 64 ;;
 esac
 
-case "$(uname -m)" in
-  arm64) host_architecture="arm64" ;;
-  x86_64) host_architecture="x64" ;;
-  *) echo "unsupported macOS build architecture: $(uname -m)" >&2; exit 1 ;;
+# Linux：Dart 侧按 `<exe 目录>/mihon_bridge/runtime/bin/java` 找 JVM
+# （desktop_mihon_runtime.dart `_javaExecutablePath`，与 Windows 同布局），bundle
+# 只跑在构建机同架构上，所以只出宿主架构一份、目录名固定 `runtime`。哈希取自
+# corretto/corretto-21 的 21.0.12.8.1 release notes。
+host_os="$(uname -s)"
+case "$host_os" in
+  Darwin) ;;
+  Linux)
+    requested_architectures="host"
+    x64_archive="amazon-corretto-$corretto_version-linux-x64.tar.gz"
+    x64_archive_sha256="75faed442d38a89c27f920e45ab24f9f71ff8ca6b732bfea90cdb500decd3c6b"
+    arm64_archive="amazon-corretto-$corretto_version-linux-aarch64.tar.gz"
+    arm64_archive_sha256="fd94500b0d3d7e6e040a9dc1b34cbe25046454e5e3047b68c1842fa6894e9bbc"
+    ;;
+  *) echo "unsupported desktop runtime build host: $host_os" >&2; exit 1 ;;
 esac
+
+case "$(uname -m)" in
+  arm64|aarch64) host_architecture="arm64" ;;
+  x86_64) host_architecture="x64" ;;
+  *) echo "unsupported build architecture: $(uname -m)" >&2; exit 1 ;;
+esac
+
+# 按宿主选校验工具，不按「PATH 里有没有 sha256sum」：macOS 14+ 自带的
+# /sbin/sha256sum 是 BSD 实现，不认 GNU 的 `--status` 选项，探测到它就走
+# GNU 分支会让每个归档都判校验失败。macOS 一律用自带的 shasum；Linux 用
+# coreutils 的 sha256sum（精简镜像常没有 perl 版 shasum）。
+case "$host_os" in
+  Darwin) sha256_tool=(shasum -a 256) ;;
+  *) sha256_tool=(sha256sum) ;;
+esac
+sha256_check() {
+  "${sha256_tool[@]}" --check >/dev/null 2>&1
+}
+sha256_of() {
+  "${sha256_tool[@]}" "$1" | awk '{print $1}'
+}
 
 case "$output_directory" in
   /|"") echo "refusing to write a desktop runtime to a filesystem root" >&2; exit 64 ;;
@@ -90,7 +122,7 @@ download_verified_archive() {
   local download_url="$corretto_base_url/$archive"
 
   if [[ -f "$archive_path" ]] &&
-    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null 2>&1; then
+    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256_check; then
     echo "resuming incomplete cached JDK archive: $archive_path" >&2
     if [[ ! -f "$partial_path" ]]; then
       mv "$archive_path" "$partial_path"
@@ -112,7 +144,7 @@ download_verified_archive() {
         --continue-at - \
         --output "$partial_path" \
         "$download_url"; then
-        if printf '%s  %s\n' "$expected_sha256" "$partial_path" | shasum -a 256 --check >/dev/null 2>&1; then
+        if printf '%s  %s\n' "$expected_sha256" "$partial_path" | sha256_check; then
           mv "$partial_path" "$archive_path"
           break
         fi
@@ -123,7 +155,7 @@ download_verified_archive() {
   fi
 
   if [[ ! -f "$archive_path" ]] ||
-    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null 2>&1; then
+    ! printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256_check; then
     echo "failed to download a verified JDK archive: $archive" >&2
     return 1
   fi
@@ -153,14 +185,18 @@ prepare_jdk() {
   local expected_sha256="$3"
   local archive_path="$download_cache/$archive"
 
-  printf '%s  %s\n' "$expected_sha256" "$archive_path" | shasum -a 256 --check >/dev/null
+  printf '%s  %s\n' "$expected_sha256" "$archive_path" | sha256_check
 
   local extract_root="$working_root/jdk-$architecture"
   mkdir -p "$extract_root"
   tar -xzf "$archive_path" -C "$extract_root"
   local jdk_bundle
   jdk_bundle="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d -print -quit)"
-  printf '%s\n' "$jdk_bundle/Contents/Home"
+  if [[ "$host_os" == Linux ]]; then
+    printf '%s\n' "$jdk_bundle"
+  else
+    printf '%s\n' "$jdk_bundle/Contents/Home"
+  fi
 }
 
 x64_jdk_home=""
@@ -216,18 +252,24 @@ build_runtime() {
 }
 
 mkdir -p "$staging_root"
-if [[ -n "$x64_jdk_home" ]]; then
-  build_runtime "$x64_jdk_home" "runtime-macos-x64"
-fi
-if [[ -n "$arm64_jdk_home" ]]; then
-  build_runtime "$arm64_jdk_home" "runtime-macos-arm64"
+if [[ "$host_os" == Linux ]]; then
+  build_runtime "$host_jdk_home" "runtime"
+else
+  if [[ -n "$x64_jdk_home" ]]; then
+    build_runtime "$x64_jdk_home" "runtime-macos-x64"
+  fi
+  if [[ -n "$arm64_jdk_home" ]]; then
+    build_runtime "$arm64_jdk_home" "runtime-macos-arm64"
+  fi
 fi
 
 cp "$server_jar" "$staging_root/m-extension-server.jar"
 cp "$source_root/LICENSE" "$staging_root/LICENSE-M-Extension-Server.txt"
 cp "$overlay_root/NOTICE" "$staging_root/NOTICE-M-Extension-Server.txt"
 
-server_sha256="$(shasum -a 256 "$staging_root/m-extension-server.jar" | awk '{print $1}')"
+server_sha256="$(sha256_of "$staging_root/m-extension-server.jar")"
+host_os_key=macos
+[[ "$host_os" == Linux ]] && host_os_key=linux
 cat >"$staging_root/checksums.json" <<EOF
 {
   "mExtensionServer": {
@@ -237,8 +279,8 @@ cat >"$staging_root/checksums.json" <<EOF
   },
   "corretto": {
     "version": "$corretto_version",
-    "macosX64ArchiveSha256": "$x64_archive_sha256",
-    "macosArm64ArchiveSha256": "$arm64_archive_sha256"
+    "${host_os_key}X64ArchiveSha256": "$x64_archive_sha256",
+    "${host_os_key}Arm64ArchiveSha256": "$arm64_archive_sha256"
   }
 }
 EOF

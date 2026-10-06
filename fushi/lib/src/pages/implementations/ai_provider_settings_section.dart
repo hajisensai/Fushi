@@ -20,13 +20,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
-import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart'
+    show GlassSettingsRenderer;
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/utils.dart';
 
 // 历史上 aiFailureText 住在这里，五处调用方按 `show aiFailureText` 从本文件引；
@@ -107,49 +111,49 @@ class _AiProviderSettingsSectionState
       _assignments = appModel.prefsRepo.aiFeatureAssignments;
     }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-      ),
-      child: Column(
-        key: const ValueKey<String>('ai-provider-settings'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          SourceSectionHeading(
-            title: t.ai_providers_section,
-            hint: t.ai_providers_section_summary,
-            icon: Icons.smart_toy_outlined,
-          ),
-          if (_drafts.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                t.ai_provider_empty,
-                key: const ValueKey<String>('ai-provider-empty'),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          for (int index = 0; index < _drafts.length; index++)
-            _providerCard(index),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+    // 与同页 schema 段同一套分组（MD3 分段卡 / Apple inset grouped）：渲染器已经
+    // 给整列加了详情页左右留白，这里不再自己缩进一层。
+    return Column(
+      key: const ValueKey<String>('ai-provider-settings'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 提供商：每家一行（名称 / 模型 / 状态 / chevron），点进去是这家的
+        // 编辑页（[_openEditor]）；末行「添加提供商」。
+        AdaptiveSettingsSection(
+          key: const ValueKey<String>('ai-provider-list'),
+          title: t.ai_providers_section,
+          children: <Widget>[
+            for (int index = 0; index < _drafts.length; index++)
+              _providerRow(index),
+            AdaptiveSettingsRow(
               key: const ValueKey<String>('ai-provider-add'),
-              onPressed: () => unawaited(_pickPresetAndAdd()),
-              icon: const Icon(Icons.add),
-              label: Text(t.ai_provider_add),
+              icon: Icons.add_rounded,
+              showIcon: true,
+              title: t.ai_provider_add,
+              onTap: () => unawaited(_pickPresetAndAdd()),
             ),
-          ),
-          SourceSectionHeading(
-            title: t.ai_features_section,
-            hint: t.ai_features_section_summary,
-            icon: Icons.auto_fix_high_outlined,
-          ),
-          _defaultProviderRow(),
-          for (final AiFeature feature in AiFeature.values)
-            if (_featureAvailableOnThisStore(feature)) _featureRow(feature),
-        ],
-      ),
+          ],
+        ),
+        SettingsSectionFooter(
+          _drafts.isEmpty
+              ? '${t.ai_provider_empty}\n${t.ai_providers_section_summary}'
+              : t.ai_providers_section_summary,
+          key: _drafts.isEmpty
+              ? const ValueKey<String>('ai-provider-empty')
+              : null,
+        ),
+        // 功能 → 提供商：每个功能一条选择行（行尾是当前值 + 弹出菜单）。
+        AdaptiveSettingsSection(
+          key: const ValueKey<String>('ai-feature-list'),
+          title: t.ai_features_section,
+          children: <Widget>[
+            _defaultProviderRow(),
+            for (final AiFeature feature in AiFeature.values)
+              if (_featureAvailableOnThisStore(feature)) _featureRow(feature),
+          ],
+        ),
+        SettingsSectionFooter(t.ai_features_section_summary),
+      ],
     );
   }
 
@@ -163,197 +167,356 @@ class _AiProviderSettingsSectionState
           StoreRestrictedCapability.externalDiscovery.isAvailable);
 
   // ---------------------------------------------------------------------------
-  // 提供商卡片
+  // 提供商列表行 + 编辑页
   // ---------------------------------------------------------------------------
 
-  Widget _providerCard(int index) {
+  /// 列表里的一家：图标 / 名称 / 模型（副标题）/ 状态 / chevron，点进编辑页。
+  Widget _providerRow(int index) {
+    final _AiProviderDraft draft = _drafts[index];
+    // 状态标只有一个判据：[AiProviderConfig.isUsable]。
+    final bool ready = draft.toConfig()?.isUsable ?? false;
+    final String model = draft.model.trim();
+    final bool glass = isGlassDesign(context);
+    return AdaptiveSettingsRow(
+      key: ValueKey<String>('ai-provider-${draft.id}'),
+      icon: _presetIcon(draft),
+      showIcon: true,
+      title: draft.displayName,
+      subtitle: model.isEmpty ? draft.presetDisplayName : model,
+      subtitleMaxLines: 1,
+      onTap: () => unawaited(_openEditor(draft.id)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 160),
+            child: Text(
+              ready ? t.ai_provider_ready : t.ai_provider_incomplete,
+              key: ValueKey<String>('ai-provider-$index-status'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              // 就绪是次要灰字（与系统设置行尾的当前值同色）；没配全才上警告色。
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: ready
+                    ? fushiNeutralSecondaryForeground(context)
+                    : fushiStatusColor(context, FushiStatusTone.warning),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          if (glass)
+            const FushiAppleChevron()
+          else
+            FushiIcon(
+              Icons.chevron_right,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 本地服务（Ollama / LM Studio）是电脑，其余是云端 API。
+  static IconData _presetIcon(_AiProviderDraft draft) =>
+      (aiProviderPresetById(draft.presetId)?.isLocal ?? false)
+      ? Icons.computer_outlined
+      : Icons.cloud_outlined;
+
+  /// 编辑页跟随本 State 重建：草稿 / 探测结果 / 模型候选都只活在这里（防抖落盘与
+  /// dispose 冲刷照旧由本 State 负责），编辑页只是另一处渲染。每次 [setState]
+  /// 都会推进它（见下方覆写）。
+  ///
+  /// 不 dispose：编辑页的监听者可能比本 State 晚一帧摘除，一个整数 notifier
+  /// 留给 GC 即可。
+  final ValueNotifier<int> _editorRevision = ValueNotifier<int>(0);
+
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _editorRevision.value++;
+  }
+
+  /// 推入一家的编辑页（系统设置「账户 › 某账户」的形态）。
+  Future<void> _openEditor(String draftId) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext pageContext) => ValueListenableBuilder<int>(
+          valueListenable: _editorRevision,
+          builder: (BuildContext pageContext, int _, Widget? __) =>
+              _buildEditorPage(pageContext, draftId),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditorPage(BuildContext pageContext, String draftId) {
+    final int index = _drafts.indexWhere(
+      (_AiProviderDraft d) => d.id == draftId,
+    );
+    // 已删除（删除按钮先 pop 再删，这里只兜退场动画那几帧）。
+    if (index < 0) return const SizedBox.shrink();
+    final _AiProviderDraft draft = _drafts[index];
+    final FushiDesignTokens tokens = FushiDesignTokens.of(pageContext);
+    final double inset = isGlassDesign(pageContext)
+        ? GlassSettingsRenderer.detailHorizontalInset(pageContext)
+        : tokens.spacing.page;
+    return FushiPageScaffold(
+      title: draft.displayName,
+      body: ListView(
+        key: ValueKey<String>('ai-provider-editor-${draft.id}'),
+        padding: EdgeInsets.fromLTRB(
+          inset,
+          tokens.spacing.gap,
+          inset,
+          tokens.spacing.page + bottomSafeInsetOf(pageContext),
+        ),
+        children: <Widget>[_providerEditor(pageContext, index)],
+      ),
+    );
+  }
+
+  /// 一家提供商的编辑表单：启用 / 连接（名称、密钥、地址、模型）/ 请求方式
+  /// （协议、推理、明文 HTTP）/ 自检，最后是删除。都是共享设置分组里的标准行。
+  Widget _providerEditor(BuildContext pageContext, int index) {
     final _AiProviderDraft draft = _drafts[index];
     final AiProviderConfig? config = draft.toConfig();
     final _ProbeState? probe = _probes[draft.id];
+    final bool busy = probe?.running ?? false;
     // 内置预设的协议是厂商事实，锁死；只有「自定义」才让用户自己选。
     final bool protocolLocked = draft.presetId != kAiCustomPresetId;
-    final ThemeData theme = Theme.of(context);
+    final double rowInset = FushiDesignTokens.of(
+      pageContext,
+    ).spacing.rowHorizontal;
+    Widget field(Widget child) => Padding(
+      padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
+      child: child,
+    );
 
-    return FushiCard(
-      key: ValueKey<String>('ai-provider-${draft.id}'),
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: SwitchListTile.adaptive(
-                  key: ValueKey<String>('ai-provider-$index-enabled'),
-                  contentPadding: EdgeInsets.zero,
-                  dense: true,
-                  title: Text(t.ai_provider_enabled),
-                  // 状态标只有一个判据：[AiProviderConfig.isUsable]。
-                  subtitle: Text(
-                    (config?.isUsable ?? false)
-                        ? t.ai_provider_ready
-                        : t.ai_provider_incomplete,
-                    key: ValueKey<String>('ai-provider-$index-status'),
-                  ),
-                  value: draft.enabled,
-                  onChanged: (bool value) =>
-                      _update(index, draft.copyWith(enabled: value)),
-                ),
+    return Column(
+      key: ValueKey<String>('ai-provider-${draft.id}-editor'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('ai-provider-$index-enabled'),
+              title: t.ai_provider_enabled,
+              subtitle: (config?.isUsable ?? false)
+                  ? t.ai_provider_ready
+                  : t.ai_provider_incomplete,
+              value: draft.enabled,
+              onChanged: (bool value) =>
+                  _update(index, draft.copyWith(enabled: value)),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          title: draft.presetDisplayName,
+          children: <Widget>[
+            field(
+              _textField(
+                key: ValueKey<String>('ai-provider-$index-name'),
+                label: t.ai_provider_name,
+                initialValue: draft.name,
+                onChanged: (String value) =>
+                    _update(index, draft.copyWith(name: value)),
               ),
-              IconButton(
-                key: ValueKey<String>('ai-provider-$index-delete'),
-                tooltip: t.ai_provider_delete,
-                onPressed: () => _delete(index),
-                icon: const Icon(Icons.remove_circle_outline),
+            ),
+            field(
+              _textField(
+                key: ValueKey<String>('ai-provider-$index-api-key'),
+                label: t.ai_provider_api_key,
+                initialValue: draft.apiKey,
+                obscureText: true,
+                onChanged: (String value) =>
+                    _update(index, draft.copyWith(apiKey: value)),
               ),
-            ],
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('ai-provider-$index-name'),
-            label: t.ai_provider_name,
-            initialValue: draft.name,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(name: value)),
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('ai-provider-$index-api-key'),
-            label: t.ai_provider_api_key,
-            initialValue: draft.apiKey,
-            obscureText: true,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(apiKey: value)),
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('ai-provider-$index-base-url'),
-            label: t.ai_provider_base_url,
-            initialValue: draft.baseUrl,
-            keyboardType: TextInputType.url,
-            errorText: draft.baseUrlError,
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(baseUrl: value)),
-          ),
-          SettingsFormField(
-            key: ValueKey<String>('ai-provider-$index-model'),
-            label: t.ai_provider_model,
-            controller: _modelController(draft),
-            hintText: t.ai_provider_model_hint,
-            // 候选长在字段自己身上，不另起一行下拉（见 [_modelPickerButton]）。
-            suffixIcon: _modelPickerButton(index, draft),
-            onChanged: (String value) =>
-                _update(index, draft.copyWith(model: value)),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: DropdownButtonFormField<AiWireProtocol>(
+            ),
+            field(
+              _textField(
+                key: ValueKey<String>('ai-provider-$index-base-url'),
+                label: t.ai_provider_base_url,
+                initialValue: draft.baseUrl,
+                keyboardType: TextInputType.url,
+                errorText: draft.baseUrlError,
+                onChanged: (String value) =>
+                    _update(index, draft.copyWith(baseUrl: value)),
+              ),
+            ),
+            field(
+              _textField(
+                key: ValueKey<String>('ai-provider-$index-model'),
+                label: t.ai_provider_model,
+                controller: _modelController(draft),
+                hintText: t.ai_provider_model_hint,
+                // 候选长在字段自己身上，不另起一行下拉（见 [_modelPickerButton]）。
+                suffixIcon: _modelPickerButton(index, draft),
+                onChanged: (String value) =>
+                    _update(index, draft.copyWith(model: value)),
+              ),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            KeyedSubtree(
               key: ValueKey<String>('ai-provider-$index-protocol'),
-              isExpanded: true,
-              initialValue: draft.protocol,
-              decoration: InputDecoration(
-                labelText: t.ai_provider_protocol,
-                // 内置预设锁死协议：厂商端点的 wire 形状不是用户偏好。
-                helperText: protocolLocked
-                    ? '${draft.presetDisplayName} · '
-                          '${t.ai_provider_protocol_locked}'
-                    : null,
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
-              items: <DropdownMenuItem<AiWireProtocol>>[
-                for (final AiWireProtocol protocol in AiWireProtocol.values)
-                  DropdownMenuItem<AiWireProtocol>(
-                    value: protocol,
-                    child: Text(_protocolLabel(protocol)),
-                  ),
-              ],
-              // onChanged 为 null = 控件禁用（Flutter 的既定语义），不必另加一层
-              // IgnorePointer/AbsorbPointer。
-              onChanged: protocolLocked
-                  ? null
-                  : (AiWireProtocol? value) {
-                      if (value == null) return;
-                      _update(index, draft.copyWith(protocol: value));
-                    },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: DropdownButtonFormField<AiReasoningEffort>(
-              key: ValueKey<String>('ai-provider-$index-reasoning'),
-              isExpanded: true,
-              initialValue: draft.reasoningEffort,
-              decoration: InputDecoration(
-                labelText: t.ai_provider_reasoning,
-                isDense: true,
-                border: const OutlineInputBorder(),
-              ),
-              items: <DropdownMenuItem<AiReasoningEffort>>[
-                for (final AiReasoningEffort effort in AiReasoningEffort.values)
-                  DropdownMenuItem<AiReasoningEffort>(
-                    value: effort,
-                    child: Text(_reasoningLabel(effort)),
-                  ),
-              ],
-              onChanged: (AiReasoningEffort? value) {
-                if (value == null) return;
-                _update(index, draft.copyWith(reasoningEffort: value));
-              },
-            ),
-          ),
-          SwitchListTile.adaptive(
-            key: ValueKey<String>('ai-provider-$index-allow-http'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: Text(t.ai_provider_allow_http),
-            subtitle: Text(t.ai_provider_allow_http_summary),
-            value: draft.allowInsecureHttp,
-            onChanged: (bool value) =>
-                _update(index, draft.copyWith(allowInsecureHttp: value)),
-          ),
-          Wrap(
-            spacing: 12,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: <Widget>[
-              OutlinedButton.icon(
-                key: ValueKey<String>('ai-provider-$index-fetch-models'),
-                // 地址还没填成合法 URL 时按钮直接不可用，而不是点了再报通用错误。
-                onPressed: config == null || probe?.running == true
-                    ? null
-                    : () => unawaited(_fetchModels(draft)),
-                icon: const Icon(Icons.download_outlined),
-                label: Text(t.ai_provider_models_fetch),
-              ),
-              OutlinedButton.icon(
-                key: ValueKey<String>('ai-provider-$index-test'),
-                // 「测试连接」对所配模型发一次最小问答（见 [_testConnection]）：
-                // listModels 验不出模型名拼错 / 未开通 / 端点不支持 chat。
-                onPressed: config == null || probe?.running == true
-                    ? null
-                    : () => unawaited(_testConnection(draft)),
-                icon: probe?.running == true
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+              child: AdaptiveSettingsRow(
+                title: t.ai_provider_protocol,
+                // 内置预设锁死协议：厂商端点的 wire 形状不是用户偏好，只读显示。
+                subtitle: protocolLocked ? t.ai_provider_protocol_locked : null,
+                trailing: protocolLocked
+                    ? Text(
+                        _protocolLabel(draft.protocol),
+                        style: Theme.of(pageContext).textTheme.bodyMedium
+                            ?.copyWith(
+                              color: fushiNeutralSecondaryForeground(
+                                pageContext,
+                              ),
+                            ),
                       )
-                    : const Icon(Icons.network_check_outlined),
-                label: Text(t.ai_provider_test),
+                    : _AiChoiceButton(
+                        semanticLabel: t.ai_provider_protocol,
+                        labels: <String>[
+                          for (final AiWireProtocol protocol
+                              in AiWireProtocol.values)
+                            _protocolLabel(protocol),
+                        ],
+                        selectedIndex: draft.protocol.index,
+                        onChanged: (int value) => _update(
+                          index,
+                          draft.copyWith(
+                            protocol: AiWireProtocol.values[value],
+                          ),
+                        ),
+                      ),
               ),
-              if (probe != null && !probe.running)
-                Text(
-                  probe.message,
-                  key: ValueKey<String>('ai-provider-$index-probe-result'),
-                  style: TextStyle(
-                    color: probe.ok
-                        ? theme.colorScheme.primary
-                        : theme.colorScheme.error,
+            ),
+            KeyedSubtree(
+              key: ValueKey<String>('ai-provider-$index-reasoning'),
+              child: AdaptiveSettingsRow(
+                title: t.ai_provider_reasoning,
+                trailing: _AiChoiceButton(
+                  semanticLabel: t.ai_provider_reasoning,
+                  labels: <String>[
+                    for (final AiReasoningEffort effort
+                        in AiReasoningEffort.values)
+                      _reasoningLabel(effort),
+                  ],
+                  selectedIndex: draft.reasoningEffort.index,
+                  onChanged: (int value) => _update(
+                    index,
+                    draft.copyWith(
+                      reasoningEffort: AiReasoningEffort.values[value],
+                    ),
                   ),
                 ),
-            ],
+              ),
+            ),
+            AdaptiveSettingsSwitchRow(
+              key: ValueKey<String>('ai-provider-$index-allow-http'),
+              title: t.ai_provider_allow_http,
+              subtitle: t.ai_provider_allow_http_summary,
+              value: draft.allowInsecureHttp,
+              onChanged: (bool value) =>
+                  _update(index, draft.copyWith(allowInsecureHttp: value)),
+            ),
+          ],
+        ),
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            AdaptiveSettingsRow(
+              key: ValueKey<String>('ai-provider-$index-fetch-models'),
+              icon: Icons.download_outlined,
+              showIcon: true,
+              title: t.ai_provider_models_fetch,
+              // 地址还没填成合法 URL 时这一行不可点，而不是点了再报通用错误。
+              onTap: config == null || busy
+                  ? null
+                  : () => unawaited(_fetchModels(draft)),
+            ),
+            AdaptiveSettingsRow(
+              key: ValueKey<String>('ai-provider-$index-test'),
+              icon: Icons.network_check_outlined,
+              showIcon: true,
+              title: t.ai_provider_test,
+              // 「测试连接」对所配模型发一次最小问答（见 [_testConnection]）：
+              // listModels 验不出模型名拼错 / 未开通 / 端点不支持 chat。
+              onTap: config == null || busy
+                  ? null
+                  : () => unawaited(_testConnection(draft)),
+              trailing: busy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+            ),
+          ],
+        ),
+        if (probe != null && !probe.running)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            // 成功走状态绿（MD3 按主色 harmonize / Apple systemGreen），失败走
+            // 错误色——语义只上在图标上，底是中性提示块。
+            child: FushiInlineNotice(
+              key: ValueKey<String>('ai-provider-$index-probe-result'),
+              severity: probe.ok
+                  ? FushiNoticeSeverity.success
+                  : FushiNoticeSeverity.error,
+              message: probe.message,
+            ),
           ),
-        ],
+        Center(
+          child: FushiTextButton.icon(
+            key: ValueKey<String>('ai-provider-$index-delete'),
+            destructive: true,
+            onPressed: () {
+              // 先退出编辑页再删：编辑页按 id 渲染，删在前会闪一帧空页。
+              Navigator.of(pageContext).pop();
+              _delete(index);
+            },
+            icon: const FushiIcon(Icons.delete_outline),
+            label: Text(t.ai_provider_delete),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 编辑页的输入框：MD3 填充式 / Apple 实色字段（[FushiTextFormFieldControl]），
+  /// 错误与说明在框下。
+  Widget _textField({
+    required Key key,
+    required String label,
+    required ValueChanged<String> onChanged,
+    String? initialValue,
+    TextEditingController? controller,
+    String? hintText,
+    String? errorText,
+    bool obscureText = false,
+    TextInputType? keyboardType,
+    Widget? suffixIcon,
+  }) {
+    return FushiTextFormFieldControl(
+      key: key,
+      initialValue: initialValue,
+      controller: controller,
+      obscureText: obscureText,
+      // 密钥：关掉输入建议与自动纠错（与 SettingsFormField 同口径）。
+      enableSuggestions: !obscureText,
+      autocorrect: !obscureText,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hintText,
+        errorText: errorText,
+        errorMaxLines: 3,
+        suffixIcon: suffixIcon,
+        border: const OutlineInputBorder(),
       ),
+      onChanged: onChanged,
     );
   }
 
@@ -376,16 +539,16 @@ class _AiProviderSettingsSectionState
     // 地址还没填成合法 URL 时拉不了候选，直接置灰，而不是点了再报通用错误。
     final bool ready = draft.toConfig() != null;
     return Builder(
-      builder: (BuildContext anchor) => IconButton(
+      builder: (BuildContext anchor) => FushiIconButtonControl(
         key: ValueKey<String>('ai-provider-$index-model-picker'),
         tooltip: t.ai_provider_model_pick,
         icon: busy
             ? const SizedBox(
                 width: 16,
                 height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.arrow_drop_down),
+            : const FushiIcon(Icons.arrow_drop_down),
         onPressed: ready && !busy
             ? () => unawaited(_pickModel(anchor, draft.id))
             : null,
@@ -414,7 +577,7 @@ class _AiProviderSettingsSectionState
     at = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
     if (at < 0) return;
     final String current = _drafts[at].model;
-    final String? picked = await showMenu<String>(
+    final String? picked = await showFushiMenu<String>(
       context: anchor,
       position: RelativeRect.fromRect(
         Rect.fromPoints(
@@ -462,20 +625,21 @@ class _AiProviderSettingsSectionState
   Widget _defaultProviderRow() {
     final List<AiProviderConfig> usable = _usableProviders();
     final String? assigned = _assignments.defaultProviderId;
-    // 指向已删除/已失效的那家时回落到「未指定」，否则 DropdownButton 会因
-    // value 不在 items 里直接断言失败。
+    // 指向已删除/已失效的那家时回落到「未指定」，否则当前值会落在选项之外。
     final String? current = usable.any((AiProviderConfig c) => c.id == assigned)
         ? assigned
         : null;
-    return _assignmentCard(
+    return _assignmentRow(
       key: const ValueKey<String>('ai-feature-default'),
-      dropdownKey: const ValueKey<String>('ai-feature-default-provider'),
+      menuKey: const ValueKey<String>('ai-feature-default-provider'),
+      icon: Icons.auto_awesome_outlined,
       title: t.ai_feature_default_provider,
       summary: t.ai_feature_default_provider_summary,
       current: current,
-      items: <DropdownMenuItem<String?>>[
-        DropdownMenuItem<String?>(child: Text(t.ai_feature_unset)),
-        for (final AiProviderConfig config in usable) _providerItem(config),
+      options: <(String?, String)>[
+        (null, t.ai_feature_unset),
+        for (final AiProviderConfig config in usable)
+          (config.id, config.displayName),
       ],
       onChanged: _setDefault,
     );
@@ -492,90 +656,84 @@ class _AiProviderSettingsSectionState
         assigned != null &&
         assigned != kAiFeatureDisabled &&
         !usable.any((AiProviderConfig c) => c.id == assigned);
-    // 显式指派的每一种取值（可用的那家 / 关掉 / 不可用）在 items 里都有对应项，
-    // 所以下拉当前值就是指派本身；只有「没显式指派」才落到「跟随默认」那一项。
+    // 显式指派的每一种取值（可用的那家 / 关掉 / 不可用）在选项里都有对应项，
+    // 所以当前值就是指派本身；只有「没显式指派」才落到「跟随默认」那一项。
     final String? current = assigned;
     final String? defaultName = usable
         .where((AiProviderConfig c) => c.id == _assignments.defaultProviderId)
         .map((AiProviderConfig c) => c.displayName)
         .firstOrNull;
 
-    return _assignmentCard(
+    return _assignmentRow(
       key: ValueKey<String>('ai-feature-${feature.storageKey}'),
-      dropdownKey: ValueKey<String>(
-        'ai-feature-${feature.storageKey}-provider',
-      ),
+      menuKey: ValueKey<String>('ai-feature-${feature.storageKey}-provider'),
+      icon: _featureIcon(feature),
       title: _featureTitle(feature),
       summary: _featureSummary(feature),
       current: current,
-      items: <DropdownMenuItem<String?>>[
-        DropdownMenuItem<String?>(
-          child: Text(
-            defaultName == null
-                ? t.ai_feature_unset
-                : t.ai_feature_follow_default(name: defaultName),
-            overflow: TextOverflow.ellipsis,
-          ),
+      options: <(String?, String)>[
+        (
+          null,
+          defaultName == null
+              ? t.ai_feature_unset
+              : t.ai_feature_follow_default(name: defaultName),
         ),
-        for (final AiProviderConfig config in usable) _providerItem(config),
-        if (assignedUnavailable)
-          DropdownMenuItem<String?>(
-            value: assigned,
-            child: Text(
-              t.ai_feature_assigned_unavailable,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        DropdownMenuItem<String?>(
-          value: kAiFeatureDisabled,
-          child: Text(t.ai_feature_disabled),
-        ),
+        for (final AiProviderConfig config in usable)
+          (config.id, config.displayName),
+        if (assignedUnavailable) (assigned, t.ai_feature_assigned_unavailable),
+        (kAiFeatureDisabled, t.ai_feature_disabled),
       ],
       onChanged: (String? value) => _setAssignment(feature, value),
     );
   }
 
-  DropdownMenuItem<String?> _providerItem(AiProviderConfig config) =>
-      DropdownMenuItem<String?>(
-        value: config.id,
-        child: Text(config.displayName, overflow: TextOverflow.ellipsis),
-      );
-
-  Widget _assignmentCard({
+  /// 「功能 → 提供商」的一条设置选择行：标题 + 说明，行尾是当前值 + 弹出菜单
+  /// （MD3 菜单 / Apple 弹出按钮，当前项打勾）。
+  Widget _assignmentRow({
     required Key key,
-    required Key dropdownKey,
+    required Key menuKey,
+    required IconData icon,
     required String title,
     required String summary,
     required String? current,
-    required List<DropdownMenuItem<String?>> items,
+    required List<(String?, String)> options,
     required ValueChanged<String?> onChanged,
   }) {
-    return FushiCard(
+    final int selected = options.indexWhere(
+      ((String?, String) option) => option.$1 == current,
+    );
+    return KeyedSubtree(
       key: key,
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Text(title, style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 2),
-          Text(summary, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String?>(
-            key: dropdownKey,
-            isExpanded: true,
-            initialValue: current,
-            decoration: const InputDecoration(
-              isDense: true,
-              border: OutlineInputBorder(),
-            ),
-            items: items,
-            onChanged: onChanged,
-          ),
-        ],
+      child: AdaptiveSettingsRow(
+        icon: icon,
+        showIcon: true,
+        title: title,
+        subtitle: summary,
+        trailing: _AiChoiceButton(
+          key: menuKey,
+          semanticLabel: title,
+          labels: <String>[
+            for (final (String?, String) option in options) option.$2,
+          ],
+          selectedIndex: selected < 0 ? null : selected,
+          onChanged: (int index) => onChanged(options[index].$1),
+        ),
       ),
     );
   }
+
+  /// 功能行的单色图标（只做辨识，不上彩色底块）。
+  static IconData _featureIcon(AiFeature feature) => switch (feature) {
+    AiFeature.galgameTextProcess => Icons.sports_esports_outlined,
+    AiFeature.dictStyle => Icons.style_outlined,
+    AiFeature.lapisStyle => Icons.dashboard_customize_outlined,
+    AiFeature.videoIdentify => Icons.movie_outlined,
+    AiFeature.videoSearch => Icons.subtitles_outlined,
+    AiFeature.customTheme => Icons.palette_outlined,
+    AiFeature.acquire => Icons.download_outlined,
+    AiFeature.mangaOcr => Icons.document_scanner_outlined,
+    AiFeature.lookupContext => Icons.manage_search_outlined,
+  };
 
   // ---------------------------------------------------------------------------
   // 变更与落盘
@@ -658,45 +816,50 @@ class _AiProviderSettingsSectionState
 
   /// 「添加提供商」：先选一个内置预设（含「自定义」），再按预设建条目。
   Future<void> _pickPresetAndAdd() async {
-    final AiProviderPreset? preset = await showDialog<AiProviderPreset>(
+    final AiProviderPreset? preset = await showAppDialog<AiProviderPreset>(
       context: context,
+      // 共享弹窗骨架（标题行 + 可滚动正文），预设是一列标准列表行：图标区分
+      // 本地 / 云端，副标题是默认地址。
       builder: (BuildContext dialogContext) => FushiDialogFrame(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
-          key: const ValueKey<String>('ai-provider-preset-picker'),
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Text(
-                t.ai_provider_add,
-                style: Theme.of(dialogContext).textTheme.titleMedium,
-              ),
-            ),
-            for (final AiProviderPreset preset in kAiProviderPresets)
-              FushiListItem(
-                key: ValueKey<String>('ai-provider-preset-${preset.id}'),
-                title: Text(preset.displayName),
-                subtitle: preset.baseUrl.isEmpty
-                    ? null
-                    : Text(preset.baseUrl, overflow: TextOverflow.ellipsis),
-                onTap: () => Navigator.of(dialogContext).pop(preset),
-              ),
-          ],
+        maxWidth: 480,
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: t.ai_provider_add,
+          leadingIcon: Icons.add_rounded,
+          scrollable: true,
+          bodyPadding: const EdgeInsets.only(bottom: 12),
+          body: Column(
+            key: const ValueKey<String>('ai-provider-preset-picker'),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (final AiProviderPreset preset in kAiProviderPresets)
+                FushiListItem(
+                  key: ValueKey<String>('ai-provider-preset-${preset.id}'),
+                  leading: FushiIcon(
+                    preset.isLocal
+                        ? Icons.computer_outlined
+                        : Icons.cloud_outlined,
+                  ),
+                  title: Text(preset.displayName),
+                  subtitle: preset.baseUrl.isEmpty
+                      ? null
+                      : Text(preset.baseUrl, overflow: TextOverflow.ellipsis),
+                  onTap: () => Navigator.of(dialogContext).pop(preset),
+                ),
+            ],
+          ),
         ),
       ),
     );
     if (preset == null || !mounted) return;
+    final String id = 'ai-${DateTime.now().microsecondsSinceEpoch}';
     setState(() {
-      _drafts.add(
-        _AiProviderDraft.fromPreset(
-          preset,
-          id: 'ai-${DateTime.now().microsecondsSinceEpoch}',
-        ),
-      );
+      _drafts.add(_AiProviderDraft.fromPreset(preset, id: id));
     });
     unawaited(_saveValidDrafts());
+    // 新加的一家直接进编辑页：接下来要做的就是填密钥 / 模型。
+    unawaited(_openEditor(id));
   }
 
   // ---------------------------------------------------------------------------
@@ -779,6 +942,8 @@ class _AiProviderSettingsSectionState
     AiFeature.videoSearch => t.ai_feature_video_search,
     AiFeature.customTheme => t.ai_feature_custom_theme,
     AiFeature.acquire => t.ai_feature_acquire,
+    AiFeature.mangaOcr => t.ai_feature_manga_ocr,
+    AiFeature.lookupContext => t.ai_feature_lookup_context,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -789,6 +954,8 @@ class _AiProviderSettingsSectionState
     AiFeature.videoSearch => t.ai_feature_video_search_subtitle_summary,
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
     AiFeature.acquire => t.ai_feature_acquire_summary,
+    AiFeature.mangaOcr => t.ai_feature_manga_ocr_summary,
+    AiFeature.lookupContext => t.ai_feature_lookup_context_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。
@@ -875,6 +1042,9 @@ class _AiProviderDraft {
   String get presetDisplayName =>
       aiProviderPresetById(presetId)?.displayName ?? presetId;
 
+  /// 列表行 / 编辑页标题：名称清空时回落到预设名，不显示一行空白。
+  String get displayName => name.trim().isEmpty ? presetDisplayName : name;
+
   _AiProviderDraft copyWith({
     String? name,
     String? apiKey,
@@ -950,4 +1120,121 @@ class _ProbeState {
   final bool running;
   final bool ok;
   final String message;
+}
+
+/// 设置行尾的单选弹出按钮：当前值 + 下拉箭头，点开菜单（当前项打勾）。
+///
+/// - Apple：共享的 [GlassSettingsPopUpButton]（macOS 弹出按钮 / iOS pull-down）；
+/// - MD3：无底文字按钮 + `arrow_drop_down`，点开 MD3 菜单（[showFushiMenu]）。
+///
+/// 当前值是独立的一段文字（不和说明拼在一起），整枚按钮是一个焦点停靠点，
+/// Enter / 手柄 A 打开菜单。
+class _AiChoiceButton extends StatefulWidget {
+  const _AiChoiceButton({
+    required this.labels,
+    required this.selectedIndex,
+    required this.onChanged,
+    required this.semanticLabel,
+    super.key,
+  });
+
+  final List<String> labels;
+  final int? selectedIndex;
+  final ValueChanged<int> onChanged;
+  final String semanticLabel;
+
+  @override
+  State<_AiChoiceButton> createState() => _AiChoiceButtonState();
+}
+
+class _AiChoiceButtonState extends State<_AiChoiceButton> {
+  final GlobalKey _anchorKey = GlobalKey();
+  bool _open = false;
+
+  Future<void> _openMenu() async {
+    if (_open || widget.labels.isEmpty) return;
+    final BuildContext? anchor = _anchorKey.currentContext;
+    if (anchor == null) return;
+    final RenderBox box = anchor.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(context).overlay!.context.findRenderObject()! as RenderBox;
+    final Offset topLeft = box.localToGlobal(
+      Offset(0, box.size.height),
+      ancestor: overlay,
+    );
+    _open = true;
+    final int? picked = await showFushiMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(
+        topLeft & Size(box.size.width, 0),
+        Offset.zero & overlay.size,
+      ),
+      initialValue: widget.selectedIndex,
+      semanticLabel: widget.semanticLabel,
+      // 按钮只有当前值那么宽，菜单不跟着缩——提供商 / 模型名普遍偏长。
+      constraints: const BoxConstraints(minWidth: 200, maxWidth: 360),
+      items: <PopupMenuEntry<int>>[
+        for (int i = 0; i < widget.labels.length; i++)
+          CheckedPopupMenuItem<int>(
+            value: i,
+            checked: i == widget.selectedIndex,
+            child: Text(
+              widget.labels[i],
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+    _open = false;
+    if (!mounted || picked == null) return;
+    if (picked != widget.selectedIndex) widget.onChanged(picked);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return GlassSettingsPopUpButton(
+        semanticLabel: widget.semanticLabel,
+        labels: widget.labels,
+        selectedIndex: widget.selectedIndex,
+        onChanged: widget.onChanged,
+        maxLabelWidth: 200,
+      );
+    }
+    final int? selected = widget.selectedIndex;
+    final String value =
+        selected != null && selected >= 0 && selected < widget.labels.length
+        ? widget.labels[selected]
+        : '';
+    final ThemeData theme = Theme.of(context);
+    return KeyedSubtree(
+      key: _anchorKey,
+      child: FushiTextButton(
+        onPressed: () => unawaited(_openMenu()),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 200),
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+            FushiIcon(
+              Icons.arrow_drop_down_rounded,
+              size: 22,
+              color: theme.colorScheme.primary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

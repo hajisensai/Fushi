@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 
@@ -11,7 +12,7 @@ import 'package:fushi/utils.dart';
 ///
 /// 数据只有一处来源 `StatFacts.sessions`（段按 gap 归并 + 游玩会话骨架）；这里是它
 /// 唯一的展示件，统计中心总览、阅读 / 视频 / 游戏三个域 tab 与「按媒体」的会话
-/// sheet 都用同一个列表：一行 = 标题 · 起止时刻 · 时长 / 字数 / 页数 · 垃圾桶。
+/// sheet 都用同一个列表：一行 = 封面 · 标题 · 起止时刻 · 时长 / 字数 / 页数 · 垃圾桶。
 /// 删除走确认 → [onDelete]（页面里落 `deleteStudySession(db, session)` 再重聚合；
 /// 那个 helper 先让段 uid 在在跑的 StudyClock 上退役，别绕过它直接调 DB 层）。
 ///
@@ -37,6 +38,11 @@ typedef StatSessionTitleOf = String Function(StudySession session);
 /// 单看一行认不出是哪部作品——会话流是跨媒体时间序，没有时段明细 sheet 那种
 /// 合集组头兜底，所以合集名必须贴在行上。
 typedef StatSessionCollectionOf = String? Function(StudySession session);
+
+/// 会话行封面（书架 / 视频库 / 游戏库同一条 `resolveMediaCoverImage` 解析链）；
+/// 没有封面返回 null，行上画域图标占位。总览是三域混排的时间序，单看标题认
+/// 不出是哪部作品时，封面是最快的辨认线索（与「按媒体」行同一个 2:3 槽）。
+typedef StatSessionCoverOf = ImageProvider? Function(StudySession session);
 
 /// 编辑一次会话：调用页落 `applyStudySessionEdit(db, session, edit)` 再整页重聚合。
 typedef StatSessionEditOf = Future<void> Function(
@@ -80,6 +86,7 @@ Widget buildStatSessionSection(
   required StatSessionEditOf onEdit,
   required StatSessionClearAll onClearAll,
   StatSessionCollectionOf? collectionOf,
+  StatSessionCoverOf? coverOf,
   int limit = 8,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -104,7 +111,7 @@ Widget buildStatSessionSection(
               ),
             ),
             if (sessions.length > shown.length)
-              TextButton(
+              FushiTextButton(
                 onPressed: () => unawaited(
                   showStatSessionsSheet(
                     context,
@@ -112,6 +119,7 @@ Widget buildStatSessionSection(
                     sessions: sessions,
                     titleOf: titleOf,
                     collectionOf: collectionOf,
+                    coverOf: coverOf,
                     onDelete: onDelete,
                     onEdit: onEdit,
                     onClearAll: onClearAll,
@@ -138,6 +146,7 @@ Widget buildStatSessionSection(
             sessions: shown,
             titleOf: titleOf,
             collectionOf: collectionOf,
+            coverOf: coverOf,
             onDelete: onDelete,
             onEdit: onEdit,
           ),
@@ -168,10 +177,10 @@ class _StatSessionsClearAllButton extends StatelessWidget {
   // 同屏两颗一样的扫帚、清的范围却差着一个数量级（会话事实 vs 整个域的全部统计），
   // 是最典型的误点来源。`playlist_remove` 读作「把这张列表清空」，范围一眼就对。
   @override
-  Widget build(BuildContext context) => IconButton(
+  Widget build(BuildContext context) => FushiIconButtonControl(
         key: const ValueKey<String>('stat-sessions-clear-all'),
         tooltip: t.stat_sessions_clear_all,
-        icon: const Icon(Icons.playlist_remove, size: 20),
+        icon: const FushiIcon(Icons.playlist_remove, size: 20),
         onPressed: () => unawaited(_confirmAndClear(context)),
       );
 }
@@ -187,6 +196,7 @@ class StatSessionList extends StatefulWidget {
     required this.onDelete,
     required this.onEdit,
     this.collectionOf,
+    this.coverOf,
     this.onDeleted,
     super.key,
   });
@@ -200,6 +210,10 @@ class StatSessionList extends StatefulWidget {
 
   /// 行的合集名解析器；不传（或返回 null）的行只显示条目名。
   final StatSessionCollectionOf? collectionOf;
+
+  /// 行的封面解析器；不传时 leading 只画域图标（无封面槽），传了则每行一个定宽
+  /// 2:3 封面槽（[buildStatCoverSlot]，无封面的行画域图标占位、左缘照样对齐）。
+  final StatSessionCoverOf? coverOf;
 
   /// 每删掉一行 / 改完一行后回调（sheet 用它记「动过」让调用方关 sheet 后重聚合）。
   final VoidCallback? onDeleted;
@@ -230,16 +244,16 @@ class _StatSessionListState extends State<StatSessionList> {
           FushiListItem(
             key: ValueKey<String>(s.key),
             density: FushiListDensity.compact,
+            // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
+            minHeight: kStatRowMinHeight,
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-            leading: Icon(
-              statSessionIcon(s),
-              size: 18,
-              color: colors.onSurfaceVariant,
-            ),
+            leading: _buildLeading(s, colors),
             // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
             // 单行 ellipsis 只看得到开头几个字。本区块的父容器（页面 sliver /
             // sheet 的 Column）高度自由，放到 2 行不会撑破谁。
-            titleMaxLines: 2,
+            // 带封面槽时文本列窄了一个槽宽（400dp 手机宽下 2 行恰好装不下同一个
+            // 长标题），放宽到 3 行；行高本来就被 2:3 封面撑高，多一行不额外撑破。
+            titleMaxLines: widget.coverOf == null ? 2 : 3,
             title: _buildTitle(context, s),
             subtitle: Text(
               '${formatStatSessionRange(s.startAt, s.endAt)} · '
@@ -247,13 +261,26 @@ class _StatSessionListState extends State<StatSessionList> {
             ),
             // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
             onTap: () => unawaited(_edit(s)),
-            trailing: IconButton(
+            trailing: FushiIconButtonControl(
               tooltip: t.stat_session_delete,
-              icon: const Icon(Icons.delete_outline),
+              icon: const FushiIcon(Icons.delete_outline),
               onPressed: () => unawaited(_confirmAndDelete(s)),
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildLeading(StudySession s, ColorScheme colors) {
+    final StatSessionCoverOf? coverOf = widget.coverOf;
+    if (coverOf == null) {
+      return FushiIcon(statSessionIcon(s), size: 18, color: colors.onSurfaceVariant);
+    }
+    return buildStatCoverSlot(
+      context,
+      icon: statSessionIcon(s),
+      cover: coverOf(s),
+      width: kStatSessionCoverWidth,
     );
   }
 
@@ -340,6 +367,7 @@ Future<bool> showStatSessionsSheet(
   required StatSessionEditOf onEdit,
   required StatSessionClearAll onClearAll,
   StatSessionCollectionOf? collectionOf,
+  StatSessionCoverOf? coverOf,
 }) async {
   bool touched = false;
   // 移动端底部 sheet、桌面端居中对话框（[showStatDetailSurface]）。
@@ -380,6 +408,7 @@ Future<bool> showStatSessionsSheet(
                   sessions: sessions,
                   titleOf: titleOf,
                   collectionOf: collectionOf,
+                  coverOf: coverOf,
                   onDelete: onDelete,
                   onEdit: onEdit,
                   onDeleted: () => touched = true,

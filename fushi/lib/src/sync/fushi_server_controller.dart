@@ -80,6 +80,7 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
+    Map<String, MangaOcrService> Function()? mangaOcrModelServicesFactory,
     Future<HostJobManager> Function()? hostJobsFactory,
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
@@ -94,6 +95,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
         _mangaOcrServiceFactory = mangaOcrServiceFactory,
+        _mangaOcrModelServicesFactory = mangaOcrModelServicesFactory,
         _hostJobsFactory = hostJobsFactory,
         _downloadsFactory = downloadsFactory,
         _subscriptionsFactory = subscriptionsFactory,
@@ -116,6 +118,9 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
+
+  /// 对端可点名的模型（key → 服务）。null = 只跑 host 当前选择的模型。
+  final Map<String, MangaOcrService> Function()? _mangaOcrModelServicesFactory;
 
   /// 通用任务（`/api/jobs`，目前 ASR）/ 代下载（`/api/downloads`）/ 内容订阅
   /// （`/api/subscriptions`）三面的装配工厂。三者此前只在无头 `fushi_server` 接线，
@@ -149,8 +154,14 @@ class FushiSyncServerController extends ChangeNotifier {
   /// Host-side game-stream session registry. The game page creates a session
   /// only after the user explicitly starts streaming; merely enabling LAN sync
   /// never exposes a game window.
+  ///
+  /// The instance is torn down by [stop] (sessions die with the server), so a
+  /// [restart] hands receivers a fresh one. The library is controller-owned
+  /// configuration and is re-attached to every instance; binding it to one
+  /// instance made every host look "outdated" after a port/TLS change.
   FushiRemoteGameStreamService get gameStreamService =>
-      _gameStreamService ??= FushiRemoteGameStreamService();
+      _gameStreamService ??= (FushiRemoteGameStreamService()
+        ..library = _gameStreamLibrary);
 
   FushiGameStreamHost get gameStreamHost {
     _gameStreamHost ??= FushiGameStreamHost(service: gameStreamService)
@@ -166,6 +177,7 @@ class FushiSyncServerController extends ChangeNotifier {
   }
 
   FushiGameStreamMiningAdapter Function()? _gameStreamMiningFactory;
+  GameStreamLibraryHost? _gameStreamLibrary;
 
   /// Windows host library for receivers ("launch from library, then stream").
   /// [miningFactory] builds the same Anki adapter the workbench button uses,
@@ -174,8 +186,9 @@ class FushiSyncServerController extends ChangeNotifier {
     GameStreamLibraryHost? library, {
     FushiGameStreamMiningAdapter Function()? miningFactory,
   }) {
-    gameStreamService.library = library;
+    _gameStreamLibrary = library;
     _gameStreamMiningFactory = miningFactory;
+    _gameStreamService?.library = library;
   }
 
   /// [GameStreamSessionStarter] for remote launches: installs the mining
@@ -712,6 +725,8 @@ class FushiSyncServerController extends ChangeNotifier {
     if (factory == null) return null;
     return MangaOcrHostJobManager(
       service: factory(),
+      modelServices: _mangaOcrModelServicesFactory?.call() ??
+          const <String, MangaOcrService>{},
       jobRoot: Directory(
         '${_syncDataDir()}${Platform.pathSeparator}manga_ocr_jobs',
       ),

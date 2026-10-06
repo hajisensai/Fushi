@@ -8,20 +8,12 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/misc/popup_channel.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
-
-String _extractWord(AppModel appModel, String text, int charIndex) {
-  if (charIndex < 0 || !appModel.isInitialised) return text;
-  // 英文等拉丁文要从词首起查，不能从被点字母起（见 [lookupWordAtIndex]）。
-  final String word = lookupWordAtIndex(text, charIndex);
-  return word.isNotEmpty ? word : text;
-}
 
 @pragma('vm:entry-point')
 void popupMain() {
@@ -61,8 +53,11 @@ class PopupDictApp extends ConsumerStatefulWidget {
 class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   String _searchTerm = '';
   int _searchGeneration = 0;
-  bool _pendingWordExtraction = false;
-  int _pendingCharIndex = -1;
+
+  /// 被点字在 [_searchTerm]（整行原文）里的 UTF-16 下标；-1 = 整串查词入口
+  /// （系统 PROCESS_TEXT / fushi://lookup）。BUG-2899：整行原样交给查词页，由它在
+  /// 源文本条上做扫描查词，不再在这里切成单词把整行丢掉。
+  int _sourceCharIndex = -1;
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（**物理像素**，原点=物理屏幕顶
   /// 含状态栏）。为 null 即非浮动字幕入口（系统 PROCESS_TEXT / fushi://lookup）→ 弹窗走
@@ -101,15 +96,11 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           }
         }
         if (!mounted) return;
-        final String resolved = _extractWord(appModel, text, charIndex);
         setState(() {
-          _searchTerm = resolved;
+          _searchTerm = text;
+          _sourceCharIndex = charIndex;
           _anchorPhysical = anchor;
           _subtitlePhysical = subtitle;
-          if (charIndex >= 0 && !appModel.isInitialised) {
-            _pendingWordExtraction = true;
-            _pendingCharIndex = charIndex;
-          }
           _searchGeneration++;
         });
       },
@@ -149,7 +140,6 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (appModel.initError != null) {
-      _pendingWordExtraction = false;
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -189,21 +179,6 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       );
     }
 
-    if (_pendingWordExtraction) {
-      _pendingWordExtraction = false;
-      final String resolved =
-          _extractWord(appModel, _searchTerm, _pendingCharIndex);
-      if (resolved != _searchTerm) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          setState(() {
-            _searchTerm = resolved;
-            _searchGeneration++;
-          });
-        });
-      }
-    }
-
     return TranslationProvider(
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
@@ -224,6 +199,7 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
         home: PopupDictionaryPage(
           searchTerm: _searchTerm,
           searchGeneration: _searchGeneration,
+          sourceCharIndex: _sourceCharIndex,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),
@@ -244,7 +220,13 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       scale: appModel.isInitialised
           ? appModel.appUiScale
           : FushiAppUiScale.defaultScale,
-      child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+      // 查词窗是独立 entry point，不经主 app 的根作用域：玻璃设计系统的组件
+      // 配色 / 渲染档位（GlassTheme）要在这里自己挂一层，否则弹窗里的玻璃
+      // 按钮 / 浮层吃库默认参数，与主 app 不一致。结构恒定（MD3 下也挂，见
+      // [FushiGlassScope] 类注释）。
+      child: FushiGlassScope(
+        child: SmoothWheelScrollScope(child: child ?? const SizedBox.shrink()),
+      ),
     );
   }
 }

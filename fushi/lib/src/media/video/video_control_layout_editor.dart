@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -10,6 +9,7 @@ import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 控制条 9 槽位拖拽编辑器（TODO-274/312 phase 2）。从旧
@@ -93,6 +93,17 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
       dragCanceledMessageOf: _controlDragCanceledMessage,
       canRenderChip: (VideoControlItem item) => item.isChipRenderable,
       wrapChip: _wrapCustomActionChip,
+      slotOrder: const <VideoControlSlot>[
+        VideoControlSlot.topLeft,
+        VideoControlSlot.topCenter,
+        VideoControlSlot.topRight,
+        VideoControlSlot.screenLeft,
+        VideoControlSlot.screenRight,
+        VideoControlSlot.bottomLeft,
+        VideoControlSlot.bottomCenter,
+        VideoControlSlot.bottomRight,
+        VideoControlSlot.hidden,
+      ],
       keyPrefix: 'video-control',
     );
   }
@@ -101,188 +112,134 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
     BuildContext context,
     ControlSlotRegionBuilder<VideoControlSlot> buildSlotRegion,
   ) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool compact = constraints.maxWidth < 480;
-        if (compact) {
-          return DecoratedBox(
-            key: const ValueKey<String>('video-control-editor-preview'),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHighest,
-              borderRadius: tokens.radii.controlRadius,
-              border: Border.all(color: cs.outlineVariant),
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(tokens.spacing.gap),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _buildCompactSlotGrid(buildSlotRegion, <VideoControlSlot>[
-                    VideoControlSlot.topLeft,
-                    VideoControlSlot.topCenter,
-                    VideoControlSlot.topRight,
-                  ]),
-                  SizedBox(height: tokens.spacing.gap),
-                  _buildCompactSlotGrid(buildSlotRegion, <VideoControlSlot>[
-                    VideoControlSlot.screenLeft,
-                    VideoControlSlot.screenRight,
-                  ]),
-                  SizedBox(height: tokens.spacing.gap),
-                  _buildCompactSlotGrid(buildSlotRegion, <VideoControlSlot>[
-                    VideoControlSlot.bottomLeft,
-                    VideoControlSlot.bottomCenter,
-                    VideoControlSlot.bottomRight,
-                  ]),
-                ],
-              ),
-            ),
-          );
-        }
-
-        // BUG-2448：宽窗舞台不再是「固定高 Stack + 绝对定位」。那套布局里同一侧的
-        // 顶栏 / 屏幕侧 / 底栏三个槽位各按内容长高，却没有任何约束阻止它们互相盖住，
-        // 平板宽度（480~900）上右列直接挤成一团，chip 还被槽位内的嵌套滚动截断。
-        // 现在按三行堆叠（顶栏行 / 屏幕侧行 / 底栏行），每行高度由内容决定、槽位
-        // 完整展开；舞台只保留 16:9 的**最小**高度维持播放器方位感，内容更高时
-        // 整体跟着长——外层设置页本来就是纵向滚动，长高不会截断任何东西。
-        final double stageWidth = constraints.maxWidth;
-        final double stageMinHeight = math.min(
-          420,
-          math.max(260, stageWidth * 9 / 16),
-        );
-        const double inset = 10;
-        final double innerWidth = stageWidth - inset * 2;
-        final double sideWidth =
-            math.min(224, math.max(128, innerWidth * 0.24));
-        final double centerWidth =
-            math.min(236, math.max(128, innerWidth * 0.22));
-        final double gap = tokens.spacing.gap;
-        return DecoratedBox(
-          key: const ValueKey<String>('video-control-editor-preview'),
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest,
-            borderRadius: tokens.radii.controlRadius,
-            border: Border.all(color: cs.outlineVariant),
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
+    // 舞台 = 播放器缩略画面。模拟画面底：MD3 用 surfaceContainerHigh→Highest
+    // 渐变；Apple 用分组底的两级系统灰。顶栏 / 屏幕两侧竖条 / 底栏都按真实位置
+    // 浮在画面上（BUG-2448：三行堆叠、行高随内容，槽位两两不重叠；舞台只保留
+    // 16:9 的**最小**高度维持方位感）。
+    final Gradient frame = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: isGlassDesign(context)
+          ? <Color>[
+              apple.tertiaryGroupedBackground,
+              apple.secondaryGroupedBackground,
+            ]
+          : <Color>[cs.surfaceContainerHigh, cs.surfaceContainerHighest],
+    );
+    return ControlStagePanel(
+      key: const ValueKey<String>('video-control-editor-preview'),
+      heightRatio: 9 / 16,
+      minHeight: 260,
+      maxHeight: 420,
+      background: frame,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildStageRow(
+            buildSlotRegion,
+            left: VideoControlSlot.topLeft,
+            center: VideoControlSlot.topCenter,
+            right: VideoControlSlot.topRight,
           ),
-          child: ClipRRect(
-            borderRadius: tokens.radii.controlRadius,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: <Color>[
-                    cs.surfaceContainerHigh,
-                    cs.surfaceContainerHighest,
-                  ],
-                ),
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: stageMinHeight),
-                child: Padding(
-                  padding: const EdgeInsets.all(inset),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      _buildStageRow(
-                        buildSlotRegion,
-                        left: VideoControlSlot.topLeft,
-                        center: VideoControlSlot.topCenter,
-                        right: VideoControlSlot.topRight,
-                        sideWidth: sideWidth,
-                        centerWidth: centerWidth,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                      ),
-                      SizedBox(height: gap),
-                      _buildStageRow(
-                        buildSlotRegion,
-                        left: VideoControlSlot.screenLeft,
-                        center: null,
-                        right: VideoControlSlot.screenRight,
-                        sideWidth: sideWidth,
-                        centerWidth: centerWidth,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                      ),
-                      SizedBox(height: gap),
-                      _buildStageRow(
-                        buildSlotRegion,
-                        left: VideoControlSlot.bottomLeft,
-                        center: VideoControlSlot.bottomCenter,
-                        right: VideoControlSlot.bottomRight,
-                        sideWidth: sideWidth,
-                        centerWidth: centerWidth,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                      ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                if (constraints.maxWidth < ControlStageBar.stackedBelowWidth) {
+                  return _buildCompactSlotGrid(
+                    buildSlotRegion,
+                    <VideoControlSlot>[
+                      VideoControlSlot.screenLeft,
+                      VideoControlSlot.screenRight,
                     ],
-                  ),
-                ),
-              ),
+                  );
+                }
+                return Row(
+                  children: <Widget>[
+                    ControlStageRail(
+                      child: buildSlotRegion(
+                        VideoControlSlot.screenLeft,
+                        growToContent: true,
+                        direction: Axis.vertical,
+                      ),
+                    ),
+                    const Expanded(child: _MockVideoCenter()),
+                    ControlStageRail(
+                      child: buildSlotRegion(
+                        VideoControlSlot.screenRight,
+                        growToContent: true,
+                        direction: Axis.vertical,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
-        );
-      },
+          _buildStageRow(
+            buildSlotRegion,
+            left: VideoControlSlot.bottomLeft,
+            center: VideoControlSlot.bottomCenter,
+            right: VideoControlSlot.bottomRight,
+          ),
+        ],
+      ),
     );
   }
 
-  /// 舞台一行：左右两个侧槽位定宽贴边、中央槽位居中；[center] 为 null 时中央留空
-  /// （屏幕侧行没有中央槽位）。槽位按内容长高，行高取三者最高，互不重叠。
+  /// 舞台一条栏：左区靠左、中区居中、右区靠右（[center] 为 null 时中间留空）。
   Widget _buildStageRow(
     ControlSlotRegionBuilder<VideoControlSlot> buildSlotRegion, {
     required VideoControlSlot left,
     required VideoControlSlot? center,
     required VideoControlSlot right,
-    required double sideWidth,
-    required double centerWidth,
-    required CrossAxisAlignment crossAxisAlignment,
   }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: crossAxisAlignment,
-      children: <Widget>[
-        SizedBox(
-          width: sideWidth,
-          child: buildSlotRegion(left, growToContent: true),
-        ),
-        if (center != null)
-          SizedBox(
-            width: centerWidth,
-            child: buildSlotRegion(center, growToContent: true),
-          ),
-        SizedBox(
-          width: sideWidth,
-          child: buildSlotRegion(right, growToContent: true),
-        ),
-      ],
+    return ControlStageBar(
+      start: buildSlotRegion(left, growToContent: true),
+      center: center == null
+          ? null
+          : buildSlotRegion(
+              center,
+              growToContent: true,
+              alignment: WrapAlignment.center,
+            ),
+      end: buildSlotRegion(
+        right,
+        growToContent: true,
+        alignment: WrapAlignment.end,
+      ),
     );
   }
 
+  /// 窄窗下屏幕两侧竖条放不下：改成并排的两条横向小栏（左栏靠左、右栏靠右）。
   Widget _buildCompactSlotGrid(
     ControlSlotRegionBuilder<VideoControlSlot> buildSlotRegion,
     List<VideoControlSlot> slots,
   ) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-        final double gap = tokens.spacing.gap;
-        final double itemWidth = constraints.maxWidth < 260
-            ? constraints.maxWidth
-            : (constraints.maxWidth - gap) / 2;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: <Widget>[
-            for (final VideoControlSlot slot in slots)
-              SizedBox(
-                width: itemWidth,
-                child: buildSlotRegion(slot, growToContent: true),
+    return Row(
+      children: <Widget>[
+        for (int i = 0; i < slots.length; i++) ...<Widget>[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(
+            child: Align(
+              alignment: i == 0
+                  ? AlignmentDirectional.centerStart
+                  : AlignmentDirectional.centerEnd,
+              heightFactor: 1,
+              child: ControlStageRail(
+                child: buildSlotRegion(
+                  slots[i],
+                  growToContent: true,
+                  alignment: i == 0 ? WrapAlignment.start : WrapAlignment.end,
+                ),
               ),
-          ],
-        );
-      },
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -377,5 +334,35 @@ class _VideoControlLayoutEditorState extends State<VideoControlLayoutEditor> {
       case VideoControlSlot.topCenter:
         return t.video_control_slot_top_center;
     }
+  }
+}
+
+/// 模拟画面中央：一颗播放符号 + 两行字幕线，让舞台读出「这是播放器」。
+class _MockVideoCenter extends StatelessWidget {
+  const _MockVideoCenter();
+
+  @override
+  Widget build(BuildContext context) {
+    final ControlEditorStyle style = ControlEditorStyle.of(context);
+    return ExcludeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiIcon(
+              Icons.play_circle_outline,
+              size: 40,
+              color: style.secondaryLabel.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 14),
+            const ControlStageTextLines(
+              widthFactors: <double>[0.62, 0.44],
+              centered: true,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

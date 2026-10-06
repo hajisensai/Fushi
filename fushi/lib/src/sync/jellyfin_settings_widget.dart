@@ -23,6 +23,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/settings/settings_context.dart';
@@ -121,13 +122,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
 
   Future<void> _showErrorDialog(String title, String message) async {
     if (!mounted) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(title),
         content: SingleChildScrollView(child: SelectableText(message)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -138,6 +139,15 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
 
   /// 把连接阶段的异常翻成用户能行动的话：主机名解析失败追加「改用 IP」提示。
   String _describeConnectFailure(String serverUrl, Object error) {
+    // 401/403 是服务器拒绝（如按 Client 白名单的公益服，BUG-2848），不是连不上：
+    // 报「无法连接」会让用户去查网络 / 代理，而该做的是找服务器管理员。
+    if (error is JellyfinApiException && error.isAccessDenied) {
+      return t.jellyfin_server_rejected_client(
+        url: serverUrl,
+        code: error.statusCode,
+        reason: error.serverMessage ?? error.endpoint,
+      );
+    }
     final String reason = JellyfinApi.isHostLookupFailure(error)
         ? '$error\n\n${t.jellyfin_host_lookup_hint}'
         : '$error';
@@ -418,7 +428,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(16),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiLoadingView(compact: true)),
           );
         }
         final List<JellyfinServerConfig> servers =
@@ -457,7 +467,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               const SizedBox(height: 8),
               Text(
                 t.jellyfin_servers_signed_in_title,
-                style: textTheme.titleSmall,
+                style: FushiSectionTitle.styleOf(
+                  context, FushiSectionTitleLevel.group),
               ),
               if (servers.isEmpty)
                 Padding(
@@ -470,7 +481,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               for (final JellyfinServerConfig config in servers)
                 _buildServerRow(config),
               const SizedBox(height: 12),
-              Text(t.jellyfin_servers_add_title, style: textTheme.titleSmall),
+              Text(t.jellyfin_servers_add_title,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group)),
               const SizedBox(height: 8),
               _buildSignInForm(),
             ],
@@ -511,9 +524,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               ? const SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : FilledButton.tonal(
+              : FushiFilledButton.tonal(
                   onPressed: _signIn,
                   child: Text(t.jellyfin_sign_in),
                 ),
@@ -537,10 +550,10 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         FushiListItem(
-          leading: const Icon(Icons.dns_outlined),
+          leading: const FushiIcon(Icons.dns_outlined),
           title: Text(serverLabel),
           subtitle: Text(config.username),
-          trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+          trailing: FushiIcon(expanded ? Icons.expand_less : Icons.expand_more),
           onTap: () => setState(() {
             if (!_expanded.remove(id)) _expanded.add(id);
           }),
@@ -556,7 +569,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                 // 视频库）。每台服务器各自一份。
                 Text(
                   t.jellyfin_libraries_title,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group),
                 ),
                 Text(
                   t.jellyfin_libraries_hint,
@@ -566,7 +580,8 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                 const SizedBox(height: 8),
                 Text(
                   t.jellyfin_routes_title,
-                  style: Theme.of(context).textTheme.titleSmall,
+                  style: FushiSectionTitle.styleOf(
+                      context, FushiSectionTitleLevel.group),
                 ),
                 Text(
                   t.jellyfin_routes_hint,
@@ -579,10 +594,11 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                       ? const SizedBox(
                           width: 24,
                           height: 24,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : TextButton(
+                      : FushiTextButton(
                           onPressed: () => _signOut(config),
+                          destructive: true,
                           child: Text(t.jellyfin_sign_out),
                         ),
                 ),
@@ -605,7 +621,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         for (final String url in config.routeUrls)
           FushiListItem(
             key: ValueKey<String>('jellyfin-route-$id-$url'),
-            leading: Radio<String>(
+            leading: FushiRadio<String>(
               value: url,
               groupValue: activeUrl,
               onChanged: _busy
@@ -641,7 +657,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               ),
             ),
             const SizedBox(width: 8),
-            FilledButton.tonal(
+            FushiFilledButton.tonal(
               onPressed: _busy ? null : () => _addRoute(config),
               child: Text(t.jellyfin_route_add),
             ),
@@ -666,7 +682,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Padding(
             padding: EdgeInsets.all(12),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(child: FushiLoadingView(compact: true)),
           );
         }
         if (snapshot.hasError) {
@@ -689,7 +705,7 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
             for (final JellyfinLibraryView view in views)
               FushiListItem(
                 title: Text(view.name),
-                trailing: Checkbox(
+                trailing: FushiCheckbox(
                   value: selected.contains(view.id),
                   onChanged: _busy
                       ? null

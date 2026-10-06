@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
@@ -12,6 +14,7 @@ import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// 一次跨**所有已启用来源**搜索同一个书名的页面（Mihon 在线源 + Aidoku 已装包）。
@@ -61,6 +64,7 @@ class MangaGlobalSearchPage extends StatefulWidget {
 
 class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   final MihonSourceImageLoadQueue _imageQueue = MihonSourceImageLoadQueue(
     maxConcurrent: 4,
   );
@@ -83,6 +87,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -197,15 +202,17 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       title: t.manga_global_search_title,
       headerBottom: Padding(
         padding: const EdgeInsets.only(top: 8),
-        child: TextField(
-          key: const ValueKey<String>('manga_global_search_field'),
+        // 2026-10 体验优化：统一为 FushiSearchField；仍是「提交才搜」（全源扇出
+        // 代价高，不做边打边搜），onChanged 空转。
+        child: FushiSearchField(
+          fieldKey: const ValueKey<String>('manga_global_search_field'),
+          focusId: const FushiFocusId('manga-global-search'),
           controller: _searchController,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: t.manga_global_search_hint,
-            prefixIcon: const Icon(Icons.search),
-          ),
+          focusNode: _searchFocus,
+          hintText: t.manga_global_search_hint,
+          onChanged: (String _) {},
           onSubmitted: (String _) => unawaited(_search()),
+          onClear: _searchController.clear,
         ),
       ),
       body: _buildBody(),
@@ -213,45 +220,30 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   }
 
   Widget _buildBody() {
+    // 2026-10 体验优化：无源 / 未搜索两种占位统一 FushiPlaceholderMessage。
     if (_sources().isEmpty) {
       final VoidCallback? onOpenSources = widget.onOpenSources;
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                t.manga_global_search_no_sources,
-                textAlign: TextAlign.center,
-              ),
-              if (onOpenSources != null) ...<Widget>[
-                const SizedBox(height: 16),
-                FilledButton.tonalIcon(
-                  key: const ValueKey<String>(
-                    'manga_global_search_open_sources',
-                  ),
-                  onPressed: onOpenSources,
-                  // 「导入」的图标（与书架空态引导同一个）。拼图块 extension_outlined
-                  // 恰恰是本 bug 的病根：漫画库里没有叫「扩展」的入口。
-                  icon: const Icon(Icons.library_add_outlined),
-                  label: Text(t.manga_global_search_open_sources),
+      return FushiPlaceholderMessage(
+        icon: Icons.travel_explore_outlined,
+        message: t.manga_global_search_no_sources,
+        action: onOpenSources == null
+            ? null
+            : FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>(
+                  'manga_global_search_open_sources',
                 ),
-              ],
-            ],
-          ),
-        ),
+                onPressed: onOpenSources,
+                // 「导入」的图标（与书架空态引导同一个）。拼图块 extension_outlined
+                // 恰恰是本 bug 的病根：漫画库里没有叫「扩展」的入口。
+                icon: const FushiIcon(Icons.library_add_outlined),
+                label: Text(t.manga_global_search_open_sources),
+              ),
       );
     }
     if (!_searched) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.manga_global_search_prompt,
-            textAlign: TextAlign.center,
-          ),
-        ),
+      return FushiPlaceholderMessage(
+        icon: Icons.search,
+        message: t.manga_global_search_prompt,
       );
     }
     return ListView.builder(
@@ -304,7 +296,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
     MangaSearchRunStatus.loading => const SizedBox(
       width: 16,
       height: 16,
-      child: CircularProgressIndicator(strokeWidth: 2),
+      child: FushiCircularProgressIndicator(strokeWidth: 2),
     ),
     _ => const SizedBox.shrink(),
   };
@@ -312,11 +304,21 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   Widget _buildSectionBody(MangaSourceSearchRun run) {
     switch (run.status) {
       case MangaSearchRunStatus.loading:
-        return const SizedBox(height: 200);
+        // 2026-10 体验优化：原先是 200dp 的纯空白，看着像「这个源什么都没有」。
+        return SizedBox(
+          height: 200,
+          child: Center(child: adaptiveIndicator(context: context)),
+        );
       case MangaSearchRunStatus.cloudflare:
         return _sourceError(run, t.manga_source_cloudflare_blocked);
       case MangaSearchRunStatus.error:
-        return _sourceError(run, '${run.error}');
+        final Object? error = run.error;
+        return _sourceError(
+          run,
+          error == null
+              ? t.online_source_error_generic
+              : describeOnlineSourceError(error),
+        );
       case MangaSearchRunStatus.empty:
         return _SectionMessage(t.mihon_source_no_results);
       case MangaSearchRunStatus.done:
@@ -401,14 +403,18 @@ class _LanguageChip extends StatelessWidget {
 
   final String language;
 
+  /// 2026-10 体验优化：原 28dp 圆章装不下 `zh-hans` / `pt-br` 这类码，字被
+  /// 挤出圆外；改成随文字伸缩的药丸，单行不换。
   @override
-  Widget build(BuildContext context) => CircleAvatar(
-    radius: 14,
-    child: Text(
-      language.toUpperCase(),
-      style: Theme.of(context).textTheme.labelSmall,
-    ),
-  );
+  Widget build(BuildContext context) {
+    // 中性灰底：语言码只是元信息，不该抢主色（Apple 设计系统下更是禁止彩色
+    // 底块），所以不用 secondaryContainer 的 tonal 色块。
+    return FushiTag(
+      text: language.toUpperCase(),
+      tone: FushiTagTone.neutral,
+      dense: true,
+    );
+  }
 }
 
 class _SectionMessage extends StatelessWidget {

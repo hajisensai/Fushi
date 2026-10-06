@@ -14,6 +14,7 @@ class LnReaderRepoPlugin {
     required this.url,
     required this.iconUrl,
     required this.storeUrl,
+    this.downloadCount,
   });
 
   /// 解析一条索引项；缺关键字段（id / name / url / version）返回 null——仓库
@@ -63,6 +64,22 @@ class LnReaderRepoPlugin {
   final String url;
   final String iconUrl;
   final String storeUrl;
+
+  /// 公开下载量（见 `lnreader_download_counts.dart`）；拿不到就是 null（非
+  /// GitHub 托管的仓库、统计接口不可达）。仓库索引本身没有这个字段。
+  final int? downloadCount;
+
+  LnReaderRepoPlugin withDownloadCount(int? count) => LnReaderRepoPlugin(
+    id: id,
+    name: name,
+    site: site,
+    lang: lang,
+    version: version,
+    url: url,
+    iconUrl: iconUrl,
+    storeUrl: storeUrl,
+    downloadCount: count,
+  );
 }
 
 /// 已安装的插件：索引元数据 + 本地启停 / 排序 / 置顶状态。JS 源码在磁盘另存。

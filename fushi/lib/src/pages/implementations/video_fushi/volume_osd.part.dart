@@ -337,11 +337,17 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     // 观感，OSD 压在画面上，实心色块会挡视线。
     final ({Color background, Color foreground, IconData icon})? palette =
         toastSeverityPalette(osd.severity);
+    final bool apple = _appleChrome;
     final Color surfaceColor = palette == null
         ? _osdSurfaceColor(cs)
         : palette.background.withValues(alpha: 0.88);
-    final Color textColor =
-        palette == null ? _osdTextColor(cs) : palette.foreground;
+    final Color textColor = apple
+        ? videoChromeNeutralForeground
+        : palette == null
+        ? _osdTextColor(cs)
+        : palette.foreground;
+    final Color iconColor =
+        apple && palette != null ? palette.background : textColor;
     final double fontSize = prominent ? 18 : 14;
     final double iconSize = prominent ? 24 : 18;
     final EdgeInsets cardPadding = prominent
@@ -356,6 +362,58 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       left: 16,
       top: _videoButtonBarHeight + 8 * _videoUiScale,
     );
+    final Widget content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (osd.icon != null) ...<Widget>[
+          FushiIcon(osd.icon, size: iconSize, color: iconColor),
+          SizedBox(width: prominent ? 12 : 8),
+        ] else if (palette != null) ...<Widget>[
+          // 语义图标：e-ink / 灰阶下颜色会塌掉，形状是唯一区分手段。
+          FushiIcon(palette.icon, size: iconSize, color: iconColor),
+          SizedBox(width: prominent ? 12 : 8),
+        ] else if (prominent) ...<Widget>[
+          FushiIcon(
+            Icons.check_circle,
+            size: iconSize,
+            color: iconColor,
+          ),
+          const SizedBox(width: 12),
+        ],
+        Flexible(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                osd.message,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: fontSize,
+                  fontWeight:
+                      prominent ? FontWeight.w600 : FontWeight.normal,
+                  height: 1.2,
+                ),
+              ),
+              if (osd.progress != null) ...<Widget>[
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: 112,
+                  child: FushiLinearProgressIndicator(
+                    value: osd.progress,
+                    minHeight: 3,
+                    backgroundColor:
+                        textColor.withValues(alpha: 0.25),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(textColor),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
     return Align(
       alignment: alignment,
       child: Padding(
@@ -365,76 +423,30 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
           constraints: BoxConstraints(
             maxWidth: MediaQuery.sizeOf(context).width - 32,
           ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: surfaceColor,
-              borderRadius: radius,
-              boxShadow: prominent
-                  ? <BoxShadow>[
-                      BoxShadow(
-                        color: cs.shadow.withValues(alpha: 0.4),
-                        blurRadius: 16,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Padding(
-              padding: cardPadding,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  if (osd.icon != null) ...<Widget>[
-                    Icon(osd.icon, size: iconSize, color: textColor),
-                    SizedBox(width: prominent ? 12 : 8),
-                  ] else if (palette != null) ...<Widget>[
-                    // 语义图标：e-ink / 灰阶下颜色会塌掉，形状是唯一区分手段。
-                    Icon(palette.icon, size: iconSize, color: textColor),
-                    SizedBox(width: prominent ? 12 : 8),
-                  ] else if (prominent) ...<Widget>[
-                    Icon(
-                      Icons.check_circle,
-                      size: iconSize,
-                      color: textColor,
-                    ),
-                    const SizedBox(width: 12),
-                  ],
-                  Flexible(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          osd.message,
-                          style: TextStyle(
-                            color: textColor,
-                            fontSize: fontSize,
-                            fontWeight:
-                                prominent ? FontWeight.w600 : FontWeight.normal,
-                            height: 1.2,
-                          ),
-                        ),
-                        if (osd.progress != null) ...<Widget>[
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            width: 112,
-                            child: LinearProgressIndicator(
-                              value: osd.progress,
-                              minHeight: 3,
-                              backgroundColor:
-                                  textColor.withValues(alpha: 0.25),
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(textColor),
+          child: apple
+              // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
+              // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
+              ? VideoGlassHud(
+                  radius: prominent ? 20 : 16,
+                  padding: cardPadding,
+                  child: content,
+                )
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: surfaceColor,
+                    borderRadius: radius,
+                    boxShadow: prominent
+                        ? <BoxShadow>[
+                            BoxShadow(
+                              color: cs.shadow.withValues(alpha: 0.4),
+                              blurRadius: 16,
+                              offset: const Offset(0, 4),
                             ),
-                          ),
-                        ],
-                      ],
-                    ),
+                          ]
+                        : null,
                   ),
-                ],
-              ),
-            ),
-          ),
+                  child: Padding(padding: cardPadding, child: content),
+                ),
         ),
       ),
     );

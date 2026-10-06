@@ -24,6 +24,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 
@@ -295,9 +296,9 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
               ),
               Semantics(
                 identifier: 'hibiki.reader.side_sheet.close',
-                child: IconButton(
+                child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_reader_stats_close'),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
@@ -382,10 +383,10 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
                 SizedBox(height: tokens.spacing.gap * 2),
                 Align(
                   alignment: AlignmentDirectional.centerEnd,
-                  child: TextButton.icon(
+                  child: FushiTextButton.icon(
                     key: const ValueKey<String>('fushi_reader_stats_full'),
                     onPressed: widget.onOpenFullRecords,
-                    icon: const Icon(Icons.chevron_right, size: 18),
+                    icon: const FushiIcon(Icons.chevron_right, size: 18),
                     iconAlignment: IconAlignment.end,
                     label: Text(t.reader_stats_full_records_open),
                   ),
@@ -459,9 +460,9 @@ class _SessionClock extends StatelessWidget {
         ),
         Semantics(
           identifier: 'hibiki.reader.stats.toggle_pause',
-          child: IconButton.outlined(
+          child: FushiIconButtonControl.outlined(
             key: const ValueKey<String>('fushi_reader_stats_pause'),
-            icon: Icon(
+            icon: FushiIcon(
               session.active ? Icons.pause_rounded : Icons.play_arrow_rounded,
             ),
             tooltip: session.active
@@ -565,7 +566,7 @@ class _PositionRow extends StatelessWidget {
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   key: ValueKey<String>('fushi_reader_stats_${keyPrefix}_bar'),
                   value: ratio ?? 0,
                   minHeight: 6,
@@ -642,7 +643,7 @@ class _Rule extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
-      child: Divider(
+      child: FushiDividerControl(
         height: 1,
         thickness: 1,
         color: Theme.of(context).colorScheme.outlineVariant,

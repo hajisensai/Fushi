@@ -22,8 +22,10 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_protocol.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ai_ocr_stream.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
@@ -106,6 +108,22 @@ Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(MangaOcrJobSpec spec) {
     case MangaOcrEngineId.pairedHost:
       return mangaOcrRemoteEvents(spec);
   }
+}
+
+/// 设置里开了大模型识别时，给这个任务配一个跟随步骤（[MangaAiOcrJobFollower]，
+/// 与引擎无关：框是谁检测的都行）；没开 / 没指派提供商时 null。
+///
+/// 和 [mangaOcrBackgroundEvents] 用同一个 [spec] 构造、一起交给
+/// [MangaOcrBackgroundJob]——由注册表驱动，任务结束（释放名额）后它仍可收尾。
+/// [MangaOcrJobSpec.onlyMissing] 为 false（重新识别）时先清掉本卷大模型缓存。
+MangaOcrJobFollower? mangaOcrJobFollower(MangaOcrJobSpec spec) {
+  final MangaAiOcrRefiner? refiner = spec.engines.aiRefinerFactory?.call();
+  if (refiner == null) return null;
+  return MangaAiOcrJobFollower(
+    imageDirPath: spec.imageDirPath,
+    refiner: refiner,
+    discardCache: !spec.onlyMissing,
+  );
 }
 
 Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(

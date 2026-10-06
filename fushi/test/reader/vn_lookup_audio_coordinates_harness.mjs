@@ -147,8 +147,11 @@ try {
           { expected: before, actual: reader.currentScreenIndex });
         const highlighted = Array.from(reader.screen.querySelectorAll(
           '.fushi-sentence-audio-active')).map(node => node.textContent).join('');
-        check(highlighted === target.cueText,
-          'audio highlights exactly the selected sentence, excluding ruby rt', highlighted);
+        // The cue text plus the sentence-final 「。」 it owns (BUG-2907), never ruby rt.
+        const expected = target.cueText + '。';
+        check(highlighted === expected,
+          'audio highlights exactly the selected sentence and its closing punctuation, excluding ruby rt',
+          { expected, actual: highlighted });
         verifySelection(target, 'after wrapper split');
 
         // Also verify forward/backward follow from a different visible screen.

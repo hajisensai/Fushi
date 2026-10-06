@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -422,16 +423,16 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       title: _anime.title,
       subtitle: widget.sourceContext.source.name,
       actions: <Widget>[
-        IconButton(
+        FushiIconButtonControl(
           key: const ValueKey<String>('anime_source_open_website'),
           tooltip: t.mihon_source_website_open,
           onPressed: () => unawaited(_openWebsite()),
-          icon: const Icon(Icons.open_in_new),
+          icon: const FushiIcon(Icons.open_in_new),
         ),
-        IconButton(
+        FushiIconButtonControl(
           tooltip: t.refresh,
           onPressed: _loading ? null : () => unawaited(_load()),
-          icon: const Icon(Icons.refresh),
+          icon: const FushiIcon(Icons.refresh),
         ),
       ],
       body: _buildBody(context),
@@ -439,7 +440,6 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   }
 
   Widget _buildBody(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final Object? error = _error;
     final int resume = _resumeIndex;
     final bool canPlay = !_loading && _episodes.isNotEmpty;
@@ -458,12 +458,12 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           genres: splitOnlineWorkGenres(_anime.genre),
           description: _anime.description,
           actions: <Widget>[
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('anime_source_play'),
               onPressed: canPlay
                   ? () => unawaited(_play(resume >= 0 ? resume : 0))
                   : null,
-              icon: const Icon(Icons.play_arrow),
+              icon: const FushiIcon(Icons.play_arrow),
               label: Text(
                 resume >= 0 && resume < _episodes.length
                     ? '${t.video_continue_watching} · '
@@ -474,27 +474,27 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             // 「加入」与「移出」各按各的判据，可以同时出现：下载过其中几集后其余集
             // 仍能加入、已入库的作品刷新出新集仍能补；「移出」只删在线行。
             if (_canAddToLibrary)
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: const ValueKey<String>('anime_source_library_add'),
                 onPressed: !canPlay || _libraryBusy
                     ? null
                     : () => unawaited(_addToLibrary()),
-                icon: const Icon(Icons.video_library_outlined),
+                icon: const FushiIcon(Icons.video_library_outlined),
                 label: Text(t.video_online_library_add),
               ),
             if (_canRemoveFromLibrary)
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: const ValueKey<String>('anime_source_library_remove'),
                 onPressed: _libraryBusy
                     ? null
                     : () => unawaited(_removeFromLibrary()),
-                icon: const Icon(Icons.video_library),
+                icon: const FushiIcon(Icons.video_library),
                 label: Text(t.video_online_library_remove),
               ),
-            OutlinedButton.icon(
+            FushiOutlinedButton.icon(
               key: const ValueKey<String>('anime_source_download_all'),
               onPressed: canPlay ? () => unawaited(_downloadAll()) : null,
-              icon: const Icon(Icons.download_outlined),
+              icon: const FushiIcon(Icons.download_outlined),
               label: Text(t.video_online_download_all),
             ),
           ],
@@ -505,9 +505,11 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Text(
-                  '$error',
-                  style: TextStyle(color: theme.colorScheme.error),
+                // 错误走统一提示条（MD3 中性底 + error 图标 / Apple tertiaryFill
+                // 实色底），不再是一行裸红字。
+                FushiInlineNotice(
+                  severity: FushiNoticeSeverity.error,
+                  message: '$error',
                 ),
                 MihonCloudflareAction(
                   runtime: widget.manager.runtime,
@@ -560,25 +562,33 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   /// 行尾：已下载 = 完成标记；下载中 = 进度环（管理器任务快照）；否则 = 下载按钮。
   Widget _episodeDownloadAction(String id) {
     if (_downloadedIds.contains(id)) {
-      return Tooltip(
+      return FushiTooltip(
         message: t.video_online_downloaded,
-        child: const Icon(Icons.download_done),
+        child: const FushiIcon(Icons.download_done),
       );
     }
-    final InterconnectDownloadTask? task = _appModelOrNull == null
+    // 只订阅整数百分比，字节级进度回报不整页重建（BUG-2944）。
+    final InterconnectDownloadBadgeState? task = _appModelOrNull == null
         ? null
-        : ref.watch(interconnectDownloadManagerProvider).taskFor(id);
-    if (task != null && task.isRunning) {
+        : ref.watch(
+            interconnectDownloadManagerProvider.select(
+              (m) => m.badgeStateFor(id),
+            ),
+          );
+    if (task != null && task.status == InterconnectDownloadStatus.running) {
       return SizedBox.square(
         dimension: 24,
-        child: CircularProgressIndicator(strokeWidth: 2, value: task.progress),
+        child: FushiCircularProgressIndicator(
+          strokeWidth: 2,
+          value: task.percent < 0 ? null : task.percent / 100,
+        ),
       );
     }
-    return IconButton(
+    return FushiIconButtonControl(
       key: ValueKey<String>('anime_download_$id'),
       tooltip: t.video_online_download_episode,
       onPressed: () => unawaited(_download(<String>[id])),
-      icon: const Icon(Icons.download_outlined),
+      icon: const FushiIcon(Icons.download_outlined),
     );
   }
 }

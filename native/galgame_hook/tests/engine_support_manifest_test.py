@@ -126,6 +126,43 @@ class EngineSupportManifestTest(unittest.TestCase):
             any("Unity Mono" in item for item in unity["known_limitations"])
         )
 
+    def test_retired_malie_cfi_lane_left_no_verified_claim_behind(self) -> None:
+        # PR #1917 removed the title-keyed CFI archive lane that the Amantes
+        # record proved. The record and the claims that only described that
+        # lane must go with it, and the legacy allowlists must not let the
+        # engine climb back to "partial" without a fresh evidence ledger.
+        malie = self.engines["malie_libp"]
+        self.assertEqual("implemented_unverified", malie["current_status"])
+        self.assertEqual([], malie["verified_games"])
+        kinds = [item["kind"] for item in malie["audio"]["priority"]]
+        self.assertNotIn("malie_libp_cfi_voice_resource", kinds)
+        limitations = "\n".join(malie["known_limitations"])
+        self.assertNotIn("Audio is verified", limitations)
+        self.assertNotIn("Only data2.dat is classified as voice", limitations)
+        self.assertIn("Amantes audio is back to unverified", limitations)
+        self.assertNotIn("malie_libp", GENERATOR.LEGACY_ENGINE_STATUSES)
+        self.assertNotIn("malie_libp", GENERATOR.LEGACY_VERIFIED_GAMES_PREFIX)
+        self.assertNotIn("malie_libp", GENERATOR.LEGACY_LIMITATIONS_PREFIX)
+        self.assertNotIn(
+            "malie_libp_cfi_voice_resource", GENERATOR.AUDIO_PROOF_BOUNDARIES
+        )
+        for kind in (
+            "malie_ogg_decoder_input_voice_resource",
+            "yuris_decoder_input_voice_resource",
+            "fvp_decoder_input_ogg_resource",
+        ):
+            self.assertEqual(
+                "resource_observed", GENERATOR.AUDIO_PROOF_BOUNDARIES[kind]
+            )
+
+        promoted = copy.deepcopy(self.manifest)
+        engine = next(
+            item for item in promoted["engines"] if item["id"] == "malie_libp"
+        )
+        engine["current_status"] = "partial"
+        with self.assertRaisesRegex(GENERATOR.ManifestError, "support_evidence"):
+            GENERATOR.validate_manifest(promoted)
+
     def test_nonempty_recognition_signatures_have_sample_evidence(self) -> None:
         for engine in self.engines.values():
             for field in GENERATOR.SIGNATURE_FIELDS:
@@ -663,10 +700,13 @@ class EngineSupportManifestTest(unittest.TestCase):
             GENERATOR.validate_manifest(self.manifest, ROOT)
 
     def test_smash_fzmedia_exact_provider_is_bound_to_lookup_matrix(self) -> None:
-        # 16-engine lookup matrix: smash/fzmedia joins with the exact provider
+        # 18-engine lookup matrix: smash/fzmedia joins with the exact provider
         # id 15 bound to engine_exact_layout, and nothing else may claim it.
-        self.assertEqual(18, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
+        self.assertEqual(21, len(GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS))
+        self.assertIn("kogado_hy", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("cmvs", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        self.assertIn("yuris", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
+        self.assertIn("fvp", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("unity_mono", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         self.assertIn("smash_fzmedia", GENERATOR.LOOKUP_ACCEPTANCE_ENGINE_IDS)
         smash_pair = (

@@ -186,7 +186,7 @@ void showLapisSetupResult(
   // 唯一出路是应用设置页里的权限项，所以直接把它做成 snackbar 上的一个按钮。
   final bool needsSettings =
       result.code == AnkiErrorCode.permissionPermanentlyDenied;
-  messenger.showSnackBar(SnackBar(
+  messenger.showSnackBar(FushiSnackBar(
     content: Text(message),
     duration: needsSettings
         ? const Duration(seconds: 10)
@@ -225,7 +225,7 @@ Future<bool> promptCreateLapisIfCannotMine({
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
   final bool confirmed = await showAppDialog<bool>(
         context: context,
-        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
           title: Text(t.anki_lapis_suggest_title),
           content: Text(t.anki_lapis_suggest_body),
           actions: <Widget>[

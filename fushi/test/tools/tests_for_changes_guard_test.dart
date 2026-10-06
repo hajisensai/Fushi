@@ -128,9 +128,12 @@ void main() {
         contains('packages/flutter_inappwebview_windows'),
         reason: '最近祖先回退死了：注释里的 `.../` 省略写法退不到那棵树',
       );
+      // 语料不能用真实构建产物名（如 dist/）：做 galgame 开发的 worktree 都会先构建
+      // helper，那时 dist/ 就在磁盘上，提取会如实返回它，这条断言随机器状态变红。
       expect(
         extractRepoPathReferences(
-          "expect(cmake.contains(r'native/galgame_hook/dist'), isTrue);",
+          "expect(cmake.contains(r'native/galgame_hook/never_built_output'), "
+          'isTrue);',
           fs,
         ),
         contains('native/galgame_hook'),

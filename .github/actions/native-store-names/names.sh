@@ -86,6 +86,9 @@ case "$platform" in
       # Universal (arm64 + x86_64) release dylib: the PR gate and the desktop release
       # build the same bytes with the same script, so they share one name.
       "p2p=macos-universal-fushi-p2p-dylib-v1-rust$P2P_RUST-$image_os-$image-$(tree_hash "$toolchain_env rust=$P2P_RUST" "${P2P[@]}")"
+      # Universal (arm64 + x86_64) static libtorrent bridge (build_macos_dylib.sh); same
+      # sharing rule as p2p. The runner's vcpkg checkout is part of the image identity.
+      "torrent=macos-universal-fushi-torrent-dylib-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${TORRENT[@]}")"
       "anki_sync_release=macos-universal-fushi-anki-sync-release-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"
       # The PR gate's debug build targets the runner's own arch only.
       "anki_sync_debug=macos-$arch-fushi-anki-sync-debug-v1-$image_os-$image-$(tree_hash "$toolchain_env" "${ANKI_SYNC[@]}")"

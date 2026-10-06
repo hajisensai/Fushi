@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 import 'sync_settings_schema_source_corpus.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// BUG-1560：互联总开关有**两个**写入口——同步设置页的「启用互联」开关，和库页来源
 /// 视图里的互联虚拟来源行——而两边各自缓存着一份内存态：
@@ -95,7 +96,7 @@ void main() {
     await tester.pumpAndSettle();
 
     Switch interconnectSwitch() =>
-        tester.widgetList<Switch>(find.byType(Switch)).first;
+        tester.widgetList<Switch>(glassUnwrapAll<Switch>(find.byType(Switch))).first;
     expect(interconnectSwitch().value, isFalse,
         reason: '初始未启用互联（preferences 默认 false）');
 

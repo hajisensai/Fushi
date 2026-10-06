@@ -67,11 +67,17 @@ SettingsDestination buildAiDestination() {
                     enabled: value,
                   ),
             ),
-          SettingsCustomItem(
+          // 自定义站点是可增删的记录：每条一行，与上面内置站的开关行同组并列。
+          SettingsCustomItem.rows(
             id: 'ai.web_knowledge.custom',
             searchTitle: t.ai_web_knowledge_custom_title,
-            builder: (SettingsContext c) =>
-                const AiWebKnowledgeCustomSitesSection(),
+            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
+                ? buildAiWebKnowledgeCustomSiteRows(
+                    c.context,
+                    c.appModel.prefsRepo,
+                    c.refresh,
+                  )
+                : const <Widget>[],
           ),
         ],
       ),

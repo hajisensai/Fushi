@@ -1,7 +1,7 @@
 /// 「悬浮球」一级分类：悬浮球唯一的设置入口（`docs/specs/2026-09-28-floating-ball.md`）。
 ///
-/// 两个独立开关——应用内（默认开）/ 应用外（Android / Windows / macOS，默认关）——
-/// 加每个场景一组按钮勾选：阅读器 / 漫画 / 视频按当前页面的语料分，「其它页面」是
+/// 两个独立开关——应用内（默认开）/ 应用外（Android / Windows / macOS，默认关）——、
+/// 关闭后自动恢复的三态（[FloatingBallAutoRestore]），加每个场景一组按钮勾选：阅读器 / 漫画 / 视频按当前页面的语料分，「其它页面」是
 /// 没有登记场景的页面，「应用外」是原生系统球。各场景的按钮目录见 [FloatingBallScope]。
 library;
 
@@ -61,7 +61,7 @@ SettingsDestination buildFloatingBallDestination() {
                 final BuildContext ctx = c.context;
                 if (ctx.mounted) {
                   ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(
+                    FushiSnackBar(
                       content: Text(t.floating_ball_overlay_permission_needed),
                     ),
                   );
@@ -69,6 +69,37 @@ SettingsDestination buildFloatingBallDestination() {
                 await FloatingBallChannel.requestOverlayPermission();
               }
             },
+          ),
+          SettingsSegmentedItem<FloatingBallAutoRestore>(
+            id: 'floating_ball.auto_restore',
+            title: t.floating_ball_auto_restore,
+            subtitle: t.floating_ball_auto_restore_hint,
+            icon: Icons.restore,
+            visible: (SettingsContext c) =>
+                _prefs(c).floatingBallInApp ||
+                (_systemBallSupported && _prefs(c).floatingBallSystem),
+            options: <SettingsSegmentOption<FloatingBallAutoRestore>>[
+              // 没有应用外球的平台（iOS / Linux）只剩「恢复 / 不恢复」两档。
+              if (_systemBallSupported)
+                SettingsSegmentOption<FloatingBallAutoRestore>(
+                  value: FloatingBallAutoRestore.both,
+                  label: t.floating_ball_auto_restore_both,
+                ),
+              SettingsSegmentOption<FloatingBallAutoRestore>(
+                value: FloatingBallAutoRestore.inApp,
+                label: t.floating_ball_auto_restore_in_app,
+              ),
+              SettingsSegmentOption<FloatingBallAutoRestore>(
+                value: FloatingBallAutoRestore.off,
+                label: t.floating_ball_auto_restore_off,
+              ),
+            ],
+            selected: (SettingsContext c) => _autoRestoreShown(c),
+            onChanged:
+                (SettingsContext c, FloatingBallAutoRestore value) async {
+                  await _prefs(c).setFloatingBallAutoRestore(value);
+                  c.refresh();
+                },
           ),
         ],
       ),
@@ -84,6 +115,14 @@ bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
   isAndroid: Platform.isAndroid,
   isDesktop: isDesktopSystemBallPlatform,
 );
+
+/// 没有应用外球的平台上，「应用内外」与「仅应用内」行为相同，按后者显示。
+FloatingBallAutoRestore _autoRestoreShown(SettingsContext c) {
+  final FloatingBallAutoRestore value = _prefs(c).floatingBallAutoRestore;
+  return !_systemBallSupported && value == FloatingBallAutoRestore.both
+      ? FloatingBallAutoRestore.inApp
+      : value;
+}
 
 SettingsSection _buttonsSection(FloatingBallScope scope) {
   return SettingsSection(
@@ -178,6 +217,7 @@ String _buttonLabel(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.clipboard => t.floating_ball_action_clipboard,
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
       FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
+      FloatingBallGlobalAction.sync => t.sync_now,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -214,6 +254,7 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
       FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
+      FloatingBallGlobalAction.sync => Icons.sync,
     };
   }
   if (scope == FloatingBallScope.reader) {

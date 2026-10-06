@@ -577,7 +577,7 @@ String mangaPageDivHtml(
 ///
 /// OCR 框有两条明确的查词入口（单击 / Shift 悬停），都走同一个字级选词函数
 /// `_selectOcrChar()`：命中层先定位到字符节点，再调
-/// `fushiSelection.selectFromPosition(node, 0, 40, x, y)`。第三个参数是
+/// `fushiSelection.selectFromPosition(node, 0, 40, x, y, fromHover)`（fromHover 随 payload 回传，宿主据此区分悬停与点击）。第三个参数是
 /// maxLength，漏传 → 扫描循环 gate `< undefined` 恒假 → text 恒空 →
 /// onTextSelected 永不触发（查词哑火）。Task 19 的内联选区 JS 只注入
 /// ReaderSelectionScripts 的定义。手势机与选词 pointerup 共存；裸图单击保持 no-op。
@@ -1157,10 +1157,16 @@ String _mangaGestureJs({
   function _cancelDoubleTapZoom(){
     if(doubleTapZoomFrame!==null){cancelAnimationFrame(doubleTapZoomFrame);doubleTapZoomFrame=null;}
   }
-  function _doubleTapZoom(x,y){
+  // 动画缩放到 target（以 (x, y) 为锚）。收尾把 ZOOM 钉到 target 本身：_zoomAbout
+  // 对 <0.0005 的差值是 no-op，不钉的话「回到正常比例」会停在 99.97% 这类值上。
+  function _animateZoomTo(target,x,y){
     _cancelDoubleTapZoom();
-    var target=ZOOM>1.01 ? 1 : 2;
-    if(!${animateDoubleTap && !preferences.einkMode}){_zoomAbout(target,x,y);return;}
+    target=_clampZoom(target);
+    function settle(){
+      if(ZOOM!==target){ZOOM=target;if(ZOOM<=1)_recenterPan();_applyCanvas();}
+      var b=_bridge();if(b)b.callHandler('onMangaZoomChanged',Math.round(ZOOM*100));
+    }
+    if(!${animateDoubleTap && !preferences.einkMode}){_zoomAbout(target,x,y,true);settle();return;}
     var startZoom=ZOOM,startTime=null;
     function frame(time){
       if(startTime===null)startTime=time;
@@ -1168,9 +1174,28 @@ String _mangaGestureJs({
       var eased=1-Math.pow(1-t,3);
       _zoomAbout(startZoom+(target-startZoom)*eased,x,y,true);
       if(t<1)doubleTapZoomFrame=requestAnimationFrame(frame);
-      else {doubleTapZoomFrame=null;var b=_bridge();if(b)b.callHandler('onMangaZoomChanged',Math.round(ZOOM*100));}
+      else {doubleTapZoomFrame=null;settle();}
     }
     doubleTapZoomFrame=requestAnimationFrame(frame);
+  }
+  // 双击：不在正常比例（100%）就一击回到正常比例——缩小到贴合以下也一样；
+  // 正好在 100% 才放大到 2×。旧判据 ZOOM>1.01 让缩小态双击先跳 2×，要再双击
+  // 一次才回得来，用户只能靠无级捏合去「凑」100%。
+  function _doubleTapZoom(x,y){
+    _animateZoomTo(Math.abs(ZOOM-1)>0.01 ? 1 : 2,x,y);
+  }
+  // 捏合结束吸附：落在正常比例 ±ZOOM_SNAP 内就收回正好 100%（并回中）。
+  // 无级捏合人手凑不准 100%，残留的 95%/104% 既不贴合、也不触发放大态平移。
+  // 只在**这次捏合真的改变了缩放**时吸附：fromZoom 是捏合开始时的倍率，
+  // 两指只是搭上屏幕（或几乎没动）时不吸附——否则设置里定好的 105% 会被
+  // 任何一次两指触碰拉回 100%。阈值 PINCH_NOOP=2%：两指静置的抖动约几像素，
+  // 在 ~200px 的指距上是 1% 量级的比例，再经 ^ZOOM_SENS 更小；而有意的捏合
+  // 远超 2%。
+  var ZOOM_SNAP=0.1;
+  var PINCH_NOOP=0.02;
+  function _snapPinchZoom(x,y,fromZoom){
+    if(!(Math.abs(ZOOM-fromZoom)>PINCH_NOOP))return;
+    if(ZOOM!==1&&Math.abs(ZOOM-1)<=ZOOM_SNAP+1e-9)_animateZoomTo(1,x,y);
   }
   document.addEventListener('pointerdown',_cancelDoubleTapZoom,{passive:true});
   window.__mangaSetZoom = function(percent){
@@ -1455,8 +1480,10 @@ String _mangaGestureJs({
   });
 
   // ── 手势消歧（pointer，覆盖触摸/鼠标）──
-  var sx = 0, sy = 0, st = 0, has = false;
-  function _start(x, y){ has = true; sx = x; sy = y; st = Date.now(); }
+  // spx：按下时的 PAN_X。松手时「手指横移 − 画布实际横移」= 平移**没吃掉**的
+  // 那段（贴边被 _clampPan 钳住的余量），它才参与 swipe 判定。
+  var sx = 0, sy = 0, st = 0, spx = 0, has = false;
+  function _start(x, y){ has = true; sx = x; sy = y; st = Date.now(); spx = PAN_X; }
   // ── 触屏双指捏合缩放 ──
   // 此前触屏**完全无法缩放**：viewport 声明了 user-scalable=no（必须的：浏览器原生
   // 缩放会和 #manga-canvas 的 transform 打架），而 JS 侧没有任何 touch/多指处理。
@@ -1599,7 +1626,7 @@ String _mangaGestureJs({
       return 'same';
     }
     selection.clearSelection();
-    selection.selectFromPosition(node, 0, 40, x, y);
+    selection.selectFromPosition(node, 0, 40, x, y, fromHover);
     var bridge = _bridge();
     if (bridge) bridge.callHandler('onMangaOcrHitDebug',
       JSON.stringify(window.__mangaLastOcrHit));
@@ -1737,11 +1764,18 @@ String _mangaGestureJs({
     has = false;
     var dx = x - sx, dy = y - sy, el = Date.now() - st;
     var ax = Math.abs(dx), ay = Math.abs(dy);
-    var vel = ax / Math.max(1, el) * 1000;
-    // ZOOM>1 时拖动已被 _panBy 消费为平移（放大后必须能看页面各处），
-    // 此时再判 swipe 会让每次平移都翻页。翻页仍可用点击边缘 / 滚轮 / 音量键。
-    if (!IS_WEBTOON && ZOOM <= 1 &&
-        ax > ay && (ax >= 72 || (ax >= 36 && vel >= 900))) {
+    // 放大态（ZOOM>1）的拖动先被 _panBy 消费为平移（放大后必须能看页面各处）；
+    // 只有平移**贴边后没吃掉**的横向余量才算翻页 swipe——与 Mihon、与滚轮的
+    // 「能平移就平移，贴边才翻页」（BUG-1760）同一口径。未放大时 _panBy 不动
+    // PAN_X，余量 = 整段位移，判据与从前逐字一致。
+    //
+    // 此前这里是硬性的 `ZOOM <= 1`：捏合缩回「看起来贴合」时常停在 101%~105%，
+    // 画面与贴合无从分辨，可左右滑永远只是挪几像素的平移、一页也翻不动，
+    // 只剩点边缘能翻（用户 2026-10-02「划不动」）。
+    var ux = dx - (PAN_X - spx), aux = Math.abs(ux);
+    var vel = aux / Math.max(1, el) * 1000;
+    if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) &&
+        (aux >= 72 || (aux >= 36 && vel >= 900))) {
       var b = _bridge();
       if (!b) return;
       // swipe 跟手：拖动内容向左（dx<0）露出的是 strip **右边**那一跨页。右边是哪
@@ -1764,7 +1798,7 @@ String _mangaGestureJs({
       var g = _pinchGeom();
       if (g && g.dist > 0) {
         // 第二指落下：进入捏合，取消已经开始的单指 swipe 计时与拖动。
-        pinch = {dist: g.dist, zoom: ZOOM};
+        pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};
         pinchGuard = true;
         has = false;
         panDrag = null;
@@ -1797,6 +1831,8 @@ String _mangaGestureJs({
     var g = _pinchGeom();
     if (!g || g.dist <= 0) return;
     e.preventDefault();
+    pinch.cx = g.cx;
+    pinch.cy = g.cy;
     _zoomAbout(
       pinch.zoom * Math.pow(g.dist / pinch.dist, ZOOM_SENS),
       g.cx,
@@ -1809,8 +1845,14 @@ String _mangaGestureJs({
     if (e.pointerType === 'touch') {
       delete touchPts[e.pointerId];
       if (pinch) {
-        // 还剩一指时仍不恢复 swipe：等全部手指抬起，避免捏合尾巴被判成翻页。
-        if (Object.keys(touchPts).length < 2) pinch = null;
+        // 不足两指即结束捏合并吸附（通常是两指中先抬起的那一指，另一指可能
+        // 还在屏上）。剩下那一指仍不恢复 swipe：pinchGuard 等全部手指抬起，
+        // 避免捏合尾巴被判成翻页。
+        if (Object.keys(touchPts).length < 2) {
+          var lastPinch = pinch;
+          pinch = null;
+          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+        }
         return;
       }
       if (pinchGuard) {

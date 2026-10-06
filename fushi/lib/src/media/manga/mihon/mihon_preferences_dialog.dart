@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// Mihon 在线来源的偏好编辑弹窗。
@@ -43,7 +45,8 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
       final List<MihonPreference> preferences = await widget.manager
           .getPreferences(widget.source);
       if (mounted) setState(() => _preferences = preferences);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MihonPreferencesDialog', error, stack);
       if (mounted) setState(() => _error = error);
     }
   }
@@ -63,7 +66,8 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
           }
         });
       }
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MihonPreferencesDialog', error, stack);
       if (mounted) setState(() => _error = error);
     } finally {
       if (mounted) setState(() => _savingKey = null);
@@ -106,7 +110,8 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
         _textDrafts.clear();
       });
       Navigator.pop(context);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MihonPreferencesDialog', error, stack);
       if (mounted) setState(() => _error = error);
     } finally {
       if (mounted) setState(() => _savingAll = false);
@@ -116,12 +121,13 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
   @override
   Widget build(BuildContext context) {
     final List<MihonPreference>? preferences = _preferences;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text('${widget.source.name} · ${t.mihon_source_preferences}'),
       content: SizedBox(
         width: 480,
+        // 2026-10 体验优化：不再把原始异常 toString 直接给用户看。
         child: _error != null
-            ? Text('$_error')
+            ? Text(describeOnlineSourceError(_error!))
             : preferences == null
             ? Center(child: adaptiveIndicator(context: context))
             : preferences.isEmpty
@@ -135,11 +141,11 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
               ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _savingAll ? null : () => Navigator.pop(context),
           child: Text(t.dialog_close),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed:
               preferences == null ||
                   _error != null ||
@@ -157,7 +163,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
     final bool busy = _savingAll || _savingKey == preference.key;
     return switch (preference.kind) {
       MihonPreferenceKind.checkBox ||
-      MihonPreferenceKind.switchControl => SwitchListTile.adaptive(
+      MihonPreferenceKind.switchControl => FushiSwitchListTile.adaptive(
         title: Text(preference.title),
         subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
         value: preference.value == true,
@@ -167,7 +173,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
       ),
       MihonPreferenceKind.text => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: TextFormField(
+        child: FushiTextFormFieldControl(
           key: ValueKey<String>('${preference.key}:${preference.value}'),
           initialValue: preference.value?.toString() ?? '',
           enabled: !busy,
@@ -180,7 +186,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
               unawaited(_save(preference, value)),
         ),
       ),
-      MihonPreferenceKind.list => DropdownButtonFormField<int>(
+      MihonPreferenceKind.list => FushiDropdownButtonFormField<int>(
         value: (preference.value as int? ?? 0).clamp(
           0,
           preference.entries.length - 1,
@@ -200,7 +206,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
             ? null
             : (int? value) => unawaited(_save(preference, value ?? 0)),
       ),
-      MihonPreferenceKind.multiSelect => ExpansionTile(
+      MihonPreferenceKind.multiSelect => FushiExpansionTile(
         title: Text(preference.title),
         subtitle: preference.summary.isEmpty ? null : Text(preference.summary),
         children: <Widget>[
@@ -230,7 +236,7 @@ class _MihonPreferencesDialogState extends State<MihonPreferencesDialog> {
         ],
       ),
       MihonPreferenceKind.unsupported => FushiListItem(
-        leading: const Icon(Icons.warning_amber_outlined),
+        leading: const FushiIcon(Icons.warning_amber_outlined),
         title: Text(preference.title),
         subtitle: Text(t.mihon_extension_incompatible),
       ),
@@ -259,7 +265,7 @@ class _MihonMultiSelectRow extends StatelessWidget {
     final ValueChanged<bool?>? changed = onChanged;
     return FushiListItem(
       title: Text(label),
-      leading: Checkbox(value: selected, onChanged: changed),
+      leading: FushiCheckbox(value: selected, onChanged: changed),
       onTap: changed == null ? null : () => changed(!selected),
     );
   }

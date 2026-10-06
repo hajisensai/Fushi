@@ -80,7 +80,7 @@ class LeaderboardService extends ChangeNotifier {
        _clockMs = clockMs ?? _systemClockMs,
        _coverThumb = coverThumb ?? leaderboardCoverThumb,
        _avatarEncoder = avatarEncoder ?? encodeLeaderboardAvatar,
-       _shelfBuilder = shelfBuilder ?? _defaultShelfBuilder,
+       _injectedShelfBuilder = shelfBuilder,
        _isbnBackfill = isbnBackfill ?? backfillEpubIsbns,
        _requestTimeout = requestTimeout,
        _uploadTimeout = uploadTimeout;
@@ -100,8 +100,8 @@ class LeaderboardService extends ChangeNotifier {
     FushiDatabase db,
     int profileId,
     DateTime now,
-  )
-  _shelfBuilder;
+  )?
+  _injectedShelfBuilder;
   final Future<int> Function(FushiDatabase db) _isbnBackfill;
   final Duration _requestTimeout;
   final Duration _uploadTimeout;
@@ -111,11 +111,40 @@ class LeaderboardService extends ChangeNotifier {
 
   static int _systemClockMs() => DateTime.now().millisecondsSinceEpoch;
 
-  static Future<LocalShelf> _defaultShelfBuilder(
+  Future<LocalShelf> _shelfBuilder(
     FushiDatabase db,
     int profileId,
     DateTime now,
-  ) => buildLocalShelf(db, profileId: profileId, now: now);
+  ) {
+    final Future<LocalShelf> Function(FushiDatabase, int, DateTime)? injected =
+        _injectedShelfBuilder;
+    if (injected != null) return injected(db, profileId, now);
+    return _defaultShelfBuilder(db, profileId, now);
+  }
+
+  /// 同机多个 Profile 共享同一个库：哪个 Profile 都没有学习记录的作品只让同机代表
+  /// Profile 计入作品读者数（BUG-2870）。
+  Future<LocalShelf> _defaultShelfBuilder(
+    FushiDatabase db,
+    int profileId,
+    DateTime now,
+  ) async {
+    final Set<int> uploading = await LeaderboardStore.uploadingProfileIds(
+      await _supportRoot(),
+    );
+    final int? owner = leaderboardUnattributedOwner(
+      uploading: uploading,
+      existing: <int>[
+        for (final ProfileRow p in await db.select(db.profiles).get()) p.id,
+      ],
+    );
+    return buildLocalShelf(
+      db,
+      profileId: profileId,
+      now: now,
+      countsUnattributed: owner == null || owner == profileId,
+    );
+  }
 
   Future<void>? _loading;
   Future<void>? _syncing;

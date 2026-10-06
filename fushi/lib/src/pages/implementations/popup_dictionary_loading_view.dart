@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
     show computeFloatingLyricPopupRect;
 import 'package:fushi/src/startup/startup_splash_mark.dart' show DelayedReveal;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 查词冷启动快于这个时长就什么都不画：弹窗直接以词卡出现，不先闪一个加载态。
 const Duration kPopupLoadingRevealDelay = Duration(milliseconds: 280);
@@ -51,7 +52,7 @@ class PopupDictionaryLoadingView extends StatelessWidget {
           child: Center(
             child: SizedBox(
               width: 88,
-              child: LinearProgressIndicator(
+              child: FushiLinearProgressIndicator(
                 minHeight: 4,
                 borderRadius: const BorderRadius.all(Radius.circular(2)),
                 color: colorScheme.primary,

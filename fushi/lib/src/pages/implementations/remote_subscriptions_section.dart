@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 class RemoteSubscriptionsSection extends ConsumerStatefulWidget {
@@ -86,7 +87,7 @@ class _RemoteSubscriptionsSectionState
     } on HostSubscriptionException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.detail ?? error.code)),
+        FushiSnackBar(content: Text(error.detail ?? error.code)),
       );
     } finally {
       if (mounted) setState(() => _busy.remove(sub.subscriptionId));
@@ -176,7 +177,7 @@ class _RemoteSubscriptionsSectionState
               ],
             ),
           ),
-          IconButton(
+          FushiIconButtonControl(
             key: ValueKey<String>(
                 'remote-subscription-check-${sub.subscriptionId}'),
             tooltip: t.download_subscription_check_all,
@@ -188,9 +189,9 @@ class _RemoteSubscriptionsSectionState
                       (InterconnectSubscriptionClient c) =>
                           c.checkNow(target, sub.subscriptionId),
                     ),
-            icon: const Icon(Icons.refresh, size: 18),
+            icon: const FushiIcon(Icons.refresh, size: 18),
           ),
-          IconButton(
+          FushiIconButtonControl(
             key: ValueKey<String>(
                 'remote-subscription-delete-${sub.subscriptionId}'),
             tooltip: t.download_subscription_delete,
@@ -202,9 +203,9 @@ class _RemoteSubscriptionsSectionState
                       (InterconnectSubscriptionClient c) =>
                           c.delete(target, sub.subscriptionId),
                     ),
-            icon: const Icon(Icons.delete_outline, size: 18),
+            icon: const FushiIcon(Icons.delete_outline, size: 18),
           ),
-          Switch.adaptive(
+          FushiSwitch.adaptive(
             key: ValueKey<String>(
                 'remote-subscription-toggle-${sub.subscriptionId}'),
             value: sub.enabled,

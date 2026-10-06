@@ -7,6 +7,8 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
+    show FushiLinearProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
 
 Widget host(Widget child) => ProviderScope(
@@ -91,7 +93,9 @@ void main() {
     expect(find.textContaining('Dictionary'), findsOneWidget);
     expect(
       tester
-          .widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator))
+          // 进度条走共享 FushiLinearProgressIndicator（表达式进度）；钉它的 value。
+          .widget<FushiLinearProgressIndicator>(
+              find.byType(FushiLinearProgressIndicator))
           .value,
       0.5,
     );

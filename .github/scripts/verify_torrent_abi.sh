@@ -9,7 +9,7 @@
 # fushi/test/media/torrent/torrent_ffi_bindings_parity_guard_test.dart 兜底；
 # 这里补的是「头文件 <-> 真实二进制」那一段，只有真编出产物的地方才做得到。
 #
-# 用法: verify_torrent_abi.sh <so-path> <nm-binary>
+# 用法: verify_torrent_abi.sh <so/dylib-path> <nm-binary>
 #   nm-binary 可以是 host `nm`，也可以是 NDK 的 llvm-nm（交叉产物用后者更稳）。
 set -euo pipefail
 
@@ -41,9 +41,13 @@ if [[ "$expected_count" -lt 30 ]]; then
   exit 1
 fi
 
-# 实际集：动态符号表里已定义的 ht_* 符号。
-"$NM" -D --defined-only "$SO" > "$work/nm.txt"
-awk '{ print $NF }' "$work/nm.txt" | grep -E '^ht_[a-z0-9_]+$' | sort -u > "$work/actual.txt" || true
+# 实际集：动态符号表里已定义的 ht_* 符号。Mach-O（macOS dylib，可为 universal）没有
+# ELF 那种独立动态符号表：取外部已定义符号（-gU）并去掉 C 符号的前导下划线。
+case "$(file -b "$SO")" in
+  Mach-O*) "$NM" -gU "$SO" | awk '{ print $NF }' | sed 's/^_//' > "$work/nm.txt" ;;
+  *) "$NM" -D --defined-only "$SO" | awk '{ print $NF }' > "$work/nm.txt" ;;
+esac
+grep -E '^ht_[a-z0-9_]+$' "$work/nm.txt" | sort -u > "$work/actual.txt" || true
 
 actual_count="$(wc -l < "$work/actual.txt" | tr -d ' ')"
 echo "ht_* symbols exported by $(basename "$SO"): $actual_count"

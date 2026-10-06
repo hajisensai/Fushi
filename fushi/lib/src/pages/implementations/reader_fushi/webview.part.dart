@@ -65,7 +65,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   static bool get _usesReaderResourceCustomScheme =>
-      Platform.isMacOS || Platform.isIOS;
+      webViewUsesCustomSchemeTransport;
 
   static bool _isReaderResourceUrl(WebUri url) {
     if (url.host != ReaderFushiSource.kHost) return false;
@@ -1593,6 +1593,10 @@ ${webViewKeyBridgeScript(handlerName: 'onSpaceKey', keys: const <String>[' '])}
     if (total <= 0 && typeof r.totalChapterChars === 'number' && r.totalChapterChars > 0) {
       total = r.totalChapterChars;
     }
+    // BUG-2903：连续 shell 的章总字数来自缓存的章内文本索引，滚动中逐帧回报不再全章 walk。
+    if (total <= 0 && typeof r.chapterCharTotal === 'function') {
+      total = r.chapterCharTotal();
+    }
     if (total <= 0 && r.createWalker) {
       var walker = r.createWalker();
       var node;
@@ -1762,20 +1766,6 @@ updateLive: function(patch) {
   // ── WebView ──────────────────────────────────────────────────────────
 
   Widget _buildWebView() {
-    if (Platform.isLinux) {
-      // flutter_inappwebview has no Linux backend; the EPUB renderer is
-      // unsupported on Linux for now (see
-      // docs/specs/2026-05-30-five-platform-build.md).
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.reader_unsupported_platform,
-            textAlign: TextAlign.center,
-          ),
-        ),
-      );
-    }
     // KeyedSubtree carries [_webViewKey] (a GlobalKey) on the InAppWebView's own
     // render subtree so [onDismissBarrierHover] can read the WebView's RenderBox
     // for global→local coordinate mapping (TODO-806), while the ValueKey stays on
@@ -1998,20 +1988,9 @@ updateLive: function(patch) {
           return true;
         }());
         _startContentReadyTimeout();
-        if (_lyricsMode && _audiobookController != null) {
-          final List<AudioCue> allCues =
-              _audiobookController!.allBookCuesSnapshot;
-          if (allCues.isNotEmpty) {
-            _audiobookController!.setChapterCues(allCues);
-          }
-          _lyricsEntryChapter = _currentChapter;
-          // BUG-872：位置优先索引，避免暂停态重建时 _currentCue 未填充导致
-          // 入场高亮 clamp 回第一句。
-          _lyricsEntryCueIndex = allCues.isNotEmpty
-              ? _audiobookController!.allBookCueIdxAtPosition
-              : _audiobookController!.currentCueIdx;
-          _loadLyricsPage();
-        } else {
+        // 覆盖层架构：歌词模式有自己的 WebView（[_buildLyricsWebView]），正文
+        // WebView 无论何时创建都装载正文章。
+        {
           _restoreInFlight = true;
           // TODO-1128：开书恢复落到被吸收单图片章（如封面 ch0 被吸收进 ch1，或旧存档
           // 停在某图片章后再开启合并）时，重定向到宿主文本章——只加载宿主（图片内联在
@@ -2225,34 +2204,6 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             _handleVnBlankTap();
-          },
-        );
-
-        // BUG-756: 歌词模式空白点击的专用桥。歌词是独立文档（LyricsModeHtml），没有
-        // 正文 fushiReader 的 onTap/onTapEmpty；歌词里点句子 = 查词，唯一能唤出底栏的
-        // 手势就是点空白。故这里对隐藏的底栏**无条件唤出/收起**——不看
-        // tapEmptyToHideChrome（那开关管的是正文点空白是否收起底栏，歌词没有别的唤出
-        // 途径，绝不能被它关死）。挤压态直接 _toggleChrome（隐藏→出、可见→收，且其内部
-        // 已 requestFocus reclaim）；悬浮态走同一唤出/收起状态机。收尾再 reclaim 一次
-        // 阅读焦点：本次 pointer 手势把 OS 焦点交给了 WebView，不夺回 Flutter _focusNode
-        // 就收不到 ESC，全局「Esc 退出整页」永不触发（正文每个手势都 reclaim，歌词此前
-        // 一处都没有 → esc 退不出）。有可见查词弹窗时按正文语义清栈、不动底栏。
-        controller.addJavaScriptHandler(
-          handlerName: 'onLyricsTapEmpty',
-          callback: (_) {
-            if (!_lyricsMode) return;
-            // BUG-2276：抽屉压着歌词页时，这次点击是「点遮罩关抽屉」。
-            if (_closeSideSheetForWebViewPointer()) return;
-            if (isDictionaryShown) {
-              clearDictionaryResult();
-              return;
-            }
-            if (_anyChromeFloating) {
-              _handleFloatingChromeReveal();
-            } else {
-              _toggleChrome();
-            }
-            _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
 
@@ -2686,40 +2637,6 @@ updateLive: function(patch) {
             _executeShortcutAction(action);
           },
         );
-
-        controller.addJavaScriptHandler(
-          handlerName: 'onLyricsPointerSeek',
-          callback: (List<dynamic> args) {
-            if (args.length < 2 || _audiobookController == null) return;
-            final int button = (args[0] as num?)?.toInt() ?? -1;
-            final int idx = (args[1] as num?)?.toInt() ?? -1;
-            final AudioCue? cue = cueForLyricsPointer(
-              appModel.shortcutRegistry,
-              button,
-              idx,
-              _lyricsCueList,
-            );
-            if (cue != null) _audiobookController!.playCueAndContinue(cue);
-          },
-        );
-
-        // BUG-1809：iOS WKWebView 的 loadData() 可返回却不发 onLoadStop。
-        // LyricsModeHtml 在 DOM API 全部就绪后主动回传；与 onLoadStop 共用幂等
-        // finalize，谁先到谁完成，另一条只读到 ready 后早返回。
-        controller.addJavaScriptHandler(
-          handlerName: 'onLyricsReady',
-          callback: (args) {
-            final dynamic raw = args.isEmpty ? null : args.first;
-            final int? generation = raw is num
-                ? raw.toInt()
-                : int.tryParse(raw?.toString() ?? '');
-            if (generation == null) return false;
-            return _finalizeLyricsDocumentIfReady(
-              controller,
-              generation: generation,
-            );
-          },
-        );
       },
       shouldInterceptRequest: (controller, request) async {
         return await _interceptRequest(request.url);
@@ -2729,7 +2646,7 @@ updateLive: function(patch) {
       },
       shouldOverrideUrlLoading: (controller, action) async {
         final String url = action.request.url?.toString() ?? '';
-        if (_isNavigatingToChapter || _isCurrentLyricsDocumentUrl(url)) {
+        if (_isNavigatingToChapter) {
           return NavigationActionPolicy.ALLOW;
         }
         // BUG-117: shouldOverrideUrlLoading is NOT invoked for <a> clicks on the
@@ -2751,18 +2668,6 @@ updateLive: function(patch) {
           '[ReaderFushi] onLoadStop: url=$url '
           'chapter=$chapterSnapshot progress=$_initialProgress',
         );
-        if (_lyricsMode) {
-          if (!await _finalizeLyricsDocumentIfReady(
-            controller,
-            generation: _lyricsLoadGeneration,
-          )) {
-            debugPrint(
-              '[ReaderFushi] onLoadStop: stale non-lyrics page '
-              'while lyrics mode is active, ignoring',
-            );
-          }
-          return;
-        }
         final String expectedUrl = _chapterUrl(chapterSnapshot);
         if (url != null &&
             Uri.parse(url.toString()).path != Uri.parse(expectedUrl).path) {
@@ -2798,14 +2703,6 @@ updateLive: function(patch) {
           return;
         }
         if (request.isForMainFrame ?? false) {
-          final int? failedLyricsGeneration = _lyricsDocumentGenerationFromUrl(
-            request.url.toString(),
-          );
-          if (failedLyricsGeneration != null &&
-              failedLyricsGeneration == _lyricsDocumentLoadGeneration &&
-              failedLyricsGeneration == _lyricsLoadGeneration) {
-            _lyricsDocumentLoadGeneration = null;
-          }
           debugPrint(
             '[ReaderFushi] onReceivedError: ${error.description} '
             'url=${request.url}',
@@ -2913,7 +2810,7 @@ updateLive: function(patch) {
         return false;
       }
       if (!_lyricsPageReady) {
-        await _onChapterLoadComplete(controller, lyricsGeneration: generation);
+        await _onLyricsDocumentReady(controller, generation: generation);
       }
       if (!mounted || !_lyricsMode || generation != _lyricsLoadGeneration) {
         return false;
@@ -2949,9 +2846,8 @@ updateLive: function(patch) {
   }
 
   Future<void> _onChapterLoadComplete(
-    InAppWebViewController controller, {
-    int? lyricsGeneration,
-  }) async {
+    InAppWebViewController controller,
+  ) async {
     // BUG-1280（平台分叉守卫）：spread 独立文档绝不注入正文引擎。
     //
     // `_loadSpreadPage` 传给 `loadData` 的 baseUrl 与 `_chapterUrl(_currentChapter)`
@@ -2976,67 +2872,6 @@ updateLive: function(patch) {
         '[ReaderFushi] onChapterLoadComplete: spread document, '
         'skipping body engine injection',
       );
-      return;
-    }
-    if (_lyricsMode) {
-      bool currentLyricsLoad() =>
-          mounted &&
-          _lyricsMode &&
-          lyricsGeneration != null &&
-          lyricsGeneration == _lyricsLoadGeneration;
-      if (!currentLyricsLoad()) return;
-      if (!_readerContentReady) {
-        // BUG-438 / TODO-889：歌词模式内容就绪，清兜底 deadline，下次导航拿新窗口。
-        _clearContentReadyTimeout();
-        _rebuild(() {
-          _readerContentReady = true;
-          _hasEverLoaded = true;
-        });
-      }
-      if (!currentLyricsLoad()) return;
-      _lyricsPageReady = true;
-      // BUG-2597：开书自动恢复歌词模式（BUG-785）可能抢在正文 `_onRestoreComplete`
-      // 之前——歌词 `loadData` 换掉文档后那次回调永远不来，`_studyClock` 一直为 null，
-      // `_onCueChanged` 的 `touch()` / 账本回调全部 no-op → 整段歌词会话零时长零字数。
-      // 歌词文档就绪也是「书能读了」，与正文就绪同样建/起表（对已在跑的是 no-op）。
-      _ensureStudyClock();
-      // 首次进入歌词模式的提示对话框：挂在歌词文档真正就绪的这一刻消费一次性旗
-      // （_toggleLyricsMode 进入分支置位），替代旧的裸 delay 100ms（事件驱动，见旗注释）。
-      if (_pendingLyricsHintOnReady) {
-        _pendingLyricsHintOnReady = false;
-        _showLyricsModeHintIfNeeded();
-      }
-      // 注入歌词专用行级 caret（键盘/手柄逐词查词），镜像 reader 的 fushiCaret 注入。
-      // 文档刚加载，caret inactive；surface 在 _enterCaret 成功时才置 lyrics。
-      await controller.evaluateJavascript(
-        source: ReaderLyricsCaretScripts.source(),
-      );
-      if (!currentLyricsLoad()) return;
-      if (mounted) {
-        await controller.evaluateJavascript(
-          source: ReaderLyricsCaretScripts.initInvocation(
-            color: _caretRingColorCss(),
-            insetTop: _readerTopOffset,
-            insetBottom: 0,
-          ),
-        );
-      }
-      if (!currentLyricsLoad()) return;
-      _onCueChanged();
-      await _applyLyricsFavorites();
-      if (!currentLyricsLoad()) return;
-      // BUG-844: 歌词是独立文档，正文 setup 脚本（下发 window.__hoverAutoLookup 初值）
-      // 不在此分支注入。歌词页的 mousemove 悬停查词监听据此全局跳过 Shift 门控（纯悬停即
-      // 查词），必须在页面就绪时把当前开关值同步进新文档，否则纯悬停查词要等一次设置热更
-      // 才生效。Shift-悬停不依赖此全局（监听器直接读 e.shiftKey），本行只补齐纯悬停路径。
-      if (mounted) await _applyHoverAutoLookupLive();
-      if (!currentLyricsLoad()) return;
-      // BUG-767: 此前（BUG-755）在歌词页就绪即强夺阅读焦点，想让 ESC 从进入那刻就能退。
-      // 但桌面 loadData 后强夺 Flutter 焦点会把原生 WebView2 顶焦、重置其滚动到顶
-      // （→ 高亮看似回第一句），并与页面自身抢焦点抖动；一旦叠加重载路径每次 loadData
-      // 都触发一次，放大成持续闪烁。故移除这处 on-load 强夺焦（本行下方原有的焦点 reclaim
-      // 调用已删）。ESC 退出仍可用：点空白唤底栏走 onLyricsTapEmpty（内含焦点 reclaim）、
-      // 查词弹窗关闭走 onAllPopupsDismissed reclaim——任一交互后焦点即回阅读内容，ESC 正常退出。
       return;
     }
     final int gen = _navigateGeneration;

@@ -135,7 +135,7 @@ class _VideoEpisodeBindingDialogState
     )) {
       _episode = _episodes.first.episodeNumber;
     }
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.collection_episode_link_manual),
       content: SizedBox(
         width: 420,
@@ -145,7 +145,7 @@ class _VideoEpisodeBindingDialogState
           children: <Widget>[
             Text(t.collection_episode_link_hint),
             const SizedBox(height: 12),
-            DropdownButtonFormField<int>(
+            FushiDropdownButtonFormField<int>(
               key: const ValueKey<String>('video-episode-link-season'),
               value: _season,
               items: <DropdownMenuItem<int>>[
@@ -166,7 +166,7 @@ class _VideoEpisodeBindingDialogState
               },
             ),
             const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
+            FushiDropdownButtonFormField<int>(
               key: const ValueKey<String>('video-episode-link-episode'),
               value: _episode,
               isExpanded: true,

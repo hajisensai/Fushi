@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 一行「来源开关」的数据。
 ///
@@ -48,7 +50,7 @@ class SourceSectionHeading extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            Icon(icon, size: 20, color: theme.colorScheme.primary),
+            FushiIcon(icon, size: 20, color: theme.colorScheme.primary),
             const SizedBox(width: 8),
           ],
           Expanded(
@@ -98,11 +100,11 @@ class SourceToggleList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         for (final SourceToggleRow row in rows)
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('$keyPrefix-${row.id}'),
             contentPadding: EdgeInsets.zero,
             dense: true,
-            secondary: Icon(icon),
+            secondary: FushiIcon(icon),
             title: Text(row.title),
             subtitle: Text(row.subtitle, maxLines: 3),
             value: row.enabled,

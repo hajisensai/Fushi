@@ -32,15 +32,16 @@ void main() {
     expect(find.text('12'), findsOneWidget);
   });
 
-  testWidgets('常规主题：半透明深色胶囊（固定 scrim，不随 colorScheme）',
+  testWidgets('MD3：inverseSurface@0.85 半透明角标（2026-10-04 角标统一）',
       (WidgetTester tester) async {
     await tester.pumpWidget(_app(
       eink: false,
       child: const CoverBadge(icon: Icons.cloud_outlined),
     ));
     final Color color = _badgeColor(tester);
-    expect(color.a, lessThan(1.0));
-    expect(color.r, 0);
+    final ColorScheme cs =
+        Theme.of(tester.element(find.byType(CoverBadge))).colorScheme;
+    expect(color, cs.inverseSurface.withValues(alpha: 0.85));
   });
 
   testWidgets('eink：纯黑实底（半透明黑在墨水屏合成抖动灰）', (WidgetTester tester) async {

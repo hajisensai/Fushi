@@ -58,7 +58,7 @@ void main() {
       expect(js, contains('fireTextSelected: function'));
       expect(
         js,
-        contains('return this.fireTextSelected(x, y);'),
+        contains('return this.fireTextSelected(x, y, fromHover);'),
         reason: 'selectFromPosition（tap 路径）必须复用 fireTextSelected',
       );
     });
@@ -165,16 +165,21 @@ void main() {
       expect(js, contains('setTimeout'));
       expect(
         js,
-        contains('var LPS_DELAY = 280;'),
-        reason: '默认长按时限须对齐 Hoshi/Android 的轻快体感',
+        contains('var LPS_DELAY = 400;'),
+        reason:
+            'BUG-2919：默认长按时限对齐 Android ViewConfiguration 的 400ms。'
+            '280ms 会把翻页前的自然停顿判成长按，翻页变成选中。',
       );
       expect(
         js,
-        contains('var LPS_SLOP_SQ = 256;'),
+        contains(
+          'var LPS_SLOP_SQ = '
+          '${ReaderSettings.tapSlopPx * ReaderSettings.tapSlopPx};',
+        ),
         reason:
-            'BUG-长按选择不灵敏：容差 16px（16²）。旧值 10px 要求手指在整个长按时限内'
-            '始终停在 10px 半径内，比单击还难触发；同时必须小于翻页距离阈值（24px），'
-            '否则「想滑动翻页」的手势会被长按抢走。',
+            'BUG-2919：长按容差取单击判据同一个真值 ReaderSettings.tapSlopPx。'
+            '放宽到 16px 会让慢于 16px/280ms 的滑动先被长按计时器抢走；翻页距离阈值'
+            '的下界是 tapSlopPx + 1，长按容差一旦大于 tapSlopPx 两者就重叠。',
       );
       expect(js, contains('LPS_DELAY'), reason: '缺长按时限');
       expect(

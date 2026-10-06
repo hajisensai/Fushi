@@ -1,0 +1,17 @@
+## BUG-2861 · macOS 视频画面发灰
+- **报告**：2026-10-02（用户：「mac 看视频发灰色，看看是不是还没做好 retina 屏适配」）
+- **真实性**：✅ 真 bug，但**不是 Retina 分辨率问题**——Retina 物理像素渲染早已由 `VideoBackingRenderSize`（`fushi/lib/src/media/video/video_backing_render_size.dart`，IINA `convertToBacking` 同款）落地。发灰是**色彩管理缺失**：
+  - Flutter macOS 把外部 BGRA 纹理按原值采样（`FlutterExternalTexture.mm` 用 `MTLPixelFormatBGRA8Unorm`，不做色彩转换），合成进**固定标记为 sRGB** 的 IOSurface（`FlutterSurface.mm` 的 `kIOSurfaceColorSpace = kCGColorSpaceSRGB`），再由系统合成器按 sRGB 换算到屏幕。
+  - media_kit macOS 纹理（`third_party/media_kit_video/macos/Classes/plugin/TextureHW.swift` 的 `render`）只给 libmpv 一个 FBO，不传 ICC、不设目标色彩；app 侧 `buildMpvProperties`（`fushi/lib/src/media/video/video_mpv_config.dart`）也从不下发 `target-trc` / `target-prim`。
+  - libmpv 在 `target-trc=auto` 下对 SDR 片源**刻意不换 gamma**（vo_gpu `pass_colormanage`：目标 TRC 未知时取片源 TRC），吐出 BT.1886（γ2.4）编码值。γ2.4 的数据被按 sRGB 曲线解码，暗部整体抬亮（码值 0.1 处亮度约为应有的 2.5 倍），黑不下去 → 发灰。
+  - 对照 IINA（`iina/VideoView.swift` 的 `setICCProfile`）：SDR 时把视频图层 colorspace 设成屏幕色彩空间、把屏幕 ICC 交给 mpv，让 mpv 按图层真正被解释成的色彩空间做色彩管理。我们的图层由 Flutter 持有、固定 sRGB，对应做法就是把 mpv 输出目标钉成 sRGB。
+- **[x] ① 已修复** — Apple 两端（macOS / iOS）下发 `target-prim=bt.709` + `target-trc=srgb`（新纯函数 `resolveTextureColorTargetProperties`，接进 `buildMpvProperties`，排在 `rawConf` 之前，mpv.conf 仍可覆盖）。Windows / Android 零行为变化。macOS 真机验证通过；iOS 的硬件渲染路径**尚未真机验证**（见备注）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_mpv_config_test.dart` 的 `resolveTextureColorTargetProperties (BUG-2861 mac 视频发灰)` 组（Apple 下发 / 其它平台不下发 / 端到端 / rawConf 覆盖）；像素探针 `fushi/integration_test/video_mac_color_target_itest.dart`（测试内生成有限范围灰阶 Y4M，读回 Flutter 合成到的纹理像素，同一帧 A/B 比对理论值；`--dart-define=FUSHI_COLOR_PROBE=hdr` 把同一段灰阶按 BT.2020 + PQ 解释，验色调映射）。
+- **备注**：Mac 真机（arm64，Flutter 3.44.0，`flutter test -d macos`）2026-10-02 跑通探针，同一帧灰阶 A/B，读回的是 Flutter 实际合成到的纹理值：
+  - 修复前（`target-trc=auto`）：Y=16/24/32/40/52/64/80 → 0/9/19/28/42/56/75，即 (Y-16)/219 原值直通，最大误差 0.41/255——证实 BT.1886 值被原样交给 sRGB 合成面。
+  - 修复后（生产配置，mpv 回报 `target-trc=srgb` `target-prim=bt.709`）：同样色块 → 0/1/6/15/30/45/65，与 `srgb_encode(v^2.4)` 逐块吻合，最大误差 0.42/255。
+  - 暗部码值差最大约 13/255（Y=32 处 19 → 6），正是用户看到的「发灰、黑不下去」。
+  - **真实屏幕取色**（同一轮 A/B 各 `screencapture` 一次；MacBook 内置 Liquid Retina，截图 2940×1912、Display P3，`sips --matchTo` sRGB 后读灰阶行）：修复前屏幕上是 0/9/19/28/42/56/74/93/112/130/156/185/214/255，修复后是 0/1/6/15/30/45/65/84/104/123/151/181/212/255——与纹理读回值逐块一致，证实系统合成器把 Flutter 合成面按 sRGB 原样上屏，发灰确实如此显示，修复后屏幕亮度符合 BT.1886 预期。截屏需要给 ssh（`sshd-keygen-wrapper`）开「屏幕录制」权限，所以截屏代码没放进入库的探针。
+  - 视频 `video-params` 报 `gamma=bt.1886` / `colorlevels=limited`，SDR 片源的典型参数。
+  - **HDR（macOS 真机）**：同一段灰阶经 `vf=format=primaries=bt.2020:gamma=pq` 当 PQ 片源、`hdr-compute-peak=no`。修复前 mpv 对 HDR 片源在 `auto` 下用 **gamma2.2** 编码（按 gamma2.2 解回线性光再编码成 sRGB 与修复后最大差 0.65/255；按 BT.1886 解差 8.8，可排除）——即**色调映射本身不变，只换了输出编码**，线性光逐块一致（Y=64：0.0160 / 0.0161；Y=128：0.5089 / 0.5095），修复后单调、0..255 不压缩。修复前 HDR 暗部同样被抬（Y=32：10 → 2），只是不如 SDR 明显。另：Y≥150（PQ ≈400 nit 以上）四块修复前后都直接截到 255——合成片不带母版元数据且探针关了动态峰值，修复前后一致、与本 bug 无关，真实 HDR 片源的高光表现未单独验证。
+  - **iOS 模拟器（FushiProbe，iPhone 17 Pro / iOS 26.5）**：修复前 A=B=0/9/19/28/…，与 macOS 修复前一致，`simctl io screenshot` 屏幕读数也相同——确认 iOS 合成面同样把纹理按 sRGB 原样上屏。**但修复在模拟器上不生效**：模拟器里 media_kit 强制 `TextureSW`（`VideoOutput.swift` 的 `isSimulator`，`MPV_RENDER_API_TYPE_SW`），mpv 软件渲染器不做任何色彩管理——`target-trc=srgb` 下发成功但输出不变，HDR 连色调映射都不做（PQ 码值原样显示）。生产代码从不关闭 `enableHardwareAcceleration`，软件渲染只出现在模拟器，用户的 iPhone 走 `TextureHW`（GLES，与 macOS 同一套 mpv GPU 渲染器），修复按理生效，**但只有真机能验证，尚未验证**。模拟器软件渲染不做色调映射是既有的开发环境限制，不影响用户。

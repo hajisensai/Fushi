@@ -185,9 +185,116 @@ VideoAcquisitionReduction _onAiIntent(
       return _onAiChoose(idle, intent.patch, defaults);
     case VideoAcquisitionIntentKind.provide:
       return _onAiProvide(idle, intent.patch, defaults);
+    case VideoAcquisitionIntentKind.recommend:
+      return _recommend(idle, intent.patch);
     case VideoAcquisitionIntentKind.unclear:
       return _unclear(idle);
   }
+}
+
+/// `recommend` = 问「哪个最好」。只在挑版本时有意义：AI 按用户说的条件给了
+/// `choiceIndex`（指向「就这个」或某个 `alt:N`）就推荐那张；没说条件就推荐资源
+/// 排序第一张能落地的卡（[rankResourceGroups] 已按偏好排好）。推荐的不是当前这
+/// 张就切过去展示，但**不提交**——下载 / 订阅仍要用户点「就这个」。
+VideoAcquisitionReduction _recommend(
+  VideoAcquisitionState state,
+  VideoAcquisitionIntentPatch patch,
+) {
+  if (state.stage != VideoAcquisitionStage.awaitingResourceConfirm) {
+    return _unclear(state);
+  }
+  final int? byCriteria = _recommendedByCriteria(state, patch.choiceIndex);
+  final ({int index, VideoAcquisitionResourcePlan plan})? target =
+      byCriteria != null
+      ? _indexedPlan(state, byCriteria)
+      : _findPlan(state, 0);
+  if (target == null) return _unclear(state);
+  final bool current = target.index == state.groupCursor;
+  final VideoAcquisitionSay say = VideoAcquisitionSay(
+    VideoAcquisitionSayKind.recommendation,
+    args: <String, Object?>{
+      'index': target.index + 1,
+      'current': current,
+      'byCriteria': byCriteria != null,
+    },
+  );
+  if (current) return (_sayThenReask(state, say), _noEffects);
+  return (_presentPlan(state.say(say), target.index, target.plan), _noEffects);
+}
+
+/// `choiceIndex` → 卡下标：「就这个」= 当前卡，`alt:N` = 第 N 张；其余选项
+/// （换一个 / 取消 / 只下最新一集…）不是版本，不算推荐。
+int? _recommendedByCriteria(VideoAcquisitionState state, int? choiceIndex) {
+  final VideoAcquisitionQuestion? question = state.question;
+  if (question == null ||
+      question.slot != VideoAcquisitionSlot.resource ||
+      choiceIndex == null ||
+      choiceIndex < 0 ||
+      choiceIndex >= question.options.length) {
+    return null;
+  }
+  final String id = question.options[choiceIndex].id;
+  if (id == kVideoAcquisitionOptionConfirm) return state.groupCursor;
+  if (!id.startsWith(kVideoAcquisitionOptionAltPrefix)) return null;
+  return int.tryParse(id.substring(kVideoAcquisitionOptionAltPrefix.length));
+}
+
+({int index, VideoAcquisitionResourcePlan plan})? _indexedPlan(
+  VideoAcquisitionState state,
+  int index,
+) {
+  final VideoAcquisitionResourcePlan? plan = _planAt(state, index);
+  return plan == null ? null : (index: index, plan: plan);
+}
+
+/// 给意图解析看的候选版本：正在挑版本时，问题里每个代表版本的选项（「就这个」=
+/// 当前卡、`alt:N`）各一条，带上让 AI 能比较「哪个更小 / 做种更多」的事实。
+/// 选项本身没有 label（页面按 i18n 渲染），不给这份 AI 只能看见 `confirm` /
+/// `alt:3` 这种 id，回答不了「哪个最好」（BUG-2933）。不在挑版本时为空。
+List<Map<String, Object?>> videoAcquisitionCandidateContext(
+  VideoAcquisitionState state,
+) {
+  final VideoAcquisitionQuestion? question = state.question;
+  if (state.stage != VideoAcquisitionStage.awaitingResourceConfirm ||
+      question == null ||
+      question.slot != VideoAcquisitionSlot.resource) {
+    return const <Map<String, Object?>>[];
+  }
+  return <Map<String, Object?>>[
+    for (int i = 0; i < question.options.length; i++)
+      ?_candidateOf(state, i, question.options[i].id),
+  ];
+}
+
+Map<String, Object?>? _candidateOf(
+  VideoAcquisitionState state,
+  int optionIndex,
+  String optionId,
+) {
+  final int? index = optionId == kVideoAcquisitionOptionConfirm
+      ? state.groupCursor
+      : optionId.startsWith(kVideoAcquisitionOptionAltPrefix)
+      ? int.tryParse(
+          optionId.substring(kVideoAcquisitionOptionAltPrefix.length),
+        )
+      : null;
+  if (index == null) return null;
+  final VideoAcquisitionResourcePlan? plan = _planAt(state, index);
+  if (plan == null) return null;
+  final VideoResourceVersionGroup group = plan.group;
+  return <String, Object?>{
+    'optionIndex': optionIndex,
+    'rank': index + 1,
+    'current': index == state.groupCursor,
+    'releaseGroup': group.releaseGroup,
+    'resolution': group.resolution,
+    'source': videoResourceSourceTag(group),
+    'provider': group.providerId,
+    'seeders': group.bestSeeders,
+    'bytesPerEpisode': estimatedBytesPerEpisode(group),
+    'episodes': plan.picks.length,
+    'batch': plan.usesBatch,
+  };
 }
 
 /// `choose` = 在回答当前问题：等价于点了 `question.options[choiceIndex]`。
@@ -738,6 +845,10 @@ VideoAcquisitionReduction _onDetailsLoaded(
   final VideoAiringStatus? airing = work?.airingStatus;
   final VideoAcquisitionState next = state.copyWith(
     stage: VideoAcquisitionStage.collectingSlots,
+    // 资源搜索 / 订阅都按这份身份走：搜索列表项的别名可能只有元数据的风格化
+    // 写法（TMDB `FX Senshi KURUMICHAN`，Nyaa 0 条），用详情的罗马字 / 英文名
+    // 补齐——与资源搜索页的别名补齐端口同一条判据（BUG-2794 / BUG-2854）。
+    chosenItem: item.withReference(item.reference.withWorkLatinTitles(work)),
     work: work,
     airing: airing,
     clearAiring: airing == null,
@@ -1183,6 +1294,17 @@ VideoAcquisitionReduction _applyChoice(
         kVideoAcquisitionOptionCancel => _cancel(state),
         _ => (state, _noEffects),
       };
+    case VideoAcquisitionSlot.franchiseFallback:
+      if (optionId == kVideoAcquisitionOptionCancel) return _cancel(state);
+      if (optionId != kVideoAcquisitionOptionContinue) {
+        return (state, _noEffects);
+      }
+      return _advance(
+        state.copyWith(
+          slots: state.slots.copyWith(scope: VideoAcquisitionScope.work),
+        ),
+        defaults,
+      );
     case VideoAcquisitionSlot.resolutionFallback:
       if (optionId == kVideoAcquisitionOptionCancel) return _cancel(state);
       return _refilter(
@@ -1876,6 +1998,7 @@ VideoAcquisitionReduction _startFranchise(VideoAcquisitionState state) {
       .copyWith(
         stage: VideoAcquisitionStage.resolvingFranchise,
         clearQuestion: true,
+        clearFranchiseDraft: true,
         busy: true,
       );
   return (
@@ -1883,6 +2006,22 @@ VideoAcquisitionReduction _startFranchise(VideoAcquisitionState state) {
     <VideoAcquisitionEffect>[VideoAcquisitionLoadFranchiseEffect(item)],
   );
 }
+
+/// 系列里属于用户要的范围（整套 / 只要剧场版 / 只要剧集）的那些作品。
+List<VideoDiscoveryItem> _franchiseMembers(
+  VideoFranchise? franchise,
+  VideoAcquisitionScope scope,
+) => franchise == null
+    ? const <VideoDiscoveryItem>[]
+    : <VideoDiscoveryItem>[
+        if (scope != VideoAcquisitionScope.franchiseMovies) ...franchise.series,
+        if (scope != VideoAcquisitionScope.franchiseSeries) ...franchise.movies,
+      ];
+
+int _countKind(List<VideoDiscoveryItem> items, VideoMetadataMediaKind kind) =>
+    items
+        .where((VideoDiscoveryItem item) => item.reference.mediaKind == kind)
+        .length;
 
 VideoAcquisitionReduction _onFranchiseLoaded(
   VideoAcquisitionState state,
@@ -1893,67 +2032,75 @@ VideoAcquisitionReduction _onFranchiseLoaded(
     return (state, _noEffects);
   }
   final VideoDiscoveryItem anchor = state.chosenItem!;
-  final VideoFranchise? franchise = event.franchise;
   final VideoAcquisitionScope scope = state.slots.scope;
-  final List<VideoDiscoveryItem> members = franchise == null
-      ? const <VideoDiscoveryItem>[]
-      : <VideoDiscoveryItem>[
-          if (scope != VideoAcquisitionScope.franchiseMovies)
-            ...franchise.series,
-          if (scope != VideoAcquisitionScope.franchiseSeries)
-            ...franchise.movies,
-        ];
+  // 分批：每一批交的是「到目前为止」的全部，与已收到的（含 TMDB / 联网补全）合并
+  // 去重；草稿不带续查入口，合并结果的 `more` 就是这一批的。
+  final VideoFranchise? franchise = mergeVideoFranchises(<VideoFranchise?>[
+    state.franchiseDraft,
+    event.franchise,
+  ]);
+  final Future<VideoFranchise> Function()? more = franchise?.more;
+  if (franchise != null && more != null) {
+    // 还没查完：报一次进度、接着查下一批，不在半张清单上开始逐部找资源。
+    final List<VideoDiscoveryItem> soFar = _franchiseMembers(franchise, scope);
+    return (
+      state
+          .say(
+            VideoAcquisitionSay(
+              VideoAcquisitionSayKind.franchiseProgress,
+              args: <String, Object?>{
+                'name': franchise.name,
+                'series': _countKind(soFar, VideoMetadataMediaKind.tv),
+                'movies': _countKind(soFar, VideoMetadataMediaKind.movie),
+              },
+            ),
+          )
+          .copyWith(franchiseDraft: franchise.withoutMore()),
+      <VideoAcquisitionEffect>[VideoAcquisitionContinueFranchiseEffect(more)],
+    );
+  }
+  final VideoAcquisitionState settled = state.copyWith(
+    clearFranchiseDraft: true,
+  );
+  final List<VideoDiscoveryItem> members = _franchiseMembers(franchise, scope);
   final bool onlyAnchor =
       members.length == 1 &&
       _sameWork(members.single.reference, anchor.reference);
   if (members.isEmpty || onlyAnchor) {
-    // 没有更多同系列作品：说一声，按单部继续（不让整条流程失败）。
-    final VideoAcquisitionState single = state
-        .copyWith(
-          busy: false,
-          slots: state.slots.copyWith(scope: VideoAcquisitionScope.work),
-        )
-        .say(
-          VideoAcquisitionSay(
-            VideoAcquisitionSayKind.franchiseNotFound,
-            args: <String, Object?>{'title': anchor.reference.title},
-          ),
-        );
-    return _advance(single, defaults);
+    return _franchiseHasNothingMore(settled, franchise, defaults);
   }
   final List<VideoAcquisitionFranchiseEntry> entries =
       <VideoAcquisitionFranchiseEntry>[
         for (final VideoDiscoveryItem item in members)
           VideoAcquisitionFranchiseEntry(item: item),
       ];
-  final VideoAcquisitionState next = state
-      .say(
-        VideoAcquisitionSay(
-          VideoAcquisitionSayKind.franchiseFound,
-          args: <String, Object?>{
-            'name': franchise!.name,
-            'series': entries
-                .where(
-                  (VideoAcquisitionFranchiseEntry e) =>
-                      e.item.reference.mediaKind == VideoMetadataMediaKind.tv,
+  final VideoAcquisitionState found = settled.say(
+    VideoAcquisitionSay(
+      VideoAcquisitionSayKind.franchiseFound,
+      args: <String, Object?>{
+        'name': franchise!.name,
+        'series': _countKind(members, VideoMetadataMediaKind.tv),
+        'movies': _countKind(members, VideoMetadataMediaKind.movie),
+      },
+    ),
+  );
+  // 解析因失败停在半路：照常往下走（已收到的照样要下），但不能让用户把它当成
+  // 「全部」（BUG-2935）。
+  final VideoAcquisitionState next =
+      (franchise.truncated
+              ? found.say(
+                  VideoAcquisitionSay(
+                    VideoAcquisitionSayKind.franchiseTruncated,
+                    args: <String, Object?>{'name': franchise.name},
+                  ),
                 )
-                .length,
-            'movies': entries
-                .where(
-                  (VideoAcquisitionFranchiseEntry e) =>
-                      e.item.reference.mediaKind ==
-                      VideoMetadataMediaKind.movie,
-                )
-                .length,
-          },
-        ),
-      )
-      .copyWith(
-        stage: VideoAcquisitionStage.planningFranchise,
-        franchiseName: franchise.name,
-        franchiseEntries: entries,
-        busy: true,
-      );
+              : found)
+          .copyWith(
+            stage: VideoAcquisitionStage.planningFranchise,
+            franchiseName: franchise.name,
+            franchiseEntries: entries,
+            busy: true,
+          );
   return (
     next,
     <VideoAcquisitionEffect>[
@@ -1964,6 +2111,70 @@ VideoAcquisitionReduction _onFranchiseLoaded(
     ],
   );
 }
+
+/// 系列里没有锚点以外的、用户要的那部分。
+///
+/// 只有清单**走完了**且锚点本身就属于用户要的范围（整套 / 要剧场版而锚点是剧场版 /
+/// 要剧集而锚点是剧集）时，「只下这一部」才就是用户要的东西，说一声直接按单部
+/// 继续。否则——「全部哆啦A梦剧场版」却只剩锚点那部 TV（1979 版 1700+ 集），
+/// 或资料源出错 / 不可用、根本不知道有没有——静默降级就是替用户下了别的东西，
+/// 必须先问（BUG-2936）。
+VideoAcquisitionReduction _franchiseHasNothingMore(
+  VideoAcquisitionState state,
+  VideoFranchise? franchise,
+  VideoAcquisitionDefaults defaults,
+) {
+  final VideoMediaReference anchor = state.chosenItem!.reference;
+  final bool known = franchise != null && !franchise.truncated;
+  if (known && _anchorFitsScope(anchor, state.slots.scope)) {
+    final VideoAcquisitionState single = state
+        .copyWith(
+          busy: false,
+          slots: state.slots.copyWith(scope: VideoAcquisitionScope.work),
+        )
+        .say(
+          VideoAcquisitionSay(
+            VideoAcquisitionSayKind.franchiseNotFound,
+            args: <String, Object?>{'title': anchor.title},
+          ),
+        );
+    return _advance(single, defaults);
+  }
+  VideoAcquisitionState next = state.copyWith(busy: false);
+  if (!known) {
+    next = next.say(
+      VideoAcquisitionSay(
+        VideoAcquisitionSayKind.franchiseUnavailable,
+        args: <String, Object?>{'title': anchor.title},
+      ),
+    );
+  }
+  return (
+    _ask(
+      next,
+      VideoAcquisitionQuestion(
+        slot: VideoAcquisitionSlot.franchiseFallback,
+        options: const <VideoAcquisitionOption>[
+          VideoAcquisitionOption(id: kVideoAcquisitionOptionContinue),
+          VideoAcquisitionOption(id: kVideoAcquisitionOptionCancel),
+        ],
+        args: <String, Object?>{'title': anchor.title},
+      ),
+    ),
+    _noEffects,
+  );
+}
+
+bool _anchorFitsScope(
+  VideoMediaReference anchor,
+  VideoAcquisitionScope scope,
+) => switch (scope) {
+  VideoAcquisitionScope.franchiseMovies =>
+    anchor.mediaKind == VideoMetadataMediaKind.movie,
+  VideoAcquisitionScope.franchiseSeries =>
+    anchor.mediaKind == VideoMetadataMediaKind.tv,
+  VideoAcquisitionScope.franchise || VideoAcquisitionScope.work => true,
+};
 
 bool _sameWork(VideoMediaReference a, VideoMediaReference b) =>
     (a.providerId == b.providerId && a.mediaId == b.mediaId) ||
@@ -2113,14 +2324,20 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   }
   final bool owned =
       event.presence?.inLibrary == true || event.alreadySubscribed;
+  // 与单作品路径同一份补齐：订阅行的检索词 / 身份要带上详情的拉丁标题。
+  final VideoDiscoveryItem item = entry.item.withReference(
+    reference.withWorkLatinTitles(event.work),
+  );
   if (found == null) {
     return entry.copyWith(
+      item: item,
       status: VideoAcquisitionFranchiseEntryStatus.noResource,
       selected: false,
       owned: owned,
     );
   }
   return entry.copyWith(
+    item: item,
     status: VideoAcquisitionFranchiseEntryStatus.ready,
     mode: found.mode,
     plan: found.plan,

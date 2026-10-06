@@ -11,6 +11,7 @@ import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
 /// 制卡静图格式 → 降采样器的编码枚举（两层各自的词汇，在此处一次性对齐）。
@@ -470,7 +471,15 @@ class ImmersionMiningEngine {
     // 不能因此整张卡失败。
     // galgame（source: game）只会以「外部已给好的片段」进来（窗口录制 + 语音混流），
     // 它没有可裁的源（hasRange 恒 false），所以下面的判据自然只认 providedVideo。
-    final bool wantsSynchronizedVideo = req.imageMode.isVideoClip &&
+    //
+    // 模式按**目标模板**生效（[resolveTargetMiningImageMode]）：模板不原样渲染图片字段
+    // 时同步片段卡什么都显示不出来，改走动图阶梯。外部已给好媒体字节的来源（Netflix
+    // 录制、galgame 窗口录制）由产字节的一侧在录制前判过，这里不再改它的模式——片段
+    // 已经录成了，事后改模式只会让同一个文件既当封面又当音频的契约错位。
+    final VideoMiningImageMode imageMode = req.providedCoverBytes == null
+        ? await resolveTargetMiningImageMode(req.imageMode, repo: repo)
+        : req.imageMode;
+    final bool wantsSynchronizedVideo = imageMode.isVideoClip &&
         (req.source == AnkiMiningSource.video ||
             req.source == AnkiMiningSource.game);
     // 抽取用的是媒体文件自己的时间轴：缓冲副本的 0 点是播放器轴上的某一刻
@@ -670,7 +679,7 @@ class ImmersionMiningEngine {
     }
 
     if (coverPath == null && !synchronizedVideo) {
-      switch (req.imageMode) {
+      switch (imageMode) {
         case VideoMiningImageMode.gif:
         // 普通视频的同步模式已在外层分流；保留其他来源既有的动图降级阶梯。
         case VideoMiningImageMode.videoClip:

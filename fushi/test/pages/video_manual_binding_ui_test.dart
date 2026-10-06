@@ -132,8 +132,13 @@ void main() {
     expect(selected, isNull);
     expect(runner.boundLookups, isEmpty);
     expect(find.text('MAL · 42'), findsOneWidget);
-    await tester.tap(
-        find.byKey(const ValueKey<String>('video-source-candidate-mal-tv-42')));
+    final Finder candidate =
+        find.byKey(const ValueKey<String>('video-source-candidate-mal-tv-42'));
+    // 重设计后对话框页眉 / 间距更大，800×600 测试窗里候选行落在可滚动结果区的
+    // 视口外：先滚进来再点（用户同样要滚到它）。
+    await tester.ensureVisible(candidate);
+    await tester.pumpAndSettle();
+    await tester.tap(candidate);
     await tester.pumpAndSettle();
     expect(selected?.lookup.externalId, '42');
   });

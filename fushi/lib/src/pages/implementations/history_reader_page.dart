@@ -5,6 +5,7 @@ import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// A default page for a [ReaderMediaSource]'s tab body content when selected
 /// as a source in the main menu.
@@ -63,30 +64,36 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
   @override
   Widget buildHistory(List<MediaItem> items) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return RawScrollbar(
-      thumbVisibility: true,
-      thickness: 3,
-      controller: mediaType.scrollController,
-      child: LayoutBuilder(
-        builder: (context, constraints) => GridView.builder(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            tokens.spacing.page * 3,
-            tokens.spacing.page,
-            tokens.spacing.page,
+    // 2026-10 动效重做：首屏卡片错峰淡入，滚动带出的卡瞬间出现。
+    return FushiEntranceScope(
+      child: RawScrollbar(
+        thumbVisibility: true,
+        thickness: 3,
+        controller: mediaType.scrollController,
+        child: LayoutBuilder(
+          builder: (context, constraints) => GridView.builder(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.page * 3,
+              tokens.spacing.page,
+              tokens.spacing.page,
+            ),
+            gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: _gridExtent(context, constraints),
+              childAspectRatio: mediaSource.aspectRatio,
+              mainAxisSpacing: tokens.spacing.gap + tokens.spacing.gap / 2,
+              crossAxisSpacing: tokens.spacing.gap + tokens.spacing.gap / 2,
+            ),
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            controller: mediaType.scrollController,
+            itemCount: items.length,
+            itemBuilder: (context, index) => FushiStaggeredEntrance(
+              index: index,
+              child: buildMediaItem(items[index]),
+            ),
           ),
-          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: _gridExtent(context, constraints),
-            childAspectRatio: mediaSource.aspectRatio,
-            mainAxisSpacing: tokens.spacing.gap + tokens.spacing.gap / 2,
-            crossAxisSpacing: tokens.spacing.gap + tokens.spacing.gap / 2,
-          ),
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          controller: mediaType.scrollController,
-          itemCount: items.length,
-          itemBuilder: (context, index) => buildMediaItem(items[index]),
         ),
       ),
     );
@@ -150,7 +157,7 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
             ),
           );
         }),
-        LinearProgressIndicator(
+        FushiLinearProgressIndicator(
           value: (item.position / item.duration).isNaN ||
                   (item.position / item.duration) == double.infinity ||
                   (item.position == 0 && item.duration == 0)

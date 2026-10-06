@@ -40,6 +40,12 @@ DownloadTaskEntry _external(String id, String title) => DownloadTaskEntry(
 Widget _host(VideoDownloadJobsPanel panel) => TranslationProvider(
   child: MaterialApp(
     theme: ThemeData.dark(useMaterial3: true),
+    // MD3 Expressive 波浪进度在确定态（0<value<1）也持续推相位，pumpAndSettle
+    // 永远等不到静止；「减少动态效果」下它退回静止直线，面板行为不受影响。
+    builder: (BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: true),
+      child: child!,
+    ),
     home: Scaffold(body: panel),
   ),
 );

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_expansion_state.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 /// Shared disclosure for schema sections and complex body forms.
@@ -113,7 +114,13 @@ class _SettingsSectionContainerState extends State<SettingsSectionContainer> {
     return AdaptiveSettingsSection(
       title: widget.title,
       summary: widget.summary,
-      titlePlacement: SettingsSectionTitlePlacement.inside,
+      // 「玻璃」设计系统：不可折叠分组的标题在卡片上方（Apple inset grouped /
+      // macOS 系统设置的分组标题），可折叠分组仍把披露头放在卡片里。
+      titlePlacement: isGlassDesign(context) &&
+              !isCupertinoPlatform(context) &&
+              !collapsible
+          ? SettingsSectionTitlePlacement.outside
+          : SettingsSectionTitlePlacement.inside,
       collapsible: collapsible,
       expanded:
           debugSettingsForceExpandAllSections ||

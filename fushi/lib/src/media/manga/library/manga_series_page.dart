@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
@@ -13,6 +14,7 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/online/online_shelf_removal.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
@@ -345,18 +347,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               children: <Widget>[
                 Text(lines.join(' · '), style: theme.textTheme.bodyMedium),
                 const SizedBox(height: 8),
-                LinearProgressIndicator(
+                FushiLinearProgressIndicator(
                   value: job == null || total <= 0 ? null : done / total,
                 ),
               ],
             ),
           ),
           if (job != null)
-            IconButton(
+            FushiIconButtonControl(
               key: const ValueKey<String>('manga_series_ocr_cancel'),
               tooltip: t.dialog_cancel,
               onPressed: () => unawaited(_cancelOcr()),
-              icon: const Icon(Icons.close),
+              icon: const FushiIcon(Icons.close),
             ),
         ],
       ),
@@ -412,7 +414,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.enqueue', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
     await _refreshDownloadState();
@@ -426,14 +431,41 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     await _refreshDownloadState();
   }
 
+  /// 删除某章的本地下载。
+  ///
+  /// 2026-10 体验优化：原先菜单一点即删整章页图（重下要再跑一遍网络 + OCR），
+  /// 先确认（写明章名），删完给 Toast。
   Future<void> _deleteChapterDownload(OnlineMangaChapter chapter) async {
     final EpubBookRow? row = _row;
     if (row == null) return;
+    final bool confirmed = await showAppDialog<bool>(
+          context: context,
+          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+            title: Text(t.manga_chapter_download_delete_action),
+            content: Text(chapter.name),
+            actions: <Widget>[
+              adaptiveDialogAction(
+                context: dialogContext,
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: dialogContext,
+                isDestructiveAction: true,
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(t.dialog_delete),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed || !mounted) return;
     try {
       await deleteChapterDownload(
         await MangaStorage.bookPath(row.bookKey),
         chapter.key,
       );
+      if (mounted) FushiToast.show(msg: t.storage_entry_delete_done);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaSeriesPage.deleteDownload',
@@ -441,7 +473,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         stack,
       );
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
     await _refreshDownloadState();
@@ -492,7 +527,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.downloadAll', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
     await _refreshDownloadState();
@@ -518,7 +556,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final _LockedChapterChoice?
     choice = await showAppDialog<_LockedChapterChoice>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         key: const ValueKey<String>('manga_chapter_locked_dialog'),
         title: Text(t.manga_chapter_locked_title),
         content: Text(
@@ -608,7 +646,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on OnlineMangaUnavailable catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.sibling', error, stack);
       if (mounted) {
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
       return;
     } finally {
@@ -654,7 +695,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       await (widget.openExternal ?? _launchExternal)(url);
     } on Object catch (error) {
       if (!mounted) return;
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: describeOnlineSourceError(error),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -825,6 +869,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             engine: engine,
             events: mangaOcrBackgroundEvents(spec),
             focus: focus,
+            follower: mangaOcrJobFollower(spec),
           ),
           mangaJsonPath: mangaChapterJsonFile(chapterDir).path,
         ),
@@ -869,7 +914,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.subscribe', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -1044,20 +1092,27 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       );
       if (!mounted) return;
       setState(() => _refreshError = error);
+      // 手点刷新才补 toast：提示条可能早已挂着，没有 toast 等于点了没反应。
       if (!silent) {
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: _loadErrorText(error),
+          severity: ToastSeverity.error,
+        );
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.refresh', error, stack);
       if (!mounted) return;
       final OnlineMangaUnavailable wrapped = OnlineMangaUnavailable(
         OnlineMangaUnavailableReason.runtimeFailure,
-        '$error',
+        describeOnlineSourceError(error),
         cause: error,
       );
       setState(() => _refreshError = wrapped);
       if (!silent) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: wrapped.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -1080,7 +1135,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.add', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1150,7 +1208,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.remove', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1228,12 +1289,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       if (mounted) {
         _challengeRetry = () => _openChapterAt(index);
         setState(() => _refreshError = error);
-        FushiToast.show(msg: error.message, severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: error.userMessage,
+          severity: ToastSeverity.error,
+        );
       }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log('MangaSeriesPage.openChapter', error, stack);
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(error),
+          severity: ToastSeverity.error,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1361,36 +1428,36 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       actions: <Widget>[
         // 源站网页入口：只有在线源（Mihon）有网页可去，本地卷 / 互联对端没有。
         if (entry != null && adapter is OnlineMangaWebUrlCapable)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_open_website'),
             tooltip: t.mihon_source_website_open,
             onPressed: () => unawaited(_openWebsite(adapter, entry)),
-            icon: const Icon(Icons.open_in_new),
+            icon: const FushiIcon(Icons.open_in_new),
           ),
         // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
         // 不必先点一条锁章再从弹窗里找。
         if (login != null)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_login'),
             tooltip: t.mihon_source_login,
             onPressed: _busy || _refreshing
                 ? null
                 : () => unawaited(_loginToSource(login)),
-            icon: const Icon(Icons.login),
+            icon: const FushiIcon(Icons.login),
           ),
         if (canSubscribe)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_subscribe'),
             tooltip: entry.subscribed
                 ? t.manga_series_unsubscribe
                 : t.manga_series_subscribe,
             onPressed: _busy ? null : () => unawaited(_toggleSubscription()),
-            icon: Icon(
+            icon: FushiIcon(
               entry.subscribed ? Icons.bookmark : Icons.bookmark_add_outlined,
             ),
           ),
         if (entry != null)
-          IconButton(
+          FushiIconButtonControl(
             key: const ValueKey<String>('manga_series_refresh'),
             tooltip: t.manga_series_refresh,
             onPressed: _refreshing
@@ -1400,9 +1467,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
                 ? const SizedBox(
                     width: 20,
                     height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.refresh),
+                : const FushiIcon(Icons.refresh),
           ),
         if (canSubscribe && entry.subscribed)
           FushiOverflowMenu<String>(
@@ -1525,6 +1592,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
+  /// 可读文案：桥接层 message 往往是 `Exception: ...` 原串，经
+  /// [OnlineMangaUnavailable.userMessage] 归一（2026-10 体验优化）；原串只进
+  /// 「查看详情」。
+  static String _loadErrorText(OnlineMangaUnavailable error) =>
+      error.userMessage;
+
   /// 一点内容都拉不到时的完整错误视图。
   ///
   /// 三件事缺一不可（BUG-1767 用例逐条盯着）：**原因可见**（把桥接层给的
@@ -1547,8 +1620,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
+            // 原始异常（含堆栈）在「查看详情」对话框里，这里给可读短句。
             SelectableText(
-              error.message,
+              _loadErrorText(error),
               style: theme.textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
@@ -1558,15 +1632,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               alignment: WrapAlignment.center,
               children: <Widget>[
                 if (retryable)
-                  FilledButton(
+                  FushiFilledButton.icon(
                     key: const ValueKey<String>('manga_series_error_retry'),
                     onPressed: _refreshing
                         ? null
                         : () => unawaited(_refreshFromSource()),
-                    child: Text(t.retry),
+                    icon: const FushiIcon(Icons.refresh_rounded),
+                    label: Text(t.retry),
                   ),
                 _challengeAction(error),
-                TextButton(
+                FushiTextButton(
                   key: const ValueKey<String>('manga_series_error_details'),
                   onPressed: () => unawaited(
                     showErrorDetails(
@@ -1598,7 +1673,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           ),
           const SizedBox(height: 8),
           SelectableText(
-            '$error',
+            describeOnlineSourceError(error),
             style: Theme.of(context).textTheme.bodySmall,
             textAlign: TextAlign.center,
           ),
@@ -1634,7 +1709,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return FushiCard(
       child: Row(
         children: <Widget>[
-          Icon(Icons.cloud_off_outlined, color: theme.colorScheme.error),
+          FushiIcon(Icons.cloud_off_outlined, color: theme.colorScheme.error),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1650,14 +1725,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             ),
           ),
           if (retryable)
-            TextButton(
+            FushiTextButton(
               onPressed: _refreshing
                   ? null
                   : () => unawaited(_refreshFromSource()),
               child: Text(t.retry),
             ),
           _challengeAction(error),
-          TextButton(
+          FushiTextButton(
             key: const ValueKey<String>('manga_series_error_details'),
             onPressed: () => unawaited(
               showErrorDetails(
@@ -1712,10 +1787,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               'MangaSeriesPage.coverDecode',
               '$resolved: $error',
             );
-            return const ColoredBox(
-              color: Color(0xff303030),
-              child: Icon(Icons.menu_book_outlined),
-            );
+            return _coverPlaceholder(context);
           },
         );
       }
@@ -1725,9 +1797,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       final Widget Function(BuildContext)? builder = target.remoteCoverBuilder;
       if (builder != null) return builder(context);
     }
-    return const ColoredBox(
-      color: Color(0xff303030),
-      child: Icon(Icons.menu_book_outlined),
+    return _coverPlaceholder(context);
+  }
+
+  /// 无封面 / 封面解码失败的占位块：跟随主题的中性底（深浅色都可读），
+  /// 不再是写死的深灰 #303030（浅色主题下是突兀的黑块、图标也看不清）。
+  Widget _coverPlaceholder(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return ColoredBox(
+      color: cs.surfaceContainerHighest,
+      child: FushiIcon(Icons.menu_book_outlined, color: cs.onSurfaceVariant),
     );
   }
 
@@ -1736,10 +1815,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final bool inLibrary = _row != null;
     if (_isLocal) {
       return <Widget>[
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: const ValueKey<String>('manga_series_open_local'),
           onPressed: _busy ? null : () => unawaited(_openLocalBook()),
-          icon: const Icon(Icons.play_arrow),
+          icon: const FushiIcon(Icons.play_arrow),
           label: Text(t.book_continue_reading),
         ),
         // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
@@ -1752,12 +1831,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         ? entry.chapters[resumeIndex]
         : null;
     return <Widget>[
-        FilledButton.icon(
+        FushiFilledButton.icon(
           key: const ValueKey<String>('manga_series_continue'),
           onPressed: resumeChapter == null || _busy
               ? null
               : () => unawaited(_openChapterAt(resumeIndex)),
-          icon: const Icon(Icons.play_arrow),
+          icon: const FushiIcon(Icons.play_arrow),
           label: Text(
             resumeChapter == null
                 ? t.book_continue_reading
@@ -1767,25 +1846,25 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（用户诉求：加了
         // 要能取消）。移出走书架同一条 deleteBook 路径，连已下载章节一起删。
         if (inLibrary)
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_remove_from_bookshelf'),
             onPressed: _busy ? null : () => unawaited(_removeFromLibrary()),
-            icon: const Icon(Icons.library_add_check),
+            icon: const FushiIcon(Icons.library_add_check),
             label: Text(t.manga_series_remove_from_bookshelf),
           )
         else
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_add_to_bookshelf'),
             onPressed: _busy ? null : () => unawaited(_addToLibrary()),
-            icon: const Icon(Icons.library_add_outlined),
+            icon: const FushiIcon(Icons.library_add_outlined),
             label: Text(t.mihon_add_to_bookshelf),
           ),
         // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
         if (inLibrary) ...<Widget>[
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_download_all'),
             onPressed: _busy ? null : () => unawaited(_downloadAll()),
-            icon: const Icon(Icons.download_outlined),
+            icon: const FushiIcon(Icons.download_outlined),
             label: Text(t.manga_series_download_all),
           ),
           FushiSelectableChip(
@@ -1795,10 +1874,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             selected: _appModelOrNull?.mangaDownloadAutoOcr ?? false,
             onSelected: (bool value) => unawaited(_setAutoOcr(value)),
           ),
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             key: const ValueKey<String>('manga_series_ocr_all_downloaded'),
             onPressed: _busy ? null : () => unawaited(_ocrAllDownloaded()),
-            icon: const Icon(Icons.document_scanner_outlined),
+            icon: const FushiIcon(Icons.document_scanner_outlined),
             label: Text(t.manga_series_ocr_all_downloaded),
           ),
           _ocrSettingsButton(),
@@ -1811,10 +1890,10 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 时用户只看到一条红 toast，不知道该去哪配。返回后重建：偏好是 AppModel 上的
   /// 状态，下一次「识别」按新偏好解析。
   Widget _ocrSettingsButton() {
-    return OutlinedButton.icon(
+    return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_series_ocr_settings'),
       onPressed: () => unawaited(_openOcrSettings()),
-      icon: const Icon(Icons.tune_outlined),
+      icon: const FushiIcon(Icons.tune_outlined),
       label: Text(t.manga_ocr_settings_open),
     );
   }
@@ -1841,7 +1920,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         FushiCard(
           padding: EdgeInsets.zero,
           child: FushiListItem(
-            leading: const Icon(Icons.auto_stories_outlined),
+            leading: const FushiIcon(Icons.auto_stories_outlined),
             title: Text(t.manga_series_page_count),
             trailing: Text('${row.chapterCount}'),
           ),

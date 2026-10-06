@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
+    show FushiLinearProgressIndicator;
 
 /// 系统全局查词冷启动占位：旧实现在别的 app 画面正中裸画大转圈、且加载期间关不掉。
 void main() {
@@ -14,7 +16,9 @@ void main() {
         home: Scaffold(backgroundColor: Colors.transparent, body: child),
       );
 
-  Finder pill() => find.byType(LinearProgressIndicator);
+  // 胶囊里的进度条走共享的 FushiLinearProgressIndicator（表达式进度），
+  // 不再是裸 LinearProgressIndicator。
+  Finder pill() => find.byType(FushiLinearProgressIndicator);
 
   testWidgets('快速冷启动不闪任何加载态；慢了才在顶部居中淡入小胶囊', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 800);

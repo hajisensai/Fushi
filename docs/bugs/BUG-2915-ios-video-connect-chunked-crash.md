@@ -1,0 +1,12 @@
+## BUG-2915 · iOS 播放 WebDAV/Emby 等 https 视频必崩：本地中继对 CONNECT 回了 transfer-encoding: chunked
+- **报告**：2026-10-03（用户：TestFlight 反馈 2 条——2.7.0 (14872) iPad11,2 iPadOS 26.6.1「Crash when trying to open any video file (I use webdav)」；2.7.0 (15037) iPhone18,3 iOS 27「emby 崩溃」）
+- **真实性**：✅ 真 bug。两份崩溃日志同栈：mpv 线程 `Avformat+0x191f8 ← Avformat+0x493cc ← Mbedtls×6 ← Avformat+0xc7130 ← Mpv`，`EXC_BAD_ACCESS KERN_INVALID_ADDRESS 0x20`，x0=0。拿随包 xcframework（`vendor-libmpv` / ffmpeg6.1.6-dovi，sha256 `00184863…` 与 Makefile 一致）反汇编定位：
+  - `0xc7130` = `tls_mbedtls.c` `tls_open` 里 `mbedtls_ssl_handshake` 循环（紧邻 `"mbedtls_ssl_setup returned %d"`，`mbedtls_ssl_set_bio(ctx=shr->tcp, 0xc730c, 0xc7360)`）；
+  - `0xc7360` = BIO recv 回调 → `ffurl_read(tcp)`，tcp 是 `httpproxy` 协议；
+  - `0x49388` 读 `ctx+0x10` 的 0x2000 缓冲、`+0x2010/+0x2018` 读写指针、`ffurl_read(ctx+0x8)` = `http.c` 的 `http_getc(s)` 读 `s->hd`；
+  - `0x191f8` = `ffurl_read(h)` 首条 `ldrb w8,[x0,#0x20]`（`h->flags`），h=NULL。
+  - 根因：`fushi/lib/src/utils/net/app_native_proxy.dart` `_connect`（原 `statusCode = 200; detachSocket()`）让 dart:io 写出默认头 `HTTP/1.1 200 OK … transfer-encoding: chunked`（探针实测原始字节）。RFC 9110 §9.3.6 禁止 2xx CONNECT 带 Transfer-Encoding/Content-Length。FFmpeg `http_proxy_open` → `http_read_header` 见到 chunked 置 `chunksize=0`，此后 TLS 握手经 `http_buf_read` 读隧道时把 ServerHello 二进制当「块长度行」解析 → 0 →「Last chunk received, closing conn」`ffurl_closep(&s->hd)` → mbedtls 再读一次 → `http_getc` → `ffurl_read(NULL)` 崩。native 播放的 https 流（WebDAV / Emby / 任何走 `AppNativeProxy` 的 https）在 ffmpeg 后端平台都经这条 CONNECT。
+  - 真 FFmpeg 复现（本机 `D:/APP/ffmpeg/bin/ffmpeg.exe` OpenSSL 后端，自签 https 源 + 按旧写法回 CONNECT 的 Dart 中继）：旧写法 `[httpproxy] Last chunk received, closing conn` → `[tls] IO error`；新写法 TLS 握手 `SSLOK`、`Input #0` 打开。OpenSSL 后端在第二次读前就报错返回，mbedtls（iOS 随包）会再读一次，才落成空指针。
+- **[x] ① 已修复** — `_connect` 改 `detachSocket(writeHeaders: false)` 后只写 `HTTP/1.1 200 Connection established\r\n\r\n`（`_connectEstablished`）；非 2xx 路径（403/502）仍走 HttpResponse 不受影响。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/net/app_native_proxy_diagnostics_test.dart`「hyper-util 的 CONNECT 隧道在本地中继上真的建得起来」追加整头逐字断言；变异实测：改回旧写法即红（Actual `HTTP/1.1 200 OK\r\ntransfer-encoding: chunked…`）。
+- **备注**：iOS 真机未复测（本机无 iOS 设备）；证据链为崩溃日志反汇编 + 真 FFmpeg 复现同一 httpproxy 状态机。Windows 随包 libmpv 走 curl 后端，不经 FFmpeg httpproxy，所以桌面没炸。

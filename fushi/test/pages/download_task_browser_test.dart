@@ -12,6 +12,8 @@ import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import '../helpers/glass_unwrap.dart';
 
 DownloadTaskEntry _task(
   String id, {
@@ -66,6 +68,13 @@ Widget _host(
     ),
   ),
 );
+
+/// 推过展开 / 折叠等一次性转场。在途任务的 MD3 Expressive 波浪进度条常驻
+/// 流动动画，列表里有进行中进度时 pumpAndSettle 永远不会返回。
+Future<void> _pumpPastTransitions(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
 
 void _viewport(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
@@ -255,7 +264,7 @@ void main() {
       _task('unknown', collectionKey: 'key', collectionTitle: 'Key Collection'),
     ];
     await tester.pumpWidget(_host(tasks));
-    await tester.pumpAndSettle();
+    await _pumpPastTransitions(tester);
     final Finder progressBar = find.byKey(
       const ValueKey<String>('download-group-progress-collection:key'),
     );
@@ -267,11 +276,11 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('download-group-collection:key')),
     );
-    await tester.pumpAndSettle();
+    await _pumpPastTransitions(tester);
     expect(find.text('half'), findsNothing);
     expect(progressBar, findsOneWidget);
     expect(
-      tester.widget<LinearProgressIndicator>(progressBar).value,
+      tester.widget<FushiLinearProgressIndicator>(progressBar).value,
       closeTo(0.375, 1e-9),
     );
     expect(find.text('38%'), findsOneWidget);
@@ -388,12 +397,12 @@ void main() {
           ),
         ], scale: scale),
       );
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
       expect(tester.takeException(), isNull);
       await tester.tap(
         find.byKey(const ValueKey<String>('download-task-toggle-long')),
       );
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
       expect(find.text('details-long'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -447,7 +456,7 @@ void main() {
         ),
       ], fontFamily: previewFont),
     );
-    await tester.pumpAndSettle();
+    await _pumpPastTransitions(tester);
     expect(tester.takeException(), isNull);
     final RenderRepaintBoundary boundary = tester
         .renderObject<RenderRepaintBoundary>(
@@ -537,7 +546,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(cardTaps, 0, reason: '选择态里卡片按钮必须让位，否则勾选会变成删除');
       expect(
-        tester.widget<Checkbox>(find.byType(Checkbox)).value,
+        tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox))).value,
         isTrue,
         reason: '这一下应该被算作「勾选这一行」',
       );
@@ -952,5 +961,157 @@ void main() {
       }
       expect(tester.takeException(), isNull);
     });
+  });
+
+  group('整组删除', () {
+    DownloadTaskEntry member(
+      String id,
+      String group, {
+      DownloadTaskActions actions = const DownloadTaskActions(),
+    }) => DownloadTaskEntry(
+      id: id,
+      title: id,
+      kind: DownloadTaskKind.video,
+      status: DownloadTaskStatus.completed,
+      actions: actions,
+      collectionKey: group,
+      collectionTitle: group,
+      builder: (BuildContext context) => DownloadTaskCard(
+        key: ValueKey<String>(id),
+        taskId: id,
+        title: id,
+        status: 'x',
+        details: Text('details-$id'),
+      ),
+    );
+
+    testWidgets('组头删除作用于整组（含折叠成员），不碰别的组', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> deleted = <String>[];
+      DownloadTaskActions deletable(String id) => DownloadTaskActions(
+        delete: ({required bool deleteFiles}) async => deleted.add(id),
+        deletesFiles: true,
+      );
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('a1', 'group-a', actions: deletable('a1')),
+          member('b1', 'group-b', actions: deletable('b1')),
+          member('b2', 'group-b', actions: deletable('b2')),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      // 先折叠 group-b：组头删除说的是「这一组」，折叠不该改变范围。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-group-collection:group-b')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey<String>('b1')), findsNothing);
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('download-group-delete-collection:group-b'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(t.download_batch_delete_confirm(n: 2)),
+        findsOneWidget,
+        reason: '确认框必须写明整组的真实条数',
+      );
+      await tester.tap(find.text(t.dialog_delete).last);
+      await tester.pumpAndSettle();
+
+      expect(deleted, <String>['b1', 'b2']);
+    });
+
+    testWidgets('组里混着不可删条目时确认框的 N 只算可删的', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      final List<String> deleted = <String>[];
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('plain', 'g'),
+          member(
+            'del',
+            'g',
+            actions: DownloadTaskActions(
+              delete: ({required bool deleteFiles}) async => deleted.add('del'),
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-group-delete-collection:g')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining(t.download_batch_delete_confirm(n: 1)),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.dialog_delete).last);
+      await tester.pumpAndSettle();
+      expect(deleted, <String>['del']);
+    });
+
+    testWidgets('组里没有可删条目时不摆删除按钮；选择态下也不摆', (
+      WidgetTester tester,
+    ) async {
+      _viewport(tester, const Size(900, 900));
+      await tester.pumpWidget(
+        _host(<DownloadTaskEntry>[
+          member('plain', 'group-plain'),
+          member(
+            'deletable',
+            'group-del',
+            actions: DownloadTaskActions(
+              delete: ({required bool deleteFiles}) async {},
+            ),
+          ),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('download-group-delete-collection:group-plain'),
+        ),
+        findsNothing,
+      );
+      final Finder groupDelete = find.byKey(
+        const ValueKey<String>('download-group-delete-collection:group-del'),
+      );
+      expect(groupDelete, findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('download-task-select-mode')),
+      );
+      await tester.pumpAndSettle();
+      expect(groupDelete, findsNothing, reason: '选择态里删除走批量栏');
+    });
+
+    for (final double scale in <double>[1, 2]) {
+      testWidgets('360 宽、文字放大 $scale 下组头带删除按钮不溢出', (
+        WidgetTester tester,
+      ) async {
+        _viewport(tester, const Size(360, 800));
+        await tester.pumpWidget(
+          _host(<DownloadTaskEntry>[
+            for (int i = 0; i < 12; i++)
+              member(
+                'm$i',
+                'Re：从零开始的异世界生活 第四季 丧失篇',
+                actions: DownloadTaskActions(
+                  delete: ({required bool deleteFiles}) async {},
+                ),
+              ),
+          ], scale: scale),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
   });
 }

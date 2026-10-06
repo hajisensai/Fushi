@@ -54,6 +54,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'asr_transcribe_language',
   'audio_source_configs',
   'audio_sources',
+  // bool：只有音频（没有字幕）的有声书下载完成后，自动用设备端语音模型转录
+  // 并入库（有正文对齐、没有成独立字幕书）。默认开；关掉 = 改前行为（任务
+  // 停在「缺字幕」，用户手动配对）。见 media/audiobook/audiobook_auto_transcribe.dart。
+  'audiobook_auto_transcribe',
   'audiobook_background_play',
   // String（JSON 数组）：有声书素材库目录（绝对路径）。库里放按作品身份命名的
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
@@ -69,7 +73,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
   // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
   'browse_moved_notice_handled',
-  'builtInTagsSeeded',
   'clipboard_panel_block_capture',
   'collapse_dictionaries',
   'collapsed_collection_ids',
@@ -87,6 +90,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // username/passwordB64/enabled/allowInsecureHttp）。String，读写见
   // PreferencesRepository。与 discovery_opds_servers 同形、同隔离纪律。
   'discovery_alist_sites',
+  // 用户自配的 Audiobookshelf 服务器清单（JSON 数组：id/name/url/username/
+  // accessTokenB64/refreshTokenB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。不存密码，只存令牌；refresh token 轮换后由
+  // AppModel.persistAudiobookshelfTokens 写回。与 discovery_opds_servers 同隔离纪律。
+  'discovery_audiobookshelf_servers',
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
@@ -113,8 +121,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'first_time_setup',
   // 悬浮球（docs/specs/2026-09-28-floating-ball.md）。`.actions` / `.mode` 是
   // 旧版单份全局按钮 / 三态模式，只作迁移读取；新值是 `.in_app` / `.system`
-  // 两个 bool 开关与每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）。
+  // 两个 bool 开关、每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）与关闭后
+  // 自动恢复的三态 `.auto_restore`。
   'floating_ball.actions',
+  'floating_ball.auto_restore',
   'floating_ball.buttons.general',
   'floating_ball.buttons.manga',
   'floating_ball.buttons.reader',
@@ -191,6 +201,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'local_audio_dbs',
   'lookup.global_context_capture',
   'lookup.ime_language',
+  // bool（默认 false）：查词后自动让 AI 按句意把符合用法的词头挪到最前
+  // （「设置 › AI」指派了查词用的提供商才生效；悬停查词与嵌套查词不触发）。
+  'lookup_ai_context_auto',
   // bool（默认 false，桌面端）：查词页按「返回上一级」直接最小化主窗（一键收窗
   // 回到之前的程序），不走关弹窗 → 清查询的阶梯。
   'lookup_page_escape_minimizes_window',
@@ -207,9 +220,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `manga_download_jobs.auto_ocr`，下载完成钩子据此起整卷 OCR（设计稿 2026-09-12 §5）。
   'manga_download_auto_ocr',
   'manga_external_mokuro_path',
+  'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
   'manga_ocr_local_model',
+  'manga_ocr_paired_host_model',
   'manga_ocr_parallel_tasks',
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
@@ -299,6 +314,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // String：书架「阅读状态」筛选（ShelfReadStatus.name，'' = 全部）。
+  'shelf_read_status_filter',
   'shelf_sort_mode',
   'show_expression_tags',
   'show_floating_lyric',
@@ -421,6 +438,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：SubDL 是否参与字幕搜索。与 api key 组成 `enabled && key`
   // 双门控（形状对齐 Jimaku）；key 为空即不装配，所以默认开不会产生任何请求。
   'video_subtitle_subdl_enabled',
+  // bool（默认 false）：播放器底栏时间显示「剩余时长」而不是「已播时长」。
+  // 点按底栏时间切换（MD3 Expressive chrome），跨设备。
+  'video_time_display_remaining',
   'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
@@ -480,6 +500,8 @@ const Set<String> kCredentialPreferenceKeys = <String>{
   'ai_providers',
   // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
   'discovery_alist_sites',
+  // 每条 Audiobookshelf 服务器记录里带 base64 的 access / refresh token。
+  'discovery_audiobookshelf_servers',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',

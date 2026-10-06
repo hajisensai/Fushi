@@ -52,6 +52,11 @@ class Win32Window {
   // child_resize_gate.h for the engine hazard this closes.
   void OnChildFrameRasterized(int32_t width, int32_t height);
 
+  // Batch hidden startup geometry changes; deliver only the final client size
+  // through the existing resize gate when preparation ends.
+  bool BeginStartupWindowPreparation();
+  void EndStartupWindowPreparation();
+
   // Returns the backing Window handle to enable clients to set icon and other
   // window properties. Returns nullptr if the window has been destroyed.
   HWND GetHandle();
@@ -65,14 +70,18 @@ class Win32Window {
   // Test mode only (FUSHI_TEST_TOPMOST): see win32_window.cpp.
   void ApplyTestTopmostPlacement(HWND window);
 
-  // BUG-1916: sets the colour this window paints its own surface with. Before
-  // the first Flutter frame that is what the user sees (the TODO-959 splash
-  // fill); afterwards the surface sits underneath the Flutter view and only
-  // shows through during maximize / restore / DPI transitions. Dart pushes
-  // the live theme surface colour here so those transitions show the app
-  // background instead of a teal "backdrop layer". |color| is a COLORREF
-  // (0x00BBGGRR).
+  // BUG-1916: sets the colour this window paints its own surface with. The
+  // window stays hidden until Flutter has rasterized a ready frame; afterwards
+  // the surface sits underneath the Flutter view and only shows through during
+  // maximize / restore / DPI transitions. Dart pushes the live theme surface
+  // colour here for those transitions. |color| is a COLORREF (0x00BBGGRR).
   void SetBackdropColor(COLORREF color);
+
+  // Glass material: while a DWM system backdrop (Windows 11 Mica) is active
+  // the surface is painted black instead of |backdrop_brush_| -- with the
+  // frame extended into the whole client area, GDI black is what lets the
+  // backdrop show through. Does not touch DWM itself; FlutterWindow owns that.
+  void SetSystemBackdrop(bool enabled);
 
   // BUG-1933: flash-free fullscreen, owned by the runner. window_manager's
   // SetFullScreen (and media_kit's EnterNativeFullscreen — same technique)
@@ -174,9 +183,13 @@ class Win32Window {
   // most one theme-coloured frame until the next present.
   void FillSurfaceBackdrop();
 
-  // Owned solid brush used by PaintBackdrop. Starts as the TODO-959 splash
-  // colour and is replaced by SetBackdropColor; released in the destructor.
+  // Owned solid brush used by PaintBackdrop. Starts with a fallback colour and
+  // is replaced by SetBackdropColor; released in the destructor.
   HBRUSH backdrop_brush_ = nullptr;
+
+  // True while FlutterWindow has a DWM system backdrop applied; see
+  // SetSystemBackdrop.
+  bool system_backdrop_ = false;
 
   // BUG-1933: captures the window's current on-screen client pixels into
   // |transition_snapshot_| (screen BitBlt; fails soft to no snapshot). While a
@@ -204,6 +217,7 @@ class Win32Window {
   void UpdateFrameChrome();
 
   bool fullscreen_ = false;
+  bool startup_window_preparation_ = false;
   bool frame_chrome_suppressed_ = false;
   WINDOWPLACEMENT placement_before_fullscreen_ = {};
   HBITMAP transition_snapshot_ = nullptr;

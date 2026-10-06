@@ -499,6 +499,7 @@ void main() {
           reason: '还原前必须先过 VideoDisplayClaim.release(this) 的记账门（早退即不还原）');
       for (final String restore in <String>[
         'setSystemUIChangeCallback(null)',
+        'setHomeShellSystemUiMode()',
         '_restoreOrientationOnExit()',
       ]) {
         final int at = b.indexOf(restore);

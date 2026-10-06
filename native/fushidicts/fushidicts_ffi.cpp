@@ -359,6 +359,13 @@ static void* import_thread_fn(void* arg) {
     a->result.title = dup("");
     a->result.detected_type = dup("term");
     a->result.error = dup(e.what());
+  } catch (...) {
+    // A non-std exception leaving a thread's start routine is std::terminate,
+    // i.e. the app dies mid-import (BUG-2952). Nothing may escape this frame.
+    a->result.success = 0;
+    a->result.title = dup("");
+    a->result.detected_type = dup("term");
+    a->result.error = dup("dictionary import failed (unknown native exception)");
   }
 #ifdef _WIN32
   return 0;

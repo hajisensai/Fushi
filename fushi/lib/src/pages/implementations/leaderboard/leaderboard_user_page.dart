@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -308,7 +309,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       );
     }
     if (card == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     String standing(LeaderboardMetric m) {
       final UserStanding s = card.standing(m);
@@ -384,55 +385,55 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         break;
       case LeaderboardRelation.none:
         buttons.add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             key: const ValueKey<String>('leaderboard-user-add-friend'),
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const Icon(Icons.person_add_alt_1_outlined),
+            icon: const FushiIcon(Icons.person_add_alt_1_outlined),
             label: Text(t.leaderboard_user_add_friend),
           ),
         );
       case LeaderboardRelation.incoming:
         buttons.add(
-          FilledButton.icon(
+          FushiFilledButton.icon(
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const Icon(Icons.how_to_reg_outlined),
+            icon: const FushiIcon(Icons.how_to_reg_outlined),
             label: Text(t.leaderboard_user_accept),
           ),
         );
       case LeaderboardRelation.outgoing:
         buttons.add(
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed: null,
             child: Text(t.leaderboard_user_requested),
           ),
         );
       case LeaderboardRelation.friends:
         buttons.add(
-          FilledButton.tonalIcon(
+          FushiFilledButton.tonalIcon(
             onPressed: null,
-            icon: const Icon(Icons.people_alt_outlined),
+            icon: const FushiIcon(Icons.people_alt_outlined),
             label: Text(t.leaderboard_user_is_friend),
           ),
         );
     }
     if (_relation != LeaderboardRelation.self) {
       buttons.addAll(<Widget>[
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           onPressed: () => unawaited(_block()),
-          icon: const Icon(Icons.block),
+          icon: const FushiIcon(Icons.block),
           label: Text(t.leaderboard_user_block),
         ),
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           onPressed: () => unawaited(_report()),
-          icon: const Icon(Icons.flag_outlined),
+          icon: const FushiIcon(Icons.flag_outlined),
           label: Text(t.leaderboard_report),
         ),
       ]);
     }
     buttons.add(
-      OutlinedButton.icon(
+      FushiOutlinedButton.icon(
         onPressed: () => unawaited(_share()),
-        icon: const Icon(Icons.ios_share),
+        icon: const FushiIcon(Icons.ios_share),
         label: Text(t.leaderboard_share),
       ),
     );

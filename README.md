@@ -20,7 +20,7 @@
 
 ## Maintainer
 
-Fushi is maintained by [hajisensai](https://github.com/hajisensai). Contact: [hajisensai@gmail.com](mailto:hajisensai@gmail.com).
+Fushi is maintained by [hajisensai](https://github.com/hajisensai). Website: [fushi.moe](https://fushi.moe). Contact: [contact@fushi.moe](mailto:contact@fushi.moe).
 
 ## Platform Support
 

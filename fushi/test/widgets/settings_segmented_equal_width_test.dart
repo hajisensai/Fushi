@@ -61,75 +61,73 @@ void main() {
     );
   }
 
-  // The full-width host box for each row is the `SizedBox(width:
-  // double.infinity)` that `_SegmentedStripHost` emits below the label. Both the
-  // fitting (child == strip) and the scrolling (child == SingleChildScrollView)
-  // branches wrap that infinite-width box, so finding the box under each keyed
-  // row and comparing its painted width proves equal width.
-  double hostWidthUnder(WidgetTester tester, String rowKey) {
-    final Finder host = find.descendant(
-      of: find.byKey(ValueKey<String>(rowKey)),
-      matching: find.byWidgetPredicate(
-        (Widget w) => w is SizedBox && w.width == double.infinity,
-      ),
-    );
-    expect(host, findsOneWidget,
-        reason: 'each controlBelow strip is hosted in a full-width box');
-    return tester.getSize(host).width;
-  }
-
+  // 2026-10 MD3 Expressive 刷新（Android 16 设置）后不再有「标签下方整行宽的分段
+  // 盒子」：放得下的少而短选项是行右侧紧凑分段，放不下的退回「当前值写进说明行、
+  // 点整行弹出菜单」。TODO-882 的诉求（同一 section 里控件不能一宽一窄、参差
+  // 不齐）因此落成：两行占满同一 section 宽度、分段控件右对齐到行内容边、长选项
+  // 不再留一个按固有宽度缩窄的盒子，而是整行变成菜单行，全部选项仍可达。
   testWidgets(
-    'TODO-882: short and long segmented boxes in one section are equal width',
+    'TODO-882: short and long segmented rows in one section line up on the '
+    'same full-width rows',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(520, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      // A pane that fits the short strip full-width but is too narrow for the
-      // long CJK strip — the exact regime where widths used to diverge.
       const double pane = 460;
       await tester.pumpWidget(buildTestApp(section(width: pane)));
       await tester.pump();
       expect(tester.takeException(), isNull);
 
-      final double shortWidth = hostWidthUnder(tester, 'short');
-      final double longWidth = hostWidthUnder(tester, 'long');
+      final Rect shortRow =
+          tester.getRect(find.byKey(const ValueKey<String>('short')));
+      final Rect longRow =
+          tester.getRect(find.byKey(const ValueKey<String>('long')));
 
-      // Both boxes span the same full available width: EQUAL.
-      expect((shortWidth - longWidth).abs(), lessThan(0.5),
-          reason: 'both segmented boxes occupy the same full row width');
+      // Both rows span the same full section width: EQUAL.
+      expect((shortRow.width - longRow.width).abs(), lessThan(0.5),
+          reason: 'both rows occupy the same full row width');
+      expect(shortRow.width, greaterThan(pane - 1),
+          reason: 'rows fill the section, not an intrinsic narrow width');
 
-      // And both really do fill the row (≈ pane minus row horizontal padding),
-      // not the strip's narrow intrinsic width.
-      expect(shortWidth, greaterThan(pane - 40),
-          reason: 'the short box fills the row');
-      expect(longWidth, greaterThan(pane - 40),
-          reason: 'the long box fills the row, not its intrinsic narrow width');
-
-      // BUG-008 guard: the long strip is genuinely scrollable inside its
-      // full-width box, so the trailing segment stays reachable.
-      final Finder longScroll = find.descendant(
-        of: find.byKey(const ValueKey<String>('long')),
-        matching: find.byType(SingleChildScrollView),
-      );
-      expect(longScroll, findsOneWidget,
-          reason: 'the long strip scrolls inside its full-width box');
-      final ScrollableState scrollState = tester.state(
+      // The short strip is a compact control right-aligned to the row content
+      // edge (no stray narrow box floating on the left).
+      final Rect shortStrip = tester.getRect(
         find.descendant(
-          of: find.byKey(const ValueKey<String>('long')),
-          matching: find.byType(Scrollable),
+          of: find.byKey(const ValueKey<String>('short')),
+          matching: find.byType(SegmentedButton<String>),
         ),
       );
-      expect(scrollState.position.maxScrollExtent, greaterThan(0.0),
-          reason: 'the long strip overflows its box → scrolls to last segment');
+      expect(shortRow.right - shortStrip.right, lessThan(40),
+          reason: 'the short strip is right-aligned to the row edge');
 
-      // The short strip fits, so it is NOT scroll-hosted (full-width equal
-      // segments instead).
-      final Finder shortScroll = find.descendant(
-        of: find.byKey(const ValueKey<String>('short')),
-        matching: find.byType(SingleChildScrollView),
+      // The long strip does not fit → the whole row is a choice-menu row, not a
+      // narrower intrinsic-width box; every option stays reachable (BUG-008).
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('long')),
+          matching: find.byType(SegmentedButton<String>),
+        ),
+        findsNothing,
+        reason: 'no narrow / clipped strip box on the long row',
       );
-      expect(shortScroll, findsNothing,
-          reason: 'the fitting short strip stretches, no scroll host');
+      final Finder longMenu = find.descendant(
+        of: find.byKey(const ValueKey<String>('long')),
+        matching: find.byType(SettingsChoiceMenuRow),
+      );
+      expect(longMenu, findsOneWidget);
+      expect(find.textContaining('自動判定で表示'), findsOneWidget,
+          reason: 'the selected long option is shown on the row');
+      await tester.tap(longMenu);
+      await tester.pumpAndSettle();
+      for (final String label in <String>[
+        '常に振り仮名を表示',
+        '振り仮名を一切表示しない',
+        '読了済みの語だけ隠す',
+      ]) {
+        expect(find.text(label), findsOneWidget,
+            reason: 'every long option stays reachable: $label');
+      }
+      expect(tester.takeException(), isNull);
     },
   );
 }

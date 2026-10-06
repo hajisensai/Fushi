@@ -21,6 +21,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import '../helpers/glass_unwrap.dart';
 
 Color? _resolve(
   WidgetStateProperty<Color?>? property,
@@ -138,13 +140,19 @@ void main() {
       expect(label?.fontFamily, 'Sentinel');
     });
 
-    test('非 eink：零行为变化', () async {
+    test('非 eink：MD3 胶囊 chip（secondaryContainer 选中 + 配对 label 色）', () async {
       final ThemeData theme = notifier.theme;
+      final ColorScheme cs = theme.colorScheme;
+      expect(theme.chipTheme.selectedColor, cs.secondaryContainer);
+      expect(theme.chipTheme.backgroundColor, cs.surfaceContainerHigh);
+      expect(theme.chipTheme.side, BorderSide.none);
+      final WidgetStateColor label =
+          theme.chipTheme.labelStyle!.color! as WidgetStateColor;
       expect(
-        theme.chipTheme.selectedColor,
-        theme.colorScheme.secondaryContainer,
+        label.resolve(<WidgetState>{WidgetState.selected}),
+        cs.onSecondaryContainer,
       );
-      expect(theme.chipTheme.labelStyle, isNull);
+      expect(label.resolve(<WidgetState>{}), cs.onSurfaceVariant);
     });
   });
 
@@ -173,9 +181,7 @@ void main() {
 
     testWidgets('eink：选中 chip 反色填充，边框不再消失', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(
-        find.byType(ChoiceChip),
-      );
+      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
 
       // 塌缩前：填充 = primaryContainer = 白 = 页面底色，且边框也是白——选中的
       // chip 比未选中的更没有边，是个负信号。
@@ -186,10 +192,9 @@ void main() {
 
     testWidgets('eink：leading 图标跟着前景翻色', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(
-        find.byType(ChoiceChip),
-      );
-      final Icon avatar = chip.avatar! as Icon;
+      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
+      // avatar 经 FushiIcon（两套设计系统共用的图标包装）渲染，颜色契约不变。
+      final FushiIcon avatar = chip.avatar! as FushiIcon;
       expect(
         avatar.color,
         Colors.white,
@@ -197,17 +202,15 @@ void main() {
       );
     });
 
-    testWidgets('非 eink：仍用 primaryContainer（零行为变化）', (
+    testWidgets('非 eink：secondaryContainer 填充、无描边（MD3 胶囊 chip）', (
       WidgetTester tester,
     ) async {
       await tester.pumpWidget(app(eink: false, selected: true));
       final Element context = tester.element(find.byType(ChoiceChip));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(
-        find.byType(ChoiceChip),
-      );
+      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
       final ColorScheme cs = Theme.of(context).colorScheme;
-      expect(chip.selectedColor, cs.primaryContainer);
-      expect(chip.side!.color, cs.primaryContainer);
+      expect(chip.selectedColor, cs.secondaryContainer);
+      expect(chip.side, BorderSide.none);
     });
   });
 }

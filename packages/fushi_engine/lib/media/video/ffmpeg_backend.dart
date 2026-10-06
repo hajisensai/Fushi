@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/bluray/bluray_ffmpeg_input.dart';
+import 'package:fushi_engine/media/video/bluray/aacs_media_session.dart';
 
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -741,26 +742,49 @@ class BlurayFfmpegBackend implements FfmpegBackend {
 
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
-    final BlurayFfmpegInput input = await prepareBlurayFfmpegArgs(args);
+    final AacsMediaSession session = AacsMediaSession();
+    BlurayFfmpegInput? input;
     try {
-      return await delegate.run(input.args, timeout);
+      input = await prepareBlurayFfmpegArgs(
+        args,
+        resolveStream: session.resolve,
+      );
+      final FfmpegRunResult result = await delegate.run(
+        await session.ffmpegInputs(input.args),
+        timeout,
+      );
+      return _redactResult(result, session);
     } finally {
-      await input.dispose();
+      await input?.dispose();
+      await session.close();
     }
   }
 
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
-    final BlurayFfmpegInput input = await prepareBlurayFfmpegArgs(
-      args,
-      probe: true,
-    );
+    final AacsMediaSession session = AacsMediaSession();
+    BlurayFfmpegInput? input;
     try {
-      return await delegate.runProbe(input.args, timeout);
+      input = await prepareBlurayFfmpegArgs(
+        args,
+        probe: true,
+        resolveStream: session.resolve,
+      );
+      final FfmpegRunResult result = await delegate.runProbe(
+        await session.ffmpegInputs(input.args, probe: true),
+        timeout,
+      );
+      return _redactResult(result, session);
     } finally {
-      await input.dispose();
+      await input?.dispose();
+      await session.close();
     }
   }
+  FfmpegRunResult _redactResult(FfmpegRunResult result, AacsMediaSession session) =>
+      FfmpegRunResult(returnCode: result.returnCode,
+          output: session.redact(result.output), executable: result.executable,
+          attemptedExecutables: result.attemptedExecutables,
+          fallbackReason: result.fallbackReason);
 }
 
 @visibleForTesting

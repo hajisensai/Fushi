@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/misc/log_upload_config.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 上传结果状态。
 enum LogUploadStatus {
@@ -139,15 +140,15 @@ Future<bool> ensureLogUploadConsent(BuildContext context) async {
   if (!context.mounted) return false;
   final bool? agreed = await showAdaptiveDialog<bool>(
     context: context,
-    builder: (BuildContext ctx) => AlertDialog.adaptive(
+    builder: (BuildContext ctx) => FushiAlertDialog.adaptive(
       title: Text(t.log_upload_consent_title),
       content: Text(t.log_upload_consent_body),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
           child: Text(t.cancel),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(ctx).pop(true),
           child: Text(t.log_upload_consent_agree),
         ),
@@ -170,7 +171,7 @@ Future<void> uploadLogToServer({
   void notify(String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   // 首次上传前征得隐私同意（记住选择）；取消则不上传。

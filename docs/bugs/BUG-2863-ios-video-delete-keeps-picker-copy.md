@@ -1,0 +1,8 @@
+## BUG-2863 · iPad 删除视频后仍占用储存（选择器副本未回收）
+- **报告**：2026-10-02（用户：iPad 上视频删了还占储存）
+- **真实性**：✅ 真 bug（代码路径验证，未上 iPad 真机）。iOS 导入视频走 `pickRealFilePath` → `FilePicker.platform.pickFiles`（`fushi/lib/src/media/import/real_path_directory_picker.dart:589`），file_picker 以 `UIDocumentPickerModeImport` 打开，系统把选中文件拷进 `tmp/<bundle>-Inbox` 后再搬到 `NSTemporaryDirectory()/<文件名>`（file_picker 8.3.7 `FilePickerPlugin.m:411-431`）；`video_import_dialog.dart:434/446` 把这份**整份副本**的路径原样存进 `videoPath`。删除时 `VideoBookRepository._deleteVideoBooksAndReclaimAssetsUnlocked`（`packages/fushi_engine/lib/media/video/video_book_repository.dart`）只回收封面 / 字幕副本 / 附加图 / 内嵌字幕缓存，视频文件只在勾了「同时删除本地文件」时才删，而该勾选默认关（`fushi/lib/src/sync/deletion_prompt.dart:113`）——它的语义是「删用户的原件」，没考虑 iOS 上 `videoPath` 根本是 app 拷出来的副本。于是默认删除后整份视频留在容器 `tmp/` 里，「iPhone 储存空间」里 Fushi 的「文稿与数据」不降。
+- **[x] ① 已修复** — `EnginePaths.pickerImportCopyDirectories()`（引擎装配点，默认空；app 的 `AppPathsEngineBridge` 在 iOS 返回 `Directory.systemTemp` = `NSTemporaryDirectory()`，注意不是 path_provider 的 `getTemporaryDirectory()`，后者在 iOS 是 `Library/Caches`）+ 纯函数判据 `isPickerImportCopyPath`（`video_local_files.dart`）。仓库层删除尾活在**未勾选**时也回收落在副本目录内的视频候选及其同名 sidecar 字幕，仍过幸存行引用护栏；勾选时行为不变。判据落在仓库层，单删 / 批删 / 合集删 / 同步墓碑消费 / 互联 host 删除等所有调用方一起生效；存量条目按路径判定，同样受益。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_book_repository_test.dart` 组「iOS 选择器导入副本随删除回收（BUG-2863）」：未勾选时副本目录里的视频与字幕被删、目录外原件不动；副本仍被幸存行引用时保留；`isPickerImportCopyPath` 边界（目录本身 / 同前缀兄弟目录 / URL / 空根）。
+- **备注**：
+  - 已删掉的视频留下的孤儿副本不会被本修复追溯清理（行已不在，无从判定）；它们在容器 `tmp/` 里，iOS 存储紧张时系统会自行清理，重装也会清掉。
+  - 同一根因的另两个后果未在本次处理：iOS 可能自行清空 `tmp/` 导致已导入视频无法播放；词典导入 / 外部阅读器备份导入调用的 `FilePicker.clearTemporaryFiles()` 在 iOS 会清空整个 `tmp/`，同样会把已导入视频的副本删掉、留下失效的 `videoPath`。根治需要把 iOS 导入改为拷进 app 自有的持久目录，属于更大的改动。

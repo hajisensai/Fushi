@@ -76,6 +76,17 @@ final bookLastReadAtProvider = FutureProvider<Map<String, int>>((ref) async {
   };
 });
 
+/// 「读完」的书的 bookKey 集合（`EpubBooks.completedAt` 非 null：手动标记或读到
+/// 末尾由阅读器自动写入），口径与书架 `_completedBookKeys` 同源。BUG-2918：首页
+/// 「继续」区判在读必须经 [classifyShelfReadStatus] 查它——阅读器落库的位置是
+/// 末页**首个可见字符**，读到最后一页 position 也永远 < duration，只看进度会把
+/// 读完的书当「在读」并显示四舍五入出的 100%。与 [bookLastReadAtProvider] 同点失效。
+final completedEpubBookKeysProvider =
+    FutureProvider<Set<String>>((ref) async {
+  final FushiDatabase db = ref.watch(appProvider).database;
+  return db.getCompletedEpubBookKeys();
+});
+
 /// bookKey → `EpubBooks.uid` 换算表（v82）。书架/首页的通货是 MediaItem
 /// （身份 = mediaIdentifier 里的 bookKey），查 [bookLastReadAtProvider] 前经此
 /// 换算；空 uid 行不进表（查不到 = 无阅读记录，与 resolveEpubBookUid 契约一致）。
@@ -90,6 +101,19 @@ final epubBookUidByKeyProvider =
       if (r.uid.isNotEmpty) r.bookKey: r.uid,
   };
 });
+
+/// 按 bookKey 查 [bookLastReadAtProvider] 映射：先经 [epubBookUidByKeyProvider]
+/// 换算成 uid 再查，换算不上（非 epub 遗留行 / 空键）退回原键。书架 hero 与
+/// 「最近阅读」排序共用这一跳——BUG-2904：hero 曾直接拿 bookKey 查 uid 键表，
+/// 恒查空、退化成列表序（= 最近导入的在读书），读了新书「继续阅读」也不换。
+int? lastReadAtForBookKey(
+  Map<String, int> lastReadAtByUid,
+  Map<String, String> epubUidByKey,
+  String? bookKey,
+) {
+  if (bookKey == null) return null;
+  return lastReadAtByUid[epubUidByKey[bookKey] ?? bookKey];
+}
 
 /// 书架阅读进度（position / duration，字符为单位）。TODO-1346：书架进度条以前只按
 /// `sectionIndex` 累加「之前各章字数」、完全忽略当前章内的 `charOffset`，读到某章开头
@@ -146,6 +170,20 @@ final epubBookUidByKeyProvider =
   }
   return (position: 0, duration: 1);
 }
+
+/// 页式书（漫画 / PDF）的位置行是不是「重置阅读状态」写回的开头位置。
+///
+/// 页式阅读器落位置恒显式传 `charOffset >= 0`（翻页 0、条漫存页内千分比），只有
+/// `library_progress_reset.dart` 的重置会写「第 0 页 + 精确锚缺席（-1）」——重置不能
+/// 删行（两条同步通道都会把对端位置灌回来），只能写一条新位置，这一形状就是它的
+/// 标记。书架按 1-based 页序算进度（停在第 1 页也算在读），不认这一形状的话重置后
+/// 的卷仍会显示「在读」并留在「继续阅读」里。[charOffset] 取仓库模型的值（-1 已
+/// 映射为 null）。
+bool isPageBasedResetPosition({
+  required int sectionIndex,
+  required int? charOffset,
+}) =>
+    sectionIndex == 0 && (charOffset == null || charOffset < 0);
 
 /// [ReaderFushiSource.deleteBook] 的结果（TODO-1359）。
 ///
@@ -243,7 +281,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   // leave to be mis-decoded or to throw on decode). Mirrors fontUrl's encoding.
   static String epubUrl(String href) {
     final String encoded = href.split('/').map(Uri.encodeComponent).join('/');
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/epub/$encoded';
     }
     return 'https://$kHost/epub/$encoded';
@@ -251,7 +289,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   static String fontUrl(String path) {
     final String encoded = Uri.encodeComponent(path);
-    if (Platform.isMacOS || Platform.isIOS) {
+    if (webViewUsesCustomSchemeTransport) {
       return '$kResourceScheme://$kHost/fonts/$encoded';
     }
     return 'https://$kHost/fonts/$encoded';
@@ -428,6 +466,8 @@ class ReaderFushiSource extends ReaderMediaSource {
     // BUG-777：阅读中位置持续落库刷新 updatedAt，关书回书架时 recency 映射与
     // 书列表同点失效，继续阅读 hero /「最近阅读」排序立即反映本次阅读。
     ref.invalidate(bookLastReadAtProvider);
+    // BUG-2918：读到末尾时阅读器写 completedAt，关书回首页「继续」区立即剔除。
+    ref.invalidate(completedEpubBookKeysProvider);
   }
 
   @override
@@ -642,7 +682,13 @@ class ReaderFushiSource extends ReaderMediaSource {
             ? (
                 // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
                 // position 溢出 duration（>100%）。
-                position: pos == null
+                // 「重置阅读状态」写回的开头位置（页式阅读器从不写缺席的精确锚，
+                // 见 [isPageBasedResetPosition]）同样算未读。
+                position: pos == null ||
+                        isPageBasedResetPosition(
+                          sectionIndex: pos.sectionIndex,
+                          charOffset: pos.charOffset,
+                        )
                     ? 0
                     : (pos.sectionIndex + 1).clamp(
                         1,

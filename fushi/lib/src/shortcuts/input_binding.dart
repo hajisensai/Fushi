@@ -157,6 +157,8 @@ class InputBinding {
     LogicalKeyboardKey.slash: 'Slash',
     LogicalKeyboardKey.semicolon: 'Semicolon',
     LogicalKeyboardKey.backquote: 'Backquote',
+    LogicalKeyboardKey.quoteSingle: 'Quote',
+    LogicalKeyboardKey.backslash: 'Backslash',
     LogicalKeyboardKey.gameButtonA: 'GameA',
     LogicalKeyboardKey.gameButtonB: 'GameB',
     LogicalKeyboardKey.gameButtonX: 'GameX',
@@ -265,6 +267,8 @@ class InputBinding {
     LogicalKeyboardKey.slash: PhysicalKeyboardKey.slash,
     LogicalKeyboardKey.semicolon: PhysicalKeyboardKey.semicolon,
     LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
+    LogicalKeyboardKey.quoteSingle: PhysicalKeyboardKey.quote,
+    LogicalKeyboardKey.backslash: PhysicalKeyboardKey.backslash,
   };
 
   /// [_logicalToPhysical] 的反向索引（同一张真相源，不是第二份手写表）。
@@ -300,11 +304,25 @@ class InputBinding {
   /// 真实逻辑键时一律原样返回，非美式布局（AZERTY / QWERTZ）的字母语义不被物理位
   /// 覆盖。表外的物理键（numpad、F13+、game*）保持 `process` 原样返回，由调用方的
   /// 既有流程处理，不猜。
+  ///
+  /// BUG-2948：第二条归一——引擎给出的逻辑键**不在 [_knownKeys] 里**、而物理键在
+  /// 覆盖表里时，按物理键取逻辑键。macOS 嵌入层对符号键按「当前修饰下产出的字符」
+  /// 定逻辑键：Shift+/ 报 `question`、Shift+[ 报 `braceLeft`、Shift+= 报 `plus`
+  /// （Mac 真机 NSEvent 实测；Windows 同一按键报 `slash` / `bracketLeft` /
+  /// `equal`）。这些表外键录进去只能存成 `#<keyId>`，WebView 键盘桥按 DOM `code`
+  /// 拼的 token 永远对不上，跨设备同步也换了一个键。表内键（字母、数字、
+  /// AZERTY 的 A/Q 等）原样返回，所以布局的字母语义不受影响；只有表外字符被收拢
+  /// 回它所在的物理键。运行时（[FushiShortcutRegistry.resolveKeyboard]、
+  /// [toActivator]）先按原始逻辑键精确匹配、再按本函数结果匹配，存量的 `#<keyId>`
+  /// 绑定照旧生效。
   static LogicalKeyboardKey normalizeCapturedKey({
     required LogicalKeyboardKey logicalKey,
     required PhysicalKeyboardKey physicalKey,
   }) {
-    if (logicalKey != LogicalKeyboardKey.process) return logicalKey;
+    if (logicalKey != LogicalKeyboardKey.process &&
+        _knownKeys.containsKey(logicalKey)) {
+      return logicalKey;
+    }
     return _physicalToLogical[physicalKey] ?? logicalKey;
   }
 
@@ -342,14 +360,15 @@ class InputBinding {
   /// (e.g. media_kit's `keyboardShortcuts`). [includeRepeats] is exposed so the
   /// video player can keep its press-edge-only keys (e.g. subtitle blur toggle)
   /// non-repeating while everything else honours OS key-repeat.
-  SingleActivator toActivator({bool includeRepeats = true}) => SingleActivator(
-        key,
-        control: modifiers.contains(ModifierKey.ctrl),
-        shift: modifiers.contains(ModifierKey.shift),
-        alt: modifiers.contains(ModifierKey.alt),
-        meta: modifiers.contains(ModifierKey.meta),
-        includeRepeats: includeRepeats,
-      );
+  ///
+  /// BUG-2948：不是裸 [SingleActivator]——macOS 上 Shift+/ 的逻辑键是 `question`，
+  /// 而 [SingleActivator] 的 `triggers` 只有 `slash`（[CallbackShortcuts] 先按
+  /// triggers 过滤，`accepts` 都轮不到），
+  /// `SingleActivator(slash, shift: true)` 永远不认。精确匹配不中时再按
+  /// [normalizeCapturedKey] 的结果比一次，与录入、[FushiShortcutRegistry.resolveKeyboard]
+  /// 同一条契约。
+  InputBindingActivator toActivator({bool includeRepeats = true}) =>
+      InputBindingActivator(this, includeRepeats: includeRepeats);
 
   static InputBinding? deserialize(String s) {
     if (s.isEmpty) return null;
@@ -390,6 +409,56 @@ class InputBinding {
 
   @override
   String toString() => 'InputBinding(${serialize()})';
+}
+
+/// [InputBinding.toActivator] 的产物：先按原始逻辑键走 [exact]（[SingleActivator]），
+/// 不中再按 [InputBinding.normalizeCapturedKey] 归一后的键比一次（BUG-2948）。
+class InputBindingActivator extends ShortcutActivator {
+  InputBindingActivator(this.binding, {bool includeRepeats = true})
+      : exact = SingleActivator(
+          binding.key,
+          control: binding.modifiers.contains(ModifierKey.ctrl),
+          shift: binding.modifiers.contains(ModifierKey.shift),
+          alt: binding.modifiers.contains(ModifierKey.alt),
+          meta: binding.modifiers.contains(ModifierKey.meta),
+          includeRepeats: includeRepeats,
+        );
+
+  final InputBinding binding;
+
+  /// 按原始逻辑键匹配的那一半；也供测试按 `trigger` / `includeRepeats` 内省。
+  final SingleActivator exact;
+
+  // 不给固定的 trigger 集：同一绑定在 macOS 上的事件逻辑键可能是布局字符
+  // （Shift+/ → `question`），枚举不全；null 让 [CallbackShortcuts] /
+  // ShortcutManager 对每个按键都问 [accepts]，绑定表很小，代价可以忽略。
+  @override
+  Iterable<LogicalKeyboardKey>? get triggers => null;
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    if (exact.accepts(event, state)) return true;
+    final bool pressEdge = event is KeyDownEvent ||
+        (exact.includeRepeats && event is KeyRepeatEvent);
+    if (!pressEdge) return false;
+    final LogicalKeyboardKey normalized = InputBinding.normalizeCapturedKey(
+      logicalKey: event.logicalKey,
+      physicalKey: event.physicalKey,
+    );
+    if (normalized == event.logicalKey || normalized != binding.key) {
+      return false;
+    }
+    final Set<ModifierKey> pressed = <ModifierKey>{
+      if (state.isControlPressed) ModifierKey.ctrl,
+      if (state.isShiftPressed) ModifierKey.shift,
+      if (state.isAltPressed) ModifierKey.alt,
+      if (state.isMetaPressed) ModifierKey.meta,
+    };
+    return setEquals(pressed, binding.modifiers);
+  }
+
+  @override
+  String debugDescribeKeys() => exact.debugDescribeKeys();
 }
 
 enum GamepadButton {

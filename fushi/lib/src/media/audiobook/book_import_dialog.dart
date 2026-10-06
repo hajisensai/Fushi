@@ -17,6 +17,7 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
+import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi/src/media/audiobook/subtitle_rematch.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi/src/media/import/audiobook_health_summary.dart';
@@ -202,23 +203,22 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return FushiFileDropTarget(
-      enabled: !importing,
-      debugLabel: 'book-import-dialog',
-      onDrop: _handleDialogDrop,
-      child: BookImportDialogFrame(
-        title: Text(t.srt_import),
-        content: _buildForm(),
-        actions: [
-          // 漫画入口（「OCR 导入漫画」/「在线目录」）均已移出书籍导入框：
-          // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
-          adaptiveDialogAction(
-            context: context,
-            onPressed: () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
-          ),
-          buildImportAction(context, onImport: _doImport),
-        ],
+    return buildImportPopGuard(
+      child: FushiFileDropTarget(
+        enabled: !importing,
+        debugLabel: 'book-import-dialog',
+        onDrop: _handleDialogDrop,
+        child: BookImportDialogFrame(
+          title: t.srt_import,
+          content: _buildForm(),
+          actions: [
+            // 漫画入口（「OCR 导入漫画」/「在线目录」）均已移出书籍导入框：
+            // OCR 归 [MangaImportDialog]，在线目录归下载页。书籍框只做书。
+            // 2026-10 体验优化：导入中取消键禁用（见 buildImportPopGuard）。
+            buildCancelAction(context),
+            buildImportAction(context, onImport: _doImport),
+          ],
+        ),
       ),
     );
   }
@@ -236,17 +236,17 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (!_classifyCarrier(path).isManga) return false;
     final bool? go = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.manga_import_detected_title),
         content: Text(
           t.manga_import_detected_message(name: p.basename(path)),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.manga_import_detected_confirm),
           ),
@@ -399,6 +399,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _epubRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_epub,
       subtitle: _epubPath == null ? null : _epubName ?? p.basename(_epubPath!),
       icon: Icons.menu_book_outlined,
@@ -408,6 +409,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.menu_book_outlined,
           tooltip: t.srt_import_pick_epub,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickEpub,
         ),
       ],
@@ -416,6 +418,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _subtitleRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_subtitle_files,
       subtitle: _subtitlePath == null
           ? null
@@ -428,6 +431,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
+            enabled: !importing,
             onTap: () async => setState(() {
               _subtitlePath = null;
               _subtitleName = null;
@@ -437,6 +441,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.subtitles_outlined,
           tooltip: t.srt_import_pick_subtitle_files,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickSubtitle,
         ),
         if (isAsrSupported)
@@ -444,7 +449,8 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.record_voice_over_outlined,
             tooltip: t.audiobook_transcribe_action,
             isWideTapArea: true,
-            onTap: importing ? null : _transcribeSubtitleFromAudio,
+            enabled: !importing,
+            onTap: _transcribeSubtitleFromAudio,
           ),
       ],
     );
@@ -526,6 +532,7 @@ class _BookImportDialogState extends State<BookImportDialog>
 
   Widget _audioRow() {
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_audio_files,
       subtitle: _audioPaths.isEmpty
           ? null
@@ -540,6 +547,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
+            enabled: !importing,
             onTap: () async => setState(() {
               _audioPaths = [];
               _audioCoverPath = null;
@@ -549,6 +557,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.audio_file_outlined,
           tooltip: t.srt_import_pick_audio_files,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickAudio,
         ),
       ],
@@ -793,6 +802,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   Widget _coverRow() {
     final String? effectiveCover = _coverPath ?? _audioCoverPath;
     return FushiFilePickerRow(
+      enabled: !importing,
       title: t.srt_import_pick_cover,
       subtitle: effectiveCover == null ? null : p.basename(effectiveCover),
       icon: Icons.image_outlined,
@@ -803,6 +813,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             icon: Icons.close,
             tooltip: t.dialog_clear,
             isWideTapArea: true,
+            enabled: !importing,
             onTap: () async => setState(() {
               _coverPath = null;
               _audioCoverPath = null;
@@ -812,6 +823,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           icon: Icons.image_outlined,
           tooltip: t.srt_import_pick_cover,
           isWideTapArea: true,
+          enabled: !importing,
           onTap: _pickCover,
         ),
       ],
@@ -893,15 +905,15 @@ class _BookImportDialogState extends State<BookImportDialog>
     if (!mounted) return DuplicateChoice.cancel;
     final bool? keep = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.book_import_duplicate_title),
         content: Text(t.book_import_duplicate_message(name: proposedTitle)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(t.book_import_duplicate_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(t.book_import_duplicate_keep),
           ),
@@ -1002,106 +1014,51 @@ class _BookImportDialogState extends State<BookImportDialog>
     required String title,
     required String? author,
   }) async {
-    final String uid = 'srtbook_${DateTime.now().millisecondsSinceEpoch}';
-    reportProgress(0.1, t.import_step_parsing);
-
-    final List<AudioCue> cues = await parseCuesForFormat(
-      File(_subtitlePath!),
-      uid,
-      0,
-    );
-    debugPrint('[fushi-import] subtitleBook: parsed ${cues.length} cues');
-
-    String bookKey = '';
-    if (cues.isNotEmpty) {
-      try {
-        reportProgress(0.3, t.import_step_building_epub);
-        final Directory tmpDir = await getTemporaryDirectory();
-        final String epubPath = p.join(tmpDir.path, 'cues_to_epub_$uid.epub');
-        await CuesToEpub.convert(
-          title: title,
-          cues: cues,
-          outputPath: epubPath,
-          author: author,
-        );
-        reportProgress(0.5, t.import_step_importing_epub);
-        bookKey = await EpubImporter.importFromPath(
-          db: widget.db,
-          filePath: epubPath,
-          fileName: '${title.replaceAll(RegExp(r'[^\w\s\-]'), '')}.epub',
-          policy: DuplicatePolicy.ask(_askOnDuplicate),
-        );
-        debugPrint(
-            '[fushi-import] subtitleBook: EPUB import done, key=$bookKey');
-      } on DuplicateImportCancelledException {
-        // 取消必须冒泡到顶层中止整次导入，不能被吞成 bookId=0 继续。
-        rethrow;
-      } catch (e, stack) {
-        // BUG-439：坏 EPUB（FormatException 等）以前在这里被吞掉、bookKey 留空串，
-        // 下面仍无条件 save 出一条没有 EpubBooks 行的孤儿 SrtBook 壳行——书架有卡
-        // 却打不开（reader 定位磁盘返回 exists:false → book_file_not_found）。
-        // EPUB 是字幕书的正文载体，载体生成/导入失败这本书就不可读，必须让整次
-        // 导入失败而不是落孤儿壳行。与上面的取消同理冒泡到顶层报错。
-        ErrorLogService.instance.log('BookImportDialog.epubImport', e, stack);
-        debugPrint('[fushi-import] EPUB generation/import failed: $e');
-        rethrow;
-      }
-    }
-
-    reportProgress(0.7, t.import_step_persisting);
-    final Directory persistDir = await _ensurePersistDir(uid);
-    final String persistedSrt = await AudiobookStorage.persistFileWithProgress(
-      File(_subtitlePath!),
-      persistDir,
-      onProgress: (int copied, int total) {
-        reportProgress(
-            0.7, t.import_step_copying_file(name: p.basename(_subtitlePath!)));
-      },
-    );
-
     // TODO-935 ①A：引用模式（仅桌面）直接存原始绝对路径，不复制（仿 VideoBooks）。
     final bool referenceAudio = _referenceOriginal && isDesktopPlatform;
-    // 持久目录音频的唯一写入原语（同步成恰好这一组，幂等、不会先删掉自己的源）。
-    final List<String> persistedAudioPaths =
-        await AudiobookStorage.syncAudioFiles(
-      persistDir,
-      _audioPaths,
-      copy: !referenceAudio,
-      onFile: (String name) =>
-          reportProgress(0.8, t.import_step_copying_file(name: name)),
+    await importStandaloneSubtitleBook(
+      db: widget.db,
+      repo: widget.repo,
+      title: title,
+      author: author,
+      subtitlePath: _subtitlePath!,
+      audioPaths: _audioPaths,
+      copyAudio: !referenceAudio,
+      policy: DuplicatePolicy.ask(_askOnDuplicate),
+      tempDir: await getTemporaryDirectory(),
+      persistCover: (Directory persistDir) async {
+        // TODO-1034：与主路径同根因——读 _audioCoverPath 前必须先等内嵌封面抽取
+        // 落定，否则用户在 ffmpeg probe 未返回时点「导入」会把封面吞掉。
+        await _awaitCoverExtraction();
+        final String? coverSource = _coverPath ?? _audioCoverPath;
+        if (coverSource == null) return null;
+        final String dest =
+            p.join(persistDir.path, 'cover${p.extension(coverSource)}');
+        return await _writeCoverOrSkip(source: coverSource, destPath: dest)
+            ? dest
+            : null;
+      },
+      onProgress: (
+        double fraction,
+        StandaloneSubtitleBookStep step,
+        String? fileName,
+      ) =>
+          reportProgress(
+              fraction,
+              switch (step) {
+                StandaloneSubtitleBookStep.parsing => t.import_step_parsing,
+                StandaloneSubtitleBookStep.buildingEpub =>
+                  t.import_step_building_epub,
+                StandaloneSubtitleBookStep.importingEpub =>
+                  t.import_step_importing_epub,
+                StandaloneSubtitleBookStep.persisting =>
+                  t.import_step_persisting,
+                StandaloneSubtitleBookStep.copyingFile =>
+                  t.import_step_copying_file(name: fileName ?? ''),
+                StandaloneSubtitleBookStep.saving => t.import_step_saving,
+                StandaloneSubtitleBookStep.done => t.import_step_done,
+              }),
     );
-
-    reportProgress(0.9, t.import_step_saving);
-    final SrtBook book = SrtBook()
-      ..uid = uid
-      ..title = title
-      ..srtPath = persistedSrt
-      ..importedAt = DateTime.now().millisecondsSinceEpoch
-      ..bookKey = bookKey;
-    if (persistedAudioPaths.isNotEmpty) {
-      book.audioPaths = persistedAudioPaths;
-    }
-    if (author != null) {
-      book.author = author;
-    }
-    // TODO-1034：与主路径同根因——读 _audioCoverPath 前必须先等内嵌封面抽取落定，
-    // 否则用户在 ffmpeg probe 未返回时点「导入」会把封面吞掉。
-    await _awaitCoverExtraction();
-    final String? coverSource = _coverPath ?? _audioCoverPath;
-    if (coverSource != null) {
-      final String ext = p.extension(coverSource);
-      final String dest = p.join(persistDir.path, 'cover$ext');
-      if (await _writeCoverOrSkip(source: coverSource, destPath: dest)) {
-        book.coverPath = dest;
-      }
-    }
-
-    debugPrint('[fushi-import] SrtBook save: uid=$uid title="$title" '
-        'bookKey=$bookKey cues=${cues.length}');
-
-    await widget.repo.save(book);
-    await widget.repo.saveCues(uid: uid, cues: cues);
-    reportProgress(1, t.import_step_done);
   }
 
   Future<void> _importEpubOnly({required String title}) async {
@@ -1230,9 +1187,6 @@ class _BookImportDialogState extends State<BookImportDialog>
 
     return summarizeAudiobookHealth(result.health);
   }
-
-  Future<Directory> _ensurePersistDir(String key) =>
-      AudiobookStorage.ensurePersistDir(key);
 }
 
 @visibleForTesting
@@ -1244,32 +1198,18 @@ class BookImportDialogFrame extends StatelessWidget {
     super.key,
   });
 
-  final Widget title;
+  /// 2026-10 体验优化：标题交给 [ImportDialogFrame] 的固定页头（与有声书导入
+  /// 一致），不再塞进可滚动 body——此前表单一长，标题就跟着滚出视口。
+  final String title;
   final Widget content;
   final List<Widget> actions;
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-
     return ImportDialogFrame(
       leadingIcon: Icons.library_add_outlined,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          DefaultTextStyle.merge(
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: tokens.type.listTitle.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-            child: title,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          content,
-        ],
-      ),
+      title: title,
+      body: content,
       actions: actions,
     );
   }

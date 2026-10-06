@@ -7,6 +7,8 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 
 /// 「同步进度条只有一条线、没有任何文字」的回归守卫。
 ///
@@ -134,7 +136,7 @@ void main() {
     testWidgets('没有同步在跑时收成零高度，不占布局', (WidgetTester tester) async {
       syncInProgress.value = false;
       await pumpBanner(tester);
-      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
       expect(find.byType(Text), findsNothing);
     });
 
@@ -144,7 +146,7 @@ void main() {
       syncProgress.value = null;
       syncActivity.value = const SyncActivity(SyncActivityKind.collections);
       await pumpBanner(tester);
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
       final Finder text = find.byType(Text);
       expect(text, findsOneWidget, reason: '这正是用户报的现象：条子在转但一个字都没有');
       expect(
@@ -163,9 +165,8 @@ void main() {
       // 准备段没有可测总数 → 不确定进度条。
       expect(
         tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
+            .widget<FushiLinearProgressIndicator>(
+                find.byType(FushiLinearProgressIndicator))
             .value,
         isNull,
       );
@@ -187,9 +188,8 @@ void main() {
       );
       expect(
         tester
-            .widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator),
-            )
+            .widget<FushiLinearProgressIndicator>(
+                find.byType(FushiLinearProgressIndicator))
             .value,
         closeTo(3 / 8, 1e-9),
       );

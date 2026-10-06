@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_resource_version_groups.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
@@ -127,7 +128,7 @@ class _VideoResourceVersionGroupListState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 group.trusted
                     ? Icons.verified_rounded
                     : Icons.cloud_download_outlined,
@@ -210,7 +211,7 @@ class _VideoResourceVersionGroupListState
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: widget.selectedIdentityKeys.contains(member.identityKey),
       leading: widget.multiSelect && widget.onSelect != null
-          ? Checkbox(
+          ? FushiCheckbox(
               value: widget.selectedIdentityKeys.contains(member.identityKey),
               onChanged: (_) => widget.onSelect!(member),
             )

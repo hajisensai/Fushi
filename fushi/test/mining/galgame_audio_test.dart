@@ -711,6 +711,82 @@ void main() {
       }
     });
 
+    // BUG-2891：`--japanese-locale` 只是请求。x64 helper 没有 Locale Emulator 运行时，
+    // injector 退回普通 CreateProcess 并回报 `locale=0`；旧实现照样报「已转区」。
+    for (final (String localeField, bool applied) in <(String, bool)>[
+      ('locale=1', true),
+      ('locale=0', false),
+    ]) {
+      test('转区事实只认 injector 回报：$localeField ⇒ applied=$applied', () async {
+        final Directory temp = await Directory.systemTemp.createTemp(
+          'hibiki_locale_fact_test_',
+        );
+        final File injector = File(
+          '${temp.path}${Platform.pathSeparator}fake.exe',
+        );
+        await injector.writeAsBytes(const <int>[0]);
+        final File game = File('${temp.path}${Platform.pathSeparator}game.exe');
+        await game.writeAsBytes(_craftPe(0x8664));
+        final _FakeProcess process = _FakeProcess();
+        setHandler((MethodCall call) async {
+          switch (call.method) {
+            case 'open':
+              return <String, Object?>{'ok': true};
+            case 'requestNativeLoopbackPolicy':
+              return <String, Object?>{
+                'nativeLoopbackRequested': 0,
+                'nativeLoopbackRequestSeq': 1,
+                'nativeLoopbackState': 0,
+                'nativeLoopbackAppliedSeq': 1,
+              };
+            case 'status':
+              return <Object?, Object?>{
+                'hooked': true,
+                'textHooked': true,
+                'audioHooksReady': true,
+                'ready': false,
+                'rawVoiceReady': false,
+              };
+          }
+          return null;
+        });
+        final EngineHookGalAudioSource source = EngineHookGalAudioSource(
+          launchExe: game.path,
+          injectorPath: injector.path,
+          capabilitiesProbe: (String _) async =>
+              GalHookCapabilityProbeResult.supported,
+          japaneseLocaleMode: GalJapaneseLocaleMode.on,
+          systemAnsiCodePageProbe: () => 936,
+          processStarter: (String _, List<String> arguments) async {
+            expect(arguments, contains('--japanese-locale'));
+            scheduleMicrotask(() {
+              process.stdoutController.add(
+                ('LAUNCH pid=4321 arch=x64 role=game $localeField\n'
+                        'OK hooked pid=4321 mode=launch\n')
+                    .codeUnits,
+              );
+            });
+            return process;
+          },
+          readyTimeout: const Duration(seconds: 1),
+          pollInterval: Duration.zero,
+        );
+        try {
+          await source.start();
+          expect(source.japaneseLocaleRequested, isTrue);
+          expect(source.japaneseLocaleApplied, applied);
+          expect(
+            source.japaneseLocaleSkipReason,
+            applied ? isNull : GalJapaneseLocaleSkipReason.runtimeUnavailable,
+          );
+        } finally {
+          await source.stop();
+          await process.dispose();
+          await temp.delete(recursive: true);
+        }
+      });
+    }
+
     test('attach 等 helper OK 后才打开共享内存', () async {
       final Directory temp = await Directory.systemTemp.createTemp(
         'hibiki_helper_attach_ready_test_',
@@ -1005,6 +1081,42 @@ void main() {
       );
       expect(line.textThreadKey, 'siglus:44');
       expect(line.textThreadLabel, 'Siglus exact · 0x25c880');
+    });
+
+    test('engine exact text sources map to their own thread namespace', () {
+      // native voice_hook_ipc.h: kTextSourceYuris = 9, kTextSourceFvp = 10,
+      // kTextSourceKogadoHy = 11, kTextSourceMalie = 15. An unmapped kind
+      // falls back to 'hook:' / 'Text hook', which hides the engine lane from
+      // thread selection.
+      const Map<int, (String, String)> expected = <int, (String, String)>{
+        9: ('yuris', 'YU-RIS exact'),
+        10: ('fvp', 'FVP exact'),
+        11: ('kogado', 'Kogado Hy exact'),
+        15: ('malie', 'Malie exact'),
+      };
+      for (final MapEntry<int, (String, String)> entry in expected.entries) {
+        final GalHookedLine line = GalHookedLine(
+          seq: 1,
+          timestampMs: 2,
+          text: '「テスト」',
+          threadId: 0x2a,
+          threadAddress: 0x1000,
+          sourceKind: entry.key,
+        );
+        expect(line.textThreadKey, '${entry.value.$1}:2a');
+        expect(line.textThreadLabel, '${entry.value.$2} · 0x1000');
+      }
+      // 12–14 are registered in voice_hook_ipc.h as reserved / unassigned.
+      for (int kind = 12; kind <= 14; kind++) {
+        final GalHookedLine line = GalHookedLine(
+          seq: 1,
+          timestampMs: 2,
+          text: '「テスト」',
+          threadId: 0x2a,
+          sourceKind: kind,
+        );
+        expect(line.textThreadKey, 'hook:2a', reason: '$kind');
+      }
     });
 
     test(
@@ -1494,10 +1606,40 @@ void main() {
 
     String join(String a, String b) => '$a${Platform.pathSeparator}$b';
 
-    test('manosaba.exe 明确启用 Unity/Mono 文本 hook 兜底', () async {
+    test('单个游戏 exe 名不触发 PC hooks：没有 Unity 目录结构的 manosaba.exe 不启用', () async {
       final File exe = File(join(dir.path, 'manosaba.exe'));
       await exe.writeAsBytes(_craftPe(0x8664), flush: true);
-      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
+    });
+
+    test(
+      'manosaba 按 Unity IL2CPP 目录结构（_Data/il2cpp_data）启用 PC hooks',
+      () async {
+        final File exe = File(join(dir.path, 'manosaba.exe'));
+        await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+        await File(join(dir.path, 'UnityPlayer.dll')).writeAsBytes(<int>[1]);
+        final File metadata = File(
+          join(
+            join(
+              join(join(dir.path, 'manosaba_Data'), 'il2cpp_data'),
+              'Metadata',
+            ),
+            'global-metadata.dat',
+          ),
+        );
+        await metadata.create(recursive: true);
+        await metadata.writeAsBytes(<int>[1]);
+
+        expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+      },
+    );
+
+    test('只有 UnityPlayer.dll、没有 IL2CPP/Mono 布局的 PE 不启用', () async {
+      final File exe = File(join(dir.path, 'sample.exe'));
+      await exe.writeAsBytes(_craftPe(0x8664), flush: true);
+      await File(join(dir.path, 'UnityPlayer.dll')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
     });
 
     test('SiglusEngine.exe 启用 PC hooks 以避开 GDI 描边伪影', () async {

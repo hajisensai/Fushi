@@ -39,6 +39,7 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart'
     show ReaderPaginationScripts;
 import 'package:fushi/src/reader/reader_content_styles.dart'
     show ReaderLayoutDefaults;
+import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 
 /// Builds the VN-mode reader shell `<script>` for the reader WebView. Mirrors
 /// [ReaderPaginationScripts.shellScript]'s shells but installs the hoshi a
@@ -753,9 +754,13 @@ $imageRevealSemantics
         if (!cue || !cue.id) continue;
         var start = Math.max(0, Number(cue.start) || 0);
         var length = Math.max(0, Number(cue.length) || 0);
+        // BUG-2907：与翻页 / 滚动同一份标点归属，句末「。」、句首「「」进当前句。
         result.push({
           id: cue.id,
-          ranges: this.collectMatchableSegments(start, start + length)
+          ranges: window.fushiSentenceAudioOwnership.extendSegments(
+            this.collectMatchableSegments(start, start + length),
+            this.reader.isMatchableChar.bind(this.reader)
+          )
         });
       }
       return result;
@@ -831,6 +836,7 @@ window.fushiReader = {
   sentenceAudioCueMap: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
+$kSentenceAudioRubyGapJs
   cueSourceRanges: new Map(),
   nodeStartOffsets: new WeakMap(),
   nodeStartRawOffsets: new WeakMap(),
@@ -1630,11 +1636,46 @@ $sharedInitViewport
         }
       }
       if (best <= start) best = start + 1;
+      best = this.viewportSplitKinsokuBoundary(units, start, best);
       var splitItems = this.textItemsFromViewportUnits(units, start, best);
       result.push(this.screenFromTextItems(splitItems, 0, splitItems.length, screen.ids));
       start = best;
     }
     return result;
+  },
+  // BUG-2905：二分只认「装得下」，切点落在哪个字上全凭运气——段落恰好多出一个「。」
+  // 就切出一屏孤零零的「。」，「…しょうな！」」切成「…しょうな！」+「」」。同一段被切
+  // 开时，下一屏不得以行首禁则字开头、本屏不得以开括号收尾（与正文 `line-break:
+  // normal` 同一套禁则，做法同排版的「追い出し」：把前一个字带到下一屏）。只往回退、
+  // 不往前进，所以退完的屏一定仍装得下。若退过本屏起点都找不到合规切点（连续禁则字比
+  // 一整屏还长，如「ーーーー…」「っっっ」「！？！？…」），禁则在本屏内无解：放弃禁则、
+  // 用二分得到的最宽切点 end（与浏览器 line-break 遇到无法满足的禁则时照常断开一致），
+  // 而不是退到只剩一个单元——那样每屏只放一个字，屏数暴增。end > start，切屏仍有进展。
+  viewportSplitKinsokuBoundary: function(units, start, end) {
+    if (end >= units.length) return end;
+    for (var boundary = end; boundary > start; boundary--) {
+      var head = this.viewportSplitUnitEdgeChar(units[boundary], true);
+      var tail = this.viewportSplitUnitEdgeChar(units[boundary - 1], false);
+      if (!this.isLineStartProhibitedChar(head) && !this.isLineEndProhibitedChar(tail)) return boundary;
+    }
+    return end;
+  },
+  viewportSplitUnitEdgeChar: function(unit, first) {
+    var items = unit && unit.items;
+    if (!items || !items.length) return '';
+    var item = items[first ? 0 : items.length - 1];
+    return String(item && item.char || '');
+  },
+  // 与正文 `line-break: normal` 对齐（BUG-2929）：CJ 类（小假名与长音 ー）允许出现在行首 / 屏首，
+  // 不在此表；`strict` 才禁它们，见 reader_content_styles.dart 的 gridCss。
+  lineStartProhibitedChars: '、。，．,.・：；:;？！?!‼⁇⁈⁉゛゜ヽヾゝゞ々〻－‐゠–〜～' +
+    '」』）〕］｝〉》】〙〗〟’”｠»)]}…‥',
+  lineEndProhibitedChars: '「『（〔［｛〈《【〘〖〝‘“｟«([{',
+  isLineStartProhibitedChar: function(char) {
+    return !!char && this.lineStartProhibitedChars.indexOf(char) >= 0;
+  },
+  isLineEndProhibitedChar: function(char) {
+    return !!char && this.lineEndProhibitedChars.indexOf(char) >= 0;
   },
   viewportSplitUnitsForItems: function(items) {
     var units = [];
@@ -2968,11 +3009,16 @@ $sharedInitViewport
       var id = cueRanges[i].id;
       var ranges = cueRanges[i].ranges;
       if (!ranges.length) continue;
+      // BUG-2917：与分页 / 连续模式同一套分组（sentenceAudioWrapItems）——同一父节点下
+      // 相邻的片段整组包进一个 wrapper，ruby 内基字就地单独包、ruby 不移动；逐段各包一个
+      // wrapper 时竖排注音处整句高亮断成一截一截。
+      var items = this.sentenceAudioWrapItems(ranges);
       var wrappers = [];
-      for (var j = ranges.length - 1; j >= 0; j--) {
-        var segment = ranges[j];
-        range.setStart(segment.node, segment.start);
-        range.setEnd(segment.node, segment.end);
+      for (var g = items.length - 1; g >= 0; g--) {
+        var first = items[g][0];
+        var last = items[g][items[g].length - 1];
+        range.setStart(first.node, first.start);
+        range.setEnd(last.node, last.end);
         var wrapper = document.createElement('span');
         wrapper.className = 'fushi-sentence-audio-cue';
         wrapper.appendChild(range.extractContents());
@@ -3003,6 +3049,7 @@ $sharedInitViewport
         wrapper.classList.remove('fushi-sentence-audio-active');
       });
     };
+    this.clearSentenceAudioRubyGaps();
     if (cueId) {
       clearWrappers(this.cueWrappers.get(cueId) || []);
       return;
@@ -3014,12 +3061,15 @@ $sharedInitViewport
     wrappers.forEach(function(wrapper) {
       wrapper.classList.add('fushi-sentence-audio-active');
     });
+    // BUG-2917：注音撑出的缝用 box-shadow 补色（与分页 / 连续模式同一实现）。
+    this.fillSentenceAudioRubyGaps(wrappers);
     return wrappers.length > 0;
   },
   clearSentenceAudioCuePresentation: function() {
     this.clearInlineSentenceAudioCue();
   },
   clearCurrentSentenceAudioScreenTargets: function() {
+    this.clearSentenceAudioRubyGaps();
     this.cueSourceRanges.clear();
     this.cueWrappers.clear();
   },

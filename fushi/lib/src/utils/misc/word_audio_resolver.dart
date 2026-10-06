@@ -30,6 +30,32 @@ typedef IndexedLocalAudioQuery = Future<Map<String, dynamic>?> Function(
 typedef LocalAudioExtractor = Future<String?>
     Function(String file, String source, {int dbIndex});
 typedef AudioSourceListFetcher = Future<List<String>> Function(String url);
+
+/// 远端音源列表（Yomitan `audioSourceList`）的逐条结果：条目自带的显示名
+/// （如 `NHK16` / `Forvo (user)`，可空）+ 音频 URL。供「选择音频源」菜单展开
+/// 一个源返回的全部变体；[WordAudioResolver.resolveConfigured] 仍只取首条 URL。
+typedef AudioSourceListEntry = ({String name, String url});
+typedef AudioSourceEntryListFetcher = Future<List<AudioSourceListEntry>>
+    Function(String url);
+
+/// 「选择音频源」菜单里的一项：哪个已配置源（[sourceIndex] 是它在
+/// `audioSourceConfigs` 里的下标）、该源内的变体名（远端列表条目名，可空）、
+/// 解析出的音频引用（远程 URL 或本地文件路径，与 [WordAudioResolver.resolveConfigured]
+/// 返回值同形）。
+class WordAudioCandidate {
+  const WordAudioCandidate({
+    required this.source,
+    required this.sourceIndex,
+    required this.variant,
+    required this.ref,
+  });
+
+  final AudioSourceConfig source;
+  final int sourceIndex;
+  final String variant;
+  final String ref;
+}
+
 typedef RemoteAudioQuery = Future<String?> Function(
     String expression, String reading);
 
@@ -40,11 +66,21 @@ class WordAudioResolver {
     IndexedLocalAudioQuery? queryLocalAudioByDbIndex,
     this.queryRemoteAudio,
     AudioSourceListFetcher? fetchAudioSourceList,
+    AudioSourceEntryListFetcher? fetchAudioSourceEntries,
   })  : queryLocalAudioByDbIndex = queryLocalAudioByDbIndex ??
             ((String expression, String reading, int _) =>
                 queryLocalAudio(expression, reading)),
         fetchAudioSourceList = fetchAudioSourceList ??
-            WordAudioResolver.defaultFetchAudioSourceList;
+            WordAudioResolver.defaultFetchAudioSourceList,
+        // 只注入了 URL 列表 fetcher（既有测试 / 调用方）时，变体列表沿用它、
+        // 条目名留空——两条路径永远打同一个端点，不会出现「播放走 A、菜单走 B」。
+        fetchAudioSourceEntries = fetchAudioSourceEntries ??
+            (fetchAudioSourceList == null
+                ? WordAudioResolver.defaultFetchAudioSourceEntries
+                : (String url) async => <AudioSourceListEntry>[
+                      for (final String u in await fetchAudioSourceList(url))
+                        (name: '', url: u),
+                    ]);
 
   static const String localAudioUrl =
       'http://localhost:8765/localaudio/get/?term={term}&reading={reading}';
@@ -63,6 +99,7 @@ class WordAudioResolver {
   final LocalAudioExtractor extractLocalAudio;
   final RemoteAudioQuery? queryRemoteAudio;
   final AudioSourceListFetcher fetchAudioSourceList;
+  final AudioSourceEntryListFetcher fetchAudioSourceEntries;
 
   Future<String?> resolve({
     required String expression,
@@ -171,6 +208,119 @@ class WordAudioResolver {
       }
     }
     return null;
+  }
+
+  /// 「选择音频源」菜单：把**每个**启用源对 [expression] / [reading] 各自解析
+  /// 一遍，返回全部可用候选（按配置顺序；远端列表型源展开成多项）。
+  ///
+  /// 与 [resolveConfigured] 同一套逐源语义（本地库按启用序号定 dbIndex、远端
+  /// 失败冷却、badResponse 当空结果），区别只在「不在首个命中处停下」。各源并发
+  /// 查询，结果仍按配置顺序拼接——菜单里的顺序就是默认播放的优先级，首项即
+  /// 单击 ♪ 会播的那条。同一引用只留第一次出现的那项。
+  Future<List<WordAudioCandidate>> listConfigured({
+    required String expression,
+    required String reading,
+    required List<AudioSourceConfig> sources,
+  }) async {
+    final List<Future<List<WordAudioCandidate>>> pending =
+        <Future<List<WordAudioCandidate>>>[];
+    int localDbIndex = 0;
+    for (int i = 0; i < sources.length; i++) {
+      final AudioSourceConfig source = sources[i];
+      if (!source.enabled) continue;
+      switch (source.kind) {
+        case AudioSourceKind.fushiRemote:
+          pending.add(_listFushiRemote(source, i, expression, reading));
+        case AudioSourceKind.localAudio:
+          final int dbIndex = localDbIndex;
+          localDbIndex++;
+          pending.add(_listLocal(source, i, expression, reading, dbIndex));
+        case AudioSourceKind.remoteAudio:
+          pending.add(_listRemote(source, i, expression, reading));
+      }
+    }
+    final List<List<WordAudioCandidate>> groups = await Future.wait(pending);
+    final Set<String> seen = <String>{};
+    return <WordAudioCandidate>[
+      for (final List<WordAudioCandidate> group in groups)
+        for (final WordAudioCandidate c in group)
+          if (seen.add(c.ref)) c,
+    ];
+  }
+
+  Future<List<WordAudioCandidate>> _listLocal(
+    AudioSourceConfig source,
+    int sourceIndex,
+    String expression,
+    String reading,
+    int dbIndex,
+  ) async {
+    final String? path = await _resolveLocalAt(expression, reading, dbIndex);
+    if (path == null || path.isEmpty) return const <WordAudioCandidate>[];
+    return <WordAudioCandidate>[
+      WordAudioCandidate(
+          source: source, sourceIndex: sourceIndex, variant: '', ref: path),
+    ];
+  }
+
+  Future<List<WordAudioCandidate>> _listFushiRemote(
+    AudioSourceConfig source,
+    int sourceIndex,
+    String expression,
+    String reading,
+  ) async {
+    final RemoteAudioQuery? query = queryRemoteAudio;
+    if (query == null || isRemoteSourceInCooldown(fushiRemoteCooldownKey)) {
+      return const <WordAudioCandidate>[];
+    }
+    final String? remote;
+    try {
+      remote = await query(expression, reading);
+    } on RemoteLookupUnreachableError {
+      _markRemoteSourceFailed(fushiRemoteCooldownKey);
+      return const <WordAudioCandidate>[];
+    }
+    _markRemoteSourceOk(fushiRemoteCooldownKey);
+    if (remote == null || remote.isEmpty) return const <WordAudioCandidate>[];
+    return <WordAudioCandidate>[
+      WordAudioCandidate(
+          source: source, sourceIndex: sourceIndex, variant: '', ref: remote),
+    ];
+  }
+
+  Future<List<WordAudioCandidate>> _listRemote(
+    AudioSourceConfig source,
+    int sourceIndex,
+    String expression,
+    String reading,
+  ) async {
+    final String? template = source.url;
+    if (template == null || template.isEmpty) {
+      return const <WordAudioCandidate>[];
+    }
+    final String url = expandTemplate(
+      template: template,
+      expression: expression,
+      reading: reading,
+    );
+    if (isRemoteSourceInCooldown(url)) return const <WordAudioCandidate>[];
+    final List<AudioSourceListEntry> entries;
+    try {
+      entries = await fetchAudioSourceEntries(url);
+    } catch (_) {
+      _markRemoteSourceFailed(url);
+      return const <WordAudioCandidate>[];
+    }
+    _markRemoteSourceOk(url);
+    return <WordAudioCandidate>[
+      for (final AudioSourceListEntry e in entries)
+        WordAudioCandidate(
+          source: source,
+          sourceIndex: sourceIndex,
+          variant: e.name,
+          ref: e.url,
+        ),
+    ];
   }
 
   /// 传统 [resolve] 路径的远端查询：保持既有「失败即跳过」语义——配对设备不可
@@ -332,23 +482,37 @@ class WordAudioResolver {
     _dio.httpClientAdapter = adapter;
   }
 
-  static Future<List<String>> defaultFetchAudioSourceList(String url) async {
+  static Future<List<String>> defaultFetchAudioSourceList(String url) async =>
+      <String>[
+        for (final AudioSourceListEntry e
+            in await defaultFetchAudioSourceEntries(url))
+          e.url,
+      ];
+
+  /// [defaultFetchAudioSourceList] 的带名版本：保留 `audioSources[].name`，供
+  /// 「选择音频源」菜单区分同一源的多个变体。错误语义与它完全一致（它就是本
+  /// 函数的投影）。
+  static Future<List<AudioSourceListEntry>> defaultFetchAudioSourceEntries(
+      String url) async {
     try {
       final Response<dynamic> response = await _dio.get<dynamic>(url);
       final dynamic body = response.data is String
           ? jsonDecode(response.data as String)
           : response.data;
-      if (body is! Map) return const <String>[];
+      if (body is! Map) return const <AudioSourceListEntry>[];
 
       final dynamic sources = body['audioSources'];
       if (body['type'] != 'audioSourceList' || sources is! List) {
-        return const <String>[];
+        return const <AudioSourceListEntry>[];
       }
 
       return sources
           .whereType<Map>()
-          .map((source) => source['url']?.toString() ?? '')
-          .where((value) => value.isNotEmpty)
+          .map((source) => (
+                name: source['name']?.toString() ?? '',
+                url: source['url']?.toString() ?? '',
+              ))
+          .where((entry) => entry.url.isNotEmpty)
           .toList(growable: false);
     } catch (e, stack) {
       // TODO-1265 根因修：`badResponse`＝服务器**可达**并回了一个非 2xx（最典型是 404
@@ -359,7 +523,7 @@ class WordAudioResolver {
       // 的词后，整段时间里该源全哑）。故 badResponse 直接当空结果返回：不记错误日志、
       // 不 rethrow → resolveConfigured 不冷却、继续下一源、该源对下个词仍可用。
       if (e is DioError && e.type == DioErrorType.badResponse) {
-        return const <String>[];
+        return const <AudioSourceListEntry>[];
       }
       final host = Uri.tryParse(url)?.host ?? url;
       final String detail;

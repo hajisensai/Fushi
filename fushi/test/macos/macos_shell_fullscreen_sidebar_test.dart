@@ -158,11 +158,13 @@ void main() {
     ).readAsStringSync());
     final String mainCode = maskComments(main);
 
-    // ① macOS 与 Windows 走同一条「隐藏系统标题栏 + 自绘顶栏」路径，且交通灯必须
-    //    在同一次调用里关掉（windowButtonVisibility: false），否则三个圆点会浮在
-    //    自绘顶栏的标题上（BUG-973 的根因）。
+    // ① macOS 与 Windows 走同一条「隐藏系统标题栏 + 自绘顶栏」路径；窗口按钮按平台
+    //    （用户 2026-10-04）：macOS 在同一次调用里保留系统原生红绿灯
+    //    （windowButtonVisibility: Platform.isMacOS），顶栏左侧给它们留位。
     expect(mainCode, contains('Platform.isWindows || Platform.isMacOS'));
-    expect(mainCode, contains('windowButtonVisibility: false'));
+    expect(mainCode, contains('windowButtonVisibility: Platform.isMacOS'));
+    expect(mainCode, isNot(contains('windowButtonVisibility: false')),
+        reason: 'macOS 已不画自绘窗口按钮，关掉红绿灯 = 窗口无最小化/关闭按钮');
     expect(mainCode, contains('FushiDesktopTitleBar.markEnabled()'),
         reason: '不置位启动闩 = 隐藏了系统标题栏却不挂替代顶栏（无标题无按钮）');
 
@@ -178,10 +180,16 @@ void main() {
         reason: '全屏时必须按所有者收起自绘顶栏');
     expect(titleBar, contains('removeListener('),
         reason: 'dispose 未摘监听 = 泄漏 + 已 dispose 的 State 上 setState');
-    // ④ AppKit 退全屏会重建标题栏视图、复位 standardWindowButton.isHidden，
-    //    退出时必须重申隐藏，否则交通灯回到自绘顶栏之上。
-    expect(titleBar, contains('setMacOSTrafficLightsHidden(true)'),
-        reason: '退出原生全屏后不重申隐藏 → 交通灯复现并压住自绘顶栏');
+    // ④ 红绿灯显隐单一真值：内容全屏（顶栏收起）时藏、否则显示；AppKit 退全屏会
+    //    重建标题栏视图、复位 standardWindowButton.isHidden，退出时必须经
+    //    reassertMacTrafficLights 按真值重申。
+    expect(titleBar,
+        contains('setMacOSTrafficLightsHidden(_contentFullscreen.value)'),
+        reason: '红绿灯显隐必须跟内容全屏真值走');
+    expect(
+        methodBody(titleBar, 'void _onMacosFullscreenChanged() {'),
+        contains('FushiDesktopTitleBar.reassertMacTrafficLights()'),
+        reason: '退出原生全屏后不重申 → 红绿灯可能停在错误的显隐态');
     expect(fullscreenState, contains('windowDidEnterFullScreen'),
         reason: 'NSWindowDelegate 是唯一能覆盖绿灯/菜单/快捷键全部入口的信号');
     expect(fullscreenState, contains('windowDidExitFullScreen'),

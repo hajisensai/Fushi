@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../tool/test_flow/heavy_budget.dart';
 import '../../tool/test_flow/heavy_lease.dart';
 
-// Real OS file locks in a private state directory; memory is injected so the
-// machine's live load cannot make these flaky.
+// Real OS file locks in a private state directory; memory is injected (it
+// only sizes the default slot count) so the machine's live load cannot make
+// these flaky.
 void main() {
   late Directory tmp;
   const MemorySnapshot roomy = MemorySnapshot(
@@ -34,7 +35,7 @@ void main() {
     HeavyKind kind = HeavyKind.analyze,
     String? worktree,
     MemorySnapshot memory = roomy,
-    Duration waitMax = const Duration(seconds: 1),
+    Duration? waitMax = const Duration(seconds: 1),
   }) =>
       acquireHeavyLease(
         need: heavyNeedFor(kind),
@@ -86,50 +87,22 @@ void main() {
     },
   );
 
-  test(
-    'waits on memory even with a slot free, and admits once it frees',
-    () async {
-      const MemorySnapshot tight = MemorySnapshot(
-        totalPhysMb: 64 * 1024,
-        availPhysMb: 5000,
-        availCommitMb: 60000,
-      );
-      await expectLater(
-        take(4, memory: tight),
-        throwsA(
-          isA<HeavyLeaseTimeout>().having(
-            (HeavyLeaseTimeout e) => e.message,
-            'message',
-            contains('available RAM'),
-          ),
-        ),
-      );
-      int reads = 0;
-      final HeavyLease admitted = await acquireHeavyLease(
-        need: heavyNeedFor(HeavyKind.analyze),
-        label: 'late',
-        waitMax: const Duration(seconds: 5),
-        environment: env(4),
-        readMemory: () => ++reads < 3 ? tight : roomy,
-        poll: const Duration(milliseconds: 50),
-        log: (_) {},
-      );
-      expect(admitted.slot, isNotNull);
-      expect(reads, greaterThanOrEqualTo(3));
-      admitted.release();
-    },
-  );
-
-  test('just-admitted runs reserve their need for the next waiter', () async {
-    // Room for one 3 GB run on top of the 4 GB reserve, not for two.
-    const MemorySnapshot one = MemorySnapshot(
-      totalPhysMb: 64 * 1024,
-      availPhysMb: 8000,
-      availCommitMb: 60000,
+  // No memory admission (2026-10-03, owner's call): a busy desktop with a
+  // free slot must not keep an agent -- and everyone queued behind it --
+  // waiting for "available RAM above a reserve".
+  test('a free slot is taken at once however little memory is free', () async {
+    const MemorySnapshot starved = MemorySnapshot(
+      totalPhysMb: 32 * 1024,
+      availPhysMb: 600,
+      availCommitMb: 300,
     );
-    final HeavyLease a = await take(4, memory: one);
-    await expectLater(take(4, memory: one), throwsA(isA<HeavyLeaseTimeout>()));
+    final HeavyLease a = await take(2, kind: HeavyKind.build, memory: starved);
+    final HeavyLease b = await take(2, kind: HeavyKind.test, memory: starved);
+    expect(<int?>{a.slot, b.slot}, <int>{0, 1});
+    expect(a.waited, lessThan(const Duration(seconds: 1)));
+    expect(b.waited, lessThan(const Duration(seconds: 1)));
     a.release();
+    b.release();
   });
 
   test(
@@ -167,6 +140,88 @@ void main() {
     },
   );
 
+  // Queue, never give up (2026-10-03, owner's call): without a wait limit a
+  // waiter stays queued however long the machine is busy.
+  test('without a wait limit a waiter queues until a slot frees', () async {
+    final HeavyLease a = await take(1);
+    bool admitted = false;
+    final Future<HeavyLease> waiting = take(1, waitMax: null)
+      ..then((_) => admitted = true);
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    expect(admitted, isFalse);
+    expect(
+      readHeavyQueue(Directory('${tmp.path}/state')).map((q) => q.label),
+      <String>['lease-analyze'],
+    );
+    a.release();
+    final HeavyLease b = await waiting;
+    expect(b.slot, 0);
+    expect(readHeavyQueue(Directory('${tmp.path}/state')), isEmpty);
+    b.release();
+  });
+
+  test('a dead waiter\'s ticket is swept, not waited on', () async {
+    final Directory queue = Directory('${tmp.path}/state/queue')
+      ..createSync(recursive: true);
+    File('${queue.path}/00000000000000000001-1-0.ticket').createSync();
+    File(
+      '${queue.path}/00000000000000000001-1-0.json',
+    ).writeAsStringSync('{"pid":1,"label":"dead"}');
+    final HeavyLease a = await take(1);
+    expect(a.waited, lessThan(const Duration(seconds: 1)));
+    expect(queue.listSync(), isEmpty);
+    a.release();
+  });
+
+  // First come, first served across processes: a free slot goes to the oldest
+  // live ticket, not to whoever polls first.
+  test(
+    'a free slot waits for an earlier live ticket in another process',
+    () async {
+      final String? dart = _dartExecutable();
+      if (dart == null) {
+        markTestSkipped('no dart executable to hold a ticket in a child');
+        return;
+      }
+      final Directory queue = Directory('${tmp.path}/state/queue')
+        ..createSync(recursive: true);
+      const String early = '00000000000000000001-1-0';
+      File(
+        '${queue.path}/$early.json',
+      ).writeAsStringSync('{"pid":1,"label":"earlier run"}');
+      final File holder = File('${tmp.path}/hold.dart')
+        ..writeAsStringSync(_holdLockScript);
+      final Process child = await Process.start(dart, <String>[
+        holder.path,
+        '${queue.path}/$early.ticket',
+      ]);
+      try {
+        await child.stdout
+            .transform(const SystemEncoding().decoder)
+            .firstWhere((String l) => l.contains('locked'))
+            .timeout(const Duration(seconds: 60));
+        await expectLater(
+          take(1),
+          throwsA(
+            isA<HeavyLeaseTimeout>().having(
+              (HeavyLeaseTimeout e) => e.message,
+              'message',
+              allOf(contains('queued behind 1'), contains('earlier run')),
+            ),
+          ),
+        );
+      } finally {
+        await child.stdin.close();
+        await child.exitCode.timeout(const Duration(seconds: 30));
+      }
+      final HeavyLease a = await take(1);
+      expect(a.slot, 0);
+      expect(File('${queue.path}/$early.ticket').existsSync(), isFalse);
+      a.release();
+    },
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
+
   test('children inherit the lease; nested tools take none', () async {
     final HeavyLease a = await take(1);
     expect(a.childEnvironment[kHeavyLeaseEnv], '$pid');
@@ -184,4 +239,41 @@ void main() {
     nested.release();
     a.release();
   });
+
+  // pre_push_check --no-lease (2026-10-02): a caller that schedules runs
+  // itself drops the memory ceiling, never the priority or the kill-on-exit
+  // that stops a leftover flutter_tester holding sqlite3.dll.
+  test('the job keeps priority and kill-on-close without a memory ceiling', () {
+    const int priorityClass = 0x20; // JOB_OBJECT_LIMIT_PRIORITY_CLASS
+    const int jobMemory = 0x200; // JOB_OBJECT_LIMIT_JOB_MEMORY
+    const int killOnClose = 0x2000; // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    expect(heavyJobLimitFlags(memoryCap: true),
+        priorityClass | jobMemory | killOnClose);
+    expect(heavyJobLimitFlags(memoryCap: false), priorityClass | killOnClose);
+  });
 }
+
+/// The SDK's dart next to the running flutter (FLUTTER_ROOT is set by the
+/// flutter tool), or null where it cannot be found.
+String? _dartExecutable() {
+  final String? root = Platform.environment['FLUTTER_ROOT'];
+  if (root == null || root.isEmpty) return null;
+  final String exe = Platform.isWindows ? 'dart.exe' : 'dart';
+  final File f = File('$root/bin/cache/dart-sdk/bin/$exe');
+  return f.existsSync() ? f.path : null;
+}
+
+/// Holds an exclusive lock on args[0] until its stdin closes.
+const String _holdLockScript = '''
+import 'dart:io';
+
+void main(List<String> args) {
+  final RandomAccessFile f = File(args[0]).openSync(mode: FileMode.append);
+  f.lockSync(FileLock.exclusive);
+  stdout.writeln('locked');
+  stdin.listen((_) {}, onDone: () {
+    f.closeSync();
+    exit(0);
+  });
+}
+''';

@@ -76,7 +76,11 @@ bool isGalLookupProductionProviderPair(int kind, int id) {
           id == 18 ||
           id == 19 ||
           id == 20 ||
-          id == 21;
+          id == 21 ||
+          id == 22 ||
+          id == 23 ||
+          id == 24 ||
+          id == 28;
     case 3: // positioned_text_api
       return id == 9 || id == 10;
     default:
@@ -1008,6 +1012,10 @@ class GalLookupCallResult {
     this.directSurface = false,
     this.requestSeq = 0,
     this.appliedSeq = 0,
+    this.clientWidth = 0,
+    this.clientHeight = 0,
+    this.rootClientX,
+    this.rootClientY,
   });
 
   /// 平台不支持（非 Windows）时的常量结果：不是失败，是「这条链在这个平台不存在」。
@@ -1042,6 +1050,15 @@ class GalLookupCallResult {
   final int requestSeq;
   final int appliedSeq;
 
+  /// 直连 present 时的游戏客户区尺寸（物理 px，0 = 未上报）。
+  final int clientWidth;
+  final int clientHeight;
+
+  /// BUG-2921 — 直连 present 时根卡在客户区里的真实左上角（物理 px）；null = runner
+  /// 未上报（旧 runner / 位图回退）。嵌套子卡以它为原点、以客户区为视口排版。
+  final int? rootClientX;
+  final int? rootClientY;
+
   bool get ok => error == null;
 
   static GalLookupCallResult fromReply(Object? reply) {
@@ -1057,6 +1074,10 @@ class GalLookupCallResult {
       directSurface: map['directSurface'] == true,
       requestSeq: _finiteWireInt(map['requestSeq']) ?? 0,
       appliedSeq: _finiteWireInt(map['appliedSeq']) ?? 0,
+      clientWidth: _finiteWireInt(map['clientWidth']) ?? 0,
+      clientHeight: _finiteWireInt(map['clientHeight']) ?? 0,
+      rootClientX: _finiteWireInt(map['rootClientX']),
+      rootClientY: _finiteWireInt(map['rootClientY']),
     );
   }
 }

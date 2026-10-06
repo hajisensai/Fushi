@@ -66,52 +66,9 @@ bool IsTestOnscreenMode() {
   return GetEnvironmentVariableW(L"FUSHI_TEST_ONSCREEN", nullptr, 0) > 0;
 }
 
-// TODO-959: 数据迁移成功后的自动重启（DesktopLifecycleService.restartApp）会以
-// detached 模式拉起带这个标志的新进程。必须与 main.cpp 的 kRestartMarkerArg 和
-// Dart 侧 DesktopLifecycleService.restartMarkerArg 逐字符一致。见到它说明本次启动
-// 是「旧进程刚迁完数据、主动拉起的新进程」，而非用户二次点击图标。
-constexpr const wchar_t kRestartMarkerArg[] = L"--fushi-restarted";
-
-// TODO-959: splash 背景色。旧进程 exit(0) 杀掉自己到新进程 Flutter 画出首帧
-// 之间，runner 窗口已 WS_VISIBLE 上屏但还没有任何内容；stock 模板 hbrBackground=0
-// （无背景画刷）→ 系统不擦背景 → 这段冷启动窗口里看到黑/未定义像素（经典 Flutter
-// Windows runner 首帧黑窗）。用这块非黑纯色擦背景，首帧前就是它而非黑。颜色取
-// Dart splash 的品牌 seed 色 0xFF1F4959（main.dart 的 ColorScheme.fromSeed
-// seedColor / 加载页 _savedSplashColor 兜底同色系深青），与启动画面观感一致，
-// 深色优先（不刺眼、不闪白）。COLORREF 是 0x00BBGGRR，故 R=0x1F G=0x49 B=0x59。
-//
-// BUG-1916: 这块颜色只是 Win32Window::backdrop_brush_ 的**初始值**，不再挂在窗口
-// 类上。Flutter 子窗是 DWM 里独立的合成层，盖在本窗口自己的重定向表面之上；表面
-// 里是什么颜色平时看不见，但最大化 / 还原 / DPI 切换这类过渡里 DWM 动画的是
-// 「表面」而不是子窗层，表面就会露出来一帧。原实现把画刷挂在 WNDCLASS.hbrBackground
-// 且父窗没有 WS_CLIPCHILDREN：每次缩放系统都把整块表面（含子窗底下）擦成深青，
-// 第一次最大化实测整窗 100% 深青一帧——用户说的「缩放有层底色」。现在画刷归窗口
-// 实例所有，Dart 每次主题变化把 surface 色推过来（FlutterWindow::ApplyCaptionColors
-// → SetBackdropColor），并在换色和 WM_SIZE 时把表面整块（含子窗底下）刷成该色，
-// 过渡帧露出的就是 app 自己的背景色（实测 0%）；冷启动首帧前仍是这块 splash 色
-// （TODO-959 不变）。交互缩放本身的节奏（每步 2~3 vsync）是引擎同步缩放的固有成本，
-// hello-world 同样如此，与本修复无关。
-constexpr COLORREF kSplashBackgroundColor = RGB(0x1F, 0x49, 0x59);
-
-// TODO-959: 本进程 argv 是否带 [kRestartMarkerArg]（迁移后自动重启拉起的新进程）。
-// 与 main.cpp 的 HasRestartMarker 同义，在 runner 窗口层独立判定，避免给
-// CreateAndShow 增加参数破坏其它平台/调用方的签名（向后兼容）。
-bool IsRestartedProcess() {
-  int argc = 0;
-  wchar_t** argv = ::CommandLineToArgvW(::GetCommandLineW(), &argc);
-  if (argv == nullptr) {
-    return false;
-  }
-  bool found = false;
-  for (int i = 1; i < argc; ++i) {
-    if (argv[i] != nullptr && ::wcscmp(argv[i], kRestartMarkerArg) == 0) {
-      found = true;
-      break;
-    }
-  }
-  ::LocalFree(argv);
-  return found;
-}
+// The main window stays hidden through Flutter startup. This backdrop is only
+// a fallback for native surface transitions after the window is revealed.
+constexpr COLORREF kInitialBackdropColor = RGB(0x1F, 0x49, 0x59);
 
 }  // namespace
 
@@ -174,7 +131,7 @@ void WindowClassRegistrar::UnregisterWindowClass() {
 }
 
 Win32Window::Win32Window()
-    : backdrop_brush_(CreateSolidBrush(kSplashBackgroundColor)) {
+    : backdrop_brush_(CreateSolidBrush(kInitialBackdropColor)) {
   ++g_active_window_count;
 }
 
@@ -217,14 +174,9 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   const int window_y =
       (hidden && !onscreen) ? kOffscreenOrigin : Scale(origin.y, scale_factor);
 
-  // TODO-959 (方向 2)：迁移重启拉起的新进程先以隐藏状态建窗（不带
-  // WS_VISIBLE），等 Dart 首帧后由 main.dart 重启分支 windowManager.show()+focus()
-  // 再显示。这样旧进程 exit(0) 到新进程首帧的交接期不会出现空白/黑色
-  // 的错误窗。普通启动（无 --fushi-restarted）仍带 WS_VISIBLE、立即上屏，
-  // 靠上面的背景画刷兜底首帧前不黑，不会永久不显窗。测试隐藏模式
-  // （hidden）不受影响：它靠 WS_VISIBLE+移出屏外保证引擎持续渲染，不能去掉
-  // WS_VISIBLE。只有「非测试 + 重启新进程」走隐藏建窗。
-  const bool restarted_hidden = !hidden && IsRestartedProcess();
+  // Normal launches keep the native window hidden until Dart reveals it after
+  // the first ready/error frame has rasterized. Test windows remain visible so
+  // the integration harness can capture and drive them.
   // BUG-1916: WS_CLIPCHILDREN — the Flutter view is a child HWND that covers
   // the whole client area; WM_PAINT erases (BeginPaint) must not touch the
   // pixels under it (that matters if the engine ever falls back to software
@@ -232,8 +184,7 @@ bool Win32Window::CreateAndShow(const std::wstring& title,
   // under-the-view fills go through FillSurfaceBackdrop instead.
   const DWORD window_style =
       WS_CLIPCHILDREN |
-      (restarted_hidden ? WS_OVERLAPPEDWINDOW
-                        : (WS_OVERLAPPEDWINDOW | WS_VISIBLE));
+      (hidden ? (WS_OVERLAPPEDWINDOW | WS_VISIBLE) : WS_OVERLAPPEDWINDOW);
 
   HWND window = CreateWindowEx(
       ex_style, window_class, title.c_str(), window_style,
@@ -358,8 +309,8 @@ Win32Window::MessageHandler(HWND hwnd,
     }
 
     case WM_ERASEBKGND:
-      // BUG-1916 / TODO-959: erase with the instance backdrop brush (splash
-      // colour before the first Flutter frame, live theme surface afterwards).
+      // BUG-1916: erase with the instance backdrop brush (fallback colour
+      // before Dart pushes the live theme surface).
       // Child-clipped, so once the view covers the client this paints nothing.
       //
       // This supersedes the earlier `if (child_content_) return TRUE; break;`
@@ -367,10 +318,10 @@ Win32Window::MessageHandler(HWND hwnd,
       // with the *class* brush and flashing a #1F4959 rectangle over the child
       // during live resize. The class brush is gone now (hbrBackground =
       // nullptr), so that `break` would fall through to a DefWindowProc with no
-      // brush at all — painting nothing, and bringing the TODO-959 cold-start
-      // black window straight back. The wparam DC honours WS_CLIPCHILDREN, so
-      // "don't cover the child" is now structural rather than a special case:
-      // there is no child yet at cold start (splash fill lands), and once the
+      // brush at all — painting nothing. The wparam DC honours
+      // WS_CLIPCHILDREN, so "don't cover the child" is structural rather than
+      // a special case:
+      // there is no child yet at cold start (fallback fill lands), and once the
       // view covers the client area this call is clipped down to nothing.
       PaintBackdrop(reinterpret_cast<HDC>(wparam));
       return 1;
@@ -443,6 +394,7 @@ Win32Window::MessageHandler(HWND hwnd,
 }
 
 void Win32Window::Destroy() {
+  startup_window_preparation_ = false;
   // Clear the borrowed Flutter-view handle before subclass teardown. Destroying
   // the controller can synchronously destroy that child and dispatch more
   // window messages; retaining it would turn a later HWND reuse into a focus or
@@ -482,7 +434,7 @@ void Win32Window::SetChildContent(HWND content) {
 }
 
 void Win32Window::SyncChildToClientArea() {
-  if (child_content_ == nullptr) {
+  if (child_content_ == nullptr || startup_window_preparation_) {
     return;
   }
   const RECT rect = GetClientArea();
@@ -524,12 +476,32 @@ void Win32Window::DeliverChildSize(ChildSize size) {
 }
 
 void Win32Window::OnChildFrameRasterized(int32_t width, int32_t height) {
+  if (startup_window_preparation_) {
+    return;
+  }
   const std::optional<ChildSize> deferred =
       child_resize_gate_.OnFrameRasterized(ChildSize{width, height});
   if (deferred.has_value()) {
     DeliverChildSize(*deferred);
   }
   ArmStuckDeferralWatchdog();
+}
+
+bool Win32Window::BeginStartupWindowPreparation() {
+  if (window_handle_ == nullptr || IsWindowVisible(window_handle_) ||
+      startup_window_preparation_) {
+    return false;
+  }
+  startup_window_preparation_ = true;
+  return true;
+}
+
+void Win32Window::EndStartupWindowPreparation() {
+  if (!startup_window_preparation_) {
+    return;
+  }
+  startup_window_preparation_ = false;
+  SyncChildToClientArea();
 }
 
 void Win32Window::ArmStuckDeferralWatchdog() {
@@ -574,7 +546,7 @@ void Win32Window::SetBackdropColor(COLORREF color) {
     DeleteObject(backdrop_brush_);
   }
   backdrop_brush_ = brush;
-  // Without this the surface keeps the cold-start splash fill under the view
+  // Without this the surface keeps the fallback fill under the view
   // forever, and the first maximize shows it (BUG-1916 residual).
   FillSurfaceBackdrop();
 }
@@ -619,7 +591,17 @@ void Win32Window::PaintBackdrop(HDC dc) {
     return;
   }
   RECT rect = GetClientArea();
-  FillRect(dc, &rect, backdrop_brush_);
+  FillRect(dc, &rect,
+           system_backdrop_ ? static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH))
+                            : backdrop_brush_);
+}
+
+void Win32Window::SetSystemBackdrop(bool enabled) {
+  if (system_backdrop_ == enabled) {
+    return;
+  }
+  system_backdrop_ = enabled;
+  FillSurfaceBackdrop();
 }
 
 namespace {

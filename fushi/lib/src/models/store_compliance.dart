@@ -43,11 +43,19 @@ enum StoreRestrictedCapability {
   onlineNovelSource,
 
   /// 统一下载中心（torrent / 磁力 / 直链队列），含外接 qBittorrent 后端。
-  downloads;
+  downloads,
+
+  /// 蓝光 AACS 内容解密（含按盘 ID 自动下载 KEYDB 播放配置）。
+  ///
+  /// 解除光盘的复制保护属于审核指南不允许的形态。iOS 上加密盘的表现与接入解密前
+  /// 一致：报「码流仍是 AACS 加密」，不读取、不下载任何播放配置；已解密的副本与
+  /// 未加密的原盘照常播放。引擎侧开关是 `aacsDecryptionAvailable`
+  /// （`installEngineHostBindings()` 用本值赋值）。
+  aacsDecryption;
 
   /// 本能力在目标平台上**是否存在**（与用户意愿、与运行时能否跑起来都无关）。
   ///
-  /// 五个值当前判据相同，仍逐个走枚举而不是塌成一个裸常量：它们是五条互相独立的
+  /// 各值当前判据相同，仍逐个走枚举而不是塌成一个裸常量：它们是互相独立的几条
   /// 合规理由，将来任意一条被单独放开（例如只保留用户自配 OPDS）时，改动面应该
   /// 是这里的一行，而不是回头去把一个被共享的布尔拆开。
   bool availableOn({required bool isIOS}) => !isIOS;

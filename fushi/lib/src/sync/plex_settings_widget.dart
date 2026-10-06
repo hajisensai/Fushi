@@ -15,6 +15,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -109,13 +110,13 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
 
   Future<void> _showError(String message) async {
     if (!mounted) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.plex_sign_in_failed),
         content: SingleChildScrollView(child: SelectableText(message)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -326,7 +327,7 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
             if (snapshot.connectionState != ConnectionState.done) {
               return const Padding(
                 padding: EdgeInsets.all(16),
-                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                child: Center(child: FushiLoadingView(compact: true)),
               );
             }
             final List<PlexServerConfig> servers =
@@ -342,7 +343,10 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
                   const SizedBox(height: 8),
                   Text(
                     t.jellyfin_servers_signed_in_title,
-                    style: textTheme.titleSmall,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
                   ),
                   if (servers.isEmpty)
                     Padding(
@@ -357,12 +361,21 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
                   const SizedBox(height: 12),
                   Text(
                     t.jellyfin_servers_add_title,
-                    style: textTheme.titleSmall,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   _buildAccountSignIn(textTheme),
                   const SizedBox(height: 16),
-                  Text(t.plex_manual_title, style: textTheme.titleSmall),
+                  Text(
+                    t.plex_manual_title,
+                    style: FushiSectionTitle.styleOf(
+                      context,
+                      FushiSectionTitleLevel.group,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   _buildManualForm(),
                 ],
@@ -379,7 +392,8 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
         : activeUrl;
     return FushiListItem(
       key: ValueKey<String>('plex-server-${config.sourceId}'),
-      leading: const Icon(Icons.dns_outlined),
+      // Plex 用「播放圆钮」、Jellyfin 系用「服务器机柜」，与浏览页服务器列表同一套类型图标。
+      leading: const FushiIcon(Icons.play_circle_outline_rounded),
       title: Text(label),
       subtitle: config.accountName.isEmpty ? null : Text(config.accountName),
       trailing: FushiIconButton(
@@ -395,9 +409,9 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
     if (pending == null) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: FilledButton.tonalIcon(
+        child: FushiFilledButton.tonalIcon(
           onPressed: _busy ? null : _signInWithAccount,
-          icon: const Icon(Icons.login),
+          icon: const FushiIcon(Icons.login),
           label: Text(t.plex_account_sign_in),
         ),
       );
@@ -411,11 +425,11 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
             const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             ),
             const SizedBox(width: 12),
             Expanded(child: Text(t.plex_pin_waiting)),
-            TextButton(onPressed: _cancelPin, child: Text(t.dialog_cancel)),
+            FushiTextButton(onPressed: _cancelPin, child: Text(t.dialog_cancel)),
           ],
         ),
         const SizedBox(height: 4),
@@ -449,9 +463,9 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
               ? const SizedBox(
                   width: 24,
                   height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : FilledButton.tonal(
+              : FushiFilledButton.tonal(
                   onPressed: _busy ? null : _connectManually,
                   child: Text(t.plex_manual_connect),
                 ),

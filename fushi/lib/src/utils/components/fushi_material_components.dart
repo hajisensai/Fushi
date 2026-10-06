@@ -1,5 +1,6 @@
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
@@ -30,10 +31,134 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_gamepad_keyboard.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show
+        GlassContainer,
+        LiquidRoundedRectangle,
+        LiquidRoundedSuperellipse;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+
+// ── 「玻璃」设计系统的共享原语 ────────────────────────────────────────────
+//
+// 共享组件在 [isGlassDesign] 为 true 时换成 `liquid_glass_widgets` 组件族，
+// MD3 分支一行不动。下面几个原语给本文件与 settings_shared / adaptive_* 共用。
+
+/// 玻璃组件的形状：按 Fushi 圆角令牌取左上角半径的连续曲率超椭圆。
+LiquidRoundedSuperellipse fushiGlassShapeOf(BorderRadius radius) =>
+    LiquidRoundedSuperellipse(borderRadius: radius.topLeft.x);
+
+/// 玻璃背衬：把一层玻璃画在 [child] **背后**（Stack 的兄弟层），而不是把
+/// [child] 包进玻璃。
+///
+/// 存在的理由是**结构恒定**：导航栏 / 工具条底下挂着带 GlobalKey 的子树，
+/// 若按「是否玻璃」把它们包进 / 拆出 GlassContainer，设计系统或材质一切换，
+/// 整棵子树就在同一帧里被重挂（LayoutBuilder 里还会触发 framework 的
+/// `_elements.contains(element)` 断言，Mac 调试版红屏）。这里外层永远是同一个
+/// Stack、[child] 永远在同一个槽位，切换时只换背景槽里的那一层。
+///
+/// [enabled] 为 false（MD3）时背景槽是空盒，布局与绘制都与不包时一致
+/// （passthrough：[child] 拿到的约束与不包时一字不差）。
+class FushiGlassBackdrop extends StatelessWidget {
+  const FushiGlassBackdrop({
+    required this.child,
+    required this.enabled,
+    super.key,
+    this.borderRadius = BorderRadius.zero,
+    this.tint,
+    this.prominent = false,
+  });
+
+  final Widget child;
+  final bool enabled;
+  final BorderRadius borderRadius;
+
+  /// 玻璃着色；null = 主题默认（surfaceContainerHigh 色阶）。
+  final Color? tint;
+
+  /// 静态主表面（导航栏、顶栏）在液态档用 premium 渲染。
+  final bool prominent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(
+          child: enabled
+              ? IgnorePointer(
+                  child: GlassContainer(
+                    shape: fushiGlassShapeOf(borderRadius),
+                    quality: fushiGlassQuality(context, prominent: prominent),
+                    settings: tint == null
+                        ? null
+                        : fushiGlassSettings(context, tint: tint),
+                    child: const SizedBox.expand(),
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+/// 玻璃设计系统下的按压高亮层：给没有自带交互外观的实色行（设置行、分组
+/// 折叠头、可点卡片）一个 iOS 单元格口径的按下反馈——systemFill 灰底（不是
+/// MD3 的墨水涟漪）。只旁观指针，不进手势竞技场。
+class FushiGlassPressHighlight extends StatefulWidget {
+  const FushiGlassPressHighlight({
+    required this.child,
+    super.key,
+    this.borderRadius,
+  });
+
+  final Widget child;
+  final BorderRadius? borderRadius;
+
+  @override
+  State<FushiGlassPressHighlight> createState() =>
+      _FushiGlassPressHighlightState();
+}
+
+class _FushiGlassPressHighlightState extends State<FushiGlassPressHighlight> {
+  bool _pressed = false;
+
+  void _set(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color pressedColor = appleColorsOf(context).fill;
+    return Listener(
+      onPointerDown: (_) => _set(true),
+      onPointerUp: (_) => _set(false),
+      onPointerCancel: (_) => _set(false),
+      child: AnimatedContainer(
+        duration: _pressed ? Duration.zero : const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: _pressed ? pressedColor : Colors.transparent,
+          borderRadius: widget.borderRadius,
+        ),
+        child: widget.child,
+      ),
+    );
+  }
+}
 
 class FushiCard extends StatefulWidget {
   const FushiCard({
@@ -49,6 +174,9 @@ class FushiCard extends StatefulWidget {
     this.onLongPress,
     this.onSecondaryTap,
     this.focusId,
+    this.pressScale = true,
+    this.grouped = false,
+    this.clipBehavior = Clip.antiAlias,
   });
 
   final Widget child;
@@ -60,6 +188,19 @@ class FushiCard extends StatefulWidget {
   final bool selected;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 可点卡片按下时是否轻微下沉（[FushiPressScale]）。false = 两套设计系统都
+  /// 不缩放，只留状态层 / 高亮反馈。
+  final bool pressScale;
+
+  /// 这张卡是分组列表里的一格（[FushiGroupedListItem] 等）。Apple 下 inset
+  /// grouped 的单元格按下只高亮、不缩放（整组里单独一格缩一下会和上下格错开
+  /// 一道缝）；MD3 分段卡不受影响。
+  final bool grouped;
+
+  /// 卡片是否把内容裁进自身圆角。封面卡（`shelfCoverCard`，底色透明、封面即
+  /// 卡片）传 [Clip.none]：封面框自己裁圆角并画阴影，被卡片裁掉阴影就没了。
+  final Clip clipBehavior;
 
   /// 桌面端鼠标右键（secondary tap）触发，通常映射到与 [onLongPress] 相同的
   /// 上下文菜单。触摸/手柄设备没有 secondary tap，故配线全平台无副作用。
@@ -79,14 +220,21 @@ class _FushiCardState extends State<FushiCard> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool eink = isEinkTheme(context);
+    // MD3 内容层卡片（2026-10-04 卡片 / 列表统一）：surfaceContainerLow
+    // （tokens.surfaces.group）填充分层、16 圆角、无描边无阴影；选中 =
+    // secondaryContainer 底（全局唯一的卡片选中口径，不再另加 primary 描边）。
     final Color effectiveColor = widget.color ??
-        (widget.selected ? tokens.surfaces.selected : tokens.surfaces.card);
-    final BorderRadius radius = widget.borderRadius ?? tokens.radii.cardRadius;
+        (widget.selected ? tokens.surfaces.selected : tokens.surfaces.group);
+    final BorderRadius radius = widget.borderRadius ??
+        const BorderRadius.all(Radius.circular(kFushiMd3CardRadius));
     // eink 把所有 surface container 塌缩为背景色（theme_notifier eink scheme），
     // 卡片没有边就与页面融为一体；主题层只给裸 Card 补了描边（CardThemeData），
     // FushiCard 在这里自己补。选中态加粗到 2px——eink 下 selected 填充色同样
     // 塌缩，边宽是唯一可辨的选中信号。
-    final BorderSide side = widget.borderColor != null
+    // 透明描边等于没有描边：不要让它占 1px 笔宽把内容（封面即卡片的封面）
+    // 往里挤，造成卡片比卡槽窄 2px。
+    final BorderSide side = widget.borderColor != null &&
+            widget.borderColor!.a > 0
         ? BorderSide(color: widget.borderColor!)
         : (eink
             ? BorderSide(
@@ -98,39 +246,57 @@ class _FushiCardState extends State<FushiCard> {
       padding: widget.padding ?? EdgeInsets.all(tokens.spacing.card),
       child: widget.child,
     );
-    final Widget card = ContextMenuTrigger(
-      // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
-      // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
-      onInvoke: contextMenuInvoker(widget.onSecondaryTap),
-      child: Padding(
-        padding: widget.margin ?? EdgeInsets.zero,
-        child: AnimatedContainer(
-          duration: einkSafeDuration(context, fushiMd3StateDuration),
-          curve: fushiMd3StateCurve,
-          decoration: ShapeDecoration(
-            color: effectiveColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: side,
-            ),
-          ),
-          child: Material(
-            type: MaterialType.transparency,
-            shape: RoundedRectangleBorder(borderRadius: radius),
-            clipBehavior: Clip.antiAlias,
-            child: widget.onTap == null &&
-                    widget.onLongPress == null &&
-                    widget.onSecondaryTap == null
-                ? content
-                : InkWell(
-                    onTap: widget.onTap,
-                    onLongPress: widget.onLongPress,
-                    child: content,
+    final Widget card = isGlassDesign(context)
+        ? _buildGlassCard(context, content)
+        : ContextMenuTrigger(
+            // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
+            // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
+            onInvoke: contextMenuInvoker(widget.onSecondaryTap),
+            child: Padding(
+              padding: widget.margin ?? EdgeInsets.zero,
+              // 可点的卡片按下即轻微下沉（2026-10 交互重做）：只旁观指针事件，不进
+              // 手势竞技场，InkWell 的点击 / 长按语义不变；eink / 减弱动态效果下不包。
+              child: FushiPressScale(
+                enabled: widget.pressScale &&
+                    (widget.onTap != null || widget.onLongPress != null),
+                child: AnimatedContainer(
+                  duration: einkSafeDuration(context, fushiMd3StateDuration),
+                  curve: fushiMd3StateCurve,
+                  decoration: ShapeDecoration(
+                    color: effectiveColor,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: radius,
+                      side: side,
+                    ),
                   ),
-          ),
-        ),
-      ),
-    );
+                  child: Material(
+                    type: MaterialType.transparency,
+                    shape: RoundedRectangleBorder(borderRadius: radius),
+                    clipBehavior: widget.clipBehavior,
+                    child: widget.onTap == null &&
+                            widget.onLongPress == null &&
+                            widget.onSecondaryTap == null
+                        ? content
+                        : InkWell(
+                            onTap: widget.onTap,
+                            onLongPress: widget.onLongPress,
+                            // 状态层 / 水波按卡片圆角走：Material 裁剪时与之重合
+                            // （像素不变），封面卡不裁剪时靠它保持圆角。
+                            borderRadius: radius,
+                            // 柔和状态层（悬停 8% / 按下 10% onSurface），水波
+                            // 由外层 Material 裁在圆角里；墨水屏交回默认。
+                            overlayColor: eink
+                                ? null
+                                : fushiMd3ContentStateLayer(
+                                    Theme.of(context).colorScheme,
+                                  ),
+                            child: content,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          );
     if (widget.onTap == null) return card;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
 
@@ -146,6 +312,68 @@ class _FushiCardState extends State<FushiCard> {
       child: FushiFocusTarget(
         id: widget.focusId ?? _fallbackFocusId,
         child: card,
+      ),
+    );
+  }
+
+  /// 玻璃设计系统：Apple 26 的内容层卡片是**实色**而不是玻璃——底色
+  /// secondarySystemGroupedBackground（调用点显式 color 优先）、连续曲率圆角
+  /// （iOS ≈ 24 / 桌面 12，调用点显式 borderRadius 优先）、无描边无阴影。选中态
+  /// 是强调色 1.5px 细描边（不是 MD3 的 tonal 色块）；按下是 systemFill 高亮。
+  /// 焦点（外层 Actions + FushiFocusTarget）、右键菜单、按压下沉与 margin 和
+  /// MD3 分支同一套，调用点的 key / focusId 不变。
+  ///
+  /// 点击面是 [FushiAppleRow]（同 MD3 的 InkWell）：没有 FushiFocusRoot 时它
+  /// 自己就是 Tab 停靠点（Enter / 手柄 A → onTap，强调色焦点描边）；有焦点根时
+  /// 交给外层 FushiFocusTarget，行自身不再取焦点（一卡一个停靠点）。
+  Widget _buildGlassCard(BuildContext context, Widget content) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final BorderRadius radius = widget.borderRadius ??
+        FushiAppleMetrics.of(context).groupBorderRadius;
+    final bool interactive =
+        widget.onTap != null || widget.onLongPress != null;
+    Widget body = content;
+    if (interactive) {
+      body = FushiAppleRow(
+        onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        selected: widget.selected,
+        // 卡片选中靠下面的强调色描边，不铺选中底。
+        selectedBackground: Colors.transparent,
+        focusable: FushiFocusRoot.maybeControllerOf(context) == null,
+        borderRadius: radius,
+        child: body,
+      );
+    }
+    // 描边层恒在（只换颜色）：按选中态增删这一层会让卡片内容整棵重挂。
+    body = DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: widget.borderColor ??
+              (widget.selected ? apple.accent : Colors.transparent),
+          width: widget.borderColor == null ? 1.5 : 1,
+        ),
+      ),
+      child: body,
+    );
+    return ContextMenuTrigger(
+      onInvoke: contextMenuInvoker(widget.onSecondaryTap),
+      child: Padding(
+        padding: widget.margin ?? EdgeInsets.zero,
+        // 分组单元格（[grouped]）只高亮不缩放，见 [FushiCard.grouped]。
+        child: FushiPressScale(
+          enabled: widget.pressScale &&
+              !widget.grouped &&
+              (widget.onTap != null || widget.onLongPress != null),
+          child: FushiAppleGroupSurface(
+            color: widget.color,
+            borderRadius: radius,
+            clipBehavior: widget.clipBehavior,
+            child: body,
+          ),
+        ),
       ),
     );
   }
@@ -221,9 +449,17 @@ class _FushiListItemState extends State<FushiListItem> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    // MD3 列表行（2026-10-04 卡片 / 列表统一）：选中 = secondaryContainer 底 +
+    // onSecondaryContainer 前景，字重不变（选中信号是底色块，不是粗体彩字）。
+    // 墨水屏 secondaryContainer 塌缩成背景色，保留原来的 primary 前景 + 加粗 +
+    // 实描边（见下）三重信号，可读性不倒退。
     final Color color =
         widget.selected ? tokens.surfaces.selected : Colors.transparent;
-    final Color selectedForeground = tokens.surfaces.primary;
+    final Color selectedForeground =
+        eink ? tokens.surfaces.primary : scheme.onSecondaryContainer;
+    final bool boldSelected = widget.selected && eink;
     final Color primaryForeground =
         widget.selected ? selectedForeground : tokens.surfaces.onSurface;
     final Color secondaryForeground =
@@ -231,40 +467,59 @@ class _FushiListItemState extends State<FushiListItem> {
     final TextStyle titleStyle = tokens.type.listTitle.copyWith(
       color: primaryForeground,
       fontWeight:
-          widget.selected ? FontWeight.w700 : tokens.type.listTitle.fontWeight,
+          boldSelected ? FontWeight.w700 : tokens.type.listTitle.fontWeight,
     );
-    final TextStyle subtitleStyle = tokens.type.listSubtitle.copyWith(
+    // 副标题 bodyMedium（MD3 列表规格；原来的 bodySmall 在两行列表里偏小）。
+    final TextStyle subtitleStyle = (Theme.of(context).textTheme.bodyMedium ??
+            tokens.type.listSubtitle)
+        .copyWith(
       color: secondaryForeground,
-      fontWeight: widget.selected
-          ? FontWeight.w600
-          : tokens.type.listSubtitle.fontWeight,
+      fontWeight: boldSelected ? FontWeight.w600 : null,
     );
     final TextStyle metadataStyle = tokens.type.metadata.copyWith(
       color: secondaryForeground,
       fontWeight:
-          widget.selected ? FontWeight.w700 : tokens.type.metadata.fontWeight,
+          boldSelected ? FontWeight.w700 : tokens.type.metadata.fontWeight,
     );
+    // 最小高 56，带副标题的两行行 72（MD3 one-line / two-line list item）。
     final double resolvedMinHeight = widget.minHeight ??
         switch (widget.density) {
-          FushiListDensity.standard => tokens.density.listMinHeight,
+          FushiListDensity.standard => widget.subtitle != null
+              ? 72
+              : tokens.density.listMinHeight,
           FushiListDensity.compact => tokens.density.compactListMinHeight,
         };
+
+    // 对话框面板里的行一律按圆角高亮排（MD3 规范的对话框选择列表），选中
+    // 不再是顶到两边的整行色块。
+    final bool pill = widget.selectedShape == FushiListItemSelectedShape.pill ||
+        FushiDialogScope.of(context);
+    // 状态层 / 选中底一律是内缩的 12 圆角块（不顶到容器边）：pill（导航 /
+    // 对话框）内缩 8，平铺列表内缩 4——平铺行默认内边距同步减 4，文字起点仍在
+    // 容器边 16 处，与分隔线、分组标题对齐。
+    final double inset = pill ? tokens.spacing.gap : kFushiMd3RowInset;
+    const BorderRadius highlightRadius =
+        BorderRadius.all(Radius.circular(kFushiMd3RowRadius));
+    final double horizontalPadding = pill
+        ? tokens.spacing.rowHorizontal
+        : tokens.spacing.rowHorizontal - inset;
     final Widget content = ConstrainedBox(
       constraints: BoxConstraints(minHeight: resolvedMinHeight),
       child: Padding(
         padding: widget.padding ??
             EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal,
+              horizontal: horizontalPadding,
               vertical: tokens.spacing.rowVertical,
             ),
         child: Row(
           children: <Widget>[
             if (widget.leading != null) ...<Widget>[
+              // 行首图标 24、单色、无底（MD3 list leading icon）。
               IconTheme.merge(
-                data: IconThemeData(color: secondaryForeground),
+                data: IconThemeData(color: secondaryForeground, size: 24),
                 child: widget.leading!,
               ),
-              SizedBox(width: tokens.spacing.gap + 4),
+              SizedBox(width: tokens.spacing.gap * 2),
             ],
             Expanded(
               child: Column(
@@ -309,38 +564,30 @@ class _FushiListItemState extends State<FushiListItem> {
       ),
     );
 
-    final bool pill = widget.selectedShape == FushiListItemSelectedShape.pill;
-    final BorderRadius? highlightRadius =
-        pill ? tokens.radii.groupRadius : null;
-    // pill 形态**两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向
-    // 内挤 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在
-    // 列表里逐行错位）。几何恒定，颜色才是唯一的选中信号。
+    if (isGlassDesign(context)) {
+      return _wrapFocus(context, _buildGlassTile(context, pill));
+    }
+    // **两态都画边框**，未选中时透明：BoxDecoration 的 border 会把子节点向内挤
+    // 1px，只在选中时给边框会让同一行选中后比未选中高 2px（功能选择卡片在列表里
+    // 逐行错位）。几何恒定，颜色才是唯一的选中信号。
     //
     // 非 eink 下选中边也保持透明：secondaryContainer 填充已经把选中态说清楚了，
-    // 再叠一圈 primary 20% 的细边只是填充之上的第二条线（设置页左栏里它和分组卡
-    // 描边、行分隔线一起凑成三层线）。eink 下选中填充塌缩成背景色，边是唯一信号，
-    // 那里保留并换成实描边色。
-    final BoxBorder? pillBorder = pill
-        ? Border.all(
-            color: widget.selected && isEinkTheme(context)
-                ? tokens.surfaces.outline
-                : Colors.transparent,
-          )
-        : null;
+    // 再叠一圈细边只是填充之上的第二条线。eink 下选中填充塌缩成背景色，边是唯一
+    // 信号，那里保留并换成实描边色。
+    final BoxBorder border = Border.all(
+      color: widget.selected && eink
+          ? tokens.surfaces.outline
+          : Colors.transparent,
+    );
     final Widget material = AnimatedContainer(
       duration: fushiMd3StateDuration,
       curve: fushiMd3StateCurve,
-      margin: pill
-          ? EdgeInsets.symmetric(horizontal: tokens.spacing.gap)
-          : EdgeInsets.zero,
-      color: pill ? null : color,
-      decoration: pill
-          ? BoxDecoration(
-              color: color,
-              borderRadius: highlightRadius,
-              border: pillBorder,
-            )
-          : null,
+      margin: EdgeInsets.symmetric(horizontal: inset),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: highlightRadius,
+        border: border,
+      ),
       child: Material(
         type: MaterialType.transparency,
         child: widget.onTap == null
@@ -349,10 +596,18 @@ class _FushiListItemState extends State<FushiListItem> {
                 onTap: widget.onTap,
                 autofocus: widget.autofocus,
                 borderRadius: highlightRadius,
+                // 柔和状态层（悬停 8% / 按下 10% onSurface）；墨水屏交回默认。
+                overlayColor: eink ? null : fushiMd3ContentStateLayer(scheme),
                 child: content,
               ),
       ),
     );
+    return _wrapFocus(context, material);
+  }
+
+  /// 焦点包装：MD3 与玻璃两条分支共用同一套（Actions 在 FushiFocusTarget 之上，
+  /// Enter / 手柄 A → [ActivateIntent] → onTap），focusId 与 key 不随设计系统变。
+  Widget _wrapFocus(BuildContext context, Widget material) {
     if (widget.onTap == null) return material;
 
     final FushiFocusId effectiveFocusId = widget.focusId ?? _fallbackFocusId;
@@ -367,11 +622,134 @@ class _FushiListItemState extends State<FushiListItem> {
       },
       child: FushiFocusTarget(
         id: effectiveFocusId,
+        // MD3 下 autofocus 落在 InkWell 上；玻璃行没有 InkWell，由焦点目标
+        // 自己开屏取焦（Enter 同样经上面的 Actions 激活）。
+        autofocus: widget.autofocus && isGlassDesign(context),
         child: material,
       ),
     );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return material;
     return target;
+  }
+
+  /// 玻璃设计系统：iOS inset grouped 的**实色行**（[FushiAppleRow]，不是玻璃）。
+  /// 最小高 44（桌面 38；compact 密度再收 4）、左右 16、标题 17 label /
+  /// 副标题 15 secondaryLabel（桌面 15 / 13）、行首图标强调色、行尾附件
+  /// secondaryLabel；悬停 = tertiaryFill、按下 = systemFill。选中按列表性质
+  /// 分两种（与设置侧栏 / 菜单同一口径）：
+  /// - 导航型（[FushiListItemSelectedShape.pill]，不在对话框里）= 强调色实底 +
+  ///   onAccent 图标 / 文字，圆角桌面 8 / 移动 12；
+  /// - 选择型（平铺列表、对话框里的单选）= 不铺底、不加粗，行尾强调色对勾
+  ///   （调用点没给 trailing 时自动补 [FushiAppleCheckmark]，给了就把它染成
+  ///   强调色）。
+  /// 标题行数、minHeight、padding 等调用点契约与 MD3 同。
+  ///
+  /// 焦点：有 FushiFocusRoot 时由 [_wrapFocus] 的焦点目标负责 Tab / Enter，行
+  /// 自身不再是停靠点（一行一个停靠点）；没有焦点根时行自己可 Tab、Enter 激活。
+  Widget _buildGlassTile(BuildContext context, bool pill) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final bool compact = widget.density == FushiListDensity.compact;
+    final bool inDialog = FushiDialogScope.of(context);
+    final bool navSelected = widget.selected && pill && !inDialog;
+    final bool checkSelected = widget.selected && !navSelected;
+    // 导航型选中行上的前景一律 onAccent（强调色实底上的反色）。
+    final Color? navForeground = navSelected ? apple.onAccent : null;
+    final TextStyle titleStyle = metrics.titleStyle(context).copyWith(
+          fontSize: compact ? metrics.titleSize - 2 : null,
+          color: navForeground,
+        );
+    final TextStyle subtitleStyle = metrics.subtitleStyle(context).copyWith(
+          fontSize: compact ? metrics.subtitleSize - 2 : null,
+          color: navForeground?.withValues(alpha: 0.8),
+        );
+    final Widget? trailing = widget.trailing ??
+        (checkSelected ? const FushiAppleCheckmark() : null);
+    final double minHeight = widget.minHeight ??
+        (compact ? metrics.rowMinHeight - 4 : metrics.rowMinHeight);
+    final Widget content = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight),
+      child: Padding(
+        padding: widget.padding ??
+            EdgeInsets.symmetric(
+              horizontal: metrics.rowHorizontal,
+              vertical: compact ? metrics.rowVertical - 2 : metrics.rowVertical,
+            ),
+        child: Row(
+          children: <Widget>[
+            if (widget.leading != null) ...<Widget>[
+              IconTheme.merge(
+                data: IconThemeData(
+                  color: navForeground ?? apple.accent,
+                  size: metrics.leadingIconSize,
+                ),
+                child: widget.leading!,
+              ),
+              SizedBox(width: metrics.leadingGap),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  DefaultTextStyle.merge(
+                    style: titleStyle,
+                    maxLines: widget.titleMaxLines,
+                    // 不限行时不能带 ellipsis（同 MD3 分支的说明）。
+                    overflow: widget.titleMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
+                    child: widget.title,
+                  ),
+                  if (widget.subtitle != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: DefaultTextStyle.merge(
+                        style: subtitleStyle,
+                        maxLines: widget.subtitleMaxLines,
+                        overflow: TextOverflow.ellipsis,
+                        child: widget.subtitle!,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (trailing != null) ...<Widget>[
+              const SizedBox(width: 8),
+              DefaultTextStyle.merge(
+                style: subtitleStyle,
+                child: IconTheme.merge(
+                  data: IconThemeData(
+                    color: navForeground ??
+                        (checkSelected ? apple.accent : apple.secondaryLabel),
+                  ),
+                  child: trailing,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+    final BorderRadius radius = pill || inDialog
+        ? BorderRadius.circular(metrics.desktop ? 8 : 12)
+        : BorderRadius.zero;
+    return Padding(
+      padding: pill
+          ? EdgeInsets.symmetric(horizontal: tokens.spacing.gap)
+          : EdgeInsets.zero,
+      child: FushiAppleRow(
+        onTap: widget.onTap,
+        selected: widget.selected,
+        // 选择型选中不铺底（透明），悬停 / 按下照常反馈；导航型铺强调色实底。
+        selectedBackground: navSelected ? apple.accent : Colors.transparent,
+        focusable: FushiFocusRoot.maybeControllerOf(context) == null,
+        autofocus: widget.autofocus,
+        borderRadius: radius,
+        child: content,
+      ),
+    );
   }
 }
 
@@ -387,10 +765,22 @@ class FushiSearchField extends StatelessWidget {
     this.clearButtonKey,
     this.focusId,
     this.onClear,
+    this.size = FushiSearchFieldSize.regular,
+    this.trailing = const <Widget>[],
   });
 
   final Key? fieldKey;
   final Key? clearButtonKey;
+
+  /// 尺寸档：[FushiSearchFieldSize.regular] 是工具条 / 行内搜索胶囊（MD3 40、
+  /// Apple 36）；[FushiSearchFieldSize.large] 是页面顶部的独立搜索栏——MD3 按
+  /// M3 SearchBar（56 高全圆角、24 前置图标、48 触控的尾部动作、bodyLarge），
+  /// Apple 没有 56 的搜索栏，仍是 iOS 搜索胶囊（36），不拉伸。
+  final FushiSearchFieldSize size;
+
+  /// 尾部动作（排在清除 / 软键盘按钮之后），例如直达管理页的圆钮。large 档
+  /// MD3 下每个动作给 48×48 触控区。
+  final List<Widget> trailing;
   final FushiFocusId? focusId;
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -398,6 +788,50 @@ class FushiSearchField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onSubmitted;
   final VoidCallback? onClear;
+
+  /// 搜索框尾部按钮（清除 + 软键盘 / 粘贴），MD3 与 Apple 两条分支共用。
+  List<Widget> _trailing(
+    BuildContext context,
+    TextEditingValue value, {
+    bool large = false,
+  }) {
+    // large 档（MD3 SearchBar）：24 图标 + 12 内边距 = 48 触控区。
+    final double iconSize =
+        large ? kFushiSearchFieldLargeIconSize : kFushiSearchFieldIconSize;
+    final EdgeInsets padding =
+        large ? const EdgeInsets.all(12) : const EdgeInsets.all(4);
+    final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
+      context: context,
+      controller: controller,
+      onChanged: onChanged,
+      iconSize: iconSize,
+      padding: padding,
+    );
+    return <Widget>[
+      if (onClear != null && value.text.isNotEmpty)
+        FushiIconButton(
+          key: clearButtonKey,
+          icon: Icons.close,
+          tooltip: t.clear,
+          size: iconSize,
+          padding: padding,
+          onTap: () {
+            onClear?.call();
+            if (focusNode.canRequestFocus) {
+              focusNode.requestFocus();
+            }
+          },
+        ),
+      if (inputSuffix != null) inputSuffix,
+      for (final Widget action in trailing)
+        large
+            ? ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                child: Center(widthFactor: 1, child: action),
+              )
+            : action,
+    ];
+  }
 
   /// 提交的收尾：清 composing，移动端再收起软键盘（BUG-2686）。
   ///
@@ -427,11 +861,143 @@ class FushiSearchField extends StatelessWidget {
       ..scheduleFrame();
   }
 
+  /// MD3 large 档 = M3 SearchBar：56 高、28 圆角全胶囊、surfaceContainerHigh
+  /// 填充、无描边；前置放大镜 24、尾部动作 48 触控区、bodyLarge 正文竖直居中。
+  /// 聚焦不画 2px 主色描边（那是文本框的语言，SearchBar 没有），改用状态层：
+  /// 悬停 8% / 聚焦 10% onSurface 叠在填充上，键盘焦点照样看得见。
+  /// 墨水屏：无填充、1px onSurface 实线描边（聚焦 2px），不靠灰阶状态层。
+  Widget _buildMd3Large(BuildContext context, TextEditingValue value) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool eink = isEinkTheme(context);
+    final List<Widget> trailing = _trailing(context, value, large: true);
+    final BorderRadius radius =
+        BorderRadius.circular(kFushiSearchFieldLargeHeight / 2);
+    OutlineInputBorder border(BorderSide side) =>
+        OutlineInputBorder(borderRadius: radius, borderSide: side);
+    final BorderSide resting =
+        eink ? BorderSide(color: cs.onSurface) : BorderSide.none;
+    final Color base = cs.surfaceContainerHigh;
+    final TextStyle text = (theme.textTheme.bodyLarge ?? const TextStyle())
+        .copyWith(
+      color: cs.onSurface,
+      height: 1.25,
+      leadingDistribution: TextLeadingDistribution.even,
+    );
+    return SizedBox(
+      height: kFushiSearchFieldLargeHeight,
+      child: TextField(
+        key: fieldKey,
+        controller: controller,
+        focusNode: focusNode,
+        style: text,
+        textAlignVertical: TextAlignVertical.center,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hintText,
+          hintStyle: text.copyWith(color: cs.onSurfaceVariant),
+          filled: !eink,
+          fillColor: eink
+              ? null
+              : WidgetStateColor.resolveWith((Set<WidgetState> states) {
+                  if (states.contains(WidgetState.focused)) {
+                    return Color.alphaBlend(
+                      cs.onSurface.withValues(alpha: 0.10),
+                      base,
+                    );
+                  }
+                  if (states.contains(WidgetState.hovered)) {
+                    return Color.alphaBlend(
+                      cs.onSurface.withValues(alpha: 0.08),
+                      base,
+                    );
+                  }
+                  return base;
+                }),
+          hoverColor: Colors.transparent,
+          border: border(resting),
+          enabledBorder: border(resting),
+          focusedBorder: border(
+            eink ? BorderSide(color: cs.onSurface, width: 2) : BorderSide.none,
+          ),
+          prefixIcon: const Padding(
+            padding: EdgeInsetsDirectional.only(start: 16, end: 12),
+            child: FushiIcon(
+              Icons.search,
+              size: kFushiSearchFieldLargeIconSize,
+            ),
+          ),
+          prefixIconColor: cs.onSurfaceVariant,
+          // 图标槽给满 56：InputDecorator 的容器高取图标槽与正文的较大者，
+          // 只给 48 时容器是 48、贴在 56 盒子顶上，正文比胶囊中线高 4px。
+          prefixIconConstraints: const BoxConstraints(
+            minHeight: kFushiSearchFieldLargeHeight,
+          ),
+          suffixIcon: trailing.isEmpty
+              ? null
+              : Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 4),
+                  child:
+                      Row(mainAxisSize: MainAxisSize.min, children: trailing),
+                ),
+          suffixIconColor: cs.onSurfaceVariant,
+          suffixIconConstraints: const BoxConstraints(
+            minHeight: kFushiSearchFieldLargeHeight,
+          ),
+          contentPadding: const EdgeInsetsDirectional.only(end: 16),
+        ),
+        textInputAction: TextInputAction.search,
+        onEditingComplete: _finishSubmit,
+        onChanged: onChanged,
+        onSubmitted: onSubmitted,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget searchBar;
-    if (isMacosPlatform(context)) {
+    if (isGlassDesign(context)) {
+      // Apple 设计系统：内容层的搜索框是 systemFill 实色胶囊（UISearchBar 的
+      // searchTextField，高 36），不是玻璃——玻璃只给浮在内容上的导航层。
+      // 走 FushiTextFieldControl 的 Apple 分支（前缀放大镜 → 胶囊形态），与
+      // 其它 Apple 输入框同一实现。fieldKey / 清除键 key / 焦点节点与 MD3 分支
+      // 同一套；提交收尾与 MD3 一致（onEditingComplete 不交焦点）；物理回车的
+      // 提交兜底在下面的 Focus 层，两条分支共用。
+      searchBar = ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final List<Widget> trailing = _trailing(context, value);
+          // 用户 2026-10-04「所有组件都要往液态玻璃靠」：搜索框是 iOS 26 的
+          // 玻璃搜索胶囊。胶囊形态（玻璃 bezel、深色下的静止底与细描边、
+          // 聚焦内环、降低透明度时回落实色）全由 FushiTextFieldControl 认出
+          // 前缀放大镜后给出，与库页搜索框同一实现——以前这里外包一层自己的
+          // GlassContainer、再把输入框填充压成近乎透明，聚焦光圈的 BoxShadow
+          // 会透过那层填充把整枚胶囊染成灰 / 白块。large 档在 Apple 下同为
+          // 36 的 iOS 搜索胶囊（Apple 没有 56 的搜索栏）。
+          return FushiTextFieldControl(
+            key: fieldKey,
+            controller: controller,
+            focusNode: focusNode,
+            decoration: InputDecoration(
+              hintText: hintText,
+              prefixIcon: const FushiIcon(
+                Icons.search,
+                size: kFushiSearchFieldIconSize,
+              ),
+              suffixIcon: trailing.isEmpty
+                  ? null
+                  : Row(mainAxisSize: MainAxisSize.min, children: trailing),
+            ),
+            textInputAction: TextInputAction.search,
+            onEditingComplete: _finishSubmit,
+            onChanged: onChanged,
+            onSubmitted: onSubmitted,
+          );
+        },
+      );
+    } else if (isMacosPlatform(context)) {
       // macOS-native: MacosTextField maps the search field faithfully —
       // search-icon prefix, native clear button (clearButtonMode), and it keeps
       // onSubmitted (MacosSearchField drops it, which would break enter-to-search).
@@ -452,30 +1018,42 @@ class FushiSearchField extends StatelessWidget {
       searchBar = ValueListenableBuilder<TextEditingValue>(
         valueListenable: controller,
         builder: (context, value, _) {
-          final Widget? inputSuffix = _hibikiTextFieldInputSuffix(
-            context: context,
-            controller: controller,
-            onChanged: onChanged,
-            iconSize: kFushiSearchFieldIconSize,
-            padding: const EdgeInsets.all(4),
-          );
-          final List<Widget> trailing = <Widget>[
-            if (onClear != null && value.text.isNotEmpty)
-              FushiIconButton(
-                key: clearButtonKey,
-                icon: Icons.close,
-                tooltip: t.clear,
+          if (size == FushiSearchFieldSize.large) {
+            return _buildMd3Large(context, value);
+          }
+          final List<Widget> trailing = _trailing(context, value);
+          // MD3（2026-10-04 输入框统一）：与库页搜索同一枚填充胶囊——
+          // fushiMd3FieldDecoration 认出前缀放大镜后给全圆角、surfaceContainerHigh
+          // 填充、静止无描边、聚焦 2px 主色（墨水屏保留描边）。内边距收回 40 高
+          // 的工具条尺度（helper 的搜索默认内边距是给更高的独立搜索框的）。
+          final InputDecoration decoration = fushiMd3FieldDecoration(
+            context,
+            InputDecoration(
+              isDense: true,
+              hintText: hintText,
+              hintStyle: tokens.type.listSubtitle,
+              prefixIcon: const FushiIcon(
+                Icons.search,
                 size: kFushiSearchFieldIconSize,
-                padding: const EdgeInsets.all(4),
-                onTap: () {
-                  onClear?.call();
-                  if (focusNode.canRequestFocus) {
-                    focusNode.requestFocus();
-                  }
-                },
               ),
-            if (inputSuffix != null) inputSuffix,
-          ];
+              suffixIcon: trailing.isEmpty
+                  ? null
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: trailing,
+                    ),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 32,
+                minHeight: 32,
+              ),
+            ),
+          )!
+              .copyWith(
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 4,
+            ),
+          );
           return SizedBox(
             height: kFushiSearchFieldHeight,
             child: TextField(
@@ -483,30 +1061,8 @@ class FushiSearchField extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               style: tokens.type.listTitle,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: hintText,
-                hintStyle: tokens.type.listSubtitle,
-                prefixIcon: const Icon(
-                  Icons.search,
-                  size: kFushiSearchFieldIconSize,
-                ),
-                border: const OutlineInputBorder(),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                suffixIcon: trailing.isEmpty
-                    ? null
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: trailing,
-                      ),
-                suffixIconConstraints: const BoxConstraints(
-                  minWidth: 32,
-                  minHeight: 32,
-                ),
-              ),
+              textAlignVertical: TextAlignVertical.center,
+              decoration: decoration,
               // 搜索框的提交动作必须显式声明：不声明时软键盘/IME 给的是
               // 「完成」，而 `TextInputAction.done` 的默认收尾是 unfocus——焦点
               // 一掉，[FushiFocusRoot] 的修复链又会把它以编程方式还回来，桌面端
@@ -566,14 +1122,24 @@ class FushiSearchField extends StatelessWidget {
   }
 }
 
-/// 搜索框统一形态（2026-09）：与三大媒体库页（书架 / 视频库 / 游戏库）的工具条搜索框
-/// 逐字对齐——固定 40 高、[OutlineInputBorder] 描边、透明底、18px 图标 + `isDense`。
+/// 搜索框统一形态（2026-09，2026-10-04 改填充胶囊）：与三大媒体库页（书架 / 视频库 /
+/// 游戏库）的工具条搜索框对齐——MD3 固定 40 高、填充全胶囊（静止无描边）、18px
+/// 图标 + `isDense`；Apple 是高 36 的 systemFill 实色胶囊。
 /// 此前 [FushiSearchField] 用的是 MD3 搜索条形态（高填充容器色、圆角 12、高约 56），
 /// 导致同一导航里「发现」页与「全部视频」页两种外观，且比同行的筛选按钮更高。
 ///
 /// 常量定义放在类之后：`md3_design_system_static_test` 用 `class FushiSearchField`
 /// 这个字面量当上一段切片的终点，插在类前会把这段注释卷进它的扫描面。
 const double kFushiSearchFieldHeight = 40;
+
+/// [FushiSearchField] 的尺寸档，见 [FushiSearchField.size]。
+enum FushiSearchFieldSize { regular, large }
+
+/// MD3 large 档（M3 SearchBar）的高度；Apple 下 large 仍是 36 的 iOS 搜索胶囊。
+const double kFushiSearchFieldLargeHeight = 56;
+
+/// MD3 large 档的前置 / 尾部图标尺寸（M3 SearchBar 24dp）。
+const double kFushiSearchFieldLargeIconSize = 24;
 
 /// 搜索框内前缀/后缀图标尺寸。[FushiIconButton] 默认 24px 图标 + `spacing.gap` 内边距
 /// 合计约 40 高，正好撑破 [kFushiSearchFieldHeight] 的内容区，故 trailing 按钮必须同时
@@ -650,17 +1216,21 @@ class _FushiTextFieldState extends State<FushiTextField> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool glass = isGlassDesign(context);
     final Widget? effectiveSuffix = widget.suffixIcon ??
         _hibikiTextFieldInputSuffix(
           context: context,
           controller: widget.readOnly ? null : widget.controller,
           onChanged: widget.onChanged,
         );
-    final OutlineInputBorder border = OutlineInputBorder(
-      borderRadius: tokens.radii.cardRadius,
-      borderSide: BorderSide(color: tokens.surfaces.outline),
-    );
-    final TextFormField textField = TextFormField(
+    // 2026-10-04 输入框统一：两套设计系统都走 FushiTextFormFieldControl。
+    // - MD3：经 fushiMd3FieldDecoration 得到 surfaceContainerHigh 柔和填充、
+    //   圆角 12、静止无描边、聚焦 2px 主色（以前这里自带常驻灰描边方框）；
+    // - Apple：内容层的实色输入框（tertiaryFill、圆角 10、标签在框上方），
+    //   不再是液态玻璃 GlassTextField；字号 / 占位色交给 Apple 默认，所以
+    //   token 字体只在 MD3 下给。
+    // 两条路都是 TextFormField 语义（initialValue / Form 校验照旧）。
+    final Widget textField = FushiTextFormFieldControl(
       controller: widget.controller,
       initialValue: widget.initialValue,
       focusNode: _effectiveFocusNode,
@@ -673,26 +1243,21 @@ class _FushiTextFieldState extends State<FushiTextField> {
       minLines: widget.minLines,
       expands: widget.expands,
       textAlignVertical: widget.textAlignVertical,
-      style: widget.style ?? tokens.type.listTitle,
+      style: widget.style ?? (glass ? null : tokens.type.listTitle),
       decoration: InputDecoration(
         hintText: widget.hintText,
         labelText: widget.labelText,
         suffixText: widget.suffixText,
-        hintStyle: tokens.type.listSubtitle,
-        labelStyle: tokens.type.metadata,
-        floatingLabelStyle: tokens.type.sectionLabel,
-        filled: true,
-        fillColor: tokens.surfaces.search,
-        border: border,
-        enabledBorder: border,
-        focusedBorder: border.copyWith(
-          borderSide: BorderSide(color: tokens.surfaces.primary, width: 2),
-        ),
+        hintStyle: glass ? null : tokens.type.listSubtitle,
+        labelStyle: glass ? null : tokens.type.metadata,
+        floatingLabelStyle: glass ? null : tokens.type.sectionLabel,
         contentPadding: widget.contentPadding ??
-            EdgeInsets.symmetric(
-              horizontal: tokens.spacing.rowHorizontal,
-              vertical: tokens.spacing.rowVertical,
-            ),
+            (glass
+                ? null
+                : EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.rowHorizontal,
+                    vertical: tokens.spacing.rowVertical,
+                  )),
         suffixIcon: effectiveSuffix,
         prefixIcon: widget.prefixIcon,
       ),
@@ -795,14 +1360,17 @@ class FushiSelectableChip extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    // E-ink：`primaryContainer` 与 `onPrimaryContainer` 双双塌缩到页面底色/前景，
-    // 于是选中态既没有填充差异、边框还从 outlineVariant 变成了底色——选中的
-    // chip 比未选中的更没有边，是个负信号。反色填充是墨水屏上唯一稳定可辨的
-    // 选中通道（与 segmentedButtonTheme / chipTheme 的处理同源）。
+    // E-ink：容器色双双塌缩到页面底色/前景，于是选中态既没有填充差异、边框还
+    // 变成了底色——选中的 chip 比未选中的更没有边，是个负信号。反色填充是墨水
+    // 屏上唯一稳定可辨的选中通道（与 segmentedButtonTheme / chipTheme 的处理
+    // 同源）。
+    // MD3（2026-10-04 chip 统一）：全胶囊、未选中 surfaceContainerHigh 柔和填充
+    // 无描边，选中 secondaryContainer + 对勾（MD3 filter chip），与全胶囊按钮、
+    // 填充输入框同一语言。
     final Color selectedFill =
-        eink ? colors.onSurface : colors.primaryContainer;
+        eink ? colors.onSurface : colors.secondaryContainer;
     final Color foreground = selected
-        ? (eink ? colors.surface : colors.onPrimaryContainer)
+        ? (eink ? colors.surface : colors.onSecondaryContainer)
         : tokens.surfaces.onSurface;
     // 仅图标模式（TODO-640）：图标当作 chip 的 label（不再放进 avatar + 文字），
     // chip 收成正方裸图标；需 leadingIcon 非空才生效，否则退化为普通文字 chip。
@@ -812,9 +1380,9 @@ class FushiSelectableChip extends StatelessWidget {
         : (avatar ??
             (leadingIcon == null
                 ? null
-                : Icon(leadingIcon, size: 18, color: foreground)));
+                : FushiIcon(leadingIcon, size: 18, color: foreground)));
     final Widget labelWidget = effectiveIconOnly
-        ? Icon(leadingIcon, size: 18, color: foreground)
+        ? FushiIcon(leadingIcon, size: 18, color: foreground)
         : Text(
             label,
             maxLines: 1,
@@ -823,22 +1391,49 @@ class FushiSelectableChip extends StatelessWidget {
                 ? TextOverflow.visible
                 : TextOverflow.ellipsis,
           );
+    if (isGlassDesign(context)) {
+      // Apple 设计系统：chip 是液态玻璃胶囊——未选中透明玻璃 + label 字，选中
+      // 强调色着色玻璃 + 反色字（降低透明度时回落实色），与 FushiChoiceChip
+      // 同一枚（fushiAppleChip）。外层已由 FushiFocusTarget 接管焦点时 chip 不再自带
+      // 焦点节点。tooltip 规则与 MD3 分支相同。
+      final bool wrapped =
+          focusId != null && FushiFocusRoot.maybeControllerOf(context) != null;
+      final Widget appleChip = fushiAppleChip(
+        context,
+        label: effectiveIconOnly
+            ? FushiIcon(leadingIcon, size: 16)
+            : Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        avatar: effectiveIconOnly
+            ? null
+            : (avatar ?? (leadingIcon == null ? null : FushiIcon(leadingIcon))),
+        selected: selected,
+        onTap: onSelected == null ? null : () => onSelected!(!selected),
+        tooltip: tooltip ?? (effectiveIconOnly ? label : null),
+        focusable: !wrapped,
+      );
+      return _wrapChipFocus(
+        context,
+        Semantics(selected: selected, child: appleChip),
+      );
+    }
     final ChoiceChip chip = ChoiceChip(
       avatar: effectiveAvatar,
       label: labelWidget,
       // 仅图标模式下 label 是 Icon，去掉 ChoiceChip 默认 label padding 让图标居中收紧。
       labelPadding: effectiveIconOnly ? EdgeInsets.zero : null,
       selected: selected,
-      showCheckmark: false,
+      // MD3 filter chip 的选中信号是对勾；仅图标模式没有位置放它。
+      showCheckmark: !effectiveIconOnly,
+      checkmarkColor: foreground,
       selectedColor: selectedFill,
-      backgroundColor: Colors.transparent,
+      backgroundColor: eink ? Colors.transparent : colors.surfaceContainerHigh,
       labelStyle: tokens.type.controlLabel.copyWith(color: foreground),
-      side: BorderSide(
-        color: selected
-            ? (eink ? colors.outline : colors.primaryContainer)
-            : colors.outlineVariant,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
+      side: eink
+          ? BorderSide(
+              color: selected ? colors.outline : colors.outlineVariant,
+            )
+          : BorderSide.none,
+      shape: const StadiumBorder(),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: onSelected,
@@ -850,6 +1445,10 @@ class FushiSelectableChip extends StatelessWidget {
     final Widget withTooltip = effectiveTooltip == null
         ? chip
         : Tooltip(message: effectiveTooltip, child: chip);
+    return _wrapChipFocus(context, withTooltip);
+  }
+
+  Widget _wrapChipFocus(BuildContext context, Widget withTooltip) {
     if (focusId == null) return withTooltip;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return withTooltip;
     return Actions(
@@ -888,16 +1487,40 @@ class FushiActionChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    if (isGlassDesign(context)) {
+      // Apple：与 FushiSelectableChip 同一枚玻璃胶囊（fushiAppleChip），图标单色
+      // 强调色——动作 chip 的「可点」信号落在图标上，不靠彩色底。
+      final bool wrapped =
+          focusId != null && FushiFocusRoot.maybeControllerOf(context) != null;
+      return _wrapFocus(
+        context,
+        fushiAppleChip(
+          context,
+          label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+          avatar: FushiIcon(icon),
+          iconTheme: IconThemeData(color: appleColorsOf(context).accent),
+          onTap: onPressed,
+          focusable: !wrapped,
+        ),
+      );
+    }
+    final bool eink = isEinkTheme(context);
+    // MD3（2026-10-04 chip 统一）：tonal 胶囊——surfaceContainerHigh 填充、无
+    // 描边、高 32，与 FushiSelectableChip 未选中态同一观感；墨水屏填充是抖动
+    // 灰，保留描边。
     final OutlinedButton button = OutlinedButton.icon(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: colors.primary,
-        side: BorderSide(color: colors.outlineVariant),
-        shape: RoundedRectangleBorder(borderRadius: tokens.radii.chipRadius),
+        backgroundColor: eink ? null : colors.surfaceContainerHigh,
+        side: eink ? BorderSide(color: colors.outlineVariant) : BorderSide.none,
+        shape: const StadiumBorder(),
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
         visualDensity: VisualDensity.compact,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
-      icon: Icon(icon, size: 18),
+      icon: FushiIcon(icon, size: 18),
       label: Text(
         label,
         maxLines: 1,
@@ -905,6 +1528,10 @@ class FushiActionChip extends StatelessWidget {
         style: tokens.type.controlLabel,
       ),
     );
+    return _wrapFocus(context, button);
+  }
+
+  Widget _wrapFocus(BuildContext context, Widget button) {
     if (focusId == null) return button;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return button;
     return Actions(
@@ -937,6 +1564,7 @@ class FushiTagChip extends StatefulWidget {
     this.onTap,
     this.onDeleted,
     this.focusId,
+    this.status,
   });
 
   final String label;
@@ -944,6 +1572,12 @@ class FushiTagChip extends StatefulWidget {
   final bool selected;
   final bool dimmed;
   final FushiTagChipTone tone;
+
+  /// 语义状态（成功 / 警告 / 错误）：色相取 [fushiStatusColor]（MD3 harmonize
+  /// 绿 / 橙 + error、Apple 系统色、墨水屏 onSurface）。设了就覆盖 [color] /
+  /// [tone] 的配色：MD3 状态色 14% 淡底 + 状态色字，Apple 纯展示标签同样淡底 +
+  /// 状态色字、可交互标签只在前置圆点上体现，墨水屏页面底 + 描边。
+  final FushiStatusTone? status;
   final VoidCallback? onTap;
   final VoidCallback? onDeleted;
   final FushiFocusId? focusId;
@@ -969,9 +1603,15 @@ class _FushiTagChipState extends State<FushiTagChip> {
     // 只保留文字不加透明。
     final bool eink = isEinkTheme(context);
     final Color tagColor = widget.color ?? colors.primary;
+    if (isGlassDesign(context)) {
+      return _wrapFocus(context, _buildGlass(context));
+    }
     final Color baseColor = widget.color ??
         (widget.selected ? colors.primaryContainer : tokens.surfaces.overlay);
-    final Color background = switch (widget.tone) {
+    final Color? statusColor = widget.status == null
+        ? null
+        : fushiStatusColor(context, widget.status!);
+    final Color toneBackground = switch (widget.tone) {
       FushiTagChipTone.filled => eink
           ? baseColor
           : widget.dimmed
@@ -981,37 +1621,58 @@ class _FushiTagChipState extends State<FushiTagChip> {
           ? (widget.selected ? colors.onSurface : colors.surface)
           : widget.selected
               ? tagColor.withValues(alpha: widget.dimmed ? 0.12 : 0.2)
-              : tokens.surfaces.overlay
+              : tokens.surfaces.search
                   .withValues(alpha: widget.dimmed ? 0.44 : 1),
     };
-    final Color foreground = switch (widget.tone) {
-      FushiTagChipTone.filled => _foregroundFor(background),
+    final Color background = statusColor == null
+        ? toneBackground
+        : eink
+            ? colors.surface
+            : statusColor.withValues(alpha: widget.dimmed ? 0.08 : 0.14);
+    final Color toneForeground = switch (widget.tone) {
+      FushiTagChipTone.filled => _foregroundFor(toneBackground),
       FushiTagChipTone.surface => eink
           ? (widget.selected ? colors.surface : colors.onSurface)
           : widget.dimmed
               ? colors.onSurface.withValues(alpha: 0.4)
               : colors.onSurface,
     };
-    final BoxBorder? border = widget.selected
-        ? Border.all(
-            color: widget.tone == FushiTagChipTone.surface
-                ? tagColor
-                : colors.primary,
-          )
-        : eink && widget.tone == FushiTagChipTone.surface
-            ? Border.all(color: colors.outline)
-            : null;
+    final Color foreground = statusColor == null
+        ? toneForeground
+        : widget.dimmed && !eink
+            ? statusColor.withValues(alpha: 0.6)
+            : statusColor;
+    final BoxBorder? border = statusColor != null
+        ? (widget.selected || eink
+            ? Border.all(color: eink ? colors.outline : statusColor)
+            : null)
+        : widget.selected
+            ? Border.all(
+                color: widget.tone == FushiTagChipTone.surface
+                    ? tagColor
+                    : colors.primary,
+              )
+            : eink && widget.tone == FushiTagChipTone.surface
+                ? Border.all(color: colors.outline)
+                : null;
     final Text labelText = Text(
       widget.label,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: tokens.type.metadata.copyWith(
         color: foreground,
-        fontWeight: FontWeight.w600,
+        fontWeight: FontWeight.w500,
       ),
     );
+    // 可交互（点选 / 删除）的标签是全胶囊 chip；纯展示标签是圆角 6 的小标签
+    // （MD3 小组件圆角），两者一眼分得开（2026-10-04 chip / 标签统一）。
+    final BorderRadius radius =
+        widget.onTap != null || widget.onDeleted != null
+            ? _pillRadius
+            : tokens.radii.chipRadius;
     final List<Widget> contentChildren = <Widget>[
-      if (widget.tone == FushiTagChipTone.surface &&
+      if (statusColor == null &&
+          widget.tone == FushiTagChipTone.surface &&
           widget.color != null) ...<Widget>[
         DecoratedBox(
           decoration: BoxDecoration(
@@ -1026,9 +1687,9 @@ class _FushiTagChipState extends State<FushiTagChip> {
       if (widget.onDeleted != null) ...<Widget>[
         SizedBox(width: tokens.spacing.gap * 0.375),
         InkWell(
-          borderRadius: tokens.radii.chipRadius,
+          customBorder: const CircleBorder(),
           onTap: widget.onDeleted,
-          child: Icon(
+          child: FushiIcon(
             Icons.close,
             size: 14,
             color: foreground,
@@ -1049,7 +1710,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
       ),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: tokens.radii.chipRadius,
+        borderRadius: radius,
         border: border,
       ),
       child: content,
@@ -1058,13 +1719,105 @@ class _FushiTagChipState extends State<FushiTagChip> {
         ? chip
         : Material(
             type: MaterialType.transparency,
-            borderRadius: tokens.radii.chipRadius,
+            borderRadius: radius,
             child: InkWell(
-              borderRadius: tokens.radii.chipRadius,
+              borderRadius: radius,
               onTap: widget.onTap,
               child: chip,
             ),
           );
+    return _wrapFocus(context, surface);
+  }
+
+  /// MD3 可交互标签的全胶囊（2026-10-04 chip 统一，与胶囊按钮 / 筛选 chip 同一
+  /// 语言）。
+  static const BorderRadius _pillRadius = BorderRadius.all(
+    Radius.circular(999),
+  );
+
+  /// Apple 设计系统：可交互标签与 FushiChoiceChip 同一枚液态玻璃胶囊
+  /// （fushiAppleChip）：未选中透明玻璃，选中强调色着色玻璃；纯展示标签是
+  /// 矮一号的实色灰胶囊。标签色
+  /// 只体现在前面那颗圆点上，不再整块着色。纯展示标签不进焦点链；外层已由
+  /// FushiFocusTarget 接管焦点时 chip 不再自带焦点节点。
+  Widget _buildGlass(BuildContext context) {
+    final bool interactive = widget.onTap != null || widget.onDeleted != null;
+    final bool wrapped =
+        interactive && FushiFocusRoot.maybeControllerOf(context) != null;
+    final Color? statusColor = widget.status == null
+        ? null
+        : fushiStatusColor(context, widget.status!);
+    final Color? dotColor = statusColor ?? widget.color;
+    final Widget? dot = dotColor == null
+        ? null
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
+            ),
+            child: const SizedBox(width: 8, height: 8),
+          );
+    if (!interactive) {
+      // 纯展示标签：矮一号的胶囊（高约 22、左右 8、12 号 w500
+      // secondaryLabel 字），与可交互 chip 区分开。不铺 systemFill 灰底
+      // （用户 2026-10-04「很多地方有底色」：元信息胶囊不是内容卡），只留一圈
+      // 发丝分隔线描边；选中换 label 色描边。语义状态标签换成状态色 15% 淡底
+      // + 状态色字（iOS 状态徽标），不再加圆点。
+      final FushiAppleColors apple = appleColorsOf(context);
+      final Widget tag = Container(
+        constraints: const BoxConstraints(minHeight: 22),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: statusColor?.withValues(alpha: 0.15),
+          border: statusColor != null
+              ? null
+              : Border.all(
+                  color: widget.selected ? apple.secondaryLabel : apple.separator,
+                  width: 0.8,
+                ),
+          borderRadius: _pillRadius,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (dot != null && statusColor == null) ...<Widget>[
+              SizedBox.square(dimension: 6, child: dot),
+              const SizedBox(width: 5),
+            ],
+            Flexible(
+              child: Text(
+                widget.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: (Theme.of(context).textTheme.labelMedium ??
+                        const TextStyle())
+                    .copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: statusColor ??
+                      (widget.selected ? apple.label : apple.secondaryLabel),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      return widget.dimmed ? Opacity(opacity: 0.45, child: tag) : tag;
+    }
+    final Widget chip = fushiAppleChip(
+      context,
+      label: Text(widget.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      avatar: dot,
+      selected: widget.selected,
+      onTap: widget.onTap,
+      onDeleted: widget.onDeleted,
+      focusable: !wrapped,
+    );
+    // dimmed 是「这条标签当前不参与筛选」：整枚减淡，形状与颜色不变。
+    return widget.dimmed ? Opacity(opacity: 0.45, child: chip) : chip;
+  }
+
+  Widget _wrapFocus(BuildContext context, Widget surface) {
     if (widget.onTap == null && widget.onDeleted == null) return surface;
     // Outside a FushiFocusRoot stay a bare tappable chip (zero overhead).
     if (FushiFocusRoot.maybeControllerOf(context) == null) return surface;
@@ -1120,13 +1873,32 @@ class FushiBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    if (isGlassDesign(context)) {
+      // Apple：内容层的实色小徽章（tertiaryFill 灰底、同尺寸同圆角），图标单色
+      // secondaryLabel——不是着色玻璃，也不是彩色底块。调用方显式给的底色 /
+      // 前景色照用。
+      final FushiAppleColors apple = appleColorsOf(context);
+      return Container(
+        padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
+        decoration: BoxDecoration(
+          // Apple 默认不垫 systemFill 底（SF Symbol 单色直接上屏）。
+          color: background ?? Colors.transparent,
+          borderRadius: tokens.radii.chipRadius,
+        ),
+        child: FushiIcon(
+          icon,
+          size: size,
+          color: foreground ?? apple.secondaryLabel,
+        ),
+      );
+    }
     return Container(
       padding: padding ?? EdgeInsets.all(tokens.spacing.gap / 2),
       decoration: BoxDecoration(
         color: background ?? colors.primaryContainer,
         borderRadius: tokens.radii.chipRadius,
       ),
-      child: Icon(
+      child: FushiIcon(
         icon,
         size: size,
         color: foreground ?? colors.onPrimaryContainer,
@@ -1134,6 +1906,9 @@ class FushiBadge extends StatelessWidget {
     );
   }
 }
+
+/// 窗口高度低于此值时 MD3 对话框头部收紧（见 [FushiModalSheetFrame]）。
+const double _kMd3DialogHeaderCompactHeight = 480;
 
 class FushiModalSheetFrame extends StatelessWidget {
   const FushiModalSheetFrame({
@@ -1163,20 +1938,43 @@ class FushiModalSheetFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool glassDesign = isGlassDesign(context);
+    // 放在对话框面板里（FushiDialogFrame 包了 [FushiDialogScope]）时按对话框
+    // 规范排：底部动作区不再压分隔线；底部区包 [FushiDialogActionScope]，
+    // Apple 下取消类文字按钮画成系统灰胶囊。作底部 sheet 用时维持原样。
+    final bool inDialog = FushiDialogScope.of(context);
+    // Apple 不画 leadingIcon、MD3 对话框里没标题时也不画，只剩图标时就没有头部。
+    final bool hasHeader = (glassDesign || inDialog)
+        ? (title != null || subtitle != null)
+        : _hasHeader;
     final List<Widget> children = <Widget>[
-      if (_hasHeader) _buildHeader(tokens, colors),
+      if (hasHeader) _buildHeader(context, tokens, colors),
       _buildBody(tokens),
       if (footer != null) ...<Widget>[
-        Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
+        // 弹层统一（2026-10-04）：MD3 sheet 底部动作区不压分隔线（墨水屏保留，
+        // 它靠线分区），四周 24、动作靠右（MD3 规范）；Apple 维持细分隔线。
+        if (inDialog || (!glassDesign && !isEinkTheme(context)))
+          const SizedBox.shrink()
+        else if (glassDesign)
+          const FushiDividerControl(height: 1)
+        else
+          Divider(height: 1, thickness: 1, color: tokens.surfaces.outline),
         Padding(
           padding: footerPadding ??
-              EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                0,
-                tokens.spacing.page,
-                tokens.spacing.page,
-              ),
-          child: footer!,
+              (inDialog || glassDesign
+                  ? EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      0,
+                      tokens.spacing.page,
+                      tokens.spacing.page,
+                    )
+                  : const EdgeInsets.fromLTRB(24, 16, 24, 24)),
+          child: FushiDialogActionScope(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: footer!,
+            ),
+          ),
         ),
       ],
     ];
@@ -1202,7 +2000,14 @@ class FushiModalSheetFrame extends StatelessWidget {
   bool get _hasHeader =>
       title != null || subtitle != null || leadingIcon != null;
 
-  Widget _buildHeader(FushiDesignTokens tokens, ColorScheme colors) {
+  Widget _buildHeader(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    ColorScheme colors,
+  ) {
+    if (isGlassDesign(context)) return _buildAppleHeader(context, tokens);
+    final bool inDialog = FushiDialogScope.of(context);
+    if (inDialog) return _buildMd3DialogHeader(context, tokens, colors);
     final Widget text = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1227,31 +2032,134 @@ class FushiModalSheetFrame extends StatelessWidget {
       ],
     );
 
+    // MD3 sheet 头部左右 24（2026-10-04 弹层统一，MD3 规范内边距）；顶部已有
+    // 拖动条的 48 交互区，不再叠 24。
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.page,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
+      padding: EdgeInsets.fromLTRB(24, tokens.spacing.gap, 24, tokens.spacing.gap),
       child: Row(
         children: <Widget>[
+          // 2026-10-04：去掉 primaryContainer 彩色底块——几乎所有弹层头部都顶着
+          // 一枚彩色方块，用户点名嫌丑。MD3 的 sheet 头部图标是无底单色
+          // （onSurfaceVariant），只做标题前的语义提示。
           if (leadingIcon != null) ...<Widget>[
-            Container(
-              padding: EdgeInsets.all(tokens.spacing.gap),
-              decoration: BoxDecoration(
-                color: colors.primaryContainer,
-                borderRadius: tokens.radii.controlRadius,
-              ),
-              child: Icon(
-                leadingIcon,
-                color: colors.onPrimaryContainer,
-                size: 20,
-              ),
+            FushiIcon(
+              leadingIcon,
+              color: colors.onSurfaceVariant,
+              size: 20,
             ),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
           Expanded(child: text),
+        ],
+      ),
+    );
+  }
+
+  /// Apple 头部（macOS 26 sheet）：标题 15 / 17 semibold label 靠左，可选
+  /// 一行 13 号 secondaryLabel 说明。[leadingIcon] 不画——左上角的彩色图标
+  /// 方块是 MD3 的语汇，Apple 的 sheet 只有文字标题。
+  Widget _buildAppleHeader(BuildContext context, FushiDesignTokens tokens) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool compact = fushiAppleCompact(context);
+    final TextTheme tt = Theme.of(context).textTheme;
+    final double pad = compact ? 20 : 24;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(pad, pad, pad, tokens.spacing.gap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (title != null)
+            Text(
+              title!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: (tt.titleMedium ?? const TextStyle()).copyWith(
+                fontSize: compact ? 15 : 17,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+                letterSpacing: 0,
+                color: apple.label,
+              ),
+            ),
+          if (subtitle != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 3),
+              child: Text(
+                subtitle!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: (tt.bodySmall ?? const TextStyle()).copyWith(
+                  fontSize: 13,
+                  height: 1.35,
+                  color: apple.secondaryLabel,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// MD3 对话框头部：有图标且有标题时按规范把单色图标（24，secondary，无底
+  /// 块）居中放在标题上方、标题随之居中；没有标题时不单独画图标（孤零零的
+  /// 图标压在左对齐正文上方只是噪音）。标题 22 w600 onSurface，说明 14
+  /// onSurfaceVariant，四周 24。
+  Widget _buildMd3DialogHeader(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    ColorScheme colors,
+  ) {
+    final TextTheme tt = Theme.of(context).textTheme;
+    // 矮窗口（桌面小窗 / 横屏手机）里规范头部（24 内边距 + 两行 22 号标题 +
+    // 图标）能吃掉近百像素，把正文挤到放不下自身控件而溢出。矮于阈值时收紧
+    // 内边距、标题只留一行、不画居中图标，把高度让回正文。
+    final bool compactHeight =
+        MediaQuery.sizeOf(context).height < _kMd3DialogHeaderCompactHeight;
+    final bool hero = !compactHeight && leadingIcon != null && title != null;
+    final CrossAxisAlignment align =
+        hero ? CrossAxisAlignment.center : CrossAxisAlignment.start;
+    final TextAlign textAlign = hero ? TextAlign.center : TextAlign.start;
+    return Padding(
+      padding: compactHeight
+          ? const EdgeInsets.fromLTRB(24, 16, 24, 8)
+          : const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      child: Column(
+        crossAxisAlignment: align,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (hero) ...<Widget>[
+            FushiIcon(leadingIcon, color: colors.secondary, size: 24),
+            const SizedBox(height: 16),
+          ],
+          if (title != null)
+            Text(
+              title!,
+              maxLines: compactHeight ? 1 : 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: textAlign,
+              style: (tt.headlineSmall ?? const TextStyle()).copyWith(
+                fontSize: 22,
+                fontWeight: FontWeight.w600,
+                height: 1.27,
+                color: colors.onSurface,
+              ),
+            ),
+          if (subtitle != null)
+            Padding(
+              padding: EdgeInsets.only(top: title != null ? 8 : 0),
+              child: Text(
+                subtitle!,
+                maxLines: compactHeight ? 1 : 3,
+                overflow: TextOverflow.ellipsis,
+                textAlign: textAlign,
+                style: (tt.bodyMedium ?? const TextStyle()).copyWith(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -1329,7 +2237,7 @@ List<Widget> narrowAwareAppBarActions({
       for (final FushiAppBarAction action in collapsible)
         IconButton(
           tooltip: action.label,
-          icon: Icon(action.icon),
+          icon: FushiIcon(action.icon),
           onPressed: action.onPressed,
         ),
     ];
@@ -1338,7 +2246,7 @@ List<Widget> narrowAwareAppBarActions({
     ...alwaysVisible,
     PopupMenuButton<int>(
       tooltip: t.common_more_actions,
-      icon: const Icon(Icons.more_vert),
+      icon: const FushiIcon(Icons.more_vert),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         for (int i = 0; i < collapsible.length; i++)
           PopupMenuItem<int>(
@@ -1346,7 +2254,7 @@ List<Widget> narrowAwareAppBarActions({
             enabled: collapsible[i].onPressed != null,
             child: Row(
               children: <Widget>[
-                Icon(collapsible[i].icon, size: 20),
+                FushiIcon(collapsible[i].icon, size: 20),
                 const SizedBox(width: 12),
                 Expanded(child: Text(collapsible[i].label)),
               ],
@@ -1367,11 +2275,18 @@ class FushiDialogFrame extends StatelessWidget {
     this.insetPadding,
     this.padding = EdgeInsets.zero,
     this.scrollable = true,
+    this.appleLiquidGlass = false,
   });
 
   final Widget child;
   final double maxWidth;
   final double maxHeightFactor;
+
+  /// Apple 设计系统下面板用真·液态玻璃（厚档 + premium 渲染，见
+  /// [FushiAppleDialogPanel.liquidGlass]），而不是默认的近实色面板。只给内容
+  /// 本身就是「浮在页面上的预览」、文字不多的对话框（右键详情）用；系统降低
+  /// 透明度时自动回落实色。MD3 不受影响。
+  final bool appleLiquidGlass;
 
   /// 对话框与屏幕边缘的留白。null = 按屏宽自适应（见 [_resolveInsetPadding]）。
   ///
@@ -1403,16 +2318,55 @@ class FushiDialogFrame extends StatelessWidget {
       padding: padding,
       child: child,
     );
+    final Widget body = ConstrainedBox(
+      constraints: BoxConstraints(
+        maxWidth: maxWidth,
+        maxHeight: screenHeight * maxHeightFactor,
+      ),
+      child: scrollable ? SingleChildScrollView(child: padded) : padded,
+    );
+    if (isGlassDesign(context)) {
+      // Apple 设计系统：Dialog 只剩布局职责（insetPadding、键盘避让、语义），
+      // 自身完全透明无阴影；表面是 macOS 26 sheet 式的实色面板（圆角 24、
+      // 柔和大阴影，见 [FushiAppleDialogPanel]），面板内是菜单式列表选中。
+      return Dialog(
+        clipBehavior: Clip.none,
+        insetPadding: _resolveInsetPadding(screenSize.width),
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        child: FushiAppleDialogPanel(
+          radius: 24,
+          liquidGlass: appleLiquidGlass,
+          child: body,
+        ),
+      );
+    }
+    // MD3：surfaceContainerHigh 面板（主题给）、圆角 28、无 tint；墨水屏下
+    // 补一圈实描边（面板与背景同为白，边是唯一的边界）。毛玻璃：Dialog 自己
+    // 的底色与 tint 让位，表面交给 FushiGlassSurface 画。面板内包
+    // [FushiDialogScope]，列表行改用圆角选中高亮。
+    final bool glass = glassMaterialOf(context) != FushiGlassMaterial.off;
+    final bool eink = isEinkTheme(context);
     return Dialog(
       clipBehavior: Clip.antiAlias,
       insetPadding: _resolveInsetPadding(screenSize.width),
-      shape: RoundedRectangleBorder(borderRadius: tokens.radii.dialogRadius),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth,
-          maxHeight: screenHeight * maxHeightFactor,
-        ),
-        child: scrollable ? SingleChildScrollView(child: padded) : padded,
+      shape: RoundedRectangleBorder(
+        borderRadius: tokens.radii.dialogRadius,
+        side: eink
+            ? BorderSide(color: Theme.of(context).colorScheme.outline)
+            : BorderSide.none,
+      ),
+      backgroundColor: glass ? Colors.transparent : null,
+      surfaceTintColor: Colors.transparent,
+      child: FushiDialogScope(
+        child: glass
+            ? FushiGlassSurface(
+                borderRadius: tokens.radii.dialogRadius,
+                child: body,
+              )
+            : body,
       ),
     );
   }
@@ -1464,7 +2418,7 @@ class FushiColorSwatch extends StatelessWidget {
     );
     final Color foreground = _swatchForegroundFor(color);
     final Widget? swatchOverlay =
-        selected ? Icon(Icons.check, color: foreground, size: 20) : overlay;
+        selected ? FushiIcon(Icons.check, color: foreground, size: 20) : overlay;
     final Widget swatch = SizedBox(
       width: resolvedWidth,
       height: resolvedHeight,
@@ -1691,116 +2645,116 @@ class FushiSchemeSwatch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final Color textRole = colors[0];
     final Color backgroundRole = colors[1];
+    final Color buttonRole = colors[2];
     final Color menuRole = colors[3];
-    final BorderSide borderSide = BorderSide(
-      color: selected ? cs.primary : borderColor ?? cs.outlineVariant,
-      width: selected ? 3 : 1,
-    );
-    final Widget? badgeChild =
-        selected ? const Icon(Icons.check, size: 10) : overlay;
-    // TODO-138: every swatch — including system (= auto) and custom (= palette) —
-    // now shows the FULL diagonal preview (「文」 glyph + accent dot). The badge is
-    // no longer a centred disc that hid that preview; it is a small corner marker
-    // in the bottom-left (the menu triangle, clear of the top-left 「文」 at 30% and
-    // the bottom-right accent dot at 68%), so system/custom previews read exactly
-    // like the presets, just with an extra hint icon.
-    final Widget? badge = badgeChild == null
-        ? null
-        : Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: menuRole,
-              shape: BoxShape.circle,
-              border: Border.all(color: cs.outlineVariant, width: 0.5),
-            ),
-            child: IconTheme.merge(
-              // BUG-212: contrast the badge icon against the badge's OWN
-              // background (`menuRole` = the previewed scheme's
-              // surfaceContainerHigh), not the app theme's `cs.onSurface`.
-              // Borrowing `cs.onSurface` made the icon track a different
-              // colorScheme than the disc behind it: under a dark app theme a
-              // light custom scheme gave a light icon on a light disc → the
-              // palette/auto glyph vanished. Mirrors `FushiColorSwatch`'s
-              // `_swatchForegroundFor(color)` so the badge foreground always
-              // reads on its own background, in every theme combination.
-              data: IconThemeData(
-                color: _swatchForegroundFor(menuRole),
-                size: 10,
-              ),
-              child: badgeChild,
-            ),
-          );
-    // Rounded-square card painted by [SchemeDiagonalPainter]: top-left triangle
-    // = page background with a text-coloured 「文」 (text-on-background); bottom-
-    // right triangle = popup-menu surface with a button-coloured dot
-    // (button-on-menu). The selection ring rides the card border via `decoration`
-    // (the painter clips to a rounded rect inside the border, so it never paints
-    // over the ring).
-    final Widget visual = AnimatedContainer(
-      duration: fushiMd3StateDuration,
-      curve: fushiMd3StateCurve,
-      width: size,
-      height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: backgroundRole,
-        borderRadius: tokens.radii.chipRadius,
-        border: Border.fromBorderSide(borderSide),
-      ),
-      child: ClipRRect(
-        borderRadius: tokens.radii.chipRadius,
-        // 滚动性能：色卡常摆在非懒的 Wrap/Column（如阅读设置抽屉的主题选择器、
-        // buildThemeSelector 的 Wrap）里。父级 SingleChildScrollView 滚动时会重绘
-        // 整棵子树，令 SchemeDiagonalPainter.paint() 每帧重跑 → 掉帧。给画布包一层
-        // RepaintBoundary，让每张色卡各自栅格化进缓存层，滚动只合成、不重绘。
-        child: RepaintBoundary(
-          child: CustomPaint(
-            // TODO-1320: pin the painting surface to the card size. A childless
-            // CustomPaint with the default `size: Size.zero` collapses to zero
-            // under the LOOSE constraints the parent AnimatedContainer hands down
-            // (its `alignment: Alignment.center` loosens child constraints). So an
-            // unselected preset swatch — which has no badge child (badge is only
-            // the selection check or the system/custom overlay) — painted onto a
-            // 0x0 canvas and rendered as a blank rounded card. Selected / system /
-            // custom swatches escaped this only because their badge/overlay gave
-            // CustomPaint a non-null child that sized it. Sizing the canvas
-            // explicitly makes EVERY swatch paint the full diagonal preview,
-            // selected or not (the earlier `showGlyph: true` was a no-op on a
-            // zero-size canvas).
-            size: Size.square(size),
-            painter: SchemeDiagonalPainter(
-              textColor: textRole,
-              backgroundColor: backgroundRole,
-              buttonColor: colors[2],
-              menuColor: menuRole,
-              // TODO-138: always paint the full preview — the 「文」 glyph and the
-              // accent dot — for EVERY swatch. The badge (if any) sits in the corner
-              // and no longer replaces the glyph, so system/custom show a complete
-              // preview, not just a base colour behind a centred badge.
-              showGlyph: true,
-              textDirection: Directionality.of(context),
-            ),
-            child: badge == null
-                ? null
-                : Align(
-                    alignment: Alignment.bottomLeft,
-                    child: Padding(
-                      padding: const EdgeInsets.all(2),
-                      child: badge,
-                    ),
-                  ),
+    // 选中强调色：Apple 设计系统走 Apple 强调色，MD3 走 primary。
+    final Color accent = isGlassDesign(context)
+        ? appleColorsOf(context).accent
+        : cs.primary;
+    final Color onAccent = appleOnAccent(accent);
+    final double radius = size * 0.24;
+    // 微缩界面预览（用户 2026-10-04：主题图标重新设计）：页面底 + 顶栏（菜单面）
+    // + 两条文字线（文字色）+ 强调色胶囊按钮，一眼看出「这套主题长什么样」，
+    // 取代旧的对角分色 + 「文」字。色板之外隔 2px 留缝再套选中环（macOS 外观
+    // 缩略图式），选中徽标在右上角；系统 / 自定义的提示图标在右下角。
+    final Widget preview = ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: Size.square(size),
+          painter: SchemeMiniUiPainter(
+            textColor: textRole,
+            backgroundColor: backgroundRole,
+            buttonColor: buttonRole,
+            barColor: menuRole,
           ),
         ),
+      ),
+    );
+    Widget cornerBadge(Widget icon, Color bg, Color fg, double d) => Container(
+      width: d,
+      height: d,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: bg,
+        shape: BoxShape.circle,
+        border: Border.all(color: backgroundRole, width: 1.5),
+      ),
+      child: IconTheme.merge(
+        data: IconThemeData(color: fg, size: d * 0.62),
+        child: icon,
+      ),
+    );
+    const double ring = 2;
+    const double gap = 2;
+    final Widget visual = SizedBox(
+      width: size + 2 * (ring + gap),
+      height: size + 2 * (ring + gap),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned.fill(
+            child: AnimatedContainer(
+              duration: fushiMd3StateDuration,
+              curve: fushiMd3StateCurve,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius + ring + gap),
+                border: Border.all(
+                  color: selected ? accent : Colors.transparent,
+                  width: ring,
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: ring + gap,
+            top: ring + gap,
+            width: size,
+            height: size,
+            child: DecoratedBox(
+              position: DecorationPosition.foreground,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(radius),
+                border: Border.all(
+                  color: borderColor ?? cs.outlineVariant.withValues(alpha: 0.6),
+                  width: 0.5,
+                ),
+              ),
+              child: preview,
+            ),
+          ),
+          if (overlay != null)
+            Positioned(
+              right: ring + gap + size * 0.06,
+              bottom: ring + gap + size * 0.06,
+              child: cornerBadge(
+                overlay!,
+                menuRole,
+                _swatchForegroundFor(menuRole),
+                size * 0.34,
+              ),
+            ),
+          if (selected)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: cornerBadge(
+                const FushiIcon(Icons.check_rounded),
+                accent,
+                onAccent,
+                size * 0.36,
+              ),
+            ),
+        ],
       ),
     );
     return _buildSwatchInteractive(
       context,
       visual: visual,
-      inkRadius: tokens.radii.chipRadius,
+      inkRadius: BorderRadius.circular(radius + ring + gap),
       selected: selected,
       onTap: onTap,
       onLongPress: onLongPress,
@@ -1901,6 +2855,16 @@ class FushiPreviewSwitch extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // 纯预览：与设置页 Apple 开关同一枚 [FushiAppleSwitch]，恒为开；
+      // onChanged 为 null = 纯展示（不吃手势、不进焦点遍历）。
+      return FushiAppleSwitch(
+        value: true,
+        onChanged: null,
+        activeTrackColor: trackColor,
+        activeThumbColor: thumbColor,
+      );
+    }
     return Switch(
       value: true,
       onChanged: null,
@@ -1936,6 +2900,26 @@ class FushiPageHeader extends StatelessWidget {
         titleWidget = title,
         subtitle = null,
         bottom = null;
+
+  /// 推出来的独立页（不在首页外壳里）的页头：标题 + 自动返回键。
+  ///
+  /// 返回键是 [FushiRouteBackButton]：Apple 设计系统下是 44 的圆形玻璃钮
+  /// （SF chevron），MD3 下是 `arrow_back` 图标按钮（48 命中盒）；[onBack]
+  /// 为 null 时 `Navigator.maybePop`，当前路由不能返回时不出现。标题走页头
+  /// 自己的大标题字阶（Apple 粗体收字距）。用来替代各页手写的
+  /// 「返回键 + titleLarge」Row。
+  FushiPageHeader.route({
+    required String this.title,
+    super.key,
+    this.subtitle,
+    this.actions = const <Widget>[],
+    this.bottom,
+    this.padding,
+    VoidCallback? onBack,
+    Key? backButtonKey,
+  })  : titleWidget = null,
+        compact = false,
+        leading = FushiRouteBackButton(key: backButtonKey, onPressed: onBack);
 
   final String? title;
   final Widget? titleWidget;
@@ -1977,7 +2961,14 @@ class FushiPageHeader extends StatelessWidget {
     // on desktop -- and the tabs carry their own 13px of centring slack inside
     // the 46px MD3 TabBar. A title margin here is therefore a second, redundant
     // one at every window size, which is why this arm ignores [narrowWindow].
-    final double resolvedTop = titleWidget != null
+    // 首页外壳顶部的大标题条（[FushiShellLargeTitleBar]）已经画了同名页面名
+    // （如查词页的「查词」）：这里不再重复画标题，只留动作行，顶距同嵌入页签
+    // 一样归 0——外壳的标题条就是它上面的那段呼吸。
+    final bool shellShowsTitle = titleWidget == null &&
+        !compact &&
+        title != null &&
+        FushiShellTitleScope.maybeTitleOf(context) == title;
+    final double resolvedTop = titleWidget != null || shellShowsTitle
         ? 0
         : compact
             ? tokens.spacing.gap
@@ -1995,15 +2986,24 @@ class FushiPageHeader extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              title!,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: tokens.type.pageTitle,
-            ),
+            if (!shellShowsTitle)
+              Text(
+                title!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                // 玻璃设计系统：GlassLargeTitle 的大标题观感（更重、略收字距）。
+                style: isGlassDesign(context)
+                    ? tokens.type.pageTitle.copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.4,
+                      )
+                    : tokens.type.pageTitle,
+              ),
             if (resolvedSubtitle != null)
               Padding(
-                padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+                padding: EdgeInsets.only(
+                  top: shellShowsTitle ? 0 : tokens.spacing.gap / 2,
+                ),
                 child: Text(
                   resolvedSubtitle,
                   maxLines: 2,
@@ -2013,6 +3013,16 @@ class FushiPageHeader extends StatelessWidget {
               ),
           ],
         );
+
+    // 2026-10-04「顶部标签栏做成全宽」：在首页外壳里、主位是分区页签（或标题
+    // 已由外壳大标题条画出）时，动作交给外壳大标题条右侧（iOS 26 / macOS 26
+    // 的大标题行工具栏胶囊、MD3 top app bar 的 actions 位），页签独占一整行。
+    // 有 leading（返回键）的页头不收：返回键与动作同属一条导航行。
+    final FushiShellActionsSlot? shellActions = actions.isNotEmpty &&
+            leading == null &&
+            (titleWidget != null || shellShowsTitle)
+        ? FushiShellTitleScope.maybeActionsSlotOf(context)
+        : null;
 
     return Padding(
       padding: resolvedPadding,
@@ -2024,6 +3034,7 @@ class FushiPageHeader extends StatelessWidget {
             leading: leading,
             title: resolvedTitle,
             actionItems: actions,
+            shellActions: shellActions,
             // 只有 customTitle（标题位是分段导航等自报宽度的组件）才启用
             // 「左边摆不下就把动作收进 ⋯ 菜单」；纯文字标题自身可省略号收缩，
             // 维持既有行为。
@@ -2091,12 +3102,16 @@ class _FushiPageHeaderRow extends StatefulWidget {
     required this.leading,
     required this.actionItems,
     required this.collapseWhenCramped,
+    this.shellActions,
   });
 
   final FushiDesignTokens tokens;
   final Widget title;
   final Widget? leading;
   final List<Widget> actionItems;
+
+  /// 非 null：动作登记到外壳大标题条（见 [FushiShellActionsSlot]），本行不画。
+  final FushiShellActionsSlot? shellActions;
 
   /// true（customTitle 模式）时，若标题位上报的自然宽 + 动作自然宽超过行宽，
   /// 把可收纳的动作（[FushiIconButton]）折进一个 ⋯ 菜单，把宽度还给标题位。
@@ -2122,24 +3137,9 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
     });
   }
 
-  /// 动作区自然宽估算（图标形态）：[FushiIconButton] = 图标 + 内边距；其它
-  /// widget 给一个按钮级的保守值。只在非展开标签（<840）的窄行场景使用。
-  double _estimateActionsWidth(List<Widget> items) {
-    double total = 0;
-    for (int index = 0; index < items.length; index++) {
-      if (index > 0) total += tokens.spacing.gap / 2;
-      final Widget item = items[index];
-      if (item is FushiIconButton) {
-        final double icon = item.size ?? 24.0;
-        final EdgeInsets padding =
-            item.padding ?? EdgeInsets.all(tokens.spacing.gap);
-        total += icon + padding.horizontal;
-      } else {
-        total += 48.0;
-      }
-    }
-    return total;
-  }
+  /// 动作区自然宽估算，见 [_estimateHeaderActionsWidth]。
+  double _estimateActionsWidth(List<Widget> items) =>
+      _estimateHeaderActionsWidth(tokens, items);
 
   Widget _buildActionRow(List<Widget> items) {
     return Row(
@@ -2156,56 +3156,32 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
     );
   }
 
-  /// ⋯ 溢出按钮：菜单项由被收纳的 [FushiIconButton] 的图标 + 文案（label 优先、
-  /// 回退 tooltip）就地派生，动作行为共享同一个 onTap，不复制第二份实现。
-  Widget _buildOverflowMenuButton(List<FushiIconButton> collapsed) {
-    return Builder(
-      builder: (BuildContext anchorContext) => FushiIconButton(
-        icon: Icons.more_vert,
-        tooltip: t.common_more_actions,
-        onTap: () => _showOverflowMenu(anchorContext, collapsed),
-      ),
+  Widget _buildOverflowMenuButton(List<FushiIconButton> collapsed) =>
+      _headerOverflowMenuButton(collapsed);
+
+  /// 当前登记着动作的外壳槽（换槽 / 不再需要时先撤回旧登记）。
+  FushiShellActionsSlot? _claimedSlot;
+
+  void _syncShellClaim(FushiShellActionsSlot? slot) {
+    if (!identical(_claimedSlot, slot)) {
+      _claimedSlot?.release(this);
+      _claimedSlot = slot;
+    }
+    if (slot == null) return;
+    // 可见 = 没被保活外壳停帧（TickerMode）且不在 IndexedStack 的隐藏子区里
+    // （[Visibility]，IndexedStack 不停帧）。两者都建立依赖，变化时本页头重建、
+    // 重新登记。
+    slot.claim(
+      this,
+      visible: TickerMode.valuesOf(context).enabled && Visibility.of(context),
+      actions: FushiShellHeaderActions(actions: widget.actionItems),
     );
   }
 
-  Future<void> _showOverflowMenu(
-    BuildContext anchorContext,
-    List<FushiIconButton> collapsed,
-  ) async {
-    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
-    final RenderBox overlay = Navigator.of(anchorContext)
-        .overlay!
-        .context
-        .findRenderObject()! as RenderBox;
-    final RelativeRect position = RelativeRect.fromRect(
-      Rect.fromPoints(
-        button.localToGlobal(Offset.zero, ancestor: overlay),
-        button.localToGlobal(
-          button.size.bottomRight(Offset.zero),
-          ancestor: overlay,
-        ),
-      ),
-      Offset.zero & overlay.size,
-    );
-    final FushiIconButton? choice = await showMenu<FushiIconButton>(
-      context: anchorContext,
-      position: position,
-      items: <PopupMenuEntry<FushiIconButton>>[
-        for (final FushiIconButton action in collapsed)
-          PopupMenuItem<FushiIconButton>(
-            value: action,
-            enabled: action.enabled && action.onTap != null,
-            child: Row(
-              children: <Widget>[
-                Icon(action.icon, size: 20),
-                const SizedBox(width: 12),
-                Expanded(child: Text(action.label ?? action.tooltip)),
-              ],
-            ),
-          ),
-      ],
-    );
-    await choice?.onTap?.call();
+  @override
+  void dispose() {
+    _claimedSlot?.release(this);
+    super.dispose();
   }
 
   @override
@@ -2213,6 +3189,11 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
     final double leadingGap = tokens.spacing.gap + 4;
     final double actionsGap = tokens.spacing.gap;
     final Widget? leading = widget.leading;
+    final FushiShellActionsSlot? shellActions = widget.shellActions;
+    _syncShellClaim(shellActions);
+    // 动作交给外壳时本行只剩标题位（分区页签独占整行）。
+    final List<Widget> actionItems =
+        shellActions == null ? widget.actionItems : const <Widget>[];
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -2239,7 +3220,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
           );
         }
         children.add(titleChild);
-        if (widget.actionItems.isNotEmpty) {
+        if (actionItems.isNotEmpty) {
           // 动作区可用宽上界：整行宽减去动作前 gap，**再减去留给标题的保底宽**。
           // leading（含右 gap）作为非弹性子项另行占位，不计入此上界——它在 Row 里已被
           // 独立扣除；这里只需保证「gap + 动作区」不超过整行宽即可避免 overflow。
@@ -2276,21 +3257,21 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
           // 摆得下就一个不收（用户定案：仅在左边位置不够时才变）。宽窗药丸
           // 形态（expandLabels）永不收纳。可收纳 <2 个时收了也省不出宽度，
           // 维持原样让滚动兜底。
-          List<Widget> resolvedItems = widget.actionItems;
+          List<Widget> resolvedItems = actionItems;
           if (widget.collapseWhenCramped &&
               !expandLabels &&
               _titleNaturalWidth != null &&
               constraints.maxWidth.isFinite) {
             final double needed = _titleNaturalWidth! +
                 actionsGap +
-                _estimateActionsWidth(widget.actionItems);
-            final List<FushiIconButton> collapsible = widget.actionItems
+                _estimateActionsWidth(actionItems);
+            final List<FushiIconButton> collapsible = actionItems
                 .whereType<FushiIconButton>()
                 .where((FushiIconButton b) => b.onTap != null)
                 .toList(growable: false);
             if (needed > constraints.maxWidth && collapsible.length >= 2) {
               resolvedItems = <Widget>[
-                for (final Widget item in widget.actionItems)
+                for (final Widget item in actionItems)
                   if (item is! FushiIconButton || item.onTap == null) item,
                 _buildOverflowMenuButton(collapsible),
               ];
@@ -2331,6 +3312,128 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: children,
+        );
+      },
+    );
+  }
+}
+
+/// 页头动作区自然宽估算（图标形态）：[FushiIconButton] = 图标 + 内边距；其它
+/// widget 给一个按钮级的保守值。只在非展开标签（<840）的窄行场景使用。
+double _estimateHeaderActionsWidth(
+  FushiDesignTokens tokens,
+  List<Widget> items,
+) {
+  double total = 0;
+  for (int index = 0; index < items.length; index++) {
+    if (index > 0) total += tokens.spacing.gap / 2;
+    final Widget item = items[index];
+    if (item is FushiIconButton) {
+      final double icon = item.size ?? 24.0;
+      final EdgeInsets padding =
+          item.padding ?? EdgeInsets.all(tokens.spacing.gap);
+      total += icon + padding.horizontal;
+    } else {
+      total += 48.0;
+    }
+  }
+  return total;
+}
+
+/// ⋯ 溢出按钮：菜单项由被收纳的 [FushiIconButton] 的图标 + 文案（label 优先、
+/// 回退 tooltip）就地派生，动作行为共享同一个 onTap，不复制第二份实现。
+Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
+  return Builder(
+    builder: (BuildContext anchorContext) => FushiIconButton(
+      icon: Icons.more_vert,
+      tooltip: t.common_more_actions,
+      onTap: () => _showHeaderOverflowMenu(anchorContext, collapsed),
+    ),
+  );
+}
+
+Future<void> _showHeaderOverflowMenu(
+  BuildContext anchorContext,
+  List<FushiIconButton> collapsed,
+) async {
+  final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
+  final RenderBox overlay = Navigator.of(anchorContext)
+      .overlay!
+      .context
+      .findRenderObject()! as RenderBox;
+  final RelativeRect position = RelativeRect.fromRect(
+    Rect.fromPoints(
+      button.localToGlobal(Offset.zero, ancestor: overlay),
+      button.localToGlobal(
+        button.size.bottomRight(Offset.zero),
+        ancestor: overlay,
+      ),
+    ),
+    Offset.zero & overlay.size,
+  );
+  final FushiIconButton? choice = await showFushiMenu<FushiIconButton>(
+    context: anchorContext,
+    position: position,
+    items: <PopupMenuEntry<FushiIconButton>>[
+      for (final FushiIconButton action in collapsed)
+        PopupMenuItem<FushiIconButton>(
+          value: action,
+          enabled: action.enabled && action.onTap != null,
+          child: Row(
+            children: <Widget>[
+              FushiIcon(action.icon, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Text(action.label ?? action.tooltip)),
+            ],
+          ),
+        ),
+    ],
+  );
+  await choice?.onTap?.call();
+}
+
+/// 外壳大标题条右侧的页头动作（页头登记进 [FushiShellActionsSlot] 的就是它）。
+///
+/// 两套设计系统都是标题行右侧的一排图标：Apple 由 [FushiToolbar] 收进一枚
+/// 液态玻璃胶囊（iOS 26 / macOS 26 大标题行工具栏），MD3 是 top app bar 的
+/// actions 位（无底一排图标按钮）。一律纯图标（文案是 tooltip）——标题行上
+/// 放图标 + 文字的药丸会把大标题挤没。外壳给的宽放不下时，可收纳的
+/// [FushiIconButton] 折进 ⋯ 菜单（与页头同一套菜单），再不够才横向滚动兜底。
+class FushiShellHeaderActions extends StatelessWidget {
+  const FushiShellHeaderActions({required this.actions, super.key});
+
+  final List<Widget> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        List<Widget> items = actions;
+        final List<FushiIconButton> collapsible = actions
+            .whereType<FushiIconButton>()
+            .where((FushiIconButton b) => b.onTap != null)
+            .toList(growable: false);
+        // +16：Apple 工具栏胶囊两端的内边距与 MD3 按钮间距的余量。
+        if (constraints.maxWidth.isFinite &&
+            collapsible.length >= 2 &&
+            _estimateHeaderActionsWidth(tokens, actions) + 16 >
+                constraints.maxWidth) {
+          items = <Widget>[
+            for (final Widget item in actions)
+              if (item is! FushiIconButton || item.onTap == null) item,
+            _headerOverflowMenuButton(collapsible),
+          ];
+        }
+        return FushiHeaderLabelScope(
+          expandLabels: false,
+          child: HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: FushiToolbar(children: items),
+            ),
+          ),
         );
       },
     );
@@ -2564,63 +3667,73 @@ class FushiToolScaffold extends StatelessWidget {
                 tokens.spacing.gap,
                 2,
               ),
-              child: SizedBox(
-                height: 44,
-                // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
-                // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
-                // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
-                // 与 [_FushiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
-                // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final double gapHalf = tokens.spacing.gap / 2;
-                    final double leadingWidth =
-                        effectiveLeading != null ? 40 + gapHalf : 0;
-                    final double titleFloor = constraints.maxWidth.isFinite
-                        ? math.min(
-                            96.0 * MediaQuery.textScalerOf(context).scale(1),
-                            constraints.maxWidth / 3,
-                          )
-                        : 0.0;
-                    final double maxActionsWidth = constraints.maxWidth.isFinite
-                        ? (constraints.maxWidth -
-                                leadingWidth -
-                                gapHalf -
-                                titleFloor)
-                            .clamp(0.0, double.infinity)
-                        : double.infinity;
-                    return Row(
-                      children: <Widget>[
-                        if (effectiveLeading != null) ...<Widget>[
-                          SizedBox.square(
-                            dimension: 40,
-                            child: effectiveLeading,
+              // 玻璃设计系统：工具条是一条胶囊玻璃（GlassAppBar 观感）。背衬恒在、
+              // 只换背景槽（见 [FushiGlassBackdrop]），切设计系统时工具条里带
+              // GlobalKey 的动作（溢出菜单等）不被重挂。
+              child: FushiGlassBackdrop(
+                enabled: isGlassDesign(context),
+                borderRadius: const BorderRadius.all(Radius.circular(22)),
+                prominent: true,
+                child: SizedBox(
+                  height: 44,
+                  // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
+                  // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
+                  // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。
+                  // 与 [_FushiPageHeaderRow] 同一类错误，那边已按本地约束修过；这里改用
+                  // LayoutBuilder 的局部约束，并同样给标题留保底宽，超出的动作横向滚动。
+                  child: LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) {
+                      final double gapHalf = tokens.spacing.gap / 2;
+                      final double leadingWidth =
+                          effectiveLeading != null ? 40 + gapHalf : 0;
+                      final double titleFloor = constraints.maxWidth.isFinite
+                          ? math.min(
+                              96.0 * MediaQuery.textScalerOf(context).scale(1),
+                              constraints.maxWidth / 3,
+                            )
+                          : 0.0;
+                      final double maxActionsWidth =
+                          constraints.maxWidth.isFinite
+                              ? (constraints.maxWidth -
+                                      leadingWidth -
+                                      gapHalf -
+                                      titleFloor)
+                                  .clamp(0.0, double.infinity)
+                              : double.infinity;
+                      return Row(
+                        children: <Widget>[
+                          if (effectiveLeading != null) ...<Widget>[
+                            SizedBox.square(
+                              dimension: 40,
+                              child: effectiveLeading,
+                            ),
+                            SizedBox(width: gapHalf),
+                          ],
+                          Expanded(
+                            child: _buildTitle(tokens),
                           ),
-                          SizedBox(width: gapHalf),
-                        ],
-                        Expanded(
-                          child: _buildTitle(tokens),
-                        ),
-                        if (actions.isNotEmpty) ...<Widget>[
-                          SizedBox(width: gapHalf),
-                          ConstrainedBox(
-                            constraints:
-                                BoxConstraints(maxWidth: maxActionsWidth),
-                            child: HorizontalDragScrollable(
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                reverse: true,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: actions,
+                          if (actions.isNotEmpty) ...<Widget>[
+                            SizedBox(width: gapHalf),
+                            ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxWidth: maxActionsWidth),
+                              child: HorizontalDragScrollable(
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  reverse: true,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: actions,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -2743,7 +3856,7 @@ class FushiFilePickerRow extends StatelessWidget {
     return FushiListItem(
       onTap: enabled ? onTap : null,
       minHeight: 60,
-      leading: Icon(icon, size: 22, color: foreground),
+      leading: FushiIcon(icon, size: 22, color: foreground),
       title: Text(title),
       subtitle: subtitle == null || subtitle!.isEmpty ? null : Text(subtitle!),
       trailing: actions.isEmpty
@@ -2793,16 +3906,28 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final PopupMenuButton<T> menu = PopupMenuButton<T>(
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    // 两套设计系统同一个弹出菜单组件：[FushiPopupMenuButton] 在 MD3 下就是
+    // PopupMenuButton，Apple 下走 showFushiMenu 的 macOS / iOS 菜单路由（与
+    // 全 app 其它弹出菜单同一套行、同一块面板）。MD3 面板：surfaceContainer、
+    // 圆角 12、轻阴影、无 tint，宽 200–320。
+    final PopupMenuButton<T> menu = FushiPopupMenuButton<T>(
       key: _menuKey,
       tooltip: widget.tooltip,
       icon: widget.child == null
-          ? widget.iconWidget ?? Icon(widget.icon, size: widget.iconSize)
+          ? widget.iconWidget ?? FushiIcon(widget.icon, size: widget.iconSize)
           : null,
-      shape: RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
-      color: tokens.surfaces.overlay,
+      shape: RoundedRectangleBorder(
+        borderRadius: tokens.radii.menuRadius,
+        side: isEinkTheme(context)
+            ? BorderSide(color: cs.outline)
+            : BorderSide.none,
+      ),
+      color: Theme.of(context).popupMenuTheme.color ?? cs.surfaceContainer,
       surfaceTintColor: Colors.transparent,
-      menuPadding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+      elevation: 3,
+      menuPadding: const EdgeInsets.symmetric(vertical: 6),
+      constraints: const BoxConstraints(minWidth: 200, maxWidth: 320),
       padding: widget.padding,
       splashRadius: widget.splashRadius,
       position: PopupMenuPosition.under,
@@ -2829,19 +3954,25 @@ class _FushiOverflowMenuState<T> extends State<FushiOverflowMenu<T>> {
   }
 }
 
-class FushiPopupMenuItem<T> extends PopupMenuItem<T> {
+/// 带结构化文案的菜单项。MD3 下行是圆角内缩高亮（左右各内缩 6、圆角 8，
+/// 悬停 / 焦点 secondaryContainer），行高 44、14 号 onSurface 文字、20 号
+/// onSurfaceVariant 图标、选中行尾对勾；Apple 下 showFushiMenu 按
+/// [FushiMenuItemData] 的字段直接画 macOS / iOS 菜单行，不用 child。
+class FushiPopupMenuItem<T> extends PopupMenuItem<T>
+    implements FushiMenuItemData {
   FushiPopupMenuItem({
-    required String label,
+    required this.label,
     required T value,
     super.key,
-    IconData? icon,
-    Color? color,
-    bool selected = false,
+    this.icon,
+    this.color,
+    this.selected = false,
     bool enabled = true,
   }) : super(
           value: value,
           enabled: enabled,
-          height: 48,
+          height: 44,
+          padding: EdgeInsets.zero,
           child: _FushiPopupMenuItemContent(
             label: label,
             icon: icon,
@@ -2849,6 +3980,58 @@ class FushiPopupMenuItem<T> extends PopupMenuItem<T> {
             selected: selected,
           ),
         );
+
+  @override
+  final String label;
+  @override
+  final IconData? icon;
+  @override
+  final Color? color;
+  @override
+  final bool selected;
+
+  @override
+  PopupMenuItemState<T, FushiPopupMenuItem<T>> createState() =>
+      _FushiPopupMenuItemState<T>();
+}
+
+class _FushiPopupMenuItemState<T>
+    extends PopupMenuItemState<T, FushiPopupMenuItem<T>> {
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    const BorderRadius radius = BorderRadius.all(Radius.circular(8));
+    // 与 PopupMenuItemState.build 同一套语义 / 焦点 / 点击（handleTap：先
+    // onTap 再带值关菜单），只把整行高亮换成内缩的圆角块。
+    return MergeSemantics(
+      child: Semantics(
+        enabled: widget.enabled,
+        button: true,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Material(
+            type: MaterialType.transparency,
+            child: InkWell(
+              onTap: widget.enabled ? handleTap : null,
+              canRequestFocus: widget.enabled,
+              mouseCursor: widget.mouseCursor,
+              borderRadius: radius,
+              hoverColor: cs.secondaryContainer,
+              focusColor: cs.secondaryContainer,
+              highlightColor: cs.secondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Opacity(
+                  opacity: widget.enabled ? 1 : 0.38,
+                  child: buildChild(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _FushiPopupMenuItemContent extends StatelessWidget {
@@ -2866,21 +4049,22 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color foreground = color ??
-        (selected ? tokens.surfaces.primary : tokens.surfaces.onSurface);
-    final TextStyle textStyle = tokens.type.listTitle.copyWith(
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final TextTheme tt = Theme.of(context).textTheme;
+    final Color foreground = color ?? cs.onSurface;
+    final TextStyle textStyle = (tt.bodyMedium ?? const TextStyle()).copyWith(
+      fontSize: 14,
       color: foreground,
-      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
     );
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 48),
+      constraints: const BoxConstraints(minHeight: 44),
       child: Row(
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            Icon(icon, size: 20, color: foreground),
-            SizedBox(width: tokens.spacing.gap + 4),
+            FushiIcon(icon, size: 20, color: color ?? cs.onSurfaceVariant),
+            const SizedBox(width: 12),
           ],
           Expanded(
             child: Text(
@@ -2891,8 +4075,8 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
             ),
           ),
           if (selected) ...<Widget>[
-            SizedBox(width: tokens.spacing.gap + 4),
-            Icon(Icons.check, size: 20, color: foreground),
+            const SizedBox(width: 12),
+            FushiIcon(Icons.check, size: 20, color: color ?? cs.primary),
           ],
         ],
       ),
@@ -3237,9 +4421,10 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
                     right: tokens.spacing.card,
                     child: Tooltip(
                       message: t.log_copy_all,
-                      child: FilledButton.tonalIcon(
+                      // 设计系统分派：MD3 tonal 按压变形；Apple 浮在日志上的玻璃胶囊。
+                      child: FushiFilledButton.tonalIcon(
                         onPressed: _copyAllToClipboard,
-                        icon: const Icon(Icons.copy_all_outlined, size: 18),
+                        icon: const FushiIcon(Icons.copy_all_outlined, size: 18),
                         label: Text(t.log_copy_all),
                       ),
                     ),
@@ -3443,6 +4628,8 @@ class FushiEditorPanel extends StatelessWidget {
                 fontFamily: 'monospace',
               ),
               decoration: InputDecoration(
+                // 嵌在卡片里的无框输入：不吃全局输入框主题的填充底。
+                filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 focusedBorder: InputBorder.none,
@@ -3476,6 +4663,7 @@ class FushiPopupSurface extends StatelessWidget {
     this.clipBehavior = Clip.antiAlias,
     this.borderOnForeground = true,
     this.borderRadius,
+    this.standaloneWindow = false,
   });
 
   final Widget child;
@@ -3484,6 +4672,17 @@ class FushiPopupSurface extends StatelessWidget {
   final double elevation;
   final bool showBorder;
   final Clip clipBehavior;
+
+  /// 这块 surface 是一扇**独立窗口**的整窗面板（悬浮词典、全局查词窗）。
+  ///
+  /// Apple 设计系统下玻璃只能折射本窗口里自己画的像素，采不到窗口背后其它
+  /// app 的画面——独立窗口里的玻璃只会是一块发灰的半透明板。这里改画不透明
+  /// 的系统材质面板（调用方底色压成不透明，默认深 #1C1C1E / 浅白），保留 Apple
+  /// 圆角与 1px separator 描边。MD3 不受影响。
+  final bool standaloneWindow;
+
+  /// Apple 浮层面板的默认圆角（iOS 26 弹出面板 / macOS 26 popover 在 12–16）。
+  static const double _appleRadius = 14;
 
   /// 圆角覆写。默认 null = 走设计令牌的卡片圆角（10）。
   ///
@@ -3523,12 +4722,16 @@ class FushiPopupSurface extends StatelessWidget {
   /// 占 shape 内侧 `[0, _borderWidth]`，因此内缩一个笔宽即可完全避让。
   ///
   /// 描边仍画在子节点**之前**，BUG-1692 的 macOS 命中测试修复不受影响。
-  Widget _borderInsetChild(FushiDesignTokens tokens, Widget content) {
+  Widget _borderInsetChild(
+    FushiDesignTokens tokens,
+    Widget content, {
+    BorderRadius? outerRadius,
+  }) {
     if (!showBorder || borderOnForeground) return content;
     return Padding(
       padding: const EdgeInsets.all(_borderWidth),
       child: ClipRRect(
-        borderRadius: _deflate(_outerRadius(tokens)),
+        borderRadius: _deflate(outerRadius ?? _outerRadius(tokens)),
         child: content,
       ),
     );
@@ -3536,6 +4739,9 @@ class FushiPopupSurface extends StatelessWidget {
 
   BorderRadius _outerRadius(FushiDesignTokens tokens) =>
       borderRadius ?? tokens.radii.cardRadius;
+
+  BorderRadius get _appleOuterRadius =>
+      borderRadius ?? const BorderRadius.all(Radius.circular(_appleRadius));
 
   /// 内圈半径 = 外圈逐角减一个笔宽（摊平的角保持摊平，不会被减成负数）。
   static BorderRadius _deflate(BorderRadius outer) {
@@ -3554,9 +4760,127 @@ class FushiPopupSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Material(
-      color: color ?? tokens.surfaces.card,
-      elevation: elevation,
+    // 玻璃设计系统：浮层面换成 [GlassContainer]。装平台视图（查词 WebView）的
+    // surface（[borderOnForeground] = false，BUG-1692 / BUG-2166）维持原路径：
+    // 着色器层压在平台视图上会重新引出 macOS 命中测试被吞的老问题。
+    final bool apple = isGlassDesign(context);
+    if (apple && standaloneWindow) {
+      // 独立窗口（见 [standaloneWindow]）：不透明系统材质面板 + 1px separator。
+      // 走与 MD3 相同的 Material + [_borderInsetChild] 骨架，装平台视图
+      // （[borderOnForeground] = false）时 BUG-1692 / BUG-2166 的修法照样成立。
+      final bool dark =
+          Theme.of(context).colorScheme.brightness == Brightness.dark;
+      final BorderRadius radius = _appleOuterRadius;
+      return Material(
+        color: (color ??
+                (dark ? const Color(0xFF1C1C1E) : const Color(0xFFFFFFFF)))
+            .withValues(alpha: 1),
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: radius,
+          side: showBorder
+              ? BorderSide(
+                  color: appleColorsOf(context).separator,
+                  width: _borderWidth,
+                )
+              : BorderSide.none,
+        ),
+        clipBehavior: clipBehavior,
+        borderOnForeground: borderOnForeground,
+        child: _borderInsetChild(
+          tokens,
+          Padding(padding: padding, child: child),
+          outerRadius: radius,
+        ),
+      );
+    }
+    if (apple && borderOnForeground) {
+      final BorderRadius radius = _appleOuterRadius;
+      // Apple 浮层：圆角 14 的玻璃面板 + 1px separator 细描边（iOS 26 弹出
+      // 面板 / macOS 26 popover 的发丝边，压在玻璃边缘高光上，浅色背景上也
+      // 勾得出轮廓）。描边层恒在、[showBorder] 只换颜色。
+      final Widget content = Padding(padding: padding, child: child);
+      // 内部仍给一层透明 Material：浮层里常有依赖 Material 祖先的 MD3 子组件
+      // （InkWell 等），去掉祖先会在它们身上抛断言。
+      return DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: ShapeDecoration(
+          shape: RoundedSuperellipseBorder(
+            borderRadius: radius,
+            side: BorderSide(
+              color: showBorder
+                  ? appleColorsOf(context).separator
+                  : Colors.transparent,
+              width: _borderWidth,
+            ),
+          ),
+        ),
+        child: GlassContainer(
+          shape: fushiGlassShapeOf(radius),
+          quality: fushiGlassQuality(context, prominent: true),
+          settings:
+              color == null ? null : fushiGlassSettings(context, tint: color),
+          clipBehavior: clipBehavior,
+          child: Material(type: MaterialType.transparency, child: content),
+        ),
+      );
+    }
+    // MD3 浮层（2026-10-04）：surfaceContainer 面板 + 一层轻阴影（elevation 2，
+    // 无 tint）把浮层从页面上托起来。描边刻意保留为柔和的 outlineVariant 细线：
+    // 查词浮层常与页面同色（阅读器主题色灌进来），独立浮窗又直接压在桌面壁纸
+    // 上——阴影在透明窗边缘被裁掉，边界只能靠这条线（BUG-2166「查词框没包边」、
+    // BUG-818）。墨水屏不要阴影（灰阶抖动）。
+    final bool eink = isEinkTheme(context);
+    if (apple) {
+      // Apple 查词浮层（装平台视图：查词 WebView，[borderOnForeground] = false）。
+      // 液态玻璃画在 WebView **背后**（[_ApplePopupGlassBackdrop] 的背景槽），
+      // WebView 文档在 Apple 设计系统下透明（popup.css `html.fushi-glass-host`），
+      // 于是看到的就是玻璃 + 词条——与浏览器扩展页内弹窗同一观感。玻璃不能压在
+      // WebView 之上（BUG-1692 macOS 命中测试被吞），所以描边也画在子节点之前、
+      // 子节点内缩一圈（BUG-2166 同一修法）。
+      final BorderRadius radius = _appleOuterRadius;
+      return _ApplePopupGlassBackdrop(
+        enabled: true,
+        borderRadius: radius,
+        panelColor: _applePanelColor(context),
+        child: Material(
+          color: Colors.transparent,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side: showBorder
+                ? BorderSide(
+                    color: appleColorsOf(context).separator,
+                    width: _borderWidth,
+                  )
+                : BorderSide.none,
+          ),
+          clipBehavior: clipBehavior,
+          borderOnForeground: borderOnForeground,
+          child: _borderInsetChild(
+            tokens,
+            Padding(padding: padding, child: child),
+            outerRadius: radius,
+          ),
+        ),
+      );
+    }
+    // MD3 查词浮层（装平台视图、非独立窗）同样是玻璃材质，与浏览器扩展页内弹窗
+    // 同一组参数（用户 2026-10-04：「查词框要和浏览器扩展一样有液态玻璃材质」，
+    // 扩展在任何主题下都是玻璃）：面板色（主色 5% 淡染）亮 90% / 暗 88% + 20 模糊，
+    // 画在 WebView 背后（[_ApplePopupGlassBackdrop] 背景槽），WebView 文档透明
+    // （popup.css `html.fushi-glass-host`）。Material 改透明、去掉 elevation 投影
+    // ——半透明面上的阴影会透出来把玻璃压脏——轮廓靠 outlineVariant 细线。
+    // 墨水屏、独立窗（standaloneWindow：背后是别的 app，BUG-818 要求不透明）照旧实色。
+    // 结构恒定：两种情况都挂在同一个 Stack 槽位里，切换时 WebView 不会被拆出重挂；
+    // 纯 Flutter 浮层（foreground 描边）不受影响。
+    final bool md3Glass = !borderOnForeground && !eink && !standaloneWindow;
+    final Widget md3 = Material(
+      color: md3Glass ? Colors.transparent : (color ?? tokens.surfaces.card),
+      elevation: md3Glass ? 0 : (eink || elevation > 0 ? elevation : 2),
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
         borderRadius: _outerRadius(tokens),
         side: showBorder
@@ -3573,7 +4897,240 @@ class FushiPopupSurface extends StatelessWidget {
         ),
       ),
     );
+    if (borderOnForeground) return md3;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return _ApplePopupGlassBackdrop(
+      enabled: md3Glass,
+      md3: true,
+      borderRadius: _outerRadius(tokens),
+      panelColor: Color.alphaBlend(
+        scheme.primary.withValues(alpha: 0.05),
+        (color ?? scheme.surfaceContainer).withValues(alpha: 1),
+      ),
+      child: md3,
+    );
   }
+
+  /// Apple 查词面板的材质底色：调用方传主题页面底（`colorScheme.surface` =
+  /// systemGroupedBackground，深色是纯黑）或不传时，取浮层惯用的
+  /// secondarySystemGroupedBackground（浅白 / 深 #1C1C1E，iOS 26 popover 的
+  /// 材质色）；用户手动指定的词典底色（overrideDictionaryColor）原样尊重。
+  Color _applePanelColor(BuildContext context) {
+    final Color? requested = color;
+    if (requested == null ||
+        requested == Theme.of(context).colorScheme.surface) {
+      return appleColorsOf(context).secondaryGroupedBackground;
+    }
+    return requested;
+  }
+}
+
+/// 所有查词浮层层（第一层 / 热槽与每一层嵌套）的 BackdropFilter 共用的背景快照
+/// key。等价于在所有浮层的公共祖先挂一个 [BackdropGroup]，但浮层宿主有六处
+/// （视频 / 网页视频 / 阅读器 / 查词页 / texthooker / 悬浮歌词），各自的 Stack 里
+/// 浮层是 [Positioned] 直接子项，用一个全局 key 让它们无需改宿主结构就进同一组。
+/// 只有 Impeller 认这个 key（同 key 的滤镜共用第一次读到的背景，子层模糊的是正文
+/// 而不是下面那层查词卡）；Skia 后端忽略它。
+final BackdropKey kFushiLookupPopupBackdropKey = BackdropKey();
+
+/// Apple 查词浮层的玻璃背衬（[FushiPopupSurface] 装平台视图时用）。
+///
+/// 与 [FushiGlassBackdrop] 同一形态（Stack 兄弟层、passthrough、[enabled] 为
+/// false 时背景槽是空盒），区别在材质参数：查词面板背后是正文（阅读器 /
+/// 视频 / 漫画 / 上一层查词卡），要读得清词条，所以不用控件层那种几乎透明的
+/// 薄玻璃，而是「面板底色 亮 90% / 暗 88% + 20 模糊」。
+///
+/// 逐平台（[fushiPopupBackdropSampleable]）：Windows / Linux 的 WebView 以纹理
+/// 合成进 Flutter 场景，采得到背后的正文，是真玻璃；iOS / macOS 背后的正文是
+/// 原生平台视图，Android 的阅读器 WebView 走 Hybrid Composition（真 Android
+/// View，Flutter 画在它上面的层是独立 overlay surface），都采不到，半透明填充
+/// 只会把下面的字原样透出来，所以直接画**不透明**面板 + 发丝描边（iOS / macOS
+/// 另有原生系统材质，见 [_buildNativeMaterial]）。降低透明度 / 高对比度 / 墨水屏
+/// 同样不透明、零模糊。
+class _ApplePopupGlassBackdrop extends StatelessWidget {
+  const _ApplePopupGlassBackdrop({
+    required this.enabled,
+    required this.borderRadius,
+    required this.panelColor,
+    required this.child,
+    this.md3 = false,
+  });
+
+  final bool enabled;
+
+  /// MD3 版：Flutter 自己的 [BackdropFilter] 磨砂（不走 liquid_glass 的高光 /
+  /// 折射，MD3 没有那套光照语言）。iOS / macOS / Android 背后是原生平台视图、
+  /// 采不到，直接画不透明面板色。
+  final bool md3;
+  final BorderRadius borderRadius;
+  final Color panelColor;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(
+          child: enabled ? _buildGlass(context) : const SizedBox.shrink(),
+        ),
+        child,
+      ],
+    );
+  }
+
+  Widget _buildGlass(BuildContext context) {
+    final bool dark =
+        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    final Color opaque = panelColor.withValues(alpha: 1);
+    if (fushiGlassOverPlatformView(context) &&
+        fushiNativePopupMaterialAvailableOf(context)) {
+      return _buildNativeMaterial(context, dark: dark);
+    }
+    // 查词面板压在**正文文字**上（阅读器 / 视频字幕 / 上一层查词卡），可读性优先：
+    // - 采不到背后画面（iOS / macOS 背后是原生 WebView 平台视图；Android 的 WebView
+    //   是 Hybrid Composition 原生 View，BackdropFilter 与着色器都采不到，半透明
+    //   填充只会把下面的字原样透出来——用户报「Mac 上嵌套查词很透明」）、降低透明度、
+    //   高对比度、墨水屏：一律不透明面板；
+    // - 能真模糊（Windows / Linux，WebView 以纹理合成进 Flutter 场景）：
+    //   面板色 亮 90% / 暗 88% + 20 模糊。这是用户 2026-10-05 认定「刚好」的观感
+    //   （从当时截图反推有效 alpha ≈ 0.89；0.66 / 0.72 被嫌太透）。
+    //   每一层嵌套查词都用这同一组参数（用户 2026-10-05 拍板「每层都和第一层一样」），
+    //   且所有查词层的 BackdropFilter 共用一个 [kFushiLookupPopupBackdropKey]：
+    //   Impeller 下同 key 的滤镜共用一张背景快照，子层模糊的是正文而不是下面那层
+    //   查词卡（玻璃叠玻璃不会一层比一层实）。Skia 后端（Windows / Linux 默认）忽略
+    //   这个 key，那里各层只是参数一致。
+    //   MD3 的玻璃材质档恒为 off（[FushiGlassTheme.material] 只在玻璃设计系统下
+    //   非 off），所以 MD3 直接问系统「降低透明度」；Apple 问材质档（已扣除它）。
+    final bool transparencyAllowed = md3
+        ? !SystemTransparency.reduceTransparency.value
+        : glassMaterialOf(context) != FushiGlassMaterial.off;
+    final bool realBlur = fushiPopupBackdropSampleable(context) &&
+        transparencyAllowed &&
+        !(MediaQuery.maybeHighContrastOf(context) ?? false) &&
+        !isEinkTheme(context);
+    final Color fill =
+        realBlur ? opaque.withValues(alpha: dark ? 0.88 : 0.9) : opaque;
+    // 玻璃设计系统的「毛玻璃」档（frosted）与 MD3 同走 BackdropFilter，才能进同一个
+    // 背景快照组；液态玻璃着色器（liquid_glass_widgets）每个 GlassContainer 自带
+    // 私有 BackdropGroup，进不了跨层的组。
+    if (md3 ||
+        (realBlur && glassMaterialOf(context) == FushiGlassMaterial.frosted)) {
+      return IgnorePointer(
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: realBlur
+              ? BackdropFilter(
+                  backdropGroupKey: kFushiLookupPopupBackdropKey,
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: ColoredBox(color: fill),
+                )
+              : ColoredBox(color: opaque),
+        ),
+      );
+    }
+    if (!realBlur) {
+      // 不走玻璃着色器：它在平台视图上的回落只管「采样为空」的像素，采到的是透明
+      // 平台视图区时仍按半透明合成。直接画实色系统材质面板。
+      return IgnorePointer(
+        child: ClipRRect(
+          borderRadius: borderRadius,
+          child: ColoredBox(color: opaque),
+        ),
+      );
+    }
+    return IgnorePointer(
+      child: GlassContainer(
+        useOwnLayer: true,
+        shape: LiquidRoundedRectangle(borderRadius: borderRadius.topLeft.x),
+        quality: fushiGlassQuality(context, prominent: true),
+        settings: fushiGlassSettingsOverPlatformView(context, tint: fill)
+            .copyWith(blur: 20, platformViewFallbackColor: opaque),
+        platformViewBackdrop: fushiGlassOverPlatformView(context),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
+  /// iOS / macOS 真模糊：弹窗 WebView 下方垫原生系统材质
+  /// （[FushiNativeMaterialBackdrop]：macOS `NSVisualEffectView` `.withinWindow` /
+  /// iOS `UIVisualEffectView`），系统合成器在窗口内模糊背后的阅读器 WKWebView
+  /// ——Flutter 的 [BackdropFilter] 采不到原生平台视图，这条路采得到。
+  ///
+  /// - MD3：材质上叠一层面板色（主色 5% 淡染的 surfaceContainer）低 alpha 色层，
+  ///   面板仍读作 MD3 的配色；Apple：纯系统材质，只有用户手动指定的词典底色才淡染。
+  /// - 投影只画在形状**外侧**（[_PopupOuterShadowPainter]）：画进形状内会被材质
+  ///   采样、把模糊整块压暗。它画在原生视图之前（同一 Stack 的更低层），不会给
+  ///   平台视图挖 hit-test 忽略区（BUG-1692）。
+  Widget _buildNativeMaterial(BuildContext context, {required bool dark}) {
+    final Color appleDefault = appleColorsOf(context).secondaryGroupedBackground;
+    // 嵌套层与第一层同一材质 / 色层（用户 2026-10-05 拍板）。
+    final Color? tint = md3
+        ? panelColor.withValues(alpha: dark ? 0.42 : 0.38)
+        : (panelColor.withValues(alpha: 1) == appleDefault.withValues(alpha: 1)
+            ? null
+            : panelColor.withValues(alpha: 0.4));
+    return Stack(
+      fit: StackFit.expand,
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        IgnorePointer(
+          child: CustomPaint(
+            painter: _PopupOuterShadowPainter(
+              borderRadius: borderRadius,
+              color: Colors.black.withValues(alpha: dark ? 0.45 : 0.18),
+            ),
+          ),
+        ),
+        FushiNativeMaterialBackdrop(
+          dark: dark,
+          borderRadius: borderRadius.topLeft.x,
+          continuousCorners: !md3,
+          tint: tint,
+        ),
+      ],
+    );
+  }
+}
+
+/// 只画在圆角矩形**外侧**的柔和投影（内侧裁掉）：原生材质会采样它背后的一切，
+/// 画进形状内的阴影会被模糊进面板、把材质整体压暗。
+class _PopupOuterShadowPainter extends CustomPainter {
+  const _PopupOuterShadowPainter({
+    required this.borderRadius,
+    required this.color,
+  });
+
+  final BorderRadius borderRadius;
+  final Color color;
+
+  static const double _blurSigma = 12;
+  static const double _offsetY = 4;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final RRect shape = borderRadius.toRRect(Offset.zero & size);
+    final Rect bounds = (Offset.zero & size).inflate(_blurSigma * 3 + _offsetY);
+    canvas.save();
+    canvas.clipPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect(bounds),
+        Path()..addRRect(shape),
+      ),
+    );
+    canvas.drawRRect(
+      shape.shift(const Offset(0, _offsetY)),
+      Paint()
+        ..color = color
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, _blurSigma),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_PopupOuterShadowPainter oldDelegate) =>
+      oldDelegate.borderRadius != borderRadius || oldDelegate.color != color;
 }
 
 class FushiCompactSearchRow extends StatelessWidget {
@@ -3621,9 +5178,15 @@ class FushiCompactSearchRow extends StatelessWidget {
       context: context,
       controller: controller,
     );
+    // 与 [FushiSearchField] 同一形态语言：两套设计系统都是全圆角胶囊（MD3 填充
+    // 胶囊 surfaceContainerHigh；Apple 是无底胶囊 + 发丝分隔线描边——搜索框是
+    // 控件层，不铺 systemFill 灰块；它常压在查词弹窗的平台视图旁，着色器玻璃
+    // 会采到黑底，所以这里不用玻璃，只留描边）。
+    final bool apple = isGlassDesign(context);
     return FushiCard(
-      color: tokens.surfaces.search,
-      borderRadius: tokens.radii.controlRadius,
+      color: apple ? Colors.transparent : tokens.surfaces.search,
+      borderColor: apple ? appleColorsOf(context).separator : null,
+      borderRadius: const BorderRadius.all(Radius.circular(22)),
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: SizedBox(
         height: 44,
@@ -3647,6 +5210,8 @@ class FushiCompactSearchRow extends StatelessWidget {
                   hintStyle: tokens.type.listSubtitle,
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  // 嵌在卡片里的无框输入：不吃全局输入框主题的填充底。
+                  filled: false,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
@@ -3698,4 +5263,63 @@ class _CompactSearchIconButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [FushiSchemeSwatch] 的微缩界面：页面底色上一条顶栏、两条文字线与一枚
+/// 强调色胶囊按钮，比例随色板尺寸缩放。
+@visibleForTesting
+class SchemeMiniUiPainter extends CustomPainter {
+  const SchemeMiniUiPainter({
+    required this.textColor,
+    required this.backgroundColor,
+    required this.buttonColor,
+    required this.barColor,
+  });
+
+  final Color textColor;
+  final Color backgroundColor;
+  final Color buttonColor;
+  final Color barColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final Paint paint = Paint()..isAntiAlias = true;
+    canvas.drawRect(Offset.zero & size, paint..color = backgroundColor);
+    // 顶栏：菜单 / 卡片面色，带一枚强调色小圆点（导航选中的暗示）。
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h * 0.24), paint..color = barColor);
+    canvas.drawCircle(
+      Offset(w * 0.16, h * 0.12),
+      h * 0.045,
+      paint..color = buttonColor,
+    );
+    RRect line(double top, double width, double height) => RRect.fromRectAndRadius(
+      Rect.fromLTWH(w * 0.12, top, w * width, height),
+      Radius.circular(height / 2),
+    );
+    canvas.drawRRect(
+      line(h * 0.36, 0.62, h * 0.075),
+      paint..color = textColor.withValues(alpha: 0.9),
+    );
+    canvas.drawRRect(
+      line(h * 0.50, 0.44, h * 0.06),
+      paint..color = textColor.withValues(alpha: 0.42),
+    );
+    // 强调色胶囊按钮。
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * 0.12, h * 0.68, w * 0.42, h * 0.16),
+        Radius.circular(h * 0.08),
+      ),
+      paint..color = buttonColor,
+    );
+  }
+
+  @override
+  bool shouldRepaint(SchemeMiniUiPainter old) =>
+      old.textColor != textColor ||
+      old.backgroundColor != backgroundColor ||
+      old.buttonColor != buttonColor ||
+      old.barColor != barColor;
 }

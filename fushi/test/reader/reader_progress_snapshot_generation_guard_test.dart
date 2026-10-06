@@ -68,7 +68,7 @@ void main() {
       for (final String condition in <String>[
         '!mounted',
         '_restoreInFlight',
-        '_lyricsMode',
+        // 2026-10-04 歌词覆盖层：歌词不再换掉正文文档，正文快照不再按歌词态丢弃。
         // BUG-2399 起加入这道闸：内容还没就绪时晚到的快照同样不得写进恢复锚。
         // 两个入口（_refreshProgress / _syncPositionFromWebViewProgress）都要有，
         // 只补一处等于漏的那条路照样能污染恢复锚。

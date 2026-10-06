@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// Used to show information or error messages across the application.
 /// For example, this is used for the empty placeholder messages on the home
@@ -13,6 +16,8 @@ class FushiPlaceholderMessage extends StatelessWidget {
     this.iconSize,
     this.messageStyle,
     this.detail,
+    this.details = const <String>[],
+    this.detailMaxLines = 3,
     this.action,
     super.key,
   });
@@ -39,11 +44,26 @@ class FushiPlaceholderMessage extends StatelessWidget {
   /// 不抢 [message] 的主文案层级。
   final String? detail;
 
+  /// 追加的次级说明行（如「接口提示 + 原始错误 + 代理提示」），排在 [detail]
+  /// 之后、样式相同；空串跳过。
+  final List<String> details;
+
+  /// 每条说明行的最大行数（默认 3，超出省略）；null = 不限。
+  final int? detailMaxLines;
+
+  /// [detail] + [details] 中非空的行，按顺序。
+  List<String> get _detailLines => <String>[
+        if (detail != null && detail!.isNotEmpty) detail!,
+        for (final String line in details)
+          if (line.isNotEmpty) line,
+      ];
+
   /// 可选行动按钮（如空态的「导入」、错误态的「重试」），渲染在文案下方。
   final Widget? action;
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Color foreground = color ?? tokens.surfaces.onVariant;
     return Center(
@@ -59,7 +79,7 @@ class FushiPlaceholderMessage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
+                FushiIcon(
                   icon,
                   size: iconSize ??
                       Theme.of(context).textTheme.headlineMedium?.fontSize,
@@ -74,13 +94,15 @@ class FushiPlaceholderMessage extends StatelessWidget {
                             color: foreground,
                           ),
                 ),
-                if (detail != null) ...[
+                for (final String line in _detailLines) ...[
                   SizedBox(height: tokens.spacing.gap / 2),
                   Text(
-                    detail!,
+                    line,
                     textAlign: TextAlign.center,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: detailMaxLines,
+                    overflow: detailMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: foreground,
                         ),
@@ -92,6 +114,55 @@ class FushiPlaceholderMessage extends StatelessWidget {
                 ],
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 玻璃设计系统：iOS 空状态（ContentUnavailableView）——无底色、居中，
+  /// 大图标 secondaryLabel + 17 semibold 标题 + 15 号说明，不再是一块深灰卡。
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final TextTheme tt = Theme.of(context).textTheme;
+    final Color foreground = color ?? apple.secondaryLabel;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              FushiIcon(icon, size: iconSize ?? 48, color: foreground),
+              const SizedBox(height: 14),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: messageStyle ??
+                    tt.titleMedium?.copyWith(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: color ?? apple.label,
+                    ),
+              ),
+              for (final String line in _detailLines) ...[
+                const SizedBox(height: 6),
+                Text(
+                  line,
+                  textAlign: TextAlign.center,
+                  maxLines: detailMaxLines,
+                  overflow: detailMaxLines == null
+                      ? null
+                      : TextOverflow.ellipsis,
+                  style: tt.bodyMedium?.copyWith(color: apple.secondaryLabel),
+                ),
+              ],
+              if (action != null) ...[
+                const SizedBox(height: 18),
+                action!,
+              ],
+            ],
           ),
         ),
       ),

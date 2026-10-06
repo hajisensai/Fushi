@@ -202,7 +202,9 @@ class _BrowseOnlineSourcesViewState
   );
 
   List<Widget> _videoSlivers(MihonManager manager) => <Widget>[
-    _hint(t.video_online_sources_hint),
+    // 仓库页顶部自带信任提示，不再叠这段域说明。
+    if (widget.section != OnlineSourcesSection.stores)
+      _hint(t.video_online_sources_hint),
     if (widget.section == OnlineSourcesSection.sources)
       MihonInstalledSourcesSection(
         key: const ValueKey<String>('video_mihon_sources'),
@@ -225,7 +227,9 @@ class _BrowseOnlineSourcesViewState
   ];
 
   List<Widget> _novelSlivers(LnReaderManager manager) => <Widget>[
-    _hint(t.novel_online_sources_hint),
+    // 仓库页顶部自带信任提示，不再叠这段域说明。
+    if (widget.section != OnlineSourcesSection.stores)
+      _hint(t.novel_online_sources_hint),
     if (widget.section == OnlineSourcesSection.sources)
       LnReaderInstalledSourcesSection(
         key: const ValueKey<String>('book_lnreader_sources'),

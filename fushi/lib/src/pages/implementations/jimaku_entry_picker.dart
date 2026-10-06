@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/utils.dart';
 
@@ -72,7 +73,7 @@ class JimakuEntryPicker extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Icon(
+            child: FushiIcon(
               selected
                   ? Icons.radio_button_checked
                   : Icons.radio_button_unchecked,
@@ -120,7 +121,7 @@ class JimakuEntryPicker extends StatelessWidget {
           const SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 6),
           Text(t.video_jimaku_source_loading, style: theme.textTheme.bodySmall),
@@ -182,7 +183,7 @@ class JimakuLanguagePicker extends StatelessWidget {
       spacing: 8,
       runSpacing: 8,
       children: <Widget>[
-        ChoiceChip(
+        FushiChoiceChip(
           label: Text(t.video_jimaku_language_all),
           selected: selectedLanguage == null,
           onSelected: enabled ? (_) => onSelected(null) : null,
@@ -195,7 +196,7 @@ class JimakuLanguagePicker extends StatelessWidget {
               !kJimakuLanguageCodes.contains(selectedLanguage))
             selectedLanguage!,
         ])
-          ChoiceChip(
+          FushiChoiceChip(
             label: Text(jimakuLanguageLabel(language)),
             selected: selectedLanguage == language,
             onSelected: enabled ? (_) => onSelected(language) : null,

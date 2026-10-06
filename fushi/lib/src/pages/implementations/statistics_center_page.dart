@@ -5,12 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
-import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
@@ -23,13 +23,15 @@ import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// 统计中心的 tab（阶段 2：三个独立统计页收进一个入口；排行榜 2026-09-28 追加为第 5 个）。
-enum StatsCenterTab { overview, reading, video, game, leaderboard }
+/// 统计中心的 tab（阶段 2：三个独立统计页收进一个入口）。排行榜 2026-09-28 曾是第 5 个
+/// tab，2026-10-01 抽成首页统计中心入口旁的独立页（[LeaderboardPage]）。
+enum StatsCenterTab { overview, reading, video, game }
 
 /// 统计中心（阶段 2，统计中心大改造）：总览 + 阅读/观看/游戏三域 tab。
 ///
@@ -93,13 +95,12 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
         initialIndex: widget.initialTab.index,
         child: Column(
           children: <Widget>[
-            TabBar(
+            FushiTabBar(
               tabs: <Widget>[
                 Tab(text: t.stat_center_tab_overview),
                 Tab(text: t.home_filter_read),
                 Tab(text: t.home_filter_watch),
                 Tab(text: t.home_filter_game),
-                Tab(text: t.leaderboard_tab),
               ],
             ),
             Expanded(
@@ -118,8 +119,6 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
                     embedded: true,
                     rangeSelection: _rangeSelection,
                   ),
-                  // 排行榜自带周/月/总窗口，不吃统计中心的时间范围选择。
-                  const LeaderboardTab(),
                 ],
               ),
             ),
@@ -157,6 +156,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   Map<int, String> _collectionNamesById = <int, String>{};
   List<GalgameEntry> _games = <GalgameEntry>[];
 
+  /// 会话行封面的两张表：书条目（键 = 段 mediaKey，bookKey / 有声书 srt uid
+  /// 两种书身份都收，与 [_openEntry] 同一判据）与视频封面路径（键 = bookUid）。
+  /// 游戏封面直接从 [_games] 取。
+  Map<String, MediaItem> _bookItemsByKey = <String, MediaItem>{};
+  Map<String, String> _videoCoverPathByUid = <String, String>{};
+
   /// 跨域计数面分桶（阅读 + 视频 + 游戏三个来源之和）。时段卡之前只有时长 / 字数，
   /// 制卡与查词这两个每天都在动的数字在总览上一个都看不到，只能逐个 tab 翻——
   /// 现在与三个域 tab 的时段卡逐行同形。
@@ -190,6 +195,15 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   void _onRangeChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// 加载失败后的重试：先回到加载态（按钮不可连点），再重新聚合。
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
   }
 
   /// 当前范围：共享选择 × 本 tab 的今日 × 跨域最早有数据的一天。
@@ -238,6 +252,22 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       };
       _primaryCollectionByEntry = await db.getPrimaryCollectionIdByEntry();
       _games = await appModel.galgameRepo.load();
+      _videoCoverPathByUid = <String, String>{
+        for (final VideoBookRow b in await VideoBookRepository(db).listAll())
+          if (b.coverPath case final String path when path.isNotEmpty)
+            b.bookUid: path,
+      };
+      _bookItemsByKey = <String, MediaItem>{
+        for (final MediaItem item
+            in ref
+                    .read(fushiBooksProvider(JapaneseLanguage.instance))
+                    .valueOrNull ??
+                const <MediaItem>[])
+          if (ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
+                  ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier)
+              case final String key)
+            key: item,
+      };
       _error = null;
     } catch (error, stack) {
       ErrorLogService.instance.log('StatsOverviewTab.load', error, stack);
@@ -279,14 +309,26 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   Widget _buildBody(FushiDesignTokens tokens) {
     if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      );
+      return const FushiLoadingView();
     }
     if (_error != null) {
-      return Center(child: Text(_error!, style: tokens.type.metadata));
+      // 2026-10 体验优化：不再把异常原文（英文堆栈片段）直接甩给用户；原文已在
+      // [_load] 写进错误日志，这里显示本地化的「加载出错」+ 重试。
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.error_load_failed, style: tokens.type.metadata),
+            SizedBox(height: tokens.spacing.gap),
+            TextButton.icon(
+              key: const ValueKey<String>('stat-overview-retry'),
+              onPressed: _retryLoad,
+              icon: const Icon(Icons.refresh),
+              label: Text(t.retry),
+            ),
+          ],
+        ),
+      );
     }
     final StatWindow w = _window;
     final StatRange range = _range;
@@ -343,6 +385,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             sessions: _sessions,
             titleOf: _sessionTitle,
             collectionOf: _sessionCollectionName,
+            coverOf: _sessionCover,
             onDelete: _deleteSession,
             onEdit: _editSession,
             onClearAll: _clearSessions,
@@ -354,8 +397,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 目标编辑：与阅读统计 tab 同一份表单、同一个持久化目标。
   Future<void> _editGoals() async {
-    final bool saved =
-        await showStatGoalEditDialog(context, ref.read(appProvider));
+    final bool saved = await showStatGoalEditDialog(
+      context,
+      ref.read(appProvider),
+      recentDailyAverage:
+          statRecentDailyAverageChars(_daily, _window.lastDayKeys(7)),
+    );
     if (saved && mounted) setState(() {});
   }
 
@@ -382,6 +429,38 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
           s.title;
     }
     return s.title;
+  }
+
+  /// 会话行封面（三域混排时最快的辨认线索）：与三个域 tab 的会话行 / 「按媒体」
+  /// 行同一条 [resolveMediaCoverImage] 解析链，只是按会话所属域分派。
+  ImageProvider? _sessionCover(StudySession s) {
+    if (s.isGame) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: findGalgameForActivity(
+          _games,
+          mediaKey: s.mediaKey,
+          title: s.title,
+        )?.coverPath,
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      );
+    }
+    if (s.isVideo) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.video,
+        localPath: _videoCoverPathByUid[s.mediaKey],
+        decodeWidth: kActivityCoverDecodePixelWidth,
+      );
+    }
+    final MediaItem? item = _bookItemsByKey[s.mediaKey];
+    return item == null
+        ? null
+        : resolveMediaCoverImage(
+            kind: MediaKind.epub,
+            book: item,
+            appModel: ref.read(appProvider),
+            decodeWidth: kActivityCoverDecodePixelWidth,
+          );
   }
 
   /// 会话行的所属合集名（BUG-2417：会话流混排三域，段 title 是条目名——合集里
@@ -420,11 +499,20 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       t.stat_clear_all_overview_message,
     );
     if (!confirmed || !mounted) return;
+    // 2026-10 体验优化：三个域逐个清空可能要一两秒，期间旧数字还挂在页面上、
+    // 按钮还能再点。确认后立即进加载态（动作行按钮随 _loading 一起禁用），
+    // 清完重聚合，再给一条完成提示。
+    setState(() => _loading = true);
     final FushiDatabase db = ref.read(appProvider).database;
-    await db.clearAllReadingStatistics();
-    await db.clearAllVideoStatistics();
-    await db.clearAllGalgameStatistics();
-    if (mounted) await _load();
+    try {
+      await db.clearAllReadingStatistics();
+      await db.clearAllVideoStatistics();
+      await db.clearAllGalgameStatistics();
+    } finally {
+      // 清空失败也要重聚合退出加载态（异常照常向上抛，不吞）。
+      if (mounted) await _load();
+    }
+    if (mounted) FushiToast.show(msg: t.stat_cleared_toast);
   }
 
   /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid
@@ -441,8 +529,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (mounted) await _load();
   }
 
-  /// 跨域「今日目标」进度卡（只读展示；编辑入口在首页/阅读统计页）。目标未设
-  /// 时整卡隐藏。
+  /// 跨域「今日目标」进度卡。目标未设时整卡隐藏（动作行的旗标按钮是常驻入口）。
+  /// 2026-10 体验优化：卡片本身可点，直接进目标编辑（此前只读，用户找不到改法）。
   Widget _buildGoalCard(FushiDesignTokens tokens, StatWindow w) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) return const SizedBox.shrink();
@@ -456,6 +544,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         0,
       ),
       child: FushiCard(
+        onTap: _loading ? null : () => unawaited(_editGoals()),
         child: Row(
           children: <Widget>[
             Text(t.stat_goal, style: tokens.type.metadata),
@@ -463,11 +552,13 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             Expanded(
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 6,
-                  backgroundColor: tokens.surfaces.card,
-                  color: tokens.surfaces.primary,
+                  // 轨道不传 surfaces.card：它与外层 FushiCard 同一档面色，整条
+                  // 隐形；用进度条默认轨道（MD3 secondaryContainer / Apple
+                  // systemFill）。
+                  color: statChartColorsOf(context).series,
                 ),
               ),
             ),
@@ -533,8 +624,10 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatChars(chars)),
-        if (cph != null)
-          StatSummaryLine(label: t.stat_reading_speed, value: cph),
+        StatSummaryLine(
+          label: t.stat_reading_speed,
+          value: cph ?? kStatEmptyValue,
+        ),
         StatSummaryLine(label: t.stat_lookup, value: '${pick(_lookup)}'),
         StatSummaryLine(label: t.stat_mined, value: '${pick(_mined)}'),
         StatSummaryLine(label: t.stat_favorited, value: '${pick(_favorited)}'),

@@ -102,6 +102,9 @@ struct SgreLookupCapture {
   uint32_t valid = 0;
   uint32_t text_units = 0;
   uint32_t glyph_count = 0;
+  // Size of the renderer's laid-out glyph vector (the whole line). Local to
+  // the draw callback's decision; snapshot slots do not carry it.
+  uint32_t layout_glyph_count = 0;
   float line_height = 0.0f;
   ULONGLONG captured_tick = 0;
   // Text-lane seq of the exact line this capture was drawn from (0 = the text
@@ -1351,6 +1354,7 @@ SgreLookupCaptureResult CopySgreLookupDrawState(void* text_surface,
     }
     capture->text_units = static_cast<uint32_t>(visible_glyphs);
     capture->glyph_count = static_cast<uint32_t>(visible_glyphs);
+    capture->layout_glyph_count = static_cast<uint32_t>(glyph_count);
     capture->line_height = line_height;
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return SgreLookupCaptureResult::kException;
@@ -1483,7 +1487,12 @@ void CaptureSgreLookupDrawState(void* text_surface) {
   const SgreLookupCaptureResult capture_result =
       CopySgreLookupDrawState(text_surface, &snapshot);
   if (capture_result == SgreLookupCaptureResult::kOk) {
-    if (text_requested) {
+    // A typing prefix stays lookup-able (its glyphs are on screen) but is not
+    // a line: it gets no text-lane seq, so a hit on it fails closed on mining
+    // instead of mining a half sentence.
+    if (text_requested && fushi_voice_hook::IsSgreScenarioLineFullyRevealed(
+                              snapshot.glyph_count,
+                              snapshot.layout_glyph_count)) {
       snapshot.text_seq = PublishSgreExactText(snapshot, text_surface);
     }
     if (!lookup_requested) return;

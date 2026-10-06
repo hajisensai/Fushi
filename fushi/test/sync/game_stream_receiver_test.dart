@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -177,8 +178,10 @@ void main() {
   late _Renderer renderer;
   late _Peer peer;
   late FushiGameStreamReceiver receiver;
+  late List<int> audioPreparedAtRendererInits;
 
   setUp(() {
+    audioPreparedAtRendererInits = <int>[];
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     transport = _Transport();
     renderer = _Renderer();
@@ -187,6 +190,8 @@ void main() {
       client: FushiGameStreamClient(transport: transport),
       videoRenderer: renderer,
       peerFactory: () async => peer,
+      prepareAudio: () async =>
+          audioPreparedAtRendererInits.add(renderer.initializeCount),
     );
   });
 
@@ -204,6 +209,43 @@ void main() {
     );
     expect(renderer.initializeCount, 0);
     expect(peer.closeCount, 0);
+    expect(audioPreparedAtRendererInits, isEmpty);
+  });
+
+  test('routes audio as media before the first WebRTC call', () async {
+    await receiver.connect(sessionId: 'session', clientId: 'phone');
+    // The renderer's initialize() is the first plugin call; once it has run,
+    // the plugin has already built its audio stack with call defaults.
+    expect(audioPreparedAtRendererInits, <int>[0]);
+    expect(renderer.initializeCount, 1);
+  });
+
+  test('media audio setup hands the plugin a media configuration', () async {
+    final List<MethodCall> calls = <MethodCall>[];
+    const MethodChannel channel = MethodChannel('FlutterWebRTC.Method');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+          calls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      WebRTC.initialized = false;
+    });
+    WebRTC.initialized = false;
+
+    await prepareGameStreamMediaAudio();
+
+    expect(calls.first.method, 'initialize');
+    final Map<Object?, Object?> options =
+        (calls.first.arguments as Map<Object?, Object?>)['options']!
+            as Map<Object?, Object?>;
+    final Map<Object?, Object?> audio =
+        options['androidAudioConfiguration']! as Map<Object?, Object?>;
+    expect(audio['androidAudioAttributesUsageType'], 'media');
+    expect(audio['androidAudioMode'], 'normal');
+    expect(audio['androidAudioStreamType'], 'music');
   });
 
   test('ready requires the first rendered video frame', () async {

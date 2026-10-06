@@ -30,7 +30,7 @@ function recountStatements(db, workIds, accountIds) {
     db.prepare(
       `UPDATE works SET readers = (
          SELECT COUNT(*) FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-         WHERE s.work_id = works.id AND s.finished_at IS NOT NULL)
+         WHERE s.work_id = works.id AND s.finished_at IS NOT NULL AND s.counted = 1)
        WHERE id IN (SELECT value FROM json_each(?1))`,
     ).bind(ids),
     ...exactWorkPeriodsStatements(db, ids),
@@ -89,10 +89,11 @@ export async function mergeWorks(env, from, into, now) {
     env.DB.prepare('UPDATE work_aliases SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
     // 同一账户两边都有：与上报合并规则一致——读完时刻取较晚者，字数/时长累加。
     env.DB.prepare(
-      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
-       SELECT account_id, ?2, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at
+      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, counted, updated_at)
+       SELECT account_id, ?2, kind, refs, title, author, finished_at, finished_date, chars, ms, counted, updated_at
        FROM shelf WHERE work_id = ?1
        ON CONFLICT (account_id, work_id) DO UPDATE SET
+         counted = MAX(shelf.counted, excluded.counted),
          finished_date = CASE WHEN COALESCE(excluded.finished_at, -1) > COALESCE(shelf.finished_at, -1)
                               THEN excluded.finished_date ELSE shelf.finished_date END,
          finished_at = CASE WHEN COALESCE(excluded.finished_at, -1) > COALESCE(shelf.finished_at, -1)
@@ -161,7 +162,7 @@ export async function setAccountHidden(env, accountId, hidden, now) {
   if (!acc) throw new HttpError(404, 'not_found');
   if ((acc.hidden === 1) === hidden) return;
   const finished = await env.DB.prepare(
-    'SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL',
+    'SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL AND counted = 1',
   ).bind(accountId).all();
   const d = hidden ? -1 : 1;
   // CAS：与本账户并发上传交错时整批回滚（409），管理员重试即可——否则上传用的旧 hidden 会让读者数重复计入。

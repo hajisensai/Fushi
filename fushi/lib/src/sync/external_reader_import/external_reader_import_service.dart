@@ -301,29 +301,40 @@ class ExternalReaderImportService {
   /// 时刻而不是 now（now 会让旧进度在互联进度同步的「新者胜」里显得最新）；
   /// `charOffset` 显式写 -1——冲突更新只改 companion 里给出的列，不写的话旧的
   /// 精确锚会残留，重开书恢复到旧位置。
+  ///
+  /// 「读完」与位置取舍无关（BUG-2870）：Fushi 的位置更新、或重复导入同一份备份
+  /// 时位置保留不写，但 Hoshi 书签说这本读完了它就是读完了——此前只在写位置的
+  /// 分支里判读完，重导一次也补不上漏标的书。
   Future<void> _writePosition({
     required ExternalReaderBook book,
     required EpubBookRow row,
     required ExternalReaderImportReport report,
   }) async {
     final ExternalReaderBookmark bookmark = book.bookmark!;
-    final String uid = row.uid.isNotEmpty
-        ? row.uid
-        : (await db.resolveEpubBookUid(row.bookKey) ?? '');
-    if (uid.isEmpty) return;
-    final int? sourceAt = bookmark.lastModifiedAt ?? book.lastAccessAt;
-    final ReaderPositionRow? existing = await db.getReaderPosition(uid);
-    if (existing != null &&
-        (sourceAt == null || existing.updatedAt >= sourceAt)) {
-      report.positionsKept++;
-      return;
-    }
     final ExternalReaderMappedPosition? mapped = mapExternalReaderBookmark(
       bookmark: bookmark,
       bookInfo: book.bookInfo,
       chapters: parseFushiChapterRefs(row.chaptersJson),
     );
     if (mapped == null) return;
+    final int? sourceAt = bookmark.lastModifiedAt ?? book.lastAccessAt;
+    if (mapped.completed) {
+      final int marked = await db.markEpubBookCompletedIfUnset(
+        row.bookKey,
+        DateTime.fromMillisecondsSinceEpoch(sourceAt ?? _clock()),
+      );
+      report.booksMarkedCompleted += marked;
+    }
+    final String uid = row.uid.isNotEmpty
+        ? row.uid
+        : (await db.resolveEpubBookUid(row.bookKey) ?? '');
+    if (uid.isEmpty) return;
+    final ReaderPositionRow? existing = await db.getReaderPosition(uid);
+    if (existing != null &&
+        (sourceAt == null || existing.updatedAt >= sourceAt)) {
+      report.positionsKept++;
+      return;
+    }
     await db.upsertReaderPosition(
       ReaderPositionsCompanion(
         bookUid: Value(uid),
@@ -334,13 +345,6 @@ class ExternalReaderImportService {
       ),
     );
     report.positionsWritten++;
-    if (mapped.completed) {
-      final int marked = await db.markEpubBookCompletedIfUnset(
-        row.bookKey,
-        DateTime.fromMillisecondsSinceEpoch(sourceAt ?? _clock()),
-      );
-      report.booksMarkedCompleted += marked;
-    }
   }
 
   Future<void> _writeStatistics({

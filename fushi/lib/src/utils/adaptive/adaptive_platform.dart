@@ -1,4 +1,5 @@
 import 'dart:io' show Platform;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
@@ -59,6 +60,94 @@ class FushiEinkTheme extends ThemeExtension<FushiEinkTheme> {
 /// True 当墨水屏模式开启（读不到扩展时为 false，测试裸 ThemeData 零破坏）。
 bool isEinkTheme(BuildContext context) {
   return Theme.of(context).extension<FushiEinkTheme>()?.einkMode ?? false;
+}
+
+/// 功能层表面（导航 / 底部弹层 / 对话框）的材质。与颜色主题正交：颜色仍由
+/// ColorScheme 决定，这里只决定表面是实心还是半透明 + 背景模糊。
+enum FushiGlassMaterial {
+  /// 实心表面（默认）。
+  off,
+
+  /// 毛玻璃：半透明填充 + BackdropFilter 模糊。
+  frosted,
+
+  /// 液态玻璃：折射 / 色散 / 高光着色器（`liquid_glass_widgets`）。只在引擎
+  /// 支持着色器 ImageFilter（Impeller）时生效，否则 [glassMaterialOf] 降级为
+  /// [frosted]。
+  liquid;
+
+  /// 偏好值（`glass_material`）→ 枚举；未知值回落 [off]。
+  static FushiGlassMaterial fromPrefValue(String? value) {
+    for (final FushiGlassMaterial m in FushiGlassMaterial.values) {
+      if (m.name == value) return m;
+    }
+    return FushiGlassMaterial.off;
+  }
+}
+
+/// 玻璃材质的 ThemeExtension 载体，与 [FushiEinkTheme] 同一写法：挂在
+/// `buildFushiThemeData` 的 extensions 里，随主题重建自动更新。
+@immutable
+class FushiGlassTheme extends ThemeExtension<FushiGlassTheme> {
+  const FushiGlassTheme(this.material, {this.glassDesign = false});
+
+  /// 表面材质（off / frosted / liquid），已扣除系统降低透明度。
+  final FushiGlassMaterial material;
+
+  /// 是否「玻璃」设计系统：为 true 时共享组件与控件包装渲染
+  /// `liquid_glass_widgets` 组件族（与 MD3 并列的另一套组件），即使
+  /// [material] 因降低透明度 / 高对比度回退为 off，组件族也不变——只是
+  /// 玻璃变成实心。见 [isGlassDesign]。
+  final bool glassDesign;
+
+  @override
+  FushiGlassTheme copyWith({FushiGlassMaterial? material, bool? glassDesign}) {
+    return FushiGlassTheme(
+      material ?? this.material,
+      glassDesign: glassDesign ?? this.glassDesign,
+    );
+  }
+
+  @override
+  FushiGlassTheme lerp(
+    covariant ThemeExtension<FushiGlassTheme>? other,
+    double t,
+  ) {
+    return this;
+  }
+}
+
+/// 引擎是否支持着色器 ImageFilter（液态玻璃的前提）。测试可覆盖。
+@visibleForTesting
+bool Function() debugShaderFilterSupported = () =>
+    ImageFilter.isShaderFilterSupported;
+
+/// 当前上下文实际生效的玻璃材质。墨水屏（半透明 = 灰阶抖动 + 残影）与系统
+/// 「增强对比度」（[MediaQueryData.highContrast]）下一律回退 [FushiGlassMaterial.off]；
+/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样是 off。[FushiGlassMaterial.liquid]
+/// 在不支持着色器 ImageFilter 的引擎（Skia 后端）上降级为 frosted。
+FushiGlassMaterial glassMaterialOf(BuildContext context) {
+  final FushiGlassMaterial material =
+      Theme.of(context).extension<FushiGlassTheme>()?.material ??
+          FushiGlassMaterial.off;
+  if (material == FushiGlassMaterial.off) return material;
+  if (isEinkTheme(context)) return FushiGlassMaterial.off;
+  if (MediaQuery.maybeHighContrastOf(context) ?? false) {
+    return FushiGlassMaterial.off;
+  }
+  if (material == FushiGlassMaterial.liquid && !debugShaderFilterSupported()) {
+    return FushiGlassMaterial.frosted;
+  }
+  return material;
+}
+
+/// 当前上下文是否走「玻璃」设计系统的组件族（`liquid_glass_widgets`）。
+/// 与 [glassMaterialOf] 正交：后者决定表面透不透明，这里决定渲染 MD3 还是
+/// 玻璃组件。墨水屏下恒 false（墨水屏的可读性调校全建在 MD3 组件上）；
+/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样 false。
+bool isGlassDesign(BuildContext context) {
+  if (isEinkTheme(context)) return false;
+  return Theme.of(context).extension<FushiGlassTheme>()?.glassDesign ?? false;
 }
 
 /// eink 下把动画时长归零（墨水屏连续重绘=残影），否则原样返回。

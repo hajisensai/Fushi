@@ -65,8 +65,13 @@ void main() {
         reason: 'top-bar groups must not scroll/clip buttons when squeezed');
     final List<VideoControlItem> topRightItems =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
-    expect(topRightItems.contains(VideoControlItem.subtitleTrack), isTrue,
-        reason: 'subtitle source must default into the real top-right slot');
+    // 2026-10-05 M3E 重排：字幕轨默认挪到底栏右（高频），仍在真实控制条里。
+    expect(
+        VideoControlLayout.currentChrome
+            .itemsIn(VideoControlSlot.bottomRight)
+            .contains(VideoControlItem.subtitleTrack),
+        isTrue,
+        reason: 'subtitle source must default into the real bottom-right slot');
     expect(topRightItems.contains(VideoControlItem.audioTrack), isTrue,
         reason: 'audio track must default into the real top-right slot');
     expect(topRightItems.contains(VideoControlItem.screenshot), isTrue,

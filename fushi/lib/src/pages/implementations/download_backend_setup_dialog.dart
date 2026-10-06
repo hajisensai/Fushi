@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
@@ -130,7 +131,7 @@ class _DownloadBackendSetupDialogState
       message = t.download_test_connection_failed;
     }
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _finish() async {
@@ -162,7 +163,7 @@ class _DownloadBackendSetupDialogState
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
+      child: FushiTextFieldControl(
         controller: controller,
         obscureText: obscure,
         keyboardType: keyboard,
@@ -179,6 +180,16 @@ class _DownloadBackendSetupDialogState
   }
 
   Widget _note(ThemeData theme, String text, {bool warning = false}) {
+    // 警告走共享提示条（语义只上在图标色上），不再整段红字。
+    if (warning) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: FushiInlineNotice(
+          severity: FushiNoticeSeverity.warning,
+          message: text,
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
@@ -262,7 +273,7 @@ class _DownloadBackendSetupDialogState
               ),
               Align(
                 alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
+                child: FushiOutlinedButton.icon(
                   onPressed: _probing || _urlCtrl.text.trim().isEmpty
                       ? null
                       : _probeConnection,
@@ -270,9 +281,9 @@ class _DownloadBackendSetupDialogState
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.network_check, size: 18),
+                      : const FushiIcon(Icons.network_check, size: 18),
                   label: Text(t.download_test_connection),
                 ),
               ),
@@ -282,13 +293,13 @@ class _DownloadBackendSetupDialogState
         footer: Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: <Widget>[
-            TextButton(
+            FushiTextButton(
               onPressed:
                   _saving ? null : () => Navigator.of(context).pop(false),
               child: Text(t.dialog_cancel),
             ),
             SizedBox(width: tokens.spacing.gap),
-            FilledButton(
+            FushiFilledButton(
               onPressed: _canFinish ? _finish : null,
               child: Text(t.dialog_done),
             ),

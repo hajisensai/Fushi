@@ -7,6 +7,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
 
@@ -59,7 +60,7 @@ class IllustrationZoomViewer extends StatelessWidget {
                 '$diagnosticTag.coverDecode',
                 '${file.path}: $error',
               );
-              return const Icon(Icons.broken_image_outlined, size: 64);
+              return const FushiIcon(Icons.broken_image_outlined, size: 64);
             },
           ),
         ),
@@ -144,7 +145,7 @@ Future<void> showImageCopyContextMenu(
   // `fontSize: 14 * menuScale`，chrome 渲染成 40 而菜单 80（scale=2）。所以这里
   // 写常量，让菜单与 app 其它右键菜单（视频 / 合集 / 标签管理）口径一致。
   final Offset anchor = overlay.globalToLocal(globalPosition);
-  final String? action = await showMenu<String>(
+  final String? action = await showFushiMenu<String>(
     context: context,
     position: RelativeRect.fromRect(
       Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
@@ -160,7 +161,7 @@ Future<void> showImageCopyContextMenu(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(Icons.copy_outlined, size: 18.0),
+            const FushiIcon(Icons.copy_outlined, size: 18.0),
             const SizedBox(width: 12.0),
             Text(t.reader_copy_image, style: const TextStyle(fontSize: 14.0)),
           ],

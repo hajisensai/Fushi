@@ -73,28 +73,36 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     );
     if (lines.isEmpty) {
       // 一行都没检到：整块当一行读（竖排同样先转向），没有行几何可给。
-      return OcrRecognition(
-        text: await _readRegion(page, box, vertical: blockVertical),
+      final ({String text, double? confidence}) whole = await _readRegion(
+        page,
+        box,
         vertical: blockVertical,
+      );
+      return OcrRecognition(
+        text: whole.text,
+        vertical: blockVertical,
+        confidence: whole.confidence,
       );
     }
     final List<String> texts = <String>[];
     final List<OcrRect> boxes = <OcrRect>[];
+    double? confidence;
     for (final OcrRect line in lines) {
       final OcrRect region = line.clamp(
         page.width.toDouble(),
         page.height.toDouble(),
       );
       if (region.width < 1 || region.height < 1) continue;
-      final String text = await _readRegion(
+      final ({String text, double? confidence}) read = await _readRegion(
         page,
         region,
         vertical: blockVertical,
       );
       // 读不出字的行连同行框一起丢，`lines` 与 `lineBoxes` 仍一一对应。
-      if (text.isEmpty) continue;
-      texts.add(text);
+      if (read.text.isEmpty) continue;
+      texts.add(read.text);
       boxes.add(region);
+      confidence = minOcrConfidence(confidence, read.confidence);
     }
     // 检到了行却一个字都没读出：不再整块重读——多列块当一行读只会得到串列的乱码。
     if (texts.isEmpty) {
@@ -105,20 +113,21 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
       vertical: blockVertical,
       lines: texts,
       lineBoxes: boxes,
+      confidence: confidence,
     );
   }
 
   /// 裁出 [region]（页面坐标）交行识别器。竖排先逆时针转 90°：列顶转到左边，
   /// 从上往下读的列变成从左往右读的横行（PaddleOCR 对竖行同样是 `np.rot90`）。
-  Future<String> _readRegion(
+  Future<({String text, double? confidence})> _readRegion(
     img.Image page,
     OcrRect region, {
     required bool vertical,
   }) async {
     final OcrBlockCrop? crop = cropOcrBlock(page, region);
-    if (crop == null) return '';
+    if (crop == null) return (text: '', confidence: null);
     // copyRotate 的正角是顺时针，-90 即逆时针 90°。
-    return _lineRecognizer.recognizeLine(
+    return _lineRecognizer.recognizeLineScored(
       vertical ? img.copyRotate(crop.image, angle: -90) : crop.image,
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:gap/gap.dart';
 import 'package:fushi/utils.dart';
 
@@ -43,7 +44,7 @@ class FushiListTile extends StatelessWidget {
     return FushiListItem(
       selected: selected,
       onTap: onTap,
-      leading: Icon(
+      leading: FushiIcon(
         icon,
         color: foregroundColor,
       ),

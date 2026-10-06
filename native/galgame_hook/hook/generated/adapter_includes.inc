@@ -14,3 +14,6 @@
 #include "../adapters/aos_sfa_adapter.inc"
 #include "../adapters/unity_mono_adapter.inc"
 #include "../adapters/smash_fzmedia_adapter.inc"
+#include "../adapters/yuris_adapter.inc"
+#include "../adapters/fvp_adapter.inc"
+#include "../adapters/kogado_hy_adapter.inc"
