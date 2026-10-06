@@ -81,7 +81,8 @@ void main() {
         mouseBindings: <MouseBinding>[MouseBinding(2)],
       ),
     );
-    expect(find.byIcon(Icons.mouse), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.mouse)), findsOneWidget);
+    expect(find.byIcon(FushiIcons.mouse), findsNothing);
     expect(find.text(t.shortcut_mouse_right), findsWidgets);
   });
 

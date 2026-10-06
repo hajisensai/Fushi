@@ -302,14 +302,14 @@ extension MouseBindingLabel on MouseBinding {
     }
   }
 
-  /// 中键落在滚轮上用滚轮图标，其余用通用鼠标图标
-  /// （Material 无左右键专属图标）。
+  /// 中键用线框鼠标图标，其余按键用实心鼠标图标（Material Symbols 无左右键专属
+  /// 图标，靠线框 / 实心把中键与其它键区分开）。
   IconData get icon {
     switch (button) {
       case 1:
         return FushiIcons.mouse;
       default:
-        return FushiIcons.mouse;
+        return FushiIcons.filled(FushiIcons.mouse);
     }
   }
 }
