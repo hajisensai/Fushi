@@ -20,7 +20,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/physics.dart' show SpringSimulation;
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -530,7 +530,7 @@ class ReaderPanelScope extends InheritedWidget {
 /// 阅读器面板外壳（导航 / 设置 / 统计 / 有声书共用）：页头（可选图标徽标 +
 /// 标题 + 副标题 + 动作 + 关闭 ×）+ 可选固定页头 [bottom] + 内容。
 ///
-/// 页头是共享的 [ReaderPanelHeader]（reader_panel_kit.dart）：M3 Expressive 下
+/// 页头是共享的 [ReaderPanelHeader]（reader_panel_chrome_kit.dart）：M3 Expressive 下
 /// 图标落在 primaryContainer 的 cookie 形底上、标题加粗 titleLarge，副标题给
 /// 上下文（书名 / 当前章）；Apple 下是强调色字形 + iOS 灰底关闭键。底部 sheet 形态在页头上方多一条拖动把手
 /// （向下拖动关闭）。颜色全部取 context 主题，歌词模式注入的封面取色主题照常生效。

@@ -9,7 +9,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/controls/control_layout_editor.dart';
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
