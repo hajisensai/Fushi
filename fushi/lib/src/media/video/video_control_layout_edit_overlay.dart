@@ -6,8 +6,16 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/media/video/video_m3e_chrome.dart'
+    show videoM3eFloatingColor;
+import 'package:fushi/src/media/video/video_side_panel.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
@@ -65,18 +73,33 @@ class _VideoControlLayoutEditOverlayState
     }
   }
 
+  /// 本覆盖层的配色主题：M3E 下与设置侧板同一份播放器面板中性主题
+  /// （[videoM3ePanelTheme]：灰阶容器、白字、强调色仍是 app 主色），Apple / 墨水屏
+  /// 原样。槽位与 chip 的颜色都从这里取——它们画在面板表面之外（直接压在画面
+  /// scrim 上，拖拽反馈还在 Overlay 里），拿不到面板表面注入的 Theme。
+  ThemeData get _theme {
+    final ThemeData base = Theme.of(context);
+    return videoM3ePanelNeutral(context) ? videoM3ePanelTheme(base) : base;
+  }
+
+  /// 槽位 / 调色板的错峰进场（M3E spring；墨水屏与减弱动态效果下直接到位）。
+  Widget _enter(int index, Widget child) =>
+      FushiStaggeredEntrance(index: index, child: child);
+
   @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.black.withValues(alpha: 0.34),
       child: SafeArea(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            final bool compact =
-                constraints.maxWidth < 760 || constraints.maxHeight < 460;
-            if (compact) return _buildCompactLayout(constraints);
-            return _buildSpatialLayout(constraints);
-          },
+        child: FushiEntranceScope(
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool compact =
+                  constraints.maxWidth < 760 || constraints.maxHeight < 460;
+              if (compact) return _buildCompactLayout(constraints);
+              return _buildSpatialLayout(constraints);
+            },
+          ),
         ),
       ),
     );
@@ -108,36 +131,36 @@ class _VideoControlLayoutEditOverlayState
           top: 12,
           left: 12,
           width: sideWidth,
-          child: _buildSlotRegion(VideoControlSlot.topLeft),
+          child: _enter(0, _buildSlotRegion(VideoControlSlot.topLeft)),
         ),
         Positioned(
           top: 12,
           right: 12,
           width: sideWidth,
-          child: _buildSlotRegion(VideoControlSlot.topRight),
+          child: _enter(2, _buildSlotRegion(VideoControlSlot.topRight)),
         ),
         Positioned(
           top: 12,
           left: centerLeft,
           width: centerWidth,
-          child: _buildSlotRegion(VideoControlSlot.topCenter),
+          child: _enter(1, _buildSlotRegion(VideoControlSlot.topCenter)),
         ),
         Positioned(
           top: 108,
           left: paletteLeft,
           width: paletteWidth,
-          child: _buildPalette(
-            maxWidth: paletteWidth,
-            maxHeight: paletteHeight,
+          child: _enter(
+            3,
+            _buildPalette(maxWidth: paletteWidth, maxHeight: paletteHeight),
           ),
         ),
         Positioned(
           left: paletteLeft,
           right: paletteLeft,
           bottom: 108,
-          child: _buildSlotRegion(
-            VideoControlSlot.hidden,
-            tray: true,
+          child: _enter(
+            4,
+            _buildSlotRegion(VideoControlSlot.hidden, tray: true),
           ),
         ),
         Positioned(
@@ -146,7 +169,7 @@ class _VideoControlLayoutEditOverlayState
           bottom: 0,
           width: sideWidth,
           child: Center(
-            child: _buildSlotRegion(VideoControlSlot.screenLeft),
+            child: _enter(4, _buildSlotRegion(VideoControlSlot.screenLeft)),
           ),
         ),
         Positioned(
@@ -155,14 +178,14 @@ class _VideoControlLayoutEditOverlayState
           bottom: 0,
           width: sideWidth,
           child: Center(
-            child: _buildSlotRegion(VideoControlSlot.screenRight),
+            child: _enter(4, _buildSlotRegion(VideoControlSlot.screenRight)),
           ),
         ),
         Positioned(
           left: 12,
           bottom: 12,
           width: sideWidth,
-          child: _buildSlotRegion(VideoControlSlot.bottomLeft),
+          child: _enter(5, _buildSlotRegion(VideoControlSlot.bottomLeft)),
         ),
         Align(
           alignment: Alignment.bottomCenter,
@@ -170,7 +193,7 @@ class _VideoControlLayoutEditOverlayState
             padding: const EdgeInsets.only(bottom: 12),
             child: SizedBox(
               width: centerWidth,
-              child: _buildSlotRegion(VideoControlSlot.bottomCenter),
+              child: _enter(6, _buildSlotRegion(VideoControlSlot.bottomCenter)),
             ),
           ),
         ),
@@ -178,7 +201,7 @@ class _VideoControlLayoutEditOverlayState
           right: 12,
           bottom: 12,
           width: sideWidth,
-          child: _buildSlotRegion(VideoControlSlot.bottomRight),
+          child: _enter(7, _buildSlotRegion(VideoControlSlot.bottomRight)),
         ),
       ],
     );
@@ -196,9 +219,12 @@ class _VideoControlLayoutEditOverlayState
       padding: const EdgeInsets.all(12),
       child: Column(
         children: <Widget>[
-          _buildCompactPalette(
-            maxWidth: availableWidth,
-            maxHeight: paletteMaxHeight,
+          _enter(
+            0,
+            _buildCompactPalette(
+              maxWidth: availableWidth,
+              maxHeight: paletteMaxHeight,
+            ),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -207,12 +233,16 @@ class _VideoControlLayoutEditOverlayState
                 spacing: 8,
                 runSpacing: 8,
                 children: <Widget>[
-                  for (final VideoControlSlot slot in _editorSlots)
+                  for (final (int index, VideoControlSlot slot)
+                      in _editorSlots.indexed)
                     SizedBox(
                       width: tileWidth,
-                      child: _buildSlotRegion(
-                        slot,
-                        tray: slot == VideoControlSlot.hidden,
+                      child: _enter(
+                        index + 1,
+                        _buildSlotRegion(
+                          slot,
+                          tray: slot == VideoControlSlot.hidden,
+                        ),
                       ),
                     ),
                 ],
@@ -228,9 +258,7 @@ class _VideoControlLayoutEditOverlayState
     required double maxWidth,
     required double maxHeight,
   }) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = _theme.colorScheme;
     final Widget chipList = Wrap(
       spacing: 6,
       runSpacing: 6,
@@ -247,14 +275,10 @@ class _VideoControlLayoutEditOverlayState
       constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
       child: SizedBox(
         height: maxHeight,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: cs.surface.withValues(alpha: 0.92),
-            borderRadius: tokens.radii.chipRadius,
-            border: Border.all(color: cs.outlineVariant),
-          ),
+        // 与设置侧板同一枚浮层表面（M3E 中性深色 / Apple 玻璃 / 墨水屏描边）。
+        child: VideoFloatingPanelSurface(
           child: Padding(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.fromLTRB(12, 6, 6, 12),
             child: Column(
               children: <Widget>[
                 SizedBox(
@@ -268,8 +292,8 @@ class _VideoControlLayoutEditOverlayState
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
                           FushiIcon(
-                            Icons.dashboard_customize_outlined,
-                            size: 18,
+                            FushiIcons.dashboardCustomize,
+                            size: 20,
                             color: cs.primary,
                           ),
                           const SizedBox(width: 4),
@@ -285,7 +309,7 @@ class _VideoControlLayoutEditOverlayState
                           FushiIconButtonControl(
                             tooltip: MaterialLocalizations.of(context)
                                 .closeButtonTooltip,
-                            icon: const FushiIcon(Icons.close),
+                            icon: const FushiIcon(FushiIcons.close),
                             onPressed: _cancelDraft,
                           ),
                           const SizedBox(width: 4),
@@ -293,10 +317,8 @@ class _VideoControlLayoutEditOverlayState
                             t.video_control_palette_title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: cs.onSurface,
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: context.fushiType.titleMediumEmphasized
+                                .copyWith(color: cs.onSurface),
                           ),
                         ],
                       ),
@@ -315,9 +337,7 @@ class _VideoControlLayoutEditOverlayState
   }
 
   Widget _buildPalette({double maxWidth = 420, double? maxHeight}) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = _theme.colorScheme;
     final bool tightHeight = maxHeight != null && maxHeight < 220;
     final Widget chipList = Wrap(
       spacing: 6,
@@ -331,14 +351,10 @@ class _VideoControlLayoutEditOverlayState
           ),
       ],
     );
-    final Widget panel = DecoratedBox(
-      decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: 0.92),
-        borderRadius: tokens.radii.chipRadius,
-        border: Border.all(color: cs.outlineVariant),
-      ),
+    // 与设置侧板同一枚浮层表面（M3E 中性深色 / Apple 玻璃 / 墨水屏描边）。
+    final Widget panel = VideoFloatingPanelSurface(
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
         child: Column(
           mainAxisSize: maxHeight == null ? MainAxisSize.min : MainAxisSize.max,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -346,8 +362,8 @@ class _VideoControlLayoutEditOverlayState
             Row(
               children: <Widget>[
                 FushiIcon(
-                  Icons.dashboard_customize_outlined,
-                  size: 18,
+                  FushiIcons.dashboardCustomize,
+                  size: 20,
                   color: cs.primary,
                 ),
                 const SizedBox(width: 8),
@@ -355,15 +371,14 @@ class _VideoControlLayoutEditOverlayState
                   child: Text(
                     t.video_control_palette_title,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleSmall?.copyWith(
+                    style: context.fushiType.titleMediumEmphasized.copyWith(
                       color: cs.onSurface,
-                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
                 FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                  icon: const FushiIcon(Icons.close),
+                  icon: const FushiIcon(FushiIcons.close),
                   onPressed: _cancelDraft,
                 ),
               ],
@@ -377,7 +392,7 @@ class _VideoControlLayoutEditOverlayState
             if (!tightHeight) ...<Widget>[
               Text(
                 t.video_control_palette_hint,
-                style: theme.textTheme.bodySmall?.copyWith(
+                style: context.fushiType.bodySmall.copyWith(
                   color: cs.onSurfaceVariant,
                 ),
               ),
@@ -417,9 +432,17 @@ class _VideoControlLayoutEditOverlayState
   }
 
   Widget _buildSlotRegion(VideoControlSlot slot, {bool tray = false}) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = _theme.colorScheme;
+    final bool neutral = videoM3ePanelNeutral(context);
+    final FushiSpringSpec colorSpring = context.fushiMotion.effectsFast;
+    final TextStyle labelStyle = context.fushiType.labelMediumEmphasized;
+    final TextStyle hintStyle = context.fushiType.bodySmall;
+    // M3E：槽位是与面板同色的中性浮层块（无描边），拖入时换成 secondaryContainer
+    // tonal 色块；Apple / 墨水屏保持半透明表面 + 细描边。
+    final Color restColor = neutral
+        ? videoM3eFloatingColor(Theme.of(context).colorScheme)
+        : cs.surface.withValues(alpha: 0.86);
+    final Color restBorder = neutral ? Colors.transparent : cs.outlineVariant;
     final List<VideoControlItem> items = <VideoControlItem>[
       for (final VideoControlItem item in _layout.itemsIn(slot))
         if (_isOnVideoDraggableItem(item)) item,
@@ -446,19 +469,18 @@ class _VideoControlLayoutEditOverlayState
             ? cs.error
             : highlighted
                 ? cs.primary
-                : cs.outlineVariant;
+                : restBorder;
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
+          duration: colorSpring.duration,
+          curve: colorSpring.curve,
           constraints: BoxConstraints(
             minHeight: tray ? 64 : 84,
             maxHeight: tray ? 120 : 176,
           ),
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: highlighted
-                ? cs.primaryContainer.withValues(alpha: 0.9)
-                : cs.surface.withValues(alpha: 0.86),
-            borderRadius: tokens.radii.chipRadius,
+            color: highlighted ? cs.secondaryContainer : restColor,
+            borderRadius: FushiM3eShape.cardRadius,
             border: Border.all(
               color: borderColor,
               width: highlighted || rejecting ? 2 : 1,
@@ -472,10 +494,10 @@ class _VideoControlLayoutEditOverlayState
                 _controlSlotLabel(slot),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  color:
-                      highlighted ? cs.onPrimaryContainer : cs.onSurfaceVariant,
-                  fontWeight: FontWeight.w700,
+                style: labelStyle.copyWith(
+                  color: highlighted
+                      ? cs.onSecondaryContainer
+                      : cs.onSurfaceVariant,
                 ),
               ),
               const SizedBox(height: 6),
@@ -484,9 +506,9 @@ class _VideoControlLayoutEditOverlayState
                   t.video_control_slot_drop_hint,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  style: hintStyle.copyWith(
                     color: highlighted
-                        ? cs.onPrimaryContainer
+                        ? cs.onSecondaryContainer
                         : cs.onSurfaceVariant,
                   ),
                 )
@@ -545,9 +567,9 @@ class _VideoControlLayoutEditOverlayState
     required VideoControlSlot sourceSlot,
     required int sourceIndex,
   }) {
-    final ThemeData theme = Theme.of(context);
+    final ThemeData theme = _theme;
     final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiSpringSpec colorSpring = context.fushiMotion.effectsFast;
     return DragTarget<VideoControlDragData>(
       onWillAcceptWithDetails:
           (DragTargetDetails<VideoControlDragData> details) =>
@@ -566,14 +588,13 @@ class _VideoControlLayoutEditOverlayState
       ) {
         final bool highlighted = candidate.isNotEmpty;
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
+          duration: colorSpring.duration,
+          curve: colorSpring.curve,
           constraints: const BoxConstraints(maxWidth: 204),
           padding: const EdgeInsets.only(right: 2),
           decoration: BoxDecoration(
-            color: highlighted
-                ? cs.primaryContainer.withValues(alpha: 0.82)
-                : cs.secondaryContainer,
-            borderRadius: tokens.radii.controlRadius,
+            color: highlighted ? cs.primaryContainer : cs.secondaryContainer,
+            borderRadius: FushiM3eShape.smallRadius,
             border: Border.all(
               color: highlighted ? cs.primary : Colors.transparent,
               width: highlighted ? 1.5 : 1,
@@ -606,7 +627,7 @@ class _VideoControlLayoutEditOverlayState
                       height: 28,
                     ),
                     icon: FushiIcon(
-                      Icons.close,
+                      FushiIcons.close,
                       size: 14,
                       color: cs.onSecondaryContainer,
                     ),
@@ -627,13 +648,11 @@ class _VideoControlLayoutEditOverlayState
     required bool dragging,
     required double maxWidth,
   }) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme cs = _theme.colorScheme;
     final Widget body = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.secondaryContainer,
-        borderRadius: tokens.radii.controlRadius,
+        borderRadius: FushiM3eShape.smallRadius,
         boxShadow: dragging
             ? <BoxShadow>[
                 BoxShadow(
@@ -668,7 +687,7 @@ class _VideoControlLayoutEditOverlayState
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 softWrap: false,
-                style: theme.textTheme.labelMedium?.copyWith(
+                style: context.fushiType.labelMedium.copyWith(
                   color: cs.onSecondaryContainer,
                 ),
               ),
