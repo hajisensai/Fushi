@@ -192,14 +192,20 @@ void main() {
 
     testWidgets('eink：leading 图标跟着前景翻色', (WidgetTester tester) async {
       await tester.pumpWidget(app(eink: true, selected: true));
-      final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)),);
-      // avatar 经 FushiIcon（两套设计系统共用的图标包装）渲染，颜色契约不变。
-      final FushiIcon avatar = chip.avatar! as FushiIcon;
-      expect(
-        avatar.color,
-        Colors.white,
-        reason: 'avatar 不着色就会取 chip 默认 onSurfaceVariant（黑），黑底黑图标',
+      await tester.pumpAndSettle();
+      // 选中时前导槽原位换成对勾（M3 filter chip，5dc51724f1f）：渲染的是对勾而不是
+      // 原 leading 图标，颜色契约落在对勾上，仍须跟着前景翻成白。
+      final Finder check = find.descendant(
+        of: find.byType(ChoiceChip),
+        matching: find.byKey(const ValueKey<String>('fushi-chip-leading-check')),
       );
+      expect(check, findsOneWidget);
+      expect(
+        tester.widget<FushiIcon>(check).color,
+        Colors.white,
+        reason: '对勾不着色就会取 chip 默认 onSurfaceVariant（黑），黑底黑图标',
+      );
+      expect(find.byIcon(Icons.star), findsNothing);
     });
 
     testWidgets('非 eink：secondaryContainer 填充、无描边（MD3 胶囊 chip）', (
