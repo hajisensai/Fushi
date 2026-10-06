@@ -10,6 +10,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -143,7 +144,7 @@ void main() {
 
     Finder clearButton() => find.widgetWithIcon(
           FushiIconButton,
-          Icons.delete_sweep_outlined,
+          FushiIcons.deleteSweep,
         );
 
     testWidgets('shows the clear button when mined sentences exist',
