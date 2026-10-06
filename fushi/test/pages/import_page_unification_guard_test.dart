@@ -208,6 +208,21 @@ void main() {
         hasLength(3),
         reason: '来源 / 扩展共用一处 + 发现 + 下载，共三处二级标签条',
       );
+      // One additional generic constructor belongs only to the explicit
+      // widget-test seam. Keep a total budget so new production domains cannot
+      // silently escape the typed-site assertions above.
+      expect(
+        RegExp(r'_BrowseSwipeSections<\w+>\(').allMatches(browse),
+        hasLength(4),
+      );
+      final String seam = methodBody(
+        browse,
+        'Widget debugBrowseSwipeSections<',
+      );
+      expect(
+        RegExp(r'_BrowseSwipeSections<T>\(').allMatches(seam),
+        hasLength(1),
+      );
       expect(
         'secondary: true'.allMatches(browse),
         hasLength(1),

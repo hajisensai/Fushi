@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../pages/video_fushi_page_source_corpus.dart';
+import '../../helpers/source_guard.dart';
 
 /// 源码守卫：视频播放器 chrome 必须吃主题色——无法用纯单测覆盖（控制条由 media_kit
 /// 在真实 libmpv player 上渲染），故在源码层钉死：
@@ -30,6 +31,15 @@ void main() {
         );
       },
     );
+
+    test('neutral button foreground resolves through the shared constant', () {
+      final String helper = methodBody(
+        page,
+        'Color _videoChromeButtonForeground(',
+      );
+      expect(helper, contains('videoChromeNeutralForeground'));
+      expect(helper, isNot(contains('cs.primary')));
+    });
 
     test('控制条按钮不再用 cs.primary / onSurface / 硬编码白色', () {
       expect(
