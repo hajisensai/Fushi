@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "2.9.1-debug.17195",
-  "tag": "v2.9.1-debug.17195+a2a7287",
+  "version": "2.9.1-debug.17199",
+  "tag": "v2.9.1-debug.17199+8531e2e",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 17195,
-  "notes": "Automated desktop debug-channel build from develop @ a2a7287. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 17199,
+  "notes": "Automated desktop debug-channel build from develop @ 8531e2e. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-2.9.1-debug.17195-a2a7287-debug.apk",
@@ -35,13 +35,13 @@
       "sha256": "75ba5f1978d97fb44b826c0dabaa5d812a48291e7537f73c77206a70a07cf6d7"
     },
     {
-      "name": "fushi-2.9.1-debug.17195-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17195-windows-setup.exe",
-      "releaseSequence": 17195,
-      "tag": "v2.9.1-debug.17195+a2a7287",
-      "version": "2.9.1-debug.17195",
-      "size": 285670456,
-      "sha256": "afb05fb3e6c5203fae33e6779d3df14674eb9b633ebbc50bb516627bb017f3d0"
+      "name": "fushi-2.9.1-debug.17199-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17199-windows-setup.exe",
+      "releaseSequence": 17199,
+      "tag": "v2.9.1-debug.17199+8531e2e",
+      "version": "2.9.1-debug.17199",
+      "size": 285649856,
+      "sha256": "9fac1a031bca0cd3b5629c08ce7b619b022e10a7b7665da210e0d59889e97e0b"
     }
   ]
 }
