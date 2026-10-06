@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import 'widget_test_helpers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   group('FushiTextField on-screen keyboard affordance', () {
@@ -16,7 +17,7 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget,
+      expect(find.byIcon(FushiIcons.keyboard), findsOneWidget,
           reason: 'desktop gamepad users need an on-screen keyboard');
     });
 
@@ -29,7 +30,7 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.keyboard_outlined), findsNothing);
+      expect(find.byIcon(FushiIcons.keyboard), findsNothing);
     });
 
     testWidgets('a caller-supplied suffix is never overridden',
@@ -41,7 +42,7 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.keyboard_outlined), findsNothing);
+      expect(find.byIcon(FushiIcons.keyboard), findsNothing);
       expect(find.byIcon(Icons.clear), findsOneWidget);
     });
 
@@ -53,7 +54,7 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.keyboard_outlined), findsNothing);
+      expect(find.byIcon(FushiIcons.keyboard), findsNothing);
     });
 
     testWidgets('mobile + controller shows a one-tap paste button',
@@ -65,8 +66,8 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.content_paste_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.keyboard_outlined), findsNothing,
+      expect(find.byIcon(FushiIcons.paste), findsOneWidget);
+      expect(find.byIcon(FushiIcons.keyboard), findsNothing,
           reason: 'mobile uses the system IME, not the on-screen keyboard');
     });
 
@@ -79,8 +80,8 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
-      expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
+      expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
+      expect(find.byIcon(FushiIcons.paste), findsNothing);
     });
 
     testWidgets(
@@ -103,7 +104,7 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.content_paste_outlined));
+      await tester.tap(find.byIcon(FushiIcons.paste));
       await tester.pumpAndSettle();
       expect(c.text, 'ahi');
       expect(changes.last, 'ahi');
@@ -116,7 +117,7 @@ void main() {
         theme: ThemeData(useMaterial3: true, platform: TargetPlatform.android),
       ));
       await tester.pump();
-      expect(find.byIcon(Icons.content_paste_outlined), findsNothing);
+      expect(find.byIcon(FushiIcons.paste), findsNothing);
     });
   });
 
@@ -140,7 +141,7 @@ void main() {
       ));
       await tester.pump();
 
-      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
     });
 
     testWidgets('optional clear button clears text and keeps search focus',
@@ -172,7 +173,7 @@ void main() {
 
       expect(
           find.byKey(const ValueKey<String>('search-clear')), findsOneWidget);
-      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
       expect(focusNode.hasFocus, isTrue);
 
       await tester.tap(find.byKey(const ValueKey<String>('search-clear')));
@@ -182,7 +183,7 @@ void main() {
       expect(clears, <String>['']);
       expect(focusNode.hasFocus, isTrue);
       expect(find.byKey(const ValueKey<String>('search-clear')), findsNothing);
-      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
     });
 
     testWidgets('desktop compact search row shows the ⌨ button',
@@ -203,7 +204,7 @@ void main() {
       ));
       await tester.pump();
 
-      expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
     });
   });
 
@@ -222,6 +223,6 @@ void main() {
     ));
     await tester.pump();
 
-    expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
   });
 }

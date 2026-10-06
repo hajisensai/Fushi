@@ -135,7 +135,7 @@ void main() {
           containsCodeLine(dashboard, 'onPressed: _openStatisticsCenter'),
           isTrue,
           reason: '统计中心入口必须在首页 dashboard 可达');
-      expect(containsCodeLine(dashboard, 'icon: Icons.bar_chart_outlined'),
+      expect(containsCodeLine(dashboard, 'icon: FushiIcons.barChart'),
           isTrue);
     });
   });

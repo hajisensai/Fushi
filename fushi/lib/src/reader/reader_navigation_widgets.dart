@@ -7,6 +7,7 @@ import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 阅读器「导航」侧板（目录 / 收藏 / 搜索）的专用视觉件。共享件（页签、进度条、
 /// 引文卡、空状态）在 [reader_panel_kit.dart]。
@@ -169,8 +170,8 @@ class ReaderTocRow extends StatelessWidget {
                     Transform.scale(scale: s, child: child),
                 child: ReaderShapeBadge(
                   icon: glass
-                      ? Icons.play_arrow_rounded
-                      : Icons.auto_stories_rounded,
+                      ? FushiIcons.play
+                      : FushiIcons.readingMode,
                   size: glass ? 26 : 32,
                   shape: ReaderBadgeShape.cookie4,
                   iconSize: glass ? 18 : 17,
@@ -198,7 +199,7 @@ class ReaderTocRow extends StatelessWidget {
                       ? MaterialLocalizations.of(context).collapsedIconTapHint
                       : MaterialLocalizations.of(context).expandedIconTapHint,
                   icon: FushiIcon(
-                    Icons.expand_more_rounded,
+                    FushiIcons.expandMore,
                     color: glass ? apple!.tertiaryLabel : cs.onSurfaceVariant,
                   ),
                   onPressed: onToggleExpanded,

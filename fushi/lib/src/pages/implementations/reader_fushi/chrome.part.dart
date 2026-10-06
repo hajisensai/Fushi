@@ -265,7 +265,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(Icons.search_outlined, size: 18.0),
+              FushiIcon(FushiIcons.search, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.search, style: TextStyle(fontSize: 14.0)),
             ],
@@ -278,7 +278,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(Icons.copy_outlined, size: 18.0),
+              FushiIcon(FushiIcons.copy, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.copy, style: TextStyle(fontSize: 14.0)),
             ],
@@ -294,7 +294,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              FushiIcon(Icons.star_border, size: 18.0),
+              FushiIcon(FushiIcons.star, size: 18.0),
               const SizedBox(width: 12.0),
               Text(t.action_favorite, style: TextStyle(fontSize: 14.0)),
             ],
@@ -308,7 +308,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                FushiIcon(Icons.movie_creation_outlined, size: 18.0),
+                FushiIcon(FushiIcons.video, size: 18.0),
                 const SizedBox(width: 12.0),
                 Text(t.audiobook_export_clip, style: TextStyle(fontSize: 14.0)),
               ],
@@ -521,16 +521,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
 
     List<Widget> glassSelectionButtons() => <Widget>[
-          glassButton(Icons.search_outlined, t.search, 'search'),
-          glassButton(Icons.copy_outlined, t.copy, 'copy'),
+          glassButton(FushiIcons.search, t.search, 'search'),
+          glassButton(FushiIcons.copy, t.copy, 'copy'),
           if (isAndroidPlatform)
-            glassButton(Icons.share_outlined, t.share, 'share'),
+            glassButton(FushiIcons.share, t.share, 'share'),
           if (isAndroidPlatform)
             glassButton(
-                Icons.travel_explore, t.selection_web_search, 'webSearch'),
-          glassButton(Icons.star_border, t.action_favorite, 'favorite'),
+                FushiIcons.travelExplore, t.selection_web_search, 'webSearch'),
+          glassButton(FushiIcons.star, t.action_favorite, 'favorite'),
           if (hasAudio)
-            glassButton(Icons.movie_creation_outlined,
+            glassButton(FushiIcons.video,
                 t.audiobook_export_clip, 'export'),
         ];
 
@@ -583,20 +583,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
               color: theme.popupMenuTheme.color ??
                   theme.colorScheme.surfaceContainerHigh,
               items: <ReaderSelectionActionItem>[
-                item(Icons.search_outlined, t.search, 'search'),
-                item(Icons.copy_outlined, t.copy, 'copy'),
+                item(FushiIcons.search, t.search, 'search'),
+                item(FushiIcons.copy, t.copy, 'copy'),
                 if (isAndroidPlatform)
-                  item(Icons.share_outlined, t.share, 'share'),
+                  item(FushiIcons.share, t.share, 'share'),
                 if (isAndroidPlatform)
                   item(
-                    Icons.travel_explore,
+                    FushiIcons.travelExplore,
                     t.selection_web_search,
                     'webSearch',
                   ),
-                item(Icons.star_border, t.action_favorite, 'favorite'),
+                item(FushiIcons.star, t.action_favorite, 'favorite'),
                 if (hasAudio)
                   item(
-                    Icons.movie_creation_outlined,
+                    FushiIcons.video,
                     t.audiobook_export_clip,
                     'export',
                   ),
@@ -1805,7 +1805,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     switch (item) {
       case ReaderControlItem.back:
         return ReaderHeaderAction(
-          icon: Icons.arrow_back,
+          icon: FushiIcons.back,
           label: t.back,
           pinned: true,
           semanticsId: 'hibiki.reader.header.back',
@@ -1816,7 +1816,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.modeToggle:
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_lyrics_mode_button'),
-          icon: lyrics ? Icons.auto_stories_outlined : Icons.lyrics_outlined,
+          icon: lyrics ? FushiIcons.readingMode : FushiIcons.lyrics,
           label: lyrics ? t.book_mode : t.lyrics_mode,
           pinned: lyrics,
           semanticsId: 'hibiki.reader.header.lyrics_mode',
@@ -1825,7 +1825,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.navigation:
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_navigation_button'),
-          icon: Icons.format_list_bulleted,
+          icon: FushiIcons.bulletList,
           label: _labelWithShortcut(
             t.section_navigation,
             ShortcutAction.readerOpenNavigation,
@@ -1838,7 +1838,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         );
       case ReaderControlItem.gallery:
         return ReaderHeaderAction(
-          icon: Icons.collections_outlined,
+          icon: FushiIcons.collections,
           label: _labelWithShortcut(
             t.reader_gallery_tooltip,
             ShortcutAction.readerOpenGallery,
@@ -1847,7 +1847,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         );
       case ReaderControlItem.statistics:
         return ReaderHeaderAction(
-          icon: Icons.insights_outlined,
+          icon: FushiIcons.statistics,
           label: _labelWithShortcut(
             t.reading_statistics,
             ShortcutAction.readerOpenStatistics,
@@ -1862,7 +1862,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         final bool paused = _studyClockManualPause;
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_study_timer_button'),
-          icon: paused ? Icons.timer_off_outlined : Icons.timer_outlined,
+          icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
           label: _labelWithShortcut(
             paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
             ShortcutAction.readerToggleStudyClock,
@@ -1873,13 +1873,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.title:
         // 书名不是按钮：顶栏由 showsTitle 决定画不画，底栏槽位不接受它。
         return ReaderHeaderAction(
-          icon: Icons.title,
+          icon: FushiIcons.title,
           label: _book?.title ?? '',
           onPressed: null,
         );
       case ReaderControlItem.audiobook:
         return ReaderHeaderAction(
-          icon: Icons.headphones_outlined,
+          icon: FushiIcons.audiobook,
           label: _labelWithShortcut(
             t.section_audiobook,
             ShortcutAction.readerOpenAudiobook,
@@ -1896,8 +1896,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_fullscreen_button'),
           icon: _isWindowFullscreen
-              ? Icons.fullscreen_exit_rounded
-              : Icons.fullscreen_rounded,
+              ? FushiIcons.fullscreenExit
+              : FushiIcons.fullscreen,
           label: t.shortcut_action_global_toggle_fullscreen,
           semanticsId: 'hibiki.reader.bottom.fullscreen',
           onPressed: () => unawaited(_changeReaderWindowFullscreen()),
@@ -1910,8 +1910,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_toolbars_button'),
           icon: hidden
-              ? Icons.web_asset_outlined
-              : Icons.web_asset_off_outlined,
+              ? FushiIcons.webAsset
+              : FushiIcons.webAssetOff,
           label: hidden ? t.reader_toolbars_show : t.reader_toolbars_hide,
           semanticsId: 'hibiki.reader.control.toolbars',
           onPressed: () => unawaited(_setHideToolbars(!hidden)),
@@ -1919,7 +1919,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.settings:
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_settings_button'),
-          icon: Icons.tune_outlined,
+          icon: FushiIcons.settings,
           label: _labelWithShortcut(
             t.reader_settings_section,
             ShortcutAction.readerOpenMenu,
@@ -1936,8 +1936,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         final int skip = ReaderFushiSource.instance.skipActionSeconds;
         return ReaderHeaderAction(
           icon: skip == 0
-              ? Icons.skip_previous_outlined
-              : Icons.fast_rewind_outlined,
+              ? FushiIcons.skipPrevious
+              : FushiIcons.fastRewind,
           label: skip == 0 ? t.prev_sentence : '-${skip}s',
           semanticsId: 'hibiki.reader.control.audiobook_prev',
           onPressed: () => unawaited(
@@ -1950,8 +1950,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         final int skip = ReaderFushiSource.instance.skipActionSeconds;
         return ReaderHeaderAction(
           icon: skip == 0
-              ? Icons.skip_next_outlined
-              : Icons.fast_forward_outlined,
+              ? FushiIcons.skipNext
+              : FushiIcons.fastForward,
           label: skip == 0 ? t.next_sentence : '+${skip}s',
           semanticsId: 'hibiki.reader.control.audiobook_next',
           onPressed: () => unawaited(
@@ -1963,21 +1963,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.audiobookPlayPause:
         final bool playing = _audiobookController!.isPlaying;
         return ReaderHeaderAction(
-          icon: playing ? Icons.pause_outlined : Icons.play_arrow_outlined,
+          icon: playing ? FushiIcons.pause : FushiIcons.play,
           label: playing ? t.pause : t.play,
           semanticsId: 'hibiki.reader.control.audiobook_play_pause',
           onPressed: () => unawaited(_audiobookController!.togglePlayPause()),
         );
       case ReaderControlItem.audiobookSeekBack:
         return ReaderHeaderAction(
-          icon: Icons.replay_10_outlined,
+          icon: FushiIcons.replay10,
           label: '-10s',
           semanticsId: 'hibiki.reader.control.audiobook_seek_back',
           onPressed: () => unawaited(_audiobookController!.seekRelative(-10)),
         );
       case ReaderControlItem.audiobookSeekForward:
         return ReaderHeaderAction(
-          icon: Icons.forward_10_outlined,
+          icon: FushiIcons.forward10,
           label: '+10s',
           semanticsId: 'hibiki.reader.control.audiobook_seek_forward',
           onPressed: () => unawaited(_audiobookController!.seekRelative(10)),
@@ -1985,7 +1985,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.audiobookFollow:
         final bool on = _audiobookController!.followAudio.value;
         return ReaderHeaderAction(
-          icon: on ? Icons.link : Icons.link_off,
+          icon: on ? FushiIcons.link : FushiIcons.linkOff,
           label: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
           semanticsId: 'hibiki.reader.control.audiobook_follow',
           onPressed: () => _audiobookController!.setFollowAudio(!on),
@@ -2390,23 +2390,23 @@ extension _ReaderChrome on _ReaderFushiPageState {
       items: <({String id, IconData icon, String label})>[
         (
           id: _kReaderPanelNavigation,
-          icon: Icons.format_list_bulleted,
+          icon: FushiIcons.bulletList,
           label: t.section_navigation,
         ),
         if (audiobook)
           (
             id: _kReaderPanelAudiobook,
-            icon: Icons.headphones_outlined,
+            icon: FushiIcons.audiobook,
             label: t.section_audiobook,
           ),
         (
           id: _kReaderPanelSettings,
-          icon: Icons.tune_outlined,
+          icon: FushiIcons.settings,
           label: t.reader_settings_section,
         ),
         (
           id: _kReaderPanelStatistics,
-          icon: Icons.insights_outlined,
+          icon: FushiIcons.statistics,
           label: t.reading_statistics,
         ),
       ],
@@ -4204,7 +4204,7 @@ class ReaderSelectionActionBar extends StatelessWidget {
               _iconButton(i),
             PopupMenuButton<int>(
               key: const ValueKey<String>('reader_selection_action_more'),
-              icon: const Icon(Icons.more_vert),
+              icon: const Icon(FushiIcons.more),
               tooltip: MaterialLocalizations.of(context).showMenuTooltip,
               onSelected: (int index) => overflow[index].onPressed(),
               itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[

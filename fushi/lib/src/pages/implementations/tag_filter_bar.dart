@@ -12,6 +12,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 书架 / 视频 tab 共享的标签筛选栏：横向 tag chip（点选筛选、长按拖拽重排）+ 末尾
 /// 「管理标签」齿轮；可选「批量选择」动作（仅书架多选书需要，[onToggleSelectionMode]
@@ -101,7 +102,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final Widget tagManage = KeyedSubtree(
       key: const ValueKey<String>('library_tag_settings'),
       child: _tagBarAction(
-        icon: Icons.settings_outlined,
+        icon: FushiIcons.settingsGear,
         tooltip: t.tag_manage,
         onTap: () => _openTagManagement(context),
       ),
@@ -114,7 +115,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final List<Widget> viewActions = <Widget>[
       if (widget.onToggleSelectionMode != null)
         _tagBarAction(
-          icon: widget.selectionMode ? Icons.close : Icons.checklist_outlined,
+          icon: widget.selectionMode ? FushiIcons.close : FushiIcons.checklist,
           tooltip: widget.selectionMode
               ? MaterialLocalizations.of(context).closeButtonTooltip
               : t.batch_select,
@@ -151,7 +152,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       if (tagsOnly && widget.showTagManagement)
         _TagBarActionChip(
           key: const ValueKey<String>('library_tag_manage_chip'),
-          icon: Icons.tune_rounded,
+          icon: FushiIcons.settings,
           label: t.tag_manage,
           onTap: () => _openTagManagement(context),
         ),
@@ -160,7 +161,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       if (tagsOnly && selectedIds.isNotEmpty)
         _TagBarActionChip(
           key: const ValueKey<String>('library_tag_clear_chip'),
-          icon: Icons.filter_alt_off_outlined,
+          icon: FushiIcons.filterOff,
           label: t.tag_clear_filter,
           onTap: () => ref.read(selectedTagIdsProvider.notifier).state = <int>{},
         ),
@@ -366,7 +367,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) {
         return _tagBarAction(
-          icon: hasView ? Icons.tune : Icons.sort,
+          icon: hasView ? FushiIcons.settings : FushiIcons.sort,
           tooltip: hasView ? t.shelf_sort_and_view : t.sort_by,
           onTap: () =>
               controller.isOpen ? controller.close() : controller.open(),
@@ -458,7 +459,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
             if (selected)
               Padding(
                 padding: EdgeInsets.only(left: tokens.spacing.gap),
-                child: FushiIcon(Icons.check, size: 20, color: foreground),
+                child: FushiIcon(FushiIcons.check, size: 20, color: foreground),
               ),
           ],
         ),

@@ -32,6 +32,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/overlay_entry_lifecycle.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 测试可见的查词状态探针：让 widget 行为测试直接断言「查词后 _isSearching 已复位」
 /// 与「_loadMore 不再被永久阻塞」，从而钉住 [TODO-555] 的回归不变量
@@ -742,7 +743,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 child: FushiPlaceholderMessage(
                   icon: isGlassDesign(context)
                       ? CupertinoIcons.search
-                      : Icons.manage_search,
+                      : FushiIcons.manageSearch,
                   message: t.floating_ball_lookup_hint,
                 ),
               )
@@ -794,7 +795,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           ? FushiIconButton(
               key: const ValueKey<String>('home-dictionary-route-back'),
               tooltip: t.back,
-              icon: Icons.arrow_back,
+              icon: FushiIcons.back,
               onTap: () => Navigator.of(context).maybePop(),
             )
           : null,
@@ -813,12 +814,12 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         FushiIconButton(
           key: const ValueKey<String>('home-dictionary-collections'),
           tooltip: t.collections,
-          icon: Icons.collections_bookmark_outlined,
+          icon: FushiIcons.collection,
           onTap: _openCollections,
         ),
         FushiIconButton(
           tooltip: t.clear_dictionary_title,
-          icon: Icons.delete_sweep_outlined,
+          icon: FushiIcons.deleteSweep,
           onTap: _showDeleteDictionaryHistoryPrompt,
         ),
       ],
@@ -909,7 +910,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                           'home_dictionary_manage_button',
                         ),
                         tooltip: t.dictionaries,
-                        icon: Icons.library_books_outlined,
+                        icon: FushiIcons.dictionary,
                         backgroundColor: isEinkTheme(context)
                             ? null
                             : Theme.of(context).colorScheme.secondaryContainer,
@@ -951,7 +952,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           if (isCupertinoPlatform(context))
             FushiIconButton(
               tooltip: t.clear_dictionary_title,
-              icon: Icons.delete_sweep_outlined,
+              icon: FushiIcons.deleteSweep,
               onTap: _showDeleteDictionaryHistoryPrompt,
             ),
         ],
@@ -1023,7 +1024,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
       index: 0,
       child: Center(
         child: FushiPlaceholderMessage(
-          icon: Icons.search_off,
+          icon: FushiIcons.searchOff,
           message: t.no_search_results,
         ),
       ),
@@ -1045,7 +1046,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         if (noDictionaries) ...[
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
           FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.auto_stories_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.readingMode, size: 18),
             label: Text(t.dialog_import_dictionary),
             onPressed: appModel.showDictionaryMenu,
           ),
@@ -1405,7 +1406,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                   SizedBox(width: tokens.spacing.gap / 2),
                   glass
                       ? const FushiAppleChevron()
-                      : const FushiIcon(Icons.chevron_right, size: 20),
+                      : const FushiIcon(FushiIcons.chevronRight, size: 20),
                 ],
               ),
             ),
@@ -2075,7 +2076,7 @@ class HomeDictionaryClearHistoryDialog extends StatelessWidget {
       maxHeightFactor: 0.72,
       child: FushiModalSheetFrame(
         title: t.clear_dictionary_title,
-        leadingIcon: Icons.delete_sweep_outlined,
+        leadingIcon: FushiIcons.deleteSweep,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -2221,7 +2222,7 @@ class _RecentSearchChipState extends State<_RecentSearchChip> {
                 children: <Widget>[
                   const SizedBox(width: 12),
                   FushiIcon(
-                    Icons.history,
+                    FushiIcons.history,
                     size: 18,
                     color: cs.onSurfaceVariant,
                   ),
@@ -2252,7 +2253,7 @@ class _RecentSearchChipState extends State<_RecentSearchChip> {
                               ),
                               child: FushiIconButton(
                                 tooltip: t.lookup_history_remove,
-                                icon: Icons.close,
+                                icon: FushiIcons.close,
                                 size: 16,
                                 constraints: const BoxConstraints.tightFor(
                                   width: 28,
@@ -2372,7 +2373,7 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
                 opacity: reveal ? 1 : 0,
                 child: FushiOverflowMenu<String>(
                   tooltip: t.lookup_history_more,
-                  icon: Icons.more_horiz,
+                  icon: FushiIcons.moreHoriz,
                   iconSize: 20,
                   items: <PopupMenuEntry<String>>[
                     PopupMenuItem<String>(
@@ -2427,7 +2428,7 @@ class _LookupIdleState extends StatelessWidget {
             shape: fushiLeadingShapeBorder(FushiLeadingShape.flower),
           ),
           child: FushiIcon(
-            Icons.manage_search,
+            FushiIcons.manageSearch,
             size: 48,
             color: cs.onPrimaryContainer,
           ),
@@ -2455,7 +2456,7 @@ class _LookupIdleState extends StatelessWidget {
       FushiFilledButton.tonalIcon(
         key: const ValueKey<String>('home_dictionary_idle_clipboard'),
         onPressed: () => unawaited(onLookupClipboard()),
-        icon: const FushiIcon(Icons.content_paste, size: 18),
+        icon: const FushiIcon(FushiIcons.paste, size: 18),
         label: Text(t.floating_ball_action_clipboard),
       ),
       if (recents.isNotEmpty) ...<Widget>[

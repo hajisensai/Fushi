@@ -176,7 +176,7 @@ class _LyricsTypographyPanelState extends State<LyricsTypographyPanel> {
                 onPressed: _size <= kLyricsFontSizeMin
                     ? null
                     : () => _setSize(_size - 1),
-                icon: const FushiIcon(Icons.remove_rounded),
+                icon: const FushiIcon(FushiIcons.remove),
               ),
               Expanded(
                 child: FushiSlider(

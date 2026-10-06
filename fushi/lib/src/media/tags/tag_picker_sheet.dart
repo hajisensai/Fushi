@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 选择器从底部 sheet 换成居中弹层的窗口宽度。
 const double kTagPickerWideBreakpoint = 600;
@@ -552,7 +553,7 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
           )
         else if (all.isEmpty && query.trim().isEmpty)
           FushiPlaceholderMessage(
-            icon: Icons.label_outline,
+            icon: FushiIcons.tag,
             message: t.tag_no_tags_hint,
           )
         else
@@ -597,7 +598,7 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              const FushiIcon(Icons.add_rounded, size: 18),
+              const FushiIcon(FushiIcons.add, size: 18),
               SizedBox(width: tokens.spacing.gap / 2),
               Text(t.tag_new),
             ],
@@ -645,7 +646,7 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
           child: FushiModalSheetFrame(
             title: widget.title ?? t.tag_label,
             subtitle: _summary(),
-            leadingIcon: Icons.sell_outlined,
+            leadingIcon: FushiIcons.tag,
             scrollable: true,
             maxHeightFactor: wide ? null : 0.9,
             bodyPadding: EdgeInsets.fromLTRB(
@@ -721,7 +722,7 @@ class _ScopeSelector extends StatelessWidget {
       segments: <ButtonSegment<TagCollectionScope>>[
         ButtonSegment<TagCollectionScope>(
           value: TagCollectionScope.collection,
-          icon: const FushiIcon(Icons.collections_bookmark_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.collection, size: 18),
           label: Text(
             t.tag_picker_scope_collection,
             key: const ValueKey<String>('tag_picker_scope_collection'),
@@ -729,7 +730,7 @@ class _ScopeSelector extends StatelessWidget {
         ),
         ButtonSegment<TagCollectionScope>(
           value: TagCollectionScope.members,
-          icon: const FushiIcon(Icons.library_books_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.dictionary, size: 18),
           label: Text(
             t.tag_picker_scope_members,
             key: const ValueKey<String>('tag_picker_scope_members'),
@@ -802,7 +803,7 @@ class _CreateChip extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  FushiIcon(Icons.add_rounded, size: 18, color: fg),
+                  FushiIcon(FushiIcons.add, size: 18, color: fg),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(

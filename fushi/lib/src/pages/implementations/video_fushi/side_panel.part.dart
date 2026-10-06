@@ -95,15 +95,15 @@ extension _VideoSidePanel on _VideoFushiPageState {
   IconData _videoSidePanelIcon(_VideoSidePanelKind kind) {
     switch (kind) {
       case _VideoSidePanelKind.speed:
-        return Icons.speed;
+        return FushiIcons.speed;
       case _VideoSidePanelKind.settings:
-        return Icons.tune;
+        return FushiIcons.settings;
       case _VideoSidePanelKind.chapters:
-        return Icons.bookmarks_outlined;
+        return FushiIcons.bookmarks;
       case _VideoSidePanelKind.quality:
-        return Icons.high_quality_outlined;
+        return FushiIcons.highQuality;
       case _VideoSidePanelKind.danmakuMatch:
-        return Icons.forum_outlined;
+        return FushiIcons.forum;
     }
   }
 

@@ -12,6 +12,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 import '../../helpers/source_guard.dart';
 import '../../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-1907：字幕列表加「搜索（Ctrl+F 可快捷触发）和导出（导出收藏语句）」
 /// （用户 2026-08-28）。
@@ -394,7 +395,7 @@ void main() {
 
     // IconButton 把 Tooltip 建在**自己内部**，所以 byTooltip 命中的是后代而非祖先；
     // 直接按图标定位按钮本体。
-    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(find.widgetWithIcon(IconButton, Icons.share_outlined)),);
+    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(find.widgetWithIcon(IconButton, FushiIcons.share)),);
     expect(button.onPressed, isNull);
     expect(called, isFalse);
   });

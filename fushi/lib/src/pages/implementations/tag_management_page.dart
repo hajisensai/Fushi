@@ -14,6 +14,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// MD3 底部让给悬浮新建按钮的高度：常规 FAB 56dp + Scaffold 的 FAB 外边距
 /// （上下各一份 [kFloatingActionButtonMargin]），末行才不被悬浮按钮压住。
@@ -168,18 +169,18 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
         FushiPopupMenuItem<_TagMenuAction>(
           value: _TagMenuAction.edit,
           label: t.tag_manage_rename,
-          icon: Icons.edit_outlined,
+          icon: FushiIcons.edit,
         ),
         if (_tags.length > 1)
           FushiPopupMenuItem<_TagMenuAction>(
             value: _TagMenuAction.merge,
             label: t.tag_manage_merge_action,
-            icon: Icons.merge_type_rounded,
+            icon: FushiIcons.merge,
           ),
         FushiPopupMenuItem<_TagMenuAction>(
           value: _TagMenuAction.delete,
           label: t.dialog_delete,
-          icon: Icons.delete_outline,
+          icon: FushiIcons.delete,
           color: scheme.error,
         ),
       ],
@@ -216,7 +217,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
         title: t.tag_manage_merge_title(name: source.name),
         message: t.tag_manage_merge_confirm(from: source.name, to: target.name),
         confirmLabel: t.tag_manage_merge_action,
-        leadingIcon: Icons.merge_type_rounded,
+        leadingIcon: FushiIcons.merge,
       ),
     );
     if (confirmed == null || !mounted) return;
@@ -323,7 +324,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
             // 与合集页滑动删除同一形态：实心 error 底 + onError 图标。
             color: theme.colorScheme.error,
             child: FushiIcon(
-              Icons.delete_outline,
+              FushiIcons.delete,
               color: theme.colorScheme.onError,
             ),
           ),
@@ -374,7 +375,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                         builder: (BuildContext buttonContext) =>
                             FushiIconButtonControl(
                           tooltip: t.shelf_toolbar_more,
-                          icon: const FushiIcon(Icons.more_vert),
+                          icon: const FushiIcon(FushiIcons.more),
                           onPressed: () {
                             final RenderBox box =
                                 buttonContext.findRenderObject()! as RenderBox;
@@ -391,7 +392,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                           child: Padding(
                             padding: EdgeInsets.all(tokens.spacing.gap),
                             child: FushiIcon(
-                              Icons.drag_handle_rounded,
+                              FushiIcons.dragHandle,
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
@@ -449,7 +450,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     } else if (_tags.isEmpty) {
       body = Center(
         child: FushiPlaceholderMessage(
-          icon: Icons.label_outline,
+          icon: FushiIcons.tag,
           message: t.tag_no_tags_hint,
           // 空状态直接给「新建标签」主按钮（FAB 之外的第二个入口，首次进来的
           // 用户不必去找右下角）。
@@ -502,7 +503,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
         if (apple)
           FushiIconButtonControl(
             key: const ValueKey<String>('tag-management-create'),
-            icon: const FushiIcon(Icons.add),
+            icon: const FushiIcon(FushiIcons.add),
             tooltip: t.tag_new,
             onPressed: _createTag,
           ),
@@ -513,7 +514,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
               // M3E：扩展 FAB（图标 + 文字），主操作一眼可见。
               onPressed: _createTag,
               tooltip: t.tag_new,
-              icon: const FushiIcon(Icons.add),
+              icon: const FushiIcon(FushiIcons.add),
               label: Text(t.tag_new),
             ),
       body: body,
@@ -597,7 +598,7 @@ class _MergeTargetSheet extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiModalSheetFrame(
       title: t.tag_manage_merge_title(name: source.name),
-      leadingIcon: Icons.merge_type_rounded,
+      leadingIcon: FushiIcons.merge,
       scrollable: true,
       bodyPadding: EdgeInsets.fromLTRB(
         tokens.spacing.card,

@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 一个标签相对于一组目标的勾选状态。
 enum TagCheckState {
@@ -155,13 +156,13 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
           ScaleTransition(scale: a, child: child),
       child: switch (state) {
         TagCheckState.all => FushiIcon(
-            Icons.check_rounded,
+            FushiIcons.check,
             key: const ValueKey<String>('all'),
             size: 18,
             color: foreground,
           ),
         TagCheckState.partial => FushiIcon(
-            Icons.remove_rounded,
+            FushiIcons.remove,
             key: const ValueKey<String>('partial'),
             size: 18,
             color: foreground,
@@ -332,7 +333,7 @@ class FushiTagInputChip extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(6),
                   child: FushiIcon(
-                    Icons.close_rounded,
+                    FushiIcons.close,
                     size: 16,
                     color: foreground,
                     semanticLabel:

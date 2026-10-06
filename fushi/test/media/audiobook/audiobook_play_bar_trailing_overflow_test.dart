@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 2026-10 体验优化：底栏槽位按钮并进播放条 trailing 后，360dp 窄屏下拖 3 颗
 /// 以上按钮不得让整条 bar 溢出；三联键与设置键仍须完整可见。
@@ -64,10 +65,10 @@ void main() {
           findsOneWidget,
         );
         for (final IconData icon in <IconData>[
-          Icons.skip_previous_outlined,
-          Icons.play_arrow_outlined,
-          Icons.skip_next_outlined,
-          Icons.tune_outlined,
+          FushiIcons.skipPrevious,
+          FushiIcons.play,
+          FushiIcons.skipNext,
+          FushiIcons.settings,
         ]) {
           final Rect r = tester.getRect(find.byIcon(icon));
           expect(r.left, greaterThanOrEqualTo(0));
@@ -85,7 +86,7 @@ void main() {
         );
         expect(scrollable.position.maxScrollExtent, greaterThan(0));
         final Rect playbackBefore = tester.getRect(
-          find.byIcon(Icons.play_arrow_outlined),
+          find.byIcon(FushiIcons.play),
         );
         await tester.drag(
           trailingScroll,
@@ -99,7 +100,7 @@ void main() {
           reason: '溢出的槽位按钮必须能用鼠标拖出来',
         );
         expect(
-          tester.getRect(find.byIcon(Icons.play_arrow_outlined)),
+          tester.getRect(find.byIcon(FushiIcons.play)),
           playbackBefore,
           reason: '横拖只移动 trailing，固定播放键不动',
         );

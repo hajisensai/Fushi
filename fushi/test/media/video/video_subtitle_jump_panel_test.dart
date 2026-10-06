@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import '../../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..bookKey = 'video/1'
@@ -504,8 +505,8 @@ void main() {
 
       // TODO-637: the X is back (BUG-256 tap-outside barrier removed because it
       // ate the picture-subtitle lookup gesture, TODO-636). Tapping it closes.
-      expect(find.byIcon(Icons.close), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.close));
+      expect(find.byIcon(FushiIcons.close), findsOneWidget);
+      await tester.tap(find.byIcon(FushiIcons.close));
       await tester.pump();
       expect(closes, 1, reason: 'tapping the X must invoke onClose (TODO-637)');
     });
@@ -538,9 +539,9 @@ void main() {
       // STILL be present on every row (regression guard: revert to the old
       // `showActions = hovered || selected || selectedForCard` gate -> these
       // would be findsNothing -> red).
-      expect(find.byIcon(Icons.play_arrow), findsNWidgets(2));
-      expect(find.byIcon(Icons.content_copy_outlined), findsNWidgets(2));
-      expect(find.byIcon(Icons.star_border), findsNWidgets(2));
+      expect(find.byIcon(FushiIcons.play), findsNWidgets(2));
+      expect(find.byIcon(FushiIcons.copy), findsNWidgets(2));
+      expect(find.byIcon(FushiIcons.star), findsNWidgets(2));
     });
 
     testWidgets('inline copy button fires onCopyCue with the row cue', (
@@ -569,7 +570,7 @@ void main() {
       controller.debugUpdateCueForPosition(500);
       await tester.pump();
 
-      await tester.tap(find.byIcon(Icons.content_copy_outlined));
+      await tester.tap(find.byIcon(FushiIcons.copy));
       await tester.pump();
       expect(copied, isNotNull);
       expect(copied!.text, 'copy me');
@@ -602,24 +603,24 @@ void main() {
       )));
       controller.debugUpdateCueForPosition(500);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.byIcon(FushiIcons.check), findsNothing);
 
-      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.tap(find.byIcon(FushiIcons.copy).first);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsOneWidget);
-      expect(find.byIcon(Icons.content_copy_outlined), findsOneWidget,
+      expect(find.byIcon(FushiIcons.check), findsOneWidget);
+      expect(find.byIcon(FushiIcons.copy), findsOneWidget,
           reason: '只有被点的那一行切 ✓，其它行不动');
       expect(find.byTooltip(t.copied), findsOneWidget);
 
       await tester.pump(kCopyFeedbackDuration);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsNothing);
-      expect(find.byIcon(Icons.content_copy_outlined), findsNWidgets(2));
+      expect(find.byIcon(FushiIcons.check), findsNothing);
+      expect(find.byIcon(FushiIcons.copy), findsNWidgets(2));
 
       // 空文本行：handler 返回 false（没写剪贴板），按钮不装成功。
-      await tester.tap(find.byIcon(Icons.content_copy_outlined).last);
+      await tester.tap(find.byIcon(FushiIcons.copy).last);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.byIcon(FushiIcons.check), findsNothing);
     });
 
     testWidgets(
@@ -653,15 +654,15 @@ void main() {
       await tester.pump();
 
       // 复制当前正在播的那一行。
-      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.tap(find.byIcon(FushiIcons.copy).first);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(FushiIcons.check), findsOneWidget);
 
       // 播放头推进到下一句：第 0 行不再 selected，行 key 翻转 → Element 重建。
       controller.debugUpdateCueForPosition(2500);
       await tester.pump();
       expect(
-        find.byIcon(Icons.check),
+        find.byIcon(FushiIcons.check),
         findsOneWidget,
         reason: '反馈窗口还没到，✓ 不该因为播放头走开就消失',
       );
@@ -670,7 +671,7 @@ void main() {
       // 窗口到点仍正常回落（不是把 ✓ 焊死）。
       await tester.pump(kCopyFeedbackDuration);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsNothing);
+      expect(find.byIcon(FushiIcons.check), findsNothing);
     });
 
     testWidgets('only one row can be checked at a time',
@@ -697,12 +698,12 @@ void main() {
       )));
       await tester.pump();
 
-      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.tap(find.byIcon(FushiIcons.copy).first);
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.content_copy_outlined).last);
+      await tester.tap(find.byIcon(FushiIcons.copy).last);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsOneWidget);
-      expect(find.byIcon(Icons.content_copy_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.check), findsOneWidget);
+      expect(find.byIcon(FushiIcons.copy), findsOneWidget);
     });
 
     testWidgets('unmounting inside the feedback window does not throw',
@@ -726,9 +727,9 @@ void main() {
         emptyHint: 'empty',
       )));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.content_copy_outlined).first);
+      await tester.tap(find.byIcon(FushiIcons.copy).first);
       await tester.pump();
-      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(FushiIcons.check), findsOneWidget);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(kCopyFeedbackDuration + const Duration(seconds: 1));
@@ -762,8 +763,8 @@ void main() {
       await tester.pump();
 
       // Not favorited yet -> hollow star.
-      expect(find.byIcon(Icons.star_border), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.star_border));
+      expect(find.byIcon(FushiIcons.star), findsOneWidget);
+      await tester.tap(find.byIcon(FushiIcons.star));
       await tester.pump();
       expect(favorited, isNotNull);
       expect(favorited!.text, 'fav me');
@@ -773,7 +774,7 @@ void main() {
       await tester.pumpWidget(_wrap(panel()));
       controller.debugUpdateCueForPosition(500);
       await tester.pump();
-      expect(find.byIcon(Icons.star), findsOneWidget);
+      expect(find.byIcon(FushiIcons.filled(FushiIcons.star)), findsOneWidget);
     });
 
     testWidgets('header toolbar has font A-/A+ and auto-scroll toggle', (
@@ -797,14 +798,14 @@ void main() {
       )));
 
       // Font step buttons + auto-scroll (default on -> filled icon).
-      expect(find.byIcon(Icons.text_decrease), findsOneWidget);
-      expect(find.byIcon(Icons.text_increase), findsOneWidget);
-      expect(find.byIcon(Icons.vertical_align_center), findsOneWidget);
+      expect(find.byIcon(FushiIcons.textDecrease), findsOneWidget);
+      expect(find.byIcon(FushiIcons.textIncrease), findsOneWidget);
+      expect(find.byIcon(FushiIcons.alignCenterVertical), findsOneWidget);
 
       // Toggle auto-scroll off -> pause icon.
-      await tester.tap(find.byIcon(Icons.vertical_align_center));
+      await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
       await tester.pump();
-      expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
+      expect(find.byIcon(FushiIcons.pauseCircle), findsOneWidget);
     });
 
     testWidgets(
@@ -906,9 +907,9 @@ void main() {
         ),
       )));
 
-      await tester.tap(find.byIcon(Icons.vertical_align_center));
+      await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
       await tester.pump();
-      expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget);
+      expect(find.byIcon(FushiIcons.pauseCircle), findsOneWidget);
 
       controller.debugUpdateCueForPosition(150050);
       await tester.pump();
@@ -918,7 +919,7 @@ void main() {
       expect(find.text('cue 00150 text'), findsNothing,
           reason: 'disabled auto-scroll must not force-follow playback');
 
-      await tester.tap(find.byIcon(Icons.pause_circle_outline));
+      await tester.tap(find.byIcon(FushiIcons.pauseCircle));
       await tester.pump();
       for (int i = 0; i < 24; i++) {
         await tester.pump(const Duration(milliseconds: 16));
@@ -1308,7 +1309,7 @@ void main() {
           tester.widget<Text>(find.text(text)).style!.fontSize!;
       final double before = fontOf('sized');
 
-      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.tap(find.byIcon(FushiIcons.textIncrease));
       await tester.pump();
       expect(fontOf('sized'), greaterThan(before),
           reason: 'A+ enlarges row font (local transient step)');
@@ -1409,9 +1410,9 @@ void main() {
       final double before = tsColumnWidth();
       // Step the font up twice (to the largest 1.3x step) and the timestamp
       // column must grow so 'h:mm:ss' keeps fitting instead of overflowing.
-      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.tap(find.byIcon(FushiIcons.textIncrease));
       await tester.pump();
-      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.tap(find.byIcon(FushiIcons.textIncrease));
       await tester.pump();
       expect(tsColumnWidth(), greaterThan(before),
           reason: 'larger font must widen the timestamp column (TODO-567)');
@@ -1446,9 +1447,9 @@ void main() {
 
       // No pumpAndSettle: exactly one filled star (the favorited row) and one
       // hollow star (the plain row) must already be present.
-      expect(find.byIcon(Icons.star), findsOneWidget,
+      expect(find.byIcon(FushiIcons.filled(FushiIcons.star)), findsOneWidget,
           reason: 'favorited row must show a filled star on the first frame');
-      expect(find.byIcon(Icons.star_border), findsOneWidget,
+      expect(find.byIcon(FushiIcons.star), findsOneWidget,
           reason: 'non-favorited row keeps a hollow star');
     });
 
@@ -1475,10 +1476,10 @@ void main() {
         emptyHint: 'empty',
       )));
 
-      expect(find.byIcon(Icons.pause_circle_outline), findsOneWidget,
+      expect(find.byIcon(FushiIcons.pauseCircle), findsOneWidget,
           reason:
               'initialAutoScroll:false must start in the off (paused) state');
-      expect(find.byIcon(Icons.vertical_align_center), findsNothing);
+      expect(find.byIcon(FushiIcons.alignCenterVertical), findsNothing);
     });
 
     testWidgets(
@@ -1505,13 +1506,13 @@ void main() {
       )));
 
       // Starts on → tap turns it off and reports false.
-      await tester.tap(find.byIcon(Icons.vertical_align_center));
+      await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
       await tester.pump();
       expect(changes, <bool>[false],
           reason: 'turning auto-scroll off must report false to persist');
 
       // Tap again → on, reports true.
-      await tester.tap(find.byIcon(Icons.pause_circle_outline));
+      await tester.tap(find.byIcon(FushiIcons.pauseCircle));
       await tester.pump();
       expect(changes, <bool>[false, true]);
     });
@@ -1667,7 +1668,7 @@ void main() {
               '所有存量用户的字号都会静默漂移');
       // BUG-2156 之后 2.0× 不再是最大档，A+ 应当仍然可用。
       final IconButton increase = tester.widget<IconButton>(glassUnwrap<IconButton>(find.ancestor(
-          of: find.byIcon(Icons.text_increase),
+          of: find.byIcon(FushiIcons.textIncrease),
           matching: find.byType(IconButton),
         )),);
       expect(increase.onPressed, isNotNull,
@@ -1706,7 +1707,7 @@ void main() {
           reason: '最高档 3.0× × 基准 14 = 42');
 
       final IconButton increase = tester.widget<IconButton>(glassUnwrap<IconButton>(find.ancestor(
-          of: find.byIcon(Icons.text_increase),
+          of: find.byIcon(FushiIcons.textIncrease),
           matching: find.byType(IconButton),
         )),);
       expect(increase.onPressed, isNull, reason: '已在最大档，A+ 禁用');
@@ -1735,10 +1736,10 @@ void main() {
         emptyHint: 'empty',
       )));
 
-      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.tap(find.byIcon(FushiIcons.textIncrease));
       await tester.pump();
       expect(changes, <int>[2], reason: 'A+ 报新档位 2 供页面层落盘');
-      await tester.tap(find.byIcon(Icons.text_decrease));
+      await tester.tap(find.byIcon(FushiIcons.textDecrease));
       await tester.pump();
       expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
     });

@@ -29,6 +29,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // ── 形状尺度（M3E 形状对比：大容器 / 内卡 / 小件）────────────────────────────
 
@@ -153,7 +154,7 @@ class ReaderPanelHeader extends StatelessWidget {
                 child: glass
                     ? FushiIconButtonControl.filledTonal(
                         key: const ValueKey<String>('fushi_side_sheet_close'),
-                        icon: const FushiIcon(Icons.close),
+                        icon: const FushiIcon(FushiIcons.close),
                         iconSize: 18,
                         tooltip: MaterialLocalizations.of(
                           context,
@@ -162,7 +163,7 @@ class ReaderPanelHeader extends StatelessWidget {
                       )
                     : FushiIconButtonControl(
                         key: const ValueKey<String>('fushi_side_sheet_close'),
-                        icon: const FushiIcon(Icons.close),
+                        icon: const FushiIcon(FushiIcons.close),
                         tooltip: MaterialLocalizations.of(
                           context,
                         ).closeButtonTooltip,
@@ -603,7 +604,7 @@ class ReaderPanelListItem extends StatelessWidget {
     this.subtitle,
     this.trailing,
     this.leadingIcon,
-    this.currentIcon = Icons.play_arrow_rounded,
+    this.currentIcon = FushiIcons.play,
     this.current = false,
     this.onTap,
     this.titleMaxLines = 2,

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // M3 Expressive 交互控件共享层（fushi_expressive_controls.dart）的契约：
 // ① 尺寸档 / 形状 / toggle / split / FAB / FAB menu / 滑块尺寸 / chip 强调色
@@ -330,13 +331,13 @@ void main() {
       await tester.pump();
       expect(primary, 1);
 
-      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.tap(find.byIcon(FushiIcons.expandMore));
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('CSV'), findsOneWidget);
       final Transform rotation = tester.widget<Transform>(
         find
             .ancestor(
-              of: find.byIcon(Icons.keyboard_arrow_down_rounded),
+              of: find.byIcon(FushiIcons.expandMore),
               matching: find.byType(Transform),
             )
             .first,
@@ -349,7 +350,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('CSV'), findsNothing);
 
-      await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+      await tester.tap(find.byIcon(FushiIcons.expandMore));
       await tester.pump(const Duration(milliseconds: 600));
       await tester.tap(find.text('JSON'));
       await tester.pump(const Duration(milliseconds: 600));

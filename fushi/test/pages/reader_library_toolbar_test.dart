@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
     show FushiLinearProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 Widget host(Widget child) => ProviderScope(
       child: TranslationProvider(
@@ -52,9 +53,9 @@ void main() {
     );
     final Finder select = find.widgetWithIcon(
       IconButton,
-      Icons.checklist_outlined,
+      FushiIcons.checklist,
     );
-    final Finder sort = find.widgetWithIcon(IconButton, Icons.sort);
+    final Finder sort = find.widgetWithIcon(IconButton, FushiIcons.sort);
     final Offset before = tester.getCenter(sort);
     expect(tester.getCenter(select).dy, before.dy);
     expect(tester.getSize(select).width, greaterThanOrEqualTo(44));
@@ -69,7 +70,7 @@ void main() {
     await tester.tap(find.text(ShelfSortMode.title.name));
     await tester.pumpAndSettle();
     expect(chosen, ShelfSortMode.title);
-    expect(find.byIcon(Icons.settings_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.settingsGear), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

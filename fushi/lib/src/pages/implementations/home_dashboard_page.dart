@@ -66,6 +66,7 @@ import 'package:fushi/src/migration/migration_importer.dart';
 import 'package:fushi_engine/foundation/engine_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 首页「继续」区是否收这本书：与书架读完筛选 / hero 计数同一判据
 /// [classifyShelfReadStatus]（`EpubBooks.completedAt` 优先于进度）。
@@ -302,7 +303,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
     return FushiAlertDialog(
       title: Row(
         children: <Widget>[
-          const FushiIcon(Icons.visibility_outlined),
+          const FushiIcon(FushiIcons.visibility),
           const SizedBox(width: 12),
           Expanded(child: Text(t.media_tracking_watched_title)),
         ],
@@ -324,7 +325,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
             if (snapshot.hasError) {
               return Center(
                 child: FushiPlaceholderMessage(
-                  icon: Icons.error_outline,
+                  icon: FushiIcons.error,
                   message: t.media_tracking_watched_load_failed(
                     error: snapshot.error!,
                   ),
@@ -336,7 +337,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
             if (watched.isEmpty) {
               return Center(
                 child: FushiPlaceholderMessage(
-                  icon: Icons.visibility_outlined,
+                  icon: FushiIcons.visibility,
                   message: t.media_tracking_watched_empty,
                 ),
               );
@@ -354,14 +355,14 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                     width: 42,
                     height: 56,
                     child: coverUrl == null
-                        ? const FushiIcon(Icons.movie_outlined)
+                        ? const FushiIcon(FushiIcons.video)
                         : ClipRRect(
                             borderRadius: FushiBorderRadius.chip,
                             child: Image(
                               image: AppHttpImage(coverUrl),
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) =>
-                                  const FushiIcon(Icons.broken_image_outlined),
+                                  const FushiIcon(FushiIcons.brokenImage),
                             ),
                           ),
                   ),
@@ -377,7 +378,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                   ),
                   trailing: FushiTooltip(
                     message: t.media_tracking_open_subject,
-                    child: const FushiIcon(Icons.open_in_new, size: 18),
+                    child: const FushiIcon(FushiIcons.openInNew, size: 18),
                   ),
                   onTap: () => unawaited(widget.onOpenSubject(item.subject.id)),
                 );
@@ -1342,8 +1343,8 @@ class _HomeDashboardPageState
             FushiToolbarItem(
               key: const ValueKey<String>('home-toolbar-updates'),
               icon: unseen > 0
-                  ? Icons.notifications_active
-                  : Icons.notifications_outlined,
+                  ? FushiIcons.notificationsActive
+                  : FushiIcons.notifications,
               label: unseen > 0
                   ? '${t.updates_center_title} ($unseen)'
                   : t.updates_center_title,
@@ -1351,14 +1352,14 @@ class _HomeDashboardPageState
             ),
             FushiToolbarItem(
               key: const ValueKey<String>('home-toolbar-stats'),
-              icon: Icons.bar_chart_outlined,
+              icon: FushiIcons.barChart,
               label: t.stat_center_title,
               onPressed: _openStatisticsCenter,
             ),
             // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
             FushiToolbarItem(
               key: const ValueKey<String>('home-toolbar-leaderboard'),
-              icon: Icons.emoji_events_outlined,
+              icon: FushiIcons.trophy,
               label: t.leaderboard_title,
               onPressed: _openLeaderboard,
             ),
@@ -1380,7 +1381,7 @@ class _HomeDashboardPageState
         key: const ValueKey<String>('home-resume-fab'),
         visible: entry != null && _toolbarScroll.pastHero,
         icon: entry == null
-            ? Icons.play_arrow_rounded
+            ? FushiIcons.play
             : _resumeActionIcon(entry),
         label: entry == null ? t.home_continue : _resumeActionLabel(entry),
         onPressed: () {
@@ -1590,7 +1591,7 @@ class _HomeDashboardPageState
       child: filtered.isEmpty
           ? (_initialLoadDone
               ? HomeEmptyState(
-                  icon: Icons.play_circle_outline,
+                  icon: FushiIcons.playCircle,
                   message: t.home_continue_empty,
                 )
               : const HomeContinueHeroSkeleton())
@@ -1649,9 +1650,9 @@ class _HomeDashboardPageState
 
   /// 主角卡主按钮与「继续」FAB 共用的动作图标。
   IconData _resumeActionIcon(_ContinueEntry entry) => switch (entry.kind) {
-        MediaKind.video => Icons.play_arrow_rounded,
-        MediaKind.epub || MediaKind.srt => Icons.menu_book_rounded,
-        MediaKind.game => Icons.sports_esports_outlined,
+        MediaKind.video => FushiIcons.play,
+        MediaKind.epub || MediaKind.srt => FushiIcons.books,
+        MediaKind.game => FushiIcons.games,
       };
 
   /// 横滑卡片行本体（「继续」与「最近添加」共用）：定高横向 ListView。
@@ -2097,7 +2098,7 @@ class _HomeDashboardPageState
         image: image,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) =>
-            _coverPlaceholder(tokens, Icons.menu_book_outlined),
+            _coverPlaceholder(tokens, FushiIcons.books),
       );
     }
     return FadeInImage(
@@ -2105,7 +2106,7 @@ class _HomeDashboardPageState
       image: image,
       fit: BoxFit.cover,
       imageErrorBuilder: (_, __, ___) =>
-          _coverPlaceholder(tokens, Icons.menu_book_outlined),
+          _coverPlaceholder(tokens, FushiIcons.books),
     );
   }
 
@@ -2120,7 +2121,7 @@ class _HomeDashboardPageState
     final String? coverUrl = remote.coverUrl;
     final RemoteCoverFetcher? fetcher = _remoteCoverFetcher;
     final IconData icon =
-        entry.isVideo ? Icons.movie_outlined : Icons.menu_book_outlined;
+        entry.isVideo ? FushiIcons.video : FushiIcons.books;
     if (coverUrl == null || coverUrl.isEmpty || fetcher == null) {
       return _coverPlaceholder(tokens, icon);
     }
@@ -2744,7 +2745,7 @@ class _HomeDashboardPageState
       child: groups.isEmpty
           ? (_initialLoadDone
               ? HomeEmptyState(
-                  icon: Icons.history_rounded,
+                  icon: FushiIcons.history,
                   message: t.home_activity_empty,
                 )
               : const HomeActivitySkeleton())
@@ -2769,7 +2770,7 @@ class _HomeDashboardPageState
                       onPressed: () => setState(() {
                         _visibleActivityEntryCount += _kActivityPageSize;
                       }),
-                      icon: const FushiIcon(Icons.expand_more),
+                      icon: const FushiIcon(FushiIcons.expandMore),
                       label: Text(t.discovery_load_more),
                     ),
                   ),
@@ -2870,7 +2871,7 @@ class _HomeDashboardPageState
                       key: const ValueKey<String>('home-activity-device'),
                       children: <Widget>[
                         Icon(
-                          Icons.devices_outlined,
+                          FushiIcons.devices,
                           size: 14,
                           color: tokens.type.metadata.color,
                         ),
@@ -3106,15 +3107,15 @@ class _HomeDashboardPageState
   IconData _activityIcon(String eventType) {
     switch (eventType) {
       case kActivityRead:
-        return Icons.menu_book;
+        return FushiIcons.books;
       case kActivityWatch:
-        return Icons.movie;
+        return FushiIcons.video;
       case kActivityAdded:
-        return Icons.add_circle_outline;
+        return FushiIcons.addCircle;
       case kActivityGame:
-        return Icons.videogame_asset;
+        return FushiIcons.game;
       default:
-        return Icons.menu_book;
+        return FushiIcons.books;
     }
   }
 
@@ -3154,7 +3155,7 @@ class _HomeDashboardPageState
               alignment: AlignmentDirectional.centerStart,
               child: FushiFilledButton.tonalIcon(
                 onPressed: _openTrackingSettings,
-                icon: const FushiIcon(Icons.link),
+                icon: const FushiIcon(FushiIcons.link),
                 label: Text(t.media_tracking_connect),
               ),
             ),
@@ -3191,7 +3192,7 @@ class _HomeDashboardPageState
                 child: Row(
                   children: <Widget>[
                     FushiIcon(
-                      Icons.person_outline,
+                      FushiIcons.person,
                       size: 18,
                       color: scheme.primary,
                     ),
@@ -3213,7 +3214,7 @@ class _HomeDashboardPageState
                     ),
                     SizedBox(width: tokens.spacing.gap / 4),
                     FushiIcon(
-                      Icons.chevron_right,
+                      FushiIcons.chevronRight,
                       size: 18,
                       color: scheme.primary,
                     ),
@@ -3232,7 +3233,7 @@ class _HomeDashboardPageState
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                FushiIcon(Icons.error_outline, size: 18, color: scheme.error),
+                FushiIcon(FushiIcons.error, size: 18, color: scheme.error),
                 SizedBox(width: tokens.spacing.gap / 2),
                 Expanded(
                   child: Text(
@@ -3305,18 +3306,18 @@ class _HomeDashboardPageState
                         dimension: 16,
                         child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const FushiIcon(Icons.sync),
+                    : const FushiIcon(FushiIcons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
               if (status.automaticMappingMissCount > 0)
                 FushiFilledButton.tonalIcon(
                   onPressed: _trackingSyncBusy ? null : _retryTrackingMappings,
-                  icon: const FushiIcon(Icons.refresh),
+                  icon: const FushiIcon(FushiIcons.refresh),
                   label: Text(t.media_tracking_retry_mapping),
                 ),
               FushiTextButton.icon(
                 onPressed: _openTrackingSettings,
-                icon: const FushiIcon(Icons.tune),
+                icon: const FushiIcon(FushiIcons.settings),
                 label: Text(t.media_tracking_manage_links),
               ),
             ],
@@ -3339,7 +3340,7 @@ class _HomeDashboardPageState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            FushiIcon(Icons.link_off, size: 18, color: scheme.error),
+            FushiIcon(FushiIcons.linkOff, size: 18, color: scheme.error),
             SizedBox(width: tokens.spacing.gap / 2),
             Expanded(
               child: Column(
@@ -3360,7 +3361,7 @@ class _HomeDashboardPageState
               ),
             ),
             SizedBox(width: tokens.spacing.gap / 2),
-            const FushiIcon(Icons.chevron_right, size: 18),
+            const FushiIcon(FushiIcons.chevronRight, size: 18),
           ],
         ),
       ),
@@ -3387,7 +3388,7 @@ class _HomeDashboardPageState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             if (failure != null) ...<Widget>[
-              FushiIcon(Icons.sync_problem_outlined, size: 18, color: scheme.error),
+              FushiIcon(FushiIcons.syncProblem, size: 18, color: scheme.error),
               SizedBox(width: tokens.spacing.gap / 2),
             ],
             Expanded(
@@ -3421,7 +3422,7 @@ class _HomeDashboardPageState
             SizedBox(width: tokens.spacing.gap / 2),
             FushiTooltip(
               message: t.media_tracking_open_subject,
-              child: const FushiIcon(Icons.open_in_new, size: 16),
+              child: const FushiIcon(FushiIcons.openInNew, size: 16),
             ),
           ],
         ),

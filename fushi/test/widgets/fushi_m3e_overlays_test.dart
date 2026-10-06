@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// M3E 共享浮层（对话框路由 / 标准模板 / 底部弹层自适应）的行为测试。
 void main() {
@@ -174,7 +175,7 @@ void main() {
       ],
     );
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(find.byIcon(FushiIcons.check), findsOneWidget);
     await tester.tap(find.text('one'));
     await tester.pumpAndSettle();
     expect(await result, 1);

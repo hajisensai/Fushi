@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/fushi_search.dart';
 
 import '../helpers/glass_unwrap.dart';
 import 'widget_test_helpers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // FushiSearchBar / FushiSearchView（M3E 搜索共享层）的行为契约：防抖、IME
 // 组字期间不出查询、清空、Esc 清空 / 失焦并归还焦点、提交跳过防抖；搜索视图
@@ -228,9 +229,9 @@ void main() {
         tester,
         FushiSearchBar(hintText: 'Search', onBack: () => backs++),
       );
-      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
-      expect(find.byIcon(Icons.search), findsNothing);
-      await tester.tap(find.byIcon(Icons.arrow_back));
+      expect(find.byIcon(FushiIcons.back), findsOneWidget);
+      expect(find.byIcon(FushiIcons.search), findsNothing);
+      await tester.tap(find.byIcon(FushiIcons.back));
       expect(backs, 1);
       final TextField field = tester.widget<TextField>(
         glassUnwrap<TextField>(find.byType(TextField)),
@@ -320,7 +321,7 @@ void main() {
       expect(tester.getSize(surface()).height, lessThan(900));
       await tester.pumpAndSettle();
       expect(tester.getSize(surface()), const Size(420, 900));
-      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      expect(find.byIcon(FushiIcons.back), findsOneWidget);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
@@ -375,7 +376,7 @@ void main() {
             of: find.text('犬'),
             matching: find.byType(FushiListItem),
           ),
-          matching: find.byIcon(Icons.close),
+          matching: find.byIcon(FushiIcons.close),
         ),
       );
       await tester.pumpAndSettle();

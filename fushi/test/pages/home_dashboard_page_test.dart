@@ -37,6 +37,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -1734,11 +1735,11 @@ void main() {
     }
     // 统计中心 / 排行榜从学习卡标题行尾挪进了工具栏：卡里不再有第二份入口。
     expect(
-      inSection(t.reading_activity, find.byIcon(Icons.bar_chart_outlined)),
+      inSection(t.reading_activity, find.byIcon(FushiIcons.barChart)),
       findsNothing,
     );
     expect(
-      inSection(t.reading_activity, find.byIcon(Icons.emoji_events_outlined)),
+      inSection(t.reading_activity, find.byIcon(FushiIcons.trophy)),
       findsNothing,
     );
     // 首屏主角卡在视野里：FAB 不出现（不与主角卡主按钮重复）。
@@ -1985,7 +1986,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('本地动画合集'), findsOneWidget);
       expect(find.textContaining('Remote anime'), findsOneWidget);
-      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      expect(find.byIcon(FushiIcons.openInNew), findsOneWidget);
       expect(
         find.textContaining(t.media_tracking_linked_count(n: 1)),
         findsOneWidget,
@@ -2032,7 +2033,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('500'), findsOneWidget);
-      expect(find.byIcon(Icons.sync_problem_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.syncProblem), findsOneWidget);
       expect(
         find.textContaining(t.media_tracking_pending_count(n: 1)),
         findsOneWidget,

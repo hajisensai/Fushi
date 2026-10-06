@@ -37,6 +37,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 面板的呈现形态。
 enum ReaderQuickSettingsPresentation {
@@ -590,7 +591,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             constraints.maxHeight < kReaderNavCompactHeroBelow;
         return ReaderSideSheet(
           title: t.section_navigation,
-          icon: Icons.menu_book_outlined,
+          icon: FushiIcons.books,
           subtitle: widget.epubBook?.title,
           onClose: _sideSheetClose(context),
           scrollable: false,
@@ -629,9 +630,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                           key: ValueKey<String>('reader-nav-tab-${tab.name}'),
                           label: _navTabLabel(tab),
                           icon: switch (tab) {
-                            _ReaderNavTab.contents => Icons.toc_rounded,
-                            _ReaderNavTab.favorites => Icons.star_rounded,
-                            _ReaderNavTab.search => Icons.search_rounded,
+                            _ReaderNavTab.contents => FushiIcons.toc,
+                            _ReaderNavTab.favorites => FushiIcons.star,
+                            _ReaderNavTab.search => FushiIcons.search,
                           },
                         ),
                     ],
@@ -651,7 +652,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                       _favorites.isEmpty
                           ? _buildNavEmptyState(
                               theme,
-                              icon: Icons.star_outline_rounded,
+                              icon: FushiIcons.star,
                               message: t.reader_nav_favorites_empty,
                             )
                           : _buildFavoritesSection(context, theme),
@@ -680,7 +681,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             !_searchFailed &&
             _searchController.text.trim().isEmpty)
           ReaderPanelEmpty(
-            icon: Icons.manage_search_rounded,
+            icon: FushiIcons.manageSearch,
             message: t.reader_nav_search_empty_hint,
           ),
         if (widget.onJumpToCharOffset != null) ...<Widget>[
@@ -796,7 +797,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final TabController controller = _ensureSideSheetTabController();
     return ReaderSideSheet(
       title: t.reader_settings_section,
-      icon: Icons.tune_outlined,
+      icon: FushiIcons.settings,
       subtitle: widget.lyricsMode ? t.lyrics_mode : widget.epubBook?.title,
       headerActions: const <Widget>[ReaderSettingsSideButton()],
       onClose: _sideSheetClose(context),
@@ -896,7 +897,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       SettingsDestination(
         id: SettingsDestinationId.readerQuickSettings,
         title: tab.label,
-        icon: Icons.tune_outlined,
+        icon: FushiIcons.settings,
         sections: buildReaderSettingsSections(
           collectReaderItems(settingsContext),
           tab,
@@ -940,8 +941,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                   ? t.reader_panel_lyrics_exit_hint
                   : t.reader_panel_lyrics_switch_hint,
               icon: widget.lyricsMode
-                  ? Icons.auto_stories_outlined
-                  : Icons.lyrics_outlined,
+                  ? FushiIcons.readingMode
+                  : FushiIcons.lyrics,
               showIcon: true,
               onTap: () {
                 Navigator.of(context).pop();
@@ -984,7 +985,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     return ReaderSideSheet(
       title: t.section_audiobook,
       subtitle: widget.chapterLabel,
-      icon: Icons.headphones_rounded,
+      icon: FushiIcons.audiobook,
       scrollable: false,
       onClose: _sideSheetClose(context),
       child: _buildAudiobookPanelBody(context),
@@ -1017,28 +1018,28 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     // 导航置首：location → layout → behavior → lookup → [audiobook]。
     final List<Widget> navigationRows = [
       _categoryTile(
-        icon: Icons.menu_book_outlined,
+        icon: FushiIcons.books,
         label: t.section_navigation,
         page: 'location',
       ),
       _categoryTile(
-        icon: Icons.auto_stories_outlined,
+        icon: FushiIcons.readingMode,
         label: t.section_layout,
         page: 'layout',
       ),
       _categoryTile(
-        icon: Icons.touch_app_outlined,
+        icon: FushiIcons.touch,
         label: t.settings_destination_reading_controls,
         page: 'behavior',
       ),
       _categoryTile(
-        icon: Icons.manage_search_outlined,
+        icon: FushiIcons.manageSearch,
         label: t.settings_destination_lookup,
         page: 'lookup',
       ),
       if (widget.controller != null && _listeningEnabled)
         _categoryTile(
-          icon: Icons.headphones_outlined,
+          icon: FushiIcons.audiobook,
           label: t.section_audiobook,
           page: 'audiobook',
         ),
@@ -1050,7 +1051,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         AdaptiveSettingsNavigationRow(
           key: const ValueKey<String>('fushi_sheet_statistics_row'),
           title: t.reading_statistics,
-          icon: Icons.insights_outlined,
+          icon: FushiIcons.statistics,
           onTap: () {
             Navigator.of(context).pop();
             widget.onOpenStatistics!();
@@ -1218,7 +1219,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   Widget _buildBookCssEditorRow() {
     return AdaptiveSettingsNavigationRow(
       title: t.book_css_editor_edit_css,
-      icon: Icons.code_outlined,
+      icon: FushiIcons.code,
       onTap: () async {
         await Navigator.push(
           context,
@@ -1452,7 +1453,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 hintText: t.book_search_hint,
                 prefixIcon: navPanel
                     ? FushiIcon(
-                        Icons.search_rounded,
+                        FushiIcons.search,
                         size: 20,
                         color: fushiNeutralSecondaryForeground(context),
                       )
@@ -1477,7 +1478,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                             adaptiveIndicator(context: context, strokeWidth: 2),
                       )
                     : FushiIconButton(
-                        icon: Icons.arrow_forward_rounded,
+                        icon: FushiIcons.forward,
                         size: 22,
                         // M3E：主操作用强调色实心圆角方块（形状对比于胶囊输入框）；
                         // Apple：强调色实心圆。
@@ -1574,7 +1575,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
             _searchController.text.trim().isNotEmpty &&
             _searchResultsQuery.isNotEmpty) ...[
           ReaderPanelEmpty(
-            icon: Icons.search_off_rounded,
+            icon: FushiIcons.searchOff,
             message: t.book_search_no_results,
           ),
         ],
@@ -1638,7 +1639,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               dimension: 48,
               child: Center(
                 child: FushiIconButton(
-                  icon: Icons.arrow_forward_rounded,
+                  icon: FushiIcons.forward,
                   size: 22,
                   backgroundColor: theme.colorScheme.secondaryContainer,
                   enabledColor: theme.colorScheme.onSecondaryContainer,
@@ -1718,7 +1719,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               overflow: TextOverflow.ellipsis,
             ),
             avatar: i == volumes.currentIndex
-                ? const FushiIcon(Icons.menu_book_outlined, size: 16)
+                ? const FushiIcon(FushiIcons.books, size: 16)
                 : null,
             selected: i == _viewedVolume,
             onSelected: (bool _) {
@@ -1934,7 +1935,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         final String readout = AudiobookSpeedSlider.format(current);
         return AdaptiveSettingsRow(
           title: '${t.playback_speed} ($readout)',
-          icon: Icons.speed_outlined,
+          icon: FushiIcons.speed,
           controlBelow: true,
           trailing: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1944,7 +1945,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               Align(
                 alignment: Alignment.centerRight,
                 child: FushiIconButton(
-                  icon: Icons.restart_alt_outlined,
+                  icon: FushiIcons.restart,
                   size: 18,
                   enabled: (current - 1.0).abs() >= 0.001,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
@@ -1975,18 +1976,18 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         // 窄屏按真实需求换行而不是把标题削成一个字。
         return AdaptiveSettingsRow(
           title: t.av_sync,
-          icon: Icons.sync_outlined,
+          icon: FushiIcons.sync,
           trailingWidth: 4 * kMinInteractiveDimension + 72,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               _RepeatIconButton(
-                icon: Icons.keyboard_double_arrow_left,
+                icon: FushiIcons.doubleChevronLeft,
                 tooltip: '-1000ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 1000),
               ),
               _RepeatIconButton(
-                icon: Icons.chevron_left,
+                icon: FushiIcons.chevronLeft,
                 tooltip: '-50ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value - 50),
               ),
@@ -2016,12 +2017,12 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 ),
               ),
               _RepeatIconButton(
-                icon: Icons.chevron_right,
+                icon: FushiIcons.chevronRight,
                 tooltip: '+50ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 50),
               ),
               _RepeatIconButton(
-                icon: Icons.keyboard_double_arrow_right,
+                icon: FushiIcons.doubleChevronRight,
                 tooltip: '+1000ms',
                 onPressed: () => ctrl.setDelayMs(ctrl.delayMs.value + 1000),
               ),
@@ -2040,7 +2041,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     final int current = _src.skipActionSeconds;
     return AdaptiveSettingsPickerRow<int>(
       title: t.skip_action,
-      icon: Icons.skip_next_outlined,
+      icon: FushiIcons.skipNext,
       options: _skipActionOptions
           .map((s) => AdaptiveSettingsPickerOption<int>(
                 value: s,
@@ -2064,7 +2065,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         return AdaptiveSettingsSegmentedRow<int>(
           title: t.image_pause,
           subtitle: t.image_pause_hint,
-          icon: Icons.image_outlined,
+          icon: FushiIcons.image,
           controlBelow: true,
           segments: _imagePauseOptions
               .map((s) => ButtonSegment<int>(
@@ -2172,7 +2173,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 // 这一行现在换的是音频**与**字幕两半（[SrtBookReimportDialog]），
                 // 不再只是「替换音频文件」。
                 title: t.srt_book_reimport,
-                icon: Icons.swap_horiz_outlined,
+                icon: FushiIcons.swap,
                 showIcon: true,
                 onTap: () {
                   Navigator.pop(context);
@@ -2562,8 +2563,8 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 context,
                 key: const ValueKey<String>('fushi_lyrics_mode_toggle'),
                 icon: widget.lyricsMode
-                    ? Icons.auto_stories_outlined
-                    : Icons.lyrics_outlined,
+                    ? FushiIcons.readingMode
+                    : FushiIcons.lyrics,
                 label: widget.lyricsMode ? t.book_mode : t.lyrics_mode,
                 onTap: () {
                   Navigator.of(context).pop();
@@ -2575,7 +2576,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         Expanded(
           child: _actionBtn(
             context,
-            icon: Icons.exit_to_app_outlined,
+            icon: FushiIcons.exitToApp,
             label: t.action_exit,
             onTap: () {
               if (_exitScheduled) {
@@ -2760,7 +2761,7 @@ class _InBookFavoriteRow extends StatelessWidget {
       actions: <Widget>[
         if (onPlay != null) ...[
           _InBookIconButton(
-            materialIcon: Icons.volume_up_outlined,
+            materialIcon: FushiIcons.volumeUp,
             cupertinoIcon: CupertinoIcons.speaker_2,
             tooltip: t.play,
             onPressed: onPlay!,
@@ -2769,14 +2770,14 @@ class _InBookFavoriteRow extends StatelessWidget {
           SizedBox(width: tokens.spacing.gap),
         ],
         _InBookIconButton(
-          materialIcon: Icons.copy_outlined,
+          materialIcon: FushiIcons.copy,
           cupertinoIcon: CupertinoIcons.doc_on_doc,
           tooltip: t.copy,
           onPressed: onCopy,
         ),
         SizedBox(width: tokens.spacing.gap),
         _InBookIconButton(
-          materialIcon: Icons.delete_outline,
+          materialIcon: FushiIcons.delete,
           cupertinoIcon: CupertinoIcons.delete,
           tooltip: t.options_delete,
           destructive: true,
@@ -2994,7 +2995,7 @@ class AudiobookVolumeRow extends StatelessWidget {
     return AdaptiveSettingsSliderRow(
       // 与速度行同款的标题实时读数：1%/5% 的细步进没有可见读数等于白调。
       title: '${t.audio_volume} ($percentLabel)',
-      icon: Icons.volume_up_outlined,
+      icon: FushiIcons.volumeUp,
       value: value,
       max: maxVolume,
       divisions: sliderDivisions,

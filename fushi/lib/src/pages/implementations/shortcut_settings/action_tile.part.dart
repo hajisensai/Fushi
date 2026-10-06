@@ -119,7 +119,7 @@ class _ActionTileState extends State<_ActionTile> {
     final _ActionTile w = widget;
     if (w.readOnly) {
       return FushiIcon(
-        Icons.lock_outline_rounded,
+        FushiIcons.lock,
         size: 18,
         color: tokens.surfaces.onVariant,
       );
@@ -134,7 +134,7 @@ class _ActionTileState extends State<_ActionTile> {
           child: w.modified
               ? FushiIconButton(
                   key: ValueKey<String>('shortcut-reset-${w.action.name}'),
-                  icon: Icons.restart_alt_rounded,
+                  icon: FushiIcons.restart,
                   tooltip: t.shortcut_reset_defaults,
                   onTap: w.onReset,
                 )
@@ -142,14 +142,14 @@ class _ActionTileState extends State<_ActionTile> {
         ),
         FushiIconButton(
           key: ValueKey<String>('shortcut-add-${w.action.name}'),
-          icon: Icons.add_rounded,
+          icon: FushiIcons.add,
           tooltip: t.shortcut_add_binding,
           onTap: w.onAdd,
         ),
         if (w.onOpenEditor != null)
           FushiIconButton(
             key: ValueKey<String>('shortcut-editor-${w.action.name}'),
-            icon: Icons.tune_rounded,
+            icon: FushiIcons.settings,
             tooltip: t.shortcut_edit_all_inputs,
             onTap: w.onOpenEditor,
           ),
@@ -316,7 +316,7 @@ class _InputIconChip extends StatelessWidget {
             InkWell(
               onTap: onDeleted,
               customBorder: const CircleBorder(),
-              child: FushiIcon(Icons.close, size: 14, color: fg),
+              child: FushiIcon(FushiIcons.close, size: 14, color: fg),
             ),
           ],
         ],

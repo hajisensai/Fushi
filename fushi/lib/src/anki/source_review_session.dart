@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/anki/source_review_controls.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Reading state and note edits have independent lifetimes. Continuing reading
 /// never turns an edit of the source note into creation of another note.
@@ -277,7 +278,7 @@ class SourceReviewSession extends ChangeNotifier {
       final bool discard = await showFushiConfirmDialog(
         context: ui,
         title: t.card_source_review_draft_discard,
-        icon: Icons.delete_outline,
+        icon: FushiIcons.delete,
         cancelLabel: MaterialLocalizations.of(ui).cancelButtonLabel,
         confirmLabel: t.card_source_review_draft_discard,
         destructive: true,

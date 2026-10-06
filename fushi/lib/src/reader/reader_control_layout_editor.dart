@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 export 'package:fushi/src/controls/control_layout_editor.dart'
     show controlLayoutEditorHintStyle;
@@ -27,39 +28,39 @@ export 'package:fushi/src/controls/control_layout_editor.dart'
 IconData readerControlItemIcon(ReaderControlItem item) {
   switch (item) {
     case ReaderControlItem.back:
-      return Icons.arrow_back;
+      return FushiIcons.back;
     case ReaderControlItem.modeToggle:
-      return Icons.lyrics_outlined;
+      return FushiIcons.lyrics;
     case ReaderControlItem.navigation:
-      return Icons.format_list_bulleted;
+      return FushiIcons.bulletList;
     case ReaderControlItem.gallery:
-      return Icons.collections_outlined;
+      return FushiIcons.collections;
     case ReaderControlItem.statistics:
-      return Icons.insights_outlined;
+      return FushiIcons.statistics;
     case ReaderControlItem.studyTimer:
-      return Icons.timer_outlined;
+      return FushiIcons.timer;
     case ReaderControlItem.title:
-      return Icons.title;
+      return FushiIcons.title;
     case ReaderControlItem.audiobook:
-      return Icons.headphones_outlined;
+      return FushiIcons.audiobook;
     case ReaderControlItem.fullscreen:
-      return Icons.fullscreen_rounded;
+      return FushiIcons.fullscreen;
     case ReaderControlItem.toolbars:
-      return Icons.web_asset_off_outlined;
+      return FushiIcons.webAssetOff;
     case ReaderControlItem.settings:
-      return Icons.tune_outlined;
+      return FushiIcons.settings;
     case ReaderControlItem.audiobookPrev:
-      return Icons.skip_previous_outlined;
+      return FushiIcons.skipPrevious;
     case ReaderControlItem.audiobookPlayPause:
-      return Icons.play_arrow_outlined;
+      return FushiIcons.play;
     case ReaderControlItem.audiobookNext:
-      return Icons.skip_next_outlined;
+      return FushiIcons.skipNext;
     case ReaderControlItem.audiobookSeekBack:
-      return Icons.replay_10_outlined;
+      return FushiIcons.replay10;
     case ReaderControlItem.audiobookSeekForward:
-      return Icons.forward_10_outlined;
+      return FushiIcons.forward10;
     case ReaderControlItem.audiobookFollow:
-      return Icons.link;
+      return FushiIcons.link;
   }
 }
 
@@ -223,7 +224,7 @@ class ReaderControlLayoutEditor extends StatelessWidget {
           PopupMenuItem<String>(
             value: 'earlier',
             child: _MenuRow(
-              icon: Icons.arrow_upward_rounded,
+              icon: FushiIcons.arrowUp,
               label: t.reader_control_move_earlier,
             ),
           ),
@@ -233,7 +234,7 @@ class ReaderControlLayoutEditor extends StatelessWidget {
           PopupMenuItem<String>(
             value: 'later',
             child: _MenuRow(
-              icon: Icons.arrow_downward_rounded,
+              icon: FushiIcons.arrowDown,
               label: t.reader_control_move_later,
             ),
           ),
@@ -278,10 +279,10 @@ class ReaderControlLayoutEditor extends StatelessWidget {
         ReaderControlSlot.topLeft ||
         ReaderControlSlot.topCenter ||
         ReaderControlSlot.topRight =>
-          Icons.vertical_align_top_rounded,
-        ReaderControlSlot.overflow => Icons.more_horiz_rounded,
-        ReaderControlSlot.hidden => Icons.visibility_off_outlined,
-        _ => Icons.vertical_align_bottom_rounded,
+          FushiIcons.alignTop,
+        ReaderControlSlot.overflow => FushiIcons.moreHoriz,
+        ReaderControlSlot.hidden => FushiIcons.visibilityOff,
+        _ => FushiIcons.alignBottom,
       };
 
   @override
@@ -360,7 +361,7 @@ class ReaderControlLayoutEditor extends StatelessWidget {
           child: FushiTextButton.icon(
             key: const ValueKey<String>('reader-control-restore-defaults'),
             onPressed: () => unawaited(onLayoutChanged!(defaults!)),
-            icon: const FushiIcon(Icons.restart_alt_rounded),
+            icon: const FushiIcon(FushiIcons.restart),
             label: Text(t.reader_control_restore_defaults),
           ),
         ),
@@ -476,7 +477,7 @@ class _TitleSwitchRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: <Widget>[
-          const FushiIcon(Icons.title_rounded, size: 20),
+          const FushiIcon(FushiIcons.title, size: 20),
           const SizedBox(width: 10),
           Expanded(child: Text(t.reader_control_show_title)),
           FushiSwitch(value: value, onChanged: onChanged),
@@ -575,7 +576,7 @@ class _ZoneRow extends StatelessWidget {
                         height: 40,
                         child: Center(
                           child: FushiIcon(
-                            Icons.add_rounded,
+                            FushiIcons.add,
                             color: accent.withValues(alpha: 0.5),
                           ),
                         ),
@@ -803,7 +804,7 @@ class _ReaderToolbarPreview extends StatelessWidget {
               ..._items(ReaderControlSlot.topRight),
               if (overflow.isNotEmpty)
                 FushiToolbarItem(
-                  icon: Icons.more_vert,
+                  icon: FushiIcons.more,
                   label: t.reader_control_slot_overflow,
                   onPressed: null,
                 ),
@@ -969,13 +970,13 @@ class _ReaderControlLayoutTargetEditorState
             ReaderPanelTab<bool>(
               value: true,
               label: t.reader_control_layout_target_compact,
-              icon: Icons.smartphone_rounded,
+              icon: FushiIcons.phone,
               key: const ValueKey<String>('reader-control-target-compact'),
             ),
             ReaderPanelTab<bool>(
               value: false,
               label: t.reader_control_layout_target_wide,
-              icon: Icons.laptop_rounded,
+              icon: FushiIcons.laptop,
               key: const ValueKey<String>('reader-control-target-wide'),
             ),
           ],
