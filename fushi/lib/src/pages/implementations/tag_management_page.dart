@@ -436,50 +436,60 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       ),
     );
 
-    final EdgeInsets listPadding = EdgeInsets.fromLTRB(
-      tokens.spacing.page,
-      0,
-      tokens.spacing.page,
-      // MD3 底部留出 FAB 的位置；Apple 新建在页头，不必留。
-      tokens.spacing.gap + (apple ? 0 : _kMd3FabClearance),
-    );
+    // 正文铺到浮动页头底下：context 取 Builder 的（页头脚手架之内），才读得到
+    // 顶部让位（状态栏 + 页头）；摘要卡与搜索是列表首项，随内容一起滚走。
+    Widget buildBody(BuildContext context) {
+      final EdgeInsets listPadding = EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        MediaQuery.paddingOf(context).top,
+        tokens.spacing.page,
+        // MD3 底部留出 FAB 的位置；Apple 新建在页头，不必留。
+        tokens.spacing.gap + (apple ? 0 : _kMd3FabClearance),
+      );
 
-    final Widget body;
-    if (!_loaded) {
-      body = Center(child: adaptiveIndicator(context: context));
-    } else if (_tags.isEmpty) {
-      body = Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.tag,
-          message: t.tag_no_tags_hint,
-          // 空状态直接给「新建标签」主按钮（FAB 之外的第二个入口，首次进来的
-          // 用户不必去找右下角）。
-          action: FushiFilledButton(
-            key: const ValueKey<String>('tag-management-empty-create'),
-            onPressed: _createTag,
-            child: Text(t.tag_new),
+      if (!_loaded) {
+        return SafeArea(
+          bottom: false,
+          child: Center(child: adaptiveIndicator(context: context)),
+        );
+      }
+      if (_tags.isEmpty) {
+        return SafeArea(
+          bottom: false,
+          child: Center(
+            child: FushiPlaceholderMessage(
+              icon: FushiIcons.tag,
+              message: t.tag_no_tags_hint,
+              // 空状态直接给「新建标签」主按钮（FAB 之外的第二个入口，首次进来的
+              // 用户不必去找右下角）。
+              action: FushiFilledButton(
+                key: const ValueKey<String>('tag-management-empty-create'),
+                onPressed: _createTag,
+                child: Text(t.tag_new),
+              ),
+            ),
           ),
-        ),
-      );
-    } else if (searching) {
-      // 2026-10-06 M3E 重做：顶部摘要色块 + 搜索，下面整池标签读作一个分组
-      // （MD3 分段卡 / Apple inset grouped）；行 = 彩色徽记 + 名称 + 条目数 +
-      // 更多 + 拖动把手。错峰进场。
-      body = FushiEntranceScope(
-        child: ListView.builder(
-          padding: listPadding,
-          itemCount: visible.length + 1,
-          itemBuilder: (BuildContext context, int i) {
-            if (i == 0) return header;
-            return FushiStaggeredEntrance(
-              index: i - 1,
-              child: row(visible[i - 1], i - 1, visible.length),
-            );
-          },
-        ),
-      );
-    } else {
-      body = FushiEntranceScope(
+        );
+      }
+      if (searching) {
+        // 2026-10-06 M3E 重做：顶部摘要色块 + 搜索，下面整池标签读作一个分组
+        // （MD3 分段卡 / Apple inset grouped）；行 = 彩色徽记 + 名称 + 条目数 +
+        // 更多 + 拖动把手。错峰进场。
+        return FushiEntranceScope(
+          child: ListView.builder(
+            padding: listPadding,
+            itemCount: visible.length + 1,
+            itemBuilder: (BuildContext context, int i) {
+              if (i == 0) return header;
+              return FushiStaggeredEntrance(
+                index: i - 1,
+                child: row(visible[i - 1], i - 1, visible.length),
+              );
+            },
+          ),
+        );
+      }
+      return FushiEntranceScope(
         child: ReorderableListView.builder(
           header: header,
           padding: listPadding,
@@ -517,7 +527,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
               icon: const FushiIcon(FushiIcons.add),
               label: Text(t.tag_new),
             ),
-      body: body,
+      body: Builder(builder: buildBody),
     );
   }
 }
