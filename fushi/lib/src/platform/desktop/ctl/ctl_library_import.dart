@@ -539,23 +539,16 @@ class LibraryCtlImporter {
       DiscoveryMediaKind.audiobook,
       files,
     );
-    if (plan is! AlignAudiobookPlan) {
-      final DiscoveryImportBlocker blocker = plan is UnsupportedPlan
-          ? plan.blocker
-          : DiscoveryImportBlocker.unknownFileType;
+    final Future<String?> Function()? run = _audiobookRunner(plan);
+    if (run == null) {
       return _unsupported(
         label,
-        libraryCtlBlockerMessage(blocker),
+        libraryCtlBlockerMessage(_audiobookBlocker(plan)),
         kind: LibraryCtlKind.audiobook,
       );
     }
     try {
-      final String? bookKey = await importDiscoveryAudiobook(
-        db: _db,
-        srtBookRepo: SrtBookRepository(_db),
-        audiobookRepo: AudiobookRepository(_db),
-        plan: plan,
-      );
+      final String? bookKey = await run();
       if (bookKey == null) {
         return LibraryCtlImportResult(
           path: label,
@@ -564,7 +557,11 @@ class LibraryCtlImporter {
           message: '同名条目已在库',
         );
       }
-      final SrtBook? srt = await SrtBookRepository(_db).findByBookKey(bookKey);
+      // 独立字幕书的正文 EPUB 生成失败时导入器回的是 SrtBook.uid（bookKey 为空）。
+      final SrtBookRepository srtRepo = SrtBookRepository(_db);
+      final SrtBook? srt =
+          await srtRepo.findByBookKey(bookKey) ??
+          await srtRepo.findByUid(bookKey);
       return LibraryCtlImportResult(
         path: label,
         status: LibraryCtlImportStatus.imported,
@@ -595,6 +592,35 @@ class LibraryCtlImporter {
       );
     }
   }
+
+  /// 有声书分类结果 → 入库动作；null = 本入口不执行（原因见 [_audiobookBlocker]）。
+  ///
+  /// 与发现页自动入库同一分类、同一组引擎导入器：有正文走对齐，只有字幕 + 音频
+  /// 成独立字幕书。只有音频（[TranscribeAudiobookPlan]）不在这里转录——那要几个
+  /// 小时，CLI 同步等不了；与无头服务端一样以「缺字幕」挡下。
+  Future<String?> Function()? _audiobookRunner(DiscoveryImportPlan plan) =>
+      switch (plan) {
+        AlignAudiobookPlan() => () => importDiscoveryAudiobook(
+          db: _db,
+          srtBookRepo: SrtBookRepository(_db),
+          audiobookRepo: AudiobookRepository(_db),
+          plan: plan,
+        ),
+        SubtitleAudiobookPlan() => () => importDiscoverySubtitleAudiobook(
+          db: _db,
+          srtBookRepo: SrtBookRepository(_db),
+          plan: plan,
+        ),
+        _ => null,
+      };
+
+  static DiscoveryImportBlocker _audiobookBlocker(DiscoveryImportPlan plan) =>
+      switch (plan) {
+        UnsupportedPlan(:final DiscoveryImportBlocker blocker) => blocker,
+        TranscribeAudiobookPlan() =>
+          DiscoveryImportBlocker.audiobookMissingSubtitle,
+        _ => DiscoveryImportBlocker.unknownFileType,
+      };
 }
 
 /// 发现页导入阻断码 → 命令行文案。

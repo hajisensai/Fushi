@@ -1,10 +1,12 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
     show DiscoveryImportBlocker;
 import 'package:path/path.dart' as p;
@@ -291,7 +293,9 @@ void main() {
     );
 
     String touch(String name) {
-      final File file = File(p.join(tmp.path, name))
+      // 用例里的相对名一律写 `/`，落盘前换成本平台分隔符：否则 Windows 上
+      // `p.join` 原样保留 `/`，期望值与导入器返回的本机路径对不上。
+      final File file = File(p.joinAll(<String>[tmp.path, ...name.split('/')]))
         ..createSync(recursive: true)
         ..writeAsBytesSync(List<int>.filled(16, 0));
       return file.path;
@@ -422,6 +426,41 @@ void main() {
       expect(result.status, LibraryCtlImportStatus.unsupported);
       await games.load();
       expect(games.games, isEmpty);
+    });
+
+    test('有声书只有字幕 + 音频 → 成独立字幕书（与发现页同一导入器）', () async {
+      final EnginePaths previousPaths = enginePaths;
+      final Future<Directory> Function()? previousDocsRoot =
+          AudiobookStorage.documentsRootResolver;
+      enginePaths = FixedEnginePaths(documents: tmp, support: tmp, temp: tmp);
+      AudiobookStorage.documentsRootResolver = () async => tmp;
+      addTearDown(() {
+        enginePaths = previousPaths;
+        AudiobookStorage.documentsRootResolver = previousDocsRoot;
+      });
+      final File srt = File(p.join(tmp.path, 'src', '銀河鉄道の夜.srt'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          '1\n00:00:00,000 --> 00:00:02,000\nジョバンニは走った。\n\n'
+          '2\n00:00:02,000 --> 00:00:04,000\nカムパネルラもいた。\n',
+        );
+      final File mp3 = File(p.join(tmp.path, 'src', '01.mp3'))
+        ..writeAsBytesSync(<int>[0, 1, 2, 3]);
+
+      final LibraryCtlImportResult result = (await importer().importAll(
+        <String>[srt.path, mp3.path],
+        kind: LibraryCtlKind.audiobook,
+      )).single;
+      expect(
+        result.status,
+        LibraryCtlImportStatus.imported,
+        reason: result.message,
+      );
+      final SrtBook book = (await SrtBookRepository(db).listAll()).single;
+      expect(book.title, '銀河鉄道の夜');
+      expect(result.keys, <String>[
+        LibraryCtlKey(LibraryCtlStore.srt, book.uid).wire,
+      ]);
     });
 
     test('有声书缺字幕 → unsupported 并说明缺什么', () async {
