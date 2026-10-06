@@ -3,6 +3,9 @@ import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiBadgeControl;
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter/services.dart';
@@ -73,7 +76,7 @@ Widget _maybeBadge({
   if (!item.experimentalBadge) return KeyedSubtree(key: key, child: child);
   return KeyedSubtree(
     key: key,
-    child: Badge(child: child),
+    child: FushiBadgeControl(child: child),
   );
 }
 
@@ -1320,7 +1323,7 @@ class _NavMiniCapsule extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final BorderRadius radius = BorderRadius.circular(height / 2);
-    return Tooltip(
+    return FushiTooltip(
       message: item.label,
       child: Semantics(
         button: true,
@@ -1411,7 +1414,7 @@ class _NavBarFab extends StatelessWidget {
       size: 28,
       color: foreground,
     );
-    return Tooltip(
+    return FushiTooltip(
       message: fab.label,
       child: Semantics(
         button: true,
@@ -1444,7 +1447,7 @@ class _NavBarFab extends StatelessWidget {
                       switchInCurve: FushiMotion.enter,
                       switchOutCurve: FushiMotion.exit,
                       child: fab.experimentalBadge
-                          ? Badge(key: glyph.key, child: glyph)
+                          ? FushiBadgeControl(key: glyph.key, child: glyph)
                           : glyph,
                     ),
                   ),
@@ -2003,7 +2006,7 @@ class _NavRailMenuButton extends StatelessWidget {
       onPressed();
     }
 
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: Semantics(
         button: true,
@@ -2494,7 +2497,7 @@ class _NavFocusCellState extends State<_NavFocusCell> {
     if (metrics.compact || labelsHidden) {
       // 窄格里的标签可能被省略 / 用户关了底栏标签，用 tooltip 补出完整名称
       // （长按 / 悬停可见）。
-      tile = Tooltip(message: item.label, child: tile);
+      tile = FushiTooltip(message: item.label, child: tile);
     }
     // MD3 展开 rail 的行靠起始边（药丸包住图标 + 文字），其余居中。
     final bool materialRailRow = !glassDesign && !horizontal && extended;
@@ -2687,7 +2690,7 @@ class _FushiNavTile extends StatelessWidget {
     if (horizontal && iconOnly) {
       const double extent =
           kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding;
-      return Tooltip(
+      return FushiTooltip(
         message: item.label,
         child: Semantics(
           label: item.label,
@@ -2746,7 +2749,7 @@ class _FushiNavTile extends StatelessWidget {
       // 窄条（medium 窗口）：图标在上、10 号标签在下，标签恒显示（2026-10-05
       // 用户反馈「所有文字不要隐藏」，与 MD3 收起 rail 一致）；放不下按格宽省略，
       // tooltip 补全名。
-      return Tooltip(
+      return FushiTooltip(
         message: item.label,
         child: AnimatedContainer(
           duration: duration,

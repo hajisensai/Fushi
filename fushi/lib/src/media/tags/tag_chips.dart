@@ -264,7 +264,7 @@ class _FushiTagToggleChipState extends State<FushiTagToggleChip>
     );
     final String? tooltip = widget.tooltip ??
         (state == TagCheckState.partial ? _partialMark() : null);
-    if (tooltip != null) chip = Tooltip(message: tooltip, child: chip);
+    if (tooltip != null) chip = FushiTooltip(message: tooltip, child: chip);
     return Semantics(selected: state == TagCheckState.all, child: chip);
   }
 

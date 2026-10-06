@@ -20,6 +20,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -234,7 +235,7 @@ class FushiPageChromeTitle extends StatelessWidget {
       // 副标题放不下：信息不丢——悬停 / 长按看完整副标题，读屏仍读到它。
       final String? text = demoted is Text ? demoted.data : null;
       final InlineSpan? span = demoted is Text ? demoted.textSpan : null;
-      content = Tooltip(
+      content = FushiTooltip(
         message: text,
         richMessage: text == null ? (span ?? WidgetSpan(child: demoted)) : null,
         child: content,

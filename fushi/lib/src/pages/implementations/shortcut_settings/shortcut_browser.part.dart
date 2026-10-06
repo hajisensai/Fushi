@@ -1278,7 +1278,7 @@ class _ModifiedDot extends StatelessWidget {
     final Color color = isGlassDesign(context)
         ? appleColorsOf(context).accent
         : Theme.of(context).colorScheme.primary;
-    return Tooltip(
+    return FushiTooltip(
       message: t.shortcut_modified,
       child: Container(
         width: 7,
@@ -1887,7 +1887,7 @@ class _BindingKeycap extends StatelessWidget {
     );
     final ShortcutAction? conflict = conflictWith;
     if (conflict != null) {
-      result = Tooltip(
+      result = FushiTooltip(
         message: t.shortcut_conflict(s: conflict.label),
         child: DecoratedBox(
           decoration: BoxDecoration(

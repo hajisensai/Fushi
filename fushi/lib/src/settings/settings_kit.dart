@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -1412,7 +1413,7 @@ class SettingsModifiedRow extends StatelessWidget {
                 spring: fushiExpressiveFastSpatial,
                 builder: (BuildContext context, double v, Widget? _) {
                   if (v <= 0.01) return const SizedBox.shrink();
-                  return Tooltip(
+                  return FushiTooltip(
                     message: t.settings_modified_hint,
                     child: SizedBox.square(
                       dimension: 6 * v.clamp(0.0, 1.4),

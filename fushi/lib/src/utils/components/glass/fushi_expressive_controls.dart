@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
@@ -445,7 +446,7 @@ class _FushiToggleButtonState extends State<FushiToggleButton> {
     result = Semantics(toggled: widget.selected, child: result);
     final String? tip = widget.tooltip;
     if (tip != null && tip.isNotEmpty) {
-      result = Tooltip(message: tip, child: result);
+      result = FushiTooltip(message: tip, child: result);
     }
     return result;
   }
@@ -771,7 +772,7 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
         );
         final String? tip = widget.menuTooltip;
         if (tip != null && tip.isNotEmpty) {
-          button = Tooltip(message: tip, child: button);
+          button = FushiTooltip(message: tip, child: button);
         }
         return button;
       },

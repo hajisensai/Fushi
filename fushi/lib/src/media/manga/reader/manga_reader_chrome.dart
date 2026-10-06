@@ -813,7 +813,7 @@ class MangaReaderTopBar extends StatelessWidget {
       padding: EdgeInsets.zero,
       child: onTitleTap == null
           ? clamped
-          : Tooltip(
+          : FushiTooltip(
               message: titleTooltip ?? '',
               excludeFromSemantics: true,
               child: InkWell(
@@ -1532,7 +1532,7 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
             ),
           );
     final String? tooltip = widget.pageTapTooltip;
-    return tooltip == null ? chip : Tooltip(message: tooltip, child: chip);
+    return tooltip == null ? chip : FushiTooltip(message: tooltip, child: chip);
   }
 
   Widget _slider(

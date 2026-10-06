@@ -33,6 +33,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -273,7 +274,7 @@ class FushiToolbarButton extends StatelessWidget {
       ).textTheme.labelSmall?.copyWith(color: fg, height: 1.1);
       button = SizedBox(
         width: kFushiFloatingToolbarLabeledItemWidth,
-        child: Tooltip(
+        child: FushiTooltip(
           message: item.tooltip ?? item.label,
           excludeFromSemantics: true,
           child: InkResponse(
@@ -734,7 +735,7 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
             padding: EdgeInsets.zero,
             child: InkWell(
               onTap: onTitleTap,
-              child: Tooltip(
+              child: FushiTooltip(
                 message: titleTooltip ?? '',
                 excludeFromSemantics: true,
                 child: ConstrainedBox(
@@ -950,7 +951,7 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
         child: Center(child: icon),
       ),
     );
-    button = Tooltip(
+    button = FushiTooltip(
       message: widget.tooltip,
       child: Semantics(
         button: true,

@@ -956,7 +956,7 @@ class _MediaCollectionGridDetailPageState
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         if (hasFilterDims)
-          Badge(
+          FushiBadgeControl(
             isLabelVisible: activeFilters > 0,
             label: Text('$activeFilters'),
             child: FushiIconButton(

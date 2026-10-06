@@ -657,7 +657,7 @@ class _SessionPauseButton extends StatelessWidget {
       ),
     );
     return FushiPressScale(
-      child: Tooltip(
+      child: FushiTooltip(
         message: tooltip,
         child: Semantics(
           button: true,
