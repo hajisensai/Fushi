@@ -72,6 +72,22 @@ void main() {
           )
           .where((Opacity o) => o.opacity == 0);
       expect(faded, isNotEmpty);
+      // 让位后的胶囊不进语义树（读屏不会念出看不见的目的地），也不进焦点遍历。
+      final SemanticsHandle semantics = tester.ensureSemantics();
+      await tester.pump();
+      expect(find.semantics.byLabel('Home'), findsNothing);
+      expect(find.semantics.byLabel('Books'), findsNothing);
+      expect(find.semantics.byLabel('Lookup'), findsWidgets);
+      semantics.dispose();
+      final Iterable<ExcludeFocus> excluded = tester
+          .widgetList<ExcludeFocus>(
+            find.ancestor(
+              of: find.byIcon(Icons.home_outlined),
+              matching: find.byType(ExcludeFocus),
+            ),
+          )
+          .where((ExcludeFocus e) => e.excluding);
+      expect(excluded, isNotEmpty);
     },
   );
 
