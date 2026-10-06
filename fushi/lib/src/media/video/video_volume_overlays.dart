@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -121,6 +121,10 @@ class VideoVolumePopoverCard extends StatelessWidget {
                       color: colorScheme.onSurface,
                       fontSize: 12 * scale,
                       fontWeight: FontWeight.w600,
+                      // 百分比随拖动逐帧变化：等宽数字。
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
                     ),
                   ),
                 ],

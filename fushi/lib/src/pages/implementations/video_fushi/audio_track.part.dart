@@ -99,13 +99,14 @@ extension _VideoAudioTrack on _VideoFushiPageState {
   }
 
   /// TODO-1351：设置面板「音频」分类里的音轨切换区（取代外面浮的音轨侧栏）。用
-  /// [Builder] 让配色随设置面板自身主题（浅色 MD3）解析，而非视频 chrome 深色。轨列表
+  /// [Builder] 让配色随设置面板自身主题解析（M3E 下是面板中性深色主题：选中轨是
+  /// secondaryContainer 圆角色块 + onSecondaryContainer 前景；Apple 照旧强调色）。轨列表
   /// 读 controller 的 audioTracks、选中态 [_currentAudioTrackId]，点某轨走既有
   /// [_selectAudioTrack]（切轨 + 持久化 + OSD）。空列表显示占位。
   Widget _buildAudioTrackSettingsSection(VideoPlayerController controller) {
     return Builder(
       builder: (BuildContext context) {
-        final ColorScheme cs = Theme.of(context).colorScheme;
+        final Color? selectedFg = videoPanelSelectedForeground(context);
         final List<AudioTrack> tracks = controller.audioTracks;
         if (tracks.isEmpty) {
           return FushiListTileControl(
@@ -124,9 +125,9 @@ extension _VideoAudioTrack on _VideoFushiPageState {
                 leading: const FushiIcon(Icons.audiotrack),
                 title: Text(_trackLabel(track.title, track.language, track.id)),
                 selected: _currentAudioTrackId == track.id,
-                selectedColor: cs.primary,
+                selectedColor: selectedFg,
                 trailing: _currentAudioTrackId == track.id
-                    ? FushiIcon(Icons.check, color: cs.primary)
+                    ? FushiIcon(Icons.check, color: selectedFg)
                     : null,
                 onTap: () => unawaited(_selectAudioTrack(controller, track)),
               ),

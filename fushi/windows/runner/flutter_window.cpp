@@ -542,6 +542,25 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name() == "endStartupWindowPreparation") {
           EndStartupWindowPreparation();
           result->Success();
+        } else if (call.method_name() == "setCaptionMaxButtonRect") {
+          // Physical-pixel rect of the Flutter maximize button in the Flutter
+          // view (= child client coordinates); all zero = disabled.
+          const auto* rect_args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          auto read_int = [rect_args](const char* key) -> LONG {
+            if (rect_args == nullptr) {
+              return 0;
+            }
+            const auto it = rect_args->find(flutter::EncodableValue(key));
+            if (it == rect_args->end()) {
+              return 0;
+            }
+            return static_cast<LONG>(it->second.TryGetLongValue().value_or(0));
+          };
+          const RECT rect{read_int("left"), read_int("top"), read_int("right"),
+                          read_int("bottom")};
+          caption_snap_button_.SetRect(rect);
+          result->Success();
         } else if (call.method_name() == "clearTaskbarFlash") {
           // TODO-615: actively stop any taskbar "flash / request attention"
           // state on the main window. SetForegroundWindow (window_manager's
@@ -757,6 +776,15 @@ bool FlutterWindow::OnCreate() {
   RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+  caption_snap_button_.Attach(
+      GetHandle(), flutter_controller_->view()->GetNativeWindow(),
+      [this](const char* event) {
+        if (caption_channel_) {
+          caption_channel_->InvokeMethod(
+              "onCaptionMaxButton",
+              std::make_unique<flutter::EncodableValue>(std::string(event)));
+        }
+      });
   return true;
 }
 
@@ -1013,6 +1041,20 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
   style.highlight_color =
       ArgbFromValue(args, "highlightColor", style.highlight_color);
   style.active_color = ArgbFromValue(args, "activeColor", style.active_color);
+  style.toolbar_bg_color =
+      ArgbFromValue(args, "toolbarBgColor", style.toolbar_bg_color);
+  style.toolbar_icon_color =
+      ArgbFromValue(args, "toolbarIconColor", style.toolbar_icon_color);
+  style.toolbar_hover_color =
+      ArgbFromValue(args, "toolbarHoverColor", style.toolbar_hover_color);
+  style.toolbar_active_bg_color =
+      ArgbFromValue(args, "toolbarActiveBgColor", style.toolbar_active_bg_color);
+  style.toolbar_active_icon_color = ArgbFromValue(
+      args, "toolbarActiveIconColor", style.toolbar_active_icon_color);
+  style.toolbar_tooltip_bg_color = ArgbFromValue(
+      args, "toolbarTooltipBgColor", style.toolbar_tooltip_bg_color);
+  style.toolbar_tooltip_text_color = ArgbFromValue(
+      args, "toolbarTooltipTextColor", style.toolbar_tooltip_text_color);
   // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。旧 payload 缺字段回退结构体默认 0=平台默认。
   style.corner_radius = DoubleFromValue(args, "cornerRadius", style.corner_radius);
   style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
@@ -2232,6 +2274,18 @@ void FlutterWindow::RegisterFloatingBallChannel() {
               config.on_surface =
                   ArgbFromValue(colors, "onSurface", config.on_surface);
               config.primary = ArgbFromValue(colors, "primary", config.primary);
+              config.ball_container = ArgbFromValue(colors, "ballContainer",
+                                                    config.ball_container);
+              config.button_container = ArgbFromValue(
+                  colors, "buttonContainer", config.button_container);
+              config.on_button_container = ArgbFromValue(
+                  colors, "onButtonContainer", config.on_button_container);
+              config.outline =
+                  ArgbFromValue(colors, "outline", config.outline);
+              config.ball_open =
+                  ArgbFromValue(colors, "ballOpen", config.primary);
+              config.on_ball_open =
+                  ArgbFromValue(colors, "onBallOpen", config.on_ball_open);
             }
           }
           const bool dock_left = StringFromValue(args, "dock", "right") == "left";
@@ -3025,6 +3079,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           hook_toolbar::SetSlotTooltips(
               hook_toolbar::Profile::kGalHook,
               WideListFromValue(args, "slotTooltips"));
+          // 图标下方短标签（同下标）。缺键 = 空表 = 不画文字。
+          hook_toolbar::SetSlotLabels(hook_toolbar::Profile::kGalHook,
+                                      WideListFromValue(args, "slotLabels"));
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
@@ -3036,6 +3093,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
               IntFromValue(args, "lookupTrigger", 0));
           gal_hook_text_window_->SetToolbarAutoHide(
               BoolFromValue(args, "toolbarAutoHide", true));
+          gal_hook_text_window_->SetToolbarLabels(
+              BoolFromValue(args, "toolbarLabels", false));
           gal_hook_text_window_->SetPassThroughBlocksMouse(
               BoolFromValue(args, "passThroughBlocksMouse", true));
           // 置顶按会话复位（与 locked / passThrough / following 同规矩）：上一局
@@ -3089,6 +3148,10 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         } else if (method == "setToolbarAutoHide") {
           gal_hook_text_window_->SetToolbarAutoHide(
               BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setToolbarLabels") {
+          gal_hook_text_window_->SetToolbarLabels(
+              BoolFromValue(args, "enabled", false));
           result->Success();
         } else if (method == "setPassThroughBlocksMouse") {
           gal_hook_text_window_->SetPassThroughBlocksMouse(
@@ -4617,6 +4680,9 @@ bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {
 }
 
 void FlutterWindow::OnDestroy() {
+  // Before the Flutter view / channels go away: unhook the child subclass and
+  // drop the Dart relay.
+  caption_snap_button_.Detach();
   if (window_capture_channel_) {
     window_capture_channel_->SetMethodCallHandler(nullptr);
     window_capture_channel_.reset();
@@ -4753,6 +4819,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
               std::make_unique<flutter::EncodableValue>());
         },
         windows_ime_space_channel_.get());
+  }
+
+  // Snap Layouts hit testing for the app-drawn maximize button (before the
+  // plugins: window_manager answers WM_NCHITTEST on its own otherwise).
+  if (std::optional<LRESULT> snap =
+          caption_snap_button_.HandleTopLevel(hwnd, message, wparam, lparam)) {
+    return *snap;
   }
 
   // Give Flutter, including plugins, an opportunity to handle window messages.

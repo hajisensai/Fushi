@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.44.0-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | **繁體中文** | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -55,14 +55,14 @@ flutter build apk --release --target-platform android-arm64 --split-per-abi
 flutter build windows --release
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 與 `ci/apply-patches.sh` 收斂成一條命令。本專案鎖定 Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`），部分上游依賴經 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修補——機制細節見 [docs/agent/build.md](../agent/build.md)。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 與 `ci/apply-patches.sh` 收斂成一條命令。本專案鎖定 Flutter 3.47.6（Dart SDK `>=3.5.0 <4.0.0`），部分上游依賴經 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修補——機制細節見 [docs/agent/build.md](../agent/build.md)。
 
 <details>
 <summary><b>技術棧一覽</b></summary>
 
 | 層 | 技術 |
 |---|---|
-| 框架 | Flutter 3.44.0（Dart SDK `>=3.5.0 <4.0.0`） |
+| 框架 | Flutter 3.47.6（Dart SDK `>=3.5.0 <4.0.0`） |
 | 平台 | Android / Windows / macOS / iOS（Material Design 3） |
 | 閱讀器 | WebView 分頁引擎（衍生自 Hoshi Reader 系列） |
 | 影片 | media_kit（libmpv 核心） |
@@ -157,7 +157,6 @@ Fushi 基於以下專案與生態：
 | [Mihon](https://github.com/mihonapp/mihon) | 漫畫來源擴充生態 |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 動畫來源擴充生態（extensions-lib 14–16，與漫畫共用同一執行環境） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫畫擴充執行環境 |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫畫來源執行環境 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 瀏覽器擴充功能串流字幕橋接參考 |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | 動畫辨識與刮削架構參考 |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | galgame 庫資訊架構參考 |

@@ -27,6 +27,11 @@ FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 ///
 /// 「立刻」很关键——它让本测试即使在修复前也只是变红，而不是真的等两段 30s 超时。
 class _RecordingFfmpegBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   final List<List<String>> runCalls = <List<String>>[];
   final List<List<String>> probeCalls = <List<String>>[];
 

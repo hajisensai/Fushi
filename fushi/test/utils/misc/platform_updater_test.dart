@@ -588,13 +588,23 @@ void main() {
   });
 
   group('MacUpdater.selectAsset', () {
-    test('picks the -macos.zip asset (stable)', () async {
+    test('picks the -macos-arm64.zip asset (stable)', () async {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(_assets(<String>[
         'fushi-0.4.2-arm64-v8a.apk',
         'fushi-0.4.2-windows-setup.exe',
-        'fushi-0.4.2-macos.zip',
+        'fushi-0.4.2-macos-arm64.zip',
         'fushi-0.4.2-ios.ipa',
+      ])));
+      expect(url, 'https://example.com/fushi-0.4.2-macos-arm64.zip');
+    });
+
+    // 改名前（universal 时代）的 `-macos.zip` 在 arm64 上照常能跑，仍然认。
+    test('still accepts the legacy -macos.zip asset', () async {
+      final MacUpdater u = MacUpdater();
+      final String? url = await _urlOf(u.selectAsset(_assets(<String>[
+        'fushi-0.4.2-windows-setup.exe',
+        'fushi-0.4.2-macos.zip',
       ])));
       expect(url, 'https://example.com/fushi-0.4.2-macos.zip');
     });
@@ -612,23 +622,23 @@ void main() {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'fushi-0.5.1-macos.zip',
-          'fushi-0.5.1-debug.412-macos.zip',
+          'fushi-0.5.1-macos-arm64.zip',
+          'fushi-0.5.1-debug.412-macos-arm64.zip',
         ]),
         channel: UpdateChannel.debug,
       ));
-      expect(url, 'https://example.com/fushi-0.5.1-debug.412-macos.zip');
+      expect(url, 'https://example.com/fushi-0.5.1-debug.412-macos-arm64.zip');
     });
 
     test('stable channel ignores the debug macOS zip', () async {
       final MacUpdater u = MacUpdater();
       final String? url = await _urlOf(u.selectAsset(
         _assets(<String>[
-          'fushi-0.5.1-debug.412-macos.zip',
-          'fushi-0.5.1-macos.zip',
+          'fushi-0.5.1-debug.412-macos-arm64.zip',
+          'fushi-0.5.1-macos-arm64.zip',
         ]),
       ));
-      expect(url, 'https://example.com/fushi-0.5.1-macos.zip');
+      expect(url, 'https://example.com/fushi-0.5.1-macos-arm64.zip');
     });
 
     test('macOS updater advertises in-app install support', () {
@@ -664,7 +674,9 @@ void main() {
     test('synthesizeStableAssetNames lists the macOS zip', () {
       final List<String> names = synthesizeStableAssetNames('0.4.2');
       // macOS/Windows 均已切 fushi（Windows 更新桥已落，Phase 5）；Android APK 保持旧名。
-      expect(names, contains('fushi-0.4.2-macos.zip'));
+      expect(names, contains('fushi-0.4.2-macos-arm64.zip'));
+      // 旧名不再合成：从这一版起 release 里只有 arm64 名的包。
+      expect(names, isNot(contains('fushi-0.4.2-macos.zip')));
       expect(names, contains('fushi-0.4.2-windows-setup.exe'));
     });
   });

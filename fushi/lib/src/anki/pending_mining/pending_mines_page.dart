@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -12,7 +12,11 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/settings/settings_kit.dart' show SettingsCountBadge;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 订阅待发队列：表一变就重读一次（行数 / 行列表）。
@@ -66,11 +70,11 @@ class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
-      icon: Icons.outbox_outlined,
+      icon: FushiIcons.cloudUpload,
       showIcon: true,
       title: t.anki_pending_mines_title,
       subtitle: t.anki_pending_mines_hint,
-      trailing: Text('$_count'),
+      trailing: SettingsCountBadge(count: _count),
       onTap: () => Navigator.of(context).push<void>(
         adaptivePageRoute<void>(
           context: context,
@@ -120,7 +124,7 @@ class _PendingMineLandingSwitchRowState
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsSwitchRow(
-      icon: Icons.move_to_inbox_outlined,
+      icon: FushiIcons.cloudDownload,
       showIcon: true,
       title: t.anki_pending_mine_landing_title,
       subtitle: t.anki_pending_mine_landing_hint,
@@ -141,12 +145,43 @@ class PendingMinesPage extends ConsumerStatefulWidget {
 class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
     with _PendingMineQueueListener<PendingMinesPage> {
   List<PendingMineRow> _rows = const <PendingMineRow>[];
+
+  /// 首次读表完成前显示骨架，而不是先闪一下空状态。
+  bool _loaded = false;
   bool _sending = false;
+
+  /// 最近一次读表失败（成功后清空）。首次读表就失败时结束骨架、显示错误态与
+  /// 重试；已有数据时刷新失败保留旧列表（BUG-2996）。
+  Object? _loadError;
 
   @override
   Future<void> reload() async {
-    final List<PendingMineRow> rows = await store.all();
-    if (mounted) setState(() => _rows = rows);
+    try {
+      final List<PendingMineRow> rows = await store.all();
+      if (mounted) {
+        setState(() {
+          _rows = rows;
+          _loaded = true;
+          _loadError = null;
+        });
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('PendingMinesPage.reload', e, stack);
+      if (mounted) {
+        setState(() {
+          _loaded = true;
+          _loadError = e;
+        });
+      }
+    }
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _loaded = false;
+      _loadError = null;
+    });
+    unawaited(reload());
   }
 
   PendingMiningAnkiRepository? get _repo {
@@ -179,23 +214,16 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   }
 
   Future<void> _delete(PendingMineRow row) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    final bool confirmed = await showFushiConfirmDialog(
       context: context,
-      builder: (BuildContext ctx) => FushiAlertDialog(
-        content: Text(t.anki_pending_mines_delete_confirm),
-        actions: <Widget>[
-          FushiTextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text(t.cancel),
-          ),
-          FushiTextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text(t.anki_pending_mines_delete),
-          ),
-        ],
-      ),
+      title: t.anki_pending_mines_delete,
+      message: t.anki_pending_mines_delete_confirm,
+      confirmLabel: t.anki_pending_mines_delete,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.delete,
+      destructive: true,
     );
-    if (confirmed == true) await store.discard(row);
+    if (confirmed) await store.discard(row);
   }
 
   String _statusText(PendingMineRow row) => switch (row.status) {
@@ -209,74 +237,200 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
           : '${t.anki_pending_mines_status_pending} · ${row.lastError}',
   };
 
+  /// 行首状态色块：待发 = 中性、发送中 = primary、失败 = error。
+  Widget _statusLeading(PendingMineRow row) => switch (row.status) {
+    PendingMineStatus.sending => const FushiListLeadingIcon(
+      FushiIcons.cloudUpload,
+      tone: FushiCardTone.primary,
+    ),
+    PendingMineStatus.failed => const FushiListLeadingIcon(
+      FushiIcons.error,
+      tone: FushiCardTone.error,
+    ),
+    _ => const FushiListLeadingIcon(FushiIcons.pending),
+  };
+
+  Widget _rowTile(PendingMineRow row) {
+    return FushiListItem(
+      leading: _statusLeading(row),
+      title: Text(
+        row.reading.isEmpty
+            ? row.expression
+            : '${row.expression}【${row.reading}】',
+      ),
+      subtitle: Text(_statusText(row)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (row.status == PendingMineStatus.failed)
+            FushiIconButtonControl.filledTonal(
+              tooltip: t.retry,
+              icon: const FushiIcon(FushiIcons.refresh),
+              onPressed: () => store.retry(row.id),
+            ),
+          FushiIconButtonControl(
+            tooltip: t.anki_pending_mines_delete,
+            icon: const FushiIcon(FushiIcons.delete),
+            onPressed: () => _delete(row),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _skeleton(BuildContext context, double gutter) {
+    // 骨架：三行占位分段卡，与真实行同高，读表完成后原位替换。
+    return ListView(
+      // 顶部让出「状态栏 + 浮动页头」，与真实列表同位。
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        8 + MediaQuery.paddingOf(context).top,
+        gutter,
+        8,
+      ),
+      children: <Widget>[
+        FushiSkeletonShimmer(
+          child: FushiGroupedList(
+            children: <Widget>[
+              for (int i = 0; i < 3; i++)
+                SizedBox(
+                  height: 72,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: <Widget>[
+                        const FushiSkeleton(
+                          width: 40,
+                          height: 40,
+                          circle: true,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(child: FushiSkeleton.line(widthFactor: 0.6)),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBody(BuildContext context, bool switchesApp) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double gutter = tokens.spacing.page;
+    if (!_loaded) return _skeleton(context, gutter);
+    final Object? loadError = _loadError;
+    if (loadError != null && _rows.isEmpty) {
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.error_load_failed,
+            detail: '$loadError',
+            action: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('pending-mines-load-retry'),
+              onPressed: _retryLoad,
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ),
+      );
+    }
+    // 空态走统一占位（M3E 色块图标 + 文案）。
+    if (_rows.isEmpty) {
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.success,
+            message: t.anki_pending_mines_empty,
+          ),
+        ),
+      );
+    }
+    final List<Widget> sections = <Widget>[
+      if (switchesApp)
+        FushiCard(
+          tone: FushiCardTone.tertiary,
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(FushiIcons.info),
+              const SizedBox(width: 12),
+              Expanded(child: Text(t.anki_pending_mines_ankimobile_hint)),
+            ],
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.only(left: 4),
+        child: Row(
+          children: <Widget>[
+            Text(
+              t.anki_pending_mines_title,
+              style: context.fushiType.titleSmallEmphasized,
+            ),
+            const SizedBox(width: 8),
+            SettingsCountBadge(count: _rows.length),
+          ],
+        ),
+      ),
+      // 分段卡片：首尾大圆角、行间 2px；每行错峰进场。
+      FushiGroupedList(
+        children: <Widget>[
+          for (int i = 0; i < _rows.length; i++)
+            FushiStaggeredEntrance(
+              key: ValueKey<Object>(_rows[i].id),
+              index: i,
+              child: _rowTile(_rows[i]),
+            ),
+        ],
+      ),
+    ];
+    return FushiEntranceScope(
+      child: ListView.separated(
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.fromLTRB(
+            gutter,
+            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+            8 + MediaQuery.paddingOf(context).top,
+            gutter,
+            // 给悬浮 FAB 让出位置。
+            tokens.spacing.section * 2 + 72,
+          ),
+        ),
+        itemCount: sections.length,
+        separatorBuilder: (BuildContext context, int index) =>
+            const SizedBox(height: 12),
+        itemBuilder: (BuildContext context, int index) => sections[index],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool switchesApp = _repo?.switchesAppPerNote ?? false;
-    return Scaffold(
-      appBar: FushiAppBar(title: Text(t.anki_pending_mines_title)),
-      // 空态走统一占位（图标 + 文案），不再是孤零零一行正文；行收进一个设置
-      // 分组：MD3 = 中性圆角组，Apple = inset grouped 实色组 + 细分隔线，而不是
-      // 散落在页面底色上的裸行。
-      body: _rows.isEmpty
-          ? Center(
-              child: FushiPlaceholderMessage(
-                icon: Icons.outbox_outlined,
-                message: t.anki_pending_mines_empty,
-              ),
-            )
-          : ListView(
-              padding: EdgeInsets.only(
-                bottom: FushiDesignTokens.of(context).spacing.section * 2,
-              ),
-              children: <Widget>[
-                if (switchesApp)
-                  AdaptiveSettingsSection(
-                    children: <Widget>[
-                      AdaptiveSettingsRow(
-                        icon: Icons.info_outline,
-                        showIcon: true,
-                        title: t.anki_pending_mines_ankimobile_hint,
-                        titleMaxLines: 4,
-                      ),
-                    ],
-                  ),
-                AdaptiveSettingsSection(
-                  children: <Widget>[
-                    for (final PendingMineRow row in _rows)
-                      AdaptiveSettingsRow(
-                        title: row.reading.isEmpty
-                            ? row.expression
-                            : '${row.expression}【${row.reading}】',
-                        subtitle: _statusText(row),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            if (row.status == PendingMineStatus.failed)
-                              FushiIconButtonControl(
-                                tooltip: t.retry,
-                                icon: const FushiIcon(Icons.refresh),
-                                onPressed: () => store.retry(row.id),
-                              ),
-                            FushiIconButtonControl(
-                              tooltip: t.anki_pending_mines_delete,
-                              icon: const FushiIcon(Icons.delete_outline),
-                              onPressed: () => _delete(row),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ],
-            ),
+    return FushiPageScaffold(
+      title: t.anki_pending_mines_title,
+      // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
+      body: Builder(
+        builder: (BuildContext context) => _buildBody(context, switchesApp),
+      ),
       floatingActionButton: _rows.isEmpty
           ? null
-          : FushiGlassFab(
-              child: FloatingActionButton.extended(
-                onPressed: _sending ? null : _sendAll,
-                icon: const FushiIcon(Icons.send),
-                label: Text(t.anki_pending_mines_send_all),
-              ),
+          : FushiFab(
+              onPressed: _sending ? null : _sendAll,
+              icon: _sending
+                  ? const SizedBox.square(
+                      dimension: 24,
+                      child: FushiCircularProgressIndicator(strokeWidth: 3),
+                    )
+                  : const FushiIcon(FushiIcons.upload),
+              label: Text(t.anki_pending_mines_send_all),
             ),
     );
   }

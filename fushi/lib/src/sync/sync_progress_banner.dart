@@ -1,10 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 同步进行中的细进度条 —— 挂在媒体页列表上方。
 ///
@@ -38,41 +42,108 @@ class SyncProgressBanner extends StatelessWidget {
               valueListenable: syncActivity,
               builder: (BuildContext context, SyncActivity? activity, ___) {
                 final ThemeData theme = Theme.of(context);
+                final FushiTypography type = context.fushiType;
+                final FushiMotionScheme motion = context.fushiMotion;
                 final String? line = p != null
                     ? syncProgressLine(p)
                     : (activity != null ? syncActivityLine(activity) : null);
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (line != null)
-                      Padding(
-                        padding: compact
-                            ? const EdgeInsets.fromLTRB(12, 0, 12, 2)
-                            : const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                        child: Text(
-                          line,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: (compact
-                                  ? theme.textTheme.labelSmall
-                                  : theme.textTheme.bodySmall)
-                              ?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                final bool eink = isEinkTheme(context);
+                return AnimatedSize(
+                  duration: motion.spatialDefault.duration,
+                  curve: motion.spatialDefault.curve,
+                  alignment: Alignment.topCenter,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (line != null)
+                        Padding(
+                          padding: compact
+                              ? const EdgeInsets.fromLTRB(12, 0, 12, 2)
+                              : const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                          child: Row(
+                            children: <Widget>[
+                              // M3E：行首一枚小号同步图标（tonal 圆底），让这条
+                              // 文字一眼读成「同步状态」而不是普通说明文字。
+                              if (!compact) ...<Widget>[
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: eink
+                                        ? theme.colorScheme.surface
+                                        : theme.colorScheme.secondaryContainer,
+                                    shape: BoxShape.circle,
+                                    border: eink
+                                        ? Border.all(
+                                            color: theme.colorScheme.outline,
+                                          )
+                                        : null,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(3),
+                                    child: FushiIcon(
+                                      FushiIcons.sync,
+                                      size: 14,
+                                      color: eink
+                                          ? theme.colorScheme.onSurface
+                                          : theme
+                                              .colorScheme.onSecondaryContainer,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Expanded(
+                                // 阶段文字切换走 effects 弹簧淡入淡出，不跳字。
+                                child: AnimatedSwitcher(
+                                  duration: motion.effectsFast.duration,
+                                  switchInCurve: motion.effectsFast.curve,
+                                  switchOutCurve: motion.effectsFast.curve,
+                                  layoutBuilder: (
+                                    Widget? current,
+                                    List<Widget> previous,
+                                  ) =>
+                                      Stack(
+                                    alignment: AlignmentDirectional.centerStart,
+                                    children: <Widget>[
+                                      ...previous,
+                                      if (current != null) current,
+                                    ],
+                                  ),
+                                  child: Text(
+                                    line,
+                                    key: ValueKey<String>(line),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: (compact
+                                            ? type.labelSmall
+                                            : type.bodySmall)
+                                        .tabular
+                                        .copyWith(
+                                          color: theme
+                                              .colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
+                      // 阶段没有可测总数时退化成不确定进度条（value 为 null；eink
+                      // 下钉成 0——不定态动画在墨水屏上是整条带子持续刷新，且默认
+                      // 轨道色塌成底色，给实色轨道才看得见）。M3E 下是波浪进度。
+                      Padding(
+                        padding: compact
+                            ? EdgeInsets.zero
+                            : const EdgeInsets.symmetric(horizontal: 16),
+                        child: FushiLinearProgressIndicator(
+                          value: einkSafeProgressValue(context, p?.fraction),
+                          minHeight: compact ? 2 : 4,
+                          backgroundColor:
+                              eink ? theme.colorScheme.surface : null,
+                        ),
                       ),
-                    // 阶段没有可测总数时退化成不确定进度条（value 为 null；eink
-                    // 下钉成 0——不定态动画在墨水屏上是整条带子持续刷新，且默认
-                    // 轨道色塌成底色，给实色轨道才看得见）。
-                    FushiLinearProgressIndicator(
-                      value: einkSafeProgressValue(context, p?.fraction),
-                      minHeight: 2,
-                      backgroundColor: isEinkTheme(context)
-                          ? theme.colorScheme.surface
-                          : null,
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             );

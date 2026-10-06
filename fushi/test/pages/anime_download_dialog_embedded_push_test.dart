@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
@@ -287,7 +288,7 @@ void main() {
               widget.tooltip == t.anime_download_delete,
         ),
       );
-      expect(deleteButton.icon, Icons.delete_outline);
+      expect(deleteButton.icon, FushiIcons.delete);
       expect(deleteButton.onTap, isNotNull);
 
       await tester.pumpWidget(const SizedBox.shrink());

@@ -452,6 +452,15 @@ class DictionaryRepository {
     _schedulePersistDictionaryHistory();
   }
 
+  /// 从查词历史里移除一条（按查询串）。与 [addHistoryResult] 同一条防抖落库。
+  void removeHistoryResult(String searchTerm) {
+    final int before = _dictionaryHistoryResults.length;
+    _dictionaryHistoryResults.removeWhere((r) => r.searchTerm == searchTerm);
+    if (_dictionaryHistoryResults.length != before) {
+      _schedulePersistDictionaryHistory();
+    }
+  }
+
   Future<void> clearDictionaryHistory() async {
     // 先取消 pending flush：清空之后再触发的旧快照写回会把已清历史复活。
     _cancelPendingHistoryPersist();

@@ -1,7 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 
@@ -59,43 +61,37 @@ String extensionDownloadCountLabel(int? downloads) => downloads == null
         count: formatMihonDownloadCount(downloads),
       );
 
-/// 扩展行副标题：一行元信息 + 一行下载量（小号字）。
-///
-/// [extra] 接在下载量下面（Mihon 用它挂「包含的源」清单）。
-class ExtensionCatalogSubtitle extends StatelessWidget {
-  const ExtensionCatalogSubtitle({
-    required this.meta,
-    required this.downloads,
-    this.extra = const <Widget>[],
+/// 祖先页头已经挂着「刷新仓库」动作时由页面提供（库页「扩展」子标签）：扩展目录
+/// 据此不在正文顶部再画一枚刷新按钮。没有这个 scope 的宿主（浏览模块、独立页、
+/// 测试）照旧在目录顶部给刷新入口——入口只挪位置，不会丢。
+class ExtensionCatalogHeaderScope extends InheritedWidget {
+  const ExtensionCatalogHeaderScope({
+    required super.child,
     super.key,
+    this.refreshInHeader = true,
   });
 
-  final String meta;
-  final int? downloads;
-  final List<Widget> extra;
+  /// 页头里已经有「刷新仓库」。
+  final bool refreshInHeader;
+
+  /// [context] 所在页面的页头是否已经挂了「刷新仓库」。
+  static bool refreshInHeaderOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<ExtensionCatalogHeaderScope>()
+          ?.refreshInHeader ??
+      false;
 
   @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(meta, maxLines: 1, overflow: TextOverflow.ellipsis),
-        Text(
-          extensionDownloadCountLabel(downloads),
-          style: theme.textTheme.labelSmall,
-        ),
-        ...extra,
-      ],
-    );
-  }
+  bool updateShouldNotify(ExtensionCatalogHeaderScope oldWidget) =>
+      oldWidget.refreshInHeader != refreshInHeader;
 }
 
-/// 扩展目录的动作行：最低下载量下拉 + 批量安装 + 一键更新。
+/// 扩展目录的动作区：最低下载量 chip 行 + 批量安装 + 一键更新（M3E）。
 ///
-/// 键名按 [keyPrefix] 生成（`<prefix>_min_downloads` /
-/// `<prefix>_min_downloads_<档位>` / `<prefix>_bulk_install` /
+/// 下载量门槛是一排单选 chip（[ExtensionFilterChipRow]，与仓库 / 语言筛选同一
+/// 形态）；批量安装是 outlined（装进来的是会执行的代码，不给主色），一键更新是
+/// tonal 强调。键名按 [keyPrefix] 生成（`<prefix>_min_downloads`（chip 行）/
+/// `<prefix>_min_downloads_<档位>`（chip）/ `<prefix>_bulk_install` /
 /// `<prefix>_update_all`），测试按它定位。
 class ExtensionCatalogActions extends StatelessWidget {
   const ExtensionCatalogActions({
@@ -119,39 +115,48 @@ class ExtensionCatalogActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        FushiDropdownButton<int>(
+        ExtensionFilterChipRow<int>(
           key: ValueKey<String>('${keyPrefix}_min_downloads'),
-          value: minDownloads,
-          onChanged: (int? value) => onMinDownloadsChanged(value ?? 0),
-          items: <DropdownMenuItem<int>>[
+          icon: FushiIcons.download,
+          label: t.mihon_extension_min_downloads,
+          chipKeyPrefix: '${keyPrefix}_min_downloads_',
+          selected: minDownloads,
+          options: <ExtensionFilterOption<int>>[
             for (final int option in minDownloadOptions)
-              DropdownMenuItem<int>(
-                key: ValueKey<String>('${keyPrefix}_min_downloads_$option'),
+              (
                 value: option,
-                child: Text(
-                  option == 0
-                      ? '${t.mihon_extension_min_downloads}: ${t.mihon_extension_language_all}'
-                      : '${t.mihon_extension_min_downloads}: $option',
-                ),
+                label: option == 0
+                    ? t.mihon_extension_language_all
+                    : '≥ ${formatMihonDownloadCount(option)}',
               ),
           ],
+          onSelected: onMinDownloadsChanged,
         ),
-        FushiOutlinedButton.icon(
-          key: ValueKey<String>('${keyPrefix}_bulk_install'),
-          onPressed: onBulkInstall,
-          icon: const FushiIcon(Icons.playlist_add_check),
-          label: Text(t.mihon_extension_bulk_install),
-        ),
-        FushiOutlinedButton.icon(
-          key: ValueKey<String>('${keyPrefix}_update_all'),
-          onPressed: onUpdateAll,
-          icon: const FushiIcon(Icons.system_update_alt),
-          label: Text(t.mihon_extension_update_all),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            FushiOutlinedButton.icon(
+              key: ValueKey<String>('${keyPrefix}_bulk_install'),
+              size: FushiButtonSize.s,
+              onPressed: onBulkInstall,
+              icon: const FushiIcon(FushiIcons.libraryAdd),
+              label: Text(t.mihon_extension_bulk_install),
+            ),
+            FushiFilledButton.tonalIcon(
+              key: ValueKey<String>('${keyPrefix}_update_all'),
+              size: FushiButtonSize.s,
+              onPressed: onUpdateAll,
+              icon: const FushiIcon(FushiIcons.sync),
+              label: Text(t.mihon_extension_update_all),
+            ),
+          ],
         ),
       ],
     );
@@ -187,29 +192,14 @@ Future<bool> confirmExtensionBulk(
   required String message,
   required String actionLabel,
   required bool destructive,
-}) async =>
-    await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-        title: Text(title),
-        content: Text(message),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: dialogContext,
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: dialogContext,
-            isDestructiveAction: destructive,
-            isDefaultAction: !destructive,
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(actionLabel),
-          ),
-        ],
-      ),
-    ) ==
-    true;
+}) => showFushiConfirmDialog(
+  context: context,
+  title: title,
+  message: message,
+  icon: destructive ? FushiIcons.warning : null,
+  confirmLabel: actionLabel,
+  destructive: destructive,
+);
 
 /// 批量动作执行体：进度框 → [run] → 关进度框。
 ///

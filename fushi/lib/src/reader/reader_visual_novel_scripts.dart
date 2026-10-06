@@ -2602,6 +2602,13 @@ $sharedInitViewport
   renderScreen: function(index, fullyRevealed) {
     if (!this.screens.length) return;
     var safeIndex = Math.min(Math.max(0, index), this.screens.length - 1);
+    // renderScreen 会替换 DOM（同屏重建也一样），先清理仍引用旧节点的选区。
+    // 旧节点即将销毁，不能沿用连续滚动的拖选保护；完整清理也通知 Flutter。
+    // reveal 与 limit 不进这里，不应结束仍依附当前正文的拖选。
+    var selection = window.fushiSelection;
+    if (selection && typeof selection.clearSelection === 'function') {
+      selection.clearSelection();
+    }
     this.clearRevealTimer();
     this.currentScreenIndex = safeIndex;
     this.clearCurrentSentenceAudioScreenTargets();

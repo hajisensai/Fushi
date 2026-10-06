@@ -1185,6 +1185,17 @@ class SourceLibraryScanner {
     final Set<String> existingPaths = existingRows
         .map((VideoBookRow r) => normalizeVideoPath(r.videoPath))
         .toSet();
+    // BUG-2979：文件被搬走（整个剧目录挪进另一个文件夹再加成来源）时，旧行的
+    // bookUid 与新路径派生的 bookUid 相同、路径不同——不认出来就会以 `X (2)`
+    // 再建一行，同一集在库里两行、合集详情页每集两张卡。
+    final Map<String, VideoBookRow> rowByUid = <String, VideoBookRow>{
+      for (final VideoBookRow r in existingRows) r.bookUid: r,
+    };
+    final Map<String, VideoBookRow> rowByPath = <String, VideoBookRow>{
+      for (final VideoBookRow r in existingRows)
+        normalizeVideoPath(r.videoPath): r,
+    };
+    List<MediaCollectionItemRow>? collectionItems;
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -1195,8 +1206,41 @@ class SourceLibraryScanner {
       final List<String> failedPaths = <String>[];
       Object? firstError;
       for (final ScanVideoItem item in plan.videos) {
+        final String normalizedPath = normalizeVideoPath(item.videoPath);
+        // BUG-2979：同名旧行的文件已经不在原处 = 这就是搬走的那个文件。
+        final VideoBookRow? moved =
+            streamInPlace ? null : rowByUid[singleVideoBookUid(item.videoPath)];
+        if (moved != null && isVideoRowMovedTo(moved, item.videoPath)) {
+          final VideoBookRow? live = rowByPath[normalizedPath];
+          if (live == null) {
+            // 首次扫到搬家后的文件：原行改指新路径，进度 / 字幕 cue / 标签 /
+            // 合集归属 / 统计全在原 bookUid 上，原样保住，不再另建 `X (2)`。
+            await _videoRepo.updateLocalMediaPaths(
+              moved.bookUid,
+              videoPath: item.videoPath,
+              subtitleSource: item.subtitlePath != null &&
+                      _isDeadLocalPath(moved.subtitleSource)
+                  ? item.subtitlePath
+                  : null,
+            );
+            await _videoRepo.assignSourceIfNull(moved.bookUid, sourceId);
+            existingPaths.add(normalizedPath);
+            rowByPath[normalizedPath] = moved;
+            continue;
+          }
+          if (live.bookUid != moved.bookUid) {
+            // 修复前已经建出了 `X (2)`：把旧行并进在世的那一行再删旧行。
+            collectionItems ??= await _db.getAllCollectionItems();
+            await _mergeMovedVideoDuplicate(
+              stale: moved,
+              live: live,
+              collectionItems: collectionItems,
+            );
+            rowByUid.remove(moved.bookUid);
+          }
+        }
         // Skip already-imported physical files (library or same-batch dup).
-        if (!existingPaths.add(normalizeVideoPath(item.videoPath))) {
+        if (!existingPaths.add(normalizedPath)) {
           continue;
         }
         // BUG-2570：一个文件的失败只作废这个文件。此前整个循环共用 [scan] 的总
@@ -1286,6 +1330,51 @@ class SourceLibraryScanner {
         } catch (_) {}
       }
     }
+  }
+
+  /// BUG-2979：把「文件搬走后旧行没认出、又以 `X (2)` 建出的新行」归并成一行。
+  ///
+  /// 留在世的 [live]（路径有效、挂着来源、刮削资料 / 规范分集绑定都在它身上），
+  /// 把 [stale] 上的用户状态搬过去后删掉 [stale]：观看进度取较晚播放的一份、
+  /// 看完取两者之一、标签与合集归属并入（[live] 已在的合集不重复加）。
+  /// 学习统计按 bookUid 记账，留在旧键上不迁（统计只累加、不随行删除）。
+  Future<void> _mergeMovedVideoDuplicate({
+    required VideoBookRow stale,
+    required VideoBookRow live,
+    required List<MediaCollectionItemRow> collectionItems,
+  }) async {
+    final bool staleNewer =
+        (stale.lastPlayedAt ?? 0) > (live.lastPlayedAt ?? 0);
+    await (_db.update(_db.videoBooks)
+          ..where((t) => t.bookUid.equals(live.bookUid)))
+        .write(VideoBooksCompanion(
+      lastPositionMs: staleNewer
+          ? Value<int>(stale.lastPositionMs)
+          : const Value<int>.absent(),
+      lastPlayedAt: staleNewer
+          ? Value<int?>(stale.lastPlayedAt)
+          : const Value<int?>.absent(),
+      completedAt: live.completedAt == null && stale.completedAt != null
+          ? Value<DateTime?>(stale.completedAt)
+          : const Value<DateTime?>.absent(),
+    ));
+    for (final BookTagRow tag in await _db.getTagsForVideoBook(stale.bookUid)) {
+      await _db.addTagToVideoBook(live.bookUid, tag.id);
+    }
+    final String video = MediaKind.video.dbValue;
+    final Set<int> liveCollections = <int>{
+      for (final MediaCollectionItemRow item in collectionItems)
+        if (item.mediaType == video && item.entryKey == live.bookUid)
+          item.collectionId,
+    };
+    for (final MediaCollectionItemRow item in collectionItems) {
+      if (item.mediaType != video || item.entryKey != stale.bookUid) continue;
+      if (liveCollections.add(item.collectionId)) {
+        await _db.addToCollection(
+            item.collectionId, MediaKind.video, live.bookUid);
+      }
+    }
+    await _videoRepo.deleteVideoBooks(<String>[stale.bookUid]);
   }
 
   /// Imports every m3u8/m3u playlist in the plan into a playlist VideoBook;
@@ -1530,4 +1619,37 @@ class SourceLibraryScanner {
     }
     return true;
   }
+}
+
+/// BUG-2979：[row] 是不是「被搬到 [newPath] 的那个文件」的旧行。
+///
+/// 判据全部成立才算：同文件名（bookUid 同源派生，调用方已按它取出 [row]）、
+/// 路径不同、旧行是普通本地文件（不是流媒体 / 播放列表 / URL）、旧文件已不存在，
+/// 而且**旧路径所在的盘还在线**——网络盘 / 移动硬盘没挂上时旧文件当然「不存在」，
+/// 那不是搬家，绝不能把仍然有效的旧行并掉。
+bool isVideoRowMovedTo(VideoBookRow row, String newPath) {
+  final String oldPath = row.videoPath;
+  if (row.playlistJson != null || row.streamSpecJson != null) return false;
+  if (oldPath.contains('://')) return false;
+  if (normalizeVideoPath(oldPath) == normalizeVideoPath(newPath)) return false;
+  if (_crossPlatformBasename(oldPath).toLowerCase() !=
+      _crossPlatformBasename(newPath).toLowerCase()) {
+    return false;
+  }
+  if (!p.isAbsolute(oldPath)) return false;
+  final String root = p.rootPrefix(oldPath);
+  if (root.isEmpty || !Directory(root).existsSync()) return false;
+  return !File(oldPath).existsSync();
+}
+
+String _crossPlatformBasename(String path) {
+  final int cut = path.lastIndexOf(RegExp(r'[\\/]'));
+  return cut < 0 ? path : path.substring(cut + 1);
+}
+
+/// 本地路径已失效（null / URL / 哨兵值都不算失效，不去动它）。
+bool _isDeadLocalPath(String? path) {
+  if (path == null || path.isEmpty || path.contains('://')) return false;
+  if (!p.isAbsolute(path)) return false;
+  return !File(path).existsSync();
 }

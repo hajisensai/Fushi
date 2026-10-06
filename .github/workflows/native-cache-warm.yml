@@ -8,7 +8,7 @@
 #     fushi-anki-sync debug（1.2~1.5 min）；
 #   * macOS：fushi-anki-sync debug（本机架构，2.1~3.1 min，占 5 个 macOS 槽之一）；
 #   * windows：fushi-anki-sync debug（3.2 min）。
-# 与 release-desktop.yml 共名的件（Windows torrent / p2p / Mihon / galgame、macOS universal
+# 与 release-desktop.yml 共名的件（Windows torrent / p2p / Mihon / galgame、macOS arm64
 # p2p dylib、iOS device p2p staticlib）不在这里：release-desktop 在每次 develop push 上就会
 # restore-or-build-and-save 它们，这里再编只会白占槽位（尤其 macOS）。
 #
@@ -159,7 +159,7 @@ jobs:
       - uses: subosito/flutter-action@v2
         if: steps.torrent_store.outputs.hit != 'true' || steps.p2p_store.outputs.hit != 'true'
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
 
       # ---- 静态 torrent bridge（vcpkg）。两层 vcpkg 缓存的 key 与 build-multiplatform.yml

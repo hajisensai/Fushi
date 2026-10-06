@@ -1,10 +1,11 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 
@@ -76,12 +77,12 @@ class ExtensionStoreToolbar extends StatelessWidget {
       children: <Widget>[
         FushiTextButton.icon(
           onPressed: onRefresh,
-          icon: const FushiIcon(Icons.refresh),
+          icon: const FushiIcon(FushiIcons.refresh),
           label: Text(refreshLabel),
         ),
         FushiFilledButton.tonalIcon(
           onPressed: onAdd,
-          icon: const FushiIcon(Icons.add),
+          icon: const FushiIcon(FushiIcons.add),
           label: Text(addLabel),
         ),
       ],
@@ -113,7 +114,7 @@ ExtensionStoreRowAction extensionStoreCopyAction(String url, {Key? key}) =>
     ExtensionStoreRowAction(
       key: key,
       label: t.copy,
-      icon: Icons.content_copy_outlined,
+      icon: FushiIcons.copy,
       onTap: () {
         Clipboard.setData(ClipboardData(text: url));
         FushiToast.show(msg: t.copied_to_clipboard);
@@ -187,8 +188,11 @@ class ExtensionStoreTile extends StatelessWidget {
               glass || constraints.maxWidth < _kInlineActionsMinWidth;
           return FushiListItem(
             key: rowKey,
-            leading: FushiIcon(
-              builtin ? Icons.lock_outline : Icons.hub_outlined,
+            // M3E 行首形状底（12 圆角方块，secondaryContainer）；Apple 是 iOS
+            // 设置式彩色圆角方块。内置仓库用锁，普通仓库用枢纽。
+            leading: FushiListLeadingIcon(
+              builtin ? FushiIcons.lock : FushiIcons.hub,
+              shape: FushiLeadingShape.square,
             ),
             title: Text(name),
             subtitleMaxLines: 3,
@@ -252,7 +256,7 @@ class _ExtensionStoreRowMenu extends StatelessWidget {
     return FushiPopupMenuButton<ExtensionStoreRowAction>(
       key: menuKey,
       tooltip: t.common_more_actions,
-      icon: FushiIcon(glass ? Icons.more_horiz : Icons.more_vert),
+      icon: FushiIcon(glass ? FushiIcons.moreHoriz : FushiIcons.more),
       onSelected: (ExtensionStoreRowAction action) => action.onTap(),
       itemBuilder: (BuildContext context) =>
           <PopupMenuEntry<ExtensionStoreRowAction>>[
@@ -375,7 +379,7 @@ class _ExtensionStoreUrlDialogState extends State<_ExtensionStoreUrlDialog> {
             if (warning != null) ...<Widget>[
               FushiInlineNotice(
                 severity: FushiNoticeSeverity.warning,
-                icon: Icons.shield_outlined,
+                icon: FushiIcons.shield,
                 message: warning,
               ),
               const SizedBox(height: 16),
@@ -392,7 +396,7 @@ class _ExtensionStoreUrlDialogState extends State<_ExtensionStoreUrlDialog> {
               decoration: InputDecoration(
                 labelText: t.mihon_store_url,
                 hintText: 'https://example.org/repo.json',
-                prefixIcon: const FushiIcon(Icons.link),
+                prefixIcon: const FushiIcon(FushiIcons.link),
                 errorText: _error,
               ),
               onChanged: (_) {

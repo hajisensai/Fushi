@@ -443,6 +443,15 @@ extension _VideoQuality on _VideoFushiPageState {
     final String label = variants[index].label;
     _hideVideoSidePanel();
     client.streamVariantIndex = index;
+    // 媒体服务器换版本 = 换一个文件：先报停旧会话（与换档同口径，服务器据此结束
+    // 旧版本的转码）；扩展线路没有会话能力，这一步是空操作。
+    await _reportRemotePlaybackStopped(
+      info: _effectiveRemoteInfo,
+      client: _effectiveRemoteClient,
+      positionMs: posMs,
+      generation: _remotePlaybackGeneration,
+    );
+    if (!mounted) return;
     await _loadRemoteEpisode(
       _currentEpisode < 0 ? 0 : _currentEpisode,
       startIntent: EpisodeStartIntent.explicitCue,
@@ -490,19 +499,75 @@ extension _VideoQuality on _VideoFushiPageState {
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
+  /// 多条可播候选（扩展线路 / 媒体服务器版本）各一行，正在播的打勾；点了按
+  /// [_switchStreamVariant] 换候选并回到当前位置重新起播。
+  List<Widget> _buildStreamVariantTiles(
+    Color? selectedFg,
+    List<RemoteVideoStreamVariant> variants,
+  ) {
+    final int current = _streamVariantsClient?.streamVariantIndex ?? -1;
+    return <Widget>[
+      for (int i = 0; i < variants.length; i++)
+        FushiListTileControl(
+          key: ValueKey<String>('video-quality-stream-variant-$i'),
+          dense: true,
+          leading: const FushiIcon(Icons.alt_route),
+          title: Text(variants[i].label),
+          selected: current == i,
+          selectedColor: selectedFg,
+          trailing:
+              current == i ? FushiIcon(Icons.check, color: selectedFg) : null,
+          onTap: () => unawaited(_switchStreamVariant(i)),
+        ),
+    ];
+  }
+
   /// 画质侧栏面板：「自动」+ 各档 variant（高到低），当前档打勾。YouTube 流优先显其懒解析
   /// 的各档（解析中显 spinner）；否则显 HLS 档；空态显示标题占位。
   Widget _buildQualitySidePanel(VideoPlayerController controller) {
-    final ColorScheme cs = _videoChromeColorScheme(context);
-    // 媒体服务器分支：固定阶梯（自动 + 各档），当前档打勾。
+    // 配色读侧栏表面**内部**的主题（M3E = 面板中性深色主题；Apple / 墨水屏 =
+    // 页面主题，与以前一致），而不是页面 context 的主题。
+    return Builder(
+      builder: (BuildContext panelContext) =>
+          _buildQualitySidePanelBody(panelContext, controller),
+    );
+  }
+
+  Widget _buildQualitySidePanelBody(
+    BuildContext panelContext,
+    VideoPlayerController controller,
+  ) {
+    final ColorScheme cs = Theme.of(panelContext).colorScheme;
+    // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块），Apple 强调色。
+    final Color? selectedFg = videoPanelSelectedForeground(panelContext);
+    final EdgeInsets listPadding = videoPanelListPadding(panelContext);
+    // 媒体服务器分支：固定阶梯（自动 + 各档），当前档打勾。条目在服务器上有
+    // 多个版本（同一集 1080p / 4K 两个文件）时版本列在最上面：换版本与换档互不
+    // 覆盖（版本决定哪个文件，档位决定要不要转码）。
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server != null) {
       final List<MediaServerQualityPreset> presets = server.qualityPresets;
+      final List<RemoteVideoStreamVariant> versions = _streamVariants;
       return ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: listPadding,
         children: <Widget>[
+          if (versions.isNotEmpty) ...<Widget>[
+            Padding(
+              key: const ValueKey<String>('video-quality-versions-header'),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Text(
+                t.media_server_versions,
+                style: Theme.of(panelContext)
+                    .textTheme
+                    .labelMedium
+                    ?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ),
+            ..._buildStreamVariantTiles(selectedFg, versions),
+            const FushiDividerControl(),
+          ],
           _buildMediaServerQualityTile(
-            cs,
+            selectedFg,
             icon: Icons.auto_awesome,
             label: t.video_quality_auto,
             index: -1,
@@ -510,7 +575,7 @@ extension _VideoQuality on _VideoFushiPageState {
           ),
           for (int i = 0; i < presets.length; i++)
             _buildMediaServerQualityTile(
-              cs,
+              selectedFg,
               icon: Icons.high_quality,
               label: presets[i].label,
               index: i,
@@ -523,34 +588,22 @@ extension _VideoQuality on _VideoFushiPageState {
     // 是 HLS master 时把它的码率档接在下面（换线路与换档互不覆盖）。
     final List<RemoteVideoStreamVariant> streamVariants = _streamVariants;
     if (streamVariants.isNotEmpty) {
-      final int current = _streamVariantsClient!.streamVariantIndex;
       final List<HlsVariant> hls = _hlsVariants;
       return ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: listPadding,
         children: <Widget>[
-          for (int i = 0; i < streamVariants.length; i++)
-            FushiListTileControl(
-              key: ValueKey<String>('video-quality-stream-variant-$i'),
-              dense: true,
-              leading: const FushiIcon(Icons.alt_route),
-              title: Text(streamVariants[i].label),
-              selected: current == i,
-              selectedColor: cs.primary,
-              trailing:
-                  current == i ? FushiIcon(Icons.check, color: cs.primary) : null,
-              onTap: () => unawaited(_switchStreamVariant(i)),
-            ),
+          ..._buildStreamVariantTiles(selectedFg, streamVariants),
           if (hls.isNotEmpty) ...<Widget>[
             const FushiDividerControl(),
             _buildQualityTile(
-              cs,
+              selectedFg,
               icon: Icons.auto_awesome,
               label: t.video_quality_auto,
               index: -1,
             ),
             for (int i = 0; i < hls.length; i++)
               _buildQualityTile(
-                cs,
+                selectedFg,
                 icon: Icons.high_quality,
                 label: hls[i].qualityLabel,
                 index: i,
@@ -582,17 +635,17 @@ extension _VideoQuality on _VideoFushiPageState {
       }
       if (_youtubeVariants.isNotEmpty) {
         return ListView(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: listPadding,
           children: <Widget>[
             _buildYoutubeQualityTile(
-              cs,
+              selectedFg,
               icon: Icons.auto_awesome,
               label: t.video_quality_auto,
               index: -1,
             ),
             for (int i = 0; i < _youtubeVariants.length; i++)
               _buildYoutubeQualityTile(
-                cs,
+                selectedFg,
                 icon: Icons.high_quality,
                 label: _youtubeVariants[i].label,
                 index: i,
@@ -627,17 +680,17 @@ extension _VideoQuality on _VideoFushiPageState {
       );
     }
     return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: listPadding,
       children: <Widget>[
         _buildQualityTile(
-          cs,
+          selectedFg,
           icon: Icons.auto_awesome,
           label: t.video_quality_auto,
           index: -1,
         ),
         for (int i = 0; i < variants.length; i++)
           _buildQualityTile(
-            cs,
+            selectedFg,
             icon: Icons.high_quality,
             label: variants[i].qualityLabel,
             index: i,
@@ -647,7 +700,7 @@ extension _VideoQuality on _VideoFushiPageState {
   }
 
   Widget _buildQualityTile(
-    ColorScheme cs, {
+    Color? selectedFg, {
     required IconData icon,
     required String label,
     required int index,
@@ -658,14 +711,14 @@ extension _VideoQuality on _VideoFushiPageState {
       leading: FushiIcon(icon),
       title: Text(label),
       selected: selected,
-      selectedColor: cs.primary,
-      trailing: selected ? FushiIcon(Icons.check, color: cs.primary) : null,
+      selectedColor: selectedFg,
+      trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,
       onTap: () => unawaited(_switchHlsVariant(index)),
     );
   }
 
   Widget _buildMediaServerQualityTile(
-    ColorScheme cs, {
+    Color? selectedFg, {
     required IconData icon,
     required String label,
     required int index,
@@ -677,14 +730,14 @@ extension _VideoQuality on _VideoFushiPageState {
       leading: FushiIcon(icon),
       title: Text(label),
       selected: selected,
-      selectedColor: cs.primary,
-      trailing: selected ? FushiIcon(Icons.check, color: cs.primary) : null,
+      selectedColor: selectedFg,
+      trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,
       onTap: () => unawaited(_switchMediaServerQuality(index)),
     );
   }
 
   Widget _buildYoutubeQualityTile(
-    ColorScheme cs, {
+    Color? selectedFg, {
     required IconData icon,
     required String label,
     required int index,
@@ -695,8 +748,8 @@ extension _VideoQuality on _VideoFushiPageState {
       leading: FushiIcon(icon),
       title: Text(label),
       selected: selected,
-      selectedColor: cs.primary,
-      trailing: selected ? FushiIcon(Icons.check, color: cs.primary) : null,
+      selectedColor: selectedFg,
+      trailing: selected ? FushiIcon(Icons.check, color: selectedFg) : null,
       onTap: () => unawaited(_switchYoutubeVariant(index)),
     );
   }

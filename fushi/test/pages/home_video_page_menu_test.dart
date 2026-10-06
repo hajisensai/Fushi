@@ -5,7 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,9 +15,13 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/tags/tag_chips.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -36,6 +40,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 永不被真调用的刮削 runner：菜单测试只需要一个在场的 controller 来点亮入口。
 class _IdleScrapeRunner implements VideoSourceScrapeRunner {
@@ -50,6 +55,39 @@ class _IdleScrapeRunner implements VideoSourceScrapeRunner {
     String runScope = 'source',
   }) async =>
       SourceScrapeReport(sourceIds: <int>[source.id]);
+}
+
+/// 支持手动候选搜索的 runner（BUG-2999 在线搜索封面）：只记录搜了什么。
+class _CoverSearchScrapeRunner extends _IdleScrapeRunner
+    implements VideoSourceScrapeManualBinding {
+  final List<String> queries = <String>[];
+
+  @override
+  Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({
+    SourceLibraryRow? source,
+    required String workTitle,
+    String? workStableKey,
+    required String query,
+  }) async {
+    queries.add(query);
+    return const <VideoSourceScrapeConfirmationCandidate>[];
+  }
+
+  @override
+  Future<VideoMetadataWork?> fetchWorkForLookup(
+          VideoMetadataLookup lookup) async =>
+      null;
+
+  @override
+  Future<SourceScrapeReport> rescrapeWorkWithLookup({
+    required SourceLibraryRow source,
+    required String workTitle,
+    String? workStableKey,
+    required VideoMetadataLookup lookup,
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+  }) =>
+      throw UnimplementedError();
 }
 
 class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
@@ -311,10 +349,12 @@ void main() {
       );
 
   Future<void> dragTopTagToVideoCard(WidgetTester tester) async {
+    // 顶部筛选条的标签是 M3E 彩色 filter chip [FushiTagToggleChip]（127d7722029
+    // 起；卡片上的标签层仍是 [FushiTagChip]）。
     final Finder tagChip = find
         .descendant(
           of: find.byType(FushiTagFilterBar),
-          matching: find.widgetWithText(FushiTagChip, 'Anime'),
+          matching: find.widgetWithText(FushiTagToggleChip, 'Anime'),
         )
         .first;
     final Finder card =
@@ -652,6 +692,52 @@ void main() {
     });
   });
 
+  // BUG-2999：设置封面曾经只剩「选择封面图片」（本地文件）。在线入口与「手动指定
+  // 作品」共用同一条候选搜索，所以只有 controller 支持手动搜索时才画。
+  group('视频卡「在线搜索封面」（BUG-2999）', () {
+    testWidgets('支持手动搜索的 controller 下菜单有在线入口，点开按视频标题搜索',
+        (WidgetTester tester) async {
+      await seedTaggedVideo();
+      final _CoverSearchScrapeRunner runner = _CoverSearchScrapeRunner();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildApp(scrapeTaskController: controller));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      expect(find.text(t.srt_import_pick_cover), findsOneWidget,
+          reason: '本地选图入口照旧在场');
+      expect(find.text(t.video_cover_online_search), findsOneWidget,
+          reason: '设置封面不能只剩本地文件');
+
+      await tester.tap(find.text(t.video_cover_online_search));
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_cover_online_search), findsOneWidget,
+          reason: '弹出的是在线搜封面的候选搜索框（标题用封面文案，不是「手动指定作品」）');
+      expect(find.text(t.video_cover_online_hint), findsOneWidget);
+
+      await tester.tap(
+          find.byKey(const ValueKey<String>('video-source-manual-search')));
+      await tester.pumpAndSettle();
+      expect(runner.queries, <String>['My Episode'],
+          reason: '以视频标题作初始搜索词，打到资料源的候选搜索');
+    });
+
+    testWidgets('controller 不支持手动搜索时不画在线入口', (WidgetTester tester) async {
+      await seedTaggedVideo();
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_IdleScrapeRunner());
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(buildApp(scrapeTaskController: controller));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      expect(find.text(t.srt_import_pick_cover), findsOneWidget);
+      expect(find.text(t.video_cover_online_search), findsNothing);
+    });
+  });
+
   testWidgets('从未看过的视频卡菜单不出现「清除观看进度」', (WidgetTester tester) async {
     // 无痕迹的集画这个按钮只是一个什么都不会发生的钮；门控口径与合集续播的
     // 痕迹判据同源（videoBookHasWatchTrace）。
@@ -753,7 +839,7 @@ void main() {
   Future<void> enterSelectionMode(WidgetTester tester) async {
     final Finder selectBtn = find.descendant(
       of: find.byType(FushiTagFilterBar),
-      matching: find.byIcon(Icons.checklist_outlined),
+      matching: find.byIcon(FushiIcons.checklist),
     );
     expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮（用户报的「视频少了选择」）');
     await tester.tap(selectBtn);
@@ -1080,24 +1166,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
 
-    // 点批量打标签按钮（批量栏的 sell_outlined）→ 打开三态 picker。dialog 打开前
-    // 页面上只有批量栏一个 sell_outlined（卡片标签层用 FushiTagChip，不是该图标）。
-    await tester.tap(find.byIcon(Icons.sell_outlined).last);
+    // 点批量栏的打标签按钮 → 打开共享三态标签选择器（1de93012a32 起取代旧的
+    // 批量打标签对话框 + SegmentedButton 三段）。
+    await tester.tap(
+        find.byKey(const ValueKey<String>('home_video_batch_tag')));
     await tester.pumpAndSettle();
-    expect(find.text(t.batch_tag_title), findsOneWidget);
+    expect(find.byType(TagPickerPanel), findsOneWidget);
 
-    // 把「Anime」设为「添加」（segmented 的 + 段）：在 SegmentedButton 内定位 + 图标，
-    // 避开页头导入按钮（也是 Icons.add，TODO-064 起恒渲染）。
-    final Finder segmentedButton = find.byWidgetPredicate(
-      (Widget w) => w is SegmentedButton,
-    );
-    expect(segmentedButton, findsWidgets);
-    await tester.tap(find.descendant(
-      of: segmentedButton.first,
-      matching: find.byIcon(Icons.add),
-    ));
+    // 两条都还没挂「Anime」：选择器里该标签是「无」，点一下 → 全加；多目标不即时
+    // 落库，按「应用」才写。
+    final Finder chip = find.byKey(ValueKey<String>('tag_picker_chip_$tagId'));
+    expect(tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.none);
+    await tester.tap(chip);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.batch_tag_apply));
+    expect(tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.all);
+    expect(await db.getTagsForVideoBook('video/1'), isEmpty);
+    await tester.tap(find.byKey(const ValueKey<String>('tag_picker_apply')));
     await tester.pumpAndSettle();
 
     expect(

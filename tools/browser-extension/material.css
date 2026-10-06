@@ -1,0 +1,1361 @@
+/*
+ *  material.css — 扩展自有页面（options 页 / 工具栏菜单 / 字幕侧边栏）的表面材质与控件形态层，
+ *  两套外观风格共用一份文件：
+ *    · M3E（Material 3 Expressive，缺省——用户 2026-10-06「浏览器扩展也统一成 m3e」，与 Fushi app
+ *      同一设计语言）：实色色调表面、分段列表、M3E 形状分级与按压形变、弹簧动效，控件（按钮 /
+ *      开关 / 滑杆 / chip / 分段按钮 / 导航 / 输入框 / 菜单 / snackbar）全取 theme.css 的
+ *      --md-sys-* token。规则挂在 `:root:not([data-style="glass"])` 下——theme.js 总会给扩展页面写
+ *      data-style，没写（脚本未到）或未知值同样落到 M3E；
+ *    · 液态玻璃（第二套，data-style="glass"）：半透明填充 + backdrop-filter 模糊 + 顶缘高光 + 柔和
+ *      投影，页面背后铺一层随主色变化的光斑。只属于玻璃的规则挂在 `:root[data-style="glass"]` 下。
+ *  文件前半是两套共用的基础结构（数值全是 theme.css 的风格 token：M3E 下描边 / 高光 / 模糊 / 光斑
+ *  token 自动清零），后半是 M3E 的形态差异。本文件绝不写死颜色或风格数值；风格与配色正交：任何
+ *  预设 / 自定义主题、亮暗两态都同一套规则。网页里的查词弹窗不走这里：它在 content-css-overlay.css。
+ *
+ *  兼容：不支持 backdrop-filter / 用户要求减少透明度时，theme.css 的兼容层把玻璃填充换回实心、
+ *  不模糊；减少动态效果时本文件末尾把过渡与入场动画全部归零。
+ *  SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+/* ── 页面背景：三团柔和光斑 + 底色（M3E 下光斑强度为 0 = 平的底色）。fixed 让长页面滚动时
+   玻璃卡片在光斑上「滑过」。 ── */
+:root body {
+  background:
+    radial-gradient(60vmax 46vmax at 4% -6%, color-mix(in oklch, var(--fushi-mat-orb-1) var(--fushi-mat-orb-strength), transparent), transparent 68%),
+    radial-gradient(52vmax 42vmax at 104% 22%, color-mix(in oklch, var(--fushi-mat-orb-2) var(--fushi-mat-orb-strength), transparent), transparent 66%),
+    radial-gradient(58vmax 44vmax at 40% 108%, color-mix(in oklch, var(--fushi-mat-orb-3) var(--fushi-mat-orb-strength), transparent), transparent 70%),
+    var(--fushi-bg);
+  background-attachment: fixed;
+}
+
+/* ── 图标槽（icons.js 的 data-fushi-icon 占位，hydrate 后换成 Material Symbols Rounded 的 <svg class="msr">）：
+   居中、不吃行高。尺寸由各处容器 / data-fushi-icon-size 决定。 ── */
+:root .msr-slot {
+  display: inline-grid;
+  place-items: center;
+  line-height: 0;
+}
+
+:root .msr-slot > .msr { display: block; }
+
+/* ── 一级表面（三页共用一份选择器清单）：卡片 / 节导航 / 连接卡 / 折叠卡 / 侧栏页眉 / 菜单分组。
+   描边分两层：border 是贴边的半透明暗边（在亮背景上勾出轮廓），inset 阴影的第一道是顶缘
+   1px 高光（液态玻璃的「边缘反光」），外阴影给浮起感。M3E 下这些 token 全是透明 / none，
+   只剩实色填充。 ── */
+:root :where(
+  .section, .connection, .advanced, .section-nav, .custom-theme-editor,
+  .hp-connection, .hp-update, .hp-group, .hp-queue,
+  .panel-header, .subs-item, .subtitle-row.is-current
+) {
+  border: 1px solid var(--fushi-mat-edge);
+  background-color: var(--fushi-mat-fill);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 40%, transparent), transparent 42%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), inset 0 0 0 1px color-mix(in oklch, var(--fushi-mat-stroke) 35%, transparent), var(--fushi-mat-shadow);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+/* 两份清单都用 :where() 包：特异性只算 :root 这一截 (0,1,0) 加后代，压得过各页 CSS 的
+   单类规则，又不会因为清单里混了 #track 这种 id 而盖掉页面自己的状态规则（开关选中态等）。 */
+
+/* 次级表面（卡片里的代码块 / 选轨）：更薄的一层，不再叠阴影和模糊（它们本来就在卡片里，
+   二次模糊没有可采样的东西，只是白耗）。 */
+:root :where(.select-input, .connection code, .lookup-perf-output, .track-select) {
+  border-color: var(--fushi-mat-edge);
+  background-color: var(--fushi-mat-fill-strong);
+}
+
+:root :where(.section, .connection, .advanced, .section-nav, .custom-theme-editor, .hp-queue) {
+  border-radius: var(--fushi-shape-card);
+}
+
+:root .hp-group {
+  overflow: hidden;
+  border-radius: var(--fushi-shape-card);
+}
+
+:root .subtitle-row.is-current {
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 62%, transparent);
+  border-color: color-mix(in oklch, var(--fushi-primary) 45%, transparent);
+}
+
+:root .subtitle-row:hover {
+  background-color: var(--fushi-mat-fill-subtle);
+}
+
+/* 主按钮（玻璃）：实心主色上加一道顶缘高光 + 主色投影，像一滴有厚度的色块。M3E 的 filled 按钮
+   是平的（悬停才抬到 level 1），见文件后部。 */
+:root[data-style="glass"] :where(.primary-button:not(:disabled), .hp-gen:not(:disabled)) {
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--fushi-mat-highlight) 50%, transparent), 0 6px 18px -8px color-mix(in oklch, var(--fushi-primary) 70%, transparent);
+}
+
+/* 侧边栏页眉本来就半透明 + 模糊，这里换成同一套材质参数、去掉直角底边。 */
+:root .panel-header {
+  border-width: 0 0 1px;
+  border-radius: 0 0 16px 16px;
+}
+
+/* 底部 toast：材质底 + 正文色，不再是实心主色胶囊。 */
+:root .save-toast,
+:root .toast {
+  color: var(--fushi-text);
+  background-color: var(--fushi-mat-fill-strong);
+  border: 1px solid var(--fushi-mat-edge);
+  box-shadow: var(--fushi-mat-shadow);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+/* ── 提示条 .fushi-notice（两套风格同一结构）：左侧 20 号图标 + 正文，--fushi-shape-notice 圆角。玻璃下是
+   一层薄材质；M3E 的语义色块（info / success / warn / error）见文件后部「语义 tonal 色块」。 ── */
+:root .fushi-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-notice);
+  background-color: var(--fushi-mat-fill-subtle);
+  color: var(--fushi-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+:root .fushi-notice > .msr-slot { flex: none; color: var(--fushi-primary); }
+
+/* ── 开关（设置页 .switch input + 工具栏菜单 .hp-toggle 里的假开关）：两套风格同一结构，形状全取
+   token。玻璃：胶囊槽 + 带投影的白色水滴拇指；M3E：描边槽 + 小拇指，选中时拇指长大成满高圆、
+   按下时再大一圈（MD3 开关），弹簧过渡。 ── */
+:root .switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 28px;
+}
+
+:root .switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+:root .switch > span {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: 999px;
+  background-color: color-mix(in oklch, var(--fushi-text) 14%, transparent);
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .switch > span::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fushi-mat-thumb);
+  box-shadow: var(--fushi-mat-thumb-shadow);
+  transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial), width var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    height var(--fushi-dur-medium) var(--fushi-ease-spatial), top var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    left var(--fushi-dur-medium) var(--fushi-ease-spatial), background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span) {
+  border-color: var(--fushi-primary);
+  background-color: var(--fushi-primary);
+}
+
+:root :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span)::after {
+  transform: translateX(18px);
+}
+
+:root .switch input:focus-visible + span {
+  outline: 3px solid color-mix(in oklch, var(--fushi-focus) 54%, transparent);
+  outline-offset: 3px;
+}
+
+:root .switch input:disabled + span { opacity: 0.45; }
+
+/* ── 设置行 / 菜单开关行：玻璃下是卡片里以细线分隔的行；M3E 下见文件后部的分段样式。 ── */
+:root :where(.setting-list > .setting-row, .hp-group > .hp-toggle) {
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .hp-group > .hp-toggle + .hp-toggle {
+  border-top: 1px solid color-mix(in oklch, var(--fushi-outline) 40%, transparent);
+}
+
+:root .hp-group > .hp-toggle:hover {
+  background-color: color-mix(in oklch, var(--fushi-text) 6%, transparent);
+}
+
+:root .hp-group > .hp-toggle:focus-visible {
+  outline: 2px solid var(--fushi-focus);
+  outline-offset: -2px;
+}
+
+/* ── 统一输入框（设置页 / 字幕侧边栏 / 工具栏菜单的全部文本、数字、搜索、密码输入与 textarea）：
+   玻璃面里的一枚无描边填充胶囊，高度与相邻按钮 / 下拉同档（38；抽屉嵌入 32）。焦点是一圈主色
+   光晕——不再是浏览器默认 outline 叠出来的粗黑双圈，但焦点仍然清楚可见；减少透明度 / 不支持
+   模糊时填充回落成实色（见文件末尾兼容层）。勾选框 / 开关 / 滑块 / 取色器不在这份清单里。
+   (0,2,0) 起步：压得过各页的 `.field input`、`.subs-row input`、`input:focus-visible` 这类
+   (0,1,1) 规则；抽屉嵌入的 32 高度规则 (0,2,2) 仍然生效。 ── */
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+) {
+  box-sizing: border-box;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--fushi-shape-field);
+  background-color: var(--fushi-mat-field);
+  background-image: none;
+  box-shadow: inset 0 1px 2px color-mix(in oklch, var(--fushi-text) 7%, transparent);
+  color: var(--fushi-text);
+  font: inherit;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-color var(--fushi-dur-short) var(--fushi-ease), box-shadow var(--fushi-dur-short) var(--fushi-ease);
+}
+
+/* 设置页的字段标签是 12px 粗体，输入框不跟着它走：正文字号、常规字重。 */
+:root:root .field :where(input, textarea) {
+  font-size: 14px;
+  font-weight: 400;
+}
+
+:root:root textarea {
+  min-height: 76px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+:root:root :where(input, textarea)::placeholder {
+  color: var(--fushi-muted);
+  opacity: 1;
+}
+
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):hover:not(:disabled) {
+  background-color: var(--fushi-mat-field-hover);
+}
+
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):focus {
+  outline: none;
+  border-color: color-mix(in oklch, var(--fushi-primary) 55%, transparent);
+  background-color: var(--fushi-mat-field-focus);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 26%, transparent);
+}
+
+:root:root :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 数字框去掉原生上下箭头（在胶囊里又小又糊）；键盘上下键 / 滚轮照常改值。 */
+:root:root input[type="number"] { -moz-appearance: textfield; }
+
+:root:root input[type="number"]::-webkit-inner-spin-button,
+:root:root input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* 搜索框：去掉原生放大镜装饰；清除钮保留（Esc 也能清），只是改成跟随正文色的小圆钮。 */
+:root:root input[type="search"]::-webkit-search-decoration { -webkit-appearance: none; }
+
+:root:root input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background:
+    linear-gradient(45deg, transparent 44%, var(--fushi-surface) 44% 56%, transparent 56%),
+    linear-gradient(-45deg, transparent 44%, var(--fushi-surface) 44% 56%, transparent 56%),
+    var(--fushi-muted);
+  cursor: pointer;
+}
+
+/* 设置页 Token：输入框与「显示」按钮连成一枚胶囊（左半输入、右半按钮）。 */
+:root:root .token-field input { border-radius: var(--fushi-shape-field) 0 0 var(--fushi-shape-field); }
+
+:root .token-field button {
+  min-height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-left: 1px solid var(--fushi-mat-edge);
+  border-radius: 0 var(--fushi-shape-field) var(--fushi-shape-field) 0;
+  background-color: var(--fushi-mat-field-hover);
+  color: var(--fushi-primary-strong);
+  font-weight: 600;
+  outline: none;
+}
+
+:root .token-field button:hover { background-color: var(--fushi-mat-field-focus); }
+
+:root .token-field button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 26%, transparent);
+}
+
+/* 字幕侧边栏查字幕：搜索词 / 集数 / 搜 三件一组——等高、对齐、统一的全圆角胶囊。 */
+:root .subs-row {
+  grid-template-columns: minmax(0, 1fr) 64px 38px;
+  align-items: center;
+  gap: 6px;
+}
+
+:root:root .subs-row input { min-width: 0; height: 38px; }
+
+:root:root .subs-row input[type="number"] {
+  padding: 0 8px;
+  text-align: center;
+}
+
+:root .subs-row button {
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+}
+
+:root.fushi-embed .subs-row { grid-template-columns: minmax(0, 1fr) 52px 32px; }
+
+:root:root.fushi-embed .subs-row input { height: 32px; min-height: 32px; }
+
+:root.fushi-embed .subs-row button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+
+/* ── 统一下拉（glass-select.js）：原生 <select> 视觉隐藏留作真相源，触发器是玻璃胶囊 + 右侧
+   chevron，展开面板是挂在 <body> 上的玻璃菜单。外壳 .fgs 会带上 select 的布局类
+   （.select-input / .track-select），这里先把那些类给的边框 / 内边距 / 底色在外壳上清掉，
+   视觉全交给触发器。 ── */
+:root .fgs {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  vertical-align: middle;
+}
+
+:root .fgs[hidden] { display: none; }
+
+:root .fgs .fgs-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+:root .fgs-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  margin: 0;
+  padding: 0 10px 0 14px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-field);
+  background-color: var(--fushi-mat-fill-strong);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 45%, transparent), transparent 60%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 1px 2px color-mix(in oklch, var(--fushi-text) 6%, transparent);
+  color: var(--fushi-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+  transition: border-color var(--fushi-dur-short) var(--fushi-ease), background-color var(--fushi-dur-short) var(--fushi-ease), box-shadow var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .fgs-trigger:hover {
+  border-color: color-mix(in oklch, var(--fushi-primary) 35%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-surface) 84%, transparent);
+}
+
+/* 焦点环：一圈柔和的主色光晕，不再是 outline + offset 叠出来的粗双圈。 */
+:root .fgs-trigger:focus-visible,
+:root .fgs.is-open .fgs-trigger {
+  border-color: color-mix(in oklch, var(--fushi-primary) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 24%, transparent);
+}
+
+:root .fgs-trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+:root .fgs-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root .fgs-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fushi-muted);
+  transition: transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root .fgs.is-open .fgs-chevron { transform: rotate(180deg); }
+
+:root .fgs-menu {
+  position: fixed;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 5px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-menu);
+  background-color: var(--fushi-mat-fill-strong);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 40%, transparent), transparent 40%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), inset 0 0 0 1px color-mix(in oklch, var(--fushi-mat-stroke) 35%, transparent), var(--fushi-mat-shadow);
+  color: var(--fushi-text);
+  -webkit-backdrop-filter: var(--fushi-mat-filter);
+  backdrop-filter: var(--fushi-mat-filter);
+}
+
+:root .fgs-menu[hidden] { display: none; }
+
+:root .fgs-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  border-radius: calc(var(--fushi-shape-menu) - 5px);
+  cursor: pointer;
+  user-select: none;
+}
+
+:root .fgs-option + .fgs-option { margin-top: 1px; }
+
+:root .fgs-option-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root .fgs-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fushi-primary);
+  visibility: hidden;
+}
+
+:root .fgs-option.is-active { background-color: color-mix(in oklch, var(--fushi-text) 8%, transparent); }
+
+:root .fgs-option.is-selected {
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 72%, transparent);
+  font-weight: 600;
+}
+
+:root .fgs-option.is-selected.is-active { background-color: color-mix(in oklch, var(--fushi-primary-soft) 92%, transparent); }
+
+:root .fgs-option.is-selected .fgs-check { visibility: visible; }
+
+:root .fgs-option[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* 抽屉嵌入（html.fushi-embed）的选轨行压到 32 高，与按钮行同档。 */
+:root.fushi-embed .fgs-trigger {
+  min-height: 32px;
+  font-size: 13px;
+}
+
+/* ── 字幕侧边栏的按钮：工具排（＋ 字 A− A＋ AS ⚙）、时轴偏移排、查字幕排、抽屉折叠钮、
+   每行时间戳，统一成玻璃胶囊 / 小圆钮，去掉页面 CSS 的实线描边；选中态（AS 等 .is-on）是
+   主色染色的玻璃。特异性 (0,2,1) 压得过侧边栏的 button / button:hover / button.is-on。 ── */
+:root :is(.toolbar, .offset-row, .subs-row) button,
+:root .hdr-fold,
+:root .timestamp {
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-control);
+  background-color: var(--fushi-mat-fill-strong);
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-mat-highlight) 45%, transparent), transparent 60%);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 1px 2px color-mix(in oklch, var(--fushi-text) 6%, transparent);
+  outline: none;
+  transition: border-color var(--fushi-dur-short) var(--fushi-ease), background-color var(--fushi-dur-short) var(--fushi-ease), box-shadow var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial), transform var(--fushi-dur-short) var(--fushi-ease);
+}
+
+:root .toolbar button {
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+:root .offset-row button {
+  min-height: 30px;
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+:root :is(.toolbar, .offset-row, .subs-row) button:hover,
+:root .hdr-fold:hover,
+:root .timestamp:hover {
+  border-color: color-mix(in oklch, var(--fushi-primary) 35%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-surface) 84%, transparent);
+}
+
+:root :is(.toolbar, .offset-row, .subs-row) button:active,
+:root .hdr-fold:active,
+:root .timestamp:active {
+  border-radius: var(--fushi-shape-control-pressed);
+  transform: scale(0.96);
+}
+
+:root :is(.toolbar, .offset-row, .subs-row) button:focus-visible,
+:root .hdr-fold:focus-visible,
+:root .timestamp:focus-visible {
+  border-color: color-mix(in oklch, var(--fushi-primary) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight), 0 0 0 3px color-mix(in oklch, var(--fushi-primary) 24%, transparent);
+}
+
+:root .toolbar button.is-on,
+:root .toolbar button.is-on:hover {
+  border-color: color-mix(in oklch, var(--fushi-primary) 50%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-primary-soft) 75%, transparent);
+  color: var(--fushi-primary);
+}
+
+/* 时间戳：更薄的一枚小胶囊（行里的次级控件），当前句的那枚染主色。 */
+:root .timestamp {
+  padding: 2px 8px;
+  background-color: var(--fushi-mat-fill-subtle);
+  box-shadow: inset 0 1px 0 var(--fushi-mat-highlight);
+}
+
+:root .subtitle-row.is-current .timestamp {
+  border-color: color-mix(in oklch, var(--fushi-primary) 40%, transparent);
+  background-color: color-mix(in oklch, var(--fushi-primary) 14%, transparent);
+}
+
+/* ══ M3E（缺省：:root:not([data-style="glass"])）形态差异 ══
+   token 已经把填充换成实色、描边 / 高光 / 模糊 / 光斑清零；这里补「形状语言」与控件形态：
+   ① 设置行与菜单开关行是分段色块——卡片退成透明容器，每行一块实色 surface，组内首尾大圆角、
+      中间小圆角、行间 2px 缝（M3E 分段列表）；
+   ② 按钮 filled / tonal / text：label-large 强调字重、全圆角，按下收成 corner-medium 并微缩（弹簧）；
+   ③ 开关是 M3 形态：52×32 描边槽 + 16 拇指，选中拇指长成 24 并显示 check，按下 28；
+   ④ 滑杆是 M3E expressive：16px 粗轨道（活动段主色）+ 竖条拇指，按下变细；
+   ⑤ 导航是胶囊指示器（secondary-container）；chip / 分段按钮 / 菜单 / snackbar 按 M3 规格。 */
+
+:root:not([data-style="glass"]) .section {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  animation-duration: var(--md-sys-motion-spring-default-spatial-duration);
+  animation-timing-function: var(--md-sys-motion-spring-default-spatial);
+}
+
+/* 常驻卡片靠色调分层、不投影（M3E 的阴影只留给菜单 / snackbar 这类浮层）。 */
+:root:not([data-style="glass"]) :where(.connection, .advanced, .custom-theme-editor, .hp-connection, .hp-update, .hp-queue, .panel-header, .subs-item, .subtitle-row.is-current) {
+  box-shadow: none;
+}
+
+:root:not([data-style="glass"]) .section-heading { padding: 6px 6px 14px; }
+
+:root:not([data-style="glass"]) .section-icon {
+  border-radius: var(--md-sys-shape-corner-large);
+  color: var(--md-sys-color-on-primary);
+  background: var(--md-sys-color-primary);
+}
+
+:root:not([data-style="glass"]) .subtitle-preview { margin-bottom: 10px; border-radius: var(--fushi-shape-card); }
+
+/* ── ① 分段列表 ── */
+:root:not([data-style="glass"]) :is(.setting-list, .hp-group) {
+  gap: 2px;
+}
+
+:root:not([data-style="glass"]) .hp-group {
+  overflow: visible;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+:root:not([data-style="glass"]) :is(.setting-list > .setting-row, .hp-group > .hp-toggle) {
+  padding: 12px 20px;
+  border: 0;
+  border-radius: var(--fushi-shape-segment);
+  background-color: var(--md-sys-color-surface-container-lowest);
+}
+
+:root:not([data-style="glass"]) .hp-group > .hp-toggle { padding: 10px 16px; }
+
+:root:not([data-style="glass"]) :is(.setting-list > :first-child, .hp-group > :first-child) {
+  border-top-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-top-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+:root:not([data-style="glass"]) :is(.setting-list > :last-child, .hp-group > :last-child) {
+  border-bottom-left-radius: var(--md-sys-shape-corner-large-increased);
+  border-bottom-right-radius: var(--md-sys-shape-corner-large-increased);
+}
+
+/* 状态层：悬停 on-surface 8%、按下 10%（M3 state layer，叠在行的实色上）。 */
+:root:not([data-style="glass"]) :is(.setting-list > .setting-row:not(.setting-row-static), .hp-group > .hp-toggle):hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-lowest));
+}
+
+:root:not([data-style="glass"]) :is(.setting-list > .setting-row:not(.setting-row-static), .hp-group > .hp-toggle):active {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), var(--md-sys-color-surface-container-lowest));
+}
+
+:root:not([data-style="glass"]) .setting-row:hover .setting-copy strong { color: var(--md-sys-color-on-surface); }
+
+/* 快捷键网格：每格是一枚独立的圆角色块（网格里没有「组首尾」可言）。 */
+:root:not([data-style="glass"]) .shortcut-grid { gap: 4px; }
+
+:root:not([data-style="glass"]) .shortcut-grid > .shortcut-row {
+  padding: 8px 14px 8px 12px;
+  border-radius: var(--fushi-shape-item);
+}
+
+/* 「更多选项」：一枚整宽的 tonal 胶囊，展开后列表接在下方（展开高度走 default spatial 弹簧）。 */
+:root:not([data-style="glass"]) .more { margin: 10px 0 0; }
+
+:root:not([data-style="glass"]) .more > summary {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:root:not([data-style="glass"]) .more > summary:hover {
+  background: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) .more[open] > summary { margin-bottom: 8px; }
+
+:root:not([data-style="glass"]) .more-count {
+  color: var(--md-sys-color-on-primary);
+  background: var(--md-sys-color-primary);
+}
+
+:root:not([data-style="glass"]) :is(.more, .advanced)::details-content {
+  transition:
+    block-size var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial),
+    content-visibility var(--md-sys-motion-spring-default-spatial-duration) allow-discrete;
+}
+
+:root:not([data-style="glass"]) .subgroup-heading { margin: 18px 6px 8px; }
+
+:root:not([data-style="glass"]) .advanced {
+  border-radius: var(--md-sys-shape-corner-large-increased);
+  background-color: var(--md-sys-color-surface-container-lowest);
+}
+
+:root:not([data-style="glass"]) .diagnostics-stack { gap: 4px; padding-top: 0; }
+
+:root:not([data-style="glass"]) .tip { padding: 14px 20px; }
+
+/* 自定义主题编辑器、风格卡、主题卡：同为实色色调块。 */
+:root:not([data-style="glass"]) .style-card {
+  border-width: 2px;
+  border-color: transparent;
+  background: var(--md-sys-color-surface-container);
+}
+
+:root:not([data-style="glass"]) .style-card:has(input:checked) {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-primary-container);
+}
+
+:root:not([data-style="glass"]) .palette-swatch { border-radius: var(--fushi-shape-item); }
+
+/* ── ⑤ 节导航：透明容器 + 胶囊指示器（secondary-container），选中项强调字重。 ── */
+:root:not([data-style="glass"]) .section-nav {
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-style="glass"]) .section-link {
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-on-surface-variant);
+  font-weight: var(--md-sys-typescale-weight-medium);
+}
+
+:root:not([data-style="glass"]) .section-link:hover {
+  color: var(--md-sys-color-on-surface);
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) .section-link[aria-current="true"] {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+:root:not([data-style="glass"]) .section-link[aria-current="true"] .nav-icon { color: var(--md-sys-color-on-secondary-container); }
+
+/* 窄屏的吸顶导航条：M3E 下是一条实色的底，不透明不模糊。 */
+@media (max-width: 900px) {
+  :root:not([data-style="glass"]) .section-nav {
+    padding: 8px 0;
+    background: var(--md-sys-color-surface);
+  }
+
+  :root:not([data-style="glass"]) .section-link { min-height: 40px; padding: 8px 16px; }
+}
+
+/* ── 语义 tonal 色块（提示条 / 状态卡，三页同一份）：对齐 app FushiInlineNotice 的 M3E 口径——按语义
+   着色的实色容器、无描边无投影，文字 / 图标一律取对应的 on- 色（用户 2026-10-06「改色块」）：
+     · info                      = secondary-container
+     · good / success            = tertiary-container（app 的 success）
+     · warn                      = 调色板警示色淡染的 warn 容器。ColorScheme 没有 warning 角色，app 的提示条
+                                   让 warning 与 success 共用 tertiary、靠图标区分；但连接卡「已连接 / 需处理」
+                                   是同一张卡换状态，必须一眼分得开，所以单列一档
+     · danger / error            = error-container
+     · loading / neutral / ok / 无 = surface-container 中性卡
+   消费方：工具栏菜单的连接卡 .hp-connection 与自更新失效提示 .hp-update、设置页的连接卡 .connection 与
+   版本卡 .tip、字幕侧边栏的结果提示 .fushi-notice。--notice-* 只是本段的局部变量（颜色仍全取 --md-sys-*）：
+   fill / on = 容器与前景，accent / on-accent = 状态图标圆底（连接卡）与状态点。 ── */
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice) {
+  --notice-fill: var(--md-sys-color-surface-container);
+  --notice-on: var(--md-sys-color-on-surface);
+  --notice-accent: var(--md-sys-color-surface-container-highest);
+  --notice-on-accent: var(--md-sys-color-on-surface-variant);
+  --notice-dot: var(--md-sys-color-on-surface-variant);
+  border: 0;
+  background-color: var(--notice-fill);
+  background-image: none;
+  box-shadow: none;
+  color: var(--notice-on);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice)[data-tone="info"] {
+  --notice-fill: var(--md-sys-color-secondary-container);
+  --notice-on: var(--md-sys-color-on-secondary-container);
+  --notice-accent: var(--md-sys-color-secondary, var(--md-sys-color-primary));
+  --notice-on-accent: var(--md-sys-color-on-secondary, var(--md-sys-color-on-primary));
+  --notice-dot: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice):is([data-tone="good"], [data-tone="success"]) {
+  --notice-fill: var(--md-sys-color-tertiary-container);
+  --notice-on: var(--md-sys-color-on-tertiary-container);
+  --notice-accent: var(--md-sys-color-tertiary);
+  --notice-on-accent: var(--md-sys-color-on-tertiary);
+  --notice-dot: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice)[data-tone="warn"] {
+  --notice-fill: color-mix(in oklch, var(--fushi-warn) 22%, var(--md-sys-color-surface-container-lowest));
+  --notice-on: var(--md-sys-color-on-surface);
+  --notice-accent: var(--fushi-warn);
+  --notice-on-accent: var(--md-sys-color-surface-container-lowest);
+  --notice-dot: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice):is([data-tone="danger"], [data-tone="error"]) {
+  --notice-fill: var(--md-sys-color-error-container, color-mix(in oklch, var(--md-sys-color-error) 18%, var(--md-sys-color-surface)));
+  --notice-on: var(--md-sys-color-on-error-container, var(--md-sys-color-on-surface));
+  --notice-accent: var(--md-sys-color-error);
+  --notice-on-accent: var(--md-sys-color-on-error);
+  --notice-dot: var(--notice-accent);
+}
+
+/* 状态卡（连接卡）是卡片：extra-large 28；提示条是 large 16（--fushi-shape-notice，与 app 横幅同形）。 */
+:root:not([data-style="glass"]) :is(.hp-connection, .connection) { border-radius: var(--fushi-shape-card); }
+
+:root:not([data-style="glass"]) :is(.hp-update, .tip, .fushi-notice) { border-radius: var(--fushi-shape-notice); }
+
+:root:not([data-style="glass"]) .fushi-notice {
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+}
+
+/* 色块里的次级文字 / 图标：on- 色降一档（不再用 on-surface-variant——它在彩色容器上会撞色）。 */
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice) :is(.hp-connection-detail, .hp-connection-recheck, .hp-update-detail, p, small, code) {
+  color: color-mix(in oklch, var(--notice-on) 78%, transparent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice) :is(strong, h2, .hp-connection-title, .hp-update-title) {
+  color: var(--notice-on);
+}
+
+:root:not([data-style="glass"]) :is(.hp-update, .fushi-notice) > .msr-slot { color: var(--notice-on); }
+
+:root:not([data-style="glass"]) .hp-connection .hp-connection-icon {
+  color: var(--notice-on-accent);
+  background: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) .connection .status-dot {
+  background: var(--notice-dot);
+  box-shadow: 0 0 0 5px color-mix(in oklch, var(--notice-dot) 22%, transparent);
+}
+
+:root:not([data-style="glass"]) .connection code {
+  background: color-mix(in oklch, var(--notice-on) 8%, transparent);
+}
+
+/* 整卡可点的连接卡（工具栏菜单）：悬停在色块上叠 on- 色 8% 状态层，按下 28 → 16 形变。 */
+:root:not([data-style="glass"]) .hp-connection:hover {
+  background-color: color-mix(in oklch, var(--notice-on) var(--md-sys-state-hover-opacity), var(--notice-fill));
+}
+
+/* 工具栏菜单：制卡队列是一张实色大圆角卡。 */
+:root:not([data-style="glass"]) .hp-queue { padding: 14px; }
+
+/* ── ② 按钮（三页同一份）：filled（.primary-button）/ tonal（.text-button）/ text（.danger-button）。
+   与 app filledButtonTheme 同规格：全胶囊、40 高、左右 20、label-large 强调字重、无描边无投影（filled
+   悬停才抬到 level 1）；按下全圆收成 corner-medium 并微缩（M3E shape morph，弹簧）。工具栏菜单的
+   「字幕侧边栏」/「开始生成」两颗整宽按钮挂同名 class，形态不在 action-popup.html 里另写。 ── */
+:root:not([data-style="glass"]) :is(.primary-button, .text-button) {
+  min-height: 40px;
+  padding: 10px 20px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  font-size: var(--md-sys-typescale-label-large-size);
+  line-height: var(--md-sys-typescale-label-large-line-height);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+  transition:
+    background-color var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+    box-shadow var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+    border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) .primary-button {
+  color: var(--md-sys-color-on-primary);
+  background: var(--md-sys-color-primary);
+  box-shadow: none;
+}
+
+:root:not([data-style="glass"]) .primary-button:hover {
+  background: color-mix(in oklch, var(--md-sys-color-on-primary) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary));
+  box-shadow: var(--md-sys-elevation-level1);
+}
+
+:root:not([data-style="glass"]) .text-button {
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:root:not([data-style="glass"]) .text-button:hover {
+  background: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) .text-button.danger-button {
+  color: var(--md-sys-color-error);
+  background: transparent;
+}
+
+:root:not([data-style="glass"]) .text-button.danger-button:hover {
+  background: color-mix(in oklch, var(--md-sys-color-error) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) :is(.primary-button, .text-button):active:not(:disabled) {
+  border-radius: var(--fushi-shape-control-pressed);
+  transform: scale(0.97);
+}
+
+:root:not([data-style="glass"]) :is(.primary-button, .text-button):focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+}
+
+:root:not([data-style="glass"]) :is(.primary-button, .text-button):disabled {
+  color: color-mix(in oklch, var(--md-sys-color-on-surface) 38%, transparent);
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-disabled-container-opacity), transparent);
+  box-shadow: none;
+  cursor: default;
+}
+
+/* 连接成组的按钮（查词性能日志的刷新 / 复制 / 清空）：M3E connected button group——组外缘全圆角、
+   组内相邻边小圆角、2px 缝；按下仍收成 corner-medium。 */
+:root:not([data-style="glass"]) .lookup-perf-actions { gap: 2px; }
+
+:root:not([data-style="glass"]) .lookup-perf-actions .text-button { border-radius: var(--md-sys-shape-corner-small); }
+
+:root:not([data-style="glass"]) .lookup-perf-actions .text-button:first-child {
+  border-top-left-radius: var(--md-sys-shape-corner-full);
+  border-bottom-left-radius: var(--md-sys-shape-corner-full);
+}
+
+:root:not([data-style="glass"]) .lookup-perf-actions .text-button:last-child {
+  border-top-right-radius: var(--md-sys-shape-corner-full);
+  border-bottom-right-radius: var(--md-sys-shape-corner-full);
+}
+
+:root:not([data-style="glass"]) .lookup-perf-actions .text-button.danger-button {
+  background: color-mix(in oklch, var(--md-sys-color-error) 12%, transparent);
+}
+
+/* 通用分段按钮（.segmented > button，选中 aria-pressed / aria-checked / .is-selected）：连接组，
+   选中段 secondary-container + 前置 check；未选中段描边。供各扩展页按需使用。 */
+:root:not([data-style="glass"]) .segmented {
+  display: inline-flex;
+  gap: 2px;
+}
+
+:root:not([data-style="glass"]) .segmented > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-small);
+  color: var(--md-sys-color-on-surface);
+  background: transparent;
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) .segmented > button:first-child {
+  border-top-left-radius: var(--md-sys-shape-corner-full);
+  border-bottom-left-radius: var(--md-sys-shape-corner-full);
+}
+
+:root:not([data-style="glass"]) .segmented > button:last-child {
+  border-top-right-radius: var(--md-sys-shape-corner-full);
+  border-bottom-right-radius: var(--md-sys-shape-corner-full);
+}
+
+:root:not([data-style="glass"]) .segmented > button:hover {
+  background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) .segmented > :is([aria-pressed="true"], [aria-checked="true"], .is-selected) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+:root:not([data-style="glass"]) .segmented > :is([aria-pressed="true"], [aria-checked="true"], .is-selected)::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+:root:not([data-style="glass"]) .segmented > button:active { border-radius: var(--fushi-shape-control-pressed); }
+
+/* 通用 chip（.chip，选中 .is-on / aria-pressed）：与 app chipTheme 同形——32 高全胶囊、无描边、
+   surface-container-high 柔和填充；选中 secondary-container。 */
+:root:not([data-style="glass"]) .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-high);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) .chip:hover { background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high)); }
+
+:root:not([data-style="glass"]) .chip:active { border-radius: var(--md-sys-shape-corner-medium); }
+
+:root:not([data-style="glass"]) .chip:is(.is-on, [aria-pressed="true"]) {
+  border-color: transparent;
+  color: var(--md-sys-color-on-secondary-container);
+  background: var(--md-sys-color-secondary-container);
+}
+
+/* ── 标准图标按钮（M3E standard icon button，三页同一份）：工具栏菜单顶栏的设置钮 .hp-icon-btn、设置页
+   连接卡的重检钮 .icon-button、字幕侧边栏工具排 / 抽屉折叠钮。透明底、on-surface-variant，悬停叠
+   8% 状态层；按下圆形收成圆角方并微缩（弹簧）；切换钮选中（.is-on / aria-pressed）= secondary-container
+   填充、静息即圆角方（M3E toggle icon button）。尺寸各页自管（40 / 抽屉 30×32）。 ── */
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold) {
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-surface-variant);
+  transition:
+    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):hover {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+  color: var(--md-sys-color-on-surface);
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):is(.is-on, [aria-pressed="true"]),
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):is(.is-on, [aria-pressed="true"]):hover {
+  border-radius: var(--md-sys-shape-corner-medium);
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):is(.is-on, [aria-pressed="true"]):hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):active {
+  border-radius: var(--md-sys-shape-corner-small);
+  transform: scale(0.92);
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* 字幕侧边栏查字幕的「搜」钮：与输入框同形（--fushi-shape-field）的 tonal 方钮。时轴偏移排 /
+   时间戳的 M3E 形态在 side-panel.css（只有侧边栏有）。 */
+:root:not([data-style="glass"]) .subs-row button {
+  border: 0;
+  border-radius: var(--fushi-shape-field);
+  background-color: var(--md-sys-color-secondary-container);
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+:root:not([data-style="glass"]) .subs-row button:hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) .subs-row button:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--md-sys-color-primary) 40%, transparent);
+}
+
+/* ── ③ 开关：52×32 描边槽；关时拇指 16、取 outline，开时拇指长成 24、取 on-primary 并显示 check；
+   按住（行或开关本身）拇指长到 28。弹簧过渡。 ── */
+:root:not([data-style="glass"]) .switch {
+  width: 52px;
+  height: 32px;
+}
+
+:root:not([data-style="glass"]) .switch > span {
+  border: 2px solid var(--md-sys-color-outline);
+  background-color: var(--md-sys-color-surface-container-highest);
+}
+
+:root:not([data-style="glass"]) .switch > span::after {
+  top: 6px;
+  left: 6px;
+  width: 16px;
+  height: 16px;
+  background: var(--md-sys-color-outline);
+}
+
+:root:not([data-style="glass"]) :is(.setting-row, .hp-toggle):hover .switch > span::after {
+  background: var(--md-sys-color-on-surface-variant);
+}
+
+/* check 图标：画在拇指之上（z-index），只在选中时出现。位置 = 选中拇指的中心。 */
+:root:not([data-style="glass"]) .switch > span::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: 6px;
+  left: 26px;
+  width: 16px;
+  height: 16px;
+  background-color: var(--md-sys-color-on-primary-container);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -960 960 960'%3E%3Cpath d='m378-332 363-363q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L399-267q-9 9-21 9t-21-9L175-449q-9-9-8.5-21.5T176-492q9-9 21.5-9t21.5 9l159 160Z'/%3E%3C/svg%3E") center / contain no-repeat;
+  opacity: 0;
+  transform: scale(0.4);
+  pointer-events: none;
+  transition: opacity var(--fushi-dur-short) var(--fushi-ease), transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span) {
+  border-color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary);
+}
+
+:root:not([data-style="glass"]) :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span)::after {
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  background: var(--md-sys-color-on-primary);
+  transform: translateX(20px);
+}
+
+:root:not([data-style="glass"]) :is(.switch input:checked + span, .hp-toggle[data-on="1"] .switch > span)::before {
+  opacity: 1;
+  transform: scale(1);
+}
+
+:root:not([data-style="glass"]) :is(.setting-row, .hp-toggle):hover .switch input:checked + span::after,
+:root:not([data-style="glass"]) .hp-toggle[data-on="1"]:hover .switch > span::after {
+  background: var(--md-sys-color-primary-container);
+}
+
+/* 按下：拇指 28（排在选中规则之后、同特异性，按住选中态时也能长大）。 */
+:root:not([data-style="glass"]) :is(:is(.setting-row, .hp-toggle):active .switch, .switch:active) > span::after {
+  top: 0;
+  left: 0;
+  width: 28px;
+  height: 28px;
+}
+
+:root:not([data-style="glass"]) .switch input:focus-visible + span {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 54%, transparent);
+  outline-offset: 2px;
+}
+
+:root:not([data-style="glass"]) .switch input:disabled + span { opacity: var(--md-sys-state-disabled-content-opacity); }
+
+/* ── ④ 滑杆（M3E expressive slider）：16px 粗轨道，活动段主色、非活动段 secondary-container，
+   中间是一根 4px 竖条拇指（两侧各留 6px 缝），按下变细到 2px。活动段宽度取 --fill（options.js 按
+   值 / min / max 写入）；Firefox 用原生 ::-moz-range-progress。 ── */
+:root:not([data-style="glass"]) input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+:root:not([data-style="glass"]) input[type="range"]::-webkit-slider-runnable-track {
+  height: 16px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: linear-gradient(to right,
+    var(--md-sys-color-primary) 0 calc(var(--fill, 50%) - 6px),
+    transparent calc(var(--fill, 50%) - 6px) calc(var(--fill, 50%) + 6px),
+    var(--md-sys-color-secondary-container) calc(var(--fill, 50%) + 6px) 100%);
+}
+
+:root:not([data-style="glass"]) input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 4px;
+  height: 44px;
+  margin-top: -14px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--md-sys-color-primary);
+  transition: width var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) input[type="range"]:active::-webkit-slider-thumb { width: 2px; }
+
+:root:not([data-style="glass"]) input[type="range"]::-moz-range-track {
+  height: 16px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-secondary-container);
+}
+
+:root:not([data-style="glass"]) input[type="range"]::-moz-range-progress {
+  height: 16px;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-primary);
+}
+
+:root:not([data-style="glass"]) input[type="range"]::-moz-range-thumb {
+  width: 4px;
+  height: 44px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--md-sys-color-primary);
+  transition: width var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+:root:not([data-style="glass"]) input[type="range"]:active::-moz-range-thumb { width: 2px; }
+
+:root:not([data-style="glass"]) input[type="range"]:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 54%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--md-sys-shape-corner-small);
+}
+
+:root:not([data-style="glass"]) input[type="range"]:disabled {
+  opacity: var(--md-sys-state-disabled-content-opacity);
+  cursor: default;
+}
+
+/* ── 输入框：surface-container-highest 实色填充、无内阴影；焦点是 2px 主色内描边。 ── */
+:root:not([data-style="glass"]) :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+) {
+  padding: 0 16px;
+  background-color: var(--md-sys-color-surface-container-highest);
+  box-shadow: none;
+  color: var(--md-sys-color-on-surface);
+}
+
+:root:not([data-style="glass"]) :where(
+  input:not([type]), input[type="text"], input[type="search"], input[type="number"],
+  input[type="password"], input[type="url"], input[type="email"], input[type="tel"], textarea
+):focus {
+  border-color: transparent;
+  background-color: var(--md-sys-color-surface-container-highest);
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+:root:not([data-style="glass"]) textarea {
+  padding: 10px 16px;
+  border-radius: var(--md-sys-shape-corner-large);
+}
+
+:root:not([data-style="glass"]) .token-field button {
+  border-left-color: transparent;
+  color: var(--md-sys-color-primary);
+  font-size: var(--md-sys-typescale-label-large-size);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+/* ── 下拉（glass-select）：触发器与输入框同形（实色填充、focus 2px 主色内描边），菜单是 M3 menu：
+   surface-container、level 2 投影、corner-large；选中行 secondary-container + check。展开时
+   从顶缘弹出（@starting-style，弹簧）。 ── */
+:root:not([data-style="glass"]) .fgs-trigger {
+  padding: 0 8px 0 16px;
+  border-color: transparent;
+  background-color: var(--md-sys-color-surface-container-highest);
+  background-image: none;
+  box-shadow: none;
+  color: var(--md-sys-color-on-surface);
+}
+
+:root:not([data-style="glass"]) .fgs-trigger:hover {
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-highest));
+}
+
+:root:not([data-style="glass"]) .fgs-trigger:focus-visible,
+:root:not([data-style="glass"]) .fgs.is-open .fgs-trigger {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+:root:not([data-style="glass"]) .fgs-chevron { color: var(--md-sys-color-on-surface-variant); }
+
+:root:not([data-style="glass"]) .fgs-menu {
+  padding: 4px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-large);
+  background-color: var(--md-sys-color-surface-container);
+  background-image: none;
+  box-shadow: var(--md-sys-elevation-level2);
+  color: var(--md-sys-color-on-surface);
+  transform-origin: top center;
+  transition:
+    opacity var(--md-sys-motion-spring-fast-effects-duration) var(--md-sys-motion-spring-fast-effects),
+    transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
+}
+
+@starting-style {
+  :root:not([data-style="glass"]) .fgs-menu:not([hidden]) {
+    opacity: 0;
+    transform: scaleY(0.85);
+  }
+}
+
+:root:not([data-style="glass"]) .fgs-option {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+:root:not([data-style="glass"]) .fgs-option.is-active {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+:root:not([data-style="glass"]) .fgs-option.is-selected {
+  color: var(--md-sys-color-on-secondary-container);
+  background-color: var(--md-sys-color-secondary-container);
+  font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+:root:not([data-style="glass"]) .fgs-option.is-selected.is-active {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) .fgs-check { color: var(--md-sys-color-on-secondary-container); }
+
+/* ── snackbar（设置页 .save-toast / 侧边栏 .toast；页内 #fushi-toast 同值）：inverse-surface 底、
+   --fushi-shape-snackbar（= app kFushiM3eInverseSurfaceRadius 24）、level 3 投影。 ── */
+:root:not([data-style="glass"]) :is(.save-toast, .toast) {
+  color: var(--md-sys-color-inverse-on-surface);
+  background-color: var(--md-sys-color-inverse-surface);
+  border-color: transparent;
+  border-radius: var(--fushi-shape-snackbar);
+  box-shadow: var(--md-sys-elevation-level3);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root *,
+  :root *::before,
+  :root *::after {
+    transition-duration: 0.01ms !important;
+    animation: none !important;
+  }
+
+  :root :is(.primary-button, .text-button, .hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):active { transform: none; }
+}

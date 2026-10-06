@@ -3,7 +3,7 @@
 // libass `calc_transform_matrix`：先切变再旋转（R·Shear）。
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

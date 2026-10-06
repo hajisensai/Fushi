@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 void main() {
@@ -107,7 +108,20 @@ void main() {
     );
     await tester.pump();
     // spacing.page + 8 == 28, unchanged: a text title still needs its band.
-    expect(tester.getTopLeft(find.text('书架')).dy, closeTo(47 + 28, 0.01));
+    // M3E：标题带是悬浮标题胶囊，量胶囊上沿。
+    expect(
+      tester
+          .getTopLeft(
+            find
+                .ancestor(
+                  of: find.text('书架'),
+                  matching: find.byType(FushiPageChromeTitle),
+                )
+                .first,
+          )
+          .dy,
+      closeTo(47 + 28, 0.01),
+    );
   });
 
   testWidgets('explicit header padding still takes precedence', (

@@ -126,7 +126,9 @@ def _platform_key(name: str) -> str:
 
     Shapes mirror each Publish step ASSET_GLOB and are mutually exclusive:
     hibiki-*.apk android, hibiki-*-windows-setup.exe windows,
-    hibiki-*-macos.zip / hibiki-*.ipa apple. Unknown shape becomes its own
+    hibiki-*-macos.zip (legacy universal) / *-macos-arm64.zip / hibiki-*.ipa
+    apple. Both macOS shapes share one slot so the arm64 zip supersedes the
+    legacy one instead of both lingering side by side. Unknown shape becomes its own
     singleton slot other:<name> unioned by exact name.
     """
     n = name.lower()
@@ -134,7 +136,7 @@ def _platform_key(name: str) -> str:
         return "windows"
     if n.endswith(".apk"):
         return "android"
-    if n.endswith("-macos.zip"):
+    if n.endswith("-macos.zip") or n.endswith("-macos-arm64.zip"):
         return "macos"
     if n.endswith(".ipa"):
         return "ios"

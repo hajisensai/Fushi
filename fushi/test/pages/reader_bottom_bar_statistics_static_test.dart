@@ -103,10 +103,11 @@ void main() {
         '  Widget _buildDesktopHeader() {',
         '  /// 顶部工具栏「统计」',
       );
-      expect(
-          header,
-          contains(
-              'leading: _readerControlActionsIn(ReaderControlSlot.topLeft)'));
+      expect(header,
+          contains('_readerControlActionsIn(ReaderControlSlot.topLeft)'));
+      // 2026-10：布局的「更多」槽恒进 ⋮；悬浮样式顶栏同样从槽位取按钮。
+      expect(header, contains('overflowActions: _overflowControlActions()'));
+      expect(header, contains('_renderableControlsIn(ReaderControlSlot.topRight)'));
       expect(
           header,
           contains(
@@ -139,7 +140,8 @@ void main() {
       // 底栏槽位按钮仍由布局槽位驱动并进播放条右端；与播放条自带传输键重复的
       // 那几颗被滤掉（6213bc5a59：同一行不出两份上一句 / 播放 / 下一句）。
       expect(trailing, contains('_renderableControlsIn(slot)'));
-      expect(trailing, contains('!_isDuplicatedByAudiobookPlayBar(item)'));
+      expect(trailing, contains('!_isDuplicatedByAudiobookPlayBar(item)'),
+          reason: '与播放条传输键重复的槽位按钮不得再并进来');
       expect(trailing,
           contains('_readerControlButton(_readerControlAction(item))'));
       expect(

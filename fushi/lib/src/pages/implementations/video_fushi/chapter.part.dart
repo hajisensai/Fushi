@@ -89,7 +89,7 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
       buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
@@ -161,7 +161,7 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      // 浮动底栏（Apple 玻璃胶囊 / M3E 浮动工具栏）的抬升，见 [_floatingChromeBottomLift]。
       buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
@@ -220,15 +220,18 @@ extension _VideoChapter on _VideoFushiPageState {
     final int current = controller.chapterIndexForPosition(
       controller.positionMs ?? 0,
     );
-    return VideoChapterPanel(
-      controller: controller,
-      currentIndex: current,
-      colorScheme: _videoChromeColorScheme(context),
-      emptyHint: t.video_chapters_empty,
-      onTapChapter: (VideoChapter chapter) {
-        _pokeControlsVisible();
-        unawaited(controller.seekToChapter(chapter.index));
-      },
+    // 配色读侧栏表面**内部**的主题（M3E = 面板中性深色主题），不是页面主题。
+    return Builder(
+      builder: (BuildContext panelContext) => VideoChapterPanel(
+        controller: controller,
+        currentIndex: current,
+        colorScheme: Theme.of(panelContext).colorScheme,
+        emptyHint: t.video_chapters_empty,
+        onTapChapter: (VideoChapter chapter) {
+          _pokeControlsVisible();
+          unawaited(controller.seekToChapter(chapter.index));
+        },
+      ),
     );
   }
 
@@ -245,7 +248,7 @@ extension _VideoChapter on _VideoFushiPageState {
     final double bottom = _videoBottomSystemInset() +
         (_videoButtonBarHeight + _videoSeekBarContainerHeight) *
             _controlsDensityScale +
-        _appleBottomLift +
+        _floatingChromeBottomLift +
         20 * scale;
     return Positioned(
       right: 24 * scale,

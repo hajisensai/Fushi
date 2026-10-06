@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui'
     show AppExitResponse, PlatformDispatcher;
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
@@ -12,7 +13,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -58,6 +58,7 @@ import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -79,6 +80,7 @@ import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_desktop_auto_launch.dart';
+import 'package:fushi/src/anki/anki_video_template_entry.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
@@ -87,6 +89,10 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
+import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
+import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_routes.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
@@ -96,7 +102,6 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -116,7 +121,6 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
@@ -810,6 +814,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 见 [initState]）。持有以便 [dispose] 注销。
   AppLifecycleListener? _exitRequestListener;
 
+  /// 桌面本机控制通道（`fushi_cli` 的服务端，见 [_startCtlServer]）。
+  CtlServer? _ctlServer;
+
   /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
   /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
   /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
@@ -914,15 +921,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
-    FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
-    // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    // 只在有 Aidoku 宿主的构建里装（iOS 按 App Store 合规、macOS 随 Rust CLI 一并
-    // 移除后当前没有宿主）：没有源却装个解题器等于给一个不存在的源留后门。
-    // `AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源匹配用它的
-    // `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
-    if (AidokuRuntimeFactory.isSupported) {
-      installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
+    if (_isDesktop) {
+      unawaited(_startCtlServer());
     }
+    FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    installAnkiVideoTemplateFallbackNotice(
+      navigatorKey: ref.read(appProvider).navigatorKey,
+      prefs: () => ref.read(appProvider).prefsRepo,
+    );
     // 桌面 Mihon sidecar 是无头 JVM，被 Cloudflare 拦下时由宿主弹 WebView 解题；
     // Android 有自己的 CloudflareChallengeActivity，不走这条。
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
@@ -1120,6 +1126,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _guardedExitStep('exit flush', () async {
         await ExitFlushRegistry.instance.flushAll();
       }),
+      // 删掉 CLI 发现文件：exit(0) 之后不会再有 dispose，不删就留下一份残留
+      // （CLI 能认出残留，但少一次连不上的探测）。
+      _guardedExitStep('ctl channel stop', () async {
+        await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
+      }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续
@@ -1222,6 +1233,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
     _exitRequestListener?.dispose();
+    unawaited(_ctlServer?.stop());
+    _ctlServer = null;
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -1578,6 +1591,71 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return null;
   }
 
+  /// 启动桌面本机控制通道：`fushi_cli` 经 127.0.0.1 + token 驱动本 app。
+  ///
+  /// 在 initState 就开（不等初始化完成）：CLI 拉起 app 后靠它判断「进程已起、还在
+  /// 初始化」，`status` 回 `initialised:false`，open / lookup 回 409 让 CLI 继续等。
+  Future<void> _startCtlServer() async {
+    final CtlServer? server = await startDesktopCtlServer(
+      DesktopCtlHost(
+        isReady: () {
+          final AppModel model = ref.read(appProvider);
+          return model.isInitialised &&
+              model.navigatorKey.currentState != null;
+        },
+        appVersion: () => ref.read(appProvider).packageInfo.version,
+        openTarget: _handleCtlOpen,
+        lookupWord: (String word) async {
+          await _focusMainWindowForCtl();
+          DesktopLookupService.instance.triggerLookup(word);
+        },
+        quitApp: _flushAndExitForWindowClose,
+        routes: buildDesktopCtlRoutes(
+          DesktopCtlContext(
+            ref: ref,
+            focusMainWindow: _focusMainWindowForCtl,
+            ingestExternalVideo: _ingestExternalVideo,
+          ),
+        ),
+      ),
+    );
+    if (!mounted) {
+      await server?.stop();
+      return;
+    }
+    _ctlServer = server;
+  }
+
+  /// `fushi_cli open`：先按 argv 同一组候选裁决（拒绝要回给终端），接受的目标交给
+  /// 单实例转交的同一个出口 [_handleExternalVideoChannel] 落地。
+  ///
+  /// 不 await 落地：视频分支会 await 播放页 push，那要等用户关掉播放页才返回，
+  /// CLI 不该挂到那时候。
+  Future<CtlOpenResult> _handleCtlOpen(String target) async {
+    final CtlOpenResult verdict = classifyCtlOpenTarget(
+      target,
+      videoModuleEnabled:
+          ref.read(appProvider).moduleVisibility.isEnabled(ModuleId.video),
+    );
+    if (!verdict.accepted) return verdict;
+    await _focusMainWindowForCtl();
+    unawaited(
+      _handleExternalVideoChannel(MethodCall('openExternalVideo', target)),
+    );
+    return verdict;
+  }
+
+  /// 单实例转交时 C++ 侧会前置主窗；CLI 走网络通道到这里，没人替我们做，自己前置。
+  Future<void> _focusMainWindowForCtl() async {
+    try {
+      if (await windowManager.isMinimized()) await windowManager.restore();
+      await windowManager.show();
+      await windowManager.focus();
+    } catch (e) {
+      debugPrint('[Fushi] ctl focus main window failed: $e');
+    }
+  }
+
   /// TODO-1092: Windows runner 报告「系统强调色/主题色已变」。经短去抖合并同一次
   /// 变更连发的多条广播，然后调 [AppModel.refreshSystemPalette] 让 `system-theme`
   /// 动态取色实时更新——修复「必须最小化/恢复/失焦触发生命周期 resumed 才刷新」。
@@ -1607,6 +1685,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
 
+    final String? bookUid = await _ingestExternalVideo(videoPath);
+    if (bookUid == null) return;
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+
+    if (!mounted) return;
+    // This process-level launch path owns a NavigatorState but has no themed
+    // descendant BuildContext, so its route contract is explicitly Material.
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
+      ),
+    );
+  }
+
+  /// 外部视频入库（不打开）：模块门 → 存在性 → 按路径去重建/取 VideoBook。
+  /// 失败（模块关 / 文件不存在 / 入库异常）已给 toast 并返回 null。
+  /// [_openExternalVideo] 与 `fushi_cli library import` 共用这一个入口。
+  Future<String?> _ingestExternalVideo(String videoPath) async {
     // ⓪ 模块门：视频模块关掉时「看不见也到不了」——文件关联 / 命令行 argv /
     // 单实例转发 / 拖拽四条外部路径都汇到这里，是唯一能读到偏好的落地点（冷启动
     // argv 分支跑在 AppModel.initialise 之前，那时 prefs 还在 Drift 里读不到）。
@@ -1619,7 +1716,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         msg: t.module_disabled_hint,
         severity: ToastSeverity.info,
       );
-      return;
+      return null;
     }
 
     // ③ 存在性校验：冷启动 argv 路径虽在 main() 已 existsSync 过，但从那次检查到
@@ -1630,7 +1727,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         msg: t.video_file_not_found,
         severity: ToastSeverity.error,
       );
-      return;
+      return null;
     }
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
@@ -1700,19 +1797,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       );
     } catch (e) {
       debugPrint('[Fushi] external video upsert failed: $e');
-      return;
+      return null;
     }
-
-    if (!mounted) return;
-    // This process-level launch path owns a NavigatorState but has no themed
-    // descendant BuildContext, so its route contract is explicitly Material.
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
-      ),
-    );
+    return bookUid;
   }
+
 
   void _scheduleWindowsUpdateHandoffReconcile() {
     if (_windowsUpdateHandoffScheduled || _windowsUpdateHandoffChecked) {
@@ -2308,11 +2397,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           ],
           home: home,
           locale: locale,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          // material_ui 的 delegates 已含 Cupertino + Widgets 三份本地化。
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: appModel.locales.values,
           themeMode: themeMode,
           theme: appModel.theme,
@@ -2374,150 +2460,183 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       fontFamily: appModel.appFontFamily),
                   // 玻璃设计系统的组件配色 / 渲染档位作用域（结构恒定，
                   // 见 FushiGlassScope 类注释）。
-                  child: FushiGlassScope(
-                  child: LayoutBuilder(
-                    builder:
-                        (BuildContext context, BoxConstraints constraints) {
-                      final Size viewport = constraints.hasBoundedWidth &&
-                              constraints.hasBoundedHeight
-                          ? constraints.biggest
-                          : MediaQuery.sizeOf(context);
-                      final double uiScale =
-                          appModel.resolveAppUiScaleForViewport(
-                        viewport: viewport,
-                        platform: Theme.of(context).platform,
-                      );
-                      Widget navigation = wrapWithGlobalNavigation(
-                        navigatorKey: appModel.navigatorKey,
-                        focusNavigationEnabled:
-                            appModel.experimentalFocusNavigationEnabled,
-                        registry: appModel.shortcutRegistry,
-
-                        // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
-                        // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
-                        // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
-                        // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
-                        // 到不了全局处理器——整个全局键处理静默失效。
-                        child: _wrapFocusNavigation(
-                          enabled: appModel.experimentalFocusNavigationEnabled,
-                          // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
-                          // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
-                          // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
-                          // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）
-                          // 在查词宿主之下：球点出的查词弹窗要盖在球上。
-                          child: Stack(
-                            children: <Widget>[
-                              child!,
-                              const AppFloatingBallHost(),
-                              const FloatingLyricLookupHost(),
-                            ],
-                          ),
-                        ),
-                      );
-                      if (isMacosPlatform(context)) {
-                        // macOS native shell (Approach B): the MacosWindow + Sidebar
-                        // wrap the WHOLE navigator so every route — home tabs AND
-                        // pushed routes (reader, settings detail, dialogs) — inherits
-                        // a MacosWindowScope and can use native MacosScaffold/ToolBar.
-                        // MacosTheme is derived from the SAME live ColorScheme as the
-                        // rest of the app. The sidebar destinations come from the
-                        // dynamic HomeTab list (video/games toggles) so they
-                        // stay in lock-step with HomePage's rail; selection is shared
-                        // via homeShellTabNotifier. Hide the sidebar while a media
-                        // item (reader/video) is open so reading is full-width; the
-                        // builder reruns when appModel notifies (openMedia/close).
-                        // TODO-1375：sidebar 显隐由 appModel.mediaOpenNotifier 驱动，
-                        // 不再直接读 appModel.isMediaOpen。根因：isMediaOpen 变化不
-                        // notifyListeners，退出阅读器后本 builder 不重跑、sidebar 卡在
-                        // stale null（永久消失→设置 tab 无出口→困死）。改用
-                        // ValueListenableBuilder 监听可靠通知源：退出媒体必重建恢复
-                        // sidebar。navigation（=整个 navigator）作为不变 child 透传，
-                        // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
-                        navigation = MacosTheme(
-                          data:
-                              fushiMacosThemeFromColorScheme(cs, cs.brightness),
-                          child: ValueListenableBuilder<bool>(
-                            valueListenable: appModel.mediaOpenNotifier,
-                            builder: (BuildContext context, bool mediaOpen,
-                                Widget? child) {
-                              return MacosWindow(
-                                sidebar: mediaOpen
-                                    ? null
-                                    : buildFushiMacosSidebar(
-                                        // 与 HomePage._activeTabs 同一真值、
-                                        // 同一个参数。此前这里是第二份手抄的
-                                        // 七参实参表，漏传 gamesEnabled 靠缺省
-                                        // false 蒙对，注释还把漏写说成「macOS
-                                        // 恒 false」——收成一个 ModuleVisibility
-                                        // 后不可能再漂移。
-                                        activeTabs: homeActiveTabs(
-                                          appModel.moduleVisibility,
-                                        ),
-                                      ),
-                                child: child!,
+                  // LegacyDesignCompatibility：把新 material_ui / cupertino_ui
+                  // 主题与本地化桥给仍用 SDK 旧 Material / Cupertino 的第三方
+                  // 组件（必须在上面这层 CupertinoTheme 之内）。
+                  child: LegacyDesignCompatibility(
+                    child: FushiGlassScope(
+                      child: LayoutBuilder(
+                        builder: (BuildContext context, BoxConstraints constraints) {
+                          final Size viewport =
+                              constraints.hasBoundedWidth &&
+                                  constraints.hasBoundedHeight
+                              ? constraints.biggest
+                              : MediaQuery.sizeOf(context);
+                          final double uiScale = appModel
+                              .resolveAppUiScaleForViewport(
+                                viewport: viewport,
+                                platform: Theme.of(context).platform,
                               );
-                            },
-                            child: navigation,
-                          ),
-                        );
-                      }
-                      navigation = FushiAppUiScale(
-                        scale: uiScale,
-                        child: navigation,
-                      );
-                      // 自绘顶栏的唯一门控就是这条启动闩（Windows / macOS 由
-                      // `main()` 置位）：不再叠一层 `Platform.isWindows`，否则
-                      // macOS 明明已经隐藏了系统标题栏与交通灯，却拿不到替代顶栏
-                      // ——窗口既没有标题也没有最小化/关闭按钮。
-                      if (FushiDesktopTitleBar.isEnabled) {
-                        navigation = ValueListenableBuilder<bool>(
-                          // The home rail is only on screen while the home
-                          // shell is the top route; opening a media item
-                          // covers it — the same signal the macOS shell uses
-                          // to drop its sidebar — so the title has to
-                          // un-indent with it. `navigation` is passed through
-                          // as the unchanging `child`, so flipping this never
-                          // rebuilds the navigator subtree.
-                          valueListenable: appModel.mediaOpenNotifier,
-                          builder: (BuildContext context, bool mediaOpen,
-                              Widget? child) {
-                            final WindowSizeClass sizeClass =
-                                windowSizeClassForWidth(viewport.width);
-                            final bool railVisible = !mediaOpen &&
-                                sizeClass != WindowSizeClass.compact;
-                            // expanded 档是展开侧栏（玻璃 224 悬浮侧栏 / MD3
-                            // 240 展开 rail，adaptiveNavRail extended），标题
-                            // 跟着它缩进。
-                            final double railWidth = adaptiveNavRailWidthFor(
-                              context,
-                              extended: sizeClass == WindowSizeClass.expanded,
-                            );
-                            return FushiDesktopTitleBar(
-                              // The native-sized frame sits outside app UI
-                              // zoom; align its title with the visually scaled
-                              // home rail. Breakpoint and rail width both come
-                              // from the widgets that own them (HomePage's
-                              // size class / adaptiveNavRail), so they cannot
-                              // drift apart behind a copied literal.
-                              leadingInset: railVisible
-                                  ? railWidth * uiScale
-                                  : 0,
-                              title: ValueListenableBuilder<HomeTab>(
-                                valueListenable: homeShellTabNotifier,
-                                builder: (BuildContext context, HomeTab tab,
-                                    Widget? _) {
-                                  return Text(homeNavItemFor(tab).label);
-                                },
+                          Widget navigation = wrapWithGlobalNavigation(
+                            navigatorKey: appModel.navigatorKey,
+                            focusNavigationEnabled:
+                                appModel.experimentalFocusNavigationEnabled,
+                            registry: appModel.shortcutRegistry,
+
+                            // BUG-1349（第二处根因）：焦点导航层（FushiFocusRoot 的
+                            // fallbackNode）必须在全局导航层**之内**。键事件沿焦点树
+                            // 冒泡：fallbackNode 若在 wrapWithGlobalNavigation 之外，
+                            // 零受管目标页把焦点回收到兜底节点后，Esc/全局快捷键根本
+                            // 到不了全局处理器——整个全局键处理静默失效。
+                            child: _wrapFocusNavigation(
+                              enabled:
+                                  appModel.experimentalFocusNavigationEnabled,
+                              // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
+                              // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
+                              // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                              // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）
+                              // 在查词宿主之下：球点出的查词弹窗要盖在球上。
+                              child: Stack(
+                                children: <Widget>[
+                                  child!,
+                                  const AppFloatingBallHost(),
+                                  const FloatingLyricLookupHost(),
+                                  // galgame Hook 浮窗（native 窗口）跟随 app 主题。
+                                  const GalHookOverlayThemeSync(),
+                                ],
                               ),
-                              child: child!,
+                            ),
+                          );
+                          if (isMacosPlatform(context)) {
+                            // macOS native shell (Approach B): the MacosWindow + Sidebar
+                            // wrap the WHOLE navigator so every route — home tabs AND
+                            // pushed routes (reader, settings detail, dialogs) — inherits
+                            // a MacosWindowScope and can use native MacosScaffold/ToolBar.
+                            // MacosTheme is derived from the SAME live ColorScheme as the
+                            // rest of the app. The sidebar destinations come from the
+                            // dynamic HomeTab list (video/games toggles) so they
+                            // stay in lock-step with HomePage's rail; selection is shared
+                            // via homeShellTabNotifier. Hide the sidebar while a media
+                            // item (reader/video) is open so reading is full-width; the
+                            // builder reruns when appModel notifies (openMedia/close).
+                            // TODO-1375：sidebar 显隐由 appModel.mediaOpenNotifier 驱动，
+                            // 不再直接读 appModel.isMediaOpen。根因：isMediaOpen 变化不
+                            // notifyListeners，退出阅读器后本 builder 不重跑、sidebar 卡在
+                            // stale null（永久消失→设置 tab 无出口→困死）。改用
+                            // ValueListenableBuilder 监听可靠通知源：退出媒体必重建恢复
+                            // sidebar。navigation（=整个 navigator）作为不变 child 透传，
+                            // 只有 sidebar 参数随 mediaOpen 变，绝不重建 navigator 路由栈。
+                            navigation = MacosTheme(
+                              data: fushiMacosThemeFromColorScheme(
+                                cs,
+                                cs.brightness,
+                              ),
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable: appModel.mediaOpenNotifier,
+                                builder:
+                                    (
+                                      BuildContext context,
+                                      bool mediaOpen,
+                                      Widget? child,
+                                    ) {
+                                      return MacosWindow(
+                                        sidebar: mediaOpen
+                                            ? null
+                                            : buildFushiMacosSidebar(
+                                                // 与 HomePage._activeTabs 同一真值、
+                                                // 同一个参数。此前这里是第二份手抄的
+                                                // 七参实参表，漏传 gamesEnabled 靠缺省
+                                                // false 蒙对，注释还把漏写说成「macOS
+                                                // 恒 false」——收成一个 ModuleVisibility
+                                                // 后不可能再漂移。
+                                                activeTabs: homeActiveTabs(
+                                                  appModel.moduleVisibility,
+                                                ),
+                                              ),
+                                        child: child!,
+                                      );
+                                    },
+                                child: navigation,
+                              ),
                             );
-                          },
-                          child: navigation,
-                        );
-                      }
-                      return navigation;
-                    },
-                  ),
+                          }
+                          navigation = FushiAppUiScale(
+                            scale: uiScale,
+                            child: navigation,
+                          );
+                          // 自绘顶栏的唯一门控就是这条启动闩（Windows / macOS 由
+                          // `main()` 置位）：不再叠一层 `Platform.isWindows`，否则
+                          // macOS 明明已经隐藏了系统标题栏与交通灯，却拿不到替代顶栏
+                          // ——窗口既没有标题也没有最小化/关闭按钮。
+                          if (FushiDesktopTitleBar.isEnabled) {
+                            navigation = ListenableBuilder(
+                              // The home rail is only on screen while the home
+                              // shell is the top route; opening a media item
+                              // covers it — the same signal the macOS shell uses
+                              // to drop its sidebar — so the title has to
+                              // un-indent with it. `navigation` is passed through
+                              // as the unchanging `child`, so flipping this never
+                              // rebuilds the navigator subtree.
+                              listenable: Listenable.merge(<Listenable>[
+                                appModel.mediaOpenNotifier,
+                                appModel.navRailExpandedNotifier,
+                              ]),
+                              builder: (BuildContext context, Widget? child) {
+                                final bool mediaOpen =
+                                    appModel.mediaOpenNotifier.value;
+                                final WindowSizeClass sizeClass =
+                                    windowSizeClassForWidth(viewport.width);
+                                final bool railVisible =
+                                    !mediaOpen &&
+                                    sizeClass != WindowSizeClass.compact;
+                                // 展开侧栏（玻璃 208 悬浮侧栏 / MD3 220 展开
+                                // rail）与收起 rail 宽度不同，标题跟着它缩进；
+                                // 展开态与首页 rail 同一判据（尺寸档 + MD3 菜单钮
+                                // 手动切换的记忆）。
+                                final double railWidth =
+                                    adaptiveNavRailWidthFor(
+                                      context,
+                                      extended: adaptiveNavRailExtended(
+                                        context,
+                                        sizeClass: sizeClass,
+                                        userExpanded: appModel
+                                            .navRailExpandedNotifier
+                                            .value,
+                                      ),
+                                    );
+                                return FushiDesktopTitleBar(
+                                  // The native-sized frame sits outside app UI
+                                  // zoom; align its title with the visually scaled
+                                  // home rail. Breakpoint and rail width both come
+                                  // from the widgets that own them (HomePage's
+                                  // size class / adaptiveNavRail), so they cannot
+                                  // drift apart behind a copied literal.
+                                  leadingInset: railVisible
+                                      ? railWidth * uiScale
+                                      : 0,
+                                  title: ValueListenableBuilder<HomeTab>(
+                                    valueListenable: homeShellTabNotifier,
+                                    builder:
+                                        (
+                                          BuildContext context,
+                                          HomeTab tab,
+                                          Widget? _,
+                                        ) {
+                                          return Text(
+                                            homeNavItemFor(tab).label,
+                                          );
+                                        },
+                                  ),
+                                  child: child!,
+                                );
+                              },
+                              child: navigation,
+                            );
+                          }
+                          return navigation;
+                        },
+                      ),
+                    ),
                   ),
                 ),
               ),

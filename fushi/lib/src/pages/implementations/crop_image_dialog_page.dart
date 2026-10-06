@@ -3,8 +3,8 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:crop_image/crop_image.dart';
-import 'package:flutter/material.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi/pages.dart';
@@ -86,7 +86,7 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.creator_enhancement_crop_image,
-        leadingIcon: Icons.crop_outlined,
+        leadingIcon: FushiIcons.image,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -120,26 +120,40 @@ class _CropImageDialogPageState extends BasePageState<CropImageDialogPage> {
 
   Widget buildContent() {
     if (_decodeError != null) {
+      // M3E 错误态：errorContainer 色块图标 + 说明（坏文件 / 非图片字节）。
       return Center(
-        child: FushiIcon(
-          Icons.broken_image_outlined,
-          size: 64,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.brokenImage,
+          message: t.creator_crop_image_unreadable,
+          tone: FushiPlaceholderTone.error,
         ),
       );
     }
-    return Center(
-      child: CropImage(
-          minimumImageSize: 25,
-          gridColor: Theme.of(context).colorScheme.onSurfaceVariant,
-          controller: _controller,
-          image: Image(image: _provider)),
+    // 裁剪画布放进 M3E 卡片圆角（20）的中性色块里，与对话框面板分出层级；
+    // 网格线用主色，拖动把手更醒目。
+    return ClipRRect(
+      borderRadius: FushiM3eShape.cardRadius,
+      child: ColoredBox(
+        color: fushiNeutralBlockColor(context),
+        child: Padding(
+          padding: EdgeInsets.all(FushiDesignTokens.of(context).spacing.gap),
+          child: Center(
+            child: CropImage(
+              minimumImageSize: 25,
+              gridColor: Theme.of(context).colorScheme.primary,
+              controller: _controller,
+              image: Image(image: _provider),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   Widget buildCropButton() {
     return adaptiveDialogAction(
       context: context,
+      isDefaultAction: true,
       onPressed: _decodeError == null ? executeCrop : null,
       child: Text(t.dialog_crop),
     );

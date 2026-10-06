@@ -157,6 +157,47 @@ fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试
 
 所有子命令接受 `--config <path>`（默认当前目录 `fushi_server.yaml`）和 `--verbose`。
 
+### `ctl`：操作正在运行的 serve
+
+上面的命令都是**离线**的（直接开数据目录）。`serve` 在跑时，用 `ctl` 经下面的 admin API
+改它，不碰数据库；扫描进度、下载队列、订阅、模型下载这些运行时状态也只有 `ctl` 看得到。
+
+```
+fushi_server ctl status | logs | p2p
+fushi_server ctl lib [ls] | add <path> [--kind video|book] [--id x] | rm <id> [--purge]
+fushi_server ctl scan [--prune|--no-prune]
+fushi_server ctl dl [ls] | add <magnet> --title t [--media-kind movie|tv] | cancel|retry|rm <id>
+fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
+fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
+fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
+fushi_server ctl upload <文件…> --lib <id> [--path 目录]   分块断点续传（传完 scan）
+fushi_server ctl logs -f                                 跟随日志
+fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
+
+# 经互联接口（admin 以 host 身份代调 /api/admin/host/*，配对路由除外）
+fushi_server ctl books|videos|audiobooks|dict|metadata [ls]
+fushi_server ctl books progress <key> [--set '<json>']   videos position|playback <id> …
+fushi_server ctl scrape pending | sweep | ai-identify <id> | search <bookUid> -q 词
+                  | identify <bookUid> --provider anidb|mal|tmdb --external-id <id>
+fushi_server ctl jobs submit asr <音频> -l ja -o out.srt   在运行中的服务上转录
+fushi_server ctl assistant start --feature f | show <id> --wait | act <id> '<json>'
+fushi_server ctl host <METHOD> <互联路径> ['<json>']       直调任意互联接口
+```
+
+地址按配置的 `admin_bind` / `admin_port` / `tls` 推本机地址（通配 bind 换回环），token 读
+`admin_token`；TLS 下按数据目录里服务端证书的指纹钉扎。远程用 `--url` / `--token` /
+`--fingerprint` 覆盖。`--json` 原样输出。退出码：0 成功、1 服务端拒绝、64 用法错误、
+69 连不上、75 冲突（409）、77 鉴权失败。完整动作表见 `fushi_server --help`。
+
+**数据目录互斥**：`serve` 与所有直接打开数据库的离线命令（`scan` / `status` / `import` /
+`audiobook` / `dict` …）启动时都要拿 `<data_dir>/fushi_server.lock` 的排他 OS 文件锁（进程退出
+自动释放，锁文件里记着持有者 pid 与 WebUI 地址）。serve 运行期间离线命令一律以 **75** 拒绝——
+包括看似只读的 `status`：打开运行时就会跑 schema 迁移 / 补写偏好，和 serve 的写事务并发不安全；
+运行中请用上面的 `ctl`。第二个 serve、或离线命令正在跑时启动 serve，同样 75。
+
+**`--json` 的 stdout**：只有最终那一个 JSON 文档（Linux / macOS 在 fd 层把后台 isolate 与原生库的
+打印整体改道 stderr），可直接 `| jq`；进度与诊断一律在 stderr。
+
 ## admin API（WebUI 用的那套）
 
 鉴权：`Authorization: Bearer <admin_token>`，或浏览器 `POST /login`（表单 `token=`）拿 cookie。全部 JSON，前缀 `/api/admin/`：
@@ -284,6 +325,33 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
 
+## 词典与远程查词
+
+带上 `libfushidicts_ffi`（与 app 同一个 C++ 引擎，源码 `native/fushidicts/`）时，服务端提供互联查词：
+`/api/lookup/dictionary`（含 `popupOnly`）、词典图片 `/api/media/dictionary`，以及查词历史（`record: true` 落服务端
+DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` 的 `lookup.dictionary` / `lookup.history`
+如实反映引擎是否加载成功；加载失败 serve 照常起，查词路由不注册（客户端按不可用处理）。
+
+- 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
+  Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
+  `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
+  `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物已随包
+  这份 .so 与变形表；正式发布包（`release-server.yml`，ubuntu-22.04）**尚未**随包，需自行放进 `lib/`。
+- 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
+  `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
+- 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
+
+```
+fushi_server dict ls [--json]
+fushi_server dict add <yomitan.zip> [--json]   # 同名视为更新，保留排序与隐藏设置
+fushi_server dict rm <词典名> [--json]
+```
+
+  离线改动在 serve 重启后进引擎。退出码：用法错 64、词典包 / 配置不存在 66、原生库不可用 69、导入失败 1。
+
+制卡转发（`/api/mine`、`/api/mine/forward`、`/api/duplicate`）在服务端带 `fushi-anki-sync` helper 时接线，
+落到上面「Anki 落地」的同一个牌组集合；`/api/capabilities` 报 `mining`。
+
 ## GPU（CUDA）
 
 随包的是 CPU 版 onnxruntime。要 NVIDIA 加速：
@@ -294,7 +362,8 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 
 ## 服务端**不**做什么
 
-- 不装词典 FFI 引擎（`fushidicts`）：服务端只托管词典包文件供客户端同步，查词仍在客户端本地；Linux 桌面版 Fushi 自带 `libfushidicts_ffi.so`，与服务端无关。
+- 不做游戏串流：`/api/game-stream/*` 恒回 `501 {"error":"unsupported","feature":"gameStream"}`，`/api/capabilities` 报 `gameStream: false`。
+- 不做浸入式制卡（`mineImmersion` 回错误）与「在 Anki 里打开」/ 笔记类型编辑 / 媒体去重；查词结果不带词条发音（`lookupAudio` 恒空）。
 - 不做查词发音：本地音频库（`/api/library/localaudio`）同词典包一样只做存储中转——客户端推上来的库落 `<data_dir>/support/local_audio_<n>.db`、登记进 `preferences` 表的 `local_audio_dbs`（与 app 同键同形），其它客户端可列出 / 拉取 / 删除；服务端自己不播发音。
 - 不做发现页 UI：host 的订阅由客户端发现页（带作品身份）或 WebUI（只按搜索词）创建；host 自己搜 Nyaa / apibay / Knaben / Torznab（Torznab indexer 与停用清单读同一张 `preferences` 表的 `video_resource_torznab_config` / `video_resource_disabled_sources`，与 app 同一编码；在 WebUI「订阅」页的「资源索引器」卡片编辑，保存即生效；不能经互联「配置文件」设——Torznab 配置含 API key，出境时按凭据剔除，服务端寄存的配置文件也不应用到自己身上）。
 - 漫画根只认 `.mokuro` 卷与纯页图目录：cbz / cbr / cb7 / pdf 暂不扫描（压缩包导入器还在 app 侧、rar 需外部 7-Zip），这类文件仍走客户端导入。

@@ -7,9 +7,8 @@ const String kCloudflareClearanceCookie = 'cf_clearance';
 
 /// 一条按域名作用的 cookie。
 ///
-/// 两个漫画扩展运行时共用这一份：Aidoku（wasm host 在 Rust 里发请求，读不到
-/// WebView 的 cookie 存储）与 Mihon 桌面 sidecar（JVM 子进程，okhttp 的 jar 是
-/// 进程内存、重启即失）。两边都需要「宿主持有真值、每次调用重新注入」，所以
+/// Mihon 桌面 sidecar（JVM 子进程，okhttp 的 jar 是进程内存、重启即失）与
+/// LNReader 小说源共用这一份：都需要「宿主持有真值、每次调用重新注入」，所以
 /// 数据结构与匹配规则只应该有一份。
 class MangaCookie {
   const MangaCookie({

@@ -3,7 +3,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -34,6 +34,8 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -96,8 +98,8 @@ class SourceMangaSeriesTarget extends MangaSeriesTarget {
   ///
   /// 入库后封面走本地落盘那张（作品页首屏不该依赖网络）；但**还没入库**时本地
   /// 什么都没有，只能由来源自己提供取图控件——Mihon 要经扩展的 imageProxy 带鉴权
-  /// 头，Aidoku 是普通 https + referer，两者的取图方式没有公共分母。作品页因此
-  /// 不自己开取图路径，只留这个口子。
+  /// 头，各运行时的取图方式没有公共分母。作品页因此不自己开取图路径，只留这个
+  /// 口子。
   final Widget Function(BuildContext context)? remoteCoverBuilder;
 }
 
@@ -112,8 +114,8 @@ class SourceMangaSeriesTarget extends MangaSeriesTarget {
 /// 设计要点：
 /// - **先离线渲染，再后台刷新**。首屏只读库里的描述符，一次网络调用都不发；
 ///   刷新失败只在顶部挂一条可重试的提示条，不遮挡任何已有内容。
-/// - **与运行时无关**。只跟 [OnlineMangaLibraryService] 打交道，Mihon 和
-///   Aidoku 走同一条路径。
+/// - **与运行时无关**。只跟 [OnlineMangaLibraryService] 打交道，Mihon 与
+///   互联对端走同一条路径。
 /// - **本地卷也进这里**（用户明确要求的一致性）：本地 mokuro 卷没有章节，
 ///   章节区换成页数/进度，不假装有章节列表。
 class MangaSeriesPage extends ConsumerStatefulWidget {
@@ -358,7 +360,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
               key: const ValueKey<String>('manga_series_ocr_cancel'),
               tooltip: t.dialog_cancel,
               onPressed: () => unawaited(_cancelOcr()),
-              icon: const FushiIcon(Icons.close),
+              icon: const FushiIcon(FushiIcons.close),
             ),
         ],
       ),
@@ -438,27 +440,14 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Future<void> _deleteChapterDownload(OnlineMangaChapter chapter) async {
     final EpubBookRow? row = _row;
     if (row == null) return;
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => AlertDialog.adaptive(
-            title: Text(t.manga_chapter_download_delete_action),
-            content: Text(chapter.name),
-            actions: <Widget>[
-              adaptiveDialogAction(
-                context: dialogContext,
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              adaptiveDialogAction(
-                context: dialogContext,
-                isDestructiveAction: true,
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.manga_chapter_download_delete_action,
+      message: chapter.name,
+      icon: FushiIcons.delete,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed || !mounted) return;
     try {
       await deleteChapterDownload(
@@ -1415,85 +1404,24 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
 
   // ── 渲染 ────────────────────────────────────────────────────────────
 
+  /// M3E 作品详情骨架（2026-10，与视频系列 / 在线作品页同一套
+  /// `media_detail_kit.dart`）：AppBar 只留标题；原 AppBar 上的动作挪进 hero 的
+  /// 主操作按钮组——登录 / 订阅是常驻的图标次按钮（BUG-2497：登录入口要直接
+  /// 可见），在网站打开 / 刷新 / 自动下载 / OCR 进「⋯」。各动作的 ValueKey 原样
+  /// 带到新组件上。
   @override
   Widget build(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
-    final bool canSubscribe = entry != null && _row != null && _service != null;
-    final OnlineMangaLoginTarget? login = _loginTarget;
-    final Object? adapter = _adapter;
+    // 正文铺到悬浮页头底下（脚手架默认 extendBodyBehindHeader）：封面模糊背景
+    // 一直画到窗口顶端，页头只是胶囊。
     return FushiPageScaffold(
       title: title,
-      subtitle: _subtitle(),
-      actions: <Widget>[
-        // 源站网页入口：只有在线源（Mihon）有网页可去，本地卷 / 互联对端没有。
-        if (entry != null && adapter is OnlineMangaWebUrlCapable)
-          FushiIconButtonControl(
-            key: const ValueKey<String>('manga_series_open_website'),
-            tooltip: t.mihon_source_website_open,
-            onPressed: () => unawaited(_openWebsite(adapter, entry)),
-            icon: const FushiIcon(Icons.open_in_new),
-          ),
-        // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
-        // 不必先点一条锁章再从弹窗里找。
-        if (login != null)
-          FushiIconButtonControl(
-            key: const ValueKey<String>('manga_series_login'),
-            tooltip: t.mihon_source_login,
-            onPressed: _busy || _refreshing
-                ? null
-                : () => unawaited(_loginToSource(login)),
-            icon: const FushiIcon(Icons.login),
-          ),
-        if (canSubscribe)
-          FushiIconButtonControl(
-            key: const ValueKey<String>('manga_series_subscribe'),
-            tooltip: entry.subscribed
-                ? t.manga_series_unsubscribe
-                : t.manga_series_subscribe,
-            onPressed: _busy ? null : () => unawaited(_toggleSubscription()),
-            icon: FushiIcon(
-              entry.subscribed ? Icons.bookmark : Icons.bookmark_add_outlined,
-            ),
-          ),
-        if (entry != null)
-          FushiIconButtonControl(
-            key: const ValueKey<String>('manga_series_refresh'),
-            tooltip: t.manga_series_refresh,
-            onPressed: _refreshing
-                ? null
-                : () => unawaited(_refreshFromSource()),
-            icon: _refreshing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: FushiCircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const FushiIcon(Icons.refresh),
-          ),
-        if (canSubscribe && entry.subscribed)
-          FushiOverflowMenu<String>(
-            key: const ValueKey<String>('manga_series_more'),
-            items: <PopupMenuEntry<String>>[
-              FushiPopupMenuItem<String>(
-                key: const ValueKey<String>('manga_series_auto_download'),
-                value: 'auto-download',
-                label: t.manga_series_auto_download,
-                icon: entry.autoDownload
-                    ? Icons.check_box
-                    : Icons.check_box_outline_blank,
-                selected: entry.autoDownload,
-              ),
-            ],
-            onSelected: (String value) {
-              if (value == 'auto-download') unawaited(_toggleAutoDownload());
-            },
-          ),
-      ],
       body: _buildBody(context),
     );
   }
 
+  /// hero 标题上方的来源名（本地卷 / 源名 / 扩展包名）。
   String? _subtitle() {
     if (_isLocal) return t.manga_series_local_volume;
     final String? label = _sourceLabel;
@@ -1511,83 +1439,117 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       _row == null && (_entry?.chapters.isEmpty ?? true);
 
   Widget _buildBody(BuildContext context) {
-    if (_loading) return Center(child: adaptiveIndicator(context: context));
+    if (_loading) return const MediaDetailSkeleton();
     final Object? fatal = _fatalError;
-    if (fatal != null) return _buildFatalError(context, fatal);
+    // 页头浮在正文上（extendBodyBehindHeader）：错误态自己让开页头。
+    if (fatal != null) {
+      return SafeArea(bottom: false, child: _buildFatalError(context, fatal));
+    }
     final OnlineMangaUnavailable? loadError = _refreshError;
     if (loadError != null && _hasNothingToShow) {
-      return _buildLoadError(context, loadError);
+      return SafeArea(
+        bottom: false,
+        child: _buildLoadError(context, loadError),
+      );
     }
+    final double page = FushiDesignTokens.of(context).spacing.page;
     final Widget? ocrBanner = _isLocal ? null : _buildOcrBanner(context);
-    return ListView(
-      // BUG-2440：scaffold 的 body 不再扣底部安全区，章节列表得自己把这段补进
-      // 滚动 padding，否则最后一章静止时压在手势条底下点不到。
-      padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-      children: <Widget>[
-        if (_refreshError != null) ...<Widget>[
-          _buildRefreshBanner(context, _refreshError!),
-          const SizedBox(height: 12),
-        ],
-        _buildHeader(context),
-        const SizedBox(height: 24),
-        if (ocrBanner != null) ...<Widget>[
-          ocrBanner,
-          const SizedBox(height: 12),
-        ],
-        if (_isLocal)
-          _buildLocalDetails(context)
-        else
-          MangaChapterList(
-            entry: _entry,
-            states: _states,
-            newestFirst: _newestFirst,
-            unreadOnly: _unreadOnly,
-            currentChapterKey: _entry?.currentChapter?.key,
-            onSortToggled: () => setState(() => _newestFirst = !_newestFirst),
-            onUnreadOnlyToggled: () =>
-                setState(() => _unreadOnly = !_unreadOnly),
-            onChapterTap: (OnlineMangaChapter chapter) {
-              final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;
-              if (index >= 0) unawaited(_openChapterAt(index));
-            },
-            onToggleRead: _bookUid == null
-                ? null
-                : (OnlineMangaChapter chapter) =>
-                      unawaited(_toggleChapterRead(chapter)),
-            onMarkUpToRead: _bookUid == null
-                ? null
-                : (OnlineMangaChapter chapter) =>
-                      unawaited(_markUpToRead(chapter)),
-            downloadedChapterKeys: _downloaded,
-            jobsByChapterKey: _jobs,
-            ocrRunningChapterKey: _ocrRunningChapterKey,
-            ocrProgress: _ocrJob == null
-                ? null
-                : (
-                    done: _ocrEvent?.pagesDone ?? 0,
-                    total: _ocrEvent?.pagesTotal ?? 0,
-                  ),
-            ocrQueuedChapterKeys: _ocrQueuedChapterKeys,
-            languageScope: _languageScope,
-            onSiblingSourceTap: (OnlineMangaSiblingSource sibling) =>
-                unawaited(_openSiblingSource(sibling)),
-            onDownload: _bookKey == null
-                ? null
-                : (OnlineMangaChapter chapter) =>
-                      unawaited(_enqueueChapter(chapter)),
-            onRetryDownload: _bookKey == null
-                ? null
-                : (OnlineMangaChapter chapter) =>
-                      unawaited(_retryChapterDownload(chapter)),
-            onDeleteDownload: _bookKey == null
-                ? null
-                : (OnlineMangaChapter chapter) =>
-                      unawaited(_deleteChapterDownload(chapter)),
-            onOcr: _bookKey == null
-                ? null
-                : (OnlineMangaChapter chapter) =>
-                      unawaited(_ocrChapter(chapter)),
+    // 宽屏两栏：左 hero（封面 / 标题 / 操作 / 简介）独立滚动，右章节列表；窄屏
+    // 单列。BUG-2440 的底部安全区由 MediaDetailLayout 的尾部 SliverSafeArea 补。
+    return FushiEntranceScope(
+      child: MediaDetailLayout(
+        backdrop: _coverImageProvider(),
+        header: _buildHeader(context),
+        slivers: <Widget>[
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: page),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (ocrBanner != null) ...<Widget>[
+                    FushiStaggeredEntrance(index: 0, child: ocrBanner),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_isLocal)
+                    FushiStaggeredEntrance(
+                      index: 1,
+                      child: _buildLocalDetails(context),
+                    )
+                  else
+                    _buildChapterList(context),
+                ],
+              ),
+            ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 章节区：刷新中顶一条波浪进度（原 AppBar 刷新钮的转圈挪进了「⋯」菜单，
+  /// 进行中的反馈落在被刷新的列表上）+ 共享的 [MangaChapterList]。
+  Widget _buildChapterList(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (_refreshing)
+          const Padding(
+            key: ValueKey<String>('manga_series_refreshing'),
+            padding: EdgeInsets.only(bottom: 8),
+            child: FushiLinearProgressIndicator(),
+          ),
+        MangaChapterList(
+          entry: _entry,
+          states: _states,
+          newestFirst: _newestFirst,
+          unreadOnly: _unreadOnly,
+          currentChapterKey: _entry?.currentChapter?.key,
+          onSortToggled: () => setState(() => _newestFirst = !_newestFirst),
+          onUnreadOnlyToggled: () =>
+              setState(() => _unreadOnly = !_unreadOnly),
+          onChapterTap: (OnlineMangaChapter chapter) {
+            final int index = _entry?.indexOfChapterKey(chapter.key) ?? -1;
+            if (index >= 0) unawaited(_openChapterAt(index));
+          },
+          onToggleRead: _bookUid == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_toggleChapterRead(chapter)),
+          onMarkUpToRead: _bookUid == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_markUpToRead(chapter)),
+          downloadedChapterKeys: _downloaded,
+          jobsByChapterKey: _jobs,
+          ocrRunningChapterKey: _ocrRunningChapterKey,
+          ocrProgress: _ocrJob == null
+              ? null
+              : (
+                  done: _ocrEvent?.pagesDone ?? 0,
+                  total: _ocrEvent?.pagesTotal ?? 0,
+                ),
+          ocrQueuedChapterKeys: _ocrQueuedChapterKeys,
+          languageScope: _languageScope,
+          onSiblingSourceTap: (OnlineMangaSiblingSource sibling) =>
+              unawaited(_openSiblingSource(sibling)),
+          onDownload: _bookKey == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_enqueueChapter(chapter)),
+          onRetryDownload: _bookKey == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_retryChapterDownload(chapter)),
+          onDeleteDownload: _bookKey == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_deleteChapterDownload(chapter)),
+          onOcr: _bookKey == null
+              ? null
+              : (OnlineMangaChapter chapter) =>
+                    unawaited(_ocrChapter(chapter)),
+        ),
       ],
     );
   }
@@ -1604,55 +1566,43 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// message 原样摆出来，不是一句「加载失败」）、**诊断入口**（原生堆栈和失败
   /// 阶段太长不能铺在页面上，只能进可复制对话框）、**重试真的重发请求**。
   Widget _buildLoadError(BuildContext context, OnlineMangaUnavailable error) {
-    final ThemeData theme = Theme.of(context);
     // 源被禁用 / 平台不支持时重试永远不会成功，别给一个骗人的按钮。
     final bool retryable =
         error.reason == OnlineMangaUnavailableReason.runtimeFailure;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+    return SingleChildScrollView(
+      child: FushiPlaceholderMessage(
+        icon: FushiIcons.cloudOff,
+        tone: FushiPlaceholderTone.error,
+        message: t.manga_online_detail_load_failed,
+        // 原始异常（含堆栈）在「查看详情」对话框里，这里给可读短句。
+        detail: _loadErrorText(error),
+        detailMaxLines: 6,
+        action: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: <Widget>[
-            Text(
-              t.manga_online_detail_load_failed,
-              style: theme.textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            // 原始异常（含堆栈）在「查看详情」对话框里，这里给可读短句。
-            SelectableText(
-              _loadErrorText(error),
-              style: theme.textTheme.bodySmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              alignment: WrapAlignment.center,
-              children: <Widget>[
-                if (retryable)
-                  FushiFilledButton.icon(
-                    key: const ValueKey<String>('manga_series_error_retry'),
-                    onPressed: _refreshing
-                        ? null
-                        : () => unawaited(_refreshFromSource()),
-                    icon: const FushiIcon(Icons.refresh_rounded),
-                    label: Text(t.retry),
-                  ),
-                _challengeAction(error),
-                FushiTextButton(
-                  key: const ValueKey<String>('manga_series_error_details'),
-                  onPressed: () => unawaited(
-                    showErrorDetails(
-                      context,
-                      title: t.mihon_extension_error,
-                      error: error.diagnostics,
-                    ),
-                  ),
-                  child: Text(t.manga_online_error_view_detail),
+            if (retryable)
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('manga_series_error_retry'),
+                onPressed: _refreshing
+                    ? null
+                    : () => unawaited(_refreshFromSource()),
+                icon: const FushiIcon(FushiIcons.refresh),
+                label: Text(t.retry),
+              ),
+            _challengeAction(error),
+            FushiTextButton(
+              key: const ValueKey<String>('manga_series_error_details'),
+              onPressed: () => unawaited(
+                showErrorDetails(
+                  context,
+                  title: t.mihon_extension_error,
+                  error: error.diagnostics,
                 ),
-              ],
+              ),
+              child: Text(t.manga_online_error_view_detail),
             ),
           ],
         ),
@@ -1660,33 +1610,38 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
-  Widget _buildFatalError(BuildContext context, Object error) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            t.manga_online_detail_load_failed,
-            style: Theme.of(context).textTheme.titleMedium,
-            textAlign: TextAlign.center,
+  /// 读库本身失败（条目被删 / 数据库异常）：错误占位 + 重试（重新走一遍
+  /// [_load]，不是只刷新源）。
+  Widget _buildFatalError(BuildContext context, Object error) =>
+      SingleChildScrollView(
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.error,
+          tone: FushiPlaceholderTone.error,
+          message: t.manga_online_detail_load_failed,
+          detail: describeOnlineSourceError(error),
+          detailMaxLines: 6,
+          action: FushiFilledButton.icon(
+            key: const ValueKey<String>('manga_series_fatal_retry'),
+            onPressed: _retryLoad,
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.retry),
           ),
-          const SizedBox(height: 8),
-          SelectableText(
-            describeOnlineSourceError(error),
-            style: Theme.of(context).textTheme.bodySmall,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 
-  /// 刷新失败提示条。
+  void _retryLoad() {
+    setState(() {
+      _fatalError = null;
+      _loading = true;
+    });
+    unawaited(_load());
+  }
+
+  /// 刷新失败提示条（hero 简介下方，不遮挡章节）。
   ///
   /// 按 [OnlineMangaUnavailableReason] 分流是有意义的：源被禁用和网络抽风给的
   /// 出路完全不同，把两者都渲染成「加载失败 + 重试」会让用户对着一个永远不会
-  /// 成功的按钮反复点。
+  /// 成功的按钮反复点。按钮另起一行 Wrap：两栏左栏只有 400 宽，与文案并排必溢出。
   Widget _buildRefreshBanner(
     BuildContext context,
     OnlineMangaUnavailable error,
@@ -1707,59 +1662,118 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       ),
     };
     return FushiCard(
-      child: Row(
+      key: const ValueKey<String>('manga_series_refresh_banner'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiIcon(Icons.cloud_off_outlined, color: theme.colorScheme.error),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(text, style: theme.textTheme.bodyMedium),
-                const SizedBox(height: 2),
-                Text(
-                  t.manga_series_offline_hint,
-                  style: theme.textTheme.bodySmall,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              FushiIcon(FushiIcons.cloudOff, color: theme.colorScheme.error),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(text, style: theme.textTheme.bodyMedium),
+                    const SizedBox(height: 2),
+                    Text(
+                      t.manga_series_offline_hint,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          if (retryable)
-            FushiTextButton(
-              onPressed: _refreshing
-                  ? null
-                  : () => unawaited(_refreshFromSource()),
-              child: Text(t.retry),
-            ),
-          _challengeAction(error),
-          FushiTextButton(
-            key: const ValueKey<String>('manga_series_error_details'),
-            onPressed: () => unawaited(
-              showErrorDetails(
-                context,
-                title: t.manga_online_detail_load_failed,
-                error: '${error.reason}\n\n${error.message}',
               ),
-            ),
-            child: Text(t.manga_online_error_view_detail),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            runSpacing: 4,
+            children: <Widget>[
+              if (retryable)
+                FushiTextButton(
+                  onPressed: _refreshing
+                      ? null
+                      : () => unawaited(_refreshFromSource()),
+                  child: Text(t.retry),
+                ),
+              _challengeAction(error),
+              FushiTextButton(
+                key: const ValueKey<String>('manga_series_error_details'),
+                onPressed: () => unawaited(
+                  showErrorDetails(
+                    context,
+                    title: t.manga_online_detail_load_failed,
+                    error: '${error.reason}\n\n${error.message}',
+                  ),
+                ),
+                child: Text(t.manga_online_error_view_detail),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  /// 作品页头部：三域共用的 [OnlineWorkHeader]（2026-09-27「浏览」阶段 2，版式以
-  /// 视频源作品页为准）——封面 + 标题 / 元信息 / 类型标签 + 主操作区，简介在下。
+  /// 作品页头部：三域共用的 [OnlineWorkHeader]（M3E 详情 hero）——封面模糊大
+  /// 背景 + 封面卡 + 来源 overline + 标题 + 作者 / 在书架 chip + 主操作按钮组 +
+  /// 类型标签 + 可展开简介（+ 刷新失败提示条）。
   Widget _buildHeader(BuildContext context) {
     final OnlineMangaSeries? series = _entry?.series;
+    final OnlineMangaUnavailable? refreshError = _refreshError;
     return OnlineWorkHeader(
       cover: _buildCover(context),
+      backdrop: _coverImageProvider(),
+      overline: _subtitle(),
       title: series?.title ?? _row?.title ?? t.manga_library,
-      lines: <String?>[series?.byline, if (_isLocal) _row?.author],
+      chips: <MediaDetailChip>[
+        for (final String? line in <String?>[
+          series?.byline,
+          if (_isLocal) _row?.author,
+        ])
+          if (line != null && line.trim().isNotEmpty)
+            MediaDetailChip(line.trim(), icon: FushiIcons.person),
+        if (_row != null && !_isLocal)
+          MediaDetailChip(
+            t.video_discovery_in_library,
+            icon: FushiIcons.check,
+            tone: MediaDetailChipTone.primary,
+            key: const ValueKey<String>('manga_series_in_library_chip'),
+          ),
+      ],
       genres: series?.genreLabels ?? const <String>[],
       description: series?.description,
-      actions: _buildActions(context),
+      primaryAction: _buildPrimaryAction(),
+      secondaryActions: _buildSecondaryActions(),
+      moreItems: _buildMoreItems(),
+      extra: refreshError == null
+          ? null
+          : _buildRefreshBanner(context, refreshError),
     );
+  }
+
+  /// 本地已落盘封面的路径；未入库 / 无封面为 null。
+  String? _localCoverPath() {
+    final EpubBookRow? row = _row;
+    if (row == null) return null;
+    // 复用书架/制卡那份解析（TODO-1388 / BUG-703），别自己拼路径：coverPath 可能
+    // 是相对页图路径、可能大小写与磁盘不符（跨平台备份还原），那些坑都已经在
+    // resolveCoverFilePath 里踩过了。
+    return ReaderFushiSource.resolveCoverFilePath(
+      extractDir: row.extractDir,
+      coverPath: row.coverPath,
+    );
+  }
+
+  /// hero 大背景：本地封面模糊铺底。未入库的源条目只有来源自己的取图控件、拿不到
+  /// ImageProvider，就只画色晕（不为背景另开一条取图路径）。
+  ImageProvider? _coverImageProvider() {
+    final String? path = _localCoverPath();
+    return path == null ? null : FileImage(File(path));
   }
 
   /// 封面。
@@ -1768,29 +1782,20 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   /// 也得在。没有本地封面（刚从源进来还没入库）才回退到占位块——真正的远端取图
   /// 由源浏览页的封面缓存负责，作品页不自己再开一条取图路径。
   Widget _buildCover(BuildContext context) {
-    final EpubBookRow? row = _row;
-    if (row != null) {
-      // 复用书架/制卡那份解析（TODO-1388 / BUG-703），别自己拼路径：coverPath 可能
-      // 是相对页图路径、可能大小写与磁盘不符（跨平台备份还原），那些坑都已经在
-      // resolveCoverFilePath 里踩过了。
-      final String? resolved = ReaderFushiSource.resolveCoverFilePath(
-        extractDir: row.extractDir,
-        coverPath: row.coverPath,
+    final String? resolved = _localCoverPath();
+    if (resolved != null) {
+      return Image.file(
+        File(resolved),
+        fit: BoxFit.cover,
+        // BUG-2496：坏封面文件解码失败退回占位块，不当致命 FlutterError。
+        errorBuilder: (_, Object error, __) {
+          ErrorLogService.instance.logDiagnostic(
+            'MangaSeriesPage.coverDecode',
+            '$resolved: $error',
+          );
+          return _coverPlaceholder(context);
+        },
       );
-      if (resolved != null) {
-        return Image.file(
-          File(resolved),
-          fit: BoxFit.cover,
-          // BUG-2496：坏封面文件解码失败退回占位块，不当致命 FlutterError。
-          errorBuilder: (_, Object error, __) {
-            ErrorLogService.instance.logDiagnostic(
-              'MangaSeriesPage.coverDecode',
-              '$resolved: $error',
-            );
-            return _coverPlaceholder(context);
-          },
-        );
-      }
     }
     final MangaSeriesTarget target = widget.target;
     if (target is SourceMangaSeriesTarget) {
@@ -1806,95 +1811,199 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return ColoredBox(
       color: cs.surfaceContainerHighest,
-      child: FushiIcon(Icons.menu_book_outlined, color: cs.onSurfaceVariant),
+      child: Center(
+        child: FushiIcon(
+          FushiIcons.manga,
+          size: 40,
+          color: cs.onSurfaceVariant,
+        ),
+      ),
     );
   }
 
-  List<Widget> _buildActions(BuildContext context) {
-    final OnlineMangaLibraryEntry? entry = _entry;
-    final bool inLibrary = _row != null;
-    if (_isLocal) {
-      return <Widget>[
-        FushiFilledButton.icon(
-          key: const ValueKey<String>('manga_series_open_local'),
-          onPressed: _busy ? null : () => unawaited(_openLocalBook()),
-          icon: const FushiIcon(Icons.play_arrow),
-          label: Text(t.book_continue_reading),
-        ),
-        // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
-        _ocrSettingsButton(),
-      ];
+  /// 在飞下载（排队 / 执行中）的整体页进度：主按钮下挂波浪条。没有在飞任务 =
+  /// null；页数还不知道 = -1（不确定进度）。
+  double? get _downloadProgress {
+    bool active = false;
+    int done = 0;
+    int total = 0;
+    for (final MangaDownloadJobRow job in _jobs.values) {
+      if (job.status != MangaDownloadJobStatus.queued &&
+          job.status != MangaDownloadJobStatus.running) {
+        continue;
+      }
+      active = true;
+      done += job.pagesDone;
+      total += job.pagesTotal;
     }
+    if (!active) return null;
+    if (total <= 0) return -1;
+    return (done / total).clamp(0.0, 1.0);
+  }
+
+  /// 主按钮：本地卷「继续阅读」；在线作品「继续阅读 · 第 N 话」（未入库点了会
+  /// 先入库再读，见 [_openChapterAt]）。
+  Widget _buildPrimaryAction() {
+    if (_isLocal) {
+      return MediaDetailPrimaryButton(
+        buttonKey: const ValueKey<String>('manga_series_open_local'),
+        icon: FushiIcons.play,
+        label: t.book_continue_reading,
+        onPressed: _busy ? null : () => unawaited(_openLocalBook()),
+      );
+    }
+    final OnlineMangaLibraryEntry? entry = _entry;
     final int resumeIndex = _resumeIndex;
     final OnlineMangaChapter? resumeChapter =
         entry != null && resumeIndex >= 0 && resumeIndex < entry.chapters.length
         ? entry.chapters[resumeIndex]
         : null;
+    return MediaDetailPrimaryButton(
+      buttonKey: const ValueKey<String>('manga_series_continue'),
+      icon: FushiIcons.play,
+      label: resumeChapter == null
+          ? t.book_continue_reading
+          : '${t.book_continue_reading} · ${resumeChapter.name}',
+      progress: _downloadProgress,
+      onPressed: resumeChapter == null || _busy
+          ? null
+          : () => unawaited(_openChapterAt(resumeIndex)),
+    );
+  }
+
+  /// 次按钮（tonal）：加入 ↔ 移出书架（同一位置，在库时 selected）、下载全部；
+  /// 订阅（书签）与登录是图标钮。本地卷只有「OCR 设置」。
+  List<Widget> _buildSecondaryActions() {
+    if (_isLocal) {
+      // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
+      return <Widget>[_ocrSettingsButton()];
+    }
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final bool inLibrary = _row != null;
+    final OnlineMangaLoginTarget? login = _loginTarget;
     return <Widget>[
-        FushiFilledButton.icon(
-          key: const ValueKey<String>('manga_series_continue'),
-          onPressed: resumeChapter == null || _busy
-              ? null
-              : () => unawaited(_openChapterAt(resumeIndex)),
-          icon: const FushiIcon(Icons.play_arrow),
-          label: Text(
-            resumeChapter == null
-                ? t.book_continue_reading
-                : '${t.book_continue_reading} · ${resumeChapter.name}',
+      // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（用户诉求：加了
+      // 要能取消）。移出走书架同一条 deleteBook 路径，连已下载章节一起删。
+      if (inLibrary)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>(
+            'manga_series_remove_from_bookshelf',
           ),
+          icon: FushiIcons.libraryAdd,
+          label: t.manga_series_remove_from_bookshelf,
+          selected: true,
+          onPressed: _busy ? null : () => unawaited(_removeFromLibrary()),
+        )
+      else
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('manga_series_add_to_bookshelf'),
+          icon: FushiIcons.libraryAdd,
+          label: t.mihon_add_to_bookshelf,
+          onPressed: _busy ? null : () => unawaited(_addToLibrary()),
         ),
-        // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（用户诉求：加了
-        // 要能取消）。移出走书架同一条 deleteBook 路径，连已下载章节一起删。
-        if (inLibrary)
-          FushiOutlinedButton.icon(
-            key: const ValueKey<String>('manga_series_remove_from_bookshelf'),
-            onPressed: _busy ? null : () => unawaited(_removeFromLibrary()),
-            icon: const FushiIcon(Icons.library_add_check),
-            label: Text(t.manga_series_remove_from_bookshelf),
-          )
-        else
-          FushiOutlinedButton.icon(
-            key: const ValueKey<String>('manga_series_add_to_bookshelf'),
-            onPressed: _busy ? null : () => unawaited(_addToLibrary()),
-            icon: const FushiIcon(Icons.library_add_outlined),
-            label: Text(t.mihon_add_to_bookshelf),
-          ),
-        // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
-        if (inLibrary) ...<Widget>[
-          FushiOutlinedButton.icon(
-            key: const ValueKey<String>('manga_series_download_all'),
-            onPressed: _busy ? null : () => unawaited(_downloadAll()),
-            icon: const FushiIcon(Icons.download_outlined),
-            label: Text(t.manga_series_download_all),
-          ),
-          FushiSelectableChip(
-            key: const ValueKey<String>('manga_series_auto_ocr_chip'),
-            label: t.manga_series_auto_ocr,
-            leadingIcon: Icons.document_scanner_outlined,
-            selected: _appModelOrNull?.mangaDownloadAutoOcr ?? false,
-            onSelected: (bool value) => unawaited(_setAutoOcr(value)),
-          ),
-          FushiOutlinedButton.icon(
-            key: const ValueKey<String>('manga_series_ocr_all_downloaded'),
-            onPressed: _busy ? null : () => unawaited(_ocrAllDownloaded()),
-            icon: const FushiIcon(Icons.document_scanner_outlined),
-            label: Text(t.manga_series_ocr_all_downloaded),
-          ),
-          _ocrSettingsButton(),
-        ],
+      // 下载动作只对在库条目有意义：任务表按 bookKey 记，没有行就没地方挂任务。
+      if (inLibrary)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('manga_series_download_all'),
+          icon: FushiIcons.download,
+          label: t.manga_series_download_all,
+          onPressed: _busy ? null : () => unawaited(_downloadAll()),
+        ),
+      if (entry != null && inLibrary && _service != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('manga_series_subscribe'),
+          icon: entry.subscribed ? FushiIcons.bookmark : FushiIcons.bookmarkAdd,
+          label: entry.subscribed
+              ? t.manga_series_unsubscribe
+              : t.manga_series_subscribe,
+          selected: entry.subscribed,
+          iconOnly: true,
+          onPressed: _busy ? null : () => unawaited(_toggleSubscription()),
+        ),
+      // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页、常驻
+      // 可见，不必先点一条锁章再从弹窗里找。
+      if (login != null)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('manga_series_login'),
+          icon: FushiIcons.login,
+          label: t.mihon_source_login,
+          iconOnly: true,
+          onPressed: _busy || _refreshing
+              ? null
+              : () => unawaited(_loginToSource(login)),
+        ),
+    ];
+  }
+
+  /// 「⋯」：在网站打开、刷新章节、新章自动下载（订阅中）、下载后自动识别、
+  /// 识别全部已下载、OCR 设置（在库）。
+  List<MediaDetailMenuItem> _buildMoreItems() {
+    if (_isLocal) return const <MediaDetailMenuItem>[];
+    final OnlineMangaLibraryEntry? entry = _entry;
+    final Object? adapter = _adapter;
+    final bool inLibrary = _row != null;
+    final bool autoOcr = _appModelOrNull?.mangaDownloadAutoOcr ?? false;
+    return <MediaDetailMenuItem>[
+      // 源站网页入口：只有在线源（Mihon）有网页可去，本地卷 / 互联对端没有。
+      if (entry != null && adapter is OnlineMangaWebUrlCapable)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_open_website'),
+          icon: FushiIcons.openInNew,
+          label: t.mihon_source_website_open,
+          onSelected: () => unawaited(_openWebsite(adapter, entry)),
+        ),
+      if (entry != null)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_refresh'),
+          icon: FushiIcons.refresh,
+          label: t.manga_series_refresh,
+          enabled: !_refreshing,
+          onSelected: () => unawaited(_refreshFromSource()),
+        ),
+      if (entry != null && inLibrary && _service != null && entry.subscribed)
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_auto_download'),
+          icon: entry.autoDownload
+              ? FushiIcons.filled(FushiIcons.success)
+              : FushiIcons.cloudDownload,
+          label: t.manga_series_auto_download,
+          enabled: !_busy,
+          onSelected: () => unawaited(_toggleAutoDownload()),
+        ),
+      if (inLibrary) ...<MediaDetailMenuItem>[
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_auto_ocr_chip'),
+          icon: autoOcr ? FushiIcons.filled(FushiIcons.success) : FushiIcons.ocr,
+          label: t.manga_series_auto_ocr,
+          onSelected: () => unawaited(_setAutoOcr(!autoOcr)),
+        ),
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_ocr_all_downloaded'),
+          icon: FushiIcons.ocr,
+          label: t.manga_series_ocr_all_downloaded,
+          enabled: !_busy,
+          onSelected: () => unawaited(_ocrAllDownloaded()),
+        ),
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('manga_series_ocr_settings'),
+          icon: FushiIcons.settings,
+          label: t.manga_ocr_settings_open,
+          onSelected: () => unawaited(_openOcrSettings()),
+        ),
+      ],
     ];
   }
 
   /// 「OCR 设置」：作品页是阅读器外触发 OCR 的入口（BUG-2461），引擎偏好 / 模型
   /// 下载 / Lens 语言 / 外部 mokuro 路径必须就在触发点旁边可达——否则解析不到引擎
   /// 时用户只看到一条红 toast，不知道该去哪配。返回后重建：偏好是 AppModel 上的
-  /// 状态，下一次「识别」按新偏好解析。
+  /// 状态，下一次「识别」按新偏好解析。在线作品在「⋯」里，本地卷是次按钮。
   Widget _ocrSettingsButton() {
-    return FushiOutlinedButton.icon(
-      key: const ValueKey<String>('manga_series_ocr_settings'),
+    return MediaDetailSecondaryButton(
+      buttonKey: const ValueKey<String>('manga_series_ocr_settings'),
+      icon: FushiIcons.settings,
+      label: t.manga_ocr_settings_open,
       onPressed: () => unawaited(_openOcrSettings()),
-      icon: const FushiIcon(Icons.tune_outlined),
-      label: Text(t.manga_ocr_settings_open),
     );
   }
 
@@ -1911,18 +2020,18 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget _buildLocalDetails(BuildContext context) {
     final EpubBookRow? row = _row;
     if (row == null) return const SizedBox.shrink();
-    final ThemeData theme = Theme.of(context);
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(t.manga_series_volume_info, style: theme.textTheme.titleLarge),
-        const SizedBox(height: 8),
-        FushiCard(
-          padding: EdgeInsets.zero,
-          child: FushiListItem(
-            leading: const FushiIcon(Icons.auto_stories_outlined),
-            title: Text(t.manga_series_page_count),
-            trailing: Text('${row.chapterCount}'),
+        MediaDetailSectionHeader(t.manga_series_volume_info),
+        MediaDetailItemRow(
+          index: 0,
+          count: 1,
+          leading: const FushiIcon(FushiIcons.books),
+          title: t.manga_series_page_count,
+          trailing: Text(
+            '${row.chapterCount}',
+            style: context.fushiType.titleMediumEmphasized.tabular,
           ),
         ),
       ],

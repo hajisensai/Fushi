@@ -29,19 +29,102 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2728 条。点号进各自文件。
+> 共 2813 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2999](bugs/BUG-2999-ctx-remove-middle-sentence.md) | ✅ | ✅ | 制卡上下文无法删除中间的旁白句 |
+| [BUG-3060](bugs/BUG-3060-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
+| [BUG-3059](bugs/BUG-3059-fab-menu-keyboard-focus.md) | ✅ | ✅ | FushiFabMenu 键盘展开后焦点留在 FAB：首帧菜单项不在树里，后帧回调 requestFocus 落空 |
+| [BUG-3058](bugs/BUG-3058-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
+| [BUG-3057](bugs/BUG-3057-vertical-slider-fills-width.md) | ✅ | ✅ | 竖直 FushiSlider（MD3）横向吃满父级宽度：Slider 在有界高度下撑满、旋转后成一大块 |
+| [BUG-3056](bugs/BUG-3056-fushi-spring-no-snap.md) | ✅ | ✅ | FushiSpring 弹簧落定不吸附终值：浮动工具条停在离目标约 1e-3 处（亚像素偏移） |
+| [BUG-3055](bugs/BUG-3055-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
+| [BUG-3054](bugs/BUG-3054-search-capsule-symbol-icon.md) | ✅ | ✅ | 搜索框图标迁到 FushiIcons.search 后不再被认成搜索框：MD3 丢全胶囊、Apple 丢 36 高胶囊 |
+| [BUG-3053](bugs/BUG-3053-theme-compact-preview-too-tall.md) | ✅ | ✅ | MD3 窄屏自定义主题吸顶预览超过视口三分之一（示意开关挤成三行） |
+| [BUG-3052](bugs/BUG-3052-theme-role-picker-sheet-overflow.md) | ✅ | ✅ | 自定义主题角色选色 sheet 在矮窗口底部溢出、推荐色点不到 |
+| [BUG-3051](bugs/BUG-3051-collection-menu-binding.md) | ✅ | ✅ | 合集详情非拖排网格和列表右键菜单绕过快捷键绑定 |
+| [BUG-3050](bugs/BUG-3050-reader-selection-toolbar-grip-overlap.md) | ✅ | ✅ | 竖排选择操作条遮挡选择球，视口边缘手柄难以抓取 |
+| [BUG-3049](bugs/BUG-3049-reader-selection-overlay-lifecycle.md) | ✅ | ✅ | 阅读器选中时打开导航、插图、统计或有声书，选择控件残留在覆盖页面上 |
+| [BUG-3048](bugs/BUG-3048-reader-selection-persists-across-page-turn.md) | ✅ | ✅ | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
+| [BUG-3047](bugs/BUG-3047-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
+| [BUG-3046](bugs/BUG-3046-reader-selection-handle-covers-glyph.md) | 🚧 | 🚧 | 页边缘选择手柄避让回归：触控盒和选择球遮挡选中字 |
+| [BUG-3045](bugs/BUG-3045-asr-truncated-audio-finished.md) | ✅ | ✅ | ASR 转录把解不完的音频当文件末尾，残卷标成完成 |
+| [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
+| [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
+| [BUG-3041](bugs/BUG-3041-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
+| [BUG-3040](bugs/BUG-3040-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |
+| [BUG-3039](bugs/BUG-3039-md3-large-app-bar-title.md) | ✅ | ✅ | MD3 大标题顶栏展开态被主题钉成 titleLarge 小字（设置页标题上方大片空白） |
+| [BUG-3038](bugs/BUG-3038-md3-settings-search-capsule.md) | ✅ | ✅ | MD3 设置页搜索栏被压成 12 圆角方框（胶囊判据认不出包了 Padding 的放大镜） |
+| [BUG-3037](bugs/BUG-3037-shared-animated-size-zero-duration.md) | ✅ | ✅ | 共享尺寸动画在减弱动态效果下布局重入且切换偏好可能丢子树状态 |
+| [BUG-3035](bugs/BUG-3035-destructive-confirm-footer.md) | ✅ | ✅ | 通用删除确认框勾选披露后动作区滚出矮窗口 |
+| [BUG-3034](bugs/BUG-3034-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
+| [BUG-3033](bugs/BUG-3033-pending-ai-outcome-scroll.md) | ✅ | ✅ | AI识别长结论在待确认清空或刷新时溢出 |
+| [BUG-3032](bugs/BUG-3032-control-layout-chip-overflow.md) | ✅ | ✅ | 阅读器按钮布局编辑器长文案胶囊撑破窄槽 |
+| [BUG-3031](bugs/BUG-3031-manual-download-reduced-motion.md) | ✅ | ✅ | 手动下载切换输入时零时长尺寸动画在布局中触发重入 |
+| [BUG-3029](bugs/BUG-3029-settings-search-reveal-floating-header.md) | ✅ | ✅ | 设置搜索跳转定位被浮动页头首帧后让位推偏、高亮被重建拆掉 |
+| [BUG-3028](bugs/BUG-3028-delete-confirm-footer-scrolls.md) | ✅ | ✅ | 删除确认框的「删除」按钮在矮窗口里被滚出可视区 |
+| [BUG-3027](bugs/BUG-3027-indexedstack-keyboard-scroll-hidden-pane.md) | ✅ | ✅ | 键盘翻页滚到 IndexedStack 隐藏子区（Flutter 3.47 IndexedStack 不再包 Visibility） |
+| [BUG-3026](bugs/BUG-3026-gal-capture-empty-state-overflow.md) | ✅ | ✅ | 采集设置线程栏 M3E 空态在 1400x900 窗口溢出 |
+| [BUG-3025](bugs/BUG-3025-manga-settings-zero-duration-animated-size.md) | ✅ | ✅ | 漫画阅读设置面板减弱动效下切换作用域断言 RenderAnimatedSize |
+| [BUG-3024](bugs/BUG-3024-settings-reset-narrow-row.md) | ✅ | ✅ | 设置恢复默认按钮挤压窄面板标题导致溢出 |
+| [BUG-3023](bugs/BUG-3023-audio-missing-notice-squeezed.md) | ✅ | ✅ | 音频来源弹窗：丢失文件提示把说明挤成一列字、重新选择按钮被推出视口 |
+| [BUG-3022](bugs/BUG-3022-ocr-settings-zero-duration-animated-size.md) | ✅ | ✅ | 漫画 OCR 设置在减弱动态效果下 AnimatedSize 零时长断言 |
+| [BUG-3021](bugs/BUG-3021-tag-picker-video-counter.md) | ✅ | ✅ | 统一标签面板对视频批量操作仍显示本书 |
+| [BUG-3020](bugs/BUG-3020-placeholder-short-viewport.md) | ✅ | ✅ | 紧凑错误状态图标与说明高度超过可用视口 |
+| [BUG-3019](bugs/BUG-3019-settings-stepper-touch-width.md) | ✅ | ✅ | 设置步进器迁移后声明宽度少算触控区导致标题挤压 |
+| [BUG-3018](bugs/BUG-3018-smoke-navigation-destinations.md) | ✅ | ✅ | 桌面 smoke 把侧栏菜单图标算成首个导航目的地 |
+| [BUG-3015](bugs/BUG-3015-reorder-feedback-entrance-replay.md) | ✅ | ✅ | 开页进场期间拖动列表行时反馈副本重新变透明 |
+| [BUG-3011](bugs/BUG-3011-horizontal-filter-mouse-drag.md) | ✅ | ✅ | 新增横向筛选与导航区未启用桌面鼠标拖动 |
+| [BUG-3010](bugs/BUG-3010-tag-reorder-scaled-handle.md) | ✅ | ✅ | 标签管理重排使用SDK浮层导致非默认界面缩放下拖拽错位 |
+| [BUG-3009](bugs/BUG-3009-raw-component-guard-empty-scan.md) | ✅ | ✅ | 组件棘轮守卫路径替换空串导致零文件扫描并静默通过 |
+| [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
+| [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
+| [BUG-3005](bugs/BUG-3005-nav-more-spring-range.md) | ✅ | ✅ | 导航底栏更多菜单弹簧过冲导致打开时断言 |
+| [BUG-3001](bugs/BUG-3001-reader-live-hooks-cleared.md) | ✅ | ✅ | 阅读器按钮布局等实时设置在切卷/叠开阅读器后改了不生效，须退出重进 |
+| [BUG-3000](bugs/BUG-3000-jimaku-key-not-found.md) | ✅ | ✅ | Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕 |
+| [BUG-2999](bugs/BUG-2999-video-cover-online-search.md) | ✅ | ✅ | 视频设置封面只能选本地文件，在线搜索封面入口丢失 |
 | [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
+| [BUG-2997](bugs/BUG-2997-lookup-hidden-dict-empty-popup.md) | ✅ | ✅ | 查词只命中已隐藏词典时弹窗画页面自己的 emoji「未找到」并铺满最大尺寸 |
+| [BUG-2996](bugs/BUG-2996-pending-mines-load-error-skeleton.md) | ✅ | ✅ | 待发卡片页首次读表失败时骨架屏永不结束且无重试 |
+| [BUG-2995](bugs/BUG-2995-yomitan-nested-root-empty-zip.md) | ✅ | ✅ | 整合包父目录与嵌套 Yomitan 根同时存在时子词典被重打包为空 |
+| [BUG-2994](bugs/BUG-2994-import-dialog-busy-dismiss.md) | ✅ | ✅ | 漫画/视频导入进行中对话框可被返回键/点遮罩关闭 |
+| [BUG-2993](bugs/BUG-2993-download-menu-stale-index.md) | ✅ | ✅ | 下载任务菜单实时刷新后旧「删除」被重映射成「补对齐」 |
+| [BUG-2992](bugs/BUG-2992-lyrics-more-settings-tab.md) | ✅ | ✅ | 歌词更多设置入口被上次标签页记忆覆盖 |
+| [BUG-2991](bugs/BUG-2991-navigation-semantics-tap.md) | ✅ | ✅ | 自适应导航按钮未提供读屏激活动作 |
+| [BUG-2990](bugs/BUG-2990-audiobook-mini-follow-action.md) | ✅ | ✅ | MD3 迷你播放条缺失跟随音频入口 |
+| [BUG-2989](bugs/BUG-2989-reader-panel-session-lifetime.md) | ✅ | ✅ | 阅读器设置面板换侧及宽窄切换销毁会话 |
+| [BUG-2988](bugs/BUG-2988-custom-theme-preview-consistency.md) | ✅ | ✅ | 自定义主题色卡及编辑预览与实际应用配色不一致 |
+| [BUG-2987](bugs/BUG-2987-custom-theme-system-accent-notify.md) | ✅ | ✅ | 自定义主题跟随系统强调色后不通知界面 |
+| [BUG-2986](bugs/BUG-2986-md3-search-autofocus.md) | ✅ | ✅ | MD3 默认尺寸搜索框忽略自动聚焦 |
+| [BUG-2985](bugs/BUG-2985-apple-search-leading-action.md) | ✅ | ✅ | Apple 搜索框丢弃显式前缀操作按钮 |
+| [BUG-2984](bugs/BUG-2984-apple-menu-route-order.md) | ✅ | ✅ | Apple 菜单回调打开的新路由被随后关闭 |
+| [BUG-2983](bugs/BUG-2983-ext-popup-empty-glass-first.md) | ✅ | ✅ | 浏览器扩展查词先露空毛玻璃底板、内容晚到 |
+| [BUG-2982](bugs/BUG-2982-style-redesign-contracts.md) | ✅ | ✅ | 漫画章节列表以下载状态作身份导致重复 sibling key |
+| [BUG-2981](bugs/BUG-2981-settings-search-local-width.md) | ✅ | ✅ | 设置搜索回车使用全窗宽度导致窄内容区无法打开结果 |
+| [BUG-2980](bugs/BUG-2980-scroll-away-first-drag.md) | ✅ | ✅ | 悬浮页头从顶部连续拖动越过阈值仍不收起 |
+| [BUG-2979](bugs/BUG-2979-video-moved-file-duplicate-row.md) | ✅ | 🚧 | 视频文件搬家后重扫来源再建一行致分集重复 |
+| [BUG-2978](bugs/BUG-2978-collection-episode-local-remote-duplicate.md) | ✅ | ✅ | 视频作品详情页同一集本地与远端成员各出一张卡 |
+| [BUG-2977](bugs/BUG-2977-floating-title-capsule-clipped.md) | ✅ | ✅ | M3E 浮动页头标题胶囊下半截被裁、返回圆底部被切 |
+| [BUG-2976](bugs/BUG-2976-home-tab-switch-jank.md) | ✅ | ✅ | 切到视频首页与回到 app 首页卡顿 |
+| [BUG-2975](bugs/BUG-2975-floating-chrome-scroll-bounce.md) | ✅ | ✅ | 视频库滚轮上下滚动回弹滚不动 |
+| [BUG-2974](bugs/BUG-2974-collection-picker-cross-domain.md) | ✅ | ✅ | 书的加入合集列表里出现视频合集（合集未按媒体库隔离） |
+| [BUG-2973](bugs/BUG-2973-text-field-vertical-center.md) | ✅ | ✅ | 输入框文字垂直不居中（自定义主题页 AI 输入框与名称框） |
+| [BUG-2972](bugs/BUG-2972-lyrics-highlight-color.md) | ✅ | ✅ | 歌词模式高亮颜色无法修改 |
+| [BUG-2971](bugs/BUG-2971-subtitle-blur-respect-ass-off.md) | 🚧 | ✅ | 视频字幕遮蔽模糊在关闭尊重ASS样式时不生效 |
+| [BUG-2970](bugs/BUG-2970-emby-short-query-search.md) | ✅ | ✅ | Emby 媒体服务器搜索少于四个字搜不到 |
+| [BUG-2969](bugs/BUG-2969-collection-member-menu-mismatch.md) | ✅ | ✅ | 合集详情页成员右键菜单与书架不一致且没有标签 |
+| [BUG-2968](bugs/BUG-2968-tag-filter-hides-collection-members.md) | ✅ | ✅ | 标签筛选时合集内打了标签的书找不到 |
+| [BUG-2967](bugs/BUG-2967-android-first-lookup-after-idle-anki-main-thread.md) | ✅ | ✅ | Android 空闲后首次查词卡顿：AnkiDroid 制卡态探测在主线程冷启动 AnkiDroid |
+| [BUG-2966](bugs/BUG-2966-home-ja-untranslated.md) | ✅ | ✅ | 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译 |
 | [BUG-2965](bugs/BUG-2965-movie-pack-numbered-files-become-extras.md) | ✅ | ✅ | 剧场版合集包Movie 01…25被误判带集号，只入库一部其余进Extras |
 | [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |
 | [BUG-2963](bugs/BUG-2963-ai-acquire-anime-movie-category-movie.md) | ✅ | ✅ | 全部哆啦A梦剧场版被解析成category=movie，作品搜索只剩TMDB直接失败 |
 | [BUG-2962](bugs/BUG-2962-mal-unreachable-every-request-full-retries.md) | ✅ | ✅ | Jikan停摆时每条MAL请求都吃满3次超时，整套下载核对卡一两个小时 |
+| [BUG-2961](bugs/BUG-2961-audiobook-background-desync-and-stall.md) | ✅ | ✅ | 后台挂有声书：切回来高亮/视口与音频不同步，挂久了音频断掉且点不起来 |
 | [BUG-2960](bugs/BUG-2960-franchise-web-fallback-anchor-title.md) | ✅ | ✅ | 整套下载资料源不可用时联网补全拿单部剧场版标题搜维基列不出系列 |
 | [BUG-2959](bugs/BUG-2959-server-port-conflict-masked.md) | ✅ | ✅ | 服务端端口被占时只报drift Bad state No element |
 | [BUG-2958](bugs/BUG-2958-ai-acquire-alt-version-details.md) | ✅ | ✅ | AI下视频备选版本chip缺做种来源集数编码 |
+| [BUG-2957](bugs/BUG-2957-android-liquid-glass-bar.md) | ✅ | ✅ | Android 设计系统 Apple（液态玻璃）底栏渲染成灰色矩形 |
 | [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
 | [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
@@ -60,6 +143,7 @@
 | [BUG-2941](bugs/BUG-2941-download-collection-sync-order.md) | ✅ | ✅ | 下载合集选集乱序：同步平手取远端冲掉按集号排序 |
 | [BUG-2940](bugs/BUG-2940-synced-clip-silent-audio.md) | ✅ | ✅ | 同步片段导出放过 0 音频包的 webm（#1951） |
 | [BUG-2939](bugs/BUG-2939-mobile-libmpv-no-muxer.md) | ✅ | ✅ | Android/iOS/macOS 随包 libmpv 无 muxer，dump-cache 恒失败（#1953） |
+| [BUG-2938](bugs/BUG-2938-desktop-ffmpeg-filters-probe-stdout.md) | ✅ | ✅ | 桌面端片段导出滤镜探测丢 stdout，硬字幕恒不烧 |
 | [BUG-2937](bugs/BUG-2937-franchise-walk-batched.md) | ✅ | ✅ | AI下视频整套：系列查不完时按预算截断交半张清单·应分批续查到走完 |
 | [BUG-2936](bugs/BUG-2936-franchise-movies-silent-truncation.md) | ✅ | ✅ | AI下视频「全部哆啦A梦大电影」MAL系列遍历静默截断丢新剧场版·失败时静默降级成下单部TV·短片混进剧场版 |
 | [BUG-2935](bugs/BUG-2935-mal-franchise-silent-truncation.md) | ✅ | ✅ | 「整套下载」MAL 关联链走到上限静默截断，哆啦A梦等长寿系列可能漏收作品 |
@@ -74,6 +158,7 @@
 | [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
 | [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
+| [BUG-2923](bugs/BUG-2923-kiku-release-template-probe.md) | ✅ | ✅ | Kiku 发布模板预渲染字段导致同步视频兼容探测误判 |
 | [BUG-2922](bugs/BUG-2922-gal-mine-card-flicker.md) | ✅ | ✅ | 游戏内查词卡点制卡时卡片消失一下 |
 | [BUG-2921](bugs/BUG-2921-gal-nested-card-root-jump.md) | ✅ | ✅ | 游戏内查词卡嵌套查词时根卡跳位、子卡标题被裁 |
 | [BUG-2920](bugs/BUG-2920-shelf-read-status-filter-reset.md) | ✅ | ✅ | 书架阅读状态筛选每次打开软件都重置 |

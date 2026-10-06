@@ -5,7 +5,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -107,7 +108,7 @@ void main() {
       find.byKey(ValueKey<String>('remote_book_card_${safeKey(title)}'));
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
   }
 
@@ -196,7 +197,7 @@ void main() {
     // 串行：第一本挂在闸门上时第二本还没起（审查 #2：批量不得一帧扇出 N 个）。
     expect(client.fetched, <String>['Cloud One'],
         reason: '批量下载逐本串行，第一本没完第二本不起');
-    expect(find.byIcon(Icons.checklist_outlined), findsOneWidget,
+    expect(find.byIcon(FushiIcons.checklist), findsOneWidget,
         reason: '批量下载一开始就退出多选态（入口图标回到「选择」）');
     // 多选态期间卡内右上角下载按钮必须是禁用态（审查 #1），此时已退出多选，
     // 按钮回到可用——用另一张未勾选的卡核对壳与按钮都活着。

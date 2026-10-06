@@ -1,6 +1,6 @@
 import 'dart:async' show unawaited;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
@@ -13,6 +13,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// [IptvPlaylistImportDialog] 关窗时交回的结果。
@@ -148,59 +149,61 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
 
   @override
   Widget build(BuildContext context) {
-    return ImportDialogFrame(
-      leadingIcon: Icons.live_tv_outlined,
-      title: t.video_iptv_import_title,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          FushiTextFieldControl(
-            controller: _urlController,
-            enabled: !importing,
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            decoration: InputDecoration(
-              labelText: t.video_iptv_url_field,
-              hintText: 'https://.../playlist.m3u',
-              prefixIcon: const FushiIcon(Icons.link),
-              isDense: true,
+    // 导入进行中禁止返回键 / 点遮罩 / Esc 关闭（HBK-AUDIT-037，见 buildImportPopGuard）。
+    return buildImportPopGuard(
+      child: ImportDialogFrame(
+        leadingIcon: FushiIcons.tv,
+        title: t.video_iptv_import_title,
+        body: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiTextFieldControl(
+              controller: _urlController,
+              enabled: !importing,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: t.video_iptv_url_field,
+                hintText: 'https://.../playlist.m3u',
+                prefixIcon: const FushiIcon(FushiIcons.link),
+              ),
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) {
+                if (_canImport) _doImport();
+              },
             ),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) {
+            const SizedBox(height: 12),
+            FushiOutlinedButton.icon(
+              onPressed: importing ? null : _pickFile,
+              icon: const FushiIcon(FushiIcons.file),
+              label: Text(
+                _localPath == null
+                    ? t.video_iptv_pick_file
+                    : p.basename(_localPath!),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 12),
+            FushiInlineNotice(
+              message: t.video_iptv_import_hint,
+              icon: FushiIcons.info,
+            ),
+          ],
+        ),
+        actions: <Widget>[
+          FushiTextButton(
+            onPressed: importing ? null : () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
+          buildImportAction(
+            context,
+            onImport: () {
               if (_canImport) _doImport();
             },
           ),
-          const SizedBox(height: 8),
-          FushiOutlinedButton.icon(
-            onPressed: importing ? null : _pickFile,
-            icon: const FushiIcon(Icons.playlist_play_outlined),
-            label: Text(
-              _localPath == null
-                  ? t.video_iptv_pick_file
-                  : p.basename(_localPath!),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            t.video_iptv_import_hint,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
         ],
       ),
-      actions: <Widget>[
-        FushiTextButton(
-          onPressed: importing ? null : () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
-        ),
-        buildImportAction(
-          context,
-          onImport: () {
-            if (_canImport) _doImport();
-          },
-        ),
-      ],
     );
   }
 }

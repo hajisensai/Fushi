@@ -4,7 +4,7 @@
 //
 // 订阅列表的一行是**一条规则**（同 filter 的发布聚合成一行），所以判据落在组上：
 // 组里还有单集就照旧追更，整组都是整包才降级成一次性。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_core/fushi_core.dart';

@@ -1,0 +1,9 @@
+## BUG-2923 · Kiku 发布模板预渲染字段导致同步视频兼容探测误判
+- **报告**：2026-10-03（Discord LiFTH：Kiku 下视频片段没有画面/音频，切 GIF 正常，上一轮处理后仍然失败）。
+- **真实性**：✅ 真 bug。BUG-2869 的模板判据 `packages/fushi_anki/lib/src/anki_synchronized_clip_template.dart:19` 只剥离 script/template/comment；真实 Kiku v2.1.0 发布包在 SSR 画面中有两处裸 `{{Picture}}`，使判据错误返回 true。Kiku hydration 后由 `PictureSection.tsx` / `FieldGroupContext.tsx` 只提取 img，视频/重播按钮被丢弃。v1.10.2 的隐藏 div 字段源也被同一判据误认。旧夹具取自开发源模板、SSR 仍是占位符，因此没有覆盖发布结果，且 README 错写为 SSR 不含字段引用。
+- **[x] ① 已修复** — 识别脚本消费的 `data-field` 图片字段源，静态 SSR 副本不再作为原样显示媒体的证据；沿用已有产出前 GIF + 独立句子音频路径。按字段映射识别，不依赖 Kiku 名称；普通静态模板和 Lapis 保留视频。提交见本文件所在修复提交。
+- **[x] ② 已加自动化测试** — 包级 `synchronized_clip_template_test.dart` 加入真实 v2.1.0 apkg 导出的正反面、v1.10.2 隐藏 div、重命名字段及负向边界；修前实际 3 条断言失败，修后通过。应用 `fushi/test/mining/synchronized_video_mining_test.dart` 用真实模板验证走动图提取、保留独立音频且不调用同步视频导出。
+- **实际媒体验证**：隔离目录 `.codex-test/kiku-live/` 中导入官方 `Kiku_v2.1.0.apkg`，合成带音轨 WebM 输入，经真实 `ImmersionMiningEngine`、FFmpeg、`AnkiConnectRepository` 字段组合器（媒体传输替身写隔离媒体库）产出。修前判 true，Picture 为视频重播按钮；修后判 false，Picture 为 GIF、SentenceAudio 为独立 AAC sound 引用。安装版 Anki 的 Collection 实际创建测试笔记、渲染卡片与原生 AV 列表，再在其 PyQt6 / QtWebEngine 6.9 运行官方 Kiku JS/CSS：修前 hydration 后 images=0/videos=0；修后加载到 480×270 GIF、一个原生重播按钮，点击发出 `play:a:0`，AV 列表指向对应 AAC。截图 `after.png` 已肉眼核对，见同目录 `before-dom.json` / `after-dom.json` 和 `after-av.json`。未改用户真实 Anki 数据。
+- **边界**：上述是实际媒体和桌面 Anki 渲染内核验证，原生播放桥仅记录重播命令，不宣称耳听或 AnkiDroid/AnkiMobile 整机 E2E 通过。本次修复让 Kiku 正确自动使用 GIF + 音频，不是增加 Kiku 原生视频能力；旧坏卡需要重新制卡，无法靠新版本自动补回旧卡缺失媒体。
+- **WebM 对照**：另用生产 `inlineVideoCoverHtml` / `inlineVideoSentenceAudioHtml` 生成修复前 WebM 字段并导入同一隔离 collection，官方 Kiku 渲染后无图片、无原生 AV 条目、无原生重播命令，截图 `before-webm.png` 确认没有画面。残留 video DOM 不等于可见播放器。
+- **检查**：`dart tool/pre_push_check.dart --base=HEAD` 完整通过：应用 421 项、Anki 包 653 项，共 1074 项；全量 `flutter analyze` 无问题。实际 FFmpeg 解码修复后 GIF 得 12 帧/1.50 秒、AAC 得 1.51 秒/48 kHz 单声道。`bug.dart check` 与 `git diff --check` 通过。

@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import '../../../helpers/glass_unwrap.dart';
 
@@ -278,6 +279,11 @@ void main() {
         find.textContaining(t.manga_online_detail_load_failed), findsOneWidget);
 
     client.seriesError = null;
+    // M3E 外框（居中图标徽标 + 标题）与两行动作按钮在 800×600 下把可滚动正文
+    // 区压到放不下整块错误态：「重试」落在正文滚动区下沿、被 footer 盖住一半
+    // （外框 scrollable: true，正文本就该滚）。先滚到可见再点，点的是真按钮。
+    await tester.ensureVisible(find.text(t.retry));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.retry));
     await tester.pumpAndSettle();
     expect(find.text('よつばと! 第01巻'), findsOneWidget);
@@ -368,11 +374,11 @@ void main() {
     await s.downloaders[0].ctrl.close();
     await pumpUntil(
       tester,
-      () => find.byIcon(Icons.check_circle).evaluate().isNotEmpty,
+      () => find.byIcon(FushiIcons.filled(FushiIcons.success)).evaluate().isNotEmpty,
       reason: '✓ 标记',
     );
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
     expect(find.text(t.manga_online_downloaded), findsOneWidget);
     expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     expect(

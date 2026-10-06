@@ -100,10 +100,12 @@ class GalCalibrationOcrModelStore {
     final Directory manga = Directory(
       p.join(support.path, 'ocr_models', 'manga'),
     );
-    // The shared manga OCR service already downloads these PP-OCRv6 files.
-    // Reuse them when present so enabling calibration does not create a second
-    // 31 MB copy; otherwise keep the small calibration pack isolated from the
-    // larger manga model lifecycle.
+    // Installs from before the 2026-10 removal of the manga-ocr local model
+    // left these PP-OCRv6 files in the legacy manga directory, and the startup
+    // cleanup deliberately keeps them (kRemovedMangaOcrLegacyFileNames). Reuse
+    // them when present so enabling calibration does not create a second 31 MB
+    // copy; otherwise keep the small calibration pack isolated from the manga
+    // model lifecycle.
     final bool sharedReady = kGalCalibrationOcrModelManifest.every(
       (MangaOcrModelFile model) =>
           isMangaOcrModelFileReady(File(p.join(manga.path, model.fileName))),

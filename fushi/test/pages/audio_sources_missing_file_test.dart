@@ -1,7 +1,8 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 import 'package:fushi/utils.dart';
@@ -42,6 +43,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(pickedPaths, <String>['/cache/gone.db']);
     expect(tester.takeException(), isNull);
+  });
+
+  // BUG-3023：M3E 提示条曾把说明与「重新选择」塞进同一 Row，按钮按固有宽度先
+  // 占位，说明只剩十几像素宽、逐字换行撑高整行，按钮被推出列表的可滚视口。
+  testWidgets(
+      'BUG-3023 missing-file notice keeps the explanation readable and the '
+      'reselect action inside the list viewport', (WidgetTester tester) async {
+    await tester.pumpWidget(_host(AudioSourcesDialog(
+      sources: <AudioSourceConfig>[_local('/cache/gone.db')],
+      onSave: (_) {},
+      isLocalDbAvailable: (_) async => false,
+      onReplaceLocalDb: (_) async => null,
+    )));
+    await tester.pumpAndSettle();
+
+    final Rect message =
+        tester.getRect(find.text(t.local_audio_file_unavailable));
+    final Rect row = tester.getRect(find.text('Saved pronunciation name'));
+    expect(message.width, greaterThan(row.width / 2),
+        reason: 'the explanation must not be squeezed by the action button');
+    final Rect viewport = tester.getRect(find
+        .ancestor(
+          of: find.text(t.local_audio_file_reselect),
+          matching: find.byType(SingleChildScrollView),
+        )
+        .first);
+    final Rect reselect =
+        tester.getRect(find.text(t.local_audio_file_reselect));
+    expect(viewport.contains(reselect.center), isTrue,
+        reason: 'the reselect action must be reachable without scrolling');
   });
 
   testWidgets('healthy database has no missing-file warning or recovery action',
@@ -166,7 +197,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.local_audio_file_reselect));
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_up).last);
+    await tester.tap(find.byIcon(FushiIcons.expandLess).last);
     await tester.pump();
     await tester.tap(find.byType(Switch).last);
     await tester.pump();

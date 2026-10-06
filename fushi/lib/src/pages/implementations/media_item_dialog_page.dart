@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
         GlassButton,
@@ -51,7 +52,7 @@ final class DialogListAction extends DialogAction {
   const DialogListAction({
     required super.label,
     required super.onPressed,
-    super.icon = Icons.tune,
+    super.icon = FushiIcons.settings,
   });
 }
 
@@ -59,7 +60,7 @@ final class DialogDangerAction extends DialogAction {
   const DialogDangerAction({
     required super.label,
     required super.onPressed,
-    super.icon = Icons.delete_outline,
+    super.icon = FushiIcons.delete,
     this.muted = false,
   });
   final bool muted;
@@ -110,7 +111,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
         if (widget.item.canEdit && widget.isHistory)
           DialogListAction(
             label: t.dialog_edit_info,
-            icon: Icons.edit_outlined,
+            icon: FushiIcons.edit,
             onPressed: _executeEdit,
           ),
       ];
@@ -120,7 +121,7 @@ class _MediaItemDialogPageState extends BasePageState<MediaItemDialogPage> {
         if (widget.item.canDelete && widget.isHistory)
           DialogDangerAction(
             label: t.dialog_clear,
-            icon: Icons.clear_all,
+            icon: FushiIcons.deleteSweep,
             onPressed: _executeClear,
             muted: true,
           ),

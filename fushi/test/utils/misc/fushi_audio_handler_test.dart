@@ -5,7 +5,7 @@ void main() {
   group('FushiAudioHandler notification subtitles', () {
     FushiAudioHandler buildHandler() {
       return FushiAudioHandler(
-        onPlayPause: () {},
+        onPlayIntent: (_) {},
         onSeek: (_) {},
         onRewind: () {},
         onFastForward: () {},

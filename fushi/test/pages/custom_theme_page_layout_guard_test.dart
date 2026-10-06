@@ -1,6 +1,41 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
+
+bool _pinsSurfaceThroughSharedScheme(
+  String page,
+  String notifier,
+  String appModel,
+) {
+  String code(String source, String signature) => maskCommentsAndStrings(
+    methodBody(source, signature),
+  ).replaceAll(RegExp(r'\s+'), '');
+
+  final String entry = code(page, 'CustomThemeEntry _buildEntry(');
+  final String preview = code(page, 'ColorScheme _buildSchemeFor(');
+  // 190147fb54f：编辑页经 AppModel 门面取配色（不穿透 themeNotifier），门面与
+  // ThemeNotifier 同名方法都委托到同一个顶层纯函数——派生链仍只有一份。
+  final String facade = code(appModel, 'ColorScheme buildCustomThemeColorScheme(');
+  final String delegate = code(
+    notifier,
+    'ColorScheme buildCustomThemeColorScheme(',
+  );
+  final String runtime = code(
+    notifier,
+    'ColorScheme buildCustomThemeEntryColorScheme(',
+  );
+  return entry.contains('returnCustomThemeEntry(') &&
+      entry.contains('surfaceColor:argb(_overrides[_ThemeRole.surface]),') &&
+      preview.contains(
+        'returnappModelNoUpdate.buildCustomThemeColorScheme('
+        '_buildEntry(),brightness,);',
+      ) &&
+      facade.contains('theme_notifier.buildCustomThemeEntryColorScheme(') &&
+      delegate.contains('buildCustomThemeEntryColorScheme(') &&
+      runtime.contains('returnbuildFushiColorScheme(') &&
+      runtime.contains('surface:role(entry.surfaceColor),');
+}
 
 /// 自定义主题编辑页重设计（2026-09）的结构守卫。
 ///
@@ -17,6 +52,12 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final String source = File(
     'lib/src/pages/implementations/custom_theme_page.dart',
+  ).readAsStringSync();
+  final String notifier = File(
+    'lib/src/models/theme_notifier.dart',
+  ).readAsStringSync();
+  final String appModel = File(
+    'lib/src/models/app_model.dart',
   ).readAsStringSync();
 
   group('CustomThemePage · 选色器不在滚动主路径上', () {
@@ -37,23 +78,26 @@ void main() {
       expect(source.contains('class _ThemeColorPicker'), isTrue);
     });
 
-    test('宽屏两栏：列表在左、预览与选色器在右', () {
+    test('宽屏两栏：预览 sticky 在左、编辑在右；取色器按需弹出不常驻', () {
       expect(source.contains('kCustomThemeWideLayoutMinWidth'), isTrue);
-      expect(source.contains('_buildSidePickerCard()'), isTrue);
+      expect(source.contains('_buildSidePickerCard'), isFalse);
       expect(source.contains('_showRolePickerDialog('), isTrue);
+      expect(source.contains('adaptiveModalSheet<void>('), isTrue);
+      expect(source.contains('SettingsKitScaffold('), isTrue);
     });
   });
 
   group('CustomThemePage · 按用途命名的角色与板块', () {
-    test('四个板块按主题色 / 阅读器 / 有声书 / 微调派生色排列', () {
-      final int accent = source.indexOf('t.theme_section_accent');
-      final int reader = source.indexOf('t.theme_section_reader');
-      final int audiobook = source.indexOf('t.theme_section_audiobook');
-      final int fineTune = source.indexOf('t.theme_section_fine_tune');
-      expect(accent, greaterThanOrEqualTo(0));
-      expect(reader, greaterThan(accent));
-      expect(audiobook, greaterThan(reader));
-      expect(fineTune, greaterThan(audiobook));
+    test('分组按 主题色（种子）/ 界面配色 / 阅读器 排列，主题色只有一处', () {
+      final int seed = source.indexOf('title: t.theme_role_accent');
+      final int ui = source.indexOf('title: t.theme_section_accent');
+      final int reader = source.indexOf('title: t.theme_section_reader');
+      expect(seed, greaterThanOrEqualTo(0));
+      expect(ui, greaterThan(seed));
+      expect(reader, greaterThan(ui));
+      // 2026-10 M3E：不再常驻侧栏选色器，也不再在「界面配色」里重复一排主题色板。
+      expect(source.contains('_buildAccentPresetRow'), isFalse);
+      expect(source.contains('_buildTonalPalette()'), isTrue);
     });
 
     test('十个角色全部用 theme_role_* 文案，不再出现 Material 术语 key', () {
@@ -121,10 +165,45 @@ void main() {
     test('界面背景角色钉死 surface，与真机同一派生链', () {
       expect(source.contains('_ThemeRole.surface'), isTrue);
       expect(
-        source.contains('surface: _overrides[_ThemeRole.surface]'),
+        // 45fc6d88b17 将预览接到运行期共享入口：覆盖色先写草稿 entry，
+        // 再由 ThemeNotifier 派生。必须守住三段，不能只找全文件里的 surface。
+        _pinsSurfaceThroughSharedScheme(source, notifier, appModel),
         isTrue,
       );
       expect(source.contains('t.theme_role_surface'), isTrue);
+    });
+
+    test('surface 接线守卫拒绝丢失覆盖色、错误草稿及只剩注释的派生参数', () {
+      expect(
+        _pinsSurfaceThroughSharedScheme(
+          source.replaceFirst(
+            'surfaceColor: argb(_overrides[_ThemeRole.surface]),',
+            'surfaceColor: null,',
+          ),
+          notifier,
+          appModel,
+        ),
+        isFalse,
+      );
+      expect(
+        _pinsSurfaceThroughSharedScheme(
+          source.replaceFirst('_buildEntry(),', '_otherEntry(),'),
+          notifier,
+          appModel,
+        ),
+        isFalse,
+      );
+      expect(
+        _pinsSurfaceThroughSharedScheme(
+          source,
+          notifier.replaceFirst(
+            'surface: role(entry.surfaceColor),',
+            'surface: null, /* surface: role(entry.surfaceColor), */',
+          ),
+          appModel,
+        ),
+        isFalse,
+      );
     });
 
     test('预览按角色框出影响位置', () {
@@ -133,7 +212,20 @@ void main() {
     });
 
     test('墨水屏模式下预览同样黑白', () {
-      expect(source.contains('buildEinkColorScheme('), isTrue);
+      expect(
+        methodBody(source, 'ColorScheme _buildSchemeFor('),
+        contains('appModelNoUpdate.buildCustomThemeColorScheme('),
+      );
+      expect(
+        methodBody(appModel, 'ColorScheme buildCustomThemeColorScheme('),
+        contains('einkMode: einkMode'),
+      );
+      final String scheme = methodBody(
+        notifier,
+        'ColorScheme buildCustomThemeEntryColorScheme(',
+      );
+      expect(scheme, contains('einkMode'));
+      expect(scheme, contains('buildEinkColorScheme('));
     });
   });
 }

@@ -5,8 +5,9 @@
 // 更不会推到 Anki。
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
@@ -84,7 +85,7 @@ Future<LapisVisualEditorResult?> _pumpAndRunAi(
   if (!save) {
     return null;
   }
-  await tester.tap(find.byIcon(Icons.save_outlined));
+  await tester.tap(find.byIcon(FushiIcons.save));
   await tester.pumpAndSettle();
   await popped;
   return result;
@@ -113,7 +114,7 @@ void main() {
     );
     // 什么都没改，保存按钮保持灰。
     final FilledButton saveButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
-        of: find.byIcon(Icons.save_outlined),
+        of: find.byIcon(FushiIcons.save),
         matching: find.byType(FilledButton),
       )),);
     expect(saveButton.onPressed, isNull);

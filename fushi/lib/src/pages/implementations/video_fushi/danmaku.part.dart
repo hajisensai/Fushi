@@ -232,11 +232,14 @@ extension _VideoDanmaku on _VideoFushiPageState {
 
   /// 手动匹配侧栏内容：以当前视频文件名为初始关键词，注入搜索/绑定回调。
   Widget _buildDanmakuMatchSidePanel() {
-    return DanmakuManualMatchPanel(
-      initialKeyword: p.basenameWithoutExtension(_currentVideoPath ?? ''),
-      colorScheme: _videoChromeColorScheme(context),
-      onSearch: _searchDanmakuEpisodes,
-      onEpisodeSelected: _bindDanmakuEpisode,
+    // 配色读侧栏表面**内部**的主题（M3E = 面板中性深色主题），不是页面主题。
+    return Builder(
+      builder: (BuildContext panelContext) => DanmakuManualMatchPanel(
+        initialKeyword: p.basenameWithoutExtension(_currentVideoPath ?? ''),
+        colorScheme: Theme.of(panelContext).colorScheme,
+        onSearch: _searchDanmakuEpisodes,
+        onEpisodeSelected: _bindDanmakuEpisode,
+      ),
     );
   }
 }

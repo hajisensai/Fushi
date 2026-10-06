@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -151,7 +151,8 @@ void main() {
   });
 
   testWidgets('宽屏（≥900）两列：两张集卡同一行', (WidgetTester tester) async {
-    useSurface(tester, const Size(1280, 1600));
+    // ≥1080 走两栏（左 hero 400），右栏集网格要 ≥900 才两列。
+    useSurface(tester, const Size(1600, 1600));
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 

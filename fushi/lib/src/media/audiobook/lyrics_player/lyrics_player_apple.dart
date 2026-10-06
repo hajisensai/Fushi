@@ -2,16 +2,17 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter, lerpDouble;
 
-import 'package:flutter/cupertino.dart' show CupertinoIcons;
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -25,7 +26,7 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
   const AppleLyricsPlayerDesign();
 
   @override
-  Rect lyricsRect(Size size, EdgeInsets padding) {
+  Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
       return _WideLayout(size, padding).lyricsRect;
     }
@@ -33,7 +34,12 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
   }
 
   @override
-  Widget buildBackground(BuildContext context, LyricsPlayerData data) {
+  Widget buildBackground(
+    BuildContext context,
+    LyricsPlayerData data, {
+    double bleedTop = 0,
+  }) {
+    // 模糊封面各层按画布比例铺，与页面几何无关：整张画布照画即可。
     return _AppleLyricsBackground(
       cover: data.cover,
       accent: appleColorsOf(context).accent,
@@ -486,6 +492,10 @@ class _PlayerPanel extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             _MaskButton(data: data, callbacks: callbacks),
+            if (callbacks.onTypography != null) ...<Widget>[
+              const SizedBox(width: 10),
+              _TypographyButton(onTypography: callbacks.onTypography!),
+            ],
             const SizedBox(width: 10),
             _LyricsIconButton(
               icon: CupertinoIcons.rectangle,
@@ -884,6 +894,10 @@ class _NarrowChrome extends StatelessWidget {
                                 onChanged: callbacks.onSpeedChanged,
                               ),
                               _MaskButton(data: data, callbacks: callbacks),
+                              if (callbacks.onTypography != null)
+                                _TypographyButton(
+                                  onTypography: callbacks.onTypography!,
+                                ),
                             ],
                           ),
                         ),
@@ -1063,8 +1077,8 @@ class _LyricsIconButton extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onPressed;
 
-  /// 需要锚定菜单的按钮：回调里带本按钮的全局矩形。
-  final ValueChanged<Rect>? onPressedWithRect;
+  /// 需要锚定菜单的按钮：回调里带本按钮的全局矩形与 context。
+  final ValueChanged<LyricsMenuAnchor>? onPressedWithRect;
   final Color? color;
 
   /// 给 [AnimatedSwitcher] 区分新旧图标用。
@@ -1072,7 +1086,7 @@ class _LyricsIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ValueChanged<Rect>? withRect = onPressedWithRect;
+    final ValueChanged<LyricsMenuAnchor>? withRect = onPressedWithRect;
     final Widget glyph = Icon(
       icon,
       key: iconKey,
@@ -1093,7 +1107,12 @@ class _LyricsIconButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(diameter / 2),
         onPressed: withRect == null
             ? onPressed
-            : () => withRect(_globalRectOf(context)),
+            : () => withRect(
+                LyricsMenuAnchor(
+                  rect: _globalRectOf(context),
+                  context: context,
+                ),
+              ),
         child: SizedBox(
           width: diameter,
           height: diameter,
@@ -1201,10 +1220,28 @@ class _MaskButton extends StatelessWidget {
   }
 }
 
+/// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
+class _TypographyButton extends StatelessWidget {
+  const _TypographyButton({required this.onTypography});
+
+  final ValueChanged<LyricsMenuAnchor> onTypography;
+
+  @override
+  Widget build(BuildContext context) {
+    return _LyricsIconButton(
+      icon: CupertinoIcons.textformat_size,
+      diameter: 34,
+      iconSize: 19,
+      tooltip: t.lyrics_typography_title,
+      onPressedWithRect: onTypography,
+    );
+  }
+}
+
 class _MoreButton extends StatelessWidget {
   const _MoreButton({required this.onMore});
 
-  final ValueChanged<Rect> onMore;
+  final ValueChanged<LyricsMenuAnchor> onMore;
 
   @override
   Widget build(BuildContext context) {
@@ -1218,93 +1255,51 @@ class _MoreButton extends StatelessWidget {
   }
 }
 
-String _speedLabel(double speed) {
-  // 1 → 1.0，1.25 → 1.25：整数档保留一位小数（Apple Music 的「1.0×」写法）。
-  if (speed == speed.roundToDouble()) return speed.toStringAsFixed(1);
-  String text = speed.toStringAsFixed(2);
-  while (text.endsWith('0')) {
-    text = text.substring(0, text.length - 1);
-  }
-  return text;
-}
-
-/// 倍速小文字按钮，点开锚定在按钮上的设计系统菜单。
+/// 倍速小文字按钮，点开锚定在按钮上的倍速面板（与普通阅读模式快捷设置同一条
+/// `AudiobookSpeedSlider`），拖动实时生效。
 class _SpeedButton extends StatelessWidget {
   const _SpeedButton({required this.speed, required this.onChanged});
 
   final double speed;
   final ValueChanged<double> onChanged;
 
-  Future<void> _open(BuildContext context) async {
-    final RenderObject? button = context.findRenderObject();
-    final RenderObject? overlay = Navigator.of(
-      context,
-    ).overlay?.context.findRenderObject();
-    if (button is! RenderBox || overlay is! RenderBox) return;
-    final Rect anchor = Rect.fromPoints(
-      button.localToGlobal(Offset.zero, ancestor: overlay),
-      button.localToGlobal(
-        button.size.bottomRight(Offset.zero),
-        ancestor: overlay,
-      ),
-    );
-    final double? picked = await showFushiMenu<double>(
-      context: context,
-      position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
-      initialValue: speed,
-      items: <PopupMenuEntry<double>>[
-        for (final double s in kLyricsPlayerSpeeds)
-          PopupMenuItem<double>(
-            value: s,
-            child: Row(
-              children: <Widget>[
-                SizedBox(
-                  width: 22,
-                  child: s == speed
-                      ? const Icon(CupertinoIcons.checkmark, size: 16)
-                      : null,
-                ),
-                const SizedBox(width: 6),
-                Text('${_speedLabel(s)}×'),
-              ],
-            ),
-          ),
-      ],
-    );
-    if (picked != null && picked != speed) onChanged(picked);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final String label = '${_speedLabel(speed)}×';
+    final String label = formatLyricsSpeed(speed);
     return FushiTooltip(
       message: t.playback_speed,
-      child: FushiPlainButton(
-        semanticLabel: '${t.playback_speed} $label',
-        borderRadius: BorderRadius.circular(17),
-        onPressed: () => _open(context),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 7),
-            child: Center(
-              widthFactor: 1,
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.88),
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                  shadows: <Shadow>[
-                    Shadow(
-                      color: Colors.black.withValues(alpha: 0.28),
-                      blurRadius: 12,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
+      child: FushiPressScale(
+        child: FushiPlainButton(
+          semanticLabel: '${t.playback_speed} $label',
+          borderRadius: BorderRadius.circular(17),
+          onPressed: () => showLyricsSpeedPanel(
+            anchorContext: context,
+            speed: speed,
+            onChanged: onChanged,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 7),
+              child: Center(
+                widthFactor: 1,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withValues(alpha: 0.88),
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                    shadows: <Shadow>[
+                      Shadow(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

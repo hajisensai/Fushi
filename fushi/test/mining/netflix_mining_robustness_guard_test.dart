@@ -30,20 +30,26 @@ void main() {
     for (final File content in <File>[assetsContent, toolsContent]) {
       group('content.js ${content.path}', () {
         test('文件存在', () {
-          expect(content.existsSync(), isTrue,
-              reason: 'missing ${content.path}');
+          expect(
+            content.existsSync(),
+            isTrue,
+            reason: 'missing ${content.path}',
+          );
         });
 
         test('#1 查词暂停由 subtitlePauseOnLookup 门控', () {
           final String src = content.readAsStringSync();
           expect(
-            src.contains('if (fushiPauseOnLookup && '
-                '!(fushiPausedForLookup && fushiPausedForLookup.paused)) {\n'
-                '    try { const _v = fushiFindPlayingVideo(); '
-                'if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}\n'
-                '  }'),
+            src.contains(
+              'if (fushiPauseOnLookup && '
+              '!(fushiPausedForLookup && fushiPausedForLookup.paused)) {\n'
+              '    try { const _v = fushiFindPlayingVideo(); '
+              'if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}\n'
+              '  }',
+            ),
             isTrue,
-            reason: '${content.path} 查词暂停未受用户设置门控'
+            reason:
+                '${content.path} 查词暂停未受用户设置门控'
                 '（或暂停未记录 fushiPausedForLookup 供关窗恢复）',
           );
           expect(
@@ -55,8 +61,11 @@ void main() {
 
         test('#2 beginClip 成功标记 + endClip 收口在 finally', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('began = !!(beginResp && beginResp.ok);'), isTrue,
-              reason: '${content.path} 未按 beginClip 结果标记 began');
+          expect(
+            src.contains('began = !!(beginResp && beginResp.ok);'),
+            isTrue,
+            reason: '${content.path} 未按 beginClip 结果标记 began',
+          );
           // finally 里按 began 收口录制器。
           expect(
             src.contains('if (began) {') && src.contains("type: 'endClip'"),
@@ -64,29 +73,45 @@ void main() {
             reason: '${content.path} 未在 finally 里收口 recorder',
           );
           // 至少两个 finally：per-item 录制器收口 + 外层样式还原。
-          expect('} finally {'.allMatches(src).length, greaterThanOrEqualTo(2),
-              reason: '${content.path} finally 收口块不足（应 >=2）');
+          expect(
+            '} finally {'.allMatches(src).length,
+            greaterThanOrEqualTo(2),
+            reason: '${content.path} finally 收口块不足（应 >=2）',
+          );
         });
 
         test('#3 hideStyle/cursor 还原在 finally（不泄漏可见副作用）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('const prevCursor = document.body.style.cursor;'),
-              isTrue,
-              reason: '${content.path} 未捕获 prevCursor 以还原光标');
           expect(
-              src.contains('document.body.style.cursor = prevCursor;'), isTrue,
-              reason: '${content.path} 未把光标还原放进 finally');
-          expect(src.contains('hideStyle.remove()'), isTrue,
-              reason: '${content.path} 缺 hideStyle 还原');
+            src.contains('const prevCursor = document.body.style.cursor;'),
+            isTrue,
+            reason: '${content.path} 未捕获 prevCursor 以还原光标',
+          );
+          expect(
+            src.contains('document.body.style.cursor = prevCursor;'),
+            isTrue,
+            reason: '${content.path} 未把光标还原放进 finally',
+          );
+          expect(
+            src.contains('hideStyle.remove()'),
+            isTrue,
+            reason: '${content.path} 缺 hideStyle 还原',
+          );
           // 旧的循环外裸还原（cursor 硬写 '' 不在 finally）不得残留。
-          expect(src.contains("document.body.style.cursor = '';"), isFalse,
-              reason: '${content.path} 仍残留循环外裸还原光标');
+          expect(
+            src.contains("document.body.style.cursor = '';"),
+            isFalse,
+            reason: '${content.path} 仍残留循环外裸还原光标',
+          );
         });
 
         test('#4 扩展 mineClip 不发段内窗/gifEnd 死偏移', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('clipGifEndMs'), isFalse,
-              reason: '${content.path} 残留 clipGifEndMs 死偏移');
+          expect(
+            src.contains('clipGifEndMs'),
+            isFalse,
+            reason: '${content.path} 残留 clipGifEndMs 死偏移',
+          );
         });
 
         test('#6 批量外层 finally 兜底 nfStopCapture（异常路径也释放 tabCapture 流）', () {
@@ -94,14 +119,22 @@ void main() {
           // 外层 finally（复位 fushiNfBatchRunning 处）内必须发 nfStopCapture：
           // fushiRunNetflixBatch 抛错时也释放 tabCapture 流，避开 M7375 + 流泄漏。
           final int finallyIdx = src.lastIndexOf('} finally {');
-          final int resetIdx =
-              src.indexOf('fushiNfBatchRunning = false;', finallyIdx);
-          expect(finallyIdx, greaterThanOrEqualTo(0),
-              reason: '${content.path} 缺外层 finally');
+          final int resetIdx = src.indexOf(
+            'fushiNfBatchRunning = false;',
+            finallyIdx,
+          );
+          expect(
+            finallyIdx,
+            greaterThanOrEqualTo(0),
+            reason: '${content.path} 缺外层 finally',
+          );
           expect(resetIdx, greaterThan(finallyIdx));
           expect(
-            src.substring(finallyIdx, resetIdx).contains(
-                "chrome.runtime.sendMessage({ type: 'nfStopCapture' })"),
+            src
+                .substring(finallyIdx, resetIdx)
+                .contains(
+                  "chrome.runtime.sendMessage({ type: 'nfStopCapture' })",
+                ),
             isTrue,
             reason: '${content.path} 外层 finally 未兜底 nfStopCapture',
           );
@@ -115,7 +148,8 @@ void main() {
         // beginClip 新建前先停旧 recorder（解绑 ondataavailable 是 beginClip 独有，stopCapture 只解 onstop）。
         expect(
           src.contains(
-              'recorder.onstop = null; recorder.ondataavailable = null; recorder.stop();'),
+            'recorder.onstop = null; recorder.ondataavailable = null; recorder.stop();',
+          ),
           isTrue,
           reason: '${offscreen.path} beginClip 未先停旧 recorder（孤儿泄漏）',
         );
@@ -126,17 +160,29 @@ void main() {
         // recorder.stop() 抛异常时的 catch 块须清理 recorder/chunks（并解绑回调），
         // 否则孤儿 recorder + 陈旧 chunks 滞留在流上。定位到该 catch 块内断言。
         final int stopFailedIdx = src.indexOf("error: 'stop failed'");
-        expect(stopFailedIdx, greaterThanOrEqualTo(0),
-            reason: '${offscreen.path} 缺 endClip 错误路径');
+        expect(
+          stopFailedIdx,
+          greaterThanOrEqualTo(0),
+          reason: '${offscreen.path} 缺 endClip 错误路径',
+        );
         final int catchIdx = src.lastIndexOf('} catch (_) {', stopFailedIdx);
         expect(catchIdx, greaterThanOrEqualTo(0));
         final String catchBlock = src.substring(catchIdx, stopFailedIdx);
-        expect(catchBlock.contains('recorder = null;'), isTrue,
-            reason: '${offscreen.path} endClip 错误路径未清 recorder');
-        expect(catchBlock.contains('chunks = [];'), isTrue,
-            reason: '${offscreen.path} endClip 错误路径未清 chunks');
-        expect(catchBlock.contains('recorder.ondataavailable = null;'), isTrue,
-            reason: '${offscreen.path} endClip 错误路径未解绑 ondataavailable');
+        expect(
+          catchBlock.contains('recorder = null;'),
+          isTrue,
+          reason: '${offscreen.path} endClip 错误路径未清 recorder',
+        );
+        expect(
+          catchBlock.contains('chunks = [];'),
+          isTrue,
+          reason: '${offscreen.path} endClip 错误路径未清 chunks',
+        );
+        expect(
+          catchBlock.contains('recorder.ondataavailable = null;'),
+          isTrue,
+          reason: '${offscreen.path} endClip 错误路径未解绑 ondataavailable',
+        );
       });
 
       test('BUG-2159 offscreen ${offscreen.path} 录制期间不把 tabCapture 流接回扬声器', () {
@@ -144,75 +190,117 @@ void main() {
         // 正向：仍向 tabCapture 请求音轨（录出的 webm 必须带音频，静音不是靠丢音轨实现的）。
         expect(
           src.contains(
-              "audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } }"),
+            "audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } }",
+          ),
           isTrue,
           reason: '${offscreen.path} startCapture 不再请求 tab 音轨（会录出无声 clip）',
         );
         // 反向：不得再用 AudioContext 把流 connect 到 destination——tabCapture 已把标签页
         // 音频改道进流，接回 destination 就是批量回放期间整集台词对着房间放的根因。
-        expect(src.contains('createMediaStreamSource'), isFalse,
-            reason: '${offscreen.path} 仍把 tabCapture 流接回扬声器（BUG-2159）');
-        expect(src.contains('.destination'), isFalse,
-            reason:
-                '${offscreen.path} 仍把音频路由到 AudioContext.destination（BUG-2159）');
-        expect(src.contains('audioPlaybackCtx'), isFalse,
-            reason: '${offscreen.path} 残留 audioPlaybackCtx（BUG-2159）');
+        expect(
+          src.contains('createMediaStreamSource'),
+          isFalse,
+          reason: '${offscreen.path} 仍把 tabCapture 流接回扬声器（BUG-2159）',
+        );
+        expect(
+          src.contains('.destination'),
+          isFalse,
+          reason:
+              '${offscreen.path} 仍把音频路由到 AudioContext.destination（BUG-2159）',
+        );
+        expect(
+          src.contains('audioPlaybackCtx'),
+          isFalse,
+          reason: '${offscreen.path} 残留 audioPlaybackCtx（BUG-2159）',
+        );
       });
 
-      test('BUG-2159 offscreen ${offscreen.path} startCapture 在途互斥 + stop 代数',
-          () {
-        final String src = offscreen.readAsStringSync();
-        // 并发 startCapture 共用同一次 getUserMedia（行为测试见 tools/browser-extension/
-        // offscreen-capture-inflight.test.js；这里只守源码结构不被回退）。
-        expect(src.contains('if (startInFlight) return startInFlight;'), isTrue,
-            reason: '${offscreen.path} startCapture 缺在途互斥（并发会起第二条流）');
-        expect(src.contains('if (gen !== captureGen) {'), isTrue,
-            reason: '${offscreen.path} 在途落地未按代数判断是否已被 stopCapture');
-      });
+      test(
+        'BUG-2159 offscreen ${offscreen.path} startCapture 在途互斥 + stop 代数',
+        () {
+          final String src = offscreen.readAsStringSync();
+          // 并发 startCapture 共用同一次 getUserMedia（行为测试见 tools/browser-extension/
+          // offscreen-capture-inflight.test.js；这里只守源码结构不被回退）。
+          expect(
+            src.contains('if (startInFlight) return startInFlight;'),
+            isTrue,
+            reason: '${offscreen.path} startCapture 缺在途互斥（并发会起第二条流）',
+          );
+          expect(
+            src.contains('if (gen !== captureGen) {'),
+            isTrue,
+            reason: '${offscreen.path} 在途落地未按代数判断是否已被 stopCapture',
+          );
+        },
+      );
     }
 
     for (final File bg in <File>[assetsBg, toolsBg]) {
       test('#4 background ${bg.path} mineClip 不带 clipGifEndMs', () {
         final String src = bg.readAsStringSync();
-        expect(src.contains('clipGifEndMs'), isFalse,
-            reason: '${bg.path} mineClip 残留 clipGifEndMs 死偏移');
+        expect(
+          src.contains('clipGifEndMs'),
+          isFalse,
+          reason: '${bg.path} mineClip 残留 clipGifEndMs 死偏移',
+        );
       });
     }
 
     test('两份镜像逐字节一致（content.js）', () {
-      expect(assetsContent.readAsBytesSync(), toolsContent.readAsBytesSync(),
-          reason: 'content.js 两份镜像不一致');
+      expect(
+        assetsContent.readAsBytesSync(),
+        toolsContent.readAsBytesSync(),
+        reason: 'content.js 两份镜像不一致',
+      );
     });
     test('两份镜像逐字节一致（offscreen.js）', () {
       expect(
-          assetsOffscreen.readAsBytesSync(), toolsOffscreen.readAsBytesSync(),
-          reason: 'offscreen.js 两份镜像不一致');
+        assetsOffscreen.readAsBytesSync(),
+        toolsOffscreen.readAsBytesSync(),
+        reason: 'offscreen.js 两份镜像不一致',
+      );
     });
   });
 
   group('V16#4 dart 侧时间窗死代码已删', () {
     test('immersion_mine_payload.dart 无 clipGifEndMs', () {
-      final String src =
-          File('../packages/fushi_engine/lib/sync/immersion_mine_payload.dart').readAsStringSync();
-      expect(src.contains('clipGifEndMs'), isFalse,
-          reason: 'payload 残留 clipGifEndMs 死字段');
+      final String src = File(
+        '../packages/fushi_engine/lib/sync/immersion_mine_payload.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains('clipGifEndMs'),
+        isFalse,
+        reason: 'payload 残留 clipGifEndMs 死字段',
+      );
     });
     test(
-        'immersion_capture_channel.dart transcodeClipToCapture 无 window/gifEnd 参数',
-        () {
-      final String src = File('lib/src/mining/immersion_capture_channel.dart')
-          .readAsStringSync();
-      expect(src.contains('windowStartMs'), isFalse,
-          reason: '残留 windowStartMs 死参数');
-      expect(src.contains('windowEndMs'), isFalse,
-          reason: '残留 windowEndMs 死参数');
-      expect(src.contains('gifEndMs'), isFalse, reason: '残留 gifEndMs 死参数');
-    });
+      'immersion_capture_channel.dart transcodeClipToCapture 无 window/gifEnd 参数',
+      () {
+        final String src = File(
+          'lib/src/mining/immersion_capture_channel.dart',
+        ).readAsStringSync();
+        expect(
+          src.contains('windowStartMs'),
+          isFalse,
+          reason: '残留 windowStartMs 死参数',
+        );
+        expect(
+          src.contains('windowEndMs'),
+          isFalse,
+          reason: '残留 windowEndMs 死参数',
+        );
+        expect(src.contains('gifEndMs'), isFalse, reason: '残留 gifEndMs 死参数');
+      },
+    );
     test('app_model.dart clipBytes 分支不接线 windowStartMs', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src.contains('windowStartMs: payload.clipStartMs'), isFalse,
-          reason: 'app_model 仍接线已删的 windowStartMs');
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains('windowStartMs: payload.clipStartMs'),
+        isFalse,
+        reason: 'app_model 仍接线已删的 windowStartMs',
+      );
     });
   });
 
@@ -226,28 +314,45 @@ void main() {
         test('绝无页面浮层常驻 chip（fushiChip 已删，队列 UI 迁到 action-popup）', () {
           final String src = content.readAsStringSync();
           // TODO-1221：右下角常驻 chip 及其渲染彻底删除，绝不复活（否则又落右下角常驻控件）。
-          expect(src.contains('fushiChip'), isFalse,
-              reason: '${content.path} 复活了页面浮层常驻 chip（fushiChip）');
-          expect(src.contains('fushiRenderQueueList'), isFalse,
-              reason: '${content.path} 复活了页面内队列列表渲染（应在 action-popup.js）');
-          expect(src.contains('document.createElement'), isTrue,
-              reason: '${content.path} sanity: 应仍有 DOM 创建（toast 等）');
+          expect(
+            src.contains('fushiChip'),
+            isFalse,
+            reason: '${content.path} 复活了页面浮层常驻 chip（fushiChip）',
+          );
+          expect(
+            src.contains('fushiRenderQueueList'),
+            isFalse,
+            reason: '${content.path} 复活了页面内队列列表渲染（应在 action-popup.js）',
+          );
+          expect(
+            src.contains('document.createElement'),
+            isTrue,
+            reason: '${content.path} sanity: 应仍有 DOM 创建（toast 等）',
+          );
         });
 
         test('fushiToast 定位为中间下方、非 sticky 时 5s 自动淡出（短暂）', () {
           final String src = content.readAsStringSync();
           // 中间下方：left:50% + translateX(-50%) + bottom（不是右下角固定）。
           expect(
-              src.contains(
-                  'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);'),
-              isTrue,
-              reason: '${content.path} fushiToast 不是中间下方定位');
+            src.contains(
+              'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);',
+            ),
+            isTrue,
+            reason: '${content.path} fushiToast 不是中间下方定位',
+          );
           // 非 sticky：5000ms 后自动淡出（短暂、不常驻）。
           expect(
-              src.contains(
-                  "if (!sticky) fushiToastTimer = setTimeout(() => { if (t) t.style.opacity = '0'; }, 5000);"),
-              isTrue,
-              reason: '${content.path} fushiToast 非 sticky 时未自动淡出');
+            RegExp(
+              r'if\s*\(!sticky\)\s*\{\s*fushiToastTimer\s*=\s*setTimeout\(\(\)\s*=>\s*\{'
+              r"\s*if\s*\(!t\)\s*return;\s*t\.style\.opacity\s*=\s*'0';"
+              r"\s*if\s*\(typeof t\.setAttribute\s*===\s*'function'\)\s*"
+              r"t\.setAttribute\('data-visible',\s*'0'\);\s*\},\s*5000\);\s*\}",
+            ).hasMatch(src),
+            isTrue,
+            reason:
+                '${content.path} 非 sticky toast 必须在 5 秒后同时淡出 opacity 与 CSS 状态',
+          );
         });
       });
     }
@@ -263,48 +368,80 @@ void main() {
       group('content.js ${content.path}', () {
         test('批量前记录 resumeAt/wasPlaying（video 元素取到之后）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('const resumeAt = v.currentTime;'), isTrue,
-              reason: '${content.path} 未记录批量前播放位置 resumeAt');
-          expect(src.contains('const wasPlaying = !v.paused;'), isTrue,
-              reason: '${content.path} 未记录批量前播放态 wasPlaying');
+          expect(
+            src.contains('const resumeAt = v.currentTime;'),
+            isTrue,
+            reason: '${content.path} 未记录批量前播放位置 resumeAt',
+          );
+          expect(
+            src.contains('const wasPlaying = !v.paused;'),
+            isTrue,
+            reason: '${content.path} 未记录批量前播放态 wasPlaying',
+          );
         });
 
         test('外层 finally 里按 wasPlaying 门控 seek 回 resumeAt + 续播', () {
           final String src = content.readAsStringSync();
           // 用现有 seekTo（走官方 API seek）回到原位。
-          expect(src.contains('try { await seekTo(resumeAt); } catch (_) {}'),
-              isTrue,
-              reason: '${content.path} finally 未 seek 回批量前位置');
+          expect(
+            src.contains('try { await seekTo(resumeAt); } catch (_) {}'),
+            isTrue,
+            reason: '${content.path} finally 未 seek 回批量前位置',
+          );
           // 原来在播才回位并续播；原本暂停则不回跳、保持暂停（TODO-1217seek）。
-          expect(src.contains('try { await v.play(); } catch (_) {}'), isTrue,
-              reason: '${content.path} finally 未续播 v.play()');
+          expect(
+            src.contains('try { await v.play(); } catch (_) {}'),
+            isTrue,
+            reason: '${content.path} finally 未续播 v.play()',
+          );
           // 回位 + 续播都必须门控进 if (wasPlaying)：门在两者之前。
           final int gateIdx = src.indexOf('if (wasPlaying) {');
-          final int seekBackIdx =
-              src.indexOf('try { await seekTo(resumeAt); } catch (_) {}');
+          final int seekBackIdx = src.indexOf(
+            'try { await seekTo(resumeAt); } catch (_) {}',
+          );
           final int playIdx = src.indexOf(
-              'try { await v.play(); } catch (_) {}',
-              seekBackIdx >= 0 ? seekBackIdx : 0);
-          expect(gateIdx, greaterThanOrEqualTo(0),
-              reason: '${content.path} 缺 if (wasPlaying) 门控');
-          expect(seekBackIdx, greaterThan(gateIdx),
-              reason: '${content.path} seek 回位未门控进 wasPlaying');
-          expect(playIdx, greaterThan(seekBackIdx),
-              reason: '${content.path} 续播未门控进 wasPlaying（应在 seek 之后）');
+            'try { await v.play(); } catch (_) {}',
+            seekBackIdx >= 0 ? seekBackIdx : 0,
+          );
+          expect(
+            gateIdx,
+            greaterThanOrEqualTo(0),
+            reason: '${content.path} 缺 if (wasPlaying) 门控',
+          );
+          expect(
+            seekBackIdx,
+            greaterThan(gateIdx),
+            reason: '${content.path} seek 回位未门控进 wasPlaying',
+          );
+          expect(
+            playIdx,
+            greaterThan(seekBackIdx),
+            reason: '${content.path} 续播未门控进 wasPlaying（应在 seek 之后）',
+          );
           // 还原必须在外层 finally（还原光标那块）里，才能成功/异常都走到。
-          final int cursorIdx =
-              src.indexOf('document.body.style.cursor = prevCursor;');
+          final int cursorIdx = src.indexOf(
+            'document.body.style.cursor = prevCursor;',
+          );
           expect(cursorIdx, greaterThanOrEqualTo(0));
-          expect(seekBackIdx, greaterThan(cursorIdx),
-              reason: '${content.path} 位置还原未与光标还原同处外层 finally');
+          expect(
+            seekBackIdx,
+            greaterThan(cursorIdx),
+            reason: '${content.path} 位置还原未与光标还原同处外层 finally',
+          );
         });
 
         test('内容脚本版本标记 bump 到 v48（用户可确认新版）', () {
           final String src = content.readAsStringSync();
-          expect(src.contains("'data-fushi-cs', 'v48'"), isTrue,
-              reason: '${content.path} 版本标记未 bump 到 v48');
-          expect(src.contains('content script v48 loaded'), isTrue,
-              reason: '${content.path} 加载日志版本未 bump 到 v48');
+          expect(
+            src.contains("'data-fushi-cs', 'v48'"),
+            isTrue,
+            reason: '${content.path} 版本标记未 bump 到 v48',
+          );
+          expect(
+            src.contains('content script v48 loaded'),
+            isTrue,
+            reason: '${content.path} 加载日志版本未 bump 到 v48',
+          );
         });
       });
     }
@@ -321,10 +458,15 @@ void main() {
         test('有 fushiWaitForBuffered 缓冲门（readyState>=HAVE_FUTURE_DATA=3）', () {
           final String src = content.readAsStringSync();
           expect(
-              src.contains('function fushiWaitForBuffered(v, maxMs)'), isTrue,
-              reason: '${content.path} 缺 fushiWaitForBuffered 缓冲就绪门');
-          expect(src.contains('v.readyState >= 3'), isTrue,
-              reason: '${content.path} 缓冲门未用 HAVE_FUTURE_DATA(3) 阈值');
+            src.contains('function fushiWaitForBuffered(v, maxMs)'),
+            isTrue,
+            reason: '${content.path} 缺 fushiWaitForBuffered 缓冲就绪门',
+          );
+          expect(
+            src.contains('v.readyState >= 3'),
+            isTrue,
+            reason: '${content.path} 缓冲门未用 HAVE_FUTURE_DATA(3) 阈值',
+          );
         });
 
         test('beginClip 前先暂停 + 等 seek 落定 + 等缓冲就绪（不吃头部提前量）', () {
@@ -333,25 +475,42 @@ void main() {
           // fushiWaitForBuffered → beginClip（暂停不推进 currentTime → 保留 200ms
           // 头部提前量）。TODO-1361（BUG-685）在暂停与缓冲门之间加了 seek 落定门。
           final int pauseIdx = src.indexOf('try { v.pause(); } catch (_) {}');
-          final int settledIdx =
-              src.indexOf('await fushiWaitForSeekSettled(v, targetSec, 4000);');
-          final int bufIdx =
-              src.indexOf('await fushiWaitForBuffered(v, 3000);');
+          final int settledIdx = src.indexOf(
+            'await fushiWaitForSeekSettled(v, targetSec, 4000);',
+          );
+          final int bufIdx = src.indexOf(
+            'await fushiWaitForBuffered(v, 3000);',
+          );
           final int beginIdx = src.indexOf("type: 'beginClip'");
-          expect(pauseIdx, greaterThanOrEqualTo(0),
-              reason: '${content.path} seek 后未暂停（保留头部提前量）');
-          expect(settledIdx, greaterThan(pauseIdx),
-              reason: '${content.path} seek 落定门未排在暂停之后');
-          expect(bufIdx, greaterThan(settledIdx),
-              reason: '${content.path} 缓冲门未排在 seek 落定门之后');
-          expect(beginIdx, greaterThan(bufIdx),
-              reason: '${content.path} 缓冲门未排在 beginClip 之前');
+          expect(
+            pauseIdx,
+            greaterThanOrEqualTo(0),
+            reason: '${content.path} seek 后未暂停（保留头部提前量）',
+          );
+          expect(
+            settledIdx,
+            greaterThan(pauseIdx),
+            reason: '${content.path} seek 落定门未排在暂停之后',
+          );
+          expect(
+            bufIdx,
+            greaterThan(settledIdx),
+            reason: '${content.path} 缓冲门未排在 seek 落定门之后',
+          );
+          expect(
+            beginIdx,
+            greaterThan(bufIdx),
+            reason: '${content.path} 缓冲门未排在 beginClip 之前',
+          );
         });
 
         test('旧的固定 sleep(150) 首帧稳定 warmup 已被缓冲门取代', () {
           final String src = content.readAsStringSync();
-          expect(src.contains('await sleep(150); // 让首帧稳定'), isFalse,
-              reason: '${content.path} 仍残留固定 sleep(150) 首帧稳定 warmup');
+          expect(
+            src.contains('await sleep(150); // 让首帧稳定'),
+            isFalse,
+            reason: '${content.path} 仍残留固定 sleep(150) 首帧稳定 warmup',
+          );
         });
       });
     }

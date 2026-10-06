@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_library_prune.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' show HostSubscriptionRejected;
@@ -35,6 +36,7 @@ import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/library_scanner.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/profile_hub.dart';
+import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
@@ -196,8 +198,63 @@ class AdminApi {
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
         return _upload(request);
+      case ('GET', '/api/admin/scrape/pending'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        return _json(<String, Object?>{'works': await scrape.pendingWorks()});
+      case ('POST', '/api/admin/scrape/sweep'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        // 不 await：一轮补刮可能很久，结果看 status.scrape / scrape/pending。
+        unawaited(scrape.sweep().catchError((Object e, StackTrace st) => ctx.log.log('AdminApi.scrape.sweep', e, st)));
+        return _json(const <String, Object?>{'started': true});
+      case ('POST', '/api/admin/scrape/ai-identify'):
+        final ServerVideoScrape? scrape = ctx.host.videoScrape;
+        if (scrape == null) return _err(503, 'video scrape is not running');
+        final String id = ((await _body(request))['id'] ?? '').toString();
+        if (id.isEmpty) throw const FormatException('id required (a pending work id)');
+        // 先同步校验，免得「已开始」之后才在日志里报找不到。
+        if (!(await scrape.pendingWorks()).any((Map<String, Object?> w) => w['id'] == id)) {
+          return _err(404, 'work "$id" is not in the pending list');
+        }
+        // AI 识别要多轮请求，同样不阻塞；结果落库后 pending 清单会少一条。
+        unawaited(scrape
+            .identifyPendingWithAi(id)
+            .then((Map<String, Object?> r) => ctx.log.info('scrape ai-identify $id: $r'))
+            .catchError((Object e, StackTrace st) => ctx.log.log('AdminApi.scrape.aiIdentify', e, st)));
+        return _json(<String, Object?>{'started': true, 'id': id});
+      case (_, _) when path.startsWith(_hostProxyPrefix):
+        return _hostProxy(request, path.substring(_hostProxyPrefix.length));
     }
     return _err(404, 'unknown admin route $method $path');
+  }
+
+  static const String _hostProxyPrefix = '/api/admin/host/';
+
+  /// `/api/admin/host/<rest>` → 互联的 `/api/<rest>`，以 host 身份进程内调用。
+  ///
+  /// 互联的库 / 刮削 / 进度 / 任务等接口只对已配对 peer 开放，管理员自己反而没有
+  /// 入口；这里让 `fushi_server ctl` 与 WebUI 直接复用那一套，而不是在 admin 面
+  /// 另写同功能路由（两份实现必然漂移）。管理员凭据已由 [AdminServer] 验过。
+  ///
+  /// 配对路由依赖对端地址与人工确认，代调没有意义也不安全，一律拒绝。
+  Future<shelf.Response> _hostProxy(shelf.Request request, String rest) async {
+    if (rest == 'pair' || rest.startsWith('pair/')) {
+      return _err(403, 'pairing routes are not available through the admin proxy');
+    }
+    final FushiSyncServer? server = ctx.host.syncServer;
+    if (server == null) return _err(503, 'the interconnect host is not running');
+    final Uri target = Uri(
+      scheme: 'http',
+      host: 'localhost',
+      path: '/api/$rest',
+      query: request.requestedUri.hasQuery ? request.requestedUri.query : null,
+    );
+    final Map<String, String> headers = <String, String>{
+      for (final MapEntry<String, String> e in request.headers.entries)
+        if (e.key.toLowerCase() != 'authorization' && e.key.toLowerCase() != 'cookie') e.key: e.value,
+    };
+    return server.handleInProcess(shelf.Request(request.method, target, headers: headers, body: request.read()));
   }
 
   String _segment(String path, String prefix, String suffix) =>
@@ -547,7 +604,6 @@ class AdminApi {
   }
 
   static String _ocrModelName(String key) => switch (key) {
-        'manga_ocr' => 'manga-ocr（经典）',
         'manga_ctc' => '漫画 CTC（快速）',
         'baberu' => 'Baberu',
         _ => key,

@@ -1,6 +1,7 @@
 #ifndef RUNNER_FLUTTER_WINDOW_H_
 #define RUNNER_FLUTTER_WINDOW_H_
 
+#include "caption_snap_button.h"
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <flutter/method_channel.h>
@@ -47,6 +48,11 @@ class FlutterWindow : public Win32Window {
   // Receives title-bar colors pushed from Dart (app.fushi/window channel).
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       caption_channel_;
+
+  // Windows 11 Snap Layouts on the app-drawn maximize button: HTMAXBUTTON hit
+  // testing over the rect Dart reports (setCaptionMaxButtonRect), hover /
+  // press / click relayed back as onCaptionMaxButton.
+  CaptionSnapButton caption_snap_button_;
 
   // Copies decoded reader images to the Windows clipboard as CF_DIB.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>

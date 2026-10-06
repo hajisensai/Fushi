@@ -72,8 +72,11 @@ void main() {
             .contains(VideoControlItem.subtitleTrack),
         isTrue,
         reason: 'subtitle source must default into the real bottom-right slot');
-    expect(topRightItems.contains(VideoControlItem.audioTrack), isTrue,
-        reason: 'audio track must default into the real top-right slot');
+    // 2026-10-06 遮挡最小化：音轨默认移出播放器，常驻右上「⋯」。
+    expect(topRightItems.contains(VideoControlItem.audioTrack), isFalse,
+        reason: 'audio track folds into the top-right ⋯ by default');
+    expect(VideoControlLayout.currentChrome.removedItems,
+        contains(VideoControlItem.audioTrack));
     expect(topRightItems.contains(VideoControlItem.screenshot), isTrue,
         reason: 'screenshot action must default into the real top-right slot');
     expect(src.contains('_showSubtitleSourceMenu(controller)'), isTrue);

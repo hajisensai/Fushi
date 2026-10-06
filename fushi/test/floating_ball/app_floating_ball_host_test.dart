@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -555,16 +555,40 @@ void main() {
     expect(floatingBallNativeLabels()['ball'], isNotEmpty);
   });
 
-  test('原生系统球的配色取当前主题三色', () {
+  test('原生系统球的配色取当前主题的 M3E 角色（墨水屏降级为描边无填色）', () {
     const ColorScheme scheme = ColorScheme.light(
       surface: Color(0xFF101112),
       onSurface: Color(0xFF202122),
       primary: Color(0xFF303132),
+      primaryContainer: Color(0xFF404142),
+      onPrimaryContainer: Color(0xFF505152),
+      secondaryContainer: Color(0xFF606162),
+      onSecondaryContainer: Color(0xFF707172),
+      onPrimary: Color(0xFF808182),
     );
     expect(floatingBallNativeColors(scheme), <String, int>{
       'surface': 0xFF101112,
       'onSurface': 0xFF202122,
       'primary': 0xFF303132,
+      'ballContainer': 0xFF404142,
+      'onBallContainer': 0xFF505152,
+      'buttonContainer': 0xFF606162,
+      'onButtonContainer': 0xFF707172,
+      'outline': 0x00000000,
+      'ballOpen': 0xFF303132,
+      'onBallOpen': 0xFF808182,
+    });
+    expect(floatingBallNativeColors(scheme, eink: true), <String, int>{
+      'surface': 0xFF101112,
+      'onSurface': 0xFF202122,
+      'primary': 0xFF303132,
+      'ballContainer': 0xFF101112,
+      'onBallContainer': 0xFF202122,
+      'buttonContainer': 0xFF101112,
+      'onButtonContainer': 0xFF202122,
+      'outline': 0xFF202122,
+      'ballOpen': 0xFF101112,
+      'onBallOpen': 0xFF202122,
     });
   });
 

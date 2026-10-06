@@ -13,7 +13,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -184,12 +184,17 @@ void main() {
     await _pumpDialog(tester, db, 'video');
 
     expect(find.text('Anime'), findsOneWidget);
+    // 诊断包导出收进行尾「⋯」菜单（M3E 行只留高频动作）：先打开菜单再找。
+    await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$anime')));
+    await tester.pumpAndSettle();
     expect(
       find.byKey(
         ValueKey<String>('video_scrape_diagnostic_export_$anime'),
       ),
       findsOneWidget,
     );
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
     expect(find.text('/srv/anime'), findsOneWidget);
     expect(find.text('Movies'), findsOneWidget);
     // 统计文案用「N videos」（视频量词），N = 累计拥有数（2），不是 mediaCount(68)。
@@ -226,8 +231,10 @@ void main() {
     ));
     await _pumpDialog(tester, db, 'video');
 
-    // 点移除图标 -> 确认对话框。
-    await tester.tap(find.byIcon(Icons.remove_circle_outline));
+    // 行尾「⋯」菜单 -> 移除 -> 确认对话框。
+    await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$sid')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey<String>('media_source_remove_$sid')));
     await tester.pumpAndSettle();
     expect(find.text('Removing a source does not delete imported media.'),
         findsOneWidget);
@@ -297,7 +304,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 点「重新扫描」启动 async _rescan（此刻 State 仍 mounted）。
-    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.tap(find.byTooltip('Rescan'));
     await tester.pump(); // 让 _rescan 起步进入 await（scan 尚未完成）。
 
     // 扫描 in-flight 时把对话框整棵换出树 -> State dispose。

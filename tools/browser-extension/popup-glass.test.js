@@ -48,6 +48,8 @@ function loadSandbox() {
     storage: { local: { get: async () => ({}), set: async () => {} }, onChanged: { addListener: noop } },
   };
   sandbox.window = {
+    // 本文件钉的是液态玻璃风格；缺省风格已是 M3E（theme.js），这里显式选玻璃。
+    fushiTheme: { style: 'glass' },
     addEventListener: noop, innerWidth: 1200, innerHeight: 800,
     matchMedia: () => ({ matches: false, addEventListener: noop }),
     flutter_inappwebview: { callHandler: noop },
@@ -147,7 +149,10 @@ test('content.css：玻璃样式整段在 @supports 内，数值与 Flutter 侧�
   // 例外两类：「选择音频源」菜单（.fushi-audio-menu.is-glass / .is-eink）自带材质；共享 popup.css 的
   // 强调色段 `:where(html.fushi-glass-host, .fushi-glass) …` 只给标签 / 按钮上主题主色，不碰材质。
   const outside = css.replace(block, '').replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '');
+    .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '')
+    // theme.css 重根进来的玻璃兼容层只用 backdrop-filter 当 @supports 的**条件**（判断内核支不支持），
+    // 块里只有 token、不挂任何材质，不算泄漏。
+    .replace(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/g, '@supports not (x)');
   assert.ok(!/backdrop-filter/.test(outside), 'backdrop-filter 漏到 @supports 段外');
   assertGlassHooksAreAccentOnly(outside, '@supports 段外');
 });
@@ -173,7 +178,10 @@ function assertGlassHooksAreAccentOnly(css, where) {
 test('共享 popup.css 不含卡片材质（app 内弹窗的玻璃由 Flutter 画，文档里无可模糊的内容）', () => {
   const popupCss = fs.readFileSync(POPUP_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
     // 音频源菜单浮在同一文档的词条之上，背后有真内容可模糊，是本条的有意例外。
-    .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '');
+    .replace(/\.fushi-audio-menu[^{]*\{[^}]*\}/g, '')
+    // theme.css 重根进来的玻璃兼容层只用 backdrop-filter 当 @supports 的**条件**（判断内核支不支持），
+    // 块里只有 token、不挂任何材质，不算泄漏。
+    .replace(/@supports not \(\(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\)\)/g, '@supports not (x)');
   assert.ok(!/backdrop-filter/.test(popupCss));
   assertGlassHooksAreAccentOnly(popupCss, 'popup.css ');
   // app 内 Apple 宿主：文档透明（卡面是 Flutter 的玻璃 / 材质面板）。

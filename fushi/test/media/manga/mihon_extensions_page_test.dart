@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
@@ -122,8 +122,9 @@ void main() {
 
     final Finder preview =
         find.widgetWithText(TextButton, t.mihon_extension_preview);
+    // M3E：安装是 filled 主操作（预览仍是文字按钮）。
     final Finder install =
-        find.widgetWithText(TextButton, t.mihon_extension_install);
+        find.widgetWithText(FilledButton, t.mihon_extension_install);
     final VoidCallback previewAction =
         tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed!;
     previewAction();
@@ -132,9 +133,12 @@ void main() {
 
     expect(blocking.prepareCalls, 1);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
-    // 准备中的那一行显示行内小转圈（扩展行的 busy 槽）。
-    expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed == null, isTrue);
+    // 准备中的那一行在卡片底部展开一条波浪进度（扩展行的 busy 槽）。
+    expect(
+      find.byKey(const ValueKey<String>('extension_tile_busy_progress')),
+      findsOneWidget,
+    );
 
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     await pumpStandalone(tester);
@@ -151,18 +155,18 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed != null, isTrue);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed != null, isTrue);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed != null, isTrue);
 
     blocking.resetPending();
     final VoidCallback installAction =
-        tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed!;
+        tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed!;
     installAction();
     installAction();
     await tester.pump();
 
     expect(blocking.prepareCalls, 2);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed == null, isTrue);
     blocking.failPending();
     await tester.pump();
     await tester.pump();
@@ -233,18 +237,13 @@ void main() {
     expect(find.text('Japanese only'), findsOneWidget);
     expect(find.text('Multi language'), findsOneWidget);
 
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    // M3E：语言筛选是一排 choice chip（key 沿用旧下拉项的
+    // `mihon_extension_language_<code>`），直接点 JA。
+    final Finder languageChip =
+        find.byKey(const ValueKey<String>('mihon_extension_language_ja'));
+    await tester.ensureVisible(languageChip);
     await tester.pumpAndSettle();
-    // 展开后的菜单项挂在 Overlay 里（树序在后），关闭态那份在 DropdownButton 自己的
-    // IndexedStack 里；`.last` 取的是菜单那份。先 ensureVisible 再点，免得菜单
-    // 正好把它排在需要滚动的位置。
-    final Finder languageItem =
-        find.byKey(const ValueKey<String>('mihon_extension_language_ja')).last;
-    await tester.ensureVisible(languageItem);
-    await tester.pumpAndSettle();
-    // warnIfMissed: false —— 命中的是菜单项外面那层 `_DropdownMenuItemButton`
-    // 的 InkWell（真实用户点击也是它接手），DropdownMenuItem 自己不是 hit target。
-    await tester.tap(languageItem, warnIfMissed: false);
+    await tester.tap(languageChip);
     await tester.pumpAndSettle();
 
     expect(find.text('Japanese only'), findsOneWidget);

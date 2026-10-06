@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -6,6 +6,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 import '../../integration_test/helpers/focus_driver.dart';
@@ -259,8 +260,9 @@ void main() {
     gameSectionNotifier.value = GameSection.diagnostics;
     await tester.pump();
     expect(find.byKey(HomeGamePage.diagnosticsKey), findsOneWidget);
-    expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.multitrack_audio_outlined), findsOneWidget);
+    // 诊断页分段卡片的行首形状图标（M3E：FushiIcons 语义名）。
+    expect(find.byIcon(FushiIcons.hub), findsOneWidget);
+    expect(find.byIcon(FushiIcons.audio), findsOneWidget);
   });
 
   testWidgets('game tabs participate in managed focus navigation',

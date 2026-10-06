@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_chapter_skip.dart';
@@ -103,25 +103,38 @@ void main() {
   group('default layout (M3E rework)', () {
     final VideoControlLayout layout = VideoControlLayout.currentChrome;
 
-    test('bottom-left is episode / play / episode + time', () {
+    // 2026-10-06 控件显示时遮挡最小化：左下一颗「播放 + 时间」胶囊、右下一颗
+    // 「音量 / 字幕 / 倍速 / 全屏」胶囊，学习组移出播放器、常驻右下「⋯」。
+    test('bottom-left is play + time', () {
       expect(layout.itemsIn(VideoControlSlot.bottomLeft), <VideoControlItem>[
-        VideoControlItem.previousEpisode,
         VideoControlItem.playPause,
-        VideoControlItem.nextEpisode,
         VideoControlItem.positionIndicator,
       ]);
     });
 
-    test('bottom-centre is the learning group with replay in the middle', () {
-      expect(layout.itemsIn(VideoControlSlot.bottomCenter), <VideoControlItem>[
-        VideoControlItem.seekBackward,
-        VideoControlItem.frameBackward,
-        VideoControlItem.previousCue,
-        VideoControlItem.replayCue,
-        VideoControlItem.nextCue,
-        VideoControlItem.frameForward,
-        VideoControlItem.seekForward,
+    test('bottom-right is volume / subtitle / speed / fullscreen', () {
+      expect(layout.itemsIn(VideoControlSlot.bottomRight), <VideoControlItem>[
+        VideoControlItem.volume,
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.speed,
+        VideoControlItem.fullscreen,
       ]);
+    });
+
+    test('bottom-centre is empty; the learning group folds into ⋯', () {
+      expect(layout.itemsIn(VideoControlSlot.bottomCenter), isEmpty);
+      expect(
+        layout.removedItems,
+        containsAll(<VideoControlItem>[
+          VideoControlItem.seekBackward,
+          VideoControlItem.frameBackward,
+          VideoControlItem.previousCue,
+          VideoControlItem.replayCue,
+          VideoControlItem.nextCue,
+          VideoControlItem.frameForward,
+          VideoControlItem.seekForward,
+        ]),
+      );
     });
 
     test('replay folds together with the other cue keys', () {
@@ -217,6 +230,39 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
+      expect(presses, 1);
+    });
+
+    testWidgets('center paused hint is a small, plate-less, dimmed icon', (
+      WidgetTester tester,
+    ) async {
+      int presses = 0;
+      await tester.pumpWidget(
+        _host(VideoCenterPausedHint(extent: 44, onPressed: () => presses++)),
+      );
+      final Icon icon = tester.widget<Icon>(find.byType(Icon));
+      expect(icon.icon, Icons.play_arrow_rounded);
+      expect(icon.size, 44);
+      expect(icon.color!.a, lessThan(1));
+      // 不再有半透明大圆块：提示子树里没有任何带底色的 DecoratedBox / Material。
+      expect(
+        find.descendant(
+          of: find.byType(VideoCenterPausedHint),
+          matching: find.byType(DecoratedBox),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(VideoCenterPausedHint),
+          matching: find.byType(Material),
+        ),
+        findsNothing,
+      );
+      // 命中区不小于 48dp，且不超出图标太多（不吃掉画面中央的单击切控制栏）。
+      final Size hit = tester.getSize(find.byType(VideoCenterPausedHint));
+      expect(hit, const Size.square(48));
+      await tester.tap(find.byType(VideoCenterPausedHint));
       expect(presses, 1);
     });
 

@@ -152,9 +152,9 @@ void main() {
     final String source =
         File('lib/src/models/app_model.dart').readAsStringSync();
     expect(
-        source, contains('_autoRedownloadAndReimport(dictionary, remote, job)'),
+        source, contains('redownloadAndReimportDictionary(dictionary, remote, job)'),
         reason: '远端 index 结果必须传进重导函数');
-    final int fn = source.indexOf('Future<void> _autoRedownloadAndReimport(');
+    final int fn = source.indexOf('Future<void> redownloadAndReimportDictionary(');
     final int end = source.indexOf('\n  }\n', fn);
     final String body = source.substring(fn, end);
     // BUG-2707（#1670）：本地 downloadUrl 只能作为 resolveDownloadUrl /

@@ -8,10 +8,14 @@ library;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiFloatingPill, fushiFloatingToolbarPalette;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -232,9 +236,10 @@ class ScreenOcrPickerPage extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: lineFill,
                           border: Border.all(color: lineStroke, width: 1.5),
-                          borderRadius: glass
-                              ? const BorderRadius.all(Radius.circular(4))
-                              : null,
+                          // 两套设计系统都给行框 4 圆角（M3E 不再是直角框）。
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(4),
+                          ),
                         ),
                       ),
                     ),
@@ -244,33 +249,40 @@ class ScreenOcrPickerPage extends StatelessWidget {
                     alignment: Alignment.topLeft,
                     child: Padding(
                       padding: const EdgeInsets.all(8),
-                      child: _hintPill(
-                        context,
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            FushiIconButtonControl(
-                              key: const ValueKey<String>(
-                                'screen_ocr_picker_close',
+                      // 浮动胶囊弹簧上浮淡入（减弱动态效果 / 墨水屏下静止）。
+                      child: FushiStaggeredEntrance(
+                        index: 0,
+                        child: _hintPill(
+                          context,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              FushiIconButtonControl(
+                                key: const ValueKey<String>(
+                                  'screen_ocr_picker_close',
+                                ),
+                                tooltip: MaterialLocalizations.of(
+                                  context,
+                                ).closeButtonTooltip,
+                                icon: const FushiIcon(FushiIcons.close),
+                                onPressed: () =>
+                                    Navigator.of(context).maybePop(),
                               ),
-                              tooltip: MaterialLocalizations.of(
-                                context,
-                              ).closeButtonTooltip,
-                              icon: const FushiIcon(Icons.close),
-                              onPressed: () => Navigator.of(context).maybePop(),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16),
-                              child: Text(
-                                t.floating_ball_ocr_pick_hint,
-                                style: TextStyle(
-                                  color: glass
-                                      ? appleColorsOf(context).label
-                                      : colors.onSurface,
+                              Padding(
+                                padding: const EdgeInsets.only(right: 16),
+                                child: Text(
+                                  t.floating_ball_ocr_pick_hint,
+                                  style: context.fushiType.labelLarge.copyWith(
+                                    color: glass
+                                        ? appleColorsOf(context).label
+                                        : fushiFloatingToolbarPalette(
+                                            context,
+                                          ).foreground,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -284,8 +296,7 @@ class ScreenOcrPickerPage extends StatelessWidget {
     );
   }
 
-  /// 左上角「关闭 + 提示」胶囊：浮在截图上的控件层。MD3 是 90% 不透明的 surface
-  /// 胶囊；Apple 是液态玻璃胶囊（截图本身是 Flutter 图像，玻璃能折射到它），
+  /// 左上角「关闭 + 提示」胶囊：浮在截图上的控件层。MD3 是 M3E 悬浮胶囊；Apple 是液态玻璃胶囊（截图本身是 Flutter 图像，玻璃能折射到它），
   /// 降低透明度时由 [fushiGlassSettings] 回落实色。
   Widget _hintPill(BuildContext context, Widget child) {
     if (isGlassDesign(context)) {
@@ -297,9 +308,11 @@ class ScreenOcrPickerPage extends StatelessWidget {
         child: child,
       );
     }
-    return Material(
-      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
-      shape: const StadiumBorder(),
+    // M3E 悬浮工具栏同一套胶囊（surfaceContainer + Elevation 3 投影，墨水屏
+    // 改描边），与阅读器 / 首页的浮动工具栏一致。
+    return FushiFloatingPill(
+      color: fushiFloatingToolbarPalette(context).container,
+      padding: EdgeInsets.zero,
       child: child,
     );
   }

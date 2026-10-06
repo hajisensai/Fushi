@@ -1,13 +1,13 @@
-/// 作品详情页的人物关系轨道（配音 / 演职人员）：一人一张竖卡，照片 + 姓名 +
-/// 角色或职位。合集详情页与单文件作品页共用同一份，两页的照片来源与回退规则
+/// 作品详情页的人物关系轨道（配音 / 演职人员）：一人一枚圆形头像卡，照片 +
+/// 姓名 + 角色或职位。合集详情页与单文件作品页共用同一份，两页的照片来源与回退规则
 /// 不会再各自漂移（BUG-2612：单文件作品页此前只画文字 Chip，结构上没有照片）。
 library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/detail/media_detail_kit.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -39,6 +39,10 @@ VideoCreditCardImage? _imageFor(String? path, String? url) {
   return url == null ? null : (image: AppCachedHttpImage(url), source: url);
 }
 
+/// 人物横滑轨道（M3E）：区块标题 + 计数胶囊，一人一枚圆形头像卡（照片 + 姓名 +
+/// 角色或职位），错峰进场。视觉是作品详情共享骨架的 [MediaDetailCastStrip]；这里
+/// 只负责把规范人物行换成纯值——照片来源与回退规则（[videoCreditCardImage]）、
+/// 坏图诊断日志（BUG-2496）与测试 key 前缀都留在本文件。
 class VideoCreditRail extends StatelessWidget {
   const VideoCreditRail({
     required this.title,
@@ -55,91 +59,31 @@ class VideoCreditRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
-        ),
-        SizedBox(height: tokens.spacing.card),
-        SizedBox(
-          height: 224,
-          child: HorizontalDragScrollable(
-            child: ListView.separated(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              scrollDirection: Axis.horizontal,
-              itemCount: credits.length,
-              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
-              itemBuilder: (BuildContext context, int index) {
-                final VideoMetadataCreditSummary credit = credits[index];
-                final VideoCreditCardImage? image =
-                    videoCreditCardImage(credit);
-                return SizedBox(
-                  key: ValueKey<String>(
-                      '$keyPrefix-${credit.person.personKey}-$index'),
-                  width: 132,
-                  child: FushiCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Expanded(
-                          child: image == null
-                              ? const _CreditPlaceholder()
-                              : Image(
-                                  image: image.image,
-                                  fit: BoxFit.cover,
-                                  // BUG-2496：坏头像文件解码失败退回占位，不当致命错误。
-                                  errorBuilder: (_, Object error, __) {
-                                    ErrorLogService.instance.logDiagnostic(
-                                      'VideoCreditRail.coverDecode',
-                                      '${image.source}: $error',
-                                    );
-                                    return const _CreditPlaceholder();
-                                  },
-                                ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
-                          child: Text(
-                            credit.person.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(9, 0, 9, 9),
-                          child: Text(
-                            credit.character?.name ??
-                                (credit.roleName.isEmpty
-                                    ? credit.creditKind
-                                    : credit.roleName),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
+    return MediaDetailCastStrip(
+      title: title,
+      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+      people: <MediaDetailPerson>[
+        for (int index = 0; index < credits.length; index++)
+          _personOf(credits[index], index),
       ],
     );
   }
-}
 
-class _CreditPlaceholder extends StatelessWidget {
-  const _CreditPlaceholder();
-
-  @override
-  Widget build(BuildContext context) => const ColoredBox(
-        color: Color(0x1FFFFFFF),
-        child: FushiIcon(Icons.person_outline, size: 42),
-      );
+  MediaDetailPerson _personOf(VideoMetadataCreditSummary credit, int index) {
+    final VideoCreditCardImage? image = videoCreditCardImage(credit);
+    return MediaDetailPerson(
+      key: ValueKey<String>('$keyPrefix-${credit.person.personKey}-$index'),
+      name: credit.person.name,
+      role: credit.character?.name ??
+          (credit.roleName.isEmpty ? credit.creditKind : credit.roleName),
+      image: image?.image,
+      // BUG-2496：坏头像文件解码失败退回占位（骨架里画），不当致命错误。
+      onImageError: image == null
+          ? null
+          : (Object error) => ErrorLogService.instance.logDiagnostic(
+                'VideoCreditRail.coverDecode',
+                '${image.source}: $error',
+              ),
+    );
+  }
 }

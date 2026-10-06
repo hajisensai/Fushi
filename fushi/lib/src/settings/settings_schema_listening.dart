@@ -1,6 +1,7 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -43,7 +44,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.audiobook_background_play',
           title: t.audiobook_background_play,
           subtitle: t.audiobook_background_play_hint,
-          icon: Icons.play_circle_outline,
+          icon: FushiIcons.playCircle,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.audiobookBackgroundPlay,
           onChanged: (SettingsContext settingsContext, bool value) async {
@@ -59,7 +60,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.audiobook_material_library',
           title: t.audiobook_material_library,
           subtitle: t.audiobook_material_library_hint,
-          icon: Icons.library_books_outlined,
+          icon: FushiIcons.dictionary,
           onTap: (SettingsContext settingsContext) async {
             await showAppDialog<void>(
               context: settingsContext.context,
@@ -76,7 +77,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.audiobook_auto_transcribe',
           title: t.audiobook_auto_transcribe,
           subtitle: t.audiobook_auto_transcribe_hint,
-          icon: Icons.record_voice_over_outlined,
+          icon: FushiIcons.voice,
           visible: (_) => isAsrSupported,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.audiobookAutoTranscribe,
@@ -90,7 +91,7 @@ List<SettingsSection> buildListeningSections() {
         SettingsSwitchItem(
           id: 'listening.media_notification',
           title: t.show_media_notification,
-          icon: Icons.notifications_outlined,
+          icon: FushiIcons.notifications,
           value: (SettingsContext settingsContext) =>
               settingsContext.appModel.showMediaNotification,
           onChanged: (SettingsContext settingsContext, bool value) async {
@@ -101,7 +102,7 @@ List<SettingsSection> buildListeningSections() {
         SettingsSwitchItem(
           id: 'listening.volume_key_sentence_nav',
           title: t.volume_key_sentence_nav,
-          icon: Icons.skip_next_outlined,
+          icon: FushiIcons.skipNext,
           // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
           visible: (_) => Platform.isAndroid,
           reader: const ReaderPlacement(
@@ -130,7 +131,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.floating_lyric',
           title: t.show_floating_lyric,
           subtitle: t.floating_lyric_hint,
-          icon: Icons.subtitles_outlined,
+          icon: FushiIcons.subtitles,
           // The strip is the desktop counterpart of the Android overlay
           // (windows/runner/floating_lyric_window.cpp), so Windows must see
           // this switch too — gating it to Android hid it from desktop users
@@ -151,7 +152,7 @@ List<SettingsSection> buildListeningSections() {
         SettingsStepperItem(
           id: 'listening.floating_lyric_font_size',
           title: t.floating_lyric_font_size,
-          icon: Icons.format_size,
+          icon: FushiIcons.fontSize,
           visible: (SettingsContext c) =>
               (Platform.isAndroid || Platform.isWindows) &&
               c.appModel.showFloatingLyric,
@@ -328,7 +329,7 @@ List<SettingsSection> buildListeningSections() {
           id: 'listening.floating_lyric_click_lookup',
           title: t.floating_lyric_click_lookup,
           subtitle: t.floating_lyric_click_lookup_hint,
-          icon: Icons.touch_app_outlined,
+          icon: FushiIcons.touch,
           visible: (SettingsContext c) =>
               (Platform.isAndroid || Platform.isWindows) &&
               c.appModel.showFloatingLyric,
