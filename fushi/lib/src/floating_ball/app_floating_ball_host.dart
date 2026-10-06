@@ -166,6 +166,8 @@ Map<String, int> floatingBallNativeIcons() => <String, int>{
 ///   与图标色；
 /// - `outline`：描边，只有墨水屏不透明（此时上面两组都降级成 surface /
 ///   onSurface，「描边无填色」），其余为全透明（原生不画环）；
+/// - `ballOpen` / `onBallOpen`：展开态球变成的关闭钮（primary 底 + onPrimary ×，
+///   墨水屏 surface / onSurface）；
 /// - `surface` / `onSurface` / `primary`：截屏识字冻结层的行框与提示条沿用。
 ///
 /// 原生侧持久化这张表（Android 存 SharedPreferences），主题一变 Dart 重新下发
@@ -185,7 +187,13 @@ Map<String, int> floatingBallNativeColors(
   'onButtonContainer': (eink ? colors.onSurface : colors.onSecondaryContainer)
       .toARGB32(),
   'outline': eink ? colors.onSurface.toARGB32() : 0x00000000,
+  'ballOpen': (eink ? colors.surface : colors.primary).toARGB32(),
+  'onBallOpen': (eink ? colors.onSurface : colors.onPrimary).toARGB32(),
 };
+
+/// 展开态球（M3E FAB menu 的关闭钮）上那颗 × 的图标 PNG 键：桌面原生球在
+/// iconImages 里按这个键取，着 `onBallOpen` 色（按钮图标是 `onButtonContainer`）。
+const String kFloatingBallNativeBallCloseKey = 'ball_close';
 
 /// 本平台有没有这个全局按钮的能力。
 bool floatingBallGlobalActionAvailable(FloatingBallGlobalAction action) =>
@@ -556,14 +564,20 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // Dart 持久化后交给它。
       final bool desktop = isDesktopSystemBallPlatform;
       final Map<String, Uint8List>? iconImages = desktop
-          ? await renderFloatingBallIconPngs(
-              floatingBallNativeIconData(),
-              Color(
-                colors['onButtonContainer'] ??
-                    colors['onSurface'] ??
-                    0xFF1D1B20,
+          ? <String, Uint8List>{
+              ...await renderFloatingBallIconPngs(
+                floatingBallNativeIconData(),
+                Color(
+                  colors['onButtonContainer'] ??
+                      colors['onSurface'] ??
+                      0xFF1D1B20,
+                ),
               ),
-            )
+              // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
+              ...await renderFloatingBallIconPngs(const <String, IconData>{
+                kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
+              }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+            }
           : null;
       // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
       final Uint8List? ballImage = desktop

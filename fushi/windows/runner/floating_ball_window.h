@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <d2d1.h>
+#include <dwrite.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 
@@ -50,6 +51,10 @@ class FloatingBallWindow {
     uint32_t button_container = 0;
     uint32_t on_button_container = 0;
     uint32_t outline = 0;
+    // 展开态球（M3E FAB menu 的关闭钮）：primary 底 + onPrimary ×（墨水屏 surface /
+    // onSurface）。× 图标 PNG 在 icon_images["ball_close"]。
+    uint32_t ball_open = 0xFF6750A4;
+    uint32_t on_ball_open = 0xFFFFFFFF;
   };
 
   // |anchor| = 球在屏幕上的矩形（物理像素、左上原点）。
@@ -164,6 +169,10 @@ class FloatingBallWindow {
   bool ButtonCircle(int index, double* cx, double* cy, double* radius,
                     double* opacity) const;
   int ButtonAt(double x, double y) const;
+  // 单列且横向放得下时为每颗按钮排好标签胶囊（DirectWrite 布局 + 宽度）；否则清空。
+  void PrepareMenuLabels(const fushi::floating_ball::Geometry& g);
+  // 当前进度下第 |index| 颗的标签胶囊（按钮窗坐标）；没有标签返回 false。
+  bool LabelRect(int index, D2D1_RECT_F* rect, double* opacity) const;
   void RunButton(int index);
   void UpdateTooltip(int index);
   void HideTooltip();
@@ -240,6 +249,12 @@ class FloatingBallWindow {
   Microsoft::WRL::ComPtr<ID2D1Factory> d2d_factory_;
   Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> render_target_;
   Microsoft::WRL::ComPtr<IWICImagingFactory> wic_factory_;
+  Microsoft::WRL::ComPtr<IDWriteFactory> dwrite_factory_;
+  Microsoft::WRL::ComPtr<IDWriteTextFormat> label_format_;
+  double label_format_scale_ = 0;
+  // 与 menu_ids_ 一一对应；空 = 本次展开不显示标签。
+  std::vector<Microsoft::WRL::ComPtr<IDWriteTextLayout>> menu_label_layouts_;
+  std::vector<double> menu_label_widths_;
   std::map<std::string, CachedBitmap> bitmaps_;
 
   ActionCallback on_action_;

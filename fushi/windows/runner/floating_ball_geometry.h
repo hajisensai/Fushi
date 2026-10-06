@@ -32,6 +32,18 @@ constexpr double kBallShadowPadDip = 6.0;
 // 按钮窗四周给阴影留的边（Android MENU_SHADOW_PAD_DP）。
 constexpr double kMenuShadowPadDip = 4.0;
 
+// M3E FAB menu（与 Dart reader_floating_ball.dart 同值，DIP）：
+// 球收起是圆角方块（kReaderFloatingBallCollapsedRadius），展开变正圆关闭钮；
+// 单列时每颗按钮朝屏幕中央一侧带标签胶囊；按钮命中区 ≥ 48。
+constexpr double kBallCollapsedRadiusDip = 14.0;
+constexpr double kLabelGapDip = 8.0;
+constexpr double kLabelHeightDip = 32.0;
+constexpr double kLabelMaxWidthDip = 200.0;
+constexpr double kLabelPaddingDip = 12.0;
+// M3E label large（14）；Windows 无 Medium 字重，取 SemiBold（同 Dart 字阶层）。
+constexpr double kLabelFontDip = 14.0;
+constexpr double kMinTouchDip = 48.0;
+
 // 与应用内球同一组时长（_expandDuration / _collapseDuration / _snapDuration）。
 constexpr int kExpandMs = 280;
 constexpr int kCollapseMs = 190;

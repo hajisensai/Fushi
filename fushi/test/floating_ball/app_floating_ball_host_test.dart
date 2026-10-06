@@ -564,6 +564,7 @@ void main() {
       onPrimaryContainer: Color(0xFF505152),
       secondaryContainer: Color(0xFF606162),
       onSecondaryContainer: Color(0xFF707172),
+      onPrimary: Color(0xFF808182),
     );
     expect(floatingBallNativeColors(scheme), <String, int>{
       'surface': 0xFF101112,
@@ -574,6 +575,8 @@ void main() {
       'buttonContainer': 0xFF606162,
       'onButtonContainer': 0xFF707172,
       'outline': 0x00000000,
+      'ballOpen': 0xFF303132,
+      'onBallOpen': 0xFF808182,
     });
     expect(floatingBallNativeColors(scheme, eink: true), <String, int>{
       'surface': 0xFF101112,
@@ -584,6 +587,8 @@ void main() {
       'buttonContainer': 0xFF101112,
       'onButtonContainer': 0xFF202122,
       'outline': 0xFF202122,
+      'ballOpen': 0xFF101112,
+      'onBallOpen': 0xFF202122,
     });
   });
 
