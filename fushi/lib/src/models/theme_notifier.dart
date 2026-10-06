@@ -527,12 +527,24 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
   }
 }
 
-/// 一个内置主题预设：[seed] + M3 [variant] 决定配色，[brightness] 是选中它时写入的
-/// 全局明暗，[pureBlack] 让深色下的页面底为真黑。
+/// 一个内置主题预设：只有种子色 [seed] + M3 方案变体 [variant]。
+///
+/// 2026-10-06 用户：「切换主题的时候如果我是深色就要继续保持深色」——预设**只决定
+/// 种子色，不决定明暗**：选任何预设都不改写 `brightness_mode`、不强制亮 / 暗，
+/// app 与阅读器始终按当前明暗设置（亮 / 暗 / 跟随系统）从种子派生。旧预设带的
+/// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({
   Color seed,
-  Brightness brightness,
   DynamicSchemeVariant variant,
+});
+
+/// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
+/// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
+/// `brightness_mode` 从未写过时作只读兜底）、[pureBlack] = 纯黑底。
+typedef LegacyThemePreset = ({
+  Color seed,
+  bool neutral,
+  bool dark,
   bool pureBlack,
 });
 
@@ -964,109 +976,178 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme presets ──────────────────────────────────────────────────
 
-  // 全部走 M3E 默认的 vibrant（[kFushiDefaultSchemeVariant]；中性灰例外，用
-  // neutral），靠 seed 色相区分。2026-10-05 用户「配色统一成 m3e」：此前为「像普通
-  // M3」压回 tonalSpot，M3E 恰恰要饱和的容器色块。
+  // 2026-10-06 用户「预设只留 M3E 谷歌经典配色」：Material Theme Builder 的经典
+  // 种子（M3 基线紫 + Google 经典色板），一律由种子经 DynamicScheme 生成整套 tonal
+  // 方案（M3E 默认 vibrant 变体，中性灰用 neutral），不手写任何槽位。顺序按色相。
+  // 「跟随系统取色」（system-theme）、自定义主题、墨水屏开关不在此表，照旧保留。
   static const Map<String, ThemePreset> themePresets = {
+    'm3-baseline': (
+      seed: Color(0xFF6750A4),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-indigo': (
+      seed: Color(0xFF3F51B5),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-blue': (
+      seed: Color(0xFF0B57D0),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-teal': (
+      seed: Color(0xFF00796B),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-green': (
+      seed: Color(0xFF146C2E),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-yellow': (
+      seed: Color(0xFFFBBC04),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-orange': (
+      seed: Color(0xFFFF6D00),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-red': (
+      seed: Color(0xFFB3261E),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-pink': (
+      seed: Color(0xFFE91E63),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-neutral': (
+      seed: Color(0xFF5F6368),
+      variant: DynamicSchemeVariant.neutral,
+    ),
+  };
+
+  /// 中性灰预设 id（无彩度 / neutral 变体的旧预设映射到它）。
+  static const String neutralPresetKey = 'm3-neutral';
+
+  /// 已删除的旧预设（id 冻结在存量偏好 / 备份 / Profile 快照 / 阅读器设置里）。
+  /// 读取时经 [legacyPresetReplacement] 映射到最接近的保留预设，**不改写偏好**；
+  /// 阅读器的手调纸色（羊皮纸 / 水蓝 / 护眼 / 灰 / 深色 / 纯黑）仍按存量 id 生效
+  /// （见 [storedAppThemeKey]），本次不动。
+  static const Map<String, LegacyThemePreset> legacyThemePresets = {
     'light-theme': (
       seed: Color(0xFF1F4959),
-      brightness: Brightness.light,
-      variant: kFushiDefaultSchemeVariant,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
     'ecru-theme': (
       seed: Color(0xFF8B7355),
-      brightness: Brightness.light,
-      variant: kFushiDefaultSchemeVariant,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
-    // 水蓝：原 seed #4A7C8F 与品牌青 #1F4959 的 HCT 色相只差 2°，生成的方案逐色
-    // 几乎相同（亮 primary #096780 对 #0f6681），两张色卡选了等于没选。改成与阅读器
-    // 水蓝主题（底 #dfecf4、链接 #3a5fad）同族的天蓝，色相拉开到与青色可辨。
     'water-theme': (
       seed: Color(0xFF3A6EA5),
-      brightness: Brightness.light,
-      variant: kFushiDefaultSchemeVariant,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
-    // Eye-care (护眼): a warm, low-blue-light sage-green light theme. The seed is a
-    // muted bean-paste green (豆沙绿 family) so the whole app chrome carries a soft
-    // green cast that is easier on the eyes than pure white; the reader body gets an
-    // explicit bean-green background (#C7EDCC) via the reader `_themeMap` /
-    // `_themeColors` presets, matching the pronounced backgrounds of ecru/water.
     'eyecare-theme': (
       seed: Color(0xFF5E8C63),
-      brightness: Brightness.light,
-      variant: kFushiDefaultSchemeVariant,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
-    // The three dark presets must stay visibly apart (TODO-100): gray by its
-    // neutral variant, dark by the teal brand hue, black by its true-black
-    // surfaces plus an indigo accent.
     'gray-theme': (
-      // Neutral: a real neutral-grey primary (~#bac9d1), no teal cast.
       seed: Color(0xFF5C6B73),
-      brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.neutral,
+      neutral: true,
+      dark: true,
       pureBlack: false,
     ),
     'dark-theme': (
-      // M3E vibrant: the teal Hibiki brand colour (~#60d4ff).
       seed: Color(0xFF1F4959),
-      brightness: Brightness.dark,
-      variant: kFushiDefaultSchemeVariant,
+      neutral: false,
+      dark: true,
       pureBlack: false,
     ),
     'black-theme': (
-      // 「纯黑」：页面底真黑 #000（与阅读器同名主题的 `#000`、浏览器扩展镜像的
-      // `surface: '#000000'` 一致），强调色是靛蓝 (~#bac3ff)。底色由 pureBlack
-      // 真黑阶梯钉死，不受变体影响（早年 vibrant 不带真黑阶梯时是藏青底 #0f101a）。
       seed: Color(0xFF3F51B5),
-      brightness: Brightness.dark,
-      variant: kFushiDefaultSchemeVariant,
+      neutral: false,
+      dark: true,
       pureBlack: true,
     ),
   };
 
+  static final Map<String, String> _legacyReplacementCache =
+      <String, String>{};
+
+  /// 旧预设 [key] 的替代预设：中性 → [neutralPresetKey]；其余按种子 HCT 色相
+  /// 环形距离最近的彩色预设。非旧预设 id 返回 null。
+  static String? legacyPresetReplacement(String key) {
+    final LegacyThemePreset? legacy = legacyThemePresets[key];
+    if (legacy == null) return null;
+    return _legacyReplacementCache.putIfAbsent(key, () {
+      if (legacy.neutral || isAchromaticSeed(legacy.seed)) {
+        return neutralPresetKey;
+      }
+      return nearestPresetForSeed(legacy.seed);
+    });
+  }
+
+  /// 与 [seed] 色相最近的彩色预设（不含中性灰）。
+  static String nearestPresetForSeed(Color seed) {
+    final double hue = Hct.fromInt(seed.toARGB32()).hue;
+    String best = 'm3-baseline';
+    double bestDistance = double.infinity;
+    for (final MapEntry<String, ThemePreset> entry in themePresets.entries) {
+      if (entry.value.variant == DynamicSchemeVariant.neutral) continue;
+      final double h = Hct.fromInt(entry.value.seed.toARGB32()).hue;
+      final double d = (hue - h).abs() % 360;
+      final double distance = d > 180 ? 360 - d : d;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = entry.key;
+      }
+    }
+    return best;
+  }
+
   /// 预设 [preset] 在 [brightness] 下的 ColorScheme——设置页色卡与生效主题同源。
   static ColorScheme buildPresetColorScheme(
     ThemePreset preset,
-    Brightness brightness,
-  ) {
+    Brightness brightness, {
+    bool pureBlack = false,
+  }) {
     return buildFushiColorScheme(
       seedColor: preset.seed,
       brightness: brightness,
       variant: preset.variant,
-      pureBlack: preset.pureBlack,
+      pureBlack: pureBlack,
     );
   }
 
-  static const _themeLabelKeys = {
-    'light-theme': 'theme_light',
-    'ecru-theme': 'theme_ecru',
-    'water-theme': 'theme_water',
-    'eyecare-theme': 'theme_eyecare',
-    'gray-theme': 'theme_gray',
-    'dark-theme': 'theme_dark',
-    'black-theme': 'theme_black',
-  };
-
+  /// 主题名（设置页色卡下的名称）；旧预设 id 显示其替代预设的名字。
   static String themeLabel(String key) {
-    switch (_themeLabelKeys[key]) {
-      case 'theme_light':
-        return t.theme_light;
-      case 'theme_ecru':
-        return t.theme_ecru;
-      case 'theme_water':
-        return t.theme_water;
-      case 'theme_eyecare':
-        return t.theme_eyecare;
-      case 'theme_gray':
-        return t.theme_gray;
-      case 'theme_dark':
-        return t.theme_dark;
-      case 'theme_black':
-        return t.theme_black;
+    switch (legacyPresetReplacement(key) ?? key) {
+      case 'system-theme':
+        return t.theme_preset_system;
+      case 'm3-baseline':
+        return t.theme_preset_baseline;
+      case 'm3-indigo':
+        return t.theme_preset_indigo;
+      case 'm3-blue':
+        return t.theme_preset_blue;
+      case 'm3-teal':
+        return t.theme_preset_teal;
+      case 'm3-green':
+        return t.theme_preset_green;
+      case 'm3-yellow':
+        return t.theme_preset_yellow;
+      case 'm3-orange':
+        return t.theme_preset_orange;
+      case 'm3-red':
+        return t.theme_preset_red;
+      case 'm3-pink':
+        return t.theme_preset_pink;
+      case 'm3-neutral':
+        return t.theme_preset_neutral;
       default:
         return key;
     }
@@ -1092,15 +1173,40 @@ class ThemeNotifier extends ChangeNotifier {
     return null;
   }
 
-  String get appThemeKey {
+  /// 偏好里存的原始主题键（校验过：未知值 → `system-theme`），**可能是已删的
+  /// 旧预设 id**。只给阅读器纸色（按存量 id 生效）与只读兜底用；其余一律读
+  /// [appThemeKey]。
+  String get storedAppThemeKey {
     final String key = _get('app_theme_key', defaultValue: '');
     if (key.isEmpty ||
         (!themePresets.containsKey(key) &&
+            !legacyThemePresets.containsKey(key) &&
             !isCustomThemeKey(key) &&
             key != 'system-theme')) {
       return 'system-theme';
     }
     return key;
+  }
+
+  /// 生效的主题键：已删的旧预设 id 只读映射到最接近的保留预设
+  /// （[legacyPresetReplacement]），偏好原值不改写。
+  String get appThemeKey {
+    final String key = storedAppThemeKey;
+    return legacyPresetReplacement(key) ?? key;
+  }
+
+  /// 「纯黑深色背景」：深色下页面底为真黑（OLED）。与预设 / 明暗正交的独立开关；
+  /// 从没写过时，存量选了旧「纯黑」预设的用户默认开（保持原观感，不改写偏好）。
+  bool get pureBlackDark => _get(
+        'pure_black_dark',
+        defaultValue:
+            legacyThemePresets[storedAppThemeKey]?.pureBlack ?? false,
+      ) as bool;
+
+  Future<void> setPureBlackDark(bool value) async {
+    await _set('pure_black_dark', value);
+    notifyListeners();
+    _persistSplashColor();
   }
 
   /// Resolve the [CustomThemeEntry] the current [appThemeKey] points at, applying
@@ -1177,10 +1283,10 @@ class ThemeNotifier extends ChangeNotifier {
     final key = appThemeKey;
     if (key == 'system-theme') return 'system';
     if (isCustomThemeKey(key)) return customThemeDark ? 'dark' : 'light';
-    final preset = themePresets[key];
-    if (preset != null) {
-      return preset.brightness == Brightness.dark ? 'dark' : 'light';
-    }
+    // 只读兜底：老用户选旧预设时当年会顺带写 brightness_mode；万一没写过，按旧
+    // 预设的明暗语义读出，不改写。新预设不带明暗 → 跟随系统。
+    final LegacyThemePreset? legacy = legacyThemePresets[storedAppThemeKey];
+    if (legacy != null) return legacy.dark ? 'dark' : 'light';
     return 'system';
   }
 
@@ -1375,12 +1481,15 @@ class ThemeNotifier extends ChangeNotifier {
     if (appThemeKey == 'system-theme') {
       // 系统取色的中性阶梯有两个来源（Android 壁纸调色板 / 桌面 accent seed），
       // 间距各不相同；同预设与自定义主题一样收口到统一阶梯。
-      return applyFushiSurfaceLadder(buildSystemThemeColorScheme(
+      final ColorScheme system = buildSystemThemeColorScheme(
         brightness: brightness,
         palette: _systemPalette,
         accent: _systemAccentColor,
         fallbackSeed: _seedColor,
-      ));
+      );
+      return pureBlackDark
+          ? applyFushiPureBlackSurfaceLadder(system)
+          : applyFushiSurfaceLadder(system);
     }
     return buildFushiColorScheme(
       seedColor: _seedColor,
@@ -1401,7 +1510,7 @@ class ThemeNotifier extends ChangeNotifier {
       ),
       surface: activeCustomThemeSurfaceColor,
       neutralDerived: activeCustomThemeNeutralDerived,
-      pureBlack: themePresets[appThemeKey]?.pureBlack ?? false,
+      pureBlack: pureBlackDark,
     );
   }
 
@@ -1730,18 +1839,11 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Setters ───────────────────────────────────────────────────────
 
+  /// 切主题只换配色：**不改写 `brightness_mode`、不强制亮 / 暗**（2026-10-06 用户
+  /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
+  /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
   Future<void> setAppThemeKey(String key) async {
     await _set('app_theme_key', key);
-    if (key == 'system-theme') {
-      await setBrightnessMode('system');
-      return;
-    }
-    final preset = themePresets[key];
-    if (preset != null) {
-      await setBrightnessMode(
-          preset.brightness == Brightness.dark ? 'dark' : 'light');
-      return;
-    }
     notifyListeners();
     _persistSplashColor();
   }

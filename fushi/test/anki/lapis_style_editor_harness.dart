@@ -6,6 +6,7 @@
 // 同进程其它测试。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -101,7 +102,7 @@ Future<LapisVisualEditorResult?> openEditorAndSave(
 
   await (interact ?? toggleBold)(tester);
 
-  await tester.tap(find.byIcon(Icons.save_outlined));
+  await tester.tap(find.byIcon(FushiIcons.save));
   await tester.pumpAndSettle();
   await session.popped;
   return result;

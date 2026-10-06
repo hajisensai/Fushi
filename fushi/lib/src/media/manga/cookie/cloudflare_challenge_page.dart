@@ -4,91 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_proxy_challenge.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
-import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
-
-/// 把「在 WebView 里解 Cloudflare 挑战」装成 [AidokuCloudflareGate.resolver]。
-/// 在 app 根 navigator 就绪后调用一次；runtime 遇到 `CLOUDFLARE_CHALLENGE` 时
-/// 会推一页 [AidokuCloudflareChallengePage]，拿到 `cf_clearance` 后自动关闭。
-///
-/// 按 host 单飞：并发调用（全局搜索扇出 / 源匹配）同站的挑战共享同一次解题，
-/// 不会叠出多个全屏页——后到的调用等第一次的结果，成功后各自带新 cookie 重试。
-void installAidokuCloudflareResolver(
-  GlobalKey<NavigatorState> navigatorKey, {
-  @visibleForTesting
-  Widget Function(Uri challengeUrl, String userAgent)? pageBuilder,
-}) {
-  final Map<String, Future<bool>> inflight = <String, Future<bool>>{};
-  AidokuCloudflareGate.resolver = (Uri challengeUrl, String userAgent) {
-    final String host = challengeUrl.host;
-    final Future<bool>? pending = inflight[host];
-    if (pending != null) return pending;
-    // 顺序是硬要求：**先建 future → 再写 map → 最后挂清理**。
-    //
-    // 写成 `inflight[host] ??= () async { ... finally { inflight.remove(host); } }()`
-    // 会把这个 host 永久毒死：`map[k] ??= expr` 是「先求值 expr、再写 map」，
-    // 而 async 函数体在第一个 await 之前是**同步**跑的——navigator 还没挂上
-    // （启动期，或两个共用 navigatorKey 的 widget 切换窗口）的早退路径一个 await 都没有，
-    // 于是 `remove` 在 map 被写入之前就跑完了（空操作），随后那个已完成的
-    // `Future(false)` 被钉进 map：该站点整个进程生命周期内再也弹不出解题页。
-    final Future<bool> solving = _solveChallenge(
-      navigatorKey,
-      challengeUrl,
-      userAgent,
-      pageBuilder,
-    );
-    inflight[host] = solving;
-    return solving.whenComplete(() => inflight.remove(host));
-  };
-}
-
-/// 推一页解题 WebView 并等结果。navigator 未就绪（启动期 / 切换窗口）直接
-/// 返回 false，调用方按原错误上报；下一次调用会重新尝试。
-Future<bool> _solveChallenge(
-  GlobalKey<NavigatorState> navigatorKey,
-  Uri challengeUrl,
-  String userAgent,
-  Widget Function(Uri challengeUrl, String userAgent)? pageBuilder,
-) async {
-  final NavigatorState? navigator = navigatorKey.currentState;
-  if (navigator == null) return false;
-  if (pageBuilder == null) {
-    final bool? nativeResult = await solveAidokuProxyChallenge(
-      url: challengeUrl,
-      userAgent: userAgent,
-      jar: AidokuCookieJar.shared,
-      title: t.manga_source_cloudflare_verify_title,
-      closeLabel: MaterialLocalizations.of(
-        navigator.context,
-      ).closeButtonTooltip,
-    );
-    if (nativeResult != null) return nativeResult;
-    if (!navigator.mounted) return false;
-  }
-  final bool? solved = await navigator.push<bool>(
-    MaterialPageRoute<bool>(
-      // 路由层中和界面整体缩放，WebView 才按真实视口栅格化（BUG-2522）。
-      builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
-        child:
-            pageBuilder?.call(challengeUrl, userAgent) ??
-            AidokuCloudflareChallengePage(
-              challengeUrl: challengeUrl,
-              userAgent: userAgent,
-              jar: AidokuCookieJar.shared,
-            ),
-      ),
-      fullscreenDialog: true,
-    ),
-  );
-  return solved ?? false;
-}
 
 /// 用**被拦请求同一 User-Agent** 加载被拦的页面，让用户/浏览器完成 Cloudflare
 /// 验证；`cf_clearance` 一落到 WebView 的 cookie 存储就整站导出到 [jar] 并返回 true。
@@ -98,12 +19,12 @@ Future<bool> _solveChallenge(
 /// **值不同于 jar 里现存条目**的 `cf_clearance`——WebView 的共享 cookie 存储里
 /// 可能还留着上一轮的陈旧 cookie（正是它失效才走到这一页），只查存在会秒判
 /// 成功、带着旧 cookie 重试然后再次被拦。
-class AidokuCloudflareChallengePage extends StatefulWidget {
-  const AidokuCloudflareChallengePage({
+class CloudflareChallengePage extends StatefulWidget {
+  const CloudflareChallengePage({
     super.key,
     required this.challengeUrl,
     required this.jar,
-    this.userAgent = kAidokuUserAgent,
+    required this.userAgent,
     this.pollInterval = const Duration(seconds: 1),
     this.cookieReader,
     this.webViewBuilder,
@@ -112,8 +33,8 @@ class AidokuCloudflareChallengePage extends StatefulWidget {
 
   final Uri challengeUrl;
 
-  /// 解完后整站 cookie 写进这里。基类即可：Aidoku 与桌面 Mihon 的 jar 是同一份
-  /// 实现的两个子类，解题页对两边逐字相同，不为 Mihon 再复制一页。
+  /// 解完后整站 cookie 写进这里。基类即可：桌面 Mihon 与 LNReader 小说源各有
+  /// 自己的 jar，解题页对两边逐字相同，不再复制一页。
   final MangaCookieJar jar;
 
   /// 被拦请求实际用的 UA；`cf_clearance` 绑定解题时的 UA，必须逐字节一致。
@@ -132,12 +53,11 @@ class AidokuCloudflareChallengePage extends StatefulWidget {
   final Future<WebViewEnvironment?> Function()? environmentFactory;
 
   @override
-  State<AidokuCloudflareChallengePage> createState() =>
-      _AidokuCloudflareChallengePageState();
+  State<CloudflareChallengePage> createState() =>
+      _CloudflareChallengePageState();
 }
 
-class _AidokuCloudflareChallengePageState
-    extends State<AidokuCloudflareChallengePage> {
+class _CloudflareChallengePageState extends State<CloudflareChallengePage> {
   Timer? _poll;
   bool _checking = false;
   bool _done = false;
@@ -150,7 +70,7 @@ class _AidokuCloudflareChallengePageState
   /// 而 `sharedCookiesEnabled` 让它跨 renderer 代存活；重建后 [_check] 的轮询会
   /// 照常把新拿到的 `cf_clearance` 判出来。所以只要重建 + 让轮询继续跑。
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
-    surface: 'aidoku_cf_challenge',
+    surface: 'manga_cf_challenge',
     afterRebuild: () {
       if (mounted) setState(() {});
     },
@@ -266,7 +186,7 @@ class _AidokuCloudflareChallengePageState
     }
   }
 
-  AidokuCookie _toJarCookie(Cookie cookie) => AidokuCookie(
+  MangaCookie _toJarCookie(Cookie cookie) => MangaCookie(
     name: cookie.name,
     value: cookie.value?.toString() ?? '',
     domain: cookie.domain ?? widget.challengeUrl.host,
@@ -312,15 +232,17 @@ class _AidokuCloudflareChallengePageState
                             url: WebUri.uri(widget.challengeUrl),
                           ),
                           initialSettings: InAppWebViewSettings(
-                            // 与被拦请求逐字节一致，见 [AidokuCloudflareResolver]。
+                            // 与被拦请求逐字节一致（`cf_clearance` 绑定解题时的 UA）。
                             userAgent: widget.userAgent,
                             javaScriptEnabled: true,
                             sharedCookiesEnabled: true,
                           ),
                           onLoadStop: (_, __) => unawaited(_check()),
                           // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
-                          onWebContentProcessDidTerminate: (InAppWebViewController _) =>
-                              unawaited(_deathGuard.handleWebContentTerminated()),
+                          onWebContentProcessDidTerminate:
+                              (InAppWebViewController _) => unawaited(
+                                _deathGuard.handleWebContentTerminated(),
+                              ),
                           onRenderProcessGone:
                               (
                                 InAppWebViewController _,

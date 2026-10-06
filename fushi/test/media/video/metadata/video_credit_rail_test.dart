@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -119,7 +120,7 @@ void main() {
     expect(
         find.byKey(const ValueKey<String>('video-work-credit-person:mal:1-0')),
         findsOneWidget);
-    expect(find.byIcon(Icons.person_outline), findsOneWidget,
+    expect(find.byIcon(FushiIcons.person), findsOneWidget,
         reason: '没有任何图时显示人物占位');
   });
 

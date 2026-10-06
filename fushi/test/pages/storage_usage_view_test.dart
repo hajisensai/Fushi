@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/pages/implementations/storage_usage_view.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 void main() {
@@ -131,7 +132,7 @@ void main() {
     expect(find.text('吾輩は猫である'), findsOneWidget);
 
     // 点条目删除 → 确认弹窗 → 确认。
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.tap(find.byIcon(FushiIcons.delete).first);
     await tester.pumpAndSettle();
     expect(
       find.text(t.storage_entry_delete_confirm_title(name: '吾輩は猫である')),
@@ -194,7 +195,7 @@ void main() {
     // 音频大小真的显示出来了（旧实现这里是 0 B）。
     expect(find.text('4.0 KB'), findsWidgets);
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.tap(find.byIcon(FushiIcons.delete).first);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
     for (int i = 0; i < 20; i++) {
@@ -431,7 +432,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('video_covers/a.jpg'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.tap(find.byIcon(FushiIcons.delete).first);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
     // 与书籍删除用例同款重扫驱动（FakeAsync 区里 async* 不启动）。
@@ -462,6 +463,6 @@ void main() {
     await tester.tap(find.text(t.storage_category_custom_fonts));
     await tester.pumpAndSettle();
     expect(find.text('custom_fonts/mine.ttf'), findsOneWidget);
-    expect(find.byIcon(Icons.delete_outline), findsNothing);
+    expect(find.byIcon(FushiIcons.delete), findsNothing);
   });
 }

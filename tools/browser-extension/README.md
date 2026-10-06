@@ -206,7 +206,7 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 - **调色板选择与 Fushi 本体同一套模型**（`theme-palette.js` + `theme.js`）：`extensionPalette` =
   `app`（跟随 Fushi，**缺省**——2026-10-06 起，查词弹窗本来就吃 app 下发的配色，扩展页面缺省也跟它，两边同源；首次查词前没有镜像时回落 `theme.css`）/ `fushi`（扩展绿，`theme.css` 原样，弹窗也按它覆盖）/ `app` 镜像：`background.js` 把查词响应的 app 配色按
   明暗镜像进 `appThemeMirror`）/ 七款预设（与 app `theme_notifier.dart` 同名同种子：
-  `light-theme` … `black-theme`，自带出厂明暗，选中时一并写 `extensionTheme`）/ `custom:<id>`
+  `light-theme` … `black-theme`，只决定配色家族、不改明暗——每款都按当前明暗由种子派生亮暗两套；明暗只看 `extensionTheme`，自动 + 跟随 Fushi 时跟 app 当前明暗 `appThemeMirror.current`）/ `custom:<id>`
   （`extensionCustomThemes` 列表，每项 `{id, name, seed, surface?, text?, neutral}`，对应 app
   `CustomThemeEntry` 的 seed / surfaceColor / fontColor / neutralDerived）。一个种子色按 OKLCH 阶梯
   派生浅色与深色两套 `--fushi-*`（hex），落成一条 `<style id="fushi-theme-palette">`：扩展页面写

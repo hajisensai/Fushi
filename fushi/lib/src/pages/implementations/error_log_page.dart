@@ -56,7 +56,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
       title: t.error_log_label(n: count),
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.copy_outlined,
+          icon: FushiIcons.copy,
           tooltip: t.copy,
           onTap: () async {
             await Clipboard.setData(ClipboardData(text: _log));
@@ -68,7 +68,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           },
         ),
         FushiIconButton(
-          icon: Icons.share_outlined,
+          icon: FushiIcons.share,
           tooltip: t.share,
           onTap: () {
             final bytes = Uint8List.fromList(utf8.encode(_log));
@@ -82,7 +82,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
         ),
         if (showUploadLogAction)
           FushiIconButton(
-            icon: Icons.cloud_upload_outlined,
+            icon: FushiIcons.cloudUpload,
             tooltip: t.log_upload_action,
             onTap: () => uploadLogToServer(
               context: context,
@@ -92,7 +92,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           ),
         if (showSaveLogAction)
           FushiIconButton(
-            icon: Icons.save_alt_outlined,
+            icon: FushiIcons.save,
             tooltip: t.log_export_file,
             onTap: () => saveLogToFile(
               context: context,
@@ -102,7 +102,7 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
             ),
           ),
         FushiIconButton(
-          icon: Icons.delete_outline,
+          icon: FushiIcons.delete,
           tooltip: t.clear,
           onTap: () {
             ErrorLogService.instance.clear();
@@ -115,10 +115,14 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => FushiLogPanel(
-        log: _log,
-        shareAction: (text) => FushiShare.shareText(text),
-      ),
+          ) => count == 0
+          // 空状态：settings kit 统一空态（M3E 形状图标 + 标题），不是一块只写着
+          // 「暂无日志」的空日志面板。
+          ? SettingsEmptyState(icon: FushiIcons.success, title: t.error_log_empty)
+          : FushiLogPanel(
+              log: _log,
+              shareAction: (text) => FushiShare.shareText(text),
+            ),
     );
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 编辑「单个本地音频库」的子来源：拖拽调整优先级顺序 + 逐源启用/禁用。
@@ -76,7 +78,7 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.local_audio_source_order_title,
-        leadingIcon: Icons.tune,
+        leadingIcon: FushiIcons.audio,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -125,13 +127,12 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
       return buildLoading(padding: const EdgeInsets.all(24));
     }
     if (prefs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.local_audio_no_sources,
-            textAlign: TextAlign.center,
-          ),
+      // M3E 空状态：72 色块图标 + 弹入（FushiPlaceholderMessage）。
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.audio,
+          message: t.local_audio_no_sources,
         ),
       );
     }
@@ -140,55 +141,68 @@ class _LocalAudioSourcesDialogState extends State<LocalAudioSourcesDialog>
     // Transform.scale，缩放界面下长按拖拽会飞出屏幕。前者把拖拽反馈渲染在列表自身坐标系、
     // 用 globalToLocal 消掉祖先缩放 → 任意缩放下都精确跟手、零偏移且视觉一致。
     // 上下箭头按钮仍是无障碍/手柄重排路径。
-    return FushiReorderableColumn(
-      itemCount: prefs.length,
-      keyForIndex: (int index) =>
-          ValueKey<String>('local_audio_source_${prefs[index].name}'),
-      onReorder: (int from, int to) {
-        setState(() {
-          final LocalAudioSourcePref item = prefs.removeAt(from);
-          prefs.insert(to, item);
-        });
-      },
-      itemBuilder: (BuildContext context, int index) {
-        final LocalAudioSourcePref source = prefs[index];
-        return AdaptiveSettingsRow(
-          title: source.name,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiSwitch.adaptive(
-                value: source.enabled,
-                onChanged: (bool enabled) => setState(() {
-                  prefs[index] = source.copyWith(enabled: enabled);
-                }),
+    // M3E 分段列表：每个来源一张分段卡（首尾大圆角、行间 2），行间缝交给
+    // FushiReorderableColumn 的 spacing（拖拽时缝不跟着行走）；首次出现错峰进场。
+    return FushiEntranceScope(
+      child: FushiReorderableColumn(
+        itemCount: prefs.length,
+        spacing: fushiGroupedListGap(context),
+        keyForIndex: (int index) =>
+            ValueKey<String>('local_audio_source_${prefs[index].name}'),
+        onReorder: (int from, int to) {
+          setState(() {
+            final LocalAudioSourcePref item = prefs.removeAt(from);
+            prefs.insert(to, item);
+          });
+        },
+        itemBuilder: (BuildContext context, int index) {
+          final LocalAudioSourcePref source = prefs[index];
+          return FushiStaggeredEntrance(
+            index: index,
+            child: FushiGroupedListItem(
+              index: index,
+              count: prefs.length,
+              includeGap: false,
+              child: AdaptiveSettingsRow(
+                title: source.name,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    FushiSwitch.adaptive(
+                      value: source.enabled,
+                      onChanged: (bool enabled) => setState(() {
+                        prefs[index] = source.copyWith(enabled: enabled);
+                      }),
+                    ),
+                    FushiIconButton(
+                      icon: FushiIcons.expandLess,
+                      size: 18,
+                      tooltip: t.move_up,
+                      enabled: index > 0,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                      onTap: () => setState(() {
+                        final LocalAudioSourcePref item = prefs.removeAt(index);
+                        prefs.insert(index - 1, item);
+                      }),
+                    ),
+                    FushiIconButton(
+                      icon: FushiIcons.expandMore,
+                      size: 18,
+                      tooltip: t.move_down,
+                      enabled: index < prefs.length - 1,
+                      padding: EdgeInsets.all(tokens.spacing.gap / 2),
+                      onTap: () => setState(() {
+                        final LocalAudioSourcePref item = prefs.removeAt(index);
+                        prefs.insert(index + 1, item);
+                      }),
+                    ),
+                  ],
+                ),
               ),
-              FushiIconButton(
-                icon: Icons.keyboard_arrow_up,
-                size: 18,
-                tooltip: t.move_up,
-                enabled: index > 0,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final LocalAudioSourcePref item = prefs.removeAt(index);
-                  prefs.insert(index - 1, item);
-                }),
-              ),
-              FushiIconButton(
-                icon: Icons.keyboard_arrow_down,
-                size: 18,
-                tooltip: t.move_down,
-                enabled: index < prefs.length - 1,
-                padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                onTap: () => setState(() {
-                  final LocalAudioSourcePref item = prefs.removeAt(index);
-                  prefs.insert(index + 1, item);
-                }),
-              ),
-            ],
-          ),
-        );
-      },
+            ),
+          );
+        },
+      ),
     );
   }
 }
