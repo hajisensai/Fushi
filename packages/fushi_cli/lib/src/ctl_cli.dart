@@ -380,12 +380,13 @@ class _Cli {
     try {
       return await client.status();
     } on CtlException catch (error) {
-      // 残留的发现文件：端口已没人听，或被别的进程复用（token 对不上 / 非本协议应答）。
-      if (error.isUnreachable ||
-          error.code == kCtlErrorUnauthorized ||
-          error.code == 'protocol') {
-        return null;
-      }
+      // 残留的发现文件：端口已没人听，或被别的进程复用。本 app 对带对 token、不带
+      // Origin 的 status 只会回 200；任何 4xx（token 对不上、别的服务的 404/403、
+      // 同机 fushi_server 管理接口的鉴权失败……）都说明对面不是这次的 app。
+      // 5xx 仍上抛：那更像是本 app 自己出错，不该再拉起第二个实例掩盖它。
+      if (error.isUnreachable || error.code == 'protocol') return null;
+      final int? status = error.statusCode;
+      if (status != null && status >= 400 && status < 500) return null;
       rethrow;
     }
   }

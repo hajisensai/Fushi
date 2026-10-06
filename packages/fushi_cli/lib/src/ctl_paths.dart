@@ -28,7 +28,12 @@ String? resolveCtlStateDir({
   final String? explicit = _nonEmpty(environment[kCtlDirEnv]);
   if (explicit != null) return explicit;
   final String? root = _nonEmpty(testRoot);
-  if (root != null) return p.join(root, 'ctl');
+  if (root != null) {
+    return (operatingSystem == 'windows' ? p.windows : p.posix).join(
+      root,
+      'ctl',
+    );
+  }
   switch (operatingSystem) {
     case 'windows':
       final String? local = _nonEmpty(environment['LOCALAPPDATA']);

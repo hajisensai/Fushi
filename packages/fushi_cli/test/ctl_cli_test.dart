@@ -53,7 +53,9 @@ void main() {
   }) => runFushiCli(
     args,
     environment: <String, String>{kCtlDirEnv: stateDir, ...extraEnv},
-    operatingSystem: 'linux',
+    // 按宿主平台跑：候选路径用对应平台的 path 上下文拆 cliExecutable，
+    // 拿 Windows 路径冒充 linux 会让「CLI 同级目录」这条候选拆错。
+    operatingSystem: Platform.operatingSystem,
     cliExecutable: p.join(root.path, 'bin', 'fushi_cli'),
     out: out,
     err: err,
@@ -73,7 +75,9 @@ void main() {
   }
 
   Future<String> fakeAppBinary() async {
-    final File app = File(p.join(root.path, 'bin', 'fushi'));
+    final File app = File(
+      p.join(root.path, 'bin', Platform.isWindows ? 'fushi.exe' : 'fushi'),
+    );
     await app.create(recursive: true);
     return app.path;
   }
@@ -100,7 +104,37 @@ void main() {
       stateDir,
       CtlEndpoint(port: await _closedPort(), token: 't', pid: 1, startedAt: 0),
     );
-    expect(await run(<String>['status']), kCliExitUnavailable);
+    expect(
+      await run(<String>['status']),
+      kCliExitUnavailable,
+      reason: err.toString(),
+    );
+  });
+
+  test('残留发现文件的端口被别的服务复用（回 JSON 4xx）→ 按未运行处理', () async {
+    // 同机别的 HTTP 服务（如 fushi_server 管理接口）恰好拿到了旧端口：
+    // 它对 status 回的是自己的错误码，不是本 app 的应答，不能当成命令失败。
+    final HttpServer foreign = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    addTearDown(() => foreign.close(force: true));
+    foreign.listen((HttpRequest request) {
+      request.response
+        ..statusCode = HttpStatus.notFound
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode(<String, Object?>{'error': 'not_found'}))
+        ..close();
+    });
+    await writeCtlEndpoint(
+      stateDir,
+      CtlEndpoint(port: foreign.port, token: 't', pid: 1, startedAt: 0),
+    );
+    expect(
+      await run(<String>['status']),
+      kCliExitUnavailable,
+      reason: err.toString(),
+    );
   });
 
   test('open：相对路径在 CLI 侧转成绝对路径', () async {

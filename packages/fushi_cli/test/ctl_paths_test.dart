@@ -28,6 +28,17 @@ void main() {
       );
     });
 
+    test('测试根按目标平台拼路径（与宿主平台无关）', () {
+      expect(
+        resolveCtlStateDir(
+          environment: const <String, String>{},
+          operatingSystem: 'windows',
+          testRoot: r'C:\t',
+        ),
+        r'C:\t\ctl',
+      );
+    });
+
     test('Windows 落 LOCALAPPDATA', () {
       expect(
         resolveCtlStateDir(
