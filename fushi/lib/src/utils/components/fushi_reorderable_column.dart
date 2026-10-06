@@ -138,6 +138,7 @@ class FushiReorderableColumn extends StatefulWidget {
     required this.onReorder,
     this.spacing = 0,
     this.feedbackBorderRadius,
+    this.useDragHandles = false,
     super.key,
   });
 
@@ -148,6 +149,10 @@ class FushiReorderableColumn extends StatefulWidget {
   /// 「item[from] 移到最终下标 to」。起拖时机按输入设备区分（见类注释）：
   /// 鼠标等精确指针按下即拖，触摸屏长按（`kLongPressTimeout`）再拖。
   final FushiReorderCallback onReorder;
+
+  /// 仅 [FushiReorderableDragHandle] 区域起拖；行体保留长按菜单 / 横滑删除。
+  /// 默认 false 延续既有整行拖动行为。
+  final bool useDragHandles;
 
   /// 相邻行之间的间距，由**列表**插入（而非塞进每个 item 自带 padding）。
   /// 这样拖拽中的浮层复制只包住行内容本身、不会把行间空隙也涂成背景色
@@ -477,10 +482,24 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
     final Widget slot = _dragOriginal == original
         ? Opacity(opacity: 0.0, child: content)
         : content;
-    // 稳定 key（行身份）：拖拽中 _display 重排时，Flutter 据此保留同一
-    // RawGestureDetector 元素与其活跃的识别器，拖拽不中断。
-    return RawGestureDetector(
+    if (widget.useDragHandles) {
+      return _FushiReorderHandleScope(
+        key: widget.keyForIndex(original),
+        wrap: (Widget child) => _buildDragDetector(original, child),
+        child: slot,
+      );
+    }
+    return _buildDragDetector(
+      original,
+      slot,
       key: widget.keyForIndex(original),
+    );
+  }
+
+  Widget _buildDragDetector(int original, Widget child, {Key? key}) {
+    // 稳定行 key 由整行识别器或 handle scope 持有；重排时识别器不中断。
+    return RawGestureDetector(
+      key: key,
       behavior: HitTestBehavior.translucent,
       gestures: <Type, GestureRecognizerFactory>{
         // 鼠标等精确指针：按下即拖（修 Win 端必须长按等待才能排序）。
@@ -510,9 +529,39 @@ class _FushiReorderableColumnState extends State<FushiReorderableColumn> {
               },
             ),
       },
-      child: slot,
+      child: child,
     );
   }
+}
+
+/// [FushiReorderableColumn.useDragHandles] 的起拖区域。使用原列表的本地坐标
+/// 拖拽实现，避免 SDK 重排 Overlay 在 UI 缩放下发生坐标漂移。
+class FushiReorderableDragHandle extends StatelessWidget {
+  const FushiReorderableDragHandle({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final _FushiReorderHandleScope? scope = context
+        .dependOnInheritedWidgetOfExactType<_FushiReorderHandleScope>();
+    // 拖动浮层是 IgnorePointer 包住的行副本，位于 scope 外，无需再安装手势。
+    return scope?.wrap(child) ?? child;
+  }
+}
+
+class _FushiReorderHandleScope extends InheritedWidget {
+  const _FushiReorderHandleScope({
+    required this.wrap,
+    required super.child,
+    super.key,
+  });
+
+  final Widget Function(Widget child) wrap;
+
+  @override
+  bool updateShouldNotify(_FushiReorderHandleScope oldWidget) =>
+      wrap != oldWidget.wrap;
 }
 
 /// 把 [MultiDragGestureRecognizer] 的拖拽回调桥接到 [_FushiReorderableColumnState]

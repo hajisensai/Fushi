@@ -100,9 +100,9 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       await _db.createTag(result.name, result.color);
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.tag_name_duplicate)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.tag_name_duplicate)));
         return;
       }
       rethrow;
@@ -122,9 +122,9 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       await _db.updateTag(tag.id, name: result.name, colorValue: result.color);
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.tag_name_duplicate)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.tag_name_duplicate)));
         return;
       }
       rethrow;
@@ -149,8 +149,9 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   /// 既无 swipe 又无 gamepad，删除此前无入口——本菜单补齐，同时保留 tap→编辑、
   /// swipe→删除、gamepad X→删除。
   Future<void> _showTagMenu(BookTagRow tag, Offset globalPosition) async {
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     // 与 media_collection_grid_detail_page 同理：globalPosition 是真实视口坐标，
     // 需经 Overlay 的 RenderBox 换算到根 Navigator Overlay 坐标系，界面缩放≠100%
@@ -199,27 +200,29 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   /// 合并：选目标标签 → 确认 → 把 [source] 在五种宿主下的全部映射加到目标上，
   /// 再删除 [source]（不改数据层：逐条走各域 typed add，合集走 addTagToCollection）。
   Future<void> _mergeTag(BookTagRow source) async {
-    final List<BookTagRow> others =
-        _tags.where((BookTagRow tag) => tag.id != source.id).toList();
+    final List<BookTagRow> others = _tags
+        .where((BookTagRow tag) => tag.id != source.id)
+        .toList();
     if (others.isEmpty) return;
     final BookTagRow? target = await adaptiveModalSheet<BookTagRow>(
       context: context,
-      builder: (BuildContext ctx) => _MergeTargetSheet(
-        source: source,
-        candidates: others,
-      ),
+      builder: (BuildContext ctx) =>
+          _MergeTargetSheet(source: source, candidates: others),
     );
     if (target == null || !mounted) return;
     final FushiDestructiveConfirmResult? confirmed =
         await showAppDialog<FushiDestructiveConfirmResult>(
-      context: context,
-      builder: (_) => FushiDestructiveConfirmDialog(
-        title: t.tag_manage_merge_title(name: source.name),
-        message: t.tag_manage_merge_confirm(from: source.name, to: target.name),
-        confirmLabel: t.tag_manage_merge_action,
-        leadingIcon: FushiIcons.merge,
-      ),
-    );
+          context: context,
+          builder: (_) => FushiDestructiveConfirmDialog(
+            title: t.tag_manage_merge_title(name: source.name),
+            message: t.tag_manage_merge_confirm(
+              from: source.name,
+              to: target.name,
+            ),
+            confirmLabel: t.tag_manage_merge_action,
+            leadingIcon: FushiIcons.merge,
+          ),
+        );
     if (confirmed == null || !mounted) return;
     await mergeTagInto(_db, sourceId: source.id, targetId: target.id);
     final Set<int> current = Set<int>.from(ref.read(selectedTagIdsProvider));
@@ -239,9 +242,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   Future<void> _deleteTag(BookTagRow tag) async {
     final confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (ctx) => TagDeleteConfirmationDialog(
-        tagName: tag.name,
-      ),
+      builder: (ctx) => TagDeleteConfirmationDialog(tagName: tag.name),
     );
     if (confirmed != true) return;
 
@@ -256,7 +257,6 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
 
   /// 拖动把手重排：先改内存序（立即可见），再落库 sortOrder（失败有提示并重载）。
   Future<void> _onReorder(int oldIndex, int newIndex) async {
-    if (newIndex > oldIndex) newIndex -= 1;
     if (oldIndex == newIndex) return;
     final List<BookTagRow> next = List<BookTagRow>.of(_tags);
     final BookTagRow moved = next.removeAt(oldIndex);
@@ -374,21 +374,23 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                       Builder(
                         builder: (BuildContext buttonContext) =>
                             FushiIconButtonControl(
-                          tooltip: t.shelf_toolbar_more,
-                          icon: const FushiIcon(FushiIcons.more),
-                          onPressed: () {
-                            final RenderBox box =
-                                buttonContext.findRenderObject()! as RenderBox;
-                            _showTagMenu(
-                              tag,
-                              box.localToGlobal(box.size.center(Offset.zero)),
-                            );
-                          },
-                        ),
+                              tooltip: t.shelf_toolbar_more,
+                              icon: const FushiIcon(FushiIcons.more),
+                              onPressed: () {
+                                final RenderBox box =
+                                    buttonContext.findRenderObject()!
+                                        as RenderBox;
+                                _showTagMenu(
+                                  tag,
+                                  box.localToGlobal(
+                                    box.size.center(Offset.zero),
+                                  ),
+                                );
+                              },
+                            ),
                       ),
                       if (!searching)
-                        ReorderableDragStartListener(
-                          index: index,
+                        FushiReorderableDragHandle(
                           child: Padding(
                             padding: EdgeInsets.all(tokens.spacing.gap),
                             child: FushiIcon(
@@ -490,16 +492,24 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
         );
       }
       return FushiEntranceScope(
-        child: ReorderableListView.builder(
-          header: header,
+        child: SingleChildScrollView(
           padding: listPadding,
-          buildDefaultDragHandles: false,
-          itemCount: visible.length,
-          onReorder: _onReorder,
-          itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
-            key: ValueKey<int>(visible[i].id),
-            index: i,
-            child: row(visible[i], i, visible.length),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              header,
+              FushiReorderableColumn(
+                itemCount: visible.length,
+                useDragHandles: true,
+                keyForIndex: (int i) => ValueKey<int>(visible[i].id),
+                onReorder: _onReorder,
+                itemBuilder: (BuildContext context, int i) =>
+                    FushiStaggeredEntrance(
+                      index: i,
+                      child: row(visible[i], i, visible.length),
+                    ),
+              ),
+            ],
           ),
         ),
       );
@@ -547,8 +557,9 @@ class _TagSummaryCard extends StatelessWidget {
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
     final bool plain = apple || eink;
-    final Color fill =
-        plain ? Colors.transparent : theme.colorScheme.primaryContainer;
+    final Color fill = plain
+        ? Colors.transparent
+        : theme.colorScheme.primaryContainer;
     final Color fg = plain
         ? theme.colorScheme.onSurface
         : theme.colorScheme.onPrimaryContainer;
@@ -564,10 +575,15 @@ class _TagSummaryCard extends StatelessWidget {
         children: <Widget>[
           Text(
             '$count',
-            style: (apple
-                    ? theme.textTheme.headlineMedium
-                    : theme.textTheme.displayMedium)
-                ?.copyWith(color: fg, fontWeight: FontWeight.w800, height: 1),
+            style:
+                (apple
+                        ? theme.textTheme.headlineMedium
+                        : theme.textTheme.displayMedium)
+                    ?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    ),
           ),
           SizedBox(width: tokens.spacing.gap * 1.5),
           Expanded(
@@ -576,16 +592,19 @@ class _TagSummaryCard extends StatelessWidget {
               children: <Widget>[
                 Text(
                   t.tag_manage_count(n: count),
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(color: fg, fontWeight: FontWeight.w700),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 Text(
                   '${t.tag_book_count(count: tagged)} · '
                   '${t.tag_manage_reorder_hint}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listSubtitle
-                      .copyWith(color: fg.withValues(alpha: 0.78)),
+                  style: tokens.type.listSubtitle.copyWith(
+                    color: fg.withValues(alpha: 0.78),
+                  ),
                 ),
               ],
             ),
@@ -644,7 +663,9 @@ Future<void> mergeTagInto(
 }) async {
   if (sourceId == targetId) return;
   for (final TagHostKind kind in TagHostKind.values) {
-    for (final TagAssignmentRow row in await db.getTagAssignmentsForKind(kind)) {
+    for (final TagAssignmentRow row in await db.getTagAssignmentsForKind(
+      kind,
+    )) {
       if (row.tagId != sourceId) continue;
       switch (kind) {
         case TagHostKind.epub:
@@ -689,8 +710,9 @@ class _TagBadge extends StatelessWidget {
       );
     }
     final String trimmed = name.trim();
-    final String initial =
-        trimmed.isEmpty ? '#' : String.fromCharCode(trimmed.runes.first);
+    final String initial = trimmed.isEmpty
+        ? '#'
+        : String.fromCharCode(trimmed.runes.first);
     return Container(
       width: 40,
       height: 40,
@@ -703,19 +725,16 @@ class _TagBadge extends StatelessWidget {
       child: Text(
         initial,
         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: fushiTagOnColor(color),
-              fontWeight: FontWeight.w800,
-            ),
+          color: fushiTagOnColor(color),
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
 }
 
 class TagDeleteConfirmationDialog extends StatelessWidget {
-  const TagDeleteConfirmationDialog({
-    required this.tagName,
-    super.key,
-  });
+  const TagDeleteConfirmationDialog({required this.tagName, super.key});
 
   final String tagName;
 
@@ -841,12 +860,12 @@ class TagEditDialogState extends State<TagEditDialog> {
                 valueListenable: _nameController,
                 builder: (BuildContext context, TextEditingValue value, _) =>
                     FushiTagToggleChip(
-                  label: value.text.trim().isEmpty
-                      ? t.tag_name_hint
-                      : value.text.trim(),
-                  color: Color(_selectedColor),
-                  state: TagCheckState.all,
-                ),
+                      label: value.text.trim().isEmpty
+                          ? t.tag_name_hint
+                          : value.text.trim(),
+                      color: Color(_selectedColor),
+                      state: TagCheckState.all,
+                    ),
               ),
             ),
             SizedBox(height: tokens.spacing.gap * 2),
