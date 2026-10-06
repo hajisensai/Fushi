@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -144,14 +145,14 @@ class LeaderboardIntroView extends ConsumerWidget {
               key: const ValueKey<String>('leaderboard-intro-login'),
               onPressed: () =>
                   unawaited(_openSignIn(context, LeaderboardSignInMode.login)),
-              icon: const FushiIcon(Icons.login),
+              icon: const FushiIcon(FushiIcons.login),
               label: Text(t.leaderboard_intro_login),
             ),
             FushiTextButton.icon(
               key: const ValueKey<String>('leaderboard-intro-recovery'),
               onPressed: () =>
                   unawaited(showLeaderboardRecoveryImportDialog(context)),
-              icon: const FushiIcon(Icons.key_outlined),
+              icon: const FushiIcon(FushiIcons.key),
               label: Text(t.leaderboard_intro_recovery),
             ),
           ],
@@ -356,7 +357,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
             title: t.leaderboard_sync_claim_title,
             message: t.leaderboard_sync_claim_message,
             confirmLabel: t.leaderboard_sync_claim_action,
-            leadingIcon: Icons.sync_alt,
+            leadingIcon: FushiIcons.swap,
           ),
         );
     if (ok == null || !mounted) return;
@@ -449,7 +450,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                 else
                   const SizedBox.square(
                     dimension: 48,
-                    child: FushiIcon(Icons.account_circle_outlined, size: 40),
+                    child: FushiIcon(FushiIcons.account, size: 40),
                   ),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(
@@ -479,7 +480,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
               children: <Widget>[
                 FushiOutlinedButton.icon(
                   onPressed: selfId.isEmpty ? null : () => _openUser(selfId),
-                  icon: const FushiIcon(Icons.person_outline),
+                  icon: const FushiIcon(FushiIcons.person),
                   label: Text(t.leaderboard_header_profile),
                 ),
                 FushiOutlinedButton.icon(
@@ -497,12 +498,12 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                             initialWindow: _window,
                           ),
                         ),
-                  icon: const FushiIcon(Icons.ios_share),
+                  icon: const FushiIcon(FushiIcons.share),
                   label: Text(t.leaderboard_header_share),
                 ),
                 FushiOutlinedButton.icon(
                   onPressed: () => _push(const LeaderboardAccountPage()),
-                  icon: const FushiIcon(Icons.manage_accounts_outlined),
+                  icon: const FushiIcon(FushiIcons.account),
                   label: Text(t.leaderboard_header_account),
                 ),
               ],
@@ -536,7 +537,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                const FushiIcon(Icons.cloud_sync_outlined, size: 20),
+                const FushiIcon(FushiIcons.cloudSync, size: 20),
                 SizedBox(width: tokens.spacing.gap),
                 Expanded(
                   child: Text(
@@ -573,7 +574,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
               FushiFilledButton.tonalIcon(
                 key: const ValueKey<String>('leaderboard-sync-claim'),
                 onPressed: _syncing ? null : () => unawaited(_claim()),
-                icon: const FushiIcon(Icons.sync_alt),
+                icon: const FushiIcon(FushiIcons.swap),
                 label: Text(t.leaderboard_sync_claim_action),
               ),
             ],
@@ -742,7 +743,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         Padding(
           padding: EdgeInsets.all(tokens.spacing.card),
           child: FushiPlaceholderMessage(
-            icon: Icons.leaderboard_outlined,
+            icon: FushiIcons.statistics,
             message: page.computedAt == null
                 ? t.leaderboard_board_generating
                 : t.leaderboard_board_empty,

@@ -13,6 +13,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:share_plus/share_plus.dart';
@@ -214,7 +215,10 @@ class LeaderboardShareCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: tokens.radii.cardRadius,
+        // M3E 整卡 20 圆角；Apple 沿用分组卡圆角。
+        borderRadius: glass
+            ? tokens.radii.cardRadius
+            : FushiM3eShape.cardRadius,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -473,7 +477,7 @@ class _LeaderboardShareDialogState
     return FushiDialogFrame(
       child: FushiModalSheetFrame(
         title: t.leaderboard_header_share,
-        leadingIcon: Icons.ios_share,
+        leadingIcon: FushiIcons.share,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -499,31 +503,28 @@ class _LeaderboardShareDialogState
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,
           children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_close,
               onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_close),
             ),
             // 链接不依赖卡片预览：取数失败 / 还在加载时也能先复制。
             KeyedSubtree(
               key: const ValueKey<String>('leaderboard-share-copy-link'),
-              child: adaptiveDialogAction(
-                context: context,
+              child: FushiDialogAction(
+                label: t.leaderboard_share_copy_link,
                 onPressed: url == null
                     ? null
                     : () => unawaited(leaderboardCopy(url.toString())),
-                child: Text(t.leaderboard_share_copy_link),
               ),
             ),
             KeyedSubtree(
               key: const ValueKey<String>('leaderboard-share-image'),
-              child: adaptiveDialogAction(
-                context: context,
-                isDefaultAction: true,
+              child: FushiDialogAction(
+                label: t.leaderboard_share,
+                kind: FushiDialogActionKind.primary,
                 onPressed: data == null || url == null || _sharing
                     ? null
                     : () => unawaited(_share(url)),
-                child: Text(t.leaderboard_share),
               ),
             ),
           ],
