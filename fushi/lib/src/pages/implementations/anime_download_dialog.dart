@@ -233,6 +233,7 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
     this.sheet = false,
     @visibleForTesting this.debugInitialMedia,
     @visibleForTesting this.debugInitialTorrent,
+    @visibleForTesting this.debugNyaaMinRequestInterval,
   });
 
   /// 内联模式：直接铺在「下载」页里（无对话框外框、无标题栏、无取消按钮），
@@ -274,6 +275,13 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
 
   /// 仅测试：初始即选中的种子（与 [debugInitialMedia] 联用直达确认推送阶段）。
   final NyaaTorrent? debugInitialTorrent;
+
+  /// 仅测试：覆盖 Nyaa 同 host 请求节流间隔（null = 生产默认
+  /// [kNyaaMinRequestInterval]）。节流按**真实时钟**记在进程级静态表里，
+  /// widget 测试的 fake-async 只推进假时间：同一进程里连跑的多条搜索用例会把
+  /// 预约时刻越排越远，等待超出骨架闪光的有界动画后 `pumpAndSettle` 提前收敛，
+  /// 断言读到的还是加载态。测试注入 [Duration.zero] 与其它 Nyaa 测试同口径。
+  final Duration? debugNyaaMinRequestInterval;
 
   /// 由 [showAnimeDownloadDialog] 经 [adaptiveModalSheet] 打开：只出 M3E 弹层
   /// 外壳（窄屏底部弹层 / 宽屏浮动面板由弹层路由给），不再自套对话框外框。
@@ -596,6 +604,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     try {
       nyaa = NyaaClient(
         client: await ref.read(appProvider).createDownloadHttpClient(),
+        minRequestInterval:
+            widget.debugNyaaMinRequestInterval ?? kNyaaMinRequestInterval,
       );
       if (!mounted || request.generation != _torrentRequestGeneration) {
         return;
