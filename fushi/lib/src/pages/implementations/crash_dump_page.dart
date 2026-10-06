@@ -94,77 +94,88 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
           onTap: _refresh,
         ),
       ],
+      // 正文（隐私提示 + 转储列表）同在一个 ListView 里，顶部内边距吃壳的页头
+      // 让位，往下滚时滚到叠放的页头底下。
+      bodyConsumesTopPadding: true,
       bodyBuilder:
           (
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
-          ) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // 隐私提示（常驻）：.dmp 含进程内存快照。
-          Padding(
-            padding: const EdgeInsets.all(12),
+          ) {
+            // 隐私提示（常驻）：.dmp 含进程内存快照。作为列表首项随正文滚动，
+            // 不再钉在正文顶部（会与浮动页头重叠）。
             // 统一提示块：MD3 中性填充 r12 / Apple tertiaryFill r10，图标单色，
             // 不再拿整张卡片装一行提示（卡片在 Apple 下是内容底板语义）。
-            child: FushiInlineNotice(
-              icon: FushiIcons.shield,
-              message: t.crash_dump_privacy_notice,
-            ),
-          ),
-          Expanded(
-            child: _dumps.isEmpty
-                // 空状态走 settings kit 统一空态（M3E 形状图标 + 标题）。
-                ? SettingsEmptyState(
+            final Widget notice = Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: FushiInlineNotice(
+                icon: FushiIcons.shield,
+                message: t.crash_dump_privacy_notice,
+              ),
+            );
+            final double top = MediaQuery.paddingOf(context).top;
+            if (_dumps.isEmpty) {
+              // 空状态走 settings kit 统一空态（M3E 形状图标 + 标题）。
+              return ListView(
+                controller: controller,
+                padding: EdgeInsets.fromLTRB(12, top, 12, 12),
+                children: <Widget>[
+                  notice,
+                  SettingsEmptyState(
                     icon: FushiIcons.success,
                     title: t.crash_dump_empty,
-                  )
-                // M3E 分段卡片列表：行首 error 色块形状，行尾分享；首屏错峰进场。
-                : FushiEntranceScope(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                      itemCount: _dumps.length,
-                      itemBuilder: fushiStaggeredItemBuilder((
-                        BuildContext context,
-                        int index,
-                      ) {
-                        final File dump = _dumps[index];
-                        final String name = dump.uri.pathSegments.isNotEmpty
-                            ? dump.uri.pathSegments.last
-                            : dump.path;
-                        FileStat? stat;
-                        try {
-                          stat = dump.statSync();
-                        } catch (_) {
-                          stat = null;
-                        }
-                        final String subtitle = stat == null
-                            ? ''
-                            : '${_formatSize(stat.size)}  ·  ${stat.modified}';
-                        return FushiGroupedListItem(
-                          index: index,
-                          count: _dumps.length,
-                          child: FushiListItem(
-                            leading: const FushiListLeadingIcon(
-                              FushiIcons.file,
-                              shape: FushiLeadingShape.square,
-                              tone: FushiCardTone.error,
-                            ),
-                            title: Text(name),
-                            subtitle: subtitle.isEmpty ? null : Text(subtitle),
-                            trailing: FushiIconButton(
-                              icon: FushiIcons.share,
-                              tooltip: t.crash_dump_share,
-                              onTap: () => _shareDump(dump),
-                            ),
-                          ),
-                        );
-                      }),
-                    ),
                   ),
-          ),
-        ],
-      ),
+                ],
+              );
+            }
+            // M3E 分段卡片列表：行首 error 色块形状，行尾分享；首屏错峰进场。
+            return FushiEntranceScope(
+              child: ListView.builder(
+                controller: controller,
+                padding: EdgeInsets.fromLTRB(12, top, 12, 12),
+                itemCount: _dumps.length + 1,
+                itemBuilder: fushiStaggeredItemBuilder((
+                  BuildContext context,
+                  int position,
+                ) {
+                  if (position == 0) return notice;
+                  final int index = position - 1;
+                  final File dump = _dumps[index];
+                  final String name = dump.uri.pathSegments.isNotEmpty
+                      ? dump.uri.pathSegments.last
+                      : dump.path;
+                  FileStat? stat;
+                  try {
+                    stat = dump.statSync();
+                  } catch (_) {
+                    stat = null;
+                  }
+                  final String subtitle = stat == null
+                      ? ''
+                      : '${_formatSize(stat.size)}  ·  ${stat.modified}';
+                  return FushiGroupedListItem(
+                    index: index,
+                    count: _dumps.length,
+                    child: FushiListItem(
+                      leading: const FushiListLeadingIcon(
+                        FushiIcons.file,
+                        shape: FushiLeadingShape.square,
+                        tone: FushiCardTone.error,
+                      ),
+                      title: Text(name),
+                      subtitle: subtitle.isEmpty ? null : Text(subtitle),
+                      trailing: FushiIconButton(
+                        icon: FushiIcons.share,
+                        tooltip: t.crash_dump_share,
+                        onTap: () => _shareDump(dump),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            );
+          },
     );
   }
 }
