@@ -271,25 +271,28 @@ class _MigrationPageState extends State<MigrationPage> {
     return FushiPageScaffold(
       title: t.migration_settings_entry,
       body: FushiEntranceScope(
-        child: ListView(
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.section,
-            ),
-          ),
-          children: <Widget>[
-            for (int i = 0; i < sections.length; i++)
-              Padding(
-                padding: EdgeInsets.only(
-                  bottom: i == sections.length - 1 ? 0 : tokens.spacing.card,
-                ),
-                child: FushiStaggeredEntrance(index: i, child: sections[i]),
+        // Builder：在页头脚手架之内取 MediaQuery 顶部让位，正文滚到浮动页头底下。
+        child: Builder(
+          builder: (BuildContext context) => ListView(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+                tokens.spacing.page,
+                tokens.spacing.section,
               ),
-          ],
+            ),
+            children: <Widget>[
+              for (int i = 0; i < sections.length; i++)
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: i == sections.length - 1 ? 0 : tokens.spacing.card,
+                  ),
+                  child: FushiStaggeredEntrance(index: i, child: sections[i]),
+                ),
+            ],
+          ),
         ),
       ),
     );
