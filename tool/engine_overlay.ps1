@@ -21,7 +21,7 @@
 # <dir> holds one sub-directory per cache directory it replaces
 # (windows-x64, windows-x64-profile, windows-x64-release), each with
 # flutter_windows.dll, flutter_windows.dll.lib, flutter_windows.dll.exp,
-# flutter_windows.dll.pdb (optional), flutter_windows.h and
+# flutter_windows.dll.pdb (required by flutter_tools), flutter_windows.h and
 # flutter_texture_registrar.h, plus engine-overlay.json at the top level.
 param(
   [string]$ArtifactDir,
@@ -120,12 +120,12 @@ foreach ($mode in $modes) {
   }
   foreach ($f in $files) {
     $from = Join-Path $source $f
-    $to = Join-Path $dir $f
-    if (Test-Path $from) { Copy-Item $from $to -Force }
-    elseif ($f -ne 'flutter_windows.dll.pdb') { throw "Overlay is missing $mode\$f" }
-    # A pdb left over from the stock engine or an earlier overlay would not
-    # match this dll; no symbols beats wrong symbols.
-    elseif (Test-Path $to) { Remove-Item $to -Force }
+    # Every file is required, the pdb included: flutter_tools lists
+    # flutter_windows.dll.pdb among the Windows artifacts it copies, so
+    # `flutter build windows` fails without one, and a pdb that does not
+    # match the dll would mislead every crash investigation.
+    if (-not (Test-Path $from)) { throw "Overlay is missing $mode\$f" }
+    Copy-Item $from (Join-Path $dir $f) -Force
   }
   Copy-Item $overlayPath (Join-Path $dir $marker) -Force
   "${mode}: installed patched engine $($overlay.patchVersion)"
