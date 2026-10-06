@@ -290,13 +290,20 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
   /// 「让 AI 帮忙」区：输入框 + 生成按钮 + 状态行，与 gal 文本处理编辑器同款。
   Widget _buildAiSection(FushiDesignTokens tokens) {
     // M3E：AI 区是 tertiaryContainer 饱和色块（与普通控件组区分开）。
+    // 色块上的文字跟卡片配对前景（tokens.type 自带页面前景，会盖掉卡片的
+    // onTertiaryContainer，HBK-AUDIT-022）。
+    final Color? onCard =
+        fushiCardToneColors(context, FushiCardTone.tertiary)?.onContainer;
     return FushiCard(
       key: const ValueKey<String>('lapis-ai-section'),
       tone: FushiCardTone.tertiary,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(t.ai_assist_section, style: tokens.type.sectionLabel),
+          Text(
+            t.ai_assist_section,
+            style: tokens.type.sectionLabel.copyWith(color: onCard),
+          ),
           SizedBox(height: tokens.spacing.gap),
           FushiTextField(
             key: const ValueKey<String>('lapis-ai-request'),
@@ -326,7 +333,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             Text(
               _aiMessage!,
               key: const ValueKey<String>('lapis-ai-message'),
-              style: tokens.type.listSubtitle,
+              style: tokens.type.listSubtitle.copyWith(color: onCard),
             ),
           ],
           if (_aiExplanation.isNotEmpty) ...<Widget>[
@@ -334,7 +341,7 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             Text(
               _aiExplanation,
               key: const ValueKey<String>('lapis-ai-explanation'),
-              style: tokens.type.listSubtitle,
+              style: tokens.type.listSubtitle.copyWith(color: onCard),
             ),
           ],
         ],

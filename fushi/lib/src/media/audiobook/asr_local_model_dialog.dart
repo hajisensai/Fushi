@@ -371,7 +371,10 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
               child: Text(
                 key: const ValueKey<String>('asr-local-model-status'),
                 _statusLine(pack),
-                style: context.fushiType.bodyMedium.tabular,
+                // 色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+                style: context.fushiType.bodyMedium.tabular.copyWith(
+                  color: fushiCardToneColors(context, tone)?.onContainer,
+                ),
               ),
             ),
           ],

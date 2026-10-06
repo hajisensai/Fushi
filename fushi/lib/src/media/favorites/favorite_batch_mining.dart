@@ -404,8 +404,13 @@ class _FavoriteBatchProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiTypography type = context.fushiType;
     final double value = total == 0 ? 1 : done / total;
+    final FushiCardTone tone = finished
+        ? FushiCardTone.tertiary
+        : FushiCardTone.primary;
+    // 色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return FushiCard(
-      tone: finished ? FushiCardTone.tertiary : FushiCardTone.primary,
+      tone: tone,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -418,15 +423,23 @@ class _FavoriteBatchProgressCard extends StatelessWidget {
                     : FushiIcons.ankiCard,
               ),
               const SizedBox(width: 12),
-              Text('$done', style: type.displaySmallEmphasized.tabular),
+              Text(
+                '$done',
+                style: type.displaySmallEmphasized.tabular.copyWith(
+                  color: onCard,
+                ),
+              ),
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 6),
-                child: Text('/ $total', style: type.titleMedium.tabular),
+                child: Text(
+                  '/ $total',
+                  style: type.titleMedium.tabular.copyWith(color: onCard),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(label, style: type.bodyMedium),
+          Text(label, style: type.bodyMedium.copyWith(color: onCard)),
           const SizedBox(height: 12),
           TweenAnimationBuilder<double>(
             tween: Tween<double>(end: value),

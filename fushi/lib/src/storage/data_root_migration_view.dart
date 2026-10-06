@@ -171,8 +171,14 @@ class DataRootMigrationView extends StatelessWidget {
                       tone: FushiCardTone.error,
                       child: Text(
                         reason,
+                        // 跟卡片实际配对前景（Apple 淡染底时是系统红，
+                        // 不是 onErrorContainer）；墨水屏无配对色回落原值。
                         style: type.bodyMedium.copyWith(
-                          color: cs.onErrorContainer,
+                          color: fushiCardToneColors(
+                                context,
+                                FushiCardTone.error,
+                              )?.onContainer ??
+                              cs.onErrorContainer,
                         ),
                       ),
                     ),

@@ -377,6 +377,9 @@ class _VideoSourceScrapeTaskPanelState
     List<Widget> details = const <Widget>[],
   }) {
     final FushiTypography type = context.fushiType;
+    // fushiType 的槽位自带页面前景色，会盖掉饱和卡写进 DefaultTextStyle 的
+    // 配对前景（HBK-AUDIT-022）；中性卡 onCard 为 null 保持原色。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return FushiCard(
       tone: tone,
       padding: const EdgeInsets.all(16),
@@ -389,10 +392,17 @@ class _VideoSourceScrapeTaskPanelState
               FushiIcon(icon, size: 22),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(title, style: type.titleMediumEmphasized),
+                child: Text(
+                  title,
+                  style: type.titleMediumEmphasized.copyWith(color: onCard),
+                ),
               ),
               if (percent != null)
-                Text('$percent%', style: type.headlineSmallEmphasized.tabular),
+                Text(
+                  '$percent%',
+                  style: type.headlineSmallEmphasized.tabular
+                      .copyWith(color: onCard),
+                ),
             ],
           ),
           if (showProgress) ...<Widget>[
@@ -412,7 +422,11 @@ class _VideoSourceScrapeTaskPanelState
     final int total = progress.total;
     final double? value = total <= 0 ? null : progress.current / total;
     final String phase = _phaseLabel(progress.phase);
-    final TextStyle detailStyle = context.fushiType.bodyMedium;
+    // 说明行落在 [_buildStatusCard] 的饱和卡上：跟卡片配对前景。
+    final Color? onCard =
+        fushiCardToneColors(context, _phaseTone(progress.phase))?.onContainer;
+    final TextStyle detailStyle =
+        context.fushiType.bodyMedium.copyWith(color: onCard);
     return _buildStatusCard(
       icon: _phaseIcon(progress.phase),
       tone: _phaseTone(progress.phase),
@@ -437,7 +451,10 @@ class _VideoSourceScrapeTaskPanelState
             style: detailStyle,
           ),
         if (progress.message case final String message)
-          SelectableText(message, style: context.fushiType.bodySmall),
+          SelectableText(
+            message,
+            style: context.fushiType.bodySmall.copyWith(color: onCard),
+          ),
       ],
     );
   }
@@ -838,6 +855,9 @@ class _VideoSourceScrapeTaskPanelState
     }
 
     final FushiTypography type = context.fushiType;
+    // 说明卡是 tertiary 饱和色块：fushiType 自带页面前景，需显式跟卡片配对前景。
+    final Color? onCard =
+        fushiCardToneColors(context, FushiCardTone.tertiary)?.onContainer;
     final int count = confirmation.candidates.length;
     return <Widget>[
       FushiCard(
@@ -859,14 +879,17 @@ class _VideoSourceScrapeTaskPanelState
                 children: <Widget>[
                   Text(
                     t.video_source_scrape_waiting_confirmation,
-                    style: type.titleMediumEmphasized,
+                    style: type.titleMediumEmphasized.copyWith(color: onCard),
                   ),
                   const SizedBox(height: 4),
-                  Text(confirmation.localWorkTitle, style: type.bodyLarge),
+                  Text(
+                    confirmation.localWorkTitle,
+                    style: type.bodyLarge.copyWith(color: onCard),
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     t.video_source_scrape_confirmation_hint,
-                    style: type.bodySmall,
+                    style: type.bodySmall.copyWith(color: onCard),
                   ),
                 ],
               ),
@@ -913,7 +936,10 @@ class _VideoSourceScrapeTaskPanelState
               skipped: report.protectedArtifacts,
               failed: report.failedWorks,
             ),
-            style: context.fushiType.bodyMedium,
+            style: context.fushiType.bodyMedium.copyWith(
+              color:
+                  fushiCardToneColors(context, _phaseTone(phase))?.onContainer,
+            ),
           ),
         ],
       ),

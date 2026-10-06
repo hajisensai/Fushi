@@ -614,6 +614,15 @@ class MangaPanelModeCards<T> extends StatelessWidget {
                                 fontWeight: option.value == selected
                                     ? FontWeight.w700
                                     : FontWeight.w500,
+                                // 选中格是 secondary 饱和色块：textTheme 自带页面
+                                // 前景会盖掉卡片写进 DefaultTextStyle 的配对前景
+                                // （HBK-AUDIT-022）；中性格为 null 保持原色。
+                                color: option.value == selected
+                                    ? fushiCardToneColors(
+                                        context,
+                                        FushiCardTone.secondary,
+                                      )?.onContainer
+                                    : null,
                               ),
                             ),
                           ],

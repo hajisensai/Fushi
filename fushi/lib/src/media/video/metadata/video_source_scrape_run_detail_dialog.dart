@@ -220,6 +220,10 @@ class _VideoSourceScrapeRunDetailDialogState
 
   Widget _buildRunSummary(VideoSourceScrapeRunRow run, String? lastError) {
     final FushiTypography type = context.fushiType;
+    // fushiType 槽位自带页面前景，会盖掉饱和卡的配对前景（HBK-AUDIT-022）；
+    // 中性（取消 / 中断）为 null 保持原色。
+    final Color? onCard =
+        fushiCardToneColors(context, _runStatusTone(run.status))?.onContainer;
     return FushiCard(
       tone: _runStatusTone(run.status),
       padding: const EdgeInsets.all(14),
@@ -232,7 +236,7 @@ class _VideoSourceScrapeRunDetailDialogState
               Expanded(
                 child: Text(
                   videoSourceScrapeRunStatusLabel(run.status),
-                  style: type.titleMediumEmphasized,
+                  style: type.titleMediumEmphasized.copyWith(color: onCard),
                 ),
               ),
               const SizedBox(width: 8),
@@ -240,7 +244,7 @@ class _VideoSourceScrapeRunDetailDialogState
                 FushiTimeFormat.dateHourMinute(
                   DateTime.fromMillisecondsSinceEpoch(run.startedAt),
                 ),
-                style: type.labelMedium.tabular,
+                style: type.labelMedium.tabular.copyWith(color: onCard),
               ),
             ],
           ),
@@ -252,11 +256,14 @@ class _VideoSourceScrapeRunDetailDialogState
               pending: run.pendingConfirmations,
               failed: run.failedWorks,
             ),
-            style: type.bodyMedium,
+            style: type.bodyMedium.copyWith(color: onCard),
           ),
           if (lastError != null && lastError.isNotEmpty) ...<Widget>[
             const SizedBox(height: 6),
-            SelectableText(lastError, style: type.bodySmall),
+            SelectableText(
+              lastError,
+              style: type.bodySmall.copyWith(color: onCard),
+            ),
           ],
         ],
       ),
@@ -272,8 +279,12 @@ class _VideoSourceScrapeRunDetailDialogState
                 ) ??
                 false));
     final FushiTypography type = context.fushiType;
+    final FushiCardTone tone =
+        isError ? FushiCardTone.error : FushiCardTone.secondary;
+    // 同上：卡内文字跟饱和卡的配对前景。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return FushiCard(
-      tone: isError ? FushiCardTone.error : FushiCardTone.secondary,
+      tone: tone,
       padding: const EdgeInsetsDirectional.fromSTEB(14, 12, 8, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,7 +306,9 @@ class _VideoSourceScrapeRunDetailDialogState
                         issue.workTitle,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: type.titleSmallEmphasized,
+                        style: type.titleSmallEmphasized.copyWith(
+                          color: onCard,
+                        ),
                       ),
                     ),
                   ],
@@ -305,7 +318,7 @@ class _VideoSourceScrapeRunDetailDialogState
                   issue.path == null
                       ? describeVideoScrapeIssueMessage(issue.message)
                       : '${describeVideoScrapeIssueMessage(issue.message)}\n${issue.path}',
-                  style: type.bodySmall,
+                  style: type.bodySmall.copyWith(color: onCard),
                   maxLines: 4,
                 ),
               ],
@@ -627,6 +640,10 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
     final List<VideoSourceScrapeConfirmationCandidate>? results = _results;
     final FushiTypography type = context.fushiType;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    // 「当前作品」卡是 secondary 饱和色块：fushiType 自带页面前景，显式跟
+    // 卡片配对前景（HBK-AUDIT-022）。
+    final Color? onCard =
+        fushiCardToneColors(context, FushiCardTone.secondary)?.onContainer;
     return FushiAlertDialog(
       icon: const FushiIcon(FushiIcons.manageSearch),
       title: Text(widget.title ?? t.video_source_scrape_manual_search_title),
@@ -657,14 +674,16 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                           children: <Widget>[
                             Text(
                               t.video_source_scrape_manual_current_work,
-                              style: type.labelMedium,
+                              style: type.labelMedium.copyWith(color: onCard),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               widget.workTitle,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: type.titleMediumEmphasized,
+                              style: type.titleMediumEmphasized.copyWith(
+                                color: onCard,
+                              ),
                             ),
                           ],
                         ),

@@ -1327,13 +1327,18 @@ class ImportDropZoneCard extends StatelessWidget {
     final String? sub = subtitle;
     final bool dragging = FushiFileDropTarget.dragHoveringOf(context);
     final bool lit = selected || dragging;
+    final FushiCardTone tone =
+        lit ? FushiCardTone.primary : FushiCardTone.neutral;
+    // 点亮成色块时字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）；
+    // 中性时为 null，copyWith 保持原色。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return AnimatedScale(
       scale: dragging ? 1.02 : 1,
       duration: motion.spatialFast.duration,
       curve: motion.spatialFast.curve,
       child: FushiCard(
         variant: lit ? FushiCardVariant.filled : FushiCardVariant.outlined,
-        tone: lit ? FushiCardTone.primary : FushiCardTone.neutral,
+        tone: tone,
         onTap: onTap,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
         child: Row(
@@ -1363,7 +1368,7 @@ class ImportDropZoneCard extends StatelessWidget {
                 children: <Widget>[
                   Text(
                     title,
-                    style: type.titleMediumEmphasized,
+                    style: type.titleMediumEmphasized.copyWith(color: onCard),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1371,7 +1376,7 @@ class ImportDropZoneCard extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       sub,
-                      style: type.bodyMedium,
+                      style: type.bodyMedium.copyWith(color: onCard),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1440,6 +1445,11 @@ class ImportProgressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiTypography type = context.fushiType;
     final FushiMotionScheme motion = context.fushiMotion;
+    // 色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+    final Color? onCard = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    )?.onContainer;
     final Widget card = FushiCard(
       tone: FushiCardTone.secondary,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
@@ -1455,7 +1465,9 @@ class ImportProgressCard extends StatelessWidget {
               children: <Widget>[
                 Text(
                   '${(value.clamp(0.0, 1.0) * 100).round()}%',
-                  style: type.headlineSmallEmphasized.tabular,
+                  style: type.headlineSmallEmphasized.tabular.copyWith(
+                    color: onCard,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 FushiLinearProgressIndicator(value: value),
@@ -1467,7 +1479,7 @@ class ImportProgressCard extends StatelessWidget {
             valueListenable: message,
             builder: (BuildContext context, String msg, Widget? _) => Text(
               msg,
-              style: type.bodyMedium,
+              style: type.bodyMedium.copyWith(color: onCard),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

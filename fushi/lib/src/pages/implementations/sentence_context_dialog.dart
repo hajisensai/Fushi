@@ -322,8 +322,13 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     final String matched = widget.matched;
     final ColorScheme scheme = theme.colorScheme;
     // 当前句整句半粗（对齐 Niratan `.body.weight(.semibold)`），命中词再加重 + 底色。
+    // 当前句卡是 primary 色块：正文跟随卡片配对前景（bodyMedium 自带页面前景色，
+    // 不覆盖会在自定义主题下深底黑字，HBK-AUDIT-022）。
     final TextStyle base = (theme.textTheme.bodyMedium ?? const TextStyle())
-        .copyWith(fontWeight: FontWeight.w500);
+        .copyWith(
+      fontWeight: FontWeight.w500,
+      color: fushiCardToneColors(context, FushiCardTone.primary)?.onContainer,
+    );
     // M3E：命中词用 tertiaryContainer 饱和色块（不再 primary 叠透明度），落在
     // primaryContainer 的当前句卡上仍分得清层次。
     final TextStyle hl = base.copyWith(
@@ -446,8 +451,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                 child: Text(
                   label,
                   style: current
-                      ? context.fushiType.labelMediumEmphasized
-                          .copyWith(color: scheme.onPrimaryContainer)
+                      ? context.fushiType.labelMediumEmphasized.copyWith(
+                          color: fushiCardToneColors(
+                            context,
+                            FushiCardTone.primary,
+                          )?.onContainer,
+                        )
                       : context.fushiType.labelSmall
                           .copyWith(color: scheme.onSurfaceVariant),
                 ),

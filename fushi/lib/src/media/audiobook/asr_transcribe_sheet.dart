@@ -1339,7 +1339,15 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
                             key: const ValueKey<String>(
                               'asr-transcribe-status',
                             ),
-                            style: context.fushiType.bodyMedium.tabular,
+                            // 色块上的字跟卡片配对前景（fushiType 自带页面
+                            // 前景，HBK-AUDIT-022）。
+                            style:
+                                context.fushiType.bodyMedium.tabular.copyWith(
+                              color: fushiCardToneColors(
+                                context,
+                                _statusTone(),
+                              )?.onContainer,
+                            ),
                           ),
                         ),
                       ],

@@ -103,6 +103,9 @@ class _AudioRecorderDialogPageState
         buildSaveButton(),
       ];
 
+  FushiCardTone get _playerCardTone =>
+      _isRecording ? FushiCardTone.error : FushiCardTone.secondary;
+
   Widget buildContent() {
     // M3E：播放器放进一张饱和色块卡——录音中是 errorContainer（录音态一眼可辨），
     // 平时 secondaryContainer；Apple 下 FushiCard 自动换成强调色淡染。
@@ -110,7 +113,7 @@ class _AudioRecorderDialogPageState
       width: double.maxFinite,
       child: FushiCard(
         pressScale: false,
-        tone: _isRecording ? FushiCardTone.error : FushiCardTone.secondary,
+        tone: _playerCardTone,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: _audioFile == null || _isRecording
             ? buildDisabledPlayer()
@@ -271,6 +274,8 @@ class _AudioRecorderDialogPageState
           child: Text(
             '${getPositionText()} / ${getDurationText()}',
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              // 卡片饱和色块的配对前景（labelLarge 自带页面 onSurface 会盖掉它）。
+              color: fushiCardToneColors(context, _playerCardTone)?.onContainer,
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),

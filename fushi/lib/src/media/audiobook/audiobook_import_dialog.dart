@@ -386,6 +386,8 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
     // M3E tonal 状态色块：底色走饱和 container（成功 primary / 部分 tertiary /
     // 失败 error），图标保留语义状态色，匹配率用等宽大号数字突出。
     final FushiTypography type = context.fushiType;
+    // 色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return FushiCard(
       tone: tone,
       padding: EdgeInsets.symmetric(
@@ -396,12 +398,15 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
         children: [
           FushiIcon(icon, size: 22, color: color),
           SizedBox(width: tokens.spacing.gap),
-          Text('$pctStr%', style: type.titleLargeEmphasized.tabular),
+          Text(
+            '$pctStr%',
+            style: type.titleLargeEmphasized.tabular.copyWith(color: onCard),
+          ),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
               label,
-              style: type.bodyMedium,
+              style: type.bodyMedium.copyWith(color: onCard),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),

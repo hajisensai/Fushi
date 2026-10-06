@@ -82,6 +82,11 @@ class _AudiobookMaterialLibraryDialogState
     final Set<String> missing = <String>{...?scan?.missingDirs};
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiTypography type = context.fushiType;
+    // 扫描状态色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+    final Color? onStatusCard = fushiCardToneColors(
+      context,
+      FushiCardTone.secondary,
+    )?.onContainer;
     final FushiMotionScheme motion = context.fushiMotion;
     return FushiAlertDialog(
       icon: const FushiDialogHeroIcon(
@@ -186,7 +191,8 @@ class _AudiobookMaterialLibraryDialogState
                         children: <Widget>[
                           Text(
                             '${scan.index.identifiedWorkCount}',
-                            style: type.headlineSmallEmphasized.tabular,
+                            style: type.headlineSmallEmphasized.tabular
+                                .copyWith(color: onStatusCard),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -195,7 +201,9 @@ class _AudiobookMaterialLibraryDialogState
                                 dirs: '${_dirs.length}',
                                 works: '${scan.index.identifiedWorkCount}',
                               ),
-                              style: type.bodyMedium,
+                              style: type.bodyMedium.copyWith(
+                                color: onStatusCard,
+                              ),
                             ),
                           ),
                         ],

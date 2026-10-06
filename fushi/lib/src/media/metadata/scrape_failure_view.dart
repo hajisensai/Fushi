@@ -131,7 +131,14 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                           child: SingleChildScrollView(
                             child: SelectableText(
                               widget.detail,
-                              style: theme.textTheme.bodySmall,
+                              // error 饱和卡：textTheme 自带页面前景，显式跟
+                              // 卡片配对前景（HBK-AUDIT-022）。
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: fushiCardToneColors(
+                                  context,
+                                  FushiCardTone.error,
+                                )?.onContainer,
+                              ),
                             ),
                           ),
                         ),

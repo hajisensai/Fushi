@@ -215,6 +215,11 @@ class _SentenceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiSpringSpec spring = context.fushiMotion.spatialFast;
+    final FushiCardTone tone =
+        selected ? FushiCardTone.secondary : FushiCardTone.neutral;
+    // listTitle 自带页面 onSurface，会盖掉卡片写下的配对前景；
+    // 中性卡为 null，保持原色。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
 
     // M3E：选中态 = secondaryContainer 饱和色块（FushiCard tone，卡内文字随之
     // 取 onSecondaryContainer）+ 右上角对勾弹簧弹入；不再是中性底 + 主色描边。
@@ -222,7 +227,7 @@ class _SentenceCard extends StatelessWidget {
       selected: selected,
       child: FushiCard(
         onTap: onTap,
-        tone: selected ? FushiCardTone.secondary : FushiCardTone.neutral,
+        tone: tone,
         padding: EdgeInsets.all(tokens.spacing.card),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,6 +236,7 @@ class _SentenceCard extends StatelessWidget {
               child: Text(
                 sentence,
                 style: tokens.type.listTitle.copyWith(
+                  color: onCard,
                   fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),

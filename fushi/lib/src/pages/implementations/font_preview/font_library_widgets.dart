@@ -808,12 +808,17 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
         : <(String, String?)>[
             (fontLibrarySampleText(widget.script, custom), null),
           ];
+    // 样张卡是 secondary 饱和色块（Apple 为中性卡）：样张字与字号读数跟随卡片
+    // 配对前景，_specimenStyle / labelLarge 自带的页面 onSurface 会盖掉它。
+    final Color? onSpecimen = apple
+        ? null
+        : fushiCardToneColors(context, FushiCardTone.secondary)?.onContainer;
     final TextStyle body = _specimenStyle(
       context,
       family: entry.family,
       fontSize: _fontSize,
       height: 1.9,
-    );
+    ).copyWith(color: onSpecimen);
     final TextStyle ruby = body.copyWith(fontSize: _fontSize * 0.5, height: 1);
 
     final Widget header = Row(
@@ -910,7 +915,9 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
                 child: Text(
                   '${_fontSize.round()}',
                   textAlign: TextAlign.end,
-                  style: theme.textTheme.labelLarge,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: onSpecimen,
+                  ),
                 ),
               ),
             ],

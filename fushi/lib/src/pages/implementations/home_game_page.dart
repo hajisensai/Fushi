@@ -776,14 +776,18 @@ class _CaptureStatusStrip extends StatelessWidget {
     // FushiCard 的 selected（eink 下 2px 描边），图标 + 文案已带语义。
     final bool eink = isEinkTheme(context);
     final bool toned = active && !eink;
-    // 色块卡里的次要文字跟随 onContainer（卡片注入的默认前景），中性卡回落
+    // 色块卡里的文字跟随卡片配对前景 onContainer（字阶样式自带页面前景色，
+    // 不显式覆盖会盖掉卡片注入的默认前景，HBK-AUDIT-022），中性卡回落
     // onSurfaceVariant。
-    final Color? secondary = toned ? null : colors.onSurfaceVariant;
+    final Color? onCard = toned
+        ? fushiCardToneColors(context, FushiCardTone.primary)?.onContainer
+        : null;
+    final Color? secondary = toned ? onCard : colors.onSurfaceVariant;
 
     final Widget detail = active
         ? readiness == GalWorkbenchReadiness.waitingForThread
-            ? _buildWaitingForThreadDetail(context, secondary)
-            : _buildActiveDetail(context, secondary)
+            ? _buildWaitingForThreadDetail(context, secondary, onCard)
+            : _buildActiveDetail(context, secondary, onCard)
         : Text(
             '${t.game_session_idle}  ·  ${t.game_open_capture_workspace}',
             maxLines: 1,
@@ -825,7 +829,8 @@ class _CaptureStatusStrip extends StatelessWidget {
               children: <Widget>[
                 Text(
                   '$lineCount',
-                  style: context.fushiType.titleLargeEmphasized.tabular,
+                  style: context.fushiType.titleLargeEmphasized.tabular
+                      .copyWith(color: onCard),
                 ),
                 Text(
                   t.game_captured_lines,
@@ -844,7 +849,11 @@ class _CaptureStatusStrip extends StatelessWidget {
     );
   }
 
-  Widget _buildWaitingForThreadDetail(BuildContext context, Color? secondary) {
+  Widget _buildWaitingForThreadDetail(
+    BuildContext context,
+    Color? secondary,
+    Color? onCard,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -856,7 +865,9 @@ class _CaptureStatusStrip extends StatelessWidget {
                 t.game_session_waiting_thread,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: context.fushiType.labelLargeEmphasized,
+                style: context.fushiType.labelLargeEmphasized.copyWith(
+                  color: onCard,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -876,7 +887,11 @@ class _CaptureStatusStrip extends StatelessWidget {
 
   /// 活动态：横向排关键状态（正在捕获 · 音频来源）+ Hook 阶段 chip，下方一行
   /// 截断的最新台词；台词数在卡片右侧单独用大数字展示。
-  Widget _buildActiveDetail(BuildContext context, Color? secondary) {
+  Widget _buildActiveDetail(
+    BuildContext context,
+    Color? secondary,
+    Color? onCard,
+  ) {
     final String meta = <String>[
       t.game_capture_active,
       galHookAudioBackendLabel(state.audioBackend),
@@ -892,7 +907,9 @@ class _CaptureStatusStrip extends StatelessWidget {
                 meta,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: context.fushiType.labelLargeEmphasized,
+                style: context.fushiType.labelLargeEmphasized.copyWith(
+                  color: onCard,
+                ),
               ),
             ),
             const SizedBox(width: 8),

@@ -157,7 +157,14 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
                       Expanded(
                         child: Text(
                           t.srt_book_reimport_subtitle_hint,
-                          style: type.bodyMedium,
+                          // 色块上的字跟卡片配对前景（fushiType 自带页面前景，
+                          // HBK-AUDIT-022）。
+                          style: type.bodyMedium.copyWith(
+                            color: fushiCardToneColors(
+                              context,
+                              FushiCardTone.tertiary,
+                            )?.onContainer,
+                          ),
                         ),
                       ),
                     ],
