@@ -1,7 +1,9 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -1289,15 +1291,21 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
     final size = MediaQuery.sizeOf(context);
 
     Widget body;
     if (_error != null) {
+      // M3E 错误态：errorContainer 图标色块 + 原始错误串（文本保持原样，测试与
+      // 用户反馈都按它认）。
       body = Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: EdgeInsets.all(tokens.spacing.card),
-          child:
-              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.error,
+            message: _error!,
+            tone: FushiPlaceholderTone.error,
+          ),
         ),
       );
     } else if (_entries == null) {
@@ -1306,7 +1314,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         ? _entriesInPlay.isEmpty
         : (_entries!.isEmpty && (_dicts?.isEmpty ?? true))) {
       // 空态判定按「参与项」：只看冲突时基于冲突项，无冲突即「无可解冲突」。
-      body = Center(child: Text(t.sync_compare_empty));
+      body = Center(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(tokens.spacing.card),
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.success,
+            message: t.sync_compare_empty,
+          ),
+        ),
+      );
     } else {
       final conflicts = _entriesInPlay.where((e) => e.hasConflict).toList();
       // 只看冲突时只渲染冲突分组：隐藏自动可解的书与全部词典分组。
@@ -1317,41 +1333,66 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       final List<SyncDictEntry> dicts =
           showDicts ? (_dicts ?? const <SyncDictEntry>[]) : const [];
 
+      // M3E 错峰进场：三段共用一条递增序号，首屏内的卡片依次弹入（窗口外滚出来
+      // 的瞬间出现，见 FushiEntranceScope）；墨水屏 / 减弱动态效果下静止。
+      int stagger = 0;
+      Widget staggered(Widget child) =>
+          FushiStaggeredEntrance(index: stagger++, child: child);
+
       // C3：段头 pinned 在滚动容器顶上并带计数，长列表滚到哪都知道在看哪一段；
       // 批量选择挪到冲突段头——它只作用于需要人工裁决的冲突项，放标题行是错位。
-      body = CustomScrollView(
-        slivers: <Widget>[
-          if (conflicts.isNotEmpty) ...<Widget>[
-            _stickyHeader(
-              t.sync_compare_conflicts,
-              theme,
-              count: conflicts.length,
-              isConflict: true,
-              trailing: _bulkChoiceMenu(conflicts),
-            ),
-            SliverList.list(
-              children: <Widget>[
-                for (final e in conflicts) _buildEntry(e, theme)
-              ],
-            ),
+      // 每段是一组 M3E 分段卡片（首尾大圆角、中间小圆角、行间 2px）。
+      body = FushiEntranceScope(
+        replayKey: _showOnlyConflicts,
+        child: CustomScrollView(
+          slivers: <Widget>[
+            if (conflicts.isNotEmpty) ...<Widget>[
+              _stickyHeader(
+                t.sync_compare_conflicts,
+                theme,
+                count: conflicts.length,
+                isConflict: true,
+                trailing: _bulkChoiceMenu(conflicts),
+              ),
+              SliverList.list(
+                children: <Widget>[
+                  for (int i = 0; i < conflicts.length; i++)
+                    staggered(
+                      _buildEntry(conflicts[i], theme,
+                          index: i, count: conflicts.length),
+                    ),
+                ],
+              ),
+            ],
+            if (others.isNotEmpty) ...<Widget>[
+              _stickyHeader(t.sync_compare_all_books, theme,
+                  count: others.length),
+              SliverList.list(
+                children: <Widget>[
+                  for (int i = 0; i < others.length; i++)
+                    staggered(
+                      _buildEntry(others[i], theme,
+                          index: i, count: others.length),
+                    ),
+                ],
+              ),
+            ],
+            if (dicts.isNotEmpty) ...<Widget>[
+              _stickyHeader(t.sync_compare_dictionaries, theme,
+                  count: dicts.length),
+              SliverList.list(
+                children: <Widget>[
+                  for (int i = 0; i < dicts.length; i++)
+                    staggered(
+                      _buildDictEntry(dicts[i], theme,
+                          index: i, count: dicts.length),
+                    ),
+                ],
+              ),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
           ],
-          if (others.isNotEmpty) ...<Widget>[
-            _stickyHeader(t.sync_compare_all_books, theme,
-                count: others.length),
-            SliverList.list(
-              children: <Widget>[for (final e in others) _buildEntry(e, theme)],
-            ),
-          ],
-          if (dicts.isNotEmpty) ...<Widget>[
-            _stickyHeader(t.sync_compare_dictionaries, theme,
-                count: dicts.length),
-            SliverList.list(
-              children: <Widget>[
-                for (final SyncDictEntry d in dicts) _buildDictEntry(d, theme),
-              ],
-            ),
-          ],
-        ],
+        ),
       );
     }
 
@@ -1359,6 +1400,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final canApply = applyCount > 0 && !_applying && _entries != null;
     final maxWidth = (size.width * 0.7).clamp(400.0, 720.0);
     final maxBodyHeight = (size.height * 0.7).clamp(400.0, 640.0);
+    final FushiMotionScheme motion = context.fushiMotion;
 
     return FushiDialogFrame(
       maxWidth: maxWidth,
@@ -1370,14 +1412,24 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         children: [
           Row(
             children: [
+              // M3E 对话框图标徽标：冲突解决弹窗用 error 色饼干底 + 警示，
+              // 设置页入口用 primary 色 + 云同步（Apple 下退化为单色字形）。
+              FushiDialogHeroIcon(
+                icon: widget.conflictsOnly
+                    ? FushiIcons.warning
+                    : FushiIcons.cloudSync,
+                tone: widget.conflictsOnly
+                    ? FushiHeroTone.destructive
+                    : FushiHeroTone.primary,
+                size: 48,
+              ),
+              const SizedBox(width: 16),
               Expanded(
                 child: Text(
                   t.sync_compare_title,
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listTitle.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: type.headlineSmallEmphasized,
                 ),
               ),
               // 冲突解决弹窗本就只有冲突，筛选无意义；默认模式下有冲突才给开关。
@@ -1388,8 +1440,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               // _entriesInPlay 为空，非冲突的书和词典段全部不可见也不可达，
               // Apply 恒为 0，只能关掉对话框重开。
               if (!widget.conflictsOnly &&
-                  (_conflictCount > 0 || _filterConflicts))
+                  (_conflictCount > 0 || _filterConflicts)) ...<Widget>[
+                const SizedBox(width: 8),
                 _conflictFilterChip(theme),
+              ],
             ],
           ),
           SizedBox(height: tokens.spacing.card),
@@ -1400,19 +1454,34 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             ),
           ),
           SizedBox(height: tokens.spacing.card),
-          if (_applying) ...[
-            FushiLinearProgressIndicator(value: _progress),
-            const SizedBox(height: 6),
-            Text(
-              _progressLabel ?? t.sync_compare_apply(count: _actionableCount),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            SizedBox(height: tokens.spacing.card),
-          ],
+          // 应用进度：M3E 波浪进度条 + 当前步骤，弹簧展开 / 收起。
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: AlignmentDirectional.topStart,
+            child: _applying
+                ? Padding(
+                    padding: EdgeInsets.only(bottom: tokens.spacing.card),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        FushiLinearProgressIndicator(value: _progress),
+                        const SizedBox(height: 6),
+                        Text(
+                          _progressLabel ??
+                              t.sync_compare_apply(count: _actionableCount),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: type.bodySmall.tabular.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
           OverflowBar(
             alignment: MainAxisAlignment.end,
             spacing: tokens.spacing.gap,
@@ -1451,10 +1520,12 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   /// 「只看冲突」筛选 chip。与 [FushiOverflowMenu] 同款接线：在焦点根下注册成方向
   /// 导航目标，Activate（Enter / 手柄 A）即切换；否则裸 chip 对手柄不可达。
+  /// M3E：error 色标签 chip（选中铺满 error、未选淡色块），与冲突段头同色。
   Widget _conflictFilterChip(ThemeData theme) {
     final Widget chip = FushiFilterChip(
       label: Text('${t.sync_compare_only_conflicts} · $_conflictCount'),
       selected: _filterConflicts,
+      accentColor: isGlassDesign(context) ? null : theme.colorScheme.error,
       onSelected: (bool value) => setState(() => _filterConflicts = value),
     );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return chip;
@@ -1485,7 +1556,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// 这条约定就不必再存在。
   Widget _bulkChoiceMenu(List<SyncCompareEntry> targets) {
     return FushiOverflowMenu<SyncChoice>(
-      iconWidget: const FushiIcon(Icons.checklist, size: 20),
+      iconWidget: const FushiIcon(FushiIcons.checklist, size: 20),
       tooltip: t.sync_compare_select_all,
       onSelected: (choice) {
         setState(() {
@@ -1499,25 +1570,25 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       items: [
         FushiPopupMenuItem<SyncChoice>(
           label: t.sync_compare_all_local,
-          icon: Icons.phone_android_outlined,
+          icon: FushiIcons.devices,
           value: SyncChoice.useLocal,
         ),
         FushiPopupMenuItem<SyncChoice>(
           label: t.sync_compare_all_remote,
-          icon: Icons.cloud_outlined,
+          icon: FushiIcons.cloud,
           value: SyncChoice.useRemote,
         ),
         FushiPopupMenuItem<SyncChoice>(
           label: t.sync_compare_all_skip,
-          icon: Icons.block_outlined,
+          icon: FushiIcons.block,
           value: SyncChoice.skip,
         ),
       ],
     );
   }
 
-  /// pinned 段头：标题 + 计数 chip（+ 可选行尾控件）。背景取对话框底色，滚动时
-  /// 内容从它下面穿过而不透出来。
+  /// pinned 段头：tonal 图标块 + 标题 + 计数 chip（+ 可选行尾控件）。背景取对话框
+  /// 底色，滚动时内容从它下面穿过而不透出来。
   Widget _stickyHeader(
     String text,
     ThemeData theme, {
@@ -1527,27 +1598,35 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   }) {
     final ColorScheme cs = theme.colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color accent = isConflict ? cs.error : cs.primary;
+    final bool apple = isGlassDesign(context);
+    final Color accent = isConflict
+        ? (apple ? appleColorsOf(context).destructive : cs.error)
+        : cs.primary;
     return SliverPersistentHeader(
       pinned: true,
       delegate: _CompareSectionHeaderDelegate(
-        height: 40,
+        height: 48,
         child: Container(
           // 与对话框同底色：先跟主题的 DialogTheme，否则回落到 token（M3 对话框
           // 默认底色 surfaceContainerHigh 在 token 里就是 surfaces.search 那一档）。
           color:
               DialogTheme.of(context).backgroundColor ?? tokens.surfaces.search,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsetsDirectional.only(start: 4, end: 0),
           alignment: AlignmentDirectional.centerStart,
           child: Row(
             children: <Widget>[
               if (isConflict) ...<Widget>[
-                FushiIcon(Icons.warning_amber_rounded, size: 16, color: accent),
-                const SizedBox(width: 4),
+                FushiIcon(FushiIcons.warning, size: 18, color: accent),
+                const SizedBox(width: 6),
               ],
-              Text(
-                text,
-                style: theme.textTheme.labelLarge?.copyWith(color: accent),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.fushiType.titleSmallEmphasized
+                      .copyWith(color: accent),
+                ),
               ),
               const SizedBox(width: 8),
               FushiTag(
@@ -1566,31 +1645,54 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _buildEntry(SyncCompareEntry entry, ThemeData theme) {
+  /// 这一行最终会被应用到的那一侧：手动裁决优先，否则按自动方向；跳过 /
+  /// 已同步 / 未裁决的冲突都没有「胜出侧」。用于两栏对比卡的差异高亮。
+  bool? _winnerIsLocal(SyncCompareEntry entry) {
+    final SyncChoice? choice = _choices[entry.title];
+    if (choice == SyncChoice.useLocal) return true;
+    if (choice == SyncChoice.useRemote) return false;
+    if (entry.needsManualChoice) return null;
+    return switch (entry.autoDirection) {
+      SyncDirection.exportToTtu => entry.hasLocal ? true : null,
+      SyncDirection.importFromTtu => entry.hasRemote ? false : null,
+      SyncDirection.synced => null,
+    };
+  }
+
+  Widget _buildEntry(
+    SyncCompareEntry entry,
+    ThemeData theme, {
+    required int index,
+    required int count,
+  }) {
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     final isConflict = entry.hasConflict;
+    final ColorScheme cs = theme.colorScheme;
+    final FushiTypography type = context.fushiType;
 
-    // Apple：iOS 不铺粉色错误底块——冲突条目保持透明底，只用 destructive
-    // 低透明细描边 + 标题旁单色警示图标区分；MD3 原样。
+    // Apple：iOS 不铺粉色错误底块——冲突条目只用 destructive 细描边 + 标题旁
+    // 单色警示图标区分。M3E：分段卡片（组内首尾大圆角、行间 2px），冲突行
+    // errorContainer 描边 + 警示徽标。
     final FushiAppleColors? apple =
         isGlassDesign(context) ? appleColorsOf(context) : null;
+    final bool? winnerLocal = _winnerIsLocal(entry);
     return FushiCard(
-      color: isConflict && apple == null
-          ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
-          : Colors.transparent,
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      grouped: true,
+      borderRadius: fushiGroupedItemRadius(context, index, count),
+      margin: EdgeInsets.only(
+        bottom: index < count - 1 ? fushiGroupedListGap(context) : 0,
+      ),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       borderColor: !isConflict
           ? null
-          : (apple?.destructive.withValues(alpha: 0.45) ??
-              theme.colorScheme.errorContainer),
+          : (apple?.destructive.withValues(alpha: 0.45) ?? cs.errorContainer),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               _directionIcon(entry, theme),
-              const SizedBox(width: 6),
+              const SizedBox(width: 10),
               // 书名是这一行唯一的身份（`_choices` 也按 title 索引），而轻小说 /
               // 有声书标题动辄二三十字。单行省略后同一系列的多条冲突只剩下
               // 同一个前缀（「無職転生 ～異世界行った…」），用户无法分辨自己在给
@@ -1598,7 +1700,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               Expanded(
                 child: Text(
                   entry.title,
-                  style: theme.textTheme.titleSmall,
+                  style: type.titleSmallEmphasized,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -1606,13 +1708,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               if (isConflict)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: FushiIcon(Icons.warning_amber_rounded,
-                      size: 16, color: theme.colorScheme.error),
+                  child: FushiIcon(FushiIcons.warning,
+                      size: 18, color: apple?.destructive ?? cs.error),
                 ),
               if (entry.remoteFolderId != null ||
                   entry.remoteAudioBookId != null)
                 FushiOverflowMenu<String>(
-                  iconWidget: const FushiIcon(Icons.delete_outline, size: 18),
+                  iconWidget: const FushiIcon(FushiIcons.delete, size: 18),
                   tooltip: t.dialog_delete,
                   onSelected: (String sel) {
                     if (sel == 'book' && entry.remoteFolderId != null) {
@@ -1644,37 +1746,61 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                     if (entry.remoteFolderId != null)
                       FushiPopupMenuItem<String>(
                         label: t.sync_compare_delete_book,
-                        icon: Icons.menu_book_outlined,
+                        icon: FushiIcons.books,
                         value: 'book',
                       ),
                     if (entry.remoteAudioBookId != null)
                       FushiPopupMenuItem<String>(
                         label: t.sync_compare_delete_audiobook,
-                        icon: Icons.headphones_outlined,
+                        icon: FushiIcons.audiobook,
                         value: 'audiobook',
                       ),
                   ],
                 ),
             ],
           ),
-          const SizedBox(height: 4),
-          DefaultTextStyle(
-            style: theme.textTheme.bodySmall!.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-            child: Row(
-              children: [
-                Expanded(child: _dataColumn(entry, isLocal: true)),
-                const SizedBox(height: 32, child: FushiVerticalDivider(width: 16)),
-                Expanded(child: _dataColumn(entry, isLocal: false)),
-              ],
-            ),
+          const SizedBox(height: 8),
+          // 本地 / 远端两栏对比：宽时并排（相邻内角收小成一对分段块），窄时上下
+          // 堆叠。将被应用的那一侧铺 primaryContainer 色块 + 勾选徽标，差异一眼
+          // 可见；另一侧保持中性 surfaceContainerHigh。
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final bool stacked = constraints.maxWidth < 360;
+              final Widget local = _dataColumn(
+                entry,
+                isLocal: true,
+                highlighted: winnerLocal == true,
+                stacked: stacked,
+              );
+              final Widget remote = _dataColumn(
+                entry,
+                isLocal: false,
+                highlighted: winnerLocal == false,
+                stacked: stacked,
+              );
+              if (stacked) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[local, const SizedBox(height: 2), remote],
+                );
+              }
+              return IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(child: local),
+                    const SizedBox(width: 2),
+                    Expanded(child: remote),
+                  ],
+                ),
+              );
+            },
           ),
           if (entry.bookKey != null && entry.needsManualChoice) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             _choiceRow(entry.title, choice, theme),
           ] else if (entry.isDownloadableRemoteOnly) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 10),
             _downloadRow(entry, theme),
           ] else if (entry.bookKey == null &&
               (entry.remoteFolderId != null ||
@@ -1682,11 +1808,20 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             // Orphan remote folder: only sync metadata on the cloud, no book to
             // download. Show why (the delete menu above can clean it up) instead
             // of a download checkbox that could never succeed (BUG-049).
-            const SizedBox(height: 6),
-            Text(
-              t.sync_compare_no_content,
-              style: theme.textTheme.labelMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            Row(
+              children: <Widget>[
+                FushiIcon(FushiIcons.info,
+                    size: 16, color: cs.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    t.sync_compare_no_content,
+                    style: type.labelMedium
+                        .copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ),
+              ],
             ),
           ],
         ],
@@ -1697,45 +1832,60 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Widget _downloadRow(SyncCompareEntry entry, ThemeData theme) {
     return Align(
       alignment: AlignmentDirectional.centerStart,
-      child: FushiTextButton.icon(
+      child: FushiFilledButton.tonalIcon(
         onPressed: _applying ? null : () => _downloadRemoteOnlyFromRow(entry),
-        icon: const FushiIcon(Icons.cloud_download_outlined, size: 16),
+        size: FushiButtonSize.xs,
+        icon: const FushiIcon(FushiIcons.cloudDownload, size: 18),
         label: Text(t.sync_compare_download),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          minimumSize: const Size(0, 32),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
       ),
     );
   }
 
-  Widget _buildDictEntry(SyncDictEntry d, ThemeData theme) {
+  Widget _buildDictEntry(
+    SyncDictEntry d,
+    ThemeData theme, {
+    required int index,
+    required int count,
+  }) {
+    final ColorScheme cs = theme.colorScheme;
     return FushiCard(
-      color: Colors.transparent,
-      margin: const EdgeInsets.symmetric(vertical: 2),
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      grouped: true,
+      borderRadius: fushiGroupedItemRadius(context, index, count),
+      margin: EdgeInsets.only(
+        bottom: index < count - 1 ? fushiGroupedListGap(context) : 0,
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       child: Row(
         children: <Widget>[
-          FushiIcon(Icons.menu_book_outlined,
-              size: 18, color: theme.colorScheme.onSurfaceVariant),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Text(
-              d.shownName,
-              style: theme.textTheme.titleSmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+          const FushiListLeadingIcon(
+            FushiIcons.dictionary,
+            shape: FushiLeadingShape.square,
+            size: 36,
           ),
-          Text(
-            d.presenceLabel,
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  d.shownName,
+                  style: context.fushiType.titleSmallEmphasized,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  d.presenceLabel,
+                  style: context.fushiType.bodySmall
+                      .copyWith(color: cs.onSurfaceVariant),
+                ),
+              ],
+            ),
           ),
           if (d.hasRemote)
             FushiOverflowMenu<String>(
-              iconWidget: const FushiIcon(Icons.delete_outline, size: 18),
+              iconWidget: const FushiIcon(FushiIcons.delete, size: 18),
               tooltip: t.dialog_delete,
               onSelected: (String _) => _deleteRemote(
                 name: d.name,
@@ -1746,7 +1896,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               items: <PopupMenuEntry<String>>[
                 FushiPopupMenuItem<String>(
                   label: t.sync_compare_delete_dict,
-                  icon: Icons.delete_outline,
+                  icon: FushiIcons.delete,
                   value: 'dict',
                 ),
               ],
@@ -1756,30 +1906,53 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
+  /// 行首方向徽标：36 见方的 tonal 圆块 + 方向图标，颜色随方向 / 裁决弹簧过渡。
   Widget _directionIcon(SyncCompareEntry entry, ThemeData theme) {
     final cs = theme.colorScheme;
+    final bool apple = isGlassDesign(context);
     // Apple：tertiary 映射成系统橙（警示色），上传不是警示——两个方向都用强调色，
     // 靠图标形状区分；MD3 保持 primary / tertiary 两色。
-    final Color uploadColor =
-        isGlassDesign(context) ? appleColorsOf(context).accent : cs.tertiary;
+    final Color uploadColor = apple ? appleColorsOf(context).accent : cs.tertiary;
     final choice = _choices[entry.title] ?? SyncChoice.skip;
+    final IconData icon;
+    final Color color;
+    final Color container;
     if (choice == SyncChoice.useLocal) {
-      return FushiIcon(Icons.cloud_upload_outlined, size: 18, color: uploadColor);
+      icon = FushiIcons.cloudUpload;
+      color = apple ? uploadColor : cs.onTertiaryContainer;
+      container = cs.tertiaryContainer;
+    } else if (choice == SyncChoice.useRemote) {
+      icon = FushiIcons.cloudDownload;
+      color = apple ? cs.primary : cs.onPrimaryContainer;
+      container = cs.primaryContainer;
+    } else {
+      switch (entry.autoDirection) {
+        case SyncDirection.importFromTtu:
+          icon = FushiIcons.cloudDownload;
+          color = apple ? cs.primary : cs.onPrimaryContainer;
+          container = cs.primaryContainer;
+        case SyncDirection.exportToTtu:
+          icon = FushiIcons.cloudUpload;
+          color = apple ? uploadColor : cs.onTertiaryContainer;
+          container = cs.tertiaryContainer;
+        case SyncDirection.synced:
+          icon = FushiIcons.success;
+          color = cs.onSurfaceVariant;
+          container = cs.surfaceContainerHighest;
+      }
     }
-    if (choice == SyncChoice.useRemote) {
-      return FushiIcon(Icons.cloud_download_outlined, size: 18, color: cs.primary);
-    }
-    final icon = switch (entry.autoDirection) {
-      SyncDirection.importFromTtu => Icons.cloud_download_outlined,
-      SyncDirection.exportToTtu => Icons.cloud_upload_outlined,
-      SyncDirection.synced => Icons.check_circle_outline,
-    };
-    final color = switch (entry.autoDirection) {
-      SyncDirection.importFromTtu => cs.primary,
-      SyncDirection.exportToTtu => uploadColor,
-      SyncDirection.synced => cs.onSurfaceVariant,
-    };
-    return FushiIcon(icon, size: 18, color: color);
+    final Widget glyph = FushiIcon(icon, size: 18, color: color);
+    if (apple || isEinkTheme(context)) return glyph;
+    final FushiMotionScheme motion = context.fushiMotion;
+    return AnimatedContainer(
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(color: container, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: glyph,
+    );
   }
 
   Widget _choiceRow(String title, SyncChoice choice, ThemeData theme) {
@@ -1788,6 +1961,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     // native cluster; with only the header overflow menu registered, directional
     // nav would never land here and the user could not pick a choice or reach
     // Apply.
+    // M3E：连接式按钮组（FushiSegmentedButton，Apple 下为 iOS 分段控件）。
     return FushiAdjustableSegmented<SyncChoice>(
       focusIdPrefix: 'sync-choice',
       values: const <SyncChoice>[
@@ -1799,25 +1973,29 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       onChanged: (SyncChoice value) {
         setState(() => _choices[title] = value);
       },
-      child: adaptiveSegmentedButton<SyncChoice>(
-        context: context,
-        style: SegmentedButton.styleFrom(
+      child: FushiSegmentedButton<SyncChoice>(
+        expandedInsets: EdgeInsets.zero,
+        showSelectedIcon: false,
+        style: FushiSegmentedButton.styleFrom(
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: theme.textTheme.labelSmall,
+          textStyle: context.fushiType.labelMedium,
         ),
         segments: [
           ButtonSegment(
             value: SyncChoice.useLocal,
+            icon: const FushiIcon(FushiIcons.devices, size: 16),
             label: Text(t.sync_compare_use_local),
             tooltip: t.sync_compare_use_local,
           ),
           ButtonSegment(
             value: SyncChoice.skip,
+            icon: const FushiIcon(FushiIcons.block, size: 16),
             label: Text(t.sync_compare_skip),
             tooltip: t.sync_compare_skip,
           ),
           ButtonSegment(
             value: SyncChoice.useRemote,
+            icon: const FushiIcon(FushiIcons.cloud, size: 16),
             label: Text(t.sync_compare_use_remote),
             tooltip: t.sync_compare_use_remote,
           ),
@@ -1830,32 +2008,131 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _dataColumn(SyncCompareEntry e, {required bool isLocal}) {
+  /// 两栏对比卡的一侧：标题行（设备 / 云图标 + 本地 / 远端）、进度大号等宽数字、
+  /// 时间与统计 / 有声书位置。[highlighted] = 这一侧将被应用：M3E 铺
+  /// primaryContainer + 勾选徽标（颜色弹簧过渡），Apple 用强调色淡染。
+  Widget _dataColumn(
+    SyncCompareEntry e, {
+    required bool isLocal,
+    bool highlighted = false,
+    bool stacked = false,
+  }) {
     final progress = isLocal ? e.localProgress : e.remoteProgress;
     final updatedAt = isLocal ? e.localUpdatedAt : e.remoteUpdatedAt;
     final statsCount = isLocal ? e.localStatsCount : e.remoteStatsCount;
     final hasAudio =
         isLocal ? e.localAudioPosMs != null : e.remoteAudioPosSec != null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          isLocal ? t.sync_compare_local : t.sync_compare_remote,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final bool apple = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final Color container;
+    final Color onContainer;
+    if (highlighted) {
+      container = eink
+          ? cs.surface
+          : apple
+              ? appleColorsOf(context).accent.withValues(alpha: 0.15)
+              : cs.primaryContainer;
+      onContainer = eink
+          ? cs.onSurface
+          : apple
+              ? appleColorsOf(context).accent
+              : cs.onPrimaryContainer;
+    } else {
+      container = eink ? cs.surface : cs.surfaceContainerHigh;
+      onContainer = cs.onSurfaceVariant;
+    }
+    // 一对分段块：外侧 16、相邻内侧 4（宽时左右相邻，窄时上下相邻）。
+    const Radius outer = Radius.circular(16);
+    const Radius inner = Radius.circular(4);
+    final BorderRadius radius = stacked
+        ? (isLocal
+            ? const BorderRadius.vertical(top: outer, bottom: inner)
+            : const BorderRadius.vertical(top: inner, bottom: outer))
+        : (isLocal
+            ? const BorderRadiusDirectional.horizontal(
+                start: outer, end: inner)
+                .resolve(Directionality.of(context))
+            : const BorderRadiusDirectional.horizontal(
+                start: inner, end: outer)
+                .resolve(Directionality.of(context)));
+
+    final TextStyle detail = type.bodySmall.copyWith(color: onContainer);
+    return AnimatedContainer(
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: container,
+        borderRadius: radius,
+        border: eink
+            ? Border.all(color: highlighted ? cs.onSurface : cs.outline)
+            : null,
+      ),
+      child: DefaultTextStyle(
+        style: detail,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: <Widget>[
+                FushiIcon(
+                  isLocal ? FushiIcons.devices : FushiIcons.cloud,
+                  size: 16,
+                  color: onContainer,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    isLocal ? t.sync_compare_local : t.sync_compare_remote,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: type.labelLargeEmphasized
+                        .copyWith(color: onContainer),
+                  ),
+                ),
+                // 出现走 spatial 弹簧（轻回弹），收起走 effects（不过冲，避免
+                // 缩放越过 0 翻面）。
+                AnimatedScale(
+                  scale: highlighted ? 1 : 0,
+                  duration: highlighted
+                      ? motion.spatialFast.duration
+                      : motion.effectsFast.duration,
+                  curve: highlighted
+                      ? motion.spatialFast.curve
+                      : motion.effectsFast.curve,
+                  child: FushiIcon(
+                    FushiIcons.filled(FushiIcons.success),
+                    size: 18,
+                    color: onContainer,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            if (progress != null)
+              Text(
+                '${(progress * 100).toStringAsFixed(1)}%',
+                style: type.titleLargeEmphasized.tabular.copyWith(
+                  color: highlighted ? onContainer : cs.onSurface,
+                ),
+              )
+            else
+              Text(t.sync_compare_no_data),
+            if (updatedAt != null) Text(_formatTime(updatedAt)),
+            if (statsCount != null && statsCount > 0)
+              Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),
+            if (hasAudio)
+              Text(
+                '${t.sync_audiobook}: ${isLocal ? _formatDuration(e.localAudioPosMs! ~/ 1000) : _formatDuration(e.remoteAudioPosSec!.round())}',
+              ),
+          ],
         ),
-        if (progress != null)
-          Text('${(progress * 100).toStringAsFixed(1)}%')
-        else
-          Text(t.sync_compare_no_data),
-        if (updatedAt != null) Text(_formatTime(updatedAt)),
-        if (statsCount != null && statsCount > 0)
-          Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),
-        if (hasAudio)
-          Text(
-            '${t.sync_audiobook}: ${isLocal ? _formatDuration(e.localAudioPosMs! ~/ 1000) : _formatDuration(e.remoteAudioPosSec!.round())}',
-          ),
-      ],
+      ),
     );
   }
 

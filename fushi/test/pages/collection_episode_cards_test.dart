@@ -151,7 +151,8 @@ void main() {
   });
 
   testWidgets('宽屏（≥900）两列：两张集卡同一行', (WidgetTester tester) async {
-    useSurface(tester, const Size(1280, 1600));
+    // ≥1080 走两栏（左 hero 400），右栏集网格要 ≥900 才两列。
+    useSurface(tester, const Size(1600, 1600));
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 

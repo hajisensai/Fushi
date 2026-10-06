@@ -102,30 +102,42 @@ Future<void> showInterconnectPairQrDialog(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 // 二维码恒为白底黑码：深色主题下反色的码很多相机扫不出。
-                // 白底卡片带圆角（MD3 12 / Apple 16），不再是直角白方块
-                // 突兀地贴在圆角面板里。
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(
-                      isGlassDesign(ctx) ? 16 : 12,
+                // 白底卡片带圆角（M3E 卡片 20 / Apple 16），不再是直角白方块
+                // 突兀地贴在圆角面板里；进场走 spatial 弹簧放大（减弱动态效果
+                // / 墨水屏下时长归零、瞬间到位）。
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.85, end: 1),
+                  duration: ctx.fushiMotion.spatialDefault.duration,
+                  curve: ctx.fushiMotion.spatialDefault.curve,
+                  builder: (BuildContext _, double scale, Widget? child) =>
+                      Transform.scale(scale: scale, child: child),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(
+                        isGlassDesign(ctx) ? 16 : FushiM3eShape.card,
+                      ),
                     ),
-                  ),
-                  padding: const EdgeInsets.all(12),
-                  child: QrImageView(
-                    data: uri,
-                    size: 240,
-                    backgroundColor: Colors.white,
-                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                    padding: const EdgeInsets.all(12),
+                    child: QrImageView(
+                      data: uri,
+                      size: 240,
+                      backgroundColor: Colors.white,
+                      errorCorrectionLevel: QrErrorCorrectLevel.M,
+                    ),
                   ),
                 ),
                 SizedBox(height: tokens.spacing.gap),
+                // 本机设备名：M3E tonal 色块，告诉对方扫的是哪台主机。
                 if (link.deviceName != null)
-                  Text(
-                    link.deviceName!,
-                    style: Theme.of(ctx).textTheme.titleSmall,
+                  Center(
+                    child: _InterconnectStatusPill(
+                      icon: FushiIcons.devices,
+                      label: link.deviceName!,
+                      tone: FushiCardTone.primary,
+                    ),
                   ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Text(t.sync_pair_qr_hint, textAlign: TextAlign.center),
               ],
             ),
@@ -173,6 +185,7 @@ Future<FushiPairLink?> promptInterconnectPairLinkPaste(
         scrollable: false,
         child: FushiModalSheetFrame(
           title: t.sync_pair_link_paste,
+          leadingIcon: FushiIcons.link,
           scrollable: true,
           bodyPadding: EdgeInsets.fromLTRB(
             tokens.spacing.card,
@@ -248,17 +261,19 @@ class _InterconnectPairScanPageState extends State<_InterconnectPairScanPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: FushiAppBar(title: Text(t.sync_pair_scan)),
+    // M3E 页面壳：浮动页头 + 相机取景；相机不可用时出 error tonal 占位。
+    return FushiPageScaffold(
+      title: t.sync_pair_scan,
       body: MobileScanner(
         onDetect: _onDetect,
         errorBuilder: (BuildContext ctx, MobileScannerException error) =>
             Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(
-                  t.sync_pair_scan_failed,
-                  textAlign: TextAlign.center,
+                child: FushiPlaceholderMessage(
+                  icon: FushiIcons.error,
+                  message: t.sync_pair_scan_failed,
+                  tone: FushiPlaceholderTone.error,
                 ),
               ),
             ),
@@ -348,6 +363,7 @@ Future<bool?> _promptInterconnectNfcLock(BuildContext context) {
           scrollable: false,
           child: FushiModalSheetFrame(
             title: t.sync_pair_nfc_write,
+            leadingIcon: FushiIcons.touch,
             scrollable: true,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
@@ -376,9 +392,11 @@ Future<bool?> _promptInterconnectNfcLock(BuildContext context) {
                   ],
                 ),
                 SizedBox(height: tokens.spacing.gap),
-                Text(
-                  t.sync_pair_nfc_lock_hint,
-                  style: Theme.of(ctx).textTheme.bodySmall,
+                // 锁定不可撤销：M3E tonal 提示块（锁定时换 error 色块强调）。
+                _InterconnectInlineNotice(
+                  icon: lock ? FushiIcons.lock : FushiIcons.lockOpen,
+                  message: t.sync_pair_nfc_lock_hint,
+                  tone: lock ? FushiCardTone.error : FushiCardTone.neutral,
                 ),
               ],
             ),

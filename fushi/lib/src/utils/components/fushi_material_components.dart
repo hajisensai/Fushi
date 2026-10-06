@@ -4301,9 +4301,11 @@ class FushiToolScaffold extends StatelessWidget {
                 borderRadius: const BorderRadius.all(Radius.circular(22)),
                 prominent: true,
                 child: SizedBox(
-                  // MD3（M3E 悬浮工具条）：返回键 / 标题 / 动作各是一枚 48 高的
-                  // 悬浮胶囊，行高 52；Apple 保持 44 的玻璃胶囊条。
-                  height: isGlassDesign(context) ? 44 : 52,
+                  // MD3（M3E 悬浮工具条）：返回键 / 标题 / 动作各是一枚
+                  // [kFushiPageChromeExtent] 高的悬浮胶囊，行高与胶囊同高（行高
+                  // 小于胶囊会把返回圆压扁、标题胶囊下半截截平）；Apple 保持 44
+                  // 的玻璃胶囊条。
+                  height: isGlassDesign(context) ? 44 : kFushiPageChromeExtent,
                   // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
                   // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
                   // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。

@@ -646,22 +646,64 @@ class _HomeDashboardPageState
   /// 游戏库仓储（[initState] 挂监听，[dispose] 解除）。
   GalgameRepository? _galgameRepo;
 
+  /// 首页 tab 保活（2026-10 切 tab 卡顿）后，切回首页不再整页重挂载；切回时
+  /// 只补做隐藏期间被推迟的重载（[_reloadDeferredWhileHidden]），并经共享 TTL
+  /// 缓存补一次互联远端（与视频页 BUG-994 同一范式）。
+  @override
+  HomeTab get shellTab => HomeTab.home;
+
+  @override
+  void onTabActivated() {
+    if (_reloadDeferredWhileHidden) {
+      _reloadDeferredWhileHidden = false;
+      _reloadNow();
+      return;
+    }
+    unawaited(_loadRemoteDashboardData(skipIfUnchanged: true));
+  }
+
+  /// 首页被 Offstage 藏着时到达的数据变更：只记一笔，不在后台重跑整批聚合。
+  ///
+  /// 保活之前首页一切走就 dispose，根本不会在别的 tab 上重查；保活之后若照旧
+  /// 每次写库都重载，用户在书架 / 阅读器里翻页（readerPositions 写入）就会让
+  /// 看不见的首页隔几秒在 UI isolate 上跑一遍全量统计聚合。
+  bool _reloadDeferredWhileHidden = false;
+
+  bool get _isVisibleTab => homeShellTabNotifier.value == HomeTab.home;
+
+  /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteDashboardData]）。
+  List<RemoteBookInfo>? _adoptedRemoteBooks;
+  List<RemoteVideoInfo>? _adoptedRemoteVideos;
+
+  /// 最近一次混排上屏的三份远端清单（对象身份）；门控关闭清空远端状态时一并作废。
+  List<RemoteBookInfo>? _appliedRemoteBooks;
+  List<RemoteVideoInfo>? _appliedRemoteVideos;
+  List<RemoteActivityEvent>? _appliedRemoteActivity;
+
   /// 表变更后防抖重载（多次连续写只重查一次，避免频繁 setState）。
   void _scheduleReload() {
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      // 「继续」的书侧数据来自缓存 provider（书列表/最近阅读时刻均派生自
-      // reader_positions），它们此前只在关书/导入时失效——互联/云同步把更远的
-      // 对端进度写回后首页拿不到新值、要重启才生效。表级变更信号（现已含
-      // readerPositions）到达时一并失效，让下面的重载 + build 的 ref.watch 读到
-      // 新进度。频度由写入端自身的 debounce + 本 400ms 防抖兜住。
-      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
-      ref.invalidate(bookLastReadAtProvider);
-      // BUG-2918：读完标记（EpubBooks.completedAt）变更同样经表级信号到达。
-      ref.invalidate(completedEpubBookKeysProvider);
-      unawaited(_loadDashboardData());
+      if (!_isVisibleTab) {
+        _reloadDeferredWhileHidden = true;
+        return;
+      }
+      _reloadNow();
     });
+  }
+
+  void _reloadNow() {
+    // 「继续」的书侧数据来自缓存 provider（书列表/最近阅读时刻均派生自
+    // reader_positions），它们此前只在关书/导入时失效——互联/云同步把更远的
+    // 对端进度写回后首页拿不到新值、要重启才生效。表级变更信号（现已含
+    // readerPositions）到达时一并失效，让下面的重载 + build 的 ref.watch 读到
+    // 新进度。频度由写入端自身的 debounce + 本 400ms 防抖兜住。
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(bookLastReadAtProvider);
+    // BUG-2918：读完标记（EpubBooks.completedAt）变更同样经表级信号到达。
+    ref.invalidate(completedEpubBookKeysProvider);
+    unawaited(_loadDashboardData());
   }
 
   @override
@@ -936,7 +978,12 @@ class _HomeDashboardPageState
   /// 书清单（内联阅读进度）/ 视频清单（内联播放断点）/ 最近活动事件，
   /// 把本地没有的在读书、在看视频补进「继续」，活动事件与本地混排进时间轴
   /// （display-only 不落库）。任何失败静默保持纯本地视图（离线/老 host 不致崩）。
-  Future<void> _loadRemoteDashboardData() async {
+  ///
+  /// [skipIfUnchanged]：切回首页（[onTabActivated]）时为 true——三份清单都还是
+  /// 上一轮已经混排上屏的同一批对象（TTL 内缓存命中）就到此为止，不再重算
+  /// 补位卡 / 混排时间轴、也不 setState 整页重建。本地聚合重载之后的那次补位
+  /// 不传：本地数据变了，补位要按新的本地集合重算。
+  Future<void> _loadRemoteDashboardData({bool skipIfUnchanged = false}) async {
     final AppModel appModel = ref.read(appProvider);
     // 「显示远端条目」门控前移到取数之前（BUG-1182 视频页同款）：此前本页只判
     // 互联开关，关掉开关的用户仍全额付三个远端请求的网络代价、远端条目照混排。
@@ -983,12 +1030,26 @@ class _HomeDashboardPageState
           results[1] as List<RemoteVideoInfo>;
       final RemoteCollectionAdoptionService adoption =
           RemoteCollectionAdoptionService(appModel.database);
-      await adoption.adoptBooks(remoteBooks);
-      for (final RemoteVideoInfo video in remoteVideos) {
-        await adoption.adoptVideo(video);
+      // TTL 内缓存回的是同一个清单对象，它的合集收养已经落过库：不再逐条重做
+      // （书那边每轮还要全表装载一次身份索引）。保活后切回首页会走这里。
+      if (!identical(remoteBooks, _adoptedRemoteBooks)) {
+        await adoption.adoptBooks(remoteBooks);
+        _adoptedRemoteBooks = remoteBooks;
+      }
+      if (!identical(remoteVideos, _adoptedRemoteVideos)) {
+        for (final RemoteVideoInfo video in remoteVideos) {
+          await adoption.adoptVideo(video);
+        }
+        _adoptedRemoteVideos = remoteVideos;
       }
       final List<RemoteActivityEvent> remoteActivity =
           results[2] as List<RemoteActivityEvent>;
+      if (skipIfUnchanged &&
+          identical(remoteBooks, _appliedRemoteBooks) &&
+          identical(remoteVideos, _appliedRemoteVideos) &&
+          identical(remoteActivity, _appliedRemoteActivity)) {
+        return;
+      }
       if (!mounted) return;
       final List<MediaItem> books =
           ref.read(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
@@ -1027,6 +1088,9 @@ class _HomeDashboardPageState
       if (!mounted) return;
       setState(() {
         _remoteContinue = continueCandidates;
+        _appliedRemoteBooks = remoteBooks;
+        _appliedRemoteVideos = remoteVideos;
+        _appliedRemoteActivity = remoteActivity;
         _remoteCoverFetcher = remoteCoverFetcherFor(backend);
         _remoteDeviceName = deviceName;
         _remoteActivityRows = Set<ActivityEventRow>.identity()
@@ -1050,6 +1114,9 @@ class _HomeDashboardPageState
         _remoteDeviceName != null ||
         _remoteCoverFetcher != null;
     if (!hasRemoteState) return;
+    _appliedRemoteBooks = null;
+    _appliedRemoteVideos = null;
+    _appliedRemoteActivity = null;
     setState(() {
       _remoteContinue = const <RemoteContinueCandidate>[];
       _remoteCoverFetcher = null;
