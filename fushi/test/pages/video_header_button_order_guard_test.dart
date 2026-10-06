@@ -134,38 +134,40 @@ void main() {
     expect(text.contains('_toggleClipExport()'), isTrue);
   });
 
-  test('默认右上角顶栏精简为 6 个常用入口（TODO-642）', () {
-    // 默认 topRight = episodeList / screenshot / clipExport / subtitleTrack /
-    // audioTrack / chapterList 六个；prev/next 集与 prev/next 章 4 个导航键不再
-    // 默认占顶栏（落 hidden / removed，可从编辑器拖回）。screenshot 与 clipExport
-    // 保持相邻（受上一个守卫钉死）。
+  test('默认右上角顶栏是 6 个低频入口（TODO-642 → 2026-10-05 M3E 重排）', () {
+    // 2026-10-05 播放器 UI 重做按使用频率重排默认布局（见 VideoControlLayout
+    // .currentChrome 的文档）：字幕轨挪到底栏右，设置从右侧栏挪到右上；右上 =
+    // 音轨 / 选集 / 章节 / 截图 / 片段导出 / 设置，窄窗按优先级收进「⋮」。
+    // screenshot 与 clipExport 保持相邻（受上一个守卫钉死）。
     final List<VideoControlItem> topRight =
         VideoControlLayout.currentChrome.itemsIn(VideoControlSlot.topRight);
     expect(
         topRight,
         <VideoControlItem>[
+          VideoControlItem.audioTrack,
           VideoControlItem.episodeList,
+          VideoControlItem.chapterList,
           VideoControlItem.screenshot,
           VideoControlItem.clipExport,
-          VideoControlItem.subtitleTrack,
-          VideoControlItem.audioTrack,
-          VideoControlItem.chapterList,
+          VideoControlItem.settings,
         ],
-        reason: 'TODO-642：默认右上角顶栏精简为 6 个常用入口');
+        reason: '默认右上角是 6 个低频入口');
 
-    // 4 个 prev/next 导航键默认不在任何可见槽，落 removedItems（仍可自定义拖回）。
+    // 上 / 下一集默认在底栏左夹着播放键（只在合集里渲染）；上 / 下一章默认移出
+    // 播放器（章节列表 + PageUp/PageDown + 跳过片头片尾仍在），可从编辑器拖回。
+    expect(VideoControlLayout.currentChrome.slotOf(VideoControlItem.previousEpisode),
+        VideoControlSlot.bottomLeft);
+    expect(VideoControlLayout.currentChrome.slotOf(VideoControlItem.nextEpisode),
+        VideoControlSlot.bottomLeft);
     const List<VideoControlItem> trimmedNav = <VideoControlItem>[
-      VideoControlItem.previousEpisode,
-      VideoControlItem.nextEpisode,
       VideoControlItem.previousChapter,
       VideoControlItem.nextChapter,
     ];
     for (final VideoControlItem nav in trimmedNav) {
       expect(VideoControlLayout.currentChrome.isOnPlayer(nav), isFalse,
-          reason: '$nav 默认不应在播放器可见槽（TODO-642）');
+          reason: '$nav 默认不应在播放器可见槽');
       expect(VideoControlLayout.currentChrome.removedItems, contains(nav),
           reason: '$nav 默认落 removedItems，可从编辑器面板拖回（非从模型删除）');
-      // 仍是可自定义项：能被拖回任意可见槽。
       expect(nav.canMoveToSlot(VideoControlSlot.topRight), isTrue,
           reason: '$nav 仍可被用户加回 topRight');
     }

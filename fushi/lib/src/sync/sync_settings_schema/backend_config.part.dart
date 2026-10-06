@@ -186,7 +186,7 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
                     height: 24,
                     child: adaptiveIndicator(context: context, strokeWidth: 2),
                   )
-                : FilledButton.tonal(
+                : FushiFilledButton.tonal(
                     onPressed: _testConnection,
                     child:
                         widget.testButtonChild ?? Text(t.sync_test_connection),
@@ -272,7 +272,7 @@ class _WebDavConfigWidget extends StatelessWidget {
       testButtonChild: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const Icon(Icons.wifi_find, size: 18),
+          const FushiIcon(Icons.wifi_find, size: 18),
           const SizedBox(width: 8),
           Text(t.sync_test_connection),
         ],

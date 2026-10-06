@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -194,7 +195,7 @@ class _VideoDownloadSubscriptionsPanelState
   ) async {
     final bool confirmed = await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext dialogContext) => AlertDialog(
+          builder: (BuildContext dialogContext) => FushiAlertDialog(
             title: Text(t.download_subscription_delete),
             content: Text(
               t.download_subscription_delete_confirm(
@@ -202,11 +203,11 @@ class _VideoDownloadSubscriptionsPanelState
               ),
             ),
             actions: <Widget>[
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
                 child: Text(t.dialog_cancel),
               ),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: () => Navigator.pop(dialogContext, true),
                 child: Text(t.dialog_delete),
               ),
@@ -231,7 +232,7 @@ class _VideoDownloadSubscriptionsPanelState
     if (!mounted) return;
     if (sources.isEmpty) {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(t.download_no_managed_video_source)),
+        FushiSnackBar(content: Text(t.download_no_managed_video_source)),
       );
       return;
     }
@@ -288,7 +289,7 @@ class _VideoDownloadSubscriptionsPanelState
           );
         }
         if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
+          return const FushiLoadingView();
         }
         final List<VideoDownloadSubscriptionRow> subscriptions = snapshot.data!;
         return VideoDownloadSubscriptionsView(
@@ -450,10 +451,10 @@ class _VideoDownloadSubscriptionsViewState
                   selected: _sort == value,
                 ),
             ],
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
               onPressed: null,
-              icon: const Icon(Icons.sort, size: 18),
+              icon: const FushiIcon(Icons.sort, size: 18),
               label: Text(_sortLabel(_sort)),
             ),
           ),
@@ -490,7 +491,7 @@ class _VideoDownloadSubscriptionsViewState
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   key: const ValueKey<String>(
                     'video-subscription-check-all',
                   ),
@@ -503,9 +504,9 @@ class _VideoDownloadSubscriptionsViewState
                   icon: widget.checkingAll
                       ? const SizedBox.square(
                           dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.refresh, size: 18),
+                      : const FushiIcon(Icons.refresh, size: 18),
                   label: Text(t.download_subscription_check_all),
                 ),
               ],
@@ -662,7 +663,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     final String url = subscription.coverUrl?.trim() ?? '';
     final Widget placeholder = ColoredBox(
       color: tokens.surfaces.group,
-      child: const Icon(Icons.subscriptions_outlined, size: 20),
+      child: const FushiIcon(Icons.subscriptions_outlined, size: 20),
     );
     return ClipRRect(
       borderRadius: FushiBorderRadius.chip,
@@ -732,7 +733,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
                   ],
                 ),
               ),
-              Switch.adaptive(
+              FushiSwitch.adaptive(
                 key: ValueKey<String>(
                   'video-subscription-toggle-${subscription.subscriptionId}',
                 ),
@@ -914,7 +915,7 @@ class _SubscriptionItemsSection extends StatelessWidget {
             child: Center(
               child: SizedBox.square(
                 dimension: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
               ),
             ),
           );
@@ -959,7 +960,7 @@ class _SubscriptionItemsSection extends StatelessWidget {
                 ),
                 density: FushiListDensity.compact,
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: Icon(
+                leading: FushiIcon(
                   switch (item.status) {
                     VideoDownloadSubscriptionItemStatus.processed =>
                       Icons.check_circle_outline,
@@ -973,8 +974,11 @@ class _SubscriptionItemsSection extends StatelessWidget {
                   },
                   size: 18,
                   color: switch (item.status) {
+                    // Apple：完成是语义绿（单色强调色不表达成功）。
                     VideoDownloadSubscriptionItemStatus.processed =>
-                      theme.colorScheme.primary,
+                      isGlassDesign(context)
+                          ? fushiStatusColor(context, FushiStatusTone.success)
+                          : theme.colorScheme.primary,
                     VideoDownloadSubscriptionItemStatus.failed =>
                       theme.colorScheme.error,
                     _ => theme.colorScheme.onSurfaceVariant,
@@ -1019,36 +1023,11 @@ class _VideoDownloadSubscriptionMessage extends StatelessWidget {
   final String title;
   final String? body;
 
+  /// 走共享空状态：MD3 是分组底色信息块，Apple 是 ContentUnavailableView
+  /// 形态（无底、secondaryLabel 大图标 + 17 semibold 标题）。
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 44, color: theme.colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleMedium,
-            ),
-            if (body != null) ...<Widget>[
-              const SizedBox(height: 8),
-              Text(
-                body!,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+    return FushiPlaceholderMessage(icon: icon, message: title, detail: body);
   }
 }
 

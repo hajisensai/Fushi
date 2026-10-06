@@ -4,6 +4,7 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -112,23 +113,23 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
     required VoidCallback onSortByTitle,
     required VoidCallback onSortByImported,
   }) {
-    return MenuAnchor(
+    return FushiMenuAnchor(
       menuChildren: <Widget>[
         MenuItemButton(
-          leadingIcon: const Icon(Icons.sort_by_alpha, size: 20),
+          leadingIcon: const FushiIcon(Icons.sort_by_alpha, size: 20),
           onPressed: onSortByTitle,
           child: Text(t.collection_sort_by_title),
         ),
         MenuItemButton(
-          leadingIcon: const Icon(Icons.history, size: 20),
+          leadingIcon: const FushiIcon(Icons.history, size: 20),
           onPressed: onSortByImported,
           child: Text(t.collection_sort_by_imported),
         ),
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) =>
-          IconButton(
+          FushiIconButtonControl(
         tooltip: t.sort_by,
-        icon: const Icon(Icons.sort),
+        icon: const FushiIcon(Icons.sort),
         onPressed: () =>
             controller.isOpen ? controller.close() : controller.open(),
       ),
@@ -143,6 +144,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
     String? localFilesSubtitle,
     String? statisticsSubtitle,
     DeletionDisclosure? checkedDisclosure,
+    String? deleteSubscriptionsLabel,
   }) {
     return showAppDialog<FushiDestructiveConfirmResult>(
       context: context,
@@ -154,6 +156,7 @@ mixin CollectionDetailShared<T extends StatefulWidget> on State<T> {
         localFilesSubtitle: localFilesSubtitle,
         statisticsSubtitle: statisticsSubtitle,
         checkedDisclosure: checkedDisclosure,
+        deleteSubscriptionsLabel: deleteSubscriptionsLabel,
       ),
     );
   }

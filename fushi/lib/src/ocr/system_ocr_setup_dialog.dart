@@ -11,13 +11,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 弹出系统 OCR 模型配置。弹窗打开时自己查一次状态。
 Future<void> showSystemOcrSetupDialog(
   BuildContext context, {
   required String language,
   SystemOcrModelSetup setup = const MethodChannelSystemOcr(),
-}) => showDialog<void>(
+}) => showAppDialog<void>(
   context: context,
   builder: (BuildContext context) =>
       SystemOcrSetupDialog(language: language, setup: setup),
@@ -126,31 +128,31 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         t.ocr_system_model_play_services_unavailable,
     };
     final Widget? primary = switch (_phase) {
-      SystemOcrSetupPhase.missing => FilledButton(
+      SystemOcrSetupPhase.missing => FushiFilledButton(
         key: const ValueKey<String>('system_ocr_setup_download'),
         onPressed: () => unawaited(_download()),
         child: Text(t.ocr_system_model_download),
       ),
-      SystemOcrSetupPhase.failed => FilledButton(
+      SystemOcrSetupPhase.failed => FushiFilledButton(
         key: const ValueKey<String>('system_ocr_setup_retry'),
         onPressed: () => unawaited(_check()),
         child: Text(t.retry),
       ),
-      SystemOcrSetupPhase.playServicesResolvable => FilledButton(
+      SystemOcrSetupPhase.playServicesResolvable => FushiFilledButton(
         key: const ValueKey<String>('system_ocr_setup_fix_play_services'),
         onPressed: () => unawaited(_fixPlayServices()),
         child: Text(t.ocr_system_model_play_services_fix),
       ),
       _ => null,
     };
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.ocr_system_model_title),
       content: Row(
         children: <Widget>[
           if (busy) ...<Widget>[
             const SizedBox.square(
               dimension: 24,
-              child: CircularProgressIndicator(strokeWidth: 3),
+              child: FushiCircularProgressIndicator(strokeWidth: 3),
             ),
             const SizedBox(width: 16),
           ],
@@ -163,7 +165,7 @@ class _SystemOcrSetupDialogState extends State<SystemOcrSetupDialog> {
         ],
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),

@@ -124,6 +124,7 @@ class CollectionManifestEntry {
     this.members = const <CollectionManifestMember>[],
     this.memberTombstones = const <CollectionMemberTombstone>[],
     this.tagNames = const <String>[],
+    this.episodeOrdered = false,
   });
 
   /// 自然键：合集名（跨端身份，同 backup 合并的 (name, collection_type) 对齐）。
@@ -153,6 +154,12 @@ class CollectionManifestEntry {
   /// 合集标签（按名跨端传递；BookTags.id 各端不一致故用名）。只增不删并集，
   /// 无墓碑（合集标签同步不消费墓碑，见 collection-tags 设计 §5）。
   final List<String> tagNames;
+
+  /// 成员序由集号派生（下载管理的合集，BUG-2941）。两端都没手动排过序
+  /// （[orderUpdatedAt] 均为 0）时，合并按成员键里的季/集重排视频成员，而不是
+  /// 「平手取远端」——远端序只是另一端的下载到达顺序。只要有一端知道就随清单
+  /// 传播（合并 / 折叠取或），没有下载任务的设备也据此收敛到同一顺序。
+  final bool episodeOrdered;
 
   factory CollectionManifestEntry.fromJson(Object? json) {
     if (json is! Map<String, dynamic>) {
@@ -201,6 +208,8 @@ class CollectionManifestEntry {
                 if (t is String && t.isNotEmpty) t,
             ]
           : const <String>[],
+      // additive 字段：旧清单缺它即 false。
+      episodeOrdered: json['episodeOrdered'] == true,
     );
   }
 
@@ -247,6 +256,8 @@ class CollectionManifestEntry {
       ],
       // 空时不写 key：无标签合集 JSON 与加特性前逐字节相同，维持 canonicalJson 幂等。
       if (sortedTags.isNotEmpty) 'tagNames': sortedTags,
+      // 同上：false 时不写 key，非下载合集的 JSON 与加特性前逐字节相同。
+      if (episodeOrdered) 'episodeOrdered': true,
     };
   }
 }

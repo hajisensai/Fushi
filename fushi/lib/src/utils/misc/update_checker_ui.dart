@@ -532,7 +532,7 @@ class _DownloadOverlay extends StatelessWidget {
                         return Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            LinearProgressIndicator(
+                            FushiLinearProgressIndicator(
                               value: clamped > 0 ? clamped : null,
                             ),
                             SizedBox(height: tokens.spacing.gap / 2),
@@ -557,11 +557,11 @@ class _DownloadOverlay extends StatelessWidget {
                       children: <Widget>[
                         // 取消（逃生口·TODO-738）：全死源串行回退期间用户可主动中断，
                         // 不必盯着「正在连接更新源…」干等几分钟。
-                        TextButton(
+                        FushiTextButton(
                           onPressed: onCancel,
                           child: Text(t.update_cancel),
                         ),
-                        TextButton(
+                        FushiTextButton(
                           onPressed: onHide,
                           child: Text(t.update_hide),
                         ),

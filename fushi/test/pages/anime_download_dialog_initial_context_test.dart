@@ -14,6 +14,7 @@ import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-2485：AnimeDownloadDialog 初始上下文入参。
 /// ① initialMedia（合集绑 anilistId 时本地合成）→ 直达选种段：Nyaa 查询词与
@@ -84,7 +85,7 @@ void main() {
   }
 
   Iterable<String> fieldTexts(WidgetTester tester) => tester
-      .widgetList<TextField>(find.byType(TextField))
+      .widgetList<TextField>(glassUnwrapAll<TextField>(find.byType(TextField)))
       .map((TextField f) => f.controller?.text ?? '');
 
   testWidgets('initialMedia + initialEpisode → 直达选种段并预填合集名/集号',

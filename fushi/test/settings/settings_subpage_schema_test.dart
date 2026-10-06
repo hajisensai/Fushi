@@ -79,7 +79,7 @@ void main() {
   SettingsNavigationItem navTo(SettingsDestination Function() child) =>
       SettingsNavigationItem(id: 'p.sub', title: '进入子页', child: child);
 
-  testWidgets('Android game receiver belongs to interconnect settings',
+  testWidgets('game receiver belongs to interconnect settings',
       (WidgetTester tester) async {
     await pumpContext(tester);
     final SettingsDestination destination = buildInterconnectDestination();
@@ -89,7 +89,8 @@ void main() {
         .toList();
     expect(entries, hasLength(1));
     expect(entries.single, isA<SettingsActionItem>());
-    expect(entries.single.isVisible(sctx), Platform.isAndroid);
+    // Every platform can receive a stream, so the entry has no platform gate.
+    expect(entries.single.isVisible(sctx), isTrue);
   });
 
   SettingsDestination parentPage(SettingsNavigationItem nav) =>
@@ -381,7 +382,9 @@ void main() {
     test('渲染分发：状态行有专属分支；child 导航行推 SettingsDetailPage.subPage', () {
       final String widgets =
           read('lib/src/settings/settings_schema_widgets.dart');
-      expect(widgets, contains('SettingsStatusItem status => _status(status)'));
+      // _status 现在额外接收 BuildContext（按设计系统分派状态行外观），
+      // 契约仍是「状态行有专属分支」。
+      expect(widgets, contains('SettingsStatusItem status => _status(context, status)'));
       expect(widgets, contains('SettingsDetailPage.subPage(child)'));
     });
 

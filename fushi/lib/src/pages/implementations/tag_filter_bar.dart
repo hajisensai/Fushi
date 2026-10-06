@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
@@ -16,11 +17,17 @@ import 'package:fushi/utils.dart';
 ///
 /// 筛选状态走共享的 [selectedTagIdsProvider]（与书架联动）；管理标签返回后刷新
 /// [allTagsProvider] 并回调 [onTagsChanged]，让调用方刷新各自的 book/video 标签映射。
+///
+/// [part] 让库页把整栏拆进统一的库页工具行（`LibraryToolbar`，2026-10-04）：
+/// [FushiTagFilterBarPart.actions] 出「管理标签（常驻，新建标签入口）+ 批量选择 +
+/// 排序」三枚图标（放进搜索行行尾）；[FushiTagFilterBarPart.tags] 只出标签 chip，
+/// 没有标签时整段不占高度——不再有只剩两枚孤立图标的第三行和多余分隔线。
 class FushiTagFilterBar extends ConsumerStatefulWidget {
   const FushiTagFilterBar({
     required this.tags,
     required this.onToggleFilter,
     required this.onReorder,
+    this.part = FushiTagFilterBarPart.full,
     this.selectionMode = false,
     this.pinActions = false,
     this.showTagManagement = true,
@@ -32,7 +39,11 @@ class FushiTagFilterBar extends ConsumerStatefulWidget {
     super.key,
   });
 
+  /// 渲染整栏还是其中一段，见类注释。
+  final FushiTagFilterBarPart part;
+
   /// Keep actions visible while tags scroll on compact library layouts.
+  /// [FushiTagFilterBarPart.actions] 下决定图标是否用 44 触控尺寸。
   final bool pinActions;
   final bool showTagManagement;
 
@@ -72,25 +83,35 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final t = Translations.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-    // 末尾动作：先「管理标签」（有标签才显示），再可选「批量选择」。
-    final List<Widget> trailing = <Widget>[
-      if (widget.showTagManagement && widget.tags.isNotEmpty)
-        _tagBarAction(
-          icon: Icons.settings_outlined,
-          tooltip: t.tag_manage,
-          onTap: () {
-            Navigator.push(
-              context,
-              adaptivePageRoute(
-                context: context,
-                builder: (_) => const TagManagementPage(),
-              ),
-            ).then((_) {
-              ref.invalidate(allTagsProvider);
-              widget.onTagsChanged?.call();
-            });
-          },
-        ),
+    final bool actionsOnly = widget.part == FushiTagFilterBarPart.actions;
+    // 「管理标签」（新建 / 改名 / 删除标签的入口）。整栏 / 标签段形态下有标签才
+    // 显示；拆进工具行（actions）后**常驻**——没有任何标签时这里就是唯一的
+    // 新建标签入口，key 沿用书架窄屏那枚常驻齿轮的 `library_tag_settings`。
+    final Widget tagManage = KeyedSubtree(
+      key: const ValueKey<String>('library_tag_settings'),
+      child: _tagBarAction(
+        icon: Icons.settings_outlined,
+        tooltip: t.tag_manage,
+        onTap: () {
+          Navigator.push(
+            context,
+            adaptivePageRoute(
+              context: context,
+              builder: (_) => const TagManagementPage(),
+            ),
+          ).then((_) {
+            ref.invalidate(allTagsProvider);
+            widget.onTagsChanged?.call();
+          });
+        },
+      ),
+    );
+    // 末尾动作：先「管理标签」，再可选「批量选择」。
+    final List<Widget> tagActions = <Widget>[
+      if (widget.showTagManagement && (actionsOnly || widget.tags.isNotEmpty))
+        tagManage,
+    ];
+    final List<Widget> viewActions = <Widget>[
       if (widget.onToggleSelectionMode != null)
         _tagBarAction(
           icon: widget.selectionMode ? Icons.close : Icons.checklist_outlined,
@@ -108,19 +129,37 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         _sortMenuAction(tokens),
     ];
 
+    if (actionsOnly) {
+      // 「管理标签 + 批量选择 + 排序」：放进库页工具行行尾，与搜索 / 筛选同一行。
+      return FushiToolbar(
+        dense: true,
+        children: <Widget>[...tagActions, ...viewActions],
+      );
+    }
+    final bool tagsOnly = widget.part == FushiTagFilterBarPart.tags;
+    if (tagsOnly && widget.tags.isEmpty) return const SizedBox.shrink();
+    // 标签段不再重复「管理标签」：它已常驻在工具行行尾。
+    final List<Widget> trailing = tagsOnly
+        ? const <Widget>[]
+        : <Widget>[...tagActions, ...viewActions];
+    // 拆出的标签段不钉住动作：齿轮跟在标签后面滚动。
+    final bool pinned = widget.pinActions && !tagsOnly;
+
     final Widget tags = HorizontalDragScrollable(
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
+        // 拆段形态与库页工具行（`LibraryToolbar`，左右 12）左缘对齐。
         padding: EdgeInsets.symmetric(
-          horizontal: tokens.spacing.rowHorizontal,
+          horizontal: tagsOnly ? 12 : tokens.spacing.rowHorizontal,
           vertical: tokens.spacing.gap * 0.75,
         ),
-        itemCount:
-            widget.tags.length + (widget.pinActions ? 0 : trailing.length),
+        // 非钉住形态：整组动作作为**一个**工具栏项跟在标签后面滚动。
+        itemCount: widget.tags.length +
+            (pinned || trailing.isEmpty ? 0 : 1),
         separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap * 0.75),
         itemBuilder: (context, index) {
           if (index >= widget.tags.length) {
-            return trailing[index - widget.tags.length];
+            return Center(child: FushiToolbar(dense: true, children: trailing));
           }
           final BookTagRow tag = widget.tags[index];
           final bool isSelected = selectedIds.contains(tag.id);
@@ -134,13 +173,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           }
           return LongPressDraggable<BookTagRow>(
             data: tag,
-            feedback: Material(
-              color: Colors.transparent,
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: tokens.radii.chipRadius,
-              ),
-              clipBehavior: Clip.antiAlias,
+            feedback: FushiReorderDragProxy(
+              transparent: true,
+              borderRadius: tokens.radii.chipRadius,
               child: _tagFilterChip(
                 tag: tag,
                 isSelected: true,
@@ -182,15 +217,22 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         },
       ),
     );
+    if (tagsOnly) {
+      // 拆段形态：紧跟在库页工具行下面，与内容之间靠留白分隔，不画分隔线。
+      return SizedBox(height: tokens.spacing.gap * 5.5, child: tags);
+    }
     return Container(
       height: widget.pinActions ? 48 : tokens.spacing.gap * 5.5,
       decoration: BoxDecoration(
         border: Border(
           bottom: BorderSide(
             // eink：30% alpha 分隔线合成抖动灰 → 实心 outline（巡检 PR-3）。
+            // Apple：系统 separator（本身带 alpha 的发丝线色）。
             color: isEinkTheme(context)
                 ? tokens.surfaces.outline
-                : tokens.surfaces.outline.withValues(alpha: 0.3),
+                : isGlassDesign(context)
+                    ? appleColorsOf(context).separator
+                    : tokens.surfaces.outline.withValues(alpha: 0.3),
           ),
         ),
       ),
@@ -201,7 +243,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           ? Row(
               children: <Widget>[
                 Expanded(child: tags),
-                ...trailing,
+                FushiToolbar(dense: true, children: trailing),
                 const SizedBox(width: 12),
               ],
             )
@@ -217,11 +259,12 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (widget.pinActions) {
-      return IconButton(
+      return FushiIconButtonControl(
         tooltip: tooltip,
         constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-        icon: Icon(icon, size: 20),
+        icon: FushiIcon(icon, size: 20),
         color: selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
+        isSelected: selected,
         onPressed: onTap,
       );
     }
@@ -230,8 +273,9 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       tooltip: tooltip,
       size: tokens.spacing.gap * 2.25,
       padding: EdgeInsets.all(tokens.spacing.gap * 0.875),
-      enabledColor:
-          selected ? tokens.surfaces.primary : tokens.surfaces.onVariant,
+      // 选中（多选模式开着）交给 Expressive toggle / Apple 强调色玻璃圆钮。
+      selected: selected,
+      enabledColor: selected ? null : tokens.surfaces.onVariant,
       onTap: onTap,
     );
   }
@@ -242,20 +286,10 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
   Widget _sortMenuAction(FushiDesignTokens tokens) {
     final t = Translations.of(context);
     final ShelfSortMode selectedMode = widget.sortMode!;
-    return MenuAnchor(
+    // 菜单面板样式交给 FushiMenuAnchor（MD3 走全局 menuTheme，Apple 走玻璃
+    // 菜单面板），不再手拼 MenuStyle。
+    return FushiMenuAnchor(
       controller: _sortMenu,
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.overlay),
-        surfaceTintColor: const WidgetStatePropertyAll<Color>(
-          Colors.transparent,
-        ),
-        shape: WidgetStatePropertyAll<OutlinedBorder>(
-          RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
-        ),
-        padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
-          EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        ),
-      ),
       menuChildren: <Widget>[
         for (final ShelfSortMode mode in ShelfSortMode.values)
           _sortMenuItem(tokens, mode, selectedMode),
@@ -277,8 +311,14 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     ShelfSortMode selectedMode,
   ) {
     final bool selected = mode == selectedMode;
-    final Color foreground =
-        selected ? tokens.surfaces.primary : tokens.surfaces.onSurface;
+    // Apple：行样式交给玻璃菜单的 MenuButtonTheme（悬停 / 焦点强调色块 +
+    // onAccent 字），选中只靠行尾对勾；MD3 保留选中底 + 主色字。
+    final bool glass = isGlassDesign(context);
+    final Color? foreground = glass
+        ? null
+        : selected
+            ? tokens.surfaces.primary
+            : tokens.surfaces.onSurface;
     return Actions(
       // B 只关菜单（焦点回归标签栏），不冒泡成 GamepadService 的整页返回。
       actions: <Type, Action<Intent>>{
@@ -298,29 +338,33 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           _sortMenu.close();
           widget.onSortModeChanged!(mode);
         },
-        style: MenuItemButton.styleFrom(
-          minimumSize: const Size(0, 48),
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.rowHorizontal,
-          ),
-          alignment: Alignment.centerLeft,
-          backgroundColor: selected ? tokens.surfaces.selected : null,
-          foregroundColor: foreground,
-        ),
+        style: glass
+            ? null
+            : MenuItemButton.styleFrom(
+                minimumSize: const Size(0, 48),
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.rowHorizontal,
+                ),
+                alignment: Alignment.centerLeft,
+                backgroundColor: selected ? tokens.surfaces.selected : null,
+                foregroundColor: foreground,
+              ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             Text(
               widget.sortModeLabel!(mode),
-              style: tokens.type.listTitle.copyWith(
-                color: foreground,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
+              style: glass
+                  ? null
+                  : tokens.type.listTitle.copyWith(
+                      color: foreground,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    ),
             ),
             if (selected)
               Padding(
                 padding: EdgeInsets.only(left: tokens.spacing.gap),
-                child: Icon(Icons.check, size: 20, color: foreground),
+                child: FushiIcon(Icons.check, size: 20, color: foreground),
               ),
           ],
         ),
@@ -343,4 +387,16 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       onTap: onTap,
     );
   }
+}
+
+/// [FushiTagFilterBar] 渲染哪一段。
+enum FushiTagFilterBarPart {
+  /// 整栏：标签 chip + 末尾全部动作（独立使用 / 旧调用点）。
+  full,
+
+  /// 只出标签 chip；无标签时零高度。
+  tags,
+
+  /// 只出「管理标签（常驻）+ 批量选择 + 排序」（放进库页工具行行尾）。
+  actions,
 }

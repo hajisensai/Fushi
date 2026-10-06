@@ -144,17 +144,15 @@ class OnlineWorkHeader extends StatelessWidget {
   }
 }
 
-/// 条目区小标题（「剧集」「章节（N）」）。
+/// 条目区小标题（「剧集」「章节（N）」）：委托共享 [FushiSectionTitle]
+/// （内容区块层级，默认上 24 下 8）。
 class OnlineWorkSectionTitle extends StatelessWidget {
   const OnlineWorkSectionTitle(this.text, {super.key});
 
   final String text;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 24, bottom: 8),
-    child: Text(text, style: Theme.of(context).textTheme.titleMedium),
-  );
+  Widget build(BuildContext context) => FushiSectionTitle(text);
 }
 
 /// 条目区的一行：点行 = 在线打开这一条，[trailing] 放这一条的次要动作（下载等）。

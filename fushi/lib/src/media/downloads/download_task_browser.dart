@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_task_delete_confirm.dart';
@@ -193,7 +194,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     final String message = describeDownloadBatchOutcome(outcome);
     if (message.isEmpty) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      FushiSnackBar(content: Text(message)),
     );
   }
 
@@ -215,11 +216,13 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   /// 目标集在弹确认框**之前**就定死并一路带到执行：确认框可能停留好几秒，期间
   /// 后台轮询会重建列表，跨 await 重算一次交集会让确认框里的 N 与实际删除量对不上，
   /// 甚至对已经消失的条目调 delete。
-  Future<void> _confirmBatchDelete(List<DownloadTaskEntry> rendered) async {
-    final List<DownloadTaskEntry> targets = List<DownloadTaskEntry>.of(
-      _selectedVisible(rendered),
-    );
-    if (targets.isEmpty) return;
+  Future<void> _confirmBatchDelete(List<DownloadTaskEntry> rendered) =>
+      _confirmDelete(List<DownloadTaskEntry>.of(_selectedVisible(rendered)));
+
+  /// 删除一个已定死的目标集（多选批量 / 整组删除共用）：整批只问一次「要不要连
+  /// 文件一起删」。确认框里的 N 就是 [targets] 的条数。
+  Future<void> _confirmDelete(List<DownloadTaskEntry> targets) async {
+    if (targets.isEmpty || _batchRunning) return;
     // 「同时删除文件」只在选中集里真有条目兑现得了时才摆出来——mokuro / 直链
     // 只能把条目移出列表，勾了也删不掉盘上的东西（与单条删除确认框同一纪律）。
     final bool offerDeleteFiles = targets.any(
@@ -252,7 +255,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          Checkbox(
+          FushiCheckbox(
             value: selected,
             onChanged: (_) => _toggleTask(task.id),
           ),
@@ -401,12 +404,12 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 18),
+          FushiIcon(icon, size: 18),
           const SizedBox(width: 6),
           Flexible(
             child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
-          const Icon(Icons.arrow_drop_down, size: 18),
+          const FushiIcon(Icons.arrow_drop_down, size: 18),
         ],
       ),
     ),
@@ -571,7 +574,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                 if (visible.any(
                   (DownloadTaskEntry task) => task.actions.retry != null,
                 ))
-                  TextButton(
+                  FushiTextButton(
                     key: const ValueKey<String>('download-task-retry-visible'),
                     onPressed: _batchRunning
                         ? null
@@ -586,7 +589,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                 if (visible.any(
                   (DownloadTaskEntry task) => task.actions.clear != null,
                 ))
-                  TextButton(
+                  FushiTextButton(
                     key: const ValueKey<String>('download-task-clear-visible'),
                     onPressed: _batchRunning
                         ? null
@@ -661,7 +664,7 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                         children: <Widget>[
                           FushiListItem(
                             key: ValueKey<String>('download-group-$key'),
-                            leading: Icon(
+                            leading: FushiIcon(
                               expanded
                                   ? Icons.expand_more
                                   : Icons.chevron_right,
@@ -672,15 +675,50 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
                             // 文字放大 2.0 下，trailing 只放得下「已完成 / 总数」，
                             // 再接一段就把整行撑溢出（本文件的窄屏守卫会红）。
                             subtitle: Text('${(groupProgress * 100).round()}%'),
-                            trailing: Text(
-                              '$completed / ${group.value.length}',
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                Text('$completed / ${group.value.length}'),
+                                // 整组删除：目标是这一组的全部成员（含折叠着的）
+                                // ——组头就是这一组本身，确认框会写明条数。
+                                if (!_selectionMode &&
+                                    countDownloadTasksSupporting(
+                                          group.value,
+                                          DownloadBatchAction.delete,
+                                        ) >
+                                        0)
+                                  FushiIconButton(
+                                    key: ValueKey<String>(
+                                      'download-group-delete-$key',
+                                    ),
+                                    enabled: !_batchRunning,
+                                    tooltip: t.download_task_group_delete,
+                                    icon: Icons.delete_outline,
+                                    onTap: () => unawaited(
+                                      // 只交可删的成员：确认框里的 N
+                                      // 必须等于真会删掉的条数。
+                                      _confirmDelete(
+                                        group.value
+                                            .where(
+                                              (DownloadTaskEntry task) =>
+                                                  downloadTaskBatchCallable(
+                                                    task,
+                                                    DownloadBatchAction.delete,
+                                                  ) !=
+                                                  null,
+                                            )
+                                            .toList(),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                             onTap: () => setState(
                               () => _expandedGroups[key] = !expanded,
                             ),
                           ),
                           if (!expanded && groupProgress < 1)
-                            LinearProgressIndicator(
+                            FushiLinearProgressIndicator(
                               key: ValueKey<String>(
                                 'download-group-progress-$key',
                               ),

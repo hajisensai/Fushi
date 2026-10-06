@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -8,7 +10,11 @@ import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart'
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -16,6 +22,10 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiTitleBarColorScope, fushiTitleBarColorsOn;
 
 /// Receiver-side wording for a host mine result. The host only sends stable
 /// detail codes (its raw failure text stays on the host), so every outcome a
@@ -141,11 +151,20 @@ class GameStreamPage extends StatefulWidget {
   State<GameStreamPage> createState() => _GameStreamPageState();
 }
 
+bool get _isDesktopPlatform => switch (defaultTargetPlatform) {
+  TargetPlatform.windows ||
+  TargetPlatform.macOS ||
+  TargetPlatform.linux => true,
+  _ => false,
+};
+
 class _GameStreamPageState extends State<GameStreamPage>
     with WidgetsBindingObserver {
   final GlobalKey _videoKey = GlobalKey();
   GameStreamLookupController? _lookupController;
-  bool _controlsVisible = true;
+  // The on-screen pad stands in for missing buttons on a touch screen; a
+  // desktop has a keyboard and mouse, so it starts hidden there.
+  bool _controlsVisible = !_isDesktopPlatform;
   bool _lookupVisible = true;
   bool _mineFailed = false;
   final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
@@ -155,6 +174,15 @@ class _GameStreamPageState extends State<GameStreamPage>
       <GameStreamVirtualButton, String>{};
   final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
   GameStreamTouchInterpreter? _touch;
+  GameStreamMouseInterpreter? _mouse;
+  ({Rect bounds, Rect content})? _mouseGeometry;
+  bool _mouseMoveInFlight = false;
+
+  /// After a forced release the user's finger may still be on the button. The
+  /// rest of that press is dropped until every button is up; otherwise the
+  /// next drag event would look like a fresh press and click the game.
+  bool _mouseAwaitingRelease = false;
+  Offset? _queuedMouseMove;
   ({Rect bounds, Rect content})? _pointerGeometry;
   GameStreamInputComposer? _pointerComposer;
   GameStreamTouchMode _touchMode = GameStreamTouchMode.direct;
@@ -277,14 +305,16 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   void _releasePointerIfLayoutChanged(Duration _) {
-    if (!mounted || _touch == null) return;
-    if (_pointerGeometry != _currentPointerGeometry()) {
+    if (!mounted) return;
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if ((_touch != null && _pointerGeometry != geometry) ||
+        (_mouse?.active == true && _mouseGeometry != geometry)) {
       unawaited(_releasePointer());
     }
   }
 
   void _schedulePointerGeometryCheck() {
-    if (_touch != null) {
+    if (_touch != null || _mouse?.active == true) {
       WidgetsBinding.instance.addPostFrameCallback(
         _releasePointerIfLayoutChanged,
       );
@@ -292,15 +322,19 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _releasePointer() async {
-    final GameStreamTouchInterpreter? touch = _touch;
-    final GameStreamInputComposer? composer = _pointerComposer;
-    if (touch == null || composer == null) return;
     // Clear synchronously: cancellation, metrics and disposal can arrive in the
     // same frame and must emit exactly one release to the original session.
+    final GameStreamTouchInterpreter? touch = _touch;
+    final GameStreamInputComposer? composer = _pointerComposer;
     _touch = null;
     _pointerComposer = null;
     _pointerGeometry = null;
-    await _dispatchPointer(touch.cancel(), composer);
+    // _releaseMouse also detaches its state before its first await.
+    final Future<void> mouse = _releaseMouse();
+    if (touch != null && composer != null) {
+      await _dispatchPointer(touch.cancel(), composer);
+    }
+    await mouse;
   }
 
   Future<void> _sendPointer(
@@ -371,6 +405,127 @@ class _GameStreamPageState extends State<GameStreamPage>
       _pointerGeometry = null;
     }
     await _dispatchPointer(commands, composer);
+  }
+
+  static bool _isMouse(PointerEvent event) =>
+      event.kind == PointerDeviceKind.mouse;
+
+  /// Hovering is spontaneous, so it is only sent while input can reach the
+  /// host; otherwise every move would come back as a rejected ack.
+  bool get _canHover {
+    final FushiGameStreamReceiver? receiver = widget.receiver;
+    return receiver != null &&
+        !receiver.backgrounded &&
+        receiver.state == GameStreamReceiverState.connected;
+  }
+
+  Offset? _normalizeMouse(
+    PointerEvent event,
+    ({Rect bounds, Rect content}) geometry,
+  ) {
+    final RenderBox? box =
+        _videoKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return null;
+    return GameStreamPointerMapper(
+      geometry.content.size,
+    ).normalize(box.globalToLocal(event.position) - geometry.content.topLeft);
+  }
+
+  GameStreamMouseInterpreter _mouseFor(({Rect bounds, Rect content}) geometry) {
+    _mouseGeometry = geometry;
+    return _mouse ??= GameStreamMouseInterpreter(
+      extraButtonsSupported: _supports(GameStreamFeature.pointerButtons),
+      wheelSupported: _supports(GameStreamFeature.wheel),
+    );
+  }
+
+  /// Desktop mouse press / release / drag / hover: buttons map to themselves.
+  Future<void> _sendMouse(PointerEvent event) async {
+    if (_mouseAwaitingRelease) {
+      if (event.buttons == 0) _mouseAwaitingRelease = false;
+      return;
+    }
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if (geometry == null) return;
+    // A held button whose video moved under it cannot be continued.
+    if (_mouse?.active == true && geometry != _mouseGeometry) {
+      await _releaseMouse();
+      return;
+    }
+    final Offset? normalized = _normalizeMouse(event, geometry);
+    if (normalized == null) return;
+    await _dispatchMouse(_mouseFor(geometry).update(normalized, event.buttons));
+  }
+
+  /// Logical pixels one physical wheel detent arrives as. The desktop
+  /// embedders disagree: Windows reports WHEEL_DELTA as 100 physical pixels,
+  /// macOS one line as 40, Linux 53. Counting detents per platform keeps one
+  /// detent = one host notch (a VN advances or backs up one line), while a
+  /// high-resolution wheel's small deltas still add up instead of each
+  /// becoming a whole notch.
+  double _wheelDetentPixels() => switch (defaultTargetPlatform) {
+    TargetPlatform.windows => 100 / MediaQuery.devicePixelRatioOf(context),
+    TargetPlatform.macOS => 40,
+    _ => 53,
+  };
+
+  Future<void> _scrollMouse(
+    PointerEvent event,
+    Offset delta, {
+    double step = GameStreamMouseInterpreter.scrollStep,
+  }) async {
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if (geometry == null) return;
+    final Offset? normalized = _normalizeMouse(event, geometry);
+    if (normalized == null) return;
+    await _dispatchMouse(
+      _mouseFor(geometry).scroll(normalized, delta, step: step),
+    );
+  }
+
+  Future<void> _releaseMouse() async {
+    final GameStreamMouseInterpreter? mouse = _mouse;
+    if (mouse == null) return;
+    if (mouse.active) _mouseAwaitingRelease = true;
+    _mouse = null;
+    _mouseGeometry = null;
+    _queuedMouseMove = null;
+    await _dispatchPointer(mouse.cancel(), widget.inputComposer);
+  }
+
+  /// Moves are positional, so only the newest matters: one is in flight at a
+  /// time and the latest waiting position replaces the rest. Each input waits
+  /// for the host's ack, and a mouse reports motion far faster than that. A
+  /// button event carries its own position, so it drops a waiting move rather
+  /// than letting the older position land after the press.
+  Future<void> _dispatchMouse(List<GameStreamPointerCommand> commands) async {
+    final GameStreamInputComposer composer = widget.inputComposer;
+    final bool moveOnly =
+        commands.length == 1 &&
+        commands.single.action == GameStreamInputAction.move;
+    if (!moveOnly) {
+      _queuedMouseMove = null;
+      await _dispatchPointer(commands, composer);
+      return;
+    }
+    if (_mouseMoveInFlight) {
+      _queuedMouseMove = commands.single.position;
+      return;
+    }
+    _mouseMoveInFlight = true;
+    try {
+      Offset? next = commands.single.position;
+      while (next != null) {
+        _queuedMouseMove = null;
+        await composer.pointer(
+          action: GameStreamInputAction.move,
+          normalized: next,
+        );
+        next = _queuedMouseMove;
+      }
+    } finally {
+      _mouseMoveInFlight = false;
+    }
   }
 
   Future<void> _dispatchPointer(
@@ -467,9 +622,9 @@ class _GameStreamPageState extends State<GameStreamPage>
     final bool restoreLookup = _lookupVisible;
     setState(() => _lookupVisible = false);
     try {
-      await showModalBottomSheet<void>(
+      await adaptiveModalSheet<void>(
         context: context,
-        isScrollControlled: true,
+        showDragHandle: false,
         builder: (BuildContext context) => StatefulBuilder(
           builder: (BuildContext context, StateSetter updateSheet) => SafeArea(
             child: SizedBox(
@@ -488,7 +643,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                     if (button != GameStreamVirtualButton.menu)
                       FushiListItem(
                         title: Text(_buttonLabel(button)),
-                        trailing: DropdownButton<String>(
+                        trailing: FushiDropdownButton<String>(
                           key: ValueKey<String>(
                             'game-stream-binding-${button.name}',
                           ),
@@ -649,14 +804,14 @@ class _GameStreamPageState extends State<GameStreamPage>
       // Resolution/fps can only go down from the host's capture ceiling;
       // tell the user when their request was capped.
       if (applied.maxHeight < next.maxHeight || applied.maxFps < next.maxFps) {
-        ScaffoldMessenger.maybeOf(
-          context,
-        )?.showSnackBar(SnackBar(content: Text(t.game_stream_settings_capped)));
+        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+          FushiSnackBar(content: Text(t.game_stream_settings_capped)),
+        );
       }
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text('${t.game_stream_settings_apply_failed}: $error'),
           ),
         );
@@ -690,9 +845,14 @@ class _GameStreamPageState extends State<GameStreamPage>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Focus(onKeyEvent: _onHardwareKey, child: _buildBody(theme)),
+    // 串流页整页黑底：桌面自绘顶栏（挂在 Navigator 外、只认根主题 surface）
+    // 跟着变黑，否则画面顶上压一条浅色带。
+    return FushiTitleBarColorScope(
+      colors: fushiTitleBarColorsOn(Colors.black),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Focus(onKeyEvent: _onHardwareKey, child: _buildBody(theme)),
+      ),
     );
   }
 
@@ -713,8 +873,12 @@ class _GameStreamPageState extends State<GameStreamPage>
                     alignment: Alignment.topCenter,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 52),
+                      // 浮在画面上的中性圆角浮层 + 错误色文字，不再是贴边的
+                      // errorContainer 色条。
                       child: Material(
-                        color: theme.colorScheme.errorContainer,
+                        color: theme.colorScheme.surfaceContainer,
+                        borderRadius: FushiBorderRadius.control,
+                        elevation: kFushiFloatingElevation,
                         child: Padding(
                           padding: const EdgeInsets.all(8),
                           child: Text(
@@ -724,7 +888,10 @@ class _GameStreamPageState extends State<GameStreamPage>
                                     widget.inputComposer.lastRejectionReason,
                                   ),
                             style: TextStyle(
-                              color: theme.colorScheme.onErrorContainer,
+                              color: fushiStatusColor(
+                                context,
+                                FushiStatusTone.error,
+                              ),
                             ),
                           ),
                         ),
@@ -738,9 +905,21 @@ class _GameStreamPageState extends State<GameStreamPage>
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
-                      BackButton(
-                        color: Colors.white,
-                        onPressed: () => Navigator.of(context).maybePop(),
+                      // 返回钮与右上工具栏同一形态（悬浮工具栏 / Apple 玻璃
+                      // 圆钮），不再是直接压在画面上的裸白色箭头——画面亮时
+                      // 白箭头会消失。
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: FushiToolbar(
+                          floating: true,
+                          children: <Widget>[
+                            FushiIconButtonControl(
+                              tooltip: t.back,
+                              icon: const FushiIcon(Icons.arrow_back),
+                              onPressed: () => Navigator.of(context).maybePop(),
+                            ),
+                          ],
+                        ),
                       ),
                       if (_statsVisible) _buildStatsOverlay(theme),
                     ],
@@ -754,7 +933,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   height: 1,
                   child: Opacity(
                     opacity: 0,
-                    child: TextField(
+                    child: FushiTextFieldControl(
                       key: GameStreamPage.keyboardKey,
                       focusNode: _keyboardFocus,
                       controller: _keyboardText,
@@ -771,85 +950,88 @@ class _GameStreamPageState extends State<GameStreamPage>
                 ),
                 Align(
                   alignment: Alignment.topRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      IconButton(
-                        tooltip: t.game_stream_settings_title,
-                        color: Colors.white,
-                        icon: const Icon(Icons.settings_outlined),
-                        onPressed: _openSettings,
-                      ),
-                      FushiOverflowMenu<_StreamMenuAction>(
-                        tooltip: t.game_stream_more,
-                        iconWidget: const Icon(
-                          Icons.more_vert,
-                          color: Colors.white,
-                        ),
-                        onSelected: _onOverflowAction,
-                        items: <PopupMenuEntry<_StreamMenuAction>>[
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.touchMode,
-                            icon: _touchMode == GameStreamTouchMode.direct
-                                ? Icons.mouse_outlined
-                                : Icons.touch_app_outlined,
-                            label: _touchMode == GameStreamTouchMode.direct
-                                ? t.game_stream_touch_trackpad
-                                : t.game_stream_touch_direct,
+                  // 悬浮工具栏（M3 Expressive floating toolbar / Apple 玻璃胶囊组）：
+                  // 自带底色与阴影，图标不再写死白色去扛串流画面的对比度。
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: FushiToolbar(
+                      floating: true,
+                      groups: <List<Widget>>[
+                        <Widget>[
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_settings_title,
+                            icon: const FushiIcon(Icons.settings_outlined),
+                            onPressed: _openSettings,
                           ),
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.keyboard,
-                            icon: Icons.keyboard_outlined,
-                            label: t.game_stream_keyboard,
-                          ),
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.stats,
-                            icon: Icons.speed_outlined,
-                            label: _statsVisible
-                                ? t.game_stream_stats_hide
-                                : t.game_stream_stats_show,
-                          ),
-                          FushiPopupMenuItem<_StreamMenuAction>(
-                            value: _StreamMenuAction.audio,
-                            icon: _settings.audio
-                                ? Icons.volume_off_outlined
-                                : Icons.volume_up_outlined,
-                            label: _settings.audio
-                                ? t.game_stream_audio_mute
-                                : t.game_stream_audio_unmute,
+                          FushiOverflowMenu<_StreamMenuAction>(
+                            tooltip: t.game_stream_more,
+                            iconWidget: const FushiIcon(Icons.more_vert),
+                            onSelected: _onOverflowAction,
+                            items: <PopupMenuEntry<_StreamMenuAction>>[
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.touchMode,
+                                icon: _touchMode == GameStreamTouchMode.direct
+                                    ? Icons.mouse_outlined
+                                    : Icons.touch_app_outlined,
+                                label: _touchMode == GameStreamTouchMode.direct
+                                    ? t.game_stream_touch_trackpad
+                                    : t.game_stream_touch_direct,
+                              ),
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.keyboard,
+                                icon: Icons.keyboard_outlined,
+                                label: t.game_stream_keyboard,
+                              ),
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.stats,
+                                icon: Icons.speed_outlined,
+                                label: _statsVisible
+                                    ? t.game_stream_stats_hide
+                                    : t.game_stream_stats_show,
+                              ),
+                              FushiPopupMenuItem<_StreamMenuAction>(
+                                value: _StreamMenuAction.audio,
+                                icon: _settings.audio
+                                    ? Icons.volume_off_outlined
+                                    : Icons.volume_up_outlined,
+                                label: _settings.audio
+                                    ? t.game_stream_audio_mute
+                                    : t.game_stream_audio_unmute,
+                              ),
+                            ],
                           ),
                         ],
-                      ),
-                      IconButton(
-                        tooltip: t.game_stream_keys,
-                        color: Colors.white,
-                        icon: const Icon(Icons.tune),
-                        onPressed: _configureKeys,
-                      ),
-                      IconButton(
-                        tooltip: t.game_stream_lookup_toggle,
-                        color: Colors.white,
-                        icon: Icon(
-                          _lookupVisible
-                              ? Icons.menu_book
-                              : Icons.menu_book_outlined,
-                        ),
-                        onPressed: () =>
-                            setState(() => _lookupVisible = !_lookupVisible),
-                      ),
-                      IconButton(
-                        tooltip: t.game_stream_controls_toggle,
-                        color: Colors.white,
-                        icon: Icon(
-                          _controlsVisible
-                              ? Icons.gamepad
-                              : Icons.gamepad_outlined,
-                        ),
-                        onPressed: () => setState(
-                          () => _controlsVisible = !_controlsVisible,
-                        ),
-                      ),
-                    ],
+                        <Widget>[
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_keys,
+                            icon: const FushiIcon(Icons.tune),
+                            onPressed: _configureKeys,
+                          ),
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_lookup_toggle,
+                            icon: FushiIcon(
+                              _lookupVisible
+                                  ? Icons.menu_book
+                                  : Icons.menu_book_outlined,
+                            ),
+                            onPressed: () => setState(
+                              () => _lookupVisible = !_lookupVisible,
+                            ),
+                          ),
+                          FushiIconButtonControl(
+                            tooltip: t.game_stream_controls_toggle,
+                            icon: FushiIcon(
+                              _controlsVisible
+                                  ? Icons.gamepad
+                                  : Icons.gamepad_outlined,
+                            ),
+                            onPressed: () => setState(
+                              () => _controlsVisible = !_controlsVisible,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -898,9 +1080,14 @@ class _GameStreamPageState extends State<GameStreamPage>
       child: IgnorePointer(
         child: DecoratedBox(
           key: GameStreamPage.statsKey,
-          decoration: const BoxDecoration(color: Color(0xAA000000)),
+          // 画面上的 HUD 保持深色半透明（任何画面亮度下白字都可读），
+          // 圆角与浮层统一，不再是直角黑块。
+          decoration: const BoxDecoration(
+            color: Color(0xAA000000),
+            borderRadius: BorderRadius.all(Radius.circular(8)),
+          ),
           child: Padding(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: Text(
               lines.isEmpty ? t.game_stream_video_waiting : lines.join('\n'),
               style: theme.textTheme.labelSmall?.copyWith(
@@ -924,12 +1111,42 @@ class _GameStreamPageState extends State<GameStreamPage>
       onPointerDown: (PointerDownEvent event) {
         // Hardware keyboard keys go to the game while the video is focused.
         if (!_keyboardFocus.hasFocus) _videoFocus.requestFocus();
-        unawaited(_sendPointer(event, GameStreamInputAction.down));
+        unawaited(
+          _isMouse(event)
+              ? _sendMouse(event)
+              : _sendPointer(event, GameStreamInputAction.down),
+        );
       },
-      onPointerMove: (PointerMoveEvent event) =>
-          unawaited(_sendPointer(event, GameStreamInputAction.move)),
-      onPointerUp: (PointerUpEvent event) =>
-          unawaited(_sendPointer(event, GameStreamInputAction.up)),
+      onPointerMove: (PointerMoveEvent event) => unawaited(
+        _isMouse(event)
+            ? _sendMouse(event)
+            : _sendPointer(event, GameStreamInputAction.move),
+      ),
+      onPointerUp: (PointerUpEvent event) => unawaited(
+        _isMouse(event)
+            ? _sendMouse(event)
+            : _sendPointer(event, GameStreamInputAction.up),
+      ),
+      onPointerHover: (PointerHoverEvent event) {
+        if (_isMouse(event) && _canHover) unawaited(_sendMouse(event));
+      },
+      onPointerSignal: (PointerSignalEvent event) {
+        if (event is! PointerScrollEvent) return;
+        GestureBinding.instance.pointerSignalResolver.register(
+          event,
+          (PointerSignalEvent event) => unawaited(
+            _scrollMouse(
+              event,
+              (event as PointerScrollEvent).scrollDelta,
+              step: _wheelDetentPixels(),
+            ),
+          ),
+        );
+      },
+      // Trackpad two-finger pan: content follows the fingers (natural
+      // scrolling), the opposite sign of a wheel delta.
+      onPointerPanZoomUpdate: (PointerPanZoomUpdateEvent event) =>
+          unawaited(_scrollMouse(event, -event.panDelta)),
       onPointerCancel: (PointerCancelEvent event) =>
           unawaited(_releasePointer()),
       child: Container(
@@ -1071,7 +1288,11 @@ class _GameStreamPageState extends State<GameStreamPage>
                             fontSize: 14,
                             selected: true,
                             fontFamily: theme.textTheme.bodyMedium?.fontFamily,
-                            color: theme.colorScheme.onPrimaryContainer,
+                            color: SubtitleTranscriptRow.textColorOf(
+                              context,
+                              theme.colorScheme,
+                              selected: true,
+                            ),
                           ),
                           keyboardLookup: true,
                           onLookup: (int index, Rect anchor) {
@@ -1096,7 +1317,11 @@ class _GameStreamPageState extends State<GameStreamPage>
                         trailing: SubtitleTranscriptAction(
                           icon: Icons.content_copy_outlined,
                           tooltip: t.copy,
-                          color: theme.colorScheme.onPrimaryContainer,
+                          color: SubtitleTranscriptRow.secondaryColorOf(
+                            context,
+                            theme.colorScheme,
+                            selected: true,
+                          ),
                           size: 16,
                           onPressed: () => unawaited(
                             Clipboard.setData(ClipboardData(text: line.text)),
@@ -1107,15 +1332,24 @@ class _GameStreamPageState extends State<GameStreamPage>
                 ),
               ),
             ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Expanded(
               key: GameStreamPage.dictionaryKey,
               child: controller == null || result == null
                   ? Center(
                       child: controller?.searching == true
-                          ? const CircularProgressIndicator()
-                          : Text(
-                              controller?.error ?? t.game_stream_lookup_hint,
+                          ? const FushiCircularProgressIndicator()
+                          : Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                controller?.error ?? t.game_stream_lookup_hint,
+                                textAlign: TextAlign.center,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: fushiNeutralSecondaryForeground(
+                                    context,
+                                  ),
+                                ),
+                              ),
                             ),
                     )
                   : DictionaryPopupLayer(
@@ -1142,8 +1376,8 @@ class _GameStreamPageState extends State<GameStreamPage>
                   _mineMessage!,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: _mineFailed
-                        ? theme.colorScheme.error
-                        : theme.colorScheme.primary,
+                        ? fushiStatusColor(context, FushiStatusTone.error)
+                        : fushiAccentForeground(context),
                   ),
                 ),
               ),
@@ -1229,7 +1463,7 @@ class _IconPadButton extends StatelessWidget {
     return _PadShell(
       onDown: () => onButton(button, GameStreamInputAction.down),
       onUp: () => onButton(button, GameStreamInputAction.up),
-      child: Icon(icon, color: Colors.white),
+      child: FushiIcon(icon, color: Colors.white),
     );
   }
 }

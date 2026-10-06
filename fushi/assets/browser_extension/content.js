@@ -513,13 +513,14 @@ window.fushiToast = function (text, sticky, openSettings) {
       t.id = 'fushi-toast';
       t.style.cssText =
         'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:2147483647;' +
-        'max-width:70vw;padding:12px 18px;border-radius:10px;background:var(--fushi-scrim-strong,rgba(20,20,22,.94));' +
-        'color:var(--fushi-on-scrim,#fff);font:14px/1.5 "Hiragino Sans",sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);' +
+        'max-width:70vw;padding:12px 20px;font:14px/1.5 system-ui,"Hiragino Sans",sans-serif;' +
         'pointer-events:none;white-space:pre-line;text-align:center;transition:opacity .2s;';
+      // 外观（液态玻璃胶囊 + 减少透明度 / 不支持模糊时的实色回落）在 content.css 的 #fushi-toast。
       (document.fullscreenElement || document.body).appendChild(t);
     } else if (t.parentNode !== (document.fullscreenElement || document.body)) {
       (document.fullscreenElement || document.body).appendChild(t); // 全屏切换时迁到正确父节点
     }
+    if (typeof t.setAttribute === 'function') t.setAttribute('data-theme', fushiResolveTheme());
     t.textContent = openSettings ? text + '\n' + fushiTr('toast_open_settings_hint') : text;
     // toast 是复用的同一个节点：每次都要把可点态显式设成本次该有的值，否则上一条可点的报错
     // 会把 pointer-events 留给下一条普通提示，让它凭空吞掉页面点击。
@@ -625,57 +626,14 @@ async function fushiRemoveQueued(okIds) {
     await chrome.storage.local.set({ fushiQueue: remaining });
   } catch (_) {}
 }
-// 制卡结果分类（TODO-1184）：卡已建(success)或已存在(duplicate) → 出队(done，队列才会清)；
-// Anki 未配置(notConfigured) → 留队 + 提示用户去配（配好再点生成即可，出队会静默丢词）；
-// 其余(error / 网络失败 / 上下文失效) → 留队下次重试。只有 done 才 push 进 okIds 被剔除。
-// TODO-1331：把制卡请求的 HTTP/网络层失败翻成用户能懂的原因。resp 形状见 background.js：
-// HTTP 成功 {ok:true,status,data}；非 2xx {ok:false,status,data:null}；fetch 抛异常
-// （连接被拒/超时/DNS）{ok:false,error}。据此分 401 鉴权 / 404 端点 / 4xx-5xx 服务端 /
-// 连不上（无 status）四类，让扩展弹明确 ✗ 原因，而不是静默 retry 到「你看日志却查不到」。
-function fushiMineHttpFailureReason(resp) {
-  if (!resp) return fushiTr('mine_err_no_response');
-  const status = typeof resp.status === 'number' ? resp.status : 0;
-  if (status === 401) return fushiTr('mine_err_401');
-  if (status === 404) return fushiTr('mine_err_404');
-  if (status >= 500) return fushiTr('mine_err_5xx', { status });
-  if (status >= 400) return fushiTr('mine_err_4xx', { status, error: resp.error || fushiTr('mine_err_check_settings') });
-  // ok:false 且无 status = fetch 抛异常（连接被拒/超时/DNS）：server 没开或主机/端口错。
-  return fushiTr('mine_err_unreachable', { error: resp.error || fushiTr('mine_err_refused') });
-}
+// 制卡结果分类：判据住在 mine-outcome.js（与 background 的 YouTube 批量制卡共用同一份），
+// 这里只负责把 notice 弹成页面 toast（Netflix 回放录制在本页里跑）。
 function fushiClassifyMineResp(resp) {
-  // TODO-1331：HTTP/网络层失败不再静默 retry——弹 ✗ 原因让用户看得见（YouTube/Netflix
-  // 批量制卡共用本分类器，两条链路的 HTTP 失败都据此显因）。
-  if (!resp || !resp.ok || !resp.data) {
-    if (typeof window.fushiToast === 'function') {
-      // 401 / 其它 4xx 的文案就是让用户去扩展设置核对 token，故这两类做成可点直达设置页。
-      const st = resp && typeof resp.status === 'number' ? resp.status : 0;
-      const settingsFixable = st === 401 || (st >= 400 && st < 500 && st !== 404);
-      try {
-        window.fushiToast('✗ ' + fushiMineHttpFailureReason(resp), false, settingsFixable);
-      } catch (_) {}
-    }
-    return 'retry';
+  const o = window.fushiMineOutcome(resp, fushiTr);
+  if (o.notice && typeof window.fushiToast === 'function') {
+    try { window.fushiToast(o.notice, false, o.settingsFixable); } catch (_) {}
   }
-  const d = resp.data;
-  const r = d.result;
-  // TODO-1303：服务端现在回带诊断（message=失败原因/音频落空警告，
-  // detail=技术细节）。末尾弹 toast 显因，终结「制卡失败报成功 + 没提示」；
-  // app 侧已把失败写进错误日志。
-  const reason = (d.message || d.detail || '').toString();
-  if (r === 'success' || r === 'duplicate') {
-    // 部分成功：卡建好了但单词音频落空（message 非空）→ 与真成功区分，
-    // 弹警告但仍算 done（卡确实建了）。
-    if (r === 'success' && reason && typeof window.fushiToast === 'function') {
-      try { window.fushiToast('⚠ ' + reason); } catch (_) {}
-    }
-    return 'done';
-  }
-  if (r === 'notConfigured') return 'unconfigured';
-  // error / 其它：失败，弹原因（无原因回落通用文案）后重试。
-  if (typeof window.fushiToast === 'function') {
-    try { window.fushiToast('✗ ' + (reason || fushiTr('mine_err_failed_retry'))); } catch (_) {}
-  }
-  return 'retry';
+  return o.cls;
 }
 function fushiQueueLoad() {
   try {
@@ -795,30 +753,76 @@ window.fushiOpenSentenceContextModal = function (args) {
   const host = document.createElement('div');
   host.id = 'fushi-ctx-modal-host';
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
+  // 明暗跟扩展主题；--fushi-* token 由 content.css 重根到本宿主（theme.js IN_PAGE_HOSTS 同一份
+  // 清单，预设 / 自定义调色板也落到这里），shadow 内经继承读到；缺席时用下面的同色系兜底。
+  host.setAttribute('data-theme', dark ? 'dark' : 'light');
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
+  // 液态玻璃（与查词弹窗 glass 变体、扩展设置页同一套材质）：面板 = 半透明填充 + 背景模糊 +
+  // 顶缘高光 + 柔和投影；字段 = 面内的无描边填充胶囊；四个 ± 是一条连体分段胶囊；取消 = 透明
+  // 玻璃胶囊、确认 = 主色胶囊；焦点一律主色光晕。不支持 backdrop-filter / 减少透明度 → 实色。
+  const hl = dark ? 'rgba(255,255,255,.14)' : 'rgba(255,255,255,.75)';
+  const sheen = dark ? 'rgba(255,255,255,.05)' : 'rgba(255,255,255,.35)';
+  const edge = dark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.07)';
+  const tok = function (name, light, darkV) { return 'var(--fushi-' + name + ',' + (dark ? darkV : light) + ')'; };
+  const surface = tok('surface', '#fbfcfa', '#202422');
+  const text = tok('text', '#1d221f', '#e8ece9');
+  const muted = tok('muted', '#5f6862', '#a9b2ac');
+  const primary = tok('primary', '#2f6f4f', '#8fd0ad');
+  const onPrimary = tok('on-primary', '#ffffff', '#10241a');
+  const primarySoft = tok('primary-soft', '#d3ecdc', '#21402f');
+  const mix = function (c, pct) { return 'color-mix(in oklch,' + c + ' ' + pct + ',transparent)'; };
+  const ring = mix(primary, '34%');
   style.textContent =
     ':host{all:initial}' +
-    '.bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;' +
-      'font:14px/1.5 "Hiragino Sans","Noto Sans CJK JP",sans-serif;}' +
-    '.card{background:' + (dark ? '#1f1f22' : '#fff') + ';color:' + (dark ? '#eee' : '#1c1c1e') + ';' +
-      'width:min(560px,92vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px 20px;' +
-      'box-shadow:0 12px 40px rgba(0,0,0,.45);box-sizing:border-box;}' +
-    '.eyebrow{font-size:12px;opacity:.65;letter-spacing:.04em}' +
-    '.title{font-size:18px;font-weight:600;margin:2px 0 4px}' +
-    '.count{font-size:12px;opacity:.7;margin-bottom:10px}' +
-    '.label{font-size:12px;opacity:.7;margin:10px 0 4px}' +
-    '.box{border:1px solid ' + (dark ? '#3a3a3f' : '#d9d9de') + ';border-radius:8px;padding:8px 10px;margin:4px 0;' +
-      'white-space:pre-wrap;word-break:break-word;background:' + (dark ? '#26262a' : '#fafafa') + '}' +
-    '.box.cur{border-color:#1a73e8;background:' + (dark ? '#1b2a44' : '#eef4ff') + '}' +
-    '.box.empty{opacity:.5;font-style:italic}' +
-    'mark{background:#ffe08a;color:#1c1c1e;border-radius:3px;padding:0 1px}' +
-    '.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}' +
-    'button{font:inherit;padding:6px 12px;border-radius:8px;border:1px solid ' + (dark ? '#4a4a50' : '#c8c8cf') + ';' +
-      'background:' + (dark ? '#2c2c31' : '#f4f4f6') + ';color:inherit;cursor:pointer}' +
-    'button:disabled{opacity:.4;cursor:default}' +
-    '.foot{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}' +
-    '.primary{background:#1a73e8;border-color:#1a73e8;color:#fff}';
+    '*{box-sizing:border-box}' +
+    '.bg{position:fixed;inset:0;padding:16px;background:rgba(0,0,0,' + (dark ? '.42' : '.26') + ');' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font:14px/1.55 system-ui,"Hiragino Sans","Yu Gothic UI","Noto Sans CJK JP",sans-serif;' +
+      'color-scheme:' + (dark ? 'dark' : 'light') + '}' +
+    '.card{width:min(560px,100%);max-height:88vh;overflow:auto;padding:22px 22px 18px;border-radius:24px;' +
+      'color:' + text + ';border:1px solid ' + edge + ';' +
+      'background-color:' + mix(surface, dark ? '66%' : '72%') + ';' +
+      'background-image:linear-gradient(180deg,' + sheen + ',transparent 38%);' +
+      'box-shadow:inset 0 1px 0 ' + hl + ',0 1px 2px rgba(0,0,0,.08),0 24px 60px -18px rgba(0,0,0,' + (dark ? '.7' : '.38') + ');' +
+      '-webkit-backdrop-filter:blur(28px) saturate(1.8);backdrop-filter:blur(28px) saturate(1.8)}' +
+    '.eyebrow{font-size:12px;font-weight:600;letter-spacing:.04em;color:' + primary + '}' +
+    '.title{font-size:19px;font-weight:700;line-height:1.3;margin:2px 0}' +
+    '.count{font-size:12px;color:' + muted + ';margin-bottom:6px}' +
+    '.label{font-size:12px;font-weight:600;color:' + muted + ';margin:12px 4px 5px}' +
+    '.box{margin:0;padding:10px 14px;border-radius:16px;min-height:42px;' +
+      'white-space:pre-wrap;word-break:break-word;background:' + mix(text, dark ? '9%' : '5.5%') + '}' +
+    '.box.cur{background:' + mix(primarySoft, dark ? '78%' : '70%') + ';' +
+      'box-shadow:inset 0 0 0 1px ' + mix(primary, '28%') + ',0 0 0 3px ' + mix(primary, '12%') + '}' +
+    '.box.empty{color:' + muted + ';font-style:italic}' +
+    'mark{background:' + mix(primary, '26%') + ';color:inherit;border-radius:5px;padding:0 2px;' +
+      'box-shadow:inset 0 -2px 0 ' + mix(primary, '70%') + '}' +
+    'button{font:inherit;font-size:13px;font-weight:600;min-height:38px;padding:0 16px;border:0;border-radius:999px;' +
+      'color:inherit;background:transparent;cursor:pointer;outline:none;' +
+      'transition:background-color .15s ease,box-shadow .15s ease,opacity .15s ease,transform .12s ease}' +
+    'button:active:not(:disabled){transform:scale(.97)}' +
+    'button:focus-visible{box-shadow:0 0 0 3px ' + ring + '}' +
+    'button:disabled{opacity:.38;cursor:default}' +
+    // 四个 ± 是一条连体分段胶囊：槽是面内更深一层的填充，段是透明胶囊，悬停浮起一层玻璃。
+    '.row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:2px;margin-top:14px;padding:3px;' +
+      'border-radius:999px;background:' + mix(text, dark ? '9%' : '6%') + '}' +
+    '.row button{min-height:34px;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.row button:hover:not(:disabled){background:' + mix(surface, dark ? '55%' : '88%') + ';' +
+      'box-shadow:inset 0 1px 0 ' + hl + ',0 1px 3px rgba(0,0,0,.12)}' +
+    '.row button:focus-visible{box-shadow:0 0 0 3px ' + ring + '}' +
+    '.foot{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}' +
+    '.ghost{background:' + mix(surface, dark ? '30%' : '50%') + ';box-shadow:inset 0 1px 0 ' + hl + ',inset 0 0 0 1px ' + edge + '}' +
+    '.ghost:hover:not(:disabled){background:' + mix(surface, dark ? '50%' : '84%') + '}' +
+    '.ghost:focus-visible{box-shadow:inset 0 1px 0 ' + hl + ',0 0 0 3px ' + ring + '}' +
+    '.primary{padding:0 20px;color:' + onPrimary + ';background-color:' + primary + ';' +
+      'background-image:linear-gradient(180deg,rgba(255,255,255,.22),transparent 60%);' +
+      'box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 8px 20px -8px ' + mix(primary, '80%') + '}' +
+    '.primary:hover:not(:disabled){filter:brightness(1.06)}' +
+    '.primary:focus-visible{box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 0 0 3px ' + ring + '}' +
+    '@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.card{background-color:' + surface + '}}' +
+    '@media (prefers-reduced-transparency:reduce){.card{background-color:' + surface + ';background-image:none;' +
+      '-webkit-backdrop-filter:none;backdrop-filter:none}.bg{background:rgba(0,0,0,.55)}}' +
+    '@media (prefers-reduced-motion:reduce){button{transition:none}button:active:not(:disabled){transform:none}}';
   shadow.appendChild(style);
   const bg = document.createElement('div');
   bg.className = 'bg';
@@ -883,7 +887,7 @@ window.fushiOpenSentenceContextModal = function (args) {
   card.appendChild(row);
 
   const foot = el('div', 'foot');
-  const cancel = el('button', '', t.cancel);
+  const cancel = el('button', 'ghost', t.cancel);
   cancel.onclick = function () {
     window.fushiSetSentenceContext(snap.prev, snap.next);
     fushiCloseSentenceContextModal();
@@ -1069,43 +1073,6 @@ function fushiResolveTheme(fallback) {
     ? 'dark'
     : 'light';
 }
-
-// 生成全部（YouTube）：逐条把 {videoId,起,止} 发服务端从真实流裁 → 出卡。无录屏、无回放。
-// 只移除**成功**的项（失败留在队列下次重试）；跨视频累积的 youtube 项都在此生成。
-window.fushiGenerateAll = async function () {
-  const items = fushiQueue.filter((q) => q.site === 'youtube' && q.youtubeId);
-  if (!items.length) {
-    window.fushiToast(fushiTr('gen_youtube_queue_empty'));
-    return;
-  }
-  if (!fushiExtAlive()) { window.fushiToast(fushiTr('gen_ext_updated_refresh')); return; }
-  let done = 0, fail = 0, unconfigured = 0;
-  const okIds = [];
-  window.fushiToast(fushiTr('gen_progress', { done: 0, total: items.length }), true);
-  for (const q of items) {
-    const cls = await new Promise((resolve) => {
-      try {
-        chrome.runtime.sendMessage({
-          type: 'mineYoutube', fields: q.fields, sentence: q.sentence,
-          youtubeVideoId: q.youtubeId, startMs: q.startV, endMs: q.endV,
-        }, (resp) => {
-          try { if (chrome.runtime.lastError) return resolve('retry'); } catch (_) { return resolve('retry'); }
-          resolve(fushiClassifyMineResp(resp));
-        });
-      } catch (_) { resolve('retry'); }
-    });
-    // done(成功/已存在)才出队；unconfigured/retry 留队（前者提示配 Anki，后者下次重试）。
-    if (cls === 'done') { done++; okIds.push(q.id); }
-    else { fail++; if (cls === 'unconfigured') unconfigured++; }
-    window.fushiToast(fushiTr('gen_progress', { done: done + fail, total: items.length }), true);
-  }
-  await fushiRemoveQueued(okIds);
-  if (unconfigured > 0) {
-    window.fushiToast(fushiTr('gen_partial_anki_unconfigured', { done, kept: fail }));
-  } else {
-    window.fushiToast(fushiTr('gen_done_processed', { done }) + (fail ? fushiTr('gen_done_failed_suffix', { fail }) : ''));
-  }
-};
 
 // ── Netflix 回放录制（DRM）：由 content 驱动，capture 经 background/offscreen（beginClip/endClip）──
 let fushiNfBatchRunning = false;
@@ -1566,8 +1533,10 @@ async function fushiMaybeResumeNetflixBatch(fromLoad) {
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (!msg) return;
-  if (msg.type === 'fushiToastMsg' && typeof window.fushiToast === 'function') window.fushiToast(msg.text);
-  else if (msg.type === 'fushiRunYoutube' && typeof window.fushiGenerateAll === 'function') window.fushiGenerateAll();
+  // background 推来的提示（YouTube 批量制卡进度/结果在 service worker 里跑，借当前页显示）。
+  if (msg.type === 'fushiToastMsg' && typeof window.fushiToast === 'function') {
+    window.fushiToast(msg.text, !!msg.sticky, !!msg.openSettings);
+  }
 });
 // 图标点击设 fushiNfBatch(active) → storage 变化触发就地续跑(本页无重载,fromLoad=false 不导航);
 // 切集重载后由 setTimeout(fromLoad=true) 驱动导航到目标集。
@@ -2054,6 +2023,8 @@ function fushiDrawHighlightOverlay(rects) {
 
 function fushiRemoveContainer() {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
+  // 音频源菜单挂在独立宿主上，不随弹窗 shadow host 一起移除；不收会残留在页面上并卡住模态计数。
+  if (typeof window.fushiCloseAudioSourceMenu === 'function') window.fushiCloseAudioSourceMenu(false);
   // 上层草稿依赖底层词条，底层真正关闭时同步撤掉，不能留下失去制卡目标的弹层。
   fushiCloseSentenceContextModal();
   // BUG-688：移除 shadow 宿主即连带整个 shadow root（弹窗内容）；清 __fushiRoot 让 popup.js
@@ -2066,6 +2037,7 @@ function fushiRemoveContainer() {
   window._renderInProgress = false;
   fushiLookupPerfContext = null;
   fushiBindPopupPerfContext(null);
+  fushiCancelPendingReveal();
   fushiHost = null;
   fushiContainer = null;
   fushiShownTerm = '';
@@ -2874,6 +2846,31 @@ function fushiMirrorPopupSize(width, height) {
 
 // 把查词响应下发的主题变量套到弹窗上。applyBox=false 时只套颜色/行为类变量，**不碰 host 的
 // 尺寸盒**（width/maxWidth/maxHeight/zoom），保留当前落点计算出来的 maxHeight。
+// 玻璃材质开关（样式在 content-css-overlay.css 的 @supports 段，取不到 backdrop-filter 的内核
+// 整段不生效、卡片保持不透明）。弹窗根 c 挂 .fushi-glass = 半透明填充；c 所在 shadow root 的
+// 宿主（#hibiki-popup-host，固定尺寸、内部滚动的那只卡）挂 data-fushi-glass="light|dark" =
+// 背景模糊 + 圆角 + 细描边。圆角变量 --fushi-radius-card 原本只 setProperty 在 c 上，宿主是 c 的
+// 父级读不到，这里同值补到宿主。关时（墨水屏）两个钩子一并摘掉（同一宿主上即时复原）。
+function fushiApplyGlass(c, enabled, radius) {
+  if (!c) return;
+  const root = typeof c.getRootNode === 'function' ? c.getRootNode() : null;
+  const host = (root && root.host) || null;
+  if (c.classList) {
+    if (enabled) c.classList.add('fushi-glass');
+    else c.classList.remove('fushi-glass');
+  }
+  if (!host) return;
+  if (enabled) {
+    const dark = c.getAttribute && c.getAttribute('data-theme') === 'dark';
+    host.setAttribute('data-fushi-glass', dark ? 'dark' : 'light');
+    if (typeof radius === 'string' && radius) {
+      host.style.setProperty('--fushi-radius-card', radius);
+    }
+  } else {
+    host.removeAttribute('data-fushi-glass');
+  }
+}
+
 function fushiApplyTheme(c, theme, applyBox) {
   if (!theme || typeof theme !== 'object') return;
   for (const k in theme) {
@@ -2932,6 +2929,10 @@ function fushiApplyTheme(c, theme, applyBox) {
   // 浏览器弹窗的音调去重永远是关的（同一个词的同一个调型被每本词典各画一行）。
   // 缺该 key = 旧 app，保持关闭，与相邻两条同法。
   window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
+  // 液态玻璃是扩展唯一的材质（与 app 设计系统选什么无关）。唯一的例外是墨水屏：app 开墨水屏时
+  // 随 theme 下发 --fushi-glass: '0'，弹窗保持不透明；缺该 key（旧 app）同样按玻璃。减少透明度 /
+  // 不支持 backdrop-filter 的回落由 content.css 自己的 @media / @supports 负责。
+  fushiApplyGlass(c, theme['--fushi-glass'] !== '0', theme['--fushi-radius-card']);
   // BUG-688：尺寸盒 + zoom 落到 host（视口坐标，确定宽度 → header 满宽、按钮右推、不再全屏铺开）。
   if (applyBox && fushiHost) {
     // 尺寸真相源是 app 下发的 theme（扩展设置页「查词框大小」写的也是它，经
@@ -2984,6 +2985,8 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   } catch (_) { wordRect = null; }
   // TODO-1218②：取词 rects 拿不到（并发 selectText 清了 selection）时用查词时快照的锚点，避免退回鼠标坐标。
   if (!wordRect && anchorRect) wordRect = anchorRect;
+  // 弹窗已开着时换词（悬停扫词）不重播入场动画，只在新开的那一下播。
+  const freshOpen = c.style.visibility !== 'visible';
   // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
   c.style.visibility = 'hidden';
@@ -2999,6 +3002,7 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
     // BUG-2773：显示即锁边——此后尾批长高只在这一侧夹高/伸展，不再上下翻。
     fushiPlaceSide = fushiPlacedSide;
     c.style.visibility = 'visible';
+    if (freshOpen) fushiPlayPopupEnter(fushiHost, fushiPlaceSide);
     fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
   };
   const place = () => {
@@ -3011,9 +3015,60 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
     // 落点已按当前布局尽力算过，settle 里还会按最终样式再复算一次。同步 <style> 路径
     // fushiCssLink 恒为 null，直接放行，不多等一帧。
     const gate = fushiCssLink && fushiCssLink.__fushiCssGate;
-    if (!(gate && gate.add(reveal))) reveal();
+    const revealWhenComplete = () => fushiRevealWhenRenderComplete(freshOpen, reveal);
+    if (!(gate && gate.add(revealWhenComplete))) revealWhenComplete();
   };
   requestAnimationFrame(place);
+}
+
+// 2026-10-04 22:56 录屏（子层同款，见 nested-popup-host.js reveal）：popup.js 首词条同步渲染、
+// 尾批在宏任务里补建（_renderInProgress=true）。新开的弹窗若此刻就显示，用户先看到一条只有
+// 首词条的矮卡，尾批建完再「啪」地长到全高。新开时等尾批完成（popupRendered 终发经
+// bridge-shim 调 window.__fushiOnRendered）再显示，最多等 FUSHI_REVEAL_WAIT_MS；弹窗已开着
+// 换词（悬停扫词）不等，保持即时。
+const FUSHI_REVEAL_WAIT_MS = 260;
+let fushiPendingReveal = null;
+function fushiCancelPendingReveal() {
+  if (!fushiPendingReveal) return;
+  clearTimeout(fushiPendingReveal.timer);
+  fushiPendingReveal = null;
+}
+function fushiRevealWhenRenderComplete(freshOpen, reveal) {
+  fushiCancelPendingReveal();
+  if (!freshOpen || window._renderInProgress !== true) { reveal(); return; }
+  const pending = { reveal, timer: 0 };
+  const fire = () => {
+    if (fushiPendingReveal !== pending) return;
+    fushiPendingReveal = null;
+    clearTimeout(pending.timer);
+    // 尾批期间高度在变：显示前按终高再落一次点（同一锚点、同一纯函数）。
+    fushiApplyPlacement();
+    reveal();
+  };
+  pending.fire = fire;
+  pending.timer = setTimeout(fire, FUSHI_REVEAL_WAIT_MS);
+  fushiPendingReveal = pending;
+}
+window.__fushiOnRendered = function () {
+  if (fushiPendingReveal && window._renderInProgress !== true) fushiPendingReveal.fire();
+};
+
+// 查词弹窗入场：落点已算好、锁边之后才播，只动 opacity + 轻微位移/缩放（合成器线程），
+// 原点在贴词的那条边上——像从被查词处长出来。玻璃（宿主的 backdrop-filter）第一帧就在；
+// 系统要求减少动态效果时不播。嵌套子层同一套参数（nested-popup-host.js playEnter）。
+function fushiPlayPopupEnter(host, side) {
+  if (!host || typeof host.animate !== 'function') return;
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  } catch (_) { /* matchMedia 不可用：照常播 */ }
+  const above = side === 'above';
+  host.style.transformOrigin = above ? '50% 100%' : '50% 0%';
+  try {
+    host.animate([
+      { opacity: 0, transform: 'translateY(' + (above ? 6 : -6) + 'px) scale(0.97)' },
+      { opacity: 1, transform: 'none' },
+    ], { duration: 180, easing: 'cubic-bezier(0.2, 0, 0, 1)' });
+  } catch (_) { /* WAAPI 不可用：直接显示 */ }
 }
 
 // BUG-1726：用当前实测尺寸 + 记录的锚点（fushiPlaceAnchor）跑一次落点并写回 host。

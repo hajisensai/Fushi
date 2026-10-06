@@ -33,6 +33,7 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi/src/utils/misc/lookup_auto_read_coordinator.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
@@ -1032,9 +1033,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   }
 
   Widget buildDictionary() {
+    // 覆盖主题（阅读器纸色亮暗）下重挂一层玻璃作用域：库组件的默认玻璃变体
+    // 跟随弹窗主题的亮暗，而不是 app 根上的那份。结构恒定（MD3 也挂）。
     return Theme(
       data: appModel.overrideDictionaryTheme ?? theme,
-      child: AnimatedBuilder(
+      child: FushiGlassScope(child: AnimatedBuilder(
         animation: _popupListenable,
         builder: (context, _) {
           final stack = _popup.entries;
@@ -1110,7 +1113,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
             },
           );
         },
-      ),
+      )),
     );
   }
 
@@ -1133,18 +1136,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       top: pos.top,
       width: pos.width,
       height: pos.height,
+      // 查询中：卡壳先铺上，加载指示器（MD3 Expressive 变形 / Apple 菊花 / 墨水屏
+      // 沙漏）150ms 后才露出——快查询只看到卡壳一闪而过、不闪转圈；绝不画「未找到」。
       child: FushiPopupSurface(
         color: fillColor,
-        child: Column(
-          children: [
-            LinearProgressIndicator(
-              backgroundColor: Colors.transparent,
-              color: effectiveCs.primary,
-              minHeight: 2.75,
-            ),
-            Expanded(child: Container()),
-          ],
-        ),
+        child: FushiDeferredLoading(active: true, color: effectiveCs.primary),
       ),
     );
   }
@@ -1191,6 +1187,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // 钉住整层，让元素真正搬位而不是拆建原生表面。
       key: ObjectKey(item),
       pos: pos,
+      // 被更上层查词卡盖住的部分裁掉：上层的模糊才采到正文而不是本层面板
+      // （[PopupOccluderClip]，玻璃叠玻璃）。
+      occluders: <Rect>[
+        for (int j = index + 1; j < stack.length; j++)
+          if (stack[j].visible)
+            _calculatePopupPosition(
+              stack[j].selectionRect,
+              screen,
+              verticalWriting: _layerVerticalWriting(j),
+            ),
+      ],
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图
       // （WebView2 / Android platform view）盖住 showAppDialog 弹的对话框（层级不对）。
@@ -1698,28 +1705,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return ValueListenableBuilder<bool>(
       valueListenable: _isSearchingNotifier,
       builder: (context, value, child) {
-        return Visibility(
-          visible: value,
-          child: SizedBox(
-            height: double.infinity,
-            width: double.infinity,
-            child: FushiCard(
-              padding: EdgeInsets.zero,
-              color: Colors.transparent,
-              borderColor: Colors.transparent,
-              borderRadius: BorderRadius.zero,
-              child: Column(
-                children: [
-                  LinearProgressIndicator(
-                    backgroundColor: Colors.transparent,
-                    color: theme.colorScheme.primary,
-                    minHeight: 2.75,
-                  ),
-                  Expanded(child: Container())
-                ],
-              ),
-            ),
-          ),
+        // 顶层查词在途（含「已显示、等热槽 WebView 报 popupRendered」）：延迟加载层
+        // ——150ms 后才露出指示器、露出后至少停 300ms，撤场后是不拦指针的空盒。
+        return FushiDeferredLoading(
+          active: value,
+          color: theme.colorScheme.primary,
         );
       },
     );

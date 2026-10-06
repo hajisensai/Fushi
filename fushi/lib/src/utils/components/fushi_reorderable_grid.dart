@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 
 /// 网格单元内容构造器：返回**纯视觉**卡片内容（自身手势由本组件统一接管，
 /// 调用方应把卡片包在 [IgnorePointer] 里避免内部 InkWell 的 long-press 与本组件的
@@ -425,13 +426,10 @@ class _FushiReorderableGridState extends State<FushiReorderableGrid> {
                   key: const ValueKey<String>('__reorder_grid_feedback__'),
                   rect: _feedbackTopLeft & Size(_cellW, _cellH),
                   child: IgnorePointer(
-                    child: Material(
-                      elevation: 6,
-                      color: Colors.transparent,
+                    // 网格单元（封面卡）自带背景：浮层只抬阴影、不涂底色。
+                    child: FushiReorderDragProxy(
+                      transparent: true,
                       borderRadius: widget.feedbackBorderRadius,
-                      clipBehavior: widget.feedbackBorderRadius != null
-                          ? Clip.antiAlias
-                          : Clip.none,
                       child: widget.itemBuilder(context, dragged),
                     ),
                   ),

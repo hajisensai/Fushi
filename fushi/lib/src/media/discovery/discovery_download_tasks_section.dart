@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -86,7 +87,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                     ),
                   ),
                   if (hasRetryable)
-                    TextButton(
+                    FushiTextButton(
                       key: const ValueKey<String>(
                         'discovery-download-retry-all',
                       ),
@@ -94,7 +95,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                       child: Text(t.retry),
                     ),
                   if (hasFinished)
-                    TextButton(
+                    FushiTextButton(
                       key: const ValueKey<String>(
                         'discovery-download-clear-finished',
                       ),
@@ -123,7 +124,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
                 );
               },
             ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
           ],
         );
       },
@@ -188,40 +189,40 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     final ColorScheme scheme = theme.colorScheme;
     final bool eink = isEinkTheme(context);
     final Widget statusIcon = switch (task.status) {
-      DiscoveryDownloadStatus.queued => Icon(
+      DiscoveryDownloadStatus.queued => FushiIcon(
         Icons.schedule_outlined,
         size: 20,
         color: scheme.outline,
       ),
-      DiscoveryDownloadStatus.done => Icon(
+      DiscoveryDownloadStatus.done => FushiIcon(
         Icons.check_circle_outline,
         size: 20,
         color: scheme.primary,
       ),
-      DiscoveryDownloadStatus.failed => Icon(
+      DiscoveryDownloadStatus.failed => FushiIcon(
         Icons.error_outline,
         size: 20,
         color: scheme.error,
       ),
-      DiscoveryDownloadStatus.waitingRetry => Icon(
+      DiscoveryDownloadStatus.waitingRetry => FushiIcon(
         Icons.autorenew,
         size: 20,
         color: scheme.error,
       ),
-      DiscoveryDownloadStatus.cancelled => Icon(
+      DiscoveryDownloadStatus.cancelled => FushiIcon(
         Icons.block_outlined,
         size: 20,
         color: scheme.outline,
       ),
       DiscoveryDownloadStatus.running =>
         eink
-            ? const Icon(Icons.downloading_outlined, size: 20)
+            ? const FushiIcon(Icons.downloading_outlined, size: 20)
             : SizedBox(
                 width: 20,
                 height: 20,
                 child: Padding(
                   padding: const EdgeInsets.all(2),
-                  child: CircularProgressIndicator(
+                  child: FushiCircularProgressIndicator(
                     strokeWidth: 2,
                     value: discoveryDownloadProgress(task),
                   ),
@@ -307,7 +308,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     final bool revealed = await (pathRevealer ?? revealInFileManager)(path);
     if (revealed || !context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.download_task_location_open_failed)),
+      FushiSnackBar(content: Text(t.download_task_location_open_failed)),
     );
   }
 
@@ -384,6 +385,12 @@ String discoveryDownloadStatusLabel(
       return '${t.download_task_status_downloading} · '
           '$received / ${formatDiscoveryBytes(total)} ($percent%)';
     case DiscoveryDownloadStatus.done:
+      // 只有音频的有声书：下载完成、入库交给了转录队列（那条任务另有一行）。
+      // 不能说「已完成 · <书名>」——书此刻还不在库里。
+      if (task.importOutcome?.deferred ?? false) {
+        return '${t.download_task_status_completed} · '
+            '${t.audiobook_transcribe_status_queued_after_download}';
+      }
       final String? summary = task.importOutcome?.summary?.trim();
       return summary == null || summary.isEmpty
           ? t.download_task_status_completed

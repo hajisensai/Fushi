@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
 import 'package:fushi/src/platform/macos_fullscreen_state.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:window_manager/window_manager.dart';
 
 /// App-themed desktop frame used after the native caption is hidden.
@@ -80,6 +83,15 @@ class FushiDesktopTitleBar extends StatefulWidget {
         : _contentFullscreenOwners.remove(owner);
     if (!changed) return;
     _contentFullscreen.value = _contentFullscreenOwners.isNotEmpty;
+    reassertMacTrafficLights();
+  }
+
+  /// macOS 原生红绿灯的显隐真值：顶栏在时显示（任何设计系统都用系统红绿灯，
+  /// 用户 2026-10-04），内容全屏收起顶栏时隐藏（否则三个圆点浮在视频 / 阅读
+  /// 内容左上角，BUG-973）。AppKit 进出原生全屏会重建标题栏视图、复位
+  /// `isHidden`，所以退出全屏后调用方要再断言一次。非 macOS no-op。
+  static void reassertMacTrafficLights() {
+    unawaited(setMacOSTrafficLightsHidden(_contentFullscreen.value));
   }
 
   /// Keep the app frame in sync with the fullscreen state owned by
@@ -190,7 +202,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       enabled: fullscreen,
     );
     if (!fullscreen) {
-      unawaited(setMacOSTrafficLightsHidden(true));
+      FushiDesktopTitleBar.reassertMacTrafficLights();
     }
   }
 
@@ -360,38 +372,42 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     final Color captionFill = page == null
         ? colors.surface
         : Color.alphaBlend(page.background, colors.surface);
+    // 窗口按钮按平台而不是按设计系统（用户 2026-10-04）：macOS 一律用系统原生
+    // 红绿灯（左上角，顶栏只给它们留位），Windows / Linux 一律是 MD3 那组按钮。
+    final bool trafficLights = Platform.isMacOS;
     return Container(
       height: FushiDesktopTitleBar.height,
       color: captionFill,
       child: Row(
         children: <Widget>[
+          // 系统红绿灯画在原生标题栏视图里，浮在这块留位之上。
+          if (trafficLights) const SizedBox(width: _kTrafficLightsReserve),
           Expanded(
             child: DragToMoveArea(
-              child: Row(
+              // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
+              // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
+              // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
+              child: SizedBox.expand(
+                child: Row(
                 children: <Widget>[
-                  SizedBox(width: widget.leadingInset),
-                  Expanded(
-                    child: Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: Padding(
-                        padding: const EdgeInsetsDirectional.only(start: 16),
-                        child: DefaultTextStyle(
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall!
-                              .copyWith(
-                                color: page?.foreground ?? colors.onSurface,
-                                fontWeight: FontWeight.w600,
-                              ),
-                          child: widget.title,
-                        ),
-                      ),
-                    ),
+                  SizedBox(
+                    width: trafficLights
+                        ? math.max(
+                            0,
+                            widget.leadingInset - _kTrafficLightsReserve,
+                          )
+                        : widget.leadingInset,
                   ),
+                  // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
+                  // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
+                  // 保留在参数里，供无障碍窗口名等后续用途。
+                  const Spacer(),
                 ],
+              ),
               ),
             ),
           ),
+          if (!trafficLights) ...<Widget>[
           _FushiCaptionButton(
             icon: Icons.remove_rounded,
             foreground: page?.foreground,
@@ -411,6 +427,7 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
             onPressed: _close,
           ),
           const SizedBox(width: 4),
+          ],
         ],
       ),
     );
@@ -456,9 +473,9 @@ class _FushiCaptionButton extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
-      child: IconButton(
+      child: FushiIconButtonControl(
         onPressed: onPressed,
-        icon: Icon(icon, size: 16),
+        icon: FushiIcon(icon, size: 16),
         style: ButtonStyle(
           minimumSize: const WidgetStatePropertyAll<Size>(Size(40, 28)),
           maximumSize: const WidgetStatePropertyAll<Size>(Size(40, 28)),
@@ -495,6 +512,16 @@ class _FushiCaptionButton extends StatelessWidget {
 /// 页面上报给桌面顶栏的配色：底色 + 标题 / 窗口按钮的前景色。
 typedef FushiTitleBarColors = ({Color background, Color foreground});
 
+/// 只有底色、没有配套前景色的页面（视频黑底、串流黑底、漫画固定底色）用它
+/// 上报：窗口按钮按底色明暗取半透明白 / 黑，与 MD3 onSurfaceVariant 同一观感。
+FushiTitleBarColors fushiTitleBarColorsOn(Color background) => (
+  background: background,
+  foreground:
+      ThemeData.estimateBrightnessForColor(background) == Brightness.dark
+      ? Colors.white70
+      : Colors.black54,
+);
+
 /// 让桌面顶栏跟随本页底色（[FushiDesktopTitleBar.setPageColors] 的唯一推荐入口）。
 ///
 /// 只在本页是「最上面那一整页」时生效：本页路由被另一个整页（PageRoute）盖住
@@ -503,6 +530,10 @@ typedef FushiTitleBarColors = ({Color background, Color foreground});
 /// 所以打开它们顶栏不会闪色。离开树时撤回。
 ///
 /// 没有挂自绘顶栏（移动端、Linux）时上报无人消费，零副作用。
+///
+/// [colors] 为 null = 本页此刻不表态（撤回，顶栏回落到根主题或其它上报方）：
+/// 页面顶部颜色随状态变化（MD3 顶栏滚动后换色、视频加载完才变黑）时，用它
+/// 表达「这一刻页面顶部就是根主题 surface」，而不必按状态增删这一层包装。
 class FushiTitleBarColorScope extends StatefulWidget {
   const FushiTitleBarColorScope({
     required this.colors,
@@ -510,7 +541,7 @@ class FushiTitleBarColorScope extends StatefulWidget {
     super.key,
   });
 
-  final FushiTitleBarColors colors;
+  final FushiTitleBarColors? colors;
   final Widget child;
 
   @override
@@ -557,3 +588,6 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
     return widget.child;
   }
 }
+
+/// macOS 系统红绿灯占位宽度（三枚按钮 + 左右边距，与 AppKit 标准标题栏一致）。
+const double _kTrafficLightsReserve = 78;

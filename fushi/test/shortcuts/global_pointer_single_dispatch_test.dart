@@ -13,6 +13,8 @@ import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart'
+    show DictionarySearchResult;
 
 /// BUG-2031 复盘：**一次鼠标按下，全 app 只准派发一个动作**。
 ///
@@ -335,11 +337,13 @@ void main() {
       return navigatorKey;
     }
 
-    /// 结果无内容 + 非搜索态 ⇒ 走 Flutter 占位分支，不挂载平台视图（widget 测试里
-    /// 没有 WebView）。指针通道包在整层最外面，与是否挂 WebView 无关
-    /// （沿用 `test/pages/dictionary_popup_pointer_input_test.dart` 的既有范式）。
+    /// 真实空结果（查过了、无词条）+ 非搜索态 ⇒ 走 Flutter「未找到」占位分支，不挂载
+    /// 平台视图（widget 测试里没有 WebView）。`result: null` 现在是「加载中」，会挂
+    /// 常驻动画的延迟加载指示器，pumpAndSettle 等不到静止。指针通道包在整层最外面，
+    /// 与是否挂 WebView 无关（沿用 `test/pages/dictionary_popup_pointer_input_test.dart`
+    /// 的既有范式）。
     Widget realPopupLayer(List<String> tokens) => DictionaryPopupLayer(
-          result: null,
+          result: DictionarySearchResult(searchTerm: ''),
           webViewKey: GlobalKey(),
           onDismiss: () {},
           onTextSelected: (_, __) {},

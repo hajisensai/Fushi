@@ -89,6 +89,20 @@ double allVideoThumbnailTargetWidthForWidth(double width) {
 double videoHeroHeightForWidth(double width) =>
     (width * 9 / 21).clamp(220.0, 420.0);
 
+/// 视频库搜索行的单行排版下限（2026-10 体验优化）：宽度低于此值时搜索框独占
+/// 一行、年份 / 看完状态 chip 落到第二行可横滑。宽度取 LayoutBuilder 的逻辑
+/// 像素，界面缩放已折算在内。
+const double kVideoSearchBarInlineMinWidth = 600;
+
+/// 「全部视频」列表行的紧凑断点（2026-10 体验优化）：低于此宽度行封面缩小，
+/// 给标题与操作按钮留出空间。
+const double kVideoListRowCompactWidth = 420;
+
+/// 「全部视频」列表行的封面槽宽：常规 164，窄于 [kVideoListRowCompactWidth]
+/// 时收到 112（行高固定 96 不变，只让出横向空间）。
+double videoListRowCoverWidth(double rowWidth) =>
+    rowWidth < kVideoListRowCompactWidth ? 112 : 164;
+
 /// 发现页详情 hero 的窄屏断点：低于此宽度按单栏紧凑排版。
 const double kVideoDiscoveryCompactWidth = 700;
 

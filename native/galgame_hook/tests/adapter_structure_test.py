@@ -504,7 +504,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(16, len(publishers), publishers)
+        self.assertEqual(17, len(publishers), publishers)
+        self.assertIn("kogado_hy_lookup.inc", publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("yuris_lookup.inc", publishers)
         self.assertIn("malie_lookup.inc", publishers)
@@ -568,9 +569,13 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(16, len(seen), seen)
+        self.assertEqual(17, len(seen), seen)
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["fvp_lookup.inc"]
+        )
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels",
+            seen["kogado_hy_lookup.inc"],
         )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["bgi_lookup.inc"]
@@ -2412,6 +2417,64 @@ class AdapterStructureTest(unittest.TestCase):
         ]
         gated = gated[: gated.index("};")]
         self.assertIn("kLookupGeometryProviderIdMalie", gated)
+
+    def test_kogado_hy_lookup_claims_in_the_window_and_stays_gated(self) -> None:
+        """Kogado Hy 查词：点击只在游戏窗口子类里认领，受原生输入放行门控；游戏线程回调不做 IO。"""
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "kogado_hy_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        eligible = self._function_body(runtime, "bool KogadoHyPressEligible(")
+        self.assertIn("NativeInputAllowed", eligible)
+        self.assertIn("KogadoHyShieldActive", eligible)
+        self.assertIn("GetForegroundWindow", eligible)
+        subclass = self._function_body(runtime, "LRESULT CALLBACK KogadoHyWindowProc(")
+        self.assertIn("KogadoHyPressEligible", subclass)
+        self.assertIn("CallWindowProcA", subclass)
+        for body in (eligible, subclass):
+            for forbidden in ("CreateFile", "KogadoHyLog", "MultiByteToWideChar",
+                              "std::wstring", "std::vector"):
+                self.assertNotIn(forbidden, body)
+        tick = self._function_body(runtime, "void ProcessKogadoHyLookupTick(")
+        self.assertLess(tick.index("PublishKogadoHyHit("),
+                        tick.index("FindKogadoHyWindow("))
+        registry = (ROOT / "hook" / "geometry_provider_registry.h").read_text(
+            encoding="utf-8"
+        )
+        gated = registry[
+            registry.index("kLookupGeometryNativeInputGatedProviders[]") :
+        ]
+        gated = gated[: gated.index("};")]
+        self.assertIn("kLookupGeometryProviderIdKogadoHy", gated)
+
+    def test_kogado_hy_subclass_is_per_window_and_restored(self) -> None:
+        """Kogado Hy 窗口子类：按 HWND 绑定（窗口重建后重新接管）、关停时仅在仍是我们时还原原过程。"""
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "kogado_hy_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        # 不再有进程级一次性标志：它让重建后的新窗口永远不被接管。
+        self.assertNotIn("procedure_replaced", runtime)
+        self.assertNotIn("procedure_failed", runtime)
+        find = self._function_body(runtime, "void FindKogadoHyWindow(")
+        # 只有子类真落在这个 HWND 上才绑定它；失败的 HWND 不重试也不提供查词。
+        self.assertLess(find.index("ReplaceKogadoHyWindowProcedure("),
+                        find.index("rt.window = search.window"))
+        self.assertIn("rt.failed_window = search.window", find)
+        replace = self._function_body(
+            runtime, "bool ReplaceKogadoHyWindowProcedure(HWND window) {")
+        self.assertIn("current == ours", replace)
+        self.assertLess(replace.index("g_kogado_hy_previous_proc.store("),
+                        replace.index("WriteKogadoHyWindowProcedure("))
+        restore = self._function_body(
+            runtime, "void RestoreKogadoHyWindowProcedure(")
+        self.assertIn("&KogadoHyWindowProc", restore)
+        self.assertLess(restore.index("ReadKogadoHyWindowProcedure("),
+                        restore.index("WriteKogadoHyWindowProcedure("))
+        shutdown = self._function_body(runtime, "void ShutdownKogadoHyLookup(")
+        self.assertIn("RestoreKogadoHyWindowProcedure()", shutdown)
 
     def test_fvp_lookup_is_structural_and_callbacks_stay_bounded(self) -> None:
         """FVP 文本道 + 查词 + 语音：站点只来自结构；游戏线程 / 消息线程回调不做 IO / 转码 / 分配。"""

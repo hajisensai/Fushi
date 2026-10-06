@@ -4,6 +4,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/video_download_subscription_edit_dialog.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 订阅「窄合并编辑」对话框的行为守卫。
 ///
@@ -171,9 +172,7 @@ void main() {
         bad,
       );
       await tester.pumpAndSettle();
-      final FilledButton save = tester.widget<FilledButton>(
-        find.byKey(const ValueKey<String>('subscription-edit-save')),
-      );
+      final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const ValueKey<String>('subscription-edit-save'))),);
       expect(save.onPressed, isNull, reason: '非法起始集「$bad」必须禁用保存');
       expect(find.text(t.download_subscription_start_episode_invalid),
           findsOneWidget,

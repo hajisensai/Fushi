@@ -33,14 +33,14 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
   final ValueNotifier<bool> cancelRequested = ValueNotifier<bool>(false);
   BuildContext? dialogContext;
   bool dialogClosed = false;
-  unawaited(showDialog<void>(
+  unawaited(showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext ctx) {
       dialogContext = ctx;
       return PopScope(
         canPop: false,
-        child: AlertDialog(
+        child: FushiAlertDialog(
           title: Text(t.anki_dedup_progress_title),
           content: SizedBox(
             width: 420,
@@ -57,7 +57,7 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
                 valueListenable: cancelRequested,
                 builder:
                     (BuildContext context, bool requested, Widget? child) =>
-                        TextButton(
+                        FushiTextButton(
                   onPressed:
                       requested ? null : () => cancelRequested.value = true,
                   child: Text(
@@ -71,7 +71,7 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
               // 远端制卡后端（iOS 上的主力，本机无 AnkiDroid）那条请求超时是 30
               // 分钟，主机一休眠/掉线就是半小时全屏死锁，只能杀进程。这颗按钮只把
               // UI 与请求解绑（任务照跑），不谎称能停任务，与上面那条注释不冲突。
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: Text(t.dialog_background_close),
               ),
@@ -139,7 +139,7 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            LinearProgressIndicator(value: value),
+            FushiLinearProgressIndicator(value: value),
             const SizedBox(height: 12),
             Text(line),
             if (p?.currentFile != null) ...[
@@ -171,13 +171,13 @@ Future<bool> showAnkiMediaDedupPlanDialog(
   required bool offerDelete,
 }) async {
   if (plan.deletions.isEmpty) {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.anki_dedup_plan_title),
         content: Text(t.anki_dedup_report_clean),
         actions: [
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context),
             child: Text(t.dialog_ok),
           ),
@@ -186,9 +186,9 @@ Future<bool> showAnkiMediaDedupPlanDialog(
     );
     return false;
   }
-  final bool? ok = await showDialog<bool>(
+  final bool? ok = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext context) => AlertDialog(
+    builder: (BuildContext context) => FushiAlertDialog(
       title: Text(t.anki_dedup_plan_title),
       content: SizedBox(
         width: 420,
@@ -227,16 +227,16 @@ Future<bool> showAnkiMediaDedupPlanDialog(
       ),
       actions: [
         if (!offerDelete)
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_ok),
           ),
         if (offerDelete) ...[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(t.anki_dedup_plan_delete),
           ),
@@ -265,13 +265,13 @@ Future<void> showAnkiMediaDedupReportDialog(
   final String full = result.cancelled
       ? '${t.anki_dedup_report_cancelled_note}\n\n$body'
       : body;
-  await showDialog<void>(
+  await showAppDialog<void>(
     context: context,
-    builder: (BuildContext context) => AlertDialog(
+    builder: (BuildContext context) => FushiAlertDialog(
       title: Text(t.anki_dedup_report_title),
       content: Text(full),
       actions: [
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(context),
           child: Text(t.dialog_ok),
         ),

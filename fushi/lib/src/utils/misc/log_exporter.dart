@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 bool get _isDesktop =>
     Platform.isWindows || Platform.isMacOS || Platform.isLinux;
@@ -34,7 +35,7 @@ Future<void> saveLogToFile({
   void notify(String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+        .showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   File? tmp;

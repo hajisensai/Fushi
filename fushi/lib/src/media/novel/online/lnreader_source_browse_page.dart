@@ -10,6 +10,7 @@ import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
@@ -212,7 +213,7 @@ class LnReaderCover extends StatelessWidget {
     final Widget fallback = ColoredBox(
       // 与扩展行图标占位同一个设计 token（不在页面里另挑 colorScheme 色）。
       color: FushiDesignTokens.of(context).surfaces.group,
-      child: const Center(child: Icon(Icons.menu_book_outlined, size: 36)),
+      child: const Center(child: FushiIcon(Icons.menu_book_outlined, size: 36)),
     );
     final ImageProvider<Object>? image = lnReaderCoverImage(
       url,
@@ -304,7 +305,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
   Widget build(BuildContext context) {
     // 普通 AlertDialog：内含 Dropdown / FilterChip，`.adaptive` 在 iOS / macOS 主题
     // 下没有 Material 祖先。
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.novel_source_filters_title),
       content: SizedBox(
         width: 480,
@@ -340,7 +341,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
   Widget _buildFilter(int index) {
     final LnReaderFilter filter = _filters[index];
     final Widget control = switch (filter.type) {
-      LnReaderFilterType.picker => DropdownButtonFormField<String>(
+      LnReaderFilterType.picker => FushiDropdownButtonFormField<String>(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         value:
             filter.options.any(
@@ -359,13 +360,13 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         ],
         onChanged: (String? value) => _set(index, value ?? ''),
       ),
-      LnReaderFilterType.text => TextFormField(
+      LnReaderFilterType.text => FushiTextFormFieldControl(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         initialValue: filter.value as String,
         decoration: InputDecoration(labelText: filter.label),
         onChanged: (String value) => _set(index, value),
       ),
-      LnReaderFilterType.toggle => SwitchListTile.adaptive(
+      LnReaderFilterType.toggle => FushiSwitchListTile.adaptive(
         key: ValueKey<String>('novel_filter_${filter.key}'),
         contentPadding: EdgeInsets.zero,
         title: Text(filter.label),
@@ -406,7 +407,7 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         runSpacing: 6,
         children: <Widget>[
           for (final LnReaderFilterOption option in filter.options)
-            FilterChip(
+            FushiFilterChip(
               label: Text(option.label),
               selected: selected(option.value),
               onSelected: (_) => onTap(option.value),
@@ -422,7 +423,6 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
         filter.value as Map<String, List<String>>;
     final List<String> include = value['include'] ?? const <String>[];
     final List<String> exclude = value['exclude'] ?? const <String>[];
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -433,17 +433,16 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
           runSpacing: 6,
           children: <Widget>[
             for (final LnReaderFilterOption option in filter.options)
-              FilterChip(
+              FushiFilterChip(
                 label: Text(option.label),
                 selected:
                     include.contains(option.value) ||
                     exclude.contains(option.value),
-                selectedColor: exclude.contains(option.value)
-                    ? scheme.errorContainer
-                    : null,
-                avatar: exclude.contains(option.value)
-                    ? const Icon(Icons.remove, size: 16)
-                    : null,
+                // 排除态交给共享组件：MD3 errorContainer 底 + 减号；Apple 中性灰底
+                // + destructive 减号。
+                tone: exclude.contains(option.value)
+                    ? FushiFilterChipTone.exclude
+                    : FushiFilterChipTone.include,
                 onSelected: (_) {
                   final List<String> nextInclude = List<String>.of(include);
                   final List<String> nextExclude = List<String>.of(exclude);

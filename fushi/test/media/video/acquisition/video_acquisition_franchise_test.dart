@@ -140,7 +140,11 @@ void main() {
       final _Session s = _Session(_defaults);
       final List<VideoAcquisitionEffect> effects = _reachFranchise(s);
       expect(s.state.stage, VideoAcquisitionStage.resolvingFranchise);
-      expect(effects.single, isA<VideoAcquisitionLoadFranchiseEffect>());
+      final VideoFranchiseQuery query =
+          (effects.single as VideoAcquisitionLoadFranchiseEffect).query;
+      expect(query.item, s.state.chosenItem);
+      // BUG-2960：用户说的系列名随查询带给联网补全，不只剩锚点单部的标题。
+      expect(query.seriesNames, <String>['Doraemon']);
       expect(s.said, contains(VideoAcquisitionSayKind.franchiseSearching));
       expect(s.said, isNot(contains(VideoAcquisitionSayKind.question)));
     });
@@ -606,6 +610,142 @@ void main() {
         isNot(contains(VideoAcquisitionSayKind.franchiseNotFound)),
       );
       expect(s.state.question!.slot, VideoAcquisitionSlot.franchiseFallback);
+    });
+  });
+
+  // BUG-2937：系列大到一批查不完时，分批续查直到走完，而不是在半张清单上开工。
+  group('分批续查', () {
+    final VideoDiscoveryItem malMovie = _work(
+      id: 'm3',
+      title: 'Nobita no Uchuu Kaitakushi',
+      kind: VideoMetadataMediaKind.movie,
+      year: 1981,
+    );
+
+    test('还有下一批 → 报进度、发续查效果，不开始逐部找资源', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      Future<VideoFranchise> rest() async => _franchise;
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: <VideoDiscoveryItem>[_movie1980],
+            more: rest,
+          ),
+        ),
+      );
+      expect(s.state.stage, VideoAcquisitionStage.resolvingFranchise);
+      expect(s.state.busy, isTrue);
+      expect(s.state.franchiseEntries, isEmpty);
+      final VideoAcquisitionContinueFranchiseEffect effect =
+          effects.single as VideoAcquisitionContinueFranchiseEffect;
+      expect(effect.more, same(rest));
+      final VideoAcquisitionAssistantMessage progress =
+          s.state.transcript.last as VideoAcquisitionAssistantMessage;
+      expect(progress.say.kind, VideoAcquisitionSayKind.franchiseProgress);
+      // 范围是「只要剧场版」：进度只数剧场版。
+      expect(progress.say.args['movies'], 1);
+      expect(progress.say.args['series'], 0);
+      expect(s.state.franchiseDraft!.more, isNull, reason: '草稿不留用过的入口');
+      expect(s.said, isNot(contains(VideoAcquisitionSayKind.franchiseFound)));
+    });
+
+    test('最后一批回来 → 与已收到的合并去重后出清单', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      // 第一批：TMDB 的剧场版 + MAL 第一批。
+      s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: <VideoDiscoveryItem>[_movie1980, _movie2006],
+            more: () async => _franchise,
+          ),
+        ),
+      );
+      // 最后一批（MAL 到目前为止的全部）：与第一批重叠一部、新增一部。
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'ドラえもん',
+            series: <VideoDiscoveryItem>[_show],
+            movies: <VideoDiscoveryItem>[_movie1980, malMovie],
+          ),
+        ),
+      );
+      expect(s.state.stage, VideoAcquisitionStage.planningFranchise);
+      expect(
+        s.state.franchiseEntries.map(
+          (VideoAcquisitionFranchiseEntry e) => e.item.reference.mediaId,
+        ),
+        <String>['m1', 'm3', 'm2'],
+      );
+      // 系列名取第一批的（TMDB collection 名在前）。
+      expect(s.state.franchiseName, 'Doraemon');
+      expect(s.state.franchiseDraft, isNull);
+      expect(
+        effects.single,
+        isA<VideoAcquisitionResolveFranchiseEntryEffect>(),
+      );
+      expect(
+        s.said,
+        isNot(contains(VideoAcquisitionSayKind.franchiseTruncated)),
+      );
+    });
+
+    test('续查失败（空的 truncated 批）→ 交出已收到的并说清单不全', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: <VideoDiscoveryItem>[_movie1980, _movie2006],
+            more: () async => _franchise,
+          ),
+        ),
+      );
+      s.feed(
+        const VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: '',
+            series: <VideoDiscoveryItem>[],
+            movies: <VideoDiscoveryItem>[],
+            truncated: true,
+          ),
+        ),
+      );
+      expect(s.state.stage, VideoAcquisitionStage.planningFranchise);
+      expect(s.state.franchiseEntries, hasLength(2));
+      expect(s.said, contains(VideoAcquisitionSayKind.franchiseTruncated));
+    });
+
+    test('续查途中取消 → 迟到的批次被丢弃', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[_show],
+            movies: <VideoDiscoveryItem>[_movie1980],
+            more: () async => _franchise,
+          ),
+        ),
+      );
+      s.feed(const VideoAcquisitionCancelEvent());
+      final VideoAcquisitionStage cancelled = s.state.stage;
+      expect(cancelled, isNot(VideoAcquisitionStage.resolvingFranchise));
+      final List<VideoAcquisitionEffect> late = s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(_franchise),
+      );
+      expect(late, isEmpty);
+      expect(s.state.stage, cancelled);
+      expect(s.state.franchiseEntries, isEmpty);
     });
   });
 

@@ -322,7 +322,8 @@ void main() {
     final Size thumb = tester.getSize(
       find.descendant(of: card, matching: find.byType(AspectRatio)).first,
     );
-    expect(thumb.width, kMediaServerContinueCardWidth);
+    // 封面即卡片（shelfCoverCard）的透明卡边仍占 1px 描边宽，缩略图比卡槽窄 2。
+    expect(thumb.width, closeTo(kMediaServerContinueCardWidth, 2));
     expect(thumb.width / thumb.height, closeTo(16 / 9, 0.01));
     expect(
       find.descendant(
@@ -336,11 +337,11 @@ void main() {
       find.descendant(of: card, matching: find.text('S01E03 出发')),
       findsOne,
     );
-    final LinearProgressIndicator bar = tester.widget(
+    final FushiLinearProgressIndicator bar = tester.widget(
       find.byKey(const ValueKey<String>('media-server-continue-progress')),
     );
     expect(bar.value, closeTo(10 / 24, 1e-9));
-    expect(bar.minHeight, greaterThanOrEqualTo(4));
+    expect(bar.minHeight!, greaterThanOrEqualTo(4));
     // 库行仍是海报竖卡，不受影响。
     expect(find.byType(MediaServerItemCard), findsNWidgets(2));
   });

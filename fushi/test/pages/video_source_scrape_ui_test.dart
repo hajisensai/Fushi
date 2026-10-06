@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(
       NativeDatabase.memory(
@@ -575,7 +576,17 @@ void main() {
         .where((Element element) => listRect
             .contains(tester.getRect(find.byWidget(element.widget)).center))
         .length;
-    expect(visible, greaterThanOrEqualTo(8), reason: '说明行没有铺满 tab');
+    // MD3 两行列表行（2026-10 重做）每行约 68px（旧 ≈56），同样高度能露出
+    // 6 行；判据仍是「远多于旧 260px 硬截的 4 行」且可视行一直排到列表底部。
+    expect(visible, greaterThanOrEqualTo(6), reason: '说明行没有铺满 tab');
+    final List<Rect> visibleRows = issues
+        .evaluate()
+        .map((Element element) => tester.getRect(find.byWidget(element.widget)))
+        .where((Rect r) => listRect.contains(r.center))
+        .toList();
+    final double rowPitch = visibleRows[1].top - visibleRows[0].top;
+    expect(visibleRows.last.bottom, greaterThan(listRect.bottom - 2 * rowPitch),
+        reason: '说明行要一直铺到 tab 底部，不能停在半截');
     final RenderBox listBox = tester.renderObject(list);
     final RenderBox tabView = tester.renderObject(find.byType(TabBarView));
     expect(listBox.size.height, tabView.size.height,
@@ -692,7 +703,7 @@ void main() {
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(localeField()).controller!.text,
+      tester.widget<TextField>(glassUnwrap<TextField>(localeField())).controller!.text,
       'ja',
     );
     await tester.enterText(localeField(), '   ');
@@ -1050,6 +1061,12 @@ void main() {
               .byKey(ValueKey<String>('video-source-candidate-anidb-tv-$id')),
           matching: find.textContaining(label),
         );
+    // 重设计后弹窗页眉 / tab 栏更高，800×600 测试窗里活动列表视口只剩一百多
+    // 像素，AI 建议的那条候选落在视口外：先滚进来再看标注（用户同样要滚）。
+    await tester.ensureVisible(find.byKey(
+        const ValueKey<String>('video-source-candidate-anidb-tv-1002'),
+        skipOffstage: false));
+    await tester.pumpAndSettle();
     expect(find.textContaining(label), findsOneWidget);
     expect(labelIn('1002'), findsOneWidget);
     expect(labelIn('1001'), findsNothing);
@@ -1058,8 +1075,12 @@ void main() {
         findsOneWidget);
 
     // 只作标注：选哪条仍由用户决定，选了非 AI 建议的那条也照常交回。
-    await tester.tap(find.byKey(
-        const ValueKey<String>('video-source-candidate-anidb-tv-1001')));
+    final Finder first = find.byKey(
+        const ValueKey<String>('video-source-candidate-anidb-tv-1001'),
+        skipOffstage: false);
+    await tester.ensureVisible(first);
+    await tester.pumpAndSettle();
+    await tester.tap(first);
     await tester.pumpAndSettle();
     expect(runner.chosen?.lookup.externalId, '1001');
     expect(controller.isRunning, isFalse);

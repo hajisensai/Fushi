@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -225,7 +226,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         context: context,
         builder: (BuildContext dialogContext) => StatefulBuilder(
           builder: (BuildContext context, StateSetter setDialogState) =>
-              SimpleDialog(
+              FushiSimpleDialog(
                 title: Text(t.game_line_track_dialog_title),
                 children: <Widget>[
                   Padding(
@@ -236,7 +237,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ),
                   ),
                   FushiListItem(
-                    leading: const Icon(Icons.audiotrack_outlined),
+                    leading: const FushiIcon(Icons.audiotrack_outlined),
                     title: Text(line.audioBackend ?? t.game_track_voice),
                     subtitle: Text(
                       <String>[
@@ -273,7 +274,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       context: context,
       builder: (BuildContext dialogContext) => StatefulBuilder(
         builder: (BuildContext context, StateSetter setDialogState) =>
-            SimpleDialog(
+            FushiSimpleDialog(
               title: Text(t.game_line_track_dialog_title),
               children: <Widget>[
                 for (final GalAudioTrack track in tracks)
@@ -291,7 +292,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                         context,
                       ).surfaces.onSurface.withValues(alpha: 0.38);
                       return FushiListItem(
-                        leading: Icon(
+                        leading: FushiIcon(
                           excluded
                               ? Icons.music_off_outlined
                               : Icons.graphic_eq,
@@ -441,7 +442,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               );
             }
 
-            return AlertDialog(
+            return FushiAlertDialog(
               title: Text(t.game_audio_tracks),
               content: SizedBox(
                 width: 520,
@@ -462,7 +463,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 ),
               ),
               actions: <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
                   child: Text(t.dialog_close),
                 ),
@@ -895,7 +896,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // minWidth 280 + intrinsic 宽度——窗口标题（往往是「游戏名 - 章节 - 存档」这类
       // 长串）一律被挤成一行省略号。同文件的音轨弹窗早就用 SizedBox(width: 520)，
       // 这里照同一规格给出可用宽度。
-      builder: (BuildContext ctx) => SimpleDialog(
+      builder: (BuildContext ctx) => FushiSimpleDialog(
         title: Text(t.external_window_select),
         children: <Widget>[
           for (final ExternalWindowInfo window in ordered)
@@ -1167,7 +1168,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               children: <Widget>[
                 Text(t.game_hook_code_paste_body),
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   controller: codeController,
                   autofocus: true,
                   maxLines: 2,
@@ -1179,7 +1180,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   controller: labelController,
                   decoration: InputDecoration(
                     labelText: t.game_hook_code_label,
@@ -1191,7 +1192,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           footer: Align(
             alignment: Alignment.centerRight,
-            child: FilledButton(
+            child: FushiFilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(t.dialog_save),
             ),
@@ -1336,14 +1337,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     return Material(
       // 走共享设计 token 的语义 overlay 面（顶层容器面调性），不在页面里直接引原始
       // ColorScheme 面 token（MD3 守卫要求 ordinary chrome 走共享组件）。
-      color: FushiDesignTokens.of(context).surfaces.overlay,
+      // Apple：surfaces.overlay 是 systemGray4 档（深 #48484A）的占位色，整条
+      // 铺开就是一块重灰；改成内容层分组底（secondarySystemGroupedBackground）。
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).secondaryGroupedBackground
+          : FushiDesignTokens.of(context).surfaces.overlay,
       child: InkWell(
         onTap: _pickExternalWindow,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: <Widget>[
-              Icon(Icons.crop_free, size: 18, color: colors.primary),
+              FushiIcon(Icons.crop_free, size: 18, color: colors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1615,7 +1620,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
     }
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.texthooker),
         actions: _buildToolbarActions(context, embedded: false),
       ),
@@ -1739,7 +1744,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _showAudioFallbackPolicyDialog() async {
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.game_audio_fallback_policy),
         content: SizedBox(
           width: 460,
@@ -1754,7 +1759,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   children: <Widget>[
                     for (final GalAudioFallbackPolicy policy
                         in GalAudioFallbackPolicy.values)
-                      RadioListTile<GalAudioFallbackPolicy>(
+                      FushiRadioListTile<GalAudioFallbackPolicy>(
                         value: policy,
                         groupValue: current,
                         title: Text(_audioFallbackPolicyLabel(policy)),
@@ -1772,7 +1777,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_close),
           ),
@@ -1801,7 +1806,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<void> _showHealthDialog() async {
     await showAppDialog<void>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.game_health),
         content: SizedBox(
           width: 460,
@@ -1824,7 +1829,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text(t.dialog_close),
           ),
@@ -1930,7 +1935,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     ),
                     const SizedBox(height: 12),
                     Expanded(child: live),
-                    ExpansionTile(
+                    FushiExpansionTile(
                       title: Text(t.game_line_tracks),
                       tilePadding: EdgeInsets.zero,
                       children: <Widget>[
@@ -1985,7 +1990,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
             child: Row(
               children: <Widget>[
-                const Icon(Icons.forum_outlined, size: 20),
+                const FushiIcon(Icons.forum_outlined, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1996,23 +2001,32 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 if (_unreadLines > 0)
                   // 补 onTertiaryContainer 前景（此前继承默认前景，深色主题下
                   // 对比不足）；点击 = 跳到最新一行并清零未读。
+                  // chip 统一（2026-10-04）：可点的胶囊与其它 chip 同一语言——
+                  // MD3 secondaryContainer + onSecondaryContainer，Apple 是无
+                  // bezel 的 plain 按钮（强调色字、不铺 systemFill 灰底）；13 号 w500。
                   Material(
-                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    color: isGlassDesign(context)
+                        ? Colors.transparent
+                        : Theme.of(context).colorScheme.secondaryContainer,
                     borderRadius: BorderRadius.circular(999),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(999),
                       onTap: _jumpToLatestAndClearUnread,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 12,
+                          vertical: 6,
                         ),
                         child: Text(
                           '${t.game_unread_lines} $_unreadLines',
                           style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onTertiaryContainer,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: isGlassDesign(context)
+                                ? appleColorsOf(context).accent
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSecondaryContainer,
                           ),
                         ),
                       ),
@@ -2020,7 +2034,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   ),
                 const SizedBox(width: 8),
                 Text(t.game_follow_live),
-                Switch(
+                FushiSwitch(
                   value: _followLive,
                   onChanged: (bool value) {
                     setState(() {
@@ -2053,39 +2067,39 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   child: HorizontalDragScrollable(
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                      child: FushiToolbar(
+                        dense: true,
                         children: <Widget>[
                           // 粘贴一串现成的特殊码。此前唯一能把自定义 H-code 送进
                           // native 的用户路径是「导入一个七列 TSV 文件」，而首列还必须
                           // 是游戏 exe 的 SHA-256——用户拿到的只是一串字符。
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: t.game_hook_code_paste_title,
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.content_paste_go_outlined,
                               size: 20,
                             ),
                             onPressed: _pasteLunaHookCode,
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_save}',
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.bookmark_add_outlined,
                               size: 20,
                             ),
                             onPressed: _saveSelectedLunaHookCode,
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_import}',
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.file_download_outlined,
                               size: 20,
                             ),
                             onPressed: _importLunaHookProfiles,
                           ),
-                          IconButton(
+                          FushiIconButtonControl(
                             tooltip: 'Hook Code · ${t.dialog_export}',
-                            icon: const Icon(
+                            icon: const FushiIcon(
                               Icons.file_upload_outlined,
                               size: 20,
                             ),
@@ -2237,7 +2251,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 selectedTextThreadKey,
               ),
             ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: lines.isEmpty
                 ? Center(
@@ -2247,7 +2261,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: <Widget>[
-                          Icon(
+                          FushiIcon(
                             Icons.sensors_off_outlined,
                             size: 42,
                             color: Theme.of(context).colorScheme.outline,
@@ -2344,18 +2358,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final String stepCountLabel = t.game_text_process_step_count(
       count: activeSteps,
     );
-    final Widget button = IconButton(
+    final Widget button = FushiIconButtonControl(
       key: const ValueKey<String>('game-text-process-entry'),
       tooltip: activeSteps > 0
           ? '${t.game_text_process_title} · $stepCountLabel'
           : t.game_text_process_title,
-      icon: const Icon(Icons.filter_alt_outlined, size: 20),
+      icon: const FushiIcon(Icons.filter_alt_outlined, size: 20),
       onPressed: hasThread
           ? () => unawaited(_openTextProcessEditor(selectedTextThreadKey))
           : null,
     );
     if (activeSteps == 0) return button;
-    return Badge(label: Text('$activeSteps'), child: button);
+    return FushiBadgeControl(label: Text('$activeSteps'), child: button);
   }
 
   Future<void> _openTextProcessEditor(String selectedTextThreadKey) async {
@@ -2536,17 +2550,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!mounted || _overlayInert) return const SizedBox.shrink();
     // 本浮层插在 root Overlay，不是 TexthookerPage 页面子树的后代；键盘接线由
     // 页面生命周期内的 HardwareKeyboard handler 承担，不再依赖浮层 Focus 链。
-    return FushiAppUiScaleNeutralizer(
-      child: Theme(
-        data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-        child: Builder(
-          builder: (BuildContext context) {
-            if (!mounted || _overlayInert) return const SizedBox.shrink();
-            return Stack(
-              clipBehavior: Clip.none,
-              children: _buildPopups(context),
-            );
-          },
+    // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
+    return LookupOverlayNavigator(
+      child: FushiAppUiScaleNeutralizer(
+        child: Theme(
+          data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+          child: Builder(
+            builder: (BuildContext context) {
+              if (!mounted || _overlayInert) return const SizedBox.shrink();
+              return Stack(
+                clipBehavior: Clip.none,
+                children: _buildPopups(context),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -2616,7 +2633,7 @@ class _SessionOverviewCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             waitingForThread
                 ? Icons.forum_outlined
                 : state.isActive
@@ -2755,7 +2772,7 @@ class _ThreadSelectionRequiredCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.multitrack_audio_outlined,
                 size: 40,
                 color: Theme.of(context).colorScheme.outline,
@@ -2913,7 +2930,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.graphic_eq, size: 20),
+              const FushiIcon(Icons.graphic_eq, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -2972,7 +2989,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                         label: t.game_line_audio_fallback,
                         value: line.fallbackReason!,
                       ),
-                    const Divider(height: 24),
+                    const FushiDividerControl(height: 24),
                     Text(
                       t.game_line_tracks_hint,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3041,7 +3058,7 @@ class _CaptureHealthCard extends StatelessWidget {
           children: <Widget>[
             Row(
               children: <Widget>[
-                const Icon(Icons.monitor_heart_outlined, size: 20),
+                const FushiIcon(Icons.monitor_heart_outlined, size: 20),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -3171,7 +3188,7 @@ class _HealthRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: <Widget>[
-          Icon(
+          FushiIcon(
             ready ? Icons.check_circle_outline : Icons.schedule_outlined,
             size: 17,
             color: ready
@@ -3230,20 +3247,12 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color background = ready
-        ? colors.primaryContainer
-        : colors.surfaceContainerHighest;
-    final Color foreground = ready
-        ? colors.onPrimaryContainer
-        : colors.onSurfaceVariant;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(label, style: TextStyle(color: foreground)),
+    // 共享状态标签：就绪 = 成功色（MD3 harmonize 绿淡底 / Apple 中性灰底 +
+    // 系统绿字），未就绪 = 中性。
+    return FushiTag(
+      text: label,
+      tone: ready ? FushiTagTone.success : FushiTagTone.neutral,
+      dense: true,
     );
   }
 }
@@ -3536,7 +3545,7 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
         if (collapsible) ...<Widget>[
           Row(
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 Icons.warning_amber_rounded,
                 size: 16,
                 color: widget.colors.tertiary,
@@ -3562,10 +3571,10 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
           style: widget.style,
         ),
         if (collapsible)
-          TextButton.icon(
+          FushiTextButton.icon(
             key: ValueKey<String>('game-line-expand-${widget.line.id}'),
             onPressed: () => setState(() => _expanded = !_expanded),
-            icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            icon: FushiIcon(_expanded ? Icons.expand_less : Icons.expand_more),
             label: Text(
               _expanded ? t.collection_collapse : t.collection_expand,
             ),
@@ -3581,26 +3590,12 @@ class _LineMinedChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colors.primary,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(Icons.style, size: 12, color: colors.onPrimary),
-          const SizedBox(width: 4),
-          Text(
-            t.game_line_mined,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(color: colors.onPrimary),
-          ),
-        ],
-      ),
+    // 与 [_LineAudioChip] 同一枚共享标签：强调色调 + 卡片图标。
+    return FushiTag(
+      text: t.game_line_mined,
+      icon: Icons.style,
+      tone: FushiTagTone.accent,
+      dense: true,
     );
   }
 }
@@ -3625,107 +3620,64 @@ class _LineAudioChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     // 语义化 reason 优先于通用状态：无配音是常态不是故障；超长切片是可疑不是正常。
     if (status == TexthookerLineAudioStatus.missing &&
         fallbackReason == kGalLineNoVoiceReason) {
-      return _chip(
-        context,
-        t.game_line_audio_no_voice,
-        colors.surfaceContainerHighest,
-        colors.onSurfaceVariant,
-      );
+      return _chip(t.game_line_audio_no_voice, FushiTagTone.neutral);
     }
     // 「已按干净源策略抑制」绝不能和「无配音」共用灰标：前者是「没证据」，后者是
     // 「有证据判定没配音」。混成一句会让用户以为游戏这句本来就没语音。
     if (status == TexthookerLineAudioStatus.missing &&
         fallbackReason == kGalCleanSourceSuppressedReason) {
-      return Tooltip(
+      return FushiTooltip(
         message: t.game_line_audio_suppressed_hint,
-        child: _chip(
-          context,
-          t.game_line_audio_suppressed,
-          colors.secondaryContainer,
-          colors.onSecondaryContainer,
-        ),
+        child: _chip(t.game_line_audio_suppressed, FushiTagTone.accent),
       );
     }
     if (fallbackReason == kGalOverlongSliceSuspectReason) {
-      return Tooltip(
+      return FushiTooltip(
         message: t.game_line_audio_overlong_hint,
-        child: _chip(
-          context,
-          t.game_line_audio_overlong,
-          colors.tertiaryContainer,
-          colors.onTertiaryContainer,
-        ),
+        child: _chip(t.game_line_audio_overlong, FushiTagTone.warning),
       );
     }
-    final (String, Color, Color) appearance = switch (status) {
+    final (String, FushiTagTone) appearance = switch (status) {
       TexthookerLineAudioStatus.pending => (
         t.game_line_audio_pending,
-        colors.secondaryContainer,
-        colors.onSecondaryContainer,
+        FushiTagTone.neutral,
       ),
       TexthookerLineAudioStatus.matched => (
         t.game_line_audio_matched,
-        colors.primaryContainer,
-        colors.onPrimaryContainer,
+        FushiTagTone.success,
       ),
       TexthookerLineAudioStatus.encoded => (
         t.game_line_audio_encoded,
-        colors.primaryContainer,
-        colors.onPrimaryContainer,
+        FushiTagTone.success,
       ),
       TexthookerLineAudioStatus.fallback => (
         t.game_line_audio_fallback,
-        colors.tertiaryContainer,
-        colors.onTertiaryContainer,
+        FushiTagTone.warning,
       ),
       TexthookerLineAudioStatus.missing => (
         t.game_line_audio_missing,
-        colors.errorContainer,
-        colors.onErrorContainer,
+        FushiTagTone.error,
       ),
       TexthookerLineAudioStatus.unavailable => (
         t.game_line_audio_unavailable,
-        colors.surfaceContainerHighest,
-        colors.onSurfaceVariant,
+        FushiTagTone.neutral,
       ),
     };
-    final Widget chip = _chip(
-      context,
-      appearance.$1,
-      appearance.$2,
-      appearance.$3,
-    );
+    final Widget chip = _chip(appearance.$1, appearance.$2);
     // loopback 是整机混音兜底：状态标签照旧，但悬停要说清「可能混入 BGM」。
     if (backend == 'system_loopback') {
-      return Tooltip(message: t.game_line_audio_loopback_hint, child: chip);
+      return FushiTooltip(message: t.game_line_audio_loopback_hint, child: chip);
     }
     return chip;
   }
 
-  Widget _chip(
-    BuildContext context,
-    String label,
-    Color background,
-    Color foreground,
-  ) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: foreground),
-      ),
-    );
-  }
+  /// 共享状态标签：语义由 [tone] 决定，配色交给设计系统（MD3 tonal 容器 /
+  /// 状态色淡底；Apple 中性灰底 + 语义字色；墨水屏描边）。
+  Widget _chip(String label, FushiTagTone tone) =>
+      FushiTag(text: label, tone: tone, dense: true);
 }
 
 /// 给分词结果补上每个词首字在整行里的 UTF-16 偏移。

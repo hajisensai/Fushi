@@ -25,6 +25,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/reader/dictionary_font_css.dart';
 import 'package:fushi/src/reader/dictionary_language_css.dart';
@@ -111,8 +112,33 @@ String _themeVariablesJs({
   final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
   final String einkLine =
       "document.documentElement.classList.toggle('eink', $eink);\n";
+  // 弹窗卡面由 Flutter [FushiPopupSurface] 画（app 内两套设计系统都是压在正文上的
+  // 玻璃——与浏览器扩展同一材质；独立窗是不透明面板），WebView 文档背景透明、词条
+  // 直接落在材质上，并与扩展同一套强调色淡染（popup.css `html.fushi-glass-host`）。
+  // 桌面全局查词窗（.global-lookup）卡面是文档自己的 body，不挂；墨水屏不挂。
+  // toggle 同 eink：热槽跨渲染持久，开墨水屏后必须摘掉。
+  final bool glassHost = !globalLookup && !eink;
+  // 背后能不能真模糊（宿主能力声明）：iOS / macOS 的弹窗 WebView 是原生平台视图，
+  // Flutter 画在它背后的面板与正文都采不到，文档里的浮层（音频源菜单）用实底；
+  // 其它平台菜单的 backdrop-filter 真能模糊下面的词条——包括 Android：它的 WebView
+  // 虽是 Hybrid Composition（Flutter 面板因此恒不透明，见 fushiPopupBackdropSampleable），
+  // 菜单模糊的是同一文档里的词条，在 Chromium 自己的合成器里完成，与 Flutter 无关。
+  // 宿主在 WebView 下方垫了原生系统材质（NSVisualEffectView / UIVisualEffectView，
+  // [fushiNativePopupMaterialAvailable]）时，背后是真模糊，走与其它平台同一档。
+  final bool solidBackdrop = (theme.platform == TargetPlatform.iOS ||
+          theme.platform == TargetPlatform.macOS) &&
+      !(glassHost &&
+          !mobileExternal &&
+          fushiNativePopupMaterialAvailable(
+            theme: theme,
+            highContrast: WidgetsBinding
+                .instance.platformDispatcher.accessibilityFeatures.highContrast,
+          ));
+  final String glassLine =
+      "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
+      "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n";
   return '''
-      $classLine      $einkLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
+      $classLine      $einkLine      $glassLine      document.documentElement.setAttribute('data-theme', '${isDark ? 'dark' : 'light'}');
       document.documentElement.style.setProperty('--fushi-primary-highlight', '${vars['--fushi-primary-highlight']}');
       document.documentElement.style.setProperty('--text-color', '${vars['--text-color']}');
       document.documentElement.style.setProperty('--background-color', '${vars['--background-color']}');
@@ -599,7 +625,15 @@ String buildPopupSettingsJs({
 
 /// 每次查词都会变化的动态负载：词条与汉字卡结果。与静态段分开注入后，热路径
 /// 每次只发这一段 + renderPopup 调用。
-String buildPopupEntriesJs(DictionarySearchResult result) {
+///
+/// [pending] = 这一层可见且查询确实在进行中（唯一派生点 `popupLookupPending`）：
+/// popup.js 据此画加载指示器而不是「No results」（假空态）。**不再**按「结果是搜索期
+/// 占位单例」推断——热槽 seed / 复位 / 停驻 realm 挂的也是那个单例，但它们是空闲，
+/// 推 true 会让停驻在屏外的页面里加载动画无限循环。
+String buildPopupEntriesJs(
+  DictionarySearchResult result, {
+  bool pending = false,
+}) {
   final String entriesJson = result.popupJson ??
       DictionaryPopupWebViewState.buildLookupEntriesJson(result);
   final String kanjiResultsJson = jsonEncode(
@@ -607,6 +641,7 @@ String buildPopupEntriesJs(DictionarySearchResult result) {
   );
   return '''    try { window.lookupEntries = $entriesJson; } catch(e) { window.lookupEntries = []; }
     try { window.kanjiResults = $kanjiResultsJson; } catch(e) { window.kanjiResults = []; }
+    window.lookupPending = $pending;
 ''';
 }
 

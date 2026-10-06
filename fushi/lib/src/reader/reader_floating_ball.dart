@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 悬浮球停靠的屏幕边。
 enum ReaderFloatingBallDock {
@@ -466,7 +468,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
           onPanUpdate: _onPanUpdate,
           onPanEnd: (_) => _onPanEnd(layout),
           onPanCancel: () => _onPanEnd(layout),
-          child: Tooltip(
+          child: FushiTooltip(
             message: t.reader_floating_ball,
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -522,6 +524,7 @@ class _ColumnButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildGlass(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Color fg = foregroundColor ?? colors.onSurface;
     // 纸张底色上再调 6% 前景色：与正文底色拉开一层，不只靠阴影区分。
@@ -536,7 +539,7 @@ class _ColumnButton extends StatelessWidget {
       elevation: 2,
       shadowColor: Colors.black.withValues(alpha: 0.4),
       clipBehavior: Clip.antiAlias,
-      child: Tooltip(
+      child: FushiTooltip(
         message: action.label,
         child: Semantics(
           identifier: action.semanticsId,
@@ -546,7 +549,42 @@ class _ColumnButton extends StatelessWidget {
             child: SizedBox(
               width: size,
               height: size,
-              child: Icon(action.icon, size: 22, color: fg),
+              child: FushiIcon(action.icon, size: 22, color: fg),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Apple：浮在正文上的控件层 = 液态玻璃圆钮（iOS 26 悬浮按钮），按下变淡、
+  /// 无水波。玻璃填充跟随 app 亮暗（不是纸张色），所以字形取 app 的 label 色，
+  /// 而不是纸张前景色——深色 app + 浅色纸张时纸张前景（黑）压在深色玻璃上看不见。
+  /// iOS / macOS 的正文是原生 WebView 平台视图，库的着色器路径采不到它的像素，
+  /// 走 BackdropFilter 回退（[GlassContainer.platformViewBackdrop]）。
+  Widget _buildGlass(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    return SizedBox.square(
+      key: action.key,
+      dimension: size,
+      child: GlassContainer(
+        useOwnLayer: true,
+        quality: fushiGlassQuality(context),
+        settings: fushiGlassSettingsOverPlatformView(context),
+        shape: const LiquidOval(),
+        platformViewBackdrop: fushiGlassOverPlatformView(context),
+        child: FushiTooltip(
+          message: action.label,
+          child: Semantics(
+            identifier: action.semanticsId,
+            button: true,
+            child: FushiPlainButton(
+              onPressed: action.onPressed,
+              borderRadius: BorderRadius.circular(size / 2),
+              child: SizedBox.square(
+                dimension: size,
+                child: FushiIcon(action.icon, size: 22, color: apple.label),
+              ),
             ),
           ),
         ),

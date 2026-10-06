@@ -298,8 +298,8 @@ void main() {
         '  Future<void> _refreshProgress() async {',
         '\n  }\n',
       );
-      const String gate =
-          'if (_controller == null || _lyricsMode || _restoreInFlight) return;';
+      // 2026-10-04 歌词覆盖层：正文在歌词层下面照常采样记账，门里不再有歌词态。
+      const String gate = 'if (_controller == null || _restoreInFlight) return;';
       final int gateIdx = body.indexOf(gate);
       expect(gateIdx, isNonNegative, reason: '重载在飞时瞬态 atEnd 会把本章剩余计入');
       expect(

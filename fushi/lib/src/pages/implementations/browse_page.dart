@@ -6,6 +6,7 @@ import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, AudiobookStorage, SrtBookRepository;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
@@ -13,7 +14,9 @@ import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
+import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
@@ -545,7 +548,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final DroppedFiles files = classifyDroppedFiles(paths);
     if (files.torrents.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
+        FushiSnackBar(content: Text(t.drag_drop_unsupported_on_downloads)),
       );
       return;
     }
@@ -652,6 +655,30 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   }
 
   Widget _buildTasks() {
+    // 有声书「转录后入库」任务包在最外层：它的条目经闭包并进下面统一列表的
+    // additionalTasks，与各下载来源并列排序/筛选。
+    final Widget tasks = AudiobookTranscribeTasksSection(
+      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> transcribe) =>
+          _buildTaskSources(transcribe),
+    );
+    // BUG-2950：内置引擎网络被掐（fake-ip 不转发 UDP / DHT 不可达）时在任务区
+    // 顶部说明原因；无问题时横幅零高度，任务列表布局不变。
+    return Column(
+      children: <Widget>[
+        ValueListenableBuilder<TorrentNetworkIssue>(
+          valueListenable: ref.read(appProvider).torrentNetworkIssue,
+          builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
+              TorrentNetworkIssueBanner(
+            issue: issue,
+            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          ),
+        ),
+        Expanded(child: tasks),
+      ],
+    );
+  }
+
+  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe) {
     return AnimeDownloadDialog(
                         embedded: true,
                         tasksOnly: true,
@@ -689,6 +716,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                 ...manga,
                                 ...remote,
                                 ...interconnect,
+                                ...transcribe,
                               ],
                               database: ref.read(appProvider).database,
                               metricsLoader: ref
@@ -756,6 +784,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
                                     liveDataAbsence: details.liveDataAbsence,
                                     initialSnapshot: details.snapshot,
                                     initialFiles: details.files,
+                                    networkIssue:
+                                        appModel.torrentNetworkIssue,
                                   ),
                                 );
                               },
@@ -819,16 +849,27 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     return FushiFileDropTarget(
       debugLabel: 'downloads',
       onDrop: _handleDownloadsDrop,
-      child: Scaffold(
-        // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载
-        // 任务折叠区贴底、中段结果列表是唯一的 Expanded。默认
-        // resizeToAvoidBottomInset:true 时，手机软键盘弹出会压掉 body 高度、
-        // 顶掉贴底任务区。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
-        // 本就不看），顶部输入框保持可见、布局不反流。
-        resizeToAvoidBottomInset: false,
+      // 2026-10 体验优化：BUG-1003 的 inset 关闭原先对整页生效，来源 / 扩展 /
+      // 发现页签里的搜索框在手机上会被软键盘直接盖住、列表也滚不到底。只在
+      // 「下载」页签（贴底任务区）关 inset，其它页签恢复默认让键盘顶起 body。
+      child: AnimatedBuilder(
+        animation: controller,
+        builder: (BuildContext context, Widget? body) {
+          final bool onDownloads =
+              tabs[controller.index.clamp(0, tabs.length - 1)] ==
+              BrowseTab.downloads;
+          return Scaffold(
+            // BUG-1003：下载页签把输入框放在上半部、任务折叠区贴底、中段列表是
+            // 唯一的 Expanded。默认 resizeToAvoidBottomInset:true 时，手机软键盘
+            // 弹出会压掉 body 高度、顶掉贴底任务区。在该页签关掉 inset 让键盘
+            // 只覆盖下半部（打字时本就不看），顶部输入框保持可见、布局不反流。
+            resizeToAvoidBottomInset: !onDownloads,
+            body: body,
+          );
+        },
         // 作为 home tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push
         // 进来（设置入口）时的状态栏避让，双层无副作用。
-        body: SafeArea(
+        child: SafeArea(
           bottom: false,
           child: Column(
             children: <Widget>[
@@ -1096,44 +1137,54 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return BrowseSubPage(
       title: t.download_settings,
+      // 与设置详情页同一种页面：页边距由这里给，正文全是真正的设置分组
+      // （MD3 分段卡 / Apple inset grouped），组件自己不再缩进。
       child: ListView(
-                        children: <Widget>[
-                          const TorrentSettingsSection(),
-                          // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
-                          // （第三方凭据一个家）；下载页设置 tab 留一条跳转，
-                          // 番剧下载对话框「去设置」落到这里仍能一步到达。
-                          // 「在线服务」分类被 [ModuleId.services] 关掉时这一行
-                          // 不渲染：它指向的设置分类此刻已从设置页消失，留着就是
-                          // 一条通往不存在页面的死路。
-                          if (ref
-                              .watch(appProvider)
-                              .moduleVisibility
-                              .isEnabled(ModuleId.services))
-                            Builder(
-                              builder: (BuildContext rowContext) =>
-                                  AdaptiveSettingsNavigationRow(
-                                    title: t.settings_destination_services,
-                                    subtitle: t.settings_services_link_subtitle,
-                                    icon: Icons.cloud_outlined,
-                                    showIcon: true,
-                                    onTap: () => Navigator.of(rowContext).push(
-                                      adaptivePageRoute(
-                                        context: rowContext,
-                                        builder: (_) => SettingsDetailPage(
-                                          destination:
-                                              buildServicesDestination(),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
+        ),
+        children: <Widget>[
+          const TorrentSettingsSection(),
+          // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务（第三方凭据一个家）；
+          // 下载设置页留一条跳转，番剧下载对话框「去设置」落到这里仍能一步到达。
+          // 「在线服务」分类被 [ModuleId.services] 关掉时这一组不渲染：它指向的
+          // 设置分类此刻已从设置页消失，留着就是一条通往不存在页面的死路。
+          if (ref
+              .watch(appProvider)
+              .moduleVisibility
+              .isEnabled(ModuleId.services))
+            AdaptiveSettingsSection(
+              children: <Widget>[
+                Builder(
+                  builder: (BuildContext rowContext) =>
+                      AdaptiveSettingsNavigationRow(
+                        title: t.settings_destination_services,
+                        subtitle: t.settings_services_link_subtitle,
+                        icon: Icons.cloud_outlined,
+                        showIcon: true,
+                        onTap: () => Navigator.of(rowContext).push(
+                          adaptivePageRoute(
+                            context: rowContext,
+                            builder: (_) => SettingsDetailPage(
+                              destination: buildServicesDestination(),
                             ),
-                          const VideoExternalProviderSettingsSection(
-                            scope: VideoExternalProviderScope.downloadRouting,
                           ),
-                        ],
+                        ),
                       ),
+                ),
+              ],
+            ),
+          const VideoExternalProviderSettingsSection(
+            scope: VideoExternalProviderScope.downloadRouting,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1154,8 +1205,8 @@ ModuleId _moduleOfResourceDomain(_DownloadsResourceDomain domain) =>
 
 /// 此刻可见的资源域，顺序即标签顺序（枚举声明序）。
 ///
-/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；Android 的
-/// games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
+/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；非 Windows
+/// 的 games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
 List<_DownloadsResourceDomain> _visibleResourceDomains(
   ModuleVisibility visibility, {
   required GamesModuleForm? gamesForm,

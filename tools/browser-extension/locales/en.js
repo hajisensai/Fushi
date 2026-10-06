@@ -10,6 +10,9 @@
   opt_extensionTheme_option_auto: 'Follow system',
   opt_extensionTheme_option_light: 'Light',
   opt_extensionTheme_option_dark: 'Dark',
+  opt_page_subtitle: 'Settings are stored in this browser only; most changes apply immediately.',
+  opt_section_nav_aria_label: 'Settings sections',
+  opt_connection_section_heading: 'Connection and diagnostics',
   opt_palette_title: 'Color theme',
   opt_palette_desc: 'The same theme model as Fushi itself: follow Fushi’s current colors, a built-in preset, or a custom theme (one accent color derives both the light and dark palettes). Applied to the settings page, subtitle side panel, toolbar menu, subtitle drawer, the on-video subtitle box and the lookup popup.',
   opt_extensionBrightness_title: 'Light / dark',
@@ -106,7 +109,7 @@
   opt_mobileSubtitleDrawer_title: 'Subtitle list drawer',
   opt_mobileSubtitleDrawer_desc: 'Android browsers have no native side panel (that API is desktop-only), so the subtitle list had nowhere to show on phones. When on, video pages on touch devices get a ☰ floating button at the screen edge plus an invisible edge gesture strip: tap to toggle, or hold the edge to drag the panel out to any width (docked right in landscape, bottom in portrait; the full list is embedded — track picker, tap-to-seek, timing offset, external subtitles, online subtitle search, mining, tap-to-look-up). Size is remembered. <b>Landscape only appears in fullscreen</b> (non-fullscreen landscape layouts were unstable and are disabled); portrait any time. Never shown on desktop (mouse).',
   opt_playerControls_title: 'Subtitle button inside the player',
-  opt_playerControls_desc: 'Adds a Fushi button to the player’s own control bar (YouTube and Netflix; on other sites a round button appears at the bottom-right of the video while the pointer is over it). Its menu flips the same settings as this page — Fushi subtitles, replacing the site’s subtitles, hiding them, the timing offset and the subtitle appearance — without leaving the video.',
+  opt_playerControls_desc: 'Adds a Fushi button to the player’s own control bar (YouTube and Netflix; on other sites a round button appears at the top-right of the video while the pointer is over it). Its menu flips the same settings as this page — Fushi subtitles, replacing the site’s subtitles, hiding them, the timing offset and the subtitle appearance — without leaving the video.',
   opt_subtitle_heading_section_kicker: 'Subtitle workbench',
   opt_subtitle_heading_heading: 'Watching and subtitles',
   opt_subtitle_heading_section_note: 'Applies immediately',
@@ -309,7 +312,6 @@
   ctx_confirm: 'Create card',
   ctx_cancel: 'Cancel',
   gen_youtube_queue_empty: 'YouTube queue is empty: turn on subtitles → Shift-hover a word → press “mine” in the popup to queue it, then generate',
-  gen_ext_updated_refresh: 'The extension was updated; refresh the page (F5) and retry',
   gen_progress: 'Generating… {done}/{total}',
   gen_partial_anki_unconfigured: 'Partly generated: Anki is not configured — set up Anki in Fushi and retry (processed {done}, kept {kept})',
   gen_partial_anki_unconfigured_kept: 'Partly generated: Anki is not configured — set up Anki in Fushi and retry (kept {kept})',
@@ -386,7 +388,7 @@
   ap_gen_unsupported_hint: 'The queued cards come from sites without batch generation; remove them one by one or clear the queue',
   ap_gen_start_record_n: 'Start recording & generating ({n} cards)',
   ap_gen_start_n: 'Start generating ({n} cards)',
-  ap_gen_other_youtube_hint: '{n} more on YouTube — switch to a YouTube page to generate them',
+  ap_gen_other_youtube_hint: '{n} more on YouTube — open this menu on any page other than Netflix to generate them',
   ap_gen_other_netflix_hint: '{n} more on Netflix — switch to a Netflix playback page to generate them',
   ap_gen_site_count: '{site} {n} cards',
   ap_gen_wrong_site_hint: 'Pending: {pending} — click a queue item to jump to its video page, then generate',
@@ -405,7 +407,6 @@
   ap_queue_remove_title: 'Remove from queue',
 
   // ── nested-popup.html ──
-  np_fushi_nested_close_aria_label: 'Close this lookup layer',
 
   // ── theme-palette.js / options.js 配色主题 ──
   theme_palette_app: 'Follow Fushi',

@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "跟随系统",
   "opt_extensionTheme_option_light": "浅色",
   "opt_extensionTheme_option_dark": "深色",
+  "opt_page_subtitle": "设置只保存在本机浏览器里，大多数修改立即生效。",
+  "opt_section_nav_aria_label": "设置分区",
+  "opt_connection_section_heading": "连接与诊断",
   "opt_palette_title": "配色主题",
   "opt_palette_desc": "与 Fushi 本体同一套主题：跟随 Fushi 当前配色、内置预设，或自定义（一个主色派生浅色与深色两套）。设置页、字幕侧边栏、工具栏菜单、字幕抽屉、视频上的字幕底板和查词框统一套用。",
   "opt_extensionBrightness_title": "明暗",
@@ -297,7 +300,6 @@
   "ctx_confirm": "确认制卡",
   "ctx_cancel": "取消",
   "gen_youtube_queue_empty": "YouTube 队列为空：先开字幕 → shift 查词 → 点弹窗「制卡」入队，再来生成",
-  "gen_ext_updated_refresh": "扩展已更新，刷新页面(F5)后重试",
   "gen_progress": "生成中… {done}/{total}",
   "gen_partial_anki_unconfigured": "部分未生成：Anki 未配置，请在 Fushi 中配置 Anki 后重试（已处理 {done}，保留 {kept}）",
   "gen_partial_anki_unconfigured_kept": "部分未生成：Anki 未配置，请在 Fushi 中配置 Anki 后重试（保留 {kept}）",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "队列里的卡片来自暂不支持批量生成的站点，可逐项删除或清空",
   "ap_gen_start_record_n": "开始录制生成（{n} 张）",
   "ap_gen_start_n": "开始生成（{n} 张）",
-  "ap_gen_other_youtube_hint": "另有 YouTube {n} 张，需切到 YouTube 页面生成",
+  "ap_gen_other_youtube_hint": "另有 YouTube {n} 张：在 Netflix 以外的任意页面打开本菜单即可生成",
   "ap_gen_other_netflix_hint": "另有 Netflix {n} 张，需切到 Netflix 播放页生成",
   "ap_gen_site_count": "{site} {n} 张",
   "ap_gen_wrong_site_hint": "待生成：{pending}，点队列条目跳到对应视频页再生成",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "确认清空？",
   "ap_queue_open_video_hint": "点击打开视频页",
   "ap_queue_remove_title": "从队列移除",
-  "np_fushi_nested_close_aria_label": "关闭本层查词",
   "theme_palette_app": "跟随 Fushi",
   "theme_palette_app_pending": "Fushi 运行时首次查词后取得其配色",
   "theme_preset_fushi": "Fushi 绿",
@@ -426,5 +427,5 @@
   "pc_style_more": "全部设置",
   "pc_hint_site_track": "这个视频放的是站点自带字幕轨，所以 Fushi 覆盖层不出画。点这里改用 Fushi 字幕。",
   "opt_playerControls_title": "播放器内的字幕按钮",
-  "opt_playerControls_desc": "在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在视频上时于右下角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。"
+  "opt_playerControls_desc": "在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在视频上时于右上角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。"
 }

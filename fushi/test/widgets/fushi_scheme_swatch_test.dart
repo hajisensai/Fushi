@@ -3,6 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
+/// 完整预览 = 四个角色色全部上画布：页面底 / 顶栏（菜单面）/ 文字线 / 强调色按钮。
+/// 对应旧对角预览的 showGlyph（「文」字 + 按钮点都画出来，而不是只剩底色）。
+bool paintsFullPreview(SchemeMiniUiPainter painter, List<Color> colors) =>
+    painter.textColor == colors[0] &&
+    painter.backgroundColor == colors[1] &&
+    painter.buttonColor == colors[2] &&
+    painter.barColor == colors[3];
+
 void main() {
   test('swatch colours are [text, background, button, menu] of the scheme', () {
     // TODO-100: the swatch previews the four roles a user actually reads —
@@ -185,6 +193,20 @@ void main() {
         ),
       ),
     );
+    // 2026-10-04 主题图标重设计：预览画布（SchemeMiniUiPainter）的页面底就是
+    // 方案背景色；选中环是色板外留缝套的 AnimatedContainer 圆角描边。
+    final SchemeMiniUiPainter painter = tester
+        .widget<CustomPaint>(
+          find.descendant(
+            of: find.byType(FushiSchemeSwatch),
+            matching: find.byWidgetPredicate(
+              (Widget w) => w is CustomPaint && w.painter is SchemeMiniUiPainter,
+            ),
+          ),
+        )
+        .painter! as SchemeMiniUiPainter;
+    expect(painter.backgroundColor, background,
+        reason: 'card preview fill is the scheme background');
     final AnimatedContainer container = tester.widget<AnimatedContainer>(
       find.descendant(
         of: find.byType(FushiSchemeSwatch),
@@ -193,25 +215,25 @@ void main() {
     );
     expect(container.foregroundDecoration, isNull);
     final BoxDecoration card = container.decoration! as BoxDecoration;
-    expect(card.color, background,
-        reason: 'card decoration fill is the scheme background');
-    expect(card.border, isNotNull, reason: 'selection ring rides the card');
+    final Border ring = card.border! as Border;
+    expect(ring.top.color, Theme.of(tester.element(find.byType(FushiSchemeSwatch))).colorScheme.primary,
+        reason: 'selection ring rides the card in the accent colour');
     expect(card.borderRadius, isNotNull,
         reason: 'rounded square, not a full circle');
   });
 
   group('TODO-138 · 所有主题指示器都显示完整对角预览（不只底色）', () {
-    SchemeDiagonalPainter painterOf(WidgetTester tester) {
+    SchemeMiniUiPainter painterOf(WidgetTester tester) {
       final CustomPaint cp = tester.widget<CustomPaint>(
         find.descendant(
           of: find.byType(FushiSchemeSwatch),
           matching: find.byWidgetPredicate(
             (Widget w) =>
-                w is CustomPaint && w.painter is SchemeDiagonalPainter,
+                w is CustomPaint && w.painter is SchemeMiniUiPainter,
           ),
         ),
       );
-      return cp.painter! as SchemeDiagonalPainter;
+      return cp.painter! as SchemeMiniUiPainter;
     }
 
     const List<Color> colors = <Color>[
@@ -230,7 +252,7 @@ void main() {
           ),
         ),
       );
-      expect(painterOf(tester).showGlyph, isTrue);
+      expect(paintsFullPreview(painterOf(tester), colors), isTrue);
     });
 
     testWidgets('system/custom swatch（有 overlay）也画完整预览（含「文」glyph）',
@@ -249,7 +271,7 @@ void main() {
           ),
         ),
       );
-      expect(painterOf(tester).showGlyph, isTrue,
+      expect(paintsFullPreview(painterOf(tester), colors), isTrue,
           reason: 'system/custom 也必须画完整预览，不能只剩底色 + 居中徽章');
     });
 
@@ -268,10 +290,10 @@ void main() {
           ),
         ),
       );
-      expect(painterOf(tester).showGlyph, isTrue);
+      expect(paintsFullPreview(painterOf(tester), colors), isTrue);
     });
 
-    testWidgets('overlay 徽章放角落（bottomLeft），不再居中盖住预览',
+    testWidgets('overlay 徽章放角落（右下），不再居中盖住预览',
         (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
@@ -285,12 +307,17 @@ void main() {
           ),
         ),
       );
-      // 徽章经 Align(bottomLeft) 定位在角落（让出中央完整预览），
+      // 徽章经 Positioned(right/bottom) 定位在右下角（让出中央完整预览），
       // 而不是旧的 Center 居中盖住。
       final Finder badgeAlign = find.descendant(
         of: find.byType(FushiSchemeSwatch),
         matching: find.byWidgetPredicate(
-          (Widget w) => w is Align && w.alignment == Alignment.bottomLeft,
+          (Widget w) =>
+              w is Positioned &&
+              w.right != null &&
+              w.bottom != null &&
+              w.top == null &&
+              w.left == null,
         ),
       );
       expect(badgeAlign, findsOneWidget);
@@ -314,7 +341,9 @@ void main() {
       final BuildContext iconContext =
           tester.element(find.byIcon(Icons.palette_outlined));
       final IconThemeData iconTheme = IconTheme.of(iconContext);
-      expect(iconTheme.size, 10, reason: '应读到徽章那层 size==10 的 IconTheme');
+      // 徽章直径 = size*0.34，图标 = 直径*0.62（默认 size 48）。
+      expect(iconTheme.size, closeTo(48 * 0.34 * 0.62, 0.001),
+          reason: '应读到徽章那层的 IconTheme');
       return iconTheme.color!;
     }
 
@@ -425,17 +454,17 @@ void main() {
       Color(0xFFAABBCC),
     ];
 
-    SchemeDiagonalPainter painterOf(WidgetTester tester) {
+    SchemeMiniUiPainter painterOf(WidgetTester tester) {
       final CustomPaint cp = tester.widget<CustomPaint>(
         find.descendant(
           of: find.byType(FushiSchemeSwatch),
           matching: find.byWidgetPredicate(
             (Widget w) =>
-                w is CustomPaint && w.painter is SchemeDiagonalPainter,
+                w is CustomPaint && w.painter is SchemeMiniUiPainter,
           ),
         ),
       );
-      return cp.painter! as SchemeDiagonalPainter;
+      return cp.painter! as SchemeMiniUiPainter;
     }
 
     // TODO-1320 回归守卫：光有 painter.showGlyph==true 不够——若 CustomPaint 画布塌成
@@ -446,7 +475,7 @@ void main() {
             of: find.byType(FushiSchemeSwatch),
             matching: find.byWidgetPredicate(
               (Widget w) =>
-                  w is CustomPaint && w.painter is SchemeDiagonalPainter,
+                  w is CustomPaint && w.painter is SchemeMiniUiPainter,
             ),
           ),
         );
@@ -474,7 +503,7 @@ void main() {
 
     testWidgets('未选中的主题卡片也画完整对角预览（含「文」glyph）', (WidgetTester tester) async {
       await pumpSwatch(tester, selected: false);
-      expect(painterOf(tester).showGlyph, isTrue,
+      expect(paintsFullPreview(painterOf(tester), colors), isTrue,
           reason: '未选中的主题卡片必须完整显示配色，而不是选中后才完整');
     });
 
@@ -494,7 +523,7 @@ void main() {
 
     testWidgets('选中的主题卡片同样完整预览且无底部文字', (WidgetTester tester) async {
       await pumpSwatch(tester, selected: true, overlay: const Icon(Icons.add));
-      expect(painterOf(tester).showGlyph, isTrue);
+      expect(paintsFullPreview(painterOf(tester), colors), isTrue);
       expect(
         find.descendant(
           of: find.byType(FushiSchemeSwatch),

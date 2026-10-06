@@ -18,6 +18,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/utils/misc/bounded_concurrency.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 单个来源的搜索进度。
 enum MangaSearchRunStatus { loading, done, empty, cloudflare, error }
@@ -161,8 +162,14 @@ class MangaGlobalSearchRunner {
               ? MangaSearchRunStatus.empty
               : MangaSearchRunStatus.done;
       }
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       if (isCancelled()) return;
+      // 2026-10 体验优化：页面只给归一后的短句，原始异常在这里落日志。
+      ErrorLogService.instance.log(
+        'MangaGlobalSearch[${run.source.name}]',
+        error,
+        stack,
+      );
       run.error = error;
       run.status = isCloudflareError(error)
           ? MangaSearchRunStatus.cloudflare

@@ -1,8 +1,11 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:macos_ui/macos_ui.dart'
     show
         MacosScaffold,
@@ -23,6 +26,7 @@ import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
+import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
@@ -656,7 +660,7 @@ class _HomePageState extends BasePageState<HomePage>
     final AnkiMediaDedupReport? applied = outcome.applied;
     if (applied != null) {
       // 用户显式选了「自动直接删除」：只报结果。
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(
         content: Text(t.anki_dedup_auto_done(
           count: '${applied.duplicatesRemoved}',
           size: formatAnkiMediaDedupBytes(applied.bytesSaved),
@@ -666,7 +670,7 @@ class _HomePageState extends BasePageState<HomePage>
     }
     if (!outcome.needsConfirmation) return;
     // 保守路径（默认）：只提示。用户点「查看」才摊开逐条清单，再点删除才真删。
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(
       content: Text(t.anki_dedup_auto_found(
         count: '${outcome.plan.duplicatesRemoved}',
         size: formatAnkiMediaDedupBytes(outcome.plan.bytesSaved),
@@ -777,6 +781,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _appleChrome.dispose();
+    _largeTitle.dispose();
+    _shellActions.dispose();
     appModelNoUpdate.videoScrapeControllerResolver = null;
     if (identical(appModelNoUpdate.videoScrapeRuntime, _videoScrapeRuntime)) {
       appModelNoUpdate.videoScrapeRuntime = null;
@@ -1354,8 +1361,121 @@ class _HomePageState extends BasePageState<HomePage>
                   ),
                 ))));
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
-    return home;
+    // 系统窗口材质（Windows 11 Mica / macOS vibrancy）生效时首页外壳 scaffold
+    // 半透明让系统背景透出；push 出去的页面不受影响，仍是实心底。玻璃设计系统
+    // 下只有导航层（悬浮侧栏及其四周）透出，内容区由 [_GlassContentSurface]
+    // 垫回实色分组底（Apple 26：内容层永远是实色）。
+    // BackdropGroup：外壳里并排的玻璃导航（侧栏 / 底栏）用
+    // BackdropFilter.grouped 共用一次背景采样，不再各自抓一遍屏。
+    return ValueListenableBuilder<bool>(
+      valueListenable: WindowCaptionChannel.systemBackdropActive,
+      child: BackdropGroup(child: home),
+      // 结构恒定：恒套一层 Theme、只换 data。按 mica 增删这层会让整棵首页
+      // （满是 GlobalKey）在 LayoutBuilder 重建里重挂，触发 framework
+      // `_elements.contains(element)` 断言（Mac 调试版红屏）。
+      builder: (BuildContext context, bool mica, Widget? child) {
+        final ThemeData theme = Theme.of(context);
+        return Theme(
+          data: mica
+              ? theme.copyWith(
+                  scaffoldBackgroundColor:
+                      theme.colorScheme.surface.withValues(alpha: 0.6),
+                )
+              : theme,
+          child: child!,
+        );
+      },
+    );
   }
+
+  /// Apple 设计系统（iOS 26 / macOS 26）的滚动驱动导航层状态：内容是否滚到
+  /// 顶部 / 底部导航层下面（scroll edge effect）与底部标签栏的最小化。
+  final FushiAppleScrollChrome _appleChrome = FushiAppleScrollChrome();
+
+  /// 外壳大标题条的收起状态（两套设计系统共用）。
+  final FushiLargeTitleCollapse _largeTitle = FushiLargeTitleCollapse();
+
+  /// 外壳大标题条右侧的页头动作槽：库页 / 浏览 / 查词的页头在外壳里时把动作
+  /// 登记到这里（分区页签因此独占整行），可见那份由大标题条画出。
+  final FushiShellActionsSlot _shellActions = FushiShellActionsSlot();
+
+  /// 内容区外包一层滚动观察（喂 [_appleChrome] 与 [_largeTitle]）+ 顶部的
+  /// 页面大标题条（[FushiShellLargeTitleBar]）+ 内容区顶部的 scroll edge 带
+  /// （内容滚上去之后，顶部一段 soft 渐隐；只渐隐不模糊——下面常是静止的
+  /// 页头）。结构恒定：MD3 下同样挂着这层 NotificationListener / Stack，只是
+  /// 不处理通知、不画边缘带，切设计系统不重挂内容子树。
+  Widget _withAppleScrollChrome(Widget content) {
+    _appleChrome.syncScope(_visibleTab);
+    _largeTitle.syncScope(_visibleTab);
+    final bool apple = isGlassDesign(context);
+    return NotificationListener<Notification>(
+      onNotification: (Notification notification) {
+        // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
+        if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+        _largeTitle.handleNotification(notification);
+        return apple && _appleChrome.handleNotification(notification);
+      },
+      // 外壳大标题条在内容之上（库页的分区页签行之上）；条与内容的父层两套
+      // 设计系统、有无标题都恒定，只靠条的高度 / 透明度变化。
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ListenableBuilder(
+            listenable: _largeTitle,
+            builder: (BuildContext context, Widget? _) =>
+                FushiShellLargeTitleBar(
+              title: _shellTitleFor(_visibleTab),
+              collapsed: _largeTitle.collapsed,
+              actions: _shellActions,
+            ),
+          ),
+          Expanded(child: _withAppleTopEdge(content, apple: apple)),
+        ],
+      ),
+    );
+  }
+
+  /// 外壳大标题条下面那条 scroll edge 带（Apple：内容滚上去之后内容区顶部的
+  /// soft 渐隐）。
+  Widget _withAppleTopEdge(Widget content, {required bool apple}) {
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        content,
+        if (apple)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 14,
+            child: ListenableBuilder(
+              listenable: _appleChrome,
+              builder: (BuildContext context, Widget? _) =>
+                  FushiAppleScrollEdge(
+                side: FushiScrollEdgeSide.top,
+                visible: _appleChrome.contentUnderTop,
+                blur: false,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 外壳为 [tab] 显示的页面大标题：有自己分区页签行、却没有页面名的库页
+  /// （书架 / 漫画 / 视频 / 游戏）与浏览、查词。桌面自绘控制条已不再显示
+  /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、浏览器扩展与设置
+  /// 自带标题或不需要，返回 null。
+  String? _shellTitleFor(HomeTab tab) => switch (tab) {
+        HomeTab.books ||
+        HomeTab.manga ||
+        HomeTab.video ||
+        HomeTab.games ||
+        HomeTab.browse ||
+        HomeTab.dictionaries =>
+          homeNavItemFor(tab).label,
+        HomeTab.home || HomeTab.browserExtension || HomeTab.settings => null,
+      };
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
   /// [homeNavItemFor]，保证三处标签/选中图标一致。
@@ -1484,9 +1604,17 @@ class _HomePageState extends BasePageState<HomePage>
                 onTap: selectVisual,
                 items: displayItems,
                 leading: const NavRailBrandButton(),
+                // 玻璃设计系统：宽窗口是图标 + 文字的悬浮侧栏，medium 档收成窄条。
+                extended: sizeClass == WindowSizeClass.expanded,
               ),
             ),
-            Expanded(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
+            Expanded(
+              child: _GlassContentSurface(
+                child: _withAppleScrollChrome(
+                  FocusTraversalGroup(child: _bodyWithMiniBar()),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -1510,10 +1638,21 @@ class _HomePageState extends BasePageState<HomePage>
       key: _homeBodyKey,
       children: <Widget>[
         Expanded(child: buildBody()),
-        if (visibility.isEnabled(ModuleId.browse))
-          const RecommendedPackDownloadMiniBar(),
-        if (visibility.isEnabled(ModuleId.listening))
-          const NowListeningMiniBar(),
+        // 玻璃设计系统的移动布局里内容延伸到悬浮标签栏下面（extendBody），
+        // 迷你条得抬到胶囊之上；它们空闲时收成零高，此时不能留空白，否则内容
+        // 就滚不到胶囊底下了——见 [_FloatingBarInset]。其余布局这里的 bottom
+        // padding 已被 SafeArea 吃掉，是 0，几何不变。
+        _FloatingBarInset(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (visibility.isEnabled(ModuleId.browse))
+                const RecommendedPackDownloadMiniBar(),
+              if (visibility.isEnabled(ModuleId.listening))
+                const NowListeningMiniBar(),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1535,23 +1674,54 @@ class _HomePageState extends BasePageState<HomePage>
     // an edge tab up into a content focus target. Mirrors the desktop layout,
     // which already isolates the rail and content panes (TODO-713: 移动端底栏
     // 边缘 tab 按左/右焦点跑到上部).
+    // 玻璃设计系统（iOS 26）：底栏是悬浮在内容上的玻璃胶囊，内容从它下面滚过
+    // ——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
+    // body 的 SafeArea 不再吃掉它，列表（ListView / GridView 的默认 padding）
+    // 自己把末尾垫到胶囊之上。
+    final bool glassDesign = isGlassDesign(context);
+    // Apple（iOS 26）：「查词」是搜索类目的地，拆成胶囊右侧的独立圆形搜索钮
+    // （`Tab(role: .search)`）；下滑时胶囊最小化成只剩当前项的小圆，内容压在
+    // 胶囊下面时底部有一段 scroll edge 渐隐（状态都在 [_appleChrome]）。
+    final int? glassSearchIndex =
+        glassDesign && tabs.contains(HomeTab.dictionaries)
+            ? homeVisualIndexForTab(
+                tabs: tabs,
+                tab: HomeTab.dictionaries,
+                reversed: reversed,
+              )
+            : null;
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      body: SafeArea(child: FocusTraversalGroup(child: _bodyWithMiniBar())),
+      extendBody: glassDesign,
+      body: _GlassContentSurface(
+        child: SafeArea(
+          bottom: !glassDesign,
+          child: _withAppleScrollChrome(
+            FocusTraversalGroup(child: _bodyWithMiniBar()),
+          ),
+        ),
+      ),
       // The FocusTraversalGroup keeps the bottom-nav isolated as one closed
       // traversal block (TODO-713).
-      bottomNavigationBar: FocusTraversalGroup(
-        child: adaptiveBottomBar(
-          context: context,
-          currentIndex: visualIndex,
-          onTap: (int index) {
-            _selectTabFromNav(homeTabForVisualIndex(
-              tabs: tabs,
-              visualIndex: index,
-              reversed: reversed,
-            ));
-          },
-          items: displayItems,
+      bottomNavigationBar: ListenableBuilder(
+        listenable: _appleChrome,
+        builder: (BuildContext context, Widget? _) => FocusTraversalGroup(
+          child: adaptiveBottomBar(
+            context: context,
+            currentIndex: visualIndex,
+            onTap: (int index) {
+              _selectTabFromNav(homeTabForVisualIndex(
+                tabs: tabs,
+                visualIndex: index,
+                reversed: reversed,
+              ));
+            },
+            items: displayItems,
+            glassMinimized: _appleChrome.minimized,
+            onGlassExpand: _appleChrome.expand,
+            glassContentUnder: _appleChrome.contentUnderBottom,
+            glassSearchIndex: glassSearchIndex,
+          ),
         ),
       ),
     );
@@ -1629,6 +1799,8 @@ class _HomePageState extends BasePageState<HomePage>
     final bool browseReachable = _browseReachable;
     return VideoDiscoveryActions(
       loadDetails: _loadVideoDiscoveryDetails,
+      // 动画 → TMDB 交叉索引后台就绪时，详情 / Hero 重取一次换成资料语言简介。
+      detailsUpdates: _videoDiscoveryService?.detailsUpdates,
       watchStatus: _watchVideoDiscoveryStatus,
       onSearchResource: _openVideoDiscoveryResourceSearch,
       onSearchSubtitle: _openVideoDiscoverySubtitleSearch,
@@ -2366,7 +2538,7 @@ class _HomePageState extends BasePageState<HomePage>
   void _showVideoDiscoveryMessage(BuildContext context, String message) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      FushiSnackBar(content: Text(message)),
     );
   }
 
@@ -2729,7 +2901,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return;
     if (localSources.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.media_source_no_sources)),
+        FushiSnackBar(content: Text(t.media_source_no_sources)),
       );
       return;
     }
@@ -2775,7 +2947,7 @@ class _HomePageState extends BasePageState<HomePage>
     if (!mounted) return (proceed: false, grant: false);
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(
           t.video_source_scrape_external_overwrite_confirm_title,
         ),
@@ -2871,16 +3043,18 @@ class _HomePageState extends BasePageState<HomePage>
               right: 20,
               bottom: 20,
               child: SafeArea(
-                child: FloatingActionButton.small(
-                  key: const ValueKey<String>(
-                    'video-source-background-task-panel',
-                  ),
-                  tooltip: t.video_source_scrape_tasks_open,
-                  onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-                  child: Icon(
-                    controller.pendingConfirmation == null
-                        ? Icons.sync
-                        : Icons.rule_folder_outlined,
+                child: FushiGlassFab(
+                  child: FloatingActionButton.small(
+                    key: const ValueKey<String>(
+                      'video-source-background-task-panel',
+                    ),
+                    tooltip: t.video_source_scrape_tasks_open,
+                    onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+                    child: FushiIcon(
+                      controller.pendingConfirmation == null
+                          ? Icons.sync
+                          : Icons.rule_folder_outlined,
+                    ),
                   ),
                 ),
               ),
@@ -2951,7 +3125,7 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.dictionaries => HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
         ),
-      // Android 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
+      // 非 Windows 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
       // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
       HomeTab.games => appModelNoUpdate.gamesModuleForm ==
               GamesModuleForm.streamClient
@@ -2965,13 +3139,17 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.books => const HomeReaderPage(),
       HomeTab.manga => const MangaLibraryPage(),
     };
-    return PrimaryScrollController(
-      controller: _tabScrollControllers.putIfAbsent(
-        tab,
-        ScrollController.new,
+    return FushiShellTitleScope(
+      title: _shellTitleFor(tab),
+      actionsSlot: _shellActions,
+      child: PrimaryScrollController(
+        controller: _tabScrollControllers.putIfAbsent(
+          tab,
+          ScrollController.new,
+        ),
+        automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+        child: content,
       ),
-      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
-      child: content,
     );
   }
 
@@ -2997,6 +3175,114 @@ class _HomePageState extends BasePageState<HomePage>
 ///
 /// 设置内容默认是 [FushiSettingsContent]；[child] 仅供 widget 测试注入轻量占位以独立
 /// 验证 PopScope 拦截行为（生产路径始终用默认值）。
+/// 玻璃设计系统下首页内容区的实色底。系统窗口材质（Windows 11 Mica / macOS
+/// vibrancy）生效时外壳 scaffold 是半透明的（见 [_HomePageState.build] 的
+/// Theme 包装）——Apple 26 只让导航层（侧栏 / 标签栏）透出背后，内容层永远
+/// 是实色分组底，所以这里给内容区垫回 `colorScheme.surface`。
+///
+/// 结构恒定：MD3 / 无窗口材质时也挂着，只是透明色（不画任何像素、不接命中）。
+class _GlassContentSurface extends StatelessWidget {
+  const _GlassContentSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final bool solid =
+        isGlassDesign(context) && theme.scaffoldBackgroundColor.a < 1;
+    // 底色画在不参与命中测试的背景槽里：ColoredBox 自身是 opaque 命中，直接
+    // 包住内容会改变 MD3 下空白区的点击穿透。
+    return Stack(
+      fit: StackFit.passthrough,
+      children: <Widget>[
+        Positioned.fill(
+          child: IgnorePointer(
+            child: ColoredBox(
+              color: solid ? theme.colorScheme.surface : Colors.transparent,
+            ),
+          ),
+        ),
+        child,
+      ],
+    );
+  }
+}
+
+/// 底部迷你条的避让：子树有内容（高度 > 0）时在其下方垫出当前 MediaQuery 的
+/// bottom padding（玻璃移动布局里 = 悬浮标签栏占的高度），空闲收成零高时整块
+/// 也是零高——普通 Padding / SafeArea 不管子组件多高都会垫，会让内容永远
+/// 够不到胶囊底下。
+class _FloatingBarInset extends StatelessWidget {
+  const _FloatingBarInset({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return _BottomInsetWhenVisible(
+      inset: MediaQuery.paddingOf(context).bottom,
+      child: child,
+    );
+  }
+}
+
+class _BottomInsetWhenVisible extends SingleChildRenderObjectWidget {
+  const _BottomInsetWhenVisible({required this.inset, super.child});
+
+  final double inset;
+
+  @override
+  _RenderBottomInsetWhenVisible createRenderObject(BuildContext context) =>
+      _RenderBottomInsetWhenVisible(inset);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderBottomInsetWhenVisible renderObject,
+  ) {
+    renderObject.inset = inset;
+  }
+}
+
+class _RenderBottomInsetWhenVisible extends RenderShiftedBox {
+  _RenderBottomInsetWhenVisible(this._inset) : super(null);
+
+  double _inset;
+
+  set inset(double value) {
+    if (value == _inset) return;
+    _inset = value;
+    markNeedsLayout();
+  }
+
+  Size _sizeFor(Size childSize, BoxConstraints constraints) {
+    final double extra = childSize.height > 0 ? _inset : 0;
+    return constraints.constrain(
+      Size(childSize.width, childSize.height + extra),
+    );
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final RenderBox? box = child;
+    if (box == null) return constraints.smallest;
+    return _sizeFor(box.getDryLayout(constraints), constraints);
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? box = child;
+    if (box == null) {
+      size = constraints.smallest;
+      return;
+    }
+    box.layout(constraints, parentUsesSize: true);
+    (box.parentData! as BoxParentData).offset = Offset.zero;
+    size = _sizeFor(box.size, constraints);
+  }
+}
+
 class HomeSettingsTabContent extends StatelessWidget {
   const HomeSettingsTabContent({
     super.key,

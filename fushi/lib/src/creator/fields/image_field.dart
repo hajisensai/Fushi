@@ -2,6 +2,7 @@ import 'package:carousel_slider/carousel_slider.dart' hide CarouselController;
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:progress_indicators/progress_indicators.dart';
 import 'package:gap/gap.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -254,7 +255,7 @@ class ImageField extends ImageExportField {
                 top: 1.25,
                 right: 4,
               ),
-              child: Icon(
+              child: FushiIcon(
                 icon,
                 size: fontSize,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -359,7 +360,7 @@ class ImageField extends ImageExportField {
                 top: 1.25,
                 right: 4,
               ),
-              child: Icon(
+              child: FushiIcon(
                 icon,
                 size: fontSize,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,

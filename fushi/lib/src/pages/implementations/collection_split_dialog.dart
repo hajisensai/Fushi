@@ -184,7 +184,7 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.collection_split_by_season),
       content: SizedBox(
         width: 520,
@@ -195,7 +195,7 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
             children: <Widget>[
               for (int i = 0; i < _groups.length; i++) ...<Widget>[
                 if (i > 0) const SizedBox(height: 16),
-                TextField(
+                FushiTextFieldControl(
                   key: ValueKey<String>('collection-split-name-$i'),
                   controller: _groups[i].controller,
                   decoration: const InputDecoration(isDense: true),
@@ -214,7 +214,7 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
                 density: FushiListDensity.compact,
                 padding: EdgeInsets.zero,
                 onTap: () => setState(() => _keepOriginal = !_keepOriginal),
-                leading: Checkbox(
+                leading: FushiCheckbox(
                   value: _keepOriginal,
                   onChanged: (bool? value) =>
                       setState(() => _keepOriginal = value ?? true),
@@ -226,11 +226,11 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: !_namesValid ? null : _confirm,
           child: Text(t.collection_split_confirm),
         ),
@@ -262,7 +262,7 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
             onTap: () => _toggleMember(m.id),
             child: Row(
               children: <Widget>[
-                Checkbox(
+                FushiCheckbox(
                   value: _selected.contains(m.id),
                   onChanged: (bool? _) => _toggleMember(m.id),
                 ),
@@ -298,7 +298,7 @@ class _CollectionSplitDialogState extends State<CollectionSplitDialog> {
               ),
         ),
         const SizedBox(width: 12),
-        PopupMenuButton<int>(
+        FushiPopupMenuButton<int>(
           key: const ValueKey<String>('collection-split-move-to'),
           enabled: enabled,
           onSelected: _moveSelectedTo,

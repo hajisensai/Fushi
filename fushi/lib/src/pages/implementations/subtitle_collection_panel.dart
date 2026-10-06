@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -715,31 +716,45 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           return const SizedBox(
             width: 18,
             height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
           );
         case SubtitleBatchStatus.done:
-          return const Icon(Icons.check_circle, size: 18, color: Colors.green);
+          // 语义色走主题（MD3 和谐化绿 / Apple systemGreen；墨水屏 onSurface），
+          // 不再硬编码 Colors.green / red。
+          return FushiIcon(
+            Icons.check_circle,
+            size: 18,
+            color: fushiStatusColor(context, FushiStatusTone.success),
+          );
         case SubtitleBatchStatus.noMatch:
-          return const Icon(Icons.search_off, size: 18);
+          return const FushiIcon(Icons.search_off, size: 18);
         case SubtitleBatchStatus.failed:
-          return const Icon(Icons.error_outline, size: 18, color: Colors.red);
+          return FushiIcon(
+            Icons.error_outline,
+            size: 18,
+            color: fushiStatusColor(context, FushiStatusTone.error),
+          );
         case SubtitleBatchStatus.pending:
-          return const Icon(Icons.schedule, size: 18);
+          return const FushiIcon(Icons.schedule, size: 18);
       }
     }
     if (_searching) {
       return const SizedBox(
         width: 18,
         height: 18,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     }
     final SubtitleCollectionSource? source = _selectedSource;
-    if (source == null) return const Icon(Icons.remove, size: 18);
+    if (source == null) return const FushiIcon(Icons.remove, size: 18);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
     return (source.index.byEpisode[episode]?.isEmpty ?? true)
-        ? const Icon(Icons.search_off, size: 18)
-        : const Icon(Icons.check_circle_outline, size: 18, color: Colors.green);
+        ? const FushiIcon(Icons.search_off, size: 18)
+        : FushiIcon(
+            Icons.check_circle_outline,
+            size: 18,
+            color: fushiStatusColor(context, FushiStatusTone.success),
+          );
   }
 
   Widget? _episodeSubtitle(VideoBookRow member, int memberIndex) {
@@ -841,7 +856,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       for (final SubtitleCollectionSource source in _sources)
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320),
-          child: ChoiceChip(
+          child: FushiChoiceChip(
             key: ValueKey<String>('subtitle-source-${source.key}'),
             label: Text(
               '${source.label} · ${source.providerId} · '
@@ -891,7 +906,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           ),
         ),
         if (groups.isNotEmpty)
-          DropdownButtonFormField<String>(
+          FushiDropdownButtonFormField<String>(
             key: const ValueKey<String>('subtitle-collection-release-group'),
             // 缺 isExpanded 时按内容固有宽度排版，长标签在紧凑布局横向溢出。
             isExpanded: true,
@@ -931,27 +946,25 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final String? notice = _notice;
     if (notice == null && !_seriesLookupFailed) return null;
     final bool error = notice != null && _noticeIsError;
-    final Color bg = error
-        ? theme.colorScheme.errorContainer
-        : theme.colorScheme.secondaryContainer;
-    final Color fg = error
-        ? theme.colorScheme.onErrorContainer
-        : theme.colorScheme.onSecondaryContainer;
+    // 中性信息块，错误语义只上在单色图标上。
+    final Color fg = fushiNeutralBlockForeground(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
         key: kSubtitleNoticeBannerKey,
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
+        color: fushiNeutralBlockColor(context),
+        borderRadius: fushiNeutralBlockRadius(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(
+              FushiIcon(
                 error ? Icons.error_outline : Icons.info_outline,
                 size: 18,
-                color: fg,
+                color: error
+                    ? fushiStatusColor(context, FushiStatusTone.error)
+                    : fushiNeutralSecondaryForeground(context),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -1003,7 +1016,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                     Row(
                       children: <Widget>[
                         Expanded(
-                          child: TextField(
+                          child: FushiTextFieldControl(
                             controller: _queryCtrl,
                             decoration: InputDecoration(
                               labelText: t.video_jimaku_query,
@@ -1013,14 +1026,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        FilledButton.tonalIcon(
+                        FushiFilledButton.tonalIcon(
                           key: const ValueKey<String>(
                             'subtitle-collection-find',
                           ),
                           onPressed: _resolving || _searching || _running
                               ? null
                               : _resolveSeries,
-                          icon: const Icon(Icons.search, size: 18),
+                          icon: const FushiIcon(Icons.search, size: 18),
                           label: Text(t.video_jimaku_find_sources),
                         ),
                       ],
@@ -1030,7 +1043,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                         for (final AniListMedia media in _seriesMatches)
                           ConstrainedBox(
                             constraints: const BoxConstraints(maxWidth: 260),
-                            child: ChoiceChip(
+                            child: FushiChoiceChip(
                               label: Text(
                                 media.displayTitle,
                                 maxLines: 1,
@@ -1046,7 +1059,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       ]),
                     _buildSourcePicker(theme),
                     _buildCollectionSettings(theme),
-                    const Divider(height: 20),
+                    const FushiDividerControl(height: 20),
                   ],
                 ),
               ),
@@ -1054,7 +1067,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 itemCount: widget.members.length,
                 itemBuilder: (BuildContext context, int i) {
                   final VideoBookRow m = widget.members[i];
-                  return ListTile(
+                  return FushiListTileControl(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
                     leading: _statusIcon(m.bookUid, i),
@@ -1078,20 +1091,20 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           overflowSpacing: 4,
           children: <Widget>[
             if (widget.onCancel != null)
-              TextButton(
+              FushiTextButton(
                 onPressed: _running ? null : widget.onCancel,
                 child: Text(t.dialog_close),
               ),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('subtitle-collection-download-all'),
               onPressed: canDownload ? _downloadAll : null,
               icon: _running
                   ? const SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.download),
+                  : const FushiIcon(Icons.download),
               label: Text(t.video_jimaku_batch_download),
             ),
           ],

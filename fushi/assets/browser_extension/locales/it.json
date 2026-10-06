@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "Segui il sistema",
   "opt_extensionTheme_option_light": "Chiaro",
   "opt_extensionTheme_option_dark": "Scuro",
+  "opt_page_subtitle": "Le impostazioni sono salvate solo in questo browser; la maggior parte delle modifiche ha effetto subito.",
+  "opt_section_nav_aria_label": "Sezioni delle impostazioni",
+  "opt_connection_section_heading": "Connessione e diagnostica",
   "opt_palette_title": "Tema colore",
   "opt_palette_desc": "Lo stesso modello di tema di Fushi: segui i colori attuali di Fushi, un preset integrato o un tema personalizzato (un colore d’accento deriva le tavolozze chiara e scura). Vale per la pagina impostazioni, il pannello laterale dei sottotitoli, il menu della barra, il cassetto dei sottotitoli, il riquadro dei sottotitoli sul video e il popup di ricerca.",
   "opt_extensionBrightness_title": "Chiaro / scuro",
@@ -297,7 +300,6 @@
   "ctx_confirm": "Crea carta",
   "ctx_cancel": "Annulla",
   "gen_youtube_queue_empty": "La coda YouTube è vuota: attiva i sottotitoli → Shift+passa il mouse su una parola → premi “mining” nel popup per accodarla, poi genera",
-  "gen_ext_updated_refresh": "L’estensione è stata aggiornata; ricarica la pagina (F5) e riprova",
   "gen_progress": "Generazione in corso… {done}/{total}",
   "gen_partial_anki_unconfigured": "Generazione parziale: Anki non è configurato; configura Anki in Fushi e riprova (elaborate {done}, conservate {kept})",
   "gen_partial_anki_unconfigured_kept": "Generazione parziale: Anki non è configurato; configura Anki in Fushi e riprova (conservate {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "Le carte in coda provengono da siti senza generazione in batch; rimuovile una per una o svuota la coda",
   "ap_gen_start_record_n": "Avvia registrazione e generazione ({n} carte)",
   "ap_gen_start_n": "Avvia generazione ({n} carte)",
-  "ap_gen_other_youtube_hint": "Altre {n} su YouTube: passa a una pagina YouTube per generarle",
+  "ap_gen_other_youtube_hint": "Altre {n} da YouTube: apri questo menu da qualsiasi pagina diversa da Netflix per generarle",
   "ap_gen_other_netflix_hint": "Altre {n} su Netflix: passa a una pagina di riproduzione Netflix per generarle",
   "ap_gen_site_count": "{site} {n} carte",
   "ap_gen_wrong_site_hint": "In attesa: {pending}; clicca un elemento della coda per andare alla sua pagina video, poi genera",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "Svuotare tutto?",
   "ap_queue_open_video_hint": "Clicca per aprire la pagina del video",
   "ap_queue_remove_title": "Rimuovi dalla coda",
-  "np_fushi_nested_close_aria_label": "Chiudi questo livello di ricerca",
   "theme_palette_app": "Segui Fushi",
   "theme_palette_app_pending": "I colori di Fushi arrivano con la prima ricerca mentre Fushi è aperto",
   "theme_preset_fushi": "Verde Fushi",
@@ -426,5 +427,5 @@
   "pc_style_more": "Tutte le impostazioni",
   "pc_hint_site_track": "Questo video riproduce la traccia di sottotitoli del sito, quindi il livello Fushi resta nascosto. Tocca per mostrare invece i sottotitoli Fushi.",
   "opt_playerControls_title": "Pulsante sottotitoli nel player",
-  "opt_playerControls_desc": "Aggiunge un pulsante Fushi alla barra dei comandi del player (YouTube e Netflix; su altri siti compare un pulsante tondo in basso a destra del video finché il puntatore è sopra). Il suo menu cambia le stesse impostazioni di questa pagina — sottotitoli Fushi, sostituzione di quelli del sito, nascondere, sfasamento tempi e aspetto — senza lasciare il video."
+  "opt_playerControls_desc": "Aggiunge un pulsante Fushi alla barra dei comandi del player (YouTube e Netflix; su altri siti compare un pulsante tondo in alto a destra del video finché il puntatore è sopra). Il suo menu cambia le stesse impostazioni di questa pagina — sottotitoli Fushi, sostituzione di quelli del sito, nascondere, sfasamento tempi e aspetto — senza lasciare il video."
 }

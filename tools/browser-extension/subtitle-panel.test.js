@@ -257,7 +257,8 @@ test('有视频的页面拖文件：接管拖放并挂唯一 drop 提示', () =>
 
 test('drop 提示是右上角小角标，不是整屏覆盖', () => {
   const css = fs.readFileSync(path.join(__dirname, 'scripts', 'content-css-overlay.css'), 'utf8');
-  const rule = css.slice(css.indexOf('#fushi-subtitle-drop-hint'));
+  // 定位规则是行首的基础块（玻璃覆盖段里的同名选择器只改填充 / 模糊）。
+  const rule = css.slice(css.search(/^#fushi-subtitle-drop-hint \{/m));
   const block = rule.slice(0, rule.indexOf('}') + 1);
   assert.ok(/position:\s*fixed/.test(block));
   assert.ok(/top:\s*16px/.test(block) && /right:\s*16px/.test(block), '锚在右上角');

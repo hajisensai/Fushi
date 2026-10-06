@@ -11,6 +11,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'lapis_style_editor_harness.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 展开某个 [ExpansionTile] 并等动画结束。
 Future<void> _expand(WidgetTester tester, String title) async {
@@ -29,7 +30,7 @@ void main() {
         interact: (WidgetTester tester) async {
           final Finder menu = find.byWidgetPredicate(
             (Widget widget) =>
-                widget is DropdownMenu<int> &&
+                widget is FushiDropdownMenu<int> &&
                 '${(widget.key as ValueKey<String>?)?.value}'
                     .startsWith('text-indent-'),
           );
@@ -270,12 +271,10 @@ void main() {
       await tester.tap(find.text('Expression'));
       await tester.pumpAndSettle();
 
-      final FilledButton save = tester.widget<FilledButton>(
-        find.ancestor(
+      final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
           of: find.byIcon(Icons.save_outlined),
           matching: find.byType(FilledButton),
-        ),
-      );
+        )),);
       expect(save.onPressed, isNull, reason: '改回原值仍算 dirty，保存按钮假亮');
     });
   });
@@ -534,12 +533,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final FilledButton save = tester.widget<FilledButton>(
-        find.ancestor(
+      final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
           of: find.byIcon(Icons.save_outlined),
           matching: find.byType(FilledButton),
-        ),
-      );
+        )),);
       expect(save.onPressed, isNull, reason: '取消取色仍写了颜色');
     });
 

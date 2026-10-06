@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   Widget buildSubject(Widget child) {
@@ -36,7 +37,7 @@ void main() {
     expect(editorPanel, isNot(contains('fontSize: 12')));
   });
 
-  testWidgets('FushiSelectableChip uses MD3 selected and outline tokens',
+  testWidgets('FushiSelectableChip uses MD3 pill, tonal fill and checkmark',
       (WidgetTester tester) async {
     bool selected = true;
     await tester.pumpWidget(
@@ -49,18 +50,16 @@ void main() {
       ),
     );
 
-    final ChoiceChip chip = tester.widget<ChoiceChip>(find.byType(ChoiceChip));
-    final RoundedRectangleBorder shape = chip.shape! as RoundedRectangleBorder;
+    final ChoiceChip chip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.byType(ChoiceChip)));
+    final ColorScheme scheme =
+        Theme.of(tester.element(find.byType(ChoiceChip))).colorScheme;
 
     expect(chip.selected, isTrue);
-    expect(chip.showCheckmark, isFalse);
-    expect(shape.borderRadius, BorderRadius.circular(6));
-    expect(
-      chip.selectedColor,
-      Theme.of(tester.element(find.byType(ChoiceChip)))
-          .colorScheme
-          .primaryContainer,
-    );
+    expect(chip.showCheckmark, isTrue);
+    expect(chip.shape, isA<StadiumBorder>());
+    expect(chip.side, BorderSide.none);
+    expect(chip.backgroundColor, scheme.surfaceContainerHigh);
+    expect(chip.selectedColor, scheme.secondaryContainer);
 
     await tester.tap(find.byType(ChoiceChip));
     expect(selected, isFalse);
@@ -95,7 +94,7 @@ void main() {
     expect(selected, isTrue);
   });
 
-  testWidgets('FushiActionChip uses shared outline action styling',
+  testWidgets('FushiActionChip uses a tonal pill without outline',
       (WidgetTester tester) async {
     bool tapped = false;
     await tester.pumpWidget(
@@ -109,11 +108,12 @@ void main() {
     );
 
     final OutlinedButton button =
-        tester.widget<OutlinedButton>(find.byType(OutlinedButton));
-    final RoundedRectangleBorder shape = button.style!.shape!
-        .resolve(<WidgetState>{})! as RoundedRectangleBorder;
-
-    expect(shape.borderRadius, BorderRadius.circular(6));
+        tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byType(OutlinedButton)));
+    expect(
+      button.style!.shape!.resolve(<WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
+    expect(button.style!.side!.resolve(<WidgetState>{}), BorderSide.none);
     expect(find.byIcon(Icons.open_in_new), findsOneWidget);
 
     await tester.tap(find.byType(FushiActionChip));
@@ -823,7 +823,7 @@ void main() {
       ),
     );
 
-    final Switch previewSwitch = tester.widget<Switch>(find.byType(Switch));
+    final Switch previewSwitch = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch)));
     final Color trackColor = previewSwitch.trackColor!.resolve(
       <WidgetState>{WidgetState.disabled, WidgetState.selected},
     )!;
@@ -883,14 +883,14 @@ void main() {
     );
 
     final Icon icon = tester.widget<Icon>(find.byIcon(Icons.sell_outlined));
-    final Divider divider = tester.widget<Divider>(find.byType(Divider));
 
     expect(find.byType(SafeArea), findsOneWidget);
     expect(find.text('Filters'), findsOneWidget);
     expect(find.text('Body'), findsOneWidget);
     expect(find.text('Footer'), findsOneWidget);
     expect(icon.size, 20);
-    expect(divider.height, 1);
+    // MD3 sheet 底部动作区不压分隔线（2026-10-04 弹层统一）。
+    expect(find.byType(Divider), findsNothing);
   });
 
   testWidgets('FushiModalSheetFrame makes long sheet bodies scrollable',
@@ -948,12 +948,13 @@ void main() {
       ),
     );
 
-    final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+    final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
     final RoundedRectangleBorder shape =
         dialog.shape! as RoundedRectangleBorder;
 
     expect(find.text('Dialog body'), findsOneWidget);
-    expect(shape.borderRadius, BorderRadius.circular(16));
+    // MD3 Expressive 刷新：对话框容器圆角 = M3 规范 extra-large 28。
+    expect(shape.borderRadius, BorderRadius.circular(28));
     expect(dialog.clipBehavior, Clip.antiAlias);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });

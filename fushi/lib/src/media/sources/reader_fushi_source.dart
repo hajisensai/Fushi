@@ -171,6 +171,20 @@ int? lastReadAtForBookKey(
   return (position: 0, duration: 1);
 }
 
+/// 页式书（漫画 / PDF）的位置行是不是「重置阅读状态」写回的开头位置。
+///
+/// 页式阅读器落位置恒显式传 `charOffset >= 0`（翻页 0、条漫存页内千分比），只有
+/// `library_progress_reset.dart` 的重置会写「第 0 页 + 精确锚缺席（-1）」——重置不能
+/// 删行（两条同步通道都会把对端位置灌回来），只能写一条新位置，这一形状就是它的
+/// 标记。书架按 1-based 页序算进度（停在第 1 页也算在读），不认这一形状的话重置后
+/// 的卷仍会显示「在读」并留在「继续阅读」里。[charOffset] 取仓库模型的值（-1 已
+/// 映射为 null）。
+bool isPageBasedResetPosition({
+  required int sectionIndex,
+  required int? charOffset,
+}) =>
+    sectionIndex == 0 && (charOffset == null || charOffset < 0);
+
 /// [ReaderFushiSource.deleteBook] 的结果（TODO-1359）。
 ///
 /// 旧接口只回 `Future<bool>`，删除失败时调用方拿不到任何原因，只能弹一个笼统的
@@ -668,7 +682,13 @@ class ReaderFushiSource extends ReaderMediaSource {
             ? (
                 // 1-based 页序直接 clamp 到 [1, 总页数]，脏 sectionIndex 也不会让
                 // position 溢出 duration（>100%）。
-                position: pos == null
+                // 「重置阅读状态」写回的开头位置（页式阅读器从不写缺席的精确锚，
+                // 见 [isPageBasedResetPosition]）同样算未读。
+                position: pos == null ||
+                        isPageBasedResetPosition(
+                          sectionIndex: pos.sectionIndex,
+                          charOffset: pos.charOffset,
+                        )
                     ? 0
                     : (pos.sectionIndex + 1).clamp(
                         1,

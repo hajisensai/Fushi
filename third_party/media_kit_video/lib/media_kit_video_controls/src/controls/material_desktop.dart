@@ -172,6 +172,15 @@ class MaterialDesktopVideoControlsThemeData {
   /// [Color] of the seek bar thumb.
   final Color seekBarThumbColor;
 
+  /// Hibiki patch (glass design system): corner radius of the seek bar track
+  /// (and its buffer / position fills). `0` (default) keeps the upstream
+  /// square-ended track pixel-for-pixel.
+  final double seekBarRadius;
+
+  /// Hibiki patch (glass design system): colour of the top / bottom gradient
+  /// scrims behind the button bars. Default = upstream `0x61000000`.
+  final Color backdropColor;
+
   // VOLUME BAR
 
   /// [Color] of the volume bar.
@@ -275,6 +284,11 @@ class MaterialDesktopVideoControlsThemeData {
   /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(double? fraction)? onHoverPosition;
 
+  /// Hibiki patch (M3 Expressive chrome): host-painted seek-bar track. Null
+  /// (upstream default) = upstream track. Gestures stay in the fork. See
+  /// PATCHES.md.
+  final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -320,6 +334,8 @@ class MaterialDesktopVideoControlsThemeData {
     this.seekBarBufferColor = const Color(0x3DFFFFFF),
     this.seekBarThumbSize = 12.0,
     this.seekBarThumbColor = const Color(0xFFFF0000),
+    this.seekBarRadius = 0.0,
+    this.backdropColor = const Color(0x61000000),
     this.volumeBarColor = const Color(0x3DFFFFFF),
     this.volumeBarActiveColor = const Color(0xFFFFFFFF),
     this.volumeBarThumbSize = 12.0,
@@ -332,6 +348,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.onSeekEnd,
     this.onSeekDispatched,
     this.onHoverPosition,
+    this.seekBarTrackBuilder,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -368,6 +385,8 @@ class MaterialDesktopVideoControlsThemeData {
     Color? seekBarBufferColor,
     double? seekBarThumbSize,
     Color? seekBarThumbColor,
+    double? seekBarRadius,
+    Color? backdropColor,
     Color? volumeBarColor,
     Color? volumeBarActiveColor,
     double? volumeBarThumbSize,
@@ -380,6 +399,7 @@ class MaterialDesktopVideoControlsThemeData {
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
     void Function(double? fraction)? onHoverPosition,
+    VideoSeekBarTrackBuilder? seekBarTrackBuilder,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -427,6 +447,8 @@ class MaterialDesktopVideoControlsThemeData {
       seekBarBufferColor: seekBarBufferColor ?? this.seekBarBufferColor,
       seekBarThumbSize: seekBarThumbSize ?? this.seekBarThumbSize,
       seekBarThumbColor: seekBarThumbColor ?? this.seekBarThumbColor,
+      seekBarRadius: seekBarRadius ?? this.seekBarRadius,
+      backdropColor: backdropColor ?? this.backdropColor,
       volumeBarColor: volumeBarColor ?? this.volumeBarColor,
       volumeBarActiveColor: volumeBarActiveColor ?? this.volumeBarActiveColor,
       volumeBarThumbSize: volumeBarThumbSize ?? this.volumeBarThumbSize,
@@ -442,6 +464,7 @@ class MaterialDesktopVideoControlsThemeData {
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
+      seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
     );
   }
 }
@@ -881,17 +904,19 @@ class _MaterialDesktopVideoControlsState
                               // Top gradient.
                               if (_theme(context).topButtonBar.isNotEmpty)
                                 Container(
-                                  decoration: const BoxDecoration(
+                                  // Hibiki patch (glass design system): scrim
+                                  // colour from the theme (default 0x61000000).
+                                  decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
-                                      stops: [
+                                      stops: const [
                                         0.0,
                                         0.2,
                                       ],
                                       colors: [
-                                        Color(0x61000000),
-                                        Color(0x00000000),
+                                        _theme(context).backdropColor,
+                                        const Color(0x00000000),
                                       ],
                                     ),
                                   ),
@@ -899,17 +924,17 @@ class _MaterialDesktopVideoControlsState
                               // Bottom gradient.
                               if (_theme(context).bottomButtonBar.isNotEmpty)
                                 Container(
-                                  decoration: const BoxDecoration(
+                                  decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
                                       end: Alignment.bottomCenter,
-                                      stops: [
+                                      stops: const [
                                         0.5,
                                         1.0,
                                       ],
                                       colors: [
-                                        Color(0x00000000),
-                                        Color(0x61000000),
+                                        const Color(0x00000000),
+                                        _theme(context).backdropColor,
                                       ],
                                     ),
                                   ),
@@ -1334,7 +1359,22 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
               color: const Color(0x00000000),
               width: constraints.maxWidth,
               height: _theme(context).seekBarContainerHeight,
-              child: Stack(
+              // Hibiki patch (M3 Expressive chrome): host-painted track.
+              child: _theme(context).seekBarTrackBuilder != null
+                  ? _theme(context).seekBarTrackBuilder!(
+                      context,
+                      VideoSeekBarVisual(
+                        position: click ? slider : positionPercent,
+                        buffer: bufferPercent,
+                        hover: hover || click ? slider : null,
+                        hovering: hover,
+                        dragging: click,
+                        playing: playing,
+                        duration: duration,
+                        alignment: Alignment.center,
+                      ),
+                    )
+                  : Stack(
                 clipBehavior: Clip.none,
                 alignment: Alignment.centerLeft,
                 children: [
@@ -1345,7 +1385,18 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
                         : _theme(context).seekBarHeight,
                     alignment: Alignment.centerLeft,
                     duration: _theme(context).seekBarThumbTransitionDuration,
-                    color: _theme(context).seekBarColor,
+                    // Hibiki patch (glass design system): rounded track. With
+                    // the default radius 0 this is the upstream square track
+                    // (same colour, no clip).
+                    decoration: BoxDecoration(
+                      color: _theme(context).seekBarColor,
+                      borderRadius: _theme(context).seekBarRadius > 0
+                          ? BorderRadius.circular(_theme(context).seekBarRadius)
+                          : null,
+                    ),
+                    clipBehavior: _theme(context).seekBarRadius > 0
+                        ? Clip.antiAlias
+                        : Clip.none,
                     child: Stack(
                       clipBehavior: Clip.none,
                       alignment: Alignment.centerLeft,

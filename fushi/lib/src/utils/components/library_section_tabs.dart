@@ -1,17 +1,31 @@
+import 'dart:math' as math;
+
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// MD3 tab 的左右内边距（逻辑像素，单侧）。
 ///
 /// 与 framework 的 `_kTabLabelPadding`（`EdgeInsets.symmetric(horizontal: 16)`）
 /// 同值：自然宽估算必须与真实布局同口径，否则页头的「摆不摆得下」会判错。
 const double _kSectionTabHorizontalPadding = 16.0;
+
+/// Apple 页签的默认单侧内边距（与 `_FushiGlassTabBar` 的 labelPadding 默认值同值）。
+const double _kSectionTabAppleLabelPadding = 12.0;
+
+/// 收紧档的单侧内边距下限：再小相邻两段的文字就贴在一起、点按区也太窄。
+const double _kSectionTabMinLabelPadding = 8.0;
+
+/// 溢出档末尾「更多」按钮的宽（也是它的高与点按区）。
+const double _kSectionTabMoreWidth = 40.0;
 
 /// 横向 tab 还有离屏内容时，边缘渐隐占用的宽度（逻辑像素）。
 ///
@@ -103,7 +117,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required ValueChanged<T> this.onChanged,
     required this.focusIdPrefix,
     this.secondary = false,
-    this.fill = false,
+    this.fill = true,
     super.key,
   }) : controller = null;
 
@@ -120,7 +134,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required TabController this.controller,
     required this.focusIdPrefix,
     this.secondary = false,
-    this.fill = false,
+    this.fill = true,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -219,7 +233,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required T this.selected,
     required ValueChanged<T> this.onChanged,
     this.secondary = false,
-    this.fill = false,
+    this.fill = true,
     super.key,
   }) : controller = null;
 
@@ -229,7 +243,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required this.tabs,
     required TabController this.controller,
     this.secondary = false,
-    this.fill = false,
+    this.fill = true,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -256,6 +270,10 @@ class _FushiSectionTabBarState<T extends Object>
   TabController? _owned;
 
   TabController get _controller => widget.controller ?? _owned!;
+
+  /// 溢出档（前 N 段 + 「更多」）的显示用 controller，见 [_syncDisplayController]；
+  /// 其余档位不用它（保留着，窗口再变窄时不必重建）。
+  TabController? _display;
 
   /// 宿主持有 controller 时它本身就是真相，没有第二份要对齐的东西：既不投影，
   /// 也不接管点击。
@@ -351,6 +369,7 @@ class _FushiSectionTabBarState<T extends Object>
   void dispose() {
     _follow?.removeListener(_onFollowChanged);
     _owned?.dispose();
+    _display?.dispose();
     super.dispose();
   }
 
@@ -431,97 +450,315 @@ class _FushiSectionTabBarState<T extends Object>
 
     if (!_hostControlled) _scheduleProjection();
 
-    // TabBar 自带「选中段自动滚入」，但**不带**桌面鼠标拖滚：Flutter 桌面默认
-    // dragDevices 不含 mouse。旧的等宽段条外面本来就包着 [HorizontalDragScrollable]，
-    // 换控件时一起丢了——一旦溢出（窄窗 / 界面缩放 / 德俄长文案），桌面用户拖不动，
-    // 只剩键盘、手柄或点那半截 tab。
+    // 2026-10-04 用户：「顶部标签栏做成全宽的，移动端摆不下你想想办法」。
+    // 铺满 → 逐级收紧 → 「更多」下拉三档（见 [_resolveLayout]），外加 fill=false
+    // 的旧可滚动形态，**共用同一棵子树**：Stack › 滚动通知 › 拖滚 › Row
+    // [Expanded(TabBar), 更多槽]。档位之间只换参数（isScrollable / labelPadding /
+    // 字号 / 段列表 / controller），TabBar 的 State 不重挂、宿主 controller 不重建。
     //
-    // 横向滚轮仍不接：[WheelToHorizontalScroll] 需要目标滚动区的 ScrollController，
-    // 而 TabBar 的内部 controller 取不到。两侧渐隐则不能省——即使 tabs 比旧等宽段窄，
-    // 窄窗、界面缩放与长译文仍会把尾部页签完整裁到视口外，用户实报看不出后面还有
-    // 内容（BUG-1971）。通过冒泡的 scroll metrics 动态显示渐隐，不需要拿 controller。
-    if (!widget.fill) return _buildScrollableWithCues();
-    // 铺满形态没有 Scrollable，也就没有滚动通知来收回渐隐：窗口先窄（出了尾部
-    // 渐隐）再拉宽进入铺满时，旧的 cue 会一直盖在最后一段上。所以渐隐只挂在可滚动
-    // 分支里；进入铺满时顺手把残留状态清零，免得再退回可滚动的第一帧先闪一下旧值
-    // （新 Scrollable 的首条 metrics 通知随后给出真值）。这里只改字段不 setState：
-    // 它们只被可滚动分支读取，而那一支正是本 builder 下次要建的东西。
+    // TabBar 自带「选中段自动滚入」，但**不带**桌面鼠标拖滚：Flutter 桌面默认
+    // dragDevices 不含 mouse，故恒包 [HorizontalDragScrollable]（不可滚动档里它
+    // 只是一层 ScrollConfiguration，无副作用）。两侧渐隐只在可滚动档出现
+    // （BUG-1971），由冒泡的 scroll metrics 驱动，不需要拿 TabBar 的内部 controller。
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        if (!_fitsWidth(context, constraints.maxWidth)) {
-          return _buildScrollableWithCues();
+        final _SectionTabLayout layout = _resolveLayout(
+          context,
+          constraints.maxWidth,
+        );
+        final bool scrollFit = layout.fit == _SectionTabFit.scroll;
+        if (!scrollFit) {
+          // 非滚动档没有 Scrollable，也就没有滚动通知来收回渐隐：窗口先窄（出了
+          // 尾部渐隐）再拉宽时旧 cue 会一直盖在最后一段上。这里只改字段不
+          // setState：它们只被可滚动档读取，而那一档下次 build 时新 Scrollable
+          // 的首条 metrics 通知随即给出真值。
+          _showLeadingOverflowCue = false;
+          _showTrailingOverflowCue = false;
+          _pendingLeadingOverflowCue = false;
+          _pendingTrailingOverflowCue = false;
         }
-        _showLeadingOverflowCue = false;
-        _showTrailingOverflowCue = false;
-        _pendingLeadingOverflowCue = false;
-        _pendingTrailingOverflowCue = false;
-        return _buildTabBar(fillWidth: true);
+        final TabController controller = layout.fit == _SectionTabFit.overflow
+            ? _syncDisplayController(layout.visible)
+            : _controller;
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          children: <Widget>[
+            NotificationListener<ScrollMetricsNotification>(
+              onNotification: _handleScrollMetrics,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _handleScroll,
+                child: HorizontalDragScrollable(
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(child: _buildTabBar(layout, controller)),
+                      _buildMoreSlot(layout),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (scrollFit && _showLeadingOverflowCue)
+              const PositionedDirectional(
+                start: 0,
+                top: 0,
+                bottom: 0,
+                child: _SectionTabOverflowFade(
+                  key: _kSectionTabLeadingOverflowCueKey,
+                  leading: true,
+                ),
+              ),
+            if (scrollFit && _showTrailingOverflowCue)
+              const PositionedDirectional(
+                end: 0,
+                top: 0,
+                bottom: 0,
+                child: _SectionTabOverflowFade(
+                  key: _kSectionTabTrailingOverflowCueKey,
+                  leading: false,
+                ),
+              ),
+          ],
+        );
       },
     );
   }
 
-  /// 可滚动形态：拖滚 + 由冒泡滚动通知驱动的两侧渐隐。
-  Widget _buildScrollableWithCues() {
-    final Widget tabs = NotificationListener<ScrollMetricsNotification>(
-      onNotification: _handleScrollMetrics,
-      child: NotificationListener<ScrollNotification>(
-        onNotification: _handleScroll,
-        child: HorizontalDragScrollable(child: _buildTabBar()),
+  /// 真正选中的段下标（全量段序）：宿主持有形态是宿主 controller 的下标，自持
+  /// 形态是投影目标 [_targetIndex]。
+  int get _realIndex => _hostControlled
+      ? widget.controller!.index.clamp(0, widget.tabs.length - 1)
+      : _targetIndex;
+
+  /// 量各段文字的真实进距（与 Tab 同一字体、同一文字缩放；按选中态的 w600 量，
+  /// 是未选中 w500 的上界，算出来的总宽只会略宽于真实布局、不会撑出滚动）。
+  List<double> _measureLabels(BuildContext context, TextStyle style) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final List<double> widths = <double>[];
+    for (final LibrarySectionTab<T> tab in widget.tabs) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: tab.label, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      widths.add(painter.width.ceilToDouble() + 1);
+      painter.dispose();
+    }
+    return widths;
+  }
+
+  /// 本行宽度下用哪一档（2026-10-04「顶部标签栏全宽、移动端摆不下想办法」）：
+  ///
+  /// ① **等分铺满**：最宽段 + 默认内边距在 `maxWidth / 段数` 的等分格里放得下
+  ///    （TabBar fill 给每段包 Expanded，判据必须是「段数 × 最宽段」而非总和，
+  ///    否则一段长其余短时长段会被截）。
+  /// ② **逐级收紧后铺满**：按各段自然宽排，内边距从默认（MD3 16 / Apple 12）
+  ///    往下收、最低 8；还不够就字号降一级（14 → 13 → 12，不低于 12）。选定
+  ///    字号后把剩余宽度均摊回每段两侧，整行恰好铺满、不出滚动。
+  /// ③ **前 N 段 + 末尾「更多」下拉**：12 号字 + 8 内边距仍摆不下时，只排得下的
+  ///    前 N 段，其余收进 ⌄ 菜单；选中段在溢出区时替换到可见末位，用户永远看得到
+  ///    自己在哪。不再横滑截断。
+  ///
+  /// `fill: false` 的调用方维持旧的贴左可滚动形态。
+  _SectionTabLayout _resolveLayout(BuildContext context, double maxWidth) {
+    final int n = widget.tabs.length;
+    if (!widget.fill || !maxWidth.isFinite || n == 0) {
+      return const _SectionTabLayout(fit: _SectionTabFit.scroll);
+    }
+    final bool apple = isGlassDesign(context);
+    // Apple 页签条自带左右各 8 的外边距（_FushiGlassTabBar 的 padding 默认值）。
+    final double available = maxWidth - (apple ? 16.0 : 0.0);
+    final double basePadding = apple
+        ? _kSectionTabAppleLabelPadding
+        : _kSectionTabHorizontalPadding;
+    final TextStyle style = _labelStyleBase(context);
+    final double baseFont = _baseFontSize(context, apple);
+    final List<double> fonts = <double>[
+      baseFont,
+      for (final double size in const <double>[13.0, 12.0])
+        if (size < baseFont) size,
+    ];
+
+    List<double> widths = _measureLabels(
+      context,
+      style.copyWith(fontSize: baseFont),
+    );
+    final double widest = widths.reduce(math.max);
+    if ((widest + basePadding * 2) * n <= available) {
+      return const _SectionTabLayout(fit: _SectionTabFit.fill);
+    }
+
+    for (final double font in fonts) {
+      if (font != baseFont) {
+        widths = _measureLabels(context, style.copyWith(fontSize: font));
+      }
+      final double sum = widths.fold<double>(0, (double a, double b) => a + b);
+      final double padding = _floorPadding((available - sum) / (2 * n));
+      if (padding >= _kSectionTabMinLabelPadding) {
+        return _SectionTabLayout(
+          fit: _SectionTabFit.natural,
+          fontSize: font == baseFont ? null : font,
+          labelPadding: padding,
+        );
+      }
+    }
+
+    // ③ 溢出：最小字号、最小内边距下能排几段（末位要容得下溢出区里最宽的那段，
+    // 因为选中段可能被替换上来）。
+    final double room = available - _kSectionTabMoreWidth;
+    final List<double> cells = <double>[
+      for (final double w in widths) w + _kSectionTabMinLabelPadding * 2,
+    ];
+    int count = 1;
+    for (int k = n - 1; k >= 1; k--) {
+      double used = 0;
+      for (int i = 0; i < k - 1; i++) {
+        used += cells[i];
+      }
+      double tail = 0;
+      for (int i = k - 1; i < n; i++) {
+        tail = math.max(tail, cells[i]);
+      }
+      if (used + tail <= room) {
+        count = k;
+        break;
+      }
+    }
+    final int selected = _realIndex;
+    final List<int> visible = <int>[
+      for (int i = 0; i < count - 1; i++) i,
+      selected >= count - 1 ? selected : count - 1,
+    ];
+    double visibleText = 0;
+    for (final int i in visible) {
+      visibleText += widths[i];
+    }
+    final double padding = math.max(
+      4.0,
+      _floorPadding((room - visibleText) / (2 * visible.length)),
+    );
+    return _SectionTabLayout(
+      fit: _SectionTabFit.overflow,
+      fontSize: fonts.last == baseFont ? null : fonts.last,
+      labelPadding: padding,
+      visible: visible,
+    );
+  }
+
+  /// 往下取到 0.01：均摊出来的内边距若因浮点误差略大，可滚动 TabBar 会多出一丝
+  /// 滚动范围并亮起尾部渐隐。
+  static double _floorPadding(double value) => (value * 100).floor() / 100;
+
+  /// 页签文字的基准样式（量宽 + 收紧时显式下发字号都从它派生）。
+  TextStyle _labelStyleBase(BuildContext context) =>
+      (Theme.of(context).textTheme.titleSmall ?? const TextStyle()).copyWith(
+        fontWeight: FontWeight.w600,
+      );
+
+  /// 默认档字号：MD3 是 titleSmall；Apple 页签把它钳在 12–15（与
+  /// `_FushiGlassTabBar` 同口径）。
+  double _baseFontSize(BuildContext context, bool apple) {
+    final double size =
+        Theme.of(context).textTheme.titleSmall?.fontSize ?? 14.0;
+    return apple ? size.clamp(12.0, 15.0) : size;
+  }
+
+  /// 溢出档的显示用 controller：长度 = 可见段数，下标 = 选中段在可见段里的位置。
+  ///
+  /// 它只是 [_realIndex] 的投影，不是第二份真相——点击经 [_selectRealIndex] 回到
+  /// 宿主 / 自持 controller，再由下一次 build 投回来。可见段数变了（窗口宽度
+  /// 变了）才换一个；旧的那个此刻仍挂在 TabBar 上，帧末再释放。
+  TabController _syncDisplayController(List<int> visible) {
+    final int target = math.max(0, visible.indexOf(_realIndex));
+    final TabController? current = _display;
+    if (current == null || current.length != visible.length) {
+      if (current != null) {
+        WidgetsBinding.instance.addPostFrameCallback(
+          (Duration _) => current.dispose(),
+        );
+      }
+      return _display = TabController(
+        length: visible.length,
+        initialIndex: target,
+        animationDuration: _animationDuration,
+        vsync: this,
+      );
+    }
+    if (current.index != target) {
+      // build 期不能 animateTo（会同步通知 TabBar setState）；帧末再滑过去。
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (!mounted || !identical(_display, current)) return;
+        if (current.index != target) current.animateTo(target);
+      });
+    }
+    return current;
+  }
+
+  /// 按全量段序选中第 [index] 段（溢出档的点击与「更多」菜单共用）。
+  void _selectRealIndex(int index) {
+    final TabController? host = widget.controller;
+    if (host != null) {
+      if (host.index != index) host.animateTo(index);
+      return;
+    }
+    widget.onChanged!(widget.tabs[index].value);
+    // 宿主拒绝这次切换时可能根本不 rebuild：自持 controller 由投影拉回，显示用
+    // controller 靠这次重建重新投影。
+    _scheduleProjection();
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// 「更多」槽：只有溢出档才有按钮，其余档位是零宽占位（Row 的子项结构不变）。
+  Widget _buildMoreSlot(_SectionTabLayout layout) {
+    if (layout.fit != _SectionTabFit.overflow) return const SizedBox.shrink();
+    return Builder(
+      builder: (BuildContext anchorContext) => _SectionTabMoreButton(
+        onTap: () => _showOverflowSections(anchorContext, layout.visible),
       ),
     );
-    return Stack(
-      clipBehavior: Clip.hardEdge,
-      children: <Widget>[
-        tabs,
-        if (_showLeadingOverflowCue)
-          const PositionedDirectional(
-            start: 0,
-            top: 0,
-            bottom: 0,
-            child: _SectionTabOverflowFade(
-              key: _kSectionTabLeadingOverflowCueKey,
-              leading: true,
-            ),
-          ),
-        if (_showTrailingOverflowCue)
-          const PositionedDirectional(
-            end: 0,
-            top: 0,
-            bottom: 0,
-            child: _SectionTabOverflowFade(
-              key: _kSectionTabTrailingOverflowCueKey,
-              leading: false,
-            ),
-          ),
+  }
+
+  Future<void> _showOverflowSections(
+    BuildContext anchorContext,
+    List<int> visible,
+  ) async {
+    final RenderBox button = anchorContext.findRenderObject()! as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(anchorContext).overlay!.context.findRenderObject()!
+            as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(Offset.zero, ancestor: overlay),
+        button.localToGlobal(
+          button.size.bottomRight(Offset.zero),
+          ancestor: overlay,
+        ),
+      ),
+      Offset.zero & overlay.size,
+    );
+    final int? picked = await showFushiMenu<int>(
+      context: anchorContext,
+      position: position,
+      items: <PopupMenuEntry<int>>[
+        for (int i = 0; i < widget.tabs.length; i++)
+          if (!visible.contains(i))
+            PopupMenuItem<int>(value: i, child: Text(widget.tabs[i].label)),
       ],
     );
+    if (picked == null || !mounted) return;
+    _selectRealIndex(picked);
   }
 
-  /// 铺满形态下每段都摆得下吗（与页头「摆不摆得下」同一张字宽表）。
-  ///
-  /// 判据是 `段数 × 最宽段 <= maxWidth`，**不是**各段自然宽之和：
-  /// `TabBar(isScrollable: false, tabAlignment: fill)` 给每段包 Expanded，每段
-  /// 只分到 `maxWidth / n`（含两侧 labelPadding），而 Tab 文字不换行、溢出渐隐。
-  /// 一段长其余短时（德 / 俄译文、大字号）总和摆得下，长段照样被截——所以要让
-  /// 最宽那段在等分格里也放得下。每段宽口径与估算一致：文字进距 + 两侧内边距。
-  bool _fitsWidth(BuildContext context, double maxWidth) {
-    if (!maxWidth.isFinite || widget.tabs.isEmpty) return false;
-    double widest = 0.0;
-    for (final LibrarySectionTab<T> tab in widget.tabs) {
-      final double width = estimateSectionTabBarWidth(context, <String>[
-        tab.label,
-      ], horizontalPaddingPerTab: _kSectionTabHorizontalPadding);
-      if (width > widest) widest = width;
-    }
-    return widest * widget.tabs.length <= maxWidth;
-  }
-
-  /// [fillWidth]：本行摆得下全部段时铺满整行（不滚动、等分宽度），见
-  /// [FushiSectionTabBar.fill]。铺满形态没有可滚动内容，不包拖滚。
-  Widget _buildTabBar({bool fillWidth = false}) {
-    // 宿主持有形态不接管点击：TabBar 自己 animateTo 那一个 controller，页内的
-    // TabBarView 跟着走，中间不该再插一手。
-    final ValueChanged<int>? onTap = _hostControlled
+  Widget _buildTabBar(_SectionTabLayout layout, TabController controller) {
+    final bool overflow = layout.fit == _SectionTabFit.overflow;
+    // 宿主持有形态（非溢出档）不接管点击：TabBar 自己 animateTo 那一个
+    // controller，页内的 TabBarView 跟着走，中间不该再插一手。溢出档的 TabBar
+    // 挂的是显示用 controller，点击必须映射回全量段序。
+    final ValueChanged<int>? onTap = overflow
+        ? (int index) => _selectRealIndex(layout.visible[index])
+        : _hostControlled
         ? null
         : (int index) {
             widget.onChanged!(widget.tabs[index].value);
@@ -530,47 +767,118 @@ class _FushiSectionTabBarState<T extends Object>
             _scheduleProjection();
           };
     final List<Widget> tabs = <Widget>[
-      for (final LibrarySectionTab<T> tab in widget.tabs) Tab(text: tab.label),
+      if (overflow)
+        for (final int i in layout.visible) Tab(text: widget.tabs[i].label)
+      else
+        for (final LibrarySectionTab<T> tab in widget.tabs)
+          Tab(text: tab.label),
     ];
+    final double? font = layout.fontSize;
+    final TextStyle? labelStyle = font == null
+        ? null
+        : _labelStyleBase(context).copyWith(fontSize: font);
+    final TextStyle? unselectedLabelStyle = labelStyle?.copyWith(
+      fontWeight: FontWeight.w500,
+    );
+    final double? padding = layout.labelPadding;
+    final EdgeInsetsGeometry? labelPadding = padding == null
+        ? null
+        : EdgeInsets.symmetric(horizontal: padding);
+    final bool scrollable = layout.fit != _SectionTabFit.fill;
     // 可滚动 TabBar 默认留 52px 起始缩进（[TabAlignment.startOffset]）；首段必须
-    // 与页头标题 / 页面内容左缘对齐，故贴左。MD3 的 tab 分隔线会横贯整条
-    // TabBar，而这里 TabBar 旁边还有动作区——画出来是条半截线，故去掉。
-    if (fillWidth) {
-      return widget.secondary
-          ? TabBar.secondary(
-              controller: _controller,
-              isScrollable: false,
-              tabAlignment: TabAlignment.fill,
-              dividerHeight: 0,
-              onTap: onTap,
-              tabs: tabs,
-            )
-          : TabBar(
-              controller: _controller,
-              isScrollable: false,
-              tabAlignment: TabAlignment.fill,
-              dividerHeight: 0,
-              onTap: onTap,
-              tabs: tabs,
-            );
-    }
+    // 与页头标题 / 页面内容左缘对齐，故贴左。分隔线去掉：标签行旁边可能还有
+    // 页头动作（不在首页外壳里时），画出来是条半截线。
+    final TabAlignment alignment = scrollable
+        ? TabAlignment.start
+        : TabAlignment.fill;
     if (widget.secondary) {
-      return TabBar.secondary(
-        controller: _controller,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
+      return FushiTabBar.secondary(
+        controller: controller,
+        isScrollable: scrollable,
+        tabAlignment: alignment,
         dividerHeight: 0,
+        labelStyle: labelStyle,
+        unselectedLabelStyle: unselectedLabelStyle,
+        labelPadding: labelPadding,
         onTap: onTap,
         tabs: tabs,
       );
     }
-    return TabBar(
-      controller: _controller,
-      isScrollable: true,
-      tabAlignment: TabAlignment.start,
+    return FushiTabBar(
+      controller: controller,
+      isScrollable: scrollable,
+      tabAlignment: alignment,
       dividerHeight: 0,
+      labelStyle: labelStyle,
+      unselectedLabelStyle: unselectedLabelStyle,
+      labelPadding: labelPadding,
       onTap: onTap,
       tabs: tabs,
+    );
+  }
+}
+
+/// [FushiSectionTabBar] 的排布档位，见 `_resolveLayout`。
+enum _SectionTabFit { fill, natural, overflow, scroll }
+
+class _SectionTabLayout {
+  const _SectionTabLayout({
+    required this.fit,
+    this.fontSize,
+    this.labelPadding,
+    this.visible = const <int>[],
+  });
+
+  final _SectionTabFit fit;
+
+  /// 显式字号；null = 主题默认（不下发 labelStyle，观感与旧实现逐像素相同）。
+  final double? fontSize;
+
+  /// 单侧 label 内边距；null = 控件默认。
+  final double? labelPadding;
+
+  /// 溢出档里实际显示的段（全量段序下标，按显示顺序）。
+  final List<int> visible;
+}
+
+/// 溢出档末尾的「更多」：与页签同高的 ⌄，点开列出未显示的分区。
+///
+/// 它在 [FushiAdjustableSegmented] 的 ExcludeFocus 里，不是单独的焦点停靠点——
+/// 键盘 / 手柄在整排这一个停靠点上用左右方向键就能走遍**全部**分区（含溢出区，
+/// 走到时它被替换到可见末位），菜单只服务指针。两套设计系统同一结构：Apple
+/// 去水波、次要标签色 + SF chevron；MD3 圆形水波 + onSurfaceVariant。
+class _SectionTabMoreButton extends StatelessWidget {
+  const _SectionTabMoreButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool apple = isGlassDesign(context);
+    final Color color = apple
+        ? appleColorsOf(context).secondaryLabel
+        : Theme.of(context).colorScheme.onSurfaceVariant;
+    return Tooltip(
+      message: t.common_more_actions,
+      child: Semantics(
+        button: true,
+        label: t.common_more_actions,
+        child: InkResponse(
+          onTap: onTap,
+          radius: _kSectionTabMoreWidth / 2,
+          splashFactory: apple ? NoSplash.splashFactory : null,
+          highlightColor: apple ? Colors.transparent : null,
+          child: SizedBox(
+            width: _kSectionTabMoreWidth,
+            height: _kSectionTabMoreWidth,
+            child: Icon(
+              apple ? CupertinoIcons.chevron_down : Icons.expand_more,
+              size: apple ? 17 : 24,
+              color: color,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -369,6 +369,24 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。
 /// 方法逐字搬自 LocalLibraryHostService；各域 mixin 以 `on _LocalLibraryHostBase, _LocalLibraryHostShared` 取用。
 mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
+  /// host 端删除资产后记同步删除墓碑（BUG-2945），让其它已配对设备经
+  /// `/api/tombstones` 拉到并删掉本地副本。best-effort：墓碑写失败不该把已
+  /// 完成的删除变成 HTTP 500。
+  Future<void> _writeHostSyncTombstone(
+    SyncTombstoneKind kind,
+    String itemKey,
+  ) async {
+    try {
+      await _db.writeSyncDeletionTombstone(
+        kind.dbValue,
+        itemKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e, stack) {
+      engineLog.log('LocalLibraryHostService.writeHostSyncTombstone', e, stack);
+    }
+  }
+
   /// `'<mediaType>|<entryKey>'` → 该条目的**主合集归属**（多端库联合视图 §2.3
   /// 任务5.1）的一趟映射。归属跟随 [FushiDatabase.getPrimaryCollectionIdByEntry] 的
   /// 「最小 collectionId」折叠语义：一条目属多合集时只带它折进的那一张，与库网格

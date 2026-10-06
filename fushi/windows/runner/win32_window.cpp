@@ -565,8 +565,11 @@ void Win32Window::FillSurfaceBackdrop() {
   // over the solid brush — a raced composition then shows stretched app
   // content instead of a colour flash. Everything else (interactive resize,
   // theme pushes) has no snapshot and keeps the cheap brush fill.
+  // BUG-2964: never on a see-through surface — GDI writes alpha 0, so the
+  // snapshot would be added onto the Mica / HDR picture as a ghost frame.
   bool painted = false;
-  if (transition_snapshot_ != nullptr) {
+  if (transition_snapshot_ != nullptr &&
+      !fushi::MainSurfaceSeeThrough(main_surface_state())) {
     RECT rect = GetClientArea();
     HDC mem = CreateCompatibleDC(dc);
     if (mem != nullptr) {
@@ -591,7 +594,26 @@ void Win32Window::PaintBackdrop(HDC dc) {
     return;
   }
   RECT rect = GetClientArea();
-  FillRect(dc, &rect, backdrop_brush_);
+  FillRect(dc, &rect,
+           fushi::MainSurfaceSeeThrough(main_surface_state())
+               ? static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH))
+               : backdrop_brush_);
+}
+
+void Win32Window::SetSystemBackdrop(bool enabled) {
+  if (system_backdrop_ == enabled) {
+    return;
+  }
+  system_backdrop_ = enabled;
+  FillSurfaceBackdrop();
+}
+
+void Win32Window::SetVideoPassthrough(bool enabled) {
+  if (video_passthrough_ == enabled) {
+    return;
+  }
+  video_passthrough_ = enabled;
+  FillSurfaceBackdrop();
 }
 
 namespace {

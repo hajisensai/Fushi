@@ -35,55 +35,64 @@ void main() {
               reason: 'missing ${content.path}');
         });
 
+        // 分类判据在 mine-outcome.js（与 content.js 同目录），content script 与 service
+        // worker 共用；行为由 tools/browser-extension/mine-outcome.test.js 真跑。
         test('出队分类器把 success 与 duplicate 都归为 done（队列才会清）', () {
-          final String src = content.readAsStringSync();
-          expect(src.contains('function fushiClassifyMineResp('), isTrue,
-              reason: '${content.path} 缺 fushiClassifyMineResp 分类器');
+          final String src =
+              File('${content.parent.path}/mine-outcome.js').readAsStringSync();
+          expect(src.contains('function fushiMineOutcome('), isTrue,
+              reason: '${content.parent.path} 缺 fushiMineOutcome 分类器');
           // duplicate 必须与 success 同归 done，否则永久滞留 = 队列永不清。
-          // TODO-1303：判据从单行 return 改成多行块（success 但单词音频落空时先弹
-          // toast 再 return 'done'）。守卫改鲁棒语义——success||duplicate 组合谓词存在，
-          // 且其块内（notConfigured 分支之前）return 'done'——语义不变。
-          final int classifyIdx =
-              src.indexOf('function fushiClassifyMineResp(');
+          final int classifyIdx = src.indexOf('function fushiMineOutcome(');
           final int doneBranchIdx = src.indexOf(
               "if (r === 'success' || r === 'duplicate')", classifyIdx);
           final int notConfiguredIdx =
               src.indexOf("if (r === 'notConfigured')", classifyIdx);
           expect(doneBranchIdx, greaterThan(classifyIdx),
-              reason: '${content.path} 缺 success||duplicate 组合出队判据（队列永不清根因）');
+              reason: '${content.parent.path} 缺 success||duplicate 组合出队判据（队列永不清根因）');
           expect(notConfiguredIdx, greaterThan(doneBranchIdx),
-              reason:
-                  '${content.path} notConfigured 判据应在 success||duplicate 之后');
+              reason: '${content.parent.path} notConfigured 判据应在 success||duplicate 之后');
           expect(
             src
                 .substring(doneBranchIdx, notConfiguredIdx)
-                .contains("return 'done';"),
+                .contains("cls: 'done'"),
             isTrue,
             reason:
-                '${content.path} success||duplicate 块内未 return done（duplicate 会滞留=队列永不清根因）',
+                '${content.parent.path} success||duplicate 块内未归 done（duplicate 会滞留=队列永不清根因）',
           );
           // notConfigured 留队（提示配 Anki），error/网络失败留队重试。
           expect(
-              src.contains("if (r === 'notConfigured') return 'unconfigured';"),
+              src.contains(
+                  "if (r === 'notConfigured') return { cls: 'unconfigured'"),
               isTrue,
-              reason: '${content.path} 未把 notConfigured 归为 unconfigured');
+              reason: '${content.parent.path} 未把 notConfigured 归为 unconfigured');
         });
 
         test('YouTube/Netflix 两条生成路径都走分类器出队', () {
           final String src = content.readAsStringSync();
-          expect('resolve(fushiClassifyMineResp(resp));'.allMatches(src).length,
-              greaterThanOrEqualTo(2),
-              reason: '${content.path} 生成路径未统一走分类器（应 >=2 处）');
-          // 只有 done 才 push okIds 被剔除。
+          // Netflix 回放录制在 content script 里。
+          expect(src.contains('resolve(fushiClassifyMineResp(resp));'), isTrue,
+              reason: '${content.path} Netflix 生成路径未走分类器');
           expect(
-              "if (cls === 'done') { done++; okIds.push(q.id); }"
-                  .allMatches(src)
-                  .length,
-              greaterThanOrEqualTo(2),
-              reason: '${content.path} 出队未门控到 cls===done');
+              src.contains("if (cls === 'done') { done++; okIds.push(q.id); }"),
+              isTrue,
+              reason: '${content.path} Netflix 出队未门控到 cls===done');
+          // YouTube 批量在 service worker 里（不需要视频页），同一份判据、同样只出队 done。
+          final String bg =
+              File('${content.parent.path}/background.js').readAsStringSync();
+          expect(bg.contains('self.fushiMineOutcome('), isTrue,
+              reason: '${content.parent.path} YouTube 生成路径未走共享分类器');
+          // 成功即刻出队（SW 可能被 MV3 中途杀掉，攒到最后再出队会让已成功的卡重制）。
+          expect(
+              bg.contains(
+                  "if (o.cls === 'done') { ok++; await fushiRemoveQueuedId(q.id); }"),
+              isTrue,
+              reason: '${content.parent.path} YouTube 出队未门控到 cls===done');
           // 旧的「仅 success 才出队」硬判据不得残留。
-          expect(src.contains("resp.data.result === 'success'"), isFalse,
-              reason: '${content.path} 仍残留「仅 success 出队」硬判据（duplicate 会滞留）');
+          for (final String s in <String>[src, bg]) {
+            expect(s.contains("resp.data.result === 'success'"), isFalse,
+                reason: '仍残留「仅 success 出队」硬判据（duplicate 会滞留）');
+          }
         });
       });
     }

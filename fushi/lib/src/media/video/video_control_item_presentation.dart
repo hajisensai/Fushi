@@ -93,6 +93,8 @@ IconData videoControlItemIcon(
       return Icons.skip_previous;
     case VideoControlItem.nextCue:
       return Icons.skip_next;
+    case VideoControlItem.replayCue:
+      return Icons.replay_rounded;
     case VideoControlItem.fullscreen:
       return Icons.fullscreen;
     case VideoControlItem.screenshot:
@@ -173,6 +175,8 @@ String videoControlItemLabel(
       return t.video_control_previous_cue;
     case VideoControlItem.nextCue:
       return t.video_control_next_cue;
+    case VideoControlItem.replayCue:
+      return t.shortcut_action_video_replay_current_subtitle;
     case VideoControlItem.fullscreen:
       return t.video_control_fullscreen;
     case VideoControlItem.screenshot:

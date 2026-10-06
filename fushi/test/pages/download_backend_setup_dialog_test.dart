@@ -13,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 下载后端的**呈现顺序**与**配置引导**。
 ///
@@ -197,9 +198,7 @@ void main() {
     await tester.pump();
 
     expect(find.text(t.download_backend_embedded_unavailable), findsOneWidget);
-    final FilledButton done = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, t.dialog_done),
-    );
+    final FilledButton done = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.dialog_done)),);
     expect(done.onPressed, isNull,
         reason: '缺 DLL 的包配了也下不了，不能让用户以为配好了');
   });
@@ -221,9 +220,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(t.video_setting_qb_url), findsOneWidget);
-    FilledButton done() => tester.widget<FilledButton>(
-          find.widgetWithText(FilledButton, t.dialog_done),
-        );
+    FilledButton done() => tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.dialog_done)),);
     expect(done().onPressed, isNull, reason: '地址空着的 qb 后端连不上');
 
     await tester.enterText(
@@ -260,9 +257,7 @@ void main() {
     await tester.tap(find.text(t.video_setting_torrent_backend_qb).last);
     await tester.pumpAndSettle();
 
-    FilledButton done() => tester.widget<FilledButton>(
-          find.widgetWithText(FilledButton, t.dialog_done),
-        );
+    FilledButton done() => tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.dialog_done)),);
 
     for (final String bad in <String>[
       '127.0.0.1:8080',

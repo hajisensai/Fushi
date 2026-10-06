@@ -6,6 +6,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 缩略图遮罩的模糊半径占卡片短边的比例。
@@ -42,7 +43,7 @@ Widget maskedIllustrationCover(
       children: <Widget>[
         ColoredBox(color: scheme.surface),
         Center(
-          child: Icon(
+          child: FushiIcon(
             Icons.visibility_off_outlined,
             color: scheme.onSurface,
             size: iconSize,
@@ -68,7 +69,7 @@ Widget maskedIllustrationCover(
           ),
           ColoredBox(color: scrim),
           Center(
-            child: Icon(
+            child: FushiIcon(
               Icons.visibility_off_outlined,
               color: Colors.white70,
               size: iconSize,

@@ -64,15 +64,22 @@ void main() {
     await tester.pump();
   }
 
-  /// 取仓库卡片副标题的完整文本（副标题恒以仓库地址开头）。
+  /// 取仓库行副标题的完整文本：地址一行 + 可选的状态一行，按行用 `\n` 拼起来
+  /// （副标题恒以仓库地址开头）。
   String storeSubtitle(WidgetTester tester) {
-    return tester
-        .widgetList<Text>(find.byType(Text))
+    final Finder row =
+        find.byKey(const ValueKey<String>('mihon_store_$_kStoreUrl'));
+    expect(row, findsOneWidget, reason: '未找到仓库行');
+    final List<String> lines = tester
+        .widgetList<Text>(find.descendant(of: row, matching: find.byType(Text)))
         .map((Text text) => text.data ?? '')
-        .firstWhere(
-          (String data) => data.startsWith(_kStoreUrl),
-          orElse: () => throw StateError('未找到仓库卡片副标题'),
-        );
+        .toList();
+    final int start = lines.indexOf(_kStoreUrl);
+    if (start < 0) throw StateError('未找到仓库行副标题');
+    return lines
+        .sublist(start)
+        .where((String line) => line.isNotEmpty)
+        .join('\n');
   }
 
   group('BUG-1805 空目录不再静默', () {
@@ -91,7 +98,11 @@ void main() {
       manager.available = <MihonAvailableExtension>[_extension()];
       await pump(tester);
 
-      expect(storeSubtitle(tester), _kStoreUrl);
+      // 有扩展时状态行是条数说明，不是零扩展提示。
+      expect(
+        storeSubtitle(tester),
+        '$_kStoreUrl\n${t.mihon_store_extension_count(count: 1)}',
+      );
       expect(find.textContaining(t.mihon_store_zero_extensions), findsNothing);
     });
 

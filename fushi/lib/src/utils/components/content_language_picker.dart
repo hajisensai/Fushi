@@ -13,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
@@ -69,8 +70,17 @@ Future<void> showContentLanguagePicker({
       maxWidth: 440,
       maxHeightFactor: 0.78,
       child: FushiModalSheetFrame(
+        // 标题与说明交给框架头部：两套设计系统各按对话框规范排（MD3 图标居中
+        // 在标题上方，Apple 标题靠左、不画图标）。
+        title: title,
+        subtitle: description,
         leadingIcon: Icons.translate,
-        bodyPadding: EdgeInsets.all(tokens.spacing.card),
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
         footerPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           tokens.spacing.gap,
@@ -81,15 +91,6 @@ Future<void> showContentLanguagePicker({
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Text(
-              title,
-              style: tokens.type.listTitle.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Text(description, style: tokens.type.listSubtitle),
-            SizedBox(height: tokens.spacing.gap),
             for (final ({String? tag, String label}) option in options)
               FushiListItem(
                 title: Text(option.label),
@@ -100,7 +101,7 @@ Future<void> showContentLanguagePicker({
                     : null,
                 selected: current == option.tag,
                 trailing:
-                    current == option.tag ? const Icon(Icons.check) : null,
+                    current == option.tag ? const FushiIcon(Icons.check) : null,
                 onTap: () {
                   onSelected(option.tag);
                   Navigator.pop(dialogContext);

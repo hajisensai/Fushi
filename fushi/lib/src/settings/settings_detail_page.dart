@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -25,9 +26,7 @@ Widget buildSettingsDetailShell({
   required SettingsContext settingsContext,
   required SettingsDestination destination,
 }) {
-  final SettingsRenderer renderer = isCupertinoPlatform(context)
-      ? const CupertinoSettingsRenderer()
-      : const MaterialSettingsRenderer();
+  final SettingsRenderer renderer = resolveSettingsRenderer(context);
   return renderer.buildDetailPage(
     settingsContext: settingsContext,
     destination: destination,
@@ -118,6 +117,13 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
       _popInvisibleDestination();
       // 本帧还得返回点什么；pop 在帧末执行，用户看不到这一帧的空白。
       return const SizedBox.shrink();
+    }
+    // 「玻璃」设计系统：iOS / macOS 设置详情（见 GlassSettingsRenderer）。
+    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
+      return const GlassSettingsRenderer().buildDetailPage(
+        settingsContext: settingsContext,
+        destination: destination,
+      );
     }
     if (isCupertinoPlatform(context)) {
       return const CupertinoSettingsRenderer().buildDetailPage(

@@ -324,7 +324,13 @@ class FushiRemoteGameStreamService {
     String peerIdentity,
   ) async {
     final GameStreamLibraryHost? host = library;
-    if (host == null) return Response.notFound('Game library off');
+    if (host == null) {
+      return gameStreamErrorResponse(
+        404,
+        'Game library off',
+        code: GameStreamRejection.libraryOff,
+      );
+    }
     if (path == '/api/game-stream/library') {
       if (method != 'GET' && method != 'POST') return Response(405);
       final List<GameStreamLibraryGame> games = await host.listGames();
@@ -733,6 +739,11 @@ Response _json(Object body, {int status = 200}) => Response(
 );
 
 Response _error(int status, String message, {String? code}) =>
+    gameStreamErrorResponse(status, message, code: code);
+
+/// Versioned JSON error body every game-stream refusal uses, so receivers can
+/// act on `code` instead of guessing from a bare status.
+Response gameStreamErrorResponse(int status, String message, {String? code}) =>
     _json(<String, Object?>{
       'version': kGameStreamWireVersion,
       'code':

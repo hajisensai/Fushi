@@ -25,7 +25,7 @@ void main() {
     await tester.pumpWidget(
       buildApp(
         BookImportDialogFrame(
-          title: const Text('Import Book'),
+          title: 'Import Book',
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: const [
@@ -74,21 +74,38 @@ void main() {
   // rethrow so the top-level handler reports the failure.
   test('subtitle-book bad-EPUB import rethrows instead of saving a shell row',
       () {
-    final String source =
+    // 字幕书导入的实现已抽到引擎（发现页自动入库与对话框共用一份）：对话框
+    // 必须委托给它，守卫随实现一起看引擎那份。
+    final String dialog =
         File('lib/src/media/audiobook/book_import_dialog.dart')
             .readAsStringSync();
-
-    final int start = source.indexOf('Future<void> _importSubtitleBook(');
-    expect(start, isNonNegative,
+    final int dialogStart = dialog.indexOf('Future<void> _importSubtitleBook(');
+    expect(dialogStart, isNonNegative,
         reason: '_importSubtitleBook must exist in book_import_dialog.dart');
-    // Inspect only the EPUB import try/catch region of _importSubtitleBook.
-    final int regionEnd = source.indexOf('reportProgress(0.7', start);
+    expect(
+      dialog.substring(dialogStart),
+      contains('importStandaloneSubtitleBook('),
+      reason: 'the dialog must delegate to the shared engine primitive, '
+          'not grow a second copy that the guard below does not see',
+    );
+
+    final String source = File(
+      '../packages/fushi_engine/lib/media/audiobook/'
+      'standalone_subtitle_book.dart',
+    ).readAsStringSync();
+
+    final int start =
+        source.indexOf('Future<SrtBook> importStandaloneSubtitleBook(');
+    expect(start, isNonNegative,
+        reason: 'importStandaloneSubtitleBook must exist in the engine');
+    // Inspect only the EPUB import try/catch region.
+    final int regionEnd = source.indexOf('report(0.7', start);
     expect(regionEnd, greaterThan(start));
     final String region = source.substring(start, regionEnd);
 
     // The catch that logs the EPUB import failure must rethrow.
-    final int logIdx = region
-        .indexOf("ErrorLogService.instance.log('BookImportDialog.epubImport'");
+    final int logIdx =
+        region.indexOf("engineLog.log('importStandaloneSubtitleBook.epubImport'");
     expect(logIdx, isNonNegative,
         reason: 'the bad-EPUB catch must still log for diagnostics');
     final String afterLog = region.substring(logIdx);

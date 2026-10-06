@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/extension_catalog_controls.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
+import 'package:fushi/src/media/manga/extension_store_list.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 小说插件（LNReader）的「仓库」段与「扩展」段正文，嵌在书的「导入」视图里。
@@ -90,54 +92,15 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     required String title,
     String initial = '',
     bool warn = false,
-  }) async {
-    final TextEditingController controller = TextEditingController(
-      text: initial,
-    );
-    try {
-      return await showAppDialog<String>(
-        context: context,
-        // 普通 AlertDialog：内含 TextField，`.adaptive` 在 iOS / macOS 主题下渲染成
-        // CupertinoAlertDialog、没有 Material 祖先（与 Mihon 输入框同一做法）。
-        builder: (BuildContext dialogContext) => AlertDialog(
-          title: Text(title),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (warn) ...<Widget>[
-                Text(t.novel_store_add_warning),
-                const SizedBox(height: 12),
-              ],
-              TextField(
-                key: const ValueKey<String>('novel_store_url_field'),
-                controller: controller,
-                autofocus: true,
-                keyboardType: TextInputType.url,
-                decoration: InputDecoration(labelText: t.mihon_store_url),
-                onSubmitted: (String value) =>
-                    Navigator.pop(dialogContext, value),
-              ),
-            ],
-          ),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: dialogContext,
-              onPressed: () => Navigator.pop(dialogContext, controller.text),
-              child: Text(title),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      controller.dispose();
-    }
-  }
+  }) => showExtensionStoreUrlDialog(
+    context: context,
+    title: title,
+    confirmLabel: title,
+    initial: initial,
+    // 添加时把「插件是第三方脚本」的信任提示放在输入框上方。
+    warning: warn ? t.novel_store_add_warning : null,
+    fieldKey: const ValueKey<String>('novel_store_url_field'),
+  );
 
   Future<void> _addStore() async {
     final String? url = await _askStoreUrl(
@@ -170,7 +133,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
   Future<bool> _confirm(String title, String message, String action) async =>
       await showAppDialog<bool>(
         context: context,
-        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
           title: Text(title),
           content: Text(message),
           actions: <Widget>[
@@ -381,6 +344,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     if (!stores && !catalog) {
       return const SliverMainAxisGroup(slivers: <Widget>[]);
     }
+    if (stores && !catalog) return _buildStorePage();
     return SliverMainAxisGroup(
       slivers: <Widget>[
         SliverToBoxAdapter(
@@ -394,7 +358,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           const SliverToBoxAdapter(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: LinearProgressIndicator(),
+              child: FushiLinearProgressIndicator(),
             ),
           ),
         if (stores) _buildStores(),
@@ -403,13 +367,61 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     );
   }
 
+  /// 「仓库」页（扩展页签「仓库」动作 push 出的子页）：限宽居中的一列——
+  /// 顶部刷新 / 添加仓库、信任提示、加载条、仓库分组列表。与漫画 / 视频
+  /// 扩展仓库页同一组零件（`extension_store_list.dart`）。
+  Widget _buildStorePage() {
+    final LnReaderManager manager = widget.manager;
+    return ExtensionStorePageSliver(
+      slivers: <Widget>[
+        SliverToBoxAdapter(
+          child: ExtensionStoreToolbar(
+            refreshLabel: t.mihon_store_refresh,
+            addLabel: t.mihon_store_add,
+            onRefresh: manager.loading
+                ? null
+                : () => unawaited(manager.refreshStores()),
+            onAdd: manager.loading ? null : _addStore,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: FushiInlineNotice(
+              severity: FushiNoticeSeverity.warning,
+              icon: Icons.shield_outlined,
+              message: t.novel_store_add_warning,
+            ),
+          ),
+        ),
+        // 加载条占一条固定高度的槽：刷新开始 / 结束时列表不上下跳。
+        SliverToBoxAdapter(
+          child: SizedBox(
+            height: 20,
+            child: Center(
+              child: manager.loading
+                  ? const FushiLinearProgressIndicator()
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+        _buildStores(),
+      ],
+    );
+  }
+
   Widget _buildStores() {
     final LnReaderManager manager = widget.manager;
     if (manager.stores.isEmpty) {
       return SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(t.novel_store_empty, textAlign: TextAlign.center),
+        child: FushiPlaceholderMessage(
+          icon: Icons.hub_outlined,
+          message: t.novel_store_empty,
+          action: FushiFilledButton.icon(
+            onPressed: manager.loading ? null : _addStore,
+            icon: const FushiIcon(Icons.add),
+            label: Text(t.mihon_store_add),
+          ),
         ),
       );
     }
@@ -421,47 +433,52 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
         final int count = manager.available
             .where((LnReaderRepoPlugin p) => p.storeUrl == store.indexUrl)
             .length;
-        // 与 Mihon 仓库卡同一判据：刷新中不判「零扩展」，否则每次进页都误报。
+        // 与 Mihon 仓库行同一判据：刷新中不判「零扩展」，否则每次进页都误报。
         final bool returnedNothing =
             !manager.loading && store.lastError == null && count == 0;
-        final String detail = switch ((store.lastError, returnedNothing)) {
-          (final String error, _) => '${store.indexUrl}\n$error',
-          (null, true) => '${store.indexUrl}\n${t.mihon_store_zero_extensions}',
-          (null, false) =>
-            '${store.indexUrl}\n${t.mihon_store_extension_count(count: count)}',
-        };
-        return FushiCard(
-          margin: EdgeInsets.only(
-            bottom: FushiDesignTokens.of(context).spacing.gap,
-          ),
-          padding: EdgeInsets.zero,
-          child: FushiListItem(
-            key: ValueKey<String>('novel_store_${store.indexUrl}'),
-            leading: const Icon(Icons.hub_outlined),
-            title: Text(
-              builtin
-                  ? '${store.name} · ${t.novel_store_builtin_label}'
-                  : store.name,
-            ),
-            subtitle: Text(detail),
-            trailing: builtin
-                ? null
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      IconButton(
-                        tooltip: t.mihon_store_edit,
-                        onPressed: () => unawaited(_editStore(store)),
-                        icon: const Icon(Icons.edit_outlined),
-                      ),
-                      IconButton(
-                        tooltip: t.mihon_store_remove,
-                        onPressed: () => unawaited(_removeStore(store)),
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ],
-                  ),
-          ),
+        final ExtensionStoreStatus status =
+            switch ((store.lastError, returnedNothing)) {
+              (final String error, _) => (
+                text: error,
+                tone: FushiStatusTone.error,
+              ),
+              (null, true) => (
+                text: t.mihon_store_zero_extensions,
+                tone: FushiStatusTone.warning,
+              ),
+              (null, false) => (
+                text: t.mihon_store_extension_count(count: count),
+                tone: null,
+              ),
+            };
+        // 仓库列表整段读作一个分组（MD3 分段 / Apple inset grouped）。内置
+        // 仓库只能复制地址，不给改 / 删。
+        return ExtensionStoreTile(
+          index: index,
+          count: manager.stores.length,
+          rowKey: ValueKey<String>('novel_store_${store.indexUrl}'),
+          menuKey: ValueKey<String>('novel_store_menu_${store.indexUrl}'),
+          name: store.name,
+          url: store.indexUrl,
+          builtin: builtin,
+          builtinLabel: t.novel_store_builtin_label,
+          status: status,
+          actions: <ExtensionStoreRowAction>[
+            extensionStoreCopyAction(store.indexUrl),
+            if (!builtin) ...<ExtensionStoreRowAction>[
+              ExtensionStoreRowAction(
+                label: t.mihon_store_edit,
+                icon: Icons.edit_outlined,
+                onTap: () => unawaited(_editStore(store)),
+              ),
+              ExtensionStoreRowAction(
+                label: t.mihon_store_remove,
+                icon: Icons.delete_outline,
+                destructive: true,
+                onTap: () => unawaited(_removeStore(store)),
+              ),
+            ],
+          ],
         );
       },
     );
@@ -481,13 +498,19 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     });
   }
 
-  Widget _buildPluginTile(LnReaderRepoPlugin plugin) {
+  Widget _buildPluginTile(
+    LnReaderRepoPlugin plugin, {
+    int? groupIndex,
+    int? groupCount,
+  }) {
     final LnReaderManager manager = widget.manager;
     final LnReaderInstalledPlugin? installed = manager.installedById(plugin.id);
     final bool update = manager.hasUpdate(plugin);
     final bool busy = manager.isBusy(plugin.id);
     return MangaExtensionManagementTile(
       key: ValueKey<String>('novel_extension_${plugin.id}'),
+      groupIndex: groupIndex,
+      groupCount: groupCount,
       title: plugin.name,
       iconUrl: plugin.iconUrl,
       busy: busy,
@@ -539,6 +562,10 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
       stores: manager.stores,
       plugins: visible,
       expanded: _storeExpanded,
+    );
+    // 每个仓库（表头 + 展开的插件行）读作一个分组：逐行算出组内位置。
+    final List<(int, int)> groupSlots = extensionGroupSlots(
+      rows.map((LnReaderCatalogRow row) => row is LnReaderStoreHeaderRow),
     );
     // 已装但仓库目录里已经没有的插件（仓库删了 / 下架了）：仍要能卸载。
     final Set<String> availableIds = manager.available
@@ -606,6 +633,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           final LnReaderCatalogRow row = rows[index];
           return switch (row) {
             LnReaderStoreHeaderRow() => ExtensionStoreGroupHeader(
+              groupCount: groupSlots[index].$2,
               keyPrefix: 'novel',
               indexUrl: row.indexUrl,
               label: row.label,
@@ -616,7 +644,11 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
                   ? null
                   : () => _toggleStore(row.indexUrl, row.count),
             ),
-            LnReaderPluginRow() => _buildPluginTile(row.plugin),
+            LnReaderPluginRow() => _buildPluginTile(
+              row.plugin,
+              groupIndex: groupSlots[index].$1,
+              groupCount: groupSlots[index].$2,
+            ),
           };
         },
       ),
@@ -626,6 +658,8 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           final LnReaderInstalledPlugin plugin = orphans[index];
           return MangaExtensionManagementTile(
             key: ValueKey<String>('novel_extension_local_${plugin.id}'),
+            groupIndex: index,
+            groupCount: orphans.length,
             title: plugin.name,
             iconUrl: plugin.iconUrl,
             subtitle: Text(

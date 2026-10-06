@@ -19,6 +19,11 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 顶部工具栏视觉高度 == 挤压态预留高（chrome 铁律：同一真相源，见
 /// reader_chrome_floating.dart 文件头）。
@@ -314,13 +319,13 @@ class ReaderDesktopHeader extends StatelessWidget {
                         for (final ReaderHeaderAction a in trailing)
                           if (!compact || a.pinned) _button(a),
                         if (overflow.isNotEmpty)
-                          PopupMenuButton<ReaderHeaderAction>(
+                          FushiPopupMenuButton<ReaderHeaderAction>(
                             key: const ValueKey<String>(
                               'fushi_desktop_header_overflow',
                             ),
                             tooltip: MaterialLocalizations.of(context)
                                 .moreButtonTooltip,
-                            icon: Icon(Icons.more_vert, color: textColor),
+                            icon: FushiIcon(Icons.more_vert, color: textColor),
                             iconSize: 22,
                             onSelected: (ReaderHeaderAction a) =>
                                 a.onPressed?.call(),
@@ -333,7 +338,7 @@ class ReaderDesktopHeader extends StatelessWidget {
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: <Widget>[
-                                      Icon(a.icon, size: 20),
+                                      FushiIcon(a.icon, size: 20),
                                       const SizedBox(width: 12),
                                       Flexible(
                                         child: Text(a.label),
@@ -375,8 +380,8 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget button = IconButton(
-      icon: Icon(icon, color: color),
+    final Widget button = FushiIconButtonControl(
+      icon: FushiIcon(icon, color: color),
       iconSize: 22,
       tooltip: tooltip,
       onPressed: onPressed,
@@ -437,9 +442,9 @@ class ReaderSideSheet extends StatelessWidget {
               ...headerActions,
               Semantics(
                 identifier: 'hibiki.reader.side_sheet.close',
-                child: IconButton(
+                child: FushiIconButtonControl(
                   key: const ValueKey<String>('fushi_side_sheet_close'),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   onPressed: onClose,
                 ),
@@ -458,26 +463,18 @@ class ReaderSideSheet extends StatelessWidget {
   }
 }
 
-/// 抽屉里分组标题（ッツ 风格：小号大写字母间距标签，如 THEME / TEXT / LAYOUT）。
+/// 抽屉里分组标题：委托共享 [FushiSectionTitle.group]（与设置分组同一口径，
+/// MD3 主色小标题 / Apple 13 号 semibold 次要灰字）。
 class ReaderSideSheetSectionLabel extends StatelessWidget {
   const ReaderSideSheetSectionLabel(this.label, {super.key});
 
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8),
-      child: Text(
-        label.toUpperCase(),
-        style: theme.textTheme.labelSmall?.copyWith(
-          letterSpacing: 1.2,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => FushiSectionTitle.group(
+    label,
+    padding: const EdgeInsets.only(top: 20, bottom: 8),
+  );
 }
 
 /// 抽屉贴哪一边：ッツ 形态下「导航 / 章节」贴左、「外观」贴右。
@@ -533,8 +530,17 @@ Future<T?> showReaderSideSheet<T>({
         height: double.infinity,
         child: Material(
           key: const ValueKey<String>('fushi_reader_side_sheet'),
-          color: Theme.of(ctx).colorScheme.surface,
-          elevation: 8,
+          // 抽屉底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
+          // （secondaryGroupedBackground）才浮得出来；MD3 = surfaceContainerLow
+          // （Expressive 侧边面板），分组卡 surfaceContainer 比它高一级。墨水屏
+          // 两者都塌成底色，描一圈 outline 切出抽屉。
+          color: isGlassDesign(ctx)
+              ? appleColorsOf(ctx).groupedBackground
+              : Theme.of(ctx).colorScheme.surfaceContainerLow,
+          shape: isEinkTheme(ctx)
+              ? Border.all(color: Theme.of(ctx).colorScheme.outline)
+              : null,
+          elevation: kFushiFloatingElevation,
           child: Padding(
             padding: EdgeInsets.only(
               bottom: MediaQuery.viewInsetsOf(ctx).bottom,

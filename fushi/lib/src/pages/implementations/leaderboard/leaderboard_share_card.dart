@@ -196,7 +196,16 @@ class LeaderboardShareCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 分享卡底用中性卡片面（MD3 surfaceContainerHigh / Apple 二级分组底），
+    // 不再整卡 primaryContainer：封面本身已经够彩，彩底只会和封面打架。
+    final bool glass = isGlassDesign(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
+    final Color background = glass
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : tokens.surfaces.search;
+    final Color foreground = glass
+        ? appleColorsOf(context).label
+        : colors.onSurface;
     final TextTheme text = Theme.of(context).textTheme;
     const double gap = 6;
     const double coverWidth = (kLeaderboardShareCardWidth - 32 - gap * 2) / 3;
@@ -204,7 +213,7 @@ class LeaderboardShareCard extends StatelessWidget {
       width: kLeaderboardShareCardWidth,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: colors.primaryContainer,
+        color: background,
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Column(
@@ -223,7 +232,7 @@ class LeaderboardShareCard extends StatelessWidget {
                 date: data.periodLabel,
               ),
             },
-            style: text.labelLarge?.copyWith(color: colors.onPrimaryContainer),
+            style: text.labelLarge?.copyWith(color: foreground),
           ),
           const SizedBox(height: 4),
           Text(
@@ -239,7 +248,7 @@ class LeaderboardShareCard extends StatelessWidget {
               ),
             },
             style: text.headlineSmall?.copyWith(
-              color: colors.onPrimaryContainer,
+              color: foreground,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -256,7 +265,7 @@ class LeaderboardShareCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             t.leaderboard_share_card_chars(n: data.chars),
-            style: text.titleMedium?.copyWith(color: colors.onPrimaryContainer),
+            style: text.titleMedium?.copyWith(color: foreground),
           ),
           const SizedBox(height: 8),
           Row(
@@ -265,14 +274,14 @@ class LeaderboardShareCard extends StatelessWidget {
                 child: Text(
                   data.accountTag,
                   style: text.titleSmall?.copyWith(
-                    color: colors.onPrimaryContainer,
+                    color: foreground,
                   ),
                 ),
               ),
               Text(
                 'Fushi',
                 style: text.labelMedium?.copyWith(
-                  color: colors.onPrimaryContainer,
+                  color: foreground,
                 ),
               ),
             ],
@@ -459,10 +468,7 @@ class _LeaderboardShareDialogState
         onRetry: () => _show(_window),
       );
     } else {
-      content = Padding(
-        padding: EdgeInsets.all(tokens.spacing.section),
-        child: const Center(child: CircularProgressIndicator()),
-      );
+      content = const FushiLoadingView();
     }
     return FushiDialogFrame(
       child: FushiModalSheetFrame(

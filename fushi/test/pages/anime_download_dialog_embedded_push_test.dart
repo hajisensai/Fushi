@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -335,8 +336,8 @@ void main() {
     );
     expect(
       tester
-          .widget<CircularProgressIndicator>(
-            find.byType(CircularProgressIndicator),
+          .widget<FushiCircularProgressIndicator>(
+            find.byType(FushiCircularProgressIndicator),
           )
           .value,
       0.55,

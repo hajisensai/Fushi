@@ -15,6 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart' show BackupImportPhase;
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 
 void main() {
   group('BackupImportOverlayView（修①/修②：两阶段遮罩）', () {
@@ -39,7 +41,7 @@ void main() {
       // 导入期明确告知用户在导入——这正是旧版 24px 小圈缺的语义。
       expect(find.text(t.backup_import_overlay_title), findsOneWidget);
       expect(find.text(t.backup_import_overlay_warning), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
       // 导入尚未结束，不得出现「立即重启」确认按钮。
       expect(find.text(t.backup_import_restart_button), findsNothing);
 
@@ -73,7 +75,7 @@ void main() {
       expect(find.text(t.backup_import_success), findsOneWidget);
       expect(find.text(t.backup_import_restart_button), findsOneWidget);
       // running 期的进度条已消失。
-      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
 
       // 退出必须由用户点按驱动：点按前不退出，点按后恰好触发一次。
       expect(restarts, 0);
@@ -108,7 +110,7 @@ void main() {
       // DB 已关闭，失败也必须给「立即重启」出口。
       expect(find.text(t.backup_import_restart_button), findsOneWidget);
       // running 期的进度条已消失。
-      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     });
 
     testWidgets('running：progress 有值 → 确定进度条（value 非空且跟随更新）',
@@ -132,18 +134,16 @@ void main() {
       );
       await tester.pump();
 
-      final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator));
+      final FushiLinearProgressIndicator bar =
+          tester.widget<FushiLinearProgressIndicator>(find.byType(FushiLinearProgressIndicator));
       expect(bar.value, isNotNull);
       expect(bar.value, closeTo(0.42, 1e-9));
 
       // 进度推进只重建进度条（ValueListenableBuilder），值跟随更新。
       progress.value = 0.87;
       await tester.pump();
-      final LinearProgressIndicator bar2 =
-          tester.widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator));
+      final FushiLinearProgressIndicator bar2 =
+          tester.widget<FushiLinearProgressIndicator>(find.byType(FushiLinearProgressIndicator));
       expect(bar2.value, closeTo(0.87, 1e-9));
     });
   });
@@ -173,9 +173,8 @@ void main() {
       expect(find.text(t.backup_import_validating_title), findsOneWidget);
       expect(find.text(t.backup_import_validating_hint), findsOneWidget);
       // 读取/预览无字节进度 → 不确定进度条（value 为 null）。
-      final LinearProgressIndicator bar =
-          tester.widget<LinearProgressIndicator>(
-              find.byType(LinearProgressIndicator));
+      final FushiLinearProgressIndicator bar =
+          tester.widget<FushiLinearProgressIndicator>(find.byType(FushiLinearProgressIndicator));
       expect(bar.value, isNull);
       // validating 期给「取消」出口（DB 仍打开，可安全中断回设置页）。
       expect(find.text(t.dialog_cancel), findsOneWidget);

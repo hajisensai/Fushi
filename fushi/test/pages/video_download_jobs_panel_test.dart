@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/media/video/download/video_download_error_presentation.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart';
+import '../helpers/glass_unwrap.dart';
 
 final class _MemoryJobsStore implements VideoDownloadJobsPanelStore {
   final StreamController<List<VideoDownloadJobRow>> controller =
@@ -87,6 +88,12 @@ Future<void> _pumpPanel(
     TranslationProvider(
       child: MaterialApp(
         theme: ThemeData.dark(useMaterial3: true),
+        // MD3 Expressive 波浪进度在确定态（0<value<1）也持续推相位，pumpAndSettle
+        // 永远等不到静止；「减少动态效果」下它退回静止直线，面板行为不受影响。
+        builder: (BuildContext context, Widget? child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          child: child!,
+        ),
         home: Scaffold(body: panel),
       ),
     ),
@@ -652,9 +659,7 @@ void main() {
           const ValueKey<String>('video-download-job-delete-files-gone'),
         );
     bool checked() => tester
-        .widget<Checkbox>(
-          find.descendant(of: checkboxRow(), matching: find.byType(Checkbox)),
-        )
+        .widget<Checkbox>(glassUnwrap<Checkbox>(find.descendant(of: checkboxRow(), matching: find.byType(Checkbox))),)
         .value!;
 
     // ① 不碰勾选框直接确认 ⇒ 默认保留文件。

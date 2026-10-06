@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_preferences_dialog.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
 import 'package:fushi/src/media/media_search_text.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
 /// 扩展提供的在线源列表：「导入」视图「在线源」段的正文，漫画与视频共用。
@@ -78,7 +80,7 @@ class _MihonInstalledSourcesSectionState
   Future<void> _clearSourceData(MangaOnlineSourceRow source) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(t.mihon_source_clear_data),
         content: Text(t.mihon_source_clear_data_hint),
         actions: <Widget>[
@@ -99,9 +101,16 @@ class _MihonInstalledSourcesSectionState
     if (confirmed != true) return;
     try {
       await widget.manager.clearSourceData(source);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'MihonInstalledSources',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -167,9 +176,16 @@ class _MihonInstalledSourcesSectionState
             : t.mihon_sources_sort_by_downloads_no_data,
         severity: sorted ? ToastSeverity.success : ToastSeverity.warning,
       );
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
       if (mounted) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'MihonInstalledSources',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -186,17 +202,17 @@ class _MihonInstalledSourcesSectionState
         ],
       );
 
-  Widget _buildSearchField() => TextField(
+  Widget _buildSearchField() => FushiTextFieldControl(
     key: const ValueKey<String>('mihon_sources_search_field'),
     controller: _searchController,
     decoration: InputDecoration(
-      prefixIcon: const Icon(Icons.search),
+      prefixIcon: const FushiIcon(Icons.search),
       hintText: t.mihon_sources_search_hint,
       border: const OutlineInputBorder(),
       suffixIcon: _searchQuery.isEmpty
           ? null
-          : IconButton(
-              icon: const Icon(Icons.close),
+          : FushiIconButtonControl(
+              icon: const FushiIcon(Icons.close),
               onPressed: () {
                 _searchController.clear();
                 setState(() => _searchQuery = '');
@@ -222,13 +238,13 @@ class _MihonInstalledSourcesSectionState
                 children: <Widget>[
                   Expanded(child: _buildSearchField()),
                   const SizedBox(width: 8),
-                  IconButton(
+                  FushiIconButtonControl(
                     key: const ValueKey<String>(
                       'mihon_sources_sort_by_downloads',
                     ),
                     tooltip: t.mihon_sources_sort_by_downloads,
                     onPressed: () => unawaited(_sortSourcesByDownloads()),
-                    icon: const Icon(Icons.sort),
+                    icon: const FushiIcon(Icons.sort),
                   ),
                 ],
               ),
@@ -332,7 +348,7 @@ class _MihonInstalledSourcesSectionState
             key: ValueKey<String>(
               'mihon_source_row_${source.extensionPackage}_${source.sourceId}',
             ),
-            leading: Switch.adaptive(
+            leading: FushiSwitch.adaptive(
               value: source.enabled,
               onChanged: (bool value) => unawaited(
                 manager.updateSourceSettings(source, enabled: value),
@@ -344,12 +360,12 @@ class _MihonInstalledSourcesSectionState
             ),
             onTap: open != null && source.enabled ? () => open(source) : null,
             trailing: compact
-                ? PopupMenuButton<_SourceAction>(
+                ? FushiPopupMenuButton<_SourceAction>(
                     key: ValueKey<String>(
                       'mihon_source_menu_${source.extensionPackage}_${source.sourceId}',
                     ),
                     tooltip: t.common_more_actions,
-                    icon: const Icon(Icons.more_vert),
+                    icon: const FushiIcon(Icons.more_vert),
                     onSelected: (_SourceAction action) => action.onTap?.call(),
                     itemBuilder: (BuildContext context) =>
                         <PopupMenuEntry<_SourceAction>>[
@@ -361,7 +377,7 @@ class _MihonInstalledSourcesSectionState
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
-                                  Icon(action.icon, size: 20),
+                                  FushiIcon(action.icon, size: 20),
                                   const SizedBox(width: 12),
                                   Flexible(child: Text(action.label)),
                                 ],
@@ -373,11 +389,11 @@ class _MihonInstalledSourcesSectionState
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
                       for (final _SourceAction action in actions)
-                        IconButton(
+                        FushiIconButtonControl(
                           key: action.key,
                           tooltip: action.label,
                           onPressed: action.onTap,
-                          icon: Icon(action.icon),
+                          icon: FushiIcon(action.icon),
                         ),
                     ],
                   ),

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// [MediaLibraryShell] 的行为守卫（PR#550 审查补）。
 ///
@@ -201,7 +202,7 @@ void main() {
     expect(tester.state(stripFinder), same(before),
         reason: '导航条只交给当前视图，但必须是同一个 State 挪过去');
     final TabController controller =
-        tester.widget<TabBar>(find.byType(TabBar)).controller!;
+        tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!;
     expect(controller.index, 2);
     expect(controller.animation!.value, greaterThan(0));
     expect(controller.animation!.value, lessThan(2),

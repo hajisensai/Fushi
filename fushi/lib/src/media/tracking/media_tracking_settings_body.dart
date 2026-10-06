@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
@@ -133,7 +134,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(value)));
+      ..showSnackBar(FushiSnackBar(content: Text(value)));
   }
 
   @override
@@ -151,16 +152,16 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               title: t.media_tracking_access_token,
               subtitle: t.media_tracking_access_token_hint,
               controlBelow: true,
-              trailing: TextField(
+              trailing: FushiTextFieldControl(
                 controller: _tokenController,
                 obscureText: true,
                 autocorrect: false,
                 enableSuggestions: false,
                 decoration: InputDecoration(
                   border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
+                  suffixIcon: FushiIconButtonControl(
                     tooltip: t.media_tracking_access_token_hint,
-                    icon: const Icon(Icons.open_in_new),
+                    icon: const FushiIcon(Icons.open_in_new),
                     onPressed: () => launchUrl(
                       Uri.parse(BangumiApiClient.accessTokenUrl),
                       mode: LaunchMode.externalApplication,
@@ -171,12 +172,12 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
             ),
             AdaptiveSettingsRow(
               title: t.media_tracking_signup,
-              trailing: TextButton.icon(
+              trailing: FushiTextButton.icon(
                 onPressed: () => launchUrl(
                   Uri.parse(BangumiApiClient.signupUrl),
                   mode: LaunchMode.externalApplication,
                 ),
-                icon: const Icon(Icons.person_add_alt),
+                icon: const FushiIcon(Icons.person_add_alt),
                 label: Text(t.media_tracking_signup),
               ),
             ),
@@ -190,11 +191,11 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               trailing: _busy
                   ? const SizedBox.square(
                       dimension: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : FilledButton.tonalIcon(
+                  : FushiFilledButton.tonalIcon(
                       onPressed: _connect,
-                      icon: const Icon(Icons.link),
+                      icon: const FushiIcon(Icons.link),
                       label: Text(t.media_tracking_connect),
                     ),
             ),
@@ -226,17 +227,17 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               ),
             AdaptiveSettingsRow(
               title: t.media_tracking_sync_now,
-              trailing: FilledButton.tonalIcon(
+              trailing: FushiFilledButton.tonalIcon(
                 onPressed: _busy ? null : _sync,
-                icon: const Icon(Icons.sync),
+                icon: const FushiIcon(Icons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
             ),
             AdaptiveSettingsRow(
               title: t.media_tracking_add_mapping,
-              trailing: FilledButton.icon(
+              trailing: FushiFilledButton.icon(
                 onPressed: _busy ? null : () => _addMapping(),
-                icon: const Icon(Icons.add_link),
+                icon: const FushiIcon(Icons.add_link),
                 label: Text(t.media_tracking_add_mapping),
               ),
             ),
@@ -258,9 +259,9 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                       '${t.media_tracking_manual_required}',
                   titleMaxLines: 3,
                   subtitleMaxLines: 2,
-                  trailing: TextButton.icon(
+                  trailing: FushiTextButton.icon(
                     onPressed: _busy ? null : () => _addMapping(initial: item),
-                    icon: const Icon(Icons.add_link),
+                    icon: const FushiIcon(Icons.add_link),
                     label: Text(t.media_tracking_add_mapping),
                   ),
                 ),
@@ -286,13 +287,13 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 titleMaxLines: 3,
                 icon: Icons.sync_problem_outlined,
                 showIcon: failureByMappingId.containsKey(mapping.id),
-                trailing: IconButton(
+                trailing: FushiIconButtonControl(
                   tooltip: t.media_tracking_delete_mapping,
                   onPressed: () async {
                     await _repository.deleteMapping(mapping.id);
                     await _reload();
                   },
-                  icon: const Icon(Icons.link_off),
+                  icon: const FushiIcon(Icons.link_off),
                 ),
               ),
           ],
@@ -500,7 +501,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.media_tracking_add_mapping),
       content: SizedBox(
         width: 620,
@@ -508,7 +509,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              DropdownButtonFormField<_LocalTrackingTarget>(
+              FushiDropdownButtonFormField<_LocalTrackingTarget>(
                 initialValue: _target,
                 decoration:
                     InputDecoration(labelText: t.media_tracking_local_item),
@@ -527,7 +528,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 },
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<TrackingKind>(
+              FushiDropdownButtonFormField<TrackingKind>(
                 initialValue: _kind,
                 decoration: InputDecoration(labelText: t.media_tracking_kind),
                 items: <DropdownMenuItem<TrackingKind>>[
@@ -559,7 +560,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 },
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<TrackingProgressMode>(
+              FushiDropdownButtonFormField<TrackingProgressMode>(
                 initialValue: _mode,
                 decoration: InputDecoration(
                   labelText: t.media_tracking_progress_mode,
@@ -604,7 +605,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
               // 保留输入框只会让用户填出一个被忽略的值。
               if (_mode != TrackingProgressMode.status) ...<Widget>[
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   controller: _offsetController,
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
@@ -613,21 +614,21 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                 ),
               ],
               const SizedBox(height: 12),
-              TextField(
+              FushiTextFieldControl(
                 controller: _searchController,
                 onSubmitted: (_) => _search(),
                 decoration: InputDecoration(
                   labelText: t.media_tracking_search,
-                  suffixIcon: IconButton(
+                  suffixIcon: FushiIconButtonControl(
                     onPressed: _busy ? null : _search,
-                    icon: const Icon(Icons.search),
+                    icon: const FushiIcon(Icons.search),
                   ),
                 ),
               ),
               if (_busy)
                 const Padding(
                   padding: EdgeInsets.all(24),
-                  child: CircularProgressIndicator(),
+                  child: FushiCircularProgressIndicator(),
                 ),
               if (!_busy && _error != null)
                 Padding(
@@ -653,14 +654,14 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                     density: FushiListDensity.compact,
                     padding: EdgeInsets.zero,
                     leading: subject.coverUrl == null
-                        ? const Icon(Icons.auto_stories_outlined)
+                        ? const FushiIcon(Icons.auto_stories_outlined)
                         : Image(
                           image: AppHttpImage(subject.coverUrl!),
                             width: 42,
                             height: 56,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.broken_image_outlined),
+                                const FushiIcon(Icons.broken_image_outlined),
                           ),
                     title: Text(subject.displayName),
                     subtitle: Text(
@@ -678,7 +679,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(false),
           child: Text(t.cancel),
         ),

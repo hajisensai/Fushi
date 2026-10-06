@@ -17,6 +17,7 @@ import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_prompt.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -224,11 +225,9 @@ void main() {
       expect(find.text(t.game_upscaling_pick_title(name: 'テストゲーム')),
           findsOneWidget);
       final RadioListTile<MagpieUpscalingMode> selected =
-          tester.widget<RadioListTile<MagpieUpscalingMode>>(
-        find.byKey(const ValueKey<String>(
+          tester.widget<RadioListTile<MagpieUpscalingMode>>(glassUnwrap<RadioListTile<MagpieUpscalingMode>>(find.byKey(const ValueKey<String>(
           'magpie-upscaling-mode-installed_only',
-        )),
-      );
+        ))),);
       expect(selected.groupValue, MagpieUpscalingMode.installedOnly);
       expect(selected.value, MagpieUpscalingMode.installedOnly);
     });

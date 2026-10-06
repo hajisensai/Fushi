@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
@@ -126,9 +127,9 @@ class OnlineServicesOnboardingView extends StatelessWidget {
         SizedBox(height: tokens.spacing.card),
         Align(
           alignment: AlignmentDirectional.centerStart,
-          child: FilledButton.icon(
+          child: FushiFilledButton.icon(
             onPressed: onConfigure,
-            icon: const Icon(Icons.settings_outlined),
+            icon: const FushiIcon(Icons.settings_outlined),
             label: Text(t.onboarding_online_services_configure),
           ),
         ),
@@ -154,9 +155,9 @@ class OnlineServicesOnboardingView extends StatelessWidget {
                     Text(item.description),
                     if (item.link != null) ...<Widget>[
                       SizedBox(height: tokens.spacing.gap),
-                      TextButton.icon(
+                      FushiTextButton.icon(
                         onPressed: () => onOpenLink(item.link!),
-                        icon: const Icon(Icons.open_in_new_outlined),
+                        icon: const FushiIcon(Icons.open_in_new_outlined),
                         label: Text(t.onboarding_online_services_link),
                       ),
                     ],

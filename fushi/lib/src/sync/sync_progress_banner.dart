@@ -4,6 +4,7 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 同步进行中的细进度条 —— 挂在媒体页列表上方。
 ///
@@ -64,7 +65,7 @@ class SyncProgressBanner extends StatelessWidget {
                     // 阶段没有可测总数时退化成不确定进度条（value 为 null；eink
                     // 下钉成 0——不定态动画在墨水屏上是整条带子持续刷新，且默认
                     // 轨道色塌成底色，给实色轨道才看得见）。
-                    LinearProgressIndicator(
+                    FushiLinearProgressIndicator(
                       value: einkSafeProgressValue(context, p?.fraction),
                       minHeight: 2,
                       backgroundColor: isEinkTheme(context)

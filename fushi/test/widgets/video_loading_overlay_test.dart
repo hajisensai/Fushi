@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 
 Widget _harness(Widget child) {
@@ -60,8 +61,10 @@ void main() {
       ),
     );
 
-    final CircularProgressIndicator indicator = tester.widget(
-      find.byType(CircularProgressIndicator),
+    // MD3 Expressive：加载圈经 FushiCircularProgressIndicator 渲染成表达式
+    // 波浪圈 FushiWavyCircularProgress，确定 / 不定态仍由 value 区分。
+    final FushiWavyCircularProgress indicator = tester.widget(
+      find.byType(FushiWavyCircularProgress),
     );
     expect(indicator.value, isNull);
     // No percentage suffix when progress is null.
@@ -83,8 +86,10 @@ void main() {
       ),
     );
 
-    final CircularProgressIndicator indicator = tester.widget(
-      find.byType(CircularProgressIndicator),
+    // MD3 Expressive：加载圈经 FushiCircularProgressIndicator 渲染成表达式
+    // 波浪圈 FushiWavyCircularProgress，确定 / 不定态仍由 value 区分。
+    final FushiWavyCircularProgress indicator = tester.widget(
+      find.byType(FushiWavyCircularProgress),
     );
     expect(indicator.value, 0.42);
     expect(find.textContaining('Downloading subtitles…'), findsOneWidget);
@@ -145,15 +150,17 @@ void main() {
   testWidgets(
       'BUG-2609: buffering indicator keeps the plain spinner for local files',
       (WidgetTester tester) async {
+    // 2026-10-05 M3E 重做：MD3（非墨水屏）下缓冲指示是 Expressive 形变加载指示，
+    // Apple / 墨水屏仍是转圈；守的是「本地文件只有指示、不带速度文字」。
     await tester.pumpWidget(_harness(const VideoBufferingIndicator()));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
     expect(find.byType(Text), findsNothing);
 
     final ValueNotifier<double?> speed = ValueNotifier<double?>(524288);
     addTearDown(speed.dispose);
     await tester
         .pumpWidget(_harness(VideoBufferingIndicator(readSpeed: speed)));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
     expect(find.text('512.0 KB/s'), findsOneWidget);
   });
 }

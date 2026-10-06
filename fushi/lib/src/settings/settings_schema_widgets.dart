@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoColors;
 import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -5,8 +6,11 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 把一个父级 [WidgetBuilder] 包成平台对应的页面路由（Material/Cupertino）。
 /// 两个渲染器各自提供工厂，是它们之间唯一的导航差异。
@@ -45,20 +49,35 @@ class SettingsSchemaSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (section.items.isEmpty) return const SizedBox.shrink();
-    final List<Widget> rows = section.items
-        .map(
+    final List<Widget> rows = <Widget>[
+      for (final SettingsItem item in section.items)
+        if (item case SettingsCustomItem(
+          :final SettingsItemRowsBuilder rowsBuilder,
+        ))
+          // 多行 custom item（可增删的记录列表）：每条记录拆成分组里的独立行，
+          // 与同组声明式行同一分段 / 分隔线规则。首行挂搜索落点；各行靠调用方
+          // 给的 key 锚定 State（记录增删时不按位置错配）。
+          ...rowsBuilder(settingsContext).indexed.map(
+            ((int, Widget) entry) => entry.$1 == 0
+                ? SettingsSearchTarget(
+                    key: ValueKey<String>(item.id),
+                    id: item.id,
+                    child: entry.$2,
+                  )
+                : entry.$2,
+          )
+        else
           // 行级稳定 key：visible 谓词可在运行时增删行（如 qualityOptionCount
           // 变化），无 key 时同类型相邻行会按位置错配旧 State（陈旧文本 / 在途
           // 防抖写错项）；以 item.id 锚定 State 归属。
-          (SettingsItem item) => SettingsSchemaItem(
+          SettingsSchemaItem(
             key: ValueKey<String>(item.id),
             item: item,
             settingsContext: settingsContext,
             showIcons: showIcons,
             routeBuilder: routeBuilder,
           ),
-        )
-        .toList(growable: false);
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -80,7 +99,11 @@ class SettingsSchemaSection extends StatelessWidget {
 }
 
 /// 把一个 schema [SettingsItem] 派发渲染成对应的自适应行控件。
-class SettingsSchemaItem extends StatelessWidget {
+///
+/// 实现 [SettingsRowIconProbe]：分组按「上一行有没有行首图标」决定 Apple 分隔线
+/// 缩进，而 section 的直接子节点是本派发包装、不是行本身。
+class SettingsSchemaItem extends StatelessWidget
+    implements SettingsRowIconProbe {
   const SettingsSchemaItem({
     super.key,
     required this.item,
@@ -95,6 +118,15 @@ class SettingsSchemaItem extends StatelessWidget {
   final SettingsRouteBuilder routeBuilder;
 
   @override
+  bool get settingsRowHasIcon => switch (item) {
+    // 自绘正文不知道画了什么，按无图标处理。
+    SettingsCustomItem() => false,
+    SettingsNavigationItem navigation =>
+      (showIcons || navigation.showIcon) && navigation.icon != null,
+    _ => showIcons && item.icon != null,
+  };
+
+  @override
   Widget build(BuildContext context) {
     final Widget row = switch (item) {
       SettingsNavigationItem navigation => _routeRow(context, navigation),
@@ -107,7 +139,7 @@ class SettingsSchemaItem extends StatelessWidget {
       SettingsStepperItem stepper => _stepper(stepper),
       SettingsTextItem text => _text(text),
       SettingsNumberItem number => _number(number),
-      SettingsStatusItem status => _status(status),
+      SettingsStatusItem status => _status(context, status),
       SettingsCustomItem custom => custom.builder(settingsContext),
     };
     // 设置搜索跳转落点：本项是待定位目标时消费一次性挂点，包上滚动定位 +
@@ -149,7 +181,7 @@ class SettingsSchemaItem extends StatelessWidget {
     );
   }
 
-  Widget _status(SettingsStatusItem status) {
+  Widget _status(BuildContext context, SettingsStatusItem status) {
     final SettingsItemAction? onAction = status.onAction;
     // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 才到得了
     // （BUG-016）。`AdaptiveSettingsRow` 里 `if (onTap == null) return content;`
@@ -165,17 +197,26 @@ class SettingsSchemaItem extends StatelessWidget {
       settingsContext.refresh();
     }
 
+    final bool glassDesktop = isGlassDesign(context) &&
+        !isCupertinoPlatform(context) &&
+        FushiAppleMetrics.of(context).desktop;
+
     return AdaptiveSettingsRow(
       // resolveTitle / resolveSubtitle：状态文本在渲染时求值（schema 树是缓存的常量树）。
       title: status.resolveTitle(settingsContext),
       subtitle: status.resolveSubtitle(settingsContext),
       icon: status.icon,
       showIcon: showIcons,
-      controlBelow: onAction != null,
+      // 「Apple」桌面（macOS 系统设置）与 MD3（Android 16 设置）：动作按钮是
+      // 行右侧的胶囊，不换到标题下方；窄到放不下时行自己会堆叠。Cupertino 与
+      // Apple 触屏维持按钮在下。
+      controlBelow: onAction != null &&
+          (isCupertinoPlatform(context) ||
+              (isGlassDesign(context) && !glassDesktop)),
       onTap: onAction == null ? null : runAction,
       trailing: onAction == null
           ? null
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: runAction,
               child: Text(status.actionLabel!),
             ),
@@ -183,13 +224,10 @@ class SettingsSchemaItem extends StatelessWidget {
   }
 
   Widget _action(SettingsActionItem action) {
-    return AdaptiveSettingsRow(
-      title: action.title,
-      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
-      subtitle: action.resolveSubtitle(settingsContext),
-      icon: action.icon,
-      showIcon: showIcons,
-      onTap: () async => action.onTap(settingsContext),
+    return _SettingsActionRow(
+      action: action,
+      settingsContext: settingsContext,
+      showIcons: showIcons,
     );
   }
 
@@ -379,7 +417,7 @@ class SettingsSchemaItem extends StatelessWidget {
     return ButtonSegment<T>(
       value: option.value,
       label: Text(option.label),
-      icon: option.icon != null ? Icon(option.icon, size: 16) : null,
+      icon: option.icon != null ? FushiIcon(option.icon, size: 16) : null,
       tooltip: option.tooltip ?? option.label,
     );
   }
@@ -391,6 +429,51 @@ class SettingsSchemaItem extends StatelessWidget {
 /// 界面大小滑条（settings_actions.dart 的 _AppUiScaleSliderRow）同款拖动解耦——
 /// 逐 tick 写穿在重页面（如 ~6400 行视频页）会触发全页 rebuild 掉帧（BUG-963）。
 /// 键盘/手柄步进经 _KeyboardSlider 同时回调 onChanged+onChangeEnd，每按即提交。
+/// 动作行（2026-10 体验优化）：给 [SettingsActionItem.onTap] 加进行中锁——
+/// 上一次点击的异步动作（确认框、写库、导出……）没结束前，再点 / 再按 Enter
+/// 直接忽略，不会叠出两个确认框或把同一动作跑两遍。行本身保持可聚焦、外观不变。
+class _SettingsActionRow extends StatefulWidget {
+  const _SettingsActionRow({
+    required this.action,
+    required this.settingsContext,
+    required this.showIcons,
+  });
+
+  final SettingsActionItem action;
+  final SettingsContext settingsContext;
+  final bool showIcons;
+
+  @override
+  State<_SettingsActionRow> createState() => _SettingsActionRowState();
+}
+
+class _SettingsActionRowState extends State<_SettingsActionRow> {
+  bool _running = false;
+
+  Future<void> _run() async {
+    if (_running) return;
+    _running = true;
+    try {
+      await widget.action.onTap(widget.settingsContext);
+    } finally {
+      _running = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final SettingsActionItem action = widget.action;
+    return AdaptiveSettingsRow(
+      title: action.title,
+      // resolveSubtitle：运行期状态（如游戏 exe 摘要）在这里求值。
+      subtitle: action.resolveSubtitle(widget.settingsContext),
+      icon: action.icon,
+      showIcon: widget.showIcons,
+      onTap: _run,
+    );
+  }
+}
+
 class _CommitOnReleaseSlider extends StatefulWidget {
   const _CommitOnReleaseSlider({
     required this.item,
@@ -449,12 +532,30 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
   }
 }
 
-/// section 底部说明文字。padding 两渲染器一致，文字样式经 [style] 注入。
+/// 设置分组脚注的默认文字样式，按设计系统 / 平台分派：Apple = iOS footnote
+/// （13 号 secondaryLabel）；Cupertino = metadata + secondaryLabel；MD3 =
+/// bodySmall + surfaces.onVariant。分组内外的说明文字都走这一处。
+TextStyle? settingsFootnoteStyle(BuildContext context) {
+  if (isCupertinoPlatform(context)) {
+    return FushiDesignTokens.of(context).type.metadata.copyWith(
+      color: CupertinoColors.secondaryLabel.resolveFrom(context),
+    );
+  }
+  if (isGlassDesign(context)) {
+    return FushiAppleMetrics.of(context).footnoteStyle(context);
+  }
+  return Theme.of(context).textTheme.bodySmall?.copyWith(
+    color: FushiDesignTokens.of(context).surfaces.onVariant,
+  );
+}
+
+/// section 底部说明文字。padding 两渲染器一致；文字样式默认按设计系统取
+/// [settingsFootnoteStyle]，渲染器要别的口径时经 [style] 注入。
 class SettingsSectionFooter extends StatelessWidget {
-  const SettingsSectionFooter(this.text, {super.key, required this.style});
+  const SettingsSectionFooter(this.text, {super.key, this.style});
 
   final String text;
-  final SettingsFooterStyle style;
+  final SettingsFooterStyle? style;
 
   @override
   Widget build(BuildContext context) {
@@ -466,7 +567,10 @@ class SettingsSectionFooter extends StatelessWidget {
         tokens.spacing.gap + tokens.spacing.gap / 2,
         tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
-      child: Text(text, style: style(context)),
+      child: Text(
+        text,
+        style: (style ?? settingsFootnoteStyle)(context),
+      ),
     );
   }
 }
