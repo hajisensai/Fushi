@@ -148,7 +148,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('底部 sheet：页头向下拖过阈值即关闭，拖一点松手弹回', (WidgetTester tester) async {
+  testWidgets('底部 sheet：页头向下拖过阈值先落半屏档、再拖即关闭，拖一点松手弹回', (
+    WidgetTester tester,
+  ) async {
     final BuildContext context = await _pumpHost(tester, const Size(420, 900));
     showReaderSideSheet<void>(
       context: context,
@@ -168,9 +170,20 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getRect(panel).top, top, reason: '小幅拖动松手弹回');
 
+    // M3E 两档 detent（772f479e468）：满高 → 半屏 → 关闭。第一次拖过阈值落到半屏档
+    // （高度 = 窗高 × kReaderPanelBottomSheetHalfFraction，仍贴屏底）。
     await tester.drag(handle, const Offset(0, 400));
     await tester.pumpAndSettle();
-    expect(panel, findsNothing);
+    expect(panel, findsOneWidget, reason: '满高档拖过阈值先落半屏档');
+    expect(
+      tester.getRect(panel).height,
+      closeTo(900 * kReaderPanelBottomSheetHalfFraction, 0.5),
+    );
+    expect(tester.getRect(panel).bottom, 900);
+
+    await tester.drag(handle, const Offset(0, 400));
+    await tester.pumpAndSettle();
+    expect(panel, findsNothing, reason: '半屏档再拖过阈值即关闭');
   });
 
   testWidgets('宽窗即使允许底部 sheet 仍贴右侧，朝正文一侧圆角', (WidgetTester tester) async {
