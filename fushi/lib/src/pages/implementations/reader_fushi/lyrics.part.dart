@@ -811,11 +811,14 @@ extension _ReaderLyrics on _ReaderFushiPageState {
 
   /// cue 在书中的位置（章 + 章内学习单位偏移）。有 `fushi-cue://` 片段的 cue 走
   /// 精确映射；只有章 href 的 cue 退到章首（只认得章首插图）；都没有为 null。
+  /// 片段坐标映射不出来（失效坐标）也为 null——不能退到章首：那会把「已听到」
+  /// 往回拽、收回正在显示的插图，下一句映射正常时又当成「刚走过」重新弹出。
   LyricsBookPosition? _lyricsBookPositionOfCue(AudioCue cue) {
     final SubtitleRematchFragment? frag =
         SubtitleRematchCodec.tryDecode(cue.textFragmentId);
     if (frag != null && frag.sectionIndex >= 0) {
-      final int offset = _studyRangeForAudioFragment(frag)?.offset ?? 0;
+      final int? offset = _studyRangeForAudioFragment(frag)?.offset;
+      if (offset == null) return null;
       return LyricsBookPosition(frag.sectionIndex, offset);
     }
     final int chapter = _chapterIndexForCue(cue);

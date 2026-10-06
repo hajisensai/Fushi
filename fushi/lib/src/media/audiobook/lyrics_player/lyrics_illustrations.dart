@@ -325,7 +325,8 @@ class LyricsIllustrationController extends ChangeNotifier {
   }
 
   /// 装入插图表，并把 [position] 之前的插图记为已听到（**不**弹出——进歌词
-  /// 模式时已经过去的插图不该一进来就盖住封面）。
+  /// 模式时已经过去的插图不该一进来就盖住封面）。[position] 为 null 时下一次
+  /// [observe] 只建立基线、不弹出。
   void load(
     List<LyricsIllustration> items, {
     LyricsBookPosition? position,
@@ -336,7 +337,9 @@ class LyricsIllustrationController extends ChangeNotifier {
         ? -1
         : lastReachedLyricsIllustration(_items, position);
     _shown = null;
-    _lastAudioMs = audioPosition?.inMilliseconds;
+    // 没有基线位置（进歌词模式时当前 cue 还解析不出来）时，第一次观测只当基线、
+    // 不弹出：否则第一次 observe 会把书里第一张插图当成「刚走过」盖住封面。
+    _lastAudioMs = position == null ? null : audioPosition?.inMilliseconds;
     notifyListeners();
   }
 

@@ -145,6 +145,25 @@ void main() {
       expect(c.browseStart, 1);
     });
 
+    test('进歌词模式时基线位置解析不出：第一次观测只当基线，不弹出', () {
+      final LyricsIllustrationController c = LyricsIllustrationController()
+        ..load(items(), audioPosition: const Duration(minutes: 30));
+      expect(c.reached, -1);
+      c.observe(
+        const LyricsBookPosition(3, 10),
+        audioPosition: const Duration(minutes: 30, seconds: 2),
+      );
+      expect(c.reached, 1);
+      expect(c.shown, isNull);
+      // 之后顺着播走过下一张才弹出。
+      c.observe(
+        const LyricsBookPosition(5, 1300),
+        audioPosition: const Duration(minutes: 30, seconds: 40),
+      );
+      expect(c.reached, 2);
+      expect(c.shown, 2);
+    });
+
     test('顺着播走过插图：换上插图并停住，点掉回封面', () {
       final LyricsIllustrationController c = LyricsIllustrationController()
         ..load(
