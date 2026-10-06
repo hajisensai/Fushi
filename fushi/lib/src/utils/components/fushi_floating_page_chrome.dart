@@ -169,25 +169,83 @@ class FushiPageChromeTitle extends StatelessWidget {
     );
   }
 
+  /// 胶囊内留给文字行的竖向空间：定高减 2px 余量（描边 / 抗锯齿取整）。
+  static const double _kTextBudget = kFushiPageChromeExtent - 2;
+
+  /// 副标题行的固定行高倍数。
+  static const double _kSubtitleLineHeight = 1.25;
+
+  /// 副标题能否与标题同在定高胶囊里排两行。
+  ///
+  /// HBK-AUDIT-007：两行都跟随系统字体缩放，默认约 41px，1.3 倍时约 54px，
+  /// 超出 [kFushiPageChromeExtent]。胶囊不能长高（BUG-2977：页头槽位按定高排，
+  /// 长高就被 ClipRect 截掉下半截），所以空间不足时副标题降级成标题的 tooltip /
+  /// 语义补充，而不是溢出。
+  @visibleForTesting
+  static bool subtitleFits({
+    required TextScaler textScaler,
+    required double titleFontSize,
+    required double subtitleFontSize,
+  }) {
+    final double needed =
+        textScaler.scale(titleFontSize) * _kTitleLineHeight +
+        textScaler.scale(subtitleFontSize) * _kSubtitleLineHeight;
+    return needed <= _kTextBudget;
+  }
+
+  /// 标题单行在定高胶囊里能承受的最大缩放倍数。
+  ///
+  /// 与 Material [AppBar] 给标题夹紧字体缩放（`_kMaxTitleTextScaleFactor`）同一
+  /// 做法，但上限按胶囊实际空间算（titleLarge 约 1.8 倍），远高于 AppBar 的
+  /// 1.34；系统字体缩放照常生效，只是在定高页头里封顶到不溢出为止。
+  @visibleForTesting
+  static double maxTitleScaleFactor(double titleFontSize) =>
+      _kTextBudget / (titleFontSize * _kTitleLineHeight);
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final TextStyle subtitleStyle =
         (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
           color: theme.colorScheme.onSurfaceVariant,
-          height: 1.25,
+          height: _kSubtitleLineHeight,
           leadingDistribution: TextLeadingDistribution.even,
         );
+    final TextStyle titleStyle = titleStyleOf(context);
+    final double titleFontSize = titleStyle.fontSize ?? 14;
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final bool showSubtitle =
+        subtitle != null &&
+        subtitleFits(
+          textScaler: scaler,
+          titleFontSize: titleFontSize,
+          subtitleFontSize: subtitleStyle.fontSize ?? 12,
+        );
+    Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _fixedLine(title, titleStyle),
+        if (showSubtitle) _fixedLine(subtitle!, subtitleStyle),
+      ],
+    );
+    final Widget? demoted = showSubtitle ? null : subtitle;
+    if (demoted != null) {
+      // 副标题放不下：信息不丢——悬停 / 长按看完整副标题，读屏仍读到它。
+      final String? text = demoted is Text ? demoted.data : null;
+      final InlineSpan? span = demoted is Text ? demoted.textSpan : null;
+      content = Tooltip(
+        message: text,
+        richMessage: text == null ? (span ?? WidgetSpan(child: demoted)) : null,
+        child: content,
+      );
+    }
     return FushiPageChromeCapsule(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          _fixedLine(title, titleStyleOf(context)),
-          if (subtitle != null) _fixedLine(subtitle!, subtitleStyle),
-        ],
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: maxTitleScaleFactor(titleFontSize),
+        child: content,
       ),
     );
   }
