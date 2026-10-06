@@ -37,6 +37,11 @@ const double kReaderFloatingBallLabelHeight = 32;
 const double kReaderFloatingBallLabelMaxWidth = 200;
 const double kReaderFloatingBallLabelPadding = 12;
 
+/// 动作按钮的最小触控目标（M3 / Android 无障碍 48dp）。按钮画 40，四周各补
+/// `(48 - 40) / 2` 的透明命中环；包围盒也向外扩同样的量，最外圈按钮的命中环
+/// 不会落到盒外（HBK026）。
+const double kReaderFloatingBallMinTouchTarget = 48;
+
 /// 收起态整体不透明度：半透明、不抢正文。
 const double kReaderFloatingBallIdleOpacity = 0.42;
 
@@ -292,6 +297,43 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     reverseDuration: widget.animate ? _collapseDuration : Duration.zero,
   );
 
+  /// 此刻是否做过渡：墨水屏（[ReaderFloatingBall.animate] = false）与系统「减弱
+  /// 动态效果」（MediaQuery.disableAnimations，HBK028）下一律零时长。
+  bool _motion = true;
+
+  void _applyMotion() {
+    final bool motion = widget.animate && fushiMotionEnabled(context);
+    _motion = motion;
+    _expand.duration = motion ? _expandDuration : Duration.zero;
+    _expand.reverseDuration = motion ? _collapseDuration : Duration.zero;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 早于焦点树分发：触摸展开时焦点仍在正文（不抢焦点），Esc / 手柄 B 不会经过
+    // 球的子树，挂在子树上的快捷键收不到（HBK027）。展开期间在这里先截住、收起
+    // 并吞掉，免得正文再把同一下 Esc 当成「退出」。
+    FocusManager.instance.addEarlyKeyEventHandler(_onEarlyKey);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _applyMotion();
+  }
+
+  KeyEventResult _onEarlyKey(KeyEvent event) {
+    if (!_expanded) return KeyEventResult.ignored;
+    final LogicalKeyboardKey key = event.logicalKey;
+    if (key != LogicalKeyboardKey.escape &&
+        key != LogicalKeyboardKey.gameButtonB) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) _collapse();
+    return KeyEventResult.handled;
+  }
+
   late ReaderFloatingBallDock _dock = widget.dock;
   late double _fraction = widget.verticalFraction;
 
@@ -331,16 +373,12 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
         _fraction = widget.verticalFraction;
       }
     }
-    if (old.animate != widget.animate) {
-      _expand.duration = widget.animate ? _expandDuration : Duration.zero;
-      _expand.reverseDuration = widget.animate
-          ? _collapseDuration
-          : Duration.zero;
-    }
+    if (old.animate != widget.animate) _applyMotion();
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeEarlyKeyEventHandler(_onEarlyKey);
     _expand.dispose();
     for (final FocusNode node in _itemFocus) {
       node.dispose();
@@ -430,7 +468,7 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
       _dragBallTopLeft = null;
       _dock = dock;
       _fraction = fraction;
-      _snapping = widget.animate;
+      _snapping = _motion;
     });
     widget.onDockChanged(dock, fraction);
   }
@@ -507,7 +545,10 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
         } else {
           boxTopLeft = layout.boxTopLeftAt(t);
         }
-        final Offset ballCenter = layout.ballCenterInBox;
+        // 包围盒四周补触控命中环的余量（HBK026），盒内坐标整体平移同样的量，
+        // 球在屏幕上的位置不变。
+        final double pad = _touchPad(layout);
+        final Offset ballCenter = layout.ballCenterInBox + Offset(pad, pad);
         final bool menuLive = !dragging && t > 0;
         return AnimatedPositioned(
           duration: _snapping && !dragging ? _snapDuration : Duration.zero,
@@ -515,44 +556,38 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
           onEnd: () {
             if (_snapping) setState(() => _snapping = false);
           },
-          left: boxTopLeft.dx,
-          top: boxTopLeft.dy,
-          width: layout.boxWidth,
-          height: layout.boxHeight,
+          left: boxTopLeft.dx - pad,
+          top: boxTopLeft.dy - pad,
+          width: layout.boxWidth + 2 * pad,
+          height: layout.boxHeight + 2 * pad,
           child: RepaintBoundary(
             child: ExcludeFocus(
               excluding: !(menuLive && _expanded),
-              child: CallbackShortcuts(
-                bindings: <ShortcutActivator, VoidCallback>{
-                  const SingleActivator(LogicalKeyboardKey.escape): _collapse,
-                  const SingleActivator(LogicalKeyboardKey.gameButtonB):
-                      _collapse,
-                },
-                child: FocusTraversalGroup(
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: <Widget>[
-                      // 完全收起（t == 0）或拖动中按钮整个不建：不留零尺寸命中区，
-                      // 也不让收起态多画一圈看不见的按钮。
-                      if (menuLive && layout.showsLabels)
-                        for (int i = 0; i < _labelWidths.length; i++)
-                          _buildLabel(layout, i, ballCenter),
-                      if (menuLive)
-                        for (int i = 0; i < widget.actions.length; i++)
-                          _buildColumnButton(layout, i, ballCenter),
-                      Positioned(
-                        left: ballCenter.dx - layout.ballSize / 2,
-                        top: ballCenter.dy - layout.ballSize / 2,
-                        width: layout.ballSize,
-                        height: layout.ballSize,
-                        child: _buildBall(
-                          layout,
-                          progress: t,
-                          dragging: dragging,
-                        ),
+              // Esc / 手柄 B 收起走 [_onEarlyKey]（不依赖焦点在球里）。
+              child: FocusTraversalGroup(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    // 完全收起（t == 0）或拖动中按钮整个不建：不留零尺寸命中区，
+                    // 也不让收起态多画一圈看不见的按钮。
+                    if (menuLive && layout.showsLabels)
+                      for (int i = 0; i < _labelWidths.length; i++)
+                        _buildLabel(layout, i, ballCenter),
+                    if (menuLive)
+                      for (int i = 0; i < widget.actions.length; i++)
+                        _buildColumnButton(layout, i, ballCenter),
+                    Positioned(
+                      left: ballCenter.dx - layout.ballSize / 2,
+                      top: ballCenter.dy - layout.ballSize / 2,
+                      width: layout.ballSize,
+                      height: layout.ballSize,
+                      child: _buildBall(
+                        layout,
+                        progress: t,
+                        dragging: dragging,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -561,6 +596,12 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
       },
     );
   }
+
+  /// 包围盒四周为触控命中环补的余量：`(48 - 按钮径) / 2`，按钮够大时为 0。
+  double _touchPad(ReaderFloatingBallLayout layout) => math.max(
+    0.0,
+    (kReaderFloatingBallMinTouchTarget - layout.buttonSize) / 2,
+  );
 
   /// 第 [index] 颗按钮的错峰进度：每颗按钮占总时长里一段错开的区间，起点按
   /// 槽位离球由近到远推后、尾部对齐；反向（收起）沿同一区间反放。弹簧曲线会
@@ -588,19 +629,33 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     final Offset target = layout.buttonOffset(index);
     final Offset center = ballCenter + target * k;
     final double size = layout.buttonSize;
+    // 命中区 ≥ 48dp：画出来的圆钮居中，四周透明命中环点下去同样触发（HBK026）。
+    final double hit = math.max(size, kReaderFloatingBallMinTouchTarget);
+    final ReaderHeaderAction action = widget.actions[index];
     return Positioned(
-      left: center.dx - size / 2,
-      top: center.dy - size / 2,
-      width: size,
-      height: size,
+      left: center.dx - hit / 2,
+      top: center.dy - hit / 2,
+      width: hit,
+      height: hit,
       child: Opacity(
         opacity: k.clamp(0.0, 1.0).toDouble(),
         child: Transform.scale(
           scale: 0.4 + 0.6 * k.clamp(0.0, 1.2),
-          child: _ColumnButton(
-            action: widget.actions[index],
-            size: size,
-            focusNode: _itemFocus[index],
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // 无障碍节点由圆钮本身给出，命中环不另起一个。
+            excludeFromSemantics: true,
+            onTap: action.onPressed,
+            child: Center(
+              child: SizedBox.square(
+                dimension: size,
+                child: _ColumnButton(
+                  action: action,
+                  size: size,
+                  focusNode: _itemFocus[index],
+                ),
+              ),
+            ),
           ),
         ),
       ),
