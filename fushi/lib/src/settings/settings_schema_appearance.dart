@@ -10,6 +10,8 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
+    show currentAppIconSelection;
 import 'package:fushi/utils.dart';
 
 /// 「功能模块」开关行的 item id。
@@ -332,6 +334,42 @@ SettingsDestination buildAppearanceDestination() {
             icon: FushiIcons.widgets,
             visible: (_) => Platform.isAndroid || Platform.isWindows,
             builder: (_) => const MiscellaneousSettingsPage(),
+          ),
+          // 应用图标 ↔ 主题色的两个开关，紧挨「应用图标」入口，默认都关。
+          // ①「图标跟随主题色」：内置吉祥物 logo（宽屏 rail 品牌位、悬浮球）按
+          // 强调色换色；关 = 始终原图。对用户自定义的图标图片从不换色。
+          SettingsSwitchItem(
+            id: 'appearance.tint_app_logo',
+            title: t.theme_logo_tint_enabled,
+            subtitle: t.theme_logo_tint_hint,
+            icon: FushiIcons.widgets,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.themeNotifier.tintAppLogo,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.themeNotifier.setTintAppLogo(
+                value,
+              );
+              settingsContext.refresh();
+            },
+            defaultValue: false,
+          ),
+          // ②「主题色跟随图标」：设置了自定义图标图片时才出现；开着时从该图
+          // 取种子色覆盖生效主题（不改写主题偏好，关掉即恢复原主题）。
+          SettingsSwitchItem(
+            id: 'appearance.follow_app_icon_accent',
+            title: t.theme_icon_accent_follow,
+            subtitle: t.theme_icon_accent_hint,
+            icon: Icons.color_lens_outlined,
+            visible: (_) => currentAppIconSelection.value.usesCustomFile,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.themeNotifier.followAppIconAccent,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.themeNotifier
+                  .setFollowAppIconAccent(value);
+              notifyReaderSettingsChanged(settingsContext);
+              settingsContext.refresh();
+            },
+            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'appearance.reverse_navigation_bar',

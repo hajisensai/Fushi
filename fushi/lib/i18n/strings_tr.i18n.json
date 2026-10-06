@@ -6776,5 +6776,9 @@
   "anki_video_template_fallback_adapt": "Adapt",
   "audiobook_transcribe_audio_incomplete": "The audio file is damaged or not fully downloaded, so only part of it can be decoded. Re-download or replace the file, then transcribe again.",
   "lookup_dictionary_unified_style": "Unify dictionary styles",
-  "lookup_dictionary_unified_style_hint": "Recolor imported dictionaries' tags, highlights and borders with the current accent color (M3E). Turn off to keep each dictionary's original colors."
+  "lookup_dictionary_unified_style_hint": "Recolor imported dictionaries' tags, highlights and borders with the current accent color (M3E). Turn off to keep each dictionary's original colors.",
+  "theme_logo_tint_enabled": "Logo follows theme color",
+  "theme_logo_tint_hint": "Recolor the built-in mascot icon to match the accent color. When off, the original artwork is always shown.",
+  "theme_icon_accent_follow": "Theme color follows custom icon",
+  "theme_icon_accent_hint": "Take the accent color from your custom icon image. Turn off to return to the theme you picked."
 }

@@ -56,6 +56,42 @@ void main() {
     currentAppIconSelection.value = const AppIconSelection(
       presetKey: 'default',
     );
+    // 「图标跟随主题色」开关打开（默认关的行为见下面单独的组）。
+    appLogoFollowsAccent.value = true;
+  });
+
+  tearDown(() => appLogoFollowsAccent.value = false);
+
+  group('「图标跟随主题色」开关', () {
+    testWidgets('默认关：任何主题下都是原图', (WidgetTester tester) async {
+      appLogoFollowsAccent.value = false;
+      await tester.pumpWidget(
+        _host(_preset('m3-red', Brightness.dark), const CurrentAppIcon()),
+      );
+      final Image image = tester.widget<Image>(find.byType(Image));
+      expect(image.image, isA<AssetImage>());
+      expect(
+        (image.image as AssetImage).assetName,
+        presetIconAssets['default'],
+      );
+    });
+
+    testWidgets('运行中打开 → 立即着色；再关 → 回到原图', (WidgetTester tester) async {
+      appLogoFollowsAccent.value = false;
+      final ColorScheme teal = _preset('m3-teal', Brightness.light);
+      await tester.pumpWidget(_host(teal, const CurrentAppIcon()));
+      expect(tester.widget<Image>(find.byType(Image)).image, isA<AssetImage>());
+
+      appLogoFollowsAccent.value = true;
+      await tester.pump();
+      final AccentLogoImage logo =
+          tester.widget<Image>(find.byType(Image)).image as AccentLogoImage;
+      expect(logo.tint, LogoAccentTint.fromAccent(teal.primary.toARGB32()));
+
+      appLogoFollowsAccent.value = false;
+      await tester.pump();
+      expect(tester.widget<Image>(find.byType(Image)).image, isA<AssetImage>());
+    });
   });
 
   group('rail 品牌位（CurrentAppIcon）吃 ColorScheme.primary', () {

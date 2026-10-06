@@ -160,7 +160,16 @@ Future<ui.Image> tintLogoImage(ui.Image source, LogoAccentTint tint) async {
 Uint8List _tintLogoRgbaEntry((Uint8List, LogoAccentTint) args) =>
     tintLogoRgba(args.$1, args.$2);
 
+/// 「图标跟随主题色」开关的运行时真值（偏好 `theme_tint_app_logo`，默认关）。
+///
+/// 持久化在 [ThemeNotifier]（`setTintAppLogo`），由它在加载 / 改动偏好时发布到
+/// 这里；画吉祥物的组件（rail 品牌位、阅读器悬浮球、桌面系统球球面）不一定拿得到
+/// AppModel，统一监听这个全局值。关 = 始终原图。
+final ValueNotifier<bool> appLogoFollowsAccent = ValueNotifier<bool>(false);
+
 /// 主题强调色 → [LogoAccentTint]，按「强调色稳定下来」再提交。
+///
+/// [appLogoFollowsAccent] 关着时恒给 [LogoAccentTint.identity]（原图）。
 ///
 /// 主题切换带交叉过渡（`fushiThemeAnimationStyle`），过渡期间 `Theme.of` 每帧给出
 /// 一个插值出来的 primary；直接跟着换，每帧都会生成一张新换色图（每张都要整图过
@@ -183,11 +192,21 @@ class AccentLogoTintBuilder extends StatefulWidget {
 }
 
 class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
-  late LogoAccentTint _shown = LogoAccentTint.fromAccent(
+  late LogoAccentTint _settled = LogoAccentTint.fromAccent(
     widget.accent.toARGB32(),
   );
   LogoAccentTint? _pending;
   Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    appLogoFollowsAccent.addListener(_onSwitchChanged);
+  }
+
+  void _onSwitchChanged() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void didUpdateWidget(AccentLogoTintBuilder oldWidget) {
@@ -196,7 +215,7 @@ class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
     final LogoAccentTint next = LogoAccentTint.fromAccent(
       widget.accent.toARGB32(),
     );
-    if (next == _shown) {
+    if (next == _settled) {
       _pending = null;
       _timer?.cancel();
       return;
@@ -208,7 +227,7 @@ class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
       final LogoAccentTint? pending = _pending;
       if (!mounted || pending == null) return;
       setState(() {
-        _shown = pending;
+        _settled = pending;
         _pending = null;
       });
     });
@@ -216,10 +235,14 @@ class _AccentLogoTintBuilderState extends State<AccentLogoTintBuilder> {
 
   @override
   void dispose() {
+    appLogoFollowsAccent.removeListener(_onSwitchChanged);
     _timer?.cancel();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => widget.builder(context, _shown);
+  Widget build(BuildContext context) => widget.builder(
+    context,
+    appLogoFollowsAccent.value ? _settled : LogoAccentTint.identity,
+  );
 }
