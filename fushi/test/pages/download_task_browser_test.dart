@@ -406,9 +406,22 @@ void main() {
       );
       await _pumpPastTransitions(tester);
       expect(tester.takeException(), isNull);
-      await tester.tap(
-        find.byKey(const ValueKey<String>('download-task-toggle-long')),
+      // M3E 任务中心（468ceed6a93）在列表头加了汇总卡 + 状态分段，2.0 字号下
+      // 360 宽一屏放不下卡片：先滚到卡片再展开，溢出断言照旧覆盖整条路径。
+      final Finder toggle = find.byKey(
+        const ValueKey<String>('download-task-toggle-long'),
       );
+      await tester.scrollUntilVisible(
+        toggle,
+        200,
+        scrollable: find.descendant(
+          of: find.byKey(const PageStorageKey<String>('download-task-list')),
+          matching: find.byType(Scrollable),
+        ).first,
+      );
+      await _pumpPastTransitions(tester);
+      expect(tester.takeException(), isNull);
+      await tester.tap(toggle);
       await _pumpPastTransitions(tester);
       expect(find.text('details-long'), findsOneWidget);
       expect(tester.takeException(), isNull);
