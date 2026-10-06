@@ -316,7 +316,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
               // 子区让出浮动工具栏的高度（工具栏叠在内容上，见下方
               // [FushiFloatingChromeOverlay]），见 [_chromeInsetFor]。
               child: SectionPrimaryScrollScope(
-                child: _chromeInsetFor(section, sections[section]!),
+                child: _chromeInsetFor(
+                  section,
+                  child: sections[section]!,
+                ),
               ),
             ),
         ],
@@ -354,7 +357,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
   ///   归零。
   /// - 捕获工作台：定高工作台版面（会话卡 + 自带滚动的台词面板），没有整页滚动
   ///   视图可以吃让位，仍整体下移。
-  Widget _chromeInsetFor(GameSection section, Widget child) =>
+  Widget _chromeInsetFor(GameSection section, {required Widget child}) =>
       switch (section) {
         GameSection.dashboard ||
         GameSection.importGames ||

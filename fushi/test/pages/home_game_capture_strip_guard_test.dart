@@ -38,13 +38,15 @@ int _occurrences(String source, String token) {
 
 List<String> _libraryHeaderGuardProblems(String header) {
   final List<String> problems = <String>[];
-  if (!header.contains('title: GameSectionTabs(')) {
+  // 分区页签由游戏外壳的浮动工具栏画（GameSectionTabsHostScope），库页页头主位
+  // 是零尺寸占位：页头整行零高度，不在浮动工具区下面留一条钉死的空白带
+  // （2026-10-06 库页顶部改「内容滚到工具区底下」）。
+  if (!header.contains('title: const SizedBox.shrink()')) {
     problems.add('missing segmented title');
   }
-  // 提取完整性锚。原先由 `actions: <Widget>[` 兼任（证明括号配平提取穿过了 title
-  // 走到 header 结尾、没在 title 前截断）；统计入口收敛到首页后 actions 块整块撤
-  // 掉，锚点改挂 GameSectionTabs 的最后一个具名参数，继续守同一件事。
-  if (!header.contains('onSelectSettings: _showSettings')) {
+  // 提取完整性锚：证明括号配平提取穿过了 title 走到 header 结尾、没在 title 前
+  // 截断。title 之后只剩网格 / 列表切换这一个页头动作（登记进外壳动作组）。
+  if (!header.contains('GamesLibraryLayoutToggle()')) {
     problems.add('truncated header');
   }
   // 统计入口已收敛到首页 dashboard（2026-09-01），页头不得再挂。
@@ -127,7 +129,7 @@ void main() {
       // 播种锚从已撤掉的 `onTap: _openStatistics` 改成仍在的 title 参数——旧锚在
       // 源码里不存在时 replaceFirst 是空操作，三条变异会全变成「拿原文比原文」的
       // 空转，守卫看着绿其实什么都没杀。
-      const String seed = 'title: GameSectionTabs(';
+      const String seed = 'title: const SizedBox.shrink()';
       expect(header.contains(seed), isTrue, reason: '变异播种锚必须真实存在');
 
       final String missingTitle = header.replaceFirst(seed, 'title: Text(');
