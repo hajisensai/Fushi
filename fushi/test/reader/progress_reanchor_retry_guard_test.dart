@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-493 (TODO-1053 Bug B) 源码守卫：重锚时序竞态致进度概率不显示——事件驱动版。
 ///
 /// 恢复完成后 _reanchorContinuousAfterRestore 的 begin 同步置 JS 侧 _reanchorPending=true，
@@ -78,9 +80,8 @@ void main() {
     // locate 之前，二者互补）；剥行注释 + 空白归一后比对逻辑内容（dart format 折行）。
     // BUG-2961：精确定位之后、补刷之前把视口归属交还给跟随音频（resyncReaderToAudio），
     // 补刷因此反映最终落位。
-    final String chromeFlat = chrome
-        .replaceAll(RegExp(r'//[^\n]*'), '')
-        .replaceAll(RegExp(r'\s+'), ' ');
+    final String chromeFlat =
+        maskComments(chrome).replaceAll(RegExp(r'\s+'), ' ');
     expect(
         chromeFlat,
         contains('onAfterCommit: () async { '
