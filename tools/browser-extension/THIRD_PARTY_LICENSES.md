@@ -46,3 +46,22 @@ Copyright 2022 Google LLC. Licensed under the Apache License, Version 2.0 (the
 Unless required by applicable law or agreed to in writing, software distributed
 under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 CONDITIONS OF ANY KIND, either express or implied.
+
+## material_color_utilities
+
+`material-color.js` is a line-by-line JavaScript port of the subset of Google's
+material_color_utilities (Dart package 0.13.0, the version pinned by the Flutter
+SDK) needed to generate Material 3 dynamic color schemes from a seed color: HCT /
+CAM16, tonal palettes, dislike analyzer, temperature cache, contrast, dynamic
+colors and all scheme variants.
+
+- Source: https://github.com/material-foundation/material-color-utilities
+- Upstream files: `dart/lib/{utils,hct,palettes,dislike,temperature,contrast,dynamiccolor,scheme}/**`
+- License: Apache License, Version 2.0
+- License text: https://www.apache.org/licenses/LICENSE-2.0
+
+Copyright 2021 Google LLC. Licensed under the Apache License, Version 2.0 (the
+"License"); you may not use these files except in compliance with the License.
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.
