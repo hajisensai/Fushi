@@ -4,6 +4,7 @@ import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
   for (final bool added in <bool>[true, false]) {
     test('tag feedback uses changed host kinds, added=$added', () {
