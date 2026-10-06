@@ -133,6 +133,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'floating_ball.dock',
   'floating_ball.in_app',
   'floating_ball.mode',
+  // bool：展开按钮旁显示文字，默认 true；保留 tooltip / 无障碍名称。
+  'floating_ball.show_labels',
   'floating_ball.system',
   // 桌面应用外悬浮球的停靠边（String）与纵向比例（double），与应用内球的
   // `.dock` / `.y` 分开存：两颗球可以同时在。
