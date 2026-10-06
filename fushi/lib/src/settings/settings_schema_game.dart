@@ -476,6 +476,7 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextColor,
             onChanged: (SettingsContext context, int value) =>
                 context.appModel.setGalHookTextColor(value),
+            themedColor: (GalHookCaptionColors themed) => themed.text,
           ),
         ],
       ),
@@ -493,6 +494,7 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextBackgroundColor,
             onChanged: (SettingsContext context, int value) =>
                 context.appModel.setGalHookTextBackgroundColor(value),
+            themedColor: (GalHookCaptionColors themed) => themed.background,
           ),
           SettingsSliderItem(
             id: 'game.gal_hook_text_background_opacity',
@@ -525,6 +527,7 @@ SettingsDestination buildGameDestination() {
                 context.appModel.galHookTextOutlineColor,
             onChanged: (SettingsContext context, int value) =>
                 context.appModel.setGalHookTextOutlineColor(value),
+            themedColor: (GalHookCaptionColors themed) => themed.outline,
           ),
           SettingsSliderItem(
             id: 'game.gal_hook_text_outline_width',
@@ -608,6 +611,7 @@ SettingsCustomItem _galHookColorItem({
   required int defaultColor,
   required int Function(SettingsContext context) value,
   required Future<void> Function(SettingsContext context, int value) onChanged,
+  required int Function(GalHookCaptionColors themed) themedColor,
   bool enableAlpha = false,
 }) {
   return SettingsCustomItem(
@@ -615,12 +619,21 @@ SettingsCustomItem _galHookColorItem({
     icon: icon,
     searchTitle: title,
     builder: (SettingsContext settingsContext) {
-      final Color current = Color(value(settingsContext));
-      final ColorScheme colors = Theme.of(settingsContext.context).colorScheme;
+      final ThemeData theme = Theme.of(settingsContext.context);
+      final int stored = value(settingsContext);
+      // 没自定义过（未写 / 写的是历史默认）= 跟随主题：色样显示主题配对色，
+      // 副标题标明正在跟随（判据与台词窗下发同一个函数）。
+      final bool followsTheme =
+          galHookCaptionColorFollowsTheme(stored, defaultColor);
+      final Color current = Color(
+        followsTheme ? themedColor(galHookThemeCaptionColors(theme)) : stored,
+      );
+      final ColorScheme colors = theme.colorScheme;
       // 自定义行不经渲染层的 settingsResetSpecFor，这里自己接 settings kit 的
       // 「已改过 → 恢复默认」：与开关 / 滑杆同一套行首圆点 + 行尾重置钮。
       return SettingsModifiedRow(
-        modified: current.toARGB32() != defaultColor,
+        // 「恢复默认」= 回到跟随主题。
+        modified: !followsTheme,
         onReset: () => unawaited(
           _commitGalHookAppearance(
             settingsContext,
@@ -629,6 +642,7 @@ SettingsCustomItem _galHookColorItem({
         ),
         child: AdaptiveSettingsRow(
           title: title,
+          subtitle: followsTheme ? t.theme_role_follows_theme : null,
           icon: icon,
           showIcon: true,
           // M3E 色样：28 圆点 + outlineVariant 描边（浅色 / 透明色在卡片底上也
@@ -645,8 +659,12 @@ SettingsCustomItem _galHookColorItem({
               title: title,
               initial: current,
               enableAlpha: enableAlpha,
+              followsTheme: followsTheme,
+              followThemeColor: Color(defaultColor),
             );
+            // 跟随中直接按「完成」= 没改：不把此刻的主题色冻结成自定义值。
             if (selected == null ||
+                selected.toARGB32() == stored ||
                 selected.toARGB32() == current.toARGB32()) {
               return;
             }
@@ -666,9 +684,12 @@ Future<Color?> _pickGalHookColor(
   required String title,
   required Color initial,
   required bool enableAlpha,
+  bool followsTheme = false,
+  Color? followThemeColor,
 }) async {
   Color picked = initial;
   bool confirmed = false;
+  bool follow = false;
   await showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) => FushiAlertDialog(
@@ -689,6 +710,15 @@ Future<Color?> _pickGalHookColor(
         ),
       ),
       actions: <Widget>[
+        // 「跟随主题」= 写回历史默认值（台词窗把它解释成跟随主题配对色）。
+        if (followThemeColor != null && !followsTheme)
+          FushiTextButton(
+            onPressed: () {
+              follow = true;
+              Navigator.of(dialogContext).pop();
+            },
+            child: Text(t.theme_role_follows_theme),
+          ),
         FushiTextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
           child: Text(t.dialog_cancel),
@@ -703,6 +733,7 @@ Future<Color?> _pickGalHookColor(
       ],
     ),
   );
+  if (follow) return followThemeColor;
   return confirmed ? picked : null;
 }
 

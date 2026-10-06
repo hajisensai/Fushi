@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/utils.dart';
 
@@ -91,5 +92,40 @@ void main() {
     expect(palette.toolbarIconColor, 0xFF000000);
     expect(palette.toolbarActiveBgColor, 0xFF000000);
     expect(palette.toolbarActiveIconColor, 0xFFFFFFFF);
+  });
+
+  test('caption colours follow the theme until the user customises them', () {
+    final ThemeData theme = ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3949AB)),
+    );
+    final ColorScheme scheme = theme.colorScheme;
+    final GalHookCaptionColors followed = galHookResolveCaptionColors(
+      theme,
+      text: PreferencesRepository.galHookTextColorDefault,
+      background: PreferencesRepository.galHookTextBackgroundColorDefault,
+      outline: PreferencesRepository.galHookTextOutlineColorDefault,
+    );
+    expect(followed.background, scheme.primaryContainer.toARGB32());
+    expect(followed.text, scheme.onPrimaryContainer.toARGB32());
+    expect(
+      followed.outline & 0x00FFFFFF,
+      scheme.primaryContainer.toARGB32() & 0x00FFFFFF,
+    );
+    final GalHookCaptionColors custom = galHookResolveCaptionColors(
+      theme,
+      text: 0xFF102030,
+      background: 0xFF405060,
+      outline: 0xAA010203,
+    );
+    expect(custom, (
+      text: 0xFF102030,
+      background: 0xFF405060,
+      outline: 0xAA010203,
+    ));
+    // 无主题：历史黑底白字。
+    expect(
+      galHookThemeCaptionColors(null).text,
+      PreferencesRepository.galHookTextColorDefault,
+    );
   });
 }

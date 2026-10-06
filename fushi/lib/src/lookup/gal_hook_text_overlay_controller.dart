@@ -167,6 +167,73 @@ GalHookToolbarPalette galHookToolbarPalette(
   );
 }
 
+/// 台词窗三色（字 / 底 / 描边）的取值。
+typedef GalHookCaptionColors = ({int text, int background, int outline});
+
+/// 台词窗三色「跟随主题」的判据：偏好**没写过**，或写的正是历史默认值。
+///
+/// 偏好键与历史默认值都不改（老配置照读）。历史上设置页的「恢复默认」写回的就是
+/// 这个默认值，而且存量用户从没改过颜色时偏好表里要么没有这行、要么是它——两种都
+/// 按「跟随主题」处理。代价：存量里**刻意**选了与历史默认逐位相同颜色的用户（纯黑
+/// 底 / 纯白字 / 0xE0 黑描边）也会被当成跟随；这一位无法从存储里区分。
+bool galHookCaptionColorFollowsTheme(int stored, int legacyDefault) =>
+    (stored & 0xFFFFFFFF) == (legacyDefault & 0xFFFFFFFF);
+
+/// 「跟随主题」时台词窗三色：底 = 强调色派生的 M3E 容器 `primaryContainer`，
+/// 字 = 配对的 `onPrimaryContainer`，描边 = 同一容器色（0xE0），所以底板透明
+/// （默认不透明度 0）时描边就是一圈主题色光晕，底板不透明时描边与底融为一体。
+/// 随预设 / 明暗 / 纯黑 / 自定义主题变化（经 [GalHookOverlayThemeSync]）。
+///
+/// 墨水屏与无主题时回落历史黑底白字黑描边。
+GalHookCaptionColors galHookThemeCaptionColors(ThemeData? theme) {
+  const GalHookCaptionColors legacy = (
+    text: PreferencesRepository.galHookTextColorDefault,
+    background: PreferencesRepository.galHookTextBackgroundColorDefault,
+    outline: PreferencesRepository.galHookTextOutlineColorDefault,
+  );
+  if (theme == null) return legacy;
+  if (theme.extension<FushiEinkTheme>()?.einkMode ?? false) return legacy;
+  final ColorScheme scheme = theme.colorScheme;
+  return (
+    text: _argbWithAlpha(scheme.onPrimaryContainer, 0xFF),
+    background: _argbWithAlpha(scheme.primaryContainer, 0xFF),
+    outline: _argbWithAlpha(scheme.primaryContainer, 0xE0),
+  );
+}
+
+/// 把三个偏好原值解析成实际下发的颜色：跟随主题的那几项换成 [theme] 配对色。
+GalHookCaptionColors galHookResolveCaptionColors(
+  ThemeData? theme, {
+  required int text,
+  required int background,
+  required int outline,
+}) {
+  final GalHookCaptionColors themed = galHookThemeCaptionColors(theme);
+  return (
+    text:
+        galHookCaptionColorFollowsTheme(
+          text,
+          PreferencesRepository.galHookTextColorDefault,
+        )
+        ? themed.text
+        : text,
+    background:
+        galHookCaptionColorFollowsTheme(
+          background,
+          PreferencesRepository.galHookTextBackgroundColorDefault,
+        )
+        ? themed.background
+        : background,
+    outline:
+        galHookCaptionColorFollowsTheme(
+          outline,
+          PreferencesRepository.galHookTextOutlineColorDefault,
+        )
+        ? themed.outline
+        : outline,
+  );
+}
+
 /// 下发给 native `show` / `updateStyle` 的工具条主题字段（历史三色另走具名参数）。
 Map<String, Object?> galHookToolbarThemeArgs(GalHookToolbarPalette palette) =>
     <String, Object?>{
@@ -1392,9 +1459,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
         bold: _bold,
         textAlignment: _textAlignment,
         verticalAlignment: _verticalAlignment,
-        textColor: _textColor,
+        textColor: _captionColors.text,
         bgColor: _backgroundColor,
-        outlineColor: _outlineColor,
+        outlineColor: _captionColors.outline,
         outlineWidth: _outlineWidth,
         textPadding: _textPadding,
         cornerRadius: _cornerRadius,
@@ -1461,30 +1528,40 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   int get _backgroundColor {
     final int alpha = (_opacity.clamp(0.0, 1.0) * 255).round();
-    return (alpha << 24) | (_backgroundBaseColor & 0x00FFFFFF);
+    return (alpha << 24) | (_captionColors.background & 0x00FFFFFF);
   }
 
   /// 主窗口树里 [GalHookOverlayThemeSync] 最近一次报上来的主题（随预设 / 明暗 /
   /// 纯黑 / 自定义主题实时变化）。没报过时退回导航树的 context 现取。
   ThemeData? _theme;
 
-  /// 当前主题下的工具条配色；主窗口导航树没建好时回落历史配色。
-  GalHookToolbarPalette _toolbarPalette() {
-    ThemeData? theme = _theme;
-    if (theme == null) {
-      final BuildContext? context = _appModel?.navigatorKey.currentContext;
-      theme = context != null && context.mounted ? Theme.of(context) : null;
-    }
-    return galHookToolbarPalette(theme, textColor: _textColor);
+  ThemeData? _currentTheme() {
+    final ThemeData? theme = _theme;
+    if (theme != null) return theme;
+    final BuildContext? context = _appModel?.navigatorKey.currentContext;
+    return context != null && context.mounted ? Theme.of(context) : null;
   }
+
+  /// 台词窗实际下发的字 / 底 / 描边色：没自定义过的跟随主题。
+  GalHookCaptionColors get _captionColors => galHookResolveCaptionColors(
+    _currentTheme(),
+    text: _textColor,
+    background: _backgroundBaseColor,
+    outline: _outlineColor,
+  );
+
+  /// 当前主题下的工具条配色；主窗口导航树没建好时回落历史配色。
+  GalHookToolbarPalette _toolbarPalette() =>
+      galHookToolbarPalette(_currentTheme(), textColor: _captionColors.text);
 
   /// 主题变化入口（主窗口 [GalHookOverlayThemeSync] 在 build 里调用）：算出的
   /// 配色变了且浮窗在屏上就整份重推样式，工具条与查词高亮当场换色。
   void applyTheme(ThemeData theme) {
     final GalHookToolbarPalette before = _toolbarPalette();
+    final GalHookCaptionColors captionBefore = _captionColors;
     _theme = theme;
     if (!_started || !_visible) return;
-    if (_toolbarPalette() == before) return;
+    if (_toolbarPalette() == before && _captionColors == captionBefore) return;
     unawaited(_pushStyle());
   }
 
@@ -1500,8 +1577,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       bold: _bold,
       textAlignment: _textAlignment,
       verticalAlignment: _verticalAlignment,
-      textColor: _textColor,
-      outlineColor: _outlineColor,
+      textColor: _captionColors.text,
+      outlineColor: _captionColors.outline,
       outlineWidth: _outlineWidth,
       textPadding: _textPadding,
       cornerRadius: _cornerRadius,
