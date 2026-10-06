@@ -156,7 +156,7 @@ void main() {
     expect(
       script,
       contains(
-        r"git ls-tree -r --full-tree HEAD -- "
+        r'git ls-tree -r --full-tree HEAD -- '
         '"\$@"'
         r" | grep -viE '\.md$'",
       ),
