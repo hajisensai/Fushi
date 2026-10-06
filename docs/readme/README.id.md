@@ -151,7 +151,6 @@ Fushi dibangun di atas proyek dan ekosistem berikut:
 | [Mihon](https://github.com/mihonapp/mihon) | Ekosistem ekstensi sumber manga |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Ekosistem ekstensi sumber anime (extensions-lib 14–16, runtime yang sama) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime ekstensi manga untuk desktop |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI runtime sumber manga |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Rujukan jembatan subtitle streaming untuk ekstensi peramban |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Rujukan arsitektur identifikasi dan scraping anime |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Rujukan arsitektur informasi pustaka galgame |

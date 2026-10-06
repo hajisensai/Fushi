@@ -4,7 +4,7 @@
 /// `MangaDiscoveryPage`）头部形状由本组件给出唯一真相：左侧「全部来源 / 具体
 /// 来源」下拉，右侧搜索框。用户在任一模块看到的发现页结构因此一致。
 ///
-/// 各域的「来源」实体互不相同（发现源 adapter / Mihon 与 Aidoku 在线源），所以
+/// 各域的「来源」实体互不相同（发现源 adapter / Mihon 在线源），所以
 /// 本组件只吃 [DiscoverySourceOption] 这层最小公共结构 `(id, label)`，不绑任何
 /// 域模型——想让新的域接进来只需把自己的来源映射成一串 (id, label)。
 library;

@@ -238,7 +238,6 @@ void main() {
           home: MangaGlobalSearchPage(
             mihonManager: manager,
             mihonSources: manager.sources,
-            aidokuPackages: const [],
             initialQuery: 'fixture',
           ),
         ),

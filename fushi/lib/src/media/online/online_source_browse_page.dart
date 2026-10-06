@@ -1,10 +1,10 @@
-/// 三域在线源（小说 LNReader / 漫画 Mihon · Aidoku / 视频 Aniyomi）共用的源浏览页。
+/// 三域在线源（小说 LNReader / 漫画 Mihon / 视频 Aniyomi）共用的源浏览页。
 ///
-/// 2026-09-27「浏览」阶段 2：此前 `MihonSourceBrowsePage`、`LnReaderSourceBrowsePage`、
-/// `AidokuSourceBrowsePage` 是三份「形状照抄」的拷贝（注释里各自写着「版式与 Mihon
+/// 2026-09-27「浏览」阶段 2：此前 `MihonSourceBrowsePage`、`LnReaderSourceBrowsePage`
+/// 与已移除的 Aidoku 源浏览页是三份「形状照抄」的拷贝（注释里各自写着「版式与 Mihon
 /// 一致」），每处修复都要改三遍。现在页面只有这一份，差异全部收进
 /// [OnlineSourceCatalog] 适配器：
-/// - 浏览列表：Mihon / LNReader 是「热门 / 最新」，Aidoku 是源自己声明的 listing；
+/// - 浏览列表：Mihon / LNReader 是「热门 / 最新」；
 /// - 筛选：弹什么框、应用后落到搜索（Mihon）还是回到第一个列表（LNReader 的筛选作用
 ///   在热门上）；
 /// - 封面取图、详情页、Cloudflare 验证入口。
@@ -110,7 +110,7 @@ abstract class OnlineSourceCatalog<T> {
 
   /// 失败给用户看的一句话（行内错误与 toast 共用）。
   ///
-  /// 2026-10 体验优化：原先页面直接 `'$error'`，Aidoku 的 [buildVerifyAction]
+  /// 2026-10 体验优化：原先页面直接 `'$error'`，[buildVerifyAction]
   /// 又把同一个错误再画一遍，同一句话上下出现两次。文案只从这里出，
   /// [buildVerifyAction] 只负责「可点的验证入口」，不再重复画错误文字。
   String describeError(Object error) => describeOnlineSourceError(error);
