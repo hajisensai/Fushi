@@ -5303,7 +5303,6 @@
   "game_stream_line": "السطر الحالي",
   "game_stream_line_empty": "لا يوجد نص Hook بعد",
   "game_stream_lookup_hint": "حدد نصًا للبحث عنه",
-  "game_stream_android_only": "استقبال بث الألعاب متاح على Android فقط.",
   "game_stream_unreachable": "تعذّر الاتصال بالمضيف",
   "game_stream_none": "لا يوجد مضيف مقترن يبث. ابدأ البث من صفحة ألعاب Windows أولًا.",
   "game_stream_join_failed": "تعذّر الانضمام إلى البث",
@@ -5415,7 +5414,7 @@
   "game_stream_touch_direct": "التبديل إلى اللمس المباشر",
   "game_stream_touch_trackpad": "التبديل إلى لوحة اللمس",
   "game_stream_remote_launch_title": "السماح بالتشغيل عن بُعد",
-  "game_stream_remote_launch_hint": "يمكن للأجهزة المقترنة التي تعمل بـ Android بدء الألعاب من مكتبة هذا الحاسوب وبثّها",
+  "game_stream_remote_launch_hint": "يمكن للأجهزة المقترنة بدء الألعاب من مكتبة هذا الحاسوب وبثّها",
   "manga_reader_ocr_volume": "التعرّف على هذا المجلد",
   "manga_reader_ocr_queued": "في قائمة الانتظار",
   "manga_reader_ocr_unavailable_short": "لا يوجد محرك OCR · نزّل نموذجًا أو غيّر المحرك في إعدادات OCR",
@@ -6383,5 +6382,6 @@
   "game_stream_host_https_required": "The host has HTTPS turned off. Turn on encrypted connections in the interconnect settings of Fushi on Windows.",
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_library_off": "The host has no game library. Turn on the Games module in Fushi on Windows, then restart it.",
-  "game_stream_host_unauthorized": "The host rejected this device. Pair them again."
+  "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
+  "game_stream_tab": "Stream"
 }

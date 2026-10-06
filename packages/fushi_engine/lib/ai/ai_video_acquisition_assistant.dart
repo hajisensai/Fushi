@@ -212,6 +212,12 @@ Rules:
   season numbers, episode numbers, resolution or codec tags. Do not guess
   titles you are unsure of; give only what the user wrote in that case. Leave
   the list empty when no work is mentioned.
+- "category" is the medium, not the format: "anime" for any Japanese-style
+  animation, including anime theatrical films and anime specials; "movie" and
+  "tv" only for works that are not anime (live-action films / series, Western
+  cartoons). Asking for the films of an anime franchise ("all Doraemon
+  movies", "哆啦A梦剧场版") is "category": "anime" with "scope": "movies", never
+  "category": "movie". Omit it when the message does not make the medium clear.
 - "mode": only when the user explicitly chooses between one-off and following.
   "download" when they say they want just what is out now and do not want to
   follow new episodes (e.g. "just the existing episodes", "no need to follow",

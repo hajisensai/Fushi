@@ -19,6 +19,7 @@ List<String> buildSynchronizedVideoClipArgs({
   String? audioPath,
   int? audioStartMs,
   int audioStreamIndex = 0,
+  int audioChannels = 2,
   int maxWidth = 960,
   int fps = 24,
   bool decodeFromStart = false,
@@ -34,6 +35,17 @@ List<String> buildSynchronizedVideoClipArgs({
   // their remaining relative timestamps when they share that source timeline.
   final bool sharedTimeline =
       soundPath == videoPath && (audioStartMs ?? startMs) == startMs;
+  final Map<String, String> soundHeaders = audioPath == null
+      ? headers
+      : audioHeaders;
+  final String? soundPin = audioPath == null ? tlsPinSha256 : audioTlsPinSha256;
+  // Only reuse an input when its timeline AND access credentials match.
+  // This avoids a second demux/seek (and HTTP connection) for muxed sources.
+  final bool sharedInput =
+      sharedTimeline &&
+      soundPin == tlsPinSha256 &&
+      soundHeaders.length == headers.length &&
+      headers.entries.every((entry) => soundHeaders[entry.key] == entry.value);
   final String pts = sharedTimeline ? 'PTS' : 'PTS-STARTPTS';
   final String duration = ((endMs - startMs) / 1000).toStringAsFixed(3);
   List<String> input(
@@ -67,25 +79,23 @@ List<String> buildSynchronizedVideoClipArgs({
   return <String>[
     '-hide_banner', '-y',
     ...input(videoPath, startMs, headers, tlsPinSha256),
-    ...input(
-      soundPath,
-      audioStartMs ?? startMs,
-      audioPath == null ? headers : audioHeaders,
-      audioPath == null ? tlsPinSha256 : audioTlsPinSha256,
-    ),
+    if (!sharedInput)
+      ...input(soundPath, audioStartMs ?? startMs, soundHeaders, soundPin),
     '-map', '0:v:0',
     // Required audio map: missing/wrong tracks fail instead of silently making
     // another mute animation or exporting an unrelated default-language track.
-    '-map', '1:a:$audioStreamIndex',
+    '-map', '${sharedInput ? 0 : 1}:a:$audioStreamIndex',
     '-vf',
     'setpts=$pts,'
         '${cropFilter == null || cropFilter.isEmpty ? "" : "$cropFilter,"}'
+        'fps=$fps,'
         "scale=w='trunc(min($maxWidth,iw)/2)*2':h=-2,"
-        'fps=$fps,format=yuv420p',
+        'format=yuv420p',
     '-af', 'asetpts=$pts',
-    ...synchronizedClipCodecArgs(format),
-    '-sn', '-dn', '-map_metadata', '-1',
-    // No `-shortest`: both inputs are already bounded by their own `-t`, and on
+    ...synchronizedClipVideoArgs(format),
+    ...synchronizedClipAudioArgs(format, audioChannels: audioChannels),
+    '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1',
+    // No `-shortest`: every input is already bounded by its own `-t`, and on
     // FFmpeg 6.0 (Android / iOS ffmpeg-kit) its sync queue swallows every frame of
     // a raw ADTS input — the trimmed sentence `.aac` — so the clip came out with a
     // declared but empty audio track, exit code 0 (#1951; fixed upstream in 6.1).
@@ -161,16 +171,27 @@ List<String> synchronizedClipVideoArgs(MiningClipFormat format) =>
     };
 
 /// 各格式的音频编码参数：MP4 → AAC 128k，WebM → Opus 96k（WebM 只容纳 Opus/Vorbis）。
-List<String> synchronizedClipAudioArgs(MiningClipFormat format) =>
-    format == MiningClipFormat.mp4H264
-    ? const <String>['-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000']
-    : const <String>[
+List<String> synchronizedClipAudioArgs(
+  MiningClipFormat format, {
+  int audioChannels = 2,
+}) => format == MiningClipFormat.mp4H264
+    ? <String>[
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-ac',
+        '$audioChannels',
+        '-ar',
+        '48000',
+      ]
+    : <String>[
         '-c:a',
         'libopus',
         '-b:a',
         '96k',
         '-ac',
-        '2',
+        '$audioChannels',
         '-ar',
         '48000',
       ];
@@ -257,6 +278,7 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
   String? audioPath,
   int? audioStartMs,
   int audioStreamIndex = 0,
+  int audioChannels = 2,
   int maxWidth = 960,
   int fps = 24,
   bool decodeFromStart = false,
@@ -274,6 +296,7 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
       (audioStartMs ?? startMs) < 0 ||
       (decodeFromStart && (startMs != 0 || (audioStartMs ?? startMs) != 0)) ||
       audioStreamIndex < 0 ||
+      audioChannels < 1 ||
       maxWidth < 2 ||
       fps < 1 ||
       fps > 60) {
@@ -307,6 +330,7 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
             audioPath: audioPath,
             audioStartMs: audioStartMs,
             audioStreamIndex: audioStreamIndex,
+            audioChannels: audioChannels,
             maxWidth: maxWidth,
             fps: fps,
             decodeFromStart: decodeFromStart,
