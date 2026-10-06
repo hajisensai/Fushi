@@ -4,14 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/debug_log_page.dart';
 import 'package:fushi/src/pages/implementations/error_log_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/log_exporter.dart';
 
 // 守住「桌面端日志页有『另存为』按钮、移动端没有（仍有现成分享）」这条
 // 不变式。`showSaveLogAction` 读 dart:io 的 host 平台，无法在 widget 测试
 // 里 override，因此断言跟随当前 host：桌面 host 应渲染该按钮，移动 host 不应。
 // FushiIconButton 用 Semantics(label) 而非 Tooltip，故按图标定位。
-const IconData _kSaveIcon = Icons.save_alt_outlined;
-const IconData _kShareIcon = Icons.share_outlined;
+const IconData _kSaveIcon = FushiIcons.save;
+const IconData _kShareIcon = FushiIcons.share;
 
 void main() {
   setUp(() {
