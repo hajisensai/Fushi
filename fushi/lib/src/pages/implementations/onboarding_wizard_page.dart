@@ -1614,7 +1614,9 @@ class _OnboardingStepList extends StatelessWidget {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
-        tokens.spacing.card,
+        // 正文滚到浮动页头（含进度条）底下：顶部让出「状态栏 + 页头」。底部
+        // inset 已由向导在按钮行上方摘掉（BUG-2440），这里只补顶部。
+        tokens.spacing.card + MediaQuery.paddingOf(context).top,
         tokens.spacing.page,
         tokens.spacing.card,
       ),
