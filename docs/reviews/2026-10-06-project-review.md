@@ -232,3 +232,80 @@ BUG 对照：001→2980，002→2981，003→2984，004→2985，005→2986，00
 - 去重统计：核心 34 + 设置 4 + 滚动 2 + 扩展中未重跑的 26 + 最终复跑 24 = **90 项定向测试通过**。没有运行全仓测试或五平台/真实设备验收。
 - `git diff --cached --check` 通过。bug 索引检查的基线重复编号仍未解决；没有把它列为通过。
 - 最终建议顺序：合入这 12 类功能修复 → 复测最终集成版本的大字体/窗口缩放/触摸及键盘 → 修复查词主题热切换、连续重排竞态 → 收口渐隐等视觉细节。
+
+## 第四轮：集成版本复现与 M3 Expressive 对照
+
+### Scope
+
+- 固定审查基线：`4f11ba96759`。该合并提交已将上一轮修复 `45fc6d88b17` 纳入 CC 分支；本轮独立工作区快进到此处后固定审查，没有改 CC 活动工作区。
+- 复核 `535f251b960..4f11ba96759` 的存储配色、浮动工具栏、游戏标签、有声书面板、OCR 设置及模型迁移；三个子代理分别承担无障碍/路由、设置/排序、阅读器/查词。主代理核对官方规范、运行复现并汇总。
+- 新增显式执行的复现文件和报告，没有修改业务代码。本节的失败测试用于证明未修问题，不计入上一轮的 90 项通过，也不代表修复已完成。
+
+### Findings
+
+#### HBK-AUDIT-020 — Android 发现页搜索框触控高度不足
+
+- severity：P2；status：真实组件 widget 语义测试已复现；属于无障碍要求不符合。
+- 路径：`fushi/lib/src/utils/components/fushi_material_components.dart:1284,1360`、`fushi/lib/src/pages/implementations/discovery_header.dart:176`。
+- 根因：regular 搜索固定 40 高，手机发现页直接采用该布局，没有扩大搜索输入框的可点击区域。
+- 证据：390×844 Android 布局中，实际语义节点 bounds 为 `(20,374)-(370,414)`，即 **350×40**；`androidTapTargetGuideline` 要求至少 48×48，失败。只把日志明确命中的搜索框列为已证实，未把其他按钮的视觉尺寸推断成命中尺寸。
+- 影响：手机触摸目标偏小。官方允许精确鼠标场景使用更小目标，不能用此例一概判定桌面所有 40 高控件违规。[Android 无障碍规范](https://developer.android.com/guide/topics/ui/accessibility/apps)
+- 建议：触控布局提供至少 48 高的实际命中/语义区域；如保留 40 高外观，让布局为扩大的目标保留空间，避免相邻目标重叠。修后重跑 `fushi/test/widgets/discovery_m3_touch_targets_repro.dart`。
+
+#### HBK-AUDIT-021 — 查词制卡按钮交互态覆盖语义底色
+
+- severity：P2；status：CSS 层叠静态证据，未完成真实浏览器视觉复现。
+- 路径：`fushi/assets/popup/popup.css:2723–2725,2739–2760,2914–2934`。
+- 根因：未制卡按钮默认 primary/onPrimary；后置通用 hover、focus-visible、active 规则与默认底色选择器 specificity 同为 `(0,3,1)`，将 background-color 覆盖为 currentColor 的透明混色。前面的 header 状态规则只加 background-image，不能保住底色。
+- 影响：交互时原 primary 底色丢失，但图标仍为 onPrimary，破坏配对关系，存在可读性风险；尚未实测最终像素对比率，不宣称所有主题都低于某个比值。
+- 建议：通用规则排除带语义底色的 header 按钮，或为其显式保留 base color、仅叠加状态层；覆盖未制卡/duplicate/latest 与三个交互态。依据：[Material 颜色角色及配对](https://m3.material.io/styles/color/the-color-system)。
+
+#### HBK-AUDIT-022 — OCR 强调卡文字未使用配对前景
+
+- severity：P2；status：真实 ThemeNotifier 配置和 RenderParagraph 已复现；属于颜色角色使用不符合。
+- 路径：`fushi/lib/src/media/manga/manga_ocr_settings_section.dart:1473,1505,1514,1532`。
+- 根因：FushiCard 使用 secondaryContainer，标题/说明显式继承外层 textTheme 颜色，覆盖卡内 DefaultTextStyle 的 onSecondaryContainer。
+- 证据：真实可保存配置 seed=`0xFF6750A4`、surfaceColor=`0xFFFFFFFF`、brightness=dark；设置页和阅读器侧栏两例均实际得到 alpha≈0.8706 的黑字，而配对前景为浅色 RGB≈(0.9529,0.8549,1.0)。测试先断言该容器为深色，且 surface 前景为黑色；未用任意手造 ColorScheme 制造反例。
+- 影响：这种自定义主题下强调卡文字难以辨认；没有将其扩大为“默认深色主题也必然不合格”。本轮 `a1eef94face` 将已有侧栏卡样式扩大到独立设置页。
+- 建议：标题、说明和状态文字从卡片的配对前景派生，保留各自排版角色；不要直接沿用页面 onSurface。依据：[Material 颜色角色及配对](https://m3.material.io/styles/color/the-color-system)。验证：`fushi/test/media/manga/manga_ocr_model_card_color_repro.dart`。
+
+#### HBK-AUDIT-023 — 浮动 chrome 的透明度仍共用 spatial 弹簧
+
+- severity：P3；status：源码规范偏差/改进建议，不是已复现崩溃。
+- 路径：`fushi/lib/src/utils/components/fushi_floating_chrome.dart:663,926,1049`。
+- 根因：位移/缩放及透明度共用 spatial 曲线；透明度用 clamp 限幅，避免越界，却仍沿用空间运动的时间轨迹。
+- 建议：空间变化保留 spatial，透明度单独采用 effects，并共同响应减弱动态效果。官方将空间属性与颜色/透明度等 effects 区分；不把“所有动画必须有回弹”当成要求。[Material motion](https://m3.material.io/styles/motion)、[官方 MotionScheme](https://developer.android.com/reference/kotlin/androidx/compose/material3/MotionScheme)
+- 验证边界：本轮常规/减弱动画的嵌套 chrome 有限几何与稳定 body 用例均通过；此前 opacity 超范围问题已有 clamp 修复，本条不重复报该崩溃。
+
+### 已有发现的证据升级与更正
+
+- **HBK-AUDIT-007，P2**：当前紧凑工具栏高度是 **56**，更正早期交接中的 48。真实 FushiPageScaffold 双行标题在 text scale 1.0、1.3 通过，2.0 出现 **底部 RenderFlex 溢出 27 px**。建议按缩放后的文本自适应高度，并同步修正浮动 chrome 占位；不要通过禁用文字缩放掩盖问题。
+- **HBK-AUDIT-015，P2**：生产 JS 原函数在最小 DOM/style/RAF mock 中复现三项失败：暗→浅不还原、浅→暗不调色、浅色下重新调用现有调度器仍不还原。两个初始主题对照通过。升级为函数级运行复现，仍未做真实 WebView 热切换验收。建议保存原值并实现可逆调色，接入实际主题更新链路。
+- **HBK-AUDIT-016，P2**：真实 MihonManager + 内存 Drift，通过 gate 阻塞第一次写入；A/B→B/A 未完成时再次请求 A/B，漫画/视频两例最终 manager 顺序均为 B/A，丢失最后意图。失败发生于 manager 断言，后续持久化断言未执行，不将其写成独立落库实测。建议统一协调拖拽/菜单/下载量排序，串行应用最后意图并使用最新存储或完整写入；仅增加串行锁而仍按旧 row 跳写不足以修复。
+- **HBK-AUDIT-017，P2**：真实 MediaLibraryShell 中放入受控 Focus/PopScope 子页；切走后隐藏页仍多收到一次键盘事件，隐藏多选的 PopScope 仍消耗一次 back，两个用例均失败。已复现 shell 生命周期契约，尚未逐个真机验收完整书库/视频页；原页面路径及历史基线归属保持不变。建议可见性层统一控制焦点资格和返回注册。
+
+### M3E 未报错项及验收边界
+
+- 共享 expressive springs 参数与官方 Android token 一致：spatial fast/default/slow 为 damping/stiffness `0.6/800、0.8/380、0.8/200`；effects 为 `1/3800、1/1600、1/800`。因此不把共享弹簧数值列为不合规。[官方 motion tokens](https://raw.githubusercontent.com/material-components/material-components-android/master/lib/java/com/google/android/material/motion/res/values/tokens.xml)
+- FushiIconButtonControl 的 Material 外观可以是 40，但 padded 命中布局为 48；本轮没有把外观 40 误报为触控缺陷。自定义圆角、数据图配色、桌面密度不自动等于违反 M3E。
+- 存储环图与图例/列表使用同一排名映射，本轮未确认新的颜色含义错位。OCR 旧/未知模型键回退与各消费链一致，未确认新增迁移遗漏。有声书面板未找到新的确定性回归。
+- 排版按角色与可读性判断，不要求所有文字都改 display；文字对比应按实际前景合成、背景及字号测量，未做全应用对比率统计。[Material typography](https://m3.material.io/styles/typography/applying-type)
+- 本轮没有全应用逐页截图、真机触摸验收或五平台验证；因此结论是“存在明确不符合项”，不能出具全面 M3E 合格结论。
+
+### 验证与复现命令
+
+- Flutter 3.47.6，全部 Flutter 执行经 `dartvm.exe tool/heavy.dart` 机器级单槽位。第一组 10 例 **4 通过、6 失败**；颜色组 2 例 **0 通过、2 失败**。Node 5 例 **2 通过、3 失败**。共 17 例：6 个对照/边界通过，11 个未修问题断言失败，无测试编译失败。
+- Dart 文件以 `_repro.dart` 结尾，Node 文件在 `tool/review_repros/`，作为显式执行的待修复现，不接入默认测试发现；修复后应迁为正常回归测试。
+- 在 `fushi/` 执行 wrapper + `flutter test --no-pub --concurrency=1 test/widgets/discovery_m3_touch_targets_repro.dart test/widgets/fushi_floating_chrome_accessibility_review_repro.dart test/media/manga/mihon_manager_reorder_concurrency_repro.dart --reporter expanded`。
+- 颜色组同样通过 wrapper 显式执行 `test/media/manga/manga_ocr_model_card_color_repro.dart`；仓库根执行 `node --test tool/review_repros/popup_m3e_theme_transition.repro.mjs`。
+- 原始日志存放本地 `.codex-test/review-2026-10-06-round4/`，已复现项同步到本地忽略文件 `docs/REGRESSION_BUGS.md`。本轮没有重新跑完整 analyze；上一轮结果只适用于当时的修复提交。
+
+### 给 CC 的处理顺序及通知状态
+
+先修复 020/022 的触控与颜色、007 的文字溢出，再处理 016/017 的交互状态、015/021 的查词颜色；023 动效分离和019渐隐收尾。保持修改函数级范围，不以旧文件整体覆盖新工作。
+
+已确认 CC 合入上轮提交；本轮报告、复现与日志另行交接。现有实时通知通道此前无法连接目标会话，不能将持久交接文件更新表述为已收到或已读。
+
+### Next Scope
+
+在 CC 修复后的明确 HEAD 重跑上述契约，再做 Android 字体 2.0/触控和桌面键盘验收；真实 WebView 覆盖明暗双向热切换及制卡按钮三个交互态。有声书增加真实 controller、关闭跟随、章节边界和窄高窗口的运行验证。
