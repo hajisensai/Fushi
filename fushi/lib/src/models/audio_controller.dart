@@ -5,8 +5,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 
 class AudioController {
-  Stream<void> get playStream => _playController.stream;
-  final StreamController<void> _playController = StreamController.broadcast();
+  Stream<MediaPlayIntent> get playIntentStream => _playController.stream;
+  final StreamController<MediaPlayIntent> _playController =
+      StreamController.broadcast();
 
   Stream<Duration> get seekStream => _seekController.stream;
   final StreamController<Duration> _seekController =
@@ -63,7 +64,7 @@ class AudioController {
     try {
       _audioHandler = await ag.AudioService.init<FushiAudioHandler>(
         builder: () => FushiAudioHandler(
-          onPlayPause: () => _playController.add(null),
+          onPlayIntent: _playController.add,
           onSeek: (pos) => _seekController.add(pos),
           onRewind: () => _rewindController.add(null),
           onFastForward: () => _fastForwardController.add(null),
@@ -83,7 +84,7 @@ class AudioController {
     } catch (e) {
       debugPrint('[Fushi] AudioService.init failed (non-fatal): $e');
       _audioHandler = FushiAudioHandler(
-        onPlayPause: () => _playController.add(null),
+        onPlayIntent: _playController.add,
         onSeek: (pos) => _seekController.add(pos),
         onRewind: () => _rewindController.add(null),
         onFastForward: () => _fastForwardController.add(null),

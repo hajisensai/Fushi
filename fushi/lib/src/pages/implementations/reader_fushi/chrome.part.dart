@@ -1493,6 +1493,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
       // 位置（等价于「同章已 settle 时直接 scrollToSearchMatch」那条本就正常的路径）。
       onAfterCommit: () async {
         await _applyPendingPreciseLocate();
+        // BUG-2961：恢复重锚的锚是「恢复开始那一刻」的位置（音频跨章时即进章那一句）。
+        // 提交与它相隔的帧数没有上界——App 在后台时帧被冻结，提交积压到回前台才执行，
+        // 此时音频早已走远，提交把跟随音频的视口拽回旧句。重锚落定后视口归属交还给
+        // 跟随音频：正在跟随播放时重新投影到当前 cue（暂停 / 手动翻页 / 未跟随时不动）。
+        _audiobookController?.resyncReaderToAudio();
         await _refreshProgress();
       },
     );
