@@ -138,4 +138,52 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
   });
+  for (final bool glass in <bool>[false, true]) {
+    for (final bool rich in <bool>[false, true]) {
+      testWidgets(
+        '${glass ? 'Apple' : 'MD3'} empty ${rich ? 'rich' : 'plain'} tooltip leaves child interactive without a bubble',
+        (WidgetTester tester) async {
+          final SemanticsHandle semantics = tester.ensureSemantics();
+          addTearDown(semantics.dispose);
+          int taps = 0;
+          int triggers = 0;
+          await _pump(
+            tester,
+            FushiTooltip(
+              message: rich ? null : '',
+              richMessage: rich ? const TextSpan(text: '') : null,
+              triggerMode: TooltipTriggerMode.tap,
+              onTriggered: () => triggers++,
+              child: GestureDetector(
+                onTap: () => taps++,
+                child: const Text('empty-tooltip-anchor'),
+              ),
+            ),
+            glass: glass,
+          );
+          // 直接请求显示，避免子控件赢得 tap 手势后把空气泡回归藏住。
+          final Finder tooltip = find.byType(Tooltip);
+          if (tooltip.evaluate().isNotEmpty) {
+            expect(
+              tester.state<TooltipState>(tooltip).ensureTooltipVisible(),
+              isFalse,
+            );
+          }
+          await tester.tap(find.text('empty-tooltip-anchor'));
+          await tester.pumpAndSettle();
+          expect(taps, 1);
+          expect(triggers, 0);
+          expect(find.byType(GlassContainer), findsNothing);
+          expect(
+            tester
+                .getSemantics(find.text('empty-tooltip-anchor'))
+                .getSemanticsData()
+                .tooltip,
+            isEmpty,
+          );
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
 }
