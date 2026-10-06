@@ -189,7 +189,8 @@ void main() {
       expect(
         dispose,
         contains('_studyClock?.detach();'),
-        reason: 'dispose 是同步的：在这里 stop() 就是无人 await 的事务，'
+        reason:
+            'dispose 是同步的：在这里 stop() 就是无人 await 的事务，'
             '会与随后的 db.close() 互等（与阅读器 / PDF 的 dispose 同律）',
       );
       expect(dispose, isNot(contains('_studyClock?.stop()')));
@@ -205,7 +206,8 @@ void main() {
       expect(
         body,
         isNot(contains('mediaKey: book.bookKey')),
-        reason: 'SRT 书源的 bookKey 是 srt_books.uid，'
+        reason:
+            'SRT 书源的 bookKey 是 srt_books.uid，'
             '记岔了同一本书在统计中心会裂成两条',
       );
       expect(body, contains('mediaKind: kActivityMediaBook,'));
@@ -245,7 +247,6 @@ void main() {
     });
 
     const List<String> entries = <String>[
-      '  Future<void> _showAppearanceSheet({String? initialSubPage}) async {',
       '  Future<void> _openStatisticsCenter() async {',
       '  Future<void> _openAlignmentImportDialog(',
       '  Future<void> _openAudioImportDialog() async {',
@@ -261,7 +262,8 @@ void main() {
         expect(
           body,
           contains('_withStudyClockPaused('),
-          reason: '外观 / 导航 / 搜索 / 统计中心 / 导入 / 看图 / 画廊都不是阅读，'
+          reason:
+              '外观 / 导航 / 搜索 / 统计中心 / 导入 / 看图 / 画廊都不是阅读，'
               '压住期间必须停表',
         );
       });
@@ -276,9 +278,29 @@ void main() {
         '  void _openReadingStatistics() {',
         '\n  }\n',
       );
-      expect(body, contains('_presentSideSheet('));
+      expect(body, contains('_openReaderPanel(_kReaderPanelStatistics)'));
+      final String content = methodBody(
+        corpus,
+        'Widget _buildReaderPanelContent(',
+      );
+      expect(content, contains('onTogglePause: _toggleStudyClockManualPause,'));
+      final String hold = compactCode(
+        methodBody(corpus, 'void _syncPanelClockHold('),
+      );
+      expect(hold, contains('kind!=null&&kind!=_kReaderPanelStatistics'));
+      expect(hold, contains('if(want==_panelHoldsClock)return;'));
+      expect(hold, contains('_studyClockModalDepth+=want?1:-1;'));
+      expect(hold, contains('_syncStudyClockRunState()'));
+      final String panel = methodBody(corpus, 'Future<void> _openReaderPanel(');
+      expect(panel, contains('_syncPanelClockHold(kind)'));
+      expect(panel, contains('_syncPanelClockHold(notifier.value)'));
+      expect(panel, contains('notifier.addListener(onKindChanged)'));
+      expect(panel, contains('notifier.removeListener(onKindChanged)'));
+      expect(
+        panel.substring(panel.indexOf('finally')),
+        contains('_syncPanelClockHold(null)'),
+      );
       expect(body, isNot(contains('_withStudyClockPaused(')));
-      expect(body, contains('onTogglePause: _toggleStudyClockManualPause,'));
     });
 
     test('查词浮窗 / Anki 制卡（mining.part）不停表——那是阅读的一部分', () {
@@ -299,7 +321,8 @@ void main() {
         '\n  }\n',
       );
       // 2026-10-04 歌词覆盖层：正文在歌词层下面照常采样记账，门里不再有歌词态。
-      const String gate = 'if (_controller == null || _restoreInFlight) return;';
+      const String gate =
+          'if (_controller == null || _restoreInFlight) return;';
       final int gateIdx = body.indexOf(gate);
       expect(gateIdx, isNonNegative, reason: '重载在飞时瞬态 atEnd 会把本章剩余计入');
       expect(
@@ -341,7 +364,7 @@ void main() {
     test('外观面板关闭时也刷一次', () {
       final String body = _functionSource(
         corpus,
-        '  Future<void> _showAppearanceSheet({String? initialSubPage}) async {',
+        '  Future<void> _openReaderPanel(',
         '\n  }\n',
       );
       expect(
@@ -403,7 +426,8 @@ void main() {
       expect(
         dispose,
         contains('_studyClock?.detach();'),
-        reason: 'dispose 是同步的：停表必须走 detach（零 IO，攒下的写交给 '
+        reason:
+            'dispose 是同步的：停表必须走 detach（零 IO，攒下的写交给 '
             'ExitFlushRegistry.defer）；在 dispose 里直接落库 = 无人 await 的事务，'
             '与随后的 db.close() 互等',
       );
@@ -427,7 +451,10 @@ void main() {
         contains('ExitFlushRegistry.instance.defer(_flushPosition);'),
       );
       // 进程退出登记 _flushForExit（只落盘）：桌面点 X 不触发 dispose。
-      expect(pdf, contains('ExitFlushRegistry.instance.register(_flushForExit);'));
+      expect(
+        pdf,
+        contains('ExitFlushRegistry.instance.register(_flushForExit);'),
+      );
       final String forExit = _functionSource(
         pdf,
         '  Future<void> _flushForExit() async {',
