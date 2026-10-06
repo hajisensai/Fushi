@@ -16,6 +16,11 @@ import 'package:media_kit/src/player/native/core/native_library.dart';
 import 'package:vm_service/vm_service.dart' as vm;
 import 'package:vm_service/vm_service_io.dart';
 
+Future<void> _checkpoint(String message) async {
+  stdout.writeln(message);
+  await stdout.flush();
+}
+
 Future<void> _stopWorkers(vm.VmService service) async {
   final String? mainId = Service.getIsolateId(Isolate.current);
   if (mainId == null) {
@@ -43,15 +48,17 @@ Future<void> _stopWorkers(vm.VmService service) async {
       final Completer<void> exited = Completer<void>();
       exits[id] = exited;
       try {
+        await _checkpoint('WORKER KILL $id');
         await service.kill(id);
         // A successful kill request alone is not a termination barrier. Wait
         // until the worker has left FFI and emitted its IsolateExit event.
         await exited.future;
+        await _checkpoint('WORKER EXITED $id');
       } on vm.SentinelException {
         // The worker already exited between getVM and kill.
       }
     }
-    stdout.writeln('WORKERS EXITED');
+    await _checkpoint('WORKERS EXITED');
   } finally {
     await events.cancel();
     await service.streamCancel(vm.EventStreams.kIsolate);
@@ -62,16 +69,20 @@ Future<void> _owner(List<Object> arguments) async {
   final SendPort ready = arguments[0] as SendPort;
   final String library = arguments[1] as String;
   final ReceivePort commands = ReceivePort();
+  await _checkpoint('OWNER START / LIBRARY LOAD START');
   NativeLibrary.ensureInitialized(libmpv: library);
   final generated.MPV mpv = generated.MPV(DynamicLibrary.open(library));
+  await _checkpoint('LIBRARY LOADED / CREATE START');
   final Pointer<generated.mpv_handle> handle = await Initializer(mpv).create(
     (Pointer<generated.mpv_event> event) async {},
     options: <String, String>{'vo': 'null', 'ao': 'null', 'config': 'no'},
   );
+  await _checkpoint('CREATE RETURNED');
   ready.send(<Object>[handle.address, commands.sendPort]);
   await commands.first;
+  await _checkpoint('DISPOSE START');
   Initializer(mpv).dispose(handle);
-  stdout.writeln('DISPOSE RETURNED');
+  await _checkpoint('DISPOSE RETURNED');
 }
 
 Future<void> main(List<String> arguments) async {
@@ -80,11 +91,13 @@ Future<void> main(List<String> arguments) async {
     throw ArgumentError('Expected <libmpv path> <kill|dispose>');
   }
   final String mode = arguments[1];
+  await _checkpoint('PROBE START $mode');
   final ServiceProtocolInfo info = await Service.controlWebServer(enable: true);
   final Uri server = info.serverUri!;
   final vm.VmService service = await vmServiceConnectUri(
     server.replace(scheme: 'ws', path: '${server.path}ws').toString(),
   );
+  await _checkpoint('VM SERVICE READY');
   final ReceivePort ready = ReceivePort();
   final ReceivePort exited = ReceivePort();
   final Future<dynamic> exitNotification = exited.first;
@@ -93,6 +106,7 @@ Future<void> main(List<String> arguments) async {
     arguments[0],
   ], onExit: exited.sendPort);
   final List<Object> created = (await ready.first) as List<Object>;
+  await _checkpoint('OWNER READY / $mode REQUEST START');
   final Pointer<generated.mpv_handle> handle =
       Pointer<generated.mpv_handle>.fromAddress(created[0] as int);
   if (mode == 'kill') {
@@ -101,7 +115,7 @@ Future<void> main(List<String> arguments) async {
     (created[1] as SendPort).send('dispose');
   }
   await exitNotification;
-  stdout.writeln('OWNER EXITED');
+  await _checkpoint('OWNER EXITED');
   await _stopWorkers(service);
   await service.dispose();
 
@@ -109,11 +123,12 @@ Future<void> main(List<String> arguments) async {
   // libmpv coalesces notifications while an earlier wakeup is pending. Reset
   // that state after the owner is gone so this explicitly exercises a fresh
   // wakeup, rather than accidentally passing with an already-signalled queue.
+  await _checkpoint('EVENT DRAIN START');
   while (mpv.mpv_wait_event(handle, 0).ref.event_id !=
       generated.mpv_event_id.MPV_EVENT_NONE) {}
-  stdout.writeln('EVENTS DRAINED');
+  await _checkpoint('EVENTS DRAINED / WAKEUP START');
   mpv.mpv_wakeup(handle);
-  stdout.writeln('WAKEUP RETURNED');
+  await _checkpoint('WAKEUP RETURNED / QUIT START');
   final Pointer<Utf8> quit = 'quit'.toNativeUtf8();
   try {
     final int result = mpv.mpv_command_string(handle, quit.cast());
@@ -123,8 +138,8 @@ Future<void> main(List<String> arguments) async {
   } finally {
     calloc.free(quit);
   }
-  stdout.writeln('QUIT RETURNED');
-  stdout.writeln('PASS $mode');
+  await _checkpoint('QUIT RETURNED');
+  await _checkpoint('PASS $mode');
   // End this disposable process after the assertions; no Flutter renderer
   // exists here, and the OS reclaims the retained native resources.
   exit(0);
