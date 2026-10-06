@@ -514,8 +514,8 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: active ? cs.secondaryContainer : cs.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(20),
+            color: active ? cs.secondaryContainer : cs.surfaceContainer,
+            borderRadius: FushiM3eShape.cardRadius,
           ),
           child: Text(
             label,

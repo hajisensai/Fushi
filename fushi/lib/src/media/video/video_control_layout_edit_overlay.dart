@@ -9,8 +9,6 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart'
     show videoM3eFloatingColor;
 import 'package:fushi/src/media/video/video_side_panel.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
-    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
