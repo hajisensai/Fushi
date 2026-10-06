@@ -18,59 +18,59 @@ void main() {
           int resets = 0;
           await tester.pumpWidget(
             MaterialApp(
+              // 与生产一致，缩放包住路由的紧约束画布。Scaffold.body 给松约束，
+              // 会让 FittedBox 按半幅 canvas 收小，测到的其实是未放大的按钮。
+              builder: (BuildContext context, Widget? child) =>
+                  FushiAppUiScale(scale: 2, child: child!),
               home: Scaffold(
-                body: FushiAppUiScale(
-                  scale: 2,
-                  child: Builder(
-                    builder: (BuildContext context) {
-                      final FushiDesignTokens tokens = FushiDesignTokens.of(
+                body: Builder(
+                  builder: (BuildContext context) {
+                    final FushiDesignTokens tokens = FushiDesignTokens.of(
+                      context,
+                    );
+                    return MediaQuery(
+                      data: MediaQuery.of(
                         context,
-                      );
-                      return MediaQuery(
-                        data: MediaQuery.of(
-                          context,
-                        ).copyWith(textScaler: TextScaler.linear(textScale)),
-                        child: SingleChildScrollView(
-                          padding: EdgeInsets.symmetric(
-                            horizontal:
-                                tokens.spacing.page + tokens.spacing.gap,
-                          ),
-                          child: StatefulBuilder(
-                            builder:
-                                (BuildContext context, StateSetter setState) =>
-                                    SettingsModifiedRow(
-                                      modified: selected != 0,
-                                      onReset: () => setState(() {
-                                        selected = 0;
-                                        resets++;
-                                      }),
-                                      child: AdaptiveSettingsPickerRow<int>(
-                                        title: 'Immersive mode',
-                                        icon: FushiIcons.undo,
-                                        showIcon: true,
-                                        selected: selected,
-                                        options:
-                                            const <
-                                              AdaptiveSettingsPickerOption<int>
-                                            >[
-                                              AdaptiveSettingsPickerOption(
-                                                value: 0,
-                                                label: 'Shortcut and lookup',
-                                              ),
-                                              AdaptiveSettingsPickerOption(
-                                                value: 1,
-                                                label: 'Lookup only',
-                                              ),
-                                            ],
-                                        onChanged: (int value) =>
-                                            setState(() => selected = value),
-                                      ),
-                                    ),
-                          ),
+                      ).copyWith(textScaler: TextScaler.linear(textScale)),
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: tokens.spacing.page + tokens.spacing.gap,
                         ),
-                      );
-                    },
-                  ),
+                        child: StatefulBuilder(
+                          builder:
+                              (
+                                BuildContext context,
+                                StateSetter setState,
+                              ) => SettingsModifiedRow(
+                                modified: selected != 0,
+                                onReset: () => setState(() {
+                                  selected = 0;
+                                  resets++;
+                                }),
+                                child: AdaptiveSettingsPickerRow<int>(
+                                  title: 'Immersive mode',
+                                  icon: FushiIcons.undo,
+                                  showIcon: true,
+                                  selected: selected,
+                                  options:
+                                      const <AdaptiveSettingsPickerOption<int>>[
+                                        AdaptiveSettingsPickerOption(
+                                          value: 0,
+                                          label: 'Shortcut and lookup',
+                                        ),
+                                        AdaptiveSettingsPickerOption(
+                                          value: 1,
+                                          label: 'Lookup only',
+                                        ),
+                                      ],
+                                  onChanged: (int value) =>
+                                      setState(() => selected = value),
+                                ),
+                              ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
