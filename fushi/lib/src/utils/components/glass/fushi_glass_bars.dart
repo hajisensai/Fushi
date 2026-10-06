@@ -1520,6 +1520,18 @@ class FushiShellActionsSlot extends ChangeNotifier {
 /// 结构恒定：[title] 为 null（外壳这一 tab 不显示大标题）时只是高度 0，
 /// 两套设计系统、展开 / 收起都是同一棵树，切换不重挂外壳下面的子树。
 /// 墨水屏与「减弱动态效果」下 [fushiMotionDuration] 归零，直接切换。
+/// [FushiShellLargeTitleBar] 的裁剪框：行盒向下多放 16（胶囊投影）。
+class _ShellTitleShadowClipper extends CustomClipper<Rect> {
+  const _ShellTitleShadowClipper();
+
+  @override
+  Rect getClip(Size size) =>
+      Rect.fromLTRB(-16, 0, size.width + 16, size.height + 16);
+
+  @override
+  bool shouldReclip(_ShellTitleShadowClipper oldClipper) => false;
+}
+
 class FushiShellLargeTitleBar extends StatelessWidget {
   const FushiShellLargeTitleBar({
     required this.title,
@@ -1601,7 +1613,11 @@ class FushiShellLargeTitleBar extends StatelessWidget {
         final double smallOpacity = ((t - 0.5) * 2).clamp(0.0, 1.0);
         return SizedBox(
           height: height,
+          // 只裁上 / 左 / 右（收起途中大标题溢出行高）：下沿放出 16 给 M3E
+          // 标题胶囊的悬浮投影（向下 3 + 模糊 8）。整行裁平会把胶囊下沿和
+          // 投影一刀切掉，叠在内容上时看得见一道缺口（2026-10-06 用户截图）。
           child: ClipRect(
+            clipper: const _ShellTitleShadowClipper(),
             child: ColoredBox(
               color: scrolledColor.withValues(alpha: scrolledColor.a * t),
               // 标题区与右侧动作是同一行：两份标题叠在 Expanded 里，动作是行尾

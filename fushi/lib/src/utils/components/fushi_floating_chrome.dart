@@ -356,6 +356,12 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     }
     final double outer = FushiFloatingChromeInset.of(context);
     final double travel = outer + _chromeHeight;
+    // 嵌套的工具区（页面自己的搜索 / 筛选行叠在外壳页签之下）不再画第二层
+    // 遮罩：两层「从视口顶边起、顶端不透明」的渐隐叠在一起，就是库页往下滚
+    // 时页签下面那一整块白底（2026-10-06 用户截图）。顶部可读性只归最外层。
+    final bool nested =
+        context.findAncestorStateOfType<_FushiFloatingChromeOverlayState>() !=
+        null;
     final Widget chrome = Focus(
       canRequestFocus: false,
       skipTraversal: true,
@@ -391,27 +397,28 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                 // 照常可见——曾经整个工具区高度都是 0.92 的实色段，库页往下一滚
                 // 顶部两三百 px 一整块白底把内容盖死（2026-10-06 用户截图）。
                 // 没滚动时不画（工具区下面就是第一行内容）。
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: AnimatedOpacity(
-                    opacity: controller.contentUnderTop ? 1 : 0,
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    child: FushiTopFadeScrim(
-                      solidHeight: 0,
-                      fadeExtent:
-                          outer +
-                          shown *
-                              math.min(
-                                _chromeHeight,
-                                kFushiTopScrimChromeReach,
-                              ) +
-                          kFushiTopFadeExtent,
-                      topOpacity: 1,
+                if (!nested)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: AnimatedOpacity(
+                      opacity: controller.contentUnderTop ? 1 : 0,
+                      duration: fushiMotionDuration(context, FushiMotion.short),
+                      child: FushiTopFadeScrim(
+                        solidHeight: 0,
+                        fadeExtent:
+                            outer +
+                            shown *
+                                math.min(
+                                  _chromeHeight,
+                                  kFushiTopScrimChromeReach,
+                                ) +
+                            kFushiTopFadeExtent,
+                        topOpacity: 1,
+                      ),
                     ),
                   ),
-                ),
                 Positioned(
                   top: outer,
                   left: 0,
