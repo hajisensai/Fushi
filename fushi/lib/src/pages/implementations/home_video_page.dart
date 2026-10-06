@@ -409,6 +409,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// `_lastRemoteState`）。失败态不覆盖缓存。
   _RemoteVideoState? _lastRemoteState;
 
+  /// [_remoteEpisodesMirroredLocally] 的记忆：本地全量列表、远端清单、合集归属表
+  /// 三者都按对象身份比对（各自换代都是整体替换），build 期不重复解析文件名。
+  List<VideoBookRow>? _mirrorMemoLocal;
+  List<RemoteVideoInfo>? _mirrorMemoRemote;
+  Map<String, int>? _mirrorMemoCollections;
+  Set<String> _mirrorMemo = const <String>{};
+
   /// 条目自动刮削调度器（懒建，随页面 dispose 停）。见 [_maybeAutoScrape]。
   VideoScrapeAutoService? _autoScrape;
 
@@ -1539,6 +1546,31 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       key: RemoteLibraryCacheKeys.videos,
       forceRefresh: forceRefresh,
       fetch: source.listRemoteVideos,
+    );
+  }
+
+  /// 远端清单里「本机同一合集已有同一集」的条目 id（BUG-2978）。判据是共享的
+  /// [remoteEpisodesMirroredLocally]——合集归属取库页折叠用的同一张主合集表。
+  Set<String> _remoteEpisodesMirroredLocally(
+    List<VideoBookRow> local,
+    _RemoteVideoState? state,
+  ) {
+    final List<RemoteVideoInfo> remote =
+        state?.videos ?? const <RemoteVideoInfo>[];
+    final Map<String, int> collections = _primaryCollectionByEntry;
+    if (identical(local, _mirrorMemoLocal) &&
+        identical(remote, _mirrorMemoRemote) &&
+        identical(collections, _mirrorMemoCollections)) {
+      return _mirrorMemo;
+    }
+    _mirrorMemoLocal = local;
+    _mirrorMemoRemote = remote;
+    _mirrorMemoCollections = collections;
+    return _mirrorMemo = remoteEpisodesMirroredLocally(
+      local: local,
+      remote: remote,
+      collectionOfEntry: (String entryKey) =>
+          collections[MediaKind.video.compositeKey(entryKey)],
     );
   }
 
@@ -3941,9 +3973,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             }
             // TODO-2486：远端条目与本地同规则过年份/看完状态筛选（远端无刮削
             // 资料 = 未知年份桶；无完成标记按未完成、进度取 positionMs）。
+            // 本机已有同一集的远端条目不出占位卡（BUG-2978：与合集详情页
+            // [loadCollectionEpisodeSlots] 的归并同一判据，库页合集卡的
+            // 「已看完 x/N」与详情页集数一致）。判重看本地**全量**列表，
+            // 本地那集被筛选/搜索藏起来时远端副本也不该顶上来。
+            final Set<String> mirroredRemote = _remoteEpisodesMirroredLocally(
+              all,
+              snapState ?? _lastRemoteState,
+            );
             final List<RemoteVideoInfo> remoteVideos = <RemoteVideoInfo>[
               for (final RemoteVideoInfo v in _visibleRemoteVideos(
                   snapState ?? _lastRemoteState, filter))
+                if (!mirroredRemote.contains(v.id))
                 // BUG-2327：远端占位卡与本地卡同口径过搜索（此前只裁本地列表，
                 // 搜索时远端占位卡照样满屏）。
                 // 远端占位与本地同规则过系列归属筛选，判据同样取**在系列墙上的
