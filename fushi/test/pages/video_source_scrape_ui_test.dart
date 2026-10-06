@@ -878,9 +878,14 @@ void main() {
     // 搜索框预填的是那条待确认作品名，用户可直接搜。
     expect(runner.queries, <String>['Doraemon Movies']);
 
-    await tester.tap(find.byKey(
+    // M3E 手动指定弹窗（页眉图标 + 说明 + 搜索框 + 分段候选卡）在 800×600 下
+    // 正文要滚：结果卡落在正文滚动区下沿、被动作行盖住。先滚进来再点。
+    final Finder candidate = find.byKey(
       const ValueKey<String>('video-source-candidate-anidb-tv-65733'),
-    ));
+    );
+    await tester.ensureVisible(candidate);
+    await tester.pumpAndSettle();
+    await tester.tap(candidate);
     await tester.pumpAndSettle();
 
     expect(runner.boundTitles, <String>['Doraemon Movies']);
