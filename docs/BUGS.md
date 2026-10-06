@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2779 条。点号进各自文件。
+> 共 2780 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3034](bugs/BUG-3034-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
+| [BUG-3033](bugs/BUG-3033-pending-ai-outcome-scroll.md) | ✅ | ✅ | AI识别长结论在待确认清空或刷新时溢出 |
 | [BUG-3031](bugs/BUG-3031-manual-download-reduced-motion.md) | ✅ | ✅ | 手动下载切换输入时零时长尺寸动画在布局中触发重入 |
 | [BUG-3028](bugs/BUG-3028-delete-confirm-footer-scrolls.md) | ✅ | ✅ | 删除确认框的「删除」按钮在矮窗口里被滚出可视区 |
 | [BUG-3024](bugs/BUG-3024-settings-reset-narrow-row.md) | ✅ | ✅ | 设置恢复默认按钮挤压窄面板标题导致溢出 |
