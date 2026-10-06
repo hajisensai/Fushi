@@ -1823,7 +1823,7 @@ void FloatingLyricWindow::Render() {
   const float controls_h =
       ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip) +
       ScaleForDpi(kControlsTopDip) +
-      (ToolbarLabelsActive(width) ? ScaleForDpi(kToolbarLabelHeightDip) : 0.0f);
+      (ToolbarLabelsActive(static_cast<float>(width)) ? ScaleForDpi(kToolbarLabelHeightDip) : 0.0f);
   // Both modes reserve controls_h at the top: the lyric strip for its transport
   // row, the hook text window for its thin Luna-style hover toolbar
   // (the text sits below the strip so the toolbar never overlaps it).
