@@ -1005,33 +1005,14 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
             ),
           ] else if (lastError != null && lastError.isNotEmpty) ...<Widget>[
             const SizedBox(height: 10),
-            // 出错：error tonal 色块内联（不再只是一行红字）。
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: fushiCardToneColors(context, FushiCardTone.error)
-                        ?.container ??
-                    cs.surfaceContainerHigh,
-                borderRadius: FushiM3eShape.smallRadius,
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  FushiIcon(FushiIcons.error, size: 18, color: cs.error),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      lastError,
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: type.bodySmall.copyWith(
-                        color: fushiCardToneColors(context, FushiCardTone.error)
-                                ?.onContainer ??
-                            cs.error,
-                      ),
-                    ),
-                  ),
-                ],
+            // 出错：error tonal 色块内联（共享提示横幅，不再只是一行红字）。
+            FushiInlineNotice(
+              severity: FushiNoticeSeverity.error,
+              icon: FushiIcons.error,
+              message: Text(
+                lastError,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
