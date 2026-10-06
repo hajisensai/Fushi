@@ -438,7 +438,12 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       child: RepaintBoundary(
         child: FocusTraversalGroup(
           child: ListenableBuilder(
-            listenable: ctrl,
+            // 睡眠定时也要驱动重建：暂停时控制器不通知，按钮的剩余分钟 / 到点
+            // 熄灭靠定时器自己的通知。
+            listenable: Listenable.merge(<Listenable>[
+              ctrl,
+              AudiobookSleepTimer.of(ctrl),
+            ]),
             builder: (BuildContext context, Widget? _) {
               return ReaderLyricsPlayerOverlay(
                 key: const ValueKey<String>('fushi_lyrics_overlay'),

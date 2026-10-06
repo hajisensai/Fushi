@@ -1374,40 +1374,92 @@ const List<double> kReaderAudiobookSpeedPresets = <double>[
 
 /// 有声书睡眠定时：到点暂停。计时器挂在控制器上（[Expando]），关掉侧板照样走；
 /// 换书（换控制器）自然失效。
-class AudiobookSleepTimer {
-  AudiobookSleepTimer._(this._controller);
+///
+/// 是 [Listenable]：开 / 关 / 到点，以及运行中剩余分钟每跨一分钟都通知一次。
+/// 歌词覆盖层只随控制器通知重建，暂停时控制器不再通知，之前睡眠按钮的剩余分钟
+/// 提示就停在开定时那一刻；暂停中到点时 `pause()` 也不会再通知，按钮一直亮着
+/// 「剩余 1 分钟」。现在覆盖层同时监听它。
+class AudiobookSleepTimer extends ChangeNotifier {
+  AudiobookSleepTimer._(this._onExpire);
+
+  /// 测试用：不挂控制器，到点只回调 [onExpire]。
+  @visibleForTesting
+  AudiobookSleepTimer.forTesting({required VoidCallback onExpire})
+      : _onExpire = onExpire;
 
   static final Expando<AudiobookSleepTimer> _byController =
       Expando<AudiobookSleepTimer>('audiobookSleepTimer');
 
   static AudiobookSleepTimer of(AudiobookPlayerController controller) =>
-      _byController[controller] ??= AudiobookSleepTimer._(controller);
+      _byController[controller] ??=
+          AudiobookSleepTimer._(() => unawaited(controller.pause()));
 
-  final AudiobookPlayerController _controller;
+  /// 当前时刻（测试注入假时钟）。
+  @visibleForTesting
+  static DateTime Function() now = DateTime.now;
+
+  final VoidCallback _onExpire;
   Timer? _timer;
+  Timer? _minuteTick;
   DateTime? _endsAt;
 
   /// 剩余分钟（向上取整，至少 1）；没开定时 = null。
   int? get remainingMinutes {
+    final int? ms = _remainingMs;
+    return ms == null ? null : (ms / 60000).ceil();
+  }
+
+  int? get _remainingMs {
     final DateTime? end = _endsAt;
     if (end == null) return null;
-    final int seconds = end.difference(DateTime.now()).inSeconds;
-    return seconds <= 0 ? null : (seconds / 60).ceil();
+    final int ms = end.difference(now()).inMilliseconds;
+    return ms <= 0 ? null : ms;
   }
 
   /// 开 [minutes] 分钟定时；null = 关闭。
   void start(int? minutes) {
+    _cancel();
+    if (minutes != null && minutes > 0) {
+      final Duration d = Duration(minutes: minutes);
+      _endsAt = now().add(d);
+      _timer = Timer(d, () {
+        _cancel();
+        _onExpire();
+        notifyListeners();
+      });
+      _scheduleMinuteTick();
+    }
+    notifyListeners();
+  }
+
+  void _cancel() {
     _timer?.cancel();
     _timer = null;
+    _minuteTick?.cancel();
+    _minuteTick = null;
     _endsAt = null;
-    if (minutes == null || minutes <= 0) return;
-    final Duration d = Duration(minutes: minutes);
-    _endsAt = DateTime.now().add(d);
-    _timer = Timer(d, () {
-      _timer = null;
-      _endsAt = null;
-      unawaited(_controller.pause());
+  }
+
+  /// 在剩余分钟（向上取整）下一次变小的那一刻通知。
+  void _scheduleMinuteTick() {
+    _minuteTick?.cancel();
+    final int? ms = _remainingMs;
+    if (ms == null) return;
+    final int intoMinute = ms % 60000;
+    // 恰在整分上：再过一整分钟读数才变；否则过完这一分钟的零头就变。
+    final int delay = (intoMinute == 0 ? 60000 : intoMinute) + 1;
+    if (delay >= ms) return; // 最后一分钟交给到点回调。
+    _minuteTick = Timer(Duration(milliseconds: delay), () {
+      _minuteTick = null;
+      notifyListeners();
+      _scheduleMinuteTick();
     });
+  }
+
+  @override
+  void dispose() {
+    _cancel();
+    super.dispose();
   }
 }
 
