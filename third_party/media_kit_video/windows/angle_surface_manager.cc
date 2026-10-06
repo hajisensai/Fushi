@@ -8,6 +8,7 @@
 #include "angle_surface_manager.h"
 
 #include <iostream>
+#include <string>
 
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3d11.lib")
@@ -120,6 +121,21 @@ void ANGLESurfaceManager::Create() {
 }
 
 void ANGLESurfaceManager::CleanUp(bool release_context) {
+  // HIBIKI FORK (HDR): GL objects / the EGLImage reference the textures that
+  // are about to be released; drop them with the context current (the
+  // destructor path reaches here without one).
+  if ((output_image_ != EGL_NO_IMAGE_KHR || linear_texture_ != 0 ||
+       encode_program_ != 0) &&
+      display_ != EGL_NO_DISPLAY && context_ != EGL_NO_CONTEXT &&
+      surface_ != EGL_NO_SURFACE) {
+    MakeCurrent(true);
+  }
+  ReleaseHalfFloatTargets();
+  if (release_context && encode_program_ != 0 &&
+      context_ != EGL_NO_CONTEXT) {
+    glDeleteProgram(encode_program_);
+    encode_program_ = 0;
+  }
   if (release_context) {
     if (display_ != EGL_NO_DISPLAY && surface_ != EGL_NO_SURFACE) {
       eglReleaseTexImage(display_, surface_, EGL_BACK_BUFFER);
@@ -258,7 +274,9 @@ bool ANGLESurfaceManager::CreateD3DTexture() {
   auto d3d11_texture2D_desc = D3D11_TEXTURE2D_DESC{0};
   d3d11_texture2D_desc.Width = width_;
   d3d11_texture2D_desc.Height = height_;
-  d3d11_texture2D_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  // HIBIKI FORK (HDR): half-float carries extended-range values to Flutter.
+  d3d11_texture2D_desc.Format = half_float_ ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                                            : DXGI_FORMAT_B8G8R8A8_UNORM;
   d3d11_texture2D_desc.MipLevels = 1;
   d3d11_texture2D_desc.ArraySize = 1;
   d3d11_texture2D_desc.SampleDesc.Count = 1;
@@ -459,11 +477,32 @@ bool ANGLESurfaceManager::CreateAndBindEGLSurface() {
     if (result == EGL_FALSE || count == 0) {
       FAIL("eglChooseConfig");
     }
+    // HIBIKI FORK (HDR): prefer OpenGL ES 3.0 (what mpv's own
+    // --gpu-context=angle asks for first): libmpv only understands a GL_RGBA16F
+    // target framebuffer there. ES 2.0 stays the fallback.
     context_ = eglCreateContext(display_, config_, EGL_NO_CONTEXT,
-                                kEGLContextAttributes);
+                                kEGLContextAttributesES3);
+    if (context_ == EGL_NO_CONTEXT) {
+      context_ = eglCreateContext(display_, config_, EGL_NO_CONTEXT,
+                                  kEGLContextAttributes);
+    }
     if (context_ == EGL_NO_CONTEXT) {
       FAIL("eglCreateContext");
     }
+  }
+  if (half_float_) {
+    // The context only needs *a* surface to be current; rendering goes to
+    // framebuffers wrapping the half-float texture (see SetHalfFloat).
+    const EGLint pbuffer_attributes[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+    surface_ = eglCreatePbufferSurface(display_, config_, pbuffer_attributes);
+    if (surface_ == EGL_NO_SURFACE) {
+      FAIL("eglCreatePbufferSurface");
+    }
+    MakeCurrent(true);
+    if (!CreateHalfFloatTargets()) {
+      FAIL("CreateHalfFloatTargets");
+    }
+    return true;
   }
   EGLint buffer_attributes[] = {
       EGL_WIDTH,          width_,         EGL_HEIGHT,         height_,
@@ -483,4 +522,289 @@ bool ANGLESurfaceManager::CreateAndBindEGLSurface() {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// HIBIKI FORK (HDR in the Flutter compositor). See |SetHalfFloat|.
+
+namespace {
+
+constexpr GLenum kRGBA16F = 0x881A;        // GL_RGBA16F (ES 3.0)
+constexpr GLenum kHalfFloat = 0x140B;      // GL_HALF_FLOAT (ES 3.0)
+constexpr GLenum kHalfFloatOes = 0x8D61;   // GL_HALF_FLOAT_OES (ES 2.0)
+
+bool HasExtension(const char* list, const char* name) {
+  if (list == nullptr) {
+    return false;
+  }
+  const std::string haystack = std::string(" ") + list + " ";
+  return haystack.find(std::string(" ") + name + " ") != std::string::npos;
+}
+
+bool IsGles3() {
+  const char* version =
+      reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  return version != nullptr && std::string(version).find("OpenGL ES 3") !=
+                                   std::string::npos;
+}
+
+// Linear BT.2020 light (libmpv: 1.0 = 203 nit reference white) -> extended
+// sRGB: BT.709 primaries without clamping (wide-gamut colours become negative
+// components), scaled so 203 nits lands on SDR white, sign-preserving sRGB
+// OETF. GLSL matrices are column-major.
+constexpr char kEncodeVertexShader[] = R"(
+attribute vec2 a_position;
+varying vec2 v_uv;
+void main() {
+  v_uv = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}
+)";
+
+constexpr char kEncodeFragmentShader[] = R"(
+precision highp float;
+varying vec2 v_uv;
+uniform sampler2D u_texture;
+uniform float u_scale;
+const mat3 kBt2020ToBt709 = mat3(
+    1.6604910, -0.1245505, -0.0181508,
+   -0.5876411,  1.1328999, -0.1005789,
+   -0.0728499, -0.0083494,  1.1187297);
+vec3 oetf(vec3 l) {
+  vec3 a = abs(l);
+  vec3 lo = a * 12.92;
+  vec3 hi = 1.055 * pow(a, vec3(1.0 / 2.4)) - 0.055;
+  return sign(l) * mix(lo, hi, step(vec3(0.0031308), a));
+}
+void main() {
+  vec3 linear709 = kBt2020ToBt709 * texture2D(u_texture, v_uv).rgb * u_scale;
+  gl_FragColor = vec4(oetf(linear709), 1.0);
+}
+)";
+
+GLuint CompileShader(GLenum type, const char* source) {
+  GLuint shader = glCreateShader(type);
+  glShaderSource(shader, 1, &source, nullptr);
+  glCompileShader(shader);
+  GLint ok = GL_FALSE;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+  if (ok != GL_TRUE) {
+    glDeleteShader(shader);
+    return 0;
+  }
+  return shader;
+}
+
+}  // namespace
+
+bool ANGLESurfaceManager::SetHalfFloat(bool half_float) {
+  if (half_float == half_float_) {
+    return true;
+  }
+  ::WaitForSingleObject(mutex_, INFINITE);
+  half_float_ = half_float;
+  // Diagnostics: FUSHI_HDR_PROBE=1 logs a few pixels of the first HDR frame.
+  probe_pending_ = half_float && ::GetEnvironmentVariableA(
+                                     "FUSHI_HDR_PROBE", nullptr, 0) > 0;
+  bool ok = true;
+  try {
+    Create();
+  } catch (...) {
+    ok = false;
+  }
+  if (!ok && half_float) {
+    std::cout << "media_kit: ANGLESurfaceManager: half-float output "
+                 "unavailable; staying on 8-bit."
+              << std::endl;
+    half_float_ = false;
+    try {
+      Create();
+      ok = false;  // Request not honoured, 8-bit state restored.
+    } catch (...) {
+      ok = false;
+    }
+  }
+  MakeCurrent(false);
+  ::ReleaseMutex(mutex_);
+  return ok && half_float_ == half_float;
+}
+
+bool ANGLESurfaceManager::CreateHalfFloatTargets() {
+  const char* egl_extensions = eglQueryString(display_, EGL_EXTENSIONS);
+  const char* gl_extensions =
+      reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS));
+  const bool gles3 = IsGles3();
+  if (!shared_display_uses_our_device_ ||
+      !HasExtension(egl_extensions, "EGL_ANGLE_image_d3d11_texture") ||
+      !HasExtension(gl_extensions, "GL_OES_EGL_image") ||
+      !(HasExtension(gl_extensions, "GL_EXT_color_buffer_half_float") ||
+        HasExtension(gl_extensions, "GL_EXT_color_buffer_float"))) {
+    // The EGLImage must come from the device ANGLE renders on.
+    return false;
+  }
+  auto create_image = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
+      eglGetProcAddress("eglCreateImageKHR"));
+  auto image_target_texture =
+      reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+          eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+  if (create_image == nullptr || image_target_texture == nullptr) {
+    return false;
+  }
+
+  // Output: the shared half-float texture, written through an EGLImage.
+  const EGLint image_attributes[] = {EGL_NONE};
+  output_image_ = create_image(
+      display_, EGL_NO_CONTEXT, EGL_D3D11_TEXTURE_ANGLE,
+      reinterpret_cast<EGLClientBuffer>(internal_d3d_11_texture_2D_.Get()),
+      image_attributes);
+  if (output_image_ == EGL_NO_IMAGE_KHR) {
+    return false;
+  }
+  glGenTextures(1, &output_texture_);
+  glBindTexture(GL_TEXTURE_2D, output_texture_);
+  image_target_texture(GL_TEXTURE_2D, output_image_);
+  glGenFramebuffers(1, &output_framebuffer_);
+  glBindFramebuffer(GL_FRAMEBUFFER, output_framebuffer_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         output_texture_, 0);
+  bool complete =
+      glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+
+  // Linear: what libmpv renders into.
+  glGenTextures(1, &linear_texture_);
+  glBindTexture(GL_TEXTURE_2D, linear_texture_);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  if (gles3) {
+    glTexImage2D(GL_TEXTURE_2D, 0, kRGBA16F, width_, height_, 0, GL_RGBA,
+                 kHalfFloat, nullptr);
+  } else {
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width_, height_, 0, GL_RGBA,
+                 kHalfFloatOes, nullptr);
+  }
+  glGenFramebuffers(1, &linear_framebuffer_);
+  glBindFramebuffer(GL_FRAMEBUFFER, linear_framebuffer_);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         linear_texture_, 0);
+  complete = complete && glCheckFramebufferStatus(GL_FRAMEBUFFER) ==
+                             GL_FRAMEBUFFER_COMPLETE;
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+
+  if (!complete || !EnsureEncodeProgram()) {
+    ReleaseHalfFloatTargets();
+    return false;
+  }
+  return true;
+}
+
+void ANGLESurfaceManager::ReleaseHalfFloatTargets() {
+  if (linear_framebuffer_ != 0) {
+    glDeleteFramebuffers(1, &linear_framebuffer_);
+    linear_framebuffer_ = 0;
+  }
+  if (linear_texture_ != 0) {
+    glDeleteTextures(1, &linear_texture_);
+    linear_texture_ = 0;
+  }
+  if (output_framebuffer_ != 0) {
+    glDeleteFramebuffers(1, &output_framebuffer_);
+    output_framebuffer_ = 0;
+  }
+  if (output_texture_ != 0) {
+    glDeleteTextures(1, &output_texture_);
+    output_texture_ = 0;
+  }
+  if (output_image_ != EGL_NO_IMAGE_KHR) {
+    auto destroy_image = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(
+        eglGetProcAddress("eglDestroyImageKHR"));
+    if (destroy_image != nullptr) {
+      destroy_image(display_, output_image_);
+    }
+    output_image_ = EGL_NO_IMAGE_KHR;
+  }
+}
+
+bool ANGLESurfaceManager::EnsureEncodeProgram() {
+  if (encode_program_ != 0) {
+    return true;
+  }
+  GLuint vertex = CompileShader(GL_VERTEX_SHADER, kEncodeVertexShader);
+  GLuint fragment = CompileShader(GL_FRAGMENT_SHADER, kEncodeFragmentShader);
+  if (vertex == 0 || fragment == 0) {
+    if (vertex != 0) glDeleteShader(vertex);
+    if (fragment != 0) glDeleteShader(fragment);
+    return false;
+  }
+  GLuint program = glCreateProgram();
+  glAttachShader(program, vertex);
+  glAttachShader(program, fragment);
+  glBindAttribLocation(program, 0, "a_position");
+  glLinkProgram(program);
+  glDeleteShader(vertex);
+  glDeleteShader(fragment);
+  GLint linked = GL_FALSE;
+  glGetProgramiv(program, GL_LINK_STATUS, &linked);
+  if (linked != GL_TRUE) {
+    glDeleteProgram(program);
+    return false;
+  }
+  encode_program_ = program;
+  encode_texture_location_ = glGetUniformLocation(program, "u_texture");
+  encode_scale_location_ = glGetUniformLocation(program, "u_scale");
+  return true;
+}
+
+void ANGLESurfaceManager::ProbeHalfFloatPixels(float scale) {
+  const GLint xs[] = {static_cast<GLint>(width_ / 4),
+                      static_cast<GLint>(width_ * 3 / 4)};
+  const GLint y = static_cast<GLint>(height_ / 2);
+  const struct {
+    const char* name;
+    GLuint framebuffer;
+  } targets[] = {{"linear", linear_framebuffer_},
+                 {"encoded", output_framebuffer_}};
+  for (const auto& target : targets) {
+    glBindFramebuffer(GL_FRAMEBUFFER, target.framebuffer);
+    for (GLint x : xs) {
+      GLfloat p[4] = {};
+      glReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, p);
+      std::cout << "media_kit: HDR probe " << target.name << " (" << x << ","
+                << y << ") = " << p[0] << " " << p[1] << " " << p[2] << " "
+                << p[3] << " scale=" << scale << " glError=" << glGetError()
+                << std::endl;
+    }
+  }
+}
+
+void ANGLESurfaceManager::EncodeLinearToOutput(float scale) {
+  static const GLfloat kQuad[] = {-1.0f, -1.0f, 1.0f, -1.0f,
+                                  -1.0f, 1.0f,  1.0f, 1.0f};
+  glBindFramebuffer(GL_FRAMEBUFFER, output_framebuffer_);
+  glViewport(0, 0, width_, height_);
+  glDisable(GL_SCISSOR_TEST);
+  glDisable(GL_BLEND);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_STENCIL_TEST);
+  glDisable(GL_CULL_FACE);
+  glUseProgram(encode_program_);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, linear_texture_);
+  glUniform1i(encode_texture_location_, 0);
+  glUniform1f(encode_scale_location_, scale);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, kQuad);
+  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  if (probe_pending_) {
+    probe_pending_ = false;
+    ProbeHalfFloatPixels(scale);
+  }
+  // Leave libmpv a clean slate for its next render.
+  glDisableVertexAttribArray(0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glUseProgram(0);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }

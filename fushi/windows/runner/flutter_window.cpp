@@ -4318,8 +4318,65 @@ void FlutterWindow::RegisterHdrVideoHostChannel() {
           }));
           return;
         }
+        if (method == "compositorHdrSupported") {
+          result->Success(
+              flutter::EncodableValue(ResolveViewSetHdrOutput() != nullptr));
+          return;
+        }
+        if (method == "setCompositorHdrOutput") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          bool enabled = false;
+          double sdr_white_nits = 80.0;
+          if (args != nullptr) {
+            auto it = args->find(flutter::EncodableValue("enabled"));
+            if (it != args->end()) {
+              if (const bool* v = std::get_if<bool>(&it->second)) {
+                enabled = *v;
+              }
+            }
+            it = args->find(flutter::EncodableValue("sdrWhiteNits"));
+            if (it != args->end()) {
+              if (const double* v = std::get_if<double>(&it->second)) {
+                sdr_white_nits = *v;
+              }
+            }
+          }
+          result->Success(flutter::EncodableValue(SetCompositorHdrOutput(
+              enabled, static_cast<float>(sdr_white_nits))));
+          return;
+        }
         result->NotImplemented();
       });
+}
+
+// HDR inside Flutter's own swap chain (ci/patches/flutter-engine): resolved
+// at runtime so the runner keeps working on a stock engine, which simply does
+// not export the symbol.
+FlutterWindow::ViewSetHdrOutputFn FlutterWindow::ResolveViewSetHdrOutput() {
+  static const ViewSetHdrOutputFn fn = [] {
+    HMODULE engine = ::GetModuleHandleW(L"flutter_windows.dll");
+    return engine == nullptr
+               ? nullptr
+               : reinterpret_cast<ViewSetHdrOutputFn>(
+                     ::GetProcAddress(engine, "FlutterDesktopViewSetHdrOutput"));
+  }();
+  return fn;
+}
+
+bool FlutterWindow::SetCompositorHdrOutput(bool enabled,
+                                           float sdr_white_nits) {
+  const ViewSetHdrOutputFn set_hdr_output = ResolveViewSetHdrOutput();
+  if (set_hdr_output == nullptr || !flutter_controller_) {
+    return false;
+  }
+  FlutterDesktopPluginRegistrarRef registrar =
+      flutter_controller_->engine()->GetRegistrarForPlugin(
+          "FushiCompositorHdrOutput");
+  FlutterDesktopViewRef view =
+      registrar != nullptr ? FlutterDesktopPluginRegistrarGetView(registrar)
+                           : nullptr;
+  return view != nullptr && set_hdr_output(view, enabled, sdr_white_nits);
 }
 
 void FlutterWindow::RegisterMagpieChannel() {

@@ -519,6 +519,14 @@ class VideoPlayerController extends ChangeNotifier
   /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
   final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
 
+  /// 合成器内 HDR 是否激活：视频留在 Flutter 纹理里（FP16 extended sRGB），Flutter
+  /// 自己的交换链出 FP16 scRGB（打了 `ci/patches/flutter-engine` 补丁的引擎）。与
+  /// [hdrHostActive] 互斥；不需要透明底色，界面与视频在同一张画布、同一次 present。
+  final ValueNotifier<bool> hdrCompositorActive = ValueNotifier<bool>(false);
+
+  /// 字幕 / 弹幕层要不要做 HDR 亮度归一（BUG-2951）：两条 HDR 路径都要。
+  bool get hdrOutputActive => hdrHostActive.value || hdrCompositorActive.value;
+
   /// 主窗所在显示器的最近一次 runner 回报（每次重判现读）。页面据它与
   /// [hdrHostActive] 派生字幕 / 弹幕层的 HDR 亮度系数（[hdrGraphicsWhiteScale]）。
   final ValueNotifier<HdrDisplayInfo> hdrDisplayInfo =
@@ -582,6 +590,16 @@ class VideoPlayerController extends ChangeNotifier
   /// 直通位清掉（不拆窗、不改 VO——它的 Player 随页面弹出时一起释放）；旧控制器
   /// dispose 时也只有仍是 owner 才拆窗，否则会拆掉新主人的窗。
   static VideoPlayerController? _hdrHostOwner;
+
+  /// 引擎的 HDR 输出按窗口（view）开关，同样只有一份：语义与 [_hdrHostOwner] 相同，
+  /// 新控制器接管，旧控制器 dispose 时只有仍是 owner 才关引擎 HDR。
+  static VideoPlayerController? _hdrCompositorOwner;
+
+  /// 引擎是否带合成器内 HDR（runner 解析补丁导出符号的结果，进程内不变，缓存）。
+  static bool? _compositorHdrSupported;
+
+  /// 合成器内 HDR 当前下发给引擎 / 纹理 / mpv 的亮度参数；显示器变化时重下发。
+  CompositorHdrTarget? _compositorTarget;
 
   /// TODO-1297：缓冲态变化订阅（始终挂，非诊断专用）。首开就绪判据
   /// [isReadyForFirstPaint] 依赖「缓冲结束」翻真，而缓冲结束可能不伴随宽高/播放态
@@ -2112,7 +2130,11 @@ class VideoPlayerController extends ChangeNotifier
         VideoDiagLog.levelByName(log.level.trim().toLowerCase()) ??
         VideoDiagLevel.info;
     if (!videoDiagEnabledFor(category, level)) return;
-    videoDiag(category, level, redactAacsRelayUrls(redactAppNativeProxySecrets(log.text.trim())));
+    videoDiag(
+      category,
+      level,
+      redactAacsRelayUrls(redactAppNativeProxySecrets(log.text.trim())),
+    );
   }
 
   /// 着色器「对比原画」旁路态：true 时临时清空 libmpv 着色器（看原画），但**保留**
@@ -2417,7 +2439,9 @@ class VideoPlayerController extends ChangeNotifier
       // 新一集打成失败。本文件其余 8 处原生下发都用双判据，同理。
       _errorSub = player.stream.error.listen((String message) {
         if (!identical(_player, player)) return; // 旧 Player 的迟到错误不算数。
-        onPlaybackError?.call(redactAacsRelayUrls(redactAppNativeProxySecrets(message)));
+        onPlaybackError?.call(
+          redactAacsRelayUrls(redactAppNativeProxySecrets(message)),
+        );
       });
     }
     // 下面 8 处连续原生 FFI 下发（`open` / 网络缓存 / `setSubtitleTrack(no)` / 字幕抑制
@@ -2498,7 +2522,8 @@ class VideoPlayerController extends ChangeNotifier
       await nativePlayer.setProperty('log-file', '');
       if (!_isCurrentLoad(player, loadToken)) return;
     } else if (!hadProtectedAacsSession &&
-        _nativeMpvLogFile != null && _nativeMpvLogFile!.isNotEmpty) {
+        _nativeMpvLogFile != null &&
+        _nativeMpvLogFile!.isNotEmpty) {
       await nativePlayer.setProperty('log-file', _nativeMpvLogFile!);
       if (!_isCurrentLoad(player, loadToken)) return;
       await nativePlayer.setProperty('msg-level', 'all=v');
@@ -2528,7 +2553,8 @@ class VideoPlayerController extends ChangeNotifier
     unawaited(_closeAacsSessionsExcept(aacsSession));
     if (!aacsSession.hasProtectedStreams &&
         hadProtectedAacsSession &&
-        _nativeMpvLogFile != null && _nativeMpvLogFile!.isNotEmpty) {
+        _nativeMpvLogFile != null &&
+        _nativeMpvLogFile!.isNotEmpty) {
       await nativePlayer.setProperty('log-file', _nativeMpvLogFile!);
       if (!_isCurrentLoad(player, loadToken)) return;
       await nativePlayer.setProperty('msg-level', 'all=v');
@@ -3767,14 +3793,112 @@ class VideoPlayerController extends ChangeNotifier
       '[hdr-host] eval mode=${_hdrOutputMode.name} '
       'display=$displayHdr source=$_hdrSourceIsHdr '
       'dolbyVision=$_hdrSourceIsDolbyVision want=$want '
-      'active=${hdrHostActive.value}',
+      'active=${hdrHostActive.value} '
+      'compositor=${hdrCompositorActive.value}',
     );
+    // Preferred: HDR inside Flutter's own swap chain (patched engine). Dolby
+    // Vision P5 needs libplacebo's RPU reshaping, which only the gpu-next host
+    // window has on Windows; the texture renderer (gl_video) would show the
+    // inverted IPT colours (BUG-2691).
+    final bool useCompositor =
+        want && !_hdrSourceIsDolbyVision && await _isCompositorHdrSupported();
+    if (!identical(_player, player)) return;
+    if (useCompositor) {
+      if (hdrHostActive.value) await _exitHdrHost(player);
+      if (!identical(_player, player)) return;
+      await _enterOrUpdateHdrCompositor(player, display);
+      return;
+    }
+    if (hdrCompositorActive.value) await _exitHdrCompositor(player);
+    if (!identical(_player, player)) return;
     if (want == hdrHostActive.value) return;
     if (want) {
       await _enterHdrHost(player);
     } else {
       await _exitHdrHost(player);
     }
+  }
+
+  Future<bool> _isCompositorHdrSupported() async {
+    return _compositorHdrSupported ??= await _hdrChannel
+        .compositorHdrSupported();
+  }
+
+  /// 进入（或按新显示器参数重下发）合成器内 HDR：引擎交换链 → 视频纹理 → mpv 目标。
+  /// 任何一步做不到就整体撤回并记成「不支持」，交还宿主窗路径重判。
+  Future<void> _enterOrUpdateHdrCompositor(
+    Player player,
+    HdrDisplayInfo display,
+  ) async {
+    final CompositorHdrTarget target = compositorHdrTarget(display);
+    if (hdrCompositorActive.value && target == _compositorTarget) return;
+    final bool engineOn = await _hdrChannel.setCompositorHdrOutput(
+      enabled: true,
+      sdrWhiteNits: target.engineSdrWhiteNits,
+    );
+    if (!identical(_player, player)) return;
+    final PlatformVideoController? platform = _videoController?.notifier.value;
+    // The texture switches libmpv's render target in the same render-thread
+    // step (see PlatformVideoController.setHdrOutput).
+    final bool textureOn =
+        engineOn &&
+        platform != null &&
+        await platform.setHdrOutput(
+          enabled: true,
+          referenceWhiteNits: target.referenceWhiteNits,
+          targetPeakNits: target.targetPeakNits,
+        );
+    if (!identical(_player, player)) return;
+    if (!textureOn) {
+      debugPrint(
+        '[hdr-compositor] unavailable (engine=$engineOn texture=$textureOn); '
+        'falling back to the host window',
+      );
+      if (engineOn) {
+        await _hdrChannel.setCompositorHdrOutput(
+          enabled: false,
+          sdrWhiteNits: kScRgbWhiteNits,
+        );
+      }
+      _compositorHdrSupported = false;
+      unawaited(_evaluateHdrOutput());
+      return;
+    }
+    final VideoPlayerController? previous = _hdrCompositorOwner;
+    if (previous != null && !identical(previous, this)) {
+      previous._releaseHdrCompositorOwnership();
+    }
+    _hdrCompositorOwner = this;
+    _compositorTarget = target;
+    hdrCompositorActive.value = true;
+    notifyListeners();
+    debugPrint('[hdr-compositor] enter $target');
+  }
+
+  Future<void> _exitHdrCompositor(Player player) async {
+    await _videoController?.notifier.value?.setHdrOutput(
+      enabled: false,
+      referenceWhiteNits: kMpvReferenceWhiteNits,
+      targetPeakNits: 0,
+    );
+    if (!identical(_player, player)) return;
+    hdrCompositorActive.value = false;
+    _compositorTarget = null;
+    notifyListeners();
+    if (identical(_hdrCompositorOwner, this)) {
+      _hdrCompositorOwner = null;
+      await _hdrChannel.setCompositorHdrOutput(
+        enabled: false,
+        sdrWhiteNits: kScRgbWhiteNits,
+      );
+    }
+    debugPrint('[hdr-compositor] exit');
+  }
+
+  /// 被另一个控制器接管引擎 HDR：只清自己的位，引擎开关归新主人。
+  void _releaseHdrCompositorOwnership() {
+    hdrCompositorActive.value = false;
+    notifyListeners();
   }
 
   Future<void> _enterHdrHost(Player player) async {
@@ -4689,6 +4813,17 @@ class VideoPlayerController extends ChangeNotifier
       hdrHostActiveGlobal.value = false;
       unawaited(_hdrChannel.destroy());
     }
+    // 合成器内 HDR：纹理随 Player 一起释放，只需把引擎的 HDR 输出关回 8-bit。
+    hdrCompositorActive.value = false;
+    if (identical(_hdrCompositorOwner, this)) {
+      _hdrCompositorOwner = null;
+      unawaited(
+        _hdrChannel.setCompositorHdrOutput(
+          enabled: false,
+          sdrWhiteNits: kScRgbWhiteNits,
+        ),
+      );
+    }
     unawaited(_bufferingReadySub?.cancel());
     _bufferingReadySub = null;
     unawaited(_durationReadySub?.cancel());
@@ -4735,10 +4870,12 @@ class VideoPlayerController extends ChangeNotifier
     final List<AacsMediaSession> retired = _aacsSessions
         .where((AacsMediaSession session) => !identical(session, retained))
         .toList();
-    await Future.wait(retired.map((AacsMediaSession session) async {
-      await session.close();
-      _aacsSessions.remove(session);
-    }));
+    await Future.wait(
+      retired.map((AacsMediaSession session) async {
+        await session.close();
+        _aacsSessions.remove(session);
+      }),
+    );
   }
 
   /// TODO-1212：可 await 的文件句柄释放（[MediaHandleRegistry] 迁移前调用）。
