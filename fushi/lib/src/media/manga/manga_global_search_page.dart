@@ -169,15 +169,17 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           onClear: _searchController.clear,
         ),
       ),
-      body: _buildBody(),
+      // 页头浮在正文上（extendBodyBehindHeader 默认开）：正文用 body 子树里的
+      // context 构建，才读得到脚手架下发的顶部让位。
+      body: Builder(builder: _buildBody),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(BuildContext context) {
     // 2026-10 体验优化：无源 / 未搜索两种占位统一 FushiPlaceholderMessage。
     if (_sources().isEmpty) {
       final VoidCallback? onOpenSources = widget.onOpenSources;
-      return FushiPlaceholderMessage(
+      final Widget placeholder = FushiPlaceholderMessage(
         icon: Icons.travel_explore_outlined,
         message: t.manga_global_search_no_sources,
         action: onOpenSources == null
@@ -193,11 +195,15 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
                 label: Text(t.manga_global_search_open_sources),
               ),
       );
+      return SafeArea(bottom: false, child: placeholder);
     }
     if (!_searched) {
-      return FushiPlaceholderMessage(
-        icon: Icons.search,
-        message: t.manga_global_search_prompt,
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          icon: Icons.search,
+          message: t.manga_global_search_prompt,
+        ),
       );
     }
     return ListView.builder(
@@ -205,7 +211,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       // 补出手势条那一段，否则静止时被压住。
       padding: withBottomSafeInset(
         context,
-        const EdgeInsets.symmetric(vertical: 8),
+        EdgeInsets.only(top: 8 + MediaQuery.paddingOf(context).top, bottom: 8),
       ),
       itemCount: _runs.length,
       itemBuilder: (BuildContext context, int index) =>
