@@ -370,7 +370,8 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
    ① 页眉是平的 surface，工具排是一条 surface-container 全圆角的浮动工具栏（40px 图标钮，
       自动滚动是切换钮：选中 = secondary-container + 圆形形变成圆角方）；
    ② 时轴偏移是两组相连按钮组（组内相邻边小圆角、外侧全圆角）+ 独立的重置钮；
-   ③ 当前句是 secondary-container 大圆角块，时间戳是 assist chip（label-medium）；
+   ③ 当前句是 secondary-container 大圆角块，时间戳是无描边的 surface-container-high 胶囊 chip（label-medium，
+      与 app chip 同形：全胶囊、柔和填充、无描边）；
    ④ 按压：弹簧缩放 + 圆角收拢；减弱动态效果时只留颜色变化。
    抽屉嵌入（html.fushi-embed）的尺寸规格（30/32/34px 触摸档）不动，尺寸类规则都带 :not(.fushi-embed)。 */
 :root:not([data-style="glass"]) body {
@@ -429,44 +430,15 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
   padding: 0;
 }
 
-:root:not([data-style="glass"]) :is(.toolbar button, .hdr-fold) {
-  border: 0;
-  border-radius: var(--md-sys-shape-corner-full);
-  background: transparent;
-  background-image: none;
-  box-shadow: none;
-  color: var(--md-sys-color-on-surface-variant);
-  transition:
-    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
-    color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
-    border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial),
-    transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
-}
+/* 工具排钮 / 折叠钮的形态（透明底标准图标按钮、自动滚动是切换钮：选中 = secondary-container +
+   圆形形变成圆角方）与工具栏菜单 / 设置页的图标按钮同一份，在 material.css「标准图标按钮」。 */
 
-:root:not([data-style="glass"]) :is(.toolbar button, .hdr-fold):hover {
-  border-color: transparent;
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
-  color: var(--md-sys-color-on-surface);
-}
-
-/* 切换钮（自动滚动）选中：secondary-container，圆形形变成圆角方（M3E toggle icon button）。 */
-:root:not([data-style="glass"]) .toolbar button.is-on,
-:root:not([data-style="glass"]) .toolbar button.is-on:hover {
-  border-radius: var(--md-sys-shape-corner-medium);
-  background-color: var(--md-sys-color-secondary-container);
-  color: var(--md-sys-color-on-secondary-container);
-}
-
-:root:not([data-style="glass"]) .toolbar button.is-on:hover {
-  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
-}
-
-:root:not([data-style="glass"]) :is(.toolbar button, .offset-row button, .hdr-fold, .timestamp):active {
+:root:not([data-style="glass"]) :is(.offset-row button, .timestamp):active {
   border-radius: var(--md-sys-shape-corner-small);
   transform: scale(0.92);
 }
 
-:root:not([data-style="glass"]) :is(.toolbar button, .offset-row button, .hdr-fold, .timestamp):focus-visible {
+:root:not([data-style="glass"]) :is(.offset-row button, .timestamp):focus-visible {
   outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
   outline-offset: 2px;
   box-shadow: none;
@@ -588,9 +560,9 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
 :root:not([data-style="glass"]) .timestamp {
   min-width: 52px;
   padding: 0 8px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
-  background: transparent;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: var(--md-sys-color-surface-container-high);
   background-image: none;
   box-shadow: none;
   color: var(--md-sys-color-on-surface-variant);
@@ -607,8 +579,8 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
 :root:not([data-style="glass"]):not(.fushi-embed) .timestamp { min-height: 32px; }
 
 :root:not([data-style="glass"]) .timestamp:hover {
-  border-color: var(--md-sys-color-outline-variant);
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+  border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high));
 }
 
 :root:not([data-style="glass"]) .subtitle-row.is-current .timestamp {
@@ -617,13 +589,8 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
   color: var(--md-sys-color-on-secondary-container);
 }
 
-/* 底部 toast：M3 snackbar（inverse-surface）。 */
+/* 底部 toast：M3 snackbar 的颜色 / 形状与设置页同一份（material.css），这里只补弹簧入场。 */
 :root:not([data-style="glass"]) .toast {
-  border: 0;
-  border-radius: var(--md-sys-shape-corner-small);
-  background: var(--md-sys-color-inverse-surface);
-  color: var(--md-sys-color-inverse-on-surface);
-  box-shadow: var(--md-sys-elevation-level3);
   transition:
     opacity var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
     transform var(--md-sys-motion-spring-default-spatial-duration) var(--md-sys-motion-spring-default-spatial);

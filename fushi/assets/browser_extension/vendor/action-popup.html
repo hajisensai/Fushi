@@ -111,7 +111,7 @@
       color: var(--fushi-on-primary); background: var(--fushi-primary); font-size: 11px; font-weight: 700;
     }
     .hp-gen { background: var(--fushi-primary); color: var(--fushi-on-primary); }
-    .hp-gen:hover { filter: brightness(1.08); }
+    :root[data-style="glass"] .hp-gen:hover { filter: brightness(1.08); }
     /* 生成按钮图标随状态机 data-mode 切换：取消 = ×，进行中 = 沙漏，其余 = 播放。 */
     .hp-gen-icon { display: inline-grid; }
     .hp-gen-icon > .msr-slot { grid-area: 1 / 1; display: none; }
@@ -163,69 +163,16 @@
       font-weight: var(--md-sys-typescale-weight-emphasized);
       letter-spacing: 0;
     }
-    :root:not([data-style="glass"]) .hp-shell .hp-icon-btn { color: var(--md-sys-color-on-surface-variant); }
-    :root:not([data-style="glass"]) .hp-shell .hp-icon-btn:hover {
-      color: var(--md-sys-color-on-surface);
-      background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-icon-btn:focus-visible {
-      outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
-      outline-offset: 2px;
-    }
-    /* 连接卡：实色 surface-container；好 = primary-container，警示 / 失败 = 错误色调。 */
-    :root:not([data-style="glass"]) .hp-shell .hp-connection {
-      border: 0;
-      border-radius: var(--md-sys-shape-corner-extra-large);
-      background: var(--md-sys-color-surface-container);
-      background-image: none;
-      color: var(--md-sys-color-on-surface);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection:hover {
-      background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container));
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection-icon {
-      color: var(--md-sys-color-on-surface-variant);
-      background: var(--md-sys-color-surface-container-highest);
-    }
+    /* 连接卡 / 自更新提示的色块（按 data-tone 选语义容器）与设置页连接卡同一份，在 ../material.css
+       「语义 tonal 色块」；这里只管字阶。 */
     :root:not([data-style="glass"]) .hp-shell .hp-connection-title {
       font-size: var(--md-sys-typescale-title-small-size);
       line-height: var(--md-sys-typescale-title-small-line-height);
       font-weight: var(--md-sys-typescale-weight-emphasized);
     }
     :root:not([data-style="glass"]) .hp-shell .hp-connection-detail {
-      color: var(--md-sys-color-on-surface-variant);
       font-size: var(--md-sys-typescale-body-small-size);
       line-height: var(--md-sys-typescale-body-small-line-height);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="good"] {
-      background: var(--md-sys-color-primary-container);
-      color: var(--md-sys-color-on-primary-container);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="good"] .hp-connection-icon {
-      color: var(--md-sys-color-on-primary);
-      background: var(--md-sys-color-primary);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="good"] :is(.hp-connection-detail, .hp-connection-recheck) {
-      color: color-mix(in oklch, var(--md-sys-color-on-primary-container) 78%, transparent);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="danger"] {
-      background: color-mix(in oklch, var(--md-sys-color-error) 16%, var(--md-sys-color-surface-container-lowest));
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="danger"] .hp-connection-icon {
-      color: var(--md-sys-color-on-error);
-      background: var(--md-sys-color-error);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="warn"] {
-      background: color-mix(in oklch, var(--fushi-warn) 16%, var(--md-sys-color-surface-container-lowest));
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-connection[data-tone="warn"] .hp-connection-icon {
-      color: var(--md-sys-color-surface-container-lowest);
-      background: var(--fushi-warn);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-update {
-      border: 0;
-      border-radius: var(--md-sys-shape-corner-large);
-      background: color-mix(in oklch, var(--fushi-warn) 16%, var(--md-sys-color-surface-container-lowest));
     }
     /* 快捷开关：M3E 分段列表（material.css 给分段形状与开关），这里补字阶与图标色。 */
     :root:not([data-style="glass"]) .hp-shell .hp-toggle {
@@ -240,49 +187,17 @@
       outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
       outline-offset: -3px;
     }
-    /* 按钮：M3E 中号按钮（56 高，大圆角），按下圆角收成中等 + 弹簧回弹。 */
-    :root:not([data-style="glass"]) .hp-shell :is(.hp-side-panel, .hp-gen) {
-      min-height: 48px;
-      padding: 10px 20px;
-      font-size: var(--md-sys-typescale-label-large-size);
-      line-height: var(--md-sys-typescale-label-large-line-height);
-      font-weight: var(--md-sys-typescale-weight-emphasized);
-      border-radius: var(--md-sys-shape-corner-full);
-      box-shadow: none;
-      transition: background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects), color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects), border-radius var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial), transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-side-panel {
-      color: var(--md-sys-color-on-secondary-container);
-      background: var(--md-sys-color-secondary-container);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-side-panel:hover {
-      background: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-gen:not(:disabled) {
-      color: var(--md-sys-color-on-primary);
-      background: var(--md-sys-color-primary);
-    }
-    :root:not([data-style="glass"]) .hp-shell .hp-gen:not(:disabled):hover {
-      filter: none;
-      background: color-mix(in oklch, var(--md-sys-color-on-primary) var(--md-sys-state-hover-opacity), var(--md-sys-color-primary));
-    }
+    /* 按钮：两颗整宽按钮挂 .text-button（字幕侧边栏 = tonal）/ .primary-button（开始生成 = filled），
+       胶囊形态、按压形变、悬停 / 禁用态全在 ../material.css「② 按钮」，与设置页同一份；这里只补生成
+       按钮的取消态（error filled）与连接卡的按压形变。 */
     :root:not([data-style="glass"]) .hp-shell .hp-gen[data-mode="cancel"]:not(:disabled) {
       color: var(--md-sys-color-on-error);
       background: var(--md-sys-color-error);
     }
-    :root:not([data-style="glass"]) .hp-shell .hp-gen:disabled {
-      color: color-mix(in oklch, var(--md-sys-color-on-surface) 38%, transparent);
-      background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-disabled-container-opacity), transparent);
-    }
-    :root:not([data-style="glass"]) .hp-shell :is(.hp-side-panel, .hp-gen:not(:disabled), .hp-connection, .hp-icon-btn):active {
-      border-radius: var(--md-sys-shape-corner-medium);
-      transform: scale(0.96);
+    :root:not([data-style="glass"]) .hp-shell .hp-gen[data-mode="cancel"]:not(:disabled):hover {
+      background: color-mix(in oklch, var(--md-sys-color-on-error) var(--md-sys-state-hover-opacity), var(--md-sys-color-error));
     }
     :root:not([data-style="glass"]) .hp-shell .hp-connection:active { border-radius: var(--md-sys-shape-corner-large); transform: scale(0.98); }
-    :root:not([data-style="glass"]) .hp-shell :is(.hp-side-panel, .hp-gen):focus-visible {
-      outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
-      outline-offset: 2px;
-    }
     /* 制卡队列：surface-container 大圆角卡。 */
     :root:not([data-style="glass"]) .hp-shell .hp-queue {
       gap: 10px;
@@ -407,7 +322,7 @@
       <span class="msr-slot hp-connection-recheck" data-fushi-icon="refresh" data-fushi-icon-size="20" aria-hidden="true"></span>
     </div>
     <!-- BUG-1079：自更新失效提示（默认隐藏；chrome.storage.local.fushiUpdateStale 存在时显示）。 -->
-    <div class="hp-update" id="hp-update" hidden>
+    <div class="hp-update" id="hp-update" data-tone="warn" hidden>
       <span class="msr-slot" data-fushi-icon="update" data-fushi-icon-size="20" aria-hidden="true"></span>
       <span class="hp-update-copy">
         <span class="hp-update-title" id="hp-update-title"></span>
@@ -435,7 +350,7 @@
       </button>
     </div>
     <!-- 字幕列表使用浏览器原生 Side Panel，不向视频网页注入列表或修改布局。 -->
-    <button class="hp-side-panel" id="hp-nf-sublist" type="button">
+    <button class="hp-side-panel text-button" id="hp-nf-sublist" type="button">
       <span class="msr-slot" data-fushi-icon="view_sidebar" data-fushi-icon-size="20" aria-hidden="true"></span>
       <span data-i18n="ap_hp_nf_sublist_button">字幕侧边栏</span>
     </button>
@@ -445,7 +360,7 @@
         <span class="hp-title" id="hp-queue-title" data-i18n="ap_title">制卡队列</span>
         <span class="hp-count" id="hp-count"></span>
       </div>
-      <button class="hp-gen" id="hp-gen" type="button">
+      <button class="hp-gen primary-button" id="hp-gen" type="button">
         <span class="hp-gen-icon" aria-hidden="true">
           <span class="msr-slot hp-gen-go" data-fushi-icon="play_arrow" data-fushi-icon-size="20"></span>
           <span class="msr-slot hp-gen-stop" data-fushi-icon="close" data-fushi-icon-size="20"></span>

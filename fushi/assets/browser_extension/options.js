@@ -382,6 +382,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   for (const [id, key] of Object.entries(toggleIds)) {
     if (!changes[key]) continue;
     const input = $(id);
+  // 语义色块（material.css「语义 tonal 色块」）：warn = 自更新失效，其余（ok / neutral）是中性卡。
+  const card = $('updateCard');
+  if (card) card.dataset.tone = s.tone || 'neutral';
     if (input) input.checked = changes[key].newValue === true;
   }
   for (const [id, spec] of Object.entries(selectSettings)) {

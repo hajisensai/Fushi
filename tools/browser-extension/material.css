@@ -85,7 +85,7 @@
 
 /* 主按钮（玻璃）：实心主色上加一道顶缘高光 + 主色投影，像一滴有厚度的色块。M3E 的 filled 按钮
    是平的（悬停才抬到 level 1），见文件后部。 */
-:root[data-style="glass"] :where(.primary-button, .hp-gen:not(:disabled)) {
+:root[data-style="glass"] :where(.primary-button:not(:disabled), .hp-gen:not(:disabled)) {
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--fushi-mat-highlight) 50%, transparent), 0 6px 18px -8px color-mix(in oklch, var(--fushi-primary) 70%, transparent);
 }
 
@@ -105,6 +105,23 @@
   -webkit-backdrop-filter: var(--fushi-mat-filter);
   backdrop-filter: var(--fushi-mat-filter);
 }
+
+/* ── 提示条 .fushi-notice（两套风格同一结构）：左侧 20 号图标 + 正文，--fushi-shape-notice 圆角。玻璃下是
+   一层薄材质；M3E 的语义色块（info / success / warn / error）见文件后部「语义 tonal 色块」。 ── */
+:root .fushi-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--fushi-mat-edge);
+  border-radius: var(--fushi-shape-notice);
+  background-color: var(--fushi-mat-fill-subtle);
+  color: var(--fushi-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+:root .fushi-notice > .msr-slot { flex: none; color: var(--fushi-primary); }
 
 /* ── 开关（设置页 .switch input + 工具栏菜单 .hp-toggle 里的假开关）：两套风格同一结构，形状全取
    token。玻璃：胶囊槽 + 带投影的白色水滴拇指；M3E：描边槽 + 小拇指，选中时拇指长大成满高圆、
@@ -677,11 +694,7 @@
 
 :root:not([data-style="glass"]) .diagnostics-stack { gap: 4px; padding-top: 0; }
 
-:root:not([data-style="glass"]) .tip {
-  padding: 14px 20px;
-  border-radius: var(--md-sys-shape-corner-large-increased);
-  background: var(--md-sys-color-surface-container-lowest);
-}
+:root:not([data-style="glass"]) .tip { padding: 14px 20px; }
 
 /* 自定义主题编辑器、风格卡、主题卡：同为实色色调块。 */
 :root:not([data-style="glass"]) .style-card {
@@ -739,21 +752,115 @@
   :root:not([data-style="glass"]) .section-link { min-height: 40px; padding: 8px 16px; }
 }
 
-/* 连接卡：实色卡，状态好时整卡染一层主色色调。 */
-:root:not([data-style="glass"]) .connection[data-tone="good"],
-:root:not([data-style="glass"]) .hp-connection[data-tone="good"] {
-  background-color: color-mix(in oklch, var(--md-sys-color-primary-container) 55%, var(--md-sys-color-surface-container-lowest));
+/* ── 语义 tonal 色块（提示条 / 状态卡，三页同一份）：对齐 app FushiInlineNotice 的 M3E 口径——按语义
+   着色的实色容器、无描边无投影，文字 / 图标一律取对应的 on- 色（用户 2026-10-06「改色块」）：
+     · info                      = secondary-container
+     · good / success            = tertiary-container（app 的 success）
+     · warn                      = 调色板警示色淡染的 warn 容器。ColorScheme 没有 warning 角色，app 的提示条
+                                   让 warning 与 success 共用 tertiary、靠图标区分；但连接卡「已连接 / 需处理」
+                                   是同一张卡换状态，必须一眼分得开，所以单列一档
+     · danger / error            = error-container
+     · loading / neutral / ok / 无 = surface-container 中性卡
+   消费方：工具栏菜单的连接卡 .hp-connection 与自更新失效提示 .hp-update、设置页的连接卡 .connection 与
+   版本卡 .tip、字幕侧边栏的结果提示 .fushi-notice。--notice-* 只是本段的局部变量（颜色仍全取 --md-sys-*）：
+   fill / on = 容器与前景，accent / on-accent = 状态图标圆底（连接卡）与状态点。 ── */
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice) {
+  --notice-fill: var(--md-sys-color-surface-container);
+  --notice-on: var(--md-sys-color-on-surface);
+  --notice-accent: var(--md-sys-color-surface-container-highest);
+  --notice-on-accent: var(--md-sys-color-on-surface-variant);
+  --notice-dot: var(--md-sys-color-on-surface-variant);
+  border: 0;
+  background-color: var(--notice-fill);
+  background-image: none;
+  box-shadow: none;
+  color: var(--notice-on);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
-:root:not([data-style="glass"]) .hp-connection { border-radius: var(--md-sys-shape-corner-large-increased); }
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice)[data-tone="info"] {
+  --notice-fill: var(--md-sys-color-secondary-container);
+  --notice-on: var(--md-sys-color-on-secondary-container);
+  --notice-accent: var(--md-sys-color-secondary, var(--md-sys-color-primary));
+  --notice-on-accent: var(--md-sys-color-on-secondary, var(--md-sys-color-on-primary));
+  --notice-dot: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice):is([data-tone="good"], [data-tone="success"]) {
+  --notice-fill: var(--md-sys-color-tertiary-container);
+  --notice-on: var(--md-sys-color-on-tertiary-container);
+  --notice-accent: var(--md-sys-color-tertiary);
+  --notice-on-accent: var(--md-sys-color-on-tertiary);
+  --notice-dot: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice)[data-tone="warn"] {
+  --notice-fill: color-mix(in oklch, var(--fushi-warn) 22%, var(--md-sys-color-surface-container-lowest));
+  --notice-on: var(--md-sys-color-on-surface);
+  --notice-accent: var(--fushi-warn);
+  --notice-on-accent: var(--md-sys-color-surface-container-lowest);
+  --notice-dot: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice):is([data-tone="danger"], [data-tone="error"]) {
+  --notice-fill: var(--md-sys-color-error-container, color-mix(in oklch, var(--md-sys-color-error) 18%, var(--md-sys-color-surface)));
+  --notice-on: var(--md-sys-color-on-error-container, var(--md-sys-color-on-surface));
+  --notice-accent: var(--md-sys-color-error);
+  --notice-on-accent: var(--md-sys-color-on-error);
+  --notice-dot: var(--notice-accent);
+}
+
+/* 状态卡（连接卡）是卡片：extra-large 28；提示条是 large 16（--fushi-shape-notice，与 app 横幅同形）。 */
+:root:not([data-style="glass"]) :is(.hp-connection, .connection) { border-radius: var(--fushi-shape-card); }
+
+:root:not([data-style="glass"]) :is(.hp-update, .tip, .fushi-notice) { border-radius: var(--fushi-shape-notice); }
+
+:root:not([data-style="glass"]) .fushi-notice {
+  font-size: var(--md-sys-typescale-body-medium-size);
+  line-height: var(--md-sys-typescale-body-medium-line-height);
+}
+
+/* 色块里的次级文字 / 图标：on- 色降一档（不再用 on-surface-variant——它在彩色容器上会撞色）。 */
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice) :is(.hp-connection-detail, .hp-connection-recheck, .hp-update-detail, p, small, code) {
+  color: color-mix(in oklch, var(--notice-on) 78%, transparent);
+}
+
+:root:not([data-style="glass"]) :is(.hp-connection, .connection, .hp-update, .tip, .fushi-notice) :is(strong, h2, .hp-connection-title, .hp-update-title) {
+  color: var(--notice-on);
+}
+
+:root:not([data-style="glass"]) :is(.hp-update, .fushi-notice) > .msr-slot { color: var(--notice-on); }
+
+:root:not([data-style="glass"]) .hp-connection .hp-connection-icon {
+  color: var(--notice-on-accent);
+  background: var(--notice-accent);
+}
+
+:root:not([data-style="glass"]) .connection .status-dot {
+  background: var(--notice-dot);
+  box-shadow: 0 0 0 5px color-mix(in oklch, var(--notice-dot) 22%, transparent);
+}
+
+:root:not([data-style="glass"]) .connection code {
+  background: color-mix(in oklch, var(--notice-on) 8%, transparent);
+}
+
+/* 整卡可点的连接卡（工具栏菜单）：悬停在色块上叠 on- 色 8% 状态层，按下 28 → 16 形变。 */
+:root:not([data-style="glass"]) .hp-connection:hover {
+  background-color: color-mix(in oklch, var(--notice-on) var(--md-sys-state-hover-opacity), var(--notice-fill));
+}
 
 /* 工具栏菜单：制卡队列是一张实色大圆角卡。 */
 :root:not([data-style="glass"]) .hp-queue { padding: 14px; }
 
-/* ── ② 按钮：filled（.primary-button）/ tonal（.text-button）/ text（.danger-button）。 ── */
+/* ── ② 按钮（三页同一份）：filled（.primary-button）/ tonal（.text-button）/ text（.danger-button）。
+   与 app filledButtonTheme 同规格：全胶囊、40 高、左右 20、label-large 强调字重、无描边无投影（filled
+   悬停才抬到 level 1）；按下全圆收成 corner-medium 并微缩（M3E shape morph，弹簧）。工具栏菜单的
+   「字幕侧边栏」/「开始生成」两颗整宽按钮挂同名 class，形态不在 action-popup.html 里另写。 ── */
 :root:not([data-style="glass"]) :is(.primary-button, .text-button) {
   min-height: 40px;
-  padding: 10px 16px;
+  padding: 10px 20px;
   border: 0;
   border-radius: var(--md-sys-shape-corner-full);
   font-size: var(--md-sys-typescale-label-large-size);
@@ -798,6 +905,11 @@
 :root:not([data-style="glass"]) :is(.primary-button, .text-button):active:not(:disabled) {
   border-radius: var(--fushi-shape-control-pressed);
   transform: scale(0.97);
+}
+
+:root:not([data-style="glass"]) :is(.primary-button, .text-button):focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
 }
 
 :root:not([data-style="glass"]) :is(.primary-button, .text-button):disabled {
@@ -882,24 +994,25 @@
 
 :root:not([data-style="glass"]) .segmented > button:active { border-radius: var(--fushi-shape-control-pressed); }
 
-/* 通用 chip（.chip，选中 .is-on / aria-pressed）：32 高、corner-small，选中 secondary-container。 */
+/* 通用 chip（.chip，选中 .is-on / aria-pressed）：与 app chipTheme 同形——32 高全胶囊、无描边、
+   surface-container-high 柔和填充；选中 secondary-container。 */
 :root:not([data-style="glass"]) .chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
   color: var(--md-sys-color-on-surface-variant);
-  background: transparent;
+  background: var(--md-sys-color-surface-container-high);
   font-size: var(--md-sys-typescale-label-large-size);
   font-weight: var(--md-sys-typescale-weight-medium);
   cursor: pointer;
   transition: background-color var(--fushi-dur-short) var(--fushi-ease), border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
 
-:root:not([data-style="glass"]) .chip:hover { background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent); }
+:root:not([data-style="glass"]) .chip:hover { background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high)); }
 
 :root:not([data-style="glass"]) .chip:active { border-radius: var(--md-sys-shape-corner-medium); }
 
@@ -909,34 +1022,54 @@
   background: var(--md-sys-color-secondary-container);
 }
 
-/* 字幕侧边栏的工具排 / 时轴偏移排：M3E 下是 chip（32 高、corner-small，按下 corner-medium），
-   AS 等开着的 .is-on 是选中 chip；查字幕钮是与输入框同形的 tonal 方钮；折叠钮是标准图标按钮；
-   时间戳是一枚更薄的 surface-container-high 小 chip。 */
-:root:not([data-style="glass"]) :is(.toolbar, .offset-row) button {
-  border-color: var(--md-sys-color-outline-variant);
-  border-radius: var(--md-sys-shape-corner-small);
-  background-color: transparent;
+/* ── 标准图标按钮（M3E standard icon button，三页同一份）：工具栏菜单顶栏的设置钮 .hp-icon-btn、设置页
+   连接卡的重检钮 .icon-button、字幕侧边栏工具排 / 抽屉折叠钮。透明底、on-surface-variant，悬停叠
+   8% 状态层；按下圆形收成圆角方并微缩（弹簧）；切换钮选中（.is-on / aria-pressed）= secondary-container
+   填充、静息即圆角方（M3E toggle icon button）。尺寸各页自管（40 / 抽屉 30×32）。 ── */
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold) {
+  border: 0;
+  border-radius: var(--md-sys-shape-corner-full);
+  background: transparent;
   background-image: none;
   box-shadow: none;
   color: var(--md-sys-color-on-surface-variant);
+  transition:
+    background-color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    color var(--md-sys-motion-spring-default-effects-duration) var(--md-sys-motion-spring-default-effects),
+    border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
+    transform var(--fushi-dur-medium) var(--fushi-ease-spatial);
 }
 
-:root:not([data-style="glass"]) :is(.toolbar, .offset-row) button:hover {
-  border-color: var(--md-sys-color-outline-variant);
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
-}
-
-:root:not([data-style="glass"]) :is(.toolbar, .offset-row) button:active {
-  border-radius: var(--md-sys-shape-corner-medium);
-}
-
-:root:not([data-style="glass"]) .toolbar button.is-on,
-:root:not([data-style="glass"]) .toolbar button.is-on:hover {
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):hover {
   border-color: transparent;
+  background-color: color-mix(in oklch, var(--md-sys-color-on-surface-variant) var(--md-sys-state-hover-opacity), transparent);
+  color: var(--md-sys-color-on-surface);
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):is(.is-on, [aria-pressed="true"]),
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):is(.is-on, [aria-pressed="true"]):hover {
+  border-radius: var(--md-sys-shape-corner-medium);
   background-color: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
 }
 
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):is(.is-on, [aria-pressed="true"]):hover {
+  background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):active {
+  border-radius: var(--md-sys-shape-corner-small);
+  transform: scale(0.92);
+}
+
+:root:not([data-style="glass"]) :is(.hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--md-sys-color-primary) 70%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+/* 字幕侧边栏查字幕的「搜」钮：与输入框同形（--fushi-shape-field）的 tonal 方钮。时轴偏移排 /
+   时间戳的 M3E 形态在 side-panel.css（只有侧边栏有）。 */
 :root:not([data-style="glass"]) .subs-row button {
   border: 0;
   border-radius: var(--fushi-shape-field);
@@ -950,40 +1083,7 @@
   background-color: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
 }
 
-:root:not([data-style="glass"]) .hdr-fold {
-  border-color: transparent;
-  background-color: transparent;
-  background-image: none;
-  box-shadow: none;
-}
-
-:root:not([data-style="glass"]) .hdr-fold:hover {
-  border-color: transparent;
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
-}
-
-:root:not([data-style="glass"]) .timestamp {
-  border-color: transparent;
-  border-radius: var(--md-sys-shape-corner-small);
-  background-color: var(--md-sys-color-surface-container-high);
-  background-image: none;
-  box-shadow: none;
-}
-
-:root:not([data-style="glass"]) .timestamp:hover {
-  border-color: transparent;
-  background-color: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), var(--md-sys-color-surface-container-high));
-}
-
-:root:not([data-style="glass"]) .subtitle-row.is-current .timestamp {
-  border-color: transparent;
-  background-color: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
-}
-
-:root:not([data-style="glass"]) :is(.toolbar, .offset-row, .subs-row) button:focus-visible,
-:root:not([data-style="glass"]) .hdr-fold:focus-visible,
-:root:not([data-style="glass"]) .timestamp:focus-visible {
+:root:not([data-style="glass"]) .subs-row button:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--md-sys-color-primary) 40%, transparent);
 }
 
@@ -1237,12 +1337,13 @@
 
 :root:not([data-style="glass"]) .fgs-check { color: var(--md-sys-color-on-secondary-container); }
 
-/* ── snackbar（设置页 .save-toast / 侧边栏 .toast）：inverse-surface 底、corner-large、level 3 投影。 ── */
+/* ── snackbar（设置页 .save-toast / 侧边栏 .toast；页内 #fushi-toast 同值）：inverse-surface 底、
+   --fushi-shape-snackbar（= app kFushiM3eInverseSurfaceRadius 24）、level 3 投影。 ── */
 :root:not([data-style="glass"]) :is(.save-toast, .toast) {
   color: var(--md-sys-color-inverse-on-surface);
   background-color: var(--md-sys-color-inverse-surface);
   border-color: transparent;
-  border-radius: var(--md-sys-shape-corner-large);
+  border-radius: var(--fushi-shape-snackbar);
   box-shadow: var(--md-sys-elevation-level3);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -1255,4 +1356,6 @@
     transition-duration: 0.01ms !important;
     animation: none !important;
   }
+
+  :root :is(.primary-button, .text-button, .hp-icon-btn, .icon-button, .toolbar button, .hdr-fold):active { transform: none; }
 }

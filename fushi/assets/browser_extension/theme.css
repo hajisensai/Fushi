@@ -281,6 +281,10 @@
   --fushi-shape-control: 999px;
   --fushi-shape-control-pressed: 999px;
   --fushi-shape-field: 999px;
+  /* 提示条（语义 tonal 色块，对齐 app FushiInlineNotice 的 M3E large 16）与 snackbar（对齐 app
+     kFushiM3eInverseSurfaceRadius 24） */
+  --fushi-shape-notice: var(--md-sys-shape-corner-large);
+  --fushi-shape-snackbar: 24px;
   --fushi-shape-menu: 14px;
   --fushi-shape-segment: 0px;
   --fushi-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -318,6 +322,8 @@
     --fushi-mat-fill-subtle: color-mix(in oklch, color-mix(in oklch, var(--fushi-surface) 55%, black) 22%, transparent);
     --fushi-mat-stroke: rgba(255, 255, 255, 0.22);
     --fushi-mat-highlight: rgba(255, 255, 255, 0.2);
+  --fushi-shape-notice: 14px;
+  --fushi-shape-snackbar: 20px;
     --fushi-mat-edge: rgba(255, 255, 255, 0.12);
     --fushi-mat-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 18px 40px -16px rgba(0, 0, 0, 0.7);
     --fushi-mat-orb-1: color-mix(in oklch, var(--fushi-primary) 45%, oklch(0.5 0.17 300));
