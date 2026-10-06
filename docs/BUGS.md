@@ -29,12 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2769 条。点号进各自文件。
+> 共 2771 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3019](bugs/BUG-3019-settings-stepper-touch-width.md) | ✅ | ✅ | 设置步进器迁移后声明宽度少算触控区导致标题挤压 |
 | [BUG-3018](bugs/BUG-3018-smoke-navigation-destinations.md) | ✅ | ✅ | 桌面 smoke 把侧栏菜单图标算成首个导航目的地 |
+| [BUG-3011](bugs/BUG-3011-horizontal-filter-mouse-drag.md) | ✅ | ✅ | 新增横向筛选与导航区未启用桌面鼠标拖动 |
+| [BUG-3009](bugs/BUG-3009-raw-component-guard-empty-scan.md) | ✅ | ✅ | 组件棘轮守卫路径替换空串导致零文件扫描并静默通过 |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
 | [BUG-3005](bugs/BUG-3005-nav-more-spring-range.md) | ✅ | ✅ | 导航底栏更多菜单弹簧过冲导致打开时断言 |
