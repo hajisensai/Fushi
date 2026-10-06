@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
@@ -448,7 +449,7 @@ Widget buildVideoQualityEntryRow(SettingsContext context) {
     subtitle: host.qualityCurrentLabel != null
         ? Text(host.qualityCurrentLabel!)
         : null,
-    trailing: const FushiIcon(Icons.chevron_right),
+    trailing: const FushiIcon(FushiIcons.chevronRight),
     onTap: host.onOpenQuality,
   );
 }
@@ -463,7 +464,7 @@ Widget buildVideoSkiaFallbackRow(SettingsContext context) {
     leading: const FushiIcon(Icons.animation_outlined),
     title: Text(t.video_render_skia_fix_title),
     subtitle: Text(t.video_render_skia_fix_hint),
-    trailing: const FushiIcon(Icons.restart_alt),
+    trailing: const FushiIcon(FushiIcons.restart),
     onTap: host.onSwitchToSkiaRenderer,
   );
 }
@@ -476,7 +477,7 @@ Widget buildVideoAudioTrackSection(SettingsContext context) {
   if (section != null) return section;
   return FushiListTileControl(
     dense: true,
-    leading: const FushiIcon(Icons.audiotrack),
+    leading: const FushiIcon(FushiIcons.music),
     title: Text(t.video_audio_track_empty),
     enabled: false,
   );
@@ -540,6 +541,7 @@ Future<void> _pickSubtitleColor(
     context: context,
     builder: (BuildContext dialogContext) {
       return FushiAlertDialog(
+        icon: const FushiIcon(FushiIcons.appearance),
         title: Text(title),
         content: SingleChildScrollView(
           child: ColorPicker(
@@ -557,9 +559,11 @@ Future<void> _pickSubtitleColor(
           ),
         ),
         actions: <Widget>[
-          FushiTextButton(
+          FushiDialogAction(
+            label: t.dialog_done,
+            kind: FushiDialogActionKind.primary,
+            autofocus: true,
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(t.dialog_done),
           ),
         ],
       );
@@ -576,7 +580,7 @@ Widget buildVideoSubtitleTextColorRow(SettingsContext context) {
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_text_color,
-    icon: Icons.format_color_text,
+    icon: FushiIcons.textFields,
     current: style.textColor ?? const Color(0xFFFFFFFF),
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
@@ -602,7 +606,7 @@ Widget buildVideoSubtitleBgColorRow(SettingsContext context) {
   return _buildSubtitleColorRow(
     context,
     title: t.video_setting_subtitle_bg_color,
-    icon: Icons.format_color_fill_outlined,
+    icon: FushiIcons.appearance,
     current: style.backgroundColor ?? kDefaultSubtitleBackgroundColor,
     onPreview: (Color c) => previewVideoSubtitleStyle(
       context,
@@ -697,11 +701,12 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
     final List<String>? paths = _paths;
     if (paths == null) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
-    final TextStyle? noteStyle = theme.textTheme.bodySmall
-        ?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    // 输入边界说明：共享提示横幅（中性底 + 语义色图标），不再是一行灰字。
     final Widget note = Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Text(t.video_setting_mpv_lua_scripts_input_note, style: noteStyle),
+      child: FushiInlineNotice(
+        message: t.video_setting_mpv_lua_scripts_input_note,
+      ),
     );
     if (paths.isEmpty) {
       return Column(
@@ -711,8 +716,8 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
               t.video_setting_mpv_lua_scripts_empty,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              style: context.fushiType.bodyMedium
+                  .copyWith(color: theme.colorScheme.onSurfaceVariant),
             ),
           ),
           note,
@@ -756,10 +761,10 @@ class _VideoLuaScriptListState extends State<_VideoLuaScriptList> {
                 ? t.video_setting_mpv_lua_scripts_status_loaded
                 : '${t.video_setting_mpv_lua_scripts_status_error}: $error';
     final IconData icon = error != null
-        ? Icons.error_outline
+        ? FushiIcons.error
         : loaded
-            ? Icons.check_circle_outline
-            : Icons.description_outlined;
+            ? FushiIcons.success
+            : FushiIcons.file;
     final Color? tint = error != null
         ? scheme.error
         : loaded
@@ -842,7 +847,9 @@ class _VideoMpvRawConfFieldState extends State<_VideoMpvRawConfField> {
             controller: _controller,
             minLines: 3,
             maxLines: 8,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            style: context.fushiType.bodyMedium.copyWith(
+              fontFamily: 'monospace',
+            ),
             decoration: InputDecoration(
               helperText: t.video_setting_mpv_raw_hint,
               helperMaxLines: 4,
@@ -922,7 +929,9 @@ class _VideoDanmakuBlockRulesFieldState
             controller: _controller,
             minLines: 3,
             maxLines: 8,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+            style: context.fushiType.bodyMedium.copyWith(
+              fontFamily: 'monospace',
+            ),
             decoration: InputDecoration(
               hintText: t.video_setting_danmaku_block_rules_placeholder,
               border: const OutlineInputBorder(),

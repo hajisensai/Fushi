@@ -576,9 +576,10 @@ void main() {
         .where((Element element) => listRect
             .contains(tester.getRect(find.byWidget(element.widget)).center))
         .length;
-    // MD3 两行列表行（2026-10 重做）每行约 68px（旧 ≈56），同样高度能露出
-    // 6 行；判据仍是「远多于旧 260px 硬截的 4 行」且可视行一直排到列表底部。
-    expect(visible, greaterThanOrEqualTo(6), reason: '说明行没有铺满 tab');
+    // M3E 分段卡片行（2026-10-06：卡内边距 + 行间 2px + 顶部状态卡）每行约
+    // 76px，同样高度能露出 5 行以上；判据仍是「多于旧 260px 硬截的 4 行」且
+    // 可视行一直排到列表底部。
+    expect(visible, greaterThanOrEqualTo(5), reason: '说明行没有铺满 tab');
     final List<Rect> visibleRows = issues
         .evaluate()
         .map((Element element) => tester.getRect(find.byWidget(element.widget)))

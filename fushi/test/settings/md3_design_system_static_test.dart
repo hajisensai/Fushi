@@ -973,16 +973,9 @@ void main() {
           'quick-settings overlays.',
       // 阶段B：video_quick_settings_sheet.dart 重写为纯 schema 投影外壳后已无
       // 违禁 token，其原豁免（字幕字号 content / 播放中专属 ListTile 行 /
-      // monospace 逃生口）随行声明与内嵌 builder 迁移到下面两个新文件。
-      'lib/src/media/video/video_settings_actions.dart':
-          'Stage-B dual-write layer for the video settings schema: the '
-          'in-player ListTile rows (HLS quality entry / Skia fallback / '
-          'audio-track placeholder) and the monospace fontSize: 13 escape '
-          'hatches of the raw mpv.conf + danmaku block-rules multiline '
-          'fields moved verbatim from video_quick_settings_sheet.dart — '
-          'same reviewed media-page exception class as the sheet entry '
-          'they came from (the sheet itself is now a token-clean schema '
-          'projection shell).',
+      // monospace 逃生口）随行声明与内嵌 builder 迁移到下面的新文件
+      // （video_settings_actions.dart 的 monospace 字号 2026-10-06 已改走排版
+      // 令牌，不再命中违禁 token，豁免随之删除）。
       'lib/src/media/video/video_control_layout_editor.dart':
           'Video control 9-slot drag editor extracted verbatim from '
           'video_quick_settings_sheet.dart (stage B): the stage preview '
@@ -1366,9 +1359,6 @@ void main() {
       },
       'lib/src/media/video/video_long_press_speed_badge.dart': <String>{
         'BorderRadius.circular(',
-        'fontSize:',
-      },
-      'lib/src/media/video/video_settings_actions.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/video/video_subtitle_jump_panel.dart': <String>{

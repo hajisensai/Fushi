@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_align_panel.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// TODO-1315 lazy waveform render / TODO-1316 in-zoom auto-align button tests.
@@ -198,7 +199,7 @@ void main() {
     expect(find.byType(SubtitleWaveformZoomView), findsOneWidget);
     await tester.tap(find.descendant(
       of: find.byType(SubtitleWaveformZoomView),
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
     expect(find.byType(SubtitleWaveformZoomView), findsNothing);
@@ -280,7 +281,7 @@ void main() {
     expect(_zoomPainter(tester).previewDelayMs, 0);
     final Finder plus = find.descendant(
       of: find.byType(SubtitleWaveformZoomView),
-      matching: find.byIcon(Icons.chevron_right),
+      matching: find.byIcon(FushiIcons.chevronRight),
     );
     await tester.ensureVisible(plus);
     await tester.pumpAndSettle();
@@ -334,7 +335,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
-    expect(find.byIcon(Icons.play_circle_outline), findsNothing);
+    expect(find.byIcon(FushiIcons.playCircle), findsNothing);
   });
 
   testWidgets('TODO-1244: tapping a cue chip seeks+plays that line (delay 0)',
@@ -347,7 +348,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
-    expect(find.byIcon(Icons.play_circle_outline), findsWidgets);
+    expect(find.byIcon(FushiIcons.playCircle), findsWidgets);
     // 文本条与列表都渲染该句；点第一处（波形文本条 chip）即 seek+play。
     await tester.tap(find.text('ohayou').first);
     await tester.pumpAndSettle();
@@ -441,11 +442,11 @@ void main() {
     ));
     await tester.pumpAndSettle();
     await _openZoom(tester);
-    expect(find.byIcon(Icons.pause), findsNothing);
+    expect(find.byIcon(FushiIcons.pause), findsNothing);
     // 关掉再用带回调的宿主重开。
     await tester.tap(find.descendant(
       of: find.byType(SubtitleWaveformZoomView),
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
 
@@ -463,12 +464,12 @@ void main() {
     await tester.pumpAndSettle();
     await _openZoom(tester);
     // 播放中显示暂停图标。
-    expect(find.byIcon(Icons.pause), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.pause));
+    expect(find.byIcon(FushiIcons.pause), findsOneWidget);
+    await tester.tap(find.byIcon(FushiIcons.pause));
     await tester.pumpAndSettle();
     expect(toggles, 1);
     // 暂停后图标翻成播放。
-    expect(find.byIcon(Icons.play_arrow), findsWidgets);
+    expect(find.byIcon(FushiIcons.play), findsWidgets);
   });
 
   testWidgets('playhead ticker: currentPositionMs drives painter live (~30fps)',
@@ -489,7 +490,7 @@ void main() {
     // 关闭放大视图，停掉 ticker（避免 pending timer 泄漏）。
     await tester.tap(find.descendant(
       of: find.byType(SubtitleWaveformZoomView),
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
   });
@@ -751,7 +752,7 @@ void main() {
   Future<void> closeZoom(WidgetTester tester) async {
     await tester.tap(find.descendant(
       of: find.byType(SubtitleWaveformZoomView),
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
   }
@@ -954,7 +955,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.takeException(), isNull);
-      expect(find.byIcon(Icons.close), findsOneWidget);
+      expect(find.byIcon(FushiIcons.close), findsOneWidget);
       expect(find.byType(TextField), findsWidgets);
     });
   }
