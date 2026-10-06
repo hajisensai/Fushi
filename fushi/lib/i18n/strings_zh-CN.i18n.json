@@ -6734,5 +6734,6 @@
   "theme_preset_pink": "粉",
   "theme_preset_neutral": "中性灰",
   "theme_pure_black": "纯黑深色背景",
-  "theme_pure_black_hint": "深色模式下页面底为纯黑，适合 OLED 屏"
+  "theme_pure_black_hint": "深色模式下页面底为纯黑，适合 OLED 屏",
+  "asr_models_badge_partial": "部分下载"
 }

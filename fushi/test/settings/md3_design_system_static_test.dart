@@ -831,10 +831,10 @@ void main() {
           'Now-listening media mini-bar: surface role + book-cover thumbnail '
           'radius are media-subsystem content chrome (same category as the '
           'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme. Glass/MD3 redesign: the '
-          'MD3 branch is now a floating card (surfaceContainerHigh, inset 12, '
-          'elevation 2) that the recommended-pack download mini-bar mirrors '
-          'tone-for-tone — the two bars are one media mini-bar family.',
+          'hero), driven off the active ColorScheme. M3E redesign: the '
+          'Material branch is a floating capsule sharing the floating '
+          'toolbar pill decoration (surfaceContainer, full radius); only the '
+          'e-ink strip (surfaceContainerHighest) and the cover radius remain.',
       'lib/src/models/app_model.dart':
           'AppModel builds the FloatingLyricStyle data object (overlay font '
           'size is user content passed to the platform overlay), not an '
@@ -1331,7 +1331,6 @@ void main() {
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
         'surfaceContainerHighest',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{

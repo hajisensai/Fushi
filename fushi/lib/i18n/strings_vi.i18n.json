@@ -6734,5 +6734,6 @@
   "theme_preset_pink": "Pink",
   "theme_preset_neutral": "Neutral",
   "theme_pure_black": "Pure black dark",
-  "theme_pure_black_hint": "Use true black backgrounds in dark mode (OLED)"
+  "theme_pure_black_hint": "Use true black backgrounds in dark mode (OLED)",
+  "asr_models_badge_partial": "Partially downloaded"
 }
