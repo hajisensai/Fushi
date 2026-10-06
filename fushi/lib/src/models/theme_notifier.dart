@@ -1899,9 +1899,27 @@ class ThemeNotifier extends ChangeNotifier {
   /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
   /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
   Future<void> setAppThemeKey(String key) async {
-    await _set('app_theme_key', key);
+    await _setAppThemeKeyKeepingEffective(key);
     notifyListeners();
     _persistSplashColor();
+  }
+
+  /// HBK-AUDIT-035：换主题键前，把**只靠旧主题键兜底读出**、从没独立存过的明暗
+  /// （[brightnessMode] 对旧预设 / `custom_theme_dark` 的回退）与纯黑（[pureBlackDark]
+  /// 对旧「纯黑」预设的回退）按换键前的有效值补写成独立偏好，与新主题键同一批落库。
+  /// 换掉主题键后那些兜底就读不到了：旧 black-theme 用户改个种子色纯黑消失、旧自定义深色
+  /// 用户换预设变成跟随系统。已显式存过的键不动。
+  Future<void> _setAppThemeKeyKeepingEffective(String key) async {
+    final Map<String, String> writes = <String, String>{};
+    if (_get('brightness_mode', defaultValue: '').isEmpty) {
+      writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
+    }
+    if (_prefs['pure_black_dark'] == null) {
+      writes['pure_black_dark'] = PrefCodec.encode(pureBlackDark);
+    }
+    writes['app_theme_key'] = PrefCodec.encode(key);
+    _prefs.addAll(writes);
+    await _db.setPrefs(writes);
   }
 
   Future<void> setBrightnessMode(String mode) async {
@@ -1966,7 +1984,7 @@ class ThemeNotifier extends ChangeNotifier {
     );
     await upsertCustomTheme(entry);
 
-    await _set('app_theme_key', 'custom-theme');
+    await _setAppThemeKeyKeepingEffective('custom-theme');
     notifyListeners();
     _persistSplashColor();
   }
