@@ -188,9 +188,34 @@ class ShelfSelectedOverlay extends StatelessWidget {
 
 /// 封面圆角：MD3 Expressive medium（12）、Apple 10（Apple Books / TV 的封面
 /// 比分组卡片小一号）。封面框、选中罩、封面卡状态层共用这一份。
+///
+/// 祖先有 [ShelfCoverRadiusScope] 时以它为准（游戏卡局部改成 20，书 / 视频库
+/// 共享的封面组件不受影响）。
 BorderRadius shelfCoverRadius(BuildContext context) {
+  final BorderRadius? scoped = ShelfCoverRadiusScope.maybeOf(context);
+  if (scoped != null) return scoped;
   final bool apple = isGlassDesign(context) && !isEinkTheme(context);
   return BorderRadius.all(Radius.circular(apple ? 10 : 12));
+}
+
+/// 局部覆盖 [shelfCoverRadius]：子树里的封面框 / 选中罩 / 无封面占位全部换成
+/// [radius]。只给需要不同封面形状的卡族用（如游戏海报卡），不传参改共享组件。
+class ShelfCoverRadiusScope extends InheritedWidget {
+  const ShelfCoverRadiusScope({
+    required this.radius,
+    required super.child,
+    super.key,
+  });
+
+  final BorderRadius radius;
+
+  static BorderRadius? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<ShelfCoverRadiusScope>()
+      ?.radius;
+
+  @override
+  bool updateShouldNotify(ShelfCoverRadiusScope oldWidget) =>
+      oldWidget.radius != radius;
 }
 
 /// 封面卡标题样式（视频墙卡 / 横滚卡 / 远端卡 / 合集卡共用）：字号与行高沿用
@@ -227,6 +252,7 @@ FushiCard shelfCoverCard({
   VoidCallback? onLongPress,
   VoidCallback? onSecondaryTap,
   EdgeInsetsGeometry padding = EdgeInsets.zero,
+  BorderRadius borderRadius = const BorderRadius.all(Radius.circular(12)),
 }) {
   return FushiCard(
     key: key,
@@ -234,7 +260,7 @@ FushiCard shelfCoverCard({
     padding: padding,
     color: Colors.transparent,
     borderColor: Colors.transparent,
-    borderRadius: const BorderRadius.all(Radius.circular(12)),
+    borderRadius: borderRadius,
     clipBehavior: Clip.none,
     onTap: onTap,
     onLongPress: onLongPress,

@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// galgame 竖版海报卡（游戏库 / 合集行 / 合集详情 / 串流库 / 在途下载占位共用）。
@@ -21,6 +23,9 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 ///
 /// 树结构恒定：选中 / 多选 / 角标只换值或在封面 Stack 内增删叶子，不按设计系统
 /// 增删包装层。
+///
+/// 封面圆角走 [galgameCoverRadius]（M3E 20，比书 / 视频封面大一档），经
+/// [ShelfCoverRadiusScope] 只作用于本卡子树。
 class GalgamePosterCard extends StatelessWidget {
   const GalgamePosterCard({
     super.key,
@@ -80,12 +85,16 @@ class GalgamePosterCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // 悬停抬升交给共享的 [FushiHoverLift]（书架 / 漫画 / 视频库同一套，自带墨水屏
     // 与「减弱动态效果」降级）；封面框经 [FushiHoverLift.liftedOf] 自己加深投影。
-    return FushiHoverLift(
-      builder: (BuildContext context, bool _) => _buildCard(context),
+    final BorderRadius radius = galgameCoverRadius(context);
+    return ShelfCoverRadiusScope(
+      radius: radius,
+      child: FushiHoverLift(
+        builder: (BuildContext context, bool _) => _buildCard(context, radius),
+      ),
     );
   }
 
-  Widget _buildCard(BuildContext context) {
+  Widget _buildCard(BuildContext context, BorderRadius radius) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle titleStyle = shelfCardTitleStyle(context).copyWith(
@@ -152,6 +161,7 @@ class GalgamePosterCard extends StatelessWidget {
 
     final Widget card = shelfCoverCard(
       focusId: focusId,
+      borderRadius: radius,
       onTap: onTap,
       onLongPress: onLongPress,
       onSecondaryTap: onSecondaryTap,
@@ -220,4 +230,17 @@ class GalgamePosterCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 游戏封面圆角（游戏海报卡 / 「继续游戏」横版卡 / 游戏库列表行缩略图共用）。
+///
+/// M3E：卡片档 20（[FushiM3eShape.cardRadius]）——游戏包装图是整块 key art，
+/// 比书封 / 视频海报（12）大一档圆角读作「卡」而不是「图」。Apple 设计系统与
+/// 墨水屏沿用共享封面规则（[shelfCoverRadius]：Apple 10 / 墨水屏 12）。
+BorderRadius galgameCoverRadius(BuildContext context) {
+  if (isEinkTheme(context) || isGlassDesign(context)) {
+    final bool apple = isGlassDesign(context) && !isEinkTheme(context);
+    return BorderRadius.all(Radius.circular(apple ? 10 : 12));
+  }
+  return FushiM3eShape.cardRadius;
 }

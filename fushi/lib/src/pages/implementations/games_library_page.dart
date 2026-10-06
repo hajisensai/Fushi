@@ -2420,17 +2420,23 @@ class _ContinuePlayCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FushiHoverLift(
-      builder: (BuildContext context, bool _) => shelfCoverCard(
-        key: ValueKey<String>('games_continue_card_${game.id}'),
-        focusId: FushiFocusId('games-continue-${game.id}'),
-        onTap: onLaunch,
-        onLongPress: onDetail,
-        onSecondaryTap: onDetail,
-        child: Semantics(
-          label: '${t.game_focus_continue} · ${game.displayName}',
-          button: true,
-          child: ShelfCoverFrame(child: _buildContent(context)),
+    // 游戏卡封面圆角（M3E 20）只在本卡子树生效，与海报卡同一份。
+    final BorderRadius radius = galgameCoverRadius(context);
+    return ShelfCoverRadiusScope(
+      radius: radius,
+      child: FushiHoverLift(
+        builder: (BuildContext context, bool _) => shelfCoverCard(
+          key: ValueKey<String>('games_continue_card_${game.id}'),
+          focusId: FushiFocusId('games-continue-${game.id}'),
+          borderRadius: radius,
+          onTap: onLaunch,
+          onLongPress: onDetail,
+          onSecondaryTap: onDetail,
+          child: Semantics(
+            label: '${t.game_focus_continue} · ${game.displayName}',
+            button: true,
+            child: ShelfCoverFrame(child: _buildContent(context)),
+          ),
         ),
       ),
     );
