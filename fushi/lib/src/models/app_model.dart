@@ -356,6 +356,7 @@ ColorScheme buildFushiColorScheme({
   Color? primaryContainer,
   Color? surface,
   bool neutralDerived = false,
+  bool pureBlack = false,
 }) =>
     theme_notifier.buildFushiColorScheme(
       seedColor: seedColor,
@@ -367,6 +368,7 @@ ColorScheme buildFushiColorScheme({
       primaryContainer: primaryContainer,
       surface: surface,
       neutralDerived: neutralDerived,
+      pureBlack: pureBlack,
     );
 
 /// 书架长按「悬浮字幕」启动后台听书的结果（供 UI 决定提示）。
@@ -3641,14 +3643,28 @@ class AppModel with ChangeNotifier {
 
   static ColorScheme buildPresetColorScheme(
     ThemePreset preset,
-    Brightness brightness,
-  ) =>
-      ThemeNotifier.buildPresetColorScheme(preset, brightness);
+    Brightness brightness, {
+    bool pureBlack = false,
+  }) =>
+      ThemeNotifier.buildPresetColorScheme(
+        preset,
+        brightness,
+        pureBlack: pureBlack,
+      );
 
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
   String get appThemeKey => themeNotifier.appThemeKey;
   Future<void> setAppThemeKey(String key) => themeNotifier.setAppThemeKey(key);
+
+  /// 阅读器纸色用的主题键：偏好原值（可能是已删的旧预设 id，如 ecru-theme），
+  /// 让存量用户的阅读器纸色照旧生效（2026-10 预设精简时阅读器纸色不动）。
+  String get readerThemeKey => themeNotifier.storedAppThemeKey;
+
+  /// 「纯黑深色背景」开关（原「纯黑」预设的语义）。
+  bool get pureBlackDark => themeNotifier.pureBlackDark;
+  Future<void> setPureBlackDark(bool value) =>
+      themeNotifier.setPureBlackDark(value);
 
   // TODO-930: multi custom theme list delegation. The UI (theme swatch row +
   // CustomThemePage) talks to AppModel, so mirror ThemeNotifier's list API here

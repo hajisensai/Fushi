@@ -43,6 +43,9 @@ void main() {
     expect(literal.contains('HomeTab.browse'), isTrue,
         reason: '浏览 tab 必须保活（来源 / 发现页签挂载即对全部来源联网，'
             '切回不能丢搜索与结果再重拉；PR #1707 审查）');
+    expect(literal.contains('HomeTab.home'), isTrue,
+        reason: '首页 dashboard 必须保活（2026-10 切 tab 卡顿：不保活时每次切回都整页'
+            '重挂载、重跑整批统计聚合、重放进场动画）');
     expect(literal.contains('HomeTab.dictionaries'), isFalse,
         reason: '查词 tab 不得保活：靠 re-mount 消费桌面悬浮字幕 pending（TODO-376）');
     expect(literal.contains('HomeTab.settings'), isFalse,
@@ -58,6 +61,19 @@ void main() {
         reason: '保活 tab 必须惰性构建（访问过才建），避免启动即预拉未访问 tab 的远端');
     expect(src.contains('offstage: visible != tab'), isTrue,
         reason: '仅当前可见的保活 tab 露出，其余 Offstage 隐藏但不销毁');
+  });
+
+  test('隐藏的保活 tab 复用被藏起时构建的那份 widget（切 tab 不重建看不见的页）', () {
+    // 2026-10 切 tab 卡顿：buildBody 每次 new 页面 widget，Offstage 里看不见的
+    // 视频页 / 首页也跟着整页 build。隐藏 tab 必须走缓存，可见 tab 才重建。
+    expect(src.contains('_keepAliveTabContent(tab, visible: visible == tab)'),
+        isTrue,
+        reason: '保活 tab 内容必须经 _keepAliveTabContent 按可见性取缓存');
+    expect(src.contains('_hiddenTabContent[tab] ??= _buildTabContent(tab)'),
+        isTrue,
+        reason: '隐藏中的保活 tab 必须复用同一个 widget 实例，Flutter 才会跳过子树');
+    expect(src.contains('_hiddenTabContent.remove(tab)'), isTrue,
+        reason: '重新可见时必须丢掉缓存、按最新状态重建');
   });
 
   test('非保活 tab 仍按需构建（切走即销毁，保留挂载语义）', () {

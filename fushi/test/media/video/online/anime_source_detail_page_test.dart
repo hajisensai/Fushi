@@ -652,6 +652,10 @@ void main() {
       );
       await tester.pump();
       await tester.pump();
+      // 「在网站打开」收进了作品头部的「⋯」菜单：先开菜单再点菜单项。
+      await tester.tap(find.byKey(const ValueKey<String>('online_work_more')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
       await tester.tap(
         find.byKey(const ValueKey<String>('anime_source_open_website')),
       );
