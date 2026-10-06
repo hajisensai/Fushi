@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -537,10 +538,22 @@ class _WidePanel extends StatelessWidget {
             if (showCover) ...<Widget>[
               _SpringEntrance(
                 child: Center(
-                  child: _CoverTile(
-                    cover: data.cover,
+                  // 播放走过书中插图时封面位换成插图（见 lyrics_illustration_view）。
+                  child: LyricsIllustrationArtworkSlot(
+                    controller: data.illustrations,
                     side: coverSide,
-                    isPlaying: data.isPlaying,
+                    borderRadius: _kLargeBorderRadius,
+                    onOpen: callbacks.onOpenIllustration == null
+                        ? null
+                        : (int index) => callbacks.onOpenIllustration!(
+                            index,
+                            returnToCover: false,
+                          ),
+                    cover: _CoverTile(
+                      cover: data.cover,
+                      side: coverSide,
+                      isPlaying: data.isPlaying,
+                    ),
                   ),
                 ),
               ),
@@ -2072,10 +2085,25 @@ class _NarrowControlBar extends StatelessWidget {
                   return Row(
                     children: <Widget>[
                       if (showCover) ...<Widget>[
-                        _MiniCover(
-                          cover: data.cover,
-                          isPlaying: data.isPlaying,
-                          size: _kMiniCoverSize,
+                        // 小封面兼插图入口：有新插图时换成插图缩略图，点它看
+                        // 插图大图，看完回封面。
+                        LyricsIllustrationCompactArtwork(
+                          controller: data.illustrations,
+                          onOpen: callbacks.onOpenIllustration == null
+                              ? null
+                              : (int index) => callbacks.onOpenIllustration!(
+                                  index,
+                                  returnToCover: true,
+                                ),
+                          builder:
+                              (
+                                BuildContext context,
+                                ImageProvider? illustration,
+                              ) => _MiniCover(
+                                cover: illustration ?? data.cover,
+                                isPlaying: data.isPlaying,
+                                size: _kMiniCoverSize,
+                              ),
                         ),
                         const SizedBox(width: 12),
                       ],
