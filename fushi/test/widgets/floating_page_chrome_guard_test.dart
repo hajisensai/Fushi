@@ -61,7 +61,7 @@ void main() {
     );
     expect(
       bars,
-      contains('_buildFloating(context, floating)'),
+      contains('_buildFloating(context, floating, scrolledUnder)'),
       reason: 'FushiAppBar 的 Material 分支必须画悬浮胶囊顶栏',
     );
     expect(
