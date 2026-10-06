@@ -77,7 +77,7 @@ SettingsDestination buildFloatingBallDestination() {
             id: 'floating_ball.show_labels',
             title: t.floating_ball_show_labels,
             subtitle: t.floating_ball_show_labels_hint,
-            icon: Icons.text_fields,
+            icon: FushiIcons.textFields,
             value: (SettingsContext c) => _prefs(c).floatingBallShowLabels,
             onChanged: (SettingsContext c, bool value) async {
               await _prefs(c).setFloatingBallShowLabels(value);

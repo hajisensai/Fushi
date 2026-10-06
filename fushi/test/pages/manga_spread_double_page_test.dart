@@ -190,13 +190,21 @@ Directory _bookDir() {
 
 /// 完整页码读数（`页 / 总页`，双页时为区间 `2-3 / 4`）。M3E chrome 下界面显示
 /// 时底部滑块胶囊只分开画「当前页」与「总页数」两枚数字，区间读数只出现在隐藏
-/// 界面后的角落页码角标（与拖动气泡同一个 `_pageLabelFor`）。所以经 ⋮ 菜单的
-/// 「隐藏界面」（与快捷键同一执行体）收起 chrome，再读角标。
+/// 界面后的角落页码角标（与拖动气泡同一个 `_pageLabelFor`）。所以经右上角的
+/// 「隐藏界面」（平铺按钮或 ⋮ 菜单项，与快捷键同一执行体）收起 chrome，再读角标。
 Future<String?> _hiddenPageBadgeText(WidgetTester tester) async {
-  await tester.tap(find.byKey(const ValueKey<String>('manga_chrome_overflow')));
-  await tester.pumpAndSettle();
-  await tester.tap(
-      find.byKey(const ValueKey<String>('manga_chrome_hide_button_menu_item')));
+  // 右上角动作默认平铺；只有宽度不够时才收进「⋯」。两种形态都走同一执行体。
+  final Finder overflow =
+      find.byKey(const ValueKey<String>('manga_chrome_overflow'));
+  if (overflow.evaluate().isNotEmpty) {
+    await tester.tap(overflow);
+    await tester.pumpAndSettle();
+    await tester.tap(find
+        .byKey(const ValueKey<String>('manga_chrome_hide_button_menu_item')));
+  } else {
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_chrome_hide_button')));
+  }
   await tester.pumpAndSettle();
   expect(find.byKey(const ValueKey<String>('manga_chrome_show_button')),
       findsOneWidget,
