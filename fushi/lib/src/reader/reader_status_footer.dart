@@ -39,6 +39,19 @@ import 'package:fushi/utils.dart';
 /// 是 chrome 的铁律（见 reader_chrome_floating.dart 文件头）。
 const double kReaderStatusFooterHeight = 28;
 
+/// 悬浮形态（[ReaderStatusFooter.floating]）读数胶囊离窗口底边的外边距：胶囊是浮在
+/// 正文上的悬浮件，不能贴着窗口底边（无系统底 inset 的桌面窗口里会被切掉半截阴影、
+/// 看着像被挤出窗外，10-06 反馈）。有更大的系统底 inset 时以 inset 为准。
+const double kReaderStatusFooterFloatingBottomGap = 8;
+
+/// 状态行**带高**的预留口径：悬浮形态多出 [kReaderStatusFooterFloatingBottomGap]。
+/// 组件与页面（底部悬浮件坐落高度）共用这一处，视觉 == 预留。
+double readerStatusFooterPaintedHeight({
+  required bool floating,
+  double height = kReaderStatusFooterHeight,
+}) =>
+    floating ? height + kReaderStatusFooterFloatingBottomGap : height;
+
 /// 状态行文字字号，与顶部进度 pill 同源（12）。
 const double kReaderStatusFooterFontSize = kTopProgressFontSize;
 
@@ -482,7 +495,10 @@ class _ReaderStatusFooterState extends State<ReaderStatusFooter> {
             total: widget.totalChars,
           );
     final double bandHeight = readerStatusFooterBandHeight(
-      footerReserve: widget.height,
+      footerReserve: readerStatusFooterPaintedHeight(
+        floating: widget.floating,
+        height: widget.height,
+      ),
       bottomInset: widget.bottomInset,
     );
     return GestureDetector(

@@ -223,6 +223,18 @@ String labelWithShortcutHint(
   return '$label · ${keyboardBindings.first.displayLabel}';
 }
 
+/// 工具栏按钮的 tooltip 文案：功能名后括注快捷键（`导航 (Ctrl+F)`）。可见标签只放
+/// 功能名，快捷键挪进 tooltip——窄窗下 `导航 · Ctrl+F` 这种拼接会把底栏标签挤成
+/// 截断的乱码。触屏平台同 [labelWithShortcutHint] 不挂。
+String tooltipWithShortcutHint(
+  String label,
+  List<InputBinding> keyboardBindings, {
+  required bool keyboardHints,
+}) {
+  if (!keyboardHints || keyboardBindings.isEmpty) return label;
+  return '$label (${keyboardBindings.first.displayLabel})';
+}
+
 /// Localised label for a [ShortcutScope].
 extension ShortcutScopeLabel on ShortcutScope {
   String get label {

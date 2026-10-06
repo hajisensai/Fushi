@@ -1701,6 +1701,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   FushiToolbarItem _toolbarItem(ReaderHeaderAction a) => FushiToolbarItem(
         icon: a.icon,
         label: a.label,
+        tooltip: a.tooltipText,
         onPressed: a.onPressed,
         key: a.key,
         semanticsId: a.semanticsId,
@@ -1826,7 +1827,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_navigation_button'),
           icon: FushiIcons.bulletList,
-          label: _labelWithShortcut(
+          label: t.section_navigation,
+          tooltip: _shortcutTooltip(
             t.section_navigation,
             ShortcutAction.readerOpenNavigation,
           ),
@@ -1839,7 +1841,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.gallery:
         return ReaderHeaderAction(
           icon: FushiIcons.collections,
-          label: _labelWithShortcut(
+          label: t.reader_gallery_tooltip,
+          tooltip: _shortcutTooltip(
             t.reader_gallery_tooltip,
             ShortcutAction.readerOpenGallery,
           ),
@@ -1848,7 +1851,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.statistics:
         return ReaderHeaderAction(
           icon: FushiIcons.statistics,
-          label: _labelWithShortcut(
+          label: t.reading_statistics,
+          tooltip: _shortcutTooltip(
             t.reading_statistics,
             ShortcutAction.readerOpenStatistics,
           ),
@@ -1863,7 +1867,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_study_timer_button'),
           icon: paused ? FushiIcons.timerOff : FushiIcons.timer,
-          label: _labelWithShortcut(
+          label: paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
+          tooltip: _shortcutTooltip(
             paused ? t.reader_stats_clock_resume : t.reader_stats_clock_pause,
             ShortcutAction.readerToggleStudyClock,
           ),
@@ -1880,7 +1885,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       case ReaderControlItem.audiobook:
         return ReaderHeaderAction(
           icon: FushiIcons.audiobook,
-          label: _labelWithShortcut(
+          label: t.section_audiobook,
+          tooltip: _shortcutTooltip(
             t.section_audiobook,
             ShortcutAction.readerOpenAudiobook,
           ),
@@ -1920,7 +1926,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
         return ReaderHeaderAction(
           key: const ValueKey<String>('fushi_reader_settings_button'),
           icon: FushiIcons.settings,
-          label: _labelWithShortcut(
+          label: t.reader_settings_section,
+          tooltip: _shortcutTooltip(
             t.reader_settings_section,
             ShortcutAction.readerOpenMenu,
           ),
@@ -2038,7 +2045,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Widget _readerControlButton(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
         key: a.key,
         icon: a.icon,
-        tooltip: a.label,
+        tooltip: a.tooltipText,
         color: _themeTextColor(),
         semanticsId: a.semanticsId,
         onPressed: a.onPressed,
@@ -2984,10 +2991,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ///
   /// 纯指针面：包 ExcludeFocus，不进焦点遍历池（与 [_wrapBottomChromeBar] 同一规则，
   /// TODO-700 不变式）。BUG-1692：排在 WebView 之后绘制，必须自带 RepaintBoundary。
-  /// 动作文案后缀绑定键（`插图画廊 · G`），让快捷键在工具栏 tooltip 里可见；
-  /// 触屏平台不挂（见 [labelWithShortcutHint]，BUG-2960）。
-  String _labelWithShortcut(String label, ShortcutAction action) {
-    return labelWithShortcutHint(
+  /// 快捷键只进 tooltip（`插图画廊 (G)`），可见标签只放功能名——窄窗底栏把
+  /// `导航 · Ctrl+F` 截成乱码（10-06 反馈）；触屏平台不挂（BUG-2960）。
+  String _shortcutTooltip(String label, ShortcutAction action) {
+    return tooltipWithShortcutHint(
       label,
       appModel.shortcutRegistry.bindingsFor(action).keyboardBindings,
       keyboardHints: isDesktopPlatform,

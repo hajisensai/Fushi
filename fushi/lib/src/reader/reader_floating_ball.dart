@@ -540,7 +540,7 @@ class _ColumnButton extends StatelessWidget {
       shadowColor: Colors.black.withValues(alpha: 0.4),
       clipBehavior: Clip.antiAlias,
       child: FushiTooltip(
-        message: action.label,
+        message: action.tooltipText,
         child: Semantics(
           identifier: action.semanticsId,
           button: true,
@@ -574,7 +574,7 @@ class _ColumnButton extends StatelessWidget {
         shape: const LiquidOval(),
         platformViewBackdrop: fushiGlassOverPlatformView(context),
         child: FushiTooltip(
-          message: action.label,
+          message: action.tooltipText,
           child: Semantics(
             identifier: action.semanticsId,
             button: true,
