@@ -344,9 +344,16 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     // 系统栏）作为按钮条基线，进度条偏移叠加其上。
     // 按钮条高与间距同样吃密度档缩放（小窗 / 窄窗），否则进度条会按未缩小的按钮条
     // 高度抬起、在缩小后的底栏上方凭空浮一截。
-    final double seekBarBottom = bottomChromeInset +
-        _videoButtonBarHeight * density +
-        _videoSeekBarButtonGap * density;
+    // BUG-3062：与章节刻度 / 暗角 / 胶囊读同一个纯函数，不再各写一份加法。
+    final double seekBarBottom = videoSeekBarContainerBottom(
+      isDesktop: false,
+      buttonBarHeight: _videoButtonBarHeight * density,
+      seekBarButtonGap: _videoSeekBarButtonGap * density,
+      floatingLift: _floatingChromeBottomLift,
+      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
+      bottomSystemInset: _videoBottomSystemInset(),
+      desktopButtonBarOverlap: 0,
+    );
     return MaterialVideoControlsThemeData(
       // 无操作 2 秒后控制条自动隐藏（TODO-056，media_kit 默认 3 秒偏长）。
       controlsHoverDuration: const Duration(seconds: 2),

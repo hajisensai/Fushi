@@ -917,6 +917,26 @@ List<double> videoCueDensity(
   return out;
 }
 
+/// [VideoM3eSeekTrack] 的轨道中线离进度条热区容器**底缘**的距离（BUG-3062）。
+///
+/// 这是 M3E 轨道竖直位置的唯一真相：轨道 widget 自己按它画，页面上叠在进度条上的
+/// 兄弟层（章节刻度、缩略图预览、自动连播卡、底部暗角）也按它推导轨道中线，两边
+/// 不再各写一套近似公式。
+///
+/// - [trackBottomInset] 非空：直接用它（桌面把细轨抬到底栏小胶囊上方）；
+/// - 底对齐（[alignment] `y >= 0.5`，移动端默认 bottomCenter）：底缘之上 `(6 + 4) × scale`；
+/// - 其余：按 [alignment] 在容器里竖直摆放。
+double videoM3eSeekTrackCenterFromBottom({
+  required double containerHeight,
+  required double scale,
+  required Alignment alignment,
+  double? trackBottomInset,
+}) {
+  if (trackBottomInset != null) return trackBottomInset;
+  if (alignment.y >= 0.5) return (6 + 4) * scale;
+  return containerHeight - containerHeight * (alignment.y + 1) / 2;
+}
+
 /// MD3 Expressive 进度条轨道（fork `seekBarTrackBuilder` 的产物，填满进度条热区）。
 ///
 /// - 已播段：播放中是流动的正弦波（振幅 3、波长 32，随界面缩放），暂停 / 拖动时
@@ -1043,12 +1063,14 @@ class _VideoM3eSeekTrackState extends State<VideoM3eSeekTrack>
         final double w = constraints.maxWidth;
         final double h = constraints.maxHeight;
         final double s = widget.scale;
-        final double? bottomInset = widget.trackBottomInset;
-        final double centerY = bottomInset != null
-            ? h - bottomInset
-            : v.alignment.y >= 0.5
-            ? h - (6 + 4) * s
-            : h * (v.alignment.y + 1) / 2;
+        final double centerY =
+            h -
+            videoM3eSeekTrackCenterFromBottom(
+              containerHeight: h,
+              scale: s,
+              alignment: v.alignment,
+              trackBottomInset: widget.trackBottomInset,
+            );
         return Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
