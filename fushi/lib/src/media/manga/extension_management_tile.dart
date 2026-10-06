@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -171,7 +172,7 @@ class MangaExtensionManagementTile extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         _buildRow(context, tokens, narrow: narrow),
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: motion.spatialDefault.duration,
           curve: motion.spatialDefault.curve,
           alignment: Alignment.topCenter,

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -1425,7 +1426,7 @@ class SettingsModifiedRow extends StatelessWidget {
                   fit: FlexFit.tight,
                   child: child,
                 ),
-                AnimatedSize(
+                FushiAnimatedSize(
                   duration: fushiMotionDuration(context, FushiMotion.short),
                   curve: FushiMotion.standard,
                   child: Align(
@@ -1688,7 +1689,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
     // 跳转条吸在页头下方（不随正文滚动），出现 / 消失走尺寸 + 淡入过渡。
     // 与下方第一个分组标题之间留一档 gap：此前胶囊底紧贴分组标题，两排
     // 文字读成一行。
-    final Widget jumpBar = AnimatedSize(
+    final Widget jumpBar = FushiAnimatedSize(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.enter,
       alignment: Alignment.topCenter,

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
@@ -1055,7 +1056,7 @@ class FushiFloatingActionsPill extends StatelessWidget {
                 key: ValueKey<Object>(_signatureOf(actions)),
                 child: _FloatingActionsBody(actions: actions),
               );
-        return AnimatedSize(
+        return FushiAnimatedSize(
           duration: motion ? const Duration(milliseconds: 420) : Duration.zero,
           curve: const FushiSpringCurve(),
           alignment: AlignmentDirectional.centerEnd,
