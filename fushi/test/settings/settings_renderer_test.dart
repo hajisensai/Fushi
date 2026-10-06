@@ -911,7 +911,19 @@ void main() {
     expect(row.readout, '100%');
     expect(row.label, '100%');
 
+    // 27a62a0（commitOnRelease）：拖动只跟手预览，不逐 tick 写穿——否则每帧写库
+    // + 推正文 WebView 重注样式；松手 onChangeEnd 才一次性提交。
     row.onChanged(35);
+    await tester.pump();
+    expect(
+      ReaderFushiSource.instance.lookupAudioVolume,
+      100,
+      reason: '拖动期间不得写穿查词音量',
+    );
+    row = tester.widget<AdaptiveSettingsSliderRow>(sliderFinder());
+    expect(row.value, 35, reason: '滑条显示跟手到本地拖动值');
+
+    row.onChangeEnd!(35);
     await tester.pump();
 
     expect(ReaderFushiSource.instance.lookupAudioVolume, 35);
