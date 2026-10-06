@@ -283,96 +283,100 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     // 统一页面壳（MD3 大标题 / Apple 大标题 + 玻璃返回钮），与其它子页一致。
     return FushiPageScaffold(
       title: t.ai_media_acquire_title(domain: widget.domainLabel),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
+      // 输入行 / AI 改写的搜索词 / 降级提示 / 进度原本固定在正文顶部：页头浮在
+      // 正文上之后（脚手架默认 extendBodyBehindHeader）它们随页头一起进
+      // headerBottom 纵向堆叠，结果列表自己让开顶部。
+      headerBottom: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  // 共享 M3E 搜索栏——这一栏就是「说一句话去搜」。
+                  child: FushiSearchBar(
+                    fieldKey: const ValueKey<String>('ai-media-acquire-input'),
+                    controller: _input,
+                    autofocus: widget.initialQuery?.trim().isEmpty ?? true,
+                    hintText: t.ai_media_acquire_hint,
+                    onSubmitted: (String _) => unawaited(_submit()),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FushiFilledButton.icon(
+                  key: const ValueKey<String>('ai-media-acquire-send'),
+                  onPressed: _busy ? null : () => unawaited(_submit()),
+                  icon: const FushiIcon(FushiIcons.ai),
+                  label: Text(t.ai_media_acquire_send),
+                ),
+              ],
+            ),
+          ),
+          if (_queries.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    // 共享 M3E 搜索栏——这一栏就是「说一句话去搜」。
-                    child: FushiSearchBar(
-                      fieldKey: const ValueKey<String>(
-                        'ai-media-acquire-input',
-                      ),
-                      controller: _input,
-                      autofocus: widget.initialQuery?.trim().isEmpty ?? true,
-                      hintText: t.ai_media_acquire_hint,
-                      onSubmitted: (String _) => unawaited(_submit()),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FushiFilledButton.icon(
-                    key: const ValueKey<String>('ai-media-acquire-send'),
-                    onPressed: _busy ? null : () => unawaited(_submit()),
-                    icon: const FushiIcon(FushiIcons.ai),
-                    label: Text(t.ai_media_acquire_send),
-                  ),
-                ],
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                t.ai_media_acquire_queries(queries: _queries.join(' / ')),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
-            if (_queries.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  t.ai_media_acquire_queries(queries: _queries.join(' / ')),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
+          if (_aiDegraded)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              // AI 降级是「仍可用、但没有智能推荐」的警告：统一提示块（中性底
+              // + 单色警告图标），不再是一行红字像报错。
+              child: FushiInlineNotice(
+                key: const ValueKey<String>('ai-media-acquire-degraded'),
+                severity: FushiNoticeSeverity.warning,
+                message: t.ai_media_acquire_ai_failed,
               ),
-            if (_aiDegraded)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                // AI 降级是「仍可用、但没有智能推荐」的警告：统一提示块（中性底
-                // + 单色警告图标），不再是一行红字像报错。
-                child: FushiInlineNotice(
-                  key: const ValueKey<String>('ai-media-acquire-degraded'),
-                  severity: FushiNoticeSeverity.warning,
-                  message: t.ai_media_acquire_ai_failed,
-                ),
-              ),
-            if (_busy) ...<Widget>[
-              const SizedBox(height: 8),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: FushiLinearProgressIndicator(),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                child: Text(switch (_phase) {
-                  _Phase.parsing => t.ai_media_acquire_parsing,
-                  _Phase.picking => t.ai_media_acquire_picking,
-                  _ => t.ai_media_acquire_searching,
-                }, style: theme.textTheme.bodySmall),
-              ),
-            ],
+            ),
+          if (_busy) ...<Widget>[
             const SizedBox(height: 8),
-            Expanded(child: _buildResults(theme)),
+            const FushiLinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(switch (_phase) {
+                _Phase.parsing => t.ai_media_acquire_parsing,
+                _Phase.picking => t.ai_media_acquire_picking,
+                _ => t.ai_media_acquire_searching,
+              }, style: theme.textTheme.bodySmall),
+            ),
           ],
-        ),
+        ],
+      ),
+      // 正文用 body 子树里的 context 构建，才读得到脚手架下发的顶部让位。
+      body: Builder(
+        builder: (BuildContext context) => _buildResults(theme, context),
       ),
     );
   }
 
-  Widget _buildResults(ThemeData theme) {
+  Widget _buildResults(ThemeData theme, BuildContext context) {
     if (_phase == _Phase.done && _candidates.isEmpty) {
-      return FushiPlaceholderMessage(
-        key: const ValueKey<String>('ai-media-acquire-empty'),
-        icon: FushiIcons.searchOff,
-        message: t.ai_media_acquire_no_results,
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          key: const ValueKey<String>('ai-media-acquire-empty'),
+          icon: FushiIcons.searchOff,
+          message: t.ai_media_acquire_no_results,
+        ),
       );
     }
     // 还没搜出任何候选：空闲时是引导态，忙时是与结果行同轮廓的骨架。
     if (_candidates.isEmpty) {
-      if (_busy) return _buildSkeleton();
-      return FushiPlaceholderMessage(
-        key: const ValueKey<String>('ai-media-acquire-idle'),
-        icon: FushiIcons.ai,
-        message: t.ai_media_acquire_hint,
+      if (_busy) return _buildSkeleton(MediaQuery.paddingOf(context).top);
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          key: const ValueKey<String>('ai-media-acquire-idle'),
+          icon: FushiIcons.ai,
+          message: t.ai_media_acquire_hint,
+        ),
       );
     }
     final List<MediaAcquisitionCandidate> picked = <MediaAcquisitionCandidate>[
@@ -392,7 +396,10 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
       replayKey: _picks.isEmpty ? _generation : -_generation,
       child: ListView(
         key: const ValueKey<String>('ai-media-acquire-results'),
-        padding: EdgeInsets.only(bottom: 24 + bottomSafeInsetOf(context)),
+        padding: EdgeInsets.only(
+          top: 8 + MediaQuery.paddingOf(context).top,
+          bottom: 24 + bottomSafeInsetOf(context),
+        ),
         children: <Widget>[
           if (picked.isNotEmpty) ...<Widget>[
             _sectionLabel(theme, t.ai_media_acquire_recommended),
@@ -426,7 +433,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
   }
 
   /// 搜索中、尚无候选时的骨架：与结果行同轮廓（行首色块 + 两条文字 + 按钮位）。
-  Widget _buildSkeleton() {
+  Widget _buildSkeleton(double topInset) {
     Widget row() => Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
@@ -456,7 +463,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
       child: ListView(
         key: const ValueKey<String>('ai-media-acquire-skeleton'),
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(top: 8),
+        padding: EdgeInsets.only(top: 8 + topInset),
         children: <Widget>[
           FushiGroupedList(
             padding: const EdgeInsets.symmetric(horizontal: 16),
