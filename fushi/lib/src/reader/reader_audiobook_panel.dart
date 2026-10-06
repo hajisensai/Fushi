@@ -15,6 +15,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
     show AudiobookFollowAudioButton, AudiobookPlayFab;
@@ -171,7 +172,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     if (identical(anim, _routeAnimation)) return;
     _routeAnimation?.removeStatusListener(_onRouteStatus);
     _routeAnimation = anim;
-    final bool animating = anim != null &&
+    final bool animating =
+        anim != null &&
         anim.status == AnimationStatus.forward &&
         fushiMotionEnabled(context);
     _routeSettled = !animating;
@@ -245,36 +247,41 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       readerPanelStagger(0, _buildHero(theme, ctrl)),
       const SizedBox(height: 4),
       readerPanelStagger(
-          1,
-          ReaderPanelTabs<String>(
-            padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
-            tabs: <ReaderPanelTab<String>>[
-              ReaderPanelTab<String>(
-                value: 'chapters',
-                label: t.reader_audiobook_tab_chapters,
-                icon: Icons.format_list_bulleted,
-                key: const ValueKey<String>(
-                    'fushi_audiobook_tab_button_chapters'),
+        1,
+        ReaderPanelTabs<String>(
+          padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
+          tabs: <ReaderPanelTab<String>>[
+            ReaderPanelTab<String>(
+              value: 'chapters',
+              label: t.reader_audiobook_tab_chapters,
+              icon: Icons.format_list_bulleted,
+              key: const ValueKey<String>(
+                'fushi_audiobook_tab_button_chapters',
               ),
-              ReaderPanelTab<String>(
-                value: 'settings',
-                label: t.settings,
-                icon: Icons.tune_outlined,
-                key: const ValueKey<String>(
-                    'fushi_audiobook_tab_button_settings'),
+            ),
+            ReaderPanelTab<String>(
+              value: 'settings',
+              label: t.settings,
+              icon: Icons.tune_outlined,
+              key: const ValueKey<String>(
+                'fushi_audiobook_tab_button_settings',
               ),
-            ],
-            selected: _tab,
-            onChanged: (String id) => setState(() {
-              _tabForward = kReaderAudiobookPanelTabs.indexOf(id) >=
-                  kReaderAudiobookPanelTabs.indexOf(_tab);
-              if (id != _tab) _tabSerial++;
-              _tab = id;
-            }),
-          )),
+            ),
+          ],
+          selected: _tab,
+          onChanged: (String id) => setState(() {
+            _tabForward =
+                kReaderAudiobookPanelTabs.indexOf(id) >=
+                kReaderAudiobookPanelTabs.indexOf(_tab);
+            if (id != _tab) _tabSerial++;
+            _tab = id;
+          }),
+        ),
+      ),
     ];
-    final ValueKey<String> tabKey =
-        ValueKey<String>('fushi_audiobook_tab_${_tab}_$_tabSerial');
+    final ValueKey<String> tabKey = ValueKey<String>(
+      'fushi_audiobook_tab_${_tab}_$_tabSerial',
+    );
     // M3E shared-axis X：新页签从前进方向滑入淡入，旧页签朝反方向滑出淡出。
     // 每个页签内容自带一个进场窗口（新挂载的 scope），切过去也有一轮错峰进场——
     // 之前整块共用面板挂载时的那一个窗口，切页签时窗口早已关了，行瞬间出现。
@@ -307,8 +314,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         builder: (BuildContext context, BoxConstraints constraints) {
           // 高度够 → 「正在播放」卡钉住、只有页签内容滚；不够 → 整块面板一起滚
           // （手机横屏），否则 Expanded 被压到 ~0，页签以下滚不出来。
-          final bool pinned =
-              readerAudiobookPanelPinsHero(constraints.maxHeight);
+          final bool pinned = readerAudiobookPanelPinsHero(
+            constraints.maxHeight,
+          );
           Widget gate(Widget child) => _routeSettled
               ? KeyedSubtree(
                   key: const ValueKey<String>('fushi_audiobook_settled'),
@@ -316,15 +324,17 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 )
               : IgnorePointer(child: Opacity(opacity: 0, child: child));
           if (pinned) {
-            return gate(FushiEntranceScope(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  ...head,
-                  Expanded(child: body),
-                ],
+            return gate(
+              FushiEntranceScope(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    ...head,
+                    Expanded(child: body),
+                  ],
+                ),
               ),
-            ));
+            );
           }
           final Widget column = Column(
             mainAxisSize: MainAxisSize.min,
@@ -395,8 +405,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                         ? const <BoxShadow>[]
                         : <BoxShadow>[
                             BoxShadow(
-                              color: theme.colorScheme.shadow
-                                  .withValues(alpha: 0.28),
+                              color: theme.colorScheme.shadow.withValues(
+                                alpha: 0.28,
+                              ),
                               blurRadius: 16,
                               offset: const Offset(0, 6),
                             ),
@@ -437,7 +448,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                         child: Text(
                           widget.chapterLabel!.trim(),
                           key: const ValueKey<String>(
-                              'fushi_audiobook_hero_chapter'),
+                            'fushi_audiobook_hero_chapter',
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.labelMedium?.copyWith(
@@ -452,12 +464,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                       switchOutCurve: FushiMotion.exit,
                       layoutBuilder: (Widget? current, List<Widget> previous) =>
                           Stack(
-                        alignment: AlignmentDirectional.topStart,
-                        children: <Widget>[
-                          ...previous,
-                          if (current != null) current,
-                        ],
-                      ),
+                            alignment: AlignmentDirectional.topStart,
+                            children: <Widget>[
+                              ...previous,
+                              if (current != null) current,
+                            ],
+                          ),
                       child: Text(
                         cueText.isEmpty ? widget.title : cueText,
                         key: ValueKey<String>('fushi_audiobook_cue_$cueText'),
@@ -496,10 +508,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     final Duration dur = ctrl.totalDuration;
     final int durMs = dur.inMilliseconds;
     final int? scrub = _effectiveScrubMs(livePos);
-    final Duration pos =
-        scrub == null ? livePos : Duration(milliseconds: scrub);
-    final double value =
-        durMs > 0 ? (pos.inMilliseconds / durMs).clamp(0.0, 1.0) : 0.0;
+    final Duration pos = scrub == null
+        ? livePos
+        : Duration(milliseconds: scrub);
+    final double value = durMs > 0
+        ? (pos.inMilliseconds / durMs).clamp(0.0, 1.0)
+        : 0.0;
     final List<double> ticks = <double>[
       if (durMs > 0)
         for (int i = 0; i < widget.toc.length; i++)
@@ -524,10 +538,12 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                       fractions: ticks,
                       tickColor: fg.withValues(alpha: 0.55),
                     ),
-                    thumbShape:
-                        const RoundSliderThumbShape(enabledThumbRadius: 7),
-                    overlayShape:
-                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 7,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
                   )
                 : fushiSliderSizeTheme(
                     base.copyWith(
@@ -556,15 +572,15 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 label: _formatDuration(pos),
                 onChangeStart: durMs > 0
                     ? (double v) => setState(() {
-                          _scrubTargetMs = (v * durMs).round();
-                          _scrubSetAt = DateTime.now();
-                        })
+                        _scrubTargetMs = (v * durMs).round();
+                        _scrubSetAt = DateTime.now();
+                      })
                     : null,
                 onChanged: durMs > 0
                     ? (double v) => setState(() {
-                          _scrubTargetMs = (v * durMs).round();
-                          _scrubSetAt = DateTime.now();
-                        })
+                        _scrubTargetMs = (v * durMs).round();
+                        _scrubSetAt = DateTime.now();
+                      })
                     : null,
                 onChangeEnd: durMs > 0
                     ? (double v) {
@@ -739,9 +755,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     return ListView(
       key: const ValueKey<String>('fushi_audiobook_settings_list'),
       primary: false,
-      children: <Widget>[
-        widget.settingsBuilder(context),
-      ],
+      children: <Widget>[widget.settingsBuilder(context)],
     );
   }
 
@@ -759,8 +773,10 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       action();
     }
 
-    final Color fg =
-        ReaderPanelCard.foregroundFor(context, ReaderPanelCardTone.neutral);
+    final Color fg = ReaderPanelCard.foregroundFor(
+      context,
+      ReaderPanelCardTone.neutral,
+    );
     final List<Widget> actions = <Widget>[
       if (widget.onPickAlignment != null)
         FushiFilledButton.tonalIcon(
@@ -892,7 +908,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         icon: FushiIcons.timer,
         target: leftMs.toDouble(),
         format: _formatMsValue,
-        label: '${t.reader_audiobook_overview_left} · '
+        label:
+            '${t.reader_audiobook_overview_left} · '
             '${AudiobookSpeedSlider.format(speed)}',
       ),
       if (chapterLeftMs != null)
@@ -933,7 +950,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   /// 「章节」页：目录 + 该章首句在全书音频时间轴上的起点；当前章高亮。点击先跳
   /// 阅读器到该章，再把音频定位到该章首句（无 cue 的章只跳文字）。
   Widget _buildChaptersTab(ThemeData theme, AudiobookPlayerController? ctrl) {
-    final int currentEntry = resolveCurrentTocEntry(
+    final int currentEntry =
+        resolveCurrentTocEntry(
           widget.toc,
           widget.currentSection,
           widget.currentCharOffset,
@@ -958,8 +976,9 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     final int? currentStart = currentEntry >= 0 && currentEntry < starts.length
         ? starts[currentEntry]
         : null;
-    final int? currentDur =
-        currentStart == null ? null : durationFor(currentEntry);
+    final int? currentDur = currentStart == null
+        ? null
+        : durationFor(currentEntry);
     final int? chapterEndMs = currentStart == null || currentDur == null
         ? null
         : currentStart + currentDur;
@@ -993,48 +1012,56 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       currentEntry: currentEntry,
       leadCount: lead.length,
       itemCount: lead.length + widget.toc.length,
-      builder: (BuildContext context, ScrollController scroll,
-              GlobalKey currentRowKey) =>
-          ListView.builder(
-        key: const ValueKey<String>('fushi_audiobook_chapters'),
-        controller: scroll,
-        itemCount: lead.length + widget.toc.length,
-        itemBuilder:
-            fushiStaggeredItemBuilder((BuildContext context, int index) {
-          if (index < lead.length) return lead[index];
-          final int i = index - lead.length;
-          final TtuTocEntry entry = widget.toc[i];
-          final int? startMs = starts[i];
-          final int? dms = durationFor(i);
-          final String? subtitle = <String>[
-            if (i == currentEntry) t.reader_audiobook_current_chapter,
-            if (dms != null) _formatDuration(Duration(milliseconds: dms)),
-          ].join(' · ').let((String s) => s.isEmpty ? null : s);
-          return ReaderPanelListItem(
-            key: i == currentEntry ? currentRowKey : null,
-            title: entry.label,
-            subtitle: subtitle,
-            current: i == currentEntry,
-            trailing: Text(
-              startMs == null
-                  ? '—'
-                  : _formatDuration(Duration(milliseconds: startMs)),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-              ),
-            ),
-            onTap: () async {
-              Navigator.of(context).pop();
-              await widget.onJumpSection(entry.index, entry.fragment);
-              final AudioCue? first =
-                  ctrl == null ? null : _entryStartCue(ctrl, i);
-              if (ctrl != null && first != null) {
-                await ctrl.skipToCue(first);
-              }
-            },
-          );
-        }),
-      ),
+      builder:
+          (
+            BuildContext context,
+            ScrollController scroll,
+            GlobalKey currentRowKey,
+          ) => ListView.builder(
+            key: const ValueKey<String>('fushi_audiobook_chapters'),
+            controller: scroll,
+            itemCount: lead.length + widget.toc.length,
+            itemBuilder: fushiStaggeredItemBuilder((
+              BuildContext context,
+              int index,
+            ) {
+              if (index < lead.length) return lead[index];
+              final int i = index - lead.length;
+              final TtuTocEntry entry = widget.toc[i];
+              final int? startMs = starts[i];
+              final int? dms = durationFor(i);
+              final String? subtitle = <String>[
+                if (i == currentEntry) t.reader_audiobook_current_chapter,
+                if (dms != null) _formatDuration(Duration(milliseconds: dms)),
+              ].join(' · ').let((String s) => s.isEmpty ? null : s);
+              return ReaderPanelListItem(
+                key: i == currentEntry ? currentRowKey : null,
+                title: entry.label,
+                subtitle: subtitle,
+                current: i == currentEntry,
+                trailing: Text(
+                  startMs == null
+                      ? '—'
+                      : _formatDuration(Duration(milliseconds: startMs)),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFeatures: const <FontFeature>[
+                      FontFeature.tabularFigures(),
+                    ],
+                  ),
+                ),
+                onTap: () async {
+                  Navigator.of(context).pop();
+                  await widget.onJumpSection(entry.index, entry.fragment);
+                  final AudioCue? first = ctrl == null
+                      ? null
+                      : _entryStartCue(ctrl, i);
+                  if (ctrl != null && first != null) {
+                    await ctrl.skipToCue(first);
+                  }
+                },
+              );
+            }),
+          ),
     );
   }
 }
@@ -1063,7 +1090,8 @@ class _AudiobookChapterList extends StatefulWidget {
     BuildContext context,
     ScrollController scroll,
     GlobalKey currentRowKey,
-  ) builder;
+  )
+  builder;
 
   @override
   State<_AudiobookChapterList> createState() => _AudiobookChapterListState();
@@ -1113,7 +1141,7 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
         _scrolledEntry = entry;
         _revealingEntry = -1;
         unawaited(
-          Scrollable.ensureVisible(
+          FushiFocusScroll.ensureVisible(
             row,
             alignment: 0.3,
             duration: fushiMotionDuration(context, FushiMotion.medium),
@@ -1139,8 +1167,10 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
       final double estimate = attempt == 0
           ? widget.leadCount * 120.0 + entry * readerPanelRowMinHeight(context)
           : index * average - pos.viewportDimension * 0.3;
-      final double target =
-          estimate.clamp(pos.minScrollExtent, pos.maxScrollExtent);
+      final double target = estimate.clamp(
+        pos.minScrollExtent,
+        pos.maxScrollExtent,
+      );
       if (attempt > 0 && (target - pos.pixels).abs() < 1) {
         // 估算原地不动却仍看不到目标：再跳也一样，放手。
         _scrolledEntry = entry;
@@ -1195,14 +1225,13 @@ class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
     required SliderThemeData sliderTheme,
     bool isEnabled = false,
     bool isDiscrete = false,
-  }) =>
-      inner.getPreferredRect(
-        parentBox: parentBox,
-        offset: offset,
-        sliderTheme: sliderTheme,
-        isEnabled: isEnabled,
-        isDiscrete: isDiscrete,
-      );
+  }) => inner.getPreferredRect(
+    parentBox: parentBox,
+    offset: offset,
+    sliderTheme: sliderTheme,
+    isEnabled: isEnabled,
+    isDiscrete: isDiscrete,
+  );
 
   @override
   void paint(
@@ -1272,8 +1301,10 @@ class _OverviewStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final Color fg =
-        ReaderPanelCard.foregroundFor(context, ReaderPanelCardTone.neutral);
+    final Color fg = ReaderPanelCard.foregroundFor(
+      context,
+      ReaderPanelCardTone.neutral,
+    );
     final Color accent = isGlassDesign(context)
         ? appleColorsOf(context).secondaryLabel
         : theme.colorScheme.primary;
@@ -1385,14 +1416,15 @@ class AudiobookSleepTimer extends ChangeNotifier {
   /// 测试用：不挂控制器，到点只回调 [onExpire]。
   @visibleForTesting
   AudiobookSleepTimer.forTesting({required VoidCallback onExpire})
-      : _onExpire = onExpire;
+    : _onExpire = onExpire;
 
   static final Expando<AudiobookSleepTimer> _byController =
       Expando<AudiobookSleepTimer>('audiobookSleepTimer');
 
   static AudiobookSleepTimer of(AudiobookPlayerController controller) =>
-      _byController[controller] ??=
-          AudiobookSleepTimer._(() => unawaited(controller.pause()));
+      _byController[controller] ??= AudiobookSleepTimer._(
+        () => unawaited(controller.pause()),
+      );
 
   /// 当前时刻（测试注入假时钟）。
   @visibleForTesting
@@ -1488,8 +1520,9 @@ class _SleepTimerChip extends StatelessWidget {
         showCheckmark: false,
         onSelected: (_) async {
           final RenderObject? box = anchor.findRenderObject();
-          final RenderObject? overlay =
-              Overlay.of(anchor).context.findRenderObject();
+          final RenderObject? overlay = Overlay.of(
+            anchor,
+          ).context.findRenderObject();
           if (box is! RenderBox || overlay is! RenderBox) return;
           final Offset at = box.localToGlobal(Offset.zero, ancestor: overlay);
           final int? choice = await showMenu<int>(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/models.dart';
@@ -24,8 +25,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/utils.dart';
-import 'package:material_color_utilities/material_color_utilities.dart'
-    as mcu;
+import 'package:material_color_utilities/material_color_utilities.dart' as mcu;
 
 /// 自定义主题编辑页里可改的颜色「角色」——按用户看得见的用途命名，不按 Material
 /// 术语命名（seed/primary/tertiary 对用户没有意义）。每个角色在预览卡里都有一个
@@ -198,7 +198,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ? appModelNoUpdate.customThemeById(widget.themeId!)
         : null;
     _isDraft = persisted == null;
-    final CustomThemeEntry entry = persisted ??
+    final CustomThemeEntry entry =
+        persisted ??
         CustomThemeEntry(
           id: widget.themeId ?? 'ct-${DateTime.now().microsecondsSinceEpoch}',
           name: '',
@@ -208,8 +209,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         );
     _entryId = entry.id;
     _nameController = TextEditingController(text: entry.name);
-    _previewBrightness =
-        appModelNoUpdate.isDarkMode ? Brightness.dark : Brightness.light;
+    _previewBrightness = appModelNoUpdate.isDarkMode
+        ? Brightness.dark
+        : Brightness.light;
     _loadEntry(entry, audioHighlight: appModelNoUpdate.audioHighlightColor);
     _nameFocus.addListener(_onNameFocusChanged);
   }
@@ -259,16 +261,16 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       _followSystemAccent ? (_systemAccent ?? _accent) : _accent;
 
   int get _schemeInputsHash => Object.hash(
-        _resolvedAccent.toARGB32(),
-        _accentAutoTone,
-        _neutralDerived,
-        _overrides[_ThemeRole.secondary]?.toARGB32(),
-        _overrides[_ThemeRole.tertiary]?.toARGB32(),
-        _overrides[_ThemeRole.container]?.toARGB32(),
-        _overrides[_ThemeRole.surface]?.toARGB32(),
-        appModelNoUpdate.einkMode,
-        appModelNoUpdate.pureBlackDark,
-      );
+    _resolvedAccent.toARGB32(),
+    _accentAutoTone,
+    _neutralDerived,
+    _overrides[_ThemeRole.secondary]?.toARGB32(),
+    _overrides[_ThemeRole.tertiary]?.toARGB32(),
+    _overrides[_ThemeRole.container]?.toARGB32(),
+    _overrides[_ThemeRole.surface]?.toARGB32(),
+    appModelNoUpdate.einkMode,
+    appModelNoUpdate.pureBlackDark,
+  );
 
   ColorScheme _schemeFor(Brightness brightness) {
     final int key = _schemeInputsHash;
@@ -654,8 +656,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                         result,
                         audioHighlight:
                             result.sentenceAudioHighlightColor != null
-                                ? Color(result.sentenceAudioHighlightColor!)
-                                : null,
+                            ? Color(result.sentenceAudioHighlightColor!)
+                            : null,
                       );
                       FushiToast.show(
                         msg: t.import_theme_success,
@@ -735,8 +737,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         // 的全局偏好清掉。
         audioHighlight:
             suggestion.colors.containsKey(AiThemeRole.audioHighlight)
-                ? Color(merged.sentenceAudioHighlightColor!)
-                : audioBefore,
+            ? Color(merged.sentenceAudioHighlightColor!)
+            : audioBefore,
       );
       setState(() {
         _aiMessage = t.theme_ai_applied;
@@ -762,8 +764,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     if (snapshot == null) return;
     _aiUndoSnapshot = null;
     _nameController.text = snapshot.entry.name;
-    _applyImportedTheme(snapshot.entry,
-        audioHighlight: snapshot.audioHighlight);
+    _applyImportedTheme(
+      snapshot.entry,
+      audioHighlight: snapshot.audioHighlight,
+    );
     setState(() {
       _aiMessage = null;
       _aiExplanation = '';
@@ -801,7 +805,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         child: FushiIcon(
           FushiIcons.ai,
           size: 20,
-          color: apple ? appleColorsOf(context).onAccent : cs.onTertiaryContainer,
+          color: apple
+              ? appleColorsOf(context).onAccent
+              : cs.onTertiaryContainer,
         ),
       ),
     );
@@ -920,7 +926,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final BuildContext? cardContext = _aiCardKey.currentContext;
     if (cardContext != null) {
       unawaited(
-        Scrollable.ensureVisible(
+        FushiFocusScroll.ensureVisible(
           cardContext,
           alignment: 0.2,
           duration: context.fushiMotion.spatialDefault.duration,
@@ -958,7 +964,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide =
             constraints.maxWidth >= kCustomThemeWideLayoutMinWidth &&
-                !isCupertinoPlatform(context);
+            !isCupertinoPlatform(context);
         _wideLayout = wide;
         return SettingsKitScaffold(
           title: t.custom_theme,
@@ -967,96 +973,104 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           // 正文滚到叠放的页头底下：编辑列表 / 宽屏预览栏的顶部内边距加上壳的
           // 页头让位；窄屏吸顶预览浮在页头下方，编辑列表再让开它的高度。
           bodyConsumesTopPadding: true,
-          bodyBuilder: (
-            BuildContext context,
-            ScrollController controller,
-            SettingsSectionSpy spy,
-          ) {
-            final List<Widget> editor = _buildEditorColumn();
-            final double headerInset = MediaQuery.paddingOf(context).top;
-            final EdgeInsets listPadding = EdgeInsets.fromLTRB(
-              page,
-              gap / 2 + headerInset + (wide ? 0 : _pinnedPreviewHeight),
-              page,
-              page * 2 + mediaPadding.bottom + bottomInset,
-            );
-            // 用不懒构建的滚动列：分组锚点要全部挂载，跳转 chip 才列得全。
-            final Widget editorList = FushiEntranceScope(
-              child: SingleChildScrollView(
-                key: const ValueKey<String>('custom-theme-editor-list'),
-                controller: controller,
-                padding: wide ? listPadding.copyWith(left: gap) : listPadding,
-                child: Column(
+          bodyBuilder:
+              (
+                BuildContext context,
+                ScrollController controller,
+                SettingsSectionSpy spy,
+              ) {
+                final List<Widget> editor = _buildEditorColumn();
+                final double headerInset = MediaQuery.paddingOf(context).top;
+                final EdgeInsets listPadding = EdgeInsets.fromLTRB(
+                  page,
+                  gap / 2 + headerInset + (wide ? 0 : _pinnedPreviewHeight),
+                  page,
+                  page * 2 + mediaPadding.bottom + bottomInset,
+                );
+                // 用不懒构建的滚动列：分组锚点要全部挂载，跳转 chip 才列得全。
+                final Widget editorList = FushiEntranceScope(
+                  child: SingleChildScrollView(
+                    key: const ValueKey<String>('custom-theme-editor-list'),
+                    controller: controller,
+                    padding: wide
+                        ? listPadding.copyWith(left: gap)
+                        : listPadding,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (int i = 0; i < editor.length; i++)
+                          FushiStaggeredEntrance(index: i, child: editor[i]),
+                      ],
+                    ),
+                  ),
+                );
+                if (!wide) {
+                  // 键盘弹出（在改名称 / AI 描述）时收起吸顶预览，把高度让给输入框。
+                  // 预览浮在页头下方（与页头同为叠放层），编辑列表铺满整页、按预览
+                  // 实测高度让位，往下滚时内容滚到预览与页头底下。
+                  final bool keyboardOpen = bottomInset > 0;
+                  return Stack(
+                    children: <Widget>[
+                      Positioned.fill(child: editorList),
+                      Positioned(
+                        top: headerInset,
+                        left: 0,
+                        right: 0,
+                        child: FushiHeightReporter(
+                          onHeight: _onPinnedPreviewHeight,
+                          child: AnimatedSize(
+                            duration: motion.spatialDefault.duration,
+                            curve: motion.spatialDefault.curve,
+                            alignment: Alignment.topCenter,
+                            child: keyboardOpen
+                                ? const SizedBox(width: double.infinity)
+                                : Padding(
+                                    key: const ValueKey<String>(
+                                      'custom-theme-pinned-preview',
+                                    ),
+                                    padding: EdgeInsets.fromLTRB(
+                                      page,
+                                      0,
+                                      page,
+                                      gap,
+                                    ),
+                                    child: FushiStaggeredEntrance(
+                                      index: 0,
+                                      child: _buildPreviewCard(compact: true),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                // 宽屏：左栏 sticky 预览（不随编辑列表滚动），右栏编辑列表。
+                return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    for (int i = 0; i < editor.length; i++)
-                      FushiStaggeredEntrance(index: i, child: editor[i]),
+                    SizedBox(
+                      width: _kWidePreviewWidth,
+                      child: FushiEntranceScope(
+                        child: SingleChildScrollView(
+                          primary: false,
+                          padding: EdgeInsets.fromLTRB(
+                            page,
+                            gap / 2 + headerInset,
+                            gap,
+                            page + mediaPadding.bottom,
+                          ),
+                          child: FushiStaggeredEntrance(
+                            index: 0,
+                            child: _buildPreviewCard(),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(child: editorList),
                   ],
-                ),
-              ),
-            );
-            if (!wide) {
-              // 键盘弹出（在改名称 / AI 描述）时收起吸顶预览，把高度让给输入框。
-              // 预览浮在页头下方（与页头同为叠放层），编辑列表铺满整页、按预览
-              // 实测高度让位，往下滚时内容滚到预览与页头底下。
-              final bool keyboardOpen = bottomInset > 0;
-              return Stack(
-                children: <Widget>[
-                  Positioned.fill(child: editorList),
-                  Positioned(
-                    top: headerInset,
-                    left: 0,
-                    right: 0,
-                    child: FushiHeightReporter(
-                      onHeight: _onPinnedPreviewHeight,
-                      child: AnimatedSize(
-                        duration: motion.spatialDefault.duration,
-                        curve: motion.spatialDefault.curve,
-                        alignment: Alignment.topCenter,
-                        child: keyboardOpen
-                            ? const SizedBox(width: double.infinity)
-                            : Padding(
-                                key: const ValueKey<String>(
-                                  'custom-theme-pinned-preview',
-                                ),
-                                padding: EdgeInsets.fromLTRB(page, 0, page, gap),
-                                child: FushiStaggeredEntrance(
-                                  index: 0,
-                                  child: _buildPreviewCard(compact: true),
-                                ),
-                              ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }
-            // 宽屏：左栏 sticky 预览（不随编辑列表滚动），右栏编辑列表。
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                SizedBox(
-                  width: _kWidePreviewWidth,
-                  child: FushiEntranceScope(
-                    child: SingleChildScrollView(
-                      primary: false,
-                      padding: EdgeInsets.fromLTRB(
-                        page,
-                        gap / 2 + headerInset,
-                        gap,
-                        page + mediaPadding.bottom,
-                      ),
-                      child: FushiStaggeredEntrance(
-                        index: 0,
-                        child: _buildPreviewCard(),
-                      ),
-                    ),
-                  ),
-                ),
-                Expanded(child: editorList),
-              ],
-            );
-          },
+                );
+              },
         );
       },
     );
@@ -1176,21 +1190,21 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final double gap = tokens.spacing.gap;
     Widget chip(String label, String detail) => FushiTooltip(
-          message: detail,
-          child: FushiChip(
-            avatar: FushiIcon(
-              FushiIcons.warning,
-              size: 18,
-              color: cs.onErrorContainer,
-            ),
-            label: Text(label),
-            labelStyle: context.fushiType.labelLarge.copyWith(
-              color: cs.onErrorContainer,
-            ),
-            backgroundColor: cs.errorContainer,
-            side: BorderSide.none,
-          ),
-        );
+      message: detail,
+      child: FushiChip(
+        avatar: FushiIcon(
+          FushiIcons.warning,
+          size: 18,
+          color: cs.onErrorContainer,
+        ),
+        label: Text(label),
+        labelStyle: context.fushiType.labelLarge.copyWith(
+          color: cs.onErrorContainer,
+        ),
+        backgroundColor: cs.errorContainer,
+        side: BorderSide.none,
+      ),
+    );
     return Padding(
       key: const ValueKey<String>('custom-theme-contrast-warning'),
       padding: EdgeInsets.fromLTRB(
@@ -1230,7 +1244,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// system-theme) so the app never points at a now-missing custom entry.
   Future<void> _confirmDelete() async {
     final NavigatorState navigator = Navigator.of(context);
-    final bool confirmed = await showAppDialog<bool>(
+    final bool confirmed =
+        await showAppDialog<bool>(
           context: context,
           builder: (BuildContext ctx) {
             final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
@@ -1371,18 +1386,18 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ? appleColorsOf(context).destructive
         : Theme.of(context).colorScheme.error;
     Widget item(IconData icon, String label, {Color? color}) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiIcon(icon, size: 20, color: color),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                label,
-                style: color == null ? null : TextStyle(color: color),
-              ),
-            ),
-          ],
-        );
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIcon(icon, size: 20, color: color),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            label,
+            style: color == null ? null : TextStyle(color: color),
+          ),
+        ),
+      ],
+    );
     return FushiPopupMenuButton<String>(
       key: const ValueKey<String>('custom-theme-more'),
       tooltip: t.common_more_actions,
@@ -1457,11 +1472,14 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final FushiTypography type = context.fushiType;
     final Color onContainer =
         fushiCardToneColors(context, FushiCardTone.primary)?.onContainer ??
-            Theme.of(context).colorScheme.onPrimaryContainer;
-    final TextStyle style =
-        type.headlineSmallEmphasized.copyWith(color: onContainer);
+        Theme.of(context).colorScheme.onPrimaryContainer;
+    final TextStyle style = type.headlineSmallEmphasized.copyWith(
+      color: onContainer,
+    );
     final String name = _nameController.text.trim();
-    final String placeholder = t.custom_theme_default_name(n: _defaultNameIndex);
+    final String placeholder = t.custom_theme_default_name(
+      n: _defaultNameIndex,
+    );
     final Widget child = _editingName
         ? FushiTextField(
             key: const ValueKey<String>('custom-theme-name-input'),
@@ -1559,8 +1577,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           color: _selectedRole == _ThemeRole.accent
               ? null
               : (apple
-                  ? appleColorsOf(context).tertiaryFill
-                  : cs.surfaceContainerHigh),
+                    ? appleColorsOf(context).tertiaryFill
+                    : cs.surfaceContainerHigh),
           borderRadius: BorderRadius.circular(
             SettingsKitRadii.card(SettingsKitStyle.of(context)),
           ),
@@ -1786,8 +1804,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       padding: EdgeInsets.all(gap),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final int columns =
-              (constraints.maxWidth / 168).floor().clamp(2, 4).toInt();
+          final int columns = (constraints.maxWidth / 168)
+              .floor()
+              .clamp(2, 4)
+              .toInt();
           final double width =
               (constraints.maxWidth - gap * (columns - 1)) / columns;
           return Wrap(
@@ -1826,8 +1846,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           color: selected
               ? null
               : (apple
-                  ? appleColorsOf(context).tertiaryFill
-                  : cs.surfaceContainerHigh),
+                    ? appleColorsOf(context).tertiaryFill
+                    : cs.surfaceContainerHigh),
           borderRadius: BorderRadius.circular(
             SettingsKitRadii.card(SettingsKitStyle.of(context)),
           ),
@@ -1912,11 +1932,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       value: squared && !apple ? 1 : 0,
       spring: fushiExpressiveFastSpatial,
       builder: (BuildContext context, double v, Widget? _) {
-        final double radius =
-            (lerpDouble(size / 2, size * 0.3, v) ?? size / 2).clamp(
-          4.0,
-          size / 2,
-        );
+        final double radius = (lerpDouble(size / 2, size * 0.3, v) ?? size / 2)
+            .clamp(4.0, size / 2);
         return AnimatedContainer(
           duration: motion.effectsDefault.duration,
           curve: motion.effectsDefault.curve,
@@ -1974,44 +1991,41 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
 
   Future<void> _showRolePickerDialog(_ThemeRole role) {
     Widget content(BuildContext ctx) => StatefulBuilder(
-          // 路由不随页面 setState 重建：本地刷新让「恢复跟随主题」等随改色出现。
-          builder: (BuildContext ctx, StateSetter setLocal) {
-            final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-            return FushiModalSheetFrame(
-              title: _roleTitle(role),
-              subtitle: _roleDescription(role),
-              leadingIcon: _roleIcon(role),
-              bodyPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
+      // 路由不随页面 setState 重建：本地刷新让「恢复跟随主题」等随改色出现。
+      builder: (BuildContext ctx, StateSetter setLocal) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+        return FushiModalSheetFrame(
+          title: _roleTitle(role),
+          subtitle: _roleDescription(role),
+          leadingIcon: _roleIcon(role),
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: _buildPickerFor(role, onLocalChange: () => setLocal(() {})),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t.dialog_done),
               ),
-              footerPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.card,
-              ),
-              body: _buildPickerFor(
-                role,
-                onLocalChange: () => setLocal(() {}),
-              ),
-              footer: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                children: <Widget>[
-                  adaptiveDialogAction(
-                    context: ctx,
-                    isDefaultAction: true,
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(t.dialog_done),
-                  ),
-                ],
-              ),
-            );
-          },
+            ],
+          ),
         );
+      },
+    );
     if (_wideLayout) {
       // 宽屏：浮层贴在预览右侧、不压暗页面，改色时左栏预览完整可见。
       return showAppDialog<void>(
@@ -2176,10 +2190,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final Widget tag = _spot(
       _ThemeRole.secondary,
       Container(
-        padding: EdgeInsets.symmetric(
-          horizontal: gap,
-          vertical: gap * 0.375,
-        ),
+        padding: EdgeInsets.symmetric(horizontal: gap, vertical: gap * 0.375),
         decoration: BoxDecoration(
           color: cs.secondaryContainer,
           borderRadius: FushiM3eShape.smallRadius,
@@ -2192,7 +2203,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
     final Widget toggle = _spot(
       _ThemeRole.container,
-      FushiPreviewSwitch(trackColor: cs.primaryContainer, thumbColor: cs.primary),
+      FushiPreviewSwitch(
+        trackColor: cs.primaryContainer,
+        thumbColor: cs.primary,
+      ),
     );
     final Widget progress = _spot(
       _ThemeRole.tertiary,
@@ -2290,19 +2304,19 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       ),
     );
     Widget navItem(IconData icon, {bool selected = false}) => Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? gap : gap * 1.5,
-            vertical: gap * 0.75,
-          ),
-          decoration: selected
-              ? ShapeDecoration(color: cs.secondaryContainer, shape: pill)
-              : null,
-          child: FushiIcon(
-            selected ? FushiIcons.filled(icon) : icon,
-            size: 20,
-            color: selected ? cs.onSecondaryContainer : cs.onSurfaceVariant,
-          ),
-        );
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? gap : gap * 1.5,
+        vertical: gap * 0.75,
+      ),
+      decoration: selected
+          ? ShapeDecoration(color: cs.secondaryContainer, shape: pill)
+          : null,
+      child: FushiIcon(
+        selected ? FushiIcons.filled(icon) : icon,
+        size: 20,
+        color: selected ? cs.onSecondaryContainer : cs.onSurfaceVariant,
+      ),
+    );
     final Widget nav = _spot(
       _ThemeRole.secondary,
       Container(
@@ -2325,7 +2339,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       children: <Widget>[
         card,
         SizedBox(height: gap),
-        Center(child: FittedBox(fit: BoxFit.scaleDown, child: nav)),
+        Center(
+          child: FittedBox(fit: BoxFit.scaleDown, child: nav),
+        ),
       ],
     );
   }
@@ -2439,10 +2455,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                 color: ring.withValues(alpha: settled),
               ),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(3),
-              child: spotChild,
-            ),
+            child: Padding(padding: const EdgeInsets.all(3), child: spotChild),
           ),
         );
       },
@@ -2484,8 +2497,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
 /// `#RRGGBB`（带透明度时追加百分比）。
 String _hexLabel(Color color) {
   final int argb = color.toARGB32();
-  final String rgb =
-      (argb & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase();
+  final String rgb = (argb & 0xFFFFFF)
+      .toRadixString(16)
+      .padLeft(6, '0')
+      .toUpperCase();
   final int alpha = (argb >> 24) & 0xFF;
   return alpha == 0xFF ? '#$rgb' : '#$rgb · ${(alpha * 100 / 255).round()}%';
 }

@@ -5,24 +5,83 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 
 void main() {
-  testWidgets('FushiFocusScroll reveals a normal off-screen context',
-      (WidgetTester tester) async {
+  testWidgets('reveal preserves edge policy, curve and animation completion', (
+    WidgetTester tester,
+  ) async {
+    final ScrollController controller = ScrollController(
+      initialScrollOffset: 80,
+    );
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 300,
+              height: 120,
+              child: ListView.builder(
+                controller: controller,
+                itemExtent: 40,
+                itemCount: 20,
+                itemBuilder: (BuildContext context, int index) =>
+                    Text('Row $index'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 已可见行保留原位置，不能退回默认的居中对齐。
+    await FushiFocusScroll.ensureVisible(
+      tester.element(find.text('Row 3')),
+      duration: Duration.zero,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+    expect(controller.offset, 80);
+
+    bool completed = false;
+    final Future<void> reveal =
+        FushiFocusScroll.ensureVisible(
+          tester.element(find.text('Row 8')),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.linear,
+          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ).then<void>((_) {
+          completed = true;
+        });
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(completed, isFalse);
+    // Row 8 下缘在 360，视口高 120：目标 offset=240，线性动画中点=160。
+    expect(controller.offset, closeTo(160, 1));
+    await tester.pumpAndSettle();
+    await reveal;
+    expect(completed, isTrue);
+    expect(controller.offset, closeTo(240, 1));
+  });
+
+  testWidgets('FushiFocusScroll reveals a normal off-screen context', (
+    WidgetTester tester,
+  ) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(MaterialApp(
-      home: SizedBox(
-        height: 120,
-        child: ListView.builder(
-          controller: controller,
-          itemExtent: 48,
-          itemCount: 20,
-          itemBuilder: (BuildContext context, int index) {
-            return Text('Row $index');
-          },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          height: 120,
+          child: ListView.builder(
+            controller: controller,
+            itemExtent: 48,
+            itemCount: 20,
+            itemBuilder: (BuildContext context, int index) {
+              return Text('Row $index');
+            },
+          ),
         ),
       ),
-    ));
+    );
 
     FushiFocusScroll.ensureVisible(tester.element(find.text('Row 8')));
     await tester.pumpAndSettle();
@@ -30,32 +89,35 @@ void main() {
     expect(controller.offset, greaterThan(0));
   });
 
-  testWidgets('directional move scrolls the newly focused target into view',
-      (WidgetTester tester) async {
+  testWidgets('directional move scrolls the newly focused target into view', (
+    WidgetTester tester,
+  ) async {
     final ScrollController controller = ScrollController();
     addTearDown(controller.dispose);
 
-    await tester.pumpWidget(MaterialApp(
-      home: FushiFocusRoot(
-        child: SizedBox(
-          height: 120,
-          child: ListView.builder(
-            controller: controller,
-            itemExtent: 48,
-            itemCount: 20,
-            itemBuilder: (BuildContext context, int index) {
-              return FushiFocusTarget(
-                id: FushiFocusId('row-$index'),
-                child: TextButton(
-                  onPressed: () {},
-                  child: Text('Row $index'),
-                ),
-              );
-            },
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: SizedBox(
+            height: 120,
+            child: ListView.builder(
+              controller: controller,
+              itemExtent: 48,
+              itemCount: 20,
+              itemBuilder: (BuildContext context, int index) {
+                return FushiFocusTarget(
+                  id: FushiFocusId('row-$index'),
+                  child: TextButton(
+                    onPressed: () {},
+                    child: Text('Row $index'),
+                  ),
+                );
+              },
+            ),
           ),
         ),
       ),
-    ));
+    );
 
     final FushiFocusController focus = FushiFocusRoot.controllerOf(
       tester.element(find.byType(ListView)),
@@ -76,7 +138,8 @@ void main() {
     expect(
       row.top >= viewport.top && row.bottom <= viewport.bottom,
       isTrue,
-      reason: 'primary=${FocusManager.instance.primaryFocus?.debugLabel} '
+      reason:
+          'primary=${FocusManager.instance.primaryFocus?.debugLabel} '
           'offset=${controller.offset} row=$row viewport=$viewport',
     );
     expect(controller.offset, greaterThan(0));

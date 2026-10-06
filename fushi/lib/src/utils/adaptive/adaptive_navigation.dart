@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -1574,15 +1575,17 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
       final BuildContext? slot = _slots[widget.selectedId]?.currentContext;
       if (slot == null || !slot.mounted) return;
       final Duration duration = fushiMotionDuration(slot, FushiMotion.medium);
-      await Scrollable.ensureVisible(
+      await FushiFocusScroll.ensureVisible(
         slot,
+        alignment: 0,
         duration: duration,
         curve: FushiMotion.standard,
         alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
       );
       if (!slot.mounted) return;
-      await Scrollable.ensureVisible(
+      await FushiFocusScroll.ensureVisible(
         slot,
+        alignment: 0,
         duration: duration,
         curve: FushiMotion.standard,
         alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
