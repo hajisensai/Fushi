@@ -317,7 +317,11 @@ void main() {
       },
     );
 
-    await tester.tap(find.byIcon(Icons.close));
+    // M3E 浮动页头的关闭按钮改用 FushiIcons.close（Material Symbols），按它
+    // 的语义 tooltip 定位，不绑定具体码点。
+    await tester.tap(
+      find.byTooltip(const DefaultMaterialLocalizations().closeButtonTooltip),
+    );
     await tester.pumpAndSettle();
 
     expect(read, isFalse);
