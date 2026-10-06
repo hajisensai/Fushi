@@ -348,7 +348,9 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 页头。与 `MangaSourcesPage` 同一范式：导航条存在时即页头主位，不再另渲染一个
   /// 页面大标题。全源搜索不在这里——它是下面的搜索框。
   Widget _buildHeader() {
-    final List<Widget> actions = <Widget>[_refreshButton()];
+    // 刷新不放页头：它和 ✨ AI 下载同属搜索行行尾，两颗按钮右对齐成一列
+    // （放页头时它被收进外壳的悬浮动作组，与搜索行的 AI 按钮横坐标对不齐）。
+    const List<Widget> actions = <Widget>[];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
       return FushiPageHeader.customTitle(title: navigation, actions: actions);
@@ -387,7 +389,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                     key: const ValueKey<String>('manga-discovery-ai-acquire'),
                     onPressed: () => onAi(_searchController.text),
                   ),
-                if (!_headerVisible) _refreshButton(),
+                _refreshButton(),
               ],
               sources: options,
               selectedSourceId: selected,
