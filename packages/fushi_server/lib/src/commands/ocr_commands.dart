@@ -99,7 +99,6 @@ String? serverOrtProblem() {
 }
 
 String _modelName(String key) => switch (key) {
-  'manga_ocr' => 'manga-ocr（经典）',
   'manga_ctc' => '漫画 CTC（快速）',
   'baberu' => 'Baberu',
   _ => key,
@@ -145,11 +144,11 @@ class OcrCommands extends CliModule {
     final ArgParser ocr = parser.addCommand('ocr');
     addJsonFlag(ocr.addCommand('manga'))
       ..addOption('pages', help: '只识别这些页（1 起：1-20,25）；缺省整卷')
-      ..addOption('model', help: '本地模型 key（manga_ocr / manga_ctc / baberu）', defaultsTo: 'manga_ocr')
+      ..addOption('model', help: '本地模型 key（manga_ctc / baberu）', defaultsTo: kDefaultMangaOcrLocalModel.key)
       ..addFlag('redo', negatable: false, help: '丢掉已有逐页缓存重新识别')
       ..addFlag('ai-refine', negatable: false, help: '用配置文件 ai: 段的大模型重读块内文字')
       ..addOption('ai-mode', allowed: <String>['low_confidence', 'all'], defaultsTo: 'low_confidence');
-    addJsonFlag(ocr.addCommand('models')).addOption('model', help: '模型 key（pull 缺省 manga_ocr；rm 必填）');
+    addJsonFlag(ocr.addCommand('models')).addOption('model', help: '模型 key（pull 缺省 manga_ctc；rm 必填）');
     final ArgParser manga = parser.addCommand('manga');
     addJsonFlag(manga.addCommand('panels')).addFlag('ltr', negatable: false, help: '左→右阅读序（美漫 / 条漫）');
     addJsonFlag(manga.addCommand('panel-model'));
@@ -193,7 +192,7 @@ class OcrCommands extends CliModule {
     return ctx.withRuntime((ServerRuntime rt) async {
       final Map<String, MangaOcrServiceImpl> services = serverOcrModelServices();
       if (action == 'ls') return _modelsLs(services, json: json);
-      final String target = key ?? MangaOcrLocalModel.mangaOcr.key;
+      final String target = key ?? kDefaultMangaOcrLocalModel.key;
       final MangaOcrServiceImpl? service = services[target];
       if (service == null) return _unknownModel(target, services);
       if (action == 'rm') {
@@ -248,7 +247,6 @@ class OcrCommands extends CliModule {
         'obtainedBytes': status.obtainedBytes,
         'diskBytes': status.diskBytes,
         'totalBytes': status.totalBytes,
-        'acceleratorMissingBytes': status.acceleratorMissingBytes,
       });
     }
     if (json) {
