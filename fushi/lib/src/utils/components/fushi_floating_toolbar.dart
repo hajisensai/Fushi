@@ -40,6 +40,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// M3E 悬浮工具栏容器高（规格 64）。阅读器手机底栏带标签时用它。
 const double kFushiFloatingToolbarExtent = 64;
@@ -340,7 +341,7 @@ class FushiToolbarOverflowButton extends StatelessWidget {
       key: const ValueKey<String>('fushi_floating_toolbar_overflow'),
       tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
       icon: FushiIcon(
-        axis == Axis.horizontal ? Icons.more_horiz : Icons.more_vert,
+        axis == Axis.horizontal ? FushiIcons.moreHoriz : FushiIcons.more,
         color: foreground,
       ),
       iconSize: 24,

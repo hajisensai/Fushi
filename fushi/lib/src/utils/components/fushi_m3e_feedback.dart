@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // ===========================================================================
 // 骨架屏
@@ -421,7 +422,7 @@ class _FushiDragHandleState extends State<FushiDragHandle> {
               : color.withValues(alpha: 0),
         ),
         child: FushiIcon(
-          apple ? Icons.drag_handle_rounded : Icons.drag_indicator_rounded,
+          apple ? FushiIcons.dragHandle : FushiIcons.dragIndicator,
           size: widget.size,
           color: color,
         ),

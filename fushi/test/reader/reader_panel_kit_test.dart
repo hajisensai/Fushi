@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 Widget _host(Widget child) => MaterialApp(
   theme: ThemeData(useMaterial3: true),
@@ -103,7 +104,7 @@ void main() {
     await tester.tap(find.text('吾輩は猫である。'));
     await tester.tap(find.text('Chapter 1'));
     expect(taps, 2);
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byIcon(FushiIcons.play), findsOneWidget);
     expect(find.text('No bookmarks yet'), findsOneWidget);
     expect(
       find.byWidgetPredicate(

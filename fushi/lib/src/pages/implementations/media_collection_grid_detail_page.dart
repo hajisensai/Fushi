@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 合集详情页（书架 / 漫画库 / 游戏库共用；2026-10-06 M3E 重设计）。
 ///
@@ -428,7 +429,7 @@ class _MediaCollectionGridDetailPageState
             value: _MemberMenuAction.open,
             child: Row(
               children: <Widget>[
-                const FushiIcon(Icons.open_in_new, size: 20),
+                const FushiIcon(FushiIcons.openInNew, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_open),
               ],
@@ -438,7 +439,7 @@ class _MediaCollectionGridDetailPageState
           value: _MemberMenuAction.remove,
           child: Row(
             children: <Widget>[
-              const FushiIcon(Icons.remove_circle_outline, size: 20),
+              const FushiIcon(FushiIcons.removeCircle, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_remove_member),
             ],
@@ -592,23 +593,23 @@ class _MediaCollectionGridDetailPageState
         availableWidth: availableWidth,
         collapsible: <FushiAppBarAction>[
           FushiAppBarAction(
-            icon: Icons.drive_file_rename_outline,
+            icon: FushiIcons.rename,
             label: t.rename_collection,
             onPressed: renameDetailCollection,
           ),
           FushiAppBarAction(
-            icon: Icons.sell_outlined,
+            icon: FushiIcons.tag,
             label: t.collection_detail_edit_tags,
             onPressed: _editCollectionTags,
           ),
           if (_sort != CollectionMemberSort.manual)
             FushiAppBarAction(
-              icon: Icons.save_alt_rounded,
+              icon: FushiIcons.download,
               label: t.collection_detail_save_order,
               onPressed: () => _saveViewOrder(arranged),
             ),
           FushiAppBarAction(
-            icon: Icons.delete_outline,
+            icon: FushiIcons.delete,
             label: t.delete_collection,
             onPressed: _delete,
           ),
@@ -774,7 +775,7 @@ class _MediaCollectionGridDetailPageState
               child: Padding(
                 padding: EdgeInsets.all(tokens.spacing.card * 2),
                 child: FushiPlaceholderMessage(
-                  icon: Icons.filter_alt_off_outlined,
+                  icon: FushiIcons.filterOff,
                   message: t.collection_detail_filter_empty,
                   action: FushiTextButton(
                     key: const ValueKey<String>(
@@ -933,7 +934,7 @@ class _MediaCollectionGridDetailPageState
             label: Text('$activeFilters'),
             child: FushiIconButton(
               key: const ValueKey<String>('collection_detail_filter'),
-              icon: Icons.filter_list_rounded,
+              icon: FushiIcons.filterList,
               tooltip: t.shelf_toolbar_filters,
               selected: _filtersOpen,
               onTap: () => setState(() => _filtersOpen = !_filtersOpen),
@@ -947,7 +948,7 @@ class _MediaCollectionGridDetailPageState
         ),
         FushiIconButton(
           key: const ValueKey<String>('collection_detail_select'),
-          icon: _selecting ? Icons.close : Icons.checklist_rounded,
+          icon: _selecting ? FushiIcons.close : FushiIcons.checklist,
           tooltip: _selecting
               ? MaterialLocalizations.of(context).closeButtonTooltip
               : t.batch_select,
@@ -988,10 +989,10 @@ class _MediaCollectionGridDetailPageState
           CollectionMemberSort.read => t.collection_detail_sort_read,
         };
     IconData icon(CollectionMemberSort s) => switch (s) {
-          CollectionMemberSort.manual => Icons.drag_indicator_rounded,
-          CollectionMemberSort.volume => Icons.sort_by_alpha,
-          CollectionMemberSort.added => Icons.history,
-          CollectionMemberSort.read => Icons.schedule_rounded,
+          CollectionMemberSort.manual => FushiIcons.dragIndicator,
+          CollectionMemberSort.volume => FushiIcons.sortByAlpha,
+          CollectionMemberSort.added => FushiIcons.history,
+          CollectionMemberSort.read => FushiIcons.schedule,
         };
     return FushiMenuAnchor(
       menuChildren: <Widget>[
@@ -1002,7 +1003,7 @@ class _MediaCollectionGridDetailPageState
               key: ValueKey<String>('collection_detail_sort_${s.name}'),
               leadingIcon: FushiIcon(icon(s), size: 20),
               trailingIcon: s == _sort
-                  ? const FushiIcon(Icons.check_rounded, size: 20)
+                  ? const FushiIcon(FushiIcons.check, size: 20)
                   : null,
               autofocus: s == _sort,
               onPressed: () => _setSort(s),
@@ -1011,7 +1012,7 @@ class _MediaCollectionGridDetailPageState
         const FushiDivider(),
         MenuItemButton(
           key: const ValueKey<String>('collection_detail_save_order'),
-          leadingIcon: const FushiIcon(Icons.save_alt_rounded, size: 20),
+          leadingIcon: const FushiIcon(FushiIcons.download, size: 20),
           onPressed: _sort == CollectionMemberSort.manual
               ? null
               : () => _saveViewOrder(arranged),
@@ -1021,7 +1022,7 @@ class _MediaCollectionGridDetailPageState
       builder: (BuildContext context, MenuController controller, Widget? _) =>
           FushiIconButton(
         key: const ValueKey<String>('collection_detail_sort'),
-        icon: Icons.sort_rounded,
+        icon: FushiIcons.sort,
         tooltip: t.sort_by,
         selected: _sort != CollectionMemberSort.volume,
         onTap: () => controller.isOpen ? controller.close() : controller.open(),
@@ -1119,7 +1120,7 @@ class _MediaCollectionGridDetailPageState
         children: <Widget>[
           FushiIconButtonControl(
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: const FushiIcon(Icons.close),
+            icon: const FushiIcon(FushiIcons.close),
             onPressed: _endSelection,
           ),
           Padding(
@@ -1141,33 +1142,33 @@ class _MediaCollectionGridDetailPageState
         <FushiToolbarItem>[
           FushiToolbarItem(
             key: const ValueKey<String>('collection_detail_batch_tag'),
-            icon: Icons.sell_outlined,
+            icon: FushiIcons.tag,
             label: t.tag_label,
             onPressed: hasSelection ? _batchTag : null,
           ),
           if (widget.onSetMembersCompleted != null) ...<FushiToolbarItem>[
             FushiToolbarItem(
               key: const ValueKey<String>('collection_detail_batch_read'),
-              icon: Icons.check_circle_outline,
+              icon: FushiIcons.success,
               label: t.book_mark_completed_action,
               onPressed: hasSelection ? () => _batchSetCompleted(true) : null,
             ),
             FushiToolbarItem(
               key: const ValueKey<String>('collection_detail_batch_unread'),
-              icon: Icons.radio_button_unchecked,
+              icon: FushiIcons.radioUnchecked,
               label: t.book_mark_uncompleted_action,
               onPressed: hasSelection ? () => _batchSetCompleted(false) : null,
             ),
           ],
           FushiToolbarItem(
             key: const ValueKey<String>('collection_detail_batch_move'),
-            icon: Icons.drive_file_move_outline,
+            icon: FushiIcons.moveFile,
             label: t.collection_detail_move_to,
             onPressed: hasSelection ? _batchMove : null,
           ),
           FushiToolbarItem(
             key: const ValueKey<String>('collection_detail_batch_remove'),
-            icon: Icons.remove_circle_outline,
+            icon: FushiIcons.removeCircle,
             label: t.collection_remove_member,
             onPressed: hasSelection ? _batchRemove : null,
           ),
@@ -1228,7 +1229,7 @@ class _ViewModeToggle extends StatelessWidget {
             value: CollectionMemberViewMode.grid,
             tooltip: t.collection_detail_view_grid,
             icon: const FushiIcon(
-              Icons.grid_view_rounded,
+              FushiIcons.gridView,
               size: 18,
               key: ValueKey<String>('collection_detail_view_grid'),
             ),
@@ -1237,7 +1238,7 @@ class _ViewModeToggle extends StatelessWidget {
             value: CollectionMemberViewMode.list,
             tooltip: t.collection_detail_view_list,
             icon: const FushiIcon(
-              Icons.view_agenda_outlined,
+              FushiIcons.viewAgenda,
               size: 18,
               key: ValueKey<String>('collection_detail_view_list'),
             ),
@@ -1365,7 +1366,7 @@ class _MemberListRow extends StatelessWidget {
               color: scheme.secondaryContainer,
               child: Center(
                 child: FushiIcon(
-                  Icons.menu_book_outlined,
+                  FushiIcons.books,
                   color: scheme.onSecondaryContainer,
                 ),
               ),
@@ -1434,7 +1435,7 @@ class _MemberListRow extends StatelessWidget {
                     builder: (BuildContext buttonContext) =>
                         FushiIconButtonControl(
                       tooltip: t.shelf_toolbar_more,
-                      icon: const FushiIcon(Icons.more_vert),
+                      icon: const FushiIcon(FushiIcons.more),
                       onPressed: () {
                         final RenderBox box =
                             buttonContext.findRenderObject()! as RenderBox;
@@ -1478,7 +1479,7 @@ class _SelectionMark extends StatelessWidget {
           ),
         ),
         child: selected
-            ? FushiIcon(Icons.check_rounded, size: 18, color: scheme.onPrimary)
+            ? FushiIcon(FushiIcons.check, size: 18, color: scheme.onPrimary)
             : null,
       ),
     );
@@ -1514,7 +1515,7 @@ class _EmptyCollection extends StatelessWidget {
                   borderRadius: BorderRadius.circular(apple ? 56 : 36),
                 ),
                 child: FushiIcon(
-                  Icons.collections_bookmark_outlined,
+                  FushiIcons.collection,
                   size: 52,
                   color: apple
                       ? appleColorsOf(context).secondaryLabel

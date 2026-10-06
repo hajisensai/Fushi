@@ -23,6 +23,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下
@@ -250,7 +251,7 @@ class _BackIconTheme extends StatelessWidget {
       data: base.copyWith(
         backButtonIconBuilder: (BuildContext context) => glass
             ? const FushiIcon(CupertinoIcons.chevron_back, size: 22)
-            : const Icon(Icons.arrow_back),
+            : const Icon(FushiIcons.back),
       ),
       child: child,
     );
@@ -608,7 +609,7 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
         (Scaffold.maybeOf(context)?.hasEndDrawer ?? false)) {
       resolvedActions = <Widget>[
         IconButton(
-          icon: const Icon(Icons.menu),
+          icon: const Icon(FushiIcons.menu),
           tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
           onPressed: () => Scaffold.of(context).openEndDrawer(),
         ),
@@ -812,7 +813,7 @@ Widget? _impliedM3eLeading(BuildContext context) {
   if (scaffold?.hasDrawer ?? false) {
     return FushiPageChromeCircle(
       child: IconButton(
-        icon: const Icon(Icons.menu),
+        icon: const Icon(FushiIcons.menu),
         tooltip: MaterialLocalizations.of(context).openAppDrawerTooltip,
         onPressed: () => Scaffold.of(context).openDrawer(),
       ),
@@ -1479,7 +1480,7 @@ class FushiRouteBackButton extends StatelessWidget {
     // M3E：返回键是一枚悬浮圆胶囊（2026-10-05 页头统一为浮动工具栏）。
     return FushiPageChromeCircle(
       child: FushiIconButtonControl(
-        icon: const Icon(Icons.arrow_back),
+        icon: const Icon(FushiIcons.back),
         tooltip: tooltip,
         onPressed: handler,
       ),

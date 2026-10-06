@@ -15,6 +15,7 @@ import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 缩放看图的路由：非不透明、深色 scrim、点 scrim 关闭。[builder] 提供路由
 /// 内容（通常是 [IllustrationZoomViewer]，宿主可在外面再包上下文菜单触发口）。
@@ -60,7 +61,7 @@ class IllustrationZoomViewer extends StatelessWidget {
                 '$diagnosticTag.coverDecode',
                 '${file.path}: $error',
               );
-              return const FushiIcon(Icons.broken_image_outlined, size: 64);
+              return const FushiIcon(FushiIcons.brokenImage, size: 64);
             },
           ),
         ),
@@ -96,7 +97,7 @@ class IllustrationZoomViewer extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: FushiIconButton(
-                icon: Icons.close_rounded,
+                icon: FushiIcons.close,
                 tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                 backgroundColor: isGlassDesign(context)
                     ? null
@@ -206,7 +207,7 @@ Future<void> showImageCopyContextMenu(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const FushiIcon(Icons.copy_outlined, size: 18.0),
+            const FushiIcon(FushiIcons.copy, size: 18.0),
             const SizedBox(width: 12.0),
             Text(t.reader_copy_image, style: const TextStyle(fontSize: 14.0)),
           ],

@@ -38,6 +38,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 永不被真调用的刮削 runner：菜单测试只需要一个在场的 controller 来点亮入口。
 class _IdleScrapeRunner implements VideoSourceScrapeRunner {
@@ -834,7 +835,7 @@ void main() {
   Future<void> enterSelectionMode(WidgetTester tester) async {
     final Finder selectBtn = find.descendant(
       of: find.byType(FushiTagFilterBar),
-      matching: find.byIcon(Icons.checklist_outlined),
+      matching: find.byIcon(FushiIcons.checklist),
     );
     expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮（用户报的「视频少了选择」）');
     await tester.tap(selectBtn);

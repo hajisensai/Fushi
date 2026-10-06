@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-1034：字幕列表行高由 `ListView.itemExtentBuilder` **硬约束**，行高算少一点点，
 /// 换行后的末行就被直接裁掉（用户截图里当前播放行第二行的「ら」只露上半截）。
@@ -188,7 +189,7 @@ void main() {
       // Icon 的 rect 不含按钮自身那 2px padding —— 拿 Icon 量会多出 2px 余量，
       // 把 gutter 去掉这条守卫照样绿（空转）。
       final Finder starButton = find.ancestor(
-        of: find.byIcon(Icons.star_border).first,
+        of: find.byIcon(FushiIcons.star).first,
         matching: find.byType(InkResponse),
       );
       expect(starButton, findsOneWidget);
@@ -293,7 +294,7 @@ void main() {
             tester.renderObject<RenderBox>(find.text('0:00')).size.height;
         final double actionsHeight = tester
             .renderObject<RenderBox>(find.ancestor(
-              of: find.byIcon(Icons.play_arrow).first,
+              of: find.byIcon(FushiIcons.play).first,
               matching: find.byType(InkResponse),
             ))
             .size

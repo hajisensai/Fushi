@@ -4,6 +4,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 
 import 'widget_test_helpers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // FushiTextField 的 M3E 状态契约：filled / outlined 两类、尺寸三档（单行最小
 // 高度 + 文字竖直居中）、帮助 / 错误 / 计数文本、清空钮、密码显隐、悬停状态层。
@@ -137,15 +138,15 @@ void main() {
         onClear: () => cleared++,
       ),
     );
-    expect(find.byIcon(Icons.cancel_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.cancel), findsNothing);
     await tester.enterText(find.byType(TextField), 'abc');
     await tester.pump();
-    await tester.tap(find.byIcon(Icons.cancel_outlined));
+    await tester.tap(find.byIcon(FushiIcons.cancel));
     await tester.pump();
     expect(c.text, isEmpty);
     expect(changes.last, '');
     expect(cleared, 1);
-    expect(find.byIcon(Icons.cancel_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.cancel), findsNothing);
   });
 
   testWidgets('密码框：显隐切换', (WidgetTester tester) async {
@@ -154,13 +155,13 @@ void main() {
       tester.widget<TextField>(find.byType(TextField)).obscureText,
       isTrue,
     );
-    await tester.tap(find.byIcon(Icons.visibility_outlined));
+    await tester.tap(find.byIcon(FushiIcons.visibility));
     await tester.pump();
     expect(
       tester.widget<TextField>(find.byType(TextField)).obscureText,
       isFalse,
     );
-    expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.visibilityOff), findsOneWidget);
   });
 
   testWidgets('禁用态', (WidgetTester tester) async {

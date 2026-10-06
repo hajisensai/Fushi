@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-250 (TODO-306): 书架/视频 tab 的批量选择模式（`_selectionMode`）活在 tab
 /// 内容里、不是独立 route。修复前返回键冒泡到 HomePage 顶层 PopScope 直接退出
@@ -96,7 +97,7 @@ void main() {
     // Tooltip，故按 checklist 图标定位（与 home_video_page_menu_test 一致）。
     final Finder selectBtn = find.descendant(
       of: find.byType(FushiTagFilterBar),
-      matching: find.byIcon(Icons.checklist_outlined),
+      matching: find.byIcon(FushiIcons.checklist),
     );
     expect(selectBtn, findsOneWidget, reason: '视频标签栏旁应有「批量选择」按钮');
     await tester.tap(selectBtn);

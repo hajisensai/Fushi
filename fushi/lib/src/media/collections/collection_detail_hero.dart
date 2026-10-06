@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 class CollectionDetailHeroCard extends StatelessWidget {
   const CollectionDetailHeroCard({
@@ -113,7 +114,7 @@ class CollectionDetailHeroCard extends StatelessWidget {
               if (onEditTags != null)
                 _HeroActionChip(
                   key: const ValueKey<String>('collection_detail_edit_tags'),
-                  icon: Icons.sell_outlined,
+                  icon: FushiIcons.tag,
                   label: t.collection_detail_edit_tags,
                   onTap: onEditTags!,
                 ),
@@ -264,7 +265,7 @@ class _ContinueButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const FushiIcon(Icons.play_arrow_rounded, size: 20),
+            const FushiIcon(FushiIcons.play, size: 20),
             const SizedBox(width: 6),
             Flexible(
               child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -285,7 +286,7 @@ class _ContinueButton extends StatelessWidget {
             borderRadius: BorderRadius.all(Radius.circular(20)),
           ),
           onPressed: onPressed,
-          icon: const FushiIcon(Icons.play_arrow_rounded, size: 28),
+          icon: const FushiIcon(FushiIcons.play, size: 28),
           label: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 320),
             child: Text(
@@ -378,7 +379,7 @@ class _StackedCovers extends StatelessWidget {
             color: scheme.secondaryContainer,
             child: Center(
               child: FushiIcon(
-                Icons.collections_bookmark_outlined,
+                FushiIcons.collection,
                 size: width * 0.32,
                 color: scheme.onSecondaryContainer,
               ),

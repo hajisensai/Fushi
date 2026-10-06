@@ -13,6 +13,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
 ///
@@ -119,8 +120,8 @@ class AudiobookPlayBar extends StatelessWidget {
       VoidCallback onPressed
     }) backwardKey = (
       icon: skipActionSeconds == 0
-          ? Icons.skip_previous_outlined
-          : Icons.fast_rewind_outlined,
+          ? FushiIcons.skipPrevious
+          : FushiIcons.fastRewind,
       tooltip:
           skipActionSeconds == 0 ? t.prev_sentence : '-${skipActionSeconds}s',
       onPressed: () {
@@ -134,8 +135,8 @@ class AudiobookPlayBar extends StatelessWidget {
     final ({IconData icon, String tooltip, VoidCallback onPressed}) forwardKey =
         (
       icon: skipActionSeconds == 0
-          ? Icons.skip_next_outlined
-          : Icons.fast_forward_outlined,
+          ? FushiIcons.skipNext
+          : FushiIcons.fastForward,
       tooltip:
           skipActionSeconds == 0 ? t.next_sentence : '+${skipActionSeconds}s',
       onPressed: () {
@@ -171,8 +172,8 @@ class AudiobookPlayBar extends StatelessWidget {
           filledTonal: true,
           icon: FushiIcon(
             controller.isPlaying
-                ? Icons.pause_outlined
-                : Icons.play_arrow_outlined,
+                ? FushiIcons.pause
+                : FushiIcons.play,
           ),
           iconSize: 24,
           style: playStyle,
@@ -219,7 +220,7 @@ class AudiobookPlayBar extends StatelessWidget {
           id: const FushiFocusId('audiobook_settings'),
           key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
           semanticsIdentifier: 'hibiki.reader.audiobook.settings',
-          icon: const FushiIcon(Icons.tune_outlined),
+          icon: const FushiIcon(FushiIcons.settings),
           iconSize: 20,
           style: flatStyle,
           onPressed: onOpenSettings,
@@ -274,7 +275,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
         // 保留 c3dbe59a1 的纸张前景色注入：开启态用满前景色 / 关闭态 60%。
         return _FocusableBarButton(
           id: const FushiFocusId('audiobook_follow'),
-          icon: FushiIcon(on ? Icons.link : Icons.link_off),
+          icon: FushiIcon(on ? FushiIcons.link : FushiIcons.linkOff),
           iconSize: 20,
           color: on ? onColor : offColor,
           tooltip: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
@@ -475,7 +476,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
     final int skip = widget.skipActionSeconds;
     if (forward) {
       return (
-        icon: skip == 0 ? Icons.skip_next_rounded : Icons.fast_forward_rounded,
+        icon: skip == 0 ? FushiIcons.skipNext : FushiIcons.fastForward,
         tooltip: skip == 0 ? t.next_sentence : '+${skip}s',
         onPressed: () {
           if (skip == 0) {
@@ -487,7 +488,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
       );
     }
     return (
-      icon: skip == 0 ? Icons.skip_previous_rounded : Icons.fast_rewind_rounded,
+      icon: skip == 0 ? FushiIcons.skipPrevious : FushiIcons.fastRewind,
       tooltip: skip == 0 ? t.prev_sentence : '-${skip}s',
       onPressed: () {
         if (skip == 0) {
@@ -531,7 +532,7 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
               decoration: ShapeDecoration(color: cs.primary, shape: coverShape),
               child: Center(
                 child: FushiIcon(
-                  Icons.headphones_rounded,
+                  FushiIcons.audiobook,
                   color: cs.onPrimary,
                   size: 22,
                 ),
@@ -803,7 +804,7 @@ class AudiobookPlayFab extends StatelessWidget {
           id: const FushiFocusId('audiobook_play'),
           child: FushiToolbarFab(
             key: const ValueKey<String>('audiobook_play_fab'),
-            icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            icon: playing ? FushiIcons.pause : FushiIcons.play,
             tooltip: playing ? t.pause : t.play,
             morphing: true,
             rounded: playing,

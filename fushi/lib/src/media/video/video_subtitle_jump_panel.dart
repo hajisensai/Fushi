@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 export 'subtitle_transcript_text.dart';
 
@@ -1575,7 +1576,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     FushiIconButtonControl(
                       tooltip: t.video_subtitle_list_search,
                       icon: FushiIcon(
-                        _searchOpen ? Icons.search_off : Icons.search,
+                        _searchOpen ? FushiIcons.searchOff : FushiIcons.search,
                         size: iconSize,
                       ),
                       color: _searchOpen ? cs.primary : cs.onSurfaceVariant,
@@ -1585,7 +1586,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     ),
                     FushiIconButtonControl(
                       tooltip: t.video_subtitle_list_font_smaller,
-                      icon: FushiIcon(Icons.text_decrease, size: iconSize),
+                      icon: FushiIcon(FushiIcons.textDecrease, size: iconSize),
                       color: _fontScaleIndex > 0 ? cs.onSurfaceVariant : cs.outline,
                       onPressed: _fontScaleIndex > 0 ? () => _stepFont(-1) : null,
                       visualDensity: VisualDensity.compact,
@@ -1593,7 +1594,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     ),
                     FushiIconButtonControl(
                       tooltip: t.video_subtitle_list_font_larger,
-                      icon: FushiIcon(Icons.text_increase, size: iconSize),
+                      icon: FushiIcon(FushiIcons.textIncrease, size: iconSize),
                       color: _fontScaleIndex < _kFontScaleSteps.length - 1
                           ? cs.onSurfaceVariant
                           : cs.outline,
@@ -1607,8 +1608,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       tooltip: t.video_subtitle_list_auto_scroll,
                       icon: FushiIcon(
                         _autoScroll
-                            ? Icons.vertical_align_center
-                            : Icons.pause_circle_outline,
+                            ? FushiIcons.alignCenterVertical
+                            : FushiIcons.pauseCircle,
                         size: iconSize,
                       ),
                       color: _autoScroll ? cs.primary : cs.onSurfaceVariant,
@@ -1625,7 +1626,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
                     FushiIconButtonControl(
                       tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-                      icon: FushiIcon(Icons.close, size: iconSize),
+                      icon: FushiIcon(FushiIcons.close, size: iconSize),
                       color: cs.onSurfaceVariant,
                       onPressed: widget.onClose,
                       visualDensity: VisualDensity.compact,
@@ -1673,7 +1674,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   tooltip: t.video_subtitle_list_export_favorites,
                   // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
                   // 收藏夹页的导出按钮同此约定）。
-                  icon: FushiIcon(Icons.share_outlined, size: iconSize),
+                  icon: FushiIcon(FushiIcons.share, size: iconSize),
                   color: cs.onSurfaceVariant,
                   visualDensity: VisualDensity.compact,
                   onPressed: _favoriteCueCount(cues) == 0
@@ -1716,7 +1717,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   isDense: true,
                   hintText: t.video_subtitle_list_search_hint,
                   hintStyle: TextStyle(fontSize: widget.fontSize - 1),
-                  prefixIcon: FushiIcon(Icons.search, size: widget.fontSize + 2),
+                  prefixIcon: FushiIcon(FushiIcons.search, size: widget.fontSize + 2),
                   prefixIconConstraints: BoxConstraints(
                     minWidth: widget.fontSize + 14,
                     minHeight: widget.fontSize + 2,
@@ -1726,7 +1727,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       : FushiIconButtonControl(
                           tooltip: MaterialLocalizations.of(context)
                               .cancelButtonLabel,
-                          icon: FushiIcon(Icons.close, size: widget.fontSize + 2),
+                          icon: FushiIcon(FushiIcons.close, size: widget.fontSize + 2),
                           visualDensity: VisualDensity.compact,
                           onPressed: () {
                             _searchController.clear();
@@ -1915,7 +1916,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         SubtitleTranscriptAction(
-          icon: Icons.play_arrow,
+          icon: FushiIcons.play,
           tooltip: t.video_subtitle_list_jump,
           color: iconColor,
           size: iconSize,
@@ -1924,7 +1925,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         // 复制后按钮就地切成 ✓ / 「已复制」（OSD 在视频区，视线之外）。成功与否由
         // [VideoSubtitleJumpPanel.onCopyCue] 的返回值说了算，面板不重算判据。
         SubtitleTranscriptAction(
-          icon: copied ? Icons.check : Icons.content_copy_outlined,
+          icon: copied ? FushiIcons.check : FushiIcons.copy,
           tooltip: copied ? t.copied : t.copy,
           color: copied ? cs.primary : iconColor,
           size: iconSize,
@@ -1933,7 +1934,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           },
         ),
         SubtitleTranscriptAction(
-          icon: favorited ? Icons.star : Icons.star_border,
+          icon: favorited ? FushiIcons.filled(FushiIcons.star) : FushiIcons.star,
           tooltip: t.collection_sentence,
           color: favorited ? cs.primary : iconColor,
           size: iconSize,
@@ -2121,7 +2122,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               color: cs.onSurface,
-              icon: const FushiIcon(Icons.remove, size: 18),
+              icon: const FushiIcon(FushiIcons.remove, size: 18),
             ),
           ),
           SizedBox(
@@ -2152,7 +2153,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               color: cs.onSurface,
-              icon: const FushiIcon(Icons.add, size: 18),
+              icon: const FushiIcon(FushiIcons.add, size: 18),
             ),
           ),
         ],
@@ -2204,7 +2205,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 ),
                 alignment: Alignment.center,
                 child: FushiIcon(
-                  Icons.subtitles_outlined,
+                  FushiIcons.subtitles,
                   size: 20,
                   color: cs.onPrimaryContainer,
                 ),
@@ -2234,7 +2235,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     backgroundColor: cs.surfaceContainerHigh,
                   ),
                   color: cs.onSurface,
-                  icon: const FushiIcon(Icons.close, size: 20),
+                  icon: const FushiIcon(FushiIcons.close, size: 20),
                 ),
               ),
             ],
@@ -2249,7 +2250,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 toolButton(
-                  icon: _searchOpen ? Icons.search_off : Icons.search,
+                  icon: _searchOpen ? FushiIcons.searchOff : FushiIcons.search,
                   tooltip: t.video_subtitle_list_search,
                   selected: _searchOpen,
                   onPressed: () => _toggleSearch(),
@@ -2257,8 +2258,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 const SizedBox(width: 4),
                 toolButton(
                   icon: _autoScroll
-                      ? Icons.vertical_align_center
-                      : Icons.pause_circle_outline,
+                      ? FushiIcons.alignCenterVertical
+                      : FushiIcons.pauseCircle,
                   tooltip: t.video_subtitle_list_auto_scroll,
                   selected: _autoScroll,
                   onPressed: _toggleAutoScroll,
@@ -2314,7 +2315,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                                   ),
                                   color: cs.onSurfaceVariant,
                                   icon: const FushiIcon(
-                                    Icons.share_outlined,
+                                    FushiIcons.share,
                                     size: 20,
                                   ),
                                 ),
@@ -2450,14 +2451,14 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   SubtitleTranscriptAction(
-                    icon: Icons.play_arrow_rounded,
+                    icon: FushiIcons.play,
                     tooltip: t.video_subtitle_list_jump,
                     color: secondary,
                     size: iconSize,
                     onPressed: () => widget.onTapCue(cue),
                   ),
                   SubtitleTranscriptAction(
-                    icon: copied ? Icons.check : Icons.content_copy_outlined,
+                    icon: copied ? FushiIcons.check : FushiIcons.copy,
                     tooltip: copied ? t.copied : t.copy,
                     color: copied ? cs.primary : secondary,
                     size: iconSize,
@@ -2466,7 +2467,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     },
                   ),
                   SubtitleTranscriptAction(
-                    icon: favorited ? Icons.star_rounded : Icons.star_border,
+                    icon: favorited ? FushiIcons.filled(FushiIcons.star) : FushiIcons.star,
                     tooltip: t.collection_sentence,
                     color: favorited ? cs.tertiary : secondary,
                     size: iconSize,
@@ -2538,7 +2539,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                             if (favorited) ...<Widget>[
                               const SizedBox(width: _kM3eStarGap),
                               FushiIcon(
-                                Icons.star_rounded,
+                                FushiIcons.filled(FushiIcons.star),
                                 size: _m3eStarSize,
                                 color: selected
                                     ? cs.onPrimaryContainer
@@ -2604,7 +2605,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           value: 0,
           child: Row(
             children: <Widget>[
-              const FushiIcon(Icons.play_arrow_rounded, size: 20),
+              const FushiIcon(FushiIcons.play, size: 20),
               const SizedBox(width: 12),
               Flexible(child: Text(t.video_subtitle_list_jump)),
             ],
@@ -2614,7 +2615,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           value: 1,
           child: Row(
             children: <Widget>[
-              const FushiIcon(Icons.content_copy_outlined, size: 20),
+              const FushiIcon(FushiIcons.copy, size: 20),
               const SizedBox(width: 12),
               Flexible(child: Text(t.copy)),
             ],
@@ -2625,7 +2626,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           child: Row(
             children: <Widget>[
               FushiIcon(
-                favorited ? Icons.star_rounded : Icons.star_border,
+                favorited ? FushiIcons.filled(FushiIcons.star) : FushiIcons.star,
                 size: 20,
               ),
               const SizedBox(width: 12),
@@ -2651,12 +2652,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   Widget _buildM3eEmpty(ColorScheme cs, {required bool cuesLoaded}) {
     final bool searching = _searchQuery.trim().isNotEmpty;
     final IconData icon = !cuesLoaded
-        ? Icons.subtitles_off_outlined
+        ? FushiIcons.subtitlesOff
         : searching
-            ? Icons.search_off
+            ? FushiIcons.searchOff
             : _filter == VideoSubtitleListFilter.favorites
-                ? Icons.star_border_rounded
-                : Icons.subtitles_outlined;
+                ? FushiIcons.star
+                : FushiIcons.subtitles;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),

@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   Widget buildSubject(Widget child) {
@@ -268,9 +269,9 @@ void main() {
       ),
     );
 
-    expect(find.byIcon(Icons.close), findsOneWidget);
+    expect(find.byIcon(FushiIcons.close), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byIcon(FushiIcons.close));
     expect(deleted, isTrue);
   });
 

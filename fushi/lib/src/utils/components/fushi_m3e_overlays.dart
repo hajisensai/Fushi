@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // ===========================================================================
 // M3 Expressive 浮层（对话框 / 底部弹层 / 菜单）的共享原语与标准模板
@@ -1163,7 +1164,7 @@ class FushiChoiceRow extends StatelessWidget {
               ],
               Expanded(child: _labels(theme, null)),
               if (selected)
-                FushiIcon(Icons.check_rounded, size: 18, color: apple.accent),
+                FushiIcon(FushiIcons.check, size: 18, color: apple.accent),
             ],
           ),
         ),
@@ -1184,7 +1185,7 @@ class FushiChoiceRow extends StatelessWidget {
                 ScaleTransition(scale: a, child: child),
             child: selected
                 ? FushiIcon(
-                    Icons.check_rounded,
+                    FushiIcons.check,
                     key: const ValueKey<bool>(true),
                     size: 22,
                     color: fg,

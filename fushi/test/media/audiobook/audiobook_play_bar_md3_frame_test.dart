@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// TODO-297 守卫：阅读器有声书播放条的播放/暂停键必须是 MD3 圆框
 /// （[IconButton.filledTonal] —— 标准 filled-tonal 圆形容器 + state-layer +
@@ -45,7 +46,7 @@ void main() {
     );
 
     // 播放键用 IconButton.filledTonal → 背景容器非透明。
-    final Material play = _backingMaterial(tester, Icons.play_arrow_outlined);
+    final Material play = _backingMaterial(tester, FushiIcons.play);
     expect(
       play.color,
       isNot(Colors.transparent),
@@ -55,9 +56,9 @@ void main() {
 
     // 上一句/下一句/设置键是无框原生 IconButton → 背景透明（或无填充）。
     final Material prev =
-        _backingMaterial(tester, Icons.skip_previous_outlined);
-    final Material next = _backingMaterial(tester, Icons.skip_next_outlined);
-    final Material settings = _backingMaterial(tester, Icons.tune_outlined);
+        _backingMaterial(tester, FushiIcons.skipPrevious);
+    final Material next = _backingMaterial(tester, FushiIcons.skipNext);
+    final Material settings = _backingMaterial(tester, FushiIcons.settings);
     for (final Material m in <Material>[prev, next, settings]) {
       expect(
         m.color ?? Colors.transparent,
@@ -87,7 +88,7 @@ void main() {
     );
 
     // 注入纸张前景色后播放键仍是非透明 tonal 底（不退回扁平/透明）。
-    final Material play = _backingMaterial(tester, Icons.play_arrow_outlined);
+    final Material play = _backingMaterial(tester, FushiIcons.play);
     expect(play.color, isNot(Colors.transparent));
     expect(play.color, isNotNull);
   });

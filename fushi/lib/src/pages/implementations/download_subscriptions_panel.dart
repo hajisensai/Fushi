@@ -11,6 +11,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 class DownloadSubscriptionsPanel extends ConsumerStatefulWidget {
   const DownloadSubscriptionsPanel({super.key});
@@ -95,7 +96,7 @@ class _DownloadSubscriptionsPanelState
       message: t.download_subscription_delete_confirm(
         title: subscription.seriesTitle,
       ),
-      icon: Icons.delete_outline,
+      icon: FushiIcons.delete,
       confirmLabel: t.dialog_delete,
       destructive: true,
     );
@@ -165,7 +166,7 @@ class _DownloadSubscriptionsPanelState
             child: Row(
               children: <Widget>[
                 FushiIcon(
-                  Icons.schedule_outlined,
+                  FushiIcons.schedule,
                   color: theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 12),
@@ -184,7 +185,7 @@ class _DownloadSubscriptionsPanelState
                           height: 16,
                           child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const FushiIcon(Icons.refresh, size: 18),
+                      : const FushiIcon(FushiIcons.refresh, size: 18),
                   label: Text(t.download_subscription_check_all),
                 ),
               ],
@@ -202,7 +203,7 @@ class _DownloadSubscriptionsPanelState
         const SizedBox(height: 72),
         // 空态走共享占位（MD3 分组底卡 / Apple ContentUnavailableView 观感）。
         FushiPlaceholderMessage(
-          icon: Icons.subscriptions_outlined,
+          icon: FushiIcons.subscriptions,
           message: t.download_subscription_empty_title,
           detail: t.download_subscription_empty_body,
         ),
@@ -245,8 +246,8 @@ class _DownloadSubscriptionsPanelState
             titleMaxLines: 2,
             leading: FushiIcon(
               subscription.enabled
-                  ? Icons.notifications_active_outlined
-                  : Icons.notifications_off_outlined,
+                  ? FushiIcons.notificationsActive
+                  : FushiIcons.notificationsOff,
               color: subscription.enabled
                   ? theme.colorScheme.primary
                   : theme.colorScheme.outline,
@@ -291,12 +292,12 @@ class _DownloadSubscriptionsPanelState
                 ),
                 FushiIconButton(
                   tooltip: t.download_subscription_check_now,
-                  icon: Icons.refresh,
+                  icon: FushiIcons.refresh,
                   onTap: checking ? null : () => _checkOne(subscription),
                 ),
                 FushiIconButton(
                   tooltip: t.download_subscription_delete,
-                  icon: Icons.delete_outline,
+                  icon: FushiIcons.delete,
                   onTap: () => _delete(subscription),
                 ),
               ],

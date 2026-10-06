@@ -12,6 +12,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 SettingsDestination buildReadingDestination() {
   bool isVertical(SettingsContext c) =>
@@ -51,7 +52,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.view_mode',
             title: t.reader_view_mode_label,
-            icon: Icons.chrome_reader_mode_outlined,
+            icon: FushiIcons.readerMode,
             controlBelow: true,
             // TODO-725：翻页/滚动从「外观」迁到「布局与显示」组（用户最直指的
             // 「滚动/翻页应放进布局与显示」）。仅改展示分类/排序，onChanged 不变。
@@ -87,7 +88,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.writing_mode',
             title: t.reader_writing_direction,
-            icon: Icons.text_rotate_vertical,
+            icon: FushiIcons.textVertical,
             controlBelow: true,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 5),
             options: <SettingsSegmentOption<String>>[
@@ -111,7 +112,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.spread_mode',
             title: t.spread_mode,
-            icon: Icons.menu_book_outlined,
+            icon: FushiIcons.books,
             controlBelow: true,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 6),
             options: <SettingsSegmentOption<String>>[
@@ -140,7 +141,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.spread_direction',
             title: t.spread_direction,
-            icon: Icons.swap_horiz_outlined,
+            icon: FushiIcons.swap,
             controlBelow: true,
             visible: (SettingsContext c) =>
                 c.readerSource.readerSpreadMode != 'off',
@@ -170,7 +171,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.vert_text_orient',
             title: t.reader_vert_text_orient,
-            icon: Icons.text_rotation_none,
+            icon: FushiIcons.textHorizontal,
             controlBelow: true,
             visible: isVertical,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 14),
@@ -196,7 +197,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_display.furigana_mode',
             title: t.reader_furigana_mode,
-            icon: Icons.translate_outlined,
+            icon: FushiIcons.language,
             controlBelow: true,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 13),
             // 四态：Off / Toggle / Hidden（对齐 Hoshi Reader iOS）+ Dimmed
@@ -241,7 +242,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSliderItem(
             id: 'reading_vn.reveal_speed',
             title: t.reader_vn_reveal_speed,
-            icon: Icons.animation_outlined,
+            icon: FushiIcons.animation,
             min: 0,
             max: 120,
             divisions: 24,
@@ -265,7 +266,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSegmentedItem<String>(
             id: 'reading_vn.screen_mode',
             title: t.reader_vn_screen_mode,
-            icon: Icons.view_agenda_outlined,
+            icon: FushiIcons.viewAgenda,
             controlBelow: true,
             visible: isVisualNovel,
             reader: const ReaderPlacement(
@@ -294,7 +295,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_vn.sentences_per_screen',
             title: t.reader_vn_sentences_per_screen,
-            icon: Icons.format_list_numbered,
+            icon: FushiIcons.numberedList,
             visible: isVisualNovelSentenceMode,
             min: 1,
             max: 12,
@@ -315,7 +316,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_vn.preserve_dialogue',
             title: t.reader_vn_preserve_dialogue,
-            icon: Icons.format_quote,
+            icon: FushiIcons.quote,
             visible: isVisualNovelSentenceMode,
             reader: const ReaderPlacement(
               group: ReaderGroup.layout,
@@ -331,7 +332,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_vn.click_advance',
             title: t.reader_vn_click_advance,
-            icon: Icons.touch_app_outlined,
+            icon: FushiIcons.touch,
             visible: isVisualNovel,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
@@ -347,7 +348,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_vn.merge_spoken_sentence',
             title: t.reader_vn_merge_spoken_sentence,
-            icon: Icons.graphic_eq_outlined,
+            icon: FushiIcons.audio,
             visible: isVisualNovel,
             reader: const ReaderPlacement(
               group: ReaderGroup.audiobook,
@@ -370,7 +371,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.font_size',
             title: t.reader_font_size,
-            icon: Icons.format_size,
+            icon: FushiIcons.fontSize,
             min: 8,
             // 64 was a conservative UI cap, not a technical one (TODO-299):
             // `font-size: ${settings.fontSize}px` 直接喂 CSS，ruby 用相对
@@ -393,7 +394,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.font_weight',
             title: t.reader_font_weight,
-            icon: Icons.format_bold,
+            icon: FushiIcons.bold,
             min: 100,
             max: 900,
             step: 100,
@@ -408,7 +409,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.line_height',
             title: t.reader_line_height,
-            icon: Icons.format_line_spacing,
+            icon: FushiIcons.lineSpacing,
             min: 1,
             max: 3,
             step: 0.1,
@@ -425,7 +426,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.text_indentation',
             title: t.reader_text_indentation,
-            icon: Icons.format_indent_increase,
+            icon: FushiIcons.indent,
             min: 0,
             max: 10,
             step: 1,
@@ -442,7 +443,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.paragraph_spacing',
             title: t.reader_paragraph_spacing,
-            icon: Icons.format_line_spacing,
+            icon: FushiIcons.lineSpacing,
             min: 0,
             max: 3,
             step: 0.1,
@@ -461,7 +462,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.page_columns',
             title: t.columns_per_page,
-            icon: Icons.view_column_outlined,
+            icon: FushiIcons.viewColumn,
             visible: isPaginated,
             min: 0,
             max: 4,
@@ -482,7 +483,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.margin_top',
             title: t.margin_top,
-            icon: Icons.border_top,
+            icon: FushiIcons.borderTop,
             min: 0,
             max: 50,
             step: 1,
@@ -497,7 +498,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.margin_bottom',
             title: t.margin_bottom,
-            icon: Icons.border_bottom,
+            icon: FushiIcons.borderBottom,
             min: 0,
             max: 50,
             step: 1,
@@ -512,7 +513,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.margin_left',
             title: t.margin_left,
-            icon: Icons.border_left,
+            icon: FushiIcons.borderLeft,
             min: 0,
             max: 50,
             step: 1,
@@ -527,7 +528,7 @@ SettingsDestination buildReadingDestination() {
           SettingsStepperItem(
             id: 'reading_display.margin_right',
             title: t.margin_right,
-            icon: Icons.border_right,
+            icon: FushiIcons.borderRight,
             min: 0,
             max: 50,
             step: 1,
@@ -550,7 +551,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.highlight_on_tap',
             title: t.highlight_on_tap,
-            icon: Icons.touch_app_outlined,
+            icon: FushiIcons.touch,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 0,
@@ -567,7 +568,7 @@ SettingsDestination buildReadingDestination() {
             title: t.volume_button_page_turning,
             // VolumeKeyChannel 仅 Android 实现，桌面隐藏此项（TODO-1155）。
             visible: (_) => Platform.isAndroid,
-            icon: Icons.volume_up_outlined,
+            icon: FushiIcons.volumeUp,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 1,
@@ -589,7 +590,7 @@ SettingsDestination buildReadingDestination() {
             // 滚动模式的滚轮是无极滚动、不翻页（kContinuousWheelScrollJs），
             // 「翻页间隔」在那里无从谈起；分页与 VN 仍按它限速。
             visible: (SettingsContext c) => !isContinuous(c),
-            icon: Icons.mouse_outlined,
+            icon: FushiIcons.mouse,
             min: 150,
             max: 1000,
             divisions: 17,
@@ -618,7 +619,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.swipe_page_turn_sensitivity',
             titleReadout: true,
             title: t.swipe_page_turn_sensitivity,
-            icon: Icons.swipe_outlined,
+            icon: FushiIcons.swipe,
             min: ReaderSettings.minSwipePageTurnSensitivity,
             max: ReaderSettings.maxSwipePageTurnSensitivity,
             divisions: 25,
@@ -655,7 +656,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.invert_volume_buttons',
             title: t.invert_volume_buttons,
-            icon: Icons.swap_vert_outlined,
+            icon: FushiIcons.swapVert,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 2,
@@ -670,7 +671,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.invert_swipe_direction',
             title: t.invert_swipe_direction,
-            icon: Icons.swipe_outlined,
+            icon: FushiIcons.swipe,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 3,
@@ -686,7 +687,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.reverse_arrow_page_turn',
             title: t.reverse_arrow_page_turn,
-            icon: Icons.swap_horiz_outlined,
+            icon: FushiIcons.swap,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 4,
@@ -702,7 +703,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.invert_audiobook_skip_direction',
             title: t.invert_audiobook_skip_direction,
-            icon: Icons.swap_horizontal_circle_outlined,
+            icon: FushiIcons.swapCircle,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 5,
@@ -728,7 +729,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.show_top_progress_bar',
             title: t.show_top_progress_bar,
-            icon: Icons.data_usage_outlined,
+            icon: FushiIcons.dataUsage,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 12,
@@ -751,7 +752,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.tap_empty_hide_chrome',
             title: t.tap_empty_hide_chrome,
-            icon: Icons.fullscreen_outlined,
+            icon: FushiIcons.fullscreen,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 18,
@@ -772,7 +773,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.auto_hide_chrome_duration',
             titleReadout: true,
             title: t.reader_auto_hide_chrome_duration,
-            icon: Icons.timer_outlined,
+            icon: FushiIcons.timer,
             min: 1,
             max: 10,
             divisions: 9,
@@ -801,7 +802,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.hide_toolbars',
             title: t.reader_toolbars_hide,
-            icon: Icons.web_asset_off_outlined,
+            icon: FushiIcons.webAssetOff,
             subtitleBuilder: (SettingsContext c) =>
                 c.readerSource.hideToolbars &&
                         !c.appModel.prefsRepo.floatingBallInApp
@@ -820,7 +821,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_controls.keep_screen_awake',
             title: t.keep_screen_awake,
-            icon: Icons.lightbulb_outline,
+            icon: FushiIcons.lightbulb,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 7,
@@ -835,7 +836,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_display.reverse_reader_bottom_bar',
             title: t.reverse_reader_bottom_bar,
-            icon: Icons.swap_horiz_outlined,
+            icon: FushiIcons.swap,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               // order 13：behavior 组内已用 0-9/11/12（10 在 listening），取末位
@@ -855,7 +856,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_controls.toolbar_style',
             title: t.reader_toolbar_style_title,
             subtitle: t.reader_toolbar_style_hint,
-            icon: Icons.view_agenda_outlined,
+            icon: FushiIcons.viewAgenda,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 11,
@@ -864,12 +865,12 @@ SettingsDestination buildReadingDestination() {
               SettingsSegmentOption<String>(
                 value: 'floating',
                 label: t.reader_toolbar_style_floating,
-                icon: Icons.picture_in_picture_outlined,
+                icon: FushiIcons.pictureInPicture,
               ),
               SettingsSegmentOption<String>(
                 value: 'docked',
                 label: t.reader_toolbar_style_docked,
-                icon: Icons.web_asset_outlined,
+                icon: FushiIcons.webAsset,
               ),
             ],
             selected: (SettingsContext c) => c.appModel.readerToolbarStyle,
@@ -895,7 +896,7 @@ SettingsDestination buildReadingDestination() {
           SettingsActionItem(
             id: 'reading_controls.reset_control_layout',
             title: t.reader_control_reset_layout,
-            icon: Icons.restart_alt_outlined,
+            icon: FushiIcons.restart,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 15,
@@ -934,7 +935,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading.stats_idle_timeout_minutes',
             title: t.reading_stats_idle_timeout,
             subtitle: t.reading_stats_idle_timeout_hint,
-            icon: Icons.timer_off_outlined,
+            icon: FushiIcons.timerOff,
             min: PreferencesRepository.readingIdleTimeoutMinutesMin.toDouble(),
             max: PreferencesRepository.readingIdleTimeoutMinutesMax.toDouble(),
             step: 1,
@@ -952,7 +953,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading.stats_clock_start_mode',
             title: t.reading_stats_clock_start_mode,
             subtitle: t.reading_stats_clock_start_mode_hint,
-            icon: Icons.play_circle_outline,
+            icon: FushiIcons.playCircle,
             controlBelow: true,
             options: <SettingsSegmentOption<ReaderStudyClockStartMode>>[
               SettingsSegmentOption<ReaderStudyClockStartMode>(
@@ -994,7 +995,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_display.text_justify',
             title: t.reader_text_justify,
-            icon: Icons.format_align_justify,
+            icon: FushiIcons.alignJustify,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 15),
             value: (SettingsContext c) =>
                 c.readerSource.readerEnableTextJustification,
@@ -1006,7 +1007,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_display.vert_kerning',
             title: t.reader_vert_kerning,
-            icon: Icons.space_bar,
+            icon: FushiIcons.spaceBar,
             visible: isVertical,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 16),
             value: (SettingsContext c) =>
@@ -1019,7 +1020,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_display.font_vpal',
             title: t.reader_font_vpal,
-            icon: Icons.format_shapes,
+            icon: FushiIcons.formatShapes,
             visible: isVertical,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 17),
             value: (SettingsContext c) => c.readerSource.readerEnableFontVPAL,
@@ -1031,7 +1032,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_display.prioritize_reader_styles',
             title: t.reader_reader_styles,
-            icon: Icons.style_outlined,
+            icon: FushiIcons.ankiCard,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 18),
             value: (SettingsContext c) =>
                 c.readerSource.readerPrioritizeReaderStyles,
@@ -1045,7 +1046,7 @@ SettingsDestination buildReadingDestination() {
           SettingsSwitchItem(
             id: 'reading_display.blur_images',
             title: t.reader_blur_images,
-            icon: Icons.blur_on_outlined,
+            icon: FushiIcons.blur,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 20),
             value: (SettingsContext c) => c.readerSource.readerBlurImages,
             onChanged: (SettingsContext c, bool value) async {
@@ -1062,7 +1063,7 @@ SettingsDestination buildReadingDestination() {
             id: 'reading_display.merge_image_pages',
             title: t.reader_merge_image_pages,
             subtitle: t.reader_merge_image_pages_subtitle,
-            icon: Icons.collections_bookmark_outlined,
+            icon: FushiIcons.collection,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 21),
             value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
             onChanged: (SettingsContext c, bool value) async {

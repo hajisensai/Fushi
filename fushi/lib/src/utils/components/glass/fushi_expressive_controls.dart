@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // Material 3 Expressive（2025-05）交互控件共享层的第二批：按钮尺寸档 / 形状、
 // toggle 按钮、split button、FAB 三尺寸 + FAB menu，以及开关 thumb 图标、
@@ -628,7 +629,7 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
         angle: math.pi * _open.value.clamp(0.0, 1.0),
         child: child,
       ),
-      child: Icon(Icons.keyboard_arrow_down_rounded, size: iconSize + 2),
+      child: Icon(FushiIcons.expandMore, size: iconSize + 2),
     );
   }
 
@@ -1069,7 +1070,7 @@ class FushiFabMenu extends StatefulWidget {
     super.key,
     required this.icon,
     required this.items,
-    this.closeIcon = const Icon(Icons.close_rounded),
+    this.closeIcon = const Icon(FushiIcons.close),
     this.color = FushiFabColor.primaryContainer,
     this.size = FushiFabSize.regular,
     this.tooltip,
@@ -1339,13 +1340,13 @@ WidgetStateProperty<Icon?> fushiExpressiveSwitchThumbIcon(ColorScheme cs) {
     final bool disabled = states.contains(WidgetState.disabled);
     if (states.contains(WidgetState.selected)) {
       return Icon(
-        Icons.check_rounded,
+        FushiIcons.check,
         size: 16,
         color: disabled ? cs.onSurface.withValues(alpha: 0.38) : cs.primary,
       );
     }
     return Icon(
-      Icons.close_rounded,
+      FushiIcons.close,
       size: 16,
       color: disabled
           ? cs.surfaceContainerHighest.withValues(alpha: 0.38)

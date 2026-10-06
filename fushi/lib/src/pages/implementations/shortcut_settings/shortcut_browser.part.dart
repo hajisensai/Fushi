@@ -29,9 +29,9 @@ extension ShortcutInputDeviceChannels on ShortcutInputDevice {
       };
 
   IconData get icon => switch (this) {
-        ShortcutInputDevice.keyboard => Icons.keyboard_outlined,
-        ShortcutInputDevice.gamepad => Icons.sports_esports_outlined,
-        ShortcutInputDevice.mouse => Icons.mouse_outlined,
+        ShortcutInputDevice.keyboard => FushiIcons.keyboard,
+        ShortcutInputDevice.gamepad => FushiIcons.games,
+        ShortcutInputDevice.mouse => FushiIcons.mouse,
       };
 
   String get label => switch (this) {
@@ -816,7 +816,7 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
                   FushiPopupMenuItem<String>(
                     value: 'reset-all',
                     label: t.shortcut_reset_all,
-                    icon: Icons.restart_alt_rounded,
+                    icon: FushiIcons.restart,
                   ),
                 ],
               ),
@@ -874,7 +874,7 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
         trailing: <Widget>[
           FushiIconButton(
             key: const Key('shortcut_key_search_button'),
-            icon: Icons.keyboard_command_key_rounded,
+            icon: FushiIcons.commandKey,
             tooltip: t.shortcut_search_by_key,
             onTap: _armKeySearch,
           ),
@@ -1000,7 +1000,7 @@ class _ShortcutBindingsBrowserState extends State<ShortcutBindingsBrowser> {
         entry(
           scope: null,
           label: t.shortcut_domain_all,
-          icon: Icons.apps_rounded,
+          icon: FushiIcons.apps,
           count: total,
           modified: false,
         ),
@@ -1176,16 +1176,16 @@ FushiFocusId _rowFocusId(ShortcutAction action) =>
     FushiFocusId('shortcut-row-${action.name}');
 
 IconData _scopeIcon(ShortcutScope scope) => switch (scope) {
-      ShortcutScope.global => Icons.public_rounded,
-      ShortcutScope.universal => Icons.undo_rounded,
-      ShortcutScope.globalExternal => Icons.open_in_new_rounded,
-      ShortcutScope.home => Icons.home_outlined,
-      ShortcutScope.reader => Icons.menu_book_outlined,
-      ShortcutScope.audiobook => Icons.headphones_outlined,
-      ShortcutScope.manga => Icons.auto_stories_outlined,
-      ShortcutScope.video => Icons.movie_outlined,
-      ShortcutScope.gamepad => Icons.sports_esports_outlined,
-      ShortcutScope.dictionaryPopup => Icons.translate_rounded,
+      ShortcutScope.global => FushiIcons.globe,
+      ShortcutScope.universal => FushiIcons.undo,
+      ShortcutScope.globalExternal => FushiIcons.openInNew,
+      ShortcutScope.home => FushiIcons.home,
+      ShortcutScope.reader => FushiIcons.books,
+      ShortcutScope.audiobook => FushiIcons.audiobook,
+      ShortcutScope.manga => FushiIcons.readingMode,
+      ShortcutScope.video => FushiIcons.video,
+      ShortcutScope.gamepad => FushiIcons.games,
+      ShortcutScope.dictionaryPopup => FushiIcons.language,
     };
 
 // ---------------------------------------------------------------------------
@@ -1436,7 +1436,7 @@ class _KeyFilterBar extends StatelessWidget {
       child: Row(
         children: <Widget>[
           FushiIcon(
-            Icons.keyboard_command_key_rounded,
+            FushiIcons.commandKey,
             size: 20,
             color: glass
                 ? apple.secondaryLabel
@@ -1460,13 +1460,13 @@ class _KeyFilterBar extends StatelessWidget {
           const Spacer(),
           FushiIconButton(
             key: const Key('shortcut_key_search_rearm'),
-            icon: Icons.keyboard_command_key_rounded,
+            icon: FushiIcons.commandKey,
             tooltip: t.shortcut_search_by_key,
             onTap: onRearm,
           ),
           FushiIconButton(
             key: const Key('shortcut_key_filter_clear'),
-            icon: Icons.close_rounded,
+            icon: FushiIcons.close,
             tooltip: t.clear,
             onTap: onClear,
           ),
@@ -1731,7 +1731,7 @@ class _ConflictStrip extends StatelessWidget {
             Row(
               children: <Widget>[
                 FushiIcon(
-                  Icons.warning_amber_rounded,
+                  FushiIcons.warning,
                   size: 18,
                   color: glass ? apple.destructive : theme.colorScheme.error,
                 ),
@@ -1798,7 +1798,7 @@ class _EmptyResults extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             FushiIcon(
-              Icons.search_off_rounded,
+              FushiIcons.searchOff,
               size: 40,
               color: tokens.surfaces.onVariant,
             ),
@@ -1873,7 +1873,7 @@ class _BindingKeycap extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(2),
                   child: FushiIcon(
-                    Icons.close_rounded,
+                    FushiIcons.close,
                     size: 14,
                     color: glass
                         ? apple.secondaryLabel

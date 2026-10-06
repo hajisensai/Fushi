@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 搜索的共享层（用户 2026-10-05「搜索框和输入框也统一成 m3e」）。
 //
@@ -313,7 +314,7 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
     if (onBack == null) return null;
     final bool large = widget.size == FushiSearchFieldSize.large;
     return FushiIconButton(
-      icon: Icons.arrow_back,
+      icon: FushiIcons.back,
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       size: large ? kFushiSearchFieldLargeIconSize : kFushiSearchFieldIconSize,
       padding: large ? const EdgeInsets.all(12) : const EdgeInsets.all(4),
@@ -788,13 +789,13 @@ class _FushiSearchViewBodyState extends State<_FushiSearchViewBody> {
                     decoration: InputDecoration(
                       hintText: widget.config.hintText,
                       prefixIcon: const FushiIcon(
-                        Icons.search,
+                        FushiIcons.search,
                         size: kFushiSearchFieldIconSize,
                       ),
                       suffixIcon: value.text.isEmpty
                           ? null
                           : FushiIconButton(
-                              icon: Icons.cancel,
+                              icon: FushiIcons.cancel,
                               tooltip: t.clear,
                               size: kFushiSearchFieldIconSize,
                               padding: const EdgeInsets.all(4),
@@ -825,7 +826,7 @@ class _FushiSearchViewBodyState extends State<_FushiSearchViewBody> {
       child: Row(
         children: <Widget>[
           FushiIconButton(
-            icon: Icons.arrow_back,
+            icon: FushiIcons.back,
             tooltip: MaterialLocalizations.of(context).backButtonTooltip,
             size: kFushiSearchFieldLargeIconSize,
             padding: const EdgeInsets.all(12),
@@ -863,7 +864,7 @@ class _FushiSearchViewBodyState extends State<_FushiSearchViewBody> {
                     ? const SizedBox.shrink()
                     : FushiIconButton(
                         key: const ValueKey<String>('fushi-search-view-clear'),
-                        icon: Icons.close,
+                        icon: FushiIcons.close,
                         tooltip: t.clear,
                         size: kFushiSearchFieldLargeIconSize,
                         padding: const EdgeInsets.all(12),
@@ -913,13 +914,13 @@ class _FushiSearchViewBodyState extends State<_FushiSearchViewBody> {
         FushiSectionTitle.group(t.search_view_recent_title),
         for (final String entry in _recent)
           _row(
-            icon: Icons.history,
+            icon: FushiIcons.history,
             text: entry,
             onTap: () => _pick(entry),
             trailing: widget.config.onRemoveRecent == null
                 ? null
                 : FushiIconButton(
-                    icon: Icons.close,
+                    icon: FushiIcons.close,
                     tooltip: t.search_view_recent_remove,
                     size: 18,
                     onTap: () => _removeRecent(entry),
@@ -929,7 +930,7 @@ class _FushiSearchViewBodyState extends State<_FushiSearchViewBody> {
       if (suggestions.isNotEmpty) ...<Widget>[
         FushiSectionTitle.group(t.search_view_suggestions_title),
         for (final String entry in suggestions)
-          _row(icon: Icons.search, text: entry, onTap: () => _pick(entry)),
+          _row(icon: FushiIcons.search, text: entry, onTap: () => _pick(entry)),
       ],
     ];
     return FushiEntranceScope(
@@ -1084,7 +1085,7 @@ class _FushiSearchAnchorState extends State<FushiSearchAnchor> {
     final Widget content = Row(
       children: <Widget>[
         SizedBox(width: large ? 16 : 12),
-        FushiIcon(Icons.search, size: iconSize, color: hintColor),
+        FushiIcon(FushiIcons.search, size: iconSize, color: hintColor),
         SizedBox(width: large ? 12 : 8),
         Expanded(
           child: Text(

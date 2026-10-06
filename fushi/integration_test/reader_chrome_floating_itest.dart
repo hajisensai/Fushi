@@ -20,6 +20,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'helpers/focus_driver.dart';
 import 'helpers/generate_test_epub.dart' show EpubGenerator;
 import 'test_helpers.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// TODO-975 floating/collapsible reader chrome — remaining interaction behaviors
 /// device-layer (real-DOM) verification.
@@ -352,7 +353,7 @@ void main() {
         //    the audiobook play bar (fushi_play_bar). Its unique headphones
         //    (audio-import) IconButton is the direct bottom-bar witness.
         final Finder bottomBarWitness =
-            find.widgetWithIcon(IconButton, Icons.headphones_outlined);
+            find.widgetWithIcon(IconButton, FushiIcons.audiobook);
         bool progressRevealed = false;
         bool bottomBarRevealed = false;
         for (int i = 0; i < 40; i++) {

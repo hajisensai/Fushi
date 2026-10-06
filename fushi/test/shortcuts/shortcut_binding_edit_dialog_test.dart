@@ -9,6 +9,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 void main() {
   setUp(() {
@@ -235,7 +236,7 @@ void main() {
     expect(pageDownChip, findsOneWidget);
     await tester.tap(find.descendant(
       of: pageDownChip,
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
@@ -282,7 +283,7 @@ void main() {
     expect(dpadChip, findsOneWidget);
     await tester.tap(find.descendant(
       of: dpadChip,
-      matching: find.byIcon(Icons.close),
+      matching: find.byIcon(FushiIcons.close),
     ));
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);

@@ -57,6 +57,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         LiquidRoundedRectangle,
         LiquidRoundedSuperellipse;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // ── 「玻璃」设计系统的共享原语 ────────────────────────────────────────────
 //
@@ -1018,7 +1019,7 @@ class FushiSearchField extends StatelessWidget {
       if (onClear != null && value.text.isNotEmpty)
         FushiIconButton(
           key: clearButtonKey,
-          icon: Icons.close,
+          icon: FushiIcons.close,
           tooltip: t.clear,
           size: iconSize,
           padding: padding,
@@ -1132,7 +1133,7 @@ class FushiSearchField extends StatelessWidget {
               ? const Padding(
                   padding: EdgeInsetsDirectional.only(start: 16, end: 12),
                   child: FushiIcon(
-                    Icons.search,
+                    FushiIcons.search,
                     size: kFushiSearchFieldLargeIconSize,
                   ),
                 )
@@ -1199,7 +1200,7 @@ class FushiSearchField extends StatelessWidget {
               hintText: hintText,
               prefixIcon: leading == null
                   ? const FushiIcon(
-                      Icons.search,
+                      FushiIcons.search,
                       size: kFushiSearchFieldIconSize,
                     )
                   : FushiSearchLeading(child: leading!),
@@ -1257,7 +1258,7 @@ class FushiSearchField extends StatelessWidget {
               ),
               prefixIcon: leading == null
                   ? const FushiIcon(
-                      Icons.search,
+                      FushiIcons.search,
                       size: kFushiSearchFieldIconSize,
                     )
                   : FushiSearchLeading(child: leading!),
@@ -1510,7 +1511,7 @@ class _FushiTextFieldState extends State<FushiTextField> {
           children: <Widget>[
             if (clear && hasText)
               FushiIconButton(
-                icon: Icons.cancel_outlined,
+                icon: FushiIcons.cancel,
                 tooltip: t.clear,
                 size: iconSize,
                 padding: padding,
@@ -1523,8 +1524,8 @@ class _FushiTextFieldState extends State<FushiTextField> {
             if (toggle)
               FushiIconButton(
                 icon: _obscured
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
+                    ? FushiIcons.visibility
+                    : FushiIcons.visibilityOff,
                 tooltip: _obscured
                     ? t.text_field_password_show
                     : t.text_field_password_hide,
@@ -1700,7 +1701,7 @@ Widget? _hibikiTextFieldInputSuffix({
       platform == TargetPlatform.macOS;
   if (isDesktop) {
     return FushiIconButton(
-      icon: Icons.keyboard_outlined,
+      icon: FushiIcons.keyboard,
       tooltip: t.on_screen_keyboard,
       size: iconSize,
       padding: padding,
@@ -1709,7 +1710,7 @@ Widget? _hibikiTextFieldInputSuffix({
     );
   }
   return FushiIconButton(
-    icon: Icons.content_paste_outlined,
+    icon: FushiIcons.paste,
     tooltip: t.paste,
     size: iconSize,
     padding: padding,
@@ -2093,7 +2094,7 @@ class _FushiTagChipState extends State<FushiTagChip> {
           customBorder: const CircleBorder(),
           onTap: widget.onDeleted,
           child: FushiIcon(
-            Icons.close,
+            FushiIcons.close,
             size: 14,
             color: foreground,
           ),
@@ -2651,7 +2652,7 @@ List<Widget> narrowAwareAppBarActions({
     // 共享菜单路由（M3E 面板 / Apple 菜单），不再裸用 PopupMenuButton。
     FushiPopupMenuButton<int>(
       tooltip: t.common_more_actions,
-      icon: const FushiIcon(Icons.more_vert),
+      icon: const FushiIcon(FushiIcons.more),
       itemBuilder: (BuildContext context) => <PopupMenuEntry<int>>[
         for (int i = 0; i < collapsible.length; i++)
           FushiPopupMenuItem<int>(
@@ -2818,7 +2819,7 @@ class FushiColorSwatch extends StatelessWidget {
     );
     final Color foreground = _swatchForegroundFor(color);
     final Widget? swatchOverlay =
-        selected ? FushiIcon(Icons.check, color: foreground, size: 20) : overlay;
+        selected ? FushiIcon(FushiIcons.check, color: foreground, size: 20) : overlay;
     final Widget swatch = SizedBox(
       width: resolvedWidth,
       height: resolvedHeight,
@@ -3142,7 +3143,7 @@ class FushiSchemeSwatch extends StatelessWidget {
               right: 0,
               top: 0,
               child: cornerBadge(
-                const FushiIcon(Icons.check_rounded),
+                const FushiIcon(FushiIcons.check),
                 accent,
                 onAccent,
                 size * 0.36,
@@ -3515,7 +3516,7 @@ class FushiHeaderCrampScope extends InheritedWidget {
 /// 根因：旧实现（7ce19740c + 3df631aaf）标题 [Expanded](flex:1) 与动作区
 /// [Flexible](flex:1) **均分**剩余宽，动作格恒占页头右半幅（与图标实际总宽无关），
 /// 再套 [Align](centerRight) 把按钮推到右半幅右缘才勉强靠右。窄窗时 4 个图标自然宽
-/// 超过右半幅视口，内层 [SingleChildScrollView](reverse:true) 把最左侧 [Icons.add]
+/// 超过右半幅视口，内层 [SingleChildScrollView](reverse:true) 把最左侧 [FushiIcons.add]
 /// 裁到视口外（用户看到像个「-」）。
 ///
 /// 修法：标题 [Expanded]（tight）吃满剩余，动作区作为**非弹性**子项按自身自然宽落在
@@ -3524,7 +3525,7 @@ class FushiHeaderCrampScope extends InheritedWidget {
 /// 0）：放得下时约束不触发、动作区取自然宽、所有图标可见且靠右；仅当动作总宽超过该
 /// 上界（极端窄窗，如 master-detail 208px 左栏）时约束触发，内层横向
 /// [SingleChildScrollView] 收缩 + 可横滚兜底，消除 RenderFlex overflow，滚动起始边在
-/// 左、最左侧动作（回归态被裁的 [Icons.add]）默认可见。三个 home tab（视频/书架/词典）
+/// 左、最左侧动作（回归态被裁的 [FushiIcons.add]）默认可见。三个 home tab（视频/书架/词典）
 /// 页头均无 leading + actions 并存，故不必为 leading 额外预留。
 class _FushiPageHeaderRow extends StatefulWidget {
   const _FushiPageHeaderRow({
@@ -3917,7 +3918,7 @@ class FushiFloatingTextAction extends StatelessWidget {
 Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
   return Builder(
     builder: (BuildContext anchorContext) => FushiIconButton(
-      icon: Icons.more_vert,
+      icon: FushiIcons.more,
       tooltip: t.common_more_actions,
       onTap: () => _showHeaderOverflowMenu(anchorContext, collapsed),
     ),
@@ -4332,7 +4333,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     if (navigator == null || !navigator.canPop()) return null;
     return FushiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-      icon: Icons.arrow_back,
+      icon: FushiIcons.back,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(
         minWidth: kMinInteractiveDimension,
@@ -4517,7 +4518,7 @@ class FushiToolScaffold extends StatelessWidget {
     if (!Navigator.of(context).canPop()) return null;
     return FushiIconButton(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
-      icon: Icons.arrow_back,
+      icon: FushiIcons.back,
       padding: EdgeInsets.zero,
       onTap: () => Navigator.of(context).maybePop(),
     );
@@ -4633,7 +4634,7 @@ class FushiOverflowMenu<T> extends StatefulWidget {
     required this.items,
     required this.onSelected,
     super.key,
-    this.icon = Icons.more_vert,
+    this.icon = FushiIcons.more,
     this.iconWidget,
     this.child,
     this.tooltip,
@@ -4850,7 +4851,7 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
           ),
           if (selected) ...<Widget>[
             const SizedBox(width: 12),
-            FushiIcon(Icons.check, size: 20, color: color ?? cs.primary),
+            FushiIcon(FushiIcons.check, size: 20, color: color ?? cs.primary),
           ],
         ],
       ),
@@ -5198,7 +5199,7 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
                       // 设计系统分派：MD3 tonal 按压变形；Apple 浮在日志上的玻璃胶囊。
                       child: FushiFilledButton.tonalIcon(
                         onPressed: _copyAllToClipboard,
-                        icon: const FushiIcon(Icons.copy_all_outlined, size: 18),
+                        icon: const FushiIcon(FushiIcons.copyAll, size: 18),
                         label: Text(t.log_copy_all),
                       ),
                     ),
@@ -5971,7 +5972,7 @@ class FushiCompactSearchRow extends StatelessWidget {
             if (onClose != null)
               _CompactSearchIconButton(
                 key: closeButtonKey,
-                icon: Icons.close,
+                icon: FushiIcons.close,
                 tooltip: closeTooltip,
                 onPressed: onClose!,
               ),
@@ -6000,7 +6001,7 @@ class FushiCompactSearchRow extends StatelessWidget {
             if (keyboardSuffix != null) keyboardSuffix,
             _CompactSearchIconButton(
               key: searchButtonKey,
-              icon: Icons.search,
+              icon: FushiIcons.search,
               tooltip: MaterialLocalizations.of(context).searchFieldLabel,
               onPressed: _submit,
             ),
