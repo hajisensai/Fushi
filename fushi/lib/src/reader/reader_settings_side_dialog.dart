@@ -25,6 +25,10 @@ Future<T?> showReaderSettingsSideDialog<T>({
       : ReaderSideSheetSide.right;
   final ValueNotifier<ReaderSideSheetSide> controller =
       ValueNotifier<ReaderSideSheetSide>(side);
+  // 窗口跨过 compact 断点时，路由在侧板与底部 sheet 两棵布局之间切换。
+  // 会话跟随同一个 GlobalKey 搬家，避免卸载时提前 dispose 仍被路由使用的
+  // controller，同时保留草稿、标签页和焦点。
+  final GlobalKey sessionKey = GlobalKey(debugLabel: 'reader-settings-session');
   return showReaderSideSheet<T>(
     context: context,
     side: side,
@@ -32,6 +36,7 @@ Future<T?> showReaderSettingsSideDialog<T>({
     bottomSheetWhenCompact: bottomSheetWhenCompact,
     switcher: switcher,
     builder: (BuildContext context) => _ReaderSettingsSideSession(
+      key: sessionKey,
       controller: controller,
       preferences: preferences,
       child: Builder(builder: builder),
@@ -91,6 +96,7 @@ class _ReaderSettingsSideScope
 // the reverse transition, while the panel/listeners remain mounted until then.
 class _ReaderSettingsSideSession extends StatefulWidget {
   const _ReaderSettingsSideSession({
+    super.key,
     required this.controller,
     required this.preferences,
     required this.child,

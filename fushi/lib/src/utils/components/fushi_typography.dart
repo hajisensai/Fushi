@@ -153,4 +153,3 @@ TextTheme fushiResolveTextTheme(
   );
   return geometry.merge(colors.merge(textTheme));
 }
-

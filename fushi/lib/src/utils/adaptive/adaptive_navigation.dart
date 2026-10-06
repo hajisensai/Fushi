@@ -1316,6 +1316,7 @@ class _NavMiniCapsule extends StatelessWidget {
         selected: true,
         label: item.label,
         excludeSemantics: true,
+        onTap: onPressed,
         child: Material(
           color: color,
           shape: RoundedRectangleBorder(borderRadius: radius),
@@ -1402,6 +1403,7 @@ class _NavBarFab extends StatelessWidget {
         selected: fab.selected,
         label: fab.label,
         excludeSemantics: true,
+        onTap: fab.onPressed,
         child: FushiPressScale(
           scale: 0.92,
           child: Material(
@@ -1973,6 +1975,11 @@ class _NavRailMenuButton extends StatelessWidget {
     const BorderRadius radius = BorderRadius.all(
       Radius.circular(_kMaterialMenuPillHeight / 2),
     );
+    void activate() {
+      fushiSelectionHaptic(context);
+      onPressed();
+    }
+
     return Tooltip(
       message: tooltip,
       child: Semantics(
@@ -1980,11 +1987,9 @@ class _NavRailMenuButton extends StatelessWidget {
         expanded: extended,
         label: tooltip,
         excludeSemantics: true,
+        onTap: activate,
         child: InkWell(
-          onTap: () {
-            fushiSelectionHaptic(context);
-            onPressed();
-          },
+          onTap: activate,
           canRequestFocus: false,
           borderRadius: radius,
           child: FushiFocusTarget(

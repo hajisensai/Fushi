@@ -2207,7 +2207,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
   /// 放进行里、前景色由行统一给（高亮时随之反色）。选中项
   /// （[CheckedPopupMenuItem.checked] / [FushiMenuItemData.selected] /
   /// initialValue 对应项）行尾画 `CupertinoIcons.checkmark`。点击语义同
-  /// Flutter 的 `PopupMenuItemState.handleTap`（先 onTap 再带 value 关菜单）。
+  /// Flutter 的 `PopupMenuItemState.handleTap`（先带 value 关菜单再 onTap）。
   /// [PopupMenuDivider] → 细分隔线。其它自定义 [PopupMenuEntry] 原样保留。
   Widget _glassEntry(
     BuildContext context,
@@ -2259,8 +2259,9 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
       padding: EdgeInsets.symmetric(horizontal: _menuRowInset(context)),
       child: _AppleMenuRow(
         onTap: () {
-          item.onTap?.call();
           Navigator.pop<T>(context, item.value);
+          // 回调可能同步打开新路由，必须先关闭当前菜单。
+          item.onTap?.call();
         },
         enabled: item.enabled,
         minHeight: rowHeight,

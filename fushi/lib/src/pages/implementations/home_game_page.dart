@@ -26,8 +26,6 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
-import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
-    show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/utils.dart';
 
 // GameSection / gameSectionNotifier 已迁到 game_shared.dart（三页共享），

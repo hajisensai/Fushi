@@ -2166,108 +2166,51 @@ class _SearchFocusLift extends StatelessWidget {
   }
 }
 
-/// M3E 最近搜索 chip：32 高、8 圆角、outlineVariant 描边的 suggestion chip。整枚可点
-/// （查这个词）；× 只在悬停或焦点落在 chip 内时出现，键盘可 Tab 到 × 删除这一条。
-class _RecentSearchChip extends StatefulWidget {
-  const _RecentSearchChip({
-    required this.label,
-    required this.onTap,
-    this.onDeleted,
-  });
+/// M3E 最近搜索 chip：空态里的最近词快捷入口，整枚点击即可查词。
+class _RecentSearchChip extends StatelessWidget {
+  const _RecentSearchChip({required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
-
-  /// null = 纯快捷入口（空态里的最近词），不出 ×。
-  final VoidCallback? onDeleted;
-
-  @override
-  State<_RecentSearchChip> createState() => _RecentSearchChipState();
-}
-
-class _RecentSearchChipState extends State<_RecentSearchChip> {
-  bool _hovered = false;
-  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
-    final bool reveal = widget.onDeleted != null && (_hovered || _focused);
-    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     const BorderRadius radius = BorderRadius.all(Radius.circular(8));
-    return Focus(
-      canRequestFocus: false,
-      skipTraversal: true,
-      onFocusChange: (bool focused) {
-        if (focused != _focused) setState(() => _focused = focused);
-      },
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: Material(
-          color: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: BorderSide(color: cs.outlineVariant),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: widget.onTap,
-            borderRadius: radius,
-            child: SizedBox(
-              height: _kRecentChipHeight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  const SizedBox(width: 12),
-                  FushiIcon(
-                    FushiIcons.history,
-                    size: 18,
-                    color: cs.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 160),
-                    child: Text(
-                      widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tt.labelLarge?.copyWith(color: cs.onSurface),
-                    ),
-                  ),
-                  // 悬停或焦点落在 chip 上才长出 ×（AnimatedSize 弹开）；chip 持焦时
-                  // × 已显形，Tab 一下即可落到 × 上删除这一条。
-                  AnimatedSize(
-                    duration: duration,
-                    curve: FushiSpringCurve.spatial,
-                    child: AnimatedOpacity(
-                      duration: duration,
-                      curve: FushiMotion.standard,
-                      opacity: reveal ? 1 : 0,
-                      child: reveal
-                          ? Padding(
-                              padding: const EdgeInsetsDirectional.only(
-                                start: 2,
-                                end: 2,
-                              ),
-                              child: FushiIconButton(
-                                tooltip: t.lookup_history_remove,
-                                icon: FushiIcons.close,
-                                size: 16,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 28,
-                                  height: 28,
-                                ),
-                                onTap: widget.onDeleted,
-                              ),
-                            )
-                          : const SizedBox(width: 12),
-                    ),
-                  ),
-                ],
+    return Material(
+      color: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: BorderSide(color: cs.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: radius,
+        child: SizedBox(
+          height: _kRecentChipHeight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const SizedBox(width: 12),
+              FushiIcon(
+                FushiIcons.history,
+                size: 18,
+                color: cs.onSurfaceVariant,
               ),
-            ),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.labelLarge?.copyWith(color: cs.onSurface),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
           ),
         ),
       ),

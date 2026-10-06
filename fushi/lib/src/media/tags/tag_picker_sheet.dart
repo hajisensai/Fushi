@@ -455,8 +455,9 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
     final int items = widget.targets.media.length;
     final int collections = widget.targets.collectionIds.length;
     if (items > 0) parts.add(t.tag_picker_target_items(n: items));
-    if (collections > 0)
+    if (collections > 0) {
       parts.add(t.tag_picker_target_collections(n: collections));
+    }
     return parts.join(' · ');
   }
 

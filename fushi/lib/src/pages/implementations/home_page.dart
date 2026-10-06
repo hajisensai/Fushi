@@ -1788,7 +1788,6 @@ class _HomePageState extends BasePageState<HomePage>
     // 它下面滚过——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
     // body 的 SafeArea 不再吃掉它，列表（ListView / GridView 的默认 padding）
     // 自己把末尾垫到胶囊之上。
-    final bool glassDesign = isGlassDesign(context);
     // Apple（iOS 26）：「查词」是搜索类目的地，拆成胶囊右侧的独立圆形搜索钮
     // （`Tab(role: .search)`）；下滑时胶囊最小化成只剩当前项的小圆，内容压在
     // 胶囊下面时底部有一段 scroll edge 渐隐（状态都在 [_appleChrome]）。

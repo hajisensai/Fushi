@@ -38,9 +38,11 @@ void main() {
     // 否则控制条不吃缩放)。撤掉任一 * _videoUiScale 即转红。
     expect(
       source,
-      contains('_videoUiScale;
-
-  /// M3E 底栏 / 顶栏胶囊高'),
+      matches(RegExp(
+        r'double get _videoButtonBarHeight\s*=>\s*'
+        r'\(_appleChrome\s*\?\s*_videoButtonBarHeightBase\s*:\s*'
+        r'_videoM3eButtonBarHeightBase\)\s*\*\s*_videoUiScale\s*;',
+      )),
       reason: 'button bar height must follow appUiScale (TODO-067)',
     );
     expect(
