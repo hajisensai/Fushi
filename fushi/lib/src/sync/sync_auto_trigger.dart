@@ -722,9 +722,20 @@ class ManualSyncResult {
   final List<ManualSyncChannelReport> channelReports;
 }
 
+/// 一条同步通道属于哪一类（云备份 / 互联）。与 [SyncAssetChannelScope] 同一套
+/// 判据：按后端身份 [SyncChannel.isInterconnect]，不按它排在第几格。
+SyncAssetChannelScope syncAssetChannelScopeOf(SyncChannel channel) =>
+    channel.isInterconnect
+        ? SyncAssetChannelScope.interconnect
+        : SyncAssetChannelScope.cloud;
+
 /// 用户手点"立即同步"：跑完整双向全量同步（同 [triggerAutoSyncOnAppOpen]），
 /// 但绕过自动同步开关与 5 分钟冷却（手动是显式意图）。仍尊重各资产 gate 与后端
 /// 认证；与后台同步共用 [_autoSyncMutex]，避免并发改 singleton backend 状态。
+///
+/// [onlyChannels]：只跑这几类通道（桌面控制通道 `sync run <通道>` 用）。缺省 null =
+/// 全部已启用通道，所有既有调用点行为不变；过滤掉的通道既不认证也不计数，过滤后
+/// 一条都没跑成的结局与「没配置」同形（[ManualSyncOutcome.notConfigured]）。
 Future<ManualSyncResult> runManualFullSync({
   required FushiDatabase db,
   required Directory dictionaryResourceRoot,
@@ -735,6 +746,7 @@ Future<ManualSyncResult> runManualFullSync({
       onLocalAudioImported,
   SyncPostRunCallback? onPostRun,
   SyncProgressCallback? onProgress,
+  Set<SyncAssetChannelScope>? onlyChannels,
 }) async {
   if (!_syncingIds.add('__all__')) {
     return const ManualSyncResult(ManualSyncOutcome.busy);
@@ -760,6 +772,10 @@ Future<ManualSyncResult> runManualFullSync({
       StackTrace? firstStack;
       for (final SyncChannel channel
           in await enabledSyncChannelBackends(repo)) {
+        if (onlyChannels != null &&
+            !onlyChannels.contains(syncAssetChannelScopeOf(channel))) {
+          continue;
+        }
         try {
           final SyncRunReport? report = await _runSyncChannel(
             db: db,

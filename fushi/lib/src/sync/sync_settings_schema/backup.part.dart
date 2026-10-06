@@ -769,7 +769,63 @@ Future<void> runBackupExportFlow({
 /// How a backup is applied (TODO-888). [overwrite] is the legacy behavior
 /// (replace the whole DB + content trees); [merge] keeps everything on this
 /// device and only ADDS what's missing from the backup (no overwrite/delete).
-enum _BackupImportMode { overwrite, merge }
+enum BackupImportMode { overwrite, merge }
+
+/// 调用方预先替用户做好的导入选择（桌面控制通道 `backup restore --merge|--replace`）。
+///
+/// 交给 [runBackupImportFlowForFile] 时跳过「覆盖 / 合并 + 分类勾选」确认框：那个框
+/// 本身就是最终确认，预设的调用方必须已经拿到等价确认（CLI 侧 `--yes` + 路由 body
+/// `confirm: true`）。校验 / 版本检查 / 遮罩 / 重启等其余步骤一步不少。
+class BackupImportPreset {
+  const BackupImportPreset({
+    required this.mode,
+    this.categories,
+    this.importSettings = false,
+  });
+
+  final BackupImportMode mode;
+
+  /// 本模式下**可勾选**分类里要保留勾上的那些（语义同确认框里的开关）；null = 确认框
+  /// 默认（备份里有的全部勾上）。不可勾选的分类恒恢复，与确认框一致。
+  final Set<BackupCategory>? categories;
+
+  /// 覆盖模式下是否连设置层一起导入（确认框的同名开关，默认关）；合并模式忽略。
+  final bool importSettings;
+}
+
+/// 本模式下确认框里可勾选的分类集。
+Set<BackupCategory> backupImportSelectableCategories(BackupImportMode mode) =>
+    mode == BackupImportMode.overwrite
+        ? importSelectableCategories
+        : importMergeSelectableCategories;
+
+/// 确认框收口时的分类计算（单一实现，确认框与 [BackupImportPreset] 共用）：本模式
+/// 不可勾选的分类恒恢复，可勾选的只留 [selected] 里的。
+Set<BackupCategory> backupImportCategoriesFor(
+  BackupImportMode mode,
+  Set<BackupCategory> selected,
+) {
+  final Set<BackupCategory> modeSelectable =
+      backupImportSelectableCategories(mode);
+  return BackupCategory.values
+      .where((BackupCategory c) =>
+          !modeSelectable.contains(c) || selected.contains(c))
+      .toSet();
+}
+
+/// 预设 → 等价于用户在确认框里那样勾选后的分类集。确认框只给备份里**确实有**的
+/// 可勾选分类出开关，所以勾选集同样先与 [summary] 求交；null 预设 = 默认全勾。
+Set<BackupCategory> backupImportPresetCategories(
+  BackupImportPreset preset,
+  BackupContentSummary summary,
+) {
+  final Set<BackupCategory> selected = <BackupCategory>{
+    for (final BackupCategory c
+        in preset.categories ?? BackupCategory.values.toSet())
+      if (summary.has(c)) c,
+  };
+  return backupImportCategoriesFor(preset.mode, selected);
+}
 
 /// The user's choices from the import confirm dialog: which [mode] to apply and
 /// (overwrite-only) whether to also pull the backup's settings layer.
@@ -779,7 +835,7 @@ class _BackupImportChoice {
     required this.importSettings,
     required this.categories,
   });
-  final _BackupImportMode mode;
+  final BackupImportMode mode;
   final bool importSettings;
 
   /// Categories to RESTORE on an overwrite import (TODO-1358): every
@@ -860,10 +916,12 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// 正常返回（进程不重启）；导入成功或失败都会走 appModel 的遮罩收口并重启进程。
 /// [onImportSucceeded] 仅在恢复成功后、重启前回调。推荐包用它记录待办教程和
 /// 成功清理凭据；校验失败、取消或恢复失败均不会触发。
+/// [preset] 非 null 时跳过确认框（见 [BackupImportPreset]）；缺省行为不变。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
   Future<void> Function()? onImportSucceeded,
+  BackupImportPreset? preset,
 }) async {
   // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
   // [AppModel.navigatorKey] 宿主弹出。
@@ -959,8 +1017,17 @@ Future<void> runBackupImportFlowForFile({
     return;
   }
 
-  final _BackupImportChoice? choice = await _showBackupImportConfirmDialog(
-      rootCtx, meta, mergePreview, summary);
+  // 预设（控制通道）：调用方已拿到等价确认，跳过确认框，按与确认框同一套规则
+  // 折算分类（[backupImportPresetCategories]）。
+  final _BackupImportChoice? choice = preset != null
+      ? _BackupImportChoice(
+          mode: preset.mode,
+          importSettings: preset.mode == BackupImportMode.overwrite &&
+              preset.importSettings,
+          categories: backupImportPresetCategories(preset, summary),
+        )
+      : await _showBackupImportConfirmDialog(
+          rootCtx, meta, mergePreview, summary);
   if (choice == null) {
     // 用户取消确认 → 彻底退出遮罩态，回到调用方页面（validating 遮罩已退出）。
     return;
@@ -987,7 +1054,7 @@ Future<void> runBackupImportFlowForFile({
     // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
     await WidgetsBinding.instance.endOfFrame;
     await appModel.closeDatabase();
-    if (choice.mode == _BackupImportMode.merge) {
+    if (choice.mode == BackupImportMode.merge) {
       // TODO-888 merge: keep this device's library + settings, only ADD what
       // the backup carries (row-level upsert + copy-if-absent content trees).
       // Never overwrites/deletes existing data, so importSettings is moot.
@@ -1144,7 +1211,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   final String dateStr = FushiTimeFormat.dayKey(meta.createdAt);
   // Default: OVERWRITE (Never break userspace — the existing behavior), and
   // within overwrite, keep this device's settings (importSettings=false).
-  _BackupImportMode mode = _BackupImportMode.overwrite;
+  BackupImportMode mode = BackupImportMode.overwrite;
   bool importSettings = false;
   // TODO-1358: the selectable content categories this backup actually carries,
   // all ticked by default; unticking one skips restoring it. The set differs
@@ -1207,16 +1274,16 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                   t.backup_import_mode_label,
                   style: Theme.of(ctx).textTheme.labelLarge,
                 ),
-                FushiRadioListTile<_BackupImportMode>(
+                FushiRadioListTile<BackupImportMode>(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   title: Text(t.backup_import_mode_overwrite),
-                  value: _BackupImportMode.overwrite,
+                  value: BackupImportMode.overwrite,
                   groupValue: mode,
-                  onChanged: (_BackupImportMode? v) =>
-                      setLocal(() => mode = v ?? _BackupImportMode.overwrite),
+                  onChanged: (BackupImportMode? v) =>
+                      setLocal(() => mode = v ?? BackupImportMode.overwrite),
                 ),
-                FushiRadioListTile<_BackupImportMode>(
+                FushiRadioListTile<BackupImportMode>(
                   contentPadding: EdgeInsets.zero,
                   dense: true,
                   title: Text(t.backup_import_mode_merge),
@@ -1230,17 +1297,17 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                           ),
                           style: Theme.of(ctx).textTheme.bodySmall,
                         ),
-                  value: _BackupImportMode.merge,
+                  value: BackupImportMode.merge,
                   groupValue: mode,
-                  onChanged: (_BackupImportMode? v) =>
-                      setLocal(() => mode = v ?? _BackupImportMode.overwrite),
+                  onChanged: (BackupImportMode? v) =>
+                      setLocal(() => mode = v ?? BackupImportMode.overwrite),
                 ),
                 // TODO-1358: "what is inside" manifest + per-category toggles.
                 // Both modes are now live: untick a category to skip
                 // restoring/merging it. The selectable set is mode-dependent —
                 // merge can additionally gate books/statistics (row-level).
                 ...<Widget>[
-                  if (mode == _BackupImportMode.overwrite
+                  if (mode == BackupImportMode.overwrite
                       ? overwriteSelectablePresent.isNotEmpty
                       : mergeSelectablePresent.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 8),
@@ -1253,7 +1320,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                       style: Theme.of(ctx).textTheme.bodySmall,
                     ),
                     for (final BackupCategory c
-                        in mode == _BackupImportMode.overwrite
+                        in mode == BackupImportMode.overwrite
                             ? overwriteSelectablePresent
                             : mergeSelectablePresent)
                       AdaptiveSettingsSwitchRow(
@@ -1273,7 +1340,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                 ],
                 // The settings-layer toggle only applies to overwrite; merge
                 // always keeps this device's settings.
-                if (mode == _BackupImportMode.overwrite) ...<Widget>[
+                if (mode == BackupImportMode.overwrite) ...<Widget>[
                   const SizedBox(height: 4),
                   AdaptiveSettingsSwitchRow(
                     title: t.backup_import_settings_toggle,
@@ -1303,7 +1370,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
                 adaptiveDialogAction(
                   context: ctx,
                   isDefaultAction: true,
-                  isDestructiveAction: mode == _BackupImportMode.overwrite,
+                  isDestructiveAction: mode == BackupImportMode.overwrite,
                   onPressed: () => Navigator.pop(ctx, true),
                   child: Text(t.dialog_ok),
                 ),
@@ -1320,13 +1387,8 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   // selectable set is mode-dependent (merge can gate books/statistics too), so
   // an unticked merge-only category (books/statistics) is correctly dropped
   // from the set, while for overwrite those stay always-on.
-  final Set<BackupCategory> modeSelectable = mode == _BackupImportMode.overwrite
-      ? importSelectableCategories
-      : importMergeSelectableCategories;
-  final Set<BackupCategory> categories = BackupCategory.values
-      .where((BackupCategory c) =>
-          !modeSelectable.contains(c) || selectedRestore.contains(c))
-      .toSet();
+  final Set<BackupCategory> categories =
+      backupImportCategoriesFor(mode, selectedRestore);
   return _BackupImportChoice(
     mode: mode,
     importSettings: importSettings,
