@@ -2194,9 +2194,21 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ),
       ),
     );
+    final Widget previewSwitch = FushiPreviewSwitch(
+      trackColor: cs.primaryContainer,
+      thumbColor: cs.primary,
+    );
     final Widget toggle = _spot(
       _ThemeRole.container,
-      FushiPreviewSwitch(trackColor: cs.primaryContainer, thumbColor: cs.primary),
+      // 紧凑（窄屏吸顶）预览里示意开关按 28 高等比缩小：原尺寸（MD3 开关
+      // 约 66×46）在约 130 宽的 app 截面里把「按钮 / 标签 / 开关」挤成三行，
+      // 吸顶预览超过视口高度的三分之一。
+      compact
+          ? SizedBox(
+              height: 28,
+              child: FittedBox(child: previewSwitch),
+            )
+          : previewSwitch,
     );
     final Widget progress = _spot(
       _ThemeRole.tertiary,
