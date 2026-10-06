@@ -5,6 +5,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show FushiSpringCurve;
 
 import '../helpers/source_guard.dart';
 import '../widgets/widget_test_helpers.dart';
@@ -153,7 +155,8 @@ void main() {
       await tester.pumpWidget(host(visible: false));
       await tester.pumpWidget(host(visible: true, start: 0.5));
       final double first = opacityOf(tester);
-      expect(first, closeTo(Curves.easeOut.transform(0.5), 1e-9),
+      // M3E 动效统一：入场淡入曲线是 FushiSpringCurve.effects（与生产同一条）。
+      expect(first, closeTo(FushiSpringCurve.effects.transform(0.5), 1e-9),
           reason: '不从 0 重来（露底），也不直接跳满');
       await tester.pump(const Duration(milliseconds: 50));
       expect(opacityOf(tester), greaterThan(first));

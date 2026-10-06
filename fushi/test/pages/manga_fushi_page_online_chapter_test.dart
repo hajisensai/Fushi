@@ -17,6 +17,7 @@ import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:image/image.dart' as img;
@@ -309,7 +310,9 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 250));
       await tester.pump();
     });
-    await tester.pump(const Duration(milliseconds: 300));
+    // 侧栏进场是 M3E 弹簧（[FushiMotion.long]，落位前有轻微过冲）：推满整段
+    // 转场再量位置，否则读到的是过冲中的瞬时 left。
+    await tester.pump(FushiMotion.long + const Duration(milliseconds: 50));
     expect(find.byKey(const ValueKey<String>('manga_reader_chapter_drawer')),
         findsOneWidget);
     expect(

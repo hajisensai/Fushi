@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/utils.dart';
 
 /// 有声书侧板（2026-10 重设计）：正在播放卡 + 「章节 / 设置」页签；章节页顶部是

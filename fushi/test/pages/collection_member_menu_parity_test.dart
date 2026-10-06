@@ -40,6 +40,12 @@ void main() {
       );
 
   testWidgets('注入共享菜单后，长按 / 右键成员走调用方菜单，不再弹精简菜单', (WidgetTester tester) async {
+    // M3E 详情页（8853cd4fc75）顶部是 hero + 工具行，默认 800x600 视口里成员
+    // 网格落在可视区外、触摸命中不到；给桌面级视口。
+    tester.view.physicalSize = const Size(1400, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final List<String> menus = <String>[];
     VoidCallback? remove;

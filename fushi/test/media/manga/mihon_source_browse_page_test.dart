@@ -323,12 +323,17 @@ void main() {
     await tester.pump();
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.add_circle_outline));
+    // M3E：「加载更多」改成 filledTonal 图标按钮（FushiIcons.add），按它的稳定
+    // key 定位，不绑定具体图标码点。
+    final Finder loadMore = find.byKey(
+      const ValueKey<String>('mihon_browse_more'),
+    );
+    await tester.tap(loadMore);
     await tester.pump();
     await tester.pump();
 
     expect(find.text('Raw Otaku fixture'), findsOneWidget);
-    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
+    expect(loadMore, findsNothing);
   });
 
   testWidgets(

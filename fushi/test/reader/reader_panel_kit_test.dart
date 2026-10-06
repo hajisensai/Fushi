@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 

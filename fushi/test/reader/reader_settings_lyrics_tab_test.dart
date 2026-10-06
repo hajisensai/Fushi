@@ -13,6 +13,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -68,6 +69,10 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true),
+          // 与生产三个入口同一装配：歌词高亮色的 flutter_colorpicker 仍是旧 SDK
+          // Material（hex 输入框要旧 Material 祖先），靠根上的兼容桥读到主题。
+          builder: (BuildContext context, Widget? child) =>
+              LegacyDesignCompatibility(child: child!),
           home: Scaffold(
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>
@@ -172,6 +177,10 @@ void main() {
       ProviderScope(
         child: MaterialApp(
           theme: ThemeData(useMaterial3: true),
+          // 与生产三个入口同一装配：歌词高亮色的 flutter_colorpicker 仍是旧 SDK
+          // Material（hex 输入框要旧 Material 祖先），靠根上的兼容桥读到主题。
+          builder: (BuildContext context, Widget? child) =>
+              LegacyDesignCompatibility(child: child!),
           home: Scaffold(
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>

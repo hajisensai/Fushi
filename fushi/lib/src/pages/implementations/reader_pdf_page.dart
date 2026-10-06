@@ -22,7 +22,7 @@ import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';

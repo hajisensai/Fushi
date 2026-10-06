@@ -652,21 +652,33 @@ class _UnavailableSourceNotice extends StatelessWidget {
             horizontal: tokens.spacing.gap + 4,
             vertical: tokens.spacing.gap,
           ),
-          child: Row(
+          // BUG-3023：按钮另起一行靠尾对齐，不与说明同处一个 Row——同行时按钮按
+          // 固有宽度先占位，说明（Expanded）在窄弹窗/长译文下只剩十几像素宽、
+          // 逐字换行撑高整行，把「重新选择」推出列表的可滚视口。
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              FushiIcon(FushiIcons.error, size: 20, color: foreground),
-              SizedBox(width: tokens.spacing.gap),
-              Expanded(
-                child: Text(
-                  t.local_audio_file_unavailable,
-                  style: tokens.type.listSubtitle.copyWith(color: foreground),
-                ),
+              Row(
+                children: <Widget>[
+                  FushiIcon(FushiIcons.error, size: 20, color: foreground),
+                  SizedBox(width: tokens.spacing.gap),
+                  Expanded(
+                    child: Text(
+                      t.local_audio_file_unavailable,
+                      style:
+                          tokens.type.listSubtitle.copyWith(color: foreground),
+                    ),
+                  ),
+                ],
               ),
               if (showReselect)
-                FushiTextButton.icon(
-                  onPressed: onReselect,
-                  icon: const FushiIcon(FushiIcons.folderOpen),
-                  label: Text(t.local_audio_file_reselect),
+                Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: FushiTextButton.icon(
+                    onPressed: onReselect,
+                    icon: const FushiIcon(FushiIcons.folderOpen),
+                    label: Text(t.local_audio_file_reselect),
+                  ),
                 ),
             ],
           ),

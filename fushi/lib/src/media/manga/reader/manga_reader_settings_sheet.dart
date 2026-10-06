@@ -1123,7 +1123,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                 });
               },
             ),
-            AnimatedSize(
+            _MotionSize(
               duration: fushiMotionDuration(context, FushiMotion.medium),
               curve: FushiMotion.standard,
               child: _globalScope
@@ -1219,5 +1219,27 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         ],
       ),
     );
+  }
+}
+
+/// 动效开时就是 [AnimatedSize]；「减弱动态效果」/ 墨水屏把时长归零时直接给最终
+/// 几何（BUG-3025）。零时长的 [AnimatedSize] 不可用：子尺寸一变，
+/// `RenderAnimatedSize` 在自身 performLayout 里同步跳到终点、监听器随即
+/// `markNeedsLayout`，debug 下断言「mutated in its own performLayout」。
+class _MotionSize extends StatelessWidget {
+  const _MotionSize({
+    required this.duration,
+    required this.curve,
+    required this.child,
+  });
+
+  final Duration duration;
+  final Curve curve;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (duration == Duration.zero) return child;
+    return AnimatedSize(duration: duration, curve: curve, child: child);
   }
 }

@@ -155,18 +155,18 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed != null, isTrue);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed != null, isTrue);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed != null, isTrue);
 
     blocking.resetPending();
     final VoidCallback installAction =
-        tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed!;
+        tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed!;
     installAction();
     installAction();
     await tester.pump();
 
     expect(blocking.prepareCalls, 2);
     expect(tester.widget<TextButton>(glassUnwrap<TextButton>(preview)).onPressed == null, isTrue);
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(install)).onPressed == null, isTrue);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(install)).onPressed == null, isTrue);
     blocking.failPending();
     await tester.pump();
     await tester.pump();

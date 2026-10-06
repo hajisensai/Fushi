@@ -183,6 +183,10 @@ void main() {
     // 「复制错误」写出的必须是界面里这段完整详情，而不是折叠原因或截断文本。
     final String detail =
         tester.widget<SelectableText>(detailFinder).data ?? '';
+    // M3E 失败态（FushiPlaceholderMessage 图标块 + 按钮组）比旧版高，800x600 测试
+    // 窗下展开详情后「复制错误」落在结果区外层滚动视口之外——先滚到它，同用户操作。
+    await tester.ensureVisible(find.text(t.copy_error));
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.copy_error));
     await tester.pump();
     expect(copied, detail);

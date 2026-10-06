@@ -19,7 +19,7 @@
 /// 底板 2 列，宽底板 4 列）；各块在 [FushiEntranceScope] 内错峰进场。
 ///
 /// 视觉（2026-10 统一面板语言）：卡片 / 大数字 / 进度 / 分组标题全部取
-/// `reader_panel_kit.dart`——hero 是 primaryContainer 饱和色块、阅读位置与预计
+/// `reader_panel_chrome_kit.dart`——hero 是 primaryContainer 饱和色块、阅读位置与预计
 /// 读完是 tertiary 分区、其余中性卡；时长 / 字数 / 字时 / 百分比用
 /// [ReaderStatNumber] Display 级数字；进度走 [ReaderPanelProgress]（M3E 波浪 /
 /// Apple 细线）；暂停键在 M3E 下圆角方 ↔ 圆形状变形。Apple 保持分组卡语汇。
@@ -39,7 +39,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudySessionTotals;
 import 'package:fushi_core/fushi_core.dart' show LookupMiningCounterRow;
 
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart'
     show StatBarChartPainter, StatDayData;
 import 'package:fushi/src/pages/implementations/stat_shared.dart'

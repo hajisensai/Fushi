@@ -101,6 +101,9 @@ void main() {
       0.5,
     );
     await tester.pumpWidget(host(const SyncProgressBanner()));
+    // M3E 横幅（815c0d1f2b5）的尺寸变化走 AnimatedSize 弹簧，同一 State 从紧凑
+    // 换到常规时要等尺寸动画走完再量。
+    await tester.pump(const Duration(seconds: 1));
     expect(
       tester.getSize(find.byType(SyncProgressBanner)).height,
       greaterThan(compactHeight),

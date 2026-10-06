@@ -73,6 +73,9 @@ void main() {
       'no sources: empty state names the Import tab and its button lands on it',
       (WidgetTester tester) async {
     await tester.pumpWidget(shellHarness(pushDepth: 1));
+    // 壳的浮动工具栏叠在内容上，视图让位的高度要等工具栏首帧量出来
+    // （FushiHeightReporter 的 post-frame 回调）再落一帧才生效。
+    await tester.pumpAndSettle();
     await tester.tap(find.text('搜索'));
     await tester.pumpAndSettle();
 
@@ -106,6 +109,9 @@ void main() {
   testWidgets('no sources: 从详情页进来（压两层）也落到「导入」视图',
       (WidgetTester tester) async {
     await tester.pumpWidget(shellHarness(pushDepth: 2));
+    // 壳的浮动工具栏叠在内容上，视图让位的高度要等工具栏首帧量出来
+    // （FushiHeightReporter 的 post-frame 回调）再落一帧才生效。
+    await tester.pumpAndSettle();
     await tester.tap(find.text('搜索'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('详情页'));

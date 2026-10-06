@@ -491,14 +491,34 @@ void main() {
       );
     });
 
-    test('经典模型的路径不带 CTC rec', () async {
-      writeAllModels();
+    // 「经典模型」原指 kha-white manga-ocr；2026-10 删掉它后默认本地模型就是
+    // CTC（kDefaultMangaOcrLocalModel），剩下唯一的非 CTC 模型是 Baberu，必须
+    // 显式选它才走得到非 CTC 分支。
+    test('非 CTC 模型（Baberu）的路径不带 CTC rec', () async {
+      final List<MangaOcrModelFile> tinyBaberu = <MangaOcrModelFile>[
+        for (final MangaOcrModelFile model in kBaberuOcrModelManifest)
+          MangaOcrModelFile(
+            fileName: model.fileName,
+            url: 'http://unused.invalid/${model.fileName}',
+            expectedBytes: 1,
+            role: model.role,
+          ),
+      ];
+      for (final MangaOcrModelFile model in tinyBaberu) {
+        File(p.join(modelsDir.path, model.fileName)).writeAsBytesSync(<int>[7]);
+      }
       final _FakePageSessionRunner pages = _FakePageSessionRunner();
-      await service(
-        _FakeRunner(),
+      await MangaOcrServiceImpl(
+        localModel: MangaOcrLocalModel.baberu,
+        modelsDirProvider: () async => modelsDir,
+        manifest: tinyBaberu,
+        jobRunner: _FakeRunner(),
         pageSessionRunner: pages,
+        platformSupport: () => true,
       ).openPageSession(imageDirPath: 'D:/vol');
-      expect(pages.sessions.single.request.modelPaths.ctcRecPath, isEmpty);
+      final MangaOcrModelPaths paths = pages.sessions.single.request.modelPaths;
+      expect(paths.ctcRecPath, isEmpty);
+      expect(paths.ppRecPath, p.join(modelsDir.path, kPpOcrRecFileName));
     });
   });
 

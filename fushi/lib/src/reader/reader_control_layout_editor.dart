@@ -9,7 +9,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/controls/control_layout_editor.dart';
-import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
+import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -636,12 +636,26 @@ class _DraggableChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildChip(context, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildChip(BuildContext context, double maxWidth) {
     final Widget chip = _ChipFace(item: item, insertMarker: insertMarker);
+    // 拖动反馈画在 Overlay 里，拿到的是无界宽度；胶囊内的文字可收缩（Flexible），
+    // 无界时会断言——给反馈层套上源胶囊同样的最大宽度。
     final Widget feedback = Material(
       type: MaterialType.transparency,
-      child: Transform.scale(
-        scale: 1.06,
-        child: _ChipFace(item: item, lifted: true),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxWidth.isFinite ? maxWidth : 320,
+        ),
+        child: Transform.scale(
+          scale: 1.06,
+          child: _ChipFace(item: item, lifted: true),
+        ),
       ),
     );
     final Widget ghost = Opacity(opacity: 0.35, child: chip);
@@ -713,36 +727,44 @@ class _ChipFace extends StatelessWidget {
             shape: const StadiumBorder(),
           ),
         ),
-        Container(
-          constraints: const BoxConstraints(minHeight: 36),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: ShapeDecoration(
-            color: bg,
-            shape: StadiumBorder(
-              side: item.pinnedRequired
-                  ? BorderSide(color: marker.withValues(alpha: 0.6))
-                  : BorderSide.none,
-            ),
-            shadows: lifted
-                ? <BoxShadow>[
-                    BoxShadow(
-                      color: cs.shadow.withValues(alpha: 0.25),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : const <BoxShadow>[],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              FushiIcon(readerControlItemIcon(item), size: 18, color: fg),
-              const SizedBox(width: 6),
-              Text(
-                readerControlItemLabel(item),
-                style: theme.textTheme.labelLarge?.copyWith(color: fg),
+        // 长文案（窄槽 / 长译文）在槽宽内收缩、单行省略，而不是撑破 Row。
+        Flexible(
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: ShapeDecoration(
+              color: bg,
+              shape: StadiumBorder(
+                side: item.pinnedRequired
+                    ? BorderSide(color: marker.withValues(alpha: 0.6))
+                    : BorderSide.none,
               ),
-            ],
+              shadows: lifted
+                  ? <BoxShadow>[
+                      BoxShadow(
+                        color: cs.shadow.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : const <BoxShadow>[],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                FushiIcon(readerControlItemIcon(item), size: 18, color: fg),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    readerControlItemLabel(item),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(color: fg),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
