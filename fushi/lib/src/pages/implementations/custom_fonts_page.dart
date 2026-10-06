@@ -846,13 +846,13 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             valueListenable: titleNotifier,
             builder: (BuildContext context, String title, _) =>
                 CustomFontDownloadProgressDialog(
-              title: title,
-              progressNotifier: progressNotifier,
-              onCancel: () {
-                cancelToken.cancel();
-                Navigator.pop(ctx);
-              },
-            ),
+                  title: title,
+                  progressNotifier: progressNotifier,
+                  onCancel: () {
+                    cancelToken.cancel();
+                    Navigator.pop(ctx);
+                  },
+                ),
           ),
         ),
       );
@@ -1011,7 +1011,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       };
       if (list.namesReliable) {
         _systemFamilyKeys = <String>{
-          for (final SystemFontFamily f in list.families) f.family.toLowerCase(),
+          for (final SystemFontFamily f in list.families)
+            f.family.toLowerCase(),
         };
       }
     });
@@ -1023,15 +1024,15 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     for (final CustomFontCatalogRow row in _fonts) {
       final String key = row.identity;
       if (!_resolvedFamilies.containsKey(key) && _resolving.add(key)) {
-        resolveCatalogFontFamily(name: row.name, path: row.path).then(
-          (String? family) {
-            if (!mounted) return;
-            setState(() {
-              _resolving.remove(key);
-              _resolvedFamilies[key] = family;
-            });
-          },
-        );
+        resolveCatalogFontFamily(name: row.name, path: row.path).then((
+          String? family,
+        ) {
+          if (!mounted) return;
+          setState(() {
+            _resolving.remove(key);
+            _resolvedFamilies[key] = family;
+          });
+        });
       }
       final String? path = row.path;
       if (path != null &&
@@ -1065,46 +1066,46 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
 
   bool _missingOnSystem(CustomFontCatalogRow row) {
     final Set<String>? keys = _systemFamilyKeys;
-    return keys != null && !row.isFile && !keys.contains(row.name.toLowerCase());
+    return keys != null &&
+        !row.isFile &&
+        !keys.contains(row.name.toLowerCase());
   }
 
-  FontLibraryEntryView _viewOf(CustomFontCatalogRow row) => FontLibraryEntryView(
-    identity: row.identity,
-    name: row.name,
-    isFile: row.isFile,
-    path: row.path,
-    family: _resolvedFamilies[row.identity],
-    state: _specimenStateFor(row),
-    // 与用途开关同一判据：键在即挂上（值是历史的 enabled 标记）。
-    targets: row.targets,
-    metadata: _metadata[row.identity],
-    missingOnSystem: _missingOnSystem(row),
-    // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会静默跳过，
-    // 详情页直接把那枚用途按钮置灰，别让用户白设。
-    unsupportedTargets: _unsupportedTargetsFor(row),
-  );
-
-  FontLibraryTraits _traitsOf(CustomFontCatalogRow row) =>
-      fontLibraryTraitsFor(
+  FontLibraryEntryView _viewOf(CustomFontCatalogRow row) =>
+      FontLibraryEntryView(
+        identity: row.identity,
         name: row.name,
+        isFile: row.isFile,
+        path: row.path,
+        family: _resolvedFamilies[row.identity],
+        state: _specimenStateFor(row),
+        // 与用途开关同一判据：键在即挂上（值是历史的 enabled 标记）。
+        targets: row.targets,
         metadata: _metadata[row.identity],
-        systemSupportsJapanese: row.isFile
-            ? null
-            : _systemJapanese[row.name.toLowerCase()],
+        missingOnSystem: _missingOnSystem(row),
+        // native 分层窗只吃裸 sfnt；WOFF/WOFF2 勾了游戏用途下游会静默跳过，
+        // 详情页直接把那枚用途按钮置灰，别让用户白设。
+        unsupportedTargets: _unsupportedTargetsFor(row),
       );
+
+  FontLibraryTraits _traitsOf(CustomFontCatalogRow row) => fontLibraryTraitsFor(
+    name: row.name,
+    metadata: _metadata[row.identity],
+    systemSupportsJapanese: row.isFile
+        ? null
+        : _systemJapanese[row.name.toLowerCase()],
+  );
 
   Widget _buildPreviewSection() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final List<String> families = effectiveFontTargetFamilies(
-      _previewTarget,
-      <FontPreviewCandidate>[
-        for (final CustomFontCatalogRow row in _previewEnabledRows)
-          FontPreviewCandidate(
-            family: _resolvedFamilies[row.identity],
-            path: row.path,
-          ),
-      ],
-    );
+    final List<String> families =
+        effectiveFontTargetFamilies(_previewTarget, <FontPreviewCandidate>[
+          for (final CustomFontCatalogRow row in _previewEnabledRows)
+            FontPreviewCandidate(
+              family: _resolvedFamilies[row.identity],
+              path: row.path,
+            ),
+        ]);
     return FushiCard(
       pressScale: false,
       padding: EdgeInsets.all(tokens.spacing.card),
@@ -1383,8 +1384,9 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   /// 右键 / 长按 / 「更多」钮的上下文菜单。坐标经 Overlay globalToLocal 消掉
   /// FushiAppUiScale 缩放（BUG-781 同族纪律）。
   Future<void> _showFontMenu(int index, Offset globalPosition) async {
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
     final CustomFontCatalogRow row = _fonts[index];
@@ -1449,25 +1451,25 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     final Offset at = box is RenderBox && box.hasSize
         ? box.localToGlobal(box.size.bottomRight(Offset.zero))
         : Offset.zero;
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(at);
     PopupMenuItem<VoidCallback> item(
       IconData icon,
       String label,
       VoidCallback run,
-    ) =>
-        PopupMenuItem<VoidCallback>(
-          value: run,
-          child: Row(
-            children: <Widget>[
-              FushiIcon(icon, size: 20),
-              const SizedBox(width: 12),
-              Flexible(child: Text(label)),
-            ],
-          ),
-        );
+    ) => PopupMenuItem<VoidCallback>(
+      value: run,
+      child: Row(
+        children: <Widget>[
+          FushiIcon(icon, size: 20),
+          const SizedBox(width: 12),
+          Flexible(child: Text(label)),
+        ],
+      ),
+    );
     final VoidCallback? run = await showFushiMenu<VoidCallback>(
       context: context,
       position: RelativeRect.fromRect(
@@ -1475,7 +1477,11 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         Offset.zero & overlay.size,
       ),
       items: <PopupMenuEntry<VoidCallback>>[
-        item(FushiIcons.importFile, t.custom_fonts_import_file, _importFontFile),
+        item(
+          FushiIcons.importFile,
+          t.custom_fonts_import_file,
+          _importFontFile,
+        ),
         item(FushiIcons.star, t.custom_fonts_recommended, _openRecommended),
         item(FushiIcons.textFields, t.custom_fonts_add_system, _addSystemFont),
         item(FushiIcons.link, t.custom_fonts_import_url, _importFromUrl),
@@ -1532,9 +1538,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     final double inner = width - pad * 2 < 0 ? 0.0 : width - pad * 2;
     final int columns = layout == FontLibraryLayout.list
         ? 1
-        : ((inner + gap) / (inner < 600 ? 170 + gap : 280 + gap))
-              .floor()
-              .clamp(2, 6);
+        : ((inner + gap) / (inner < 600 ? 170 + gap : 280 + gap)).floor().clamp(
+            2,
+            6,
+          );
 
     if (_fontsLoading) {
       return <Widget>[
@@ -1546,8 +1553,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                   separatorBuilder: (_, __) => const SizedBox(height: gap),
                   itemBuilder: (BuildContext context, int index) =>
                       const FontSpecimenCardSkeleton(
-                    layout: FontLibraryLayout.list,
-                  ),
+                        layout: FontLibraryLayout.list,
+                      ),
                 )
               : SliverGrid.builder(
                   itemCount: columns * 2,
@@ -1559,8 +1566,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                   ),
                   itemBuilder: (BuildContext context, int index) =>
                       const FontSpecimenCardSkeleton(
-                    layout: FontLibraryLayout.grid,
-                  ),
+                        layout: FontLibraryLayout.grid,
+                      ),
                 ),
         ),
       ];
@@ -1612,13 +1619,9 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
               onReorder: _onReorder,
               itemBuilder: (BuildContext context, int index) =>
                   FushiStaggeredEntrance(
-                index: index,
-                child: _cardFor(
-                  _fonts[index],
-                  layout,
-                  reorderable: true,
-                ),
-              ),
+                    index: index,
+                    child: _cardFor(_fonts[index], layout, reorderable: true),
+                  ),
             )
           : FushiReorderableGrid(
               itemCount: _fonts.length,
@@ -1633,13 +1636,9 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
               onReorder: _onReorder,
               itemBuilder: (BuildContext context, int index) =>
                   FushiStaggeredEntrance(
-                index: index,
-                child: _cardFor(
-                  _fonts[index],
-                  layout,
-                  reorderable: true,
-                ),
-              ),
+                    index: index,
+                    child: _cardFor(_fonts[index], layout, reorderable: true),
+                  ),
             );
       return <Widget>[
         SliverPadding(
@@ -1656,8 +1655,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           child: Text(
             t.font_library_reorder_filtered_hint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
       ),
@@ -1669,9 +1668,13 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                 separatorBuilder: (_, __) => const SizedBox(height: gap),
                 itemBuilder: (BuildContext context, int index) =>
                     FushiStaggeredEntrance(
-                  index: index,
-                  child: _cardFor(visible[index], layout, reorderable: false),
-                ),
+                      index: index,
+                      child: _cardFor(
+                        visible[index],
+                        layout,
+                        reorderable: false,
+                      ),
+                    ),
               )
             : SliverGrid.builder(
                 itemCount: visible.length,
@@ -1724,22 +1727,27 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             SizedBox(height: tokens.spacing.gap),
             SizedBox(
               height: 48,
-              child: ListView.separated(
-                primary: false,
-                scrollDirection: Axis.horizontal,
-                itemCount: filters.length,
-                separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap),
-                itemBuilder: (BuildContext context, int index) {
-                  final FontLibraryFilter filter = filters[index];
-                  return Center(
-                    child: FushiSelectableChip(
-                      key: ValueKey<String>('font-library-filter-${filter.name}'),
-                      label: _filterLabel(filter),
-                      selected: _filter == filter,
-                      onSelected: (_) => setState(() => _filter = filter),
-                    ),
-                  );
-                },
+              child: HorizontalDragScrollable(
+                child: ListView.separated(
+                  primary: false,
+                  scrollDirection: Axis.horizontal,
+                  itemCount: filters.length,
+                  separatorBuilder: (_, __) =>
+                      SizedBox(width: tokens.spacing.gap),
+                  itemBuilder: (BuildContext context, int index) {
+                    final FontLibraryFilter filter = filters[index];
+                    return Center(
+                      child: FushiSelectableChip(
+                        key: ValueKey<String>(
+                          'font-library-filter-${filter.name}',
+                        ),
+                        label: _filterLabel(filter),
+                        selected: _filter == filter,
+                        onSelected: (_) => setState(() => _filter = filter),
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
             SizedBox(height: tokens.spacing.gap),
@@ -1894,88 +1902,99 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       ),
       // 字体库正文（CustomScrollView）首个 sliver 吃页头让位，滚到页头底下。
       bodyConsumesTopPadding: true,
-      bodyBuilder: (
-        BuildContext context,
-        ScrollController controller,
-        SettingsSectionSpy spy,
-      ) {
-        return FushiFileDropTarget(
-          debugLabel: 'font-library',
-          enabled: !_fontsLoading,
-          onDrop: (List<String> paths, Offset _) => _importDroppedPaths(paths),
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool wide = constraints.maxWidth >= 1000;
-              _wide = wide;
-              final int detailIndex = wide && _detailIdentity != null
-                  ? _indexOfIdentity(_detailIdentity!)
-                  : -1;
-              final bool showPanel = detailIndex >= 0;
-              final double browserWidth = showPanel
-                  ? constraints.maxWidth - _detailPanelWidth - 16
-                  : constraints.maxWidth;
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(child: _buildBrowser(context, spy, browserWidth)),
-                  AnimatedSwitcher(
-                    duration: fushiMotionDuration(context, FushiMotion.medium),
-                    switchInCurve: FushiMotion.enter,
-                    switchOutCurve: FushiMotion.exit,
-                    transitionBuilder:
-                        (Widget child, Animation<double> animation) =>
-                            FadeTransition(
-                      opacity: animation,
-                      child: SizeTransition(
-                        sizeFactor: animation,
-                        axis: Axis.horizontal,
-                        axisAlignment: -1,
-                        child: child,
+      bodyBuilder:
+          (
+            BuildContext context,
+            ScrollController controller,
+            SettingsSectionSpy spy,
+          ) {
+            return FushiFileDropTarget(
+              debugLabel: 'font-library',
+              enabled: !_fontsLoading,
+              onDrop: (List<String> paths, Offset _) =>
+                  _importDroppedPaths(paths),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  final bool wide = constraints.maxWidth >= 1000;
+                  _wide = wide;
+                  final int detailIndex = wide && _detailIdentity != null
+                      ? _indexOfIdentity(_detailIdentity!)
+                      : -1;
+                  final bool showPanel = detailIndex >= 0;
+                  final double browserWidth = showPanel
+                      ? constraints.maxWidth - _detailPanelWidth - 16
+                      : constraints.maxWidth;
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(
+                        child: _buildBrowser(context, spy, browserWidth),
                       ),
-                    ),
-                    child: !showPanel
-                        ? const SizedBox.shrink(key: ValueKey<String>('none'))
-                        : Padding(
-                            key: const ValueKey<String>('font-detail-side'),
-                            // 宽屏侧栏不随正文滚动：顶部让开叠放的页头。
-                            padding: EdgeInsetsDirectional.fromSTEB(
-                              0,
-                              4 + MediaQuery.paddingOf(context).top,
-                              16,
-                              16,
-                            ),
-                            child: SizedBox(
-                              width: _detailPanelWidth,
-                              child: Material(
-                                color: apple
-                                    ? appleColorsOf(context)
-                                        .secondaryGroupedBackground
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerLow,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: apple
-                                      ? const BorderRadius.all(
-                                          Radius.circular(12),
-                                        )
-                                      : FushiM3eShape.containerLargeRadius,
+                      AnimatedSwitcher(
+                        duration: fushiMotionDuration(
+                          context,
+                          FushiMotion.medium,
+                        ),
+                        switchInCurve: FushiMotion.enter,
+                        switchOutCurve: FushiMotion.exit,
+                        transitionBuilder:
+                            (Widget child, Animation<double> animation) =>
+                                FadeTransition(
+                                  opacity: animation,
+                                  child: SizeTransition(
+                                    sizeFactor: animation,
+                                    axis: Axis.horizontal,
+                                    axisAlignment: -1,
+                                    child: child,
+                                  ),
                                 ),
-                                clipBehavior: Clip.antiAlias,
-                                child: _detailPanelFor(
-                                  detailIndex,
-                                  onClose: () =>
-                                      setState(() => _detailIdentity = null),
+                        child: !showPanel
+                            ? const SizedBox.shrink(
+                                key: ValueKey<String>('none'),
+                              )
+                            : Padding(
+                                key: const ValueKey<String>('font-detail-side'),
+                                // 宽屏侧栏不随正文滚动：顶部让开叠放的页头。
+                                padding: EdgeInsetsDirectional.fromSTEB(
+                                  0,
+                                  4 + MediaQuery.paddingOf(context).top,
+                                  16,
+                                  16,
+                                ),
+                                child: SizedBox(
+                                  width: _detailPanelWidth,
+                                  child: Material(
+                                    color: apple
+                                        ? appleColorsOf(
+                                            context,
+                                          ).secondaryGroupedBackground
+                                        : Theme.of(
+                                            context,
+                                          ).colorScheme.surfaceContainerLow,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: apple
+                                          ? const BorderRadius.all(
+                                              Radius.circular(12),
+                                            )
+                                          : FushiM3eShape.containerLargeRadius,
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: _detailPanelFor(
+                                      detailIndex,
+                                      onClose: () => setState(
+                                        () => _detailIdentity = null,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          },
     );
   }
 }
@@ -2139,8 +2158,8 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
   final Set<String> _selected = <String>{};
 
   bool _isAdded(RecommendedFont font) => widget.alreadyAdded.any(
-        (String name) => name.toLowerCase() == font.name.toLowerCase(),
-      );
+    (String name) => name.toLowerCase() == font.name.toLowerCase(),
+  );
 
   /// 可勾选域：已装的不参与全选，与词典下载弹窗同判据——已经有的再下一遍只是
   /// 白跑一趟下载 + 导入。
@@ -2180,13 +2199,10 @@ class _RecommendedFontsPageState extends State<RecommendedFontsPage> {
                   key: const ValueKey<String>('recommended-fonts-download'),
                   tooltip: t.dialog_import,
                   icon: Icons.download_outlined,
-                  onTap: () => Navigator.pop(
-                    context,
-                    <RecommendedFont>[
-                      for (final RecommendedFont font in recommendedFontsCatalog)
-                        if (_selected.contains(font.name)) font,
-                    ],
-                  ),
+                  onTap: () => Navigator.pop(context, <RecommendedFont>[
+                    for (final RecommendedFont font in recommendedFontsCatalog)
+                      if (_selected.contains(font.name)) font,
+                  ]),
                 ),
               ],
             ),

@@ -5,6 +5,8 @@ import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/page_scroll_registry.dart';
@@ -1266,24 +1268,26 @@ class SettingsSectionJumpBar extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return SizedBox(
       height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding:
-            padding ?? EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-        itemCount: sections.length,
-        separatorBuilder: (BuildContext context, int index) =>
-            const SizedBox(width: 6),
-        itemBuilder: (BuildContext context, int index) {
-          final (String id, String title) = sections[index];
-          return Center(
-            child: _JumpChip(
-              key: ValueKey<String>('settings-jump.$id'),
-              label: title,
-              selected: id == activeId,
-              onTap: () => onSelected(id),
-            ),
-          );
-        },
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding:
+              padding ?? EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+          itemCount: sections.length,
+          separatorBuilder: (BuildContext context, int index) =>
+              const SizedBox(width: 6),
+          itemBuilder: (BuildContext context, int index) {
+            final (String id, String title) = sections[index];
+            return Center(
+              child: _JumpChip(
+                key: ValueKey<String>('settings-jump.$id'),
+                label: title,
+                selected: id == activeId,
+                onTap: () => onSelected(id),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

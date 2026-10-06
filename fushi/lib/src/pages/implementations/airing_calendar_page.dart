@@ -84,9 +84,11 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   @override
   void initState() {
     super.initState();
-    unawaited(initializeDateFormatting().then((_) {
-      if (mounted) setState(() => _dateSymbolsReady = true);
-    }));
+    unawaited(
+      initializeDateFormatting().then((_) {
+        if (mounted) setState(() => _dateSymbolsReady = true);
+      }),
+    );
     unawaited(_load());
   }
 
@@ -99,8 +101,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       _errorKind = null;
     });
     try {
-      final List<MediaCollectionRow> collections =
-          await _appModel.database.getAllMediaCollections();
+      final List<MediaCollectionRow> collections = await _appModel.database
+          .getAllMediaCollections();
       final AnimeDownloadSubscriptionStore? store =
           _appModel.animeDownloadSubscriptionStore;
       final List<AnimeDownloadSubscription> subscriptions = store == null
@@ -144,7 +146,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     required bool force,
   }) async {
     final int weekStartSeconds = _weekStart.millisecondsSinceEpoch ~/ 1000;
-    final int weekEndSeconds = DateTime(
+    final int weekEndSeconds =
+        DateTime(
           _weekStart.year,
           _weekStart.month,
           _weekStart.day + 7,
@@ -156,11 +159,17 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     if (!force) {
-      final AiringScheduleCache? memory =
-          AiringMemoryCache.get(signature, nowMs: nowMs);
+      final AiringScheduleCache? memory = AiringMemoryCache.get(
+        signature,
+        nowMs: nowMs,
+      );
       if (memory != null) return memory.episodes;
-      final String raw = _appModel.prefsRepo
-          .getPref(kAiringCalendarCachePrefKey, defaultValue: '') as String;
+      final String raw =
+          _appModel.prefsRepo.getPref(
+                kAiringCalendarCachePrefKey,
+                defaultValue: '',
+              )
+              as String;
       final AiringScheduleCache? persisted = decodeAiringScheduleCache(
         raw,
         signature: signature,
@@ -306,71 +315,73 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         : theme.colorScheme.onSurface;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: <Widget>[
-            FushiButtonGroup(
-              spacing: 4,
-              children: <Widget>[
-                FushiIconButtonControl.filledTonal(
-                  tooltip: t.download_airing_calendar_week_prev,
-                  icon: const FushiIcon(FushiIcons.chevronLeft),
-                  onPressed: _loading ? null : () => _shiftWeek(-7),
-                ),
-                AnimatedContainer(
-                  duration: context.fushiMotion.spatialDefault.duration,
-                  curve: context.fushiMotion.spatialDefault.curve,
-                  height: 40,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: glass
-                        ? null
-                        : tinted
-                            ? theme.colorScheme.primaryContainer
-                            : theme.colorScheme.surfaceContainerHigh,
-                    borderRadius: tinted
-                        ? FushiM3eShape.cardRadius
-                        : FushiM3eShape.smallRadius,
+      child: HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              FushiButtonGroup(
+                spacing: 4,
+                children: <Widget>[
+                  FushiIconButtonControl.filledTonal(
+                    tooltip: t.download_airing_calendar_week_prev,
+                    icon: const FushiIcon(FushiIcons.chevronLeft),
+                    onPressed: _loading ? null : () => _shiftWeek(-7),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      FushiIcon(
-                        FushiIcons.calendar,
-                        size: 18,
-                        color: rangeForeground,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${FushiTimeFormat.dayKey(_weekStart)} ~ '
-                        '${FushiTimeFormat.dayKey(weekEnd)}',
-                        style: context.fushiType.labelLargeEmphasized.tabular
-                            .copyWith(color: rangeForeground),
-                      ),
-                    ],
+                  AnimatedContainer(
+                    duration: context.fushiMotion.spatialDefault.duration,
+                    curve: context.fushiMotion.spatialDefault.curve,
+                    height: 40,
+                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    decoration: BoxDecoration(
+                      color: glass
+                          ? null
+                          : tinted
+                          ? theme.colorScheme.primaryContainer
+                          : theme.colorScheme.surfaceContainerHigh,
+                      borderRadius: tinted
+                          ? FushiM3eShape.cardRadius
+                          : FushiM3eShape.smallRadius,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        FushiIcon(
+                          FushiIcons.calendar,
+                          size: 18,
+                          color: rangeForeground,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${FushiTimeFormat.dayKey(_weekStart)} ~ '
+                          '${FushiTimeFormat.dayKey(weekEnd)}',
+                          style: context.fushiType.labelLargeEmphasized.tabular
+                              .copyWith(color: rangeForeground),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                FushiIconButtonControl.filledTonal(
-                  tooltip: t.download_airing_calendar_week_next,
-                  icon: const FushiIcon(FushiIcons.chevronRight),
-                  onPressed: _loading ? null : () => _shiftWeek(7),
-                ),
-              ],
-            ),
-            const SizedBox(width: 12),
-            FushiFilterChip(
-              label: Text(t.download_airing_calendar_show_all),
-              selected: _showAll,
-              onSelected: _loading
-                  ? null
-                  : (bool value) {
-                      setState(() => _showAll = value);
-                      unawaited(_load());
-                    },
-            ),
-          ],
+                  FushiIconButtonControl.filledTonal(
+                    tooltip: t.download_airing_calendar_week_next,
+                    icon: const FushiIcon(FushiIcons.chevronRight),
+                    onPressed: _loading ? null : () => _shiftWeek(7),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              FushiFilterChip(
+                label: Text(t.download_airing_calendar_show_all),
+                selected: _showAll,
+                onSelected: _loading
+                    ? null
+                    : (bool value) {
+                        setState(() => _showAll = value);
+                        unawaited(_load());
+                      },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -402,9 +413,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     }
     final List<List<AniListAiringEpisode>> buckets =
         groupEpisodesByLocalWeekday(
-      episodes: _episodes,
-      weekStartLocal: _weekStart,
-    );
+          episodes: _episodes,
+          weekStartLocal: _weekStart,
+        );
     return FushiEntranceScope(
       replayKey: _bodyStateKey,
       child: LayoutBuilder(
@@ -422,26 +433,26 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   /// 整组共享一道有界闪光。
   Widget _buildSkeleton(double topInset) {
     Widget row() => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: <Widget>[
-              const FushiSkeleton(width: 44, height: 20),
-              const SizedBox(width: 16),
-              const FushiSkeleton(width: 40, height: 60),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    FushiSkeleton.line(widthFactor: 0.8, height: 14),
-                    const SizedBox(height: 8),
-                    FushiSkeleton.line(widthFactor: 0.4),
-                  ],
-                ),
-              ),
-            ],
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: <Widget>[
+          const FushiSkeleton(width: 44, height: 20),
+          const SizedBox(width: 16),
+          const FushiSkeleton(width: 40, height: 60),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FushiSkeleton.line(widthFactor: 0.8, height: 14),
+                const SizedBox(height: 8),
+                FushiSkeleton.line(widthFactor: 0.4),
+              ],
+            ),
           ),
-        );
+        ],
+      ),
+    );
     return FushiSkeletonShimmer(
       child: ListView(
         key: const ValueKey<String>('airing-calendar-skeleton'),
@@ -612,9 +623,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     final Color? background = glass
         ? null
         : tone?.container ??
-            (isEinkTheme(context)
-                ? null
-                : theme.colorScheme.surfaceContainerHigh);
+              (isEinkTheme(context)
+                  ? null
+                  : theme.colorScheme.surfaceContainerHigh);
     final Color foreground = glass
         ? (isToday ? theme.colorScheme.primary : theme.colorScheme.onSurface)
         : tone?.onContainer ?? theme.colorScheme.onSurface;
@@ -662,8 +673,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     final bool inLibrary = _libraryAnilistIds.contains(episode.mediaId);
     final bool subscribed = _subscribedAnilistIds.contains(episode.mediaId);
     final DateTime local = airingAtToLocal(episode.airingAtSeconds);
-    final String episodeLabel =
-        t.download_airing_calendar_episode_label(episode: episode.episode);
+    final String episodeLabel = t.download_airing_calendar_episode_label(
+      episode: episode.episode,
+    );
     final String time = FushiTimeFormat.hourMinute(local);
     final Widget badges = Wrap(
       spacing: 6,

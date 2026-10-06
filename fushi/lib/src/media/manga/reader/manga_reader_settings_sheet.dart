@@ -442,9 +442,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   }
 
   void _reportSaveFailure() {
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      FushiSnackBar(content: Text(t.manga_reader_save_failed)),
-    );
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
   }
 
   /// 全局默认改一笔：界面立即显示，补丁串行写入，失败回滚到最后成功的值。
@@ -848,89 +848,83 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
 
   /// 分组表：页 → [(标题, 键…)]。顺序即页内顺序。`mode` 是页顶的选择卡，
   /// 不在表里。
-  static List<(String Function(), List<String>)> _groupsFor(int tab) =>
-      switch (tab) {
-        0 => <(String Function(), List<String>)>[
-          (
-            () => t.manga_reader_group_layout,
-            <String>['direction', 'scaleType', 'tapZones', 'longStripSidePadding'],
-          ),
-          (
-            () => t.manga_reader_group_wide_pages,
-            <String>['splitWidePages', 'rotateWidePages', 'cropBorders'],
-          ),
-          (
-            () => t.manga_reader_group_long_strip,
-            <String>[
-              'showPageGaps',
-              'webtoonDoubleTapZoom',
-              'autoScroll',
-              'autoScrollSpeed',
-            ],
-          ),
-          (
-            () => t.manga_reader_group_controls,
-            <String>[
-              'animateDoubleTap',
-              'disableZoomOut',
-              'animateTransitions',
-              'invertHorizontal',
-              'invertVertical',
-              'invertBoth',
-              'invertVolumeKeys',
-            ],
-          ),
-          (
-            () => t.manga_reader_group_chapters,
-            <String>['skipRead', 'skipDuplicate', 'downloadAhead'],
-          ),
+  static List<(String Function(), List<String>)> _groupsFor(
+    int tab,
+  ) => switch (tab) {
+    0 => <(String Function(), List<String>)>[
+      (
+        () => t.manga_reader_group_layout,
+        <String>['direction', 'scaleType', 'tapZones', 'longStripSidePadding'],
+      ),
+      (
+        () => t.manga_reader_group_wide_pages,
+        <String>['splitWidePages', 'rotateWidePages', 'cropBorders'],
+      ),
+      (
+        () => t.manga_reader_group_long_strip,
+        <String>[
+          'showPageGaps',
+          'webtoonDoubleTapZoom',
+          'autoScroll',
+          'autoScrollSpeed',
         ],
-        1 => <(String Function(), List<String>)>[
-          (
-            () => t.manga_reader_group_page,
-            <String>['background', 'automaticBackground', 'showPageNumber'],
-          ),
-          (
-            () => t.manga_reader_group_screen,
-            <String>[
-              'fullscreen',
-              'keepScreenOn',
-              'einkMode',
-              'flashOnPageChange',
-              'readerHideThreshold',
-            ],
-          ),
-          (
-            () => t.manga_reader_group_hints,
-            <String>['showReadingMode', 'showTapZonesOverlay'],
-          ),
-          (() => t.manga_reader_group_other, <String>['saveDirectory']),
+      ),
+      (
+        () => t.manga_reader_group_controls,
+        <String>[
+          'animateDoubleTap',
+          'disableZoomOut',
+          'animateTransitions',
+          'invertHorizontal',
+          'invertVertical',
+          'invertBoth',
+          'invertVolumeKeys',
         ],
-        2 => <(String Function(), List<String>)>[
-          (
-            () => t.manga_reader_group_color,
-            <String>['invertColors', 'grayscale'],
-          ),
-          (
-            () => t.manga_reader_group_adjust,
-            <String>['brightness', 'contrast', 'saturation'],
-          ),
-          (
-            () => t.manga_reader_group_overlay,
-            <String>[
-              'customColorFilter',
-              'colorFilterColor',
-              'colorFilterOpacity',
-            ],
-          ),
+      ),
+      (
+        () => t.manga_reader_group_chapters,
+        <String>['skipRead', 'skipDuplicate', 'downloadAhead'],
+      ),
+    ],
+    1 => <(String Function(), List<String>)>[
+      (
+        () => t.manga_reader_group_page,
+        <String>['background', 'automaticBackground', 'showPageNumber'],
+      ),
+      (
+        () => t.manga_reader_group_screen,
+        <String>[
+          'fullscreen',
+          'keepScreenOn',
+          'einkMode',
+          'flashOnPageChange',
+          'readerHideThreshold',
         ],
-        _ => <(String Function(), List<String>)>[
-          (
-            () => t.manga_reader_group_ocr_lookup,
-            <String>['lookupOnHover', 'showOcrBoxes', 'ocrTrigger'],
-          ),
-        ],
-      };
+      ),
+      (
+        () => t.manga_reader_group_hints,
+        <String>['showReadingMode', 'showTapZonesOverlay'],
+      ),
+      (() => t.manga_reader_group_other, <String>['saveDirectory']),
+    ],
+    2 => <(String Function(), List<String>)>[
+      (() => t.manga_reader_group_color, <String>['invertColors', 'grayscale']),
+      (
+        () => t.manga_reader_group_adjust,
+        <String>['brightness', 'contrast', 'saturation'],
+      ),
+      (
+        () => t.manga_reader_group_overlay,
+        <String>['customColorFilter', 'colorFilterColor', 'colorFilterOpacity'],
+      ),
+    ],
+    _ => <(String Function(), List<String>)>[
+      (
+        () => t.manga_reader_group_ocr_lookup,
+        <String>['lookupOnHover', 'showOcrBoxes', 'ocrTrigger'],
+      ),
+    ],
+  };
 
   List<Widget> _tabBlocks(
     int tab,
@@ -1078,9 +1072,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         builder: (BuildContext context, BoxConstraints constraints) {
           final Widget bar = ReaderPanelTabs(controller: _tabs, tabs: tabs);
           if (constraints.maxWidth >= minWidth) return bar;
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SizedBox(width: minWidth, child: bar),
+          return HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(width: minWidth, child: bar),
+            ),
           );
         },
       ),
@@ -1200,8 +1196,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                         _kScopeBarReserve + safeBottom,
                       ),
                       children: <Widget>[
-                        for (final (int i, Widget block)
-                            in _tabBlocks(tab, byKey).indexed)
+                        for (final (int i, Widget block) in _tabBlocks(
+                          tab,
+                          byKey,
+                        ).indexed)
                           FushiStaggeredEntrance(index: i, child: block),
                       ],
                     ),

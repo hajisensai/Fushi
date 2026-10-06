@@ -156,15 +156,17 @@ class OnlineSourcesFilterBar extends StatelessWidget {
           ),
     ];
     return FocusTraversalGroup(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: <Widget>[
-            for (int i = 0; i < chips.length; i++) ...<Widget>[
-              if (i > 0) SizedBox(width: gap),
-              chips[i],
+      child: HorizontalDragScrollable(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: <Widget>[
+              for (int i = 0; i < chips.length; i++) ...<Widget>[
+                if (i > 0) SizedBox(width: gap),
+                chips[i],
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
