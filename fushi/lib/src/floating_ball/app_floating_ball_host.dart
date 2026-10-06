@@ -583,6 +583,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final Uint8List? ballImage = desktop
           ? await renderFloatingBallFacePng(
               Color(colors['ballContainer'] ?? 0xFFEADDFF),
+              // 吉祥物跟随主题强调色（ballOpen = primary，墨水屏 surface）。
+              accent: Color(colors['ballOpen'] ?? 0xFF6750A4),
             )
           : null;
       // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
