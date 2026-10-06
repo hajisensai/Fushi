@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2819 条。点号进各自文件。
+> 共 2820 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3061](bugs/BUG-3061-ctx-remove-middle-sentence.md) | ✅ | ✅ | 制卡上下文无法删除中间的旁白句 |
 | [BUG-3060](bugs/BUG-3060-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
 | [BUG-3059](bugs/BUG-3059-fab-menu-keyboard-focus.md) | ✅ | ✅ | FushiFabMenu 键盘展开后焦点留在 FAB：首帧菜单项不在树里，后帧回调 requestFocus 落空 |
 | [BUG-3058](bugs/BUG-3058-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
