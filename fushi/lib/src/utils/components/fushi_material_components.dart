@@ -7,7 +7,8 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 // SelectedContent 住在 rendering 层（selection.dart），material 不转出它。
-import 'package:flutter/rendering.dart' show SelectedContent;
+import 'package:flutter/rendering.dart'
+    show BoxHitTestResult, BoxParentData, RenderShiftedBox, SelectedContent;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart'
     show
@@ -1307,6 +1308,10 @@ class FushiSearchField extends StatelessWidget {
         },
       );
     }
+    // 触控平台的命中 / 语义区域至少 48（HBK-AUDIT-020）：regular 档外观仍是
+    // 40 高的工具条胶囊，外面让出 4px 的上下边距给扩大的目标；桌面精确指针
+    // （shrinkWrap）原样不动。
+    final Widget touchSearchBar = FushiTouchTargetPadding(child: searchBar);
     // 物理回车的兜底：提交动作本该由平台 text-input 桥转成 onSubmitted，但那条
     // 路要穿过 engine 的输入插件，桌面端一旦没走到，按回车就是「什么也没发生」，
     // 用户只能靠改动输入再等防抖才搜得出来（BUG-2620）。键事件这一层是确定性的，
@@ -1337,7 +1342,7 @@ class FushiSearchField extends StatelessWidget {
         _finishSubmit();
         return KeyEventResult.handled;
       },
-      child: searchBar,
+      child: touchSearchBar,
     );
     if (focusId == null) return submittable;
     if (FushiFocusRoot.maybeControllerOf(context) == null) return submittable;
@@ -1358,6 +1363,150 @@ class FushiSearchField extends StatelessWidget {
 /// 常量定义放在类之后：`md3_design_system_static_test` 用 `class FushiSearchField`
 /// 这个字面量当上一段切片的终点，插在类前会把这段注释卷进它的扫描面。
 const double kFushiSearchFieldHeight = 40;
+
+/// 触控平台（[ThemeData.materialTapTargetSize] 为 padded，即 Android / iOS）上把
+/// [child] 的**实际命中与语义区域**撑到至少 [minHeight]×[minWidth]，外观尺寸不变：
+/// 子组件按原尺寸居中，四周让出的空白里的触点转发到子组件最近的边上（文本框
+/// 落点只沿出界的那一维收进边界，横向位置照旧）；外包一层语义容器，子组件
+/// 未单独成节点的语义（文本框的点按 / 聚焦）合并进这枚至少 48 的节点。
+/// 桌面精确指针（shrinkWrap）直接返回 [child]。父级给的是更紧的约束时让位于
+/// 父级，不溢出（HBK-AUDIT-020）。
+class FushiTouchTargetPadding extends StatelessWidget {
+  const FushiTouchTargetPadding({
+    super.key,
+    required this.child,
+    this.minHeight = kMinInteractiveDimension,
+    this.minWidth = 0,
+  });
+
+  final Widget child;
+  final double minHeight;
+  final double minWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    if (Theme.of(context).materialTapTargetSize !=
+        MaterialTapTargetSize.padded) {
+      return child;
+    }
+    return Semantics(
+      container: true,
+      child: _FushiTouchTargetBox(
+        minSize: Size(minWidth, minHeight),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _FushiTouchTargetBox extends SingleChildRenderObjectWidget {
+  const _FushiTouchTargetBox({required this.minSize, required Widget child})
+      : super(child: child);
+
+  final Size minSize;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFushiTouchTargetBox(minSize);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderFushiTouchTargetBox renderObject,
+  ) {
+    renderObject.minSize = minSize;
+  }
+}
+
+class _RenderFushiTouchTargetBox extends RenderShiftedBox {
+  _RenderFushiTouchTargetBox(this._minSize) : super(null);
+
+  Size _minSize;
+  set minSize(Size value) {
+    if (_minSize == value) return;
+    _minSize = value;
+    markNeedsLayout();
+  }
+
+  // 只放开高度下限：宽度约束原样交给子组件（工具条 / 整行搜索框靠父级的
+  // 紧宽度撑满，放成松约束会改变它们的横向布局）。
+  BoxConstraints _childConstraints(BoxConstraints constraints) =>
+      constraints.copyWith(minHeight: 0);
+
+  Size _sizeFor(BoxConstraints constraints, Size childSize) =>
+      constraints.constrain(
+        Size(
+          math.max(childSize.width, _minSize.width),
+          math.max(childSize.height, _minSize.height),
+        ),
+      );
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      math.max(super.computeMinIntrinsicWidth(height), _minSize.width);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      math.max(super.computeMaxIntrinsicWidth(height), _minSize.width);
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      math.max(super.computeMinIntrinsicHeight(width), _minSize.height);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      math.max(super.computeMaxIntrinsicHeight(width), _minSize.height);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) {
+    final RenderBox? child = this.child;
+    if (child == null) return constraints.smallest;
+    return _sizeFor(
+      constraints,
+      child.getDryLayout(_childConstraints(constraints)),
+    );
+  }
+
+  @override
+  void performLayout() {
+    final RenderBox? child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    child.layout(_childConstraints(constraints), parentUsesSize: true);
+    size = _sizeFor(constraints, child.size);
+    final BoxParentData parentData = child.parentData! as BoxParentData;
+    parentData.offset = Alignment.center.alongOffset(
+      Offset(size.width - child.size.width, size.height - child.size.height),
+    );
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (super.hitTest(result, position: position)) return true;
+    final RenderBox? child = this.child;
+    if (child == null || !size.contains(position)) return false;
+    // 落在让出的边距里：沿出界的那一维把触点收进子组件边界，其余照旧。
+    final Offset childOffset = (child.parentData! as BoxParentData).offset;
+    final Offset local = position - childOffset;
+    final Offset clamped = Offset(
+      local.dx.clamp(0.0, child.size.width),
+      local.dy.clamp(0.0, child.size.height),
+    );
+    final Offset shift = clamped - local;
+    return result.addWithRawTransform(
+      transform: Matrix4.translationValues(
+        shift.dx - childOffset.dx,
+        shift.dy - childOffset.dy,
+        0,
+      ),
+      position: position,
+      hitTest: (BoxHitTestResult result, Offset transformed) =>
+          child.hitTest(result, position: transformed),
+    );
+  }
+}
 
 /// [FushiSearchField] 的尺寸档，见 [FushiSearchField.size]。
 enum FushiSearchFieldSize { regular, large }
@@ -4059,13 +4208,20 @@ class FushiPageScaffold extends StatefulWidget {
     this.headerBottom,
     this.bottomNavigationBar,
     this.headerCompact,
-    this.extendBodyBehindHeader = false,
+    this.extendBodyBehindHeader = true,
   });
 
   final String title;
   final String? subtitle;
   final Widget body;
 
+  /// **默认开启**（2026-10-06 结构收口：「页头 + 正文上下排」时页头收起后让出
+  /// 的那段是实色空白、正文在页头下沿被硬切——统计中心等截图）。正文必须消费
+  /// `MediaQuery.paddingOf(context).top`（`ListView` / `GridView` 默认 padding、
+  /// `SafeArea`、`SliverSafeArea` 或显式加进内边距）；确实无法让内容滚到页头
+  /// 底下的页面（WebView、定高版面）显式传 false，并写明理由（守卫
+  /// `floating_top_scrim_guard_test.dart` 按白名单管）。
+  ///
   /// 正文铺到页头底下（与 [Scaffold.extendBodyBehindAppBar] 同义）：页头只是
   /// 几颗浮在正文上的胶囊，正文从窗口顶端画起（详情页的 fanart / 模糊背景
   /// 一直铺到顶）。正文经 `MediaQuery.paddingOf(context).top` 拿到「状态栏 +
