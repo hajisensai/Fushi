@@ -11,6 +11,7 @@ import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_manga_ocr.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 「漫画」一级设置分类。
@@ -233,11 +234,11 @@ SettingsDestination buildMangaDestination() {
             id: 'manga.panel_model',
             title: t.manga_panel_model,
             subtitle: t.manga_panel_model_desc,
-            icon: Icons.model_training_outlined,
+            icon: FushiIcons.modelTraining,
             child: () => SettingsDestination(
               id: SettingsDestinationId.manga,
               title: t.manga_panel_model,
-              icon: Icons.model_training_outlined,
+              icon: FushiIcons.modelTraining,
               sections: const <SettingsSection>[],
               body: (_) => const MangaPanelModelSettings(),
             ),

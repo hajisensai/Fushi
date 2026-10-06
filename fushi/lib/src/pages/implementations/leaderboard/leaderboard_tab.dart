@@ -138,7 +138,7 @@ class LeaderboardIntroView extends ConsumerWidget {
               onPressed: () => unawaited(
                 _openSignIn(context, LeaderboardSignInMode.register),
               ),
-              icon: const FushiIcon(Icons.person_add_alt_1_outlined),
+              icon: const FushiIcon(FushiIcons.personAdd),
               label: Text(t.leaderboard_intro_register),
             ),
             FushiOutlinedButton.icon(
@@ -485,7 +485,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                 ),
                 FushiOutlinedButton.icon(
                   onPressed: () => _push(const LeaderboardFriendsPage()),
-                  icon: const FushiIcon(Icons.group_outlined),
+                  icon: const FushiIcon(FushiIcons.group),
                   label: Text(t.leaderboard_header_friends),
                 ),
                 FushiOutlinedButton.icon(
@@ -791,7 +791,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
         Padding(
           padding: EdgeInsets.all(tokens.spacing.card),
           child: FushiPlaceholderMessage(
-            icon: Icons.local_fire_department_outlined,
+            icon: FushiIcons.streak,
             message: page.computedAt == null
                 ? t.leaderboard_board_generating
                 : t.leaderboard_board_empty,

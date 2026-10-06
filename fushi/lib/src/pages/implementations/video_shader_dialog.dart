@@ -1083,11 +1083,11 @@ class VideoShaderTierComparison extends StatelessWidget {
       case VideoShaderTier.off:
         return FushiIcons.block;
       case VideoShaderTier.low:
-        return Icons.signal_cellular_alt_1_bar;
+        return FushiIcons.signalLow;
       case VideoShaderTier.medium:
-        return Icons.signal_cellular_alt_2_bar;
+        return FushiIcons.signalMedium;
       case VideoShaderTier.high:
-        return Icons.signal_cellular_alt;
+        return FushiIcons.signalHigh;
       case VideoShaderTier.ultra:
         return FushiIcons.ai;
     }

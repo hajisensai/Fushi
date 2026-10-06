@@ -472,7 +472,7 @@ class MokuroMoeCatalogViewState extends ConsumerState<MokuroMoeCatalogView> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               FushiIcon(
-                Icons.public_off_outlined,
+                FushiIcons.globeOff,
                 color: tokens.surfaces.onVariant,
               ),
               SizedBox(height: tokens.spacing.gap),

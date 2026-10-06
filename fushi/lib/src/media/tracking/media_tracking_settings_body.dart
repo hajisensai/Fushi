@@ -178,7 +178,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                   Uri.parse(BangumiApiClient.signupUrl),
                   mode: LaunchMode.externalApplication,
                 ),
-                icon: const FushiIcon(Icons.person_add_alt),
+                icon: const FushiIcon(FushiIcons.personAdd),
                 label: Text(t.media_tracking_signup),
               ),
             ),

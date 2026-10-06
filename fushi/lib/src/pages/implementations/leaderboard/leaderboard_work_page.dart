@@ -190,7 +190,7 @@ class _LeaderboardWorkPageState extends ConsumerState<LeaderboardWorkPage> {
                 ),
               if (_readers.isEmpty && !_loading)
                 FushiPlaceholderMessage(
-                  icon: Icons.people_outline,
+                  icon: FushiIcons.group,
                   message: t.leaderboard_work_no_readers,
                 ),
               LeaderboardLoadMore(

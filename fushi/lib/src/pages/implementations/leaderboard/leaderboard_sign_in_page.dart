@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
@@ -228,7 +229,7 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
               onPressed: _sending || _cooldown > 0
                   ? null
                   : () => unawaited(_sendCode()),
-              icon: const FushiIcon(Icons.mark_email_unread_outlined),
+              icon: const FushiIcon(FushiIcons.emailUnread),
               label: Text(sendLabel),
             ),
           ),

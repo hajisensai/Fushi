@@ -87,9 +87,9 @@ IconData videoControlItemIcon(
     case VideoControlItem.seekForward:
       return FushiIcons.fastForward;
     case VideoControlItem.frameBackward:
-      return Icons.arrow_left;
+      return FushiIcons.stepBackward;
     case VideoControlItem.frameForward:
-      return Icons.arrow_right;
+      return FushiIcons.stepForward;
     case VideoControlItem.previousCue:
       return FushiIcons.skipPrevious;
     case VideoControlItem.nextCue:
@@ -99,7 +99,7 @@ IconData videoControlItemIcon(
     case VideoControlItem.fullscreen:
       return FushiIcons.fullscreen;
     case VideoControlItem.screenshot:
-      return Icons.photo_camera_outlined;
+      return FushiIcons.camera;
     case VideoControlItem.clipExport:
       return FushiIcons.video;
     case VideoControlItem.subtitleTrack:
@@ -107,21 +107,22 @@ IconData videoControlItemIcon(
     case VideoControlItem.audioTrack:
       return FushiIcons.audio;
     case VideoControlItem.previousEpisode:
-      return Icons.skip_previous_outlined;
+      // 上/下一集用实心字形，与上/下一句字幕（线框 skipPrevious）区分。
+      return FushiIcons.filled(FushiIcons.skipPrevious);
     case VideoControlItem.nextEpisode:
-      return Icons.skip_next_outlined;
+      return FushiIcons.filled(FushiIcons.skipNext);
     case VideoControlItem.episodeList:
-      return Icons.playlist_play;
+      return FushiIcons.playlist;
     case VideoControlItem.previousChapter:
-      return Icons.first_page;
+      return FushiIcons.firstPage;
     case VideoControlItem.nextChapter:
-      return Icons.last_page;
+      return FushiIcons.lastPage;
     case VideoControlItem.chapterList:
-      return Icons.format_list_numbered;
+      return FushiIcons.numberedList;
     case VideoControlItem.volume:
       return FushiIcons.volumeUp;
     case VideoControlItem.title:
-      return Icons.title;
+      return FushiIcons.title;
     case VideoControlItem.positionIndicator:
     case VideoControlItem.speed:
     case VideoControlItem.subtitleList:

@@ -1199,7 +1199,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
               alignment: Alignment.centerRight,
               child: FushiTextButton.icon(
                 onPressed: _jumpToPlayhead,
-                icon: const FushiIcon(Icons.my_location, size: 18),
+                icon: const FushiIcon(FushiIcons.myLocation, size: 18),
                 label: Text(
                   t.video_subtitle_waveform_jump_playhead,
                   maxLines: 1,

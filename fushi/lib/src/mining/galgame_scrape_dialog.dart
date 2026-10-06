@@ -15,6 +15,7 @@ import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 游戏「刮削元数据」统一弹窗。
 ///
@@ -332,7 +333,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.game_scrape,
-        leadingIcon: Icons.cloud_download_outlined,
+        leadingIcon: FushiIcons.cloudDownload,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -404,7 +405,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
       // 与下方「无结果」同走共享空状态件，只把图标与文案染成错误语义色
       // （MD3 error / Apple systemRed / 墨水屏 onSurface）。
       return FushiPlaceholderMessage(
-        icon: Icons.error_outline,
+        icon: FushiIcons.error,
         message: t.game_scrape_search_failed,
         color: fushiStatusColor(context, FushiStatusTone.error),
       );
@@ -412,7 +413,7 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     if (_searched && _candidates.isEmpty) {
       // 空态收进弹窗内（旧实现 toast 完就散场，用户无处改词重试）。
       return FushiPlaceholderMessage(
-        icon: Icons.search_off,
+        icon: FushiIcons.searchOff,
         message: t.game_scrape_no_result,
       );
     }
