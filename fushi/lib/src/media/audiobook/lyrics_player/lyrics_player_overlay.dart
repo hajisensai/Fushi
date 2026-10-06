@@ -208,7 +208,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
             builder: (BuildContext context, BoxConstraints constraints) {
               final Size size = constraints.biggest;
               final EdgeInsets padding = MediaQuery.paddingOf(context);
-              final Rect rect = design.lyricsRect(size, padding);
+              final Rect rect = design.lyricsRect(context, size, padding);
               final Size canvas = Size(size.width, size.height + bleed);
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),

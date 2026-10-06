@@ -232,7 +232,9 @@ abstract class LyricsPlayerDesign {
 
   /// 歌词 WebView 在覆盖层里的矩形（覆盖层局部坐标）。[padding] 是系统安全区
   /// （状态栏 / 刘海 / 手势条）。宽屏 = 右栏，窄屏 = 顶栏与底部控件条之间。
-  Rect lyricsRect(Size size, EdgeInsets padding);
+  /// [context] 给出文字缩放与触控目标尺寸：控件条高度随它们变化，歌词矩形要
+  /// 与 [buildChrome] 用同一份几何（HBK048）。
+  Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding);
 
   /// 背景层（铺满）。必须是不透明的——它就是歌词页的底色。
   ///

@@ -41,12 +41,17 @@ const BorderRadius _kLargeBorderRadius = BorderRadius.all(
   Radius.circular(_kLargeRadius),
 );
 
-/// 窄屏底部控制条的高度（不含外边距）：章名行 44 + 间距 6 + 进度条 36 + 时间约
-/// 18 + 间距 8 + 按钮行 64 + 上下内边距各 14，再留几像素给系统字号放大。
-const double _kNarrowBarHeight = 210;
-
-/// 窄屏顶栏高度。
+/// 窄屏顶栏的最小高度（实际高度见 [_NarrowGeometry]，随文字缩放增高）。
 const double _kNarrowTopBarHeight = 56;
+
+/// 窄屏播放卡：小封面边长、上下内边距、进度条波浪高度、播放键行高度。
+const double _kMiniCoverSize = 44;
+const double _kNarrowCardPadding = 14;
+const double _kNarrowSeekBarHeight = 36;
+const double _kNarrowTransportHeight = 64;
+
+/// 窄屏头行里章名至少要留的宽度；不够时先省掉小封面，再不够连章名一起省。
+const double _kNarrowMinTitleWidth = 56;
 
 /// 背景流动一周的时长：几十秒一圈，慢到不抢歌词的注意力。
 const Duration _kMeshPeriod = Duration(seconds: 48);
@@ -108,16 +113,103 @@ class _WideGeometry {
   final Rect lyrics;
 }
 
-/// 窄屏控制条矩形（悬浮卡片：左右下各留 12 外边距）。
-Rect _narrowBarRect(Size size, EdgeInsets padding) {
-  final double bottom = size.height - padding.bottom - 12;
-  return Rect.fromLTRB(
-    padding.left + 12,
-    math.max(0, bottom - _kNarrowBarHeight),
-    math.max(padding.left + 13, size.width - padding.right - 12),
-    math.max(1, bottom),
-  );
+/// 窄屏几何：顶栏与底部播放卡的高度按当前文字缩放下各行的真实行高和触控
+/// 目标尺寸算出来（HBK048）。之前是写死的 56 / 210，200% 字号下顶栏底溢 24、
+/// 卡片底溢 8；而头行的次要操作胶囊（触控平台 56 高）被 FittedBox 压进 44 高，
+/// 按钮命中区跟着缩到 48 以下。歌词矩形与控件层共用同一份计算。
+@immutable
+class _NarrowGeometry {
+  const _NarrowGeometry._({
+    required this.tapDimension,
+    required this.topBarHeight,
+    required this.headerHeight,
+    required this.seekRowHeight,
+    required this.bar,
+  });
+
+  factory _NarrowGeometry.of(
+    BuildContext context,
+    Size size,
+    EdgeInsets padding,
+  ) {
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextDirection dir = Directionality.of(context);
+    final FushiTypography type = context.fushiType;
+    final ThemeData theme = Theme.of(context);
+    double line(TextStyle? style) {
+      if (style == null) return 0;
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: 'Hg', style: style),
+        textScaler: scaler,
+        textDirection: dir,
+        maxLines: 1,
+      )..layout();
+      final double height = painter.height;
+      painter.dispose();
+      return height.ceilToDouble();
+    }
+
+    final double tap = lyricsPlayerTapDimension(theme);
+    // 次要操作胶囊 / 顶栏动作胶囊：按钮命中区 + 上下各 4 内边距。
+    final double pill = tap + 8;
+    final double topBar = <double>[
+      _kNarrowTopBarHeight,
+      pill,
+      line(type.titleMediumEmphasized) + line(type.bodySmall),
+    ].reduce(math.max);
+    final double header = <double>[
+      _kMiniCoverSize,
+      pill,
+      line(type.labelMediumEmphasized),
+      line(type.titleSmallEmphasized),
+    ].reduce(math.max);
+    final double seekRow = math.max(
+      _kNarrowSeekBarHeight + line(theme.textTheme.labelMedium),
+      tap,
+    );
+    final double cardHeight =
+        _kNarrowCardPadding +
+        header +
+        6 +
+        seekRow +
+        8 +
+        _kNarrowTransportHeight +
+        _kNarrowCardPadding;
+    final double bottom = size.height - padding.bottom - 12;
+    final Rect bar = Rect.fromLTRB(
+      padding.left + 12,
+      math.max(0, bottom - cardHeight),
+      math.max(padding.left + 13, size.width - padding.right - 12),
+      math.max(1, bottom),
+    );
+    return _NarrowGeometry._(
+      tapDimension: tap,
+      topBarHeight: topBar,
+      headerHeight: header,
+      seekRowHeight: seekRow,
+      bar: bar,
+    );
+  }
+
+  /// 触控目标边长（触控平台 48，桌面精确指针 40）。
+  final double tapDimension;
+  final double topBarHeight;
+  final double headerHeight;
+  final double seekRowHeight;
+
+  /// 底部播放卡矩形（悬浮卡片：左右下各留 12 外边距）。
+  final Rect bar;
+
+  /// 卡片内容区宽度。
+  double get innerWidth => math.max(0, bar.width - 2 * _kNarrowCardPadding);
 }
+
+/// 图标按钮实际命中区的边长：触控平台（padded）撑到 48，桌面精确指针保持 40
+/// 的视觉尺寸。
+double lyricsPlayerTapDimension(ThemeData theme) =>
+    theme.materialTapTargetSize == MaterialTapTargetSize.padded
+    ? kMinInteractiveDimension
+    : 40;
 
 // ---------------------------------------------------------------------------
 // 外观
@@ -127,12 +219,13 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
   const Md3LyricsPlayerDesign();
 
   @override
-  Rect lyricsRect(Size size, EdgeInsets padding) {
+  Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
       return _WideGeometry.of(size, padding).lyrics;
     }
-    final double top = padding.top + 8 + _kNarrowTopBarHeight + 8;
-    final double bottom = _narrowBarRect(size, padding).top - 8;
+    final _NarrowGeometry geometry = _NarrowGeometry.of(context, size, padding);
+    final double top = padding.top + 8 + geometry.topBarHeight + 8;
+    final double bottom = geometry.bar.top - 8;
     return Rect.fromLTRB(
       padding.left,
       top,
@@ -178,7 +271,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
         ],
       );
     }
-    final Rect bar = _narrowBarRect(size, padding);
+    final _NarrowGeometry geometry = _NarrowGeometry.of(context, size, padding);
     return Stack(
       clipBehavior: Clip.none,
       children: <Widget>[
@@ -186,12 +279,16 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
           top: padding.top + 8,
           left: padding.left + 16,
           right: padding.right + 8,
-          height: _kNarrowTopBarHeight,
+          height: geometry.topBarHeight,
           child: _NarrowTopBar(data: data, callbacks: callbacks),
         ),
         Positioned.fromRect(
-          rect: bar,
-          child: _NarrowControlBar(data: data, callbacks: callbacks),
+          rect: geometry.bar,
+          child: _NarrowControlBar(
+            data: data,
+            callbacks: callbacks,
+            geometry: geometry,
+          ),
         ),
       ],
     );
@@ -1913,65 +2010,110 @@ class _NarrowTopBar extends StatelessWidget {
 /// 变形）+ 章名 / 书名 + 倍速·睡眠定时·⋯ 工具条；下面波浪进度 + 时间；最下一行
 /// −10 秒 / 上一句 / 播放 / 下一句 / +10 秒。
 class _NarrowControlBar extends StatelessWidget {
-  const _NarrowControlBar({required this.data, required this.callbacks});
+  const _NarrowControlBar({
+    required this.data,
+    required this.callbacks,
+    required this.geometry,
+  });
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
+  final _NarrowGeometry geometry;
+
+  /// 头行：小封面 + 章名（让位）+ 倍速·睡眠·⋯ 胶囊（自然尺寸，不被压扁）。
+  /// 宽度不够时先省掉小封面，再不够连章名一起省；胶囊本身比整行还宽的极端
+  /// 宽度才等比缩小兜底，不溢出（HBK048：280 宽右溢 2.9px）。
+  Widget _buildHeader(String chapter) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double rowWidth = constraints.maxWidth;
+        return Row(
+          children: <Widget>[
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints lead) {
+                  final double room = lead.maxWidth;
+                  if (room < _kNarrowMinTitleWidth) {
+                    return const SizedBox.shrink();
+                  }
+                  final bool showCover =
+                      room >= _kMiniCoverSize + 12 + _kNarrowMinTitleWidth;
+                  return Row(
+                    children: <Widget>[
+                      if (showCover) ...<Widget>[
+                        _MiniCover(
+                          cover: data.cover,
+                          isPlaying: data.isPlaying,
+                          size: _kMiniCoverSize,
+                        ),
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(
+                        child: _TitleBlock(
+                          // 书名已在顶栏：这里有章名就只放章名（强调色），
+                          // 没有才放书名。
+                          title: chapter.isEmpty ? data.title : '',
+                          chapterLabel: chapter.isEmpty ? null : chapter,
+                          large: false,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: math.max(0, rowWidth - 8)),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: _SecondaryActions(
+                  data: data,
+                  callbacks: callbacks,
+                  full: false,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final String chapter = (data.chapterLabel ?? '').trim();
     return _SpringEntrance(
       child: _PlayerCard(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        padding: const EdgeInsets.all(_kNarrowCardPadding),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             SizedBox(
-              height: 44,
-              child: Row(
-                children: <Widget>[
-                  _MiniCover(
-                    cover: data.cover,
-                    isPlaying: data.isPlaying,
-                    size: 44,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _TitleBlock(
-                      // 书名已在顶栏：这里有章名就只放章名（强调色），没有才放书名。
-                      title: chapter.isEmpty ? data.title : '',
-                      chapterLabel: chapter.isEmpty ? null : chapter,
-                      large: false,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: _SecondaryActions(
-                      data: data,
-                      callbacks: callbacks,
-                      full: false,
-                    ),
-                  ),
-                ],
-              ),
+              height: geometry.headerHeight,
+              child: _buildHeader(chapter),
             ),
             const SizedBox(height: 6),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: _WavySeekBar(
-                clock: data.clock,
-                isPlaying: data.isPlaying,
-                onSeek: callbacks.onSeek,
-                strokeWidth: 5,
-                barHeight: 36,
+            SizedBox(
+              height: geometry.seekRowHeight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: _WavySeekBar(
+                    clock: data.clock,
+                    isPlaying: data.isPlaying,
+                    onSeek: callbacks.onSeek,
+                    strokeWidth: 5,
+                    barHeight: _kNarrowSeekBarHeight,
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: 64,
+              height: _kNarrowTransportHeight,
               // 极窄宽度（< 320）下整行等比缩小，不溢出。
               child: FittedBox(
                 fit: BoxFit.scaleDown,

@@ -26,7 +26,7 @@ class AppleLyricsPlayerDesign extends LyricsPlayerDesign {
   const AppleLyricsPlayerDesign();
 
   @override
-  Rect lyricsRect(Size size, EdgeInsets padding) {
+  Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
       return _WideLayout(size, padding).lyricsRect;
     }
