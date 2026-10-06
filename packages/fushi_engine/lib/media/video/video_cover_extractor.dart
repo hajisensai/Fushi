@@ -12,7 +12,7 @@
 /// `<documents>/video_covers/<sanitize(bookUid)>.jpg`，与手动/刮削封面同目录
 /// 同命名，红线：目录名与文件名派生冻结不动）：
 ///   1. 容器内嵌封面（mkv `cover.*` 附件 / mp4 attached_pic 海报）；
-///   2. ffmpeg 抽帧（默认 10s 起按候选时刻跳过黑场帧，BUG-2965；播放列表遍历到
+///   2. ffmpeg 抽帧（默认 10s 起按候选时刻跳过黑场帧，BUG-3043；播放列表遍历到
 ///      首个可用集）；
 ///   3. 远端缩略图 URL 下载（流媒体书，如 YouTube hqdefault）。
 ///
@@ -416,7 +416,7 @@ Future<String?> _extractVideoCoverUnlocked({
       outputPath: outputPath,
     );
   }
-  // ② 无自带封面：退回抽帧。BUG-2965：固定时刻常落在片头 logo 淡出 / 场间黑场，
+  // ② 无自带封面：退回抽帧。BUG-3043：固定时刻常落在片头 logo 淡出 / 场间黑场，
   // 按候选时刻依次抽，取第一张非黑帧。
   return grabFirstNonBlackCoverFrame(
     outputPath: outputPath,
@@ -437,11 +437,11 @@ Future<String?> _extractVideoCoverUnlocked({
   );
 }
 
-/// BUG-2965：判「近全黑帧」的平均亮度上限（0–255）。保守：只拦真正的黑场 / 淡出
+/// BUG-3043：判「近全黑帧」的平均亮度上限（0–255）。保守：只拦真正的黑场 / 淡出
 /// 末段，暗场戏（夜景、室内）的均值通常远高于它。
 const double kNearlyBlackMeanLuma = 16;
 
-/// BUG-2965：判「近全黑帧」的亮度标准差上限。黑底上有一块亮 logo / 字幕的帧标准差
+/// BUG-3043：判「近全黑帧」的亮度标准差上限。黑底上有一块亮 logo / 字幕的帧标准差
 /// 很大，不算黑帧（它至少有可辨认的内容）。
 const double kNearlyBlackLumaStdDev = 10;
 
@@ -488,7 +488,7 @@ bool isNearlyBlackFrame(Uint8List bytes) {
   return mean < kNearlyBlackMeanLuma && stdDev < kNearlyBlackLumaStdDev;
 }
 
-/// BUG-2965：[atSeconds] 抽到黑帧后依次再试的更晚时刻（秒）。只取严格晚于
+/// BUG-3043：[atSeconds] 抽到黑帧后依次再试的更晚时刻（秒）。只取严格晚于
 /// [atSeconds] 的项；总候选数因此有界（≤ 1 + 本表长度）。
 const List<double> kCoverFrameFallbackSeconds = <double>[30, 90, 240];
 
@@ -514,7 +514,7 @@ typedef CoverBlackFrameDetector = Future<bool> Function(Uint8List bytes);
 Future<bool> _isNearlyBlackFrameOffThread(Uint8List bytes) =>
     Isolate.run(() => isNearlyBlackFrame(bytes));
 
-/// BUG-2965：按 [candidateSeconds] 依次抽帧，把**第一张非黑帧**发布为 [outputPath]。
+/// BUG-3043：按 [candidateSeconds] 依次抽帧，把**第一张非黑帧**发布为 [outputPath]。
 ///
 /// - 每个候选先抽到独立的 staged 路径（[stagedCoverPath]），判过黑帧才经
 ///   [publishStagedCoverFile] 原子发布——中间的黑帧**从不**落到 [outputPath]，已有的

@@ -149,7 +149,7 @@ void main() {
     });
   });
 
-  // BUG-2962：image 4.x 的 JpegDecoder.startDecode 会解析整条扫描数据，大页要
+  // BUG-3041：image 4.x 的 JpegDecoder.startDecode 会解析整条扫描数据，大页要
   // 数百毫秒且同步跑在调用方 isolate 上。探测必须只看段头：像素段被截掉三分之二、
   // 整张解码必然失败的 JPEG / PNG，探测照样给出与完整文件相同的宽高。
   test('JPEG / PNG 只读头：像素段截断也给出宽高', () {

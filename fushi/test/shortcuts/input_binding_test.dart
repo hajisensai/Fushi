@@ -169,7 +169,7 @@ void main() {
     });
 
     test('displayLabel shows letters and digits without DOM code prefix', () {
-      // BUG-2960: the reader toolbar showed `Ctrl+KeyF` / `KeyB`.
+      // BUG-3040: the reader toolbar showed `Ctrl+KeyF` / `KeyB`.
       final InputBinding ctrlF = InputBinding(
         key: LogicalKeyboardKey.keyF,
         modifiers: const {ModifierKey.ctrl},

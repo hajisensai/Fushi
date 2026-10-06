@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 
-// BUG-2960：阅读器工具栏 / 溢出菜单的快捷键后缀显示了持久化 token
+// BUG-3040：阅读器工具栏 / 溢出菜单的快捷键后缀显示了持久化 token
 // （`导航 · Ctrl+KeyF`），且在 Android 平板（触屏）上也挂。
 
 void main() {

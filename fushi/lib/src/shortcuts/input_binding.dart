@@ -345,7 +345,7 @@ class InputBinding {
   // Human-readable label for the key part, used only for display in the UI.
   // The persistence tokens of letter / digit keys are DOM codes (`KeyF`,
   // `Digit1`); showing them verbatim put `Ctrl+KeyF` in the reader toolbar and
-  // the shortcut settings chips (BUG-2960) — the UI shows the bare character.
+  // the shortcut settings chips (BUG-3040) — the UI shows the bare character.
   String _keyLabel(LogicalKeyboardKey k) {
     final String? token = _knownKeys[k];
     if (token == null) return k.keyLabel;

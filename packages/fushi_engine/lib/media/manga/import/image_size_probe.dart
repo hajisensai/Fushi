@@ -14,7 +14,7 @@ import 'package:image/image.dart' as img;
 ///
 /// 不认识的格式 / 损坏文件返回 null，调用方回退整张解码（行为与从前一致）。
 ({int width, int height})? probeOrientedImageSize(Uint8List bytes) {
-  // BUG-2962：JPEG / PNG 自己读头。image 4.x 的 `JpegDecoder.startDecode` 名为
+  // BUG-3041：JPEG / PNG 自己读头。image 4.x 的 `JpegDecoder.startDecode` 名为
   // 「只读头」，实测却把整条扫描数据也解析一遍（2400×3400 的页 200~600 ms，且是
   // 在调用方 isolate 上同步跑——阅读器每个页图请求都经这里，主 isolate 直接卡住）；
   // `findDecoderForData` 也会挨个格式试探。漫画页九成以上是这两种格式，直接按

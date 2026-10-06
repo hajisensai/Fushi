@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
-// BUG-2959：MD3 主题曾在 appBarTheme 里钉 titleTextStyle = titleLarge，Flutter 的
+// BUG-3039：MD3 主题曾在 appBarTheme 里钉 titleTextStyle = titleLarge，Flutter 的
 // SliverAppBar.large 展开态取 `titleTextStyle ?? appBarTheme.titleTextStyle ??
 // headlineMedium`，于是设置页的大标题顶栏只剩一行 22 号小字压在 152 高的空带
 // 底部（Android「设置」上方大片空白）。展开态必须是 headlineMedium，普通顶栏

@@ -57,7 +57,7 @@ bool _isSearchDecoration(InputDecoration decoration) {
   Widget? prefix = decoration.prefixIcon;
   // 调用点给放大镜自配留白（设置页 MD3 胶囊搜索栏的 `Padding(FushiIcon)`）时
   // 要看穿这层包装：认不出来就会把调用方写好的胶囊边框压成 12 圆角方框
-  // （BUG-2958，Android 设置页搜索栏变成圆角矩形）。
+  // （BUG-3038，Android 设置页搜索栏变成圆角矩形）。
   while (prefix is Padding) {
     prefix = prefix.child;
   }

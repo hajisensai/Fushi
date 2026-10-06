@@ -1,4 +1,4 @@
-## BUG-2962 · 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词
+## BUG-3041 · 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词
 - **报告**：2026-10-05（用户「提督哈里斯」群聊：iOS 上看漫画查词「卡得受不了」，漫画来自 iOS「文件」App 的「连接服务器」(SMB) 挂载的 NAS；协作者只测过本地漫画）
 - **真实性**：✅ 真缺陷（性能），但与「NAS 网络 IO」无直接因果——见备注。根因两处：
   1. `fushi/lib/src/media/manga/mihon/manga_page_provider.dart:87`（基线 c7932af5419）：`LocalMangaReaderSession.page()` 每次调用都 `mangaImageDimensions(bytes)`，后者在 `:149` 用 `Isolate.run` + `img.decodeImage` **整张纯 Dart 解码**只为取宽高（而本地会话的宽高调用方根本不用，manga.json 里本就有）。阅读器每个 WebView 页图请求（`manga_fushi_page.dart:2503` `_interceptRequest` → `pageSession.page`）、面板检测都走这里；iOS/macOS 走自定义 scheme（`webViewUsesCustomSchemeTransport`），WKURLSchemeHandler 没有 HTTP 缓存，每次装窗口文档都重付。实测 2400×3400 页：JPEG 每次 ~700 ms、PNG ~500 ms，6 个并发请求 1.59 s，期间每次还把 5~12 MB 字节拷进新 isolate、解出几十 MB 像素。

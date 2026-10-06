@@ -3003,7 +3003,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 纯指针面：包 ExcludeFocus，不进焦点遍历池（与 [_wrapBottomChromeBar] 同一规则，
   /// TODO-700 不变式）。BUG-1692：排在 WebView 之后绘制，必须自带 RepaintBoundary。
   /// 快捷键只进 tooltip（`插图画廊 (G)`），可见标签只放功能名——窄窗底栏把
-  /// `导航 · Ctrl+F` 截成乱码（10-06 反馈）；触屏平台不挂（BUG-2960）。
+  /// `导航 · Ctrl+F` 截成乱码（10-06 反馈）；触屏平台不挂（BUG-3040）。
   String _shortcutTooltip(String label, ShortcutAction action) {
     return tooltipWithShortcutHint(
       label,

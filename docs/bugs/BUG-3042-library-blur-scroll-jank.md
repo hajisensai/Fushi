@@ -1,4 +1,4 @@
-## BUG-2963 · 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊
+## BUG-3042 · 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊
 - **报告**：2026-10-05（用户：协作者 shishamo Windows 录屏 `2026-10-05 16-18-26.mp4`，「这个滚动掉帧」）
 - **真实性**：✅ 真 bug（#1971 之后）。根因 `fushi/lib/src/pages/implementations/games_library_page.dart:2347-2361`（「继续游戏」卡 key art 背景 `ImageFiltered(blur 22)`），同类 `fushi/lib/src/media/video/cover_ui/portrait_cover_image.dart:120` / `landscape_cover_image.dart:157`（封面比例不符时的模糊垫底，sigma 14 / 28）、`fushi/lib/src/pages/implementations/galgame_home_page.dart:676`（游戏首页大卡，sigma 28）
 - **[x] ① 已修复** — 03a10a950ea：新组件 `PrebakedBlurImage`（`fushi/lib/src/utils/components/prebaked_blur_image.dart`）把封面按 fit 铺进按 sigma 降采样的小画布、`Picture.toImage` 只模糊一次，之后每帧只画一张纹理；四处调用点换用它

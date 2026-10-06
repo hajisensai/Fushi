@@ -1,4 +1,4 @@
-## BUG-2958 · MD3 设置页搜索栏被压成 12 圆角方框（胶囊判据认不出包了 Padding 的放大镜）
+## BUG-3038 · MD3 设置页搜索栏被压成 12 圆角方框（胶囊判据认不出包了 Padding 的放大镜）
 - **报告**：2026-10-05（协作者 shishamo：Android MD3 设置页圆角不对，截图里搜索栏是圆角矩形）
 - **真实性**：✅ 真 bug。`fushi/lib/src/utils/components/glass/fushi_glass_inputs.dart` `_isSearchDecoration` 只认 `prefixIcon` 直接是放大镜 `Icon` / `FushiIcon`；设置页 MD3 搜索栏给放大镜包了一层 `Padding` 自配留白，判据认不出 → 走普通输入框分支，把调用方写好的胶囊边框覆写成 12 圆角。
 - **[x] ① 已修复** — 判据先剥掉 `Padding` 包装再认图标（`fushi_glass_inputs.dart:61`）。

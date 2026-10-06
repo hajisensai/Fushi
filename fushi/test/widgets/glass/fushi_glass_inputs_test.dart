@@ -56,7 +56,7 @@ void main() {
       expect(find.byType(CupertinoTextField), findsNothing);
     });
 
-    // BUG-2958：设置页 MD3 胶囊搜索栏给放大镜包了一层 Padding（自配留白），
+    // BUG-3038：设置页 MD3 胶囊搜索栏给放大镜包了一层 Padding（自配留白），
     // 搜索判据只认裸 Icon，把调用方写好的胶囊边框压成 12 圆角方框。
     for (final bool wrapped in <bool>[false, true]) {
       testWidgets(
