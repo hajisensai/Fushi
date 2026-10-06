@@ -372,8 +372,12 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
             return Stack(
               children: <Widget>[
                 // 遮罩在内容之上、所有 chrome（外壳标题、页签、按钮组、搜索行）
-                // 之下：实色段盖住外壳标题区（[outer]）+ 此刻可见的工具区，
-                // 再往下渐隐。没滚动时不画（工具区下面就是第一行内容）。
+                // 之下，只是一段**短**的无硬边渐隐：从视口顶边（不透明，与上方
+                // 底色 / 窗口标题行连续）起，跨过外壳标题区与第一行胶囊后降到
+                // 0。工具区再往下的搜索框 / 筛选行是自带底色的胶囊，背后内容
+                // 照常可见——曾经整个工具区高度都是 0.92 的实色段，库页往下一滚
+                // 顶部两三百 px 一整块白底把内容盖死（2026-10-06 用户截图）。
+                // 没滚动时不画（工具区下面就是第一行内容）。
                 Positioned(
                   top: 0,
                   left: 0,
@@ -382,7 +386,16 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                     opacity: controller.contentUnderTop ? 1 : 0,
                     duration: fushiMotionDuration(context, FushiMotion.short),
                     child: FushiTopFadeScrim(
-                      solidHeight: outer + shown * _chromeHeight,
+                      solidHeight: 0,
+                      fadeExtent:
+                          outer +
+                          shown *
+                              math.min(
+                                _chromeHeight,
+                                kFushiTopScrimChromeReach,
+                              ) +
+                          kFushiTopFadeExtent,
+                      topOpacity: 1,
                     ),
                   ),
                 ),
@@ -520,6 +533,10 @@ Color fushiTopFadeScrimColor(BuildContext context) {
 
 /// [FushiTopFadeScrim] 渐隐段的默认长度（胶囊 / 栏下沿再往下 32）。
 const double kFushiTopFadeExtent = 32;
+
+/// [FushiFloatingChromeOverlay] 的顶部渐隐最多伸进工具区多深：只罩住第一行
+/// 胶囊（页签 / 标题胶囊）的上半，往下的工具行自带底色，不再整块垫底。
+const double kFushiTopScrimChromeReach = 40;
 
 /// 遮罩盖在可滚动内容上、从窗口顶端起画时的顶边不透明度（见
 /// [FushiTopFadeScrim.topOpacity]）：够让悬浮胶囊之间的内容退后，又不至于在
