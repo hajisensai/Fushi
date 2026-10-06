@@ -137,8 +137,8 @@ void main() {
   // 用 IconButton finder（不是 byTooltip）：byTooltip 命中的是 RawTooltip 包装层，
   // 拿不到 IconButton.onPressed 判禁用。
   Finder removeButtons() =>
-      find.widgetWithIcon(IconButton, Icons.remove_circle_outline);
-  Finder restoreButtons() => find.widgetWithIcon(IconButton, Icons.undo_rounded);
+      find.widgetWithIcon(IconButton, FushiIcons.removeCircle);
+  Finder restoreButtons() => find.widgetWithIcon(IconButton, FushiIcons.undo);
 
   Finder editButtons() =>
       find.widgetWithIcon(IconButton, FushiIcons.edit);

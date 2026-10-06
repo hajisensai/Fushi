@@ -435,7 +435,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
 
   /// 句子卡右上角的「移除此句 / 恢复此句」按钮，尺寸与 [_editButton] 一致。
   Widget _removeButton(SentenceContextSlot slot, int index, bool removed) =>
-      IconButton(
+      FushiIconButtonControl(
         tooltip:
             removed ? t.popup_ctx_sentence_restore : t.popup_ctx_sentence_remove,
         visualDensity: VisualDensity.compact,
@@ -443,7 +443,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
         onPressed: _locked ? null : () => _setRemoved(slot, index, !removed),
         icon: FushiIcon(
-          removed ? Icons.undo_rounded : Icons.remove_circle_outline,
+          removed ? FushiIcons.undo : FushiIcons.removeCircle,
           size: 16,
         ),
       );
