@@ -88,7 +88,7 @@ Future<http.Response> streamUpload(
   http.StreamedRequest request,
   File file,
   int fileLength,
-  void Function(double fraction)? onProgress,
+  SyncTransferProgress? onProgress,
 ) async {
   final responseFuture = (await obtainSyncHttpClient()).send(request);
   var sent = 0;
@@ -96,7 +96,7 @@ Future<http.Response> streamUpload(
   try {
     await request.sink.addStream(file.openRead().map((chunk) {
       sent += chunk.length;
-      onProgress?.call(fileLength > 0 ? sent / fileLength : 0);
+      onProgress?.call(fileLength > 0 ? sent / fileLength : 0, sent);
       return chunk;
     }));
   } catch (e) {

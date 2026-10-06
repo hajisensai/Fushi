@@ -568,7 +568,6 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
             icon: Icons.cast,
-            visible: (SettingsContext ctx) => !kIsWeb && Platform.isAndroid,
             onTap: (SettingsContext ctx) => pushSettingsPage(
               ctx,
               (BuildContext context) => GameStreamJoinPage(

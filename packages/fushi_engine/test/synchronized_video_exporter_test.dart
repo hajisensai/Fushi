@@ -18,6 +18,9 @@ void main() {
     );
     expect(args[args.indexOf('-af') + 1], 'asetpts=PTS');
     expect(args[args.indexOf('-vf') + 1], startsWith('setpts=PTS,'));
+    expect(args.where((arg) => arg == '-i'), hasLength(1));
+    expect(args, contains('0:a:0'));
+    expect(args, containsAllInOrder(['-map_chapters', '-1']));
     expect(
       args[args.indexOf('-vf') + 1],
       contains("scale=w='trunc(min(961,iw)/2)*2':h=-2"),
@@ -95,8 +98,69 @@ void main() {
       cropFilter: 'crop=320:240:0:0',
     );
     expect(args, isNot(contains('-ss')));
-    expect(args[args.indexOf('-vf') + 1], contains('crop=320:240:0:0,scale='));
+    expect(
+      args[args.indexOf('-vf') + 1],
+      contains('crop=320:240:0:0,fps=24,scale='),
+    );
   });
+
+  test(
+    'same-source input reuse preserves seek, selected track and downmix',
+    () {
+      final args = buildSynchronizedVideoClipArgs(
+        videoPath: 'movie.mkv',
+        audioPath: 'movie.mkv',
+        startMs: 4321,
+        endMs: 7321,
+        outputPath: 'out.mp4',
+        audioStreamIndex: 2,
+        audioChannels: 1,
+      );
+      expect(args.where((arg) => arg == '-i'), hasLength(1));
+      expect(args, containsAllInOrder(['-ss', '4.321', '-t', '3.000']));
+      expect(args, contains('0:a:2'));
+      expect(args, containsAllInOrder(['-ac', '1']));
+      final filter = args[args.indexOf('-vf') + 1];
+      expect(filter.indexOf('fps='), lessThan(filter.indexOf('scale=')));
+    },
+  );
+
+  test(
+    'same URL with a different seek or credentials keeps separate inputs',
+    () {
+      for (final args in [
+        buildSynchronizedVideoClipArgs(
+          videoPath: 'https://test/movie',
+          audioPath: 'https://test/movie',
+          startMs: 1000,
+          endMs: 2000,
+          audioStartMs: 0,
+          outputPath: 'out.mp4',
+        ),
+        buildSynchronizedVideoClipArgs(
+          videoPath: 'https://test/movie',
+          audioPath: 'https://test/movie',
+          startMs: 1000,
+          endMs: 2000,
+          headers: {'Authorization': 'video'},
+          audioHeaders: {'Authorization': 'audio'},
+          outputPath: 'out.mp4',
+        ),
+        buildSynchronizedVideoClipArgs(
+          videoPath: 'https://test/movie',
+          audioPath: 'https://test/movie',
+          startMs: 1000,
+          endMs: 2000,
+          tlsPinSha256: 'video',
+          audioTlsPinSha256: 'audio',
+          outputPath: 'out.mp4',
+        ),
+      ]) {
+        expect(args.where((arg) => arg == '-i'), hasLength(2));
+        expect(args, contains('1:a:0'));
+      }
+    },
+  );
 
   late Directory temp;
   late File source;

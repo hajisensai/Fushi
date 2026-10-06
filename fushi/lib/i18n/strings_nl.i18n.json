@@ -5303,7 +5303,6 @@
   "game_stream_line": "Huidige regel",
   "game_stream_line_empty": "Nog geen Hook-tekst",
   "game_stream_lookup_hint": "Selecteer tekst om op te zoeken",
-  "game_stream_android_only": "Het ontvangen van gamestreams is alleen beschikbaar op Android.",
   "game_stream_unreachable": "Kon geen verbinding maken met de host",
   "game_stream_none": "Er streamt geen gekoppelde host. Start eerst het streamen vanaf de Windows-gamepagina.",
   "game_stream_join_failed": "Kon niet deelnemen aan de stream",
@@ -5415,7 +5414,7 @@
   "game_stream_touch_direct": "Overschakelen naar directe aanraking",
   "game_stream_touch_trackpad": "Overschakelen naar trackpad",
   "game_stream_remote_launch_title": "Starten op afstand toestaan",
-  "game_stream_remote_launch_hint": "Gekoppelde Android-apparaten kunnen games uit de bibliotheek van deze pc starten en streamen",
+  "game_stream_remote_launch_hint": "Gekoppelde apparaten kunnen games uit de bibliotheek van deze pc starten en streamen",
   "manga_reader_ocr_volume": "Dit deel herkennen",
   "manga_reader_ocr_queued": "In wachtrij",
   "manga_reader_ocr_unavailable_short": "Geen OCR-engine · download een model of kies een andere engine in de OCR-instellingen",
@@ -6383,5 +6382,6 @@
   "game_stream_host_https_required": "The host has HTTPS turned off. Turn on encrypted connections in the interconnect settings of Fushi on Windows.",
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_library_off": "The host has no game library. Turn on the Games module in Fushi on Windows, then restart it.",
-  "game_stream_host_unauthorized": "The host rejected this device. Pair them again."
+  "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
+  "game_stream_tab": "Stream"
 }

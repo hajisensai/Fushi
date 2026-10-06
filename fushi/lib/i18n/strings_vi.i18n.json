@@ -5303,7 +5303,6 @@
   "game_stream_line": "Dòng hiện tại",
   "game_stream_line_empty": "Chưa có văn bản Hook",
   "game_stream_lookup_hint": "Chọn văn bản để tra",
-  "game_stream_android_only": "Chỉ Android mới nhận được luồng game.",
   "game_stream_unreachable": "Không thể kết nối máy chủ",
   "game_stream_none": "Không có máy chủ đã ghép nối nào đang phát trực tiếp. Hãy bắt đầu phát từ trang game trên Windows trước.",
   "game_stream_join_failed": "Không thể tham gia luồng",
@@ -5415,7 +5414,7 @@
   "game_stream_touch_direct": "Chuyển sang chạm trực tiếp",
   "game_stream_touch_trackpad": "Chuyển sang bàn di chuột",
   "game_stream_remote_launch_title": "Cho phép khởi chạy từ xa",
-  "game_stream_remote_launch_hint": "Thiết bị Android đã ghép nối có thể khởi động game từ thư viện của PC này và phát trực tiếp",
+  "game_stream_remote_launch_hint": "Thiết bị đã ghép nối có thể khởi động game từ thư viện của PC này và phát trực tiếp",
   "manga_reader_ocr_volume": "Nhận dạng tập này",
   "manga_reader_ocr_queued": "Đang chờ",
   "manga_reader_ocr_unavailable_short": "Không có công cụ OCR · hãy tải mô hình hoặc đổi công cụ trong cài đặt OCR",
@@ -6383,5 +6382,6 @@
   "game_stream_host_https_required": "The host has HTTPS turned off. Turn on encrypted connections in the interconnect settings of Fushi on Windows.",
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_library_off": "The host has no game library. Turn on the Games module in Fushi on Windows, then restart it.",
-  "game_stream_host_unauthorized": "The host rejected this device. Pair them again."
+  "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
+  "game_stream_tab": "Stream"
 }

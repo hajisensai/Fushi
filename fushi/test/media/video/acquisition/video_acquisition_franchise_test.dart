@@ -140,7 +140,11 @@ void main() {
       final _Session s = _Session(_defaults);
       final List<VideoAcquisitionEffect> effects = _reachFranchise(s);
       expect(s.state.stage, VideoAcquisitionStage.resolvingFranchise);
-      expect(effects.single, isA<VideoAcquisitionLoadFranchiseEffect>());
+      final VideoFranchiseQuery query =
+          (effects.single as VideoAcquisitionLoadFranchiseEffect).query;
+      expect(query.item, s.state.chosenItem);
+      // BUG-2960：用户说的系列名随查询带给联网补全，不只剩锚点单部的标题。
+      expect(query.seriesNames, <String>['Doraemon']);
       expect(s.said, contains(VideoAcquisitionSayKind.franchiseSearching));
       expect(s.said, isNot(contains(VideoAcquisitionSayKind.question)));
     });

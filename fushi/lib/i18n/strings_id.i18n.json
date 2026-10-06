@@ -5303,7 +5303,6 @@
   "game_stream_line": "Baris saat ini",
   "game_stream_line_empty": "Belum ada teks Hook",
   "game_stream_lookup_hint": "Pilih teks untuk dicari",
-  "game_stream_android_only": "Penerimaan stream game hanya tersedia di Android.",
   "game_stream_unreachable": "Tidak dapat terhubung ke host",
   "game_stream_none": "Tidak ada host terpasang yang sedang streaming. Mulai streaming dari halaman game Windows dulu.",
   "game_stream_join_failed": "Tidak dapat bergabung ke stream",
@@ -5415,7 +5414,7 @@
   "game_stream_touch_direct": "Beralih ke sentuh langsung",
   "game_stream_touch_trackpad": "Beralih ke trackpad",
   "game_stream_remote_launch_title": "Izinkan peluncuran jarak jauh",
-  "game_stream_remote_launch_hint": "Perangkat Android terpasang dapat memulai game dari pustaka PC ini dan streaming",
+  "game_stream_remote_launch_hint": "Perangkat terpasang dapat memulai game dari pustaka PC ini dan streaming",
   "manga_reader_ocr_volume": "Kenali volume ini",
   "manga_reader_ocr_queued": "Dalam antrean",
   "manga_reader_ocr_unavailable_short": "Tidak ada mesin OCR · unduh model atau ganti mesin di pengaturan OCR",
@@ -6383,5 +6382,6 @@
   "game_stream_host_https_required": "The host has HTTPS turned off. Turn on encrypted connections in the interconnect settings of Fushi on Windows.",
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_library_off": "The host has no game library. Turn on the Games module in Fushi on Windows, then restart it.",
-  "game_stream_host_unauthorized": "The host rejected this device. Pair them again."
+  "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
+  "game_stream_tab": "Stream"
 }

@@ -245,7 +245,7 @@ void main() {
     }
   });
 
-  testWidgets('iOS has no games module, so no games dock switch',
+  testWidgets('iOS games (stream only) keeps the dock switch',
       (WidgetTester tester) async {
     final FushiDatabase db = _testDb();
     addTearDown(db.close);
@@ -258,7 +258,7 @@ void main() {
     await tester.pumpWidget(_harness(db, appModel));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(moduleRow(ModuleId.games), findsNothing);
+    expect(moduleRow(ModuleId.games), findsOneWidget);
     expect(moduleRow(ModuleId.books), findsOneWidget);
     expect(moduleRow(ModuleId.manga), findsOneWidget);
     expect(moduleRow(ModuleId.video), findsOneWidget);
