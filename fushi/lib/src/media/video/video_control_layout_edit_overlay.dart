@@ -14,7 +14,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 class VideoControlLayoutEditOverlay extends StatefulWidget {
@@ -279,47 +278,51 @@ class _VideoControlLayoutEditOverlayState
             padding: const EdgeInsets.fromLTRB(12, 6, 6, 12),
             child: Column(
               children: <Widget>[
-                SizedBox(
-                  height: 48,
-                  // 按钮工具条（取消/保存/标题），不含可拖 chip——放开鼠标拖动
-                  // 滚动不会与下方调色板的 Draggable 抢手势。
-                  child: HorizontalDragScrollable(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          FushiIcon(
+                // 按钮工具条（取消/保存/关闭/标题）：放不下一行时折行，而不是横向
+                // 滚动——M3E 面板主题的按钮留白比默认主题宽，窄画面 + 大字号下单行
+                // 必然溢出，横滚会把「关闭」甚至「保存」藏到视口外（控件仍在，只是
+                // 看不见、要先拖才找得到）。宽画面下照旧是一行。
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Wrap(
+                      spacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 2),
+                          child: FushiIcon(
                             FushiIcons.dashboardCustomize,
                             size: 20,
                             color: cs.primary,
                           ),
-                          const SizedBox(width: 4),
-                          FushiTextButton(
-                            onPressed: _cancelDraft,
-                            child: Text(t.dialog_cancel),
-                          ),
-                          const SizedBox(width: 2),
-                          FushiFilledButton(
-                            onPressed: _saveDraft,
-                            child: Text(t.dialog_save),
-                          ),
-                          FushiIconButtonControl(
-                            tooltip: MaterialLocalizations.of(context)
-                                .closeButtonTooltip,
-                            icon: const FushiIcon(FushiIcons.close),
-                            onPressed: _cancelDraft,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
+                        ),
+                        FushiTextButton(
+                          onPressed: _cancelDraft,
+                          child: Text(t.dialog_cancel),
+                        ),
+                        FushiFilledButton(
+                          onPressed: _saveDraft,
+                          child: Text(t.dialog_save),
+                        ),
+                        FushiIconButtonControl(
+                          tooltip: MaterialLocalizations.of(context)
+                              .closeButtonTooltip,
+                          icon: const FushiIcon(FushiIcons.close),
+                          onPressed: _cancelDraft,
+                        ),
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(start: 2),
+                          child: Text(
                             t.video_control_palette_title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: context.fushiType.titleMediumEmphasized
                                 .copyWith(color: cs.onSurface),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
