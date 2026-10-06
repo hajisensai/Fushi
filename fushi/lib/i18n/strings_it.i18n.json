@@ -6714,5 +6714,8 @@
   "theme_pure_black": "Pure black dark",
   "theme_pure_black_hint": "Use true black backgrounds in dark mode (OLED)",
   "asr_models_badge_partial": "Partially downloaded",
-  "creator_crop_image_unreadable": "This image can't be opened"
+  "creator_crop_image_unreadable": "This image can't be opened",
+  "game_library_view_list": "List view",
+  "game_library_view_grid": "Grid view",
+  "game_library_play_time": "Play time"
 }
