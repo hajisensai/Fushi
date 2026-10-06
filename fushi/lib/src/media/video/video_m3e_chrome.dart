@@ -3,10 +3,13 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/physics.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
+import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -26,7 +29,16 @@ import 'package:media_kit_video/media_kit_video.dart';
 // - [VideoM3eSeekTrack]：进度条轨道（经 fork 的 `seekBarTrackBuilder` 接进 media_kit
 //   的进度条，手势仍归 fork）——播放时已播段是流动的正弦波，暂停时波浪收平成直线，
 //   竖条手柄、悬停 / 拖动时加粗、拖动时手柄上方出时间气泡，可选字幕密度刻度；
-// - [VideoM3eChromeSlide]：控制条显隐时顶栏上滑 / 底栏下滑（叠在 fork 的淡入淡出上）；
+// - [VideoM3eChromeSlide]：控制条显隐时顶栏上滑 / 底栏下滑 + 轻微缩放，M3E spring
+//   驱动（叠在 fork 的淡入淡出上）；
+// - 浮动工具栏（2026-10-05）：控制条不再是贴边的整条实体栏 + 整屏暗化，而是悬浮
+//   胶囊——底栏每簇一枚胶囊（[videoM3eFloatingBarStyle] → [VideoBarClusterStyle]），
+//   顶栏返回 / 标题 / 右侧按钮组各是一枚胶囊（[VideoM3eFloatingSurface]）；进度条是
+//   胶囊上方一条悬浮的轨道槽（[VideoM3eSeekTrack.lane]）。控件隐藏后画面上什么都
+//   不剩。2026-10-06（shishamo「悬浮色彩有点怪」）：所有胶囊统一同一枚中性深色
+//   半透明表面、前景统一 onSurface（近白）；强调色只给播放键、进度已播段 / 手柄与
+//   开关的「开」态——传输簇不再是饱和的 primaryContainer 色块（压在画面上突兀、
+//   与画面色调冲突，且让同一层控件出现三种配色）；
 // - [VideoM3eTimeText]：等宽数字时间（点按切「已播 / 剩余」）。
 //
 // 播放器 chrome 永远压在画面（深色）上，所以前景 / 容器色一律取**深色**方案
@@ -50,9 +62,206 @@ ColorScheme videoM3eChromeScheme(ColorScheme cs) {
   );
 }
 
-/// tonal 圆钮的容器色：深色方案的 secondaryContainer，半透明压在画面上。
-Color videoM3eTonalContainer(ColorScheme chrome) =>
-    chrome.secondaryContainer.withValues(alpha: 0.72);
+/// 播放器悬浮表面的固定中性色：HCT chroma 0、tone ≈ 18（#2D2D2D）。**完全不带
+/// 色相**——不从 app 主色生成的深色方案取 surfaceContainerHigh（那份灰带主色色相，
+/// 绿主题下胶囊发绿、和暖色画面打架）。浮在画面上的控件是一层统一的中性表面，
+/// 强调色只留给播放键、进度已播段 / 手柄与开关的「开」态（M3E 视频播放器）。
+const Color kVideoM3eNeutralSurface = Color(0xFF2D2D2D);
+
+/// 悬浮表面不透明度：画面颜色能隐约透出来，白字始终压在近实色上可读。
+const double kVideoM3eNeutralSurfaceAlpha = 0.86;
+
+/// 悬浮表面上的次要文字 / 字形（白 70%）。
+const Color kVideoM3eSecondaryForeground = Color(0xB3FFFFFF);
+
+/// tonal 圆钮的容器色：中性表面上再提一档的白 12%（不带色相）。
+Color videoM3eTonalContainer() => Colors.white.withValues(alpha: 0.12);
+
+/// 播放器上所有悬浮胶囊 / 面板（顶栏返回 / 标题 / 按钮组、底部面板、音量 / 倍速
+/// 浮层）共用的底色。
+///
+/// 给了 [cs]（当前主题）时取「带一点主题色调的中性」：以主题主色为种子的深色方案
+/// surfaceContainerHigh（tinted neutral，chroma 很低，不会把画面染色），86% 不透明
+/// ——2026-10-06 用户嫌纯灰「有点灰」。不给时退回无色相的 [kVideoM3eNeutralSurface]。
+Color videoM3eFloatingColor([ColorScheme? cs]) => cs == null
+    ? kVideoM3eNeutralSurface.withValues(alpha: kVideoM3eNeutralSurfaceAlpha)
+    : videoM3eChromeScheme(
+        cs,
+      ).surfaceContainerHigh.withValues(alpha: kVideoM3eNeutralSurfaceAlpha);
+
+/// 播放器按钮的 tonal 强调档（M3E「中性面 + 关键处 tonal 色块」）：未激活中性；
+/// 状态型按钮激活（字幕已开 / 面板已打开 / 倍速≠1）走 secondary，收藏走 tertiary，
+/// 静音走 error。颜色都取主题派生的深色方案容器色。
+enum VideoM3eButtonTone { neutral, secondary, tertiary, error }
+
+final Map<int, ColorScheme> _neutralChromeSchemeCache = <int, ColorScheme>{};
+
+/// 播放器悬浮浮层（音量 / 倍速 popover）用的配色：表面族全换成无色相中性灰、前景
+/// 纯白 / 白 70%，强调色族（primary / primaryContainer …）仍是以 app 主色为种子的
+/// 深色方案。浮层内部的滑条 / 文字按钮读这份方案，浅色主题下也不会黑压黑。
+ColorScheme videoM3eNeutralChromeScheme(ColorScheme cs) {
+  final int key = cs.primary.toARGB32();
+  return _neutralChromeSchemeCache[key] ??= videoM3eChromeScheme(cs).copyWith(
+    surface: const Color(0xFF1F1F1F),
+    onSurface: Colors.white,
+    onSurfaceVariant: kVideoM3eSecondaryForeground,
+    surfaceDim: const Color(0xFF1A1A1A),
+    surfaceBright: const Color(0xFF454545),
+    surfaceContainerLowest: const Color(0xFF141414),
+    surfaceContainerLow: const Color(0xFF222222),
+    surfaceContainer: const Color(0xFF262626),
+    surfaceContainerHigh: const Color(0xFF2A2A2A),
+    surfaceContainerHighest: kVideoM3eNeutralSurface,
+    surfaceTint: Colors.transparent,
+    outline: const Color(0x8AFFFFFF),
+    outlineVariant: const Color(0x33FFFFFF),
+    shadow: Colors.black,
+    inverseSurface: const Color(0xFFE6E6E6),
+    onInverseSurface: const Color(0xFF1F1F1F),
+  );
+}
+
+/// M3E 控件显示时的底部暗角（2026-10-06 遮挡最小化重做）：画面最下方一条很矮的
+/// 渐变，只为压住高亮画面让细进度条与白字不发虚；**不是**实体面板。高度由页面按
+/// 进度条几何给出（恒在字幕避让线以下），0 = 不画（Apple / mini 档）。
+///
+/// 排在 media_kit 控制条之前（画在控件下面、画面上面），[IgnorePointer]，显隐跟控制条
+/// 同一个 notifier、同速淡入淡出。墨水屏不画（不做渐变）。
+class VideoM3eBottomScrim extends StatelessWidget {
+  const VideoM3eBottomScrim({
+    super.key,
+    required this.visible,
+    required this.duration,
+    required this.height,
+  });
+
+  final ValueListenable<bool> visible;
+  final Duration duration;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    if (height <= 0 || isEinkTheme(context)) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: visible,
+        builder: (BuildContext context, bool shown, Widget? child) {
+          return AnimatedOpacity(
+            opacity: shown ? 1.0 : 0.0,
+            duration: einkSafeDuration(context, duration),
+            curve: Curves.easeInOut,
+            child: child,
+          );
+        },
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: SizedBox(
+            height: height,
+            width: double.infinity,
+            child: const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: <Color>[Color(0x00000000), Color(0x52000000)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 按钮簇的浮动胶囊外形（[VideoControlBar.clusterStyle]）。[scale] = 界面缩放
+/// × 密度档；墨水屏：纯黑 + 白描边、无阴影。胶囊贴条高底部（[verticalAlignment]
+/// 1），让出上方给进度条。
+///
+/// 2026-10-06 遮挡最小化：40 的按钮 + 上下各 4 = 48 高的紧凑小胶囊。
+VideoBarClusterStyle videoM3eFloatingBarStyle(
+  BuildContext context, {
+  required double scale,
+  double verticalAlignment = 1,
+}) {
+  if (isEinkTheme(context)) {
+    return VideoBarClusterStyle(
+      color: Colors.black,
+      padding: 4 * scale,
+      verticalPadding: 4 * scale,
+      gap: 8 * scale,
+      border: const BorderSide(color: Colors.white, width: 1.5),
+      verticalAlignment: verticalAlignment,
+    );
+  }
+  final Color standard = videoM3eFloatingColor(Theme.of(context).colorScheme);
+  return VideoBarClusterStyle(
+    // 各簇同一中性表面（传输簇不再单独上 primaryContainer 色块）。
+    color: standard,
+    padding: 4 * scale,
+    verticalPadding: 4 * scale,
+    gap: 8 * scale,
+    // 投影与阅读器 / 漫画的浮动工具栏同一组（共享 fushiFloatingPillDecoration）。
+    shadows:
+        fushiFloatingPillDecoration(context, color: standard).shadows ??
+        const <BoxShadow>[],
+    verticalAlignment: verticalAlignment,
+  );
+}
+
+/// 顶栏的一枚浮动胶囊（返回键、标题、右侧按钮组）。
+///
+/// 外层结构不随 [enabled] 增删（Apple 分支 / 关闭时只是透明、零内边距），按钮组
+/// 的位置 / 约束 / 焦点链路不变。胶囊是实体：点在胶囊留白上不穿透到画面
+/// （deferToChild 的空 onTap 先于 media_kit 的「点画面」胜出）。
+class VideoM3eFloatingSurface extends StatelessWidget {
+  const VideoM3eFloatingSurface({
+    super.key,
+    required this.enabled,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final bool enabled;
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool eink = isEinkTheme(context);
+    // 外形 / 投影与阅读器、漫画的浮动工具栏同一份（共享
+    // [fushiFloatingPillDecoration]）；底色取播放器 chrome 的深色方案（胶囊恒压在
+    // 画面上，不随 app 的浅色主题变白）。墨水屏：纯黑 + 白描边。
+    final ShapeDecoration decoration = !enabled
+        ? const ShapeDecoration(
+            color: Colors.transparent,
+            shape: StadiumBorder(),
+          )
+        : eink
+        ? const ShapeDecoration(
+            color: Colors.black,
+            shape: StadiumBorder(
+              side: BorderSide(color: Colors.white, width: 1.5),
+            ),
+          )
+        : fushiFloatingPillDecoration(
+            context,
+            color: videoM3eFloatingColor(Theme.of(context).colorScheme),
+          );
+    return GestureDetector(
+      behavior: HitTestBehavior.deferToChild,
+      onTap: enabled ? () {} : null,
+      excludeFromSemantics: true,
+      child: DecoratedBox(
+        decoration: decoration,
+        child: Padding(
+          padding: enabled ? padding : EdgeInsets.zero,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
 
 /// 时间格式：时长不足一小时 `m:ss`，否则 `h:mm:ss`。
 String videoM3eFormatTime(Duration value, {Duration? reference}) {
@@ -86,7 +295,11 @@ class VideoM3eIconButton extends StatelessWidget {
     this.tonal = false,
     this.selected = false,
     this.foreground,
+    this.tone = VideoM3eButtonTone.neutral,
   });
+
+  /// tonal 强调档（激活的状态型按钮）；[selected] 等价于 [VideoM3eButtonTone.secondary]。
+  final VideoM3eButtonTone tone;
 
   final Widget icon;
   final VoidCallback? onPressed;
@@ -111,13 +324,28 @@ class VideoM3eIconButton extends StatelessWidget {
       Theme.of(context).colorScheme,
     );
     final bool eink = isEinkTheme(context);
-    final Color fg = selected
-        ? chrome.onPrimaryContainer
-        : foreground ?? (eink ? Colors.white : chrome.onSurface);
-    final Color bg = selected
-        ? chrome.primaryContainer
-        : tonal
-        ? (eink ? Colors.black : videoM3eTonalContainer(chrome))
+    final VideoM3eButtonTone effectiveTone =
+        selected && tone == VideoM3eButtonTone.neutral
+        ? VideoM3eButtonTone.secondary
+        : tone;
+    final bool toned = !eink && effectiveTone != VideoM3eButtonTone.neutral;
+    final Color fg = !toned
+        ? (eink && selected ? Colors.white : foreground ?? Colors.white)
+        : switch (effectiveTone) {
+            VideoM3eButtonTone.secondary => chrome.onSecondaryContainer,
+            VideoM3eButtonTone.tertiary => chrome.onTertiaryContainer,
+            VideoM3eButtonTone.error => chrome.onErrorContainer,
+            VideoM3eButtonTone.neutral => Colors.white,
+          };
+    final Color bg = toned
+        ? switch (effectiveTone) {
+            VideoM3eButtonTone.secondary => chrome.secondaryContainer,
+            VideoM3eButtonTone.tertiary => chrome.tertiaryContainer,
+            VideoM3eButtonTone.error => chrome.errorContainer,
+            VideoM3eButtonTone.neutral => Colors.transparent,
+          }
+        : tonal || (eink && selected)
+        ? (eink ? Colors.black : videoM3eTonalContainer())
         : Colors.transparent;
     final ButtonStyle style = IconButton.styleFrom(
       foregroundColor: fg,
@@ -146,7 +374,7 @@ class VideoM3eIconButton extends StatelessWidget {
           : style,
       trackPointer: true,
       pressedRadius: extent * 0.24,
-      selected: selected,
+      selected: toned || selected,
       selectedRadius: extent * 0.3,
       builder: (BuildContext context, ButtonStyle? s, _) => IconButton(
         onPressed: onPressed,
@@ -249,12 +477,12 @@ class _VideoM3ePlayPauseButtonState extends State<VideoM3ePlayPauseButton>
     final Color bg = eink
         ? Colors.black
         : translucent
-        ? chrome.surfaceContainerHigh.withValues(alpha: 0.5)
+        ? kVideoM3eNeutralSurface.withValues(alpha: 0.5)
         : chrome.primary;
     final Color fg = eink
         ? Colors.white
         : translucent
-        ? chrome.onSurface
+        ? Colors.white
         : chrome.onPrimary;
     final double h = widget.extent;
     final double w = widget.width ?? h;
@@ -361,6 +589,52 @@ class _M3eInk extends StatelessWidget {
   }
 }
 
+/// 触屏暂停时画面中央的最小续播提示：无底板、低不透明度的小号播放图标（只靠一圈
+/// 柔和阴影在亮画面上可辨），点它续播。刻意不做大圆块——中央控件以不遮挡画面为
+/// 原则，暂停 / 快退快进的主力入口是双击与底栏。
+class VideoCenterPausedHint extends StatelessWidget {
+  const VideoCenterPausedHint({
+    super.key,
+    required this.extent,
+    required this.onPressed,
+    this.semanticLabel,
+  });
+
+  /// 图标边长（逻辑像素）；命中区按 [extent] 外扩到不小于 48dp。
+  final double extent;
+  final VoidCallback onPressed;
+  final String? semanticLabel;
+
+  /// 图标不透明度：够看清「已暂停」，又不和画面抢眼。
+  static const double opacity = 0.72;
+
+  @override
+  Widget build(BuildContext context) {
+    final double hit = math.max(48, extent);
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: SizedBox.square(
+          dimension: hit,
+          child: Center(
+            child: Icon(
+              Icons.play_arrow_rounded,
+              size: extent,
+              color: Colors.white.withValues(alpha: opacity),
+              shadows: const <Shadow>[
+                Shadow(color: Color(0x66000000), blurRadius: 8),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 画面中央的 ±N 秒键：圆形半透明底，弧形箭头 + 秒数；按下时箭头沿跳转方向
 /// 转 40°（弹簧回位），手感上「拧」了一下。
 class VideoM3eSeekButton extends StatefulWidget {
@@ -416,12 +690,9 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme chrome = videoM3eChromeScheme(
-      Theme.of(context).colorScheme,
-    );
     final bool eink = isEinkTheme(context);
     final double e = widget.extent;
-    final Color fg = eink ? Colors.white : chrome.onSurface;
+    const Color fg = Colors.white;
     final double dir = widget.forward ? 1 : -1;
     return SizedBox.square(
       dimension: e,
@@ -433,7 +704,7 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
             shape: BoxShape.circle,
             color: eink
                 ? Colors.black
-                : chrome.surfaceContainerHigh.withValues(alpha: 0.38),
+                : kVideoM3eNeutralSurface.withValues(alpha: 0.38),
             border: eink ? Border.all(color: Colors.white, width: 1.5) : null,
           ),
           child: _M3eInk(
@@ -486,7 +757,8 @@ class _VideoM3eSeekButtonState extends State<VideoM3eSeekButton>
 // 显隐位移
 // ---------------------------------------------------------------------------
 
-/// 控制条显隐时的位移：显示时从 [hiddenOffset]（逻辑像素）滑回原位，隐藏时滑出。
+/// 控制条显隐时的位移 + 缩放：显示时从 [hiddenOffset]（逻辑像素）、[hiddenScale]
+/// 弹回原位，隐藏时收回（M3E spatial spring，与共享 [FushiChromeReveal] 同参）。
 ///
 /// fork 在控制条隐藏淡出结束后会**卸载**整排按钮，所以「出现」只能靠挂载时自己
 /// 从偏移处起步（initState 里正向播一次）；「隐藏」跟随 [visible] 反向播。
@@ -498,28 +770,33 @@ class VideoM3eChromeSlide extends StatefulWidget {
     required this.visible,
     required this.hiddenOffset,
     required this.child,
+    this.hiddenScale = 0.92,
   });
 
   final bool enabled;
   final ValueListenable<bool> visible;
   final Offset hiddenOffset;
+
+  /// 隐藏态的缩放（以朝 [hiddenOffset] 的那条边为锚点）。
+  final double hiddenScale;
   final Widget child;
 
   @override
   State<VideoM3eChromeSlide> createState() => _VideoM3eChromeSlideState();
 }
 
+/// 浮动工具栏显隐弹簧：与共享 [FushiChromeReveal]（阅读器 / 漫画工具栏）同一组
+/// 参数（刚度 520、阻尼比 0.82，带一点回弹的落位），三处显隐手感一致。
+final SpringDescription _videoChromeSpring = SpringDescription.withDampingRatio(
+  mass: 1,
+  stiffness: 520,
+  ratio: 0.82,
+);
+
 class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
+  late final AnimationController _c = AnimationController.unbounded(
     vsync: this,
-    duration: FushiMotion.medium,
-    reverseDuration: FushiMotion.short,
-  );
-  late final Animation<double> _t = CurvedAnimation(
-    parent: _c,
-    curve: FushiMotion.enter,
-    reverseCurve: FushiMotion.exit,
   );
   bool _started = false;
 
@@ -537,7 +814,8 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
     if (!widget.enabled || !fushiMotionEnabled(context)) {
       _c.value = 1;
     } else if (widget.visible.value) {
-      _c.forward(from: 0);
+      _c.value = 0;
+      _springTo(1);
     }
   }
 
@@ -548,20 +826,28 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
       oldWidget.visible.removeListener(_sync);
       widget.visible.addListener(_sync);
     }
-    if (!widget.enabled) _c.value = 1;
+    if (!widget.enabled) {
+      _c
+        ..stop()
+        ..value = 1;
+    }
+  }
+
+  void _springTo(double target) {
+    _c.animateWith(
+      SpringSimulation(_videoChromeSpring, _c.value, target, _c.velocity),
+    );
   }
 
   void _sync() {
     if (!mounted) return;
     if (!widget.enabled || !fushiMotionEnabled(context)) {
-      _c.value = 1;
+      _c
+        ..stop()
+        ..value = 1;
       return;
     }
-    if (widget.visible.value) {
-      _c.forward();
-    } else {
-      _c.reverse();
-    }
+    _springTo(widget.visible.value ? 1 : 0);
   }
 
   @override
@@ -573,12 +859,23 @@ class _VideoM3eChromeSlideState extends State<VideoM3eChromeSlide>
 
   @override
   Widget build(BuildContext context) {
+    final Alignment anchor = widget.hiddenOffset.dy < 0
+        ? Alignment.topCenter
+        : Alignment.bottomCenter;
     return AnimatedBuilder(
-      animation: _t,
-      builder: (BuildContext _, Widget? child) => Transform.translate(
-        offset: widget.hiddenOffset * (1 - _t.value),
-        child: child,
-      ),
+      animation: _c,
+      builder: (BuildContext _, Widget? child) {
+        final double t = _c.value;
+        final double scale = widget.hiddenScale + (1 - widget.hiddenScale) * t;
+        return Transform.translate(
+          offset: widget.hiddenOffset * (1 - t),
+          child: Transform.scale(
+            scale: scale.clamp(0.0, 1.2),
+            alignment: anchor,
+            child: child,
+          ),
+        );
+      },
       child: widget.child,
     );
   }
@@ -636,9 +933,19 @@ class VideoM3eSeekTrack extends StatefulWidget {
     required this.scale,
     this.hoverBubble = false,
     this.cueDensity = const <double>[],
+    this.lane,
+    this.trackBottomInset,
   });
 
   final VideoSeekBarVisual visual;
+
+  /// 轨道中线离热区底缘的距离；null = 按 [VideoSeekBarVisual.alignment] 摆（底对齐
+  /// 时底缘之上 10 × 缩放、否则竖直居中）。桌面 M3E 用它把细轨抬到底栏小胶囊上方。
+  final double? trackBottomInset;
+
+  /// 悬浮轨道槽的底色（浮动工具栏上方那条胶囊槽，左右探出轨道一点）；null = 不画，
+  /// 轨道直接压在画面上。槽只是装饰，seek 命中与落点仍归 fork 的整条热区。
+  final Color? lane;
 
   /// 已播段 / 手柄颜色（chrome 强调色）。
   final Color color;
@@ -736,7 +1043,10 @@ class _VideoM3eSeekTrackState extends State<VideoM3eSeekTrack>
         final double w = constraints.maxWidth;
         final double h = constraints.maxHeight;
         final double s = widget.scale;
-        final double centerY = v.alignment.y >= 0.5
+        final double? bottomInset = widget.trackBottomInset;
+        final double centerY = bottomInset != null
+            ? h - bottomInset
+            : v.alignment.y >= 0.5
             ? h - (6 + 4) * s
             : h * (v.alignment.y + 1) / 2;
         return Stack(
@@ -751,17 +1061,22 @@ class _VideoM3eSeekTrackState extends State<VideoM3eSeekTrack>
                   position: v.position.clamp(0.0, 1.0),
                   buffer: v.buffer.clamp(0.0, 1.0),
                   color: widget.color,
+                  // 未播 / 缓冲段是中性半透明白（与胶囊的中性表面同一层级），
+                  // 强调色只留给已播段与手柄。
                   trackColor: eink
                       ? Colors.white.withValues(alpha: 0.5)
-                      : Colors.white.withValues(alpha: 0.24),
+                      : Colors.white.withValues(alpha: 0.2),
+                  // 缓冲段：主色 30%（与已播段同一色相，弱一档）。
                   bufferColor: eink
                       ? Colors.white.withValues(alpha: 0.75)
-                      : Colors.white.withValues(alpha: 0.42),
-                  cueColor: Colors.white.withValues(alpha: 0.38),
+                      : widget.color.withValues(alpha: 0.3),
+                  // 字幕密度刻度只是背景信息：更淡、更短、更稀（见 painter）。
+                  cueColor: Colors.white.withValues(alpha: 0.22),
                   cueDensity: widget.cueDensity,
                   scale: s,
                   centerY: centerY,
                   rtl: Directionality.of(context) == TextDirection.rtl,
+                  lane: widget.lane,
                 ),
               ),
             ),
@@ -846,6 +1161,7 @@ class _M3eTrackPainter extends CustomPainter {
     required this.scale,
     required this.centerY,
     required this.rtl,
+    this.lane,
   }) : super(repaint: Listenable.merge(<Listenable>[phase, amp, active]));
 
   final Animation<double> phase;
@@ -861,6 +1177,7 @@ class _M3eTrackPainter extends CustomPainter {
   final double scale;
   final double centerY;
   final bool rtl;
+  final Color? lane;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -874,31 +1191,59 @@ class _M3eTrackPainter extends CustomPainter {
     }
     final double a = active.value;
     final double s = scale;
-    final double stroke = (4 + 2 * a) * s;
+    // 细轨：静止 3、悬停 / 拖动加粗到 6（遮挡最小化，2026-10-06）。
+    final double stroke = (3 + 3 * a) * s;
     final double gap = 4 * s;
     final double handleW = 4 * s;
-    final double handleH = (16 + 8 * a) * s;
+    final double handleH = (12 + 10 * a) * s;
     final double y = centerY;
     final double x = w * position;
     final double amplitude = 3 * s * amp.value;
     final double wavelength = 32 * s;
 
-    // 字幕密度刻度：轨道上方一排细竖线，高度与透明度随密度。
+    // 悬浮轨道槽：一条浅槽，左右各探出 12（外缘与底栏胶囊外缘对齐），竖直包住
+    // 波浪与手柄的静止高度。只带一层很轻的投影——它是托住轨道的浅底，不是一条压在
+    // 画面上的实体深色条。
+    final Color? laneColor = lane;
+    if (laneColor != null) {
+      final double laneHalf = (6 + 2 * a) * s;
+      final RRect laneRect = RRect.fromRectAndRadius(
+        Rect.fromLTRB(-12 * s, y - laneHalf, w + 12 * s, y + laneHalf),
+        Radius.circular(laneHalf),
+      );
+      canvas
+        ..drawShadow(
+          Path()..addRRect(laneRect),
+          const Color(0x40000000),
+          1,
+          false,
+        )
+        ..drawRRect(laneRect, Paint()..color = laneColor);
+    }
+
+    // 字幕密度刻度：轨道上方一排细竖线，高度与透明度随密度。相邻刻度至少隔
+    // 5 * scale（按组取最大密度合并），极稀的桶不画——刻度是背景信息，不该密成
+    // 一排栅栏。
     if (cueDensity.isNotEmpty) {
       final Paint cue = Paint()
-        ..strokeWidth = math.max(1, 1.5 * s)
+        ..strokeWidth = math.max(1, 1.2 * s)
         ..strokeCap = StrokeCap.round;
-      final double step = w / cueDensity.length;
-      for (int i = 0; i < cueDensity.length; i++) {
-        final double d = cueDensity[i];
-        if (d <= 0.02) continue;
-        final double cx = step * (i + 0.5);
+      final double bucket = w / cueDensity.length;
+      final int stride = math.max(1, (5 * s / bucket).ceil());
+      final double step = bucket * stride;
+      for (int i = 0; i < cueDensity.length; i += stride) {
+        double d = 0;
+        for (int j = i; j < math.min(i + stride, cueDensity.length); j++) {
+          d = math.max(d, cueDensity[j]);
+        }
+        if (d <= 0.08) continue;
+        final double cx = bucket * i + math.min(step, w - bucket * i) / 2;
         if ((cx - x).abs() < handleW + gap) continue;
-        cue.color = cueColor.withValues(alpha: cueColor.a * (0.25 + 0.75 * d));
-        final double top = y - stroke / 2 - 3 * s - 3 * s * d - amplitude;
+        cue.color = cueColor.withValues(alpha: cueColor.a * (0.3 + 0.7 * d));
+        final double base = y - stroke / 2 - 3 * s - amplitude;
         canvas.drawLine(
-          Offset(cx, top),
-          Offset(cx, y - stroke / 2 - 3 * s - amplitude),
+          Offset(cx, base - 1.5 * s - 2 * s * d),
+          Offset(cx, base),
           cue,
         );
       }
@@ -983,7 +1328,8 @@ class _M3eTrackPainter extends CustomPainter {
       !identical(old.cueDensity, cueDensity) ||
       old.scale != scale ||
       old.centerY != centerY ||
-      old.rtl != rtl;
+      old.rtl != rtl ||
+      old.lane != lane;
 }
 
 // ---------------------------------------------------------------------------

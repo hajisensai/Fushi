@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -153,14 +153,28 @@ Future<void> _unmount(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 10));
 }
 
-/// 点底栏上的一个 destination（按可见 label 定位）。
+/// 点底栏上的一个 destination（按可见 label 定位）。MD3 悬浮底栏里「查词」
+/// 是胶囊右侧的 FAB（只有 tooltip），放不下的目的地在「更多」菜单里。
 Future<void> _tapNav(WidgetTester tester, String label) async {
-  final Finder target = find.descendant(
-    of: find.byKey(fushiMaterialNavKey),
-    matching: find.text(label),
-  );
-  expect(target, findsOneWidget, reason: '底栏上应有「$label」这个 destination');
-  await tester.tap(target);
+  final Finder nav = find.byKey(fushiMaterialNavKey);
+  final Finder text = find.descendant(of: nav, matching: find.text(label));
+  if (text.evaluate().isNotEmpty) {
+    expect(text, findsOneWidget, reason: '底栏上应有「$label」这个 destination');
+    await tester.tap(text);
+    await _settle(tester);
+    return;
+  }
+  final Finder tip = find.descendant(of: nav, matching: find.byTooltip(label));
+  if (tip.evaluate().isNotEmpty) {
+    await tester.tap(tip.first);
+    await _settle(tester);
+    return;
+  }
+  final Finder more = find.descendant(of: nav, matching: find.text('More'));
+  expect(more, findsOneWidget, reason: '底栏上应有「$label」或「更多」');
+  await tester.tap(more);
+  await _settle(tester);
+  await tester.tap(find.text(label).last);
   await _settle(tester);
 }
 

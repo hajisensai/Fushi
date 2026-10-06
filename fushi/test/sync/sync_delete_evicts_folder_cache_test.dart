@@ -1,12 +1,13 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
@@ -204,7 +205,7 @@ void main() {
 
   /// Opens the book row overflow, picks "delete book", confirms.
   Future<void> tapDeleteBook(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.tap(find.byIcon(FushiIcons.delete));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sync_compare_delete_book).last);
     await tester.pumpAndSettle();

@@ -19,7 +19,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -40,6 +40,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
@@ -124,24 +125,24 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_failed': t.floating_ball_ocr_failed,
 };
 
-/// 全局按钮的图标：应用内球与原生系统球共用这一张表（原生按码位从 app 自带的
-/// Material Icons 字体取字形），两边画出来是同一颗。
+/// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
+/// Android 原生按码位从 app 自带的 FushiSymbols 字体取字形，桌面由 Dart 画成
+/// PNG），两边画出来是同一颗。
 IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
     switch (action) {
-      FloatingBallGlobalAction.lookup => Icons.search,
-      FloatingBallGlobalAction.popupLookup =>
-        Icons.picture_in_picture_alt_outlined,
-      FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
-      FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
-      FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
-      FloatingBallGlobalAction.sync => Icons.sync,
+      FloatingBallGlobalAction.lookup => FushiIcons.search,
+      FloatingBallGlobalAction.popupLookup => FushiIcons.pictureInPicture,
+      FloatingBallGlobalAction.clipboard => FushiIcons.paste,
+      FloatingBallGlobalAction.screenOcr => FushiIcons.ocr,
+      FloatingBallGlobalAction.cameraOcr => FushiIcons.camera,
+      FloatingBallGlobalAction.sync => FushiIcons.sync,
     };
 
 /// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
-const IconData kFloatingBallCloseIcon = Icons.close;
+const IconData kFloatingBallCloseIcon = FushiIcons.close;
 
 /// 原生系统球「打开 Fushi」按钮的图标。
-const IconData kFloatingBallOpenAppIcon = Icons.open_in_new;
+const IconData kFloatingBallOpenAppIcon = FushiIcons.openInNew;
 
 /// 原生系统球每颗按钮的图标（与应用内球同一颗 IconData）。
 Map<String, IconData> floatingBallNativeIconData() => <String, IconData>{
@@ -151,7 +152,7 @@ Map<String, IconData> floatingBallNativeIconData() => <String, IconData>{
   'close': kFloatingBallCloseIcon,
 };
 
-/// 原生系统球的按钮图标（Material Icons 码位，Android 用）。常量 IconData 在
+/// 原生系统球的按钮图标（FushiSymbols 码位，Android 用）。常量 IconData 在
 /// Dart 里被引用，图标字体按码位裁剪时这些字形才会留下，原生侧才取得到。
 Map<String, int> floatingBallNativeIcons() => <String, int>{
   for (final MapEntry<String, IconData> e
@@ -159,13 +160,40 @@ Map<String, int> floatingBallNativeIcons() => <String, int>{
     e.key: e.value.codePoint,
 };
 
-/// 原生系统球的配色：取当前主题，与应用内球同源（按钮底色 = surface 叠 6%
-/// onSurface、图标 onSurface、展开环 primary）。
-Map<String, int> floatingBallNativeColors(ColorScheme colors) => <String, int>{
+/// 原生系统球的配色：取当前主题，与应用内球（M3E FAB menu）同源——
+/// - `ballContainer` / `onBallContainer`：球本体 FAB（primaryContainer）；
+/// - `buttonContainer` / `onButtonContainer`：tonal 小圆钮（secondaryContainer）
+///   与图标色；
+/// - `outline`：描边，只有墨水屏不透明（此时上面两组都降级成 surface /
+///   onSurface，「描边无填色」），其余为全透明（原生不画环）；
+/// - `ballOpen` / `onBallOpen`：展开态球变成的关闭钮（primary 底 + onPrimary ×，
+///   墨水屏 surface / onSurface）；
+/// - `surface` / `onSurface` / `primary`：截屏识字冻结层的行框与提示条沿用。
+///
+/// 原生侧持久化这张表（Android 存 SharedPreferences），主题一变 Dart 重新下发
+/// （配色进起球签名）。
+Map<String, int> floatingBallNativeColors(
+  ColorScheme colors, {
+  bool eink = false,
+}) => <String, int>{
   'surface': colors.surface.toARGB32(),
   'onSurface': colors.onSurface.toARGB32(),
   'primary': colors.primary.toARGB32(),
+  'ballContainer': (eink ? colors.surface : colors.primaryContainer).toARGB32(),
+  'onBallContainer': (eink ? colors.onSurface : colors.onPrimaryContainer)
+      .toARGB32(),
+  'buttonContainer': (eink ? colors.surface : colors.secondaryContainer)
+      .toARGB32(),
+  'onButtonContainer': (eink ? colors.onSurface : colors.onSecondaryContainer)
+      .toARGB32(),
+  'outline': eink ? colors.onSurface.toARGB32() : 0x00000000,
+  'ballOpen': (eink ? colors.surface : colors.primary).toARGB32(),
+  'onBallOpen': (eink ? colors.onSurface : colors.onPrimary).toARGB32(),
 };
+
+/// 展开态球（M3E FAB menu 的关闭钮）上那颗 × 的图标 PNG 键：桌面原生球在
+/// iconImages 里按这个键取，着 `onBallOpen` 色（按钮图标是 `onButtonContainer`）。
+const String kFloatingBallNativeBallCloseKey = 'ball_close';
 
 /// 本平台有没有这个全局按钮的能力。
 bool floatingBallGlobalActionAvailable(FloatingBallGlobalAction action) =>
@@ -536,13 +564,26 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       // Dart 持久化后交给它。
       final bool desktop = isDesktopSystemBallPlatform;
       final Map<String, Uint8List>? iconImages = desktop
-          ? await renderFloatingBallIconPngs(
-              floatingBallNativeIconData(),
-              Color(colors['onSurface'] ?? 0xFF1D1B20),
-            )
+          ? <String, Uint8List>{
+              ...await renderFloatingBallIconPngs(
+                floatingBallNativeIconData(),
+                Color(
+                  colors['onButtonContainer'] ??
+                      colors['onSurface'] ??
+                      0xFF1D1B20,
+                ),
+              ),
+              // 展开态球上的 ×：与按钮图标不同色（onPrimary）。
+              ...await renderFloatingBallIconPngs(const <String, IconData>{
+                kFloatingBallNativeBallCloseKey: kFloatingBallCloseIcon,
+              }, Color(colors['onBallOpen'] ?? 0xFFFFFFFF)),
+            }
           : null;
+      // 球面 = 主题 primaryContainer 上的吉祥物（主题一变配色进签名、重新合成）。
       final Uint8List? ballImage = desktop
-          ? await loadFloatingBallImage()
+          ? await renderFloatingBallFacePng(
+              Color(colors['ballContainer'] ?? 0xFFEADDFF),
+            )
           : null;
       // 调 start 之前唯一一道门：此前的 await 只产出本地数据（图标、球面），
       // 过期代多做完它们不留任何痕迹，逐个 await 设门只是重复同一个判断。
@@ -581,9 +622,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     unawaited(FloatingBallChannel.stopSystemBall());
   }
 
-  /// 主题变了（明暗 / 自定义主题）：原生系统球跟着换色。
-  void _syncSystemBallColors(ColorScheme scheme) {
-    final Map<String, int> colors = floatingBallNativeColors(scheme);
+  /// 主题变了（预设 / 明暗 / 纯黑 / 自定义主题 / 墨水屏）：原生系统球跟着换色。
+  void _syncSystemBallColors(ColorScheme scheme, {required bool eink}) {
+    final Map<String, int> colors = floatingBallNativeColors(
+      scheme,
+      eink: eink,
+    );
     if (_mapEquals(colors, _systemBallColors)) return;
     _systemBallColors = colors;
     // build 里触发：等这一帧结束再下发，不在 build 期间改状态。
@@ -684,7 +728,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _desktopOcr = null;
     // 冻结层的行框与提示条跟球同一套主题色（球还没起过时取当前主题）。
     final Map<String, int> colors = _systemBallColors.isEmpty
-        ? floatingBallNativeColors(Theme.of(context).colorScheme)
+        ? floatingBallNativeColors(
+            Theme.of(context).colorScheme,
+            eink: isEinkTheme(context),
+          )
         : _systemBallColors;
     // 开着的查词卡会被截进图里，而且它挡着的字点不到。
     await target.dismissLookup();
@@ -1104,7 +1151,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final AppModel appModel = ref.watch(appProvider);
     if (!appModel.isInitialised) return const SizedBox.shrink();
     final PreferencesRepository prefs = appModel.prefsRepo;
-    _syncSystemBallColors(Theme.of(context).colorScheme);
+    _syncSystemBallColors(
+      Theme.of(context).colorScheme,
+      eink: isEinkTheme(context) || appModel.einkMode,
+    );
     _attachPrefs(prefs);
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
@@ -1209,7 +1259,10 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
           onPressed: () => Navigator.of(context).pop(),
           child: Text(l10n.cancelButtonLabel),
         ),
-        FushiFilledButton(onPressed: _submit, child: Text(l10n.searchFieldLabel)),
+        FushiFilledButton(
+          onPressed: _submit,
+          child: Text(l10n.searchFieldLabel),
+        ),
       ],
     );
   }

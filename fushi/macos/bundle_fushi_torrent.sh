@@ -22,7 +22,7 @@ if [[ ! -f "$source" ]]; then
   exit 0
 fi
 
-# 库在、但缺本次要出的架构：universal 包在另一种 Mac 上会加载失败，比「没带」更难查。
+# 库在、但缺本次要出的架构（macOS 版只出 arm64）：带进去也加载失败，比「没带」更难查。
 available_archs=" $(lipo -archs "$source") "
 for arch in ${ARCHS:-$(uname -m)}; do
   case "$available_archs" in

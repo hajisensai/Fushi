@@ -4,9 +4,11 @@
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -201,7 +203,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
             title: t.leaderboard_user_block_title,
             message: t.leaderboard_user_block_message(user: card.account.tag),
             confirmLabel: t.leaderboard_user_block,
-            leadingIcon: Icons.block,
+            leadingIcon: FushiIcons.block,
           ),
         );
     if (ok == null || !mounted) return;
@@ -272,29 +274,39 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       title: card?.account.tag ?? t.leaderboard_user_title,
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.ios_share,
+          icon: FushiIcons.share,
           tooltip: t.leaderboard_share,
           onTap: _share,
         ),
       ],
-      body: RefreshIndicator(
-        onRefresh: () async {
-          await Future.wait(<Future<void>>[
-            _loadCard(),
-            _loadShelf(reset: true),
-          ]);
-        },
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.all(tokens.spacing.card),
+      body: Builder(
+        builder: (BuildContext context) => FushiRefreshIndicator(
+          // 正文铺到悬浮页头底下：指示器与列表都让出「状态栏 + 页头」（Builder
+          // 的 context 在页头脚手架之内才读得到这段 padding）。
+          edgeOffset: MediaQuery.paddingOf(context).top,
+          onRefresh: () async {
+            await Future.wait(<Future<void>>[
+              _loadCard(),
+              _loadShelf(reset: true),
+            ]);
+          },
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + MediaQuery.paddingOf(context).top,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+            ),
+            children: <Widget>[
+              _buildCard(tokens),
+              SizedBox(height: tokens.spacing.card),
+              ..._buildShelf(tokens),
+            ],
           ),
-          children: <Widget>[
-            _buildCard(tokens),
-            SizedBox(height: tokens.spacing.card),
-            ..._buildShelf(tokens),
-          ],
         ),
       ),
     );
@@ -388,7 +400,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
           FushiFilledButton.icon(
             key: const ValueKey<String>('leaderboard-user-add-friend'),
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const FushiIcon(Icons.person_add_alt_1_outlined),
+            icon: const FushiIcon(FushiIcons.personAdd),
             label: Text(t.leaderboard_user_add_friend),
           ),
         );
@@ -396,7 +408,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         buttons.add(
           FushiFilledButton.icon(
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const FushiIcon(Icons.how_to_reg_outlined),
+            icon: const FushiIcon(FushiIcons.personCheck),
             label: Text(t.leaderboard_user_accept),
           ),
         );
@@ -411,7 +423,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         buttons.add(
           FushiFilledButton.tonalIcon(
             onPressed: null,
-            icon: const FushiIcon(Icons.people_alt_outlined),
+            icon: const FushiIcon(FushiIcons.group),
             label: Text(t.leaderboard_user_is_friend),
           ),
         );
@@ -420,12 +432,12 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       buttons.addAll(<Widget>[
         FushiOutlinedButton.icon(
           onPressed: () => unawaited(_block()),
-          icon: const FushiIcon(Icons.block),
+          icon: const FushiIcon(FushiIcons.block),
           label: Text(t.leaderboard_user_block),
         ),
         FushiOutlinedButton.icon(
           onPressed: () => unawaited(_report()),
-          icon: const FushiIcon(Icons.flag_outlined),
+          icon: const FushiIcon(FushiIcons.flag),
           label: Text(t.leaderboard_report),
         ),
       ]);
@@ -433,7 +445,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     buttons.add(
       FushiOutlinedButton.icon(
         onPressed: () => unawaited(_share()),
-        icon: const FushiIcon(Icons.ios_share),
+        icon: const FushiIcon(FushiIcons.share),
         label: Text(t.leaderboard_share),
       ),
     );
@@ -477,7 +489,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       out.add(
         FushiPlaceholderMessage(
           key: const ValueKey<String>('leaderboard-shelf-private'),
-          icon: Icons.lock_outline,
+          icon: FushiIcons.lock,
           message: t.leaderboard_user_shelf_private,
         ),
       );
@@ -495,7 +507,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     if (!_shelfLoading && _rows.isEmpty) {
       out.add(
         FushiPlaceholderMessage(
-          icon: Icons.menu_book_outlined,
+          icon: FushiIcons.books,
           message: t.leaderboard_shelf_empty,
         ),
       );

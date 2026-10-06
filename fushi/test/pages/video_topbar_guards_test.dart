@@ -153,7 +153,8 @@ void main() {
       expect(groupEnd, greaterThan(groupStart));
       final String group = src.substring(groupStart, groupEnd);
       expect(
-          group.contains('if (items.isEmpty) return const SizedBox.shrink();'),
+          group.contains(
+              'if (items.isEmpty && folded.isEmpty) return const SizedBox.shrink();'),
           isTrue,
           reason: '清空 topRight 时不能留下右侧空白占位挤歪标题');
     });

@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui'
     show AppExitResponse, PlatformDispatcher;
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
@@ -12,7 +13,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -58,6 +58,7 @@ import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -96,7 +97,6 @@ import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -116,7 +116,6 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi/src/engine_bindings.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
@@ -915,14 +914,6 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
-    // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
-    // 只在有 Aidoku 宿主的构建里装（iOS 按 App Store 合规、macOS 随 Rust CLI 一并
-    // 移除后当前没有宿主）：没有源却装个解题器等于给一个不存在的源留后门。
-    // `AidokuCloudflareGate` 本身仍是跨平台的——全源搜索与来源匹配用它的
-    // `runSuppressed` 抑制批量解题弹窗，那条路径不受本门影响。
-    if (AidokuRuntimeFactory.isSupported) {
-      installAidokuCloudflareResolver(ref.read(appProvider).navigatorKey);
-    }
     // 桌面 Mihon sidecar 是无头 JVM，被 Cloudflare 拦下时由宿主弹 WebView 解题；
     // Android 有自己的 CloudflareChallengeActivity，不走这条。
     if (MihonRuntimeFactory.isSupported && !Platform.isAndroid) {
@@ -2308,11 +2299,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           ],
           home: home,
           locale: locale,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          // material_ui 的 delegates 已含 Cupertino + Widgets 三份本地化。
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: appModel.locales.values,
           themeMode: themeMode,
           theme: appModel.theme,
@@ -2374,6 +2362,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       fontFamily: appModel.appFontFamily),
                   // 玻璃设计系统的组件配色 / 渲染档位作用域（结构恒定，
                   // 见 FushiGlassScope 类注释）。
+                  // LegacyDesignCompatibility：把新 material_ui / cupertino_ui
+                  // 主题与本地化桥给仍用 SDK 旧 Material / Cupertino 的第三方
+                  // 组件（必须在上面这层 CupertinoTheme 之内）。
+                  child: LegacyDesignCompatibility(
                   child: FushiGlassScope(
                   child: LayoutBuilder(
                     builder:
@@ -2410,6 +2402,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                               child!,
                               const AppFloatingBallHost(),
                               const FloatingLyricLookupHost(),
+                              // galgame Hook 浮窗（native 窗口）跟随 app 主题。
+                              const GalHookOverlayThemeSync(),
                             ],
                           ),
                         ),
@@ -2470,7 +2464,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       // macOS 明明已经隐藏了系统标题栏与交通灯，却拿不到替代顶栏
                       // ——窗口既没有标题也没有最小化/关闭按钮。
                       if (FushiDesktopTitleBar.isEnabled) {
-                        navigation = ValueListenableBuilder<bool>(
+                        navigation = ListenableBuilder(
                           // The home rail is only on screen while the home
                           // shell is the top route; opening a media item
                           // covers it — the same signal the macOS shell uses
@@ -2478,19 +2472,29 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           // un-indent with it. `navigation` is passed through
                           // as the unchanging `child`, so flipping this never
                           // rebuilds the navigator subtree.
-                          valueListenable: appModel.mediaOpenNotifier,
-                          builder: (BuildContext context, bool mediaOpen,
-                              Widget? child) {
+                          listenable: Listenable.merge(<Listenable>[
+                            appModel.mediaOpenNotifier,
+                            appModel.navRailExpandedNotifier,
+                          ]),
+                          builder: (BuildContext context, Widget? child) {
+                            final bool mediaOpen =
+                                appModel.mediaOpenNotifier.value;
                             final WindowSizeClass sizeClass =
                                 windowSizeClassForWidth(viewport.width);
                             final bool railVisible = !mediaOpen &&
                                 sizeClass != WindowSizeClass.compact;
-                            // expanded 档是展开侧栏（玻璃 224 悬浮侧栏 / MD3
-                            // 240 展开 rail，adaptiveNavRail extended），标题
-                            // 跟着它缩进。
+                            // 展开侧栏（玻璃 208 悬浮侧栏 / MD3 220 展开
+                            // rail）与收起 rail 宽度不同，标题跟着它缩进；
+                            // 展开态与首页 rail 同一判据（尺寸档 + MD3 菜单钮
+                            // 手动切换的记忆）。
                             final double railWidth = adaptiveNavRailWidthFor(
                               context,
-                              extended: sizeClass == WindowSizeClass.expanded,
+                              extended: adaptiveNavRailExtended(
+                                context,
+                                sizeClass: sizeClass,
+                                userExpanded:
+                                    appModel.navRailExpandedNotifier.value,
+                              ),
                             );
                             return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI
@@ -2517,6 +2521,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       }
                       return navigation;
                     },
+                  ),
                   ),
                   ),
                 ),

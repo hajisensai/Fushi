@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import '../../../helpers/glass_unwrap.dart';
 
@@ -368,11 +369,11 @@ void main() {
     await s.downloaders[0].ctrl.close();
     await pumpUntil(
       tester,
-      () => find.byIcon(Icons.check_circle).evaluate().isNotEmpty,
+      () => find.byIcon(FushiIcons.filled(FushiIcons.success)).evaluate().isNotEmpty,
       reason: '✓ 标记',
     );
     await tester.pumpAndSettle();
-    expect(find.byIcon(Icons.check_circle), findsOneWidget);
+    expect(find.byIcon(FushiIcons.filled(FushiIcons.success)), findsOneWidget);
     expect(find.text(t.manga_online_downloaded), findsOneWidget);
     expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     expect(

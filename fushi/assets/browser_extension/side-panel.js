@@ -74,12 +74,19 @@
       var foldBtn = document.createElement('button');
       foldBtn.type = 'button';
       foldBtn.className = 'hdr-fold';
-      foldBtn.textContent = '▾';
       foldBtn.title = tr('sp_fold_title');
       foldBtn.setAttribute('aria-label', tr('sp_fold_aria_label'));
+      // 折叠钮字形：Material Symbols Rounded（icons.js 先于本文件装入）；拿不到时退回文字三角。
+      var setFoldGlyph = function (folded) {
+        var glyph = typeof window.fushiIcon === 'function'
+          ? window.fushiIcon(folded ? 'chevron_right' : 'expand_more', { size: 18 }) : null;
+        foldBtn.textContent = glyph ? '' : (folded ? '▸' : '▾');
+        if (glyph) foldBtn.appendChild(glyph);
+      };
+      setFoldGlyph(false);
       var applyFold = function (folded) {
         document.body.classList.toggle('hdr-folded', folded);
-        foldBtn.textContent = folded ? '▸' : '▾';
+        setFoldGlyph(folded);
       };
       foldBtn.addEventListener('click', function () {
         var folded = !document.body.classList.contains('hdr-folded');
@@ -345,6 +352,10 @@
     // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
     if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
       window.fushiTheme.applyPopupPalette(lookupContainer, scheme);
+    }
+    // M3E 视觉层（与页面弹窗同一开关，见 theme.js applyPopupStyle）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupStyle === 'function') {
+      window.fushiTheme.applyPopupStyle(lookupContainer, theme['--fushi-glass'] === '0');
     }
     var columns = theme['--dict-columns'];
     if (typeof columns === 'string' && columns) {
@@ -1155,13 +1166,30 @@
       toast(tr('subs_loaded', { provider: providerName ? providerName + ' ' : '', n: data.cues.length }));
     }
   }
+  // 查字幕的结果提示（无结果 / 只列了前 N 条）：语义 info 色块 + 左侧图标，与工具栏菜单 / 设置页的
+  // 提示条同一套 .fushi-notice（material.css「语义 tonal 色块」）。
+  function subsNotice(text) {
+    var notice = document.createElement('div');
+    notice.className = 'subs-empty fushi-notice';
+    notice.setAttribute('data-tone', 'info');
+    notice.setAttribute('role', 'status');
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon('info', { size: 20 }) : null;
+    if (glyph) {
+      var slot = document.createElement('span');
+      slot.className = 'msr-slot';
+      slot.setAttribute('aria-hidden', 'true');
+      slot.appendChild(glyph);
+      notice.appendChild(slot);
+    }
+    var copy = document.createElement('span');
+    copy.textContent = text;
+    notice.appendChild(copy);
+    return notice;
+  }
   function renderSubsResults(candidates, truncated) {
     subsResultsEl.textContent = '';
     if (!candidates.length) {
-      var empty = document.createElement('div');
-      empty.className = 'subs-empty';
-      empty.textContent = tr('subs_no_results');
-      subsResultsEl.appendChild(empty);
+      subsResultsEl.appendChild(subsNotice(tr('subs_no_results')));
       subsResultsEl.hidden = false;
       return;
     }
@@ -1188,12 +1216,7 @@
       row.addEventListener('click', function () { subsInstall(candidate); });
       subsResultsEl.appendChild(row);
     });
-    if (truncated) {
-      var more = document.createElement('div');
-      more.className = 'subs-empty';
-      more.textContent = tr('subs_truncated');
-      subsResultsEl.appendChild(more);
-    }
+    if (truncated) subsResultsEl.appendChild(subsNotice(tr('subs_truncated')));
     subsResultsEl.hidden = false;
   }
   var subsSearching = false;
@@ -1254,6 +1277,7 @@
   autoButton.addEventListener('click', function () {
     autoScroll = !autoScroll;
     autoButton.classList.toggle('is-on', autoScroll);
+    autoButton.setAttribute('aria-pressed', autoScroll ? 'true' : 'false');
     if (autoScroll) { scrollIndex = -1; updateCurrent(currentState && currentState.currentTimeMs); }
   });
   document.getElementById('settings').addEventListener('click', function () {
@@ -1304,6 +1328,7 @@
   function stopAutoScroll() {
     autoScroll = false;
     autoButton.classList.toggle('is-on', false);
+    autoButton.setAttribute('aria-pressed', 'false');
   }
   listEl.addEventListener('wheel', stopAutoScroll, { passive: true });
   listEl.addEventListener('touchmove', stopAutoScroll, { passive: true });

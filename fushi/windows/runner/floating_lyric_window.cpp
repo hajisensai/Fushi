@@ -122,6 +122,10 @@ constexpr float kBaseStripHeightForFontDip = 96.0f;
 // and every pixel of it is a pixel the player cannot click — but non-zero so
 // there is a background strip to grab when dragging the overlay.
 constexpr float kToolbarWindowMarginDip = 5.0f;
+// 工具条文字标签模式：每槽加宽到 60dip（放得下「工作台」/ "Workbench"），图标下
+// 加一条 14dip 的文字带。台词窗比整排窄时退回纯图标。
+constexpr float kToolbarLabelSlotDip = 60.0f;
+constexpr float kToolbarLabelHeightDip = 14.0f;
 
 // Text-only hook window (Luna-style hover toolbar). A thin top strip is
 // ALWAYS a mouse catch (drawn at ~2% alpha across the full width) so the fully
@@ -720,6 +724,29 @@ void FloatingLyricWindow::SetToolbarAutoHide(bool enabled) {
   ApplyToolbarVisibility();
 }
 
+void FloatingLyricWindow::SetToolbarLabels(bool enabled) {
+  if (toolbar_labels_ == enabled) {
+    return;
+  }
+  toolbar_labels_ = enabled;
+  // 文字带改变工具条高度与正文的顶部预留：重排正文 + 重摆工具条。
+  text_layout_.Reset();
+  RequestRender();
+  ApplyToolbarVisibility();
+}
+
+bool FloatingLyricWindow::ToolbarLabelsActive(float body_width_px) const {
+  if (!toolbar_labels_ || !hook_text_mode_ ||
+      hook_toolbar::SlotLabel(toolbar_profile_, 0).empty()) {
+    return false;
+  }
+  const int slots = hook_toolbar::SlotCount(toolbar_profile_);
+  const float row_w = ScaleForDpi(kToolbarLabelSlotDip) * slots +
+                      ScaleForDpi(kHookTextButtonGapDip) * (slots - 1) +
+                      ScaleForDpi(kToolbarWindowMarginDip) * 2.0f;
+  return row_w <= body_width_px;
+}
+
 void FloatingLyricWindow::SetPassThroughBlocksMouse(bool enabled) {
   if (passthrough_blocks_mouse_ == enabled) {
     return;
@@ -978,24 +1005,32 @@ hook_toolbar::Layout FloatingLyricWindow::ComputePassThroughToolbarLayout()
   const float btn = ScaleForDpi(kHookTextButtonSizeDip);
   const float gap = ScaleForDpi(kHookTextButtonGapDip);
   const float margin = ScaleForDpi(kToolbarWindowMarginDip);
-  const float row_w = HookToolbarRowWidth();
   // Same origin the in-body toolbar draws at (centred row, kControlsTopDip from
   // the top), grown by |margin| so the pill has an edge to grab for dragging.
   // 这里用的是 window rect 宽而不是 client 宽：本窗是无边框 WS_POPUP 分层窗，
   // 两者相等，但语义不同——这条 offset 要落到屏幕坐标上。
   const float body_w = static_cast<float>(wr.right - wr.left);
-  const float row_x = wr.left + HookToolbarRowLeft(body_w);
+  const bool labelled = ToolbarLabelsActive(body_w);
+  const int slots = hook_toolbar::SlotCount(toolbar_profile_);
+  const float slot_w = labelled ? ScaleForDpi(kToolbarLabelSlotDip) : btn;
+  const float label_h = labelled ? ScaleForDpi(kToolbarLabelHeightDip) : 0.0f;
+  const float row_w =
+      labelled ? slot_w * slots + gap * (slots - 1) : HookToolbarRowWidth();
+  const float row_x = wr.left + (labelled ? (body_w - row_w) / 2.0f
+                                          : HookToolbarRowLeft(body_w));
   const float row_y = wr.top + ScaleForDpi(kControlsTopDip);
   layout.rect.left = static_cast<LONG>(std::lround(row_x - margin));
   layout.rect.top = static_cast<LONG>(std::lround(row_y - margin));
   layout.rect.right =
       layout.rect.left + static_cast<LONG>(std::lround(row_w + margin * 2));
-  layout.rect.bottom =
-      layout.rect.top + static_cast<LONG>(std::lround(btn + margin * 2));
+  layout.rect.bottom = layout.rect.top +
+                       static_cast<LONG>(std::lround(btn + label_h + margin * 2));
   layout.owner_origin = POINT{wr.left, wr.top};
   layout.button_px = btn;
   layout.gap_px = gap;
   layout.margin_px = margin;
+  layout.slot_px = labelled ? slot_w : 0.0f;
+  layout.label_px = label_h;
   return layout;
 }
 
@@ -1005,6 +1040,15 @@ hook_toolbar::Style FloatingLyricWindow::ToolbarStyle() const {
   style.button_bg_color = style_.button_bg_color;
   style.active_color = style_.active_color;
   style.bg_color = style_.bg_color;
+  style.tooltip_bg_color = style_.toolbar_tooltip_bg_color;
+  style.tooltip_text_color = style_.toolbar_tooltip_text_color;
+  if ((style_.toolbar_bg_color >> 24) != 0) {
+    style.surface_color = style_.toolbar_bg_color;
+    style.button_text_color = style_.toolbar_icon_color;
+    style.button_bg_color = style_.toolbar_hover_color;
+    style.active_bg_color = style_.toolbar_active_bg_color;
+    style.active_color = style_.toolbar_active_icon_color;
+  }
   return style;
 }
 
@@ -1775,9 +1819,11 @@ void FloatingLyricWindow::Render() {
           ? std::clamp(static_cast<float>(style_.text_padding), 0.0f, 120.0f)
           : kHorizontalPaddingDip;
   const float pad = ScaleForDpi(text_padding_dip);
+  // 工具条带文字时多一条文字带，正文顶部预留跟着加高（台词不被标签压住）。
   const float controls_h =
       ScaleForDpi(hook_text_mode_ ? kHookTextButtonSizeDip : kButtonSizeDip) +
-      ScaleForDpi(kControlsTopDip);
+      ScaleForDpi(kControlsTopDip) +
+      (ToolbarLabelsActive(static_cast<float>(width)) ? ScaleForDpi(kToolbarLabelHeightDip) : 0.0f);
   // Both modes reserve controls_h at the top: the lyric strip for its transport
   // row, the hook text window for its thin Luna-style hover toolbar
   // (the text sits below the strip so the toolbar never overlaps it).

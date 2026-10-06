@@ -1,11 +1,14 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 
 // 2026-10 体验优化：手机竖屏底栏最多 8 个入口，每格约 45dp。旧实现每格照样
-// 画 64dp 药丸 + 标签，药丸被硬压、标签全是省略号。现在格宽 < 64 时只给选中项
-// 显示标签，其余仅图标 + tooltip（MD3「仅选中项显示标签」），药丸按格宽收窄。
+// 画 64dp 药丸 + 标签，药丸被硬压。现在格宽 < 64 时药丸按格宽收窄、标签缩小
+// 一号并按格宽省略、配 tooltip 补全名。
+// 2026-10-05 用户反馈「底部栏重新显示所有文字不要隐藏」：窄格曾只给选中项显示
+// 标签，现在所有入口的标签恒显示。
 void main() {
   List<AdaptiveNavItem> itemsOf(int n) => <AdaptiveNavItem>[
     for (int i = 0; i < n; i++)
@@ -41,17 +44,34 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 标签真的画出来了：Text 在树里、没有被 Visibility / Opacity 0 藏起来，且
+  /// 占了正的宽高。
   bool labelVisible(WidgetTester tester, String label) {
-    final Visibility v = tester.widget<Visibility>(
-      find.ancestor(of: find.text(label), matching: find.byType(Visibility)),
+    final Finder text = find.text(label);
+    if (text.evaluate().length != 1) return false;
+    final Iterable<Visibility> hiders = tester.widgetList<Visibility>(
+      find.ancestor(of: text, matching: find.byType(Visibility)),
     );
-    return v.visible;
+    if (hiders.any((Visibility v) => !v.visible)) return false;
+    final Iterable<Opacity> faders = tester.widgetList<Opacity>(
+      find.ancestor(of: text, matching: find.byType(Opacity)),
+    );
+    if (faders.any((Opacity o) => o.opacity == 0)) return false;
+    final Size size = tester.getSize(text);
+    return size.width > 0 && size.height > 0;
+  }
+
+  double labelFontSize(WidgetTester tester, String label) {
+    final RenderParagraph p = tester.renderObject<RenderParagraph>(
+      find.text(label),
+    );
+    return p.text.style!.fontSize!;
   }
 
   group('AdaptiveNavTileMetrics', () {
     test('格宽 >= 64 保持完整形态', () {
       final AdaptiveNavTileMetrics m = AdaptiveNavTileMetrics.forCellWidth(80);
-      expect(m.selectedLabelOnly, isFalse);
+      expect(m.compact, isFalse);
       expect(m.pillWidth, AdaptiveNavTileMetrics.fullPillWidth);
     });
 
@@ -59,13 +79,13 @@ void main() {
       final AdaptiveNavTileMetrics m = AdaptiveNavTileMetrics.forCellWidth(
         null,
       );
-      expect(m.selectedLabelOnly, isFalse);
+      expect(m.compact, isFalse);
       expect(m.pillWidth, AdaptiveNavTileMetrics.fullPillWidth);
     });
 
-    test('格宽 45 → 仅选中项标签，药丸随格宽收窄', () {
+    test('格宽 45 → 紧凑形态，药丸随格宽收窄', () {
       final AdaptiveNavTileMetrics m = AdaptiveNavTileMetrics.forCellWidth(45);
-      expect(m.selectedLabelOnly, isTrue);
+      expect(m.compact, isTrue);
       expect(m.pillWidth, lessThan(45));
       expect(
         m.pillWidth,
@@ -79,19 +99,105 @@ void main() {
     });
   });
 
-  testWidgets('360dp 宽 8 个入口：只有选中项显示标签，其余有 tooltip', (
+  /// 标签完整画出（没有被省略号截断）。
+  bool labelUntruncated(WidgetTester tester, String label) {
+    final RenderParagraph p = tester.renderObject<RenderParagraph>(
+      find.text(label),
+    );
+    return !p.didExceedMaxLines;
+  }
+
+  // 2026-10-06 悬浮底栏：放不下时不再把标签压成「浏览…」，而是按模块顺序
+  // 从前往后放，剩下的收进最右的「更多」。出现在栏上的入口标签都完整显示。
+  testWidgets('360dp 宽 8 个入口：栏上入口标签完整显示，其余收进「更多」', (
     WidgetTester tester,
   ) async {
-    await pumpBar(tester, width: 360, count: 8, currentIndex: 2);
+    int tapped = -1;
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: Builder(
+              builder: (BuildContext context) => adaptiveBottomBar(
+                context: context,
+                currentIndex: 0,
+                onTap: (int i) => tapped = i,
+                items: itemsOf(8),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    expect(labelVisible(tester, 'Tab2'), isTrue);
-    for (final int i in <int>[0, 1, 3, 7]) {
-      expect(labelVisible(tester, 'Tab$i'), isFalse, reason: 'Tab$i');
-      expect(find.byTooltip('Tab$i'), findsOneWidget);
+    final List<int> shown = <int>[
+      for (int i = 0; i < 8; i++)
+        if (find.text('Tab$i').evaluate().isNotEmpty) i,
+    ];
+    expect(shown, isNotEmpty);
+    expect(find.text('More'), findsOneWidget, reason: '放不下时出现「更多」');
+    // 按模块顺序从前往后放：栏上的是前缀。
+    expect(shown, <int>[for (int i = 0; i < shown.length; i++) i]);
+    for (final int i in shown) {
+      expect(labelVisible(tester, 'Tab$i'), isTrue, reason: 'Tab$i');
+      expect(labelUntruncated(tester, 'Tab$i'), isTrue, reason: 'Tab$i');
     }
-    // 选中项不额外包 tooltip（标签已可见）。
-    expect(find.byTooltip('Tab2'), findsNothing);
+    expect(labelUntruncated(tester, 'More'), isTrue);
+
+    // 「更多」菜单列出其余入口，选中即切过去。
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    for (int i = shown.length; i < 8; i++) {
+      expect(find.text('Tab$i'), findsOneWidget, reason: '菜单里有 Tab$i');
+    }
+    await tester.tap(find.text('Tab7'));
+    await tester.pumpAndSettle();
+    expect(tapped, 7);
+  });
+
+  testWidgets('长标签放不下时整条收进「更多」而不是省略或溢出', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiFocusRoot(
+          child: Scaffold(
+            body: const SizedBox.expand(),
+            bottomNavigationBar: Builder(
+              builder: (BuildContext context) => adaptiveBottomBar(
+                context: context,
+                currentIndex: 0,
+                onTap: (_) {},
+                items: <AdaptiveNavItem>[
+                  for (int i = 0; i < 8; i++)
+                    AdaptiveNavItem(
+                      icon: Icons.circle_outlined,
+                      label: 'Browser extension $i',
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    for (int i = 0; i < 8; i++) {
+      final Finder label = find.text('Browser extension $i');
+      if (label.evaluate().isEmpty) continue;
+      expect(labelUntruncated(tester, 'Browser extension $i'), isTrue);
+    }
+    expect(find.text('More'), findsOneWidget);
   });
 
   testWidgets('宽屏 3 个入口：全部显示标签、无 tooltip', (WidgetTester tester) async {
@@ -99,6 +205,7 @@ void main() {
     expect(tester.takeException(), isNull);
     for (int i = 0; i < 3; i++) {
       expect(labelVisible(tester, 'Tab$i'), isTrue);
+      expect(labelFontSize(tester, 'Tab$i'), 12);
       expect(find.byTooltip('Tab$i'), findsNothing);
     }
   });

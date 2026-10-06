@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -6,8 +6,17 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/utils/cover_image.dart'
     show kLocalCoverDecodePixelWidth;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeController,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 横滚行里一张竖卡的宽度（2:3 海报）。与视频首页横滚行同量级。
@@ -15,6 +24,9 @@ const double kMediaServerRowCardWidth = 150;
 
 /// 媒体库卡（16:9）的基准宽度：首页库网格的最大列宽按它推，库卡单测也按它给槽。
 const double kMediaServerLibraryCardWidth = 220;
+
+/// 媒体库卡外层卡与封面之间的内缩：20（卡）- 8 = 12（封面），同心圆角。
+const double kMediaServerLibraryCardInset = 8;
 
 /// 服务器条目封面（缩放到 [kLocalCoverDecodePixelWidth] 以内解码）。fetcher 就是
 /// 浏览器本身（[MediaServerBrowser] implements `RemoteCoverFetcher`）；无图返回 null，
@@ -166,8 +178,8 @@ MediaServerFamily mediaServerFamilyOf(String serverId) =>
 /// 类型图标：Jellyfin 系是「服务器机柜」，Plex 是「播放圆钮」（品牌中性的单色
 /// 图标，不画品牌色块）。
 IconData mediaServerFamilyIcon(MediaServerFamily family) => switch (family) {
-  MediaServerFamily.jellyfin => Icons.dns_rounded,
-  MediaServerFamily.plex => Icons.play_circle_outline_rounded,
+  MediaServerFamily.jellyfin => FushiIcons.server,
+  MediaServerFamily.plex => FushiIcons.playCircle,
 };
 
 /// 类型名（产品名不翻译）。
@@ -212,20 +224,29 @@ class MediaServerStatusDot extends StatelessWidget {
         t.game_endpoint_phase_connecting,
     };
     final bool hollow = eink && status != MediaServerConnectionStatus.online;
+    // 颜色过渡走 effects 弹簧（不过冲）；在线时点略放大，连接中 → 在线有一下
+    // 「亮起」的落位感（尺寸走 spatial 弹簧）。墨水屏 / 减弱动态效果下瞬切。
+    final FushiMotionScheme motion = context.fushiMotion;
+    final double size = status == MediaServerConnectionStatus.online ? 10 : 8;
     return Tooltip(
       message: label,
       child: Semantics(
         label: label,
-        child: AnimatedContainer(
-          key: const ValueKey<String>('media-server-status-dot'),
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: FushiMotion.standard,
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: hollow ? null : color,
-            border: hollow ? Border.all(color: color, width: 1.5) : null,
+        child: SizedBox.square(
+          dimension: 10,
+          child: Center(
+            child: AnimatedContainer(
+              key: const ValueKey<String>('media-server-status-dot'),
+              duration: motion.spatialFast.duration,
+              curve: motion.spatialFast.curve,
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: hollow ? null : color,
+                border: hollow ? Border.all(color: color, width: 1.5) : null,
+              ),
+            ),
           ),
         ),
       ),
@@ -308,7 +329,7 @@ class MediaServerItemCard extends StatelessWidget {
           PortraitCoverImage(
             image: image,
             errorBuilder: (_) =>
-                const ShelfCoverPlaceholder(icon: Icons.broken_image_outlined),
+                const ShelfCoverPlaceholder(icon: FushiIcons.brokenImage),
           ),
         if (item.isContainer && unplayed > 0)
           Positioned(top: 6, right: 6, child: CoverBadge(label: '$unplayed')),
@@ -322,7 +343,7 @@ class MediaServerItemCard extends StatelessWidget {
           const Positioned(
             top: 6,
             right: 6,
-            child: CoverBadge(icon: Icons.check_rounded),
+            child: CoverBadge(icon: FushiIcons.check),
           ),
         if (progress != null)
           Positioned(
@@ -366,11 +387,11 @@ class MediaServerItemCard extends StatelessWidget {
       type == MediaServerItemType.movie || type == MediaServerItemType.series;
 
   static IconData _placeholderIcon(MediaServerItemType type) => switch (type) {
-    MediaServerItemType.movie => Icons.movie_outlined,
+    MediaServerItemType.movie => FushiIcons.video,
     MediaServerItemType.series ||
     MediaServerItemType.season ||
-    MediaServerItemType.episode => Icons.tv_outlined,
-    MediaServerItemType.folder => Icons.folder_outlined,
+    MediaServerItemType.episode => FushiIcons.tv,
+    MediaServerItemType.folder => FushiIcons.folder,
   };
 }
 
@@ -400,7 +421,7 @@ class MediaServerInfoCorner extends StatelessWidget {
               alignment: Alignment.topLeft,
               child: Padding(
                 padding: EdgeInsets.only(top: 6, left: 6),
-                child: CoverBadge(icon: Icons.info_outline_rounded),
+                child: CoverBadge(icon: FushiIcons.info),
               ),
             ),
           ),
@@ -568,8 +589,8 @@ class MediaServerContinueCard extends StatelessWidget {
                     MediaServerFallbackImage(
                       images: mediaServerContinueImages(browser, item),
                       placeholderIcon: isEpisode
-                          ? Icons.tv_outlined
-                          : Icons.movie_outlined,
+                          ? FushiIcons.tv
+                          : FushiIcons.video,
                     ),
                     if (badge != null)
                       Positioned(
@@ -642,7 +663,8 @@ class MediaServerFallbackImage extends StatelessWidget {
 
 /// 媒体库卡（16:9 背景图卡，Apple TV「资料库」式）：库封面（或条目海报拼贴 /
 /// 类型图标）铺满整卡，底部一层渐变压暗，左下角白字「类型图标 + 库名」。两套
-/// 设计系统共用这一构图，圆角 / 描边 / 投影交给 [ShelfCoverFrame]。
+/// 设计系统共用这一构图；外层是 M3E 抬升卡（[FushiCard]，20 圆角），封面内缩成
+/// 12 圆角的同心小块。
 ///
 /// 库自身没图（Jellyfin 库可以不配封面）或图取不回来时，用 [fallbackItems] 里
 /// 前几条有海报的条目拼一张 [MediaServerLibraryCollage] 顶上，实在一张都没有
@@ -669,9 +691,9 @@ class MediaServerLibraryCard extends StatelessWidget {
   final FushiFocusId? focusId;
 
   static IconData iconFor(MediaServerLibraryKind kind) => switch (kind) {
-    MediaServerLibraryKind.movies => Icons.movie_outlined,
-    MediaServerLibraryKind.tvShows => Icons.tv_outlined,
-    MediaServerLibraryKind.mixed => Icons.video_library_outlined,
+    MediaServerLibraryKind.movies => FushiIcons.video,
+    MediaServerLibraryKind.tvShows => FushiIcons.tv,
+    MediaServerLibraryKind.mixed => FushiIcons.collection,
   };
 
   @override
@@ -680,7 +702,7 @@ class MediaServerLibraryCard extends StatelessWidget {
     final IconData icon = iconFor(library.kind);
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context);
-    final TextTheme text = Theme.of(context).textTheme;
+    final FushiTypography type = context.fushiType;
     final Widget fallback = MediaServerLibraryCollage(
       browser: browser,
       items: fallbackItems,
@@ -691,84 +713,88 @@ class MediaServerLibraryCard extends StatelessWidget {
         ? Theme.of(context).colorScheme.onSurface
         : Colors.white;
     final TextStyle labelStyle =
-        (apple ? text.titleMedium : text.titleSmall)?.copyWith(
-          color: labelColor,
-          fontWeight: apple ? FontWeight.w700 : FontWeight.w600,
-          letterSpacing: apple ? -0.2 : null,
-          shadows: eink
-              ? null
-              : const <Shadow>[Shadow(color: Color(0x66000000), blurRadius: 6)],
-        ) ??
-        TextStyle(color: labelColor);
-    return FushiHoverLift(
-      builder: (BuildContext context, bool _) => shelfCoverCard(
-        onTap: onTap,
-        focusId: focusId,
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: ShelfCoverFrame(
-            child: Stack(
-              fit: StackFit.expand,
-              children: <Widget>[
-                if (image == null)
-                  fallback
-                else
-                  PortraitCoverImage(
-                    image: image,
-                    landscapeSlot: true,
-                    errorBuilder: (_) => fallback,
-                  ),
-                IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: eink
-                          ? null
-                          : const LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              stops: <double>[0.35, 1],
-                              colors: <Color>[
-                                Color(0x00000000),
-                                Color(0xB3000000),
-                              ],
-                            ),
-                    ),
-                  ),
+        (apple ? type.titleMediumEmphasized : type.titleSmallEmphasized)
+            .copyWith(
+              color: labelColor,
+              shadows: eink
+                  ? null
+                  : const <Shadow>[
+                      Shadow(color: Color(0x66000000), blurRadius: 6),
+                    ],
+            );
+    // M3E 分区卡（2026-10 扫尾）：外层是 20 圆角的抬升卡（悬停弹到 level2、按下
+    // 回弹，焦点环跟卡形），封面以 8 内缩成 12 圆角的同心小块——卡与封面两级
+    // 圆角是 M3E 的「容器 / 内容」层次。Apple 由 [FushiCard] 自己换玻璃卡。
+    return FushiCard(
+      variant: FushiCardVariant.elevated,
+      padding: const EdgeInsets.all(kMediaServerLibraryCardInset),
+      onTap: onTap,
+      focusId: focusId,
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: ClipRRect(
+          borderRadius: FushiM3eShape.smallRadius,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              if (image == null)
+                fallback
+              else
+                PortraitCoverImage(
+                  image: image,
+                  landscapeSlot: true,
+                  errorBuilder: (_) => fallback,
                 ),
-                PositionedDirectional(
-                  start: 0,
-                  end: 0,
-                  bottom: 0,
-                  child: ColoredBox(
-                    color: eink
-                        ? Theme.of(context).colorScheme.surface
-                        : Colors.transparent,
-                    child: Padding(
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                        12,
-                        6,
-                        12,
-                        10,
-                      ),
-                      child: Row(
-                        children: <Widget>[
-                          FushiIcon(icon, size: 18, color: labelColor),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              library.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: labelStyle,
-                            ),
+              IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: eink
+                        ? null
+                        : const LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            stops: <double>[0.35, 1],
+                            colors: <Color>[
+                              Color(0x00000000),
+                              Color(0xB3000000),
+                            ],
                           ),
-                        ],
-                      ),
+                  ),
+                ),
+              ),
+              PositionedDirectional(
+                start: 0,
+                end: 0,
+                bottom: 0,
+                child: ColoredBox(
+                  color: eink
+                      ? Theme.of(context).colorScheme.surface
+                      : Colors.transparent,
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.fromSTEB(
+                      12,
+                      6,
+                      12,
+                      10,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        FushiIcon(icon, size: 18, color: labelColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            library.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: labelStyle,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -860,7 +886,7 @@ class _MediaServerViewAllButtonState extends State<MediaServerViewAllButton> {
       focusNode: _focusNode,
       onPressed: widget.onPressed,
       iconAlignment: IconAlignment.end,
-      icon: const FushiIcon(Icons.chevron_right_rounded, size: 18),
+      icon: const FushiIcon(FushiIcons.chevronRight, size: 18),
       label: Text(t.media_server_row_view_all),
     );
     final FushiFocusId? id = widget.focusId;
@@ -949,6 +975,218 @@ class MediaServerRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 分区内每层视图（服务器列表 / 首页 / 网格）的页面外壳：M3E 悬浮页头（返回圆胶囊
+/// + 标题胶囊 + 动作组胶囊 + 可选的搜索 / 排序行，由 [FushiPageHeader] 画）**叠在
+/// 正文上**——页头只是几颗自带底色的胶囊，背后内容可见。Material 下页头随正文
+/// 「往下滚收起、往回滚出现」，收起只做位移 + 淡出（[FushiFloatingChromeOverlay]，
+/// M3E default spatial 弹簧），不改正文视口；顶部可读性只靠共享的
+/// `FushiTopFadeScrim` 一段短的无硬边渐隐（由 overlay 画），不再有整宽实色底带。
+///
+/// 正文的让位：正文经 [MediaServerBodyInset]（即 [FushiFloatingChromeInset]）拿到
+/// 「外层库页工具区 + 本页头」的高度，主滚动视图把它加成顶部内边距（内容滚到
+/// 胶囊底下），空态 / 错误整体让开。**视图 State 的 context 在本框架外面**，必须
+/// 在正文子树里读（[MediaServerBodyInset]），否则读到的是外层的值。
+///
+/// 显隐 controller：挂在库页浮动外壳里（视频页「媒体服务器」分区）时与外壳的分区
+/// 页签共用同一份（[FushiFloatingChromeScope]，外壳自己听滚动通知），页头排在页签
+/// 下方、一起收；独立使用（无外壳 / 测试宿主）时自备一份、自己喂滚动通知。每层
+/// 路由成为栈顶（push 进来 / 从上一层 pop 回来）时页头弹回。
+///
+/// Apple 设计系统的页头不是悬浮胶囊：保持「页头 + 正文」竖排、页头恒在，整体让开
+/// 外层工具区（[FushiFloatingChromeInsetPadding]）。
+///
+/// 为什么不直接用 [FushiPageScaffold]：这些视图是分区嵌套 Navigator 里的路由，
+/// 分区被壳 Offstage 保活时页面仍挂在树上；[FushiPageScaffold] 会把自己的滚动
+/// 控制器登记进全局 `PageScrollRegistry`，切到别的分区后手柄 LB/RB 翻页会落到这
+/// 张看不见的页上。仍要一个 [Scaffold] 作 Material 祖先（嵌套路由上方没有）。
+class MediaServerPageFrame extends StatefulWidget {
+  const MediaServerPageFrame({
+    required this.header,
+    required this.body,
+    super.key,
+  });
+
+  /// 页头（通常是 [FushiPageHeader]）。
+  final Widget header;
+
+  /// 正文。顶部让位在正文子树里用 [MediaServerBodyInset] 读。
+  final Widget body;
+
+  @override
+  State<MediaServerPageFrame> createState() => _MediaServerPageFrameState();
+}
+
+class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
+  /// 不在库页浮动外壳里时自备的显隐 controller（外壳在时不用）。
+  final FushiFloatingChromeController _ownChrome =
+      FushiFloatingChromeController();
+
+  /// 上一次依赖变化时本路由是否是栈顶：变成栈顶时让页头弹回。
+  bool _wasCurrent = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bool current = ModalRoute.isCurrentOf(context) ?? true;
+    if (current && !_wasCurrent) {
+      // 依赖变化发生在 build 阶段，controller 通知会标脏祖先：等这一帧画完。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        (FushiFloatingChromeScope.peek(context) ?? _ownChrome).resetToTop();
+      });
+    }
+    _wasCurrent = current;
+  }
+
+  @override
+  void dispose() {
+    _ownChrome.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (isGlassDesign(context)) {
+      return Scaffold(
+        backgroundColor: tokens.surfaces.page,
+        body: FushiFloatingChromeInsetPadding(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              widget.header,
+              Expanded(child: widget.body),
+            ],
+          ),
+        ),
+      );
+    }
+    final FushiFloatingChromeController? outer =
+        FushiFloatingChromeScope.maybeOf(context);
+    return Scaffold(
+      backgroundColor: tokens.surfaces.page,
+      body: FushiFloatingChromeScope(
+        controller: outer ?? _ownChrome,
+        // 外壳在时由外壳听滚动通知（通知照常冒泡上去），这里只喂自备的那份。
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (ScrollNotification notification) =>
+              outer == null &&
+              _ownChrome.handleScrollNotification(notification),
+          child: FushiFloatingChromeOverlay(
+            chrome: widget.header,
+            child: widget.body,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [MediaServerPageFrame] 正文的顶部让位（外层库页工具区 + 本页头的高度，恒定、
+/// 不随收起变）：主滚动视图把 [builder] 拿到的 `top` 加成顶部内边距，空态 /
+/// 错误整体下移 `top`。必须挂在框架的正文子树里（视图 State 的 context 在框架
+/// 外面，读不到本页头的高度）。
+class MediaServerBodyInset extends StatelessWidget {
+  const MediaServerBodyInset({required this.builder, super.key});
+
+  final Widget Function(BuildContext context, double top) builder;
+
+  @override
+  Widget build(BuildContext context) =>
+      builder(context, FushiFloatingChromeInset.of(context));
+}
+
+/// 加载骨架：一张 2:3 海报卡（封面块 + 两行文字条），与 [MediaServerItemCard]
+/// 同几何，数据回来时版面不跳。
+class MediaServerPosterSkeleton extends StatelessWidget {
+  const MediaServerPosterSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        const AspectRatio(aspectRatio: 2 / 3, child: FushiSkeleton()),
+        const SizedBox(height: _kCaptionTop + 2),
+        FushiSkeleton.line(widthFactor: 0.8),
+        const SizedBox(height: 6),
+        FushiSkeleton.line(widthFactor: 0.5, height: 10),
+      ],
+    );
+  }
+}
+
+/// 加载骨架：一张 16:9 媒体库卡（外卡 20 + 内缩封面块，与 [MediaServerLibraryCard]
+/// 同形）。
+class MediaServerLibraryCardSkeleton extends StatelessWidget {
+  const MediaServerLibraryCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const FushiCard(
+      padding: EdgeInsets.all(kMediaServerLibraryCardInset),
+      child: AspectRatio(aspectRatio: 16 / 9, child: FushiSkeleton()),
+    );
+  }
+}
+
+/// 加载骨架：分段列表里的一行（行首 [leadingWidth]×[leadingHeight] 块 + 两行
+/// 文字条），外壳是不可点的分段卡格，首尾大圆角与真实列表一致。
+class MediaServerListRowSkeleton extends StatelessWidget {
+  const MediaServerListRowSkeleton({
+    required this.index,
+    required this.count,
+    this.leadingWidth = 40,
+    this.leadingHeight = 40,
+    this.leadingCircle = false,
+    super.key,
+  });
+
+  final int index;
+  final int count;
+  final double leadingWidth;
+  final double leadingHeight;
+  final bool leadingCircle;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double rowPad = tokens.spacing.rowHorizontal;
+    return FushiGroupedListItem(
+      index: index,
+      count: count,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: rowPad,
+          vertical: tokens.spacing.rowVertical,
+        ),
+        child: Row(
+          children: <Widget>[
+            FushiSkeleton(
+              width: leadingWidth,
+              height: leadingHeight,
+              circle: leadingCircle,
+            ),
+            SizedBox(width: rowPad),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  FushiSkeleton.line(widthFactor: 0.55, height: 14),
+                  const SizedBox(height: 8),
+                  FushiSkeleton.line(widthFactor: 0.35, height: 10),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

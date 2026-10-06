@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/profile/profile_document.dart'
+    show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -28,6 +30,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
         kMangaCoverCacheMaxDays,
         kMangaCoverCacheMinDays;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
+    show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
@@ -35,6 +39,8 @@ import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
 import 'package:fushi/src/media/video/dandanplay_client.dart';
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
+    show MediaServerVersionMemory, mediaServerVersionMemory;
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
@@ -43,6 +49,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart'
     show VideoHdrOutputMode, kVideoHdrOutputPref;
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
@@ -182,6 +189,9 @@ class PreferencesRepository extends ChangeNotifier
     _prefCache[prefsVersionKey] =
         PrefCodec.encode(await readPrefsVersionFromDb());
     _installAppProxyReaders();
+    // 媒体服务器多版本选择的记忆落偏好表（进程级装配点，取流时由 client 读）；
+    // 理由同上：挂在偏好变得可读的那一刻，所有入口都拿到同一份。
+    mediaServerVersionMemory = _PrefsMediaServerVersionMemory(this);
   }
 
   /// BUG-2429 的存量数据修复标记。跑过一次就再也不跑。
@@ -463,6 +473,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 书架合集呈现方式 [ShelfCollectionLayout] `.name`（rows / cards）。默认 cards（用户 10-06：合集默认单格堆叠卡与书同排）
+  /// （全宽横排行，现状零变化）；cards = 合集折成网格里的一个格子、与散书同一排序。
+  String get shelfCollectionLayoutName =>
+      getPref('shelf_collection_layout', defaultValue: 'cards') as String;
+
+  Future<void> setShelfCollectionLayoutName(String name) async {
+    await setPref('shelf_collection_layout', name);
+    notifyListeners();
+  }
+
   /// 书架搜索栏「阅读状态」筛选的 [ShelfReadStatus] `.name`（unread/reading/
   /// finished）；空串 = 全部。跨重启保留（与游戏库页游玩状态筛选同一决定）。
   String get shelfReadStatusFilterName =>
@@ -525,6 +545,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 游戏库是否用列表布局（`games_library_layout` == 'list'）；默认海报网格。
+  bool get gamesLibraryListLayout =>
+      (getPref('games_library_layout', defaultValue: 'grid') as String) ==
+      'list';
+
+  Future<void> setGamesLibraryListLayout(bool list) async {
+    await setPref('games_library_layout', list ? 'list' : 'grid');
+    notifyListeners();
+  }
+
   /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把「远端有、
   /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。**默认 true**——
   /// 用户拍板远端混排默认开。关闭时占位卡全部不渲染，两页只剩本地库。离线/未配对/
@@ -574,6 +604,42 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setMediaServerQualityPresetIndex(int index) async {
     await setPref('video_media_server_quality_preset', index);
     notifyListeners();
+  }
+
+  /// 媒体服务器多版本选择的记忆上限（按写入先后淘汰最旧的）。
+  static const int kMediaServerVersionChoiceLimit = 500;
+
+  /// 媒体服务器多版本条目「选哪个版本」的记忆（见 [MediaServerVersionMemory]）。
+  /// 单一 JSON map 落 KV 表；解析失败回退空 map。
+  Map<String, String> get mediaServerVersionChoices {
+    final String raw = getPref('video_media_server_version_choices',
+        defaultValue: '') as String;
+    if (raw.isEmpty) return <String, String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return <String, String>{
+          for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+            e.key.toString(): e.value.toString(),
+        };
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+          'PreferencesRepository.mediaServerVersionChoices.decode', e, stack);
+    }
+    return <String, String>{};
+  }
+
+  /// 记一条版本选择：删后重插让它排到最新，超出 [kMediaServerVersionChoiceLimit]
+  /// 从最旧的开始丢。不 notifyListeners：没有界面监听它，取流时按需读。
+  Future<void> setMediaServerVersionChoice(String key, String value) async {
+    final Map<String, String> map = mediaServerVersionChoices
+      ..remove(key)
+      ..[key] = value;
+    while (map.length > kMediaServerVersionChoiceLimit) {
+      map.remove(map.keys.first);
+    }
+    await setPref('video_media_server_version_choices', jsonEncode(map));
   }
 
   /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
@@ -1219,6 +1285,31 @@ class PreferencesRepository extends ChangeNotifier
 
   void toggleReverseNavigationBar() async {
     await setPref('reverse_navigation_bar', !reverseNavigationBar);
+    notifyListeners();
+  }
+
+  /// 宽屏主导航 rail（MD3 / M3 Expressive）用户手动选的展开 / 收起：
+  /// `''` = 未选过（按窗口尺寸档：expanded 档展开、medium 档收起）、
+  /// `'expanded'` / `'collapsed'`。由 rail 顶部的菜单钮切换并记忆。
+  bool? get navRailExpanded {
+    final String value =
+        getPref('nav_rail_expanded', defaultValue: '') as String;
+    if (value == 'expanded') return true;
+    if (value == 'collapsed') return false;
+    return null;
+  }
+
+  Future<void> setNavRailExpanded(bool expanded) async {
+    await setPref('nav_rail_expanded', expanded ? 'expanded' : 'collapsed');
+  }
+
+  /// MD3 悬浮底栏是否在图标下显示标签（默认显示；关掉即 M3E floating toolbar
+  /// 的纯图标形态）。
+  bool get navBarLabelsVisible =>
+      getPref('nav_bar_labels_visible', defaultValue: true) as bool;
+
+  Future<void> setNavBarLabelsVisible(bool value) async {
+    await setPref('nav_bar_labels_visible', value);
     notifyListeners();
   }
 
@@ -1930,6 +2021,75 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setReaderControlLayout(ReaderControlLayout layout) async {
     await setPref('reader_control_layout', layout.encode());
     notifyListeners();
+  }
+
+  /// 窄窗（手机竖屏）的按钮布局（2026-10：手机与桌面分别可配）。持久化键
+  /// `reader_control_layout_compact`。兼容存量：没存过窄窗布局、但存过（宽窗）
+  /// 布局的用户——此前一份布局两端共用——继续沿用那份自定义，不丢；两份都没有
+  /// 才落窄窗出厂布局 [ReaderControlLayout.compactDefaults]。
+  ReaderControlLayout get readerCompactControlLayout {
+    final String compact =
+        getPref('reader_control_layout_compact', defaultValue: '') as String;
+    if (compact.trim().isNotEmpty) {
+      return ReaderControlLayout.decode(
+        compact,
+        fallback: ReaderControlLayout.compactDefaults,
+      );
+    }
+    final String wide =
+        getPref('reader_control_layout', defaultValue: '') as String;
+    if (wide.trim().isNotEmpty) return ReaderControlLayout.decode(wide);
+    return ReaderControlLayout.compactDefaults;
+  }
+
+  Future<void> setReaderCompactControlLayout(ReaderControlLayout layout) async {
+    await setPref('reader_control_layout_compact', layout.encode());
+    notifyListeners();
+  }
+
+  /// 阅读器工具栏样式（2026-10，M3 Expressive toolbars）：`floating`（默认：
+  /// 悬浮胶囊 + 底部悬浮工具栏，正文满屏）/ `docked`（贴边整宽实体条，旧形态）。
+  /// 未知值按默认。
+  String get readerToolbarStyle {
+    final String v =
+        getPref('reader_toolbar_style', defaultValue: 'floating') as String;
+    return v == 'docked' ? 'docked' : 'floating';
+  }
+
+  Future<void> setReaderToolbarStyle(String style) async {
+    await setPref('reader_toolbar_style', style == 'docked' ? 'docked' : 'floating');
+    notifyListeners();
+  }
+
+  /// 「工具栏样式强制悬浮」一次性迁移的已跑标记（bool）。本键不随 Profile 走
+  /// （`ProfileKeys` 排除）：描述的是本安装是否迁过，进快照的话切到老 Profile
+  /// 会把它删掉、迁移重跑，用户事后手动选的贴边又被改回悬浮。
+  static const String readerToolbarStyleFloatingMigratedKey =
+      'reader_toolbar_style_floating_migrated';
+
+  /// 启动时（`AppModel.initialise()`）跑一次：所有者 2026-10-06「工具栏样式默认
+  /// 悬浮，老用户更新也强制先悬浮」。把 live 偏好**和每个 Profile 快照里**的
+  /// `reader_toolbar_style` 一起改成 `floating`——只改 live 的话，切一次 Profile
+  /// 快照就把旧的 `docked` 带回来。标记与新值同一次 [setPrefs] 落盘；此后用户
+  /// 再手动选贴边，标记已在，不会被改回。快照先改、标记后写：中途中断下次重跑
+  /// 也只是把同一个值再写一遍。
+  Future<void> settleReaderToolbarStyleFloating() async {
+    if (getPref(readerToolbarStyleFloatingMigratedKey, defaultValue: false) ==
+        true) {
+      return;
+    }
+    await _db.customStatement(
+      'UPDATE profile_settings SET value = ? WHERE category = ? AND key = ?',
+      <Object>[
+        PrefCodec.encode('floating'),
+        kProfileSettingCategoryPref,
+        'reader_toolbar_style',
+      ],
+    );
+    await setPrefs(<String, dynamic>{
+      'reader_toolbar_style': 'floating',
+      readerToolbarStyleFloatingMigratedKey: true,
+    });
   }
 
   /// 视频「快捷键 1..4」自定义动作按钮的绑定（用户请求）：槽位序号 → 视频动作。
@@ -3204,6 +3364,20 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 工具条每个按钮图标下显示短文字说明（默认开）。浮窗比整排窄时 native 自动
+  /// 退回纯图标，悬停提示照常。
+  static const bool galHookToolbarLabelsDefault = true;
+
+  bool get galHookToolbarLabels =>
+      getPref('gal_hook_toolbar_labels',
+          defaultValue: galHookToolbarLabelsDefault) ==
+      true;
+
+  Future<void> setGalHookToolbarLabels(bool value) async {
+    await setPref('gal_hook_toolbar_labels', value);
+    notifyListeners();
+  }
+
   /// 穿透态下浮窗是否仍拦截落在**文字行盒**上的鼠标（默认 true = 拦截，点字查词才
   /// 成立）。关掉后整窗对游戏彻底透明——用户原话「穿透不彻底等于彻底不穿透」。
   static const bool galHookPassThroughBlocksMouseDefault = true;
@@ -3526,8 +3700,14 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 本机 OCR 模型 key。经典 manga-ocr（`'manga_ocr'`）已删除：存着它的旧偏好
+  /// 由 [MangaOcrLocalModel.fromKey] 统一映射到默认模型，偏好键与存量值都不改写。
   String get mangaOcrLocalModel =>
-      getPref('manga_ocr_local_model', defaultValue: 'manga_ocr') as String;
+      getPref(
+            'manga_ocr_local_model',
+            defaultValue: kDefaultMangaOcrLocalModel.key,
+          )
+          as String;
 
   Future<void> setMangaOcrLocalModel(String value) async {
     await setPref('manga_ocr_local_model', value);
@@ -4077,6 +4257,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 小说阅读器阅读计时的开始方式（手动 / 打开即开始 / 翻页后开始），默认打开即
+  /// 开始。普通偏好（随 Profile 快照）；下次打开书生效。
+  ReaderStudyClockStartMode get readerStudyClockStartMode =>
+      ReaderStudyClockStartMode.parse(
+          getPref(kReaderStudyClockStartModePrefKey) as String?);
+
+  Future<void> setReaderStudyClockStartMode(
+      ReaderStudyClockStartMode mode) async {
+    await setPref(kReaderStudyClockStartModePrefKey, mode.storageValue);
+    notifyListeners();
+  }
+
   /// 统计「今日」重置时刻（整点 0..23，默认 0 = 本地午夜）：写入时把 dateKey 前移
   /// 该小时数（凌晨 2 点读的书在重置 = 4 时记到「昨日」）。全局唯一入口是
   /// [FushiDatabase.statDayResetHour]，AppModel 在偏好加载后与变更时镜像过去；
@@ -4114,5 +4306,25 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setReadingGoalWeeklyChars(int value) async {
     await setPref('reading_goal_weekly_chars', value.clamp(0, 10000000));
     notifyListeners();
+  }
+}
+
+/// [MediaServerVersionMemory] 的偏好表实现（[PreferencesRepository.loadFromDb]
+/// 装配）。读走偏好缓存；写入是后台落库，失败只记日志——丢一次版本记忆不该
+/// 打断播放。
+class _PrefsMediaServerVersionMemory implements MediaServerVersionMemory {
+  _PrefsMediaServerVersionMemory(this._prefs);
+
+  final PreferencesRepository _prefs;
+
+  @override
+  String? read(String key) => _prefs.mediaServerVersionChoices[key];
+
+  @override
+  void write(String key, String value) {
+    _prefs.setMediaServerVersionChoice(key, value).catchError(
+      (Object e, StackTrace stack) => ErrorLogService.instance
+          .log('PreferencesRepository.setMediaServerVersionChoice', e, stack),
+    );
   }
 }

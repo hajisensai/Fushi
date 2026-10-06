@@ -3,13 +3,15 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/media_cover_source.dart'
+    show mediaCoverFallbackIcon;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
@@ -17,12 +19,16 @@ import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
+import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show homeShellTabNotifier, HomeTab;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show CoverProgressStrip;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/stat_contribution_heatmap.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -31,6 +37,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -371,13 +378,24 @@ void main() {
     expect(find.text('原书名'), findsNothing);
   });
 
-  testWidgets('「继续」区是横滑卡片行：书卡带封面底部进度条（percent/100）',
+  testWidgets('「继续」区：最近一条是主角卡，其余是横滑卡片行（书卡带封面底部进度条）',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
+    // 2026-10 重设计：最近读的一本放大成主角卡，另一本留在下方横滑行。
+    final MediaItem heroBook = MediaItem(
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('主角书key'),
+      title: '主角测试书',
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: ReaderFushiSource.instance.uniqueKey,
+      position: 30,
+      duration: 100,
+      canDelete: false,
+      canEdit: true,
+    );
     final MediaItem book = MediaItem(
       mediaIdentifier: ReaderFushiSource.mediaIdentifierFor('横滑书key'),
       title: '横滑测试书',
@@ -394,8 +412,8 @@ void main() {
         ankiRepositoryProvider.overrideWithValue(ankiRepository),
         appProvider.overrideWith((ref) => appModel),
         ...bookStreamOverrides(
-          books: <MediaItem>[book],
-          lastReadAt: const <String, int>{'横滑书key': 1},
+          books: <MediaItem>[heroBook, book],
+          lastReadAt: const <String, int>{'横滑书key': 1, '主角书key': 2},
         ),
       ],
       child: TranslationProvider(
@@ -415,10 +433,16 @@ void main() {
           (Widget w) => w is ListView && w.scrollDirection == Axis.horizontal),
       findsOneWidget,
     );
-    // 书卡封面底部进度条 = percent/100（50/100 → 0.5）；目标未设（goal=0）时
-    // 页面上没有其它 LinearProgressIndicator。
-    final LinearProgressIndicator bar = tester
-        .widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(find.byType(LinearProgressIndicator)));
+    // 主角卡：最近读的那本（lastReadAt 更大），进度 30/100，主按钮「继续阅读」。
+    final HomeContinueHero hero =
+        tester.widget<HomeContinueHero>(find.byType(HomeContinueHero));
+    expect(hero.title, '主角测试书');
+    expect(hero.subtitle, '${t.home_filter_read} · 30%');
+    expect(hero.progress, 0.3);
+    expect(hero.actionLabel, t.book_continue_reading);
+    // 横滑行里的书卡封面底部进度条 = percent/100（50/100 → 0.5）。
+    final CoverProgressStrip bar =
+        tester.widget<CoverProgressStrip>(find.byType(CoverProgressStrip));
     expect(bar.value, 0.5);
     // 散卡：标题=书名，副标题=「阅读 · 50%」。
     expect(find.text('横滑测试书'), findsOneWidget);
@@ -511,8 +535,11 @@ void main() {
     await tester.pumpWidget(buildApp());
     await pumpDashboard(tester);
     expect(find.text(t.stat_goal_set), findsOneWidget);
-    // 目标进度条走设计系统分派版（MD3 下是 Expressive 波浪条，不是原生控件）。
-    expect(find.byType(FushiLinearProgressIndicator), findsNothing);
+    // 未设目标：环里放旗子（fraction=null），不画进度。
+    expect(
+      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
+      isNull,
+    );
 
     // 点设定入口 → 对话框输入 1000 → 保存（_editDailyGoal 真实写回 +
     // setState 刷新，与阅读统计页同一持久化）。
@@ -535,7 +562,12 @@ void main() {
       find.text(t.stat_goal_progress(read: 800, goal: 1000)),
       findsOneWidget,
     );
-    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
+    // 2026-10 重设计：目标并进学习卡头部的环形进度（800/1000 = 0.8）。
+    expect(
+      tester.widget<HomeGoalRing>(find.byType(HomeGoalRing)).fraction,
+      0.8,
+    );
+    expect(find.text(t.stat_goal_set), findsNothing);
   });
 
   testWidgets('点热力图某日弹当日明细 sheet：按类型分节列出条目', (WidgetTester tester) async {
@@ -714,9 +746,13 @@ void main() {
     // 卡宽 = 封面槽宽：竖槽 94，横槽 132×16/9 ≈ 234.7。断言「明显宽于竖槽」而不是
     // 精确值，免得日后调封面高度就得改数字（数字变了不代表行为坏了）。
     const double portraitWidth = 94;
+    // 「继续」只有一条 → 是主角卡：视频按 16:9 横槽摆封面。
+    final HomeContinueHero hero =
+        tester.widget<HomeContinueHero>(find.byType(HomeContinueHero));
+    expect(hero.title, '在看的横版视频');
+    expect(hero.landscapeCover, isTrue);
     for (final (String, String) row in <(String, String)>[
       (t.home_recently_added, '刚导入的横版视频'),
-      (t.home_continue, '在看的横版视频'),
     ]) {
       final Finder card = inSection(
         row.$1,
@@ -1235,15 +1271,17 @@ void main() {
     await pumpDashboard(tester);
 
     expect(tester.takeException(), isNull);
-    // 主列三块左边缘对齐（此前是「热力图通栏 → 继续|活动两栏 → 最近添加通栏」的
-    // 三明治：热力图/最近添加被拉到整页宽，继续区一行 4 张卡右侧全空）。
-    final double mainX = tester.getTopLeft(find.text(t.reading_activity)).dx;
-    expect(tester.getTopLeft(find.text(t.home_continue)).dx, mainX);
+    // 2026-10 重设计：主列 =「继续」主角卡 + 最近添加（左边缘对齐）；侧列 =
+    // 学习紧凑卡 → 活动时间轴（同一左边缘，在主列右侧）。
+    final double mainX = tester.getTopLeft(find.text(t.home_continue)).dx;
     expect(tester.getTopLeft(find.text(t.home_recently_added)).dx, mainX);
-    // 活动时间轴在右侧列（天然最长，独占一列才和主列高度对得上）。
+    final double sideX = tester.getTopLeft(find.text(t.reading_activity)).dx;
+    expect(sideX, greaterThan(mainX + 200));
+    expect(tester.getTopLeft(find.text(t.home_activity)).dx, sideX);
+    // 侧列内：学习卡在活动时间轴之上。
     expect(
-      tester.getTopLeft(find.text(t.home_activity)).dx,
-      greaterThan(mainX + 200),
+      tester.getTopLeft(find.text(t.reading_activity)).dy,
+      lessThan(tester.getTopLeft(find.text(t.home_activity)).dy),
     );
     // 热力图不再被拉到整页宽。
     expect(
@@ -1294,7 +1332,7 @@ void main() {
     // 用户实报「首页左右强制的间距」：旧 1600px 限宽居中在 1920 宽下左侧凭空
     // 挤出 ~140px 空带。撤限宽后内容左缘只剩页面 padding + 卡片内边距。
     expect(
-      tester.getTopLeft(find.text(t.reading_activity)).dx,
+      tester.getTopLeft(find.text(t.home_continue)).dx,
       lessThan(100),
     );
   });
@@ -1330,18 +1368,21 @@ void main() {
       final double cardInnerWidth = tester.getSize(heatmapFinder).width;
       final double gridWidth = tester.getSize(gridFinder).width;
 
-      // 网格铺到自身两道封顶（53 列 × 18px 格 + 52 × 3px 间距 = 1110）。
-      expect(gridWidth, statHeatmapMaxGridWidth(), reason: 'width=$width');
-      // 富余宽度必须为零——回归时这里是 2244 − 1110 = 1134px 死空白。
+      // 网格不超过自身两道封顶（53 列 × 18px 格 + 52 × 3px 间距 = 1110）。
+      // 2026-10 重设计后学习卡在侧列（约 2/5 宽）：2560 下侧列窄于 1110，网格
+      // 按列数自适应；3840 下侧列宽于 1110，网格铺到上限。
+      expect(gridWidth, lessThanOrEqualTo(statHeatmapMaxGridWidth()),
+          reason: 'width=$width');
+      // 富余宽度不超过一列格子——回归时这里是 2244 − 1110 = 1134px 死空白。
       expect(
         cardInnerWidth - gridWidth,
-        lessThanOrEqualTo(1.0),
+        lessThan(24),
         reason: 'width=$width 卡内右侧死空白',
       );
       // 只封顶热力图这一块：整页没有重新限宽居中，左缘仍贴页面 padding，
-      // 侧列（活动时间轴）起点仍按窗口宽的 ~60% 走。
+      // 侧列（学习卡 / 活动时间轴）起点仍按窗口宽的 ~60% 走。
       expect(
-        tester.getTopLeft(find.text(t.reading_activity)).dx,
+        tester.getTopLeft(find.text(t.home_continue)).dx,
         lessThan(100),
         reason: 'width=$width 左缘',
       );
@@ -1440,6 +1481,408 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.byType(StatContributionHeatmap), findsOneWidget);
+  });
+
+  // ── 2026-10 首页重设计 ──────────────────────────────────────────────────
+
+  testWidgets('重设计 · 空库：「继续」与「活动」走同一个空态件，不再是两行裸灰字',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(
+      inSection(t.home_continue, find.byType(HomeEmptyState)),
+      findsOneWidget,
+    );
+    expect(
+      inSection(t.home_activity, find.byType(HomeEmptyState)),
+      findsOneWidget,
+    );
+    expect(find.text(t.home_continue_empty), findsOneWidget);
+    expect(find.text(t.home_activity_empty), findsOneWidget);
+    // 首载结束后不再挂骨架。
+    expect(find.byType(HomeContinueHeroSkeleton), findsNothing);
+    expect(find.byType(HomeActivitySkeleton), findsNothing);
+  });
+
+  testWidgets('重设计 · 首载未完成：各区挂同轮廓骨架，不先闪空态', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+
+    // 首帧：聚合还在后台跑，三区都是骨架，空态文案不出现。
+    expect(find.byType(HomeContinueHeroSkeleton), findsOneWidget);
+    expect(find.byType(HomeGoalSkeleton), findsOneWidget);
+    expect(find.byType(HomeHeatmapSkeleton), findsOneWidget);
+    expect(find.byType(HomeActivitySkeleton), findsOneWidget);
+    expect(find.byType(HomeEmptyState), findsNothing);
+
+    await pumpDashboard(tester);
+    expect(find.byType(HomeContinueHeroSkeleton), findsNothing);
+    expect(find.byType(HomeContinueHero), findsOneWidget);
+  });
+
+  testWidgets('BUG-2964 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    // 同一棵 ProviderScope 里卸载 / 重挂页面（与首页 tab 不保活、切走再切回同形；
+    // 换 ProviderScope 会先 dispose 共享 appModel）。
+    final ValueNotifier<bool> showPage = ValueNotifier<bool>(true);
+    addTearDown(showPage.dispose);
+    await tester.pumpWidget(ProviderScope(
+      overrides: <Override>[
+        platformServicesProvider.overrideWithValue(platformServices),
+        ankiRepositoryProvider.overrideWithValue(ankiRepository),
+        appProvider.overrideWith((ref) => appModel),
+        ...bookStreamOverrides(),
+      ],
+      child: TranslationProvider(
+        child: MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: showPage,
+              builder: (BuildContext context, bool show, Widget? _) => show
+                  ? HomeDashboardPage(videoRepo: VideoBookRepository(db))
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await pumpDashboard(tester);
+    expect(find.byType(HomeContinueHero), findsOneWidget);
+
+    showPage.value = false;
+    await tester.pump();
+    expect(find.byType(HomeDashboardPage), findsNothing);
+
+    showPage.value = true;
+    await tester.pump();
+    // 重建后的**第一帧**：快照已上屏，没有骨架。
+    expect(find.byType(HomeContinueHeroSkeleton), findsNothing);
+    expect(find.byType(HomeActivitySkeleton), findsNothing);
+    expect(find.byType(HomeContinueHero), findsOneWidget);
+    expect(find.text('继续看的视频'), findsOneWidget);
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('重设计 · 无封面的视频：主角卡封面槽显示类型占位图标，不是空黑块',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData(); // 「继续看的视频」无 coverPath
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    final Finder hero = find.byType(HomeContinueHero);
+    expect(hero, findsOneWidget);
+    expect(
+      find.descendant(
+        of: hero,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiIcon && w.icon == mediaCoverFallbackIcon(MediaKind.video),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<HomeContinueHero>(hero).actionLabel,
+      t.video_continue_watching,
+    );
+  });
+
+  for (final (double, bool) c in <(double, bool)>[(1600, true), (420, false)]) {
+    testWidgets('重设计 · ${c.$1.toInt()} 宽：视频主角卡${c.$2 ? '横排（封面在左）' : '通栏 16:9 顶图'}',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = Size(c.$1, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await seedSampleData();
+      await tester.pumpWidget(buildApp());
+      await pumpDashboard(tester);
+
+      expect(tester.takeException(), isNull);
+      final Finder hero = find.byType(HomeContinueHero);
+      final Finder action = find.byKey(
+        const ValueKey<String>('home-continue-hero-action'),
+      );
+      final Rect heroRect = tester.getRect(hero);
+      final Rect actionRect = tester.getRect(action);
+      if (c.$2) {
+        // 横排：主按钮在卡片右半（封面占左侧）。
+        expect(actionRect.left, greaterThan(heroRect.left + 200));
+      } else {
+        // 窄屏：16:9 封面通栏在上，按钮在封面之下、贴左。
+        expect(
+          find.descendant(of: hero, matching: find.byType(AspectRatio)),
+          findsOneWidget,
+        );
+        expect(actionRect.left, lessThan(heroRect.left + 40));
+        expect(actionRect.top, greaterThan(heroRect.top + 150));
+      }
+      // 宽屏两栏：学习卡在侧列；窄屏单列：学习卡在「继续」之下。
+      final Offset study = tester.getTopLeft(find.text(t.reading_activity));
+      final Offset cont = tester.getTopLeft(find.text(t.home_continue));
+      if (c.$2) {
+        expect(study.dx, greaterThan(cont.dx + 200));
+      } else {
+        expect(study.dx, cont.dx);
+        expect(study.dy, greaterThan(cont.dy));
+      }
+    });
+  }
+
+  testWidgets('重设计 · 焦点可遍历：Tab 能落到主角卡的「继续观看」按钮', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    final Finder action =
+        find.byKey(const ValueKey<String>('home-continue-hero-action'));
+    bool focusedOnAction() {
+      final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+      if (ctx == null) return false;
+      final Element actionEl = tester.element(action);
+      bool hit = false;
+      ctx.visitAncestorElements((Element e) {
+        if (identical(e, actionEl)) hit = true;
+        return !hit;
+      });
+      return hit || identical(ctx, actionEl);
+    }
+
+    bool reached = false;
+    for (int i = 0; i < 40 && !reached; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      reached = focusedOnAction();
+    }
+    expect(reached, isTrue, reason: '主角卡主按钮必须是 Tab 可达的焦点停靠点');
+  });
+
+  // ── 2026-10 首页统一浮动工具栏 ────────────────────────────────────────────
+
+  Finder dashboardList() => find.byWidgetPredicate(
+      (Widget w) => w is ListView && w.scrollDirection == Axis.vertical);
+  HomeFloatingToolbar toolbar(WidgetTester tester) =>
+      tester.widget<HomeFloatingToolbar>(find.byType(HomeFloatingToolbar));
+  HomeResumeFab resumeFab(WidgetTester tester) =>
+      tester.widget<HomeResumeFab>(find.byType(HomeResumeFab));
+  bool excludedFromFocus(WidgetTester tester, Finder target) => tester
+      .widgetList<ExcludeFocus>(
+          find.ancestor(of: target, matching: find.byType(ExcludeFocus)))
+      .any((ExcludeFocus w) => w.excluding);
+
+  /// 滚动后跑完弹簧（default spatial 约 0.5 s 收敛）。
+  Future<void> settleSpring(WidgetTester tester) async {
+    for (int i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 60));
+    }
+  }
+
+  testWidgets('浮动工具栏：标题胶囊 + 更新/统计/排行榜按钮组常驻首页顶部，统计入口不再挂在学习卡里',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(HomeFloatingToolbar), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
+        findsOneWidget);
+    for (final String key in <String>[
+      'home-toolbar-updates',
+      'home-toolbar-stats',
+      'home-toolbar-leaderboard',
+    ]) {
+      final Finder button = find.byKey(ValueKey<String>(key));
+      expect(button, findsOneWidget, reason: key);
+      // 栏浮在内容之上：按钮顶边在第一张分区卡标题之上。
+      expect(tester.getTopLeft(button).dy,
+          lessThan(tester.getTopLeft(find.text(t.home_continue)).dy));
+    }
+    // 统计中心 / 排行榜从学习卡标题行尾挪进了工具栏：卡里不再有第二份入口。
+    expect(
+      inSection(t.reading_activity, find.byIcon(FushiIcons.barChart)),
+      findsNothing,
+    );
+    expect(
+      inSection(t.reading_activity, find.byIcon(FushiIcons.trophy)),
+      findsNothing,
+    );
+    // 首屏主角卡在视野里：FAB 不出现（不与主角卡主按钮重复）。
+    expect(resumeFab(tester).visible, isFalse);
+  });
+
+  testWidgets('浮动工具栏：Tab 可达三颗动作按钮（焦点可遍历）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedSampleData();
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    bool focusedIn(Finder target) {
+      final BuildContext? ctx = FocusManager.instance.primaryFocus?.context;
+      if (ctx == null) return false;
+      final Element el = tester.element(target);
+      if (identical(ctx, el)) return true;
+      bool hit = false;
+      ctx.visitAncestorElements((Element e) {
+        if (identical(e, el)) hit = true;
+        return !hit;
+      });
+      return hit;
+    }
+
+    final Set<String> reached = <String>{};
+    const List<String> keys = <String>[
+      'home-toolbar-updates',
+      'home-toolbar-stats',
+      'home-toolbar-leaderboard',
+    ];
+    for (int i = 0; i < 40 && reached.length < keys.length; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      for (final String key in keys) {
+        if (focusedIn(find.byKey(ValueKey<String>(key)))) reached.add(key);
+      }
+    }
+    expect(reached, keys.toSet());
+  });
+
+  testWidgets('浮动工具栏随滚动：下滚退场（不可聚焦），回滚弹回；主角卡滚出后出现「继续」FAB',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(420, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await seedAllSections();
+    final List<String> opened = <String>[];
+    await tester.pumpWidget(buildApp(
+      openVideoOverride: (
+        BuildContext _,
+        VideoBookRepository __,
+        String bookUid,
+        int? ___,
+      ) async {
+        opened.add(bookUid);
+      },
+    ));
+    await pumpDashboard(tester);
+
+    expect(toolbar(tester).visible, isTrue);
+    // 退场后栏在 Offstage 里（FushiChromeReveal），查找要带上 offstage。
+    final Finder stats = find.byKey(
+        const ValueKey<String>('home-toolbar-stats'),
+        skipOffstage: false);
+    expect(excludedFromFocus(tester, stats), isFalse);
+
+    // 下滚：越过主角卡 → 栏退场，FAB 出现。
+    await tester.drag(dashboardList(), const Offset(0, -500));
+    await settleSpring(tester);
+    expect(toolbar(tester).visible, isFalse);
+    expect(excludedFromFocus(tester, stats), isTrue,
+        reason: '退场中的栏不能还被 Tab 到');
+    expect(resumeFab(tester).visible, isTrue);
+
+    // 回滚一小段：栏弹回，FAB 仍在（主角卡还没回到视野）。
+    await tester.drag(dashboardList(), const Offset(0, 120));
+    await settleSpring(tester);
+    expect(toolbar(tester).visible, isTrue);
+    expect(excludedFromFocus(tester, stats), isFalse);
+    expect(resumeFab(tester).visible, isTrue);
+
+    // FAB 续开的是「继续」主角卡那一条（同一出口）。
+    await tester.tap(find.byKey(const ValueKey<String>('home-resume-fab')));
+    await tester.pump();
+    expect(opened, <String>['video/keep-watching']);
+
+    // 回到顶部：栏恒显示、FAB 退场。
+    await tester.drag(dashboardList(), const Offset(0, 3000));
+    await settleSpring(tester);
+    expect(toolbar(tester).visible, isTrue);
+    expect(resumeFab(tester).visible, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('HomeToolbarScrollState：只认主列表纵向滚动，带回差切换显隐', (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    final BuildContext scrollContext = tester.element(find.byType(Scaffold));
+    final HomeToolbarScrollState state = HomeToolbarScrollState();
+    addTearDown(state.dispose);
+    ScrollUpdateNotification update({
+      required double pixels,
+      required double delta,
+      Axis axis = Axis.vertical,
+    }) =>
+        ScrollUpdateNotification(
+          metrics: FixedScrollMetrics(
+            minScrollExtent: 0,
+            maxScrollExtent: 5000,
+            pixels: pixels,
+            viewportDimension: 800,
+            axisDirection: axis == Axis.vertical
+                ? AxisDirection.down
+                : AxisDirection.right,
+            devicePixelRatio: 1,
+          ),
+          context: scrollContext,
+          scrollDelta: delta,
+        );
+
+    // 横滑行（卡片里的横向列表）：不影响。
+    state.handle(update(pixels: 900, delta: 200, axis: Axis.horizontal));
+    expect(state.visible, isTrue);
+    expect(state.pastHero, isFalse);
+    // 主列表下滚一段（超过回差）→ 退场。
+    state.handle(update(pixels: 400, delta: 40));
+    expect(state.visible, isFalse);
+    expect(state.pastHero, isTrue);
+    // 小幅回滚（未过回差）→ 仍隐藏；继续回滚 → 出现。
+    state.handle(update(pixels: 390, delta: -10));
+    expect(state.visible, isFalse);
+    state.handle(update(pixels: 360, delta: -30));
+    expect(state.visible, isTrue);
+    // 顶部一屏栏高之内恒显示，FAB 条件解除。
+    state.handle(update(pixels: 60, delta: 40));
+    expect(state.visible, isTrue);
+    expect(state.pastHero, isFalse);
   });
 
   // BUG-1220：追踪链路原本零可观测（成功即删 outbox 行、失败只进错误日志并退避、
@@ -1545,7 +1988,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('本地动画合集'), findsOneWidget);
       expect(find.textContaining('Remote anime'), findsOneWidget);
-      expect(find.byIcon(Icons.open_in_new), findsOneWidget);
+      expect(find.byIcon(FushiIcons.openInNew), findsOneWidget);
       expect(
         find.textContaining(t.media_tracking_linked_count(n: 1)),
         findsOneWidget,
@@ -1592,7 +2035,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('500'), findsOneWidget);
-      expect(find.byIcon(Icons.sync_problem_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.syncProblem), findsOneWidget);
       expect(
         find.textContaining(t.media_tracking_pending_count(n: 1)),
         findsOneWidget,

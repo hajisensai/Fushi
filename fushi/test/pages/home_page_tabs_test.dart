@@ -1,9 +1,9 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 测试用：把「一串具名 bool」翻成一个可见性快照。迁移前 [homeActiveTabs] 收的正是
 /// 这串具名 bool（`videoEnabled` 必填，books/manga/downloads/lookup 默认开，
@@ -184,8 +184,8 @@ void main() {
       expect(tabs.indexOf(HomeTab.manga), tabs.indexOf(HomeTab.books) + 1);
 
       final AdaptiveNavItem item = homeNavItemFor(HomeTab.manga);
-      expect(item.icon, Icons.photo_library_outlined);
-      expect(item.selectedIcon, Icons.photo_library);
+      expect(item.icon, FushiIcons.manga);
+      expect(item.selectedIcon, FushiIcons.filled(FushiIcons.manga));
       expect(item.label, t.manga_library);
     });
   });
@@ -316,8 +316,8 @@ void main() {
 
     test('游戏导航使用 Hook 工作台标签与手柄图标', () {
       final AdaptiveNavItem item = homeNavItemFor(HomeTab.games);
-      expect(item.icon, Icons.sports_esports_outlined);
-      expect(item.selectedIcon, Icons.sports_esports);
+      expect(item.icon, FushiIcons.games);
+      expect(item.selectedIcon, FushiIcons.filled(FushiIcons.games));
       expect(item.label, t.nav_game);
     });
   });

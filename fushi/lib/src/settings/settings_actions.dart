@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -8,6 +8,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show CustomThemeEntry, ThemePreset, kCustomThemeDefaultSeed;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_context.dart';
+import 'package:fushi/src/settings/theme_preset_card.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -202,8 +204,8 @@ Widget buildDesignSystemSelector(SettingsContext settingsContext) {
       ),
       const ButtonSegment<String>(
         value: 'material',
-        label: Text('MD3'),
-        tooltip: 'Material Design 3',
+        label: Text('M3E'),
+        tooltip: 'Material 3 Expressive',
       ),
       ButtonSegment<String>(
         value: 'glass',
@@ -304,6 +306,11 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
   // 这里，既给按钮的 onTap 用，也给它的 enabled 门用——两者必须读同一个值，否则
   // 又会长出「按钮亮着但没有目标」的状态。
   final String? activeCustomThemeId = appModel.activeCustomThemeEntry?.id;
+  // 2026-10 M3E：预设只决定种子色、不决定明暗——所有色卡按**当前**明暗（含
+  // 「纯黑深色背景」）预览，与选中后真实生效的配色同源。
+  final Brightness brightness =
+      appModel.isDarkMode ? Brightness.dark : Brightness.light;
+  final bool pureBlack = appModel.pureBlackDark;
 
   return AdaptiveSettingsRow(
     title: t.reader_theme,
@@ -314,35 +321,37 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
     trailing: Wrap(
       spacing: tokens.spacing.gap,
       runSpacing: tokens.spacing.gap,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        FushiSchemeSwatch(
-          colors: fushiSchemeSwatchColors(
-            buildFushiColorScheme(
-              seedColor: systemColor,
-              brightness: Theme.of(settingsContext.context).brightness,
-            ),
+        // 跟随系统取色（Material You 动态色）。
+        FushiThemePresetCard(
+          key: const ValueKey<String>('theme-preset-system-theme'),
+          seed: systemColor,
+          scheme: buildFushiColorScheme(
+            seedColor: systemColor,
+            brightness: brightness,
+            pureBlack: pureBlack,
           ),
-          size: _swatchSize,
+          label: AppModel.themeLabel('system-theme'),
+          overlay: FushiIcons.ai,
           selected: appModel.appThemeKey == 'system-theme',
-          // Size inherited from FushiSchemeSwatch's badge IconTheme (14) so the
-          // icon fits the smaller inner dot; an explicit size here would override
-          // it and crowd the dot.
-          overlay: const FushiIcon(Icons.auto_awesome_outlined),
           onTap: () async {
             await appModel.setAppThemeKey('system-theme');
             notifyReaderSettingsChanged(settingsContext);
           },
         ),
+        // M3 经典种子预设（基线紫 + Google 经典色板 + 中性灰）。
         ...AppModel.themePresets.entries.map(
           (MapEntry<String, ThemePreset> entry) {
-            return FushiSchemeSwatch(
-              colors: fushiSchemeSwatchColors(
-                AppModel.buildPresetColorScheme(
-                  entry.value,
-                  entry.value.brightness,
-                ),
+            return FushiThemePresetCard(
+              key: ValueKey<String>('theme-preset-${entry.key}'),
+              seed: entry.value.seed,
+              scheme: AppModel.buildPresetColorScheme(
+                entry.value,
+                brightness,
+                pureBlack: pureBlack,
               ),
-              size: _swatchSize,
+              label: AppModel.themeLabel(entry.key),
               selected: appModel.appThemeKey == entry.key,
               onTap: () async {
                 await appModel.setAppThemeKey(entry.key);
@@ -351,64 +360,61 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
             );
           },
         ),
-        // TODO-930 M1: 每个自定义主题一个 swatch。单击=切换到该主题
+        // TODO-930 M1: 每个自定义主题一张卡。单击=切换到该主题
         // （写 app_theme_key=custom-theme:<id>），长按=进编辑页编辑该主题。
-        // 预览圈读各 entry 的种子+角色色 + 当前真实全局明暗（自定义主题跟随
+        // 预览读各 entry 的种子+角色色 + 当前真实全局明暗（自定义主题跟随
         // 全局明暗，custom_theme_dark 已停写、不是真值）。
-        // TODO-1320: swatch 下不再渲染主题名 caption——系统/预设/自定义所有主题
-        // 卡片统一只显示完整对角预览、无底部多余文字（选中与否都完整、且高度一致，
-        // 不再因自定义带 label 而比预设高）。主题名仍可在长按/编辑按钮进入的编辑页查看修改。
-        ...appModel.customThemes.map((CustomThemeEntry e) {
-          final String key = 'custom-theme:${e.id}';
-          return FushiSchemeSwatch(
-            colors: fushiSchemeSwatchColors(
-              buildFushiColorScheme(
-                seedColor: Color(e.seed),
-                brightness:
-                    appModel.isDarkMode ? Brightness.dark : Brightness.light,
-                primary: e.primaryColor != null ? Color(e.primaryColor!) : null,
-                secondary:
-                    e.secondaryColor != null ? Color(e.secondaryColor!) : null,
-                tertiary:
-                    e.tertiaryColor != null ? Color(e.tertiaryColor!) : null,
-                primaryContainer:
-                    e.containerColor != null ? Color(e.containerColor!) : null,
+        ...appModel.customThemes.asMap().entries.map(
+          (MapEntry<int, CustomThemeEntry> indexed) {
+            final CustomThemeEntry e = indexed.value;
+            final String key = 'custom-theme:${e.id}';
+            final Color seed = e.followSystemAccent
+                ? (appModel.systemPrimaryColor ?? Color(e.primaryColor ?? e.seed))
+                : Color(e.primaryColor ?? e.seed);
+            return FushiThemePresetCard(
+              key: ValueKey<String>('theme-preset-$key'),
+              seed: seed,
+              scheme: appModel.themeNotifier.buildCustomThemeColorScheme(
+                e,
+                brightness,
               ),
-            ),
-            size: _swatchSize,
-            // 选中 = 当前 app_theme_key 指向这个 entry（精确 custom-theme:<id>，
-            // 或裸 custom-theme 解析到的当前活跃 entry）。
-            selected: appModel.appThemeKey == key ||
-                (appModel.appThemeKey == 'custom-theme' &&
-                    appModel.activeCustomThemeEntry?.id == e.id),
-            onTap: () async {
-              await appModel.setAppThemeKey(key);
-              notifyReaderSettingsChanged(settingsContext);
-            },
-            onLongPress: () async {
-              await pushSettingsPage(
-                settingsContext,
-                (_) => CustomThemePage(themeId: e.id),
-              );
-              notifyReaderSettingsChanged(settingsContext);
-            },
-          );
-        }),
-        // TODO-930 M1: 末尾「+新建」圈。打开一个空草稿编辑页（种子取品牌默认色，
+              label: e.name.trim().isNotEmpty
+                  ? e.name.trim()
+                  : t.custom_theme_default_name(n: indexed.key + 1),
+              // 选中 = 当前 app_theme_key 指向这个 entry（精确 custom-theme:<id>，
+              // 或裸 custom-theme 解析到的当前活跃 entry）。
+              selected: appModel.appThemeKey == key ||
+                  (appModel.appThemeKey == 'custom-theme' &&
+                      appModel.activeCustomThemeEntry?.id == e.id),
+              onTap: () async {
+                await appModel.setAppThemeKey(key);
+                notifyReaderSettingsChanged(settingsContext);
+              },
+              onLongPress: () async {
+                await pushSettingsPage(
+                  settingsContext,
+                  (_) => CustomThemePage(themeId: e.id),
+                );
+                notifyReaderSettingsChanged(settingsContext);
+              },
+            );
+          },
+        ),
+        // TODO-930 M1: 末尾「+新建」卡。打开一个空草稿编辑页（种子取品牌默认色，
         // 沿用 928），用户点「应用」才写进列表。焦点/手柄用户单击（Enter / A）
         // 即可新建，无需长按。
         // BUG-1841：进编辑页前不得 upsert——否则只是点开看看也会多出一个主题。
-        FushiSchemeSwatch(
-          colors: fushiSchemeSwatchColors(
-            buildFushiColorScheme(
-              seedColor: const Color(kCustomThemeDefaultSeed),
-              brightness:
-                  appModel.isDarkMode ? Brightness.dark : Brightness.light,
-            ),
+        FushiThemePresetCard(
+          key: const ValueKey<String>('theme-preset-new-custom'),
+          seed: const Color(kCustomThemeDefaultSeed),
+          scheme: buildFushiColorScheme(
+            seedColor: const Color(kCustomThemeDefaultSeed),
+            brightness: brightness,
+            pureBlack: pureBlack,
           ),
-          size: _swatchSize,
+          label: t.custom_theme,
+          overlay: Icons.add,
           selected: false,
-          overlay: const FushiIcon(Icons.add),
           onTap: () async {
             await pushSettingsPage(
               settingsContext,

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -16,6 +16,7 @@ import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
@@ -356,11 +357,11 @@ void main() {
     await tester.tap(find.byTooltip(t.anime_download_search).first);
     await tester.pumpAndSettle();
 
-    // 只收结果行（任务折叠区表头也是 ListTile，按已知标题过滤）。
+    // 只收结果行（结果行是分段卡里的 FushiListItem，按已知标题过滤）。
     const Set<String> known = <String>{'seeders-top', 'middle', 'size-top'};
     List<String> titles() => tester
-        .widgetList<ListTile>(glassUnwrapAll<ListTile>(find.byType(ListTile)))
-        .map((ListTile tile) => tile.title)
+        .widgetList<FushiListItem>(find.byType(FushiListItem))
+        .map((FushiListItem tile) => tile.title)
         .whereType<Text>()
         .map((Text text) => text.data)
         .whereType<String>()
@@ -399,7 +400,7 @@ void main() {
     expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'Test Anime');
 
     // 标题候选下拉：切到日文原名。
-    await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+    await tester.tap(find.byIcon(FushiIcons.dropDown).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('テスト・アニメ').last);
     await tester.pumpAndSettle();
@@ -485,7 +486,7 @@ void main() {
     expect(searchCalls, 0);
     expect(find.text(t.anime_download_no_subs), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+    await tester.tap(find.byIcon(FushiIcons.dropDown).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('テスト・アニメ').last);
     await tester.pumpAndSettle();
@@ -565,7 +566,7 @@ void main() {
     expect(filesForEntry, <int>[11, 22]);
 
     // 换番剧名 → 触发重搜。手选那条仍在新结果里，必须继续选中它。
-    await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+    await tester.tap(find.byIcon(FushiIcons.dropDown).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('テスト・アニメ').last);
     await tester.pumpAndSettle();

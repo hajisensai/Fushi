@@ -1,4 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
@@ -8,7 +9,6 @@ import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
-import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -208,10 +208,9 @@ Future<void> _editCollectionTags({
   required MediaCollectionRow collection,
   required VoidCallback onChanged,
 }) async {
-  await Navigator.of(context).push<void>(
-    MaterialPageRoute<void>(
-      builder: (_) => TagPickerPage(collectionId: collection.id),
-    ),
+  await showTagPicker(
+    context,
+    targets: TagTargets(collectionIds: <int>[collection.id]),
   );
   onChanged();
 }

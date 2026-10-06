@@ -10,13 +10,14 @@
 //   fushi/lib/src/pages/implementations/home_video_page.dart      `_buildVideoSearchBar`
 //   fushi/lib/src/pages/implementations/reader_fushi_history_page.dart `_buildSearchBar`
 //   fushi/lib/src/pages/implementations/games_library_page.dart   `_buildToolbar`
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 import 'widget_test_helpers.dart';
 import '../helpers/glass_unwrap.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 三大库页搜索框的形态参数，逐字抄自上面三处调用点。
 const double _libraryPageFieldHeight = 40;
@@ -129,8 +130,8 @@ void main() {
       platform: TargetPlatform.windows,
     );
 
-    expect(find.byIcon(Icons.close), findsOneWidget, reason: '有文字时应有清除键');
-    expect(find.byIcon(Icons.keyboard_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.close), findsOneWidget, reason: '有文字时应有清除键');
+    expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
     // RenderFlex overflow 会以异常形式记录，这里必须是干净的一帧。
     expect(tester.takeException(), isNull);
     expect(

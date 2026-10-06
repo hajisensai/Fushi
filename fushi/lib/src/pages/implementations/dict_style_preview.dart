@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/dictionary/dict_style_preview_sample.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';

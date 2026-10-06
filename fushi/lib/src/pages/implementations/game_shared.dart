@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/models/store_compliance.dart';
@@ -148,6 +148,23 @@ final List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.settings,
 ];
 
+/// 标记「游戏模块的分区页签已由外壳画在浮动工具栏里」（[HomeGamePage] 挂）。
+///
+/// 游戏的七个子区各自在自己的页头主位放一份 [GameSectionTabs]；外壳改成与视频库
+/// 同构的浮动工具栏（贴合内容宽的页签胶囊 + 右侧动作组）后，子区里那一份就
+/// 不该再画——在本作用域下 [GameSectionTabs] 是空占位，页头只剩把动作登记给外壳
+/// 动作槽的职责。子页被独立使用（不在 [HomeGamePage] 里）时没有本作用域，照常画。
+class GameSectionTabsHostScope extends InheritedWidget {
+  const GameSectionTabsHostScope({required super.child, super.key});
+
+  static bool hostedOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<GameSectionTabsHostScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(GameSectionTabsHostScope oldWidget) => false;
+}
+
 /// 游戏模块共用的胶囊分段导航（首页 / 库 / 捕获工作台 / 设置）。
 ///
 /// 兼容性诊断仍可从「设置」进入，但不再占据高频顶部页签；诊断详情打开时顶部
@@ -163,8 +180,12 @@ class GameSectionTabs extends StatelessWidget {
     required this.onSelectMonitor,
     this.onSelectSettings,
     this.onSelectDashboard,
+    this.floating = false,
     super.key,
   });
+
+  /// 见 [LibrarySectionTabs.floating]（外壳浮动工具栏里那一份用）。
+  final bool floating;
 
   /// 当前高亮的子区。
   final GameSection selected;
@@ -199,6 +220,11 @@ class GameSectionTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 外壳已在浮动工具栏里画了页签（[GameSectionTabsHostScope]）：子区页头里
+    // 这一份留空。
+    if (!floating && GameSectionTabsHostScope.hostedOf(context)) {
+      return const SizedBox.shrink();
+    }
     void select(GameSection section) {
       switch (section) {
         case GameSection.dashboard:
@@ -235,9 +261,13 @@ class GameSectionTabs extends StatelessWidget {
             label: _labelFor(section),
           ),
       ],
-      selected: selected,
+      // 诊断不设页签（从「设置」进入），停在诊断时高亮「设置」。
+      selected: selected == GameSection.diagnostics
+          ? GameSection.settings
+          : selected,
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
+      floating: floating,
     );
   }
 }

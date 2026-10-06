@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// Used by the Reader WebSocket Source.
@@ -49,7 +51,7 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.server_address,
-        leadingIcon: Icons.sensors_outlined,
+        leadingIcon: FushiIcons.server,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -87,18 +89,18 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // M3E 填充输入框：前置链接图标、共享清空钮（clearable），
+              // 回车直接连接。
               FushiTextField(
                 autofocus: true,
                 controller: _addressController,
                 hintText: 'wss://',
                 labelText: t.server_address,
                 keyboardType: TextInputType.url,
-                suffixIcon: FushiIconButton(
-                  size: 18,
-                  tooltip: t.clear,
-                  onTap: _addressController.clear,
-                  icon: Icons.clear,
-                ),
+                textInputAction: TextInputAction.go,
+                onSubmitted: (_) => executeSearch(),
+                prefixIcon: const FushiIcon(FushiIcons.link),
+                clearable: true,
               ),
             ],
           ),
@@ -110,6 +112,7 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
   Widget buildConnectButton() {
     return adaptiveDialogAction(
       context: context,
+      isDefaultAction: true,
       onPressed: executeSearch,
       child: Text(t.dialog_connect),
     );

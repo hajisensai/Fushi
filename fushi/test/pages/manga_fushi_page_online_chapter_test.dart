@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -291,10 +291,14 @@ void main() {
     final Finder chapters =
         find.byKey(const ValueKey<String>('manga_reader_chapters'));
     expect(chapters, findsOneWidget);
-    // 章节按钮在左上，紧跟返回键（不在右侧动作组里；窄窗也不折进 ⋮）。
-    final Rect back = tester
-        .getRect(find.byKey(const ValueKey<String>('manga_reader_back_button')));
-    expect(tester.getRect(chapters).left, closeTo(back.right, 1));
+    // 章节按钮在底部悬浮工具栏的导航组里（拇指区，优先级仅次于快捷设置）。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('manga_reader_toolbar')),
+        matching: chapters,
+      ),
+      findsOneWidget,
+    );
     // 点开是左侧侧栏，不是底部弹层。
     await tester.runAsync(() async {
       await tester.tap(chapters);

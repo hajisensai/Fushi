@@ -3,7 +3,13 @@ import 'dart:convert';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -193,28 +199,16 @@ class _VideoDownloadSubscriptionsPanelState
   Future<void> _delete(
     VideoDownloadSubscriptionRow subscription,
   ) async {
-    final bool confirmed = await showAppDialog<bool>(
-          context: context,
-          builder: (BuildContext dialogContext) => FushiAlertDialog(
-            title: Text(t.download_subscription_delete),
-            content: Text(
-              t.download_subscription_delete_confirm(
-                title: subscription.title,
-              ),
-            ),
-            actions: <Widget>[
-              FushiTextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: Text(t.dialog_cancel),
-              ),
-              FushiFilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: Text(t.dialog_delete),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.download_subscription_delete,
+      message: t.download_subscription_delete_confirm(
+        title: subscription.title,
+      ),
+      icon: FushiIcons.delete,
+      confirmLabel: t.dialog_delete,
+      destructive: true,
+    );
     if (!confirmed) return;
     await ref
         .read(appProvider)
@@ -284,7 +278,7 @@ class _VideoDownloadSubscriptionsPanelState
       ) {
         if (snapshot.hasError) {
           return _VideoDownloadSubscriptionMessage(
-            icon: Icons.error_outline,
+            icon: FushiIcons.error,
             title: t.error_load_failed,
           );
         }
@@ -420,17 +414,24 @@ class _VideoDownloadSubscriptionsViewState
       };
 
   Widget _buildToolbar() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        0,
+      ),
       child: Row(
         children: <Widget>[
           Expanded(
-            child: FushiSearchField(
+            child: FushiSearchBar(
               fieldKey: const ValueKey<String>('video-subscription-search'),
               controller: _searchController,
               focusNode: _searchFocusNode,
               hintText: t.subscription_search_hint,
-              onChanged: (String value) => setState(() => _searchQuery = value),
+              onQueryChanged: (String value) =>
+                  setState(() => _searchQuery = value),
               onSubmitted: (String value) =>
                   setState(() => _searchQuery = value),
               onClear: () => setState(() => _searchQuery = ''),
@@ -454,7 +455,9 @@ class _VideoDownloadSubscriptionsViewState
             child: FushiOutlinedButton.icon(
               // 外层菜单接管点击；onPressed 必须为 null 才不吞菜单手势。
               onPressed: null,
-              icon: const FushiIcon(Icons.sort, size: 18),
+              // 菜单触发器：布局边界即可视胶囊，状态层与胶囊同形。
+              style: kFushiMenuTriggerButtonStyle,
+              icon: const FushiIcon(FushiIcons.sort, size: 18),
               label: Text(_sortLabel(_sort)),
             ),
           ),
@@ -463,6 +466,121 @@ class _VideoDownloadSubscriptionsViewState
     );
   }
 
+  /// 顶部汇总：订阅数 Display 大数字 + 启用数 + 说明 + 「全部检查」。
+  Widget _buildHeader() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiTypography type = context.fushiType;
+    final int enabled = widget.subscriptions
+        .where((VideoDownloadSubscriptionRow row) => row.enabled)
+        .length;
+    final Color? onContainer =
+        fushiCardToneColors(context, FushiCardTone.secondary)?.onContainer;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        tokens.spacing.gap,
+        tokens.spacing.page,
+        4,
+      ),
+      child: FushiCard(
+        key: const ValueKey<String>('video-subscriptions-header'),
+        tone: FushiCardTone.secondary,
+        padding: const EdgeInsets.all(20),
+        child: Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 16,
+          runSpacing: 12,
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  const FushiListLeadingIcon(
+                    FushiIcons.notifications,
+                    shape: FushiLeadingShape.cookie,
+                    tone: FushiCardTone.primary,
+                    size: 48,
+                  ),
+                  const SizedBox(width: 16),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          t.download_subscription_summary(
+                            n: widget.subscriptions.length,
+                            enabled: enabled,
+                          ),
+                          style: type.titleMediumEmphasized.tabular.copyWith(
+                            color: onContainer,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          t.download_subscription_running_hint,
+                          style: type.bodySmall.copyWith(color: onContainer),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            FushiFilledButton.icon(
+              key: const ValueKey<String>('video-subscription-check-all'),
+              onPressed:
+                  widget.checkingAll || enabled == 0 ? null : widget.onCheckAll,
+              icon: widget.checkingAll
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const FushiIcon(FushiIcons.refresh, size: 18),
+              label: Text(t.download_subscription_check_all),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCard(VideoDownloadSubscriptionRow subscription) {
+    final bool busy = _busy.contains(subscription.subscriptionId);
+    return _VideoDownloadSubscriptionCard(
+      key: ValueKey<String>(
+        'video-subscription-card-${subscription.subscriptionId}',
+      ),
+      subscription: subscription,
+      busy: busy,
+      itemCounts:
+          _itemCounts[subscription.subscriptionId] ?? const <String, int>{},
+      expanded: _expanded.contains(subscription.subscriptionId),
+      itemsWatcher: widget.itemsWatcher,
+      onToggleExpanded: widget.itemsWatcher == null
+          ? null
+          : () => setState(() {
+                if (!_expanded.add(subscription.subscriptionId)) {
+                  _expanded.remove(subscription.subscriptionId);
+                }
+              }),
+      onToggle: (bool enabled) =>
+          _run(subscription, () => widget.onToggle(subscription, enabled)),
+      onCheck: subscription.enabled
+          ? () => _run(subscription, () => widget.onCheck(subscription))
+          : null,
+      onEdit: widget.onEdit == null
+          ? null
+          : () => _run(subscription, () => widget.onEdit!(subscription)),
+      onDelete: () => _run(subscription, () => widget.onDelete(subscription)),
+    );
+  }
+
+  /// 宽于此值时订阅卡两列网格。
+  static const double _kGridBreakpoint = 900;
+
   @override
   Widget build(BuildContext context) {
     final List<VideoDownloadSubscriptionRow> visible =
@@ -470,121 +588,132 @@ class _VideoDownloadSubscriptionsViewState
       filterVideoDownloadSubscriptions(widget.subscriptions, _searchQuery),
       _sort,
     );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: FushiCard(
-            key: const ValueKey<String>('video-subscriptions-header'),
-            padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
-            child: Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: <Widget>[
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 560),
-                  child: Text(
-                    t.download_subscription_running_hint,
-                    style: Theme.of(context).textTheme.bodySmall,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double page = tokens.spacing.page;
+    final double gap = tokens.spacing.gap;
+    // 叠放的浮动头部（浏览页一二级页签行）让出的高度：整页是一个滚动视图，
+    // 顶部自己占位，汇总 / 搜索 / 卡片都滚到头部之下（BUG-2975）。
+    final double chromeInset = FushiFloatingChromeInset.of(context);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int columns = constraints.maxWidth >= _kGridBreakpoint ? 2 : 1;
+        final int rowCount = (visible.length + columns - 1) ~/ columns;
+        final Widget body;
+        if (widget.subscriptions.isEmpty || visible.isEmpty) {
+          body = SliverFillRemaining(
+            hasScrollBody: false,
+            child: widget.subscriptions.isEmpty
+                ? _VideoDownloadSubscriptionMessage(
+                    icon: FushiIcons.notifications,
+                    title: t.download_subscription_empty_title,
+                    body: t.download_subscription_empty_body,
+                  )
+                : _VideoDownloadSubscriptionMessage(
+                    icon: FushiIcons.searchOff,
+                    title: t.subscription_no_match,
                   ),
-                ),
-                FushiFilledButton.tonalIcon(
-                  key: const ValueKey<String>(
-                    'video-subscription-check-all',
-                  ),
-                  onPressed: widget.checkingAll ||
-                          !widget.subscriptions.any(
-                            (VideoDownloadSubscriptionRow row) => row.enabled,
-                          )
-                      ? null
-                      : widget.onCheckAll,
-                  icon: widget.checkingAll
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: FushiCircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const FushiIcon(Icons.refresh, size: 18),
-                  label: Text(t.download_subscription_check_all),
-                ),
+          );
+        } else {
+          body = SliverPadding(
+            padding: EdgeInsets.fromLTRB(page, gap, page, 24),
+            sliver: SliverList.builder(
+              itemCount: rowCount,
+              itemBuilder: fushiStaggeredItemBuilder((
+                BuildContext context,
+                int row,
+              ) {
+                final int start = row * columns;
+                final Widget content = columns == 1
+                    ? _buildCard(visible[start])
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          for (int c = 0; c < columns; c++) ...<Widget>[
+                            if (c > 0) SizedBox(width: gap + 4),
+                            Expanded(
+                              child: start + c < visible.length
+                                  ? _buildCard(visible[start + c])
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ],
+                      );
+                return Padding(
+                  padding: EdgeInsets.only(bottom: gap + 4),
+                  child: content,
+                );
+              }),
+            ),
+          );
+        }
+        return FushiEntranceScope(
+          replayKey: _sort,
+          child: FushiRefreshIndicator(
+            onRefresh: widget.onCheckAll,
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverToBoxAdapter(child: SizedBox(height: chromeInset)),
+                SliverToBoxAdapter(child: _buildHeader()),
+                if (widget.remoteSection != null)
+                  SliverToBoxAdapter(child: widget.remoteSection),
+                if (widget.subscriptions.isNotEmpty)
+                  SliverToBoxAdapter(child: _buildToolbar()),
+                body,
               ],
             ),
           ),
-        ),
-        if (widget.remoteSection != null) widget.remoteSection!,
-        if (widget.subscriptions.isNotEmpty) _buildToolbar(),
-        Expanded(
-          child: widget.subscriptions.isEmpty
-              ? _VideoDownloadSubscriptionMessage(
-                  icon: Icons.subscriptions_outlined,
-                  title: t.download_subscription_empty_title,
-                  body: t.download_subscription_empty_body,
-                )
-              : visible.isEmpty
-                  ? _VideoDownloadSubscriptionMessage(
-                      icon: Icons.search_off,
-                      title: t.subscription_no_match,
-                    )
-                  : RefreshIndicator(
-                      onRefresh: widget.onCheckAll,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                        itemCount: visible.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (BuildContext context, int index) {
-                          final VideoDownloadSubscriptionRow subscription =
-                              visible[index];
-                          final bool busy =
-                              _busy.contains(subscription.subscriptionId);
-                          return _VideoDownloadSubscriptionCard(
-                            key: ValueKey<String>(
-                              'video-subscription-card-${subscription.subscriptionId}',
-                            ),
-                            subscription: subscription,
-                            busy: busy,
-                            itemCounts:
-                                _itemCounts[subscription.subscriptionId] ??
-                                    const <String, int>{},
-                            expanded:
-                                _expanded.contains(subscription.subscriptionId),
-                            itemsWatcher: widget.itemsWatcher,
-                            onToggleExpanded: widget.itemsWatcher == null
-                                ? null
-                                : () => setState(() {
-                                      if (!_expanded
-                                          .add(subscription.subscriptionId)) {
-                                        _expanded.remove(
-                                            subscription.subscriptionId);
-                                      }
-                                    }),
-                            onToggle: (bool enabled) => _run(
-                              subscription,
-                              () => widget.onToggle(subscription, enabled),
-                            ),
-                            onCheck: subscription.enabled
-                                ? () => _run(
-                                      subscription,
-                                      () => widget.onCheck(subscription),
-                                    )
-                                : null,
-                            onEdit: widget.onEdit == null
-                                ? null
-                                : () => _run(
-                                      subscription,
-                                      () => widget.onEdit!(subscription),
-                                    ),
-                            onDelete: () => _run(
-                              subscription,
-                              () => widget.onDelete(subscription),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-        ),
-      ],
+        );
+      },
+    );
+  }
+}
+
+/// 订阅卡上的一枚信息 chip（调度 / 模式 / 来源）。
+class _SubscriptionChip extends StatelessWidget {
+  const _SubscriptionChip({
+    required this.icon,
+    required this.label,
+    this.tone,
+  });
+
+  final IconData icon;
+  final String label;
+
+  /// null = 中性 surfaceContainerHigh；给了就是该色调的饱和色块。
+  final FushiCardTone? tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final FushiCardColors? toned =
+        tone == null ? null : fushiCardToneColors(context, tone!);
+    final Color background = toned?.container ??
+        (glass ? appleColorsOf(context).fill : cs.surfaceContainerHigh);
+    final Color foreground = toned?.onContainer ?? cs.onSurfaceVariant;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: FushiM3eShape.smallRadius,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIcon(icon, size: 14, color: foreground),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.labelMedium.tabular.copyWith(
+                color: foreground,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -657,29 +786,37 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     return parts.join(' · ');
   }
 
-  Widget _buildCover(FushiDesignTokens tokens) {
-    const double width = 40;
-    const double height = 60;
+  Widget _buildCover(BuildContext context) {
+    const double width = 56;
+    const double height = 84;
     final String url = subscription.coverUrl?.trim() ?? '';
     final Widget placeholder = ColoredBox(
-      color: tokens.surfaces.group,
-      child: const FushiIcon(Icons.subscriptions_outlined, size: 20),
+      color: FushiDesignTokens.of(context).surfaces.group,
+      child: const Center(
+        child: FushiIcon(FushiIcons.video, size: 24),
+      ),
     );
-    return ClipRRect(
-      borderRadius: FushiBorderRadius.chip,
-      child: SizedBox(
-        width: width,
-        height: height,
-        // 与放送日历同一处理：占位底色走设计令牌（MD3 守卫禁止就地读
-        // colorScheme.surfaceContainer*），且 errorBuilder 必须给 ——
-        // PortraitCoverImage 加载失败会返回 SizedBox.shrink()，不给就是封面 404 /
-        // 断网留一个 40×60 的空洞。
-        child: url.isEmpty
-            ? placeholder
-            : PortraitCoverImage(
-                image: AppCachedHttpImage(url),
-                errorBuilder: (_) => placeholder,
-              ),
+    final FushiMotionScheme motion = context.fushiMotion;
+    // 停用的订阅封面降饱和（透明度走 effects 弹簧，不过冲）。
+    return AnimatedOpacity(
+      opacity: subscription.enabled ? 1 : 0.45,
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      child: ClipRRect(
+        borderRadius: FushiM3eShape.smallRadius,
+        child: SizedBox(
+          width: width,
+          height: height,
+          // 与放送日历同一处理：占位底色走设计令牌，且 errorBuilder 必须给 ——
+          // PortraitCoverImage 加载失败会返回 SizedBox.shrink()，不给就是封面
+          // 404 / 断网留一个空洞。
+          child: url.isEmpty
+              ? placeholder
+              : PortraitCoverImage(
+                  image: AppCachedHttpImage(url),
+                  errorBuilder: (_) => placeholder,
+                ),
+        ),
       ),
     );
   }
@@ -687,6 +824,9 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
     final List<String> strictParts =
         videoDownloadSubscriptionFilterSummary(subscription.filterJson);
     final String mediaLabel = subscription.mediaKind == 'movie'
@@ -699,16 +839,19 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
         ? subscription.title
         : '${subscription.title} (${subscription.year})';
     final String countsLine = _itemCountsLine;
+    final int failed =
+        itemCounts[VideoDownloadSubscriptionItemStatus.failed] ?? 0;
+    final String? lastError = subscription.lastError?.trim();
     return FushiCard(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              _buildCover(FushiDesignTokens.of(context)),
-              const SizedBox(width: 10),
+              _buildCover(context),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -717,33 +860,115 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
                       title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall,
+                      style: type.titleMediumEmphasized,
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 4),
                     Text(
                       <String>[
                         mediaLabel,
                         subscription.resourceProvider,
-                        modeLabel,
                       ].join(' · '),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: type.bodySmall.copyWith(
+                        color: cs.onSurfaceVariant,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    // 调度 chip：模式、下次检查（启用时）、上次检查、最近匹配、起始集。
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: <Widget>[
+                        _SubscriptionChip(
+                          icon: subscription.mode == 'oneShot'
+                              ? FushiIcons.download
+                              : FushiIcons.repeat,
+                          label: modeLabel,
+                          tone: subscription.enabled
+                              ? FushiCardTone.primary
+                              : null,
+                        ),
+                        if (subscription.enabled &&
+                            subscription.nextCheckAt != null)
+                          _SubscriptionChip(
+                            icon: FushiIcons.schedule,
+                            label: t.subscription_next_check(
+                              time: _formatTime(subscription.nextCheckAt),
+                            ),
+                          ),
+                        _SubscriptionChip(
+                          icon: FushiIcons.history,
+                          label: t.download_subscription_last_checked(
+                            time: _formatTime(subscription.lastCheckedAt),
+                          ),
+                        ),
+                        if (subscription.lastMatchedAt != null)
+                          _SubscriptionChip(
+                            icon: FushiIcons.downloadDone,
+                            label: t.subscription_last_matched(
+                              time: _formatTime(subscription.lastMatchedAt),
+                            ),
+                            tone: FushiCardTone.tertiary,
+                          ),
+                        if (subscription.startAfterEpisode != null)
+                          _SubscriptionChip(
+                            icon: FushiIcons.skipNext,
+                            label: t.download_subscription_start_episode(
+                              episode: subscription.startAfterEpisode!,
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              FushiSwitch.adaptive(
-                key: ValueKey<String>(
-                  'video-subscription-toggle-${subscription.subscriptionId}',
-                ),
-                value: subscription.enabled,
-                onChanged: busy ? null : onToggle,
+              const SizedBox(width: 8),
+              Column(
+                children: <Widget>[
+                  FushiSwitch.adaptive(
+                    key: ValueKey<String>(
+                      'video-subscription-toggle-${subscription.subscriptionId}',
+                    ),
+                    value: subscription.enabled,
+                    onChanged: busy ? null : onToggle,
+                  ),
+                  // 失败集数徽标：有集失败时在开关下方给一枚 error 色计数。
+                  if (failed > 0) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Container(
+                      key: ValueKey<String>(
+                        'video-subscription-failed-${subscription.subscriptionId}',
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: ShapeDecoration(
+                        color: cs.error,
+                        shape: const StadiumBorder(),
+                      ),
+                      child: Text(
+                        '$failed',
+                        style: type.labelSmallEmphasized.tabular.copyWith(
+                          color: cs.onError,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
           if (strictParts.isNotEmpty || _isLegacy) ...<Widget>[
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            Text(
+              t.subscription_rules_title,
+              style: type.labelMediumEmphasized.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 6),
             Wrap(
               spacing: 6,
               runSpacing: 6,
@@ -751,7 +976,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
                 if (_isLegacy)
                   FushiTagChip(
                     label: t.subscription_legacy_badge,
-                    color: theme.colorScheme.tertiary,
+                    color: cs.tertiary,
                     selected: true,
                     tone: FushiTagChipTone.surface,
                   ),
@@ -760,118 +985,108 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 8),
-          Text(
-            t.download_subscription_last_checked(
-              time: _formatTime(subscription.lastCheckedAt),
-            ),
-            style: theme.textTheme.bodySmall,
-          ),
-          if (subscription.enabled && subscription.nextCheckAt != null)
-            Text(
-              t.subscription_next_check(
-                time: _formatTime(subscription.nextCheckAt),
-              ),
-              style: theme.textTheme.bodySmall,
-            ),
-          if (subscription.lastMatchedAt != null)
-            Text(
-              t.subscription_last_matched(
-                time: _formatTime(subscription.lastMatchedAt),
-              ),
-              style: theme.textTheme.bodySmall,
-            ),
-          if (subscription.startAfterEpisode != null)
-            Text(
-              t.download_subscription_start_episode(
-                episode: subscription.startAfterEpisode!,
-              ),
-              style: theme.textTheme.bodySmall,
-            ),
           if (countsLine.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 4),
+            const SizedBox(height: 10),
             Text(
               countsLine,
               key: ValueKey<String>(
                 'video-subscription-items-${subscription.subscriptionId}',
               ),
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              style: type.labelMedium.tabular.copyWith(
+                color: cs.onSurfaceVariant,
               ),
             ),
           ],
           if (_isLegacy) ...<Widget>[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               t.subscription_legacy_hint,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
             ),
-          ] else if (subscription.lastError?.trim().isNotEmpty ??
-              false) ...<Widget>[
-            const SizedBox(height: 6),
-            Text(
-              subscription.lastError!.trim(),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
+          ] else if (lastError != null && lastError.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            // 出错：error tonal 色块内联（共享提示横幅，不再只是一行红字）。
+            FushiInlineNotice(
+              severity: FushiNoticeSeverity.error,
+              icon: FushiIcons.error,
+              message: Text(
+                lastError,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
-          const SizedBox(height: 6),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: <Widget>[
-                if (onToggleExpanded != null)
-                  FushiIconButton(
-                    key: ValueKey<String>(
-                      'video-subscription-expand-${subscription.subscriptionId}',
+          const SizedBox(height: 8),
+          Row(
+            children: <Widget>[
+              if (onToggleExpanded != null)
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FushiTextButton.icon(
+                      key: ValueKey<String>(
+                        'video-subscription-expand-${subscription.subscriptionId}',
+                      ),
+                      onPressed: onToggleExpanded,
+                      icon: AnimatedRotation(
+                        turns: expanded ? 0.5 : 0,
+                        duration: motion.spatialFast.duration,
+                        curve: motion.spatialFast.curve,
+                        child: const FushiIcon(FushiIcons.expandMore, size: 18),
+                      ),
+                      label: Text(
+                        t.subscription_show_items,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    tooltip: t.subscription_show_items,
-                    icon: expanded ? Icons.expand_less : Icons.expand_more,
-                    onTap: onToggleExpanded,
                   ),
-                if (onEdit != null && !_isLegacy)
-                  FushiIconButton(
-                    key: ValueKey<String>(
-                      'video-subscription-edit-${subscription.subscriptionId}',
-                    ),
-                    tooltip: t.subscription_edit_title,
-                    icon: Icons.edit_outlined,
-                    onTap: busy ? null : onEdit,
-                  ),
-                // legacy 行不给「立即检查」：新调度器对它恒报配置错误，按钮
-                // 只会制造一条新的红字。
-                if (!_isLegacy)
-                  FushiIconButton(
-                    key: ValueKey<String>(
-                      'video-subscription-check-${subscription.subscriptionId}',
-                    ),
-                    tooltip: t.download_subscription_check_now,
-                    icon: Icons.refresh,
-                    onTap: busy ? null : onCheck,
-                  ),
+                )
+              else
+                const Spacer(),
+              if (onEdit != null && !_isLegacy)
                 FushiIconButton(
                   key: ValueKey<String>(
-                    'video-subscription-delete-${subscription.subscriptionId}',
+                    'video-subscription-edit-${subscription.subscriptionId}',
                   ),
-                  tooltip: t.download_subscription_delete,
-                  icon: Icons.delete_outline,
-                  onTap: busy ? null : onDelete,
+                  tooltip: t.subscription_edit_title,
+                  icon: FushiIcons.edit,
+                  onTap: busy ? null : onEdit,
                 ),
-              ],
-            ),
+              // legacy 行不给「立即检查」：新调度器对它恒报配置错误，按钮只会
+              // 制造一条新的红字。
+              if (!_isLegacy)
+                FushiIconButton(
+                  key: ValueKey<String>(
+                    'video-subscription-check-${subscription.subscriptionId}',
+                  ),
+                  tooltip: t.download_subscription_check_now,
+                  icon: FushiIcons.refresh,
+                  onTap: busy ? null : onCheck,
+                ),
+              FushiIconButton(
+                key: ValueKey<String>(
+                  'video-subscription-delete-${subscription.subscriptionId}',
+                ),
+                tooltip: t.download_subscription_delete,
+                icon: FushiIcons.delete,
+                enabledColor: cs.error,
+                onTap: busy ? null : onDelete,
+              ),
+            ],
           ),
-          if (expanded && itemsWatcher != null)
-            _SubscriptionItemsSection(
-              subscription: subscription,
-              itemsWatcher: itemsWatcher!,
-            ),
+          // 逐集历史：spatial 弹簧撑开 / 收起。
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: expanded && itemsWatcher != null
+                ? _SubscriptionItemsSection(
+                    subscription: subscription,
+                    itemsWatcher: itemsWatcher!,
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
         ],
       ),
     );
@@ -880,7 +1095,8 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
 
 /// 卡内逐集状态视图：接 `watchVideoDownloadSubscriptionItems`，每个逻辑集
 /// 一行（`S01E05` / `movie`），显示发布名、状态与错误。历史即 items 表——
-/// 换发布组重订也不清（窄合并纪律的另一半）。
+/// 换发布组重订也不清（窄合并纪律的另一半）。M3E 分段列表（组首尾大圆角、
+/// 中间小圆角），行首状态色块。
 class _SubscriptionItemsSection extends StatelessWidget {
   const _SubscriptionItemsSection({
     required this.subscription,
@@ -900,9 +1116,25 @@ class _SubscriptionItemsSection extends StatelessWidget {
       subscription.lastCheckedAt != null &&
       subscription.lastMatchedAt == null;
 
+  static FushiCardTone _toneOf(String status) => switch (status) {
+        VideoDownloadSubscriptionItemStatus.processed => FushiCardTone.tertiary,
+        VideoDownloadSubscriptionItemStatus.queued => FushiCardTone.primary,
+        VideoDownloadSubscriptionItemStatus.failed => FushiCardTone.error,
+        _ => FushiCardTone.secondary,
+      };
+
+  static IconData _iconOf(String status) => switch (status) {
+        VideoDownloadSubscriptionItemStatus.processed => FushiIcons.success,
+        VideoDownloadSubscriptionItemStatus.queued => FushiIcons.downloading,
+        VideoDownloadSubscriptionItemStatus.failed => FushiIcons.error,
+        VideoDownloadSubscriptionItemStatus.skipped => FushiIcons.block,
+        _ => FushiIcons.schedule,
+      };
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiTypography type = context.fushiType;
     return StreamBuilder<List<VideoDownloadSubscriptionItemRow>>(
       stream: itemsWatcher(subscription.subscriptionId),
       builder: (
@@ -910,101 +1142,106 @@ class _SubscriptionItemsSection extends StatelessWidget {
         AsyncSnapshot<List<VideoDownloadSubscriptionItemRow>> snapshot,
       ) {
         if (!snapshot.hasData) {
-          return const Padding(
-            padding: EdgeInsets.all(12),
-            child: Center(
-              child: SizedBox.square(
-                dimension: 18,
-                child: FushiCircularProgressIndicator(strokeWidth: 2),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: FushiSkeletonShimmer(
+              child: Column(
+                children: <Widget>[
+                  for (int i = 0; i < 2; i++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(
+                        children: <Widget>[
+                          const FushiSkeleton(width: 32, height: 32),
+                          const SizedBox(width: 12),
+                          Expanded(child: FushiSkeleton.line(widthFactor: 0.6)),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
           );
         }
         final List<VideoDownloadSubscriptionItemRow> items = snapshot.data!;
+        final Widget heading = Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 8),
+          child: Text(
+            t.subscription_history_title,
+            style: type.labelMediumEmphasized.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        );
         if (items.isEmpty) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              heading,
+              Text(
+                t.subscription_items_empty,
+                style: type.bodySmall.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (_ongoingNeverMatched) ...<Widget>[
+                const SizedBox(height: 4),
                 Text(
-                  t.subscription_items_empty,
-                  style: theme.textTheme.bodySmall?.copyWith(
+                  key: const ValueKey<String>(
+                    'video-subscription-never-matched-hint',
+                  ),
+                  t.subscription_items_empty_ongoing_hint,
+                  style: type.bodySmall.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                if (_ongoingNeverMatched) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    key: const ValueKey<String>(
-                      'video-subscription-never-matched-hint',
-                    ),
-                    t.subscription_items_empty_ongoing_hint,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
               ],
-            ),
+              const SizedBox(height: 4),
+            ],
           );
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const SizedBox(height: 4),
-            for (final VideoDownloadSubscriptionItemRow item in items)
-              FushiListItem(
-                key: ValueKey<String>(
-                  'video-subscription-item-${item.id}',
-                ),
-                density: FushiListDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                leading: FushiIcon(
-                  switch (item.status) {
-                    VideoDownloadSubscriptionItemStatus.processed =>
-                      Icons.check_circle_outline,
-                    VideoDownloadSubscriptionItemStatus.queued =>
-                      Icons.downloading_outlined,
-                    VideoDownloadSubscriptionItemStatus.failed =>
-                      Icons.error_outline,
-                    VideoDownloadSubscriptionItemStatus.skipped =>
-                      Icons.remove_circle_outline,
-                    _ => Icons.schedule_outlined,
-                  },
-                  size: 18,
-                  color: switch (item.status) {
-                    // Apple：完成是语义绿（单色强调色不表达成功）。
-                    VideoDownloadSubscriptionItemStatus.processed =>
-                      isGlassDesign(context)
-                          ? fushiStatusColor(context, FushiStatusTone.success)
-                          : theme.colorScheme.primary,
-                    VideoDownloadSubscriptionItemStatus.failed =>
-                      theme.colorScheme.error,
-                    _ => theme.colorScheme.onSurfaceVariant,
-                  },
-                ),
-                title: Text(
-                  item.title,
-                  maxLines: 2,
-                  softWrap: true,
-                  overflow: TextOverflow.fade,
-                ),
-                titleMaxLines: 2,
-                subtitle: Text(
-                  <String>[
-                    item.logicalItemKey,
-                    _VideoDownloadSubscriptionCard.itemStatusLabel(
-                      item.status,
+            heading,
+            FushiGroupedList(
+              children: <Widget>[
+                for (final VideoDownloadSubscriptionItemRow item in items)
+                  FushiListItem(
+                    key: ValueKey<String>(
+                      'video-subscription-item-${item.id}',
                     ),
-                    if (item.error?.trim().isNotEmpty ?? false)
-                      item.error!.trim(),
-                  ].join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitleMaxLines: 2,
-              ),
+                    density: FushiListDensity.compact,
+                    leading: FushiListLeadingIcon(
+                      _iconOf(item.status),
+                      shape: FushiLeadingShape.square,
+                      tone: _toneOf(item.status),
+                      size: 32,
+                      iconSize: 18,
+                    ),
+                    title: Text(
+                      item.title,
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.fade,
+                    ),
+                    titleMaxLines: 2,
+                    subtitle: Text(
+                      <String>[
+                        item.logicalItemKey,
+                        _VideoDownloadSubscriptionCard.itemStatusLabel(
+                          item.status,
+                        ),
+                        if (item.error?.trim().isNotEmpty ?? false)
+                          item.error!.trim(),
+                      ].join(' · '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitleMaxLines: 2,
+                  ),
+              ],
+            ),
           ],
         );
       },
@@ -1023,8 +1260,7 @@ class _VideoDownloadSubscriptionMessage extends StatelessWidget {
   final String title;
   final String? body;
 
-  /// 走共享空状态：MD3 是分组底色信息块，Apple 是 ContentUnavailableView
-  /// 形态（无底、secondaryLabel 大图标 + 17 semibold 标题）。
+  /// 走共享空状态：M3E 是色块图标 + 弹入，Apple 是 ContentUnavailableView 形态。
   @override
   Widget build(BuildContext context) {
     return FushiPlaceholderMessage(icon: icon, message: title, detail: body);

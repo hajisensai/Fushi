@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 
 class LocalVideoFingerprint {
@@ -69,6 +70,7 @@ abstract class VideoSubtitleCandidate {
     this.collectionLabel,
     this.aiTranslated = false,
     this.fromTrusted = false,
+    this.archiveFormat,
   });
 
   final String providerId;
@@ -101,6 +103,16 @@ abstract class VideoSubtitleCandidate {
   /// 来源明确标注的可信上传者（OpenSubtitles `from_trusted`）。
   final bool fromTrusted;
 
+  /// 非 null = 这条候选是一个**整季压缩包**（一个下载里装着多集），值是包格式。
+  /// 包本身没有集号（[episode] 为 null）；单集下载由 provider 按请求集号从包内挑，
+  /// 合集批量下载一次后按 [VideoSubtitleDownload.archiveEntries] 逐集拆分。
+  /// [SubtitleArchiveFormat.isSupported] 为 false 的（RAR / 7z）照样列出来——
+  /// 让用户看见「有，但解不开」，而不是静默丢掉。
+  final SubtitleArchiveFormat? archiveFormat;
+
+  /// 是否整季压缩包（见 [archiveFormat]）。
+  bool get isArchivePack => archiveFormat != null;
+
   String get identityKey => '$providerId:$remoteId';
 }
 
@@ -109,11 +121,18 @@ class VideoSubtitleDownload {
     required Uint8List bytes,
     required this.fileName,
     required this.language,
-  }) : bytes = Uint8List.fromList(bytes);
+    List<ArchivedSubtitle> archiveEntries = const <ArchivedSubtitle>[],
+  })  : bytes = Uint8List.fromList(bytes),
+        archiveEntries = List<ArchivedSubtitle>.unmodifiable(archiveEntries);
 
   final Uint8List bytes;
   final String fileName;
   final String language;
+
+  /// 下载的是整季压缩包时，包内**全部**文本字幕（[bytes] / [fileName] 是按请求
+  /// 集号挑出的那一个）。合集批量下载拿它逐集拆分，不必每集重下一次整包。
+  /// 非压缩包下载恒为空。
+  final List<ArchivedSubtitle> archiveEntries;
 }
 
 abstract interface class VideoSubtitleProvider {

@@ -5,7 +5,7 @@
 // 都不写；「撤销 AI 改动」把草稿（含全局音频高亮色）整份拉回生成前。
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
@@ -135,7 +135,7 @@ Future<void> _pumpAndRunAi(
 }
 
 Future<void> _tapApply(WidgetTester tester) async {
-  final Finder apply = find.byIcon(Icons.check);
+  final Finder apply = find.byKey(const ValueKey<String>('custom-theme-apply'));
   await tester.scrollUntilVisible(apply, 200, scrollable: _verticalScrollable);
   await tester.pumpAndSettle();
   await tester.tap(apply);
@@ -197,8 +197,17 @@ void main() {
       find.byKey(const ValueKey<String>('custom-theme-ai-undo')),
       findsOneWidget,
     );
-    // 名字进了输入框；主题列表在按「应用」前一条都没写。
-    expect(find.widgetWithText(TextField, '暖纸'), findsOneWidget);
+    // 名字进了 hero 标题；主题列表在按「应用」前一条都没写。
+    // hero 在列表最上面（2026-10 M3E 重设计），滚回顶部再看。
+    await tester.drag(_verticalScrollable, const Offset(0, 2000));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('custom-theme-name')),
+        matching: find.text('暖纸'),
+      ),
+      findsOneWidget,
+    );
     expect(appModel.upserts, isEmpty);
     // AI 没给音频高亮色：全局偏好保持原值（null），没有被清成别的。
     expect(appModel.audioHighlightWrites, <Color?>[null]);

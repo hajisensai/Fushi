@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/source_guard.dart';
@@ -331,11 +331,14 @@ void main() {
               body.contains('right: _videoSeekBarSideInset'),
           isTrue,
           reason: '刻度水平范围必须与 seekBarMargin 同源内缩');
+      // M3E 浮动工具栏（2026-10-05）：轨道再内缩一个悬浮轨道槽的探出量，槽外缘
+      // 对齐浮动胶囊外缘；Apple 仍收进玻璃胶囊。
       expect(
-          src.contains(
-              'double get _videoSeekBarSideInset =>\n      _appleChrome ? kVideoAppleChromeEdgeInset + 16 : 16;'),
+          src.contains('double get _videoSeekBarSideInset => _appleChrome\n'
+              '      ? kVideoAppleChromeEdgeInset + 16\n'
+              '      : _videoM3eFloatingSideInset + _videoM3eSeekLaneOverhang;'),
           isTrue,
-          reason: 'MD3 下内缩仍是 media_kit 默认的 16');
+          reason: '进度条内缩必须与浮动工具栏胶囊 / 轨道槽同源');
       // 随控制条可见性显隐，与 seek bar 同步。
       expect(body.contains('_videoControlsVisible'), isTrue,
           reason: '刻度必须随控制条显隐，与 seek bar 同步');

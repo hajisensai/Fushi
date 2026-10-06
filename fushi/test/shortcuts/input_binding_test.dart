@@ -168,6 +168,22 @@ void main() {
       expect(binding.displayLabel.startsWith('#'), isFalse);
     });
 
+    test('displayLabel shows letters and digits without DOM code prefix', () {
+      // BUG-2960: the reader toolbar showed `Ctrl+KeyF` / `KeyB`.
+      final InputBinding ctrlF = InputBinding(
+        key: LogicalKeyboardKey.keyF,
+        modifiers: const {ModifierKey.ctrl},
+      );
+      expect(ctrlF.displayLabel, 'Ctrl+F');
+      expect(ctrlF.serialize(), 'Ctrl+KeyF');
+      expect(InputBinding(key: LogicalKeyboardKey.keyB).displayLabel, 'B');
+      expect(InputBinding(key: LogicalKeyboardKey.digit1).displayLabel, '1');
+      expect(
+        InputBinding(key: LogicalKeyboardKey.arrowRight).displayLabel,
+        'ArrowRight',
+      );
+    });
+
     test('deserialize returns null for malformed keyId token', () {
       expect(InputBinding.deserialize('#notanumber'), isNull);
     });

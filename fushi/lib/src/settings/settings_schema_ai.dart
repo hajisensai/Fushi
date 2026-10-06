@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -37,7 +39,7 @@ SettingsDestination buildAiDestination() {
     ),
     title: t.ai_settings_title,
     summary: t.ai_settings_summary,
-    icon: Icons.smart_toy_outlined,
+    icon: FushiIcons.aiAssistant,
     body: (SettingsContext settingsContext) =>
         const AiProviderSettingsSection(),
     bodyBeforeSections: true,
@@ -54,7 +56,7 @@ SettingsDestination buildAiDestination() {
             SettingsSwitchItem(
               id: 'ai.web_knowledge.${site.id}',
               title: webKnowledgeSiteDisplayLabel(site),
-              icon: Icons.public,
+              icon: FushiIcons.globe,
               value: (SettingsContext c) => c
                   .appModel
                   .prefsRepo
@@ -66,6 +68,7 @@ SettingsDestination buildAiDestination() {
                     site.id,
                     enabled: value,
                   ),
+              defaultValue: true,
             ),
           // 自定义站点是可增删的记录：每条一行，与上面内置站的开关行同组并列。
           SettingsCustomItem.rows(
@@ -92,6 +95,16 @@ SettingsDestination buildAiDestination() {
             StoreRestrictedCapability.externalDiscovery.isAvailable &&
             c.appModel.moduleVisibility.isEnabled(ModuleId.browse),
         items: <SettingsItem>[
+          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据一直是
+          // 「下载执行设备」偏好，此前只挂在下载设置页，AI 页看不到这条路。这里是同一
+          // 偏好的第二处入口；未配对时给可见说明 + 去配对，而不是整行消失。
+          SettingsCustomItem.rows(
+            id: 'ai.interconnect_host',
+            searchTitle: t.ai_interconnect_host_title,
+            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
+                ? <Widget>[AiInterconnectHostRow(appModel: c.appModel)]
+                : const <Widget>[],
+          ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_quality',
             dropdown: true,
@@ -124,6 +137,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.aiVideoDownloadQuality,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadQuality(value),
+            defaultValue: '',
           ),
           SettingsSegmentedItem<VideoAcquisitionSourcePref>(
             id: 'ai.video_download_source',
@@ -152,6 +166,7 @@ SettingsDestination buildAiDestination() {
             ),
             onChanged: (SettingsContext c, VideoAcquisitionSourcePref value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadSource(value.storageKey),
+            defaultValue: VideoAcquisitionSourcePref.any,
           ),
           SettingsSegmentedItem<VideoAcquisitionBitratePref>(
             id: 'ai.video_download_bitrate',
@@ -180,6 +195,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.setAiVideoDownloadBitrate(
                   value.storageKey,
                 ),
+            defaultValue: VideoAcquisitionBitratePref.any,
           ),
           // 跳过特典：对所有下载进视频来源的任务生效（管线现读偏好），放在这一段是
           // 因为「带不带 PV」是用户在配 AI 下视频时提的；键是全局下载偏好。
@@ -192,6 +208,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.videoDownloadSkipExtras,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.prefsRepo.setVideoDownloadSkipExtras(value),
+            defaultValue: false,
           ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_subtitle_language',
@@ -226,6 +243,7 @@ SettingsDestination buildAiDestination() {
                 c.appModel.prefsRepo.aiVideoDownloadSubtitleLanguage,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadSubtitleLanguage(value),
+            defaultValue: '',
           ),
         ],
       ),

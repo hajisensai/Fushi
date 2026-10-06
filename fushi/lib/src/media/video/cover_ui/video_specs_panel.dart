@@ -11,7 +11,7 @@
 /// widget 都在自己的 `build` 里取一次 t，而不是层层传递。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_badges.dart'

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -37,7 +37,7 @@ class JimakuSubtitleDialog extends StatelessWidget {
     super.key,
   });
 
-  final VideoSubtitleRegistry? Function()? subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function()? subtitleRegistry;
   final String initialQuery;
   final SubtitleSearchSeed seed;
   final String? videoPath;

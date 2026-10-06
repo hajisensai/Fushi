@@ -6,7 +6,7 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
@@ -15,6 +15,7 @@ import 'package:fushi_engine/epub/epub_book.dart' show fallbackMimeType;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 缩放看图的路由：非不透明、深色 scrim、点 scrim 关闭。[builder] 提供路由
 /// 内容（通常是 [IllustrationZoomViewer]，宿主可在外面再包上下文菜单触发口）。
@@ -44,7 +45,7 @@ class IllustrationZoomViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final Widget viewer = GestureDetector(
       onTap: () => Navigator.pop(context),
       onLongPress: onLongPress,
       child: InteractiveViewer(
@@ -60,11 +61,56 @@ class IllustrationZoomViewer extends StatelessWidget {
                 '$diagnosticTag.coverDecode',
                 '${file.path}: $error',
               );
-              return const FushiIcon(Icons.broken_image_outlined, size: 64);
+              return const FushiIcon(FushiIcons.brokenImage, size: 64);
             },
           ),
         ),
       ),
+    );
+    // M3E 图片查看器：图从 0.92 弹到原尺寸（expressive spatial），右上角一枚
+    // 浮在 scrim 上的 tonal 关闭圆钮（点图 / 点遮罩关闭照旧，这枚给鼠标与
+    // 不知道「点图关闭」的人一个明确出口）。减弱动态效果 / 墨水屏不弹。
+    final Duration enter = fushiMotionDuration(
+      context,
+      const Duration(milliseconds: 420),
+    );
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: enter == Duration.zero ? 1 : 0, end: 1),
+          duration: enter,
+          builder: (BuildContext context, double t, Widget? child) {
+            final double pop = const Cubic(0.42, 1.67, 0.21, 0.90).transform(t);
+            return Opacity(
+              opacity: Curves.easeOut.transform(t),
+              child: Transform.scale(scale: 0.92 + 0.08 * pop, child: child),
+            );
+          },
+          child: viewer,
+        ),
+        PositionedDirectional(
+          top: 0,
+          end: 0,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: FushiIconButton(
+                icon: FushiIcons.close,
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                backgroundColor: isGlassDesign(context)
+                    ? null
+                    : cs.secondaryContainer.withValues(alpha: 0.92),
+                enabledColor: isGlassDesign(context)
+                    ? null
+                    : cs.onSecondaryContainer,
+                onTap: () => Navigator.pop(context),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -161,7 +207,7 @@ Future<void> showImageCopyContextMenu(
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const FushiIcon(Icons.copy_outlined, size: 18.0),
+            const FushiIcon(FushiIcons.copy, size: 18.0),
             const SizedBox(width: 12.0),
             Text(t.reader_copy_image, style: const TextStyle(fontSize: 14.0)),
           ],

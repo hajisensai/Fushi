@@ -1,9 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-1902：牌组 / 笔记类型选择与「一键创建 Lapis 卡组」的**单一实现**。
@@ -148,17 +150,17 @@ class _AnkiCreateLapisRowState extends State<AnkiCreateLapisRow> {
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
-      icon: Icons.note_add_outlined,
+      icon: FushiIcons.libraryAdd,
       showIcon: true,
       title: t.anki_create_lapis,
       subtitle: t.anki_create_lapis_hint,
+      // 在途：M3E 圆形进度（Material 设计系统下是波浪），尺寸与行尾按钮同档。
       trailing: _busy
-          ? SizedBox(
-              width: 20,
-              height: 20,
-              child: adaptiveIndicator(context: context, strokeWidth: 2),
+          ? const SizedBox.square(
+              dimension: 24,
+              child: FushiCircularProgressIndicator(strokeWidth: 3),
             )
-          : null,
+          : const FushiIcon(FushiIcons.chevronRight),
       onTap: widget.isFetching || _busy ? null : () => unawaited(_run()),
     );
   }
@@ -223,27 +225,14 @@ Future<bool> promptCreateLapisIfCannotMine({
   if (settings.canMineCards) return false;
 
   final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-  final bool confirmed = await showAppDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-          title: Text(t.anki_lapis_suggest_title),
-          content: Text(t.anki_lapis_suggest_body),
-          actions: <Widget>[
-            adaptiveDialogAction(
-              context: dialogContext,
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(t.anki_lapis_suggest_dismiss),
-            ),
-            adaptiveDialogAction(
-              context: dialogContext,
-              isDefaultAction: true,
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(t.anki_create_lapis),
-            ),
-          ],
-        ),
-      ) ??
-      false;
+  final bool confirmed = await showFushiConfirmDialog(
+    context: context,
+    title: t.anki_lapis_suggest_title,
+    message: t.anki_lapis_suggest_body,
+    cancelLabel: t.anki_lapis_suggest_dismiss,
+    confirmLabel: t.anki_create_lapis,
+    icon: FushiIcons.ankiCard,
+  );
   if (!confirmed) return false;
 
   final LapisSetupResult result = await viewModel.createLapisSetup();

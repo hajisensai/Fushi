@@ -89,7 +89,7 @@ jobs:
 
     - uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.44.0'
+        flutter-version: '3.47.6'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -338,7 +338,7 @@ jobs:
     # 钉 commit（v2 = v2.23.0）：第三方 action 按 tag 引用时，tag 可被改指任意提交。
     - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.44.0'
+        flutter-version: '3.47.6'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.

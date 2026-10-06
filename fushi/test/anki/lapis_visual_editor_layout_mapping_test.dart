@@ -3,9 +3,10 @@
 // 都走真实页面：装载 → 交互 → 点保存 → 断言弹回的 [LapisVisualEditorResult]。
 // 纯函数层（位置 CSS 生成 / 字段来源真相源）的守卫在
 // packages/fushi_anki/test/lapis_styling_test.dart。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -272,7 +273,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
-          of: find.byIcon(Icons.save_outlined),
+          of: find.byIcon(FushiIcons.save),
           matching: find.byType(FilledButton),
         )),);
       expect(save.onPressed, isNull, reason: '改回原值仍算 dirty，保存按钮假亮');
@@ -322,7 +323,7 @@ void main() {
         initialBlocks: initial,
         interact: (WidgetTester tester) async {
           // 已有区域时该折叠区默认就是展开的，不能再点一次（会收起）。
-          await tester.tap(find.byIcon(Icons.delete_outline).first);
+          await tester.tap(find.byIcon(FushiIcons.delete).first);
           await tester.pumpAndSettle();
         },
       );
@@ -488,9 +489,9 @@ void main() {
         initialCustomCss: '',
         interact: (WidgetTester tester) async {
           // 文字颜色那一行的取色器入口（第一个调色板图标）。
-          await tester.ensureVisible(find.byIcon(Icons.palette_outlined).first);
+          await tester.ensureVisible(find.byIcon(FushiIcons.appearance).first);
           await tester.pumpAndSettle();
-          await tester.tap(find.byIcon(Icons.palette_outlined).first);
+          await tester.tap(find.byIcon(FushiIcons.appearance).first);
           await tester.pumpAndSettle();
           expect(find.byType(ColorPicker), findsOneWidget);
           await tester.tap(find.text(t.dialog_ok));
@@ -521,9 +522,9 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.byIcon(Icons.palette_outlined).first);
+      await tester.ensureVisible(find.byIcon(FushiIcons.appearance).first);
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.palette_outlined).first);
+      await tester.tap(find.byIcon(FushiIcons.appearance).first);
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
@@ -534,7 +535,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final FilledButton save = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
-          of: find.byIcon(Icons.save_outlined),
+          of: find.byIcon(FushiIcons.save),
           matching: find.byType(FilledButton),
         )),);
       expect(save.onPressed, isNull, reason: '取消取色仍写了颜色');

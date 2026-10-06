@@ -1,8 +1,12 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -22,6 +26,21 @@ const double kReaderFloatingBallSize = 48;
 const double kReaderFloatingBallButtonSize = 40;
 const double kReaderFloatingBallGap = 6;
 const double kReaderFloatingBallMargin = 8;
+
+/// 球本体的 M3E FAB 形状：收起是圆角方块（FAB 56/16 按 48 等比 ≈ 14），展开
+/// 变形成正圆关闭钮（FAB menu 的 close button）。
+const double kReaderFloatingBallCollapsedRadius = 14;
+
+/// 单列时按钮旁标签胶囊：与按钮的间距、高度、最大宽度（含内边距）。
+const double kReaderFloatingBallLabelGap = 8;
+const double kReaderFloatingBallLabelHeight = 32;
+const double kReaderFloatingBallLabelMaxWidth = 200;
+const double kReaderFloatingBallLabelPadding = 12;
+
+/// 动作按钮的最小触控目标（M3 / Android 无障碍 48dp）。按钮画 40，四周各补
+/// `(48 - 40) / 2` 的透明命中环；包围盒也向外扩同样的量，最外圈按钮的命中环
+/// 不会落到盒外（HBK026）。
+const double kReaderFloatingBallMinTouchTarget = 48;
 
 /// 收起态整体不透明度：半透明、不抢正文。
 const double kReaderFloatingBallIdleOpacity = 0.42;
@@ -49,6 +68,7 @@ class ReaderFloatingBallLayout {
     this.buttonSize = kReaderFloatingBallButtonSize,
     this.gap = kReaderFloatingBallGap,
     this.margin = kReaderFloatingBallMargin,
+    this.labelReach = 0,
   });
 
   final Rect viewport;
@@ -61,6 +81,10 @@ class ReaderFloatingBallLayout {
   final double buttonSize;
   final double gap;
   final double margin;
+
+  /// 单列时按钮旁标签胶囊的最大宽度（含内边距）；0 = 不显示标签。多列时标签会
+  /// 压到相邻列上，一律不显示（[showsLabels]）。
+  final double labelReach;
 
   /// 收起时缩进停靠边外的量。
   double get tuck => ballSize * 0.34;
@@ -109,9 +133,18 @@ class ReaderFloatingBallLayout {
   /// 展开态按钮区从球心向上伸出的距离（到最高一列最上面一颗按钮的上缘）。
   double get reach => actionCount <= 0 ? 0 : ballSize / 2 + rowCount * pitch;
 
-  /// 展开态按钮区从球心向中央方向伸出的横向距离（不小于半球）。
+  /// 展开态按钮旁是否显示标签胶囊（M3E FAB menu 的「圆钮 + 标签」）。
+  bool get showsLabels => labelReach > 0 && columnCount == 1;
+
+  /// 标签胶囊从球心向中央方向伸出的横向距离（不显示标签时为 0）。
+  double get labelExtent => showsLabels
+      ? buttonSize / 2 + kReaderFloatingBallLabelGap + labelReach
+      : 0;
+
+  /// 展开态按钮区从球心向中央方向伸出的横向距离（不小于半球；单列带标签时
+  /// 包住最宽的标签胶囊）。
   double get sideReach => columnCount <= 1
-      ? ballSize / 2
+      ? math.max(ballSize / 2, labelExtent)
       : math.max(ballSize / 2, (columnCount - 1) * pitch + buttonSize / 2);
 
   /// 球的可活动纵向范围（收起态球顶边 top 值）。
@@ -185,13 +218,19 @@ class ReaderFloatingBallLayout {
       : ReaderFloatingBallDock.right;
 }
 
-/// 阅读器悬浮球（球面是 Fushi 图标）。
+/// 阅读器 / 应用内悬浮球（M3 Expressive FAB menu 形态）。
 ///
-/// 收起：半透明小球停靠在视口左/右边缘（外缩约 1/3），尽量不遮字。点一下：球点亮
-/// （主题色描边 + 阴影）并平移回视口内，按钮从球心向上飞出、在球正上方竖排成
-/// 一列（错峰缩放 + 淡入，离球近的先起），球在列的最下方；视口太矮一列放不下时
-/// 向屏幕中央方向续排第二列（及后续列），见 [ReaderFloatingBallLayout]；再点球收起。拖球可沿边上下挪、也可拖到另一侧
-/// 换边，松手吸附到最近边并经 [onDockChanged] 落库。
+/// 收起：半透明的 primaryContainer 圆角方块 FAB（球面是 Fushi 吉祥物）停靠在视口
+/// 左/右边缘（外缩约 1/3），尽量不遮字。点一下：球平移回视口内、阴影加深，并像
+/// M3E FAB menu 的开合钮一样**变形**成 primary 正圆关闭钮（吉祥物旋出、关闭图标
+/// 旋入）；按钮（secondaryContainer tonal 小圆钮）从球心向上按 spring 错峰飞出、
+/// 在球正上方竖排成一列，单列时每颗旁边带标签胶囊；视口太矮一列放不下时向屏幕
+/// 中央方向续排第二列（及后续列，不带标签），见 [ReaderFloatingBallLayout]；再点
+/// 球收起。拖球可沿边上下挪、也可拖到另一侧换边，松手吸附到最近边并经
+/// [onDockChanged] 落库。
+///
+/// 颜色全部取当前主题 [ColorScheme]（随预设 / 明暗 / 纯黑变化）；Apple 设计系统
+/// 是液态玻璃圆球与圆钮；墨水屏降级为描边、无填色、无阴影、无动画。
 ///
 /// 唯一的挂载点是根上的应用内悬浮球宿主（`AppFloatingBallHost`）；按钮由它按
 /// 设置 → 悬浮球 里当前场景的勾选给出，这里只吃现成的 [ReaderHeaderAction]，
@@ -201,8 +240,10 @@ class ReaderFloatingBallLayout {
 /// 同一约束）；包围盒只覆盖球 + 按钮列那一块，自带 [RepaintBoundary]（BUG-1692：
 /// 整窗图层会让 macOS WebView 收不到鼠标事件）。透明区域不吃点击，正文照常可点。
 ///
-/// 焦点：整层 [ExcludeFocus]——阅读正文是键盘 / 手柄焦点的唯一归宿（TODO-700
-/// T8），悬浮球只服务触摸 / 鼠标；键盘用户有顶栏 / 底栏与快捷键。
+/// 焦点：收起态整层 [ExcludeFocus]——阅读正文是键盘 / 手柄焦点的唯一归宿
+/// （TODO-700 T8），收起的球不进遍历、不抢焦点。展开后按钮进入焦点遍历（一个
+/// [FocusTraversalGroup]，方向键 / Tab / 手柄可在按钮间移动）；键盘操作下展开时
+/// 焦点落到离球最近的按钮，Esc / 手柄 B 收起并把焦点还给展开前的持有者。
 class ReaderFloatingBall extends StatefulWidget {
   const ReaderFloatingBall({
     required this.viewport,
@@ -229,7 +270,9 @@ class ReaderFloatingBall extends StatefulWidget {
   final void Function(ReaderFloatingBallDock dock, double verticalFraction)
   onDockChanged;
 
-  /// 阅读器纸张主题背景 / 前景色；null 回退到 Material 主题。
+  /// 旧接口：阅读器纸张主题背景 / 前景色。M3E 版只认当前主题 [ColorScheme]
+  /// （用户 2026-10-06「悬浮球按钮适配主题色」），这两个参数不再参与配色，
+  /// 保留只为不破坏调用方。
   final Color? backgroundColor;
   final Color? foregroundColor;
 
@@ -242,6 +285,8 @@ class ReaderFloatingBall extends StatefulWidget {
 
 class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     with SingleTickerProviderStateMixin {
+  // 与原生系统球同一组时长（Android FloatingBallService / Windows / macOS
+  // 的 EXPAND / COLLAPSE / SNAP）；曲线是 M3E spatial 弹簧。
   static const Duration _expandDuration = Duration(milliseconds: 280);
   static const Duration _collapseDuration = Duration(milliseconds: 190);
   static const Duration _snapDuration = Duration(milliseconds: 220);
@@ -251,6 +296,43 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     duration: widget.animate ? _expandDuration : Duration.zero,
     reverseDuration: widget.animate ? _collapseDuration : Duration.zero,
   );
+
+  /// 此刻是否做过渡：墨水屏（[ReaderFloatingBall.animate] = false）与系统「减弱
+  /// 动态效果」（MediaQuery.disableAnimations，HBK028）下一律零时长。
+  bool _motion = true;
+
+  void _applyMotion() {
+    final bool motion = widget.animate && fushiMotionEnabled(context);
+    _motion = motion;
+    _expand.duration = motion ? _expandDuration : Duration.zero;
+    _expand.reverseDuration = motion ? _collapseDuration : Duration.zero;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 早于焦点树分发：触摸展开时焦点仍在正文（不抢焦点），Esc / 手柄 B 不会经过
+    // 球的子树，挂在子树上的快捷键收不到（HBK027）。展开期间在这里先截住、收起
+    // 并吞掉，免得正文再把同一下 Esc 当成「退出」。
+    FocusManager.instance.addEarlyKeyEventHandler(_onEarlyKey);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _applyMotion();
+  }
+
+  KeyEventResult _onEarlyKey(KeyEvent event) {
+    if (!_expanded) return KeyEventResult.ignored;
+    final LogicalKeyboardKey key = event.logicalKey;
+    if (key != LogicalKeyboardKey.escape &&
+        key != LogicalKeyboardKey.gameButtonB) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) _collapse();
+    return KeyEventResult.handled;
+  }
 
   late ReaderFloatingBallDock _dock = widget.dock;
   late double _fraction = widget.verticalFraction;
@@ -267,6 +349,15 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
   /// 吸附是用户想看到的那一下动画。
   bool _snapping = false;
 
+  /// 按钮的焦点节点（与 [ReaderFloatingBall.actions] 一一对应）。
+  final List<FocusNode> _itemFocus = <FocusNode>[];
+
+  /// 键盘展开前的焦点持有者：收起时把焦点还给它。
+  FocusNode? _restoreFocus;
+
+  /// 单列时标签胶囊的宽度（与 actions 一一对应，含内边距）；空 = 不显示标签。
+  List<double> _labelWidths = const <double>[];
+
   bool get _expanded =>
       _expand.status == AnimationStatus.forward ||
       _expand.status == AnimationStatus.completed;
@@ -282,18 +373,28 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
         _fraction = widget.verticalFraction;
       }
     }
-    if (old.animate != widget.animate) {
-      _expand.duration = widget.animate ? _expandDuration : Duration.zero;
-      _expand.reverseDuration = widget.animate
-          ? _collapseDuration
-          : Duration.zero;
-    }
+    if (old.animate != widget.animate) _applyMotion();
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeEarlyKeyEventHandler(_onEarlyKey);
     _expand.dispose();
+    for (final FocusNode node in _itemFocus) {
+      node.dispose();
+    }
     super.dispose();
+  }
+
+  void _syncFocusNodes() {
+    while (_itemFocus.length < widget.actions.length) {
+      _itemFocus.add(
+        FocusNode(debugLabel: 'ReaderFloatingBall.item${_itemFocus.length}'),
+      );
+    }
+    while (_itemFocus.length > widget.actions.length) {
+      _itemFocus.removeLast().dispose();
+    }
   }
 
   ReaderFloatingBallLayout _layout() => ReaderFloatingBallLayout(
@@ -301,19 +402,52 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     dock: _dock,
     verticalFraction: _fraction,
     actionCount: widget.actions.length,
+    labelReach: _labelWidths.isEmpty
+        ? 0
+        : _labelWidths.reduce((double a, double b) => math.max(a, b)),
   );
 
   void _toggle() {
     if (_expanded) {
-      _expand.reverse();
+      _collapse();
     } else {
-      _expand.forward();
+      _open();
+    }
+  }
+
+  void _open() {
+    if (_expanded) return;
+    _expand.forward();
+    // 键盘 / 手柄在用（traditional 高亮模式）：焦点进离球最近的按钮，可以直接
+    // 方向键遍历；触摸 / 鼠标展开不动焦点，正文照旧持有键盘。
+    if (FocusManager.instance.highlightMode != FocusHighlightMode.traditional) {
+      return;
+    }
+    _restoreFocus = FocusManager.instance.primaryFocus;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_expanded || _itemFocus.isEmpty) return;
+      _itemFocus.last.requestFocus();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _collapse() {
+    if (!_expanded) return;
+    final bool ownsFocus = _itemFocus.any((FocusNode node) => node.hasFocus);
+    _expand.reverse();
+    final FocusNode? back = _restoreFocus;
+    _restoreFocus = null;
+    if (!ownsFocus) return;
+    if (back != null && back.context != null && back.canRequestFocus) {
+      back.requestFocus();
+    } else {
+      FocusManager.instance.primaryFocus?.unfocus();
     }
   }
 
   void _onPanStart(ReaderFloatingBallLayout layout) {
     // 拖动一律先收起：按钮跟着球飞没有意义，落点也不好算。
-    if (_expanded) _expand.reverse();
+    if (_expanded) _collapse();
     setState(() {
       _dragBallTopLeft = Offset(layout.ballLeftAt(0), layout.ballTop);
     });
@@ -334,13 +468,63 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
       _dragBallTopLeft = null;
       _dock = dock;
       _fraction = fraction;
-      _snapping = widget.animate;
+      _snapping = _motion;
     });
     widget.onDockChanged(dock, fraction);
   }
 
+  /// 标签文字样式（M3E label large；颜色由胶囊给）。
+  TextStyle _labelStyle(BuildContext context) => context.fushiType.labelLarge;
+
+  /// 单列时每颗按钮的标签胶囊宽度；多列 / 视口太窄 / 没有按钮时返回空表。
+  List<double> _measureLabels(BuildContext context) {
+    final int n = widget.actions.length;
+    if (n == 0) return const <double>[];
+    // 先按无标签几何判列数：多列时标签会压到相邻列，不显示。
+    final ReaderFloatingBallLayout bare = ReaderFloatingBallLayout(
+      viewport: widget.viewport,
+      dock: _dock,
+      verticalFraction: _fraction,
+      actionCount: n,
+    );
+    if (bare.columnCount != 1) return const <double>[];
+    final double available =
+        widget.viewport.width -
+        2 * bare.margin -
+        bare.buttonSize -
+        kReaderFloatingBallLabelGap;
+    final double cap = math.min(kReaderFloatingBallLabelMaxWidth, available);
+    // 连一颗短标签都放不下（极窄窗口）：只留圆钮。
+    if (cap < 2 * kReaderFloatingBallLabelPadding + 24) {
+      return const <double>[];
+    }
+    final TextStyle style = _labelStyle(context);
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final TextDirection direction = Directionality.of(context);
+    final List<double> widths = <double>[];
+    for (final ReaderHeaderAction action in widget.actions) {
+      final TextPainter painter = TextPainter(
+        text: TextSpan(text: action.label, style: style),
+        textDirection: direction,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final double width = painter.width;
+      painter.dispose();
+      widths.add(
+        math.min(
+          cap,
+          (width + 2 * kReaderFloatingBallLabelPadding).ceilToDouble(),
+        ),
+      );
+    }
+    return widths;
+  }
+
   @override
   Widget build(BuildContext context) {
+    _syncFocusNodes();
+    _labelWidths = _measureLabels(context);
     final ReaderFloatingBallLayout layout = _layout();
     return AnimatedBuilder(
       animation: _expand,
@@ -361,41 +545,77 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
         } else {
           boxTopLeft = layout.boxTopLeftAt(t);
         }
-        final Offset ballCenter = layout.ballCenterInBox;
+        // 包围盒四周补触控命中环的余量（HBK026），盒内坐标整体平移同样的量，
+        // 球在屏幕上的位置不变。
+        final double pad = _touchPad(layout);
+        final Offset ballCenter = layout.ballCenterInBox + Offset(pad, pad);
+        final bool menuLive = !dragging && t > 0;
         return AnimatedPositioned(
           duration: _snapping && !dragging ? _snapDuration : Duration.zero,
-          curve: Curves.easeOutCubic,
+          curve: FushiSpringCurve.spatial,
           onEnd: () {
             if (_snapping) setState(() => _snapping = false);
           },
-          left: boxTopLeft.dx,
-          top: boxTopLeft.dy,
-          width: layout.boxWidth,
-          height: layout.boxHeight,
+          left: boxTopLeft.dx - pad,
+          top: boxTopLeft.dy - pad,
+          width: layout.boxWidth + 2 * pad,
+          height: layout.boxHeight + 2 * pad,
           child: RepaintBoundary(
             child: ExcludeFocus(
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: <Widget>[
-                  // 完全收起（t == 0）或拖动中按钮整个不建：不留零尺寸命中区，
-                  // 也不让收起态多画一圈看不见的按钮。
-                  if (!dragging && t > 0)
-                    for (int i = 0; i < widget.actions.length; i++)
-                      _buildColumnButton(layout, i, ballCenter),
-                  Positioned(
-                    left: ballCenter.dx - layout.ballSize / 2,
-                    top: ballCenter.dy - layout.ballSize / 2,
-                    width: layout.ballSize,
-                    height: layout.ballSize,
-                    child: _buildBall(layout, progress: t, dragging: dragging),
-                  ),
-                ],
+              excluding: !(menuLive && _expanded),
+              // Esc / 手柄 B 收起走 [_onEarlyKey]（不依赖焦点在球里）。
+              child: FocusTraversalGroup(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    // 完全收起（t == 0）或拖动中按钮整个不建：不留零尺寸命中区，
+                    // 也不让收起态多画一圈看不见的按钮。
+                    if (menuLive && layout.showsLabels)
+                      for (int i = 0; i < _labelWidths.length; i++)
+                        _buildLabel(layout, i, ballCenter),
+                    if (menuLive)
+                      for (int i = 0; i < widget.actions.length; i++)
+                        _buildColumnButton(layout, i, ballCenter),
+                    Positioned(
+                      left: ballCenter.dx - layout.ballSize / 2,
+                      top: ballCenter.dy - layout.ballSize / 2,
+                      width: layout.ballSize,
+                      height: layout.ballSize,
+                      child: _buildBall(
+                        layout,
+                        progress: t,
+                        dragging: dragging,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         );
       },
     );
+  }
+
+  /// 包围盒四周为触控命中环补的余量：`(48 - 按钮径) / 2`，按钮够大时为 0。
+  double _touchPad(ReaderFloatingBallLayout layout) => math.max(
+    0.0,
+    (kReaderFloatingBallMinTouchTarget - layout.buttonSize) / 2,
+  );
+
+  /// 第 [index] 颗按钮的错峰进度：每颗按钮占总时长里一段错开的区间，起点按
+  /// 槽位离球由近到远推后、尾部对齐；反向（收起）沿同一区间反放。弹簧曲线会
+  /// 过冲（> 1），位移 / 缩放用原值，透明度截在 0..1。
+  double _stagger(int index) {
+    final int n = widget.actions.length;
+    final double step = n <= 1 ? 0 : 0.35 / (n - 1);
+    final double begin = (n - 1 - index) * step;
+    final Interval interval = Interval(
+      begin,
+      math.min(1, begin + 0.65),
+      curve: FushiSpringCurve.spatialFast,
+    );
+    return interval.transform(_expand.value);
   }
 
   /// 第 [index] 颗按钮：从球心飞到落点，错峰（槽位离球越远越晚起，多列时
@@ -405,34 +625,78 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     int index,
     Offset ballCenter,
   ) {
-    final int n = widget.actions.length;
-    // 每颗按钮占总时长里一段错开的区间：起点按序推后、尾部对齐；反向（收起）
-    // 沿同一区间反放。
-    final double step = n <= 1 ? 0 : 0.35 / (n - 1);
-    final double begin = (n - 1 - index) * step;
-    final Interval interval = Interval(
-      begin,
-      math.min(1, begin + 0.65),
-      curve: Curves.easeOutBack,
-    );
-    final double k = interval.transform(_expand.value);
+    final double k = _stagger(index);
     final Offset target = layout.buttonOffset(index);
     final Offset center = ballCenter + target * k;
     final double size = layout.buttonSize;
+    // 命中区 ≥ 48dp：画出来的圆钮居中，四周透明命中环点下去同样触发（HBK026）。
+    final double hit = math.max(size, kReaderFloatingBallMinTouchTarget);
+    final ReaderHeaderAction action = widget.actions[index];
     return Positioned(
-      left: center.dx - size / 2,
-      top: center.dy - size / 2,
-      width: size,
-      height: size,
+      left: center.dx - hit / 2,
+      top: center.dy - hit / 2,
+      width: hit,
+      height: hit,
       child: Opacity(
         opacity: k.clamp(0.0, 1.0).toDouble(),
         child: Transform.scale(
           scale: 0.4 + 0.6 * k.clamp(0.0, 1.2),
-          child: _ColumnButton(
-            action: widget.actions[index],
-            size: size,
-            backgroundColor: widget.backgroundColor,
-            foregroundColor: widget.foregroundColor,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // 无障碍节点由圆钮本身给出，命中环不另起一个。
+            excludeFromSemantics: true,
+            onTap: action.onPressed,
+            child: Center(
+              child: SizedBox.square(
+                dimension: size,
+                child: _ColumnButton(
+                  action: action,
+                  size: size,
+                  focusNode: _itemFocus[index],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 第 [index] 颗按钮旁的标签胶囊（单列才有）：贴在按钮朝屏幕中央的一侧，与
+  /// 按钮同一个错峰进度，从按钮那一侧横向弹出。点标签 = 点按钮。
+  Widget _buildLabel(
+    ReaderFloatingBallLayout layout,
+    int index,
+    Offset ballCenter,
+  ) {
+    final double k = _stagger(index);
+    final Offset target = layout.buttonOffset(index);
+    final Offset center = ballCenter + target * k;
+    final double width = _labelWidths[index];
+    const double height = kReaderFloatingBallLabelHeight;
+    final bool towardRight = layout.dock == ReaderFloatingBallDock.left;
+    final double near = layout.buttonSize / 2 + kReaderFloatingBallLabelGap;
+    final double left = towardRight
+        ? center.dx + near
+        : center.dx - near - width;
+    final ReaderHeaderAction action = widget.actions[index];
+    return Positioned(
+      left: left,
+      top: center.dy - height / 2,
+      width: width,
+      height: height,
+      child: Opacity(
+        opacity: k.clamp(0.0, 1.0).toDouble(),
+        child: Transform.scale(
+          scale: 0.6 + 0.4 * k.clamp(0.0, 1.2),
+          alignment: towardRight ? Alignment.centerLeft : Alignment.centerRight,
+          // 无障碍名已由按钮本身给出，标签只是同一个动作的第二个点击面。
+          child: ExcludeSemantics(
+            child: _LabelCapsule(
+              label: action.label,
+              style: _labelStyle(context),
+              onPressed: action.onPressed,
+            ),
           ),
         ),
       ),
@@ -444,22 +708,15 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
     required double progress,
     required bool dragging,
   }) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color paperFg = widget.foregroundColor ?? colors.onSurface;
     final double opacity = dragging
         ? 1
         : kReaderFloatingBallIdleOpacity +
               (1 - kReaderFloatingBallIdleOpacity) * progress;
-    // 收起：细的前景描边融进正文配色；展开：主题色粗环点亮 + 阴影加深。
-    final Color ring = Color.lerp(
-      paperFg.withValues(alpha: 0.35),
-      colors.primary,
-      progress,
-    )!;
     return Opacity(
       opacity: opacity,
       child: Semantics(
         button: true,
+        expanded: _expanded,
         label: t.reader_floating_ball,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -470,32 +727,11 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
           onPanCancel: () => _onPanEnd(layout),
           child: FushiTooltip(
             message: t.reader_floating_ball,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: ring, width: 1 + 1.5 * progress),
-                boxShadow: <BoxShadow>[
-                  BoxShadow(
-                    color: Colors.black.withValues(
-                      alpha: 0.06 + 0.2 * progress,
-                    ),
-                    blurRadius: 6 + 8 * progress,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ClipOval(
-                child: Image.asset(
-                  kReaderFloatingBallIconAsset,
-                  key: const ValueKey<String>(
-                    'fushi_reader_floating_ball_icon',
-                  ),
-                  fit: BoxFit.cover,
-                  // 1024² 原图只在 48dp 圆里露脸：按 4× 解码足够，别整帧进缓存。
-                  cacheWidth: 192,
-                  filterQuality: FilterQuality.medium,
-                ),
-              ),
+            child: _BallFace(
+              size: layout.ballSize,
+              progress: progress,
+              dragging: dragging,
+              eink: !widget.animate,
             ),
           ),
         ),
@@ -504,52 +740,182 @@ class _ReaderFloatingBallState extends State<ReaderFloatingBall>
   }
 }
 
-/// 球面贴图：Fushi 应用图标。
-const String kReaderFloatingBallIconAsset = 'assets/meta/icon.png';
+/// 球面贴图：Fushi 吉祥物（透明底前景，与启动页同一张），叠在主题色 FAB 上。
+const String kReaderFloatingBallIconAsset = 'assets/meta/splash_foreground.png';
 
-/// 列中的一颗圆形按钮：纸张底色 + 前景图标 + 轻阴影，语义与顶栏 / 底栏同一颗
-/// [ReaderHeaderAction] 一致。
+/// 吉祥物在球里的放大倍数：原图 432² 里吉祥物只占中间约一半，放大后宽约占球
+/// 径的 80%。原生系统球（Android / 桌面球面 PNG）用同一个值。
+const double kReaderFloatingBallMascotScale = 1.55;
+
+/// 球本体：M3E FAB。
+///
+/// - Material：primaryContainer 圆角方块 + 吉祥物 → 展开变形为 primary 正圆 +
+///   关闭图标（形状 / 颜色走 spatial 弹簧，吉祥物与图标旋转交叉淡入），阴影按
+///   M3E elevation level 1 → 3；
+/// - Apple：液态玻璃圆球（不做形变），吉祥物 → label 色关闭图标；
+/// - 墨水屏：surface 底 + onSurface 描边，无阴影。
+class _BallFace extends StatelessWidget {
+  const _BallFace({
+    required this.size,
+    required this.progress,
+    required this.dragging,
+    required this.eink,
+  });
+
+  final double size;
+  final double progress;
+  final bool dragging;
+  final bool eink;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool apple = isGlassDesign(context);
+    final bool einkMode = eink || isEinkTheme(context);
+    // 形变走 spatial 弹簧（可轻微过冲）；颜色 / 透明度截在 0..1。
+    final double s = FushiSpringCurve.spatial.transform(
+      progress.clamp(0.0, 1.0).toDouble(),
+    );
+    final double c = s.clamp(0.0, 1.0).toDouble();
+
+    final Color closeColor;
+    final Widget surface;
+    if (apple) {
+      closeColor = appleColorsOf(context).label;
+      surface = GlassContainer(
+        useOwnLayer: true,
+        quality: fushiGlassQuality(context),
+        settings: fushiGlassSettingsOverPlatformView(context),
+        shape: const LiquidOval(),
+        platformViewBackdrop: fushiGlassOverPlatformView(context),
+        child: SizedBox.square(dimension: size),
+      );
+    } else {
+      final Color container = einkMode
+          ? cs.surface
+          : Color.lerp(cs.primaryContainer, cs.primary, c)!;
+      closeColor = einkMode
+          ? cs.onSurface
+          : Color.lerp(cs.onPrimaryContainer, cs.onPrimary, c)!;
+      final double radius =
+          (kReaderFloatingBallCollapsedRadius +
+                  (size / 2 - kReaderFloatingBallCollapsedRadius) * s)
+              .clamp(0.0, size / 2)
+              .toDouble();
+      surface = Material(
+        color: container,
+        shadowColor: cs.shadow,
+        // M3E elevation：收起 level 1、展开 / 拖动 level 3。
+        elevation: einkMode ? 0 : (dragging ? 6 : 1 + 5 * c),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: einkMode
+              ? BorderSide(color: cs.onSurface, width: 1.5)
+              : BorderSide.none,
+        ),
+        child: SizedBox.square(dimension: size),
+      );
+    }
+
+    return SizedBox.square(
+      key: const ValueKey<String>('fushi_reader_floating_ball_icon'),
+      dimension: size,
+      child: Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          surface,
+          // 吉祥物：收起态的球面；展开时旋出淡出（仍建着，拖动 / 点击命中不变）。
+          IgnorePointer(
+            child: Opacity(
+              opacity: 1 - c,
+              child: Transform.rotate(
+                angle: c * math.pi / 2,
+                child: ClipOval(
+                  child: Transform.scale(
+                    scale: kReaderFloatingBallMascotScale,
+                    child: Image.asset(
+                      kReaderFloatingBallIconAsset,
+                      fit: BoxFit.contain,
+                      // 432² 原图只在 48dp 球里露脸：按 4× 解码足够，别整帧进缓存。
+                      cacheWidth: 192,
+                      filterQuality: FilterQuality.medium,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (c > 0)
+            IgnorePointer(
+              child: Opacity(
+                opacity: c,
+                child: Transform.rotate(
+                  angle: (c - 1) * math.pi / 2,
+                  child: Center(
+                    child: FushiIcon(
+                      FushiIcons.close,
+                      size: 22,
+                      color: closeColor,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 列中的一颗按钮：M3E tonal 小圆钮（secondaryContainer + onSecondaryContainer
+/// 图标、level 1 阴影、按下 / 悬停 / 聚焦状态层、按下 spring 缩放），语义与
+/// 顶栏 / 底栏同一颗 [ReaderHeaderAction] 一致。墨水屏：surface 底 + 描边、
+/// 无阴影。
 class _ColumnButton extends StatelessWidget {
   const _ColumnButton({
     required this.action,
     required this.size,
-    this.backgroundColor,
-    this.foregroundColor,
+    required this.focusNode,
   });
 
   final ReaderHeaderAction action;
   final double size;
-  final Color? backgroundColor;
-  final Color? foregroundColor;
+  final FocusNode focusNode;
 
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) return _buildGlass(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color fg = foregroundColor ?? colors.onSurface;
-    // 纸张底色上再调 6% 前景色：与正文底色拉开一层，不只靠阴影区分。
-    final Color bg = Color.alphaBlend(
-      fg.withValues(alpha: 0.06),
-      backgroundColor ?? colors.surface,
-    );
-    return Material(
-      key: action.key,
-      color: bg,
-      shape: const CircleBorder(),
-      elevation: 2,
-      shadowColor: Colors.black.withValues(alpha: 0.4),
-      clipBehavior: Clip.antiAlias,
-      child: FushiTooltip(
-        message: action.label,
-        child: Semantics(
-          identifier: action.semanticsId,
-          button: true,
-          child: InkWell(
-            onTap: action.onPressed,
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: FushiIcon(action.icon, size: 22, color: fg),
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final Color bg = eink ? cs.surface : cs.secondaryContainer;
+    final Color fg = eink ? cs.onSurface : cs.onSecondaryContainer;
+    return FushiPressScale(
+      enabled: !eink,
+      child: Material(
+        key: action.key,
+        color: bg,
+        shape: CircleBorder(
+          side: eink
+              ? BorderSide(color: cs.onSurface, width: 1.5)
+              : BorderSide.none,
+        ),
+        elevation: eink ? 0 : 1,
+        shadowColor: cs.shadow,
+        clipBehavior: Clip.antiAlias,
+        child: FushiTooltip(
+          message: action.tooltipText,
+          child: Semantics(
+            identifier: action.semanticsId,
+            button: true,
+            child: InkWell(
+              focusNode: focusNode,
+              onTap: action.onPressed,
+              overlayColor: FushiStateLayer.overlay(fg),
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: FushiIcon(action.icon, size: 22, color: fg),
+              ),
             ),
           ),
         ),
@@ -574,12 +940,13 @@ class _ColumnButton extends StatelessWidget {
         shape: const LiquidOval(),
         platformViewBackdrop: fushiGlassOverPlatformView(context),
         child: FushiTooltip(
-          message: action.label,
+          message: action.tooltipText,
           child: Semantics(
             identifier: action.semanticsId,
             button: true,
             child: FushiPlainButton(
               onPressed: action.onPressed,
+              focusNode: focusNode,
               borderRadius: BorderRadius.circular(size / 2),
               child: SizedBox.square(
                 dimension: size,
@@ -588,6 +955,72 @@ class _ColumnButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// 按钮旁的标签胶囊（M3E FAB menu 的文字面）：Material 是 secondaryContainer
+/// 全圆角胶囊 + labelLarge；Apple 是液态玻璃胶囊 + label 色文字；墨水屏是描边
+/// 胶囊。点胶囊 = 点同一颗按钮（不参与焦点遍历，焦点只在圆钮上）。
+class _LabelCapsule extends StatelessWidget {
+  const _LabelCapsule({
+    required this.label,
+    required this.style,
+    required this.onPressed,
+  });
+
+  final String label;
+  final TextStyle style;
+  final VoidCallback? onPressed;
+
+  Widget _text(Color color) => Padding(
+    padding: const EdgeInsets.symmetric(
+      horizontal: kReaderFloatingBallLabelPadding,
+    ),
+    child: Center(
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: style.copyWith(color: color),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      final FushiAppleColors apple = appleColorsOf(context);
+      return GlassContainer(
+        useOwnLayer: true,
+        quality: fushiGlassQuality(context),
+        settings: fushiGlassSettingsOverPlatformView(context),
+        shape: const LiquidRoundedSuperellipse(borderRadius: 999),
+        platformViewBackdrop: fushiGlassOverPlatformView(context),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onPressed,
+          child: _text(apple.label),
+        ),
+      );
+    }
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    return Material(
+      color: eink ? cs.surface : cs.secondaryContainer,
+      shape: StadiumBorder(
+        side: eink
+            ? BorderSide(color: cs.onSurface, width: 1.5)
+            : BorderSide.none,
+      ),
+      elevation: eink ? 0 : 1,
+      shadowColor: cs.shadow,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: _text(eink ? cs.onSurface : cs.onSecondaryContainer),
       ),
     );
   }

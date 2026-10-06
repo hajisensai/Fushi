@@ -12,7 +12,7 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
@@ -21,6 +21,7 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 打开「手动指定模型」弹层。返回认好的包；取消返回 null。
@@ -156,31 +157,23 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiMotionScheme motion = context.fushiMotion;
     final AsrModelPack? pack = _scanned;
     return FushiModalSheetFrame(
       title: t.audiobook_transcribe_model_custom_title,
-      leadingIcon: Icons.folder_open_outlined,
+      leadingIcon: FushiIcons.folderOpen,
       scrollable: true,
       bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
       body: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Text(
             t.audiobook_transcribe_model_custom_intro,
             style: tokens.type.metadata,
           ),
           SizedBox(height: tokens.spacing.rowVertical),
-          FushiOutlinedButton.icon(
-            key: const ValueKey<String>('asr-local-model-pick'),
-            icon: const FushiIcon(Icons.folder_open_outlined, size: 18),
-            label: Text(t.audiobook_transcribe_model_custom_pick),
-            onPressed: _pick,
-          ),
-          if (_dirPath != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Text(_dirPath!, style: tokens.type.metadata),
-          ],
+          _folderCard(context),
           SizedBox(height: tokens.spacing.rowVertical),
           FushiTextField(
             controller: _name,
@@ -190,77 +183,34 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
             onChanged: (String _) => setState(() {}),
           ),
           SizedBox(height: tokens.spacing.rowVertical),
-          FushiListItem(
-            title: Text(t.audiobook_transcribe_model_custom_advanced),
-            trailing: FushiIcon(
-              _advanced ? Icons.expand_less : Icons.expand_more,
+          FushiCard(
+            padding: EdgeInsets.zero,
+            child: FushiListItem(
+              leading: const FushiListLeadingIcon(
+                FushiIcons.settings,
+                size: 36,
+                iconSize: 20,
+              ),
+              title: Text(t.audiobook_transcribe_model_custom_advanced),
+              trailing: AnimatedRotation(
+                turns: _advanced ? 0.5 : 0,
+                duration: motion.spatialFast.duration,
+                curve: motion.spatialFast.curve,
+                child: const FushiIcon(FushiIcons.expandMore),
+              ),
+              onTap: () => setState(() => _advanced = !_advanced),
             ),
-            onTap: () => setState(() => _advanced = !_advanced),
           ),
-          if (_advanced) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            FushiTextField(
-              controller: _blank,
-              labelText: t.audiobook_transcribe_model_custom_blank,
-              onChanged: (String _) => _rescan(),
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.audiobook_transcribe_model_custom_blank_hint,
-              style: tokens.type.metadata,
-            ),
-            SizedBox(height: tokens.spacing.rowVertical),
-            Text(
-              t.audiobook_transcribe_model_custom_context,
-              style: tokens.type.listTitle,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            adaptiveSegmentedButton<int>(
-              context: context,
-              segments: const <ButtonSegment<int>>[
-                ButtonSegment<int>(value: 1, label: Text('1')),
-                ButtonSegment<int>(value: 2, label: Text('2')),
-              ],
-              selected: <int>{_contextSize},
-              // 自己 setState：_rescan() 在还没选目录时会提前 return，光靠它
-              // 重绘的话，「先展开高级改参数、再选文件夹」这个很自然的顺序下
-              // 分段按钮看上去点不动。
-              onSelectionChanged: (Set<int> s) {
-                setState(() => _contextSize = s.first);
-                _rescan();
-              },
-            ),
-            SizedBox(height: tokens.spacing.rowVertical),
-            Text(
-              t.audiobook_transcribe_model_custom_index,
-              style: tokens.type.listTitle,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            adaptiveSegmentedButton<AsrIndexType>(
-              context: context,
-              segments: const <ButtonSegment<AsrIndexType>>[
-                ButtonSegment<AsrIndexType>(
-                  value: AsrIndexType.int64,
-                  label: Text('int64'),
-                ),
-                ButtonSegment<AsrIndexType>(
-                  value: AsrIndexType.int32,
-                  label: Text('int32'),
-                ),
-              ],
-              selected: <AsrIndexType>{_indexType},
-              onSelectionChanged: (Set<AsrIndexType> s) {
-                setState(() => _indexType = s.first);
-                _rescan();
-              },
-            ),
-          ],
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: _advanced
+                ? _advancedFields(context, tokens)
+                : const SizedBox(width: double.infinity),
+          ),
           SizedBox(height: tokens.spacing.rowVertical),
-          Text(
-            key: const ValueKey<String>('asr-local-model-status'),
-            _statusLine(pack),
-            style: tokens.type.metadata,
-          ),
+          _statusCard(context, pack),
         ],
       ),
       footer: Wrap(
@@ -274,13 +224,161 @@ class _AsrLocalModelDialogState extends State<AsrLocalModelDialog> {
           ),
           FushiFilledButton.icon(
             key: const ValueKey<String>('asr-local-model-confirm'),
-            icon: const FushiIcon(Icons.check_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.check, size: 18),
             label: Text(t.dialog_done),
             onPressed: pack == null
                 ? null
                 : () => Navigator.pop(context, _named(pack)),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 选文件夹卡：形状图标 + 已选路径（未选时是引导文案）+ 选择按钮。整张卡
+  /// 也可点，触屏上点哪都能开目录选择器。
+  Widget _folderCard(BuildContext context) {
+    final FushiTypography type = context.fushiType;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final String? dir = _dirPath;
+    return FushiCard(
+      variant: FushiCardVariant.outlined,
+      padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+      onTap: _pick,
+      child: Row(
+        children: <Widget>[
+          FushiListLeadingIcon(
+            dir == null ? FushiIcons.folder : FushiIcons.folderOpen,
+            shape: FushiLeadingShape.square,
+            tone: dir == null ? FushiCardTone.secondary : FushiCardTone.primary,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              dir ?? t.audiobook_transcribe_model_custom_pick,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: dir == null
+                  ? type.titleSmallEmphasized
+                  : type.bodyMedium.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FushiFilledButton.tonalIcon(
+            key: const ValueKey<String>('asr-local-model-pick'),
+            icon: const FushiIcon(FushiIcons.folderOpen, size: 18),
+            label: Text(t.audiobook_transcribe_model_custom_pick),
+            onPressed: _pick,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _advancedFields(BuildContext context, FushiDesignTokens tokens) {
+    return Padding(
+      padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiTextField(
+            controller: _blank,
+            labelText: t.audiobook_transcribe_model_custom_blank,
+            onChanged: (String _) => _rescan(),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.audiobook_transcribe_model_custom_blank_hint,
+            style: tokens.type.metadata,
+          ),
+          SizedBox(height: tokens.spacing.rowVertical),
+          Text(
+            t.audiobook_transcribe_model_custom_context,
+            style: context.fushiType.titleSmallEmphasized,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          FushiSegmentedButton<int>(
+            segments: const <ButtonSegment<int>>[
+              ButtonSegment<int>(value: 1, label: Text('1')),
+              ButtonSegment<int>(value: 2, label: Text('2')),
+            ],
+            selected: <int>{_contextSize},
+            showSelectedIcon: false,
+            // 自己 setState：_rescan() 在还没选目录时会提前 return，光靠它
+            // 重绘的话，「先展开高级改参数、再选文件夹」这个很自然的顺序下
+            // 分段按钮看上去点不动。
+            onSelectionChanged: (Set<int> s) {
+              setState(() => _contextSize = s.first);
+              _rescan();
+            },
+          ),
+          SizedBox(height: tokens.spacing.rowVertical),
+          Text(
+            t.audiobook_transcribe_model_custom_index,
+            style: context.fushiType.titleSmallEmphasized,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          FushiSegmentedButton<AsrIndexType>(
+            segments: const <ButtonSegment<AsrIndexType>>[
+              ButtonSegment<AsrIndexType>(
+                value: AsrIndexType.int64,
+                label: Text('int64'),
+              ),
+              ButtonSegment<AsrIndexType>(
+                value: AsrIndexType.int32,
+                label: Text('int32'),
+              ),
+            ],
+            selected: <AsrIndexType>{_indexType},
+            showSelectedIcon: false,
+            onSelectionChanged: (Set<AsrIndexType> s) {
+              setState(() => _indexType = s.first);
+              _rescan();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 扫描结果卡（M3E tonal 色块）：认出 = tertiary、缺文件 / 读不了 = error、
+  /// 还没选 = 中性。
+  Widget _statusCard(BuildContext context, AsrModelPack? pack) {
+    final bool failed = _error != null || _problem != null;
+    final FushiCardTone tone = failed
+        ? FushiCardTone.error
+        : pack != null
+            ? FushiCardTone.tertiary
+            : FushiCardTone.neutral;
+    final IconData icon = failed
+        ? FushiIcons.error
+        : pack != null
+            ? FushiIcons.success
+            : FushiIcons.info;
+    return AnimatedSwitcher(
+      duration: context.fushiMotion.effectsDefault.duration,
+      child: FushiCard(
+        key: ValueKey<FushiCardTone>(tone),
+        tone: tone,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiIcon(icon, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                key: const ValueKey<String>('asr-local-model-status'),
+                _statusLine(pack),
+                // 色块上的字跟卡片配对前景（fushiType 自带页面前景，HBK-AUDIT-022）。
+                style: context.fushiType.bodyMedium.tabular.copyWith(
+                  color: fushiCardToneColors(context, tone)?.onContainer,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

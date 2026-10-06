@@ -11,8 +11,10 @@ import 'dart:ui' show ImageFilter;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/shortcuts/shortcut_labels.dart'
+    show tooltipWithShortcutHint;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:path/path.dart' as p;
@@ -26,6 +28,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/fushi_reader_palette.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
+    show DictionaryPopupToolGroup;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -45,6 +50,7 @@ import 'package:fushi/src/media/audiobook/floating_lyric_lookup_routing.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/highlight_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart';
@@ -74,6 +80,8 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
+import 'package:fushi/src/reader/reader_audiobook_panel.dart'
+    show AudiobookSleepTimer;
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
 import 'package:fushi/src/reader/reader_script_compactor.dart';
@@ -107,6 +115,7 @@ import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
+import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
@@ -134,6 +143,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -181,6 +192,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassContainer, LiquidRoundedSuperellipse;
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 part 'reader_fushi/lyrics.part.dart';
 part 'reader_fushi/mining.part.dart';
@@ -390,6 +402,63 @@ ReaderThemeColors resolveReaderThemeColors({
   );
 }
 
+/// 主题 key 命中的手调纸色预设——**仅当它的明暗与 app 当前明暗一致时**才生效。
+///
+/// 2026-10-06 用户「深色模式阅读器还是浅色的」：选了米色（ecru，浅色纸）后又把
+/// 全局明暗切到「跟随系统」、系统是深色。app 外壳按米色 seed 派生出暖棕深色方案，
+/// 阅读器却仍铺 `#F7F6EB` 浅纸、黑字、浅绿当前句——整页与 app 明暗相反。全局明暗
+/// 选择器对内置预设与自定义主题一视同仁（TODO-928），预设只是 seed + 一张手调纸，
+/// 纸色就不能比 app 明暗优先。明暗不符时返回 null，调用方回落到按该预设 seed 的
+/// 真实 ColorScheme 派生的 M3E 阅读配色（米色 → 暖深纸 #18120B），与外壳同家族。
+/// 反向同理：深色预设（gray/dark/black）在浅色 app 下也不再铺深纸。
+ReaderThemeColors? readerPresetFor({
+  required String themeKey,
+  required Map<String, ReaderThemeColors> presetMap,
+  required ColorScheme scheme,
+}) {
+  final ReaderThemeColors? preset = presetMap[themeKey];
+  if (preset == null) return null;
+  if (preset.dark != (scheme.brightness == Brightness.dark)) return null;
+  return preset;
+}
+
+/// [FushiReaderPalette] 落成阅读器五角色：当前句 = tertiaryContainer 一族、
+/// 查词高亮（selection 角色）= primaryContainer 一族，色相错开不混淆。
+ReaderThemeColors readerThemeColorsFromPalette(FushiReaderPalette palette) {
+  return (
+    bg: palette.background,
+    fg: palette.text,
+    sentenceAudioHighlight: palette.sentenceHighlight,
+    selection: palette.lookupHighlight,
+    link: palette.link,
+    dark: palette.dark,
+  );
+}
+
+/// 当前主题是否走「跟随主题」的 M3E 阅读配色（而不是手调预设纸色 / 用户钉的纸色）。
+/// 是则返回那套配色，供 CSS 注音色 / 原生选区 / 工具栏底色这些五角色之外的槽位用；
+/// 预设命中、或自定义主题钉了纸色（注音 / 工具栏按主题纸色算会与用户纸色脱节）
+/// 时返回 null，调用方保持旧行为。
+FushiReaderPalette? readerFollowThemePalette({
+  required String themeKey,
+  required Map<String, ReaderThemeColors> presetMap,
+  required ColorScheme scheme,
+  ReaderThemeOverrides? customOverrides,
+}) {
+  if (readerPresetFor(
+        themeKey: themeKey,
+        presetMap: presetMap,
+        scheme: scheme,
+      ) !=
+      null) {
+    return null;
+  }
+  if (customOverrides?.bg != null && ThemeNotifier.isCustomThemeKey(themeKey)) {
+    return null;
+  }
+  return fushiReaderPaletteFor(scheme, scheme.brightness);
+}
+
 /// 墨水屏下阅读器的 Dart 侧角色色：底 / 字 / 链接与正文 CSS 的墨水屏分支
 /// （[ReaderContentStyles.css] `einkMode`）同值——纯黑白、方向跟 app 明暗，
 /// 无视阅读主题 key。Scaffold 底、桌面自绘顶栏、阅读器工具栏都读它；按预设
@@ -416,23 +485,21 @@ ReaderThemeColors _resolveBaseReaderThemeColors({
   required ColorScheme scheme,
   ReaderThemeOverrides? customOverrides,
 }) {
-  final ReaderThemeColors? preset = presetMap[themeKey];
+  final ReaderThemeColors? preset = readerPresetFor(
+    themeKey: themeKey,
+    presetMap: presetMap,
+    scheme: scheme,
+  );
   if (preset != null) {
     return preset;
   }
-  // light-theme / system-theme / 自定义 / 未覆盖的 key：跟随真实 ColorScheme。
-  final bool dark = scheme.brightness == Brightness.dark;
-  final ReaderThemeColors fromScheme = (
-    bg: scheme.surface,
-    fg: scheme.onSurface,
-    sentenceAudioHighlight: scheme.primary.withValues(
-      alpha: dark ? 0.34 : 0.40,
-    ),
-    // selection 用 tertiary：与 sasayaki(primary) 错开色相，查词高亮 ≠ 跟读高亮。
-    selection: scheme.tertiary.withValues(alpha: dark ? 0.35 : 0.40),
-    link: scheme.primary,
-    dark: dark,
-  );
+  // light-theme / system-theme / 自定义 / 未覆盖的 key：跟随真实 ColorScheme，
+  // 经 M3E 阅读配色 [fushiReaderPaletteFor] 派生（纸色 neutral 98 / 6、正文
+  // neutral 12 / 90、查词 = primaryContainer、当前句 = tertiaryContainer），
+  // 编辑页「跟随主题」显示的值也走这里——单一真源。
+  final FushiReaderPalette palette =
+      fushiReaderPaletteFor(scheme, scheme.brightness);
+  final ReaderThemeColors fromScheme = readerThemeColorsFromPalette(palette);
   if (customOverrides == null || !ThemeNotifier.isCustomThemeKey(themeKey)) {
     return fromScheme;
   }
@@ -1465,6 +1532,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
+  /// 订阅中的 app 主题通知器（dispose 时按同一实例退订）。
+  ThemeNotifier? _observedThemeNotifier;
+
+  /// 上次生成正文 CSS 时的配色指纹；app 主题变化后指纹不同才重注入。
+  Object? _cssThemeSignature;
+
   /// GlobalKey on the reader [InAppWebView] so its [RenderBox] can map a global
   /// pointer position into the WebView's local (== CSS viewport) coordinate
   /// space — see [onDismissBarrierHover] (TODO-806). The WebView is inset within
@@ -1998,8 +2071,18 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 有实色，不置此旗。
   bool _sideSheetOpen = false;
 
+  /// 侧板原地换内容（2026-10 整合）：开着的面板种类（navigation / audiobook /
+  /// settings / statistics，见 chrome.part 的 `_openReaderPanel`）；没开面板时 null。
+  ValueNotifier<String>? _panelKind;
+
+  /// 当前面板会话是否持有 [_studyClockModalDepth] 的一层（统计侧板不停表）。
+  bool _panelHoldsClock = false;
+
   bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
   set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
+
+  /// 本页登记在 [ReaderFushiSource] 持有者栈里的实时 hook（BUG-2954）。
+  ReaderLiveHooks? _liveHooks;
 
   // BUG-969：设置实时预览的合并执行器。拖 slider 时 onSettingsChangedLive 每个
   // tick 触发一次，旧实现每次直接跑「CSS 注入 + 样式重锚 + tap-gate 同步 + 整页
@@ -2074,10 +2157,15 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// （BUG-1052 / BUG-1107 的形状）。页面不再持有任何可被重锚的会话计数字段。
   StudyClock? _studyClock;
 
-  /// 用户点底部状态行左侧的计时器手动暂停了会话计时。为 true 时 [_ensureStudyClock] /
-  /// 生命周期 resumed 都不再 `start()`，直到用户再点一次继续；切屏自动暂停
-  /// （BUG-892）与之正交——账仍只在 [StudyClock] 一本。
-  bool _studyClockManualPause = false;
+  /// 阅读计时开始方式（手动 / 打开即开始 / 翻页后开始）与手动暂停旗的唯一持有者。
+  /// 打开书那一刻按设置定初值（[initState] 里建），会话内改设置不影响已打开的书。
+  late final ReaderStudyClockStartGate _studyClockStartGate;
+
+  /// 会话计时被手动暂停（用户点状态行计时器 / 统计侧栏 / 快捷键 P，或开始方式为
+  /// 「手动」/「翻页后开始」而尚未开始）。为 true 时 [_ensureStudyClock] / 生命周期
+  /// resumed 都不再 `start()`，直到用户点继续或（翻页后开始）首次向前翻页；切屏自动
+  /// 暂停（BUG-892）与之正交——账仍只在 [StudyClock] 一本。
+  bool get _studyClockManualPause => _studyClockStartGate.manualPause;
 
   /// app 切后台 / 桌面失焦期间为 true（`didChangeAppLifecycleState`）。BUG-2209：
   /// 后台听书跟随会经 [_ensureStudyClock] 反复到达，必须有一枚生命周期旗让它知道
@@ -2277,7 +2365,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 状态行**画出来**占的底部带高（悬浮态唤出时 28px，收起时 0），是底栏在窄屏
   /// 坐落的高度；与 [_statusFooterBand]（预留口径）的区别只在悬浮态。
   double get _statusFooterPaintedBand => readerStatusFooterBandHeight(
-    footerReserve: _statusFooterShouldPaint ? kReaderStatusFooterHeight : 0,
+    // 悬浮读数胶囊离窗底留外边距（[readerStatusFooterPaintedHeight]），底部悬浮
+    // 件坐在它之上，与 [ReaderStatusFooter] 同一口径。
+    footerReserve: _statusFooterShouldPaint
+        ? readerStatusFooterPaintedHeight(floating: _floatingToolbars)
+        : 0,
     bottomInset: _stableBottomInset,
   );
 
@@ -2315,7 +2407,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     enabled: _desktopChromeEnabled,
     barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
-    headerHeight: kReaderDesktopHeaderHeight,
+    // 悬浮工具栏样式（默认）顶部是浮在正文上的胶囊行，挤压态预留它的整段外框
+    // （上外边距 + 胶囊高 + 下外边距）；贴边样式照旧 48。
+    headerHeight: _floatingToolbars
+        ? kReaderFloatingHeaderExtent
+        : kReaderDesktopHeaderHeight,
   );
 
   /// 顶部进度信息条的预留高（单一真相源 [kTopProgressStripHeight]）。历史值为裸
@@ -2347,10 +2443,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   double get _bottomChromeReserve => bottomChromeReserve(
     barOccupiesLayout: _hasEverLoaded && _chromeBarsExpanded,
     floating: _bottomBarFloating,
-    // 无有声书播放条且底栏槽位没有按钮时底栏不存在 → 0（默认布局如此）。
-    chromeHeight: _audiobookController == null && !_bottomSlotsHaveButtons
-        ? 0
-        : _readerChromeHeight,
+    // 无有声书播放条且底栏槽位没有按钮时底栏不存在 → 0（宽窗默认布局如此）；
+    // 悬浮样式按迷你播放条 / 悬浮工具栏的叠放高度预留（[_bottomChromeExtent]）。
+    chromeHeight: _bottomChromeExtent,
   );
 
   /// 宽屏把阅读状态并入播放条；窄屏保留独立状态行，避免文本挤占触控按钮。
@@ -2365,7 +2460,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 并进播放条右端的那一份同样不能画，否则只是把同一批冻住的旧数字换个位置。
   /// 正文模式两个判据恒等（非歌词 ⇒ 状态行启用 ⇒ chrome 启用），行为逐字不变。
   bool get _playbackStatusInline => readerPlaybackStatusInline(
-    enabled: _statusFooterEnabled,
+    // 悬浮工具栏样式下读数不并进迷你播放条（胶囊里只放播放面），状态行照常
+    // 贴屏底，悬浮条坐在它上方。
+    enabled: _statusFooterEnabled && !_floatingToolbars,
     landscape: _readerIsLandscape,
     width: _readerControlsWidth,
   );
@@ -2391,6 +2488,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 底栏此刻**真的画着东西**才谈得上并进去：没有有声书播放条、底栏槽位又是空的
   /// （默认布局）时 [_buildBottomChrome] 整条不画，读数照旧自己贴屏底右端。
   bool get _statusFooterInBottomBar =>
+      !_floatingToolbars &&
       _separatePlaybackStatus &&
       _statusFooterShouldPaint &&
       _bottomBarShouldPaint &&
@@ -2470,6 +2568,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _sourceReviewWasActive = _sourceReviewActive;
     _suppressPositionPersist = _sourceReviewActive;
     _sourceReviewSession?.addListener(_onSourceReviewChanged);
+    // 阅读计时开始方式：打开书这一刻定初值（手动 / 翻页后开始 = 先暂停）。
+    _studyClockStartGate = ReaderStudyClockStartGate(
+      appModelNoUpdate.readerStudyClockStartMode,
+    );
     // chrome 状态机的变更（含自动收起计时到点）统一经此重建。
     _chrome.addListener(_onChromeControllerChanged);
     // 应用内悬浮球开关变了（设置 → 悬浮球、备份恢复、同步）：栏关掉只在球开着时
@@ -2490,6 +2592,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       return true;
     }());
     WidgetsBinding.instance.addObserver(this);
+    // app 明暗 / 主题在阅读器外变化（系统切深色、桌面设置窗、同步恢复）时，正文
+    // CSS 必须即时重注入——旧实现只在阅读器内的主题选择器回调里重注入。
+    _observedThemeNotifier = appModelNoUpdate.themeNotifier
+      ..addListener(_onAppThemeMaybeChanged);
     // 底栏全屏按钮的图标镜像：进页时问一次 native 真值。不问的话，「在已经全屏的窗口里
     // 打开这本书」从第一帧起图标就是错的（镜像默认 false）。与漫画页的
     // `_readInitialFullscreenState` 同款；桌面才有窗口可全屏。
@@ -2503,49 +2609,57 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
-    ReaderFushiSource.onSettingsChangedLive = () {
-      if (!mounted) return;
-      // BUG-969：经 _liveSettingsRunner 合并（错误处理/tap-gate 同步/setState
-      // 都在 runner 动作内），拖动风暴收敛为背靠背串行趟。
-      unawaited(_liveSettingsRunner.trigger());
-    };
-    ReaderFushiSource.onLayoutReloadLive = () {
-      if (!mounted) return;
-      unawaited(
-        _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log('ReaderFushi.onLayoutReloadLive', e, s);
-        }),
-      );
-    };
-    // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
-    // 不动 WebView 内容、不重锚、不重排分页。
-    ReaderFushiSource.onChromeReloadLive = () {
-      if (!mounted) return;
-      setState(() {});
-    };
-    // TODO-975：改变了喂给 WebView 的预留高的 chrome 偏好（开/关顶部进度、顶部/底栏
-    // 挤压↔悬浮切换）。除重建外还需重新下发 chrome insets 并重锚连续模式滚动位置，
-    // 否则预留高变化触发的 reflow 会把 window.scrollY 归零弹回章首。切换悬浮模式时
-    // 先收起临时可见态（新模式从隐藏起步、reserve 自洽）。
-    ReaderFushiSource.onChromeReanchorLive = () {
-      if (!mounted) return;
-      _cancelChromeAutoHide();
-      setState(() {
-        _chromeTransientVisible = false;
-      });
-      // 「关掉顶栏和底栏」也走这条通道：下面的重下 inset + 重锚一并覆盖它改变的
-      // 预留高，这里只同步状态与点词门控。
-      _syncToolbarsHidden(reanchor: false);
-      unawaited(
-        _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log(
-            'ReaderFushi.onChromeReanchorLive',
-            e,
-            s,
-          );
-        }),
-      );
-    };
+    // BUG-2954：四个 hook 作为一组登记到持有者栈，dispose 只注销自己那组。
+    _liveHooks = ReaderLiveHooks(
+      settingsChanged: () {
+        if (!mounted) return;
+        // BUG-969：经 _liveSettingsRunner 合并（错误处理/tap-gate 同步/setState
+        // 都在 runner 动作内），拖动风暴收敛为背靠背串行趟。
+        unawaited(_liveSettingsRunner.trigger());
+      },
+      layoutReload: () {
+        if (!mounted) return;
+        unawaited(
+          _reloadWithCurrentSettings().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log(
+              'ReaderFushi.onLayoutReloadLive',
+              e,
+              s,
+            );
+          }),
+        );
+      },
+      // 纯 Flutter chrome 布局变化（如反转底栏）只需重建一次重读偏好，
+      // 不动 WebView 内容、不重锚、不重排分页。
+      chromeReload: () {
+        if (!mounted) return;
+        setState(() {});
+      },
+      // TODO-975：改变了喂给 WebView 的预留高的 chrome 偏好（开/关顶部进度、顶部/底栏
+      // 挤压↔悬浮切换）。除重建外还需重新下发 chrome insets 并重锚连续模式滚动位置，
+      // 否则预留高变化触发的 reflow 会把 window.scrollY 归零弹回章首。切换悬浮模式时
+      // 先收起临时可见态（新模式从隐藏起步、reserve 自洽）。
+      chromeReanchor: () {
+        if (!mounted) return;
+        _cancelChromeAutoHide();
+        setState(() {
+          _chromeTransientVisible = false;
+        });
+        // 「关掉顶栏和底栏」也走这条通道：下面的重下 inset + 重锚一并覆盖它改变的
+        // 预留高，这里只同步状态与点词门控。
+        _syncToolbarsHidden(reanchor: false);
+        unawaited(
+          _applyChromeInsetsAndReanchor().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log(
+              'ReaderFushi.onChromeReanchorLive',
+              e,
+              s,
+            );
+          }),
+        );
+      },
+    );
+    ReaderFushiSource.attachLiveHooks(_liveHooks!);
     _initBook();
   }
 
@@ -3170,10 +3284,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugFlushReadingStats = null;
       return true;
     }());
-    ReaderFushiSource.onSettingsChangedLive = null;
-    ReaderFushiSource.onLayoutReloadLive = null;
-    ReaderFushiSource.onChromeReloadLive = null;
-    ReaderFushiSource.onChromeReanchorLive = null;
+    // BUG-2954：只注销自己登记的那组；切卷（pushReplacement）时新页已先登记，
+    // 旧页晚于它 dispose 不能把新页的 hook 一起置 null。
+    final ReaderLiveHooks? liveHooks = _liveHooks;
+    if (liveHooks != null) {
+      ReaderFushiSource.detachLiveHooks(liveHooks);
+      _liveHooks = null;
+    }
     FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
@@ -3181,6 +3298,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       _exitFlushCallback = null;
     }
     WidgetsBinding.instance.removeObserver(this);
+    _observedThemeNotifier?.removeListener(_onAppThemeMaybeChanged);
+    _observedThemeNotifier = null;
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _revealProgressRefreshTimer?.cancel();
@@ -3340,6 +3459,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   void _resumePopupCaretForHardwareNav() =>
       _caret.resumePopupCaretForHardwareNav();
+
+  /// 「跟随系统」明暗下系统切深 / 浅色：ThemeNotifier 不一定通知，这里兜住。
+  @override
+  void didChangePlatformBrightness() {
+    _onAppThemeMaybeChanged();
+  }
 
   @override
   void didChangeMetrics() {
@@ -3864,9 +3989,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// beginStyleReanchor 下发的 CSS 漂移）。两个包装分别包 <style> 标签 / jsonEncode。
   String _currentReaderCss() {
     final ReaderThemeColors rc = _readerThemeColors;
+    final FushiReaderPalette? palette = _followThemePalette;
+    _cssThemeSignature = _readerThemeSignature();
     return ReaderContentStyles.css(
       settings: _settings!,
-      themeOverride: appModel.appThemeKey,
+      // CSS 的 `_themeColors` 对预设 key 用写死纸色、忽略 customBg：预设明暗与 app
+      // 不符（[readerPresetFor] 返回 null）时不能再把预设 key 传进去，否则 Dart 侧
+      // 已回落到派生深色、正文却仍是浅纸。走 default 分支吃 customBg/customFg。
+      themeOverride: _readerPresetApplies ? appModel.readerThemeKey : 'system-theme',
       // 正文字体按**书自己的语言**选链（与界面语言无关）：中文界面下打开日文书，
       // 界面该是中文字形、正文该是日文字形，两个独立的正确答案。
       contentLanguage: _contentLanguage,
@@ -3882,6 +4012,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       selectionColor: _colorToCssRgba(rc.selection),
       sentenceAudioHighlightColor: _colorToCssRgba(rc.sentenceAudioHighlight),
       linkColor: _colorToCssRgba(rc.link),
+      // 跟随主题的 M3E 阅读配色才写注音色 / 原生选区；预设与钉纸色保持旧行为。
+      // 分页 / 滚动 / VN 三种布局共用这一份 CSS，取色同源。
+      rubyColor: palette == null ? null : _colorToCssRgba(palette.rubyText),
+      nativeSelectionColor:
+          palette == null ? null : _colorToCssRgba(palette.nativeSelection),
       // 墨水屏模式：全局单开关叠加在阅读器主题之上（纯黑白+线式高亮+关过渡），
       // 黑白方向跟 app 明暗模式，与全局 E-ink ColorScheme 一致。
       einkMode: appModel.einkMode,
@@ -4883,11 +5018,11 @@ $liveConfigJs
             // 但音频行是固定尺寸按钮，窄宽下会溢出该有界区被裁切；用 [FittedBox]
             // (`scaleDown`) 把整行等比缩小到刚好放下——绝不横向溢出/裁切，也不重叠。
             // `mainAxisSize: min` 让行取按钮总宽（有限内在宽），FittedBox 才能量到并缩放。
+            // M3E：收藏 + 有声书动作落进一枚 tonal 胶囊按钮组（与左侧字号组、右侧
+            // 关闭圆钮同一口径，见 [DictionaryPopupToolGroup]）。
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: DictionaryPopupToolGroup(
                 children: [
                   FushiIconButton(
                     icon: _currentSentenceIsFavorited

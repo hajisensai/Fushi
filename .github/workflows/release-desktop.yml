@@ -176,7 +176,7 @@ jobs:
       # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: false
           pub-cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
@@ -1235,7 +1235,7 @@ jobs:
     # 守卫 fushi/test/build/release_event_app_tag_guard_test.dart 钉住每个 job 都带它。
     if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
     runs-on: macos-latest
-    # 120：内置 torrent 引擎 bridge 冷编（两个架构的 boost + openssl + libtorrent）要几十分钟，
+    # 120：内置 torrent 引擎 bridge 冷编（boost + openssl + libtorrent）要几十分钟，
     # 只在 native/fushi_torrent 改动或 runner 镜像更新后的首跑发生，其余命中持久库。
     timeout-minutes: 120
     permissions:
@@ -1247,7 +1247,7 @@ jobs:
         with:
           fetch-depth: 0
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。p2p
-      # universal dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
+      # arm64 dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
       # 就是 PR 门首跑命中的那一份。
       - name: Resolve native artifact store names
         id: native_store
@@ -1256,7 +1256,7 @@ jobs:
           platform: macos
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -1487,8 +1487,9 @@ jobs:
         run: |
           chmod +x ci/apply-patches.sh
           bash ci/apply-patches.sh
-      # 互联 P2P 隧道（iroh）universal dylib（arm64 + x86_64，与 Flutter 的 universal
-      # release 对齐）：Runner 的「Bundle fushi_p2p dylib」构建阶段 copy-if-present 进
+      # 互联 P2P 隧道（iroh）dylib（只出 arm64：macOS 版不再支持 Intel Mac，Runner 工程
+      # 的 EXCLUDED_ARCHS = x86_64 让 app 本体也只有 arm64）：Runner 的「Bundle fushi_p2p
+      # dylib」构建阶段 copy-if-present 进
       # Contents/Frameworks，之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
       # 失败口径同 Windows：构建失败即 job 失败；出包后再核对 Frameworks 里确有此库。
       # 持久库命中只跳 Rust 工具链与 cargo（2~3 min）；ABI 校验与出包核对照跑在还原的件上。
@@ -1504,14 +1505,14 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
-      - name: Build fushi_p2p (macOS universal dylib)
+      - name: Build fushi_p2p (macOS arm64 dylib)
         shell: bash
         env:
           STORE_HIT: ${{ steps.p2p_store.outputs.hit }}
@@ -1521,12 +1522,12 @@ jobs:
             bash native/fushi_p2p/build_macos_dylib.sh
           fi
           bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/macos/libfushi_p2p.dylib nm
-      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）universal dylib：Runner 的
+      # 内置 torrent 引擎 bridge（libtorrent，vcpkg 静态链）arm64 dylib：Runner 的
       # 「Bundle fushi_torrent dylib」构建阶段 copy-if-present 进 Contents/Frameworks，之后由
       # 下面的 Developer ID 签名循环随其它 Mach-O 一起签。此前 macOS 包从没带过它，内置引擎
       # 在 macOS 上恒不可用（BUG-2865）。失败口径同 p2p：构建失败即 job 失败；出包后再核对。
       # 持久库与 build-multiplatform.yml macos job 同名：这里（develop push）存的件就是 PR 门
-      # 首跑命中的那一份；命中时跳过两个架构的 vcpkg 冷编。
+      # 首跑命中的那一份；命中时跳过 vcpkg 冷编。
       - name: Restore torrent bridge dylib from native artifact store
         id: torrent_store
         uses: ./.github/actions/native-artifact-store
@@ -1562,7 +1563,7 @@ jobs:
           key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
           restore-keys: |
             ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}
-      - name: Build embedded torrent bridge (macOS universal dylib, static)
+      - name: Build embedded torrent bridge (macOS arm64 dylib, static)
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
@@ -1587,19 +1588,40 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+      # macOS 版只出 Apple Silicon（arm64），不再支持 Intel Mac。`flutter build macos
+      # --release` 默认出 universal，靠 Runner 工程的 EXCLUDED_ARCHS = x86_64（Flutter
+      # 会把它透传给 xcodebuild）收成 arm64；这一步钉住它真的生效了，后面各 helper 的
+      # 架构核对都以 app 本体为准。
+      - name: Verify macOS app is arm64-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_bin="fushi/build/macos/Build/Products/Release/fushi.app/Contents/MacOS/fushi"
+          app_archs="$(lipo -archs "$app_bin")"
+          echo "app archs: $app_archs"
+          if [ "$app_archs" != "arm64" ]; then
+            echo "::error title=macOS app not arm64-only::$app_bin 架构是「$app_archs」，期望只有 arm64（检查 fushi/macos/Runner.xcodeproj 的 EXCLUDED_ARCHS）。"
+            exit 1
+          fi
+          # 只记录、不设门：Frameworks 里第三方预编译件（如 media_kit 的 libmpv
+          # xcframework）可能仍带 x86_64 切片，那只是死重、不影响 arm64 运行。
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          while IFS= read -r candidate; do
+            if file "$candidate" | grep -q 'Mach-O'; then
+              echo "$(lipo -archs "$candidate")  ${candidate#"$app_dir"/}"
+            fi
+          done < <(find "$app_dir/Contents/Frameworks" -type f)
       - name: Verify fushi_p2p is in the macOS bundle
         shell: bash
         run: |
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_p2p.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
-          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          # otool -D 首行是「path:」表头，其余是 id。
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
-          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上 P2P 静默不可用。
-          archs=" $(lipo -archs "$dylib") "
-          for arch in arm64 x86_64; do
-            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
-          done
+          # 发布包只出 arm64：dylib 恰好是 arm64（多出 x86_64 = 还原了旧 universal 件或脚本回退）。
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           bash native/fushi_p2p/verify_abi.sh "$dylib" nm
       - name: Save fushi_p2p dylib to native artifact store
         if: steps.p2p_store.outputs.hit != 'true'
@@ -1616,11 +1638,9 @@ jobs:
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_torrent_ffi.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_torrent dylib' phase did not copy it"; exit 1; }
           test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_torrent_ffi.dylib"
-          # 发布包是 universal，两个切片都得在，否则另一种 Mac 上内置引擎静默不可用。
-          archs=" $(lipo -archs "$dylib") "
-          for arch in arm64 x86_64; do
-            case "$archs" in *" $arch "*) ;; *) echo "::error::$dylib lacks $arch (has:$archs)"; exit 1 ;; esac
-          done
+          # 发布包只出 arm64：dylib 恰好是 arm64（多出 x86_64 = 还原了旧 universal 件或脚本回退）。
+          archs="$(lipo -archs "$dylib")"
+          if [ "$archs" != "arm64" ]; then echo "::error::$dylib must be arm64-only (has: $archs)"; exit 1; fi
           # 依赖只许是系统库（静态链真生效）。
           otool -L "$dylib" | grep -E '^[[:space:]]' | awk '{ print $1 }' > "$RUNNER_TEMP/torrent_otool.txt"
           if grep -v -e '^@rpath/libfushi_torrent_ffi\.dylib$' -e '^/usr/lib/' -e '^/System/' "$RUNNER_TEMP/torrent_otool.txt"; then
@@ -1711,15 +1731,13 @@ jobs:
           "$target_dir/ffmpeg" -hide_banner -version | head -n 1
           "$target_dir/ffprobe" -hide_banner -version | head -n 1
           ls -lh "$target_dir/ffmpeg" "$target_dir/ffprobe"
-          # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。runner 是
-          # Apple Silicon，所以一份 arm64-only 的 ffmpeg 能让上面两行全绿，却在每台
-          # Intel Mac 上被内核以 Bad CPU type (EBADARCH) 拒掉——app 本体是 universal
-          # 照常启动，于是表现为「app 好好的，就是制卡/封面/内封字幕全失效」，而且
-          # 因为抽取层各自吞掉异常，用户只看到一句泛化失败。2.1.1 就是这么发出去的。
+          # BUG-1668：`-version` 跑得通只证明**这台 runner 的架构**能跑它。当年 app 是
+          # universal、ffmpeg 却是 arm64-only，Intel Mac 上 app 照常启动、helper 被内核以
+          # Bad CPU type (EBADARCH) 拒掉，制卡/封面/内封字幕全失效（2.1.1）。
           #
-          # 真正的不变式不是「能跑」，而是**helper 的架构必须覆盖 app 本体的架构**：
-          # app 支持哪些架构，就得在哪些架构上有可用的 ffmpeg。这里直接按 app 本体
-          # 的 lipo 结果逐个核对，app 将来改成单架构也无需改这段。
+          # 真正的不变式不是「能跑」，而是**helper 的架构必须覆盖 app 本体的架构**。
+          # macOS 版现在只出 arm64（不再支持 Intel Mac），这里仍按 app 本体的 lipo 结果
+          # 逐个核对，不写死架构。
           app_archs="$(lipo -archs "$target_dir/fushi")"
           echo "app archs: $app_archs"
           for tool in ffmpeg ffprobe; do
@@ -1729,22 +1747,22 @@ jobs:
               case " $tool_archs " in
                 *" $want "*) ;;
                 *)
-                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。Intel Mac 上该 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 universal 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
+                  echo "::error title=Bundled helper arch mismatch::$tool 缺 $want（app: $app_archs / $tool: $tool_archs）。该架构的 Mac 上 helper 无法执行，制卡音频、封面、内封字幕、片段导出会全部静默失效。重跑 ffmpeg-min 工作流出 arm64 产物并重新 vendor 到 third_party/ffmpeg-min/macos/。"
                   exit 1
                   ;;
               esac
             done
           done
       # fushi-anki-sync：与 Windows 同一个 helper，放 Contents/MacOS/（Platform.resolvedExecutable
-      # 所在目录，Dart 按它找）。app 是 universal，helper 也必须是 —— build.sh --universal
-      # 分别编 arm64 / x86_64 再 lipo，下面按 app 本体的架构逐个核对（BUG-1668 同一不变式）。
+      # 所在目录，Dart 按它找）。app 只出 arm64，helper 在 arm64 runner 上按本机架构编，
+      # 下面按 app 本体的架构逐个核对（BUG-1668 同一不变式）。
       # AGPL 源码说明放 Contents/Resources/ 而不是 MacOS/：Apple 的 bundle 规则是
       # Contents/MacOS 只放代码，那里的非 Mach-O 文件会被 codesign 当代码签（签名写进
       # 扩展属性），打 zip 丢了扩展属性就验不过。
       # 必须排在 Developer ID 签名之前（那一步按 `file` 找出 Contents 下全部 Mach-O 重签）。
-      # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过 universal release：
-      # 只跳工具链与两遍 cargo（~6 min）；安装、SOURCE.txt（指向本次 commit）、version 冒烟、
-      # 签名与架构核对照跑。存进库的是未签名的原始 lipo 输出，签名只作用于 .app 里的副本。
+      # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过 arm64 release：
+      # 只跳工具链与 cargo；安装、SOURCE.txt（指向本次 commit）、version 冒烟、
+      # 签名与架构核对照跑。存进库的是未签名的原始 cargo 输出，签名只作用于 .app 里的副本。
       - name: Restore fushi-anki-sync from native artifact store
         id: anki_sync_store
         uses: ./.github/actions/native-artifact-store
@@ -1755,7 +1773,7 @@ jobs:
       - name: Set up fushi-anki-sync toolchain
         if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
-      - name: Build and bundle fushi-anki-sync (universal)
+      - name: Build and bundle fushi-anki-sync (arm64)
         shell: bash
         env:
           STORE_HIT: ${{ steps.anki_sync_store.outputs.hit }}
@@ -1767,7 +1785,7 @@ jobs:
           if [ "$STORE_HIT" = "true" ]; then
             prebuilt=(--prebuilt-binary "$RUNNER_TEMP/fushi-anki-sync-prebuilt/fushi-anki-sync")
           fi
-          bash native/fushi_anki_sync/build.sh --universal --install-dir "$target_dir" ${prebuilt[@]+"${prebuilt[@]}"}
+          bash native/fushi_anki_sync/build.sh --install-dir "$target_dir" ${prebuilt[@]+"${prebuilt[@]}"}
           mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
           codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
@@ -1791,7 +1809,7 @@ jobs:
         with:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
-          path: native/fushi_anki_sync/target/universal/release/fushi-anki-sync
+          path: native/fushi_anki_sync/target/release/fushi-anki-sync
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
       # **必须排在上面 Mihon / ffmpeg / fushi-anki-sync 三步之后**：这几步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
@@ -2021,8 +2039,10 @@ jobs:
             exit 1
           fi
           mkdir -p "$out_dir"
-          rm -f "$out_dir"/fushi-*-macos.zip
-          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos.zip"
+          # 2026-10 起只出 arm64，资产名带 `-arm64`：旧版（universal、可能跑在 Intel
+          # Mac 上）的更新器只认 `-macos.zip`，改名让它们选不中这个 Intel 上启动不了的包。
+          rm -f "$out_dir"/fushi-*-macos.zip "$out_dir"/fushi-*-macos-arm64.zip
+          ditto -c -k --keepParent "$app_dir" "$out_dir/fushi-${BUILD_VERSION_NAME}-macos-arm64.zip"
       # The single non-blocking `publish` job downloads this artifact and does
       # all Release publishing, so macOS builds in parallel with Windows/iOS and
       # never blocks (or is blocked by) the other platforms.
@@ -2031,7 +2051,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: desktop-artifacts-macos
-          path: fushi/build/release-artifacts/fushi-*-macos.zip
+          path: fushi/build/release-artifacts/fushi-*-macos-arm64.zip
           if-no-files-found: ignore
           retention-days: 14
 
@@ -2060,7 +2080,7 @@ jobs:
           platform: ios
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: '3.47.6'
           cache: true
       - name: Resolve desktop release channel
         id: channel
@@ -2902,7 +2922,7 @@ jobs:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
-            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-1049 / TODO-1123 / TODO-1129: same rolling-release asset GC as
       # release.yml. softprops upserts same-named assets but never removes a
@@ -2951,12 +2971,13 @@ jobs:
           # KEEP_SEQS by the OTHER platforms' newer seqs -- so another platform's
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
-          # *-windows-setup.exe / macOS: *-macos.zip / iOS: *-ios.ipa) so it keeps
+          # *-windows-setup.exe / macOS: *-macos-arm64.zip (+ legacy *-macos.zip) /
+          # iOS: *-ios.ipa) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -3034,7 +3055,7 @@ jobs:
           make_latest: ${{ steps.channel.outputs.make_latest }}
           files: |
             fushi/build/release-artifacts/fushi-*-windows-setup.exe
-            fushi/build/release-artifacts/fushi-*-macos.zip
+            fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-ios.ipa
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
@@ -3083,6 +3104,6 @@ jobs:
           VERSION: ${{ steps.channel.outputs.build_version_name }}
           RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
           ARTIFACTS_DIR: fushi/build/release-artifacts
-          ASSET_GLOB: fushi-*-macos.zip fushi-*-ios.ipa
+          ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh

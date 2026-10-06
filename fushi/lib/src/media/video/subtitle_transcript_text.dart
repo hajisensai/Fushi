@@ -1,6 +1,6 @@
 import 'dart:ui' show BoxHeightStyle;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';

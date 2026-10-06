@@ -1,0 +1,9 @@
+## BUG-2965 · 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块
+- **报告**：2026-10-05（用户：iOS 上首页「继续」卡的视频封面是纯黑块）
+- **真实性**：✅ 真 bug（根因 `packages/fushi_engine/lib/media/video/video_cover_extractor.dart:414`（修复前）：`_extractVideoCoverUnlocked` 在无内嵌封面时直接 `return extractVideoFrameViaFfmpeg(...)`，只在固定 `atSeconds`（默认 10s）抽一帧；`packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart:1088` 的 `extractVideoFrameViaFfmpeg` 只校验图片完整性、不看内容，片头 logo 淡出 / 场间黑场时抽到的全黑帧照样作为封面原子发布。开发数据根 `D:\hibiki-dev-data\app-documents\video_covers` 216 张自动封面里 4 张近全黑：BLEACH 千年血战篇 S17E43（均值亮度 1.0、标准差 0.0）、S17E41（均值 5.9、标准差 2.6），各含 `(2)` 副本）
+- **[x] ① 已修复** — 待提交。`video_cover_extractor.dart` 抽帧一段改走新的 `grabFirstNonBlackCoverFrame`：按 `coverFrameCandidateSeconds(atSeconds)`（`atSeconds` 后接 30 / 90 / 240 秒中更晚的时刻，最多 4 个候选）依次抽到独立 staged 路径，用纯函数 `isNearlyBlackFrame`（`package:image` 解码 → 缩到 64px 宽 → 平均亮度 < 16 **且**亮度标准差 < 10 才判黑，后台 isolate 执行）判黑，第一张非黑帧经 `publishStagedCoverFile` 原子发布；某个候选拿不到帧（seek 越过片尾 / ffmpeg 失败）就停；全部是黑帧则发布第一张（与旧行为一致，有封面总比占位好）。中间黑帧从不落到目标路径，已有的好封面不会被覆盖；未选中的候选全部删除。首个候选沿用调用方的 `diagnosticOnly`，补救候选失败一律只记诊断。`extractVideoFrameViaFfmpeg` 本身未改，进度条缩略图预览与制卡截图两个调用方行为不变；`extractPlaylistCover` 签名不受影响。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/video/video_cover_black_frame_test.dart`：`isNearlyBlackFrame` 对全黑 / 近黑 / 正常 / 暗而非黑（均值 40）/ 黑底亮 logo / 坏字节 / 小图的判定；`coverFrameCandidateSeconds` 候选序列与有界；`grabFirstNonBlackCoverFrame` 用注入的帧抓取替身覆盖「首帧黑 → 取第二个」「全黑 → 保留第一张」「越界停止」「首个候选拿不到帧 → null 且旧封面保留」「中间黑帧不落到目标路径」。源码守卫 `fushi/test/media/video/video_cover_source_filter_test.dart`（BUG-1867 回填降级）同步改为钉 `return grabFirstNonBlackCoverFrame(` 一段透传 `diagnosticOnly`。
+- **备注**：
+  - 只修新抽帧路径；**存量已落盘的黑封面本次不处理**（不在本修复范围，未核实回填产线是否会对已有封面重抽）。老封面需要用户在条目上手动换封面 / 重新抽帧，或后续另加一次性回填（按同一 `isNearlyBlackFrame` 扫 `video_covers` 下自动来源的封面并重抽）。
+  - 阈值刻意保守：开发数据根实测均值 13.3 / 标准差 6.2 的一张也会被判黑（确是暗场），均值 15.0 / 标准差 10.7 的一张不判黑。黑底上有亮 logo / 字幕卡的帧标准差大，不判黑。
+  - 远端流（http(s)）输入每个补救候选是一次最长 30 秒的 ffmpeg，最坏多 3 次；只有首帧判黑时才会发生。

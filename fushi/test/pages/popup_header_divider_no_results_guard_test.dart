@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -68,31 +68,22 @@ void main() {
   );
 
   test(
-    'popup layer gates the header divider on header + renderable results only',
+    'popup layer draws no hard header divider; top bar uses M3 scrolled-under',
     () {
       const String path =
           'lib/src/pages/implementations/dictionary_popup_layer.dart';
       final String src = File(path).readAsStringSync();
 
-      // 分隔线的门控表达式：既要有 header（app 外覆盖窗 headerWidget=null 不受影响），
-      // 又要有可渲染词条（无结果 / 搜索中不画）。
-      expect(
-        src.contains('headerWidget != null && _hasRenderableResults'),
-        isTrue,
-        reason: 'header 分隔线必须门控在「有 header 且有可渲染词条」',
-      );
-      // 门控为真时确实画出一条 Divider（有结果态分隔线保留，不回归）。
-      final int gateIdx = src.indexOf('final bool showHeaderDivider =');
-      expect(gateIdx, greaterThanOrEqualTo(0),
-          reason: 'showHeaderDivider 门控变量缺失');
-      final String afterGate = src.substring(gateIdx);
-      expect(
-        // 分隔线走共享 FushiDividerControl（Material 下即 Divider，玻璃下为细线）。
-        afterGate.contains('if (showHeaderDivider)') &&
-            afterGate.contains('FushiDividerControl('),
-        isTrue,
-        reason: '门控为真时必须画 Divider（有结果态分隔线保留）',
-      );
+      // 2026-10-06（用户：「这条线很丑」）：顶栏与正文之间不再有常驻 0.5px 分隔线，
+      // 改为正文滚离顶部时顶栏铺 scrolled-under 底，且只在有可渲染词条时启用。
+      expect(src.contains('showHeaderDivider'), isFalse,
+          reason: '常驻 header 分隔线已移除，不得复活');
+      expect(src.contains('_PopupScrolledUnderBar('), isTrue,
+          reason: '顶栏须包 scrolled-under 底');
+      expect(src.contains('enabled: _hasRenderableResults'), isTrue,
+          reason: '无结果 / 搜索中顶栏恒透明');
+      expect(src.contains('onScrolledUnderChanged:'), isTrue,
+          reason: 'scrolled-under 真值来自 WebView 回报');
     },
   );
 

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -11,9 +11,12 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
-import 'package:fushi/src/utils/components/fushi_loading_view.dart';
-import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Android receiver entry point. The page intentionally accepts a repository
 /// instead of discovering hosts globally, so only already-paired candidates
@@ -147,56 +150,120 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
           FushiIconButtonControl(
             tooltip: t.refresh,
             onPressed: _loading || _joining ? null : _loadHosts,
-            icon: const FushiIcon(Icons.refresh),
+            icon: const FushiIcon(FushiIcons.refresh),
           ),
         ],
       ),
-      body: _loading
-          ? const FushiLoadingView()
-          : _buildBody(context),
+      body: _loading ? _buildSkeleton() : _buildBody(context),
+    );
+  }
+
+  /// 加载骨架：与最终版面同轮廓（分组标题 + 三行分段列表），共享一层闪光。
+  Widget _buildSkeleton() {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: FushiSkeletonShimmer(
+          child: ListView(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              FushiSkeleton.line(widthFactor: 0.4, height: 20),
+              const SizedBox(height: 14),
+              for (int i = 0; i < 3; i++)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 4),
+                  child: FushiSkeleton(
+                    height: 72,
+                    borderRadius: FushiM3eShape.smallRadius,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildBody(BuildContext context) {
     if (_hosts.every((_GameStreamHost host) => host.sessions.isEmpty)) {
-      // 空态 / 失败态走共享占位件（两套设计系统统一的图标 + 文案层级）。
+      // 空态 / 失败态走共享占位件（M3E 色块图标 + 弹入；失败态 error 色块）。
       return FushiPlaceholderMessage(
-        icon: _error == null ? Icons.cast_outlined : Icons.error_outline,
+        icon: _error == null ? FushiIcons.cast : FushiIcons.error,
         message: _error ?? t.game_stream_none,
+        tone: _error == null
+            ? FushiPlaceholderTone.neutral
+            : FushiPlaceholderTone.error,
       );
     }
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: <Widget>[
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-              _error!,
-              style: TextStyle(
-                color: fushiStatusColor(context, FushiStatusTone.error),
-              ),
+    final List<Widget> sections = <Widget>[
+      if (_error != null)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: FushiInlineNotice(
+            message: _error!,
+            severity: FushiNoticeSeverity.error,
+          ),
+        ),
+      for (final _GameStreamHost host in _hosts)
+        if (host.sessions.isNotEmpty) _buildHostSection(host),
+    ];
+    // 宽屏不把行拉满整窗：限宽居中，行尾的「加入」不至于离标题一整屏远。
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: FushiEntranceScope(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: sections.length,
+            itemBuilder: fushiStaggeredItemBuilder(
+              (BuildContext context, int index) => sections[index],
             ),
           ),
-        for (final _GameStreamHost host in _hosts)
-          for (final GameStreamSession session in host.sessions)
-            FushiCard(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: EdgeInsets.zero,
-              child: FushiListItem(
-                leading: const FushiIcon(Icons.cast),
-                title: Text(host.peer.deviceName ?? host.peer.url),
+        ),
+      ),
+    );
+  }
+
+  /// 一台主机一组：主机名作分组标题，下面是 M3E 分段列表（行首 primary 色块
+  /// 图标、行尾中号主按钮「加入」）。
+  Widget _buildHostSection(_GameStreamHost host) {
+    final String hostName = host.peer.deviceName ?? host.peer.url;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiSectionTitle(
+          hostName,
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+        ),
+        FushiGroupedList(
+          padding: const EdgeInsets.only(bottom: 16),
+          children: <Widget>[
+            for (final GameStreamSession session in host.sessions)
+              FushiListItem(
+                leading: const FushiListLeadingIcon(
+                  FushiIcons.cast,
+                  shape: FushiLeadingShape.cookie,
+                  tone: FushiCardTone.primary,
+                ),
+                title: Text(session.gameTitle ?? hostName),
                 subtitle: Text(t.game_stream_available),
-                trailing: FushiFilledButton(
+                trailing: FushiFilledButton.icon(
+                  size: FushiButtonSize.m,
                   onPressed: _joining
                       ? null
                       : () => unawaited(_join(host, session)),
-                  child: Text(
+                  icon: const FushiIcon(FushiIcons.play),
+                  label: Text(
                     _joining ? t.game_stream_busy : t.game_stream_join_action,
                   ),
                 ),
+                onTap: _joining ? null : () => unawaited(_join(host, session)),
               ),
-            ),
+          ],
+        ),
       ],
     );
   }

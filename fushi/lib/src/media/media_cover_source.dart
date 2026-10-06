@@ -26,7 +26,7 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
 import 'package:fushi/src/media/media_item.dart' show MediaItem;

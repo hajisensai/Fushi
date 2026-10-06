@@ -3,9 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dynamic_color/dynamic_color.dart';
-import 'package:flutter/cupertino.dart'
+import 'package:cupertino_ui/cupertino_ui.dart'
     show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -16,16 +16,27 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/fushi_m3e_misc_themes.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/system_transparency.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
+/// 钉死色上的文字色：黑 / 白里取 WCAG 对比度更高的那个。
+///
+/// 以前用 `ThemeData.estimateBrightnessForColor`（相对亮度阈值 0.15）：亮度落在
+/// 0.15..0.179 之间的中灰（如 #6E6E6E）会被判「亮」配黑字，对比度只有 ~4.1，
+/// 不到 WCAG AA 的 4.5；黑白对比度相等的分界其实是 0.179。直接比对比度，任何
+/// 钉死色都至少 4.58:1。
 Color _readableOnColor(Color color) {
-  return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-      ? Colors.white
-      : Colors.black;
+  final double l = color.computeLuminance();
+  final double onBlack = (l + 0.05) / 0.05;
+  final double onWhite = 1.05 / (l + 0.05);
+  return onWhite >= onBlack ? Colors.white : Colors.black;
 }
 
 Color _deriveContainer(Color role, Brightness brightness) {
@@ -54,11 +65,28 @@ ColorScheme buildSystemThemeColorScheme({
   if (palette != null) {
     return palette.toColorScheme(brightness: brightness);
   }
+  final Color seed = accent ?? fallbackSeed;
   return ColorScheme.fromSeed(
-    seedColor: accent ?? fallbackSeed,
+    seedColor: seed,
     brightness: brightness,
+    // 灰色系统强调色（Windows「自动」灰 / 石墨）没有可信色相，vibrant 会把量化色相
+    // 拉成鲜蓝；这类 seed 维持 tonalSpot 的低彩度结果。
+    dynamicSchemeVariant: isAchromaticSeed(seed)
+        ? DynamicSchemeVariant.tonalSpot
+        : kFushiDefaultSchemeVariant,
   );
 }
+
+/// M3 Expressive 的默认方案变体：vibrant。
+///
+/// M3E 要「饱和的 container 色块」：tonalSpot 的 primary 彩度只有 36、容器偏灰，
+/// vibrant 把 primary 调色板彩度拉满（同色相，品牌色不跑偏），secondary / tertiary
+/// 容器也更鲜明；expressive 变体会把 primary 色相整体旋转（青色 seed 出紫粉主色），
+/// 预设之间的色相区分与品牌色都会丢，所以不用作默认。角色色调（tone）与 tonalSpot
+/// 同一套，on-色对比度由 DynamicScheme 保证（见 theme_contrast_test.dart）。
+/// 中性灰预设仍用 neutral，无彩度 seed 仍走 monochrome，墨水屏不受影响。
+const DynamicSchemeVariant kFushiDefaultSchemeVariant =
+    DynamicSchemeVariant.vibrant;
 
 /// [buildFushiColorScheme] 的纯函数 memo：`ColorScheme.fromSeed` 走 HCT 色调板
 /// 生成、单次非平凡；阅读设置抽屉的主题选择器每次 rebuild 会对每张色卡各调一次
@@ -91,7 +119,7 @@ const int _hibikiSchemeCacheLimit = 64;
 ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
-  DynamicSchemeVariant variant = DynamicSchemeVariant.tonalSpot,
+  DynamicSchemeVariant variant = kFushiDefaultSchemeVariant,
   Color? primary,
   Color? secondary,
   Color? tertiary,
@@ -134,7 +162,13 @@ ColorScheme buildFushiColorScheme({
           ? ColorScheme.fromSeed(
               seedColor: seedColor,
               brightness: brightness,
-              dynamicSchemeVariant: variant,
+              // 无彩度 seed（白 / 灰 / 黑）只有 HCT 量化出的随机色相：vibrant 会把它
+              // 拉成满彩度的蓝，选白色主题却得到鲜蓝强调色。这类 seed 的强调色沿用
+              // tonalSpot 的低彩度版本（与 M3E 前一致）。
+              dynamicSchemeVariant: isAchromaticSeed(seedColor) &&
+                      variant == DynamicSchemeVariant.vibrant
+                  ? DynamicSchemeVariant.tonalSpot
+                  : variant,
             )
           : null;
   final Color? accent = neutral ? (primary ?? accentBase!.primary) : primary;
@@ -493,12 +527,24 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
   }
 }
 
-/// 一个内置主题预设：[seed] + M3 [variant] 决定配色，[brightness] 是选中它时写入的
-/// 全局明暗，[pureBlack] 让深色下的页面底为真黑。
+/// 一个内置主题预设：只有种子色 [seed] + M3 方案变体 [variant]。
+///
+/// 2026-10-06 用户：「切换主题的时候如果我是深色就要继续保持深色」——预设**只决定
+/// 种子色，不决定明暗**：选任何预设都不改写 `brightness_mode`、不强制亮 / 暗，
+/// app 与阅读器始终按当前明暗设置（亮 / 暗 / 跟随系统）从种子派生。旧预设带的
+/// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({
   Color seed,
-  Brightness brightness,
   DynamicSchemeVariant variant,
+});
+
+/// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
+/// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
+/// `brightness_mode` 从未写过时作只读兜底）、[pureBlack] = 纯黑底。
+typedef LegacyThemePreset = ({
+  Color seed,
+  bool neutral,
+  bool dark,
   bool pureBlack,
 });
 
@@ -806,7 +852,11 @@ class ThemeNotifier extends ChangeNotifier {
     _systemPalette = palette;
     _systemAccentColor = accent;
     if (unchanged) return;
-    if (appThemeKey == 'system-theme') notifyListeners();
+    // 自定义主题也可以显式跟随系统强调色，与系统主题消费同一份取色结果。
+    if (appThemeKey == 'system-theme' ||
+        (activeCustomThemeEntry?.followSystemAccent ?? false)) {
+      notifyListeners();
+    }
   }
 
   void loadFromPrefsSnapshot(Map<String, String> snapshot) {
@@ -930,108 +980,178 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme presets ──────────────────────────────────────────────────
 
-  // 全部走 M3 默认的 tonalSpot（中性灰例外，用 neutral），靠 seed 色相区分——
-  // vibrant 这类高彩度变体会把亮色 primary 推到彩度 80+，不像正常 M3 应用。
+  // 2026-10-06 用户「预设只留 M3E 谷歌经典配色」：Material Theme Builder 的经典
+  // 种子（M3 基线紫 + Google 经典色板），一律由种子经 DynamicScheme 生成整套 tonal
+  // 方案（M3E 默认 vibrant 变体，中性灰用 neutral），不手写任何槽位。顺序按色相。
+  // 「跟随系统取色」（system-theme）、自定义主题、墨水屏开关不在此表，照旧保留。
   static const Map<String, ThemePreset> themePresets = {
+    'm3-baseline': (
+      seed: Color(0xFF6750A4),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-indigo': (
+      seed: Color(0xFF3F51B5),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-blue': (
+      seed: Color(0xFF0B57D0),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-teal': (
+      seed: Color(0xFF00796B),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-green': (
+      seed: Color(0xFF146C2E),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-yellow': (
+      seed: Color(0xFFFBBC04),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-orange': (
+      seed: Color(0xFFFF6D00),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-red': (
+      seed: Color(0xFFB3261E),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-pink': (
+      seed: Color(0xFFE91E63),
+      variant: kFushiDefaultSchemeVariant,
+    ),
+    'm3-neutral': (
+      seed: Color(0xFF5F6368),
+      variant: DynamicSchemeVariant.neutral,
+    ),
+  };
+
+  /// 中性灰预设 id（无彩度 / neutral 变体的旧预设映射到它）。
+  static const String neutralPresetKey = 'm3-neutral';
+
+  /// 已删除的旧预设（id 冻结在存量偏好 / 备份 / Profile 快照 / 阅读器设置里）。
+  /// 读取时经 [legacyPresetReplacement] 映射到最接近的保留预设，**不改写偏好**；
+  /// 阅读器的手调纸色（羊皮纸 / 水蓝 / 护眼 / 灰 / 深色 / 纯黑）仍按存量 id 生效
+  /// （见 [storedAppThemeKey]），本次不动。
+  static const Map<String, LegacyThemePreset> legacyThemePresets = {
     'light-theme': (
       seed: Color(0xFF1F4959),
-      brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
     'ecru-theme': (
       seed: Color(0xFF8B7355),
-      brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
-    // 水蓝：原 seed #4A7C8F 与品牌青 #1F4959 的 HCT 色相只差 2°，生成的方案逐色
-    // 几乎相同（亮 primary #096780 对 #0f6681），两张色卡选了等于没选。改成与阅读器
-    // 水蓝主题（底 #dfecf4、链接 #3a5fad）同族的天蓝，色相拉开到与青色可辨。
     'water-theme': (
       seed: Color(0xFF3A6EA5),
-      brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
-    // Eye-care (护眼): a warm, low-blue-light sage-green light theme. The seed is a
-    // muted bean-paste green (豆沙绿 family) so the whole app chrome carries a soft
-    // green cast that is easier on the eyes than pure white; the reader body gets an
-    // explicit bean-green background (#C7EDCC) via the reader `_themeMap` /
-    // `_themeColors` presets, matching the pronounced backgrounds of ecru/water.
     'eyecare-theme': (
       seed: Color(0xFF5E8C63),
-      brightness: Brightness.light,
-      variant: DynamicSchemeVariant.tonalSpot,
+      neutral: false,
+      dark: false,
       pureBlack: false,
     ),
-    // The three dark presets must stay visibly apart (TODO-100): gray by its
-    // neutral variant, dark by the teal brand hue, black by its true-black
-    // surfaces plus an indigo accent.
     'gray-theme': (
-      // Neutral: a real neutral-grey primary (~#bac9d1), no teal cast.
       seed: Color(0xFF5C6B73),
-      brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.neutral,
+      neutral: true,
+      dark: true,
       pureBlack: false,
     ),
     'dark-theme': (
-      // TonalSpot: the teal Hibiki brand colour (~#8ad0ee).
       seed: Color(0xFF1F4959),
-      brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.tonalSpot,
+      neutral: false,
+      dark: true,
       pureBlack: false,
     ),
     'black-theme': (
-      // 「纯黑」：页面底真黑 #000（与阅读器同名主题的 `#000`、浏览器扩展镜像的
-      // `surface: '#000000'` 一致），强调色是 tonalSpot 靛蓝 (~#bac3ff)。原先的
-      // vibrant 变体给的是藏青底 #0f101a，名不副实。
       seed: Color(0xFF3F51B5),
-      brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.tonalSpot,
+      neutral: false,
+      dark: true,
       pureBlack: true,
     ),
   };
 
+  static final Map<String, String> _legacyReplacementCache =
+      <String, String>{};
+
+  /// 旧预设 [key] 的替代预设：中性 → [neutralPresetKey]；其余按种子 HCT 色相
+  /// 环形距离最近的彩色预设。非旧预设 id 返回 null。
+  static String? legacyPresetReplacement(String key) {
+    final LegacyThemePreset? legacy = legacyThemePresets[key];
+    if (legacy == null) return null;
+    return _legacyReplacementCache.putIfAbsent(key, () {
+      if (legacy.neutral || isAchromaticSeed(legacy.seed)) {
+        return neutralPresetKey;
+      }
+      return nearestPresetForSeed(legacy.seed);
+    });
+  }
+
+  /// 与 [seed] 色相最近的彩色预设（不含中性灰）。
+  static String nearestPresetForSeed(Color seed) {
+    final double hue = Hct.fromInt(seed.toARGB32()).hue;
+    String best = 'm3-baseline';
+    double bestDistance = double.infinity;
+    for (final MapEntry<String, ThemePreset> entry in themePresets.entries) {
+      if (entry.value.variant == DynamicSchemeVariant.neutral) continue;
+      final double h = Hct.fromInt(entry.value.seed.toARGB32()).hue;
+      final double d = (hue - h).abs() % 360;
+      final double distance = d > 180 ? 360 - d : d;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = entry.key;
+      }
+    }
+    return best;
+  }
+
   /// 预设 [preset] 在 [brightness] 下的 ColorScheme——设置页色卡与生效主题同源。
   static ColorScheme buildPresetColorScheme(
     ThemePreset preset,
-    Brightness brightness,
-  ) {
+    Brightness brightness, {
+    bool pureBlack = false,
+  }) {
     return buildFushiColorScheme(
       seedColor: preset.seed,
       brightness: brightness,
       variant: preset.variant,
-      pureBlack: preset.pureBlack,
+      pureBlack: pureBlack,
     );
   }
 
-  static const _themeLabelKeys = {
-    'light-theme': 'theme_light',
-    'ecru-theme': 'theme_ecru',
-    'water-theme': 'theme_water',
-    'eyecare-theme': 'theme_eyecare',
-    'gray-theme': 'theme_gray',
-    'dark-theme': 'theme_dark',
-    'black-theme': 'theme_black',
-  };
-
+  /// 主题名（设置页色卡下的名称）；旧预设 id 显示其替代预设的名字。
   static String themeLabel(String key) {
-    switch (_themeLabelKeys[key]) {
-      case 'theme_light':
-        return t.theme_light;
-      case 'theme_ecru':
-        return t.theme_ecru;
-      case 'theme_water':
-        return t.theme_water;
-      case 'theme_eyecare':
-        return t.theme_eyecare;
-      case 'theme_gray':
-        return t.theme_gray;
-      case 'theme_dark':
-        return t.theme_dark;
-      case 'theme_black':
-        return t.theme_black;
+    switch (legacyPresetReplacement(key) ?? key) {
+      case 'system-theme':
+        return t.theme_preset_system;
+      case 'm3-baseline':
+        return t.theme_preset_baseline;
+      case 'm3-indigo':
+        return t.theme_preset_indigo;
+      case 'm3-blue':
+        return t.theme_preset_blue;
+      case 'm3-teal':
+        return t.theme_preset_teal;
+      case 'm3-green':
+        return t.theme_preset_green;
+      case 'm3-yellow':
+        return t.theme_preset_yellow;
+      case 'm3-orange':
+        return t.theme_preset_orange;
+      case 'm3-red':
+        return t.theme_preset_red;
+      case 'm3-pink':
+        return t.theme_preset_pink;
+      case 'm3-neutral':
+        return t.theme_preset_neutral;
       default:
         return key;
     }
@@ -1057,15 +1177,40 @@ class ThemeNotifier extends ChangeNotifier {
     return null;
   }
 
-  String get appThemeKey {
+  /// 偏好里存的原始主题键（校验过：未知值 → `system-theme`），**可能是已删的
+  /// 旧预设 id**。只给阅读器纸色（按存量 id 生效）与只读兜底用；其余一律读
+  /// [appThemeKey]。
+  String get storedAppThemeKey {
     final String key = _get('app_theme_key', defaultValue: '');
     if (key.isEmpty ||
         (!themePresets.containsKey(key) &&
+            !legacyThemePresets.containsKey(key) &&
             !isCustomThemeKey(key) &&
             key != 'system-theme')) {
       return 'system-theme';
     }
     return key;
+  }
+
+  /// 生效的主题键：已删的旧预设 id 只读映射到最接近的保留预设
+  /// （[legacyPresetReplacement]），偏好原值不改写。
+  String get appThemeKey {
+    final String key = storedAppThemeKey;
+    return legacyPresetReplacement(key) ?? key;
+  }
+
+  /// 「纯黑深色背景」：深色下页面底为真黑（OLED）。与预设 / 明暗正交的独立开关；
+  /// 从没写过时，存量选了旧「纯黑」预设的用户默认开（保持原观感，不改写偏好）。
+  bool get pureBlackDark => _get(
+        'pure_black_dark',
+        defaultValue:
+            legacyThemePresets[storedAppThemeKey]?.pureBlack ?? false,
+      ) as bool;
+
+  Future<void> setPureBlackDark(bool value) async {
+    await _set('pure_black_dark', value);
+    notifyListeners();
+    _persistSplashColor();
   }
 
   /// Resolve the [CustomThemeEntry] the current [appThemeKey] points at, applying
@@ -1109,9 +1254,8 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
   /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
-  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；`glass_material` 偏好
-  /// 只在 frosted / liquid 两档间选，缺省 liquid（引擎不支持时
-  /// [glassMaterialOf] 再降级为 frosted）。
+  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；当前固定毛玻璃
+  /// （见 [glassMaterialTier]），液态档暂时关闭。
   FushiGlassMaterial get glassMaterial {
     if (designSystem != 'glass') return FushiGlassMaterial.off;
     // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
@@ -1123,13 +1267,13 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
-  FushiGlassMaterial get glassMaterialTier =>
-      FushiGlassMaterial.fromPrefValue(
-                _get('glass_material', defaultValue: 'liquid') as String?,
-              ) ==
-              FushiGlassMaterial.frosted
-          ? FushiGlassMaterial.frosted
-          : FushiGlassMaterial.liquid;
+  ///
+  /// 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃先关——这里恒为
+  /// frosted，**不读也不改写** `glass_material` 偏好：已存 `liquid` 的用户读取时
+  /// 直接降级为毛玻璃，存储值原样保留（入口在设置页同步隐藏，见
+  /// settings_schema_appearance.dart 的 `appearance.glass_material`）。恢复液态
+  /// 档时还原为：偏好 == frosted ? frosted : liquid（缺省 liquid）。
+  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.frosted;
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
     await _set('glass_material', value.name);
@@ -1142,10 +1286,10 @@ class ThemeNotifier extends ChangeNotifier {
     final key = appThemeKey;
     if (key == 'system-theme') return 'system';
     if (isCustomThemeKey(key)) return customThemeDark ? 'dark' : 'light';
-    final preset = themePresets[key];
-    if (preset != null) {
-      return preset.brightness == Brightness.dark ? 'dark' : 'light';
-    }
+    // 只读兜底：老用户选旧预设时当年会顺带写 brightness_mode；万一没写过，按旧
+    // 预设的明暗语义读出，不改写。新预设不带明暗 → 跟随系统。
+    final LegacyThemePreset? legacy = legacyThemePresets[storedAppThemeKey];
+    if (legacy != null) return legacy.dark ? 'dark' : 'light';
     return 'system';
   }
 
@@ -1321,10 +1465,36 @@ class ThemeNotifier extends ChangeNotifier {
 
   // The M3 scheme variant for the active preset. Presets differ here so the
   // three dark presets (gray/dark/black) stay visually distinct (TODO-100);
-  // custom / system fall back to tonalSpot (their own seed/role overrides /
-  // OS palette already differentiate them).
+  // custom / system fall back to the M3E default variant (their own seed/role
+  // overrides / OS palette already differentiate them).
   DynamicSchemeVariant get _variant {
-    return themePresets[appThemeKey]?.variant ?? DynamicSchemeVariant.tonalSpot;
+    return themePresets[appThemeKey]?.variant ?? kFushiDefaultSchemeVariant;
+  }
+
+  /// 当前主题**实际生成方案所用**的种子色（浏览器扩展「跟随 Fushi」按同一种子派生另一明暗用）。
+  ///
+  /// HBK-AUDIT-030：系统取色（system-theme）与 [buildSystemThemeColorScheme] 同口径——桌面用
+  /// 系统强调色、取不到才用兜底种子；Android 壁纸调色板（[_systemPalette]）不是由单个种子生成的，
+  /// 返回 null（扩展收不到种子就不按种子派生）。以前这里恒为 [_seedColor]，系统取色下落成
+  /// 默认种子，扩展派生的另一明暗与 app 实际配色对不上。
+  Color? get activeSeedColor {
+    if (appThemeKey == 'system-theme') {
+      if (_systemPalette != null) return null;
+      return _systemAccentColor ?? _seedColor;
+    }
+    return _seedColor;
+  }
+
+  /// 当前主题的 M3 方案变体（同上）。系统取色与 [buildSystemThemeColorScheme] 同口径：
+  /// 无彩度强调色用 tonalSpot，其余用默认变体。
+  DynamicSchemeVariant get activeSchemeVariant {
+    if (appThemeKey == 'system-theme') {
+      final Color? seed = activeSeedColor;
+      return seed != null && isAchromaticSeed(seed)
+          ? DynamicSchemeVariant.tonalSpot
+          : kFushiDefaultSchemeVariant;
+    }
+    return _variant;
   }
 
   ThemeData get theme => _buildThemeData(Brightness.light);
@@ -1340,13 +1510,18 @@ class ThemeNotifier extends ChangeNotifier {
     if (appThemeKey == 'system-theme') {
       // 系统取色的中性阶梯有两个来源（Android 壁纸调色板 / 桌面 accent seed），
       // 间距各不相同；同预设与自定义主题一样收口到统一阶梯。
-      return applyFushiSurfaceLadder(buildSystemThemeColorScheme(
+      final ColorScheme system = buildSystemThemeColorScheme(
         brightness: brightness,
         palette: _systemPalette,
         accent: _systemAccentColor,
         fallbackSeed: _seedColor,
-      ));
+      );
+      return pureBlackDark
+          ? applyFushiPureBlackSurfaceLadder(system)
+          : applyFushiSurfaceLadder(system);
     }
+    final CustomThemeEntry? custom = activeCustomThemeEntry;
+    if (custom != null) return buildCustomThemeColorScheme(custom, brightness);
     return buildFushiColorScheme(
       seedColor: _seedColor,
       brightness: brightness,
@@ -1366,7 +1541,31 @@ class ThemeNotifier extends ChangeNotifier {
       ),
       surface: activeCustomThemeSurfaceColor,
       neutralDerived: activeCustomThemeNeutralDerived,
-      pureBlack: themePresets[appThemeKey]?.pureBlack ?? false,
+      pureBlack: pureBlackDark,
+    );
+  }
+
+  /// 自定义条目在当前系统取色 / 纯黑 / 墨水屏设置下的配色。
+  /// 活跃主题、设置色卡与编辑草稿共用此入口，不要求条目已经保存或选中。
+  ColorScheme buildCustomThemeColorScheme(
+    CustomThemeEntry entry,
+    Brightness brightness,
+  ) {
+    if (einkMode) return buildEinkColorScheme(brightness);
+    Color? role(int? value) => value == null ? null : Color(value);
+    final Color? systemAccent = _followedSystemAccent(entry);
+    return buildFushiColorScheme(
+      seedColor: systemAccent ?? Color(entry.seed),
+      brightness: brightness,
+      primary: entry.primaryColor == null
+          ? null
+          : (systemAccent ?? Color(entry.primaryColor!)),
+      secondary: role(entry.secondaryColor),
+      tertiary: role(entry.tertiaryColor),
+      primaryContainer: role(entry.containerColor),
+      surface: role(entry.surfaceColor),
+      neutralDerived: entry.neutralDerived,
+      pureBlack: pureBlackDark,
     );
   }
 
@@ -1695,20 +1894,31 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Setters ───────────────────────────────────────────────────────
 
+  /// 切主题只换配色：**不改写 `brightness_mode`、不强制亮 / 暗**（2026-10-06 用户
+  /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
+  /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
   Future<void> setAppThemeKey(String key) async {
-    await _set('app_theme_key', key);
-    if (key == 'system-theme') {
-      await setBrightnessMode('system');
-      return;
-    }
-    final preset = themePresets[key];
-    if (preset != null) {
-      await setBrightnessMode(
-          preset.brightness == Brightness.dark ? 'dark' : 'light');
-      return;
-    }
+    await _setAppThemeKeyKeepingEffective(key);
     notifyListeners();
     _persistSplashColor();
+  }
+
+  /// HBK-AUDIT-035：换主题键前，把**只靠旧主题键兜底读出**、从没独立存过的明暗
+  /// （[brightnessMode] 对旧预设 / `custom_theme_dark` 的回退）与纯黑（[pureBlackDark]
+  /// 对旧「纯黑」预设的回退）按换键前的有效值补写成独立偏好，与新主题键同一批落库。
+  /// 换掉主题键后那些兜底就读不到了：旧 black-theme 用户改个种子色纯黑消失、旧自定义深色
+  /// 用户换预设变成跟随系统。已显式存过的键不动。
+  Future<void> _setAppThemeKeyKeepingEffective(String key) async {
+    final Map<String, String> writes = <String, String>{};
+    if (_get('brightness_mode', defaultValue: '').isEmpty) {
+      writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
+    }
+    if (_prefs['pure_black_dark'] == null) {
+      writes['pure_black_dark'] = PrefCodec.encode(pureBlackDark);
+    }
+    writes['app_theme_key'] = PrefCodec.encode(key);
+    _prefs.addAll(writes);
+    await _db.setPrefs(writes);
   }
 
   Future<void> setBrightnessMode(String mode) async {
@@ -1773,7 +1983,7 @@ class ThemeNotifier extends ChangeNotifier {
     );
     await upsertCustomTheme(entry);
 
-    await _set('app_theme_key', 'custom-theme');
+    await _setAppThemeKeyKeepingEffective('custom-theme');
     notifyListeners();
     _persistSplashColor();
   }
@@ -1881,7 +2091,14 @@ ThemeData buildFushiThemeData({
   final ColorScheme cs = appleDesign
       ? appleColorScheme(scheme, monochrome: monochromeAccent)
       : scheme;
-  final TextTheme tt = appleDesign ? appleTextTheme(textTheme) : textTheme;
+  // 字阶先解析到与 Theme.of(context).textTheme 同一基底（Typography 2021 颜色档
+  // + 几何档，inherit: false）：下面组件主题里的文字样式与框架默认样式、以及切换
+  // 主题 / 明暗 / 设计系统时 AnimatedTheme 的插值都在同一基底上做 TextStyle.lerp，
+  // 不再撞 inherit 不一致的断言（见 fushiResolveTextTheme）。
+  final TextTheme tt = fushiResolveTextTheme(
+    appleDesign ? appleTextTheme(textTheme) : textTheme,
+    scheme: cs,
+  );
   final FushiAppleColors? appleColors = appleDesign
       ? FushiAppleColors.of(cs.brightness, cs.primary)
       : null;
@@ -1939,7 +2156,7 @@ ThemeData buildFushiThemeData({
     }),
     foregroundColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       if (states.contains(WidgetState.disabled)) {
-        return cs.onSurface.withValues(alpha: 0.38);
+        return cs.disabledContent;
       }
       if (states.contains(WidgetState.hovered) ||
           states.contains(WidgetState.focused) ||
@@ -1950,7 +2167,7 @@ ThemeData buildFushiThemeData({
     }),
     iconColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
       if (states.contains(WidgetState.disabled)) {
-        return cs.onSurface.withValues(alpha: 0.38);
+        return cs.disabledContent;
       }
       return cs.onSurfaceVariant;
     }),
@@ -1964,6 +2181,21 @@ ThemeData buildFushiThemeData({
     useMaterial3: true,
     colorScheme: cs,
     textTheme: tt,
+    primaryTextTheme: tt.apply(
+      bodyColor: cs.onPrimary,
+      displayColor: cs.onPrimary,
+    ),
+    // M3E 语义图标（FushiIcons，Material Symbols 可变字体）的全局轴默认：opsz 24
+    // 对应常规 24dp 图标（框架兜底是 48，24dp 下笔画发细）；深色主题 GRAD -25 抵消
+    // 浅色图标的光晕。颜色沿用框架默认（black87 / white），旧 MaterialIcons 与
+    // CupertinoIcons 不是可变字体，这些轴对它们无效、像素不变。
+    iconTheme: IconThemeData(
+      color: cs.brightness == Brightness.dark
+          ? kDefaultIconLightColor
+          : kDefaultIconDarkColor,
+      opticalSize: 24,
+      grade: fushiSymbolGrade(cs.brightness),
+    ),
     // E-ink: swap pages in one frame (single panel refresh, no smearing) and
     // drop ink ripples — a spreading translucent overlay is exactly the kind
     // of repeated partial refresh slow panels render worst.
@@ -2045,9 +2277,13 @@ ThemeData buildFushiThemeData({
             ),
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
-      titleTextStyle: appleDesign
-          ? null
-          : tt.titleLarge?.copyWith(color: cs.onSurface),
+      // 不在主题里钉 titleTextStyle：M3 默认就是 titleLarge / onSurface，而主题级
+      // titleTextStyle 会同时盖掉 SliverAppBar.medium / .large 展开态的
+      // headlineSmall / headlineMedium 大标题（Flutter 展开态取
+      // `titleTextStyle ?? appBarTheme.titleTextStyle ?? 大标题默认`），
+      // 大标题顶栏只剩一行 22 号小字压在 152 高的空带底部（BUG-2959：Android
+      // MD3 设置页「设置」上方大片空白）。
+      titleTextStyle: null,
       iconTheme: appleDesign
           ? null
           : IconThemeData(color: cs.onSurface, size: 24),
@@ -2181,7 +2417,7 @@ ThemeData buildFushiThemeData({
         return tt.bodyMedium?.copyWith(
           fontSize: 14,
           color: states.contains(WidgetState.disabled)
-              ? cs.onSurface.withValues(alpha: 0.38)
+              ? cs.disabledContent
               : cs.onSurface,
         );
       }),
@@ -2250,10 +2486,8 @@ ThemeData buildFushiThemeData({
     // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
     // **常驻**覆盖在每个列表右侧的，压住并吞掉最右一列的操作按钮。仓库里 9 处
     // RawScrollbar 都硬写 3，说明 3 才是设计意图，深色只是漏钉。
-    scrollbarTheme: ScrollbarThemeData(
-      thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
-      thumbVisibility: WidgetStateProperty.all(true),
-    ),
+    // M3E：粗细不变、全圆头 + onSurfaceVariant 状态递进拇指（fushi_m3e_misc_themes）。
+    scrollbarTheme: fushiM3eScrollbarTheme(cs: cs, eink: eink),
     // 2026-10：M3 2024 版滑块（16 粗轨道 + 竖条拇指 + 拇指两侧留缝 + 尾端停止
     // 点），与下面的 2024 版进度条同一代视觉；RangeSlider 吃同一份主题。墨水屏
     // 保留 2023 版细轨圆钮与原配色（缝与停止点在低分辨率面板上会糊成灰点）。
@@ -2285,36 +2519,36 @@ ThemeData buildFushiThemeData({
               color: cs.onInverseSurface,
             ),
           ),
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.card,
-      ),
-      insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
-      // 玻璃设计系统：FushiSnackBar 自己把内容画进玻璃胶囊，SnackBar 本体
-      // 必须透明无阴影，否则胶囊外再多一层底。
-      backgroundColor: glassDesign && !eink
-          ? Colors.transparent
-          : glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
-      elevation: glassDesign && !eink ? 0 : null,
+    // M3 Expressive 其余组件（2026-10-05 用户「所有组件都是 m3e」）：提示条 /
+    // tooltip / 徽标 / 日期时间选择器 / 轮播的主题统一在 fushi_m3e_misc_themes.dart，
+    // 这里只调用。提示条与 toast、plain tooltip 同一套「反色浮层」语言。
+    snackBarTheme: fushiM3eSnackBarTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      glassDesign: glassDesign,
+      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
-    // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
-    // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路
-    // 闪），离开 100ms 收起。
-    tooltipTheme: TooltipThemeData(
-      waitDuration: const Duration(milliseconds: 400),
-      exitDuration: const Duration(milliseconds: 100),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity) ??
-            cs.inverseSurface,
-        borderRadius: FushiBorderRadius.chip,
-      ),
-      textStyle: (tt.labelMedium ?? const TextStyle()).copyWith(
-        color: cs.onInverseSurface,
-      ),
+    tooltipTheme: fushiM3eTooltipTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      glassBackground: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
     ),
+    badgeTheme: fushiM3eBadgeTheme(cs: cs, tt: tt, eink: eink),
+    datePickerTheme: fushiM3eDatePickerTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      appleDesign: appleDesign,
+    ),
+    timePickerTheme: fushiM3eTimePickerTheme(
+      cs: cs,
+      tt: tt,
+      eink: eink,
+      appleDesign: appleDesign,
+    ),
+    carouselViewTheme: fushiM3eCarouselTheme(cs: cs, eink: eink),
     // 2026-10：M3 2024 版进度条——圆头、轨道与指示器之间留缝、确定态尾端有
     // 停止点，读数比 2023 版的一整条色带清楚。墨水屏保留 2023 版（缝与停止点在
     // 低分辨率面板上会糊成灰点）。
@@ -2364,7 +2598,7 @@ ThemeData buildFushiThemeData({
       dragHandleColor: cs.onSurfaceVariant.withValues(alpha: 0.4),
       dragHandleSize: const Size(32, 4),
       constraints: const BoxConstraints(maxWidth: 640),
-      modalBarrierColor: eink ? null : cs.scrim.withValues(alpha: 0.32),
+      modalBarrierColor: eink ? null : cs.modalScrim,
       surfaceTintColor: Colors.transparent,
       backgroundColor: glassTint(
         cs.surfaceContainerLow,
@@ -2553,8 +2787,37 @@ ThemeData buildFushiThemeData({
       color: cs.outlineVariant,
       // E-ink panels can't render a crisp half-pixel hairline; use a full
       // pixel so dividers stay solid black/white lines.
-      thickness: eink ? 1 : 0.5,
+      // M3 / M3E 分隔线规格 1dp outlineVariant（此前 0.5 的发丝线在 1x 屏上
+      // 被抗锯齿成半透明灰，与 M3E 色块分层的力度不匹配）。
+      thickness: 1,
     ),
+  );
+}
+
+/// 把已成型的 [base] 换成 [scheme] 重走一遍工厂：组件主题（菜单 / 对话框 / 弹层
+/// / 提示条 / 滑条……的底色与前景）全按新 scheme 重算，字阶、设计系统、玻璃材质、
+/// 墨水屏、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂产物同类型
+/// 的扩展优先）。
+///
+/// 为什么不能 `base.copyWith(colorScheme: scheme)`：工厂把 scheme 颜色**烤进**了
+/// 各组件主题（popupMenuTheme.color = surfaceContainer 等），只换 colorScheme
+/// 时那些组件仍是旧色——歌词模式按封面取色后，⋯ 菜单仍是全局主题的深蓝表面。
+ThemeData rethemeFushiWithScheme(ThemeData base, ColorScheme scheme) {
+  final FushiGlassTheme? glass = base.extension<FushiGlassTheme>();
+  final ThemeData rebuilt = buildFushiThemeData(
+    scheme: scheme,
+    textTheme: base.textTheme,
+    eink: base.extension<FushiEinkTheme>()?.einkMode ?? false,
+    designSystem: base.extension<FushiDesignSystemTheme>()?.designSystem ??
+        FushiDesignSystem.auto,
+    glass: glass?.material ?? FushiGlassMaterial.off,
+    glassDesign: glass?.glassDesign ?? false,
+  );
+  return rebuilt.copyWith(
+    platform: base.platform,
+    // 不写显式类型实参：`<ThemeExtension<dynamic>>[]` 在 CFE 里会按 F-有界
+    // 实参推成 ThemeExtension<ThemeExtension<dynamic>>，spread 编译不过。
+    extensions: [...base.extensions.values, ...rebuilt.extensions.values],
   );
 }
 
@@ -2577,13 +2840,7 @@ WidgetStateProperty<Color?> _fushiSoftStateLayer(ColorScheme cs) {
   return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
     final Color base =
         states.contains(WidgetState.selected) ? cs.primary : cs.onSurface;
-    if (states.contains(WidgetState.pressed) ||
-        states.contains(WidgetState.focused)) {
-      return base.withValues(alpha: 0.10);
-    }
-    if (states.contains(WidgetState.hovered)) {
-      return base.withValues(alpha: 0.05);
-    }
-    return null;
+    final double opacity = FushiStateLayer.opacityFor(states, soft: true);
+    return opacity == 0 ? null : base.withValues(alpha: opacity);
   });
 }

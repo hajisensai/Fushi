@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;

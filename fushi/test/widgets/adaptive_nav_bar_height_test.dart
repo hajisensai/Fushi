@@ -1,9 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 
-// 移动端底栏几何守卫。自绘的 Material 底栏曾用固定 SizedBox(height: 80)，叠上
+// 移动端底栏几何守卫。2026-10-06 起 MD3 底栏是悬浮胶囊（离左右 12、离底
+// max(12, 手势区)，上沿留 kAdaptiveNavBarFloatingTopGap），胶囊内高仍是
+// kAdaptiveNavBarContentHeight(64)。以下为原始背景：
+//
+// 自绘的 Material 底栏曾用固定 SizedBox(height: 80)，叠上
 // Android 手势条的 24dp bottom inset 后总高 104dp，标签底边离屏幕底 38dp —— 比
 // MD3 标称的 80dp 容器还高，视觉上「浮」在底部而不是贴住底部。
 //
@@ -52,13 +56,28 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('bottom bar content is 64dp tall without system inset', (
+  // 胶囊高按「药丸 + 标签实际行高 + 上下留白」算（≥ 64），标签不会被圆角
+  // 裁掉（2026-10-06 用户截图：Windows 上标签下半截被裁）。
+  testWidgets('floating capsule fits icon + label, 12dp off the bottom edge', (
     WidgetTester tester,
   ) async {
     await pumpBar(tester);
 
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    expect(bar.height, kAdaptiveNavBarContentHeight);
+    expect(
+      bar.height,
+      greaterThanOrEqualTo(
+        kAdaptiveNavBarContentHeight +
+            kAdaptiveNavBarFloatingTopGap +
+            kAdaptiveNavFloatingMargin,
+      ),
+    );
+    final Rect label = tester.getRect(find.text('Books'));
+    expect(
+      label.bottom,
+      lessThanOrEqualTo(bar.bottom - kAdaptiveNavFloatingMargin),
+      reason: '标签完整落在胶囊里',
+    );
   });
 
   testWidgets('system inset only adds gesture padding below the content', (
@@ -68,15 +87,17 @@ void main() {
     await pumpBar(tester, bottomInset: inset);
 
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    // 总高 = 内容 64 + 手势区 24 = 88；旧实现是 80 + 24 = 104。
-    expect(bar.height, kAdaptiveNavBarContentHeight + inset);
-
-    // 标签底边只隔着内容内边距 + 手势区，不再多出 14dp 的空白。
-    final Rect label = tester.getRect(find.text('Books'));
+    // 悬浮胶囊浮在手势区之上：总高 = 上缝 4 + 胶囊 + max(12, 手势区 24)。
     expect(
-      bar.bottom - label.bottom,
-      kAdaptiveNavBarContentPadding + inset,
+      bar.height,
+      greaterThanOrEqualTo(
+        kAdaptiveNavBarFloatingTopGap + kAdaptiveNavBarContentHeight + inset,
+      ),
     );
+
+    // 标签完整落在胶囊里（胶囊离底 = 手势区）。
+    final Rect label = tester.getRect(find.text('Books'));
+    expect(label.bottom, lessThanOrEqualTo(bar.bottom - inset));
   });
 
   testWidgets('bar grows instead of overflowing at large text scale', (
@@ -87,8 +108,12 @@ void main() {
     // 文字缩放被 clamp 到 1.3（与 stock NavigationBar 一致），高度按内容自适应
     // 增长；任何 RenderFlex 溢出都会让 pumpAndSettle 抛异常。
     final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
-    expect(bar.height, greaterThanOrEqualTo(kAdaptiveNavBarContentHeight + 24));
-    expect(bar.height, lessThan(kAdaptiveNavBarContentHeight + 24 + 20));
+    const double chrome = kAdaptiveNavBarFloatingTopGap + 24;
+    expect(
+      bar.height,
+      greaterThanOrEqualTo(kAdaptiveNavBarContentHeight + chrome),
+    );
+    expect(bar.height, lessThan(kAdaptiveNavBarContentHeight + chrome + 40));
     expect(tester.takeException(), isNull);
   });
 }

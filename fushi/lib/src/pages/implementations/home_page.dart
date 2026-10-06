@@ -1,10 +1,11 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:macos_ui/macos_ui.dart'
     show
@@ -24,6 +25,11 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_prompt.dart';
 import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeInset,
+        FushiHeightReporter,
+        kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -105,6 +111,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart'
     show FushiFocusController, FushiFocusRoot;
@@ -224,57 +231,57 @@ AdaptiveNavItem homeNavItemFor(HomeTab tab) {
   switch (tab) {
     case HomeTab.home:
       return AdaptiveNavItem(
-        icon: Icons.home_outlined,
-        selectedIcon: Icons.home,
+        icon: FushiIcons.home,
+        selectedIcon: FushiIcons.filled(FushiIcons.home),
         label: t.nav_home,
       );
     case HomeTab.books:
       return AdaptiveNavItem(
-        icon: Icons.menu_book_outlined,
-        selectedIcon: Icons.menu_book,
+        icon: FushiIcons.books,
+        selectedIcon: FushiIcons.filled(FushiIcons.books),
         label: t.books,
       );
     case HomeTab.manga:
       return AdaptiveNavItem(
-        icon: Icons.photo_library_outlined,
-        selectedIcon: Icons.photo_library,
+        icon: FushiIcons.manga,
+        selectedIcon: FushiIcons.filled(FushiIcons.manga),
         label: t.manga_library,
       );
     case HomeTab.video:
       return AdaptiveNavItem(
-        icon: Icons.movie_outlined,
-        selectedIcon: Icons.movie,
+        icon: FushiIcons.video,
+        selectedIcon: FushiIcons.filled(FushiIcons.video),
         label: t.nav_video,
       );
     case HomeTab.browse:
       // Mihon 的 Browse：来源 / 扩展 / 发现 / 下载（2026-09-27 由「下载」改名）。
       return AdaptiveNavItem(
-        icon: Icons.explore_outlined,
-        selectedIcon: Icons.explore,
+        icon: FushiIcons.browse,
+        selectedIcon: FushiIcons.filled(FushiIcons.browse),
         label: t.nav_browse,
       );
     case HomeTab.dictionaries:
       return AdaptiveNavItem(
-        icon: Icons.search_outlined,
-        selectedIcon: Icons.search,
+        icon: FushiIcons.lookup,
+        selectedIcon: FushiIcons.filled(FushiIcons.lookup),
         label: t.nav_lookup,
       );
     case HomeTab.games:
       return AdaptiveNavItem(
-        icon: Icons.sports_esports_outlined,
-        selectedIcon: Icons.sports_esports,
+        icon: FushiIcons.games,
+        selectedIcon: FushiIcons.filled(FushiIcons.games),
         label: t.nav_game,
       );
     case HomeTab.browserExtension:
       return AdaptiveNavItem(
-        icon: Icons.extension_outlined,
-        selectedIcon: Icons.extension,
+        icon: FushiIcons.browserExtension,
+        selectedIcon: FushiIcons.filled(FushiIcons.browserExtension),
         label: t.nav_browser_extension,
       );
     case HomeTab.settings:
       return AdaptiveNavItem(
-        icon: Icons.tune_outlined,
-        selectedIcon: Icons.tune,
+        icon: FushiIcons.settings,
+        selectedIcon: FushiIcons.filled(FushiIcons.settings),
         label: t.settings,
       );
   }
@@ -1404,36 +1411,130 @@ class _HomePageState extends BasePageState<HomePage>
     _appleChrome.syncScope(_visibleTab);
     _largeTitle.syncScope(_visibleTab);
     final bool apple = isGlassDesign(context);
+    final bool overlayTitle = !apple && _tabHasFloatingChrome(_visibleTab);
+    final bool narrow = windowSizeClassReal(
+          MediaQuery.sizeOf(context).width,
+          FushiAppUiScale.of(context),
+        ) ==
+        WindowSizeClass.compact;
+    // 叠放标题让出的高度：宽窗 = 标题条展开高度 + 6（收起成 48 的标题胶囊后，
+    // 胶囊下沿到页签胶囊恰好 12，M3E 组间距）；窄窗不显示标题，只留 8 的呼吸。
+    final double titleInset = !overlayTitle
+        ? 0
+        : narrow
+            ? kFushiFloatingChromeGap
+            : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
         if (!fushiNotificationFromVisibleSubtree(notification)) return false;
         _largeTitle.handleNotification(notification);
-        return apple && _appleChrome.handleNotification(notification);
+        // 底栏随滚动收起（Apple 胶囊 / MD3 悬浮胶囊共用同一台状态机：只认
+        // 用户滚动、到顶到底的回弹不触发，见 GlassTabBarMinimizeController）。
+        // 顶部 scroll edge 带仍只有 Apple 画。
+        _appleChrome.handleNotification(notification);
+        return false;
       },
       // 外壳大标题条在内容之上（库页的分区页签行之上）；条与内容的父层两套
       // 设计系统、有无标题都恒定，只靠条的高度 / 透明度变化。
+      //
+      // MD3 库页（书 / 漫画 / 视频 / 游戏，内容顶部是叠放的浮动工具栏）：大标题
+      // 条改为**叠在内容上**（[_floatingTitleOverlay]），内容经
+      // [FushiFloatingChromeInset] 让出恒定的顶部高度——条收起（56→52）不再
+      // 改内容视口，也不再在条下沿留一道实色硬切边（用户 2026-10-06 截图「滚
+      // 下去这里会贴住」）。窄窗不显示这条标题（见 [_floatingTitleOverlay]）。
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           ListenableBuilder(
             listenable: _largeTitle,
-            builder: (BuildContext context, Widget? _) =>
-                FushiShellLargeTitleBar(
-              title: _shellTitleFor(_visibleTab),
-              collapsed: _largeTitle.collapsed,
-              actions: _shellActions,
+            builder: (BuildContext context, Widget? _) => overlayTitle
+                ? const SizedBox.shrink()
+                : _buildShellTitleBar(),
+          ),
+          Expanded(
+            child: _withAppleTopEdge(
+              FushiFloatingChromeInset(top: titleInset, child: content),
+              apple: apple,
+              overlay: overlayTitle && !narrow
+                  ? _floatingTitleOverlay()
+                  : const <Widget>[],
             ),
           ),
-          Expanded(child: _withAppleTopEdge(content, apple: apple)),
         ],
       ),
     );
   }
 
+  /// 外壳大标题条（两种摆法共用同一份配置）。
+  ///
+  /// M3E 库页（叠放浮动工具区的 tab）一律用收起形态——一枚悬浮标题胶囊，
+  /// 不随滚动在「裸大字」与「胶囊」之间切换：否则同样停在顶部的视频页与漫画
+  /// 页一个是胶囊、一个是裸大字（2026-10-06 用户截图「标题形态不一致」）。
+  Widget _buildShellTitleBar() => FushiShellLargeTitleBar(
+        title: _shellTitleFor(_visibleTab),
+        collapsed: _largeTitle.collapsed ||
+            (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
+        actions: _shellActions,
+      );
+
+  /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
+  /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
+  /// 它们上面。
+  static bool _tabHasFloatingChrome(HomeTab tab) => switch (tab) {
+        HomeTab.books ||
+        HomeTab.manga ||
+        HomeTab.video ||
+        HomeTab.games ||
+        HomeTab.browse =>
+          true,
+        _ => false,
+      };
+
+  /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
+  /// 所以内容让出的高度恒定）。
+  double _overlayTitleHeight = 0;
+
+  void _onOverlayTitleHeight(double height) {
+    if (!mounted || height <= _overlayTitleHeight) return;
+    setState(() => _overlayTitleHeight = height);
+  }
+
+  /// 叠在内容上的外壳大标题条 + 它背后的顶部渐隐遮罩（宽窗）。
+  ///
+  /// 窄窗（手机竖屏 / 窄窗口）不显示这条标题：M3E 浮动工具栏在紧凑窗口里
+  /// 取代顶部应用栏，模块名已经在底部导航 / 侧栏上，库页自己的分区页签胶囊
+  /// 就是顶部锚点——单独一整行标题胶囊只占地方（用户 2026-10-06）。并进页签行
+  /// 会和页签胶囊、动作胶囊三颗挤一行；「只在收起时显示」会在工具栏还没收起的
+  /// 那段距离里与页签胶囊重叠，都不取。
+  ///
+  /// 标题条本身透明、不带底色或遮罩：顶部渐隐由库页工具区
+  /// （[FushiFloatingChromeOverlay]）在**页签胶囊之下**画，并把这段标题区一并
+  /// 盖住——遮罩若画在这里，就压在页签胶囊上面了（用户 2026-10-06 截图）。
+  List<Widget> _floatingTitleOverlay() => <Widget>[
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: FushiHeightReporter(
+            onHeight: _onOverlayTitleHeight,
+            child: ListenableBuilder(
+              listenable: _largeTitle,
+              builder: (BuildContext context, Widget? _) =>
+                  _buildShellTitleBar(),
+            ),
+          ),
+        ),
+      ];
+
   /// 外壳大标题条下面那条 scroll edge 带（Apple：内容滚上去之后内容区顶部的
-  /// soft 渐隐）。
-  Widget _withAppleTopEdge(Widget content, {required bool apple}) {
+  /// soft 渐隐）；[overlay] 是叠在内容上的大标题条（MD3 库页，见
+  /// [_floatingTitleOverlay]），排在内容之后。
+  Widget _withAppleTopEdge(
+    Widget content, {
+    required bool apple,
+    List<Widget> overlay = const <Widget>[],
+  }) {
     return Stack(
       fit: StackFit.passthrough,
       children: <Widget>[
@@ -1454,6 +1555,7 @@ class _HomePageState extends BasePageState<HomePage>
               ),
             ),
           ),
+        ...overlay,
       ],
     );
   }
@@ -1490,6 +1592,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// back button). Tab identity is [HomeTab]-driven — the dynamic [_activeTabs]
   /// list (video/games toggles) flows through the same enum, never int.
   Widget _buildMacosLayout() {
+    _shellFabHostedByBar = false;
     final AdaptiveNavItem currentItem = _navItemFor(_visibleTab);
     // TODO-1375（症状③）：macOS ToolBar 的 automaticallyImplyLeading 只在
     // route.canPop 时生成返回键；home（含 settings）是顶层 route、tab 是 IndexedStack
@@ -1531,6 +1634,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
+    _shellFabHostedByBar = false;
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
     // 箭头」的全屏设置就成了没有来源的第二条返回出口。macOS 现在与 Windows 同壳，
@@ -1594,14 +1698,28 @@ class _HomePageState extends BasePageState<HomePage>
             // the app focus ring hugs the single selected item; D-pad Up/Down
             // steps between them and Left/Right leaves to the content.
             FocusTraversalGroup(
-              child: adaptiveNavRail(
-                context: context,
-                currentIndex: visualIndex,
-                onTap: selectVisual,
-                items: displayItems,
-                leading: const NavRailBrandButton(),
-                // 玻璃设计系统：宽窗口是图标 + 文字的悬浮侧栏，medium 档收成窄条。
-                extended: sizeClass == WindowSizeClass.expanded,
+              child: ValueListenableBuilder<bool?>(
+                valueListenable: appModel.navRailExpandedNotifier,
+                builder: (BuildContext context, bool? userExpanded, _) {
+                  // 默认按尺寸档（expanded 档展开、medium 档收起）；MD3 下
+                  // rail 顶部菜单钮可手动切换并记住（M3E 展开 rail 取代旧侧边
+                  // 抽屉）。玻璃设计系统恒按尺寸档。
+                  final bool extended = adaptiveNavRailExtended(
+                    context,
+                    sizeClass: sizeClass,
+                    userExpanded: userExpanded,
+                  );
+                  return adaptiveNavRail(
+                    context: context,
+                    currentIndex: visualIndex,
+                    onTap: selectVisual,
+                    items: displayItems,
+                    leading: const NavRailBrandButton(),
+                    extended: extended,
+                    onToggleExtended: () =>
+                        unawaited(appModel.setNavRailExpanded(!extended)),
+                  );
+                },
               ),
             ),
             Expanded(
@@ -1654,6 +1772,7 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Widget _buildMobileLayout() {
+    _shellFabHostedByBar = !isGlassDesign(context);
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
@@ -1670,16 +1789,16 @@ class _HomePageState extends BasePageState<HomePage>
     // an edge tab up into a content focus target. Mirrors the desktop layout,
     // which already isolates the rail and content panes (TODO-713: 移动端底栏
     // 边缘 tab 按左/右焦点跑到上部).
-    // 玻璃设计系统（iOS 26）：底栏是悬浮在内容上的玻璃胶囊，内容从它下面滚过
-    // ——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
+    // 两套设计系统的底栏都悬浮在内容上（Apple：iOS 26 玻璃胶囊；MD3：2026-10-06
+    // 用户「底部栏改为 m3e 悬浮的」，离边 12 的 surfaceContainer 胶囊），内容从
+    // 它下面滚过——extendBody 把胶囊区域的高度并进 body 的 MediaQuery bottom padding，
     // body 的 SafeArea 不再吃掉它，列表（ListView / GridView 的默认 padding）
     // 自己把末尾垫到胶囊之上。
-    final bool glassDesign = isGlassDesign(context);
     // Apple（iOS 26）：「查词」是搜索类目的地，拆成胶囊右侧的独立圆形搜索钮
     // （`Tab(role: .search)`）；下滑时胶囊最小化成只剩当前项的小圆，内容压在
     // 胶囊下面时底部有一段 scroll edge 渐隐（状态都在 [_appleChrome]）。
-    final int? glassSearchIndex =
-        glassDesign && tabs.contains(HomeTab.dictionaries)
+    // MD3：同一项拆成悬浮胶囊右侧的大号 FAB（M3E floating toolbar + FAB）。
+    final int? glassSearchIndex = tabs.contains(HomeTab.dictionaries)
             ? homeVisualIndexForTab(
                 tabs: tabs,
                 tab: HomeTab.dictionaries,
@@ -1688,10 +1807,10 @@ class _HomePageState extends BasePageState<HomePage>
             : null;
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      extendBody: glassDesign,
+      extendBody: true,
       body: _GlassContentSurface(
         child: SafeArea(
-          bottom: !glassDesign,
+          bottom: false,
           child: _withAppleScrollChrome(
             FocusTraversalGroup(child: _bodyWithMiniBar()),
           ),
@@ -1717,11 +1836,37 @@ class _HomePageState extends BasePageState<HomePage>
             onGlassExpand: _appleChrome.expand,
             glassContentUnder: _appleChrome.contentUnderBottom,
             glassSearchIndex: glassSearchIndex,
+            showLabels: appModel.navBarLabelsVisible,
+            materialFab: _shellPageFab(),
           ),
         ),
       ),
     );
   }
+
+  /// MD3 移动布局里，外壳内容自己的页面 FAB 并进悬浮底栏右侧那颗 FAB，屏幕上
+  /// 不出现两颗（2026-10-06 用户）。目前外壳里唯一的页面 FAB 是视频源后台补刮
+  /// 任务面板；没有时返回 null，底栏 FAB 用默认的「查词」。
+  AdaptiveNavFab? _shellPageFab() {
+    if (isGlassDesign(context)) return null;
+    final VideoSourceScrapeTaskController? controller =
+        _videoSourceScrapeTaskController;
+    if (controller == null || !controller.isBusy) return null;
+    return AdaptiveNavFab(
+      icon: _scrapeTaskIcon(controller),
+      label: t.video_source_scrape_tasks_open,
+      onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
+    );
+  }
+
+  /// 视频源后台补刮任务面板的图标：进行中 = 同步，等用户确认 = 待处理。
+  IconData _scrapeTaskIcon(VideoSourceScrapeTaskController controller) =>
+      controller.pendingConfirmation == null
+          ? FushiIcons.sync
+          : FushiIcons.pending;
+
+  /// 当前是不是 MD3 手机布局（页面 FAB 已经并进悬浮底栏，body 不再自己画）。
+  bool _shellFabHostedByBar = false;
 
   /// 需要跨 tab 切换**保活**（State 不随切走而销毁）的顶层 tab：书架、视频与游戏。
   ///
@@ -1738,11 +1883,19 @@ class _HomePageState extends BasePageState<HomePage>
   /// 发现列表），切去别的 tab 再回来不该丢掉搜索词、结果与滚动再重拉；跨页跳转
   /// 改走 [BrowsePage.navigationRequest] 原地切页签。
   ///
+  /// 首页 dashboard 也保活（2026-10 切 tab 卡顿）：不保活时每切回一次就整页
+  /// dispose → 重挂载——整棵子树从零 inflate、`initState` 重跑整批统计聚合（全表
+  /// study_segments / 媒体图组 / 书架列表，行物化与聚合都在 UI isolate）、错峰
+  /// 进场动画整页重放、封面模糊垫底重新烘焙，就是用户说的「回到首页卡一下」。
+  /// 保活后它自己的表级变更流照常刷新数据；隐藏期间到达的变更推迟到切回时再
+  /// 重载（见 `_HomeDashboardPageState._reloadDeferredWhileHidden`）。
+  ///
   /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
   /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
   /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
   /// 若把它也保活会不再 re-mount 而漏消费。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
+    HomeTab.home,
     HomeTab.books,
     HomeTab.manga,
     HomeTab.video,
@@ -3114,6 +3267,9 @@ class _HomePageState extends BasePageState<HomePage>
     // （守卫 test/pages/home_tab_keepalive_guard_test.dart 钉的就是那一条）。
     final List<HomeTab> active = _activeTabs();
     _visitedKeepAliveTabs.removeWhere((HomeTab t) => !active.contains(t));
+    _hiddenTabContent.removeWhere(
+      (HomeTab t, Widget _) => !_visitedKeepAliveTabs.contains(t),
+    );
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -3133,7 +3289,15 @@ class _HomePageState extends BasePageState<HomePage>
                   // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
                   // 与「接拖放的那个」永远是同一个。
                   isActive: () => _visibleTab == tab,
-                  child: _buildTabContent(tab),
+                  // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
+                  // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
+                  // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
+                  // （_selectTabFromNav），它不是保活 tab、切过去才挂载并在挂载后
+                  // 消费聚焦请求，不经过这一层。
+                  child: SectionVisibilityScope(
+                    visible: visible == tab,
+                    child: _keepAliveTabContent(tab, visible: visible == tab),
+                  ),
                 ),
               ),
             ),
@@ -3144,7 +3308,7 @@ class _HomePageState extends BasePageState<HomePage>
             child: _buildTabContent(visible),
           ),
         if (_videoSourceScrapeTaskController case final controller?)
-          if (controller.isBusy)
+          if (controller.isBusy && !_shellFabHostedByBar)
             Positioned(
               right: 20,
               bottom: 20,
@@ -3156,11 +3320,7 @@ class _HomePageState extends BasePageState<HomePage>
                     ),
                     tooltip: t.video_source_scrape_tasks_open,
                     onPressed: () => unawaited(_openVideoSourceScrapeTasks()),
-                    child: FushiIcon(
-                      controller.pendingConfirmation == null
-                          ? Icons.sync
-                          : Icons.rule_folder_outlined,
-                    ),
+                    child: FushiIcon(_scrapeTaskIcon(controller)),
                   ),
                 ),
               ),
@@ -3197,6 +3357,29 @@ class _HomePageState extends BasePageState<HomePage>
     final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
     await syncRepo.upsertMediaServer(config.withActiveRoute(url));
     ref.read(remoteLibraryCacheProvider).invalidateSource(config.sourceId);
+  }
+
+  /// 隐藏中的保活 tab 上一次构建出的内容 widget（2026-10 切 tab 卡顿）。
+  ///
+  /// [_buildTabContent] 每次都 new 出页面 widget（视频外壳、首页 dashboard 带着
+  /// 闭包与非 const 参数），而 Flutter 只在**同一个** widget 实例时跳过子树重建。
+  /// 于是每切一次 tab、乃至 HomePage 任何一次 setState，**所有访问过的**保活页
+  /// ——包括被 Offstage 藏起来、根本看不见的那几页——都要把整页 build 一遍：视频
+  /// 首页那一遍是全库过滤 + 四条横滚行重算 + 卡片逐个 update，正好压在切 tab 的
+  /// 那一帧上。
+  ///
+  /// 现在隐藏的 tab 冻结在它被藏起时构建的那份 widget 上：变成隐藏的那一帧照常
+  /// 重建一次（`systemBackActive` 等可见性相关参数要落到 false），之后原样复用、
+  /// 整棵子树跳过 build；重新可见时再按最新状态重建。页面自己的数据监听（表级
+  /// 变更流、Riverpod watch、ChangeNotifier）不受影响，照常驱动它们自己的 setState。
+  final Map<HomeTab, Widget> _hiddenTabContent = <HomeTab, Widget>{};
+
+  Widget _keepAliveTabContent(HomeTab tab, {required bool visible}) {
+    if (visible) {
+      _hiddenTabContent.remove(tab);
+      return _buildTabContent(tab);
+    }
+    return _hiddenTabContent[tab] ??= _buildTabContent(tab);
   }
 
   Widget _buildTabContent(HomeTab tab) {

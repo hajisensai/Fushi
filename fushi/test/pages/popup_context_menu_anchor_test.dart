@@ -14,7 +14,7 @@
 // 度量纪律：Flutter 在点击点靠近右/下边缘时会把菜单反向展开（右边缘/底边对齐点击点），
 // 这是**正确**行为。所以断言用「点到菜单矩形的距离」，不是 topLeft 差值。
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 

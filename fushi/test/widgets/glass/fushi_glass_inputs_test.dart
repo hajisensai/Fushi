@@ -1,5 +1,5 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -55,6 +55,50 @@ void main() {
       expect(find.byType(GlassContainer), findsNothing);
       expect(find.byType(CupertinoTextField), findsNothing);
     });
+
+    // BUG-2958：设置页 MD3 胶囊搜索栏给放大镜包了一层 Padding（自配留白），
+    // 搜索判据只认裸 Icon，把调用方写好的胶囊边框压成 12 圆角方框。
+    for (final bool wrapped in <bool>[false, true]) {
+      testWidgets(
+        'MD3 search field stays a capsule (prefix wrapped in Padding: $wrapped)',
+        (WidgetTester tester) async {
+          const Widget icon = Icon(Icons.search);
+          await _pump(
+            tester,
+            FushiTextFieldControl(
+              decoration: InputDecoration(
+                hintText: 'Search',
+                prefixIcon: wrapped
+                    ? const Padding(
+                        padding: EdgeInsetsDirectional.only(start: 16, end: 8),
+                        child: icon,
+                      )
+                    : icon,
+                border: const OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(28)),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            glass: false,
+          );
+          final TextField field = tester.widget<TextField>(
+            find.byType(TextField),
+          );
+          for (final InputBorder? border in <InputBorder?>[
+            field.decoration!.border,
+            field.decoration!.enabledBorder,
+            field.decoration!.focusedBorder,
+          ]) {
+            expect(border, isA<OutlineInputBorder>());
+            expect(
+              (border! as OutlineInputBorder).borderRadius,
+              BorderRadius.circular(999),
+            );
+          }
+        },
+      );
+    }
 
     testWidgets('glass builds an iOS search capsule in one clear-glass bezel', (
       WidgetTester tester,

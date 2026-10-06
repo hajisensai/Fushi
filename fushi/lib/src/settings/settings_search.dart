@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
     show SettingsRowIconProbe, settingsRowHasLeadingIcon;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_search_synonyms.dart';
 
 /// item 的可搜索标题：普通项就是 [SettingsItem.title]；[SettingsCustomItem]
 /// 的 title 通常为空（正文由 builder 自绘），可用
@@ -31,7 +32,34 @@ class SettingsSearchEntry {
     this.hasRevealTarget = true,
     this.subPagePath = const <SettingsNavigationItem>[],
     String? resolvedTitle,
-  }) : _resolvedTitle = resolvedTitle;
+    String? resolvedSubtitle,
+    this.optionLabels = const <String>[],
+  })  : _resolvedTitle = resolvedTitle,
+        _resolvedSubtitle = resolvedSubtitle;
+
+  /// 展平时就地求好的说明（带 [SettingsItem.subtitleBuilder] 的行，说明随运行期
+  /// 状态变化；搜索要按用户此刻看到的那句匹配）。
+  final String? _resolvedSubtitle;
+
+  /// 选择类行的选项标签（分段 / 下拉）：搜「竖排」能直达排版方向那一行。
+  final List<String> optionLabels;
+
+  /// 打分与高亮用的说明文字。
+  String? get subtitle => _resolvedSubtitle ?? item.subtitle;
+
+  /// 标题没命中、但说明或选项命中时，结果行里额外露出的那句（高亮用）；
+  /// 标题已命中时返回 null（不重复占行）。
+  String? matchedDetail(String query) {
+    if (settingsSearchMatchRanges(title, query).isNotEmpty) return null;
+    final String? sub = subtitle;
+    if (sub != null && settingsSearchMatchRanges(sub, query).isNotEmpty) {
+      return sub;
+    }
+    for (final String label in optionLabels) {
+      if (settingsSearchMatchRanges(label, query).isNotEmpty) return label;
+    }
+    return null;
+  }
 
   /// 展平时就地求好的标题（带 [SettingsItem.titleBuilder] 的行才有意义）。
   final String? _resolvedTitle;
@@ -67,6 +95,61 @@ String settingsSearchBreadcrumb(SettingsSearchEntry entry) {
     return destination;
   }
   return '$destination › $section';
+}
+
+/// 结果已按分类分组展示时的「位置」行：只剩分区 / 子页链（不重复分类名）；
+/// 行就在分类顶层且没有分区标题时为空串。
+String settingsSearchLocation(SettingsSearchEntry entry) {
+  final String? section = entry.sectionTitle;
+  if (section == null ||
+      section.isEmpty ||
+      section == entry.destination.title) {
+    return '';
+  }
+  return section;
+}
+
+/// 把查询切成小写词元（空白分隔，去空）。
+List<String> settingsSearchTokens(String query) => query
+    .trim()
+    .toLowerCase()
+    .split(RegExp(r'\s+'))
+    .where((String token) => token.isNotEmpty)
+    .toList(growable: false);
+
+/// [text] 里所有命中查询词元的区间（大小写不敏感、合并重叠、升序），供高亮。
+/// 只高亮字面命中；同义词扩展命中的不画高亮（字面上不存在）。
+List<TextRange> settingsSearchMatchRanges(String text, String query) {
+  final List<String> tokens = settingsSearchTokens(query);
+  if (tokens.isEmpty || text.isEmpty) return const <TextRange>[];
+  final String lower = text.toLowerCase();
+  // 小写化可能改变长度（少数语言）；长度不一致时放弃高亮而不是错位。
+  if (lower.length != text.length) return const <TextRange>[];
+  final List<TextRange> ranges = <TextRange>[];
+  for (final String token in tokens) {
+    int from = 0;
+    while (true) {
+      final int at = lower.indexOf(token, from);
+      if (at < 0) break;
+      ranges.add(TextRange(start: at, end: at + token.length));
+      from = at + token.length;
+    }
+  }
+  if (ranges.isEmpty) return const <TextRange>[];
+  ranges.sort((TextRange a, TextRange b) => a.start.compareTo(b.start));
+  final List<TextRange> merged = <TextRange>[ranges.first];
+  for (final TextRange range in ranges.skip(1)) {
+    final TextRange last = merged.last;
+    if (range.start <= last.end) {
+      if (range.end > last.end) {
+        merged[merged.length - 1] =
+            TextRange(start: last.start, end: range.end);
+      }
+    } else {
+      merged.add(range);
+    }
+  }
+  return merged;
 }
 
 /// 把当前可见的 schema 展平成搜索条目列表。
@@ -138,6 +221,8 @@ void _flattenPageInto(
             sectionTitle: sectionTitle,
             item: item,
             resolvedTitle: title,
+            resolvedSubtitle: item.resolveSubtitle(context),
+            optionLabels: _optionLabelsOf(item),
             subPagePath: subPagePath,
           ),
         );
@@ -171,6 +256,16 @@ void _flattenPageInto(
   }
 }
 
+List<String> _optionLabelsOf(SettingsItem item) {
+  if (item is SettingsSegmentedItem) {
+    return <String>[
+      for (final SettingsSegmentOption<dynamic> option in item.options)
+        option.label,
+    ];
+  }
+  return const <String>[];
+}
+
 String? _joinBreadcrumb(String? head, String? tail) {
   if (head == null || head.isEmpty) return tail;
   if (tail == null || tail.isEmpty) return head;
@@ -184,15 +279,24 @@ List<SettingsSearchEntry> filterSettingsEntries(
   String query, {
   int maxResults = 50,
 }) {
-  final String q = query.trim().toLowerCase();
-  if (q.isEmpty) return const <SettingsSearchEntry>[];
+  final List<String> tokens = settingsSearchTokens(query);
+  if (tokens.isEmpty) return const <SettingsSearchEntry>[];
+  final String q = tokens.join(' ');
+  // 每个词元的同义词扩展（含自身）：「深色」也能搜到标题写「暗色」的项。
+  final List<List<String>> alternates = <List<String>>[
+    for (final String token in tokens) settingsSearchSynonymsOf(token),
+  ];
 
   int scoreOf(SettingsSearchEntry e) {
     final String title = e.title.toLowerCase();
+    // 整串前缀 / 包含仍是最强信号（单词元时与旧打分一致）。
     if (title.startsWith(q)) return 0;
     if (title.contains(q)) return 1;
-    final String haystack = <String?>[
-      e.item.subtitle,
+    final String detail = <String?>[
+      e.subtitle,
+      ...e.optionLabels,
+    ].whereType<String>().join('\n').toLowerCase();
+    final String location = <String?>[
       e.sectionTitle,
       e.destination.title,
       // 分类副标题也算命中面：它就印在一级列表上、是用户看得见的分类描述，
@@ -200,8 +304,29 @@ List<SettingsSearchEntry> filterSettingsEntries(
       // 「听书」只剩在阅读的 summary 里出现（见 buildReadingDestination）。
       e.destination.summary,
     ].whereType<String>().join('\n').toLowerCase();
-    if (haystack.contains(q)) return 2;
-    return -1;
+    // 多词元：每个词元都得在某处命中（AND）。分数取最弱一项：全在标题 = 1，
+    // 有词元落在说明 / 选项 = 2，落在位置（分区 / 分类）= 3，只靠同义词 = 4。
+    int worst = 0;
+    for (int i = 0; i < tokens.length; i++) {
+      final String token = tokens[i];
+      final int hit;
+      if (title.contains(token)) {
+        hit = 1;
+      } else if (detail.contains(token)) {
+        hit = 2;
+      } else if (location.contains(token)) {
+        hit = 3;
+      } else if (alternates[i].any(
+        (String alt) =>
+            alt != token && (title.contains(alt) || detail.contains(alt)),
+      )) {
+        hit = 4;
+      } else {
+        return -1;
+      }
+      if (hit > worst) worst = hit;
+    }
+    return worst;
   }
 
   final List<(int, SettingsSearchEntry)> scored =

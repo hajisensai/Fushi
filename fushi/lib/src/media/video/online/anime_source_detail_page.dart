@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -18,6 +18,9 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -417,100 +420,255 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return FushiPageScaffold(
-      title: _anime.title,
-      subtitle: widget.sourceContext.source.name,
+  // ---------------------------------------------------------------------------
+  // 多选（长按某集进入 → 底部批量栏「下载所选」）
+  // ---------------------------------------------------------------------------
+
+  /// 多选模式下选中的集 id；null = 不在多选模式。
+  Set<String>? _selection;
+
+  void _enterSelection([String? id]) {
+    setState(() => _selection = <String>{?id});
+  }
+
+  void _exitSelection() {
+    if (_selection == null) return;
+    setState(() => _selection = null);
+  }
+
+  void _toggleSelected(String id) {
+    final Set<String>? selection = _selection;
+    if (selection == null) return;
+    setState(() {
+      if (!selection.remove(id)) selection.add(id);
+    });
+  }
+
+  List<String> get _episodeIds => <String>[
+    for (final RemoteVideoInfo info
+        in _client?.remoteVideos ?? const <RemoteVideoInfo>[])
+      info.id,
+  ];
+
+  Future<void> _downloadSelected() async {
+    final Set<String>? selection = _selection;
+    if (selection == null) return;
+    final List<String> ids = <String>[
+      for (final String id in _episodeIds)
+        if (selection.contains(id) && !_downloadedIds.contains(id)) id,
+    ];
+    _exitSelection();
+    await _download(ids);
+  }
+
+  Widget _buildBatchActionBar(Set<String> selection) {
+    final List<String> ids = _episodeIds;
+    return BatchActionBar(
+      key: const ValueKey<String>('anime_source_batch_bar'),
+      selectedCount: selection.length,
+      onSelectAll: () => setState(() => selection.addAll(ids)),
+      onInvertSelection: () => setState(() {
+        final Set<String> next = <String>{
+          for (final String id in ids)
+            if (!selection.contains(id)) id,
+        };
+        selection
+          ..clear()
+          ..addAll(next);
+      }),
       actions: <Widget>[
-        FushiIconButtonControl(
-          key: const ValueKey<String>('anime_source_open_website'),
-          tooltip: t.mihon_source_website_open,
-          onPressed: () => unawaited(_openWebsite()),
-          icon: const FushiIcon(Icons.open_in_new),
+        FushiIconButton(
+          key: const ValueKey<String>('anime_source_download_selected'),
+          tooltip: t.manga_online_download_selected,
+          icon: FushiIcons.download,
+          enabled: selection.any((String id) => !_downloadedIds.contains(id)),
+          onTap: () => unawaited(_downloadSelected()),
         ),
-        FushiIconButtonControl(
-          tooltip: t.refresh,
-          onPressed: _loading ? null : () => unawaited(_load()),
-          icon: const FushiIcon(Icons.refresh),
+        FushiIconButton(
+          key: const ValueKey<String>('anime_source_selection_close'),
+          tooltip: t.dialog_cancel,
+          icon: FushiIcons.close,
+          onTap: _exitSelection,
         ),
       ],
-      body: _buildBody(context),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 页面
+  // ---------------------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    final Set<String>? selection = _selection;
+    // 页头只留标题：「在网站打开」「刷新」收进作品头部的「⋯」菜单（M3E 详情骨架）。
+    return PopScope(
+      // 多选模式下返回键先退出多选，不直接离开作品页。
+      canPop: selection == null,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) _exitSelection();
+      },
+      child: FushiPageScaffold(
+        title: _anime.title,
+        subtitle: widget.sourceContext.source.name,
+        // 正文铺到悬浮页头底下（脚手架默认）：背景一直画到窗口顶端。
+        bottomNavigationBar: selection == null
+            ? null
+            : _buildBatchActionBar(selection),
+        body: _buildBody(context),
+      ),
     );
   }
 
   Widget _buildBody(BuildContext context) {
+    final double page = FushiDesignTokens.of(context).spacing.page;
+    final bool selecting = _selection != null;
+    return MediaDetailLayout(
+      header: _buildHeader(),
+      slivers: <Widget>[
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: page),
+          sliver: SliverToBoxAdapter(
+            child: OnlineWorkSectionTitle(
+              t.video_online_episodes_title,
+              count: _episodes.isEmpty ? null : _episodes.length,
+              trailing: _episodes.isEmpty || _client == null
+                  ? null
+                  : FushiIconButtonControl(
+                      key: const ValueKey<String>('anime_source_select'),
+                      tooltip: selecting ? t.dialog_cancel : t.batch_select,
+                      isSelected: selecting,
+                      onPressed: selecting
+                          ? _exitSelection
+                          : () => _enterSelection(),
+                      icon: FushiIcon(
+                        selecting ? FushiIcons.close : FushiIcons.checklist,
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: EdgeInsets.symmetric(horizontal: page),
+          sliver: _buildEpisodeList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeader() {
     final Object? error = _error;
     final int resume = _resumeIndex;
     final bool canPlay = !_loading && _episodes.isNotEmpty;
-    return ListView(
-      padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-      children: <Widget>[
-        OnlineWorkHeader(
-          cover: MihonSourceImage(
-            runtime: widget.manager.runtime,
-            cache: widget.manager.coverCache,
-            context: widget.sourceContext,
-            url: _anime.coverUrl,
+    final String? author = _anime.author?.trim();
+    final String? artist = _anime.artist?.trim();
+    final String? status = _animeStatusLabel(_anime.status);
+    // 作品级下载进度（任一集在下）：主按钮下挂波浪条。只订阅整数百分比
+    // （BUG-2944），字节级回报不整页重建。
+    final List<String> ids = _episodeIds;
+    final InterconnectDownloadAggregateBadgeState? downloads =
+        _appModelOrNull == null || ids.isEmpty
+        ? null
+        : ref.watch(
+            interconnectDownloadManagerProvider.select(
+              (m) => m.aggregateBadgeStateFor(ids),
+            ),
+          );
+    return OnlineWorkHeader(
+      cover: MihonSourceImage(
+        runtime: widget.manager.runtime,
+        cache: widget.manager.coverCache,
+        context: widget.sourceContext,
+        url: _anime.coverUrl,
+      ),
+      title: _anime.title,
+      overline: widget.sourceContext.source.name,
+      chips: <MediaDetailChip>[
+        if (author != null && author.isNotEmpty)
+          MediaDetailChip(author, icon: FushiIcons.person),
+        if (artist != null && artist.isNotEmpty && artist != author)
+          MediaDetailChip(artist),
+        if (status != null)
+          MediaDetailChip(status, tone: _animeStatusTone(_anime.status)),
+        if (_canRemoveFromLibrary)
+          MediaDetailChip(
+            t.video_discovery_in_library,
+            key: const ValueKey<String>('anime_source_in_library_chip'),
+            icon: FushiIcons.video,
+            tone: MediaDetailChipTone.primary,
           ),
-          title: _anime.title,
-          lines: <String?>[_anime.author],
-          genres: splitOnlineWorkGenres(_anime.genre),
-          description: _anime.description,
-          actions: <Widget>[
-            FushiFilledButton.icon(
-              key: const ValueKey<String>('anime_source_play'),
-              onPressed: canPlay
-                  ? () => unawaited(_play(resume >= 0 ? resume : 0))
-                  : null,
-              icon: const FushiIcon(Icons.play_arrow),
-              label: Text(
-                resume >= 0 && resume < _episodes.length
-                    ? '${t.video_continue_watching} · '
-                          '${_episodeTitle(_episodes[resume])}'
-                    : t.play,
-              ),
-            ),
-            // 「加入」与「移出」各按各的判据，可以同时出现：下载过其中几集后其余集
-            // 仍能加入、已入库的作品刷新出新集仍能补；「移出」只删在线行。
-            if (_canAddToLibrary)
-              FushiOutlinedButton.icon(
-                key: const ValueKey<String>('anime_source_library_add'),
-                onPressed: !canPlay || _libraryBusy
-                    ? null
-                    : () => unawaited(_addToLibrary()),
-                icon: const FushiIcon(Icons.video_library_outlined),
-                label: Text(t.video_online_library_add),
-              ),
-            if (_canRemoveFromLibrary)
-              FushiOutlinedButton.icon(
-                key: const ValueKey<String>('anime_source_library_remove'),
-                onPressed: _libraryBusy
-                    ? null
-                    : () => unawaited(_removeFromLibrary()),
-                icon: const FushiIcon(Icons.video_library),
-                label: Text(t.video_online_library_remove),
-              ),
-            FushiOutlinedButton.icon(
-              key: const ValueKey<String>('anime_source_download_all'),
-              onPressed: canPlay ? () => unawaited(_downloadAll()) : null,
-              icon: const FushiIcon(Icons.download_outlined),
-              label: Text(t.video_online_download_all),
-            ),
-          ],
+      ],
+      genres: splitOnlineWorkGenres(_anime.genre),
+      description: _anime.description,
+      primaryAction: MediaDetailPrimaryButton(
+        buttonKey: const ValueKey<String>('anime_source_play'),
+        icon: FushiIcons.play,
+        label: resume >= 0 && resume < _episodes.length
+            ? '${t.video_continue_watching} · '
+                  '${_episodeTitle(_episodes[resume])}'
+            : t.play,
+        progress: downloads != null && downloads.isRunning
+            ? downloads.percent / 100
+            : null,
+        onPressed: canPlay
+            ? () => unawaited(_play(resume >= 0 ? resume : 0))
+            : null,
+      ),
+      secondaryActions: <Widget>[
+        // 「加入」与「移出」各按各的判据，可以同时出现：下载过其中几集后其余集
+        // 仍能加入、已入库的作品刷新出新集仍能补；「移出」只删在线行。
+        if (_canAddToLibrary)
+          MediaDetailSecondaryButton(
+            buttonKey: const ValueKey<String>('anime_source_library_add'),
+            icon: FushiIcons.libraryAdd,
+            label: t.video_online_library_add,
+            busy: _libraryBusy,
+            onPressed: !canPlay ? null : () => unawaited(_addToLibrary()),
+          ),
+        if (_canRemoveFromLibrary)
+          MediaDetailSecondaryButton(
+            buttonKey: const ValueKey<String>('anime_source_library_remove'),
+            icon: FushiIcons.libraryAdd,
+            label: t.video_online_library_remove,
+            selected: true,
+            busy: _libraryBusy,
+            onPressed: () => unawaited(_removeFromLibrary()),
+          ),
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('anime_source_download_all'),
+          icon: FushiIcons.download,
+          label: t.video_online_download_all,
+          onPressed: canPlay ? () => unawaited(_downloadAll()) : null,
         ),
-        if (error != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Column(
+      ],
+      moreItems: <MediaDetailMenuItem>[
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('anime_source_open_website'),
+          icon: FushiIcons.openInNew,
+          label: t.mihon_source_website_open,
+          onSelected: () => unawaited(_openWebsite()),
+        ),
+        MediaDetailMenuItem(
+          key: const ValueKey<String>('anime_source_refresh'),
+          icon: FushiIcons.refresh,
+          label: t.refresh,
+          enabled: !_loading,
+          onSelected: () => unawaited(_load()),
+        ),
+      ],
+      extra: error == null
+          ? null
+          : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                // 错误走统一提示条（MD3 中性底 + error 图标 / Apple tertiaryFill
-                // 实色底），不再是一行裸红字。
-                FushiInlineNotice(
-                  severity: FushiNoticeSeverity.error,
-                  message: '$error',
-                ),
+                // 已有剧集时刷新失败：剧集照常可播，只在头部挂一条提示（没有剧集
+                // 时错误占据剧集区，见 [_buildEpisodeList]）。
+                if (_episodes.isNotEmpty)
+                  FushiInlineNotice(
+                    severity: FushiNoticeSeverity.error,
+                    message: '$error',
+                  ),
                 MihonCloudflareAction(
                   runtime: widget.manager.runtime,
                   error: error,
@@ -518,24 +676,73 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                 ),
               ],
             ),
+    );
+  }
+
+  /// 剧集区（sliver）：加载骨架 / 错误占位 / 空占位 / 分段剧集列表（错峰进场）。
+  Widget _buildEpisodeList() {
+    final Object? error = _error;
+    if (_loading && _episodes.isEmpty) {
+      return SliverToBoxAdapter(
+        child: OnlineWorkItemsPlaceholder(
+          loading: true,
+          emptyText: t.video_online_episodes_empty,
+        ),
+      );
+    }
+    if (error != null && _episodes.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: FushiPlaceholderMessage(
+            key: const ValueKey<String>('anime_source_error'),
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.error_load_failed,
+            detail: '$error',
+            action: FushiFilledButton.tonalIcon(
+              onPressed: () => unawaited(_load()),
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
           ),
-        OnlineWorkSectionTitle(t.video_online_episodes_title),
-        if (_loading || _episodes.isEmpty)
-          OnlineWorkItemsPlaceholder(
-            loading: _loading,
-            emptyText: t.video_online_episodes_empty,
-          )
-        else
-          for (int index = 0; index < _episodes.length; index++)
-            _buildEpisodeRow(context, index),
-      ],
+        ),
+      );
+    }
+    if (_episodes.isEmpty) {
+      return SliverToBoxAdapter(
+        child: OnlineWorkItemsPlaceholder(
+          loading: false,
+          emptyText: t.video_online_episodes_empty,
+        ),
+      );
+    }
+    return FushiEntranceScope(
+      replayKey: _client,
+      child: SliverList.builder(
+        itemCount: _episodes.length,
+        itemBuilder: (BuildContext context, int index) =>
+            FushiStaggeredEntrance(
+              index: index,
+              child: _buildEpisodeRow(index, _episodes.length),
+            ),
+      ),
     );
   }
 
   String _episodeTitle(MihonEpisode episode) =>
       episode.name.isNotEmpty ? episode.name : episode.number.toString();
 
-  Widget _buildEpisodeRow(BuildContext context, int index) {
+  /// 行首序号胶囊：扩展给的集号（整数不带小数点），没有就按列表位置。
+  String _episodeNumber(MihonEpisode episode, int index) {
+    final double number = episode.number;
+    if (number <= 0) return '${index + 1}';
+    return number == number.truncateToDouble()
+        ? number.toInt().toString()
+        : number.toString();
+  }
+
+  Widget _buildEpisodeRow(int index, int count) {
     final MihonEpisode episode = _episodes[index];
     final String? uploaded = episode.uploadedAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(
@@ -543,52 +750,91 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           ).toLocal().toString().split(' ').first
         : null;
     final String? scanlator = episode.scanlator?.trim();
-    final String? id = _client?.remoteVideos[index].id;
-    return OnlineWorkItemTile(
-      key: ValueKey<String>('anime_episode_${episode.url}'),
-      title: _episodeTitle(episode),
-      subtitle: <String>[
-        if (uploaded != null) uploaded,
-        if (scanlator != null && scanlator.isNotEmpty) scanlator,
-        if (id != null && _downloadedIds.contains(id))
-          t.video_online_downloaded,
-      ].join(' · '),
-      current: index == _resumeIndex,
-      trailing: id == null ? null : _episodeDownloadAction(id),
-      onTap: () => unawaited(_play(index)),
-    );
-  }
-
-  /// 行尾：已下载 = 完成标记；下载中 = 进度环（管理器任务快照）；否则 = 下载按钮。
-  Widget _episodeDownloadAction(String id) {
-    if (_downloadedIds.contains(id)) {
-      return FushiTooltip(
-        message: t.video_online_downloaded,
-        child: const FushiIcon(Icons.download_done),
-      );
-    }
-    // 只订阅整数百分比，字节级进度回报不整页重建（BUG-2944）。
-    final InterconnectDownloadBadgeState? task = _appModelOrNull == null
+    final List<RemoteVideoInfo>? members = _client?.remoteVideos;
+    final String? id = members == null || index >= members.length
         ? null
-        : ref.watch(
-            interconnectDownloadManagerProvider.select(
-              (m) => m.badgeStateFor(id),
-            ),
-          );
-    if (task != null && task.status == InterconnectDownloadStatus.running) {
-      return SizedBox.square(
-        dimension: 24,
-        child: FushiCircularProgressIndicator(
-          strokeWidth: 2,
-          value: task.percent < 0 ? null : task.percent / 100,
-        ),
-      );
-    }
-    return FushiIconButtonControl(
-      key: ValueKey<String>('anime_download_$id'),
-      tooltip: t.video_online_download_episode,
-      onPressed: () => unawaited(_download(<String>[id])),
-      icon: const FushiIcon(Icons.download_outlined),
+        : members[index].id;
+    final bool downloaded = id != null && _downloadedIds.contains(id);
+    final Set<String>? selection = _selection;
+    // 下载任务快照按行订阅（Consumer），一集的进度变化只重建这一行。
+    return Consumer(
+      builder: (BuildContext context, WidgetRef ref, Widget? _) {
+        final InterconnectDownloadBadgeState? task =
+            id == null || downloaded || _appModelOrNull == null
+            ? null
+            : ref.watch(
+                interconnectDownloadManagerProvider.select(
+                  (m) => m.badgeStateFor(id),
+                ),
+              );
+        final MediaDetailDownloadState downloadState = downloaded
+            ? MediaDetailDownloadState.downloaded
+            : switch (task?.status) {
+                InterconnectDownloadStatus.running =>
+                  MediaDetailDownloadState.downloading,
+                InterconnectDownloadStatus.paused =>
+                  MediaDetailDownloadState.queued,
+                InterconnectDownloadStatus.failed =>
+                  MediaDetailDownloadState.failed,
+                _ => MediaDetailDownloadState.none,
+              };
+        final bool running =
+            downloadState == MediaDetailDownloadState.downloading;
+        return OnlineWorkItemTile(
+          key: ValueKey<String>('anime_episode_${episode.url}'),
+          index: index,
+          count: count,
+          number: _episodeNumber(episode, index),
+          title: _episodeTitle(episode),
+          meta: <String>[
+            ?uploaded,
+            if (scanlator != null && scanlator.isNotEmpty) scanlator,
+            if (downloaded) t.video_online_downloaded,
+          ],
+          current: index == _resumeIndex,
+          downloadState: downloadState,
+          downloadProgress: running && task != null && task.percent >= 0
+              ? task.percent / 100
+              : null,
+          selected: selection == null || id == null
+              ? null
+              : selection.contains(id),
+          // 行尾下载钮：已下载 / 下载中由行内状态图标表示；多选时让位给选择。
+          trailing: id == null || downloaded || running || selection != null
+              ? null
+              : FushiIconButtonControl(
+                  key: ValueKey<String>('anime_download_$id'),
+                  tooltip: t.video_online_download_episode,
+                  onPressed: () => unawaited(_download(<String>[id])),
+                  icon: const FushiIcon(FushiIcons.download),
+                ),
+          onTap: selection != null
+              ? (id == null ? null : () => _toggleSelected(id))
+              : () => unawaited(_play(index)),
+          onLongPress: id == null || selection != null
+              ? null
+              : () => _enterSelection(id),
+        );
+      },
     );
   }
 }
+
+/// Mihon `SAnime.status` → 显示文案（0 = 未知不显示）。取值与扩展 ABI 一致：
+/// 1 连载中、2 已完结、3 已授权、4 出版完结、5 已取消、6 休刊。
+String? _animeStatusLabel(int status) => switch (status) {
+  1 => t.novel_status_ongoing,
+  2 => t.novel_status_completed,
+  3 => t.novel_status_licensed,
+  4 => t.novel_status_publishing_finished,
+  5 => t.novel_status_cancelled,
+  6 => t.novel_status_on_hiatus,
+  _ => null,
+};
+
+/// 状态 chip 的语气：连载中 secondary、已完结 tertiary，其余中性。
+MediaDetailChipTone _animeStatusTone(int status) => switch (status) {
+  1 => MediaDetailChipTone.secondary,
+  2 || 4 => MediaDetailChipTone.tertiary,
+  _ => MediaDetailChipTone.neutral,
+};

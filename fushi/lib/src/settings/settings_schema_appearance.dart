@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -45,19 +47,19 @@ String _moduleItemId(ModuleId module) => switch (module) {
   return switch (module) {
     ModuleId.listening => (
       label: t.settings_destination_listening,
-      icon: Icons.headphones_outlined,
+      icon: FushiIcons.audiobook,
     ),
     ModuleId.cardCreation => (
       label: t.settings_destination_card_creation,
-      icon: Icons.style_outlined,
+      icon: FushiIcons.ankiCard,
     ),
     ModuleId.services => (
       label: t.settings_destination_services,
-      icon: Icons.cloud_outlined,
+      icon: FushiIcons.cloud,
     ),
     ModuleId.sync => (
       label: t.settings_destination_sync_backup,
-      icon: Icons.sync,
+      icon: FushiIcons.sync,
     ),
     // 上面 homeTabOfModule 已经把有 tab 的七个消化掉了；这里补齐 switch 让编译器
     // 在新增模块时强制点名，而不是静默落进一个 default 里显示错标签。
@@ -95,6 +97,7 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
       await settingsContext.appModel.setModuleEnabled(module, enabled);
       settingsContext.refresh();
     },
+    defaultValue: true,
   );
 }
 
@@ -103,7 +106,7 @@ SettingsDestination buildAppearanceDestination() {
     id: SettingsDestinationId.appearance,
     title: t.settings_destination_appearance_interaction,
     summary: t.design_system_hint,
-    icon: Icons.palette_outlined,
+    icon: FushiIcons.appearance,
     sections: <SettingsSection>[
       SettingsSection(
         id: 'appearance.section.interface',
@@ -114,7 +117,7 @@ SettingsDestination buildAppearanceDestination() {
           // 进入设置搜索（主题/语言/明暗等此前搜不到）。
           SettingsCustomItem(
             id: 'appearance.design_system',
-            icon: Icons.devices_outlined,
+            icon: FushiIcons.devices,
             searchTitle: t.design_system_label,
             builder: buildDesignSystemSelector,
           ),
@@ -129,6 +132,22 @@ SettingsDestination buildAppearanceDestination() {
             icon: Icons.contrast_outlined,
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
+          ),
+          // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
+          // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题
+          // 一律生效，只在深色下起作用。
+          SettingsSwitchItem(
+            id: 'appearance.pure_black_dark',
+            title: t.theme_pure_black,
+            subtitle: t.theme_pure_black_hint,
+            icon: FushiIcons.darkMode,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.pureBlackDark,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setPureBlackDark(value);
+              notifyReaderSettingsChanged(settingsContext);
+            },
+            defaultValue: false,
           ),
           // 墨水屏模式：全局单开关（设备属性，不随 Profile 快照），叠加在主题/
           // 明暗机制之上——开=纯黑白+无动画+线式高亮，关=还原原主题。
@@ -145,18 +164,24 @@ SettingsDestination buildAppearanceDestination() {
               // einkMode），开着书切换必须重注入，否则正文要退出重进才变黑白。
               notifyReaderSettingsChanged(settingsContext);
             },
+            defaultValue: false,
           ),
           // 玻璃材质档位：只在设计系统选「玻璃」时出现（设计系统行负责开关玻璃，
           // 这里只在毛玻璃 / 液态之间选）。正文、视频画面不变；墨水屏、系统增强
           // 对比度 / 降低透明度下自动回退实心，liquid 在引擎不支持着色器
           // ImageFilter 时降级为 frosted。随 Profile 走。
+          //
+          // 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃入口先关掉
+          // ——本行恒不可见（设置页与设置搜索都走 visible 谓词，一并消失），
+          // 生效值由 ThemeNotifier.glassMaterialTier 钉成 frosted。schema 项、
+          // 偏好键 `glass_material` 与液态渲染代码都保留，恢复时把 visible 改回
+          // `designSystem == 'glass'` 并撤掉 glassMaterialTier 的钉死即可。
           SettingsSegmentedItem<FushiGlassMaterial>(
             id: 'appearance.glass_material',
             title: t.glass_material,
             subtitle: t.glass_material_hint,
             icon: Icons.blur_on_outlined,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.themeNotifier.designSystem == 'glass',
+            visible: (SettingsContext settingsContext) => false,
             options: <SettingsSegmentOption<FushiGlassMaterial>>[
               SettingsSegmentOption<FushiGlassMaterial>(
                 value: FushiGlassMaterial.frosted,
@@ -172,6 +197,7 @@ SettingsDestination buildAppearanceDestination() {
             onChanged:
                 (SettingsContext settingsContext, FushiGlassMaterial value) =>
                     settingsContext.appModel.setGlassMaterial(value),
+            defaultValue: FushiGlassMaterial.frosted,
           ),
           // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
           // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
@@ -221,7 +247,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsNavigationItem(
             id: 'appearance.font_catalog',
             title: t.custom_fonts_catalog_title,
-            icon: Icons.font_download_outlined,
+            icon: FushiIcons.font,
             onTap: (SettingsContext settingsContext) async {
               await pushSettingsPage(
                 settingsContext,
@@ -246,7 +272,7 @@ SettingsDestination buildAppearanceDestination() {
               return '${t.settings_content_language_title} · $label';
             },
             subtitle: t.settings_content_language_description,
-            icon: Icons.translate,
+            icon: FushiIcons.language,
             onTap: (SettingsContext settingsContext) async {
               final String current =
                   settingsContext.appModel.prefsRepo.defaultContentLanguage;
@@ -303,7 +329,7 @@ SettingsDestination buildAppearanceDestination() {
           SettingsNavigationItem(
             id: 'appearance.app_icon',
             title: t.app_icon_label,
-            icon: Icons.widgets_outlined,
+            icon: FushiIcons.widgets,
             visible: (_) => Platform.isAndroid || Platform.isWindows,
             builder: (_) => const MiscellaneousSettingsPage(),
           ),
@@ -317,6 +343,24 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.appModel.toggleReverseNavigationBar();
               settingsContext.refresh();
             },
+            defaultValue: false,
+          ),
+          // MD3 悬浮底栏（手机竖屏）图标下的标签；关掉即 M3E floating toolbar
+          // 的纯图标形态（标签进 tooltip）。Apple 设计系统的标签栏不读它。
+          SettingsSwitchItem(
+            id: 'appearance.nav_bar_labels',
+            title: t.home_nav_bar_labels,
+            icon: FushiIcons.textFields,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.navBarLabelsVisible,
+            onChanged: (SettingsContext settingsContext, bool value) {
+              unawaited(
+                settingsContext.appModel
+                    .setNavBarLabelsVisible(value)
+                    .then((_) => settingsContext.refresh()),
+              );
+            },
+            defaultValue: true,
           ),
           // 「启动时打开查词」(id 'appearance.startup_default_dictionary_tab') 已归位到
           // 「系统 · 通用」分区（它管的是启动落地页/导航行为，与主题/明暗等外观无关）；

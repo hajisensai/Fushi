@@ -1,10 +1,15 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiFallbackTheme;
 import 'package:fushi/src/pages/implementations/floating_dict_page.dart';
+import 'package:fushi/src/pages/implementations/popup_dictionary_loading_view.dart';
+import 'package:fushi/src/startup/startup_splash_mark.dart' show DelayedReveal;
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -78,9 +83,25 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (!appModel.isInitialised) {
-      return const MaterialApp(
+      // 冷启动占位：快于揭示阈值什么都不画（窗口保持透明）；慢了才在窗口中央
+      // 淡入与系统查词弹窗同一枚 M3E 加载胶囊（兜底主题，用户主题此时还没加载）。
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(
+        WidgetsBinding.instance.platformDispatcher.platformBrightness,
+      );
+      return MaterialApp(
         debugShowCheckedModeBanner: false,
-        home: ColoredBox(color: Colors.transparent),
+        theme: fallbackTheme,
+        home: ColoredBox(
+          color: Colors.transparent,
+          child: Center(
+            child: DelayedReveal(
+              delay: kPopupLoadingRevealDelay,
+              child: PopupDictionaryLoadingPill(
+                colorScheme: fallbackTheme.colorScheme,
+              ),
+            ),
+          ),
+        ),
       );
     }
 
@@ -98,7 +119,9 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       // 独立 entry point 不经主 app 的根作用域：玻璃设计系统的组件配色 / 渲染
       // 档位在这里自己挂（结构恒定，MD3 下也挂，见 [FushiGlassScope]）。
       builder: (BuildContext context, Widget? child) =>
-          FushiGlassScope(child: child ?? const SizedBox.shrink()),
+          LegacyDesignCompatibility(
+        child: FushiGlassScope(child: child ?? const SizedBox.shrink()),
+      ),
       home: FloatingDictPage(
         channel: widget.channel,
         pendingSearch: _pendingSearch,

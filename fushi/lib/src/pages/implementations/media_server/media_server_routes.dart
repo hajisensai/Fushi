@@ -33,7 +33,11 @@ void openMediaServerDetail(
   MediaServerItem item, {
   String? initialSeasonId,
 }) {
-  Navigator.of(context).push<void>(
+  // 作品详情接管整个窗口（push 到根 Navigator）：媒体服务器分区是库页外壳里的
+  // 嵌套 Navigator，留在里面时外壳的大标题 + 页签胶囊与详情自己的浮动顶栏三层
+  // 叠在顶部，hero 背景被压在下面、宽度也被外壳内容区截住。根路由的返回键 /
+  // 系统返回与本地系列详情（同样是根路由）一致；返回后回到分区里原来那一层。
+  Navigator.of(context, rootNavigator: true).push<void>(
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => MediaServerDetailView(

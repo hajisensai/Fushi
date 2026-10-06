@@ -1,13 +1,18 @@
-/// 漫画阅读器的界面件（chrome）：顶部浮动工具栏 [MangaReaderTopBar]、底部浮动
-/// 进度工具栏 [MangaReaderBottomBar]、章末「下一章」卡片 [MangaChapterEndCard]、
+/// 漫画阅读器的界面件（chrome）：顶部悬浮条 [MangaReaderTopBar]、底部页码滑块胶囊
+/// [MangaReaderBottomBar] + 悬浮工具栏 [MangaReaderToolbar]（两者由
+/// [MangaReaderBottomChrome] 摆位）、章末「下一章」卡片 [MangaChapterEndCard]、
 /// 隐藏界面时的页码角标 [MangaHiddenPageBadge]、OCR 状态胶囊。
 ///
-/// 2026-10 重设计（MD3 Expressive 为主，Apple 26 同步）：内容全屏，chrome 不再是
-/// 贴边实色条，而是**浮在页图上的胶囊**——
-///  * MD3：surfaceContainer 底、圆角 28、elevation 3（M3 Expressive floating
-///    toolbar）；墨水屏换实色 surface + 描边、无阴影；
-///  * Apple：恒深色档（[FushiAppleDarkTier]）的液态玻璃胶囊，白色字形、按钮无底
-///    （HIG Toolbars：toolbar items don't include a bezel）。
+/// 2026-10 二次重设计：与小说阅读器统一成 **M3 Expressive 悬浮工具栏**（共享组件
+/// `fushi_floating_toolbar.dart`）。内容全屏，chrome 是一组分离的悬浮胶囊而不是
+/// 整条实体栏——
+///  * 顶部：`(←)  (标题 · 状态)  ………  (动作 · ⋯)`，三块各自成胶囊；
+///  * 底部：页码滑块胶囊叠在「按钮组胶囊 + FAB」上方（Mihon 同形，拇指区）；手机
+///    上工具栏是「图标 + 小字标签」等宽格，放不下的按优先级降进「更多」。
+///  * Material 一律 M3 Expressive（surfaceContainer 胶囊 + 阴影、选中 =
+///    secondaryContainer、FAB = primaryContainer 形状变形）；Apple 是恒深色档
+///    （[FushiAppleDarkTier]）的浮动材质胶囊——漫画 chrome 恒压在页图上。墨水屏换
+///    实色 + 描边、无阴影、无动效。
 ///
 /// 两种形态由页面决定、本组件只管画：
 ///  * 固定（`floating == false`）：胶囊所在的整条区域占布局，页面把正文 WebView
@@ -15,18 +20,17 @@
 ///  * 悬浮（`floating == true`）：盖在正文上，默认收起，正文中央点击唤出、再点
 ///    一下收起（**只认点击**：指针移动不唤出，唤出后也不自动收起）。
 ///
-/// 显隐动效走 [MangaChromeReveal]（顶部向上、底部向下 fade + slide，时长取
-/// [FushiMotion]，墨水屏 / 减弱动态效果下瞬间到位）。
+/// 显隐动效走 [MangaChromeReveal]（顶部向上、底部向下，M3E spatial 弹簧位移 +
+/// 淡入，墨水屏 / 减弱动态效果下瞬间到位）。
 library;
 
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
-import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show kReaderDesktopHeaderButtonWidth, readerHeaderCompact;
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiExpressiveLoadingIndicator;
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -34,11 +38,11 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
-/// 胶囊离屏幕左 / 右边的距离。窄屏的标题槽要放下页码胶囊（见
-/// [planMangaTopBarActions]），所以只留 8。
-const double kMangaChromeEdgeInset = 8;
+/// 胶囊离屏幕左 / 右边的距离（M3E floating toolbar 规格离窗口边 16，手机上收到
+/// 12 给标题胶囊多留一点字宽）。
+const double kMangaChromeEdgeInset = 12;
 
-/// 顶部浮动工具栏胶囊本身的高度（M3 Expressive floating toolbar 的 56 档）。
+/// 顶部一排胶囊（返回 / 标题 / 动作组）的高度：48 的图标按钮 + 上下 4。
 const double kMangaChromeTopPillHeight = 56;
 
 /// 顶部胶囊上 / 下方留白。
@@ -49,24 +53,38 @@ const double kMangaChromeTopGap = 8;
 const double kMangaChromeBarHeight =
     kMangaChromeTopGap + kMangaChromeTopPillHeight + kMangaChromeTopGap;
 
-/// 底部进度胶囊本身的高度：放得下 M3 Expressive 滑块 44 高的竖条手柄。
-const double kMangaChromeBottomPillHeight = 60;
+/// 底部页码滑块胶囊的高度：放得下 M3 Expressive 滑块 44 高的竖条手柄。
+const double kMangaChromeBottomPillHeight = 52;
+
+/// 滑块胶囊与下方悬浮工具栏之间的间距。
+const double kMangaChromeBottomStackGap = 8;
+
+/// 底部悬浮工具栏的高度（M3E floating toolbar 规格 64，带标签 / 不带标签同高）。
+const double kMangaChromeToolbarHeight = 64;
 
 /// 底部胶囊下方留白（离系统手势区）。
-const double kMangaChromeBottomGap = 12;
+const double kMangaChromeBottomGap = 16;
 
-/// 底栏占位高（不含系统手势区）= 上留白 + 胶囊 + 下留白。
+/// 底栏占位高（不含系统手势区）= 上留白 + 滑块胶囊 + 间距 + 工具栏 + 下留白。
 const double kMangaChromeBottomBarHeight =
-    kMangaChromeTopGap + kMangaChromeBottomPillHeight + kMangaChromeBottomGap;
+    kMangaChromeTopGap +
+    kMangaChromeBottomPillHeight +
+    kMangaChromeBottomStackGap +
+    kMangaChromeToolbarHeight +
+    kMangaChromeBottomGap;
 
-/// 桌面宽屏下顶部工具栏的最大宽度：再宽就居中，动作不必横跨整块屏幕。
+/// 桌面宽屏下顶部一排胶囊的最大宽度：再宽就居中，动作不必横跨整块屏幕。
 const double kMangaChromeTopMaxWidth = 1080;
 
-/// 底部进度胶囊的最大宽度。
-const double kMangaChromeBottomMaxWidth = 760;
+/// 底部滑块胶囊 / 工具栏的最大宽度。
+const double kMangaChromeBottomMaxWidth = 720;
 
 /// 胶囊圆角（M3 Expressive 的 extra-large 28）。
 const double kMangaChromePillRadius = 28;
+
+/// 底部工具栏改成「图标 + 小字标签」等宽格的宽度阈值（手机拇指区，与小说阅读器
+/// 手机底栏同一判据 600）。
+const double kMangaChromeLabeledToolbarMaxWidth = 600;
 
 /// 固定态下正文 WebView 顶部让出的高度（纯函数，单测钉住）。
 ///
@@ -87,7 +105,8 @@ double mangaChromeTopInset({
 /// 与 [mangaChromeTopInset] 同构、同理由：让位高度**必须**等于底栏画出的高度
 /// （同一个常量 + 同一个系统手势区 inset），否则页图最后一行会压在栏下。
 ///
-/// [contentReady] == false 时底栏不画（没有正文就没有可跳的页），故也不让位。
+/// [contentReady] == false 时底栏不画（没有正文就没有可跳的页、工具栏动作也无
+/// 意义），故也不让位。
 double mangaChromeBottomInset({
   required bool floating,
   required bool chromeVisible,
@@ -307,10 +326,12 @@ class MangaChromeSurface extends StatelessWidget {
 /// chrome 的显隐动效：显示时 fade + slide 进场（[fromTop] 自上而下 / 否则自下而
 /// 上），隐藏时反向退场，退场播完才卸载子树。
 ///
-/// 时长取 [FushiMotion]（进场 [FushiMotion.medium]、退场 [FushiMotion.short]，
-/// 快进慢出），墨水屏与系统「减弱动态效果」下经 [fushiMotionDuration] 归零，
-/// 瞬间到位。退场途中子树 [IgnorePointer] + [ExcludeFocus]：正在消失的按钮
-/// 不该再被点到或 Tab 到。首次挂载即可见时不播进场（打开书时栏已在位）。
+/// 位移走 M3 Expressive 的 spatial 弹簧（与小说阅读器悬浮工具栏同一套
+/// [FushiSpring] 物理：进场带一点回弹的落位，退场同一弹簧收回）；透明度钳在
+/// 0..1，所以回弹只体现在位移上。墨水屏与系统「减弱动态效果」下
+/// （[fushiMotionEnabled] == false）瞬间到位。退场途中子树 [IgnorePointer] +
+/// [ExcludeFocus]：正在消失的按钮不该再被点到或 Tab 到。首次挂载即可见时不播
+/// 进场（打开书时栏已在位）。
 class MangaChromeReveal extends StatefulWidget {
   const MangaChromeReveal({
     super.key,
@@ -327,16 +348,17 @@ class MangaChromeReveal extends StatefulWidget {
   State<MangaChromeReveal> createState() => _MangaChromeRevealState();
 }
 
+/// 漫画 chrome 显隐用的弹簧：M3E default spatial（阻尼比 0.8 档，轻微回弹）。与
+/// 小说阅读器 `FushiChromeReveal` 同参，两种阅读器的栏落位手感一致。
+final SpringDescription kMangaChromeRevealSpring =
+    SpringDescription.withDampingRatio(mass: 1, stiffness: 520, ratio: 0.82);
+
 class _MangaChromeRevealState extends State<MangaChromeReveal>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
+  late final FushiSpring _spring = FushiSpring(
     vsync: this,
-    value: widget.visible ? 1 : 0,
-  );
-  late final CurvedAnimation _curve = CurvedAnimation(
-    parent: _controller,
-    curve: FushiMotion.enter,
-    reverseCurve: FushiMotion.exit.flipped,
+    initial: widget.visible ? 1 : 0,
+    spring: kMangaChromeRevealSpring,
   );
 
   /// 退场 / 进场时的位移（逻辑像素）。
@@ -346,40 +368,29 @@ class _MangaChromeRevealState extends State<MangaChromeReveal>
   void didUpdateWidget(MangaChromeReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.visible == widget.visible) return;
-    final Duration duration = fushiMotionDuration(
-      context,
-      widget.visible ? FushiMotion.medium : FushiMotion.short,
+    _spring.animateTo(
+      widget.visible ? 1 : 0,
+      animate: fushiMotionEnabled(context),
     );
-    if (duration == Duration.zero) {
-      _controller.value = widget.visible ? 1 : 0;
-      return;
-    }
-    _controller.duration = duration;
-    _controller.reverseDuration = duration;
-    if (widget.visible) {
-      _controller.forward();
-    } else {
-      _controller.reverse();
-    }
   }
 
   @override
   void dispose() {
-    _curve.dispose();
-    _controller.dispose();
+    _spring.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _controller,
+      animation: _spring.animation,
       child: widget.child,
       builder: (BuildContext context, Widget? child) {
-        if (!widget.visible && _controller.isDismissed) {
+        final double t = _spring.value;
+        // 弹簧收回时会略微越过 0（欠阻尼）；越过即视为退场播完，卸载子树。
+        if (!widget.visible && t <= 0.001) {
           return const SizedBox.shrink();
         }
-        final double t = _curve.value;
         final double direction = widget.fromTop ? -1 : 1;
         return IgnorePointer(
           ignoring: !widget.visible,
@@ -399,15 +410,32 @@ class _MangaChromeRevealState extends State<MangaChromeReveal>
   }
 }
 
-/// 顶栏里的一颗动作。[active] 是「开关型」动作的当前态（高亮 + 溢出菜单打勾）。
+/// 漫画 chrome 里的一颗动作放在哪儿（与小说阅读器同一套信息架构：常用的在悬浮
+/// 工具栏、低频的进「更多」）。
+enum MangaChromeSlot {
+  /// 顶部动作胶囊（右上）：状态型 / 页面级动作（整卷 OCR 取消、窗口全屏）。恒画。
+  top,
+
+  /// 底部悬浮工具栏（拇指区）：阅读中高频动作（章节 / 页面一览 / 阅读模式 /
+  /// 单双页 / 翻页方向 / 快捷设置）。窄屏放不下时按 [MangaChromeAction.priority]
+  /// 从低到高降进「更多」。
+  toolbar,
+
+  /// 恒在「更多」（⋯）菜单里：低频动作（回到开头 / 识别本卷 / 全部设置 /
+  /// 隐藏界面）。
+  more,
+}
+
+/// chrome 里的一颗动作。[active] 是「开关型」动作的当前态（选中底 + 更多菜单
+/// 打勾）。
 class MangaChromeAction {
   const MangaChromeAction({
     required this.icon,
     required this.label,
     required this.onPressed,
     this.key,
-    this.pinned = false,
-    this.secondary = false,
+    this.slot = MangaChromeSlot.toolbar,
+    this.priority = 0,
     this.active = false,
     this.busy = false,
   });
@@ -417,156 +445,192 @@ class MangaChromeAction {
   final VoidCallback? onPressed;
   final Key? key;
 
-  /// 窄窗紧凑形态仍保留为图标按钮；其余收进 ⋮。
-  final bool pinned;
+  /// 放在哪儿（见 [MangaChromeSlot]）。
+  final MangaChromeSlot slot;
 
-  /// pinned 里的**次要**动作（翻页方向 / 回到开头）：紧凑形态下栏宽连页码胶囊
-  /// 都放不下时，先把它们（从后往前）降进 ⋮，而不是让按钮压在胶囊上
-  /// （BUG：412dp 竖屏手机 7 颗 pinned 按钮把胶囊挤到只剩 ~68dp）。见
-  /// [planMangaTopBarActions]。
-  final bool secondary;
+  /// 工具栏放不下时的保留优先级：越大越晚降进「更多」。
+  final int priority;
 
-  /// 开关型动作当前处于开启态：图标用强调色，溢出菜单里带勾。
+  /// 开关型动作当前处于开启态：选中底色，更多菜单里带勾。
   final bool active;
 
-  /// 忙碌中：图标位画转圈（例如整卷 OCR 进行中）。
+  /// 忙碌中：图标位画 Expressive 加载指示（例如整卷 OCR 进行中）。
   final bool busy;
+
+  /// 转成共享悬浮工具栏的项描述（小说阅读器同一组件）。
+  FushiToolbarItem toToolbarItem() => FushiToolbarItem(
+    key: key,
+    icon: icon,
+    label: label,
+    selected: active && !busy,
+    onPressed: onPressed,
+  );
 }
 
-/// 顶栏一行两端内边距合计：0——首尾 48 的图标按钮直接落在 56 高胶囊的半圆端里
-/// （可见圆 40 与胶囊端几乎同心）。412dp 竖屏手机上返回 + 章节 + 取消 OCR +
-/// 设置 + 隐藏 + ⋮ 之后页码胶囊恰好放得下，每一像素都要留给它。
-const double kMangaTopBarHorizontalPadding = 0;
+/// 工具栏一颗按钮占的宽（不带标签 = 48 的图标按钮；带标签 = 等宽格）。
+double mangaToolbarItemWidth({required bool labels}) =>
+    labels ? kFushiFloatingToolbarLabeledItemWidth : 48;
 
-/// 组间分隔线占宽：左右各 2 + 线宽 1（与 `_divider` 同源）。
-const double kMangaTopBarDividerWidth = 5;
+/// 工具栏组间分隔占宽：左右各 6 + 线宽 1（与共享组件同源）。
+const double kMangaToolbarGroupDividerWidth = 13;
 
-/// 页码胶囊左右内边距（单侧，与胶囊 `Padding` 同源）。
-const double kMangaPageChipHorizontalPadding = 10;
+/// FAB 尺寸（M3E 工具栏配对 FAB 的 56 档）。
+const double kMangaToolbarFabSize = 56;
 
-/// 标题两行至少要这么宽才画（窄屏上挤出两三个字加省略号不如不画）。
-const double kMangaTopBarTitleMinWidth = 88;
-
-/// [planMangaTopBarActions] 的结果：哪些动作画成图标、哪些进 ⋮。
-@immutable
-class MangaTopBarActionPlan {
-  const MangaTopBarActionPlan({
-    required this.compact,
-    required this.inline,
-    required this.overflow,
-    required this.titleAreaWidth,
-  });
-
-  /// 紧凑形态：组间不画分隔线。
-  final bool compact;
-
-  /// 画成图标按钮的动作（按引用比较）。
-  final Set<MangaChromeAction> inline;
-
-  /// 收进 ⋮ 的动作，保持组序。
-  final List<MangaChromeAction> overflow;
-
-  /// 按钮全部排完后留给标题槽（标题 + 页码胶囊 + 状态件）的宽度，下限 0。
-  final double titleAreaWidth;
-}
-
-/// 顶栏按**真实宽度**排布动作（纯函数，单测钉住）。
-///
-/// 固定阈值 [readerHeaderCompact]（760）只决定「要不要折叠」，从不检查折叠后
-/// 留下的 pinned 按钮真的放得下：412dp 竖屏手机上返回 + 章节 + 方向 + 回到开头 +
-/// 设置 + 隐藏 + ⋮ 一共 7 颗 48dp 按钮，标题槽只剩 ~68dp，页码胶囊（加大字号后
-/// 更宽）画出槽外、被下一颗按钮盖住。现在：
-///
-///  1. 宽窗（未过 760 阈值）且全部按钮 + 胶囊放得下 → 全部画出；
-///  2. 否则紧凑：只留 pinned，其余进 ⋮；
-///  3. 紧凑态仍放不下 [titleAreaMinWidth]（页码胶囊的实测宽）时，把 pinned 里的
-///     [MangaChromeAction.secondary] 从后往前逐个降进 ⋮，直到放得下或没有可降的。
-///
-/// [buttonWidth] 取 48（MD3 IconButton 补足 tap target 后的上界），宁可算宽。
-MangaTopBarActionPlan planMangaTopBarActions({
-  required double width,
-  required int leadingCount,
+/// 悬浮工具栏按 [groups] 画出来的宽度（纯函数，单测钉住）：两端内边距 +
+/// 按钮 + 组内间距 + 组间分隔 + 「更多」按钮 + FAB（含间距）。
+double mangaToolbarWidth({
   required List<List<MangaChromeAction>> groups,
-  required double titleAreaMinWidth,
-  double buttonWidth = kReaderDesktopHeaderButtonWidth,
+  required bool labels,
+  bool hasOverflow = false,
+  bool hasFab = false,
 }) {
   final List<List<MangaChromeAction>> visible = <List<MangaChromeAction>>[
     for (final List<MangaChromeAction> g in groups)
       if (g.isNotEmpty) g,
   ];
-  final List<MangaChromeAction> all = <MangaChromeAction>[
-    for (final List<MangaChromeAction> g in visible) ...g,
+  final double item = mangaToolbarItemWidth(labels: labels);
+  double width = 2 * kFushiFloatingToolbarPadding;
+  for (int i = 0; i < visible.length; i++) {
+    if (i > 0) width += kMangaToolbarGroupDividerWidth;
+    width +=
+        visible[i].length * item +
+        (visible[i].length - 1) * kFushiFloatingToolbarItemGap;
+  }
+  if (hasOverflow) width += kFushiFloatingToolbarItemGap + 48;
+  if (hasFab) width += kFushiFloatingToolbarFabGap + kMangaToolbarFabSize;
+  return width;
+}
+
+/// [planMangaChrome] 的结果：每颗动作最终画在哪儿。
+@immutable
+class MangaChromePlan {
+  const MangaChromePlan({
+    required this.top,
+    required this.toolbar,
+    required this.overflow,
+    required this.labels,
+  });
+
+  /// 顶部动作胶囊里画成图标的动作。
+  final List<MangaChromeAction> top;
+
+  /// 底部悬浮工具栏的分组（空组已剔除）。
+  final List<List<MangaChromeAction>> toolbar;
+
+  /// 「更多」菜单：工具栏放不下被降级的（保持声明顺序）+ [MangaChromeSlot.more]。
+  final List<MangaChromeAction> overflow;
+
+  /// 工具栏是否画成「图标 + 小字标签」等宽格（手机拇指区）。
+  final bool labels;
+}
+
+/// 按**真实宽度**把动作分到顶部胶囊 / 底部工具栏 / 「更多」（纯函数，单测钉住）。
+///
+///  1. [groups] 是页面声明的全部动作（按组、组内按序）；[MangaChromeSlot.top] 恒画
+///     在顶部胶囊，[MangaChromeSlot.more] 恒进「更多」；
+///  2. [MangaChromeSlot.toolbar] 动作保持分组排进底部工具栏；宽度 < [kMangaChromeLabeledToolbarMaxWidth] 时画成带标签
+///     的等宽格；
+///  3. 工具栏（含 FAB）超出可用宽（屏宽 − 两侧边距，封顶
+///     [kMangaChromeBottomMaxWidth]）时，按 [MangaChromeAction.priority] 从低到高
+///     （同优先级先降靠后的）逐个降进「更多」，直到放得下；降空也不报错。
+///
+/// 412dp 竖屏手机上 7~8 颗按钮挤在一条栏里、把页码胶囊压在按钮下面（旧顶栏的
+/// BUG）在这里结构上不会再发生：每块胶囊各自限宽，放不下的去「更多」。
+MangaChromePlan planMangaChrome({
+  required double width,
+  required List<List<MangaChromeAction>> groups,
+  bool hasFab = false,
+}) {
+  final List<MangaChromeAction> actions = <MangaChromeAction>[
+    for (final List<MangaChromeAction> g in groups) ...g,
   ];
-  // 返回键 + leading（章节目录）恒在。
-  final double fixed =
-      kMangaTopBarHorizontalPadding + (1 + leadingCount) * buttonWidth;
-
-  final double wideUsed =
-      fixed +
-      all.length * buttonWidth +
-      (visible.isEmpty ? 0 : (visible.length - 1) * kMangaTopBarDividerWidth);
-  if (!readerHeaderCompact(width) && wideUsed + titleAreaMinWidth <= width) {
-    return MangaTopBarActionPlan(
-      compact: false,
-      inline: Set<MangaChromeAction>.identity()..addAll(all),
-      overflow: const <MangaChromeAction>[],
-      titleAreaWidth: width - wideUsed,
-    );
-  }
-
-  final List<MangaChromeAction> inline = <MangaChromeAction>[
-    for (final MangaChromeAction a in all)
-      if (a.pinned) a,
+  final List<List<MangaChromeAction>> toolbarGroups = <List<MangaChromeAction>>[
+    for (final List<MangaChromeAction> g in groups)
+      <MangaChromeAction>[
+        for (final MangaChromeAction a in g)
+          if (a.slot == MangaChromeSlot.toolbar) a,
+      ],
   ];
-  double used() {
-    final bool hasOverflow = inline.length < all.length;
-    return fixed + (inline.length + (hasOverflow ? 1 : 0)) * buttonWidth;
+  final bool labels = width < kMangaChromeLabeledToolbarMaxWidth;
+  final double available = math.min(
+    kMangaChromeBottomMaxWidth,
+    math.max(0, width - 2 * kMangaChromeEdgeInset),
+  );
+  final List<List<MangaChromeAction>> kept = <List<MangaChromeAction>>[
+    for (final List<MangaChromeAction> g in toolbarGroups)
+      if (g.isNotEmpty) List<MangaChromeAction>.of(g),
+  ];
+  final List<MangaChromeAction> demoted = <MangaChromeAction>[];
+  final List<MangaChromeAction> more = <MangaChromeAction>[
+    for (final MangaChromeAction a in actions)
+      if (a.slot == MangaChromeSlot.more) a,
+  ];
+  bool fits() =>
+      mangaToolbarWidth(
+        groups: kept,
+        labels: labels,
+        hasFab: hasFab,
+        // 有东西降级时工具栏不另画 ⋯（「更多」在顶部），不计宽。
+      ) <=
+      available;
+  while (!fits()) {
+    MangaChromeAction? victim;
+    for (final List<MangaChromeAction> g in kept) {
+      for (final MangaChromeAction a in g) {
+        if (victim == null || a.priority <= victim.priority) victim = a;
+      }
+    }
+    if (victim == null) break;
+    for (final List<MangaChromeAction> g in kept) {
+      g.remove(victim);
+    }
+    kept.removeWhere((List<MangaChromeAction> g) => g.isEmpty);
+    demoted.add(victim);
   }
-
-  while (used() + titleAreaMinWidth > width) {
-    final int demote = inline.lastIndexWhere(
-      (MangaChromeAction a) => a.secondary,
-    );
-    if (demote < 0) break;
-    inline.removeAt(demote);
-  }
-  final Set<MangaChromeAction> inlineSet = Set<MangaChromeAction>.identity()
-    ..addAll(inline);
-  final double usedWidth = used();
-  return MangaTopBarActionPlan(
-    compact: true,
-    inline: inlineSet,
-    overflow: <MangaChromeAction>[
-      for (final MangaChromeAction a in all)
-        if (!inlineSet.contains(a)) a,
+  // 降级项按声明顺序进「更多」，排在固定的「更多」项前面（它们本是常用动作）。
+  final List<MangaChromeAction> declared = <MangaChromeAction>[
+    for (final List<MangaChromeAction> g in toolbarGroups) ...g,
+  ];
+  demoted.sort(
+    (MangaChromeAction a, MangaChromeAction b) =>
+        declared.indexOf(a).compareTo(declared.indexOf(b)),
+  );
+  return MangaChromePlan(
+    top: <MangaChromeAction>[
+      for (final MangaChromeAction a in actions)
+        if (a.slot == MangaChromeSlot.top) a,
     ],
-    titleAreaWidth: width > usedWidth ? width - usedWidth : 0,
+    toolbar: kept,
+    overflow: <MangaChromeAction>[...demoted, ...more],
+    labels: labels,
   );
 }
 
-/// 顶部浮动工具栏：
-/// `( ← 返回  章节  标题 / 副标题  [页码] ……… 组1 │ 组2  ⋮ )`。
+/// 顶部悬浮条：`(←)  (标题 / 副标题 · 状态)  ………  ( 动作 · ⋯ )`。
 ///
-/// 一枚胶囊（[MangaChromeSurface]），左右留 [kMangaChromeEdgeInset]，桌面宽屏
-/// 限宽 [kMangaChromeTopMaxWidth] 居中。标题两行：主标题（章节名 / 卷名）+
-/// 副标题（作品名）；窄屏放不下时只留页码胶囊。
+/// 与小说阅读器的顶部悬浮条同形：三块各自独立成胶囊、不占满宽，正文在胶囊之间
+/// 露出来。标题胶囊可点（[onTitleTap]：书架在线条目 = 章节目录，本地卷 = 页面
+/// 一览——与小说「点标题 = 打开导航」同一口径），宽度随内容收缩、放不下省略。
+/// 右侧胶囊画 [actions]（[MangaChromeSlot.top]）与「更多」（⋯，[overflow] 非空才画）。
+///
+/// 左右留 [kMangaChromeEdgeInset]，桌面宽屏限宽 [kMangaChromeTopMaxWidth] 居中。
 class MangaReaderTopBar extends StatelessWidget {
   const MangaReaderTopBar({
     super.key,
     required this.title,
     required this.onBack,
     required this.backTooltip,
-    required this.groups,
     required this.floating,
     this.subtitle,
-    this.pageLabel,
-    this.pageListenable,
-    this.onPageTap,
+    this.onTitleTap,
+    this.titleTooltip,
     this.status,
-    this.leading = const <MangaChromeAction>[],
+    this.actions = const <MangaChromeAction>[],
+    this.overflow = const <MangaChromeAction>[],
   });
 
-  /// 主标题（章节名 / 卷名）；空串时只画页码。
+  /// 主标题（章节名 / 卷名）；空串且无副标题时不画标题胶囊。
   final String title;
 
   /// 副标题（作品名）；null / 空串不画第二行。
@@ -574,37 +638,36 @@ class MangaReaderTopBar extends StatelessWidget {
   final VoidCallback onBack;
   final String backTooltip;
 
-  /// 紧跟返回键的动作（章节目录）：窄窗也常驻，不折进 ⋮。
-  final List<MangaChromeAction> leading;
+  /// 点标题胶囊：章节目录 / 页面一览；null = 标题不可点。
+  final VoidCallback? onTitleTap;
+  final String? titleTooltip;
 
-  /// 动作分组（按顺序从左到右），组与组之间画分隔线。空组自动跳过。
-  final List<List<MangaChromeAction>> groups;
-
-  /// 悬浮态：胶囊带投影；固定态：胶囊贴在让出的区域里、不带投影。
-  final bool floating;
-
-  /// 页码胶囊文案（如 `3-4 / 40`），每次 [pageListenable] 触发时重新取；返回
-  /// null 不画。只重建本栏、不重建整页——翻页是高频事件，页面本体带着原生
-  /// WebView，不该跟着 setState。
-  final String? Function()? pageLabel;
-  final Listenable? pageListenable;
-  final VoidCallback? onPageTap;
-
-  /// 页码胶囊右侧的状态件（分镜状态胶囊 / debug 命中信息）。
+  /// 标题胶囊尾部的状态件（分镜状态胶囊 / debug 命中信息）。
   final Widget? status;
+
+  /// 右侧胶囊里直接画成图标的动作。
+  final List<MangaChromeAction> actions;
+
+  /// 「更多」菜单项（⋯）。空 = 不画 ⋯。
+  final List<MangaChromeAction> overflow;
+
+  /// 悬浮态：胶囊浮在页图上；固定态：胶囊画在让出的区域里（同样画投影，两种
+  /// 形态外观一致，只差正文让不让位）。
+  final bool floating;
 
   @override
   Widget build(BuildContext context) {
     final double statusBar = MediaQuery.paddingOf(context).top;
-    final List<List<MangaChromeAction>> visibleGroups =
-        <List<MangaChromeAction>>[
-          for (final List<MangaChromeAction> g in groups)
-            if (g.isNotEmpty) g,
-        ];
     return FushiAppleDarkTier(
       child: Builder(
         builder: (BuildContext context) {
-          final MangaChromePalette colors = MangaChromePalette.of(context);
+          final ({
+            Color container,
+            Color foreground,
+            Color selectedContainer,
+            Color selectedForeground,
+          })
+          palette = fushiFloatingToolbarPalette(context);
           return Padding(
             padding: EdgeInsets.only(top: statusBar),
             child: SizedBox(
@@ -622,44 +685,40 @@ class MangaReaderTopBar extends StatelessWidget {
                     constraints: const BoxConstraints(
                       maxWidth: kMangaChromeTopMaxWidth,
                     ),
-                    child: MangaChromeSurface(
-                      elevated: floating,
-                      // 胶囊文案随翻页变，排布（降不降次要按钮）要跟着胶囊实测宽
-                      // 走，所以整栏随 [pageListenable] 重建——只是这一条栏，页面
-                      // 本体（原生 WebView）照旧不跟着 setState。
-                      child: ListenableBuilder(
-                        listenable:
-                            pageListenable ??
-                            Listenable.merge(const <Listenable>[]),
-                        builder: (BuildContext context, Widget? _) {
-                          final String? label = pageLabel?.call();
-                          return LayoutBuilder(
-                            builder:
-                                (
-                                  BuildContext context,
-                                  BoxConstraints constraints,
-                                ) {
-                                  final double chipWidth = label == null
-                                      ? 0
-                                      : _pageChipWidth(context, colors, label);
-                                  final MangaTopBarActionPlan plan =
-                                      planMangaTopBarActions(
-                                        width: constraints.maxWidth,
-                                        leadingCount: leading.length,
-                                        groups: visibleGroups,
-                                        titleAreaMinWidth: chipWidth,
-                                      );
-                                  return _buildRow(
-                                    context,
-                                    colors,
-                                    plan: plan,
-                                    label: label,
-                                    chipWidth: chipWidth,
-                                    visibleGroups: visibleGroups,
-                                  );
-                                },
-                          );
-                        },
+                    child: SizedBox(
+                      height: kMangaChromeTopPillHeight,
+                      child: Row(
+                        children: <Widget>[
+                          FushiFloatingPill(
+                            key: const ValueKey<String>(
+                              'manga_reader_back_pill',
+                            ),
+                            color: palette.container,
+                            child: FushiIconButtonControl(
+                              key: const ValueKey<String>(
+                                'manga_reader_back_button',
+                              ),
+                              tooltip: backTooltip,
+                              color: palette.foreground,
+                              icon: const FushiIcon(Icons.arrow_back),
+                              onPressed: onBack,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // 标题胶囊吃掉中间全部剩余宽度的上限，但按内容收缩、
+                          // 靠左；放不下时省略。
+                          Expanded(
+                            child: Align(
+                              alignment: AlignmentDirectional.centerStart,
+                              child: _titlePill(context, palette),
+                            ),
+                          ),
+                          if (actions.isNotEmpty ||
+                              overflow.isNotEmpty) ...<Widget>[
+                            const SizedBox(width: 8),
+                            _actionPill(context, palette),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -672,244 +731,203 @@ class MangaReaderTopBar extends StatelessWidget {
     );
   }
 
-  Widget _buildRow(
+  Widget _titlePill(
     BuildContext context,
-    MangaChromePalette colors, {
-    required MangaTopBarActionPlan plan,
-    required String? label,
-    required double chipWidth,
-    required List<List<MangaChromeAction>> visibleGroups,
-  }) {
-    final bool compact = plan.compact;
-    return SizedBox(
-      height: kMangaChromeTopPillHeight,
+    ({
+      Color container,
+      Color foreground,
+      Color selectedContainer,
+      Color selectedForeground,
+    })
+    palette,
+  ) {
+    final String main = title.trim();
+    final String sub = (subtitle ?? '').trim();
+    final Widget? statusWidget = status;
+    if (main.isEmpty && sub.isEmpty && statusWidget == null) {
+      return const SizedBox.shrink();
+    }
+    final TextTheme text = Theme.of(context).textTheme;
+    final Widget content = ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: kMangaChromeTopPillHeight),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: kMangaTopBarHorizontalPadding / 2,
+        padding: EdgeInsets.fromLTRB(
+          main.isEmpty && sub.isEmpty ? 8 : 18,
+          4,
+          statusWidget == null ? 18 : 8,
+          4,
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FushiIconButtonControl(
-              key: const ValueKey<String>('manga_reader_back_button'),
-              tooltip: backTooltip,
-              color: colors.foreground,
-              iconSize: 22,
-              icon: const FushiIcon(Icons.arrow_back),
-              onPressed: onBack,
-            ),
-            for (final MangaChromeAction a in leading) _button(a, colors),
-            Expanded(
-              child: _buildTitleArea(
-                context,
-                colors,
-                showTitle:
-                    title.isNotEmpty &&
-                    (!compact ||
-                        plan.titleAreaWidth - chipWidth >=
-                            kMangaTopBarTitleMinWidth),
-                label: label,
-                maxChipWidth: plan.titleAreaWidth,
+            if (main.isNotEmpty || sub.isNotEmpty)
+              Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    if (main.isNotEmpty)
+                      Text(
+                        main,
+                        key: const ValueKey<String>('manga_reader_title'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.titleSmall?.copyWith(
+                          color: palette.foreground,
+                          fontWeight: FontWeight.w700,
+                          height: 1.2,
+                        ),
+                      ),
+                    if (sub.isNotEmpty)
+                      Text(
+                        sub,
+                        key: const ValueKey<String>('manga_reader_subtitle'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: text.labelSmall?.copyWith(
+                          color: palette.foreground.withValues(alpha: 0.72),
+                          height: 1.2,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-            for (int i = 0; i < visibleGroups.length; i++) ...<Widget>[
-              if (i > 0 && !compact) _divider(colors),
-              for (final MangaChromeAction a in visibleGroups[i])
-                if (plan.inline.contains(a)) _button(a, colors),
+            if (statusWidget != null) ...<Widget>[
+              const SizedBox(width: 8),
+              Flexible(child: statusWidget),
             ],
-            if (plan.overflow.isNotEmpty)
-              _overflowMenu(context, colors, plan.overflow),
           ],
         ),
       ),
     );
-  }
-
-  TextStyle? _pageChipStyle(BuildContext context, MangaChromePalette colors) =>
-      Theme.of(context).textTheme.labelLarge?.copyWith(
-        color: colors.apple ? colors.foreground : colors.onTonal,
-        fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-      );
-
-  /// 页码胶囊按当前字号缩放（[MediaQuery.textScalerOf]）的实测宽。
-  double _pageChipWidth(
-    BuildContext context,
-    MangaChromePalette colors,
-    String label,
-  ) {
-    final TextPainter painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: DefaultTextStyle.of(
-          context,
-        ).style.merge(_pageChipStyle(context, colors)),
-      ),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-      maxLines: 1,
-    )..layout();
-    final double width = painter.width.ceilToDouble();
-    painter.dispose();
-    return width + 2 * kMangaPageChipHorizontalPadding;
-  }
-
-  Widget _buildTitleArea(
-    BuildContext context,
-    MangaChromePalette colors, {
-    required bool showTitle,
-    required String? label,
-    required double maxChipWidth,
-  }) {
-    final TextTheme text = Theme.of(context).textTheme;
-    final String? sub = subtitle;
-    return Row(
-      children: <Widget>[
-        if (showTitle)
-          Flexible(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 6, right: 10),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    title,
-                    key: const ValueKey<String>('manga_reader_title'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.titleSmall?.copyWith(
-                      color: colors.foreground,
-                      fontWeight: FontWeight.w600,
-                      height: 1.25,
-                    ),
-                  ),
-                  if (sub != null && sub.isNotEmpty)
-                    Text(
-                      sub,
-                      key: const ValueKey<String>('manga_reader_subtitle'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: text.bodySmall?.copyWith(
-                        color: colors.secondaryForeground,
-                        height: 1.25,
-                      ),
-                    ),
-                ],
+    // 胶囊高度固定 56：两行标题在极大字号（2.0）下会竖向溢出，所以本胶囊的字号
+    // 封顶 1.3 倍（工具栏标签同款口径），更大的字号只放大正文，不撑破 chrome。
+    final Widget clamped = MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: content,
+    );
+    return FushiFloatingPill(
+      key: const ValueKey<String>('manga_reader_title_pill'),
+      color: palette.container,
+      padding: EdgeInsets.zero,
+      child: onTitleTap == null
+          ? clamped
+          : Tooltip(
+              message: titleTooltip ?? '',
+              excludeFromSemantics: true,
+              child: InkWell(
+                key: const ValueKey<String>('manga_reader_title_button'),
+                onTap: onTitleTap,
+                child: clamped,
               ),
             ),
-          ),
-        if (label != null)
-          // 胶囊取自然宽，但绝不超出标题槽：极端字号下连次要按钮都降完仍放不下
-          // 时，文字省略而不是画出槽外被按钮盖住。
-          ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxChipWidth),
-            child: colors.apple
-                // Apple：工具栏项不带 bezel——纯文字胶囊，按下变淡，无水波。
-                ? FushiPlainButton(
-                    key: const ValueKey<String>('manga_page_jump_button'),
-                    onPressed: onPageTap,
-                    borderRadius: const BorderRadius.all(Radius.circular(999)),
-                    child: _pageChipLabel(context, colors, label),
-                  )
-                // MD3：tonal 全圆角胶囊（secondaryContainer），点开跳页。
-                : Material(
-                    color: colors.chipFill,
-                    shape: StadiumBorder(
-                      side: colors.eink
-                          ? BorderSide(color: colors.outline)
-                          : BorderSide.none,
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      key: const ValueKey<String>('manga_page_jump_button'),
-                      onTap: onPageTap,
-                      child: _pageChipLabel(context, colors, label),
-                    ),
-                  ),
-          ),
-        if (status != null) ...<Widget>[
-          const SizedBox(width: 8),
-          Flexible(child: status!),
-        ],
-      ],
     );
   }
 
-  Widget _pageChipLabel(
+  Widget _actionPill(
     BuildContext context,
-    MangaChromePalette colors,
-    String label,
-  ) => Padding(
-    padding: const EdgeInsets.symmetric(
-      horizontal: kMangaPageChipHorizontalPadding,
-      vertical: 6,
-    ),
-    child: Text(
-      label,
-      maxLines: 1,
-      softWrap: false,
-      overflow: TextOverflow.ellipsis,
-      style: _pageChipStyle(context, colors),
-    ),
-  );
-
-  Widget _divider(MangaChromePalette colors) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 2),
-    child: SizedBox(
-      width: 1,
-      height: 24,
-      child: ColoredBox(color: colors.groupDivider),
-    ),
-  );
-
-  Widget _button(MangaChromeAction a, MangaChromePalette colors) {
-    // 开启态：MD3 = M3 Expressive 选中的图标按钮（secondaryContainer tonal 底）；
-    // Apple = iOS 26 工具栏里「开着的」开关钮——强调色实心圆 + 反色字形。
-    final bool selected = a.active && !a.busy;
-    final Color selectedFill = colors.apple ? colors.accent : colors.tonal;
-    final Color selectedGlyph = colors.apple ? colors.onAccent : colors.onTonal;
-    final Widget icon = a.busy
-        ? SizedBox.square(
-            dimension: 22,
-            child: FushiExpressiveLoadingIndicator(
-              size: 22,
-              color: colors.foreground,
+    ({
+      Color container,
+      Color foreground,
+      Color selectedContainer,
+      Color selectedForeground,
+    })
+    palette,
+  ) {
+    return FushiFloatingPill(
+      key: const ValueKey<String>('manga_reader_action_pill'),
+      color: palette.container,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < actions.length; i++) ...<Widget>[
+            if (i > 0) const SizedBox(width: kFushiFloatingToolbarItemGap),
+            mangaChromeActionButton(actions[i], palette),
+          ],
+          if (overflow.isNotEmpty) ...<Widget>[
+            if (actions.isNotEmpty)
+              const SizedBox(width: kFushiFloatingToolbarItemGap),
+            MangaChromeOverflowButton(
+              actions: overflow,
+              foreground: palette.foreground,
             ),
-          )
-        : FushiIcon(
-            a.icon,
-            color: selected ? selectedGlyph : colors.foreground,
-          );
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 一颗 chrome 动作按钮：常态走共享悬浮工具栏按钮（M3E 图标按钮、选中 =
+/// secondaryContainer 底 / Apple 强调色实心）；[MangaChromeAction.busy] 时图标位
+/// 画 Expressive 加载指示（形变多边形转圈）。
+Widget mangaChromeActionButton(
+  MangaChromeAction a,
+  ({
+    Color container,
+    Color foreground,
+    Color selectedContainer,
+    Color selectedForeground,
+  })
+  palette, {
+  bool showLabel = false,
+}) {
+  if (a.busy) {
     return FushiIconButtonControl(
       key: a.key,
       tooltip: a.label,
-      iconSize: 22,
-      icon: icon,
-      isSelected: selected ? true : null,
-      style: selected
-          ? ButtonStyle(
-              backgroundColor: WidgetStatePropertyAll<Color>(selectedFill),
-              foregroundColor: WidgetStatePropertyAll<Color>(selectedGlyph),
-            )
-          : null,
+      icon: SizedBox.square(
+        dimension: 24,
+        child: FushiExpressiveLoadingIndicator(
+          size: 24,
+          color: palette.foreground,
+        ),
+      ),
       onPressed: a.onPressed,
     );
   }
+  return FushiToolbarButton(
+    item: a.toToolbarItem(),
+    foreground: palette.foreground,
+    selectedContainer: palette.selectedContainer,
+    selectedForeground: palette.selectedForeground,
+    showLabel: showLabel,
+  );
+}
 
-  Widget _overflowMenu(
-    BuildContext context,
-    MangaChromePalette colors,
-    List<MangaChromeAction> overflow,
-  ) {
+/// 「更多」（⋯）菜单按钮：菜单项是 [MangaChromeAction]，开关型动作带勾。小说
+/// 阅读器的「更多」同形（图标 + 文案一行一项）。
+class MangaChromeOverflowButton extends StatelessWidget {
+  const MangaChromeOverflowButton({
+    super.key,
+    required this.actions,
+    required this.foreground,
+  });
+
+  final List<MangaChromeAction> actions;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
     return FushiPopupMenuButton<MangaChromeAction>(
       key: const ValueKey<String>('manga_chrome_overflow'),
       tooltip: MaterialLocalizations.of(context).moreButtonTooltip,
-      icon: FushiIcon(Icons.more_vert, color: colors.foreground),
-      iconSize: 22,
+      icon: FushiIcon(Icons.more_horiz, color: foreground),
+      iconSize: 24,
       onSelected: (MangaChromeAction a) => a.onPressed?.call(),
       itemBuilder: (BuildContext context) =>
           <PopupMenuEntry<MangaChromeAction>>[
-            for (final MangaChromeAction a in overflow)
+            for (final MangaChromeAction a in actions)
               PopupMenuItem<MangaChromeAction>(
+                // 菜单项也带可定位的键（`<动作键>_menu_item`），焦点驱动的集成
+                // 测试按它找项。
+                key: switch (a.key) {
+                  final ValueKey<String> k => ValueKey<String>(
+                    '${k.value}_menu_item',
+                  ),
+                  _ => null,
+                },
                 value: a,
                 enabled: a.onPressed != null,
                 child: Row(
@@ -926,6 +944,146 @@ class MangaReaderTopBar extends StatelessWidget {
                 ),
               ),
           ],
+    );
+  }
+}
+
+/// 底部悬浮工具栏：M3E floating toolbar（按钮组胶囊 + 配对 FAB），居中。
+///
+/// 手机（[labels]）上是等宽「图标 + 小字标签」格（拇指区，与小说阅读器手机底栏
+/// 同形）；桌面是 48 的图标按钮。[fab] 是本页主操作（识别框开关：开 = 圆角方、
+/// 关 = 圆，M3E 形状变形）。
+class MangaReaderToolbar extends StatelessWidget {
+  const MangaReaderToolbar({
+    super.key,
+    required this.groups,
+    this.labels = false,
+    this.fab,
+  });
+
+  final List<List<MangaChromeAction>> groups;
+  final bool labels;
+  final Widget? fab;
+
+  @override
+  Widget build(BuildContext context) {
+    final ({
+      Color container,
+      Color foreground,
+      Color selectedContainer,
+      Color selectedForeground,
+    })
+    palette = fushiFloatingToolbarPalette(context);
+    final List<List<MangaChromeAction>> visible = <List<MangaChromeAction>>[
+      for (final List<MangaChromeAction> g in groups)
+        if (g.isNotEmpty) g,
+    ];
+    final List<Widget> children = <Widget>[];
+    for (int gi = 0; gi < visible.length; gi++) {
+      if (gi > 0) {
+        children.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: SizedBox(
+              width: 1,
+              height: 24,
+              child: ColoredBox(
+                color: palette.foreground.withValues(alpha: 0.18),
+              ),
+            ),
+          ),
+        );
+      }
+      for (int i = 0; i < visible[gi].length; i++) {
+        if (i > 0) {
+          children.add(const SizedBox(width: kFushiFloatingToolbarItemGap));
+        }
+        children.add(
+          mangaChromeActionButton(visible[gi][i], palette, showLabel: labels),
+        );
+      }
+    }
+    final Widget? fabWidget = fab;
+    return SizedBox(
+      height: kMangaChromeToolbarHeight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (children.isNotEmpty)
+            FushiFloatingPill(
+              key: const ValueKey<String>('manga_reader_toolbar'),
+              color: palette.container,
+              padding: const EdgeInsets.symmetric(
+                horizontal: kFushiFloatingToolbarPadding,
+              ),
+              child: SizedBox(
+                height: kMangaChromeToolbarHeight,
+                child: Row(mainAxisSize: MainAxisSize.min, children: children),
+              ),
+            ),
+          if (fabWidget != null) ...<Widget>[
+            if (children.isNotEmpty)
+              const SizedBox(width: kFushiFloatingToolbarFabGap),
+            fabWidget,
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 底部 chrome 的整块：`滑块胶囊` 叠在 `悬浮工具栏 + FAB` 上方，居中、限宽，
+/// 自己让出系统手势区。高度恒为手势区 + [kMangaChromeBottomBarHeight]（固定态正文
+/// 让位量与画出高度同源）；没有滑块（单页书）时那一行留空，工具栏不跳位。
+class MangaReaderBottomChrome extends StatelessWidget {
+  const MangaReaderBottomChrome({
+    super.key,
+    required this.slider,
+    required this.toolbar,
+  });
+
+  final Widget slider;
+  final Widget toolbar;
+
+  @override
+  Widget build(BuildContext context) {
+    final double bottomInset = MediaQuery.paddingOf(context).bottom;
+    return FushiAppleDarkTier(
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SizedBox(
+          height: kMangaChromeBottomBarHeight,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              kMangaChromeEdgeInset,
+              kMangaChromeTopGap,
+              kMangaChromeEdgeInset,
+              kMangaChromeBottomGap,
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                SizedBox(
+                  height: kMangaChromeBottomPillHeight,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: kMangaChromeBottomMaxWidth,
+                      ),
+                      child: slider,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: kMangaChromeBottomStackGap),
+                SizedBox(
+                  height: kMangaChromeToolbarHeight,
+                  child: Center(child: toolbar),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1125,17 +1283,19 @@ int mangaSliderPageIndex({
   return rtl ? pageCount - 1 - slot : slot;
 }
 
-/// 底部浮动进度工具栏：`( ⏮  3  ━━━━━┃──────  40  ⏭ )`，拖动跳页。
+/// 底部页码滑块胶囊：`( ⏮  3  ━━━━━┃──────  40  ⏭ )`，拖动跳页。浮在底部悬浮
+/// 工具栏上方（[MangaReaderBottomChrome] 负责摆位与让出手势区），本组件只画胶囊。
 ///
 /// 此前跳页的唯一入口是顶栏页码胶囊弹出的输入框——要跳到「大概三分之二处」必须先
 /// 知道总页数再心算页号。slider 是漫画阅读器的标配（Mihon / Tachiyomi / Kindle 都
 /// 有），缺它是用户「本体比 Mihon 薄」的具体一条。
 ///
-/// MD3：M3 Expressive 滑块（16 粗轨道 + 4×44 竖条手柄、无刻度点）；两端是 tonal
-/// 圆钮的上一章 / 下一章（[onPreviousChapter] / [onNextChapter] 为 null 时不画——
+/// Material：M3 Expressive 滑块（16 粗轨道 + 4×44 竖条手柄、无刻度点）；Apple：
+/// 细线滑块。两端是 tonal 圆钮的上一章 / 下一章（[onPreviousChapter] / [onNextChapter] 为 null 时不画——
 /// 本地卷没有「章」）。RTL 下两颗按钮随 slider 一起镜像：左钮恒指向物理左端。
 /// 拖动中在手柄上方画一枚数值气泡（`页 / 总页`），有 [pagePreview] 时气泡里带
-/// 那一页的缩略图。
+/// 那一页的缩略图。左侧读数可点（[onPageTap]）：弹出跳页输入框——顶栏不再放页码
+/// 胶囊，跳页入口与滑块收在同一块胶囊里。
 ///
 /// 拖动中只更新本地预览，**松手才真跳页**（[onPageCommitted]）：漫画翻页要
 /// loadData 重建窗口文档，按住滑块扫过 40 页会连发 40 次重建。
@@ -1147,12 +1307,14 @@ class MangaReaderBottomBar extends StatefulWidget {
     required this.currentPage,
     required this.rtl,
     required this.onPageCommitted,
-    this.floating = true,
+    this.onPageTap,
+    this.pageTapTooltip,
     this.onPreviousChapter,
     this.onNextChapter,
     this.previousChapterTooltip,
     this.nextChapterTooltip,
     this.pagePreview,
+    this.bubbleLabel,
   });
 
   /// 整卷总页数；<= 1 时整条栏不画（一页的书没有跳页需求）。
@@ -1170,8 +1332,9 @@ class MangaReaderBottomBar extends StatefulWidget {
   /// 松手时回调，参数是 0-based 真实页号。
   final ValueChanged<int> onPageCommitted;
 
-  /// 与顶栏同义：悬浮态胶囊带投影、固定态不带。
-  final bool floating;
+  /// 点左侧当前页读数：弹出跳页框；null = 读数不可点。
+  final VoidCallback? onPageTap;
+  final String? pageTapTooltip;
 
   /// 上一章 / 下一章（阅读顺序）；null = 不画对应按钮。
   final VoidCallback? onPreviousChapter;
@@ -1181,6 +1344,10 @@ class MangaReaderBottomBar extends StatefulWidget {
 
   /// 拖动气泡里的缩略图（0-based 页号）；返回 null 只画页码。
   final ImageProvider? Function(int pageIndex)? pagePreview;
+
+  /// 气泡文案（0-based 页号 -> 文案）；null = `页 / 总页`。双页模式下页面传
+  /// 跨页对的区间（`12-13 / 40`），与页码读数同口径。
+  final String Function(int pageIndex)? bubbleLabel;
 
   @override
   State<MangaReaderBottomBar> createState() => _MangaReaderBottomBarState();
@@ -1196,41 +1363,20 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
   @override
   Widget build(BuildContext context) {
     if (widget.pageCount <= 1) return const SizedBox.shrink();
-    final double bottomInset = MediaQuery.paddingOf(context).bottom;
     return FushiAppleDarkTier(
       child: Builder(
         builder: (BuildContext context) {
           final MangaChromePalette colors = MangaChromePalette.of(context);
-          return Padding(
-            padding: EdgeInsets.only(bottom: bottomInset),
+          return FushiFloatingPill(
+            key: const ValueKey<String>('manga_reader_slider_pill'),
+            color: fushiFloatingToolbarPalette(context).container,
+            padding: EdgeInsets.zero,
             child: SizedBox(
-              height: kMangaChromeBottomBarHeight,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  kMangaChromeEdgeInset,
-                  kMangaChromeTopGap,
-                  kMangaChromeEdgeInset,
-                  kMangaChromeBottomGap,
-                ),
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxWidth: kMangaChromeBottomMaxWidth,
-                    ),
-                    child: MangaChromeSurface(
-                      elevated: widget.floating,
-                      child: SizedBox(
-                        height: kMangaChromeBottomPillHeight,
-                        child: ListenableBuilder(
-                          listenable: widget.pageListenable,
-                          builder: (BuildContext context, Widget? _) =>
-                              _buildRow(context, colors),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              height: kMangaChromeBottomPillHeight,
+              child: ListenableBuilder(
+                listenable: widget.pageListenable,
+                builder: (BuildContext context, Widget? _) =>
+                    _buildRow(context, colors),
               ),
             ),
           );
@@ -1290,13 +1436,16 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
           )
         else
           const SizedBox(width: 10),
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 28),
-          child: Text(
-            '$shownPage',
-            key: const ValueKey<String>('manga_slider_current_page'),
-            textAlign: TextAlign.center,
-            style: readout,
+        _pageReadout(
+          colors,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 28),
+            child: Text(
+              '$shownPage',
+              key: const ValueKey<String>('manga_slider_current_page'),
+              textAlign: TextAlign.center,
+              style: readout,
+            ),
           ),
         ),
         Expanded(
@@ -1352,6 +1501,40 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     );
   }
 
+  /// 当前页读数：可点时是一枚 tonal 小胶囊（Material：secondaryContainer 底 +
+  /// 按压水波；Apple：无底、按下变淡），点开跳页框。
+  Widget _pageReadout(MangaChromePalette colors, Widget label) {
+    final VoidCallback? onTap = widget.onPageTap;
+    if (onTap == null) return label;
+    final Widget padded = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: label,
+    );
+    final Widget chip = colors.apple
+        ? FushiPlainButton(
+            key: const ValueKey<String>('manga_page_jump_button'),
+            onPressed: onTap,
+            borderRadius: const BorderRadius.all(Radius.circular(999)),
+            child: padded,
+          )
+        : Material(
+            color: colors.chipFill,
+            shape: StadiumBorder(
+              side: colors.eink
+                  ? BorderSide(color: colors.outline)
+                  : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              key: const ValueKey<String>('manga_page_jump_button'),
+              onTap: onTap,
+              child: padded,
+            ),
+          );
+    final String? tooltip = widget.pageTapTooltip;
+    return tooltip == null ? chip : Tooltip(message: tooltip, child: chip);
+  }
+
   Widget _slider(
     BuildContext context,
     MangaChromePalette colors,
@@ -1390,11 +1573,13 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
     // 一页一格的离散滑块在 40 页上会画出 40 颗刻度点：数值气泡由本栏自己画，
     // 刻度点与系统气泡都关掉。
     return SliderTheme(
-      data: SliderTheme.of(context).copyWith(
-        tickMarkShape: SliderTickMarkShape.noTickMark,
-        showValueIndicator: ShowValueIndicator.never,
-        trackHeight: 16,
-      ),
+      // 共享 M3E 滑块尺寸档 xs（16 粗轨道 + 4×44 竖条把手，按下 / 拖动时把手
+      // 收窄到 2——与视频进度条、有声书进度同一套控件规格）。
+      data: fushiSliderSizeTheme(SliderTheme.of(context), FushiSliderSize.xs)
+          .copyWith(
+            tickMarkShape: SliderTickMarkShape.noTickMark,
+            showValueIndicator: ShowValueIndicator.never,
+          ),
       child: slider,
     );
   }
@@ -1451,58 +1636,114 @@ class _MangaReaderBottomBarState extends State<MangaReaderBottomBar> {
       bottom: height + 14,
       width: bubbleWidth,
       child: IgnorePointer(
-        child: DecoratedBox(
-          key: const ValueKey<String>('manga_slider_bubble'),
-          decoration: ShapeDecoration(
-            color: fill,
-            shape: RoundedRectangleBorder(
-              borderRadius: const BorderRadius.all(Radius.circular(16)),
-              side: colors.eink
-                  ? BorderSide(color: colors.outline)
-                  : BorderSide.none,
+        child: _MangaBubbleEntrance(
+          child: DecoratedBox(
+            key: const ValueKey<String>('manga_slider_bubble'),
+            decoration: ShapeDecoration(
+              color: fill,
+              shape: RoundedRectangleBorder(
+                borderRadius: const BorderRadius.all(Radius.circular(16)),
+                side: colors.eink
+                    ? BorderSide(color: colors.outline)
+                    : BorderSide.none,
+              ),
+              shadows: colors.eink
+                  ? const <BoxShadow>[]
+                  : kElevationToShadow[3],
             ),
-            shadows: colors.eink ? const <BoxShadow>[] : kElevationToShadow[3],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (preview != null) ...<Widget>[
-                  AspectRatio(
-                    aspectRatio: 0.7,
-                    child: ShelfCoverFrame(
-                      child: Image(
-                        image: preview,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                        errorBuilder:
-                            (
-                              BuildContext context,
-                              Object error,
-                              StackTrace? stack,
-                            ) => const SizedBox.shrink(),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (preview != null) ...<Widget>[
+                    AspectRatio(
+                      aspectRatio: 0.7,
+                      child: ShelfCoverFrame(
+                        child: Image(
+                          image: preview,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder:
+                              (
+                                BuildContext context,
+                                Object error,
+                                StackTrace? stack,
+                              ) => const SizedBox.shrink(),
+                        ),
                       ),
                     ),
+                    const SizedBox(height: 6),
+                  ],
+                  Text(
+                    widget.bubbleLabel?.call(pageIndex) ??
+                        '${pageIndex + 1} / ${widget.pageCount}',
+                    key: const ValueKey<String>('manga_slider_bubble_text'),
+                    maxLines: 1,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 6),
                 ],
-                Text(
-                  '${pageIndex + 1} / ${widget.pageCount}',
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: fg,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: const <FontFeature>[
-                      FontFeature.tabularFigures(),
-                    ],
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 气泡出现的 M3E 弹簧：从手柄处 0.6 倍缩放 + 淡入弹出（拖动开始那一下）；减弱
+/// 动态效果 / 墨水屏下直接出现。
+class _MangaBubbleEntrance extends StatefulWidget {
+  const _MangaBubbleEntrance({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_MangaBubbleEntrance> createState() => _MangaBubbleEntranceState();
+}
+
+class _MangaBubbleEntranceState extends State<_MangaBubbleEntrance>
+    with SingleTickerProviderStateMixin {
+  late final FushiSpring _spring = FushiSpring(
+    vsync: this,
+    spring: kMangaChromeRevealSpring,
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _spring.animateTo(1, animate: fushiMotionEnabled(context));
+  }
+
+  @override
+  void dispose() {
+    _spring.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _spring.animation,
+      child: widget.child,
+      builder: (BuildContext context, Widget? child) {
+        final double t = _spring.value;
+        return Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Transform.scale(
+            scale: 0.6 + 0.4 * t,
+            alignment: Alignment.bottomCenter,
+            child: child,
+          ),
+        );
+      },
     );
   }
 }

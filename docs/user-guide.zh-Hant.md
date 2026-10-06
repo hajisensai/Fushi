@@ -32,7 +32,7 @@ https://github.com/hajisensai/Fushi
 
 https://github.com/hajisensai/Fushi/releases/latest
 
-請依你的平台選擇對應的檔案：**Android**——選 `arm64-v8a` 的 APK（近幾年的手機都用這個；只有較舊的裝置才需要 `armeabi-v7a`，模擬器則用 `x86_64`）；**Windows**——`windows-setup.exe`；**macOS**——`macos.zip`；**iOS**——`ios.ipa`。**Linux** 目前還沒有預先建置的安裝包，需要自行從原始碼建置。
+請依你的平台選擇對應的檔案：**Android**——選 `arm64-v8a` 的 APK（近幾年的手機都用這個；只有較舊的裝置才需要 `armeabi-v7a`，模擬器則用 `x86_64`）；**Windows**——`windows-setup.exe`；**macOS**——`macos-arm64.zip`（Apple Silicon）；**iOS**——`ios.ipa`。**Linux** 目前還沒有預先建置的安裝包，需要自行從原始碼建置。
 
 檔名以 `bridge-` 開頭的 APK 是給 **舊版 Hibiki 使用者** 的遷移橋接包，可以忽略。
 

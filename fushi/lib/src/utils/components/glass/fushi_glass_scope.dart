@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -42,9 +42,17 @@ class FushiGlassScope extends StatelessWidget {
 
 /// 当前上下文玻璃组件的渲染档位（见 [FushiGlassScope]）。[prominent] 为
 /// true 的静态主表面（导航栏、顶栏、对话框）在液态档用 [GlassQuality.premium]。
+///
+/// **premium 只能交给 `useOwnLayer: true` 的 [GlassContainer]**（或已在某个
+/// `LiquidGlassLayer` 里的分组玻璃）：引擎支持着色器 ImageFilter（Impeller，
+/// 任何平台）时，premium 的分组路径要从祖先层取几何渲染链接，找不到就在构建期
+/// 抛错——调试版红块，发布版是一块灰色矩形（BUG-2957：Android 选 Apple + 液态
+/// 底栏「直接炸了」）。Skia 后端上 premium 自动降成轻量着色器，所以只在
+/// Impeller 上暴露。守卫：`test/widgets/glass/glass_premium_own_layer_guard_test.dart`。
 GlassQuality fushiGlassQuality(BuildContext context, {bool prominent = false}) {
   final FushiGlassMaterial effective = glassMaterialOf(context);
-  // Skia 后端（Windows / Linux / 旧 Android）没有着色器 ImageFilter，
+  // Skia 后端（引擎没开 Impeller：Windows / Linux 的 3.44 默认、Android 关了
+  // Impeller 的机型）没有着色器 ImageFilter，
   // glassMaterialOf 会把 liquid 降成 frosted（表面颜色按磨砂档取）。但库的
   // standard 档是 LightweightLiquidGlass 片元着色器，Skia 上照样能跑——
   // 高光边、折射都在；只有 premium 需要 Impeller（AdaptiveGlass 自己回退）。
@@ -184,12 +192,22 @@ LiquidGlassSettings fushiGlassSettingsOverPlatformView(
   BuildContext context, {
   Color? tint,
 }) {
-  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
   return fushiGlassSettings(context, tint: tint).copyWith(
-    platformViewFallbackColor: dark
-        ? const Color(0xFF1C1C1E)
-        : const Color(0xFFF9F9F9),
+    platformViewFallbackColor: fushiGlassPlatformViewFallback(context),
   );
+}
+
+/// 玻璃着色器「采不到背景」处的实色兜底（UIKit systemMaterial：深 #1C1C1E /
+/// 浅 #F9F9F9）。库只在采样为空的像素上用它，采得到背景的地方照常是玻璃。
+///
+/// 不知道自己会压在什么上面的浮层（菜单、对话框、底部面板）一律带上：Android
+/// 的 WebView 走 Hybrid Composition（见 [fushiPopupBackdropSampleable]），压在
+/// 它上面的 Flutter 层落在独立 overlay surface 里，着色器采到的是空纹理——不带
+/// 兜底就按透明黑合成，玻璃填充叠上去是一块灰矩形、高光是一团白斑（BUG-2961：
+/// 有声书歌词模式「⋯」菜单）。iOS / macOS 的原生视图同理。
+Color fushiGlassPlatformViewFallback(BuildContext context) {
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  return dark ? const Color(0xFF1C1C1E) : const Color(0xFFF9F9F9);
 }
 
 /// 恒深色的控件层作用域：漫画阅读器 chrome、视频控件、页图上的空状态这类

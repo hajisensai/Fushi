@@ -1,8 +1,9 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 播放条只呈现控制按钮，不再重复正文中的当前句。
 class _CueController extends AudiobookPlayerController {
@@ -63,7 +64,7 @@ void main() {
       showSettingsButton: false,
     ))));
     expect(tester.takeException(), isNull);
-    expect(find.byIcon(Icons.tune_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.settings), findsNothing);
     final Rect bar = tester.getRect(find.byType(AudiobookPlayBar));
     for (final Element button in find.byType(IconButton).evaluate()) {
       final Rect rect = tester.getRect(find.byWidget(button.widget));
@@ -71,8 +72,8 @@ void main() {
       expect(bar.contains(rect.bottomRight), isTrue);
     }
     // 用户 2026-09-14 删掉 -10s / +10s 后底栏传输面只剩三联键 + 跟随磁铁。
-    expect(find.byIcon(Icons.replay_10_outlined), findsNothing);
-    expect(find.byIcon(Icons.forward_10_outlined), findsNothing);
+    expect(find.byIcon(FushiIcons.replay10), findsNothing);
+    expect(find.byIcon(FushiIcons.forward10), findsNothing);
     expect(find.byType(IconButton), findsNWidgets(4));
   });
 
@@ -84,18 +85,18 @@ void main() {
     await _pumpBar(tester, controller: first);
     expect(find.text('現在の文'), findsNothing);
     final Offset playPosition = tester.getCenter(
-      find.byIcon(Icons.play_arrow_outlined),
+      find.byIcon(FushiIcons.play),
     );
     final _CueController next = _CueController('次の文');
     addTearDown(next.dispose);
     await _pumpBar(tester, controller: next);
     expect(find.text('次の文'), findsNothing);
     expect(
-      tester.getCenter(find.byIcon(Icons.play_arrow_outlined)),
+      tester.getCenter(find.byIcon(FushiIcons.play)),
       playPosition,
     );
-    expect(find.byIcon(Icons.skip_previous_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.skip_next_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.skipPrevious), findsOneWidget);
+    expect(find.byIcon(FushiIcons.skipNext), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

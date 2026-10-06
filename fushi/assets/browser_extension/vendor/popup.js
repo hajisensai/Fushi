@@ -648,6 +648,8 @@ const ICON_PATHS = {
     // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
     // Anki 定位该词的已存在卡；仅 data-mined 时显示）
     openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+    // search_off（查完为空的 M3E 空态色块图标；取代旧的彩色 emoji 放大镜）
+    searchOff: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3 6.08 3 3.28 5.64 3.03 9h2.02C5.3 6.75 7.18 5 9.5 5 11.99 5 14 7.01 14 9.5S11.99 14 9.5 14c-.17 0-.33-.03-.5-.05v2.02c.17.02.33.03.5.03 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM6.47 10.82L4 13.29 1.53 10.82l-.71.71L3.29 14 .82 16.47l.71.71L4 14.71l2.47 2.47.71-.71L4.71 14l2.47-2.47z',
 };
 
 function iconSvg(name) {
@@ -4804,6 +4806,9 @@ function createEntryHeader(entry, idx) {
             },
         });
         setButtonIcon(adjustBtn, 'tune');
+        // M3E 按压形状变形 / 缩放：系统「减弱动态效果」或墨水屏下归零（popup.css 不能写
+        // @media，生成扩展 content.css 的脚本不处理嵌套 at-rule；同音频源菜单 .no-motion）。
+        if (__fushiPopupReducedMotion()) adjustBtn.classList.add('no-motion');
         // BUG-842：DOM 提示替代原生 title（离屏 WebView2 上原生 title 会飞到窗口角落）。
         setInlineButtonTip(adjustBtn, (window.i18nCtx && window.i18nCtx.adjust) || '');
         buttonsContainer.appendChild(adjustBtn);
@@ -5578,6 +5583,247 @@ function postProcessRuby(container) {
     // entries, incremental updates) also gets them; both passes are idempotent
     // so the double walk over entry 0 (BUG-1098) stays harmless.
     wrapExpressionInlineKanji(container);
+    // M3E 暗色下词典自带浅色底的对比度修正：同样挂在这条每个渲染路径都会走的后处理上。
+    // 推到下一帧做——首个词条的后处理先于 applyCustomCSS()，此刻词典样式表还没进文档，
+    // 读到的计算色不是最终色。
+    __fushiScheduleM3eDictTone(container);
+}
+
+/* =====================================================================
+ * M3E 暗色：词典自带强制底色的对比度修正。
+ *
+ * 词典样式表 / 结构化内容的内联 style 常为浅色主题写死一块浅底（例句粉块、注释黄块），
+ * 在 M3E 暗色卡面上就是一块刺眼的亮斑，且词典没写字色时整块继承浅色正文，几乎读不出。
+ * CSS 读不到「这个元素被词典涂了什么底色」，只能在渲染后读计算色逐个改写：
+ *   - 浅底（相对亮度 > 0.35、不透明度 ≥ 0.25）→ 保留色相、饱和度封顶 0.5、亮度压到
+ *     0.22（贴近 surfaceContainerHigh 的明度），读起来仍是「那一块粉色例句」；
+ *   - 该块里为浅底写的深色字（亮度 < 0.3）→ 同色相提亮到 0.82；继承来的字照旧继承。
+ * 只改颜色，不动结构 / 字号 / 间距。只在 M3E（html.fushi-m3e 或扩展容器 .fushi-m3e）且
+ * data-theme=dark 时运行；浅色主题、Apple 设计系统、墨水屏零变化。每个元素只处理一次
+ * （postProcessRuby 对首个词条会走两遍）。
+ *
+ * HBK-AUDIT-015：调色是**可逆**的。改写前把元素原本的内联 background-color / color（值 +
+ * 优先级）记在元素上，登记进 __fushiM3eTonedNodes；主题切换（宿主热更新只注入 CSS 变量 /
+ * 改 data-theme / class，不重建词条）时由观察器排一帧 __fushiRetoneDictColors：先全部复原
+ * 成原始内联值，再按**新**明暗重读计算色重新调色。暗→浅不再残留暗块，浅→暗也会调色；
+ * 只改颜色，不重建任何节点，选区 / 焦点 / 展开状态不受影响。
+ * ===================================================================== */
+var __fushiM3eToneRoots = null;
+var __fushiM3eToneRaf = 0;
+var __fushiM3eTonedNodes = null;
+var __fushiM3eObserved = null;
+var __fushiM3eObserver = null;
+
+function __fushiM3eRememberInline(node, prop) {
+    const key = prop === 'color' ? '__fushiM3eOrigColor' : '__fushiM3eOrigBg';
+    if (node[key]) return;
+    node[key] = {
+        value: node.style.getPropertyValue(prop),
+        priority: node.style.getPropertyPriority(prop),
+    };
+    if (!__fushiM3eTonedNodes) __fushiM3eTonedNodes = new Set();
+    __fushiM3eTonedNodes.add(node);
+}
+
+// 把调色写过的内联色全部还原成调色前的原值（原本没有内联值的就移除），清掉一次性标记。
+function __fushiRestoreDictTone() {
+    if (!__fushiM3eTonedNodes) return;
+    __fushiM3eTonedNodes.forEach((node) => {
+        try {
+            for (const [key, prop] of [['__fushiM3eOrigBg', 'background-color'], ['__fushiM3eOrigColor', 'color']]) {
+                const orig = node[key];
+                if (!orig) continue;
+                if (orig.value) node.style.setProperty(prop, orig.value, orig.priority);
+                else if (typeof node.style.removeProperty === 'function') node.style.removeProperty(prop);
+                else node.style.setProperty(prop, '');
+                node[key] = null;
+            }
+        } catch (_) { /* 节点已脱离文档 */ }
+    });
+    __fushiM3eTonedNodes.clear();
+}
+
+// 清掉「已处理」标记（含只读过、没改写的节点），让下一轮按新明暗重新判定。
+function __fushiClearDictToneMarks(root) {
+    if (!root || !root.querySelectorAll) return;
+    const all = [root, ...root.querySelectorAll('.glossary-group > div[data-dictionary], .glossary-group > div[data-dictionary] *')];
+    all.forEach((n) => { n.__fushiM3eToned = false; n.__fushiM3eTextToned = false; });
+}
+
+// 排过调色的根（词条容器 / 首个词条）：主题变化时逐个重做。脱离文档的在重做时剔除。
+var __fushiM3eKnownRoots = null;
+
+// HBK-AUDIT-029：换词会整批替换词条节点；调色登记表与根集合是强引用 Set，不剔除就把每一次
+// 查词的旧词条（及其整棵子树）一直留在内存里。每次排调色时剔除已脱离文档的节点——它们不会再
+// 显示，也无需复原。
+function __fushiPruneDetachedTone() {
+    for (const set of [__fushiM3eTonedNodes, __fushiM3eKnownRoots]) {
+        if (!set) continue;
+        set.forEach((n) => { if (n && n.isConnected === false) set.delete(n); });
+    }
+}
+
+// 主题变化后的可逆重调色：复原 → 按当前明暗重做。宿主热更新主题后也可直接调用。
+function __fushiRetoneDictColors() {
+    __fushiRestoreDictTone();
+    const roots = __fushiM3eKnownRoots ? [...__fushiM3eKnownRoots] : [];
+    const container = __fushiContainer();
+    if (container && !roots.includes(container)) roots.push(container);
+    roots.forEach((root) => {
+        if (root.isConnected === false) {
+            __fushiM3eKnownRoots.delete(root);
+            return;
+        }
+        __fushiClearDictToneMarks(root);
+        __fushiScheduleM3eDictTone(root);
+    });
+}
+if (typeof window !== 'undefined') window.__fushiRetoneDictColors = __fushiRetoneDictColors;
+
+// 观察明暗 / 主题载体（documentElement 与弹窗容器的 data-theme / class / style——宿主热更新只
+// 写 CSS 变量也落在 style 上），变化时排一帧重调色。只观察属性，不观察子树：调色自己写的是
+// 词条节点的内联色，不会自激。
+function __fushiObserveM3eToneHosts() {
+    if (typeof MutationObserver !== 'function') return;
+    if (!__fushiM3eObserver) {
+        __fushiM3eObserved = new WeakSet();
+        let pending = 0;
+        __fushiM3eObserver = new MutationObserver(() => {
+            if (pending || typeof requestAnimationFrame !== 'function') return;
+            pending = requestAnimationFrame(() => {
+                pending = 0;
+                const dark = __fushiM3eDarkSurface();
+                // 明暗没变且当前也没有调过色的节点：无事可做。
+                if (dark === __fushiM3eLastDark && !(dark && __fushiM3eTonedNodes && __fushiM3eTonedNodes.size)) return;
+                __fushiRetoneDictColors();
+            });
+        });
+    }
+    const opts = { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] };
+    for (const target of [document.documentElement, __fushiContainer()]) {
+        if (!target || __fushiM3eObserved.has(target)) continue;
+        __fushiM3eObserved.add(target);
+        try { __fushiM3eObserver.observe(target, opts); } catch (_) { /* 不可观察：只能等宿主显式调用 */ }
+    }
+}
+var __fushiM3eLastDark = null;
+
+function __fushiM3eDarkSurface() {
+    try {
+        const container = __fushiContainer();
+        if (container && container.classList && container.classList.contains('fushi-m3e')) {
+            return container.getAttribute('data-theme') === 'dark';
+        }
+        const root = document.documentElement;
+        return !!(root && root.classList && root.classList.contains('fushi-m3e') &&
+            root.getAttribute('data-theme') === 'dark');
+    } catch (_) {
+        return false;
+    }
+}
+
+function __fushiScheduleM3eDictTone(root) {
+    if (!root || typeof requestAnimationFrame !== 'function' ||
+        typeof getComputedStyle !== 'function') return;
+    if (!__fushiM3eToneRoots) __fushiM3eToneRoots = new Set();
+    __fushiM3eToneRoots.add(root);
+    if (!__fushiM3eKnownRoots) __fushiM3eKnownRoots = new Set();
+    __fushiM3eKnownRoots.add(root);
+    __fushiPruneDetachedTone();
+    __fushiObserveM3eToneHosts();
+    if (__fushiM3eToneRaf) return;
+    __fushiM3eToneRaf = requestAnimationFrame(() => {
+        __fushiM3eToneRaf = 0;
+        const roots = [...__fushiM3eToneRoots];
+        __fushiM3eToneRoots.clear();
+        const dark = __fushiM3eDarkSurface();
+        __fushiM3eLastDark = dark;
+        // 非暗色：上一轮暗色调过的颜色必须复原（不能只是「不再调色」）。
+        if (!dark) { __fushiRestoreDictTone(); return; }
+        roots.forEach((r) => {
+            try {
+                if (r.isConnected !== false) __fushiToneDictColors(r);
+            } catch (e) {
+                console.error('[popup] m3e dictionary tone failed', e);
+            }
+        });
+    });
+}
+
+function __fushiParseRgb(value) {
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+)(%?))?\s*\)$/
+        .exec(String(value || '').trim());
+    if (!m) return null;
+    let a = m[4] === undefined ? 1 : parseFloat(m[4]);
+    if (m[5] === '%') a /= 100;
+    return { r: +m[1], g: +m[2], b: +m[3], a };
+}
+
+function __fushiRelLuminance(c) {
+    const ch = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(c.r) + 0.7152 * ch(c.g) + 0.0722 * ch(c.b);
+}
+
+function __fushiRgbToHsl(c) {
+    const r = c.r / 255, g = c.g / 255, b = c.b / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return { h: 0, s: 0, l };
+    const d = max - min;
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h;
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    return { h: h * 60, s, l };
+}
+
+function __fushiHslCss(h, s, l, a) {
+    const hh = Math.round(h), ss = Math.round(s * 100), ll = Math.round(l * 100);
+    return a < 1
+        ? `hsla(${hh}, ${ss}%, ${ll}%, ${Math.round(a * 100) / 100})`
+        : `hsl(${hh}, ${ss}%, ${ll}%)`;
+}
+
+function __fushiToneDictColors(root) {
+    const scope = '.glossary-group > div[data-dictionary]';
+    const nodes = [];
+    if (root.matches && root.matches(scope)) nodes.push(root);
+    root.querySelectorAll(`${scope}, ${scope} *`).forEach((n) => nodes.push(n));
+    // 相 1（读）：一次读完所有计算色，再统一写，避免读写交错反复重算样式。
+    const toned = [];
+    for (const node of nodes) {
+        if (node.__fushiM3eToned || node.tagName === 'IMG' || node.tagName === 'svg') continue;
+        node.__fushiM3eToned = true;
+        const bg = __fushiParseRgb(getComputedStyle(node).backgroundColor);
+        if (!bg || bg.a < 0.25 || __fushiRelLuminance(bg) <= 0.35) continue;
+        toned.push({ node, bg });
+    }
+    const textFixes = [];
+    toned.forEach(({ node }) => {
+        [node, ...node.querySelectorAll('*')].forEach((n) => {
+            if (n.__fushiM3eTextToned) return;
+            n.__fushiM3eTextToned = true;
+            const fg = __fushiParseRgb(getComputedStyle(n).color);
+            if (fg && __fushiRelLuminance(fg) < 0.3) textFixes.push({ n, fg });
+        });
+    });
+    // 相 2（写）。
+    toned.forEach(({ node, bg }) => {
+        const hsl = __fushiRgbToHsl(bg);
+        __fushiM3eRememberInline(node, 'background-color');
+        node.style.setProperty('background-color',
+            __fushiHslCss(hsl.h, Math.min(hsl.s, 0.5), 0.22, bg.a), 'important');
+    });
+    textFixes.forEach(({ n, fg }) => {
+        const hsl = __fushiRgbToHsl(fg);
+        __fushiM3eRememberInline(n, 'color');
+        n.style.setProperty('color',
+            __fushiHslCss(hsl.h, Math.min(hsl.s, 0.6), 0.82, fg.a), 'important');
+    });
 }
 
 // BUG-1898: 给「隔壁也带注音」的基字单元打上 .ruby-tight，popup.css 只对它们把
@@ -6499,9 +6745,14 @@ window.renderPopup = function() {
     }
 
     if ((!entries || !entries.length) && !kanjiSection) {
+        // M3E 空态：主题色 tonal 色块里的 search_off 矢量图标 + 标题 + 可选建议，
+        // 整块在容器里水平垂直居中（.no-results 跨满所有分栏，见 popup.css）。旧版
+        // 是一枚彩色 emoji 放大镜，各平台字形不同、不随主题变色。
+        const hint = window._noResultsHint;
         container.innerHTML = '<div class="no-results">'
-            + '<div class="no-results-icon">&#x1F50D;</div>'
-            + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + '<div class="no-results-icon">' + iconSvg('searchOff') + '</div>'
+            + '<div class="no-results-title">' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + (hint ? '<div class="no-results-hint">' + hint + '</div>' : '')
             + '</div>';
         window._renderedGlossaryCounts = [];
         _firePopupRendered();

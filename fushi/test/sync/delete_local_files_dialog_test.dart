@@ -4,7 +4,7 @@
 /// 区，而「会保留」那条同时收窄成「书籍与字幕原件」。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -14,6 +14,8 @@ import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiCheckbox;
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -271,7 +273,9 @@ void main() {
 
       expect(find.text(t.delete_choices_remember), findsOneWidget);
       expect(
-        find.byIcon(Icons.check_box),
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiCheckbox && w.value == true,
+        ),
         findsNWidgets(3),
         reason: '同步删除、本地文件、记住选择都应从偏好恢复为勾选',
       );

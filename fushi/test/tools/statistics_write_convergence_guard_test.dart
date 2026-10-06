@@ -100,6 +100,9 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/statistics_center_page.dart',
   'lib/src/pages/implementations/stat_period_detail_sheet.dart',
+  // 统计页共享的关键指标（今日 / 本周 / 近 7 日活跃、本周目标）按 StatWindow 切片
+  // （2026-10 统计中心重设计，四个统计页同一个 computeStatKpis）。
+  'lib/src/pages/implementations/stat_dashboard.dart',
   'lib/src/pages/implementations/video_stat_aggregates.dart',
   'lib/src/pages/implementations/game_stat_aggregates.dart',
   'lib/src/pages/implementations/stat_activity.dart',

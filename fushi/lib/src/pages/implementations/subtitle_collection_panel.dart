@@ -10,8 +10,10 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -31,6 +33,7 @@ import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sy
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -72,6 +75,26 @@ class SubtitleCollectionSource {
 
   /// 认得出集号的集数。
   int get episodeCount => index.byEpisode.length;
+
+  /// 能解开的整季压缩包格式（来源里第一个 zip 包）；没有为 null。批量下载时这些
+  /// 包按集号拆分（[runSubtitleBatch]），所以没有单集文件的集照样能配上。
+  SubtitleArchiveFormat? get unpackablePackFormat {
+    for (final VideoSubtitleCandidate c in candidates) {
+      final SubtitleArchiveFormat? f = c.archiveFormat;
+      if (f != null && f.isSupported) return f;
+    }
+    return null;
+  }
+
+  /// 只有解不开的整季包（RAR / 7z）时的格式；有可解的包或没有包为 null。
+  SubtitleArchiveFormat? get unsupportedPackFormat {
+    if (unpackablePackFormat != null) return null;
+    for (final VideoSubtitleCandidate c in candidates) {
+      final SubtitleArchiveFormat? f = c.archiveFormat;
+      if (f != null) return f;
+    }
+    return null;
+  }
 
   /// 来源里出现过的语言（去重，稳定顺序）。
   List<String> get languages => <String>{
@@ -154,7 +177,7 @@ class SubtitleCollectionPanel extends StatefulWidget {
   final List<VideoBookRow> members;
 
   /// 统一字幕来源的延迟解析器（填 key 会重建 runtime，不能早绑）。
-  final VideoSubtitleRegistry? Function() subtitleRegistry;
+  final Future<VideoSubtitleRegistry?> Function() subtitleRegistry;
 
   final String initialApiKey;
   final Future<void> Function(String key) onApiKeyChanged;
@@ -299,9 +322,11 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     // 这条首搜**只搜不绑**（[_resolveSeries] → [_applySeries]）：这里的前提正是
     // 合集没绑 AniList，若把模糊命中的首条写回库，用户只是打开一次面板就会被
     // 粘性绑定——真人剧合集会被永久绑到一部最像的动画上。
-    if (!_searching && !_resolving && _hasConfiguredSubtitleSource) {
-      unawaited(_resolveSeries());
+    if (_searching || _resolving || !await _hasConfiguredSubtitleSource()) {
+      return;
     }
+    if (!mounted || _searching || _resolving) return;
+    unawaited(_resolveSeries());
   }
 
   /// 本次检索交给 provider 的身份。
@@ -350,10 +375,16 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     super.dispose();
   }
 
-  bool get _hasConfiguredSubtitleSource {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
+  Future<bool> _hasConfiguredSubtitleSource() async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
     return registry != null && registry.providers.isNotEmpty;
   }
+
+  /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
+  /// key 却仍然没有来源 = 来源全被关掉了，不能再拿缺 key 糊弄（BUG-2956）。
+  String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
+      ? t.video_jimaku_no_key
+      : t.video_subtitle_sources_all_disabled;
 
   SubtitleCollectionSource? get _selectedSource {
     for (final SubtitleCollectionSource s in _sources) {
@@ -416,7 +447,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   Future<void> _resolveSeries() async {
     final String apiKey = _apiKeyCtrl.text.trim();
     final String query = _queryCtrl.text.trim();
-    if (apiKey.isEmpty && !_hasConfiguredSubtitleSource) {
+    if (apiKey.isEmpty && !await _hasConfiguredSubtitleSource()) {
       _setNotice(t.video_jimaku_no_key, error: true);
       return;
     }
@@ -540,7 +571,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     int? generation,
   }) async {
     final int requestGeneration = generation ?? ++_generation;
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (!mounted) return;
     final String query = _queryCtrl.text.trim();
     if (registry == null || registry.providers.isEmpty) {
       setState(() {
@@ -548,7 +580,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _selectedSourceKey = null;
         _searched = true;
       });
-      _setNotice(t.video_jimaku_no_key, error: true);
+      _setNotice(_noSourceMessage(), error: true);
       return;
     }
     setState(() {
@@ -644,8 +676,12 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   Future<void> _downloadAll() async {
-    final VideoSubtitleRegistry? registry = widget.subtitleRegistry();
-    if (registry == null) return;
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (!mounted) return;
+    if (registry == null) {
+      _setNotice(_noSourceMessage(), error: true);
+      return;
+    }
     final List<VideoSubtitleCandidate> candidates = _batchCandidates;
     if (candidates.isEmpty) return;
     setState(() {
@@ -722,20 +758,20 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
           // 语义色走主题（MD3 和谐化绿 / Apple systemGreen；墨水屏 onSurface），
           // 不再硬编码 Colors.green / red。
           return FushiIcon(
-            Icons.check_circle,
+            FushiIcons.filled(FushiIcons.success),
             size: 18,
             color: fushiStatusColor(context, FushiStatusTone.success),
           );
         case SubtitleBatchStatus.noMatch:
-          return const FushiIcon(Icons.search_off, size: 18);
+          return const FushiIcon(FushiIcons.searchOff, size: 18);
         case SubtitleBatchStatus.failed:
           return FushiIcon(
-            Icons.error_outline,
+            FushiIcons.error,
             size: 18,
             color: fushiStatusColor(context, FushiStatusTone.error),
           );
         case SubtitleBatchStatus.pending:
-          return const FushiIcon(Icons.schedule, size: 18);
+          return const FushiIcon(FushiIcons.schedule, size: 18);
       }
     }
     if (_searching) {
@@ -746,15 +782,33 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       );
     }
     final SubtitleCollectionSource? source = _selectedSource;
-    if (source == null) return const FushiIcon(Icons.remove, size: 18);
+    if (source == null) return const FushiIcon(FushiIcons.moreHoriz, size: 18);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
-    return (source.index.byEpisode[episode]?.isEmpty ?? true)
-        ? const FushiIcon(Icons.search_off, size: 18)
+    return (source.index.byEpisode[episode]?.isEmpty ?? true) &&
+            source.unpackablePackFormat == null
+        ? const FushiIcon(FushiIcons.searchOff, size: 18)
         : FushiIcon(
-            Icons.check_circle_outline,
+            FushiIcons.success,
             size: 18,
             color: fushiStatusColor(context, FushiStatusTone.success),
           );
+  }
+
+  /// 行首状态徽标：36 圆形 surfaceContainerHighest 底托住状态图标（Apple /
+  /// 墨水屏只画图标本身）。
+  Widget _statusBadge(String bookUid, int memberIndex) {
+    final Widget icon = _statusIcon(bookUid, memberIndex);
+    if (isGlassDesign(context) || isEinkTheme(context)) return icon;
+    return SizedBox.square(
+      dimension: 36,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          shape: BoxShape.circle,
+        ),
+        child: Center(child: icon),
+      ),
+    );
   }
 
   Widget? _episodeSubtitle(VideoBookRow member, int memberIndex) {
@@ -769,7 +823,15 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       '${jimakuLanguageLabel(item.language!)}',
           );
         case SubtitleBatchStatus.noMatch:
-          return Text(t.video_jimaku_no_results);
+          final SubtitleArchiveFormat? unsupported =
+              _selectedSource?.unsupportedPackFormat;
+          return Text(
+            unsupported == null
+                ? t.video_jimaku_no_results
+                : t.video_subtitle_archive_pack_unsupported(
+                    format: unsupported.label,
+                  ),
+          );
         case SubtitleBatchStatus.failed:
           return Text(t.video_jimaku_download_failed);
         case SubtitleBatchStatus.downloading:
@@ -784,6 +846,22 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final List<VideoSubtitleCandidate> matches =
         source.index.byEpisode[episode] ?? const <VideoSubtitleCandidate>[];
     if (matches.isEmpty) {
+      // 整季包（BUG-2956 跟进）：没有单集文件的集，下载时从包里按集号拆。
+      final SubtitleArchiveFormat? pack = source.unpackablePackFormat;
+      if (pack != null) {
+        return Text(
+          t.video_subtitle_episode_from_pack(
+            episode: episode,
+            format: pack.label,
+          ),
+        );
+      }
+      final SubtitleArchiveFormat? unsupported = source.unsupportedPackFormat;
+      if (unsupported != null && source.index.unnumbered.isEmpty) {
+        return Text(
+          t.video_subtitle_archive_pack_unsupported(format: unsupported.label),
+        );
+      }
       if (source.index.unnumbered.isNotEmpty) {
         return Text(
           t.video_jimaku_episode_unlabeled(
@@ -946,36 +1024,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final String? notice = _notice;
     if (notice == null && !_seriesLookupFailed) return null;
     final bool error = notice != null && _noticeIsError;
-    // 中性信息块，错误语义只上在单色图标上。
-    final Color fg = fushiNeutralBlockForeground(context);
+    // 全 app 唯一的提示横幅：中性块 + 语义色图标（Apple / 墨水屏各自分支）。
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
+      child: FushiInlineNotice(
         key: kSubtitleNoticeBannerKey,
-        color: fushiNeutralBlockColor(context),
-        borderRadius: fushiNeutralBlockRadius(context),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FushiIcon(
-                error ? Icons.error_outline : Icons.info_outline,
-                size: 18,
-                color: error
-                    ? fushiStatusColor(context, FushiStatusTone.error)
-                    : fushiNeutralSecondaryForeground(context),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  notice ?? jimakuSeriesLookupNotice(_seriesLookupKind),
-                  style: theme.textTheme.bodySmall?.copyWith(color: fg),
-                ),
-              ),
-            ],
-          ),
-        ),
+        severity: error ? FushiNoticeSeverity.error : FushiNoticeSeverity.info,
+        icon: error ? FushiIcons.error : FushiIcons.info,
+        message: notice ?? jimakuSeriesLookupNotice(_seriesLookupKind),
       ),
     );
   }
@@ -1004,83 +1060,94 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         ],
         if (notice != null) notice,
         Expanded(
-          child: CustomScrollView(
-            slivers: <Widget>[
-              SliverToBoxAdapter(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    JimakuApiKeyField(controller: _apiKeyCtrl, dense: true),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: FushiTextFieldControl(
-                            controller: _queryCtrl,
-                            decoration: InputDecoration(
-                              labelText: t.video_jimaku_query,
-                              isDense: true,
-                            ),
-                            onSubmitted: (_) => _resolveSeries(),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        FushiFilledButton.tonalIcon(
-                          key: const ValueKey<String>(
-                            'subtitle-collection-find',
-                          ),
-                          onPressed: _resolving || _searching || _running
-                              ? null
-                              : _resolveSeries,
-                          icon: const FushiIcon(Icons.search, size: 18),
-                          label: Text(t.video_jimaku_find_sources),
-                        ),
-                      ],
-                    ),
-                    if (_seriesMatches.length >= 2)
-                      _chipSection(t.video_jimaku_anime_match, <Widget>[
-                        for (final AniListMedia media in _seriesMatches)
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 260),
-                            child: FushiChoiceChip(
-                              label: Text(
-                                media.displayTitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+          child: FushiEntranceScope(
+            replayKey: widget.members.length,
+            child: CustomScrollView(
+              slivers: <Widget>[
+                SliverToBoxAdapter(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      JimakuApiKeyField(controller: _apiKeyCtrl, dense: true),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: FushiTextFieldControl(
+                              controller: _queryCtrl,
+                              decoration: InputDecoration(
+                                labelText: t.video_jimaku_query,
+                                isDense: true,
                               ),
-                              tooltip: media.displayTitle,
-                              selected: _selectedSeriesId == media.id,
-                              onSelected: _resolving || _running
-                                  ? null
-                                  : (_) => unawaited(_selectSeries(media)),
+                              onSubmitted: (_) => _resolveSeries(),
                             ),
                           ),
-                      ]),
-                    _buildSourcePicker(theme),
-                    _buildCollectionSettings(theme),
-                    const FushiDividerControl(height: 20),
-                  ],
+                          const SizedBox(width: 8),
+                          FushiFilledButton.tonalIcon(
+                            key: const ValueKey<String>(
+                              'subtitle-collection-find',
+                            ),
+                            onPressed: _resolving || _searching || _running
+                                ? null
+                                : _resolveSeries,
+                            icon: const FushiIcon(FushiIcons.search, size: 18),
+                            label: Text(t.video_jimaku_find_sources),
+                          ),
+                        ],
+                      ),
+                      if (_seriesMatches.length >= 2)
+                        _chipSection(t.video_jimaku_anime_match, <Widget>[
+                          for (final AniListMedia media in _seriesMatches)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 260),
+                              child: FushiChoiceChip(
+                                label: Text(
+                                  media.displayTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                tooltip: media.displayTitle,
+                                selected: _selectedSeriesId == media.id,
+                                onSelected: _resolving || _running
+                                    ? null
+                                    : (_) => unawaited(_selectSeries(media)),
+                              ),
+                            ),
+                        ]),
+                      _buildSourcePicker(theme),
+                      _buildCollectionSettings(theme),
+                      const FushiDividerControl(height: 20),
+                    ],
+                  ),
                 ),
-              ),
-              SliverList.builder(
-                itemCount: widget.members.length,
-                itemBuilder: (BuildContext context, int i) {
-                  final VideoBookRow m = widget.members[i];
-                  return FushiListTileControl(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: _statusIcon(m.bookUid, i),
-                    title: Text(
-                      m.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: _episodeSubtitle(m, i),
-                  );
-                },
-              ),
-            ],
+                // M3E：成员按集排成分段卡片（首尾大圆角、行间 2），行首状态图标
+                // 放进圆形色块，错峰进场。
+                SliverList.builder(
+                  itemCount: widget.members.length,
+                  itemBuilder: fushiStaggeredItemBuilder((
+                    BuildContext context,
+                    int i,
+                  ) {
+                    final VideoBookRow m = widget.members[i];
+                    return FushiGroupedListItem(
+                      index: i,
+                      count: widget.members.length,
+                      child: FushiListItem(
+                        density: FushiListDensity.compact,
+                        leading: _statusBadge(m.bookUid, i),
+                        title: Text(
+                          m.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: _episodeSubtitle(m, i),
+                      ),
+                    );
+                  }),
+                ),
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -1104,7 +1171,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                       height: 18,
                       child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const FushiIcon(Icons.download),
+                  : const FushiIcon(FushiIcons.download),
               label: Text(t.video_jimaku_batch_download),
             ),
           ],

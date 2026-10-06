@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -59,6 +59,7 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.checkedDisclosure,
     this.deleteSubscriptionsLabel,
     this.checkboxKey,
+    this.confirmKey,
     this.requireCheckboxToConfirm = false,
     super.key,
   }) : assert(
@@ -120,6 +121,9 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
 
   /// 勾选行的 key（供测试 / 集成测试焦点驱动定位）。
   final Key? checkboxKey;
+
+  /// 确认（破坏性）按钮的 key（供测试 / 集成测试定位）。
+  final Key? confirmKey;
 
   /// **防呆闸**：true 时确认按钮在勾选前恒禁用（`onPressed: null`）。
   ///
@@ -286,27 +290,30 @@ class _FushiDestructiveConfirmDialogState
               onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
-              onPressed: widget.requireCheckboxToConfirm && !_checked
-                  ? null
-                  : () => Navigator.pop(
-                        context,
-                        FushiDestructiveConfirmResult(
-                          checked: _checked,
-                          deleteLocalFiles: _checked &&
-                              widget.localFilesSubtitle != null &&
-                              _deleteLocalFiles,
-                          deleteStatistics:
-                              _statisticsOffered && _deleteStatistics,
-                          deleteSubscriptions:
-                              widget.deleteSubscriptionsLabel != null &&
-                                  _deleteSubscriptions,
+            KeyedSubtree(
+              key: widget.confirmKey,
+              child: adaptiveDialogAction(
+                context: context,
+                isDestructiveAction: true,
+                // 防呆闸：未勾选时 onPressed 为 null，按钮真禁用（不是点了没反应）。
+                onPressed: widget.requireCheckboxToConfirm && !_checked
+                    ? null
+                    : () => Navigator.pop(
+                          context,
+                          FushiDestructiveConfirmResult(
+                            checked: _checked,
+                            deleteLocalFiles: _checked &&
+                                widget.localFilesSubtitle != null &&
+                                _deleteLocalFiles,
+                            deleteStatistics:
+                                _statisticsOffered && _deleteStatistics,
+                            deleteSubscriptions:
+                                widget.deleteSubscriptionsLabel != null &&
+                                    _deleteSubscriptions,
+                          ),
                         ),
-                      ),
-              child: Text(widget.confirmLabel ?? t.dialog_delete),
+                child: Text(widget.confirmLabel ?? t.dialog_delete),
+              ),
             ),
           ],
         ),

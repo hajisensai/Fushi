@@ -8,10 +8,11 @@
 // 本文件只做「类型 → 本地化文案/图标」的纯映射，不读写注册表、不触碰
 // 绑定序列化。
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Localised label for a [ShortcutAction].
 extension ShortcutActionLabel on ShortcutAction {
@@ -209,6 +210,31 @@ extension ShortcutActionLabel on ShortcutAction {
   }
 }
 
+/// 按钮 / 菜单文案后缀快捷键提示（`插图画廊 · G`）。只在 [keyboardHints] 为 true
+/// （桌面：键盘是常规输入）时追加；触屏平台（Android / iOS）不挂——手机、平板上
+/// 菜单里写「有声书 · B」是噪声（BUG-2960）。键名走 [InputBinding.displayLabel]，
+/// 不用持久化 token（`Ctrl+KeyF`）。
+String labelWithShortcutHint(
+  String label,
+  List<InputBinding> keyboardBindings, {
+  required bool keyboardHints,
+}) {
+  if (!keyboardHints || keyboardBindings.isEmpty) return label;
+  return '$label · ${keyboardBindings.first.displayLabel}';
+}
+
+/// 工具栏按钮的 tooltip 文案：功能名后括注快捷键（`导航 (Ctrl+F)`）。可见标签只放
+/// 功能名，快捷键挪进 tooltip——窄窗下 `导航 · Ctrl+F` 这种拼接会把底栏标签挤成
+/// 截断的乱码。触屏平台同 [labelWithShortcutHint] 不挂。
+String tooltipWithShortcutHint(
+  String label,
+  List<InputBinding> keyboardBindings, {
+  required bool keyboardHints,
+}) {
+  if (!keyboardHints || keyboardBindings.isEmpty) return label;
+  return '$label (${keyboardBindings.first.displayLabel})';
+}
+
 /// Localised label for a [ShortcutScope].
 extension ShortcutScopeLabel on ShortcutScope {
   String get label {
@@ -252,7 +278,7 @@ extension WheelBindingLabel on WheelBinding {
     return '${sorted.map((ModifierKey m) => m.label).join('+')}+$direction';
   }
 
-  IconData get icon => Icons.mouse_outlined;
+  IconData get icon => FushiIcons.mouse;
 }
 
 /// TODO-1050b: 鼠标绑定的本地化显示名与小图标。
@@ -281,9 +307,9 @@ extension MouseBindingLabel on MouseBinding {
   IconData get icon {
     switch (button) {
       case 1:
-        return Icons.mouse_outlined;
+        return FushiIcons.mouse;
       default:
-        return Icons.mouse;
+        return FushiIcons.mouse;
     }
   }
 }
@@ -303,115 +329,115 @@ extension ShortcutActionIcon on ShortcutAction {
     switch (this) {
       // 播放控制
       case ShortcutAction.videoTogglePlayPause:
-        return Icons.play_arrow_rounded;
+        return FushiIcons.play;
       case ShortcutAction.videoPlay:
-        return Icons.play_circle_outline;
+        return FushiIcons.playCircle;
       case ShortcutAction.videoPause:
-        return Icons.pause_circle_outline;
+        return FushiIcons.pauseCircle;
       case ShortcutAction.videoSeekBackward:
-        return Icons.fast_rewind_rounded;
+        return FushiIcons.fastRewind;
       case ShortcutAction.videoSeekForward:
-        return Icons.fast_forward_rounded;
+        return FushiIcons.fastForward;
       case ShortcutAction.videoPreviousFrame:
-        return Icons.skip_previous_outlined;
+        return FushiIcons.stepBackward;
       case ShortcutAction.videoNextFrame:
-        return Icons.skip_next_outlined;
+        return FushiIcons.stepForward;
 
       // 倍速
       case ShortcutAction.videoSpeedUp:
-        return Icons.speed;
+        return FushiIcons.speed;
       case ShortcutAction.videoSpeedDown:
-        return Icons.slow_motion_video;
+        return FushiIcons.slowMotion;
       case ShortcutAction.videoResetSpeed:
-        return Icons.restore;
+        return FushiIcons.restart;
       case ShortcutAction.videoHoldSpeed:
-        return Icons.fast_forward;
+        return FushiIcons.fastForward;
 
       // 字幕跳转 / 重播
       case ShortcutAction.videoPreviousSubtitle:
-        return Icons.skip_previous;
+        return FushiIcons.skipPrevious;
       case ShortcutAction.videoNextSubtitle:
-        return Icons.skip_next;
+        return FushiIcons.skipNext;
       case ShortcutAction.videoReplayCurrentSubtitle:
-        return Icons.replay;
+        return FushiIcons.replay;
       case ShortcutAction.videoReplayPreviousSubtitle:
-        return Icons.replay_5;
+        return FushiIcons.replay5;
 
       // 章节
       case ShortcutAction.videoPreviousChapter:
-        return Icons.first_page;
+        return FushiIcons.firstPage;
       case ShortcutAction.videoNextChapter:
-        return Icons.last_page;
+        return FushiIcons.lastPage;
 
       // 字幕显示 / 遮蔽
       case ShortcutAction.videoToggleSubtitleList:
-        return Icons.format_list_bulleted;
+        return FushiIcons.listView;
       case ShortcutAction.videoSearchSubtitleList:
-        return Icons.search;
+        return FushiIcons.search;
       case ShortcutAction.videoToggleSubtitleBlur:
-        return Icons.blur_on;
+        return FushiIcons.blur;
       case ShortcutAction.videoCycleSubtitleObscure:
-        return Icons.visibility_off_outlined;
+        return FushiIcons.visibilityOff;
       case ShortcutAction.videoToggleSubtitleHide:
-        return Icons.subtitles_off_outlined;
+        return FushiIcons.subtitlesOff;
       case ShortcutAction.videoCycleSecondarySubtitleObscure:
-        return Icons.blur_linear;
+        return FushiIcons.blurLinear;
       case ShortcutAction.videoToggleSecondarySubtitleHide:
-        return Icons.closed_caption_disabled_outlined;
+        return FushiIcons.captionsOff;
 
       // 字幕对轴
       case ShortcutAction.videoOpenSubtitleAlign:
-        return Icons.graphic_eq;
+        return FushiIcons.audio;
       case ShortcutAction.videoSubtitleDelayIncrease:
-        return Icons.more_time;
+        return FushiIcons.moreTime;
       case ShortcutAction.videoSubtitleDelayDecrease:
-        return Icons.history_toggle_off;
+        return FushiIcons.history;
       case ShortcutAction.videoAlignSubtitleToPrev:
-        return Icons.align_horizontal_left;
+        return FushiIcons.alignLeft;
       case ShortcutAction.videoAlignSubtitleToNext:
-        return Icons.align_horizontal_right;
+        return FushiIcons.alignRight;
 
       // 音量
       case ShortcutAction.videoVolumeUp:
-        return Icons.volume_up;
+        return FushiIcons.volumeUp;
       case ShortcutAction.videoVolumeDown:
-        return Icons.volume_down;
+        return FushiIcons.volumeDown;
       case ShortcutAction.videoToggleMute:
-        return Icons.volume_off;
+        return FushiIcons.volumeOff;
 
       // 画面 / 杂项
       case ShortcutAction.videoToggleFullscreen:
-        return Icons.fullscreen;
+        return FushiIcons.fullscreen;
       case ShortcutAction.videoToggleMiniWindow:
-        return Icons.picture_in_picture_alt_outlined;
+        return FushiIcons.pictureInPicture;
       case ShortcutAction.videoToggleMiniChrome:
-        return Icons.tune_rounded;
+        return FushiIcons.settings;
       case ShortcutAction.videoScreenshot:
-        return Icons.photo_camera_outlined;
+        return FushiIcons.camera;
       case ShortcutAction.videoScreenshotSubtitled:
-        return Icons.subtitles_outlined;
+        return FushiIcons.subtitles;
       case ShortcutAction.videoToggleShaderCompare:
-        return Icons.compare;
+        return FushiIcons.compare;
       case ShortcutAction.videoToggleImmersiveLock:
-        return Icons.lock_outline;
+        return FushiIcons.lock;
 
       // 学习
       case ShortcutAction.videoToggleFavoriteSentence:
-        return Icons.star_border_rounded;
+        return FushiIcons.star;
       case ShortcutAction.videoEnterCaret:
-        return Icons.text_fields;
+        return FushiIcons.textFields;
 
       // 全 app 共用「返回上一级」：视频页把它解释成逐级退出阶梯。
       case ShortcutAction.globalBack:
-        return Icons.arrow_back;
+        return FushiIcons.back;
 
       // 全 app 共用全屏键（F11）：视频页把它接成与 F / 双击同一个视频全屏（BUG-2462）。
       case ShortcutAction.globalToggleFullscreen:
-        return Icons.fullscreen;
+        return FushiIcons.fullscreen;
 
       // 右键菜单（按钮归属声明，执行体在各卡片 / 各媒体表面自己的 showMenu）。
       case ShortcutAction.globalContextMenu:
-        return Icons.menu_open;
+        return FushiIcons.menu;
 
       // ignore: no_default_cases
       default:

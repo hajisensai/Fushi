@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -173,10 +173,13 @@ Future<void> _tapIcon(WidgetTester tester, IconData icon) async {
   await tester.pumpAndSettle();
 }
 
-/// 滚到列表末尾，让末尾的按钮区被真正 build——「找不到删除按钮」只有在它
-/// 本该出现的位置已经构建出来时才是有效证据。
-Future<void> _scrollToEnd(WidgetTester tester) async {
-  await tester.drag(_verticalScrollable, const Offset(0, -10000));
+/// 滚到「应用主题」并点它。
+Future<void> _tapApply(WidgetTester tester) async {
+  final Finder apply =
+      find.byKey(const ValueKey<String>('custom-theme-apply'));
+  await tester.scrollUntilVisible(apply, 300, scrollable: _verticalScrollable);
+  await tester.pumpAndSettle();
+  await tester.tap(apply);
   await tester.pumpAndSettle();
 }
 
@@ -274,16 +277,18 @@ void main() {
       expect(find.text(t.custom_theme_default_name(n: 2)), findsOneWidget,
           reason: '草稿默认名 hint 应为「Custom 列表长度+1」');
 
-      await _scrollToEnd(tester);
-      expect(find.byIcon(Icons.check), findsOneWidget,
-          reason: '按钮区已构建（应用按钮可见），删除按钮的缺席才算数');
+      // 删除入口在 hero 的「更多」菜单里：打开菜单后才算数。
+      await tester.tap(find.byKey(const ValueKey<String>('custom-theme-more')));
+      await tester.pumpAndSettle();
       expect(
         find.text(t.delete_custom_theme, skipOffstage: false),
         findsNothing,
-        reason: '草稿没有东西可删，删除按钮不该出现',
+        reason: '草稿没有东西可删，删除项不该出现',
       );
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
 
-      await _tapIcon(tester, Icons.check);
+      await _tapApply(tester);
 
       expect(appModel.upserts, hasLength(1));
       final CustomThemeEntry saved = appModel.upserts.single;
@@ -326,10 +331,13 @@ void main() {
       expect(appModel.upserts, isEmpty);
       expect(find.text('Mine'), findsOneWidget);
 
-      await _scrollToEnd(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('custom-theme-more')));
+      await tester.pumpAndSettle();
       expect(find.text(t.delete_custom_theme), findsOneWidget);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
 
-      await _tapIcon(tester, Icons.check);
+      await _tapApply(tester);
 
       expect(appModel.upserts, hasLength(1));
       expect(appModel.upserts.single.id, _existing.id);
