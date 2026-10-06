@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../torrent/nyaa_html_fixture.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 番剧下载「发现」流 UX 回归：
 /// - Nyaa 搜索网络故障不再吞成「无结果」/统一文案：错误态展示真实异常串 +
@@ -358,7 +359,7 @@ void main() {
     // 只收结果行（任务折叠区表头也是 ListTile，按已知标题过滤）。
     const Set<String> known = <String>{'seeders-top', 'middle', 'size-top'};
     List<String> titles() => tester
-        .widgetList<ListTile>(find.byType(ListTile))
+        .widgetList<ListTile>(glassUnwrapAll<ListTile>(find.byType(ListTile)))
         .map((ListTile tile) => tile.title)
         .whereType<Text>()
         .map((Text text) => text.data)
@@ -395,14 +396,14 @@ void main() {
           w is TextField && w.decoration?.labelText == t.video_jimaku_query,
     );
     expect(queryField, findsOneWidget);
-    expect(tester.widget<TextField>(queryField).controller!.text, 'Test Anime');
+    expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'Test Anime');
 
     // 标题候选下拉：切到日文原名。
     await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('テスト・アニメ').last);
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(queryField).controller!.text, 'テスト・アニメ');
+    expect(tester.widget<TextField>(glassUnwrap<TextField>(queryField)).controller!.text, 'テスト・アニメ');
 
     // BUG-1184：集号框宽度必须放得下 label，且**由 label 的实测宽度决定**。
     //

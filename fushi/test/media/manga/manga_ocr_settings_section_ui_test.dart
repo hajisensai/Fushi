@@ -18,6 +18,7 @@ import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// Fake 服务，模型状态与下载流可编程。
 class _FakeOcrService implements MangaOcrService {
@@ -184,11 +185,21 @@ class _FakeRemoteRunner implements MangaOcrRemoteRunner {
   }) => throw UnimplementedError();
 }
 
+/// 测试宿主统一开「减少动态效果」：波浪进度 / 加载指示器停成静止形态。
+Widget _reduceMotion(BuildContext context, Widget? child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(disableAnimations: true),
+      child: child!,
+    );
+
 void main() {
   Widget wrap(Widget child) {
     return ProviderScope(
       child: TranslationProvider(
         child: MaterialApp(
+            // MD3 Expressive 波浪进度在下载中（不定态 / 0<value<1）持续推相位，
+            // pumpAndSettle 永远等不到静止；「减少动态效果」下退回静止直线，
+            // 下载行为不受影响。
+            builder: _reduceMotion,
             home: Scaffold(body: SingleChildScrollView(child: child))),
       ),
     );
@@ -317,7 +328,7 @@ void main() {
 
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+    expect(tester.widget<DropdownButton<int>>(glassUnwrap<DropdownButton<int>>(dropdown)).value, 0);
     await tester.ensureVisible(field);
     await tester.tap(field);
     await tester.pumpAndSettle();
@@ -328,7 +339,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 4);
+    expect(tester.widget<DropdownButton<int>>(glassUnwrap<DropdownButton<int>>(dropdown)).value, 4);
     await tester.ensureVisible(field);
     await tester.tap(field);
     await tester.pumpAndSettle();
@@ -339,7 +350,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(settings());
     await tester.pumpAndSettle();
-    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+    expect(tester.widget<DropdownButton<int>>(glassUnwrap<DropdownButton<int>>(dropdown)).value, 0);
   });
 
   String engineLabel(MangaOcrLocalModel model) =>
@@ -447,6 +458,7 @@ void main() {
       container: container,
       child: TranslationProvider(
         child: MaterialApp(
+          builder: _reduceMotion,
           home: Scaffold(
             body: SingleChildScrollView(
               child: ValueListenableBuilder<bool>(
@@ -620,7 +632,7 @@ void main() {
       OutlinedButton,
       t.manga_ocr_delete,
     );
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNotNull);
     final Finder importButton = find.byKey(
       const ValueKey<String>('manga_ocr_import_button'),
     );
@@ -634,7 +646,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(importer.calls, hasLength(1));
     expect(imported.isCompleted, isFalse);
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNull);
     await tester.ensureVisible(deleteButton);
     await tester.tap(deleteButton);
     await tester.pump();
@@ -642,7 +654,7 @@ void main() {
     expect(service.deleteCalls, 0);
     imported.complete();
     await tester.pumpAndSettle();
-    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(deleteButton)).onPressed, isNotNull);
   });
 
   testWidgets('detect external shows probed version',

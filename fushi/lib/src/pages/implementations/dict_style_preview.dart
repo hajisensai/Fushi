@@ -250,6 +250,7 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'favoriteEntry',
   'findMinedMatches',
   'getDictAsset',
+  'listWordAudioSources',
   'mineEntry',
   'minedCardAction',
   'onLinkClick',

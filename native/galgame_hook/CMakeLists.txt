@@ -100,6 +100,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/yuris_profile.h"
   "hook/adapters/yuris_voice.inc"
   "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/kogado_hy_adapter.inc"
+  "hook/adapters/kogado_hy_core.h"
+  "hook/adapters/kogado_hy_lookup.inc"
+  "hook/adapters/kogado_hy_profile.h"
+  "hook/adapters/kogado_hy_text.inc"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -115,6 +120,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/catsystem2_voice_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
+  "hook/adapters/cmvs_voice.inc"
+  "hook/adapters/cmvs_voice_core.h"
   "hook/adapters/malie_adapter.inc"
   "hook/adapters/malie_engine_io_core.h"
   "hook/adapters/malie_lookup.inc"
@@ -984,7 +991,8 @@ add_test(NAME fushi_unity_mono_lookup_test
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")
-target_include_directories(fushi_engine_identity_layout_test PRIVATE "hook")
+target_include_directories(fushi_engine_identity_layout_test PRIVATE
+  "hook" "include" "injector")
 add_test(NAME fushi_engine_identity_layout_test
   COMMAND fushi_engine_identity_layout_test)
 
@@ -1110,6 +1118,19 @@ target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
 add_test(NAME fushi_catsystem2_voice_test
   COMMAND fushi_catsystem2_voice_test)
 
+# CMVS per-line voice: group-loader site proof from the x64 exception
+# directory (both toolchain shapes, chained fragments, overflow) and the
+# voice-group / member-name classification.
+add_executable(fushi_cmvs_voice_test
+  "tests/cmvs_voice_test.cpp"
+)
+target_include_directories(fushi_cmvs_voice_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_cmvs_voice_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_cmvs_voice_test
+  COMMAND fushi_cmvs_voice_test)
+
 # Malie engine structure: the "CFI" I/O scheme table that is the engine
 # identity (name literal -> unique copy -> table hand-off -> six frame-function
 # slots, tell shape, getc->read, shared registrar) and the Ogg decoder input
@@ -1180,3 +1201,6 @@ include(tests/siglus_legacy_owner_publication_test.cmake)
 add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
 target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
 add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)
+add_executable(fushi_kogado_hy_adapter_test "tests/kogado_hy_adapter_test.cpp")
+target_include_directories(fushi_kogado_hy_adapter_test PRIVATE "hook")
+add_test(NAME fushi_kogado_hy_adapter_test COMMAND fushi_kogado_hy_adapter_test)

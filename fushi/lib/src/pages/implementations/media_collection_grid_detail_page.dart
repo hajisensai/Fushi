@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortedCollectionRows;
@@ -10,6 +11,7 @@ import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show kShelfBookCardAspectRatio;
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -260,7 +262,7 @@ class _MediaCollectionGridDetailPageState
       Rect.fromPoints(anchor, anchor),
       Offset.zero & overlay.size,
     );
-    final _MemberMenuAction? action = await showMenu<_MemberMenuAction>(
+    final _MemberMenuAction? action = await showFushiMenu<_MemberMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_MemberMenuAction>>[
@@ -269,7 +271,7 @@ class _MediaCollectionGridDetailPageState
             value: _MemberMenuAction.open,
             child: Row(
               children: <Widget>[
-                const Icon(Icons.open_in_new, size: 20),
+                const FushiIcon(Icons.open_in_new, size: 20),
                 const SizedBox(width: 12),
                 Text(t.collection_open),
               ],
@@ -279,7 +281,7 @@ class _MediaCollectionGridDetailPageState
           value: _MemberMenuAction.remove,
           child: Row(
             children: <Widget>[
-              const Icon(Icons.remove_circle_outline, size: 20),
+              const FushiIcon(Icons.remove_circle_outline, size: 20),
               const SizedBox(width: 12),
               Text(t.collection_remove_member),
             ],
@@ -297,7 +299,7 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// [availableWidth] 是这条 AppBar 实际拿到的约束宽（由 [LayoutBuilder] 下发）。
-  AppBar _buildAppBar(double availableWidth) => AppBar(
+  PreferredSizeWidget _buildAppBar(double availableWidth) => FushiAppBar(
         title: Text(_name, maxLines: 1, overflow: TextOverflow.ellipsis),
         // BUG-1184：同合集详情页——窄屏把次要动作收进溢出菜单，给合集名让出宽度。
         actions: narrowAwareAppBarActions(
@@ -392,26 +394,33 @@ class _MediaCollectionGridDetailPageState
           targetWidth: targetWidth,
           spacing: spacing,
         );
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
-          child: FushiReorderableGrid(
-            itemCount: members.length,
-            crossAxisCount: layout.columns,
-            childAspectRatio: kShelfBookCardAspectRatio,
-            crossAxisSpacing: spacing,
-            mainAxisSpacing: spacing,
-            feedbackBorderRadius: FushiBorderRadius.card,
-            keyForIndex: (int i) => ValueKey<String>(
-                '${members[i].row.mediaType}|${members[i].row.entryKey}'),
-            onReorder: _onReorder,
-            onActivateItem: widget.onOpenMember == null
-                ? null
-                : (int i) => widget.onOpenMember!(
-                    members[i].row.mediaType, members[i].row.entryKey),
-            onContextMenu: (int i, Offset globalPosition) =>
-                _showMemberMenu(members[i].row, globalPosition),
-            itemBuilder: (BuildContext context, int i) =>
-                _HoverableMemberCard(child: members[i].card),
+        // 2026-10 动效重做：成员网格的进场窗口（书 / 游戏合集共用本页）。
+        return FushiEntranceScope(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(12),
+            child: FushiReorderableGrid(
+              itemCount: members.length,
+              crossAxisCount: layout.columns,
+              childAspectRatio: kShelfBookCardAspectRatio,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing,
+              feedbackBorderRadius: FushiBorderRadius.card,
+              keyForIndex: (int i) => ValueKey<String>(
+                  '${members[i].row.mediaType}|${members[i].row.entryKey}'),
+              onReorder: _onReorder,
+              onActivateItem: widget.onOpenMember == null
+                  ? null
+                  : (int i) => widget.onOpenMember!(
+                      members[i].row.mediaType, members[i].row.entryKey),
+              onContextMenu: (int i, Offset globalPosition) =>
+                  _showMemberMenu(members[i].row, globalPosition),
+              // 2026-10 动效重做：成员卡首屏错峰进场（只包装卡，不改网格几何；
+              // 拖拽浮层复制在窗口关闭后挂载，瞬间出现）。
+              itemBuilder: (BuildContext context, int i) => FushiStaggeredEntrance(
+                index: i,
+                child: _HoverableMemberCard(child: members[i].card),
+              ),
+            ),
           ),
         );
       },

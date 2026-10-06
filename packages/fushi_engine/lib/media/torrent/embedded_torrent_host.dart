@@ -545,6 +545,53 @@ class EmbeddedTorrentHost {
     return ok;
   }
 
+  /// BUG-2950：宿主级附加 tracker（plain 字符串，通常是 fake-ip DNS 下由 DoH
+  /// 解析出的 `udp://<真实IP>:<port>/announce`）。由 AppModel 经
+  /// [setExtraTrackers] 下发；新任务由 [backendView] 派发的后端在 add 后追加。
+  List<String> _extraTrackers = const <String>[];
+
+  /// 当前宿主级附加 tracker（只读快照）。
+  List<String> get extraTrackers => _extraTrackers;
+
+  /// 设置宿主级附加 tracker（去重、去空白），并立即追加到 session 里现有的
+  /// 每个种子（native 侧对已存在的 URL 去重，重复调用无副作用）。之后经
+  /// [backendView] 新加的种子也会带上它们。传空列表只清空记录——libtorrent
+  /// 没有「撤回已加 tracker」的必要，已追加的保持原样。
+  void setExtraTrackers(List<String> trackers) {
+    final List<String> normalized = trackers
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+    _extraTrackers = List<String>.unmodifiable(normalized);
+    if (normalized.isEmpty) return;
+    final List<FtTorrentStatus>? torrents = _session.tryListTorrents();
+    if (torrents == null) return;
+    for (final FtTorrentStatus torrent in torrents) {
+      _session.addTrackers(torrent.id, normalized);
+    }
+  }
+
+  /// BUG-2950：运行期向 DHT 补节点（每项 "host:port"）。返回 native 添加的
+  /// 条数；库不支持 / session 已关 / 列表为空返回 -1。
+  int addDhtNodes(List<String> hostPorts) {
+    if (!_session.supportsAddDhtNodes) {
+      fushiDebugPrint('[torrent] loaded library lacks ht_add_dht_nodes; '
+          'cannot inject ${hostPorts.length} DHT node(s)');
+      return -1;
+    }
+    final int added = _session.addDhtNodes(hostPorts);
+    if (added < 0 && hostPorts.isNotEmpty) {
+      fushiDebugPrint('[torrent] add DHT nodes failed '
+          '(${hostPorts.length} candidate(s))');
+    }
+    return added;
+  }
+
+  /// 会话协议状态（DHT 节点数、监听端口等；见
+  /// [EmbeddedTorrentSession.sessionStatus] 的轮次契约）。库不支持返回 null。
+  FtSessionStatus? sessionStatus() => _session.sessionStatus();
+
   /// 在同步 native add/resume 之前暂时唤醒发现协议。调用方必须用 finally 配对
   /// [endNetworkWake]；begin 到真正 native 操作之间不得插入 await。
   void beginNetworkWake() {
@@ -730,6 +777,7 @@ class EmbeddedTorrentHost {
       trackerSubscriptionService: trackerSubscriptionService,
       autoAddTrackerSubscription: autoAddTrackerSubscription,
       trackerSubscriptionUrl: trackerSubscriptionUrl,
+      extraTrackers: () => _extraTrackers,
     );
   }
 

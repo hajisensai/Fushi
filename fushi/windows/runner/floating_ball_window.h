@@ -78,6 +78,11 @@ class FloatingBallWindow {
   void Stop();
   bool IsRunning() const;
 
+  // 截屏识字（spec「截屏识字」）：截图前把球、按钮列与提示藏起来——不销毁、不打断
+  // 动画与停靠状态（收起动画照常在隐藏中跑完）；冻结层关掉后原样恢复。未运行时无操作。
+  void HideForCapture();
+  void RestoreAfterCapture();
+
  private:
   struct Screen {
     HMONITOR monitor = nullptr;
@@ -187,6 +192,8 @@ class FloatingBallWindow {
   UINT last_dpi_ = 0;
 
   HWND ball_hwnd_ = nullptr;
+  // HideForCapture 生效中：新建的按钮窗也保持隐藏，直到 RestoreAfterCapture。
+  bool hidden_for_capture_ = false;
   HWND menu_hwnd_ = nullptr;
   bool classes_registered_ = false;
 

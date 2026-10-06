@@ -3010,6 +3010,7 @@ class GalHookedLine {
       8 => 'artemis',
       9 => 'yuris',
       10 => 'fvp',
+      11 => 'kogado',
       15 => 'malie',
       _ => 'hook',
     };
@@ -3031,6 +3032,7 @@ class GalHookedLine {
             8 => 'Artemis exact',
             9 => 'YU-RIS exact',
             10 => 'FVP exact',
+            11 => 'Kogado Hy exact',
             15 => 'Malie exact',
             _ => 'Text hook',
           };

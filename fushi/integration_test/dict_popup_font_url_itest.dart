@@ -38,6 +38,14 @@ String _jsString(String value) => jsonEncode(value);
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
+  // URL 投递字体只在有「能带 CORS 头的 https 拦截器」的平台上启用
+  // （`kInAppPopupFontUrlSupported`：Android / Windows）。iOS / macOS / Linux 的
+  // WebView 只能注册自定义 scheme，生产代码在那里继续内联 `data:`，这条路径不存在，
+  // 跑了只会在拦截器不触发处超时。
+  final String? unsupported = kInAppPopupFontUrlSupported
+      ? null
+      : 'URL font delivery is Android/Windows-only (kInAppPopupFontUrlSupported)';
+
   late Directory fontDir;
   late File fontFile;
 
@@ -182,6 +190,7 @@ void main() {
 
   testWidgets(
     'BUG-1868: 跨源 + ACAO 时，经拦截器的 URL 字体真的加载成功',
+    skip: unsupported != null,
     (WidgetTester tester) async {
       final r = await loadFontThroughInterceptor(tester, sendCorsHeader: true);
       // ignore: avoid_print
@@ -201,6 +210,7 @@ void main() {
 
   testWidgets(
     'BUG-1868 负向对照：抽掉 ACAO 后必须失败（证明上面那条不是恒真）',
+    skip: unsupported != null,
     (WidgetTester tester) async {
       final r = await loadFontThroughInterceptor(tester, sendCorsHeader: false);
       // ignore: avoid_print

@@ -69,7 +69,8 @@ void main() {
       final String body = showContextMenu;
       expect(body.contains('_videoControlsContext'), isTrue,
           reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出');
-      expect(body.contains('showMenu<VoidCallback>('), isTrue,
+      // 玻璃重设计：菜单走共享 showFushiMenu（同 showMenu 签名的自绘菜单）。
+      expect(body.contains('showFushiMenu<VoidCallback>('), isTrue,
           reason: '用 showMenu 弹 PopupMenu，自带锚点定位');
       expect(body.contains('RelativeRect.fromLTRB('), isTrue,
           reason: '右键位置须转成 RelativeRect 作菜单锚点');

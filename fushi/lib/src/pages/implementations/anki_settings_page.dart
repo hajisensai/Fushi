@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
@@ -86,6 +87,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 「换一个空闲端口」进行中。端口扫描是一串 bind 尝试，最坏情况会连试 200 次，
   /// 必须防重入，否则两次点击会各挑一个端口、后完成的那次覆盖前一次。
   bool _portRepairBusy = false;
+  bool _ankiLaunchBusy = false;
 
   /// 媒体去重在途标记（扫描/执行互斥防重入）。
   bool _dedupBusy = false;
@@ -131,6 +133,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 进程枚举）。手机连的是局域网另一台机上的 Anki，插件配置不在本机，改不了。
   static final bool _supportsPortRepair =
       Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  /// 是否提供「启动 Anki」三行（issue #1949）：桌面三端。「从运行中的 Anki 检测」
+  /// 依赖 Win32 进程枚举，只在 Windows 出现。
+  static final bool _supportsAnkiDesktopLaunch =
+      AnkiDesktopLauncher.isSupported;
+  static final bool _supportsAnkiExecutableDetect = Platform.isWindows;
 
   @override
   void initState() {
@@ -226,36 +234,24 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             ),
           ],
         ),
+        // 连接状态提示走共享的内联提示块（MD3 中性底 + 语义图标 / Apple 实色
+        // 分组底 + 语义色图标），不再是一行裸红字 / 居中灰字飘在两个分组之间。
         if (uiState.errorMessage != null)
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.gap + tokens.spacing.gap / 2,
-              0,
-              tokens.spacing.gap + tokens.spacing.gap / 2,
-              tokens.spacing.gap + tokens.spacing.gap / 2,
+            padding: EdgeInsets.only(
+              bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
             ),
-            child: Text(
-              uiState.errorMessage!,
-              style: textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.error,
-              ),
+            child: FushiInlineNotice(
+              message: uiState.errorMessage!,
+              severity: FushiNoticeSeverity.error,
             ),
           ),
         if (!uiState.isConfigured && uiState.errorMessage == null)
           Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.page + tokens.spacing.gap / 2,
+            padding: EdgeInsets.only(
+              bottom: tokens.spacing.gap + tokens.spacing.gap / 2,
             ),
-            child: Text(
-              t.anki_not_configured,
-              textAlign: TextAlign.center,
-              style: textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
+            child: FushiInlineNotice(message: t.anki_not_configured),
           ),
         if (uiState.isConfigured) ...[
           AdaptiveSettingsSection(
@@ -516,6 +512,8 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               onTap: _addonInstallBusy ? null : _installAnkiConnectAddon,
             ),
           ),
+        if (_supportsAnkiDesktopLaunch)
+          ..._buildAnkiDesktopLaunchRows(vm, settings),
       ],
     );
   }
@@ -1315,7 +1313,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     await _applyMobileAnkiBackend(vm, useAnkiConnect: false, apiKey: '');
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(t.anki_connect_mobile_disabled_key_cleared)),
+      FushiSnackBar(content: Text(t.anki_connect_mobile_disabled_key_cleared)),
     );
   }
 
@@ -1327,7 +1325,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (_ankiBackendBusy) return;
     if (useAnkiConnect && settings.ankiConnectApiKey.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.anki_connect_mobile_api_key_required)),
+        FushiSnackBar(content: Text(t.anki_connect_mobile_api_key_required)),
       );
       return;
     }
@@ -1368,7 +1366,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(
               t.anki_connect_backend_switch_failed(error: '$error'),
             ),
@@ -1470,7 +1468,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       result = await vm.lapisTemplateService.applyCustomization(force: force);
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_lapis_apply_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_lapis_apply_failed(error: '$e'))),
       );
       return;
     } finally {
@@ -1481,25 +1479,25 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       case LapisApplyResult.applied:
         await vm.refreshSettingsFromStore();
         messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_lapis_apply_done)),
+          FushiSnackBar(content: Text(t.anki_lapis_apply_done)),
         );
       case LapisApplyResult.upToDate:
         await vm.refreshSettingsFromStore();
         messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_lapis_up_to_date)),
+          FushiSnackBar(content: Text(t.anki_lapis_up_to_date)),
         );
       case LapisApplyResult.needsConfirm:
-        final bool? ok = await showDialog<bool>(
+        final bool? ok = await showAppDialog<bool>(
           context: context,
-          builder: (BuildContext context) => AlertDialog(
+          builder: (BuildContext context) => FushiAlertDialog(
             title: Text(t.anki_lapis_foreign_edit_title),
             content: Text(t.anki_lapis_foreign_edit_body),
             actions: [
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(context, false),
                 child: Text(t.dialog_cancel),
               ),
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.pop(context, true),
                 child: Text(t.dialog_ok),
               ),
@@ -1508,7 +1506,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         );
         if (ok == true && mounted) await _applyLapisStyling(vm, force: true);
       case LapisApplyResult.notFound:
-        messenger.showSnackBar(SnackBar(content: Text(t.anki_lapis_not_found)));
+        messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_lapis_not_found)));
       case LapisApplyResult.unsupported:
         // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
         break;
@@ -1520,15 +1518,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         title: Text(t.anki_lapis_restore_factory),
         content: Text(t.anki_lapis_restore_factory_confirm),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_ok),
           ),
@@ -1549,10 +1547,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         // 整区已按 supportsNoteTypeEditing 隐藏，此分支只是防御。
         LapisRestoreFactoryResult.unsupported => t.anki_lapis_not_found,
       };
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      messenger.showSnackBar(FushiSnackBar(content: Text(message)));
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(t.anki_lapis_restore_factory_failed(error: '$e')),
         ),
       );
@@ -1588,7 +1586,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
       if (port == null) {
         messenger.showSnackBar(
-          SnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
+          FushiSnackBar(content: Text(t.anki_connect_port_auto_fix_none)),
         );
         return;
       }
@@ -1597,7 +1595,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
       await vm.updateAnkiConnectPort(port.toString());
       messenger.showSnackBar(
-        SnackBar(
+        FushiSnackBar(
           content: Text(switch (result.status) {
             AnkiConnectPortWriteStatus.updated =>
               t.anki_connect_port_auto_fix_done(port: port),
@@ -1611,6 +1609,154 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     }
   }
 
+  List<Widget> _buildAnkiDesktopLaunchRows(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) {
+    final String executable = settings.ankiDesktopExecutable;
+    return <Widget>[
+      SettingsSearchTarget(
+        id: 'card_creation.anki.desktop_auto_launch',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_desktop_auto_launch,
+          subtitle: t.anki_desktop_auto_launch_hint,
+          value: settings.autoLaunchAnkiDesktop,
+          onChanged: (bool value) =>
+              _setAutoLaunchAnkiDesktop(vm, settings, value),
+        ),
+      ),
+      SettingsSearchTarget(
+        id: 'card_creation.anki.desktop_executable',
+        child: AdaptiveSettingsRow(
+          icon: Icons.folder_open_outlined,
+          showIcon: true,
+          title: t.anki_desktop_executable,
+          subtitle: executable.isNotEmpty
+              ? executable
+              : (Platform.isWindows
+                    ? t.anki_desktop_executable_unset_required
+                    : t.anki_desktop_executable_unset_default),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (_supportsAnkiExecutableDetect)
+                IconButton(
+                  icon: const Icon(Icons.manage_search_outlined),
+                  tooltip: t.anki_desktop_executable_detect,
+                  onPressed: () => _detectAnkiExecutable(vm),
+                ),
+              if (executable.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear),
+                  tooltip: t.clear,
+                  onPressed: () => vm.setAnkiDesktopExecutable(''),
+                ),
+            ],
+          ),
+          onTap: () => _pickAnkiExecutable(vm),
+        ),
+      ),
+      SettingsSearchTarget(
+        id: 'card_creation.anki.desktop_launch',
+        child: AdaptiveSettingsRow(
+          icon: Icons.rocket_launch_outlined,
+          showIcon: true,
+          title: t.anki_desktop_launch,
+          trailing: _ankiLaunchBusy
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: adaptiveIndicator(context: context, strokeWidth: 2),
+                )
+              : null,
+          onTap: _ankiLaunchBusy
+              ? null
+              : () => _launchAnkiDesktop(vm, settings),
+        ),
+      ),
+    ];
+  }
+
+  /// 打开开关时若本平台必须有路径而还没有，先试着从运行中的 Anki 认出来；
+  /// 认不出就提示去选——开关照样打开，路径补上后下次启动即生效。
+  Future<void> _setAutoLaunchAnkiDesktop(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+    bool value,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    await vm.setAutoLaunchAnkiDesktop(value);
+    if (!value || settings.ankiDesktopExecutable.isNotEmpty) return;
+    if (!Platform.isWindows) return;
+    final String? detected = AnkiDesktopLauncher.detectRunningExecutable();
+    if (detected != null) {
+      await vm.setAnkiDesktopExecutable(detected);
+      return;
+    }
+    messenger.showSnackBar(
+      SnackBar(content: Text(t.anki_desktop_launch_not_configured)),
+    );
+  }
+
+  Future<void> _detectAnkiExecutable(AnkiViewModel vm) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    final String? detected = AnkiDesktopLauncher.detectRunningExecutable();
+    if (detected == null) {
+      messenger.showSnackBar(
+        SnackBar(content: Text(t.anki_desktop_executable_detect_failed)),
+      );
+      return;
+    }
+    await vm.setAnkiDesktopExecutable(detected);
+  }
+
+  Future<void> _pickAnkiExecutable(AnkiViewModel vm) async {
+    final FilePickerResult? picked = await pickFilesByExtensions(
+      context: context,
+      allowedExtensions: Platform.isWindows
+          ? const <String>{'exe'}
+          : (Platform.isMacOS ? const <String>{'app'} : null),
+      dialogTitle: t.anki_desktop_executable,
+    );
+    final String? path = picked?.files.single.path;
+    if (path == null) return;
+    await vm.setAnkiDesktopExecutable(path);
+  }
+
+  Future<void> _launchAnkiDesktop(
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) async {
+    final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+    setState(() => _ankiLaunchBusy = true);
+    try {
+      final AnkiDesktopLaunchResult result = await AnkiDesktopLauncher.launch(
+        settings,
+      );
+      final String? learned = result.learnedExecutable;
+      if (learned != null) await vm.setAnkiDesktopExecutable(learned);
+      messenger.showSnackBar(
+        SnackBar(content: Text(_ankiLaunchMessage(result))),
+      );
+    } finally {
+      if (mounted) setState(() => _ankiLaunchBusy = false);
+    }
+  }
+
+  String _ankiLaunchMessage(AnkiDesktopLaunchResult result) {
+    switch (result.status) {
+      case AnkiDesktopLaunchStatus.launched:
+        return t.anki_desktop_launch_started;
+      case AnkiDesktopLaunchStatus.alreadyRunning:
+        return t.anki_desktop_launch_already_running;
+      case AnkiDesktopLaunchStatus.notConfigured:
+        return t.anki_desktop_launch_not_configured;
+      case AnkiDesktopLaunchStatus.skipped:
+      case AnkiDesktopLaunchStatus.failed:
+        return t.anki_desktop_launch_failed(error: result.detail ?? '');
+    }
+  }
+
   Future<void> _installAnkiConnectAddon() async {
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     setState(() => _addonInstallBusy = true);
@@ -1618,7 +1764,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       final AnkiAddonInstallResult result =
           await AnkiConnectInstaller.install();
       messenger.showSnackBar(
-        SnackBar(content: Text(_addonInstallMessage(result))),
+        FushiSnackBar(content: Text(_addonInstallMessage(result))),
       );
     } finally {
       if (mounted) setState(() => _addonInstallBusy = false);
@@ -1647,11 +1793,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       final LapisBackupOutcome? outcome = await vm.lapisTemplateService
           .backupNow();
       messenger.showSnackBar(
-        SnackBar(content: Text(_lapisBackupMessage(outcome))),
+        FushiSnackBar(content: Text(_lapisBackupMessage(outcome))),
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_lapis_backup_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_lapis_backup_failed(error: '$e'))),
       );
     } finally {
       if (mounted) setState(() => _lapisBusy = false);
@@ -1676,17 +1822,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     if (!mounted) return;
     if (backups.isEmpty) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_lapis_restore_empty)),
+        FushiSnackBar(content: Text(t.anki_lapis_restore_empty)),
       );
       return;
     }
-    final File? chosen = await showDialog<File>(
+    final File? chosen = await showAppDialog<File>(
       context: context,
-      builder: (BuildContext context) => SimpleDialog(
+      builder: (BuildContext context) => FushiSimpleDialog(
         title: Text(t.anki_lapis_restore),
         children: [
           for (final File f in backups.take(30))
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.pop(context, f),
               child: Text(_lapisBackupLabel(f)),
             ),
@@ -1694,17 +1840,17 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ),
     );
     if (chosen == null || !mounted) return;
-    final bool? ok = await showDialog<bool>(
+    final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(t.anki_lapis_restore),
         content: Text(t.anki_lapis_restore_confirm),
         actions: [
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(t.dialog_ok),
           ),
@@ -1730,7 +1876,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       failure ??= e; // 恢复本身的错更接近根因，优先呈现它。
     }
     messenger.showSnackBar(
-      SnackBar(
+      FushiSnackBar(
         content: Text(
           failure == null
               ? t.anki_lapis_restore_done
@@ -1782,19 +1928,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text(t.anki_dedup_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_dedup_failed(error: '$e'))),
       );
       return null;
     } finally {
       if (mounted) setState(() => _dedupBusy = false);
     }
     if (report == null) {
-      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_unavailable)));
+      messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_dedup_unavailable)));
       return null;
     }
     if (report.cancelled && dryRun) {
       // 干跑被取消：清单不完整，摊出来只会误导用户。
-      messenger.showSnackBar(SnackBar(content: Text(t.anki_dedup_cancelled)));
+      messenger.showSnackBar(FushiSnackBar(content: Text(t.anki_dedup_cancelled)));
       return null;
     }
     return report;
@@ -2238,12 +2384,12 @@ class _AnkiHandlebarPickerDialogState extends State<AnkiHandlebarPickerDialog> {
                     itemCount: widget.options.length,
                     itemBuilder: (_, i) {
                       final opt = widget.options[i];
-                      if (opt == '-') return const Divider(height: 1);
+                      if (opt == '-') return const FushiDividerControl(height: 1);
                       final bool isSelected = value.text == opt;
                       return AdaptiveSettingsRow(
                         title: widget.labelFor(opt),
                         trailing: isSelected
-                            ? Icon(
+                            ? FushiIcon(
                                 Icons.check,
                                 color: Theme.of(context).colorScheme.primary,
                               )

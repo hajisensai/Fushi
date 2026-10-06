@@ -6,6 +6,7 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog upon selecting 'Edit' in the
@@ -311,8 +312,12 @@ class MediaItemCoverOverrideField extends StatelessWidget {
         horizontal: tokens.spacing.rowHorizontal,
         vertical: tokens.spacing.gap,
       ),
-      color: tokens.surfaces.search,
-      borderColor: tokens.surfaces.outline,
+      // Apple：对话框里的内嵌块是无描边的系统灰填充（tertiaryFill），不画
+      // 描边方框；MD3 维持 search 底 + outline 描边。
+      color: isGlassDesign(context)
+          ? appleColorsOf(context).tertiaryFill
+          : tokens.surfaces.search,
+      borderColor: isGlassDesign(context) ? null : tokens.surfaces.outline,
       child: ConstrainedBox(
         constraints: BoxConstraints(
           minHeight: tokens.spacing.gap * 7,
@@ -340,7 +345,7 @@ class MediaItemCoverOverrideField extends StatelessWidget {
                       return SizedBox(
                         height: tokens.spacing.gap * 6,
                         width: tokens.spacing.gap * 6,
-                        child: const Icon(Icons.broken_image_outlined),
+                        child: const FushiIcon(Icons.broken_image_outlined),
                       );
                     },
                   ),

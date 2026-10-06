@@ -9,6 +9,9 @@ import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_login_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiTextButton;
+import '../../helpers/glass_unwrap.dart';
 
 /// BUG-2425：桌面端在真实浏览器里登录源站，把会话交给宿主的 jar。
 void main() {
@@ -96,8 +99,9 @@ void main() {
     bool settled() {
       final Iterable<Element> hits = done.evaluate();
       if (hits.isEmpty) return true; // 页已经 pop
+      // 「完成」是设计系统分派按钮（FushiTextButton），onPressed 挂在它自身上。
       final Widget widget = hits.first.widget;
-      return widget is TextButton && widget.onPressed != null;
+      return widget is FushiTextButton && widget.onPressed != null;
     }
 
     final Stopwatch clock = Stopwatch()..start();
@@ -378,7 +382,7 @@ void main() {
     ]) {
       final Finder finder = find.byKey(ValueKey<String>(key));
       expect(finder, findsOneWidget, reason: key);
-      expect(tester.widget<IconButton>(finder).onPressed, isNull, reason: key);
+      expect(tester.widget<IconButton>(glassUnwrap<IconButton>(finder)).onPressed, isNull, reason: key);
     }
     // 地址栏显示当前地址。
     expect(find.text('https://bookwalker.jp'), findsOneWidget);
@@ -421,9 +425,7 @@ void main() {
       // 按钮变禁用（不能重复登记），状态文字先是「还没收到」。
       expect(
         tester
-            .widget<OutlinedButton>(
-              find.byKey(const ValueKey<String>('mihon_login_import_browser')),
-            )
+            .widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('mihon_login_import_browser'))),)
             .onPressed,
         isNull,
       );

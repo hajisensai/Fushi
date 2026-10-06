@@ -56,8 +56,18 @@ void main() {
     expect(text.contains('goalReached(read, goal)'), isTrue,
         reason: '达成判定应来自纯函数 goalReached');
     expect(text.contains('LinearProgressIndicator('), isTrue);
-    expect(text.contains('colorScheme.tertiary'), isTrue,
+    // 统计配色收口进 StatChartColors（MD3 下 reached = tertiary，Apple 下为
+    // systemGreen）：达成后进度条换「达成」色，MD3 口径仍是 tertiary。
+    expect(
+        text.contains(
+            'reached ? chartColors.reached : chartColors.series'),
+        isTrue,
         reason: '达成后进度条换 tertiary 色');
+    final String shared =
+        File('lib/src/pages/implementations/stat_shared.dart')
+            .readAsStringSync();
+    expect(shared.contains('reached: scheme.tertiary,'), isTrue,
+        reason: '达成后进度条换 tertiary 色（MD3 配色）');
     expect(text.contains('t.stat_goal_reached'), isTrue,
         reason: '达成时展示 stat_goal_reached 文案');
     expect(

@@ -6,6 +6,8 @@ import 'package:image/image.dart' as img;
 // BUG-835：extractFfmpegFailureReason 的正准实现在 ffmpeg_backend.dart（与
 // FfmpegBackend 同层），直接从这里取，不再经 video_clip_exporter 转口。
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart'
+    show missingMuxedVideoAndAudio;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
@@ -71,10 +73,7 @@ int clipExportFps({
 
 /// 选区 → 整句 cue 区间的判定结果（M1，纯数据）。
 class AudiobookClipBoundaryResult {
-  const AudiobookClipBoundaryResult({
-    required this.kind,
-    this.range,
-  });
+  const AudiobookClipBoundaryResult({required this.kind, this.range});
 
   final AudiobookClipBoundaryKind kind;
 
@@ -156,7 +155,8 @@ AudiobookClipSelectionSpan resolveAudiobookClipSelectionSpan({
   required int? fallbackOffset,
   required int? fallbackLength,
 }) {
-  final bool hasNativeSelection = selectedText != null &&
+  final bool hasNativeSelection =
+      selectedText != null &&
       selectedOffset != null &&
       selectedLength != null &&
       selectedLength > 0;
@@ -184,10 +184,7 @@ List<AudiobookClipShareAttachment> audiobookClipMobileShareAttachments({
   // BUG-1322：移动端产物从 MJPEG/.mov 换 MPEG-4/.mp4 后，两端容器统一为 mp4，
   // mime 不再按编码器分叉。
   return <AudiobookClipShareAttachment>[
-    AudiobookClipShareAttachment(
-      path: videoPath,
-      mimeType: 'video/mp4',
-    ),
+    AudiobookClipShareAttachment(path: videoPath, mimeType: 'video/mp4'),
   ];
 }
 
@@ -223,15 +220,17 @@ List<AudiobookClipCueSpan> clipCueSpansWithDelay({
   required List<AudioCue> span,
   required int delayMs,
 }) {
-  return span.map((AudioCue c) {
-    final int startMs = (c.startMs + delayMs).clamp(0, 1 << 30);
-    final int endMs = (c.endMs + delayMs).clamp(startMs + 1, 1 << 30);
-    return AudiobookClipCueSpan(
-      text: c.text,
-      startMs: startMs,
-      endMs: endMs,
-    );
-  }).toList(growable: false);
+  return span
+      .map((AudioCue c) {
+        final int startMs = (c.startMs + delayMs).clamp(0, 1 << 30);
+        final int endMs = (c.endMs + delayMs).clamp(startMs + 1, 1 << 30);
+        return AudiobookClipCueSpan(
+          text: c.text,
+          startMs: startMs,
+          endMs: endMs,
+        );
+      })
+      .toList(growable: false);
 }
 
 /// Dynamic cards render cue text segment by segment. Only use that path when
@@ -284,10 +283,12 @@ List<List<Uint8List>> assignClipImagesToCues({
   );
   if (cueCount == 0) return assigned;
   final List<({int normOffset, Uint8List bytes})> sorted =
-      List<({int normOffset, Uint8List bytes})>.of(images)
-        ..sort((({int normOffset, Uint8List bytes}) a,
-                ({int normOffset, Uint8List bytes}) b) =>
-            a.normOffset.compareTo(b.normOffset));
+      List<({int normOffset, Uint8List bytes})>.of(images)..sort(
+        (
+          ({int normOffset, Uint8List bytes}) a,
+          ({int normOffset, Uint8List bytes}) b,
+        ) => a.normOffset.compareTo(b.normOffset),
+      );
   for (final ({int normOffset, Uint8List bytes}) image in sorted) {
     int target = 0; // 兜底：图在所有 cue 之前 / 无可用锚点 → 挂最前一段，绝不丢。
     for (int i = 0; i < cueCount; i++) {
@@ -414,7 +415,7 @@ AudioPlaybackRange? audiobookClipPlanRange({
 // `mpeg4`（BUG-1322）。但 MPEG-4 Part 2 的 Simple/ASP 规格上限远低于本导出的 1080×1920，
 // libavcodec 既不 clamp 也不写正确 profile/level → 严格硬件解码器有权拒绝，而 ffmpeg
 // 仍 exit 0，形成**静默产出打不开的文件**（与更早 mjpeg/.mov 同型，BUG-809）。
-// 两条路径都 `-c:a aac`；单图路径 `-loop 1` + `-shortest`，序列帧路径 `-framerate`。
+// 两条路径都 `-c:a aac`；单图路径 `-loop 1`，序列帧路径 `-framerate`；时长都由输出 `-t` 定。
 //
 // ⚠️ 容器（D-MUXER，BUG-460）：`.mov`/`.mp4` 都需要能同时装视频+音频流的 mov/mp4
 // muxer；精简 ffmpeg-min build（`--disable-everything`）原本只编入 adts/gif/mjpeg/
@@ -447,7 +448,7 @@ class AudiobookClipSynthResult {
   });
 
   const AudiobookClipSynthResult.success(String outputPath)
-      : this._(outputPath: outputPath, failure: null);
+    : this._(outputPath: outputPath, failure: null);
 
   const AudiobookClipSynthResult.failure(
     AudiobookClipSynthFailure failure, {
@@ -478,7 +479,11 @@ class AudiobookClipSynthResult {
 ///   移动端 ffmpeg-kit 已重编入 x264，此前的 mpeg4 回退（规格上限低于 1080×1920，
 ///   会静默产出解不了的文件）与更早的 mjpeg 均已废弃。
 /// - `-c:a aac`：音频转 AAC（捆绑包唯一音频编码器，与桌面音频裁剪同源）。
-/// - `-shortest`：以较短的输入（音频）定时长——图是无限 loop，必须靠音频收尾。
+/// - `-t [durationMs]`：输出时长 = 片段时长（调用方裁音频用的同一对毫秒值）。图是
+///   无限 loop，必须有终点；**不用 `-shortest`**：移动端 ffmpeg-kit 是 FFmpeg 6.0，
+///   它的 `-shortest` 同步队列遇到裸 ADTS 输入会坏——单图路径截不住无限图（实测固定
+///   多出约 12.5 秒静音画面），序列帧路径整条音频被吞（0 个音频包、退出码 0，同
+///   BUG-2940）。时长也不从 ADTS 文件反推：裸 ADTS 的时长是按码率估的。
 /// - `-r [fps]`：低帧率（静态画面无需高帧率，省体积/编码时间）。
 /// - `-vf scale=...:force_original_aspect_ratio=decrease,pad=...`：把图缩放进
 ///   [width]×[height] 并居中黑边填充，保证输出维度恒定且为偶数（yuv420p 要求）。
@@ -489,12 +494,14 @@ List<String> buildFfmpegImageAudioToVideoArgs({
   required String imagePath,
   required String audioPath,
   required String outputPath,
+  required int durationMs,
   int width = 1080,
   int height = 1920,
   int fps = 12,
 }) {
   // pad 居中黑边：scale 先按比例缩进框内，再 pad 到精确 WxH（偶数维度安全）。
-  final String filter = 'scale=$width:$height:'
+  final String filter =
+      'scale=$width:$height:'
       'force_original_aspect_ratio=decrease,'
       'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black';
   return <String>[
@@ -529,7 +536,8 @@ List<String> buildFfmpegImageAudioToVideoArgs({
     filter,
     '-c:a',
     'aac',
-    '-shortest',
+    '-t',
+    (durationMs / 1000).toStringAsFixed(3),
     outputPath,
   ];
 }
@@ -580,10 +588,7 @@ const List<String> _clipVideoCodecArgs = <String>[
 ///
 /// [pngBytes] 解码失败（损坏/空）返回 null，调用方据此回退（记日志 + toast）。
 /// [quality] 为 JPEG 质量（1-100），静态文本卡片用高质量避免文字边缘锯齿。
-Uint8List? encodeClipTextFrameAsJpg(
-  Uint8List pngBytes, {
-  int quality = 98,
-}) {
+Uint8List? encodeClipTextFrameAsJpg(Uint8List pngBytes, {int quality = 98}) {
   final img.Image? decoded = img.decodeImage(pngBytes);
   if (decoded == null) return null;
   return img.encodeJpg(decoded, quality: quality);
@@ -628,7 +633,9 @@ Future<Uint8List?> encodeClipTextFrameAsJpgAsync(
 ///   序列帧**输入**仍必须是 JPEG（BUG-543：两端都无 png
 ///   decoder，靠 mjpeg decoder 解 JPEG 输入——输入解码与输出编码是两回事）。
 /// - `-c:a aac`：捆绑包唯一音频编码器。
-/// - `-shortest`：以较短输入收尾（帧数×1/fps 与音频时长对齐时二者相近，防尾端错位）。
+/// - `-t [durationMs]`：输出时长 = 片段时长（帧计划与音频裁剪用的同一对毫秒值）。
+///   不用 `-shortest`，理由同 [buildFfmpegImageAudioToVideoArgs]（FFmpeg 6.0 下序列帧
+///   路径整条音频被吞，BUG-2940）。
 /// - `-vf scale=...:pad=...`：缩放+黑边填充到精确偶数维度（yuv420p 要求偶数维度）。
 ///
 /// **天花板守卫**：两端产物都必须走 libx264（TODO-2357 起移动端亦然，绝不得再出现
@@ -640,20 +647,22 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
   required String framesDir,
   required String audioPath,
   required String outputPath,
+  required int durationMs,
   String framePattern = 'frame_%04d.jpg',
   int width = 1080,
   int height = 1920,
   int fps = 12,
 }) {
-  final String filter = 'scale=$width:$height:'
+  final String filter =
+      'scale=$width:$height:'
       'force_original_aspect_ratio=decrease,'
       'pad=$width:$height:(ow-iw)/2:(oh-ih)/2:color=black';
   // 用正斜杠拼输入模式：ffmpeg 在所有平台都接受 `/`；Windows 反斜杠会被 image2
   // demuxer 的 `%d` 解析规则误伤。
   final String inputPattern =
       framesDir.endsWith('/') || framesDir.endsWith('\\')
-          ? '$framesDir$framePattern'
-          : '$framesDir/$framePattern';
+      ? '$framesDir$framePattern'
+      : '$framesDir/$framePattern';
   return <String>[
     '-hide_banner',
     '-y',
@@ -683,9 +692,27 @@ List<String> buildFfmpegImageSeqAudioToVideoArgs({
     filter,
     '-c:a',
     'aac',
-    '-shortest',
+    '-t',
+    (durationMs / 1000).toStringAsFixed(3),
     outputPath,
   ];
+}
+
+/// BUG-2940：退出码 0 + 文件非空不代表有声音——FFmpeg 6.0（移动端 ffmpeg-kit）在
+/// 序列帧路径上曾把整条 ADTS 音频吞掉、照样退出 0。按这次 ffmpeg 自己的收尾统计行
+/// 核对画面与声音两路都真的写进了数据；缺一路就删掉半成品、记日志、判失败。
+AudiobookClipSynthResult? _rejectWithoutMuxedStreams(
+  FfmpegRunResult result,
+  File output,
+  String logTag,
+) {
+  final String? missing = missingMuxedVideoAndAudio(result.output);
+  if (missing == null) return null;
+  _deleteClipSynthOutput(output);
+  ErrorLogService.instance.log(logTag, '$missing; ${result.failureSummary}');
+  return const AudiobookClipSynthResult.failure(
+    AudiobookClipSynthFailure.outputMissing,
+  );
 }
 
 /// 把 [imagePath]（文本图）+ [audioPath]（片段音频）合成成 [outputPath]
@@ -697,6 +724,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
   required String imagePath,
   required String audioPath,
   required String outputPath,
+  required int durationMs,
   int width = 1080,
   int height = 1920,
   int fps = 12,
@@ -724,20 +752,22 @@ Future<AudiobookClipSynthResult> synthAudiobookClipVideoViaFfmpeg({
 
   try {
     output.parent.createSync(recursive: true);
-    final FfmpegRunResult result =
-        await (backend ?? resolveFfmpegBackend()).run(
-      buildFfmpegImageAudioToVideoArgs(
-        imagePath: imagePath,
-        audioPath: audioPath,
-        outputPath: outputPath,
-        width: width,
-        height: height,
-        fps: fps,
-      ),
-      timeout,
-    );
+    final FfmpegRunResult result = await (backend ?? resolveFfmpegBackend())
+        .run(
+          buildFfmpegImageAudioToVideoArgs(
+            imagePath: imagePath,
+            audioPath: audioPath,
+            outputPath: outputPath,
+            durationMs: durationMs,
+            width: width,
+            height: height,
+            fps: fps,
+          ),
+          timeout,
+        );
     if (result.isSuccess && output.existsSync() && output.lengthSync() > 0) {
-      return AudiobookClipSynthResult.success(outputPath);
+      return _rejectWithoutMuxedStreams(result, output, 'AudiobookClipSynth') ??
+          AudiobookClipSynthResult.success(outputPath);
     }
     _deleteClipSynthOutput(output);
     if (result.isSuccess) {
@@ -787,6 +817,7 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
   required String framesDir,
   required String audioPath,
   required String outputPath,
+  required int durationMs,
   String framePattern = 'frame_%04d.jpg',
   int width = 1080,
   int height = 1920,
@@ -814,21 +845,27 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
 
   try {
     output.parent.createSync(recursive: true);
-    final FfmpegRunResult result =
-        await (backend ?? resolveFfmpegBackend()).run(
-      buildFfmpegImageSeqAudioToVideoArgs(
-        framesDir: framesDir,
-        audioPath: audioPath,
-        outputPath: outputPath,
-        framePattern: framePattern,
-        width: width,
-        height: height,
-        fps: fps,
-      ),
-      timeout,
-    );
+    final FfmpegRunResult result = await (backend ?? resolveFfmpegBackend())
+        .run(
+          buildFfmpegImageSeqAudioToVideoArgs(
+            framesDir: framesDir,
+            audioPath: audioPath,
+            outputPath: outputPath,
+            durationMs: durationMs,
+            framePattern: framePattern,
+            width: width,
+            height: height,
+            fps: fps,
+          ),
+          timeout,
+        );
     if (result.isSuccess && output.existsSync() && output.lengthSync() > 0) {
-      return AudiobookClipSynthResult.success(outputPath);
+      return _rejectWithoutMuxedStreams(
+            result,
+            output,
+            'AudiobookClipSeqSynth',
+          ) ??
+          AudiobookClipSynthResult.success(outputPath);
     }
     _deleteClipSynthOutput(output);
     if (result.isSuccess) {
@@ -842,8 +879,10 @@ Future<AudiobookClipSynthResult> synthAudiobookClipFrameSeqVideoViaFfmpeg({
         AudiobookClipSynthFailure.outputMissing,
       );
     }
-    ErrorLogService.instance
-        .log('AudiobookClipSeqSynth', result.failureSummary);
+    ErrorLogService.instance.log(
+      'AudiobookClipSeqSynth',
+      result.failureSummary,
+    );
     final String reason = extractFfmpegFailureReason(result.output);
     return AudiobookClipSynthResult.failure(
       AudiobookClipSynthFailure.ffmpegFailed,

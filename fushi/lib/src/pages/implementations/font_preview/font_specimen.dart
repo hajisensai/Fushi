@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 字体行右侧的对照样字：一个拉丁字母对 + 日文最能看出字形差异的几个字
 /// （「永」永字八法看笔画、平假名看圆转、片假名看硬折、「漢」看繁密汉字）。
@@ -76,7 +77,7 @@ class FontSpecimenLine extends StatelessWidget {
     final Widget trailing = switch (state) {
       FontSpecimenState.loading => SizedBox.square(
         dimension: 16,
-        child: CircularProgressIndicator(
+        child: FushiCircularProgressIndicator(
           strokeWidth: 2,
           color: scheme.onSurfaceVariant,
         ),

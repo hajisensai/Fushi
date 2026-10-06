@@ -19,6 +19,31 @@ abstract class FushiRemoteLookupService {
   });
 }
 
+/// 「选择音频源」菜单（弹窗 ♪ 长按 / 右键）的可选能力：列出每个启用源各自解析
+/// 出的全部候选。探测式接口（与 [FushiRemotePopupLookupService] 同法）——没实现它
+/// 的 service 由 `/api/lookup/audio/list` 回落成「只有默认源」的单项列表，旧实现
+/// 与测试替身不必改动。
+abstract class FushiRemoteAudioListService {
+  Future<List<RemoteAudioChoice>> listAudio({
+    required String expression,
+    required String reading,
+  });
+}
+
+/// [FushiRemoteAudioListService.listAudio] 的一项：源显示名、源内变体名（可空）、
+/// 已取回的音频字节。
+class RemoteAudioChoice {
+  const RemoteAudioChoice({
+    required this.name,
+    required this.variant,
+    required this.audio,
+  });
+
+  final String name;
+  final String variant;
+  final RemoteAudioLookup audio;
+}
+
 /// 浏览器扩展只渲染弹框时的可选快路径。
 ///
 /// [FushiRemoteLookupService.searchDictionary] 必须构造可写历史、可同步的完整

@@ -131,6 +131,26 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -i "$MKV_FIXTURE" -map 0:s:0 "$WORK/embedded.ass"
 assert_nonempty "$WORK/embedded.ass"
 
+# Image-subtitle OCR (graphic_subtitle_track_ocr.dart) copies a PGS track out
+# with `-c copy -f sup`. No FFmpeg can *encode* PGS, so the fixture is a tiny
+# hand-built .sup (one 4x2 bitmap cue, fade-in palette update, clear) that the
+# host FFmpeg muxes into Matroska. A build without the sup muxer fails with
+# "Requested output format 'sup' is not known".
+echo "[ffmpeg-min-smoke] extracting a PGS track to .sup"
+printf '%s' 'UEcAAV+QAAAAABYAEweABDgQAACAAAABAAAAAABkAMhQRwABX5AAAAAAFAAHAAAB64CAQFBHAAFfkAAAAAAVABUAAADAAAAOAAQAAgCEAQAAAIQBAABQRwABX5AAAAAAgAAAUEcAAg9YAAAAABYAEweABDgQAAAAAAABAAAAAABkAMhQRwACD1gAAAAAFAAHAAAB64CA/1BHAAIPWAAAAACAAABQRwAEHrAAAAAAFgALB4AEOBAAAAAAAABQRwAEHrAAAAAAgAAA' |
+  base64 --decode >"$WORK/pgs.sup"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y \
+  -i "$WORK/pgs.sup" -map 0 -c copy "$WORK/pgs.mkv"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -i "$WORK/pgs.mkv" -map 0:s:0 -c copy -f sup "$WORK/pgs-out.sup"
+assert_nonempty "$WORK/pgs-out.sup"
+if [ "$(head -c 2 "$WORK/pgs-out.sup")" != "PG" ]; then
+  echo "[ffmpeg-min-smoke] extracted .sup does not start with a PG segment" >&2
+  exit 1
+fi
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error \
+  -i "$WORK/pgs-out.sup" -map 0 -c copy -f null -
+
 echo "[ffmpeg-min-smoke] exporting cue GIF and frame"
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -an \

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
+    show FushiDividerControl;
 
 import '../widgets/widget_test_helpers.dart';
 
@@ -53,6 +55,11 @@ void main() {
       // header 仍在（顶栏渲染），但 header 与占位 body 之间不得出现分隔线。
       expect(find.byKey(const Key('test-popup-header')), findsOneWidget);
       expect(
+        find.byType(FushiDividerControl),
+        findsNothing,
+        reason: '无结果态不得挂共享分隔线控件',
+      );
+      expect(
         find.byType(Divider),
         findsNothing,
         reason: '无结果态 header 与占位之间不得画分隔线（TODO-1187 悬空横线）',
@@ -80,8 +87,9 @@ void main() {
           reason: 'showHeaderDivider 门控变量缺失');
       final String afterGate = src.substring(gateIdx);
       expect(
+        // 分隔线走共享 FushiDividerControl（Material 下即 Divider，玻璃下为细线）。
         afterGate.contains('if (showHeaderDivider)') &&
-            afterGate.contains('Divider('),
+            afterGate.contains('FushiDividerControl('),
         isTrue,
         reason: '门控为真时必须画 Divider（有结果态分隔线保留）',
       );

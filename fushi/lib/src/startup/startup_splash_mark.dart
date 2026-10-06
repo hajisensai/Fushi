@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 启动品牌标的前景图：与 Android 12+ 系统启动画面
 /// `windowSplashScreenAnimatedIcon`（`ic_splash_minimal_foreground`）同一张图。
@@ -132,7 +133,7 @@ class StartupSplashMark extends StatelessWidget {
               delay: progressDelay,
               child: SizedBox(
                 width: 120,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   minHeight: 4,
                   borderRadius: const BorderRadius.all(Radius.circular(2)),
                   color: colorScheme.primary,

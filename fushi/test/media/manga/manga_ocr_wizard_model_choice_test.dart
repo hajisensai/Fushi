@@ -13,6 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:path/path.dart' as p;
+import '../../helpers/glass_unwrap.dart';
 
 class _FakeOcrService implements MangaOcrService {
   _FakeOcrService({required this.ready});
@@ -110,12 +111,16 @@ void main() {
       FilledButton,
       t.manga_ocr_wizard_run,
     );
-    expect(tester.widget<FilledButton>(run).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNull);
     final Finder download = find.byKey(
       const ValueKey<String>('manga_ocr_wizard_model_download'),
     );
     expect(download, findsOneWidget);
 
+    // 引擎分段在测试字体下折成多行，向导内容区比 800x600 默认窗口高：下载
+    // 入口落在可滚动内容区下部、被固定的动作栏盖住，先滚到可见再点。
+    await tester.ensureVisible(download);
+    await tester.pumpAndSettle();
     await tester.tap(download);
     await tester.pump();
     expect(
@@ -125,7 +130,7 @@ void main() {
     await services[MangaOcrLocalModel.mangaOcr]!.downloads.close();
     await tester.pumpAndSettle();
     expect(download, findsNothing);
-    expect(tester.widget<FilledButton>(run).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNotNull);
 
     // 换成已下好的 CTC：写回全局模型偏好，仍停在本地引擎、可开跑。
     await tester.tap(modelField);
@@ -136,6 +141,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(storedModels, <String>['manga_ctc']);
     expect(modelField, findsOneWidget);
-    expect(tester.widget<FilledButton>(run).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(run)).onPressed, isNotNull);
   });
 }

@@ -99,6 +99,9 @@ class InterconnectGameStreamTransport implements GameStreamTransport {
           'session_not_found',
           'session_conflict',
           'stream_error',
+          GameStreamRejection.streamOff,
+          GameStreamRejection.httpsRequired,
+          GameStreamRejection.libraryOff,
           GameStreamLaunchFailure.disabled,
           GameStreamLaunchFailure.busy,
         };

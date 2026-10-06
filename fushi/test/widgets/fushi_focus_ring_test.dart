@@ -8,13 +8,14 @@ import 'package:fushi/src/utils/components/fushi_focus_ring.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 void main() {
-  test('FushiFocusRing uses design token radius', () {
+  test('FushiFocusRing follows the focused control shape', () {
     final String source =
         File('lib/src/utils/components/fushi_focus_ring.dart')
             .readAsStringSync();
 
-    expect(source, contains('FushiDesignTokens.of(context)'));
-    expect(source, contains('tokens.radii.chipRadius'));
+    // 环的圆角取被聚焦控件自身的外形（胶囊 / 圆钮 / 圆角），不再是恒定小圆角。
+    expect(source, contains('_probeTargetShape('));
+    expect(source, isNot(contains('tokens.radii.chipRadius')));
     expect(source, contains('FushiFocusScroll.ensureVisibleIfHidden'));
     expect(source, isNot(contains('BorderRadius.circular(8)')));
     expect(source, isNot(contains('Scrollable.ensureVisible')));

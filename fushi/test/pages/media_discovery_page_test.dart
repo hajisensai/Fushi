@@ -926,6 +926,10 @@ void main() {
       expect(prefs.discoveryNyaaQualityFilter, 0);
       expect(requests.last.queryParameters['f'], '0');
 
+      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('discovery_nyaa_filter_2')),
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('discovery_nyaa_filter_2')),
       );
@@ -938,6 +942,10 @@ void main() {
       expect(requests, hasLength(2));
       expect(requests.last.queryParameters['f'], '2');
 
+      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
       );
@@ -947,6 +955,10 @@ void main() {
       expect(requests.last.queryParameters['f'], '1');
 
       // 点已选中的档不重复请求。
+      // 筛选行是单行横滑（四个域发现页同一口径），尾部的 chip 可能在屏外。
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
+      );
       await tester.tap(
         find.byKey(const ValueKey<String>('discovery_nyaa_filter_1')),
       );

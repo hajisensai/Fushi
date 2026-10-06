@@ -9,6 +9,7 @@ import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_row.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_mini_bar.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   late Directory dir;
@@ -232,7 +233,7 @@ void main() {
         of: find.text(t.onboarding_pack_download_resume),
         matching: find.byType(FilledButton),
       );
-      expect(tester.widget<FilledButton>(resume).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(resume)).onPressed, isNotNull);
     });
   }
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -7,7 +8,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
-    show DialogListAction;
+    show DialogListAction, MediaItemDialogFrame;
 import 'package:fushi/utils.dart';
 
 /// 三库页统一合集上下文菜单的**行为**守卫（破坏性分支优先）。
@@ -48,6 +49,7 @@ void main() {
     String? localFilesSubtitle,
     String? statisticsSubtitle,
     List<DialogListAction> extraListActions = const <DialogListAction>[],
+    ImageProvider? coverImage,
   }) async {
     final _Probe probe = _Probe();
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
@@ -84,6 +86,7 @@ void main() {
                   deleteMembersLocalFilesSubtitle: localFilesSubtitle,
                   deleteMembersStatisticsSubtitle: statisticsSubtitle,
                   extraListActions: extraListActions,
+                  coverImage: coverImage,
                 ),
                 child: const Text('open'),
               ),
@@ -97,17 +100,24 @@ void main() {
     return probe;
   }
 
-  /// 点菜单里的「删除合集」危险动作 → 进确认框。菜单项渲染成 TextButton，
-  /// 确认框的确认键是 isDestructiveAction 的 FilledButton，两者同文案不同控件，
-  /// 各自按控件类型定位就不会认错。
+  /// 点菜单里的「删除合集」危险动作 → 进确认框。菜单项渲染成分段分组行
+  /// （InkWell，2026-10-04 起危险动作与列表动作同一形态、error 色），确认框的
+  /// 确认键是 isDestructiveAction 的 FilledButton，两者同文案不同控件，各自按
+  /// 控件类型定位就不会认错。
   Future<void> tapDeleteAction(WidgetTester tester) async {
-    await tester.tap(find.widgetWithText(TextButton, t.delete_collection));
+    await tester.tap(find.widgetWithText(InkWell, t.delete_collection).first);
     await tester.pumpAndSettle();
   }
 
   /// 点确认框里的「删除合集」确认键（销毁按钮 = FilledButton）。
   Future<void> tapConfirm(WidgetTester tester) async {
-    await tester.tap(find.widgetWithText(FilledButton, t.delete_collection));
+    // 二级勾选展开后确认框比 800x600 默认窗口高：内容区可滚动，确认键在
+    // 滚动区底部，先滚到可见再点（与用户滑到底再确认同一路径）。
+    final Finder confirm =
+        find.widgetWithText(FilledButton, t.delete_collection);
+    await tester.ensureVisible(confirm);
+    await tester.pumpAndSettle();
+    await tester.tap(confirm);
     await tester.pumpAndSettle();
   }
 
@@ -359,6 +369,39 @@ void main() {
 
     await tapDeleteAction(tester);
     expect(find.byType(Checkbox), findsNothing);
+  });
+
+  // 2026-10-04：合集菜单此前没有封面块，一眼认不出是哪个合集。传入图源时与书卡
+  // 菜单同形：前景 contain 封面 + 两侧同图模糊垫底；不传则不画封面块。
+  testWidgets('coverImage：画出封面块与模糊垫底，不传则没有封面块',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, MediaCollectionRow collection) =
+        await buildCollection();
+    const ValueKey<String> backdropKey =
+        ValueKey<String>('media_item_dialog_cover_backdrop');
+
+    await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: false,
+    );
+    expect(find.byKey(backdropKey), findsNothing);
+    expect(find.byType(Image), findsNothing);
+    Navigator.of(tester.element(find.byType(MediaItemDialogFrame))).pop();
+    await tester.pumpAndSettle();
+
+    await pumpAndOpen(
+      tester,
+      db: db,
+      collection: collection,
+      injectDeleteMembers: false,
+      coverImage: MemoryImage(Uint8List.fromList(const <int>[0])),
+    );
+    expect(find.byKey(backdropKey), findsOneWidget);
+    // 前景封面 + 垫底各一张。
+    expect(find.byType(Image), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('顶部主按钮 = 打开详情（不写库、不触发 onChanged）', (WidgetTester tester) async {

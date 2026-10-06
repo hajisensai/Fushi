@@ -26,6 +26,10 @@ enum GameSection {
   /// 「浏览」模块整体搬走，2026-10-01 用户拍板加回库页子标签；追加在尾部，不移动
   /// 其它子区的 IndexedStack 索引。
   discover,
+
+  /// 把另一台主机上的游戏串流到本机（与其它平台 games 模块同一个
+  /// `GameStreamLibraryPage`）。追加在尾部，理由同上。
+  stream,
 }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
@@ -134,6 +138,8 @@ String formatGameClockTime(DateTime value) {
 /// 一份真相；枚举序只管 IndexedStack 索引，显示顺序在这里）：
 /// * 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
 ///   （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构；
+/// * 「串流」紧跟「捕获工作台」：同属「玩」的一侧（本机捕获 / 别的主机串流），
+///   放在「发现 → 导入 → 设置」这组入库与配置页签之前；
 /// * 「发现」紧挨「导入」之前，与其它库页「发现 / 来源 / 扩展 → 导入」同序。
 ///   与其它库页一样自己过外部发现的合规门，不靠「iOS 当前没有游戏模块」这条
 ///   会变的前提；游戏没有扩展系统，不设来源 / 扩展；
@@ -142,6 +148,7 @@ final List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.dashboard,
   GameSection.library,
   GameSection.monitor,
+  GameSection.stream,
   if (StoreRestrictedCapability.externalDiscovery.isAvailable)
     GameSection.discover,
   GameSection.importGames,
@@ -192,6 +199,7 @@ class GameSectionTabs extends StatelessWidget {
         // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
         GameSection.importGames => t.library_view_import,
         GameSection.discover => t.library_view_discover,
+        GameSection.stream => t.game_stream_tab,
         GameSection.settings => t.settings,
         // 不设页签（从「设置」进入）；防御性给全称，正常不会上屏。
         GameSection.diagnostics => t.settings,
@@ -213,6 +221,9 @@ class GameSectionTabs extends StatelessWidget {
           return;
         case GameSection.discover:
           gameSectionNotifier.value = GameSection.discover;
+          return;
+        case GameSection.stream:
+          gameSectionNotifier.value = GameSection.stream;
           return;
         case GameSection.monitor:
           onSelectMonitor();

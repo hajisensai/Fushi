@@ -4,6 +4,23 @@ part of '../sync_settings_schema.dart';
 // Hibiki P2P interconnect: client config, host server mode, LAN discovery.
 // Shares the parent library's imports + private scope (_syncSettings / _showSnackBar / _SyncSettingsState); moved verbatim.
 
+/// 互联自绘块里的小节标题（「已保存的连接」「局域网设备」）：MD3 = titleSmall；
+/// Apple = 13 号 semibold secondaryLabel（与玻璃设置渲染器的分组标题同一口径），
+/// 不在 Apple 实色分组卡里冒出一行 MD3 标题字。
+TextStyle? _interconnectSubheadStyle(BuildContext context) =>
+    isGlassDesign(context)
+        ? FushiAppleMetrics.of(context)
+            .footnoteStyle(context)
+            .copyWith(fontWeight: FontWeight.w600)
+        : Theme.of(context).textTheme.titleSmall;
+
+/// 互联自绘块里字段上方的小标签（「令牌」「已配对设备」）：MD3 = labelSmall；
+/// Apple = footnote secondaryLabel。
+TextStyle? _interconnectFieldLabelStyle(BuildContext context) =>
+    isGlassDesign(context)
+        ? FushiAppleMetrics.of(context).footnoteStyle(context)
+        : Theme.of(context).textTheme.labelSmall;
+
 // ── Hibiki server config widget (connect to another Hibiki instance) ─
 
 class _FushiServerConfigWidget extends StatefulWidget {
@@ -158,11 +175,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     FushiClientUrl? host = hosts.length == 1 ? hosts.single : null;
     host ??= await showAppDialog<FushiClientUrl>(
       context: context,
-      builder: (BuildContext ctx) => SimpleDialog(
+      builder: (BuildContext ctx) => FushiSimpleDialog(
         title: Text(t.sync_pair_nfc_write),
         children: <Widget>[
           for (final FushiClientUrl h in hosts)
-            SimpleDialogOption(
+            FushiSimpleDialogOption(
               onPressed: () => Navigator.pop(ctx, h),
               child: Text(h.deviceName ?? h.url),
             ),
@@ -182,7 +199,12 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         : Text(
             ok ? t.sync_connection_success : t.sync_connection_failed,
             style: theme.textTheme.bodySmall?.copyWith(
-              color: ok ? theme.colorScheme.primary : theme.colorScheme.error,
+              // Apple：强调色是单色（黑 / 白），成功态改用系统绿。
+              color: ok
+                  ? (isGlassDesign(context)
+                      ? appleColorsOf(context).success
+                      : theme.colorScheme.primary)
+                  : theme.colorScheme.error,
             ),
           );
     if (parseInterconnectP2pUrl(url) == null) return reach;
@@ -538,6 +560,10 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   Widget build(BuildContext context) {
     if (!_loaded) return const SizedBox.shrink();
     final ThemeData theme = Theme.of(context);
+    // 「已连接」是成功态：Apple 下强调色是单色，改用系统绿。
+    final Color connectedColor = isGlassDesign(context)
+        ? appleColorsOf(context).success
+        : theme.colorScheme.primary;
     // Mutual exclusion: while this device serves peers, it can't also connect
     // out as a client. Block adding/editing connections; deleting stays allowed
     // so the user can clear them and switch roles.
@@ -552,7 +578,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // 「连接到其他设备」罩着两个 widget，此前本列表裸露无题，空列表时更是只剩一个
           // 孤零零的「添加」按钮，用户不知道这块是什么、该怎么连。
           Text(t.interconnect_peer_list_title,
-              style: theme.textTheme.titleSmall),
+              style: _interconnectSubheadStyle(context)),
           const SizedBox(height: 8),
           if (_urls.isEmpty)
             Text(
@@ -659,7 +685,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             spacing: 8,
             runSpacing: 4,
             children: <Widget>[
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: (lockedByServer || _pairingManual)
                     ? null
                     : () => _addOrEditUrl(),
@@ -670,32 +696,32 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                         child: adaptiveIndicator(
                             context: context, strokeWidth: 2),
                       )
-                    : const Icon(Icons.add, size: 18),
+                    : const FushiIcon(Icons.add, size: 18),
                 label:
                     Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
               ),
               // 扫码 / 粘贴链接：地址 + 证书指纹 + 一次性票据一次到手，不必同网段、
               // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
               if (interconnectPairQrScanSupported)
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: (lockedByServer || _pairingManual)
                       ? null
                       : () => _pairFromLink(scan: true),
-                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  icon: const FushiIcon(Icons.qr_code_scanner, size: 18),
                   label: Text(t.sync_pair_scan),
                 ),
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: (lockedByServer || _pairingManual)
                     ? null
                     : () => _pairFromLink(scan: false),
-                icon: const Icon(Icons.link, size: 18),
+                icon: const FushiIcon(Icons.link, size: 18),
                 label: Text(t.sync_pair_link_paste),
               ),
               if (interconnectPairNfcWriteSupported &&
                   _urls.any((FushiClientUrl u) => u.hostId != null))
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: _writeNfcSticker,
-                  icon: const Icon(Icons.nfc, size: 18),
+                  icon: const FushiIcon(Icons.nfc, size: 18),
                   label: Text(t.sync_pair_nfc_write),
                 ),
             ],
@@ -712,18 +738,18 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
               padding: const EdgeInsets.only(bottom: 8),
               child: Row(
                 children: <Widget>[
-                  Icon(Icons.check_circle_outline,
-                      size: 18, color: theme.colorScheme.primary),
+                  FushiIcon(Icons.check_circle_outline,
+                      size: 18, color: connectedColor),
                   const SizedBox(width: 6),
                   Text(
                     t.sync_client_connected,
                     style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.colorScheme.primary),
+                        ?.copyWith(color: connectedColor),
                   ),
                 ],
               ),
             ),
-          ExpansionTile(
+          FushiExpansionTile(
             tilePadding: EdgeInsets.zero,
             // 唯一的展开子项是带浮动标签的轮廓边框输入框：浮动后的标签骑在
             // 字段顶边、上半部分会溢出到字段上方（14sp 标签约 7px）。ExpansionTile 的
@@ -760,7 +786,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                       child:
                           adaptiveIndicator(context: context, strokeWidth: 2),
                     )
-                  : FilledButton.tonal(
+                  : FushiFilledButton.tonal(
                       onPressed: _testAll,
                       child: Text(t.sync_test_connection),
                     ),
@@ -1367,10 +1393,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             if (running)
               Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton.icon(
+                child: FushiTextButton.icon(
                   onPressed: () =>
                       showInterconnectPairQrDialog(context, _serverController),
-                  icon: const Icon(Icons.qr_code_2, size: 18),
+                  icon: const FushiIcon(Icons.qr_code_2, size: 18),
                   label: Text(t.sync_pair_qr_show),
                 ),
               ),
@@ -1409,7 +1435,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
                 // 地址上反复断连。
                 Align(
                   alignment: Alignment.centerRight,
-                  child: TextButton(
+                  child: FushiTextButton(
                     onPressed: () => _serverController.setP2pRelayUrls(
                       _p2pRelayController.text.split(RegExp(r'[\r\n]+')),
                     ),
@@ -1420,7 +1446,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             ],
             const SizedBox(height: 12),
             Text(t.sync_server_token,
-                style: Theme.of(context).textTheme.labelSmall),
+                style: _interconnectFieldLabelStyle(context)),
             const SizedBox(height: 4),
             // BUG-1184：令牌是等宽长串，原先硬钳 2 行且无 ellipsis —— 窄屏上尾部被
             // 直接切掉且毫无提示。令牌必须整串可见（用户要照着输/核对），去掉行数上限。
@@ -1438,19 +1464,19 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               spacing: 8,
               runSpacing: 4,
               children: <Widget>[
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: () {
                     if (_token != null) {
                       FlutterClipboard.copy(_token!);
                       _showSnackBar(context, t.sync_server_copy_token);
                     }
                   },
-                  icon: const Icon(Icons.copy, size: 18),
+                  icon: const FushiIcon(Icons.copy, size: 18),
                   label: Text(t.sync_server_copy_token),
                 ),
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: _regenerateToken,
-                  icon: const Icon(Icons.refresh, size: 18),
+                  icon: const FushiIcon(Icons.refresh, size: 18),
                   label: Text(t.sync_server_regenerate_token),
                 ),
               ],
@@ -1458,7 +1484,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
             // TODO-961 M1b: 已配对设备列表 + 逐台移除（吊销 per-peer token）。
             const SizedBox(height: 16),
             Text(t.sync_paired_peers_title,
-                style: Theme.of(context).textTheme.labelSmall),
+                style: _interconnectFieldLabelStyle(context)),
             const SizedBox(height: 4),
             if (_pairedPeers.isEmpty)
               Text(
@@ -1779,7 +1805,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
           Row(
             children: <Widget>[
               Text(t.sync_lan_discovery,
-                  style: Theme.of(context).textTheme.titleSmall),
+                  style: _interconnectSubheadStyle(context)),
               const Spacer(),
               if (_scanning)
                 SizedBox(
@@ -1810,7 +1836,7 @@ class _LanDiscoveryWidgetState extends State<_LanDiscoveryWidget>
                 style: Theme.of(context).textTheme.bodySmall),
           for (final FushiDevice device in _devices)
             FushiListItem(
-              leading: const Icon(Icons.devices_outlined, size: 20),
+              leading: const FushiIcon(Icons.devices_outlined, size: 20),
               // BUG-1184：发现到的设备名 + WebDAV URL 都可能超出窄屏一行。
               titleMaxLines: 2,
               title: Text(device.name),
@@ -1960,9 +1986,9 @@ class _InterconnectProfileTransferWidgetState
           ? const SizedBox(
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : FilledButton.tonal(
+          : FushiFilledButton.tonal(
               onPressed: _run,
               child: Text(
                 _isUpload
@@ -2075,7 +2101,7 @@ class _InterconnectBackupBackendWidgetState
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
-                FilledButton.tonal(
+                FushiFilledButton.tonal(
                   onPressed:
                       (paired && !_busy) ? _useInterconnectAsBackend : null,
                   child: Text(t.interconnect_backup_backend_apply),

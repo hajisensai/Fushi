@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// A draft numeric editor: partial input is not committed until Enter/blur.
 /// External drags update it when unfocused; step buttons commit immediately.
@@ -80,7 +82,7 @@ class _GalCalibrationNumberFieldState extends State<GalCalibrationNumberField> {
   }
 
   @override
-  Widget build(BuildContext context) => TextField(
+  Widget build(BuildContext context) => FushiTextFieldControl(
     controller: _text,
     focusNode: _focus,
     enabled: widget.enabled,
@@ -96,16 +98,16 @@ class _GalCalibrationNumberFieldState extends State<GalCalibrationNumberField> {
       suffixIcon: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: '${widget.label} −${widget.step}',
-            icon: const Icon(Icons.remove),
+            icon: const FushiIcon(Icons.remove),
             onPressed: widget.enabled && widget.value > widget.min
                 ? () => _step(-1)
                 : null,
           ),
-          IconButton(
+          FushiIconButtonControl(
             tooltip: '${widget.label} +${widget.step}',
-            icon: const Icon(Icons.add),
+            icon: const FushiIcon(Icons.add),
             onPressed: widget.enabled && widget.value < widget.max
                 ? () => _step(1)
                 : null,

@@ -87,12 +87,14 @@ void main() {
     // lookup's popup; BUG-767: popup must not cover the looked-up word). If
     // anyone drops the reanchor and leaves the popup stuck at the selection
     // fallbackRect, this test goes red.
+    // The refined rect is in the surface WebView's local space (lyrics overlay
+    // or body); it is mapped to page space before reanchoring.
     expect(
       src,
-      contains('reanchorTopPopup(rect, generation)'),
+      contains('reanchorTopPopup(_surfaceRectToPage(rect), generation)'),
       reason: 'The highlight eval result must reanchor via '
-          'reanchorTopPopup(rect, generation) to the refined word bbox '
-          '(generation-guarded); do not remove the reanchor.',
+          'reanchorTopPopup(_surfaceRectToPage(rect), generation) to the '
+          'refined word bbox (generation-guarded); do not remove the reanchor.',
     );
   });
 

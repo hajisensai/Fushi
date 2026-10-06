@@ -5,6 +5,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/episode_span_format.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
@@ -180,7 +181,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
                   padding: EdgeInsets.all(8),
                   child: SizedBox.square(
                     dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   ),
                 )
               else
@@ -255,7 +256,7 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       key: ValueKey<String>('subtitle-file-${candidate.identityKey}'),
       leading: widget.onToggleCandidate == null
           ? null
-          : Checkbox(
+          : FushiCheckbox(
               value: widget.selectedIdentityKeys.contains(
                 candidate.identityKey,
               ),
@@ -278,9 +279,9 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       trailing: busyThis
           ? const SizedBox.square(
               dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const Icon(Icons.download, size: 18),
+          : const FushiIcon(Icons.download, size: 18),
     );
   }
 }

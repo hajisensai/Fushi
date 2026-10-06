@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "اتباع النظام",
   "opt_extensionTheme_option_light": "فاتح",
   "opt_extensionTheme_option_dark": "داكن",
+  "opt_page_subtitle": "تُحفظ الإعدادات في هذا المتصفح فقط، وتسري معظم التغييرات فورًا.",
+  "opt_section_nav_aria_label": "أقسام الإعدادات",
+  "opt_connection_section_heading": "الاتصال والتشخيص",
   "opt_palette_title": "سمة الألوان",
   "opt_palette_desc": "نفس نموذج السمات في Fushi: اتباع ألوان Fushi الحالية، أو إعداد مسبق مدمج، أو سمة مخصصة (لون تمييز واحد يشتق اللوحتين الفاتحة والداكنة). تُطبَّق على صفحة الإعدادات ولوحة الترجمة الجانبية وقائمة شريط الأدوات ودرج الترجمة وصندوق الترجمة فوق الفيديو ونافذة البحث.",
   "opt_extensionBrightness_title": "فاتح / داكن",
@@ -297,7 +300,6 @@
   "ctx_confirm": "إنشاء بطاقة",
   "ctx_cancel": "إلغاء",
   "gen_youtube_queue_empty": "طابور YouTube فارغ: فعّل الترجمة → مرّر فوق كلمة مع Shift → اضغط «تعدين» في النافذة المنبثقة لإضافتها إلى الطابور، ثم أنشئ",
-  "gen_ext_updated_refresh": "تم تحديث الإضافة؛ حدّث الصفحة (F5) وأعد المحاولة",
   "gen_progress": "جارٍ الإنشاء… {done}/{total}",
   "gen_partial_anki_unconfigured": "أُنشئ جزئيًا: Anki غير مضبوط — اضبط Anki في Fushi وأعد المحاولة (عُولج {done}، احتُفظ بـ {kept})",
   "gen_partial_anki_unconfigured_kept": "أُنشئ جزئيًا: Anki غير مضبوط — اضبط Anki في Fushi وأعد المحاولة (احتُفظ بـ {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "البطاقات في الطابور من مواقع لا تدعم الإنشاء الدفعي؛ أزلها واحدة تلو الأخرى أو امسح الطابور",
   "ap_gen_start_record_n": "بدء التسجيل والإنشاء ({n} بطاقة)",
   "ap_gen_start_n": "بدء الإنشاء ({n} بطاقة)",
-  "ap_gen_other_youtube_hint": "{n} أخرى على YouTube — انتقل إلى صفحة YouTube لإنشائها",
+  "ap_gen_other_youtube_hint": "{n} أخرى من YouTube — افتح هذه القائمة من أي صفحة غير Netflix لإنشائها",
   "ap_gen_other_netflix_hint": "{n} أخرى على Netflix — انتقل إلى صفحة تشغيل Netflix لإنشائها",
   "ap_gen_site_count": "{site} {n} بطاقة",
   "ap_gen_wrong_site_hint": "قيد الانتظار: {pending} — انقر عنصرًا في الطابور للانتقال إلى صفحة الفيديو الخاصة به، ثم أنشئ",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "مسح الكل؟",
   "ap_queue_open_video_hint": "انقر لفتح صفحة الفيديو",
   "ap_queue_remove_title": "إزالة من الطابور",
-  "np_fushi_nested_close_aria_label": "إغلاق طبقة البحث هذه",
   "theme_palette_app": "اتباع Fushi",
   "theme_palette_app_pending": "تصل ألوان Fushi مع أول بحث أثناء تشغيل Fushi",
   "theme_preset_fushi": "أخضر Fushi",
@@ -426,5 +427,5 @@
   "pc_style_more": "كل الإعدادات",
   "pc_hint_site_track": "هذا الفيديو يعرض مسار الترجمة الخاص بالموقع، لذا تبقى طبقة Fushi مخفية. اضغط لعرض ترجمة Fushi بدلاً منها.",
   "opt_playerControls_title": "زر الترجمة داخل المشغّل",
-  "opt_playerControls_desc": "يضيف زر Fushi إلى شريط تحكم المشغّل نفسه (YouTube وNetflix؛ وفي المواقع الأخرى يظهر زر دائري أسفل يمين الفيديو أثناء وجود المؤشر فوقه). تبدّل قائمته الإعدادات نفسها الموجودة في هذه الصفحة — ترجمة Fushi، واستبدال ترجمة الموقع، وإخفاؤها، وإزاحة التوقيت، ومظهر الترجمة — دون مغادرة الفيديو."
+  "opt_playerControls_desc": "يضيف زر Fushi إلى شريط تحكم المشغّل نفسه (YouTube وNetflix؛ وفي المواقع الأخرى يظهر زر دائري أعلى يمين الفيديو أثناء وجود المؤشر فوقه). تبدّل قائمته الإعدادات نفسها الموجودة في هذه الصفحة — ترجمة Fushi، واستبدال ترجمة الموقع، وإخفاؤها، وإزاحة التوقيت، ومظهر الترجمة — دون مغادرة الفيديو."
 }

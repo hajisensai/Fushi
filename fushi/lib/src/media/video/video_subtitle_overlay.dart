@@ -15,6 +15,7 @@ import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/media/video/subtitle_pos_mapping.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_style.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 
 /// 命中字幕某字符的结果：整条字幕、被点 grapheme 下标、该字符的全局屏幕矩形、
@@ -2242,10 +2243,10 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     Widget box = DecoratedBox(
       decoration: BoxDecoration(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(kVideoSubtitleBoxRadius),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: kVideoSubtitleBoxPadding,
         child: textContent,
       ),
     );
@@ -2265,7 +2266,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
             Positioned(
               left: -6,
               top: -10,
-              child: Icon(
+              child: FushiIcon(
                 Icons.star,
                 size: widget.fontSize * 0.6,
                 color: starColor,
@@ -2833,7 +2834,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     final TextStyle base = TextStyle(
       color: baseColor,
       fontSize: baseFontSize,
-      height: 1.3,
+      height: kVideoSubtitleLineHeight,
       fontFamily: baseFontFamily,
       // 统一的 CJK 日文回退链：主字体（自定义或平台默认）缺某字形（如假名「の」缺字）
       // 时，引擎按本列表顺序找到第一个存在的系统日文字体，而非各字符独立走引擎默认
@@ -2995,10 +2996,7 @@ class _VideoSubtitleOverlayState extends State<VideoSubtitleOverlay>
     return decos.isEmpty ? null : TextDecoration.combine(decos);
   }
 
-  static FontWeight _fontWeight(int value) {
-    final int index = ((value.clamp(100, 900) ~/ 100).clamp(1, 9)) - 1;
-    return FontWeight.values[index];
-  }
+  static FontWeight _fontWeight(int value) => videoSubtitleFontWeight(value);
 
   /// ASS 字号 / 阴影深度是相对 [SubtitleMarkup.playResY] 的绝对像素（TODO-1246）；本因子把
   /// 它们缩放到 fit:contain 的**视频内容矩形**高（[_lastVideoContentHeight]，BUG-820——

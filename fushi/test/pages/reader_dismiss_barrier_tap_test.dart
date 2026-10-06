@@ -238,9 +238,19 @@ void main() {
       expect(idx, greaterThan(0),
           reason: 'reader must override the barrier-tap hook (TODO-1027)');
       final String body = corpus.substring(idx, idx + 900);
-      expect(body.contains('_webViewKey.currentContext?.findRenderObject()'),
+      // 歌词覆盖层（独立 WebView）在场时用户点的是歌词文档：钥匙走
+      // _surfaceWebViewKey（歌词态 → 歌词 WebView，否则 → 正文 _webViewKey）。
+      expect(
+          body.contains('_surfaceWebViewKey.currentContext?.findRenderObject()'),
           isTrue,
           reason: 'reader must map global -> WebView local via its RenderBox');
+      expect(
+        RegExp(r'GlobalKey get _surfaceWebViewKey =>\s*'
+                r'_lyricsMode \? _lyricsWebViewKey : _webViewKey;')
+            .hasMatch(corpus),
+        isTrue,
+        reason: 'outside lyrics mode the surface key must be the body WebView',
+      );
       expect(body.contains('obj.globalToLocal(globalPos)'), isTrue);
       expect(body.contains('_selectTextAt(local.dx, local.dy)'), isTrue,
           reason:
@@ -250,13 +260,36 @@ void main() {
     });
 
     test('reader onTapEmpty clears the stack when a popup is visible', () {
-      final int idx = corpus.indexOf("handlerName: 'onTapEmpty'");
-      expect(idx, greaterThan(0));
-      final String body = corpus.substring(idx, idx + 700);
-      expect(body.contains('if (isDictionaryShown) {'), isTrue,
-          reason: 'barrier-forwarded blank tap (popup visible) must close the '
-              'stack, not toggle chrome (TODO-1027)');
-      expect(body.contains('clearDictionaryResult();'), isTrue);
+      // 正文 WebView 与歌词覆盖层 WebView 各注册一个 onTapEmpty：两个都必须在有
+      // 可见弹窗时关栈。歌词那个经 lyricsTapEmptyConsumed() 收口。
+      final List<int> handlers = <int>[];
+      for (int i = corpus.indexOf("handlerName: 'onTapEmpty'");
+          i >= 0;
+          i = corpus.indexOf("handlerName: 'onTapEmpty'", i + 1)) {
+        handlers.add(i);
+      }
+      expect(handlers, isNotEmpty);
+      final int helperIdx = corpus.indexOf('bool lyricsTapEmptyConsumed() {');
+      final String helper =
+          helperIdx < 0 ? '' : corpus.substring(helperIdx, helperIdx + 400);
+      bool sawBodyHandler = false;
+      for (final int idx in handlers) {
+        final String body = corpus.substring(idx, idx + 700);
+        if (body.contains('lyricsTapEmptyConsumed()')) {
+          expect(helper.contains('if (isDictionaryShown) {'), isTrue,
+              reason: 'lyrics blank tap with a popup visible must close the '
+                  'stack (TODO-1027)');
+          expect(helper.contains('clearDictionaryResult();'), isTrue);
+          continue;
+        }
+        sawBodyHandler = true;
+        expect(body.contains('if (isDictionaryShown) {'), isTrue,
+            reason: 'barrier-forwarded blank tap (popup visible) must close the '
+                'stack, not toggle chrome (TODO-1027)');
+        expect(body.contains('clearDictionaryResult();'), isTrue);
+      }
+      expect(sawBodyHandler, isTrue,
+          reason: 'the body WebView onTapEmpty handler must exist');
     });
   });
 }

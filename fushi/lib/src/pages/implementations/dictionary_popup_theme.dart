@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show SurfaceRoles, buildFushiThemeData, deriveSurfaceRolesFrom;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
-    show FushiDesignSystem, FushiEinkTheme;
+    show FushiDesignSystem, FushiEinkTheme, FushiGlassMaterial;
 
 /// 查词弹窗覆盖主题的解析结果：罩住整个查词浮层的 [theme]，以及弹窗外壳的
 /// [fillColor]。两者必须同源——外壳填充色与主题的 surface 一旦差一个色阶，
@@ -43,6 +43,15 @@ class DictionaryPopupTheme {
 /// [textTheme] / [designSystem] 取 app 当前值（`AppModel.textTheme` /
 /// `ThemeNotifier.designSystemTheme`）：弹窗 Flutter 外壳的组件主题与字号阶梯
 /// 与主 app 同源，只有中性表面换成纸色。
+///
+/// [glassDesign] / [glass] / [monochromeAccent] 取 app 当前的设计系统（偏好
+/// `design_system == 'glass'`）、玻璃材质（`ThemeNotifier.glassMaterial`）与单色
+/// 强调色判据，原样交给 [buildFushiThemeData]：覆盖主题因此同样挂上
+/// `FushiGlassTheme` 与 `FushiAppleColors`，书内查词弹窗在 Apple 设计系统下
+/// 不再回落成 MD3。Apple 设计系统的内容层是系统分组色（见
+/// `appleColorScheme`），不做纸色派生——表面整套换成 Apple 系统色、亮暗仍跟
+/// 阅读器纸色；外壳填充随之取主题的页面底，与主题同源不出色带。墨水屏下
+/// Apple 设计系统本就不生效（`buildFushiThemeData` 内 `glassDesign && !eink`）。
 DictionaryPopupTheme resolveDictionaryPopupTheme({
   required bool eink,
   required bool einkDark,
@@ -52,6 +61,9 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
   required ColorScheme Function(Brightness brightness) buildColorScheme,
   required TextTheme textTheme,
   FushiDesignSystem designSystem = FushiDesignSystem.auto,
+  bool glassDesign = false,
+  FushiGlassMaterial glass = FushiGlassMaterial.off,
+  bool monochromeAccent = false,
 }) {
   final Color bg =
       eink ? (einkDark ? Colors.black : Colors.white) : readerBackground;
@@ -64,8 +76,9 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
 
   // 非墨水屏：弹窗配色 = app 真实 ColorScheme（主题色 / 高亮 / 描边跟用户主题）
   // + 纸色与字色盖上去的中性角色，与编辑页预览共用 [deriveSurfaceRolesFrom]。
+  final bool apple = glassDesign && !eink;
   ColorScheme dictionaryScheme = scheme;
-  if (!eink) {
+  if (!eink && !apple) {
     final SurfaceRoles paper = deriveSurfaceRolesFrom(bg);
     dictionaryScheme = scheme.copyWith(
       surface: paper.surface,
@@ -86,13 +99,17 @@ DictionaryPopupTheme resolveDictionaryPopupTheme({
     );
   }
 
+  final ThemeData theme = buildFushiThemeData(
+    scheme: dictionaryScheme,
+    textTheme: textTheme,
+    eink: eink,
+    designSystem: designSystem,
+    glass: eink ? FushiGlassMaterial.off : glass,
+    glassDesign: apple,
+    monochromeAccent: monochromeAccent,
+  );
   return DictionaryPopupTheme(
-    theme: buildFushiThemeData(
-      scheme: dictionaryScheme,
-      textTheme: textTheme,
-      eink: eink,
-      designSystem: designSystem,
-    ),
-    fillColor: bg,
+    theme: theme,
+    fillColor: apple ? theme.colorScheme.surface : bg,
   );
 }

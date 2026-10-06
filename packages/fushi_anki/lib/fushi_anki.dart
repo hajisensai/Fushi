@@ -7,5 +7,6 @@ export 'fushi_anki_core.dart';
 export 'src/base_anki_repository.dart';
 export 'src/ankidroid/anki_repository.dart';
 export 'src/ankiconnect/anki_desktop_foreground.dart';
+export 'src/ankiconnect/anki_desktop_launcher.dart';
 export 'src/ankiconnect/ankiconnect_installer.dart';
 export 'src/ankiconnect/ankiconnect_repository.dart';

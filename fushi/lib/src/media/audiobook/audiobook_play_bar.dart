@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
@@ -72,12 +73,23 @@ class AudiobookPlayBar extends StatelessWidget {
     // 前景色时（c3dbe59a1）用 12% tonal 底 + 满前景色，保证任何纸张主题上都有
     // 对比度且不泄漏 app Material 主题的 secondaryContainer；为 null 时回退到
     // filledTonal 的默认 secondaryContainer/onSecondaryContainer 配色。
-    final ButtonStyle? playStyle = fg != null
-        ? IconButton.styleFrom(
-            backgroundColor: fg.withValues(alpha: 0.12),
-            foregroundColor: fg,
-          )
-        : null;
+    //
+    // Apple：iOS 播放键的 `.glassProminent` 形态——纸张前景色实心圆 + 反色
+    // 字形（不透明前景色经 [fushiGlassFill] 的 tint 档按 0.82 重铺）。不用
+    // 12% 前景色的轻着色：玻璃本身已是中性灰底，再叠一层淡色圆对比度不够。
+    final ButtonStyle? playStyle = fg == null
+        ? null
+        : isGlassDesign(context)
+            ? ButtonStyle(
+                backgroundColor: WidgetStatePropertyAll<Color>(fg),
+                foregroundColor: WidgetStatePropertyAll<Color>(
+                  appleOnAccent(fg.withValues(alpha: 1)),
+                ),
+              )
+            : IconButton.styleFrom(
+                backgroundColor: fg.withValues(alpha: 0.12),
+                foregroundColor: fg,
+              );
     // 上一句/下一句、设置齿轮按旧版是无框原生 [IconButton]（仅图标），纸张主题
     // 前景色经 [IconButton.styleFrom] 的 foregroundColor 注入。
     final ButtonStyle? flatStyle =
@@ -139,7 +151,7 @@ class AudiobookPlayBar extends StatelessWidget {
       children: <Widget>[
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_prev'),
-          icon: Icon(leftKey.icon),
+          icon: FushiIcon(leftKey.icon),
           iconSize: 22,
           style: flatStyle,
           tooltip: leftKey.tooltip,
@@ -148,7 +160,7 @@ class AudiobookPlayBar extends StatelessWidget {
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_play'),
           filledTonal: true,
-          icon: Icon(
+          icon: FushiIcon(
             controller.isPlaying
                 ? Icons.pause_outlined
                 : Icons.play_arrow_outlined,
@@ -160,7 +172,7 @@ class AudiobookPlayBar extends StatelessWidget {
         ),
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_next'),
-          icon: Icon(rightKey.icon),
+          icon: FushiIcon(rightKey.icon),
           iconSize: 22,
           style: flatStyle,
           tooltip: rightKey.tooltip,
@@ -171,18 +183,34 @@ class AudiobookPlayBar extends StatelessWidget {
     final List<Widget> barItems = <Widget>[
       playbackControls,
       SizedBox(width: tokens.spacing.gap / 2),
-      const Spacer(),
+      // 2026-10 体验优化：trailing（底栏槽位按钮 + 状态读数）原本是定宽 Row
+      // 紧跟 Spacer，360dp 下拖进 3 颗以上按钮整条 bar 就溢出。改成占满剩余
+      // 宽度、贴着跟随键对齐、放不下时横向滚动——三联键与跟随键永远完整可点。
       if (trailing != null) ...<Widget>[
-        trailing!,
+        Expanded(
+          child: Align(
+            alignment: reversed ? Alignment.centerLeft : Alignment.centerRight,
+            // 桌面端默认 dragDevices 不含鼠标：放不下时鼠标也得拖得动。
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                key: const ValueKey<String>('audiobook_play_bar_trailing'),
+                scrollDirection: Axis.horizontal,
+                reverse: !reversed,
+                child: trailing,
+              ),
+            ),
+          ),
+        ),
         SizedBox(width: tokens.spacing.gap),
-      ],
+      ] else
+        const Spacer(),
       AudiobookFollowAudioButton(controller: controller, foregroundColor: fg),
       if (showSettingsButton)
         _FocusableBarButton(
           id: const FushiFocusId('audiobook_settings'),
           key: const ValueKey<String>('fushi_reader_audiobook_settings_button'),
           semanticsIdentifier: 'hibiki.reader.audiobook.settings',
-          icon: const Icon(Icons.tune_outlined),
+          icon: const FushiIcon(Icons.tune_outlined),
           iconSize: 20,
           style: flatStyle,
           onPressed: onOpenSettings,
@@ -237,7 +265,7 @@ class AudiobookFollowAudioButton extends StatelessWidget {
         // 保留 c3dbe59a1 的纸张前景色注入：开启态用满前景色 / 关闭态 60%。
         return _FocusableBarButton(
           id: const FushiFocusId('audiobook_follow'),
-          icon: Icon(on ? Icons.link : Icons.link_off),
+          icon: FushiIcon(on ? Icons.link : Icons.link_off),
           iconSize: 20,
           color: on ? onColor : offColor,
           tooltip: on ? t.follow_audio_on_tooltip : t.follow_audio_off_tooltip,
@@ -302,7 +330,7 @@ class _FocusableBarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget button = filledTonal
-        ? IconButton.filledTonal(
+        ? FushiIconButtonControl.filledTonal(
             icon: icon,
             iconSize: iconSize,
             style: style,
@@ -310,7 +338,7 @@ class _FocusableBarButton extends StatelessWidget {
             tooltip: tooltip,
             onPressed: onPressed,
           )
-        : IconButton(
+        : FushiIconButtonControl(
             icon: icon,
             iconSize: iconSize,
             style: style,

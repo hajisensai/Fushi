@@ -105,7 +105,10 @@ void main() {
       expect(end, greaterThan(start));
 
       final String dialogSource = online.substring(start, end);
-      expect(dialogSource, contains('=> AlertDialog('));
+      // 2026 设计系统重做：Material 对话框统一走设计系统分派版 FushiAlertDialog
+      // （MD3 下即 Material AlertDialog），仍不得用 `.adaptive`（会在 Apple 平台
+      // 换成 Cupertino 对话框）。
+      expect(dialogSource, contains('=> FushiAlertDialog('));
       expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
     });
 
@@ -143,11 +146,11 @@ void main() {
   group('iOS / Linux 导航结构与其它平台相同', () {
     test('漫画在线来源面在扩展宿主不可用时降级内容，而不是不存在', () {
       final String sources = _read(<String>['manga_online_sources_view.dart']);
-      // AppModel.mihonManager 在 iOS/Linux 抛 UnsupportedError：读它之前必须有门。
+      // AppModel.mihonManager 在没有 Mihon 宿主的平台（iOS）抛 UnsupportedError：读它之前必须有门。
       expect(
         sources,
         contains('if (!MihonRuntimeFactory.isSupported) return;'),
-        reason: '不设门就会在 iOS/Linux 上抛 UnsupportedError，视图直接白屏',
+        reason: '不设门就会在 iOS 上抛 UnsupportedError，视图直接白屏',
       );
       expect(
         sources,
@@ -166,7 +169,7 @@ void main() {
       expect(
         discovery,
         contains('if (!MihonRuntimeFactory.isSupported) return;'),
-        reason: '同上：iOS/Linux 上不得触碰 AppModel.mihonManager',
+        reason: '同上：iOS 上不得触碰 AppModel.mihonManager',
       );
       expect(
         section,

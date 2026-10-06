@@ -46,6 +46,9 @@ void main() {
   });
 
   TabController controllerIn(WidgetTester tester, Key sectionKey) {
+    // 设置页此刻是 Offstage 保活的隐藏页：两层查找都得 skipOffstage: false
+    // （glassUnwrap 的 descendant 默认跳过 offstage，这里不能用）。MD3 下
+    // FushiTabBar 把原 TabBar 渲染在自己下面一层，byType(TabBar) 直接命中它。
     final TabBar bar = tester.widget<TabBar>(
       find.descendant(
         of: find.byKey(sectionKey, skipOffstage: false),

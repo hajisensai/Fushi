@@ -61,7 +61,7 @@ class _LegacyAssetSyncNoticeState extends State<_LegacyAssetSyncNotice> {
       controlBelow: true,
       // 行级 onTap 让本行注册成 FushiFocusTarget，方向导航 / 手柄 A 能到达（BUG-016）。
       onTap: _dismiss,
-      trailing: FilledButton.tonal(
+      trailing: FushiFilledButton.tonal(
         onPressed: _dismiss,
         child: Text(t.sync_asset_legacy_notice_dismiss),
       ),
@@ -110,7 +110,6 @@ class _AssetTransferMenuRow extends StatelessWidget {
   }
 
   Widget _menu(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return FushiOverflowMenu<SyncAssetDirection>(
       tooltip: t.sync_asset_transfer_menu,
       items: <PopupMenuEntry<SyncAssetDirection>>[
@@ -126,22 +125,8 @@ class _AssetTransferMenuRow extends StatelessWidget {
         ),
       ],
       onSelected: (SyncAssetDirection direction) => _run(context, direction),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              t.sync_asset_transfer_menu,
-              style: TextStyle(
-                color: scheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Icon(Icons.arrow_drop_down, color: scheme.primary),
-          ],
-        ),
-      ),
+      // 共享「文字 + 下拉」触发器（MD3 expand_more / Apple chevron.up.chevron.down）。
+      child: FushiMenuLabelTrigger(label: t.sync_asset_transfer_menu),
     );
   }
 
@@ -171,7 +156,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
                   : _menu(context),
             );
@@ -183,7 +168,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
                 row,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: LinearProgressIndicator(value: p?.fraction),
+                  child: FushiLinearProgressIndicator(value: p?.fraction),
                 ),
               ],
             );
@@ -281,9 +266,9 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : FilledButton(
+                  : FushiFilledButton(
                       onPressed: _syncNow,
                       child: Text(t.sync_now),
                     ),
@@ -299,7 +284,7 @@ class _SyncNowWidgetState extends State<_SyncNowWidget> {
                 row,
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: LinearProgressIndicator(value: p?.fraction),
+                  child: FushiLinearProgressIndicator(value: p?.fraction),
                 ),
               ],
             );

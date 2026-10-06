@@ -1,14 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 /// 批量操作栏：多选态下钉在页面底部的那条「已选 N · 全选 · 反选 · 若干动作」。
 ///
-/// 视频库页与书架页原本各写一份近逐字重复的实现，且已经漂移出真实差异——书架侧按
-/// 「全 app elevation 0」纪律换成了上边框分隔，并把左侧三件套改 [Wrap] 以免窄屏 +
-/// 大字体下 [Row] 全员不可收缩必溢出；视频侧仍停在 `Material(elevation: 6)` + 裸
-/// [Row]。本组件取书架侧（较新、已修溢出）的形态作为唯一实现，后续新增多选表面
-/// （下载任务、资源选集、字幕候选等）一律复用，不再各写一份。
+/// 视频库页与书架页原本各写一份近逐字重复的实现，已收编为本组件这唯一实现（左侧
+/// 三件套用 [Wrap]，窄屏 + 大字体下不溢出）；书架、视频库、下载任务、字体页、字幕
+/// 候选都复用它，新增多选表面不再各写一份。
+///
+/// 外观：
+/// - MD3：离边 12 的浮动工具条，surfaceContainerHigh 圆角 20 + 轻阴影，按钮是
+///   主题的全胶囊文字按钮；
+/// - Apple：浮在内容上的玻璃胶囊工具条（Mail / Photos 选择模式底栏），动作是
+///   单色 SF 图标钮；
+/// - 墨水屏：保留贴底整条 + 上边框（阴影与半透明在灰阶下都会糊成脏边）。
 ///
 /// 只封装容器 chrome 与左侧三件套；右侧动作按钮由各表面自行构造后经 [actions] 注入
 /// ——动作的可用态判据（能否组合、能否删除、选中集是否跨类型）是各域的业务语义，
@@ -46,46 +54,114 @@ class BatchActionBar extends StatelessWidget {
       }
       trailing.add(actions[i]);
     }
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        border: Border(
-          top: BorderSide(color: theme.colorScheme.outlineVariant),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card - gap / 2,
-            vertical: gap,
-          ),
-          child: Row(
+    final Widget content = Row(
+      children: <Widget>[
+        Expanded(
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: gap,
             children: <Widget>[
-              Expanded(
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: gap,
-                  children: <Widget>[
-                    Text(
-                      t.batch_selected_count(n: selectedCount),
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: onSelectAll,
-                      child: Text(t.batch_select_all),
-                    ),
-                    TextButton(
-                      onPressed: onInvertSelection,
-                      child: Text(t.batch_invert_selection),
-                    ),
-                  ],
+              Text(
+                t.batch_selected_count(n: selectedCount),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              ...trailing,
+              FushiTextButton(
+                onPressed: onSelectAll,
+                child: Text(t.batch_select_all),
+              ),
+              FushiTextButton(
+                onPressed: onInvertSelection,
+                child: Text(t.batch_invert_selection),
+              ),
             ],
+          ),
+        ),
+        ...trailing,
+      ],
+    );
+    if (isEinkTheme(context)) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainer,
+          border: Border(
+            top: BorderSide(color: theme.colorScheme.outlineVariant),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.card - gap / 2,
+              vertical: gap,
+            ),
+            child: content,
+          ),
+        ),
+      );
+    }
+    // 浮动条与屏幕边缘 / 内容之间留 12 的空隙（Apple 底栏与 MD3 浮动工具条同口径）。
+    const EdgeInsets outer = EdgeInsets.fromLTRB(12, 4, 12, 12);
+    if (isGlassDesign(context)) {
+      final bool compact = fushiAppleCompact(context);
+      final double minHeight = compact ? 44 : 52;
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: outer,
+          child: GlassContainer(
+            useOwnLayer: true,
+            quality: fushiGlassQuality(context, prominent: true),
+            settings: fushiClearGlassSettings(context, bar: true),
+            shape: LiquidRoundedSuperellipse(borderRadius: minHeight / 2),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.only(
+                  start: 18,
+                  end: 8,
+                  top: 4,
+                  bottom: 4,
+                ),
+                child: DefaultTextStyle.merge(
+                  style: TextStyle(color: appleColorsOf(context).label),
+                  child: content,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    final ColorScheme cs = theme.colorScheme;
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: outer,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: cs.surfaceContainerHigh,
+            borderRadius: const BorderRadius.all(Radius.circular(20)),
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: cs.shadow.withValues(alpha: 0.14),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              start: tokens.spacing.card,
+              end: gap,
+              top: gap / 2,
+              bottom: gap / 2,
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: content,
+            ),
           ),
         ),
       ),

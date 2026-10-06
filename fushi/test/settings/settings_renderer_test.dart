@@ -374,9 +374,15 @@ void main() {
             'renderer output must not overflow narrow 2x-text settings panes',
       );
       expect(find.byType(Switch), findsOneWidget);
+      // MD3 重设计（Android 16 设置）：长选项 / 窄行放不下分段控件时不再横向
+      // 滚动分段条，而是退回「当前值写进说明行、点整行弹菜单」的选择行
+      // （settingsChoiceUsesSegments 判据）。契约不变：选项仍可达且不溢出。
       expect(
-        find.byWidgetPredicate((Widget widget) => widget is SegmentedButton),
+        find.byWidgetPredicate(
+          (Widget widget) => widget is SettingsChoiceMenuRow,
+        ),
         findsOneWidget,
+        reason: '长 CJK 选项在窄行 2x 字号下退回菜单选择行',
       );
       expect(find.byType(Slider), findsOneWidget);
       expect(find.byType(DropdownMenu<int>), findsOneWidget);
@@ -528,21 +534,46 @@ void main() {
       ),
     );
 
-    expect(find.byType(AdaptiveSettingsSection), findsNWidgets(2));
+    // MD3 Expressive 重设计（Android 16 平板设置）：宽屏左栏是导航抽屉式
+    // Md3SettingsNavList / Md3SettingsNavRow（选中 = secondaryContainer 全圆角
+    // 胶囊），不再是 AdaptiveSettingsSection + FushiListItem(pill)。契约不变：
+    // 固定分组（组标题）、当前项胶囊选中、行尾没有 chevron。
+    expect(find.byType(Md3SettingsNavList), findsOneWidget);
     expect(find.text(t.settings_group_interface), findsOneWidget);
     expect(find.text(t.settings_group_content), findsOneWidget);
-    expect(find.widgetWithText(FushiListItem, 'Video'), findsOneWidget);
-    FushiListItem item = tester.widget<FushiListItem>(
-      find.widgetWithText(FushiListItem, 'Appearance'),
+    expect(find.widgetWithText(Md3SettingsNavRow, 'Video'), findsOneWidget);
+    final Md3SettingsNavRow selectedRow = tester.widget<Md3SettingsNavRow>(
+      find.widgetWithText(Md3SettingsNavRow, 'Appearance'),
     );
-    expect(item.selected, isTrue);
-    expect(item.selectedShape, FushiListItemSelectedShape.pill);
-    expect(item.trailing, isNull);
+    expect(selectedRow.selected, isTrue);
+    expect(
+      tester
+          .widget<Md3SettingsNavRow>(
+            find.widgetWithText(Md3SettingsNavRow, 'Video'),
+          )
+          .selected,
+      isFalse,
+    );
+    final BuildContext rowContext = tester.element(
+      find.widgetWithText(Md3SettingsNavRow, 'Appearance'),
+    );
+    final Material pill = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.widgetWithText(Md3SettingsNavRow, 'Appearance'),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(pill.shape, isA<StadiumBorder>(), reason: '选中项是全圆角胶囊');
+    expect(pill.color, Theme.of(rowContext).colorScheme.secondaryContainer);
+    expect(find.byIcon(Icons.chevron_right), findsNothing);
   });
 
   testWidgets(
-    'material push destination list keeps fill selection and chevron',
+    'material push destination list rows sit in group cards and open details',
     (WidgetTester tester) async {
+      SettingsDestinationId? tapped;
       await tester.pumpWidget(
         _harness(
           platform: TargetPlatform.android,
@@ -551,19 +582,25 @@ void main() {
               settingsContext: settingsContext,
               destinations: <SettingsDestination>[_fixtureDestination()],
               selectedDestinationId: SettingsDestinationId.appearance,
-              onDestinationSelected: (_) {},
+              onDestinationSelected: (SettingsDestinationId id) => tapped = id,
             );
           },
         ),
       );
 
+      // MD3 重设计（Android 16 设置，用户 2026-10-04）：窄屏 push 列表的行
+      // = 单色图标 + 标题，不再画选中填充与 chevron（push 列表没有「当前项」，
+      // 点进去就是详情页）。契约：分类仍在分组卡里、可点、点了 push 详情页。
       expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
       final FushiListItem item = tester.widget<FushiListItem>(
         find.widgetWithText(FushiListItem, 'Appearance'),
       );
-      expect(item.selected, isTrue);
-      expect(item.selectedShape, FushiListItemSelectedShape.fill);
-      expect(item.trailing, isA<Icon>());
+      expect(item.leading, isA<Widget>(), reason: '分类行带图标');
+      expect(item.onTap, isA<Function>(), reason: '分类行可点进详情');
+      // 只验证点击把分类交给选择回调（push 的详情页需要完整 app 上下文才能
+      // 构建，这里不 pump 它）。
+      item.onTap!();
+      expect(tapped, SettingsDestinationId.appearance);
     },
   );
 
@@ -853,8 +890,10 @@ void main() {
           widget.title == t.lookup_audio_volume,
     );
 
-    // 标题带实时百分比读数（与有声书音量行同款）；row.title 保持裸标题作身份。
-    expect(find.text('${t.lookup_audio_volume} (100%)'), findsOneWidget);
+    // 行内带实时百分比读数（与有声书音量行同款）；row.title 保持裸标题作身份。
+    // MD3 重设计后读数常驻在滑条右侧读数槽，不再拼进标题。
+    expect(find.text(t.lookup_audio_volume), findsOneWidget);
+    expect(find.text('100%'), findsOneWidget);
     expect(sliderFinder(), findsOneWidget);
     AdaptiveSettingsSliderRow row = tester.widget<AdaptiveSettingsSliderRow>(
       sliderFinder(),
@@ -1220,8 +1259,14 @@ void main() {
       );
 
       // ① 详情面板身份：第一帧就是 destinations.first 的面板，没有任何导航发生。
+      // 左栏导航行也以同一个 destination id 作 key，这里只认详情面板的
+      // KeyedSubtree。
       expect(
-        find.byKey(ValueKey<SettingsDestinationId>(first.id)),
+        find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is KeyedSubtree &&
+              widget.key == ValueKey<SettingsDestinationId>(first.id),
+        ),
         findsOneWidget,
         reason: '宽屏首帧就渲染了第一分类的详情面板 —— 「面板存在」本身不构成导航证据',
       );
@@ -1230,7 +1275,7 @@ void main() {
       final Finder firstRow = find.ancestor(
         of: find.text(first.title),
         matching: find.byWidgetPredicate(
-          (Widget widget) => widget is FushiListItem && widget.selected,
+          (Widget widget) => widget is Md3SettingsNavRow && widget.selected,
         ),
       );
       expect(
@@ -1279,14 +1324,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // 机制（字体无关）：分类项真拿到 titleMaxLines: 2（放行第二行）。
-      final FushiListItem item = tester.widget<FushiListItem>(
-        find.widgetWithText(FushiListItem, longTitle),
-      );
+      // 机制（字体无关）：MD3 导航行（Md3SettingsNavRow）的标题放行第二行。
       expect(
-        item.titleMaxLines,
-        2,
-        reason: 'TODO-1143 左父菜单分类项必须传 titleMaxLines: 2',
+        find.widgetWithText(Md3SettingsNavRow, longTitle),
+        findsOneWidget,
+        reason: 'TODO-1143 左父菜单分类项是 MD3 导航行',
       );
 
       // 效果：标题 RenderParagraph 允许两行，长标签在 280px 内不再被单行 ellipsis

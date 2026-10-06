@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -155,6 +156,14 @@ class SyncDictEntry {
   final String? remoteAssetId;
 
   bool get hasRemote => remoteAssetId != null;
+
+  /// Every side that actually holds this dictionary, local first. A bare
+  /// "Remote" for a dictionary that is also installed locally made it look
+  /// identical to a cloud-only one (#1473).
+  String get presenceLabel => <String>[
+        if (hasLocal) t.sync_compare_local,
+        if (hasRemote) t.sync_compare_remote,
+      ].join(' · ');
 }
 
 /// True if a remote book folder holds a downloadable EPUB content asset.
@@ -862,7 +871,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         final manager = SyncManager(
           db: widget.db,
           backend: widget.backend,
-          onContentProgress: (fraction) {
+          onContentProgress: (double fraction, [int? _]) {
             if (mounted && total > 0) {
               setState(
                   () => _progress = (done + fraction.clamp(0.0, 1.0)) / total);
@@ -1204,11 +1213,11 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               alignment: MainAxisAlignment.end,
               spacing: 8,
               children: <Widget>[
-                TextButton(
+                FushiTextButton(
                   onPressed: () => Navigator.pop(ctx, false),
                   child: Text(t.dialog_cancel),
                 ),
-                FilledButton(
+                FushiFilledButton(
                   onPressed: () => Navigator.pop(ctx, true),
                   child: Text(t.dialog_delete),
                 ),
@@ -1292,12 +1301,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         ),
       );
     } else if (_entries == null) {
-      body = const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
-          child: CircularProgressIndicator.adaptive(),
-        ),
-      );
+      body = const FushiLoadingView();
     } else if (_showOnlyConflicts
         ? _entriesInPlay.isEmpty
         : (_entries!.isEmpty && (_dicts?.isEmpty ?? true))) {
@@ -1397,7 +1401,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           ),
           SizedBox(height: tokens.spacing.card),
           if (_applying) ...[
-            LinearProgressIndicator(value: _progress),
+            FushiLinearProgressIndicator(value: _progress),
             const SizedBox(height: 6),
             Text(
               _progressLabel ?? t.sync_compare_apply(count: _actionableCount),
@@ -1414,7 +1418,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             spacing: tokens.spacing.gap,
             overflowSpacing: tokens.spacing.gap,
             children: [
-              TextButton(
+              FushiTextButton(
                 // 应用期间也保持可点：本框是 `barrierDismissible: false`，iOS 上既
                 // 没有系统返回键、对话框路由也没有侧滑返回，而 `_applyChoices` 先
                 // 抢全局同步互斥锁（后台自动云同步在跑就一直等）、拿到锁后逐本做
@@ -1428,13 +1432,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ),
               ),
               if (_entries != null && _entries!.isNotEmpty)
-                FilledButton(
+                FushiFilledButton(
                   onPressed: canApply ? _applyChoices : null,
                   child: _applying
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+                          child: FushiCircularProgressIndicator(strokeWidth: 2),
                         )
                       : Text(t.sync_compare_apply(count: applyCount)),
                 ),
@@ -1448,7 +1452,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// 「只看冲突」筛选 chip。与 [FushiOverflowMenu] 同款接线：在焦点根下注册成方向
   /// 导航目标，Activate（Enter / 手柄 A）即切换；否则裸 chip 对手柄不可达。
   Widget _conflictFilterChip(ThemeData theme) {
-    final Widget chip = FilterChip(
+    final Widget chip = FushiFilterChip(
       label: Text('${t.sync_compare_only_conflicts} · $_conflictCount'),
       selected: _filterConflicts,
       onSelected: (bool value) => setState(() => _filterConflicts = value),
@@ -1481,7 +1485,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   /// 这条约定就不必再存在。
   Widget _bulkChoiceMenu(List<SyncCompareEntry> targets) {
     return FushiOverflowMenu<SyncChoice>(
-      iconWidget: const Icon(Icons.checklist, size: 20),
+      iconWidget: const FushiIcon(Icons.checklist, size: 20),
       tooltip: t.sync_compare_select_all,
       onSelected: (choice) {
         setState(() {
@@ -1538,7 +1542,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           child: Row(
             children: <Widget>[
               if (isConflict) ...<Widget>[
-                Icon(Icons.warning_amber_rounded, size: 16, color: accent),
+                FushiIcon(Icons.warning_amber_rounded, size: 16, color: accent),
                 const SizedBox(width: 4),
               ],
               Text(
@@ -1566,13 +1570,20 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     final isConflict = entry.hasConflict;
 
+    // Apple：iOS 不铺粉色错误底块——冲突条目保持透明底，只用 destructive
+    // 低透明细描边 + 标题旁单色警示图标区分；MD3 原样。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) ? appleColorsOf(context) : null;
     return FushiCard(
-      color: isConflict
+      color: isConflict && apple == null
           ? theme.colorScheme.errorContainer.withValues(alpha: 0.15)
           : Colors.transparent,
       margin: const EdgeInsets.symmetric(vertical: 2),
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      borderColor: isConflict ? theme.colorScheme.errorContainer : null,
+      borderColor: !isConflict
+          ? null
+          : (apple?.destructive.withValues(alpha: 0.45) ??
+              theme.colorScheme.errorContainer),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1595,13 +1606,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
               if (isConflict)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(start: 4),
-                  child: Icon(Icons.warning_amber_rounded,
+                  child: FushiIcon(Icons.warning_amber_rounded,
                       size: 16, color: theme.colorScheme.error),
                 ),
               if (entry.remoteFolderId != null ||
                   entry.remoteAudioBookId != null)
                 FushiOverflowMenu<String>(
-                  iconWidget: const Icon(Icons.delete_outline, size: 18),
+                  iconWidget: const FushiIcon(Icons.delete_outline, size: 18),
                   tooltip: t.dialog_delete,
                   onSelected: (String sel) {
                     if (sel == 'book' && entry.remoteFolderId != null) {
@@ -1654,7 +1665,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             child: Row(
               children: [
                 Expanded(child: _dataColumn(entry, isLocal: true)),
-                const SizedBox(height: 32, child: VerticalDivider(width: 16)),
+                const SizedBox(height: 32, child: FushiVerticalDivider(width: 16)),
                 Expanded(child: _dataColumn(entry, isLocal: false)),
               ],
             ),
@@ -1686,9 +1697,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Widget _downloadRow(SyncCompareEntry entry, ThemeData theme) {
     return Align(
       alignment: AlignmentDirectional.centerStart,
-      child: TextButton.icon(
+      child: FushiTextButton.icon(
         onPressed: _applying ? null : () => _downloadRemoteOnlyFromRow(entry),
-        icon: const Icon(Icons.cloud_download_outlined, size: 16),
+        icon: const FushiIcon(Icons.cloud_download_outlined, size: 16),
         label: Text(t.sync_compare_download),
         style: TextButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1706,7 +1717,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
       child: Row(
         children: <Widget>[
-          Icon(Icons.menu_book_outlined,
+          FushiIcon(Icons.menu_book_outlined,
               size: 18, color: theme.colorScheme.onSurfaceVariant),
           const SizedBox(width: 6),
           Expanded(
@@ -1718,13 +1729,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             ),
           ),
           Text(
-            d.hasRemote ? t.sync_compare_remote : t.sync_compare_local,
+            d.presenceLabel,
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           if (d.hasRemote)
             FushiOverflowMenu<String>(
-              iconWidget: const Icon(Icons.delete_outline, size: 18),
+              iconWidget: const FushiIcon(Icons.delete_outline, size: 18),
               tooltip: t.dialog_delete,
               onSelected: (String _) => _deleteRemote(
                 name: d.name,
@@ -1747,12 +1758,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
 
   Widget _directionIcon(SyncCompareEntry entry, ThemeData theme) {
     final cs = theme.colorScheme;
+    // Apple：tertiary 映射成系统橙（警示色），上传不是警示——两个方向都用强调色，
+    // 靠图标形状区分；MD3 保持 primary / tertiary 两色。
+    final Color uploadColor =
+        isGlassDesign(context) ? appleColorsOf(context).accent : cs.tertiary;
     final choice = _choices[entry.title] ?? SyncChoice.skip;
     if (choice == SyncChoice.useLocal) {
-      return Icon(Icons.cloud_upload_outlined, size: 18, color: cs.tertiary);
+      return FushiIcon(Icons.cloud_upload_outlined, size: 18, color: uploadColor);
     }
     if (choice == SyncChoice.useRemote) {
-      return Icon(Icons.cloud_download_outlined, size: 18, color: cs.primary);
+      return FushiIcon(Icons.cloud_download_outlined, size: 18, color: cs.primary);
     }
     final icon = switch (entry.autoDirection) {
       SyncDirection.importFromTtu => Icons.cloud_download_outlined,
@@ -1761,10 +1776,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     };
     final color = switch (entry.autoDirection) {
       SyncDirection.importFromTtu => cs.primary,
-      SyncDirection.exportToTtu => cs.tertiary,
+      SyncDirection.exportToTtu => uploadColor,
       SyncDirection.synced => cs.onSurfaceVariant,
     };
-    return Icon(icon, size: 18, color: color);
+    return FushiIcon(icon, size: 18, color: color);
   }
 
   Widget _choiceRow(String title, SyncChoice choice, ThemeData theme) {

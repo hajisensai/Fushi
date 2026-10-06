@@ -12,6 +12,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
@@ -27,7 +28,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
@@ -49,6 +50,7 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -61,7 +63,11 @@ import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
+    show FushiTitleBarColorScope, FushiTitleBarColors, fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_page_grid.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
@@ -352,9 +358,9 @@ Future<int?> showMangaPageJumpDialog(
   String input = '$currentPage';
   return showAppDialog<int>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog(
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
       title: Text(t.manga_jump_to_page),
-      content: TextFormField(
+      content: FushiTextFormFieldControl(
         initialValue: input,
         autofocus: true,
         keyboardType: TextInputType.number,
@@ -369,11 +375,11 @@ Future<int?> showMangaPageJumpDialog(
         onChanged: (String value) => input = value,
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.pop(dialogContext),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           onPressed: () => Navigator.pop(dialogContext, int.tryParse(input)),
           child: Text(t.dialog_ok),
         ),
@@ -873,6 +879,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
   bool _edgeToastShown = false;
+
+  /// 章末「下一章」卡片的数据：读到本章最后一页时按与翻页换章同一判据
+  /// （[_adjacentChapterIndex]）解出一次，按章节 key 缓存，换章后自然失效。
+  int? _upNextChapterIndex;
+  String? _upNextResolvedFor;
+  bool _upNextResolving = false;
+
+  /// 章末卡片的作品封面：按封面绝对路径缓存，读到末页时（不是 build 里）异步
+  /// 判一次文件在不在；[_upNextCoverFor] 记的是已判过的路径。
+  ImageProvider? _upNextCover;
+  String? _upNextCoverFor;
 
   /// 当前选中的在线章还没下载、在线直读也没成（源不可用 / 取不到页）：正文区显示
   /// 「本章未下载」态（入队 / 选章两个出口），
@@ -1611,6 +1628,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentPage = MangaFushiPage.firstPageOfSpread(spreads, _currentSpread);
     });
     _pageNotifier.value = _currentPage;
+    _syncChapterEndCard();
     await _loadInitialWindow();
     _updateCurrentPageImagePath();
     _recordProgress();
@@ -1767,7 +1785,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 没有本书覆盖时不碰 wakelock：openMedia 已按全局「保持屏幕常亮」设好，漫画
       // 默认值（true）不能把用户全局关掉的常亮再打开。
       if (hasKeepScreenOnOverride) {
-        await WakelockPlus.toggle(enable: readerPreferences.keepScreenOn);
+        // 永不抛错：wakelock 失败（Linux 无 ScreenSaver D-Bus 服务）不能连带跳过下面的全屏恢复。
+        await setScreenWakelock(
+          enable: readerPreferences.keepScreenOn,
+          source: 'manga restore',
+        );
       }
       if (hasFullscreenOverride && desktopWindowFullscreenSupported) {
         await _setMangaFullscreen(readerPreferences.fullscreen);
@@ -1944,6 +1966,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
+    // 换章停在原页码时 notifier 不通知：显式补一次章末卡片的数据准备。
+    _syncChapterEndCard();
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
@@ -2199,7 +2223,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       if (mounted) {
         FushiToast.show(
-          msg: error is OnlineMangaUnavailable ? error.message : '$error',
+          // 原始异常已进上面的错误日志；toast 只给归一后的短句。
+          msg: error is OnlineMangaUnavailable
+              ? error.userMessage
+              : describeOnlineSourceError(error),
           severity: ToastSeverity.error,
         );
       }
@@ -2597,7 +2624,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       imgSrcs.add(
         MangaFushiPage.mangaImageUrl(
           image.url,
-          useCustomScheme: Platform.isMacOS || Platform.isIOS,
+          useCustomScheme: webViewUsesCustomSchemeTransport,
           version: _pageSessionGeneration,
         ),
       );
@@ -2676,6 +2703,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       default:
         return Theme.of(context).colorScheme.surface;
     }
+  }
+
+  /// 桌面自绘顶栏该跟的颜色＝本页最顶上一排像素。2026-10 重设计后顶栏是离页顶
+  /// [kMangaChromeTopGap] 的浮动胶囊，最顶一排恒是页面底色——除非回看横幅在顶
+  /// （固定态顶栏收起时它贴页顶）。
+  FushiTitleBarColors _desktopTitleBarColors(BuildContext context) {
+    final Color background = _backgroundColor;
+    // 固定态顶栏可见时横幅贴在让出的区域下沿，最顶一排仍是底色；其余情况横幅
+    // 贴页顶（悬浮胶囊浮在它上面、不占最顶一排）。
+    if (_sourceReviewSession != null && _chromeTopInset == 0) {
+      final ColorScheme scheme = Theme.of(context).colorScheme;
+      return (
+        background: scheme.secondaryContainer,
+        foreground: scheme.onSecondaryContainer,
+      );
+    }
+    return fushiTitleBarColorsOn(background);
   }
 
   /// 同一个底色给 WebView 文档用的 CSS 值。两处**必须**同源：页图是
@@ -3249,6 +3293,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final MangaReaderInputAction? action = _resolveMangaKeyAction(
       event.logicalKey,
       activeModifierKeys(),
+      physicalKey: event.physicalKey,
     );
     if (action == null) return KeyEventResult.ignored;
     if (repeat && _panStepFor(action) == null) {
@@ -3446,16 +3491,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 注册表解析 → 跨页方向校正 → 上下文门控。键盘路径与 WebView 桥回传路径共用，
   /// 保证「改键」对两条路径同时生效（否则改了键，WebView 持焦时又变回默认键位）。
+  ///
+  /// [physicalKey] 只由 Flutter 键盘路径传入（BUG-2948：macOS 上 Shift+/ 的逻辑键是
+  /// `question`，由注册表按物理键收拢）；WebView 桥回传的是按 DOM `code` 拼的注册表
+  /// token，本就是表内键名，不需要。
   MangaReaderInputAction? _resolveMangaKeyAction(
     LogicalKeyboardKey key,
-    Set<ModifierKey> modifiers,
-  ) {
+    Set<ModifierKey> modifiers, {
+    PhysicalKeyboardKey? physicalKey,
+  }) {
     final FushiShortcutRegistry registry = appModel.shortcutRegistry;
     final ShortcutAction? bound =
         registry.resolveKeyboard(
           key,
           modifiers: modifiers,
           scope: ShortcutScope.manga,
+          physicalKey: physicalKey,
         ) ??
         // 兜底「返回上一级」（universal，默认 Esc）。排在 manga scope 之后：本页专属
         // 键永远优先。跨页方向校正只作用于翻页动作，globalBack 原样穿过。
@@ -3463,11 +3514,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           key,
           modifiers: modifiers,
           scope: ShortcutScope.universal,
+          physicalKey: physicalKey,
         ) ??
         registry.resolveKeyboard(
           key,
           modifiers: modifiers,
           scope: ShortcutScope.global,
+          physicalKey: physicalKey,
         );
     final ShortcutAction? corrected =
         resolveMangaArrowPageTurn(
@@ -3812,7 +3865,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             bookKey: widget.bookKey,
             imageDirPath: directory,
             mangaJsonPath: p.join(directory, row.epubPath),
-            volumeTitle: _chromeTitle,
+            volumeTitle: _volumeDisplayTitle,
             startPage: _currentPage,
             engines:
                 widget.ocrEnginesOverride ??
@@ -3910,6 +3963,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void _onReaderPageChanged() {
     _observedOcrJob?.focusPage(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
+    _syncChapterEndCard();
   }
 
   /// 在线直读章的边看边识别：从读者当前页起识别眼前这页与后面几页，识别完一页
@@ -4503,6 +4557,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     });
     _resetPanelNavigation();
     _pageNotifier.value = _currentPage;
+    _syncChapterEndCard();
     _noteVisiblePages();
     await _loadInitialWindow();
     // 布局变化会换掉当前 spread 背后的页（ERRATA C2）。
@@ -4722,7 +4777,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+        ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
       }
       return false;
     }
@@ -4809,17 +4864,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     style: Theme.of(sheetContext).textTheme.titleMedium,
                   ),
                 ),
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: MaterialLocalizations.of(
                     sheetContext,
                   ).closeButtonTooltip,
                   onPressed: () => Navigator.of(sheetContext).pop(),
-                  icon: const Icon(Icons.close),
+                  icon: const FushiIcon(Icons.close),
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: SingleChildScrollView(
               child: MangaChapterList(
@@ -5075,10 +5130,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _applyVolumeKeyPaging(prefs.volumeKeys, invertDirection: _invertVolumeKeys);
     try {
       // 保持亮屏同理：没有本书覆盖时回到全局「保持屏幕常亮」（openMedia 的口径）。
-      await WakelockPlus.toggle(
+      await setScreenWakelock(
         enable: hasKeepScreenOnOverride
             ? prefs.keepScreenOn
             : ReaderFushiSource.instance.keepScreenAwake,
+        source: 'manga settings',
       );
       if (fullscreenChanged) {
         if (desktopWindowFullscreenSupported) {
@@ -5100,7 +5156,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+        ).showSnackBar(FushiSnackBar(content: Text(t.manga_reader_save_failed)));
       }
     }
 
@@ -5108,6 +5164,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!mounted) return;
     if (modeChanged) {
       _pageNotifier.value = _currentPage;
+      _syncChapterEndCard();
       _noteVisiblePages();
       await _loadInitialWindow();
       if (!mounted) return;
@@ -5135,6 +5192,219 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (page != null) {
       await _jumpToPage(page);
     }
+  }
+
+  // ── 2026-10 重设计的 chrome 入口（页面一览 / 快捷设置 / 章节按钮 / 章末卡片）──
+
+  /// 第 [pageIndex] 页的本地缩略图（拖动气泡 / 页面一览）。只认已经在盘上的页图
+  /// （本地卷 / 已下载章）：在线直读的页不为了缩略图去发请求，取不到就返回
+  /// null，调用方画页码占位。
+  ImageProvider? _pageThumbnail(int pageIndex) {
+    final MokuroPayload? payload = _payload;
+    final String? imagesDir = _imagesDir;
+    if (payload == null || imagesDir == null) return null;
+    final String? path = MangaFushiPage.resolveMangaPageImage(
+      payload,
+      imagesDir,
+      pageIndex,
+    );
+    if (path == null || !File(path).existsSync()) return null;
+    return ResizeImage(
+      FileImage(File(path)),
+      width: 240,
+      policy: ResizeImagePolicy.fit,
+    );
+  }
+
+  /// 当前屏上的页（双页 spread 两页都算），页面一览里高亮它们。
+  Set<int> _currentScreenPages() {
+    final int page = _pageNotifier.value;
+    final int spreadIndex = MangaFushiPage.spreadIndexForPage(_spreads, page);
+    if (spreadIndex >= 0 && spreadIndex < _spreads.length) {
+      return _spreads[spreadIndex].pageIndices.toSet();
+    }
+    return <int>{page};
+  }
+
+  /// 是否读到了本章（本卷）最后一页（双页 spread 含末页也算）。
+  bool _atLastPage() {
+    final int pageCount = _payload?.images.length ?? 0;
+    if (pageCount <= 0) return false;
+    return _pageNotifier.value >= pageCount - 1 ||
+        _currentScreenPages().contains(pageCount - 1);
+  }
+
+  Future<void> _showPageGrid() async {
+    final int total = _payload?.images.length ?? 0;
+    if (total <= 0 || !mounted) return;
+    final int? page = await showMangaPageGridSheet(
+      context: context,
+      pageCount: total,
+      currentPages: _currentScreenPages(),
+      thumbnail: _pageThumbnail,
+    );
+    if (page != null && mounted) await _jumpToPage(page + 1);
+  }
+
+  /// 快捷设置面板：阅读方向 / 单双页 / 缩放 / 底色 / 亮度。写入与「全部设置」
+  /// 同一份本书覆盖（[_patchReaderOverride]）并同样重应用；方向单独走
+  /// [_setSpreadDirection]（与顶栏方向按钮同一执行体，连点不丢）。
+  Future<void> _showQuickSettings() async {
+    final EpubBookRow? row = _bookRow;
+    if (row == null || row.uid.isEmpty || !mounted) return;
+    _readerSettingsOpen = true;
+    await _syncAutoScrollPause();
+    bool openAll = false;
+    try {
+      if (!mounted) return;
+      openAll =
+          await showMangaReaderQuickSettingsSheet(
+            context: context,
+            preferences: _readerPreferences,
+            currentMode: _mode,
+            spreadPreference: _spreadPreference,
+            onSpreadPreferenceChanged: (MangaSpreadPreference value) =>
+                unawaited(_setSpreadPreference(value)),
+            onPatch: (Map<String, Object?> patch) async {
+              if (patch.length == 1 && patch['direction'] is String) {
+                await _setSpreadDirection(patch['direction']! as String);
+                return;
+              }
+              if (!await _patchReaderOverride(row.uid, patch)) {
+                throw StateError('manga reader override not saved');
+              }
+              if (!mounted) return;
+              try {
+                await _reapplyReaderPreferences();
+              } on Object catch (error, stack) {
+                ErrorLogService.instance.log(
+                  'MangaFushiPage.quickSettingsApply',
+                  error,
+                  stack,
+                );
+              }
+            },
+          ) ??
+          false;
+    } finally {
+      _readerSettingsOpen = false;
+      await _syncAutoScrollPause();
+    }
+    if (openAll && mounted) await _showReaderSettings();
+  }
+
+  /// 底栏上一章 / 下一章：与翻过章节边界同一判据（[_adjacentChapterIndex]，
+  /// 尊重「跳过已读 / 重复」），但**不**记已读——按钮是跳转，不是读完。
+  Future<void> _goToAdjacentChapter({required bool forward}) async {
+    if (_shelfEntry == null || _switchingChapter) return;
+    final int? target = await _adjacentChapterIndex(forward: forward);
+    if (!mounted) return;
+    if (target == null) {
+      FushiToast.show(
+        msg: forward
+            ? t.manga_series_last_chapter_reached
+            : t.manga_series_first_chapter_reached,
+      );
+      return;
+    }
+    await _switchToChapter(target);
+  }
+
+  /// 章末卡片的数据准备：读到本章末页时解出「下一章」并判作品封面，结果按章节
+  /// key / 封面路径缓存。只在可见单元变化处调（翻页监听、换章装载、单元边界
+  /// 重建），**不在 build 里**——build 只读缓存。
+  void _syncChapterEndCard() {
+    if (!mounted ||
+        _shelfEntry == null ||
+        !_chromeContentReady ||
+        !_atLastPage()) {
+      return;
+    }
+    unawaited(_resolveUpNextChapter());
+    unawaited(_resolveUpNextCover());
+  }
+
+  Future<void> _resolveUpNextChapter() async {
+    final String? key = _shelfChapterKey;
+    if (key == null || _upNextResolving || _upNextResolvedFor == key) return;
+    _upNextResolving = true;
+    int? target;
+    try {
+      target = await _adjacentChapterIndex(forward: true);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaFushiPage.upNext', error, stack);
+    } finally {
+      _upNextResolving = false;
+    }
+    if (!mounted) return;
+    setState(() {
+      _upNextResolvedFor = key;
+      _upNextChapterIndex = target;
+    });
+  }
+
+  /// 作品封面（本地文件），章末卡片用；不存在就留 null 画占位。
+  Future<void> _resolveUpNextCover() async {
+    final EpubBookRow? row = _bookRow;
+    final String? cover = row?.coverPath;
+    String? path;
+    if (row != null && cover != null && cover.isNotEmpty) {
+      path = p.isAbsolute(cover) ? cover : p.join(row.extractDir, cover);
+    }
+    if (path == _upNextCoverFor) return;
+    _upNextCoverFor = path;
+    final bool exists = path != null && await File(path).exists();
+    if (!mounted || _upNextCoverFor != path) return;
+    final String? existing = exists ? path : null;
+    setState(() {
+      _upNextCover = existing == null
+          ? null
+          : ResizeImage(
+              FileImage(File(existing)),
+              width: 160,
+              policy: ResizeImagePolicy.fit,
+            );
+    });
+  }
+
+  /// 章末「下一章」卡片（只有书架在线条目才有「章」）。点「继续」走与翻过最后
+  /// 一页完全相同的 [_onReachedChapterEdge]：先记本章已读、再换章。
+  Widget _buildChapterEndCard({required bool chromeShown}) {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    final bool atEnd = entry != null && _chromeContentReady && _atLastPage();
+    final int? next = _upNextResolvedFor == _shelfChapterKey
+        ? _upNextChapterIndex
+        : null;
+    final bool hasNext =
+        entry != null && next != null && next >= 0 && next < entry.chapters.length;
+    final bool visible = chromeShown && atEnd && hasNext && !_switchingChapter;
+    return MangaChromeReveal(
+      visible: visible,
+      fromTop: false,
+      child: hasNext
+          ? Align(
+              alignment: Alignment.bottomCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: kMangaChromeEdgeInset,
+                  ),
+                  child: MangaChapterEndCard(
+                    key: const ValueKey<String>('manga_chapter_end_card'),
+                    eyebrow: t.manga_series_next_chapter,
+                    title: mangaChapterDisplayName(entry.chapters[next]),
+                    actionLabel: t.manga_chapter_transition,
+                    cover: atEnd ? _upNextCover : null,
+                    onContinue: _switchingChapter
+                        ? null
+                        : () => unawaited(_onReachedChapterEdge(1)),
+                  ),
+                ),
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
   }
 
   Future<File?> _currentMangaPageFile() async {
@@ -5218,7 +5488,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final RenderBox overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final Offset anchor = overlay.globalToLocal(Offset(x, y));
-    final _MangaContextAction? action = await showMenu<_MangaContextAction>(
+    final _MangaContextAction? action = await showFushiMenu<_MangaContextAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromLTWH(anchor.dx, anchor.dy, 1, 1),
@@ -5429,10 +5699,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     Positioned(
                       top:
                           MediaQuery.paddingOf(context).top +
-                          kMangaChromeBarHeight +
-                          8,
-                      left: 12,
-                      right: 12,
+                          kMangaChromeBarHeight,
+                      left: kMangaChromeEdgeInset + 4,
+                      right: kMangaChromeEdgeInset + 4,
                       child: Align(alignment: Alignment.topRight, child: badge),
                     ),
                   // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
@@ -5456,35 +5725,73 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   // 所以栏本体只受 [_chromeVisible]（固定态）/ 加悬浮唤出态门控；
                   // 内容门控只落在栏里的**动作组**上（[_buildTopChrome]）：没有正文
                   // 时页码 / 布局 / 缩放全无意义，栏只剩返回键。
-                  if (mangaChromeBarPainted(
-                    floating: _chromeFloating,
-                    chromeVisible: _chromeVisible,
-                    transientVisible: _chrome.transientVisible,
-                    contentReady: _chromeActionsEnabled,
-                  ))
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
+                  //
+                  // 2026-10 重设计：栏是浮动胶囊，显隐经 [MangaChromeReveal] 做
+                  // fade + slide（顶部向上退、底部向下退），退场播完才卸载。
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: MangaChromeReveal(
+                      // 正文就绪前后各是一个 Reveal：悬浮态加载中无条件画栏
+                      // （出口），书一就绪就该**立即**收起，而不是对着首屏页图
+                      // 播一段退场；之后的显隐（中央点击 / M 键）才走动效。
+                      key: ValueKey<bool>(_chromeContentReady),
+                      visible: mangaChromeBarPainted(
+                        floating: _chromeFloating,
+                        chromeVisible: _chromeVisible,
+                        transientVisible: _chrome.transientVisible,
+                        contentReady: _chromeActionsEnabled,
+                      ),
                       child: _buildTopChrome(),
                     ),
+                  ),
+                  // 章末「下一章」卡片：读到本章最后一页、且有下一章时浮在底栏上方；
+                  // 与底栏同一条可见性（chrome 收起时它也收起，不挡页图）。
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom:
+                        MediaQuery.paddingOf(context).bottom +
+                        kMangaChromeBottomBarHeight -
+                        kMangaChromeBottomGap +
+                        8,
+                    child: ListenableBuilder(
+                      listenable: _pageNotifier,
+                      builder: (BuildContext context, Widget? _) =>
+                          _buildChapterEndCard(
+                            chromeShown:
+                                _chromeActionsEnabled &&
+                                mangaChromeBarPainted(
+                                  floating: _chromeFloating,
+                                  chromeVisible: _chromeVisible,
+                                  transientVisible: _chrome.transientVisible,
+                                  contentReady: _chromeActionsEnabled,
+                                ),
+                          ),
+                    ),
+                  ),
                   // 底栏跳页 slider：可见性与顶栏同判据（同一条 chrome），但额外
                   // 要求有正文——没有页就没有可跳的页。
                   // ExcludeFocus：Slider 是可 Tab 到的焦点节点，拿到焦点后左右
                   // 方向键被它自己的 Shortcuts 吃掉、到不了 _handleReaderKey；
                   // 阅读器 chrome 不参与焦点遍历（docs/agent/focus-ownership.md），
-                  // 鼠标/触摸拖动不经焦点，功能不受影响。
-                  if (_chromeActionsEnabled &&
-                      mangaChromeBarPainted(
-                        floating: _chromeFloating,
-                        chromeVisible: _chromeVisible,
-                        transientVisible: _chrome.transientVisible,
-                        contentReady: _chromeActionsEnabled,
-                      ))
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
+                  // 鼠标/触摸拖动不经焦点，功能不受影响。上一章 / 下一章另有
+                  // 快捷键与章节目录两条键盘通道。
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: MangaChromeReveal(
+                      fromTop: false,
+                      visible:
+                          _chromeActionsEnabled &&
+                          mangaChromeBarPainted(
+                            floating: _chromeFloating,
+                            chromeVisible: _chromeVisible,
+                            transientVisible: _chrome.transientVisible,
+                            contentReady: _chromeActionsEnabled,
+                          ),
                       child: ExcludeFocus(
                         child: MangaReaderBottomBar(
                           key: const ValueKey<String>(
@@ -5497,9 +5804,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                           floating: _chromeFloating,
                           onPageCommitted: (int pageIndex) =>
                               unawaited(_jumpToPage(pageIndex + 1)),
+                          onPreviousChapter: _shelfEntry == null
+                              ? null
+                              : () => unawaited(
+                                  _goToAdjacentChapter(forward: false),
+                                ),
+                          onNextChapter: _shelfEntry == null
+                              ? null
+                              : () => unawaited(
+                                  _goToAdjacentChapter(forward: true),
+                                ),
+                          previousChapterTooltip:
+                              t.manga_series_previous_chapter,
+                          nextChapterTooltip: t.manga_series_next_chapter,
+                          pagePreview: _pageThumbnail,
                         ),
                       ),
                     ),
+                  ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。
                   if (!_chromeVisible &&
                       _chromeContentReady &&
@@ -5524,14 +5846,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       child: SafeArea(
                         child: Opacity(
                           opacity: 0.35,
-                          child: IconButton(
+                          child: FushiIconButtonControl(
                             key: const ValueKey<String>(
                               'manga_chrome_show_button',
                             ),
                             tooltip: t.manga_interface_show,
                             iconSize: 20,
                             color: Colors.white,
-                            icon: const Icon(Icons.visibility_outlined),
+                            icon: const FushiIcon(Icons.visibility_outlined),
                             onPressed: _toggleMangaChrome,
                           ),
                         ),
@@ -5544,7 +5866,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
       ),
     );
-    return WindowFullscreenHost(child: page);
+    // 桌面自绘顶栏挂在 Navigator 外只认根主题 surface；漫画页最顶上一排可能是
+    // 顶栏（固定 / 悬浮暗条）、回看横幅或「漫画 · 底色」（黑 / 白 / 灰），都
+    // 与 surface 不同源，不上报就在页顶切出一条异色带。零布局。
+    return WindowFullscreenHost(
+      child: FushiTitleBarColorScope(
+        colors: _desktopTitleBarColors(context),
+        child: page,
+      ),
+    );
   }
 
   /// BUG-1888：切换界面可见性。移动端联动系统栏——隐藏界面即进入沉浸式全屏；
@@ -5580,16 +5910,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 顶栏动作是否有意义：没有正文（加载失败 / 本章未下载）时只剩返回键。
   bool get _chromeActionsEnabled => _chromeContentReady && _chromeVisible;
 
-  /// 栏标题：书架在线条目 = `作品 · 章`；本地卷 = 书名。
+  /// 整卷标题（OCR 任务名等）：书架在线条目 = `作品 · 章`；本地卷 = 书名。
+  String get _volumeDisplayTitle {
+    final String? series = _chromeSubtitle;
+    return series == null ? _chromeTitle : '$series · $_chromeTitle';
+  }
+
+  /// 栏主标题：书架在线条目 = 章节名；本地卷 = 书名。
   String get _chromeTitle {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
     if (entry != null &&
         _shelfChapterIndex >= 0 &&
         _shelfChapterIndex < entry.chapters.length) {
-      return '${entry.series.title} · '
-          '${mangaChapterDisplayName(entry.chapters[_shelfChapterIndex])}';
+      return mangaChapterDisplayName(entry.chapters[_shelfChapterIndex]);
     }
     return _bookRow?.title ?? '';
+  }
+
+  /// 栏副标题（第二行）：书架在线条目 = 作品名；本地卷没有第二行。
+  String? get _chromeSubtitle {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    if (entry != null &&
+        _shelfChapterIndex >= 0 &&
+        _shelfChapterIndex < entry.chapters.length) {
+      return entry.series.title;
+    }
+    return null;
   }
 
   Widget _buildTopChrome() {
@@ -5597,6 +5943,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     return MangaReaderTopBar(
       key: const ValueKey<String>('manga_reader_top_bar'),
       title: ready ? _chromeTitle : '',
+      subtitle: ready ? _chromeSubtitle : null,
       floating: _chromeFloating,
       backTooltip: MaterialLocalizations.of(context).backButtonTooltip,
       onBack: () => Navigator.of(context).maybePop(),
@@ -5654,6 +6001,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         key: const ValueKey<String>('manga_ocr_acceleration_label'),
         text: accel == null ? progress : '$progress · ${accel.label}',
         warning: accel?.degraded ?? false,
+        progress: _wholeVolumeOcrTotal > 0
+            ? _wholeVolumeOcrDone / _wholeVolumeOcrTotal
+            : null,
       );
     }
     if (_streamOcrBusy) {
@@ -5823,11 +6173,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ),
       ],
       <MangaChromeAction>[
+        // 页面一览：全部页缩略图网格，点一页跳过去。
+        MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_page_grid_button'),
+          icon: Icons.grid_view_rounded,
+          label: t.manga_reader_page_grid,
+          onPressed: () => unawaited(_showPageGrid()),
+        ),
+        // 快捷设置（方向 / 单双页 / 缩放 / 底色 / 亮度）；底部有「全部设置」。
+        MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_quick_settings_button'),
+          icon: Icons.tune_rounded,
+          label: t.manga_reader_quick_settings,
+          pinned: true,
+          onPressed: () => unawaited(_showQuickSettings()),
+        ),
         MangaChromeAction(
           key: const ValueKey<String>('manga_reader_settings_button'),
           icon: Icons.settings_outlined,
           label: t.manga_reader_settings,
-          pinned: true,
           onPressed: () => unawaited(_showReaderSettings()),
         ),
         // BUG-1888：隐藏界面。与快捷键（默认 M / 手柄 Y）同一个执行体。
@@ -5971,7 +6335,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (_chapterNotDownloaded) return _buildChapterNotDownloaded();
     if (_bookRow == null || _imagesDir == null || _payload == null) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     // 平台无关的「内容已加载」标记：非 Linux 是原生 WebView，Linux 是无后端占位
     // （`manga_webview` key 仅存在于前者，随宿主平台变化）。加载成功的普适可观察
@@ -6077,74 +6441,66 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             _shelfChapterIndex < entry.chapters.length
         ? entry.chapters[_shelfChapterIndex].name
         : '';
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(
-              Icons.cloud_download_outlined,
-              size: 48,
-              color: Colors.white70,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              t.manga_chapter_not_downloaded,
-              key: const ValueKey<String>('manga_chapter_not_downloaded'),
-              style: const TextStyle(color: Colors.white70),
-              textAlign: TextAlign.center,
-            ),
-            if (chapterName.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 4),
+    // 本态恒画在黑底阅读区上：Apple 浅色 app 的主按钮是黑色强调色，压在黑底上
+    // 直接隐形，整块换成恒深色档主题（MD3 / 深色 app 原样，结构不变）。
+    return FushiAppleDarkTier(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const FushiIcon(
+                Icons.cloud_download_outlined,
+                size: 48,
+                color: Colors.white70,
+              ),
+              const SizedBox(height: 12),
               Text(
-                chapterName,
-                style: const TextStyle(color: Colors.white54),
+                t.manga_chapter_not_downloaded,
+                key: const ValueKey<String>('manga_chapter_not_downloaded'),
+                style: const TextStyle(color: Colors.white70),
                 textAlign: TextAlign.center,
               ),
-            ],
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              alignment: WrapAlignment.center,
-              children: <Widget>[
-                FilledButton.icon(
-                  key: const ValueKey<String>('manga_reader_enqueue_download'),
-                  onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
-                  icon: const Icon(Icons.download),
-                  label: Text(t.manga_chapter_download_action),
-                ),
-                OutlinedButton.icon(
-                  key: const ValueKey<String>('manga_reader_pick_chapter'),
-                  onPressed: _switchingChapter
-                      ? null
-                      : () => unawaited(_showChapterPicker()),
-                  icon: const Icon(Icons.list_alt_outlined),
-                  label: Text(t.manga_series_chapters_action),
+              if (chapterName.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(
+                  chapterName,
+                  style: const TextStyle(color: Colors.white54),
+                  textAlign: TextAlign.center,
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                alignment: WrapAlignment.center,
+                children: <Widget>[
+                  FushiFilledButton.icon(
+                    key: const ValueKey<String>('manga_reader_enqueue_download'),
+                    onPressed: () => unawaited(_enqueueCurrentChapterDownload()),
+                    icon: const FushiIcon(Icons.download),
+                    label: Text(t.manga_chapter_download_action),
+                  ),
+                  FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('manga_reader_pick_chapter'),
+                    onPressed: _switchingChapter
+                        ? null
+                        : () => unawaited(_showChapterPicker()),
+                    icon: const FushiIcon(Icons.list_alt_outlined),
+                    label: Text(t.manga_series_chapters_action),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// 只在有 WebView 后端的平台构造原生 WebView（Linux 无 flutter_inappwebview
-  /// 后端；widget 测试宿主的加载早退路径也永不触达这里）。
+  /// 构造原生 WebView（widget 测试宿主的加载早退路径永不触达这里）。
   Widget _buildWebView() {
-    if (Platform.isLinux) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.book_file_not_found,
-            style: const TextStyle(color: Colors.white70),
-          ),
-        ),
-      );
-    }
     // 重建 key 挂在 WebView **之上**：`manga_webview` 这个 ValueKey 是集成测试
     // finder 的锚点，不能随代次变化。
     return KeyedSubtree(

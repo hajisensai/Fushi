@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 每屏**最少**列数（周数）。见 [StatContributionHeatmap.weeks]。
@@ -241,16 +243,24 @@ int maxHeatmapPageOffset({
   required double spacing,
   required int cols,
 }) {
-  if (local.dx < 0 || local.dy < 0) return null;
+  if (local.dx < 0 || local.dy < 0 || cols <= 0) return null;
   final double step = cell + spacing;
-  final int col = local.dx ~/ step;
-  final int row = local.dy ~/ step;
-  if (col < 0 || col >= cols || row < 0 || row >= 7) return null;
-  // 落在格子内部而非右/下侧间隙。
-  if (local.dx - col * step > cell) return null;
-  if (local.dy - row * step > cell) return null;
+  final double gridW = cols * cell + (cols - 1) * spacing;
+  final double gridH = 7 * cell + 6 * spacing;
+  if (local.dx > gridW || local.dy > gridH) return null;
+  // 2026-10 体验优化：格间缝也算命中，取最近的格子。旧实现落在 3dp 缝里直接
+  // 判空白、收起气泡——手机上格子只有 12dp，手指点到缝里的概率很高，表现为
+  // 「点了没反应 / 刚弹的气泡又没了」。格 i 与格 i+1 的分界在缝的正中
+  // （i*step + cell + spacing/2），所以按 (x + spacing/2) / step 取整即最近格。
+  final int col =
+      ((local.dx + spacing / 2) / step).floor().clamp(0, cols - 1).toInt();
+  final int row = ((local.dy + spacing / 2) / step).floor().clamp(0, 6).toInt();
   return (col: col, row: row);
 }
+
+/// 翻页箭头的最小命中边长（2026-10 体验优化：旧箭头只有 26×22，手机上很难点中；
+/// 视觉图标不变，命中区扩到 ≥40）。
+const double kStatHeatmapArrowHitSize = 40;
 
 /// GitHub 式贡献热力图组件：自适应可用宽度铺 [weeks] 列小方格，颜色由 [baseColor]
 /// 按等级 0..4 加深。
@@ -385,18 +395,28 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
     Color? disabledColor,
   ) {
     if (!enabled && disabledColor == null) {
-      return const SizedBox(width: 26, height: _headerHeight);
+      return const SizedBox(
+        width: kStatHeatmapArrowHitSize,
+        height: kStatHeatmapArrowHitSize,
+      );
     }
+    // Apple：翻页箭头是强调色的纯图标按钮（无水波，系统 UIButton.plain 观感）；
+    // MD3 保留 onSurfaceVariant + 圆形水波。
+    final bool apple = isGlassDesign(context);
     return SizedBox(
-      width: 26,
-      height: _headerHeight,
+      width: kStatHeatmapArrowHitSize,
+      height: kStatHeatmapArrowHitSize,
       child: InkResponse(
-        radius: 16,
+        radius: kStatHeatmapArrowHitSize / 2,
+        splashFactory: apple ? NoSplash.splashFactory : null,
+        highlightColor: apple ? Colors.transparent : null,
         onTap: enabled ? onTap : null,
-        child: Icon(
+        child: FushiIcon(
           icon,
           size: 18,
-          color: enabled ? activeColor : disabledColor!,
+          color: enabled
+              ? (apple ? appleColorsOf(context).accent : activeColor)
+              : disabledColor!,
         ),
       ),
     );
@@ -404,10 +424,14 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
 
   Widget _bubbleChip(ThemeData theme, String text) {
     // eink：surfaceContainerHighest 塌成页面底色，气泡只剩一行悬空的字；描边。
+    // Apple：tertiarySystemFill 胶囊（中性灰，不是 tonal 色块）。
+    final bool apple = isGlassDesign(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
+        color: apple
+            ? appleColorsOf(context).tertiaryFill
+            : theme.colorScheme.surfaceContainerHighest,
         borderRadius: const BorderRadius.all(Radius.circular(10)),
         border: isEinkTheme(context)
             ? Border.all(color: theme.colorScheme.outline)
@@ -435,8 +459,9 @@ class _StatContributionHeatmapState extends State<StatContributionHeatmap> {
     final String? bubble = sel == null
         ? null
         : widget.valueLabel(sel, widget.valueByDateKey[sel] ?? 0);
+    // 有翻页箭头时顶部行随箭头命中区加高到 40，否则保持原 22。
     return SizedBox(
-      height: _headerHeight,
+      height: showArrows ? kStatHeatmapArrowHitSize : _headerHeight,
       child: Row(
         children: <Widget>[
           Expanded(

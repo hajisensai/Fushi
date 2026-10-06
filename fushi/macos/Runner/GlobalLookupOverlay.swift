@@ -970,7 +970,8 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
   /// (ResolveBridge) instead of the immediate `null` — the exact list the
   /// Windows router keeps (see global_lookup_window.cpp WebMessageReceived).
   private static let deferredHandlers: Set<String> = [
-    "resolveWordAudio", "queryLocalAudio", "favoriteEntry", "favoriteCheck",
+    "resolveWordAudio", "listWordAudioSources", "queryLocalAudio", "favoriteEntry",
+    "favoriteCheck",
     "mineEntry", "duplicateCheck", "overwriteTargetNoteId", "updateEntry",
     "findMinedMatches", "openMinedNote", "openInAnki",
   ]

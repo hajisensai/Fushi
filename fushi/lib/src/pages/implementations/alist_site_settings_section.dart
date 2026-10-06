@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
@@ -78,7 +79,7 @@ class _AListSiteSettingsSectionState
           for (int index = 0; index < _drafts.length; index++) _card(index),
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: FushiOutlinedButton.icon(
               key: const ValueKey<String>('alist-site-add'),
               onPressed: () => setState(
                 () => _drafts.add(
@@ -87,7 +88,7 @@ class _AListSiteSettingsSectionState
                   ),
                 ),
               ),
-              icon: const Icon(Icons.add),
+              icon: const FushiIcon(Icons.add),
               label: Text(t.discovery_alist_add),
             ),
           ),
@@ -109,7 +110,7 @@ class _AListSiteSettingsSectionState
           Row(
             children: <Widget>[
               Expanded(
-                child: SwitchListTile.adaptive(
+                child: FushiSwitchListTile.adaptive(
                   key: ValueKey<String>('alist-site-$index-enabled'),
                   contentPadding: EdgeInsets.zero,
                   dense: true,
@@ -119,7 +120,7 @@ class _AListSiteSettingsSectionState
                       _update(index, draft.copyWith(enabled: value)),
                 ),
               ),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('alist-site-$index-remove'),
                 tooltip: t.discovery_alist_remove,
                 onPressed: () {
@@ -129,7 +130,7 @@ class _AListSiteSettingsSectionState
                   });
                   unawaited(_saveValidDrafts());
                 },
-                icon: const Icon(Icons.remove_circle_outline),
+                icon: const FushiIcon(Icons.remove_circle_outline),
               ),
             ],
           ),
@@ -179,7 +180,7 @@ class _AListSiteSettingsSectionState
             runSpacing: 4,
             children: <Widget>[
               for (final DiscoveryMediaKind kind in DiscoveryMediaKind.values)
-                FilterChip(
+                FushiFilterChip(
                   key: ValueKey<String>('alist-site-$index-kind-${kind.name}'),
                   label: Text(discoveryMediaKindLabel(kind)),
                   selected: draft.kinds.contains(kind),
@@ -206,7 +207,7 @@ class _AListSiteSettingsSectionState
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          SwitchListTile.adaptive(
+          FushiSwitchListTile.adaptive(
             key: ValueKey<String>('alist-site-$index-allow-http'),
             contentPadding: EdgeInsets.zero,
             dense: true,
@@ -218,7 +219,7 @@ class _AListSiteSettingsSectionState
           ),
           Row(
             children: <Widget>[
-              OutlinedButton.icon(
+              FushiOutlinedButton.icon(
                 key: ValueKey<String>('alist-site-$index-test'),
                 onPressed: draft.toConfig() == null || probe?.running == true
                     ? null
@@ -227,9 +228,9 @@ class _AListSiteSettingsSectionState
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.network_check_outlined),
+                    : const FushiIcon(Icons.network_check_outlined),
                 label: Text(t.discovery_alist_test),
               ),
               if (probe != null && !probe.running) ...<Widget>[

@@ -50,7 +50,6 @@ class CoreAudioVolume {
     required this.sourceTorrentId,
     required this.fileSizeKiB,
     required this.coverUrl,
-    required this.releaseDate,
     required this.amazonId,
   });
 
@@ -64,7 +63,6 @@ class CoreAudioVolume {
   final String sourceTorrentId;
   final int? fileSizeKiB;
   final String? coverUrl;
-  final String? releaseDate;
   final String? amazonId;
 
   String get sourceLabel {
@@ -137,7 +135,6 @@ class CoreAudioCatalog {
               sourceTorrentId: source,
               fileSizeKiB: int.tryParse(_string(raw['filesize'])),
               coverUrl: _nullableString(raw['cover']),
-              releaseDate: _nullableString(raw['release_date']),
               amazonId: _nullableString(raw['amazon_id']),
             ),
           );
@@ -365,9 +362,7 @@ class CoreAudioDiscoverySource extends MediaDiscoverySource {
     final CoreAudioCatalog catalog = await _catalog();
     if (request.path == null || request.path!.isEmpty) {
       return ProviderBatchResult<DiscoveryResultPage>.success(
-        <DiscoveryResultPage>[
-          _seriesPage(catalog.series, request),
-        ],
+        <DiscoveryResultPage>[_seriesPage(catalog.series, request)],
       );
     }
     final CoreAudioSeries? value = catalog.seriesByKey(request.path!);
@@ -401,7 +396,6 @@ class CoreAudioDiscoverySource extends MediaDiscoverySource {
                 sizeBytes: volume.fileSizeKiB == null
                     ? null
                     : volume.fileSizeKiB! * 1024,
-                dateText: volume.releaseDate,
                 coverUrl: volume.coverUrl,
                 detailUrl: 'https://www.audible.co.jp/pd/${volume.id}',
                 note: volume.sourceLabel,

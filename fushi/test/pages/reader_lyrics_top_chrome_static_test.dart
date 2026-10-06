@@ -39,8 +39,13 @@ void main() {
       );
     });
 
-    test('底部状态行仍留在歌词模式之外（进度在歌词模式不刷新，画出来是冻住的旧数）', () {
-      expect(getterExpression('_statusFooterEnabled'), contains('_lyricsMode'));
+    // 2026-10-04 歌词覆盖层：歌词盖在正文之上，状态行被覆盖层盖住即可；它的预留
+    // 属于正文版面，不得随进出歌词翻转（否则正文每次进出歌词都因预留变化重排）。
+    // 覆盖层自己显示读数（读阅读器现成数据），读数也不再「冻住」——正文在下面照常推进。
+    test('底部状态行的启用与预留不随歌词覆盖层翻转', () {
+      final String expr = getterExpression('_statusFooterEnabled');
+      expect(expr, contains('lyricsMode: false'));
+      expect(expr, isNot(contains('_lyricsMode')));
     });
 
     test('并进播放条右端的状态文字跟状态行同真值，不跟整套 chrome', () {

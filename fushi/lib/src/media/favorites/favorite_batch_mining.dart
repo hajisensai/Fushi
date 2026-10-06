@@ -9,6 +9,7 @@ import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -282,16 +283,16 @@ class _FavoriteBatchMiningPageState
         if (!didPop) _requestStop();
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: FushiAppBar(
           title: Text(t.favorites_batch_mine_title),
           actions: <Widget>[
             if (_running)
-              TextButton(
+              FushiTextButton(
                 onPressed: _stopRequested ? null : _requestStop,
                 child: Text(t.stop),
               ),
             if (_finished)
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.maybePop(context),
                 child: Text(t.dialog_done),
               ),
@@ -300,7 +301,7 @@ class _FavoriteBatchMiningPageState
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            LinearProgressIndicator(value: total == 0 ? 1 : _done / total),
+            FushiLinearProgressIndicator(value: total == 0 ? 1 : _done / total),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Text(
@@ -329,7 +330,7 @@ class _FavoriteBatchMiningPageState
                   ),
                 ),
               ),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             Expanded(
               child: ListView.builder(
                 itemCount: total,
@@ -392,7 +393,7 @@ class _FavoriteBatchItemTile extends StatelessWidget {
   }
 
   Widget _statusIcon(ColorScheme scheme) => switch (result.status) {
-    FavoriteBatchItemStatus.pending => Icon(
+    FavoriteBatchItemStatus.pending => FushiIcon(
       Icons.radio_button_unchecked,
       color: scheme.outline,
     ),
@@ -400,24 +401,24 @@ class _FavoriteBatchItemTile extends StatelessWidget {
       dimension: 24,
       child: Padding(
         padding: EdgeInsets.all(2),
-        child: CircularProgressIndicator(strokeWidth: 2.5),
+        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
       ),
     ),
-    FavoriteBatchItemStatus.added => Icon(
+    FavoriteBatchItemStatus.added => FushiIcon(
       result.textOnlyReason == null
           ? Icons.check_circle
           : Icons.check_circle_outline,
       color: scheme.primary,
     ),
-    FavoriteBatchItemStatus.duplicate => Icon(
+    FavoriteBatchItemStatus.duplicate => FushiIcon(
       Icons.library_add_check_outlined,
       color: scheme.tertiary,
     ),
-    FavoriteBatchItemStatus.failed => Icon(
+    FavoriteBatchItemStatus.failed => FushiIcon(
       Icons.error_outline,
       color: scheme.error,
     ),
-    FavoriteBatchItemStatus.skipped => Icon(
+    FavoriteBatchItemStatus.skipped => FushiIcon(
       Icons.remove_circle_outline,
       color: scheme.outline,
     ),

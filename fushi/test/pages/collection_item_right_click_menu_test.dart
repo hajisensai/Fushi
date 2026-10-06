@@ -14,6 +14,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-1245：桌面端右键（secondary tap）应打开与移动端长按（onLongPress）
 /// 完全相同的条目菜单（`_showItemDialog` → 居中的 CollectionItemDialogFrame）。
@@ -130,10 +131,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CollectionItemDialogFrame), findsOneWidget);
     final Set<String> longPressButtons = tester
-        .widgetList<TextButton>(find.descendant(
+        .widgetList<TextButton>(glassUnwrapAll<TextButton>(find.descendant(
           of: find.byType(CollectionItemDialogFrame),
           matching: find.byType(TextButton),
-        ))
+        )))
         .map((TextButton b) => _labelOf(tester, b))
         .whereType<String>()
         .toSet();
@@ -149,10 +150,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CollectionItemDialogFrame), findsOneWidget);
     final Set<String> rightClickButtons = tester
-        .widgetList<TextButton>(find.descendant(
+        .widgetList<TextButton>(glassUnwrapAll<TextButton>(find.descendant(
           of: find.byType(CollectionItemDialogFrame),
           matching: find.byType(TextButton),
-        ))
+        )))
         .map((TextButton b) => _labelOf(tester, b))
         .whereType<String>()
         .toSet();

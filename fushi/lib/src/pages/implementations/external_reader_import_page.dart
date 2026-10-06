@@ -9,8 +9,9 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/sync/external_reader_import/external_reader_import_service.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_backup_archive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:fushi/src/utils/misc/screen_wakelock.dart';
 
 /// 「从 Hoshi Reader 导入」页：选 `.hoshi` 书库备份 → 扫描并预览 → 逐本导入书、
 /// 阅读位置与统计 → 结果报告。落库逻辑全在 [ExternalReaderImportService]，
@@ -107,7 +108,7 @@ class _ExternalReaderImportPageState
       _progressValue = 0;
       _progressLabel = null;
     });
-    await WakelockPlus.enable();
+    await setScreenWakelock(enable: true, source: 'external reader import');
     try {
       final ExternalReaderImportReport report = await _service.run(
         backup,
@@ -137,7 +138,7 @@ class _ExternalReaderImportPageState
       if (!mounted) return;
       setState(() => _error = '$e');
     } finally {
-      await WakelockPlus.disable();
+      await setScreenWakelock(enable: false, source: 'external reader import');
       // 移动端系统选择器把整份备份拷进了缓存：用完即清，免得几个 GB 常驻。
       if (Platform.isAndroid || Platform.isIOS) {
         await FilePicker.platform.clearTemporaryFiles();
@@ -171,25 +172,27 @@ class _ExternalReaderImportPageState
         if (!didPop && _running) setState(() => _cancelRequested = true);
       },
       child: Scaffold(
-        appBar: AppBar(title: Text(t.hoshi_import_entry)),
+        appBar: FushiAppBar(title: Text(t.hoshi_import_entry)),
         body: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             Text(t.hoshi_import_how_to),
             const SizedBox(height: 16),
-            FilledButton.tonalIcon(
+            FushiFilledButton.tonalIcon(
               onPressed: _scanning || _running ? null : _pickBackup,
-              icon: const Icon(Icons.folder_open_outlined),
+              icon: const FushiIcon(Icons.folder_open_outlined),
               label: Text(t.hoshi_import_file_pick),
             ),
             const SizedBox(height: 16),
             if (_scanning) ...<Widget>[
-              const Center(child: CircularProgressIndicator()),
-              const SizedBox(height: 12),
-              Text(t.hoshi_import_scan_running, textAlign: TextAlign.center),
+              FushiLoadingView(message: t.hoshi_import_scan_running),
             ],
+            // 错误走共享提示块（中性底 + 错误色图标），不再是裸红字。
             if (_error != null)
-              Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+              FushiInlineNotice(
+                severity: FushiNoticeSeverity.error,
+                message: _error!,
+              ),
             if (_preview != null) _buildPreview(theme, _preview!),
             if (_report != null) _buildReport(theme, _report!),
           ],
@@ -227,7 +230,7 @@ class _ExternalReaderImportPageState
           ],
           const SizedBox(height: 16),
           if (_running) ...<Widget>[
-            LinearProgressIndicator(value: _progressValue),
+            FushiLinearProgressIndicator(value: _progressValue),
             if (_progressLabel != null) ...<Widget>[
               const SizedBox(height: 8),
               Text(
@@ -239,7 +242,7 @@ class _ExternalReaderImportPageState
             const SizedBox(height: 8),
             Align(
               alignment: AlignmentDirectional.centerEnd,
-              child: TextButton(
+              child: FushiTextButton(
                 onPressed: _cancelRequested
                     ? null
                     : () => setState(() => _cancelRequested = true),
@@ -247,7 +250,7 @@ class _ExternalReaderImportPageState
               ),
             ),
           ] else
-            FilledButton(
+            FushiFilledButton(
               onPressed: _runImport,
               child: Text(t.hoshi_import_run_start),
             ),
@@ -310,7 +313,7 @@ class _ExternalReaderImportPageState
             for (final ExternalReaderImportFailure failure in report.failures)
               FushiListItem(
                 density: FushiListDensity.compact,
-                leading: Icon(
+                leading: FushiIcon(
                   Icons.error_outline,
                   color: theme.colorScheme.error,
                 ),

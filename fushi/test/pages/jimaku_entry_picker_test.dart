@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
@@ -86,9 +87,7 @@ void main() {
 
     await tester.tap(find.text('日本語'));
     await tester.pump();
-    final ChoiceChip languageChip = tester.widget<ChoiceChip>(
-      find.widgetWithText(ChoiceChip, '日本語'),
-    );
+    final ChoiceChip languageChip = tester.widget<ChoiceChip>(glassUnwrap<ChoiceChip>(find.widgetWithText(ChoiceChip, '日本語')),);
     expect(languageChip.selected, isTrue);
   });
 }

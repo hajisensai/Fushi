@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
@@ -154,7 +155,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          TextField(
+          FushiTextFieldControl(
             controller: _urlController,
             enabled: !importing,
             keyboardType: TextInputType.url,
@@ -162,7 +163,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
             decoration: InputDecoration(
               labelText: t.video_iptv_url_field,
               hintText: 'https://.../playlist.m3u',
-              prefixIcon: const Icon(Icons.link),
+              prefixIcon: const FushiIcon(Icons.link),
               isDense: true,
             ),
             onChanged: (_) => setState(() {}),
@@ -171,9 +172,9 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
             },
           ),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
+          FushiOutlinedButton.icon(
             onPressed: importing ? null : _pickFile,
-            icon: const Icon(Icons.playlist_play_outlined),
+            icon: const FushiIcon(Icons.playlist_play_outlined),
             label: Text(
               _localPath == null
                   ? t.video_iptv_pick_file
@@ -189,7 +190,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         ],
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: importing ? null : () => Navigator.pop(context),
           child: Text(t.dialog_cancel),
         ),

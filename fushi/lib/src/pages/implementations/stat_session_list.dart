@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_session_edit_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
 
@@ -110,7 +111,7 @@ Widget buildStatSessionSection(
               ),
             ),
             if (sessions.length > shown.length)
-              TextButton(
+              FushiTextButton(
                 onPressed: () => unawaited(
                   showStatSessionsSheet(
                     context,
@@ -176,10 +177,10 @@ class _StatSessionsClearAllButton extends StatelessWidget {
   // 同屏两颗一样的扫帚、清的范围却差着一个数量级（会话事实 vs 整个域的全部统计），
   // 是最典型的误点来源。`playlist_remove` 读作「把这张列表清空」，范围一眼就对。
   @override
-  Widget build(BuildContext context) => IconButton(
+  Widget build(BuildContext context) => FushiIconButtonControl(
         key: const ValueKey<String>('stat-sessions-clear-all'),
         tooltip: t.stat_sessions_clear_all,
-        icon: const Icon(Icons.playlist_remove, size: 20),
+        icon: const FushiIcon(Icons.playlist_remove, size: 20),
         onPressed: () => unawaited(_confirmAndClear(context)),
       );
 }
@@ -243,6 +244,8 @@ class _StatSessionListState extends State<StatSessionList> {
           FushiListItem(
             key: ValueKey<String>(s.key),
             density: FushiListDensity.compact,
+            // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
+            minHeight: kStatRowMinHeight,
             padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
             leading: _buildLeading(s, colors),
             // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
@@ -258,9 +261,9 @@ class _StatSessionListState extends State<StatSessionList> {
             ),
             // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
             onTap: () => unawaited(_edit(s)),
-            trailing: IconButton(
+            trailing: FushiIconButtonControl(
               tooltip: t.stat_session_delete,
-              icon: const Icon(Icons.delete_outline),
+              icon: const FushiIcon(Icons.delete_outline),
               onPressed: () => unawaited(_confirmAndDelete(s)),
             ),
           ),
@@ -271,7 +274,7 @@ class _StatSessionListState extends State<StatSessionList> {
   Widget _buildLeading(StudySession s, ColorScheme colors) {
     final StatSessionCoverOf? coverOf = widget.coverOf;
     if (coverOf == null) {
-      return Icon(statSessionIcon(s), size: 18, color: colors.onSurfaceVariant);
+      return FushiIcon(statSessionIcon(s), size: 18, color: colors.onSurfaceVariant);
     }
     return buildStatCoverSlot(
       context,

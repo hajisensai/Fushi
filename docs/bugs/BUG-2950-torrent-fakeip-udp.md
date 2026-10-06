@@ -1,0 +1,19 @@
+## BUG-2950 · 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示
+- **报告**：2026-10-04（用户：重新下载有声书合集里的一卷时任务一直 0 连接；问「fushi 为什么一定要 UDP 支持的节点，fushi 这边不能适应吗」→「那你改进一下」）
+- **真实性**：✅ 真 bug（可规避的那一半）。本机 Clash Verge TUN + fake-ip 实测：
+  - 系统 DNS 把 `router.bittorrent.com` / `dht.transmissionbt.com` 等全部解析成 `198.18.1.x`；libtorrent 会话的 DHT 引导点（`native/fushi_torrent/fushi_torrent_ffi.cpp` `ht_session_create` 的 `dht_bootstrap_nodes`，只有域名）走假地址进了不转发 UDP 的代理节点，**路由表 30 分钟恒 0 节点**；
+  - 同一进程改用 DoH 拿到的真实 IP 引导（`add_dht_node` / `dht_bootstrap_nodes` 写 IP），35 秒内路由表 33～388 节点——假地址才是瓶颈，出站 UDP 并非全断；
+  - `udp://` tracker（nyaa 种子五条里四条）同理走假地址超时；
+  - UI 只显示 0 做种 / 0 下载者，没有任何能让用户判断「是本机代理掐了 UDP」的信息（`fushi/lib/src/pages/implementations/torrent_detail_dialog.dart` `_buildNetworkRows` 只罗列数字，无判读）。
+  - 不可规避的那一半：若代理既不转发 UDP、又连不上种子唯一的 HTTP tracker（本次 `nyaa.tracker.wf:7777` 经代理空响应），客户端拿不到任何 peer 地址——只能提示用户换节点 / 走直连。
+- **[x] ① 已修复** —
+  - native 新导出 `ht_add_dht_nodes`（`lt::session::add_dht_node`，不碰 `dht_bootstrap_nodes` / 代理键，守卫 D/E 不变）+ 绑定可选符号探测 `hasAddDhtNodes`（老 DLL 降级、不崩）+ `EmbeddedTorrentSession.addDhtNodes` / `EmbeddedTorrentHost.addDhtNodes`；
+  - `EmbeddedTorrentHost.setExtraTrackers`：附加 tracker 追加到现有与新增任务（backend 两条 add 路径实时读取）；`EmbeddedTorrentHost.sessionStatus()`；
+  - `packages/fushi_engine/lib/utils/net/fake_ip_dns.dart`：fake-ip 判定（`198.18.0.0/15`）、DoH JSON 解析器（AliDNS → Cloudflare，经应用代理出口的 HTTPS）、`resolveFakeIpTorrentBypass`（DHT 引导点 + `kPublicTrackers` 的 UDP tracker 改写成真实 IP；HTTP tracker 不改写，按 IP 访问会丢 Host 头）；
+  - `packages/fushi_engine/lib/media/torrent/torrent_network_diagnosis.dart`：纯函数 `diagnoseTorrentNetwork`（DHT 实际运行 90 秒仍 0 节点 → fake-ip 下报 `fakeIpUdpBlocked`，否则 `dhtUnreachable`；DHT 闲置不报）；
+  - `AppModel`：host 建好后 20 秒一拍监测；DHT 每次从停到跑重判 fake-ip，命中即 DoH 解析、灌节点、追加 tracker；`torrentNetworkIssue` 驱动下载页横幅（`TorrentNetworkIssueBanner`）与种子详情网络行警告（仅内置引擎任务）。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/utils/net/fake_ip_dns_test.dart`（16：fake-ip 判定 / DoH 解析与端点回退 / 改写 / 诊断判据）、`fushi/test/media/torrent/embedded_torrent_fakeip_bypass_test.dart`（7：伪造 C ABI，老 DLL 降级、节点下发、附加 tracker 进现有与新任务）、`fushi/test/media/torrent/torrent_network_issue_banner_test.dart`（4）、`packages/fushi_torrent/test/ffi_smoke_test.dart` 加真库用例（无 `FUSHI_TORRENT_LIB` 时跳过）。
+- **备注**：
+  - 新导出本机未编出 DLL，只用 vcpkg 的 libtorrent 2.0.11 头文件做了 `clang++ -fsyntax-only`（含反证：错参类型确实报错）；随包 DLL 换新之前 `hasAddDhtNodes` 恒 false，DHT 补节点不生效，附加 UDP tracker（走已有 `ht_add_trackers`）与诊断横幅不依赖新 DLL。
+  - 无头服务端（`packages/fushi_server/lib/src/download_host.dart`）未接 fake-ip 绕行，服务器部署场景少见 fake-ip，需要时照 AppModel 同样装配。
+  - 实测本机即使 UDP tracker 改用真实 IP 也超时（该代理规则对部分 UDP 直接丢弃）——绕行不能保证 tracker 通，诊断横幅就是为这种情况准备的。

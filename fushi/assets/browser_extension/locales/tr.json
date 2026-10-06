@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "Sistemi izle",
   "opt_extensionTheme_option_light": "Açık",
   "opt_extensionTheme_option_dark": "Koyu",
+  "opt_page_subtitle": "Ayarlar yalnızca bu tarayıcıda saklanır; çoğu değişiklik hemen uygulanır.",
+  "opt_section_nav_aria_label": "Ayar bölümleri",
+  "opt_connection_section_heading": "Bağlantı ve tanılama",
   "opt_palette_title": "Renk teması",
   "opt_palette_desc": "Fushi ile aynı tema modeli: Fushi’nin geçerli renklerini izle, yerleşik bir ön ayar veya özel tema (tek vurgu rengi açık ve koyu paletleri türetir). Ayarlar sayfası, altyazı yan paneli, araç çubuğu menüsü, altyazı çekmecesi, video üstündeki altyazı kutusu ve sözlük açılır penceresine uygulanır.",
   "opt_extensionBrightness_title": "Açık / koyu",
@@ -297,7 +300,6 @@
   "ctx_confirm": "Kart oluştur",
   "ctx_cancel": "İptal",
   "gen_youtube_queue_empty": "YouTube kuyruğu boş: altyazıları açın → Shift basılıyken bir sözcüğün üzerine gelin → kuyruğa eklemek için açılır pencerede “kart çıkar” düğmesine basın, sonra oluşturun",
-  "gen_ext_updated_refresh": "Uzantı güncellendi; sayfayı yenileyip (F5) yeniden deneyin",
   "gen_progress": "Oluşturuluyor… {done}/{total}",
   "gen_partial_anki_unconfigured": "Kısmen oluşturuldu: Anki yapılandırılmamış — Fushi’de Anki’yi ayarlayıp yeniden deneyin (işlenen {done}, tutulan {kept})",
   "gen_partial_anki_unconfigured_kept": "Kısmen oluşturuldu: Anki yapılandırılmamış — Fushi’de Anki’yi ayarlayıp yeniden deneyin (tutulan {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "Kuyruktaki kartlar toplu oluşturma olmayan sitelerden geliyor; tek tek kaldırın veya kuyruğu temizleyin",
   "ap_gen_start_record_n": "Kaydı ve oluşturmayı başlat ({n} kart)",
   "ap_gen_start_n": "Oluşturmayı başlat ({n} kart)",
-  "ap_gen_other_youtube_hint": "YouTube’da {n} kart daha var — oluşturmak için bir YouTube sayfasına geçin",
+  "ap_gen_other_youtube_hint": "YouTube’dan {n} tane daha — oluşturmak için bu menüyü Netflix dışındaki herhangi bir sayfada açın",
   "ap_gen_other_netflix_hint": "Netflix’te {n} kart daha var — oluşturmak için bir Netflix oynatma sayfasına geçin",
   "ap_gen_site_count": "{site} {n} kart",
   "ap_gen_wrong_site_hint": "Bekleyen: {pending} — video sayfasına gitmek için bir kuyruk öğesine tıklayın, sonra oluşturun",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "Tümü temizlensin mi?",
   "ap_queue_open_video_hint": "Video sayfasını açmak için tıklayın",
   "ap_queue_remove_title": "Kuyruktan kaldır",
-  "np_fushi_nested_close_aria_label": "Bu arama katmanını kapat",
   "theme_palette_app": "Fushi’yi izle",
   "theme_palette_app_pending": "Fushi çalışırken ilk aramada renkleri alınır",
   "theme_preset_fushi": "Fushi yeşili",
@@ -426,5 +427,5 @@
   "pc_style_more": "Tüm ayarlar",
   "pc_hint_site_track": "Bu video sitenin kendi altyazı parçasını oynatıyor, bu yüzden Fushi katmanı gizli kalıyor. Bunun yerine Fushi altyazılarını göstermek için dokunun.",
   "opt_playerControls_title": "Oynatıcı içindeki altyazı düğmesi",
-  "opt_playerControls_desc": "Oynatıcının kendi kontrol çubuğuna bir Fushi düğmesi ekler (YouTube ve Netflix; diğer sitelerde işaretçi videonun üzerindeyken sağ altta yuvarlak bir düğme belirir). Menüsü bu sayfadaki ayarların aynısını — Fushi altyazıları, sitenin altyazılarını değiştirme, gizleme, zaman kaydırma ve altyazı görünümü — videodan ayrılmadan değiştirir."
+  "opt_playerControls_desc": "Oynatıcının kendi kontrol çubuğuna bir Fushi düğmesi ekler (YouTube ve Netflix; diğer sitelerde işaretçi videonun üzerindeyken sağ üstte yuvarlak bir düğme belirir). Menüsü bu sayfadaki ayarların aynısını — Fushi altyazıları, sitenin altyazılarını değiştirme, gizleme, zaman kaydırma ve altyazı görünümü — videodan ayrılmadan değiştirir."
 }

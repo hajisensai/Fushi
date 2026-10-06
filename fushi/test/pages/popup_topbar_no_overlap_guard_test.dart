@@ -82,18 +82,22 @@ void main() {
       return tester.getRect(finder);
     }
 
-    final Rect zoomOut = rectOf(find.byIcon(Icons.text_decrease));
-    final Rect zoomIn = rectOf(find.byIcon(Icons.text_increase));
+    // 2026-10 体验优化：窄宽（< kDictionaryPopupTopBarCompactWidth）下 A−/A+/AI
+    // 收进「⋯」溢出菜单，左簇只剩一颗溢出按钮；原断言「A−/A+ 在 header 左侧」
+    // 改为断言溢出按钮在 header 左侧（不重叠判据不变）。
+    expect(find.byIcon(Icons.text_decrease), findsNothing);
+    expect(find.byIcon(Icons.text_increase), findsNothing);
+    final Rect overflow = rectOf(
+      find.byKey(const ValueKey<String>('popup_topbar_overflow')),
+    );
     final Rect close = rectOf(find.byIcon(Icons.close));
     final Rect header = rectOf(find.byKey(const Key('test-popup-header')));
 
-    // 左簇（A−/A+）整体在 header 左侧、右端关闭在 header 右侧——三者不水平重叠。
-    final double leftClusterRight =
-        zoomOut.right > zoomIn.right ? zoomOut.right : zoomIn.right;
+    // 左簇（溢出按钮）在 header 左侧、右端关闭在 header 右侧——三者不水平重叠。
     expect(
-      leftClusterRight,
+      overflow.right,
       lessThanOrEqualTo(header.left + 0.5),
-      reason: 'A−/A+ 字号按钮不得压到居中 header（BUG-826 重叠）。',
+      reason: '左簇不得压到居中 header（BUG-826 重叠）。',
     );
     expect(
       header.right,
@@ -104,6 +108,48 @@ void main() {
     // header 收缩后仍在弹窗宽度内（未越界）。
     expect(header.left, greaterThanOrEqualTo(-0.5));
     expect(header.right, lessThanOrEqualTo(kLookupPopupMinWidth + 0.5));
+  });
+
+  testWidgets(
+      'wide popup keeps A-/A+ inline; narrow popup menu still zooms '
+      '(2026-10 overflow)', (WidgetTester tester) async {
+    await pumpLayer(tester, kDictionaryPopupTopBarCompactWidth + 40);
+    expect(tester.takeException(), isNull);
+    expect(find.byIcon(Icons.text_decrease), findsOneWidget);
+    expect(find.byIcon(Icons.text_increase), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('popup_topbar_overflow')),
+      findsNothing,
+    );
+
+    // 窄宽：菜单里能找到 A−/A+ 两项（WebView 未挂载时点了安全 no-op）。
+    await pumpLayer(tester, kLookupPopupMinWidth);
+    // result=null 的层现在画的是「加载中」（FushiDeferredLoading 的无限动画，
+    // 不再是假空态「未找到」），pumpAndSettle 永远等不到静止；用有界 pump 走完
+    // 菜单的开/关过渡即可。
+    Future<void> pumpMenuTransition() async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('popup_topbar_overflow')),
+    );
+    await pumpMenuTransition();
+    expect(find.byIcon(Icons.text_decrease), findsOneWidget);
+    expect(find.byIcon(Icons.text_increase), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.text_increase));
+    await pumpMenuTransition();
+    // 选中后菜单关闭（不是点了没反应）。
+    expect(find.byIcon(Icons.text_increase), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('mobile top action hit area is at least 44 (2026-10)', () {
+    expect(dictionaryPopupTopActionExtent(mobile: true),
+        greaterThanOrEqualTo(44));
+    // 桌面保持压缩顶栏的 36（design-2026-08）。
+    expect(dictionaryPopupTopActionExtent(mobile: false), 36);
   });
 
   test(
@@ -146,7 +192,12 @@ void main() {
   // 4 颗 = 144，弹窗宽下限 [kLookupPopupMinWidth] = 250 ⇒ 142 < 144。
   //
   // 这里用**真按钮**跑正反两面：不包 FittedBox 必 overflow（负向对照证明本条判据真
-  // 在工作，不是恒绿），包了必不 overflow。生产侧真的走了 FittedBox 这条结构，由
+  // 在工作，不是恒绿），包了必不 overflow。
+  //
+  // 2026-10 体验优化后窄宽左簇收成一颗「⋯」（36），中段可用宽 = 250 − 72 = 178，
+  // 4 颗（144）已放得下、裸 Row 不再溢出——负向对照失去意义。改用 5 颗（180 > 178）
+  // 保持「裸 Row 必溢出、FittedBox 必不溢出」这对判据；生产视频 header 的按钮数
+  // 只会更少，正向断言覆盖面不变。生产侧真的走了 FittedBox 这条结构，由
   // `test/pages/video_popup_cue_actions_guard_test.dart` 的源码扫描钉住。
   Widget realIconButtons() => Row(
         mainAxisSize: MainAxisSize.min,
@@ -157,6 +208,7 @@ void main() {
             Icons.play_arrow,
             Icons.content_copy_outlined,
             Icons.star_border,
+            Icons.skip_next,
           ])
             FushiIconButton(
               icon: icon,
@@ -197,7 +249,7 @@ void main() {
     expect(
       tester.takeException(),
       isNull,
-      reason: 'FittedBox(scaleDown) 必须把 4 颗按钮缩到有界宽内，绝不横向溢出/裁切。',
+      reason: 'FittedBox(scaleDown) 必须把按钮行缩到有界宽内，绝不横向溢出/裁切。',
     );
   });
 }

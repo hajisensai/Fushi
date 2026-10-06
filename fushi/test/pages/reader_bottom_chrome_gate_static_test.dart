@@ -75,9 +75,13 @@ void main() {
       '  Widget _buildBottomChrome()',
       '  Widget _buildAudiobookBar()',
     );
+    // 歌词覆盖层在场时底栏额外停画（`_lyricsMode || ...`），但收敛门控本身必须
+    // 仍是不画分支的判据之一。
     expect(
-      buildChrome,
-      contains('if (!_bottomBarShouldPaint)'),
+      RegExp(r'if \((?:_lyricsMode \|\| )?!_bottomBarShouldPaint\) \{\s*'
+              r'return const SizedBox\.shrink\(\);')
+          .hasMatch(buildChrome),
+      isTrue,
       reason: '_buildBottomChrome 必须经收敛后的 _bottomBarShouldPaint 门控可见性。',
     );
     // popupBottomReserve 经 _bottomChromeReserve（含 _hasEverLoaded && _showChrome

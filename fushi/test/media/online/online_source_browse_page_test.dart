@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/online/online_source_browse_page.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// 三域共用源浏览页（2026-09-27「浏览」阶段 2）的行为契约，用假适配器驱动：
 /// 列表切换 / 搜索 / 筛选落点 / 离底自动翻页 / 全重复页停翻 / 过期响应丢弃。
@@ -84,16 +85,14 @@ void main() {
     expect(query.listingId, 'popular');
     expect(query.isSearch, isFalse);
     expect(query.filtered, isTrue);
-    expect(tester.widget<TextField>(field()).controller!.text, isEmpty);
+    expect(tester.widget<TextField>(glassUnwrap<TextField>(field())).controller!.text, isEmpty);
   });
 
   // PR #1707 审查：合并成共用页后小说筛选按钮的提示变成了 Mihon 的「来源偏好」。
   testWidgets('筛选按钮的提示由适配器给出', (WidgetTester tester) async {
     final _FakeCatalog catalog = _FakeCatalog();
     await pumpPage(tester, catalog);
-    final IconButton button = tester.widget<IconButton>(
-      find.byKey(const ValueKey<String>('fake_filters')),
-    );
+    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(const ValueKey<String>('fake_filters'))),);
     expect(button.tooltip, 'Fake filters');
     expect(
       File(

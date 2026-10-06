@@ -46,6 +46,7 @@ class SyncProgress {
     required this.itemTotal,
     this.title,
     this.fileFraction,
+    this.bytesPerSecond,
   });
 
   final SyncPhase phase;
@@ -53,6 +54,11 @@ class SyncProgress {
   final int itemTotal;
   final String? title;
   final double? fileFraction;
+
+  /// Current transfer rate, or null when this tick carries no byte count (an
+  /// atomic item, a transport that only reports a fraction, or the wait for a
+  /// package's first byte) or the meter has not seen enough of a window yet.
+  final double? bytesPerSecond;
 
   /// 0..1 progress within the current phase.
   ///
@@ -68,6 +74,60 @@ class SyncProgress {
     if (itemTotal <= 0) return null;
     final double file = (fileFraction ?? 1).clamp(0.0, 1.0);
     return ((itemIndex + file) / itemTotal).clamp(0.0, 1.0);
+  }
+}
+
+/// Sliding-window transfer rate over the per-file byte counts a sync reports.
+///
+/// Transports report bytes done *within the current file*, so the caller names
+/// the file each sample belongs to; when the name changes (or the count drops
+/// back, as on a retry of the same file) the meter folds the finished count
+/// into a running total instead of treating the drop as negative throughput.
+/// The name is the only reliable boundary: a small file's final count can be
+/// below the next file's first one, which a "count went down" check misses.
+/// Samples
+/// older than [window] are discarded, so a long gap (the host packaging the
+/// next dictionary) does not drag the average down nor leave a stale rate.
+class TransferRateMeter {
+  TransferRateMeter({
+    DateTime Function()? now,
+    this.window = const Duration(seconds: 3),
+    this.minSpan = const Duration(milliseconds: 300),
+  }) : _now = now ?? DateTime.now;
+
+  final DateTime Function() _now;
+
+  /// How far back samples count towards the average.
+  final Duration window;
+
+  /// Minimum time the retained samples must span before a rate is reported;
+  /// shorter spans divide by near-zero and flicker.
+  final Duration minSpan;
+
+  final List<(DateTime, int)> _samples = <(DateTime, int)>[];
+  int _finishedBytes = 0;
+  int _fileBytes = 0;
+  Object? _file;
+
+  /// Records that [file] has [bytesDone] bytes transferred and returns the
+  /// rate in bytes per second, or null if not yet measurable. [file] is any
+  /// value with equality that identifies the transfer (a record works).
+  double? sample(Object file, int bytesDone) {
+    if (file != _file || bytesDone < _fileBytes) {
+      _finishedBytes += _fileBytes;
+      _file = file;
+    }
+    _fileBytes = bytesDone;
+
+    final DateTime now = _now();
+    _samples
+      ..add((now, _finishedBytes + bytesDone))
+      ..removeWhere(((DateTime, int) s) => now.difference(s.$1) > window);
+
+    final (DateTime t0, int b0) = _samples.first;
+    final Duration span = now.difference(t0);
+    if (span < minSpan) return null;
+    return (_samples.last.$2 - b0) * 1000000 / span.inMicroseconds;
   }
 }
 

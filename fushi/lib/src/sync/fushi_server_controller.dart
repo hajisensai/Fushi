@@ -154,8 +154,14 @@ class FushiSyncServerController extends ChangeNotifier {
   /// Host-side game-stream session registry. The game page creates a session
   /// only after the user explicitly starts streaming; merely enabling LAN sync
   /// never exposes a game window.
+  ///
+  /// The instance is torn down by [stop] (sessions die with the server), so a
+  /// [restart] hands receivers a fresh one. The library is controller-owned
+  /// configuration and is re-attached to every instance; binding it to one
+  /// instance made every host look "outdated" after a port/TLS change.
   FushiRemoteGameStreamService get gameStreamService =>
-      _gameStreamService ??= FushiRemoteGameStreamService();
+      _gameStreamService ??= (FushiRemoteGameStreamService()
+        ..library = _gameStreamLibrary);
 
   FushiGameStreamHost get gameStreamHost {
     _gameStreamHost ??= FushiGameStreamHost(service: gameStreamService)
@@ -171,6 +177,7 @@ class FushiSyncServerController extends ChangeNotifier {
   }
 
   FushiGameStreamMiningAdapter Function()? _gameStreamMiningFactory;
+  GameStreamLibraryHost? _gameStreamLibrary;
 
   /// Windows host library for receivers ("launch from library, then stream").
   /// [miningFactory] builds the same Anki adapter the workbench button uses,
@@ -179,8 +186,9 @@ class FushiSyncServerController extends ChangeNotifier {
     GameStreamLibraryHost? library, {
     FushiGameStreamMiningAdapter Function()? miningFactory,
   }) {
-    gameStreamService.library = library;
+    _gameStreamLibrary = library;
     _gameStreamMiningFactory = miningFactory;
+    _gameStreamService?.library = library;
   }
 
   /// [GameStreamSessionStarter] for remote launches: installs the mining

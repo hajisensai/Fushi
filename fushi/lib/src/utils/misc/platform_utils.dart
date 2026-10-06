@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 // Architecture decision: platform branching uses runtime Platform.is* checks
 // centralized in this file, not Dart conditional imports.
@@ -30,31 +31,33 @@ bool get isWindowsPlatform => Platform.isWindows;
 
 bool get isMacOSPlatform => Platform.isMacOS;
 
+/// WebView 本地资源（EPUB / 漫画页 / 字体）走自定义 scheme 投递的平台。
+///
+/// WKWebView（iOS / macOS）与 WPE WebKit（Linux，`flutter_inappwebview_linux`）
+/// 都没有能拦截 `https://` 的 `shouldInterceptRequest`，只能注册自定义 scheme
+/// （`WKURLSchemeHandler` / `webkit_web_context_register_uri_scheme`）；Android 与
+/// Windows 则拦截 `https://fushi.local/...`。资源 URL 的构造与 WebView 的
+/// `resourceCustomSchemes` 必须问同一个判据，否则页面请求的 scheme 没人接。
+bool get webViewUsesCustomSchemeTransport =>
+    Platform.isMacOS || Platform.isIOS || Platform.isLinux;
+
 /// Sets the system-UI mode for the **home/menu shell** (book shelf, video,
 /// dictionary search, settings -- everything that is NOT an open media session).
 ///
-/// Android phones in portrait have a permanently-visible status bar (the OS
-/// clock/battery strip) that sits directly above Hibiki's top-right action
-/// icons. Even though the home page already wraps its body in a [SafeArea]
-/// (so the icons are not literally clipped), the always-on status bar crowds
-/// the top-right controls and makes them awkward to tap (TODO-097). We hide the
-/// status bar on Android while keeping the navigation/gesture bar, so the top
-/// action row reclaims the strip the OS bar was occupying.
+/// Every platform, Android included, shows both the status bar and the
+/// navigation bar (the user reversed TODO-097 on 2026-10-04: the Android home
+/// shell shows the status bar again). Show every overlay first, then
+/// edge-to-edge: Flutter 3.44's edgeToEdge only changes decor fitting and does
+/// not clear the FULLSCREEN / IMMERSIVE_STICKY a video page leaves behind, so
+/// visibility must be restored explicitly through `manual` (BUG-2925).
 ///
-/// Android: [SystemUiMode.manual] with only [SystemUiOverlay.bottom] enabled --
-/// status bar hidden, navigation/gesture bar kept. Other platforms (iOS keeps
-/// the status bar -- it is expected there and handled via SafeArea; desktop has
-/// no system bars) keep the prior edge-to-edge behaviour. An open book/video
-/// still uses `immersiveSticky` (both bars hidden) on open and the reader
-/// restores its own mode on exit via `AppModel.closeMedia`, which calls back here.
+/// Readers restore this mode through AppModel.closeMedia; video pages restore
+/// it when the last display owner exits.
 Future<void> setHomeShellSystemUiMode() async {
-  if (Platform.isAndroid) {
-    await SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: <SystemUiOverlay>[SystemUiOverlay.bottom],
-    );
-    return;
-  }
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.manual,
+    overlays: SystemUiOverlay.values,
+  );
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 }
 
@@ -392,7 +395,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
         final Widget? divider = showDivider
-            ? VerticalDivider(
+            ? FushiVerticalDivider(
                 width: 1,
                 thickness: 1,
                 color: resolvedDividerColor,

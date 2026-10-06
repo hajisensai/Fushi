@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 合集批量面板（前身 `JimakuBatchDialog`，现走 registry）的状态门：
 /// 搜索失败 → 提示 + 下载禁用；搜索中禁用、非空后开放；快速切系列时迟到的旧响应
@@ -303,7 +304,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining(t.video_jimaku_search_failed), findsOneWidget);
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
   });
 
   testWidgets('搜索中禁用；返回非空候选后才开放下载', (WidgetTester tester) async {
@@ -320,7 +321,7 @@ void main() {
     );
     await tester.pump();
     expect(find.text(t.video_jimaku_source_loading), findsWidgets);
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
 
     pending.complete(
       ProviderBatchResult<VideoSubtitleCandidate>.success(
@@ -330,7 +331,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNotNull);
     expect(
       find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
       findsOneWidget,
@@ -534,7 +535,7 @@ void main() {
       find.byKey(const ValueKey<String>('subtitle-source-fake:e1')),
       findsOneWidget,
     );
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNotNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNotNull);
   });
 
   /// AniList 模糊搜索返回 [ids] 里每个 id 一条候选，其余请求 404。
@@ -725,7 +726,7 @@ void main() {
     );
     expect(empty, findsOneWidget);
     expect(tester.widget<Text>(empty).data, t.video_jimaku_no_results);
-    expect(tester.widget<FilledButton>(downloadButton()).onPressed, isNull);
+    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
   });
 
   testWidgets('一个字幕来源都没配：不自动发搜，来源区给引导', (WidgetTester tester) async {

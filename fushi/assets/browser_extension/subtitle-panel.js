@@ -1029,6 +1029,7 @@
       st.dropHint.id = 'fushi-subtitle-drop-hint';
       st.dropHint.textContent = tr('subtitle_drop_hint');
     }
+    if (typeof st.dropHint.setAttribute === 'function') st.dropHint.setAttribute('data-theme', resolveTheme());
     var parent = parentForOverlay();
     if (st.dropHint.parentNode !== parent) parent.appendChild(st.dropHint);
   }

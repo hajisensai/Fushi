@@ -42,10 +42,14 @@ Directory _repoRoot() {
   fail('找不到含 docs/BUGS.md 的仓库根（从 ${Directory.current.path} 向上）');
 }
 
-/// 被扫描的输入组件构造式。三个共享组件 + 原生 `TextField`/`TextFormField`。
+/// 被扫描的输入组件构造式。三个共享组件 + 原生 `TextField`/`TextFormField`
+/// + 它们的设计系统分派版（`FushiTextFieldControl` / `FushiTextFormFieldControl`，
+/// 调用点只改类名、参数同名同型——不扫它们，换了类名的地址框就整片漏网）。
 const List<String> _widgetNames = <String>[
   'TextField(',
   'TextFormField(',
+  'FushiTextFieldControl(',
+  'FushiTextFormFieldControl(',
   'FushiTextField(',
   'AdaptiveSettingsTextField(',
   '_CredentialFieldSpec(',

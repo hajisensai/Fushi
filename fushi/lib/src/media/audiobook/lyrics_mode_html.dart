@@ -1,10 +1,97 @@
+import 'dart:convert';
+import 'dart:ui' show Color;
+
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 
 class LyricsModeHtml {
   LyricsModeHtml._();
+
+  /// 歌词主题 → CSS 变量表 + body 开关 class（初始内联与运行期热更共用一份）。
+  ///
+  /// 覆盖层架构下歌词 WebView 是透明底、盖在设计系统画的背景上，配色 / 对齐 /
+  /// 逐行透明度阶梯全由 [LyricsHtmlTheme] 决定（Apple = Apple Music 白字左对齐；
+  /// MD3 = primary 当前行）。[textColorOverride] 是用户自定义歌词文字色（设置项
+  /// `lyrics_text_color`，非 0 才传），覆盖非当前行颜色——不丢旧功能。
+  static ({Map<String, String> vars, List<String> bodyClasses}) themeVars(
+    LyricsHtmlTheme theme, {
+    Color? textColorOverride,
+  }) {
+    final Color text = textColorOverride ?? theme.textColor;
+    final List<double> ops = <double>[
+      for (int i = 0; i < 4; i++)
+        i < theme.contextOpacities.length
+            ? theme.contextOpacities[i]
+            : (theme.contextOpacities.isEmpty
+                ? 1.0
+                : theme.contextOpacities.last),
+    ];
+    final double scale = theme.deselectedScale <= 0
+        ? 1.0
+        : 1.0 / theme.deselectedScale;
+    final double anchor = theme.anchorY.clamp(0.1, 0.9);
+    final Map<String, String> vars = <String, String>{
+      '--ly-text': _css(text),
+      '--ly-current': _css(theme.currentColor),
+      // 逐字扫过（Niratan 的 line progress sweep）：当前行未读部分 = 当前色 × 0.4。
+      '--ly-upcoming': _css(
+        theme.currentColor.withValues(alpha: theme.currentColor.a * 0.4),
+      ),
+      '--ly-hl': _css(theme.accentColor),
+      '--ly-hl-text': _css(theme.selectionTextColor),
+      '--ly-op1': ops[0].toStringAsFixed(3),
+      '--ly-op2': ops[1].toStringAsFixed(3),
+      '--ly-op3': ops[2].toStringAsFixed(3),
+      '--ly-op4': ops[3].toStringAsFixed(3),
+      '--ly-op-browse': theme.browsingOpacity.toStringAsFixed(3),
+      '--ly-near1-scale': '1',
+      '--cue-scale': scale.toStringAsFixed(4),
+      '--ly-anchor': anchor.toStringAsFixed(3),
+      '--ly-pad-top': '${(anchor * 100).toStringAsFixed(1)}vh',
+      '--ly-pad-bottom': '${((1 - anchor) * 100).toStringAsFixed(1)}vh',
+      '--ly-fade': '${(theme.edgeFade * 100).toStringAsFixed(1)}%',
+      '--ly-align': theme.alignStart ? 'start' : 'center',
+      '--ly-origin': theme.alignStart ? 'left center' : 'center',
+      '--ly-self': theme.alignStart ? 'stretch' : 'auto',
+      '--ly-ctx-blur': '${theme.contextBlurPx.toStringAsFixed(1)}px',
+      '--ly-radius': '${theme.rowRadius.toStringAsFixed(1)}px',
+      '--ly-hover': _css(theme.hoverFill),
+      '--ly-pill-bg': _css(
+        theme.currentColor.withValues(alpha: 0.16),
+      ),
+      '--ly-pill-fg': _css(theme.currentColor),
+    };
+    return (
+      vars: vars,
+      bodyClasses: <String>[
+        'ly-themed',
+        'ly-sweep',
+        if (theme.edgeFade > 0) 'ly-fade',
+        if (theme.contextBlurPx > 0) 'ly-ctxblur',
+      ],
+    );
+  }
+
+  /// 运行期热更主题（不重建整页）：写 CSS 变量 + 换 body 开关 class。
+  static String applyThemeInvocation(
+    LyricsHtmlTheme theme, {
+    Color? textColorOverride,
+  }) {
+    final ({Map<String, String> vars, List<String> bodyClasses}) t =
+        themeVars(theme, textColorOverride: textColorOverride);
+    return 'window.__lyricsApplyTheme && window.__lyricsApplyTheme('
+        '${jsonEncode(t.vars)}, ${jsonEncode(t.bodyClasses)});';
+  }
+
+  static String _css(Color c) {
+    final int r = (c.r * 255.0).round().clamp(0, 255);
+    final int g = (c.g * 255.0).round().clamp(0, 255);
+    final int b = (c.b * 255.0).round().clamp(0, 255);
+    return 'rgba($r,$g,$b,${c.a.toStringAsFixed(2)})';
+  }
 
   static String generate({
     required List<AudioCue> cues,
@@ -23,7 +110,21 @@ class LyricsModeHtml {
     bool blur = false,
     String fontFamilyCss = '',
     String fontFaceCss = '',
+    LyricsHtmlTheme? theme,
+    Color? textColorOverride,
+    String followLabel = '',
   }) {
+    // 覆盖层主题：内联进 :root 与 body class，首帧即是最终观感（不等热更）。
+    // 无主题（旧调用 / 单测）时变量全部缺省，CSS 的 var() 回落值与改动前逐值相同。
+    final ({Map<String, String> vars, List<String> bodyClasses})? themed =
+        theme == null
+            ? null
+            : themeVars(theme, textColorOverride: textColorOverride);
+    final String themeVarsCss = themed == null
+        ? ''
+        : themed.vars.entries
+            .map((MapEntry<String, String> e) => '${e.key}: ${e.value};')
+            .join(' ');
     final StringBuffer cueHtml = StringBuffer();
     final LyricsCueTextResolver? textResolver = book == null
         ? null
@@ -42,10 +143,12 @@ class LyricsModeHtml {
           : dist <= 3
           ? 'cue near-$dist'
           : 'cue';
+      // `.tx` 是行内包装：逐字扫过的渐变按 box-decoration-break: slice 把多行
+      // 当成一条长行来铺，扫过方向因此与阅读顺序一致（换行处接续）。
       cueHtml.write(
         '<div class="$cls" data-cue-index="$i" '
         'data-text-fragment-id="$fragId" data-text="$plainText">'
-        '$escaped</div>\n',
+        '<span class="tx">$escaped</span></div>\n',
       );
     }
 
@@ -73,19 +176,34 @@ class LyricsModeHtml {
         : (marginRight > 0 ? marginRight : 2.5);
     final String containerPaddingCss = vertical
         ? 'padding: ${padTop}vh ${padRight}vw ${padBottom}vh ${padLeft}vw;'
-        : 'padding: calc(45vh + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
-              'calc(45vh + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
+        // 主题的锚点（当前行落在视口 anchorY 处）决定上下余量：上 anchorY·100vh、
+        // 下 (1-anchorY)·100vh；无主题时 var 回落 45vh（旧的居中余量）。
+        : 'padding: calc(var(--ly-pad-top, 45vh) + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
+              'calc(var(--ly-pad-bottom, 45vh) + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
     // JS 端轴标记：true=竖排横滚（用 scrollBy 增量绕开 vertical-rl 负向 scrollX）。
     final String verticalJs = vertical ? 'true' : 'false';
     // TODO-908 / BUG-852：听力沉浸模糊。blur=true 时给 body 挂 `lyrics-blur` class，CSS
     // 对**所有**句（.cue）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。模糊
     // 维度与 writing-mode 正交——blur CSS 只作用在 cue 元素上，与轴/竖排无关。
-    final String blurBodyClass = blur ? ' class="lyrics-blur"' : '';
+    final List<String> bodyClasses = <String>[
+      if (blur) 'lyrics-blur',
+      ...?themed?.bodyClasses,
+      // 竖排标记只服务主题态的扫过 / 渐隐方向；旧观感不加 class（输出与改动前一致）。
+      if (vertical && themed != null) 'ly-vertical',
+    ];
+    final String blurBodyClass =
+        bodyClasses.isEmpty ? '' : ' class="${bodyClasses.join(' ')}"';
+    final String followLabelHtml = _escapeHtml(followLabel);
     // 歌词模式此前硬编码 "Noto Serif JP", "Noto Sans JP", serif：同一本书在正文视图
     // 用用户设的阅读字体、切到歌词就变回 Noto。这里接上 FontTarget.body 的
     // @font-face + family（调用方传 ReaderSettings.buildCustomFontCss()）。
     // 用户没设字体时 fontFamilyCss 为空，整条链与改动前逐字节相同。
-    const String lyricsFallbackFonts = '"Noto Serif JP", "Noto Sans JP", serif';
+    // 覆盖层主题（Apple Music / MD3 播放页）的歌词是粗体无衬线（Apple Music 用 SF
+    // 粗体）；旧歌词页保留 Noto 衬线链。用户设了正文字体时两者都优先用户字体。
+    final String lyricsFallbackFonts = theme == null
+        ? '"Noto Serif JP", "Noto Sans JP", serif'
+        : 'system-ui, -apple-system, "Hiragino Sans", "Yu Gothic UI", '
+            '"Noto Sans JP", "Noto Sans CJK JP", sans-serif';
     final String bodyFontFamily = fontFamilyCss.isEmpty
         ? lyricsFallbackFonts
         : '$fontFamilyCss, $lyricsFallbackFonts';
@@ -98,7 +216,10 @@ class LyricsModeHtml {
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-:root { --cue-scale: 1.15; --cue-font-size: ${fontSize}px; }
+:root { --cue-scale: 1.15; --cue-font-size: ${fontSize}px; $themeVarsCss }
+/* 逐字扫过的进度（0%–100%）。注册成 <percentage> 才能被 transition 插值；不支持
+   @property 的旧内核上它不动画、直接落到 100%（整行点亮），只是少了扫过效果。 */
+@property --ly-p { syntax: '<percentage>'; inherits: true; initial-value: 100%; }
 html, body {
   width: 100%;
   height: 100%;
@@ -147,8 +268,11 @@ body { font-family: $bodyFontFamily; }
 }
 .cue {
   position: relative;
-  text-align: center;
-  color: $textColor;
+  text-align: var(--ly-align, center);
+  color: var(--ly-text, $textColor);
+  align-self: var(--ly-self, auto);
+  transform-origin: var(--ly-origin, center);
+  border-radius: var(--ly-radius, 0);
   /* TODO-1080: per-cue font-size flows from --cue-font-size so JS can shrink one
      over-long cue via inline font-size (see __lyricsFitCues) without touching the
      shared base every other cue uses. */
@@ -158,7 +282,7 @@ body { font-family: $bodyFontFamily; }
   max-width: calc(100% / var(--cue-scale) - 1%);
   overflow-wrap: break-word;
   word-break: break-word;
-  opacity: 0.15;
+  opacity: var(--ly-op4, 0.15);
   transform: scale(1);
   transition: opacity 0.35s ease-out, transform 0.3s ease-out, color 0.3s ease-out;
   will-change: transform, opacity;
@@ -168,11 +292,92 @@ body { font-family: $bodyFontFamily; }
   opacity: 1.0;
   transform: scale(var(--cue-scale));
   font-weight: 700;
-  color: $accentColor;
+  color: var(--ly-current, $accentColor);
 }
-.cue.near-1 { opacity: 0.55; transform: scale(1.05); }
-.cue.near-2 { opacity: 0.35; }
-.cue.near-3 { opacity: 0.25; }
+.cue.near-1 { opacity: var(--ly-op1, 0.55); transform: scale(var(--ly-near1-scale, 1.05)); }
+.cue.near-2 { opacity: var(--ly-op2, 0.35); }
+.cue.near-3 { opacity: var(--ly-op3, 0.25); }
+/* ── 覆盖层主题（Apple Music / MD3）──────────────────────────────────────
+   整行粗体、行级圆角悬停底块；当前行弹簧放大（Niratan highlightAnimation：
+   stiffness 322 / damping 24 → 轻微过冲），离开当前行用阻尼更大的收回。 */
+body.ly-themed .cue {
+  font-weight: 700;
+  padding: 10px 14px;
+  margin: 2px 0;
+  transition: opacity 0.45s ease-out, transform 0.55s cubic-bezier(0.22, 1, 0.36, 1),
+      color 0.3s ease-out, background-color 0.18s ease-out, filter 0.3s ease-out;
+}
+body.ly-themed .cue.current {
+  transition: opacity 0.3s ease-out, transform 0.42s cubic-bezier(0.34, 1.36, 0.64, 1),
+      color 0.3s ease-out, background-color 0.18s ease-out, filter 0.3s ease-out;
+}
+/* Apple Music / Niratan 不显示滚动条（scrollIndicators(.never)）。 */
+body.ly-themed { scrollbar-width: none; }
+body.ly-themed::-webkit-scrollbar { width: 0; height: 0; }
+body.ly-browsing .cue:not(.current) { opacity: var(--ly-op-browse, 0.6); }
+body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
+@media (hover: hover) {
+  body.ly-themed .cue:hover { background-color: var(--ly-hover, transparent); }
+  body.ly-themed .cue:not(.current):hover { opacity: 0.84; }
+}
+/* 逐字扫过：当前行按播放进度从左到右点亮（未读部分 = 当前色 × 0.4）。.tx 是行内
+   元素，slice 让多行渐变按阅读顺序接续。暂停 / 查词时整行直接点亮。 */
+body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx {
+  background-image: linear-gradient(to right, var(--ly-current) calc(var(--ly-p) - 4%),
+      var(--ly-upcoming) calc(var(--ly-p) + 4%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-box-decoration-break: slice;
+  box-decoration-break: slice;
+}
+body.ly-sweep:not(.ly-paused) .cue.current:not(.ly-nosweep) .tx rt {
+  -webkit-text-fill-color: var(--ly-current);
+}
+body.ly-sweep.ly-vertical .cue.current .tx {
+  background-image: linear-gradient(to bottom, var(--ly-current) calc(var(--ly-p) - 4%),
+      var(--ly-upcoming) calc(var(--ly-p) + 4%));
+}
+/* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
+   遮罩挂在它的盒上、不随内容滚动。 */
+body.ly-fade {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ly-fade),
+      #000 calc(100% - var(--ly-fade)), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 var(--ly-fade),
+      #000 calc(100% - var(--ly-fade)), transparent 100%);
+}
+body.ly-fade.ly-vertical {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 var(--ly-fade),
+      #000 calc(100% - var(--ly-fade)), transparent 100%);
+  mask-image: linear-gradient(to left, transparent 0, #000 var(--ly-fade),
+      #000 calc(100% - var(--ly-fade)), transparent 100%);
+}
+/* 手动滚动脱离跟随后的「回到当前行」胶囊（Niratan followPlaybackButton）。 */
+#ly-follow {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  writing-mode: horizontal-tb;
+  transform: translate(-50%, 14px);
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  border-radius: 999px;
+  padding: 9px 16px;
+  font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--ly-pill-fg, $textColor);
+  background: var(--ly-pill-bg, rgba(127,127,127,0.2));
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  transition: opacity 0.24s ease-out, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  cursor: pointer;
+  z-index: 10;
+}
+body.ly-browsing #ly-follow {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
 /* TODO-908 / BUG-852: 听力沉浸模糊 —— body.lyrics-blur 时对**所有**句（.cue，含
    当前句与前后文 near-*）盖 8px 高斯模糊；单独 hover 或点击（.revealed）才显形。
    之前只盖 .cue.current，前后文照样能读、可预读，沉浸失效——听力模糊的语义是整篇
@@ -188,16 +393,16 @@ body.lyrics-blur .cue.revealed {
   filter: blur(0);
 }
 ::highlight(fushi-selection) {
-  background-color: $accentColor;
-  color: $backgroundColor;
+  background-color: var(--ly-hl, $accentColor);
+  color: var(--ly-hl-text, $backgroundColor);
 }
 .fushi-dict-highlight {
-  background-color: $accentColor !important;
+  background-color: var(--ly-hl, $accentColor) !important;
   color: inherit;
   border-radius: 2px;
 }
 .cue.current .fushi-dict-highlight {
-  color: $backgroundColor;
+  color: var(--ly-hl-text, $backgroundColor);
 }
 .cue.favorited::before {
   content: '\\2605';
@@ -214,6 +419,7 @@ body.lyrics-blur .cue.revealed {
 <div class="lyrics-container" id="lc">
 $cueHtml
 </div>
+<button id="ly-follow" type="button" tabindex="-1">&#8634;&nbsp;$followLabelHtml</button>
 <script>
 $selectionJs
 
@@ -224,14 +430,22 @@ $selectionJs
 var __lyricsVertical = $verticalJs;
 var _animId = 0;
 // 返回元素中心相对视口中线的偏移（沿当前滚动轴）：>0 表示需正向 scrollBy。
+// 当前行对齐到视口的哪个比例处：主题的 --ly-anchor（Apple 0.46 / MD3 0.42），无主题 0.5。
+// 对齐口径同 SwiftUI scrollTo(anchor:)：元素自身 a 处对齐视口 a 处。
+var _lyAnchor = 0.5;
+function _lyReadAnchor() {
+  var v = parseFloat(getComputedStyle(document.documentElement)
+      .getPropertyValue('--ly-anchor'));
+  _lyAnchor = (isFinite(v) && v > 0 && v < 1) ? v : 0.5;
+}
+_lyReadAnchor();
 function _lyricsCenterDelta(el) {
   var r = el.getBoundingClientRect();
   if (__lyricsVertical) {
     var elCenterX = r.left + r.width / 2;
     return elCenterX - (window.innerWidth / 2);
   }
-  var elCenterY = r.top + r.height / 2;
-  return elCenterY - (window.innerHeight / 2);
+  return (r.top + r.height * _lyAnchor) - (window.innerHeight * _lyAnchor);
 }
 // BUG-784: `html, body { height:100%; overflow-x:hidden }` —— 按 CSS 规范，overflow-x
 // 非 visible 会把 overflow-y 从 visible **计算成 auto**，于是 body 恰好填满 html、真正
@@ -251,34 +465,86 @@ function _lyricsScrollTarget() {
   }
   return b || h;
 }
+// 程序化滚动的「免判」窗口：滚动事件晚于 scrollTop 赋值异步到达，窗口内的 scroll
+// 不算用户手动滚（否则自动跟随会把自己判成「用户滚走了」）。
+var _lyProgUntil = 0;
 function _lyricsScrollByAxis(d) {
   var s = _lyricsScrollTarget();
+  _lyProgUntil = performance.now() + 150;
   if (__lyricsVertical) s.scrollLeft += d;
   else s.scrollTop += d;
 }
-function scrollToCenter(el, duration) {
+// 行切换滚动：弹簧（Niratan lineChangeAnimation：mass 1 / stiffness 100 / damping 18，
+// ζ≈0.9 轻微欠阻尼），按帧半隐式积分，跨帧时长被钳住防卡顿后一步飞过头。相距很远
+// （>3 屏，例如拖进度 / 跳章）直接落位，不做长距离动画。
+// force=true（显式回中：跟随开关 snap / 焦点 caret / 点「回到当前行」）无视手动浏览态。
+function scrollToCenter(el, duration, force) {
   if (!el) return;
+  if (_lyBrowsing && !force) return;
   _animId++;
   var myId = _animId;
   var diff = _lyricsCenterDelta(el);
   if (Math.abs(diff) < 1) return;
-  var absDiff = Math.abs(diff);
-  var adaptDuration = Math.min(700, Math.max(300, absDiff * 0.5));
-  if (duration) adaptDuration = duration;
-  var startTime = performance.now();
-  var lastApplied = 0;
-  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+  var extent = __lyricsVertical ? window.innerWidth : window.innerHeight;
+  if (Math.abs(diff) > extent * 3 || window.__lyricsReduceMotion) {
+    _lyricsScrollByAxis(diff);
+    return;
+  }
+  var x = 0, v = 0, last = performance.now();
+  var K = 100, C = 18;
   function step(now) {
     if (myId !== _animId) return;
-    var elapsed = now - startTime;
-    var progress = Math.min(elapsed / adaptDuration, 1);
-    var want = diff * easeOutCubic(progress);
-    _lyricsScrollByAxis(want - lastApplied);
-    lastApplied = want;
-    if (progress < 1) requestAnimationFrame(step);
+    var dt = Math.min(0.034, Math.max(0.001, (now - last) / 1000));
+    last = now;
+    // 两个子步，60Hz 下也足够稳定。
+    for (var i = 0; i < 2; i++) {
+      var h = dt / 2;
+      v += (-K * (x - diff) - C * v) * h;
+      x += v * h;
+    }
+    var applied = x;
+    if (Math.abs(diff - x) < 0.5 && Math.abs(v) < 4) applied = diff;
+    _lyricsScrollByAxis(applied - (step.done || 0));
+    step.done = applied;
+    if (applied !== diff) requestAnimationFrame(step);
   }
+  step.done = 0;
   requestAnimationFrame(step);
 }
+
+// ── 手动滚动脱离跟随（Niratan isFollowingPlayback）──
+// 用户滚动 / 拖动歌词时停止自动跟随，统一降透明度并露出「回到当前行」；播放中静置
+// 4 秒自动回到当前行（manualScrollFollowResumeDelay），暂停时一直停在用户位置。
+// 只在覆盖层主题下启用；旧观感无此状态。
+var _lyBrowsing = false, _lyResumeTimer = 0, _lyPlaying = false;
+function _lyThemed() { return document.body.classList.contains('ly-themed'); }
+function _lyScheduleResume() {
+  clearTimeout(_lyResumeTimer);
+  if (!_lyPlaying || !_lyBrowsing) return;
+  _lyResumeTimer = setTimeout(_lyResume, 4000);
+}
+function _lyEnterBrowse() {
+  if (!_lyThemed() || window.__lyricsCaretActive) return;
+  _animId++;
+  if (!_lyBrowsing) {
+    _lyBrowsing = true;
+    document.body.classList.add('ly-browsing');
+  }
+  _lyScheduleResume();
+}
+function _lyResume() {
+  clearTimeout(_lyResumeTimer);
+  if (!_lyBrowsing) return;
+  _lyBrowsing = false;
+  document.body.classList.remove('ly-browsing');
+  if (_currentIdx >= 0 && _currentIdx < _cues.length) {
+    scrollToCenter(_cues[_currentIdx], 0, true);
+  }
+}
+window.addEventListener('wheel', function() { _lyEnterBrowse(); }, {passive: true});
+document.addEventListener('scroll', function() {
+  if (performance.now() > _lyProgUntil) _lyEnterBrowse();
+}, {passive: true, capture: true});
 
 // ── cue 切换 ──
 var _currentIdx = -1;
@@ -365,7 +631,8 @@ function setCue(index, scroll) {
   var len = _cues.length;
   if (old >= 0) {
     for (var i = Math.max(0, old - 3), e = Math.min(len - 1, old + 3); i <= e; i++)
-      _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3', 'revealed');
+      _cues[i].classList.remove('current', 'near-1', 'near-2', 'near-3', 'revealed', 'ly-nosweep');
+    _lySweepReset(_cues[old]);
   }
   for (var i = Math.max(0, index - 3), e = Math.min(len - 1, index + 3); i <= e; i++) {
     var d = Math.abs(i - index);
@@ -382,8 +649,16 @@ window.__lyricsSetCue = function(index, scroll) { setCue(index, scroll); };
 window.__lyricsGetCurrentIndex = function() { return _currentIdx; };
 // 供 fushiLyricsCaret 行间移动时把目标 cue 居中（复用同一滚动动画）。
 window.__lyricsScrollToCue = function(index) {
-  if (index >= 0 && index < _cues.length) scrollToCenter(_cues[index]);
+  if (index < 0 || index >= _cues.length) return;
+  // 显式回中（跟随 snap / 焦点 caret）同时结束手动浏览态。
+  if (_lyBrowsing) {
+    _lyBrowsing = false;
+    clearTimeout(_lyResumeTimer);
+    document.body.classList.remove('ly-browsing');
+  }
+  scrollToCenter(_cues[index], 0, true);
 };
+
 
 // BUG-1809: iOS WKWebView can complete loadData() without delivering
 // onLoadStop, so the page tells Dart it is ready by itself. Register the
@@ -430,6 +705,68 @@ window.__lyricsScrollToCue = function(index) {
   }
 })();
 
+// ── 逐字扫过（Niratan line progress）──
+// Dart 在 cue 推进 / 播放态翻转 / seek 时下发「当前行已播比例 + 每秒推进量」，
+// JS 只用一次 CSS transition 把 --ly-p 从该比例线性推到 100%，不逐帧回传。
+function _lyTx(el) { return el ? el.querySelector('.tx') : null; }
+function _lySweepReset(el) {
+  var tx = _lyTx(el);
+  if (!tx) return;
+  tx.style.transition = 'none';
+  tx.style.removeProperty('--ly-p');
+}
+window.__lyricsSetProgress = function(index, fraction, ratePerSec) {
+  if (index !== _currentIdx || !_lyPlaying) return;
+  var tx = _lyTx(_cues[index]);
+  if (!tx) return;
+  var f = Math.max(0, Math.min(1, fraction || 0));
+  tx.style.transition = 'none';
+  tx.style.setProperty('--ly-p', (f * 100).toFixed(2) + '%');
+  void tx.offsetWidth;
+  if (ratePerSec > 0 && f < 1) {
+    var ms = Math.max(0, (1 - f) / ratePerSec * 1000);
+    tx.style.transition = '--ly-p ' + ms.toFixed(0) + 'ms linear';
+    tx.style.setProperty('--ly-p', '100%');
+  }
+};
+// 播放态：暂停时当前行整行点亮（不扫）、并停掉自动回到当前行的计时；继续播放时
+// 若用户正停在别处浏览，重新起 4 秒回中计时。
+window.__lyricsSetPlaying = function(playing) {
+  _lyPlaying = !!playing;
+  document.body.classList.toggle('ly-paused', !_lyPlaying);
+  if (_lyPlaying) _lyScheduleResume();
+  else clearTimeout(_lyResumeTimer);
+};
+// 覆盖层主题热更（设计系统切换 / 封面取色到达 / 明暗切换），不重建整页。
+var _lyThemeClasses = [];
+window.__lyricsApplyTheme = function(vars, classes) {
+  var root = document.documentElement;
+  for (var k in vars) root.style.setProperty(k, vars[k]);
+  var keep = (classes || []).slice();
+  for (var i = 0; i < _lyThemeClasses.length; i++) {
+    if (keep.indexOf(_lyThemeClasses[i]) < 0) document.body.classList.remove(_lyThemeClasses[i]);
+  }
+  for (var j = 0; j < keep.length; j++) document.body.classList.add(keep[j]);
+  _lyThemeClasses = keep;
+  _lyReadAnchor();
+  __lyricsFitCues();
+  if (_currentIdx >= 0 && _currentIdx < _cues.length && !_lyBrowsing) {
+    _lyricsScrollByAxis(_lyricsCenterDelta(_cues[_currentIdx]));
+  }
+};
+// 「回到当前行」胶囊。用原始 pointerup / touchend（与歌词点按同一机制，不依赖合成
+// click——查词弹窗的 Flutter 屏障在场时合成 click 会被吞，见 BUG-280）。
+(function() {
+  var pill = document.getElementById('ly-follow');
+  if (!pill) return;
+  function resume(e) { if (e) e.preventDefault(); _lyResume(); }
+  pill.addEventListener('pointerup', function(e) {
+    if (e.pointerType === 'touch') return;
+    resume(e);
+  }, {passive: false});
+  pill.addEventListener('touchend', resume, {passive: false});
+})();
+
 // ── 点击：所有句子→查词 ──
 // BUG-280: 原来用 DOM 'click' 事件触发查词。click 只在「pointerdown→pointerup 全程
 // 未被宿主层认领」时由浏览器合成；当 Flutter 端弹窗可见时，整屏有一层 translucent
@@ -467,6 +804,23 @@ function _lyTapEnd(x, y) {
   }
   // TODO-908: 模糊态下点句显形（同视频「点击显形」语义）；非模糊态无影响。
   if (document.body.classList.contains('lyrics-blur')) cueEl.classList.add('revealed');
+  // 覆盖层主题（Apple Music 形态）：点在行的**字形之外**（行尾空白 / 行内边距）=
+  // 跳到这一句播放并回到跟随（Niratan contextLyricsLineTapTarget）；点在字上照旧查词，
+  // 查词能力不变。模糊态下第一下只显形不跳（上面已 revealed）。
+  if (_lyThemed() && window.fushiSelection &&
+      window.fushiSelection.getCharacterAtPoint &&
+      !window.fushiSelection.getCharacterAtPoint(x, y)) {
+    var seekIdx = parseInt(cueEl.getAttribute('data-cue-index'), 10);
+    if (!isNaN(seekIdx) && window.flutter_inappwebview) {
+      if (_lyBrowsing) {
+        _lyBrowsing = false;
+        clearTimeout(_lyResumeTimer);
+        document.body.classList.remove('ly-browsing');
+      }
+      window.flutter_inappwebview.callHandler('onLyricsCueTap', seekIdx);
+    }
+    return;
+  }
   if (window.fushiSelection) {
     window.fushiSelection.selectText(x, y, 400);
   }
@@ -538,6 +892,9 @@ _lc.addEventListener('mousedown', function(e) {
     var hitEl = document.elementFromPoint(x, y);
     var cueEl = hitEl ? hitEl.closest('.cue') : null;
     if (cueEl) {
+      // 查词高亮落在这一行：停掉逐字扫过（扫过用透明字 + 背景裁切，会把查词底块
+      // 里的字一起「挖空」），换行后自动恢复。
+      cueEl.classList.add('ly-nosweep');
       window.__lyricsCueContext = {
         textFragmentId: cueEl.getAttribute('data-text-fragment-id'),
         cueIndex: parseInt(cueEl.getAttribute('data-cue-index'), 10),
@@ -562,17 +919,30 @@ window.__lyricsMarkFavorites = function(texts) {
 };
 
 // ── 实时样式更新（避免整页重载） ──
+function __lyricsApplyContainerPadding(r, mt, mb, ml, mr) {
+  if (__lyricsVertical) {
+    // 竖排 vertical-rl：居中余量在左右(45vw)，上下吃用户 vh 边距。
+    r.style.padding = (mt||0) + 'vh calc(45vw + ' + (mr||0) + 'vw) ' + (mb||0) + 'vh calc(45vw + ' + (ml||0) + 'vw)';
+  } else {
+    var lv = (ml != null && ml > 0) ? ml : 2.5;
+    var rv = (mr != null && mr > 0) ? mr : 2.5;
+    r.style.padding = 'calc(var(--ly-pad-top, 45vh) + ' + (mt||0) + 'vh) ' + lv + 'vw calc(var(--ly-pad-bottom, 45vh) + ' + (mb||0) + 'vh) ' + rv + 'vw';
+  }
+}
 window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize, mt, mb, ml, mr) {
   var root = document.documentElement;
   document.body.style.background = bgColor;
   root.style.background = bgColor;
+  // 覆盖层主题下，文字 / 当前行 / 高亮配色归 __lyricsApplyTheme 的 CSS 变量管
+  // （规则里是 var(--ly-*)），这里只更新字号与边距，不能用字面色把变量盖掉。
+  var themed = _lyThemed();
 
   var sheet = document.styleSheets[0];
   var rules = sheet.cssRules || sheet.rules;
   for (var i = 0; i < rules.length; i++) {
     var r = rules[i];
     if (r.selectorText === '.cue') {
-      r.style.color = textColor;
+      if (!themed) r.style.color = textColor;
       // TODO-1080: the base size is now the --cue-font-size custom prop that .cue
       // reads via var(); update the prop (not a fixed .cue font-size) so the refit
       // below re-measures against the new base and clears/re-applies per-cue
@@ -583,6 +953,10 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
       r.style.setProperty('scrollbar-color', textColor + ' transparent');
     } else if (r.selectorText === '::-webkit-scrollbar-thumb') {
       r.style.backgroundColor = textColor;
+    } else if (r.selectorText === '.lyrics-container') {
+      __lyricsApplyContainerPadding(r, mt, mb, ml, mr);
+    } else if (themed) {
+      // 主题配色由 CSS 变量承担，跳过下面的字面色改写。
     } else if (r.selectorText === '.cue.current') {
       r.style.color = accentColor;
     } else if (r.type === CSSRule.STYLE_RULE && r.selectorText === '.cue.current .fushi-dict-highlight') {
@@ -592,15 +966,6 @@ window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize,
     } else if (r.selectorText === '::highlight(fushi-selection)') {
       r.style.setProperty('background-color', accentColor);
       r.style.color = bgColor;
-    } else if (r.selectorText === '.lyrics-container') {
-      if (__lyricsVertical) {
-        // 竖排 vertical-rl：居中余量在左右(45vw)，上下吃用户 vh 边距。
-        r.style.padding = (mt||0) + 'vh calc(45vw + ' + (mr||0) + 'vw) ' + (mb||0) + 'vh calc(45vw + ' + (ml||0) + 'vw)';
-      } else {
-        var lv = (ml != null && ml > 0) ? ml : 2.5;
-        var rv = (mr != null && mr > 0) ? mr : 2.5;
-        r.style.padding = 'calc(45vh + ' + (mt||0) + 'vh) ' + lv + 'vw calc(45vh + ' + (mb||0) + 'vh) ' + rv + 'vw';
-      }
     }
   }
   // Base font-size / margins just changed, so cues re-flow; re-measure overflow

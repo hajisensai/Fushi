@@ -17,6 +17,8 @@ import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
+    show kPopupSearchingPlaceholderResult;
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -246,9 +248,18 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.nudgeSurfaceOnRender = false,
     this.restoreScrollTop,
     this.reorderOf,
+    this.lookupPending = false,
   });
 
   final DictionarySearchResult result;
+
+  /// 注入页面的 `window.lookupPending`：本层可见且确有一次查询在进行中（唯一派生点
+  /// `popupLookupPending`，`DictionaryPopupLayer` 按控制器状态 + 层可见性算好传入）。
+  /// 热槽停驻 / seed / 复位一律 false——页面画静态空占位，绝不起循环加载动画。
+  ///
+  /// 与 [result] **独立**比较：复用热槽查词时结果仍是同一个占位单例（身份不变），
+  /// 只有这个标志在变；不单独比较它，页面就永远收不到「真的在查了」。
+  final bool lookupPending;
 
   /// 弹窗内原地跳转（[DictionaryPopupEntry.restoreScrollTop]）：后退 / 前进回到历史
   /// 页时，[result] 渲染完成后要恢复到的 `scrollTop`（CSS px）。null（新词 / load-more
@@ -609,6 +620,17 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// `identical(_lastRenderedResult, widget.result)` 即「当前结果已渲染完成，
   /// 不会再有渲染信号」——等信号的宿主必须立即按已渲染处理。
   DictionarySearchResult? _lastRenderedResult;
+
+  /// 与 [_lastPushedResult] / [_lastRenderedResult] 配对的 `lookupPending`：同一个占位
+  /// 单例在「空闲」与「查询中」两态下渲染结果不同，去重必须连这一位一起比。
+  bool _lastPushedPending = false;
+  bool _lastRenderedPending = false;
+
+  /// 当前这次推送是不是「还没有内容」的占位渲染（搜索期占位单例：空闲空占位或加载
+  /// 指示器）。这种 DOM 的高度不是内容高度，不能拿去自适应外壳——否则复用热槽查词
+  /// 时外壳先缩到加载盒子的高度、结果一到再撑开（跳一下）。
+  bool get _pushedPlaceholder =>
+      identical(_lastPushedResult, kPopupSearchingPlaceholderResult);
 
   /// The theme-derived CSS variable JS last pushed to the WebView. Used to
   /// re-inject (and only re-inject) when the app theme actually changes while
@@ -1393,6 +1415,11 @@ JSON.stringify((function(){
     if (oldWidget.result != widget.result) {
       // 只是同一批词条换了顺序（AI 挑词）就只挪 DOM，否则全量重推。
       if (!_tryPushReorder(oldWidget.result)) _pushResults();
+    } else if (oldWidget.lookupPending != widget.lookupPending) {
+      // 结果对象没变、查询状态变了：复用热槽查词（占位单例 → 占位单例）激活时翻 true，
+      // 停驻 / 结果前被关掉时翻 false。只比结果身份会漏掉这两次，页面要么收不到
+      // 「真的在查」，要么停驻后加载动画一直转。占位渲染很轻（空盒子），全量推即可。
+      _pushResults();
     }
     // TODO-869：独立比较，不搭 result 便车——子弹窗增减时 result 可能没变（卡片内容
     // 不变），但 hasChildPopup 翻转必须重新注入，否则父窗点卡片关不掉刚 push 的子窗。
@@ -1529,6 +1556,7 @@ JSON.stringify((function(){
     }
     _refreshWhenReady = false;
     _lastPushedResult = widget.result;
+    _lastPushedPending = widget.lookupPending;
 
     final int renderToken = ++_renderToken;
     final bool isLoadMore = _lastSearchTerm == widget.result.searchTerm &&
@@ -1578,7 +1606,10 @@ JSON.stringify((function(){
     final String inAppExtrasJs = extrasChanged
         ? _inAppStaticExtrasJs(sentencePreviewEnabled: sentencePreviewEnabled)
         : '';
-    final String entriesJs = buildPopupEntriesJs(widget.result);
+    final String entriesJs = buildPopupEntriesJs(
+      widget.result,
+      pending: widget.lookupPending,
+    );
     // 主题变量段随静态段一起（或已经）在 WebView 里生效；记下它供
     // didChangeDependencies 的主题热切换去重，不再另拼一份删减版拷贝。
     _lastThemeVarsJs = staticSettings.themeVarsJs;
@@ -1685,10 +1716,12 @@ JSON.stringify((function(){
   /// `popupRendered`——等信号撤盖板/翻可见的宿主必须立即按已渲染处理，否则会
   /// 空等到 failsafe 超时。
   bool refreshCurrentResult() {
-    if (identical(_lastRenderedResult, widget.result)) {
+    if (identical(_lastRenderedResult, widget.result) &&
+        _lastRenderedPending == widget.lookupPending) {
       return false;
     }
-    if (identical(_lastPushedResult, widget.result)) {
+    if (identical(_lastPushedResult, widget.result) &&
+        _lastPushedPending == widget.lookupPending) {
       // 已发出注入、渲染在途：popupRendered 会带当前 token 到达，别重推。
       return true;
     }
@@ -1946,9 +1979,16 @@ JSON.stringify((function(){
     final appModel = ref.read(appProvider);
     // 初始 HTML 底色与主题注入器同源（popupCardSurface），
     // 避免两路底色不一致造成的一帧闪变。
-    final Color bgColor = popupCardSurface(
-        scheme: Theme.of(context).colorScheme,
-        override: appModel.overrideDictionaryColor);
+    // Apple 设计系统：注入后文档背景透明（html.fushi-glass-host），卡面是 Flutter
+    // 画的材质面板；注入前的首帧先用同色系的面板色（secondarySystemGroupedBackground），
+    // 别让深色下纯黑的 systemGroupedBackground 闪一帧。
+    final Color bgColor = appModel.overrideDictionaryColor == null &&
+            isGlassDesign(context) &&
+            !isEinkTheme(context)
+        ? appleColorsOf(context).secondaryGroupedBackground
+        : popupCardSurface(
+            scheme: Theme.of(context).colorScheme,
+            override: appModel.overrideDictionaryColor);
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final String bgHex = _colorToHex(bgColor);
     final String themeAttr = isDark ? 'dark' : 'light';
@@ -2332,7 +2372,9 @@ JSON.stringify((function(){
                       ? renderObject.size.height
                       : null,
                 );
-                if (contentHeight != null && viewportHeight != null) {
+                if (contentHeight != null &&
+                    viewportHeight != null &&
+                    !_pushedPlaceholder) {
                   widget.onContentMetrics?.call(contentHeight, viewportHeight);
                 }
                 return null;
@@ -2385,12 +2427,15 @@ JSON.stringify((function(){
                       ? renderObject.size.height
                       : null,
                 );
-                if (contentHeight != null && viewportHeight != null) {
+                if (contentHeight != null &&
+                    viewportHeight != null &&
+                    !_pushedPlaceholder) {
                   widget.onContentMetrics?.call(contentHeight, viewportHeight);
                 }
                 // 记录「当前已推结果渲染完成」，供 refreshCurrentResult 去重判定
                 // （识别渲染信号早于宿主盖板架起的竞态）。
                 _lastRenderedResult = _lastPushedResult;
+                _lastRenderedPending = _lastPushedPending;
                 widget.onRendered?.call();
                 // TODO-1152：全高填充宿主（in-app 查词结果区）渲染完成后补一次表面
                 // 重绘 nudge，逼 Windows WebView2/WGC 捕获完整视口，消除下半屏黑。
@@ -2883,6 +2928,30 @@ JSON.stringify((function(){
           },
         );
 
+        // 「选择音频源」菜单（♪ 长按 / 右键 / Shift+F10）：每个启用源各自解析出的
+        // 全部候选 `[{name, variant, url}]`，url 与 resolveWordAudio 同样可直接播放。
+        controller.addJavaScriptHandler(
+          handlerName: 'listWordAudioSources',
+          callback: (args) async {
+            return _guardJsBridge<List<Map<String, String>>>(
+              'DictPopupWebview.listWordAudioSources',
+              const <Map<String, String>>[],
+              ErrorLogService.instance,
+              () async {
+                if (args.isEmpty || args[0] is! Map) {
+                  return const <Map<String, String>>[];
+                }
+                final data = args[0] as Map;
+                final expression = data['expression']?.toString() ?? '';
+                final reading = data['reading']?.toString() ?? '';
+                if (expression.isEmpty) return const <Map<String, String>>[];
+                return listWordAudioWebViewChoices(
+                    ref.read(appProvider), expression, reading);
+              },
+            );
+          },
+        );
+
         // Word audio no longer round-trips to a native/libmpv player: popup.js
         // plays the resolved URL itself with an HTML5 <audio> element (unified
         // with the browser extension and every desktop surface — see
@@ -3067,6 +3136,26 @@ JSON.stringify((function(){
   /// WebView2 原生项，禁原生后自补 [Clipboard.setData]）。BUG-802：选区读取从早年的
   /// `getSelectedText`（桌面 fork 未实现 + 只读顶层文档）改为穿透同源 iframe 的
   /// [_selectedTextAcrossFrames]，否则复制/搜索拿到空串永远无效。
+  /// [globalPosition] 处是不是弹窗里的音频按钮 ♪（或已打开的音频源菜单）。WebView
+  /// 视口 CSS px 与本 widget 的本地逻辑坐标一一对应（缩放已由 globalToLocal 吃掉），
+  /// 直接 `elementFromPoint`。WebView 未就绪 / 脚本失败一律按「不是」处理，宿主菜单照旧。
+  Future<bool> _secondaryClickHitsAudioButton(Offset globalPosition) async {
+    final InAppWebViewController? controller = _controller;
+    final RenderObject? box = context.findRenderObject();
+    if (controller == null || box is! RenderBox || !box.hasSize) return false;
+    final Offset p = box.globalToLocal(globalPosition);
+    try {
+      final Object? hit = await controller.evaluateJavascript(
+          source: '(function(){var e=document.elementFromPoint('
+              '${p.dx.toStringAsFixed(1)},${p.dy.toStringAsFixed(1)});'
+              "return !!(e&&e.closest&&e.closest('.audio-button, .fushi-audio-menu'));"
+              '})()');
+      return hit == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _showWindowsContextMenu(
       BuildContext context, Offset globalPosition) async {
     // BUG-1451 根因：选区是**易失状态**，而 [showMenu] 是一个真实 route——打开到用户
@@ -3075,7 +3164,13 @@ JSON.stringify((function(){
     // 是「菜单关闭那一刻」的状态而非「用户右键那一刻」的状态，任一环变动就拿空串，
     // 再被 `if (text.isEmpty) return` 静默吞掉 —— 用户看到的就是「菜单弹了、点复制没反应」。
     // 正确的数据流是在**事件源头**取快照：右键按下即发起读取，菜单只是选择动作的 UI。
+    // 右键落在 ♪ 上：popup.js 收到 DOM contextmenu 会自己弹「选择音频源」菜单，
+    // 宿主的搜索 / 复制菜单让位（否则两张菜单叠在一起）。按下即判，不等 DOM 事件
+    // ——fork 把指针转给 WebView2 是异步的，此刻 DOM 还没见到这次按下。
+    // 选区快照仍在最前发起（BUG-1451），再判让位。
     final Future<String> selectionAtRightClick = _selectedTextAcrossFrames();
+    if (await _secondaryClickHitsAudioButton(globalPosition)) return;
+    if (!mounted || !context.mounted) return;
     final RenderObject? overlayObject =
         Overlay.of(context).context.findRenderObject();
     if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
@@ -3089,7 +3184,7 @@ JSON.stringify((function(){
     );
     final t = Translations.of(context);
     final _PopupContextMenuAction? action =
-        await showMenu<_PopupContextMenuAction>(
+        await showFushiMenu<_PopupContextMenuAction>(
       context: context,
       position: position,
       items: <PopupMenuEntry<_PopupContextMenuAction>>[

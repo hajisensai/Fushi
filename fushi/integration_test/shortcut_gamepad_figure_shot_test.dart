@@ -27,6 +27,7 @@ import 'package:fushi/src/startup/observe_blank_detector.dart';
 
 import 'helpers/observe_capture.dart';
 import 'test_helpers.dart';
+import '../test/helpers/glass_unwrap.dart';
 
 /// 有界抓帧：pump 固定几帧让布局/绘制稳定（不 pumpAndSettle，避免被主页永久
 /// 动画卡死），再对根 RenderView 的图层 toImage，落盘并判非空白。
@@ -102,7 +103,7 @@ void main() {
       final Finder toggle = find.byKey(const Key('shortcut_view_toggle'));
       expect(toggle, findsOneWidget, reason: '视图切换段控件应存在');
       final SegmentedButton<bool> segmented =
-          tester.widget<SegmentedButton<bool>>(toggle);
+          tester.widget<SegmentedButton<bool>>(glassUnwrap<SegmentedButton<bool>>(toggle));
       segmented.onSelectionChanged!(<bool>{true});
       await tester.pump(const Duration(milliseconds: 600));
 

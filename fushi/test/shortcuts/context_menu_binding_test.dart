@@ -508,11 +508,40 @@ void main() {
     });
 
     test('三个共享卡片组件的 onSecondaryTap 参数只经 ContextMenuTrigger 落地', () {
+      // 自持 ContextMenuTrigger 的壳。galgame 海报卡改由 shelfCoverCard → FushiCard
+      // 落地（FushiCard 两条设计路径都经 ContextMenuTrigger），下方单独守委托链。
       const List<String> shells = <String>[
         'lib/src/utils/components/fushi_material_components.dart',
-        'lib/src/utils/components/galgame_poster_card.dart',
         'lib/src/pages/implementations/series_shelf_card.dart',
       ];
+      const List<({String path, String delegate})> delegators =
+          <({String path, String delegate})>[
+        (
+          path: 'lib/src/utils/components/galgame_poster_card.dart',
+          delegate: 'shelfCoverCard(',
+        ),
+        (
+          path: 'lib/src/utils/components/shelf_card_widgets.dart',
+          delegate: 'FushiCard(',
+        ),
+      ];
+      for (final ({String path, String delegate}) d in delegators) {
+        final File file = File(d.path);
+        expect(file.existsSync(), isTrue, reason: '路径过期请更新守卫：${d.path}');
+        final String source = maskComments(file.readAsStringSync());
+        expect(
+          source.contains(d.delegate),
+          isTrue,
+          reason: '${d.path} 不再委托 ${d.delegate} —— 右键菜单可能脱离绑定表',
+        );
+        // 委托壳自己不得挂手势识别器接次按钮。
+        expect(
+          RegExp(r'GestureDetector\(|InkWell\(|onSecondaryTapDown|onSecondaryTapUp')
+              .hasMatch(source),
+          isFalse,
+          reason: '${d.path} 自己挂了手势识别器，可能绕过 ContextMenuTrigger 硬绑右键',
+        );
+      }
       for (final String path in shells) {
         final File file = File(path);
         expect(file.existsSync(), isTrue, reason: '路径过期请更新守卫：$path');

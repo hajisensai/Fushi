@@ -143,7 +143,7 @@ class _LeaderboardWorkPageState extends ConsumerState<LeaderboardWorkPage> {
                 onRetry: () => unawaited(_load(reset: true)),
               )
             else if (page == null)
-              const Center(child: CircularProgressIndicator())
+              const FushiLoadingView()
             else ...<Widget>[
               FushiCard(
                 child: Row(

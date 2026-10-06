@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 下载任务「删除任务」确认框：正文 + 「同时删除已下载文件」勾选框。返回 null=取消，
 /// 否则为勾选值。v78 任务面板与旧番剧计划面板共用，两处口径一致；测试按
@@ -28,7 +29,7 @@ Future<bool?> showDownloadTaskDeleteConfirm(
         BuildContext context,
         void Function(void Function()) setDialogState,
       ) =>
-          AlertDialog(
+          FushiAlertDialog(
         title: Text(t.download_task_delete),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -55,7 +56,7 @@ Future<bool?> showDownloadTaskDeleteConfirm(
                 onTap: () => setDialogState(
                   () => deleteFiles = !deleteFiles,
                 ),
-                leading: Checkbox(
+                leading: FushiCheckbox(
                   value: deleteFiles,
                   onChanged: (bool? value) => setDialogState(
                     () => deleteFiles = value ?? false,
@@ -67,11 +68,11 @@ Future<bool?> showDownloadTaskDeleteConfirm(
           ],
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             key: ValueKey<String>(
               'video-download-job-delete-confirm-$keySuffix',
             ),

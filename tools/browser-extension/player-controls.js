@@ -17,7 +17,7 @@
 //  · **事件不漏给站点**。播放器把点画面当播放/暂停、把空格方向键当播放控制，所以按钮与菜单上的
 //    指针事件与键盘事件一律 stopPropagation（content.js 的弹窗与模态同款）。
 //
-// 站点适配只有两条特例（YouTube / Netflix），其余站点退回「悬停视频时浮在右下角」的通用按钮——
+// 站点适配只有两条特例（YouTube / Netflix），其余站点退回「悬停视频时浮在右上角」的通用按钮——
 // 通用路径不依赖任何站点 DOM，所以不会随站点改版失效。
 //
 // 判定与菜单模型是纯函数（node 可测）；DOM 装配在下半段。
@@ -38,6 +38,8 @@
   var MIN_VIDEO_W = 200; // 通用按钮的视频门（与 study-tracker 同口径：挡掉首页悬停预览/预告片）
   var MIN_VIDEO_H = 120;
   var MIN_VIDEO_SEC = 30;
+  var FLOAT_BTN_SIZE = 44;  // 通用悬浮按钮边长（与 content-css-overlay.css 的 .is-floating 同值）
+  var FLOAT_BTN_INSET = 8;  // 通用悬浮按钮离视频画面边缘的留白（px）
 
   function tr(key, params) {
     var g = (typeof window !== 'undefined') ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
@@ -345,13 +347,15 @@
     paintButton();
   }
 
-  // 通用站点的悬浮按钮：贴视频画面右下角，鼠标不在视频上就淡出（站点控件也是这个作息）。
+  // 通用站点的悬浮按钮：贴视频画面右上角，鼠标不在视频上就淡出（站点控件也是这个作息）。
+  // 不放右下角：几乎所有站点的进度条 / 音量 / 全屏都排在画面底边，按钮压上去会挡住站点控件
+  // （用户 2026-10-04 报）。顶边通常只有标题，且菜单在上方放不下时 placeMenu 自然翻到按钮下方。
   function placeFloatingButton() {
     var v = videoEl();
     if (!btnEl || !v || typeof v.getBoundingClientRect !== 'function') return;
     var r = v.getBoundingClientRect();
-    btnEl.style.left = Math.round(r.right - 52) + 'px';
-    btnEl.style.top = Math.round(r.bottom - 52) + 'px';
+    btnEl.style.left = Math.round(r.right - FLOAT_BTN_SIZE - FLOAT_BTN_INSET) + 'px';
+    btnEl.style.top = Math.round(r.top + FLOAT_BTN_INSET) + 'px';
     btnEl.dataset.visible = (st.open || st.hoverVideo) ? '1' : '';
   }
 

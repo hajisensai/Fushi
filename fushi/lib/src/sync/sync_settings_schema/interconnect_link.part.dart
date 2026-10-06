@@ -102,8 +102,15 @@ Future<void> showInterconnectPairQrDialog(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 // 二维码恒为白底黑码：深色主题下反色的码很多相机扫不出。
+                // 白底卡片带圆角（MD3 12 / Apple 16），不再是直角白方块
+                // 突兀地贴在圆角面板里。
                 Container(
-                  color: Colors.white,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(
+                      isGlassDesign(ctx) ? 16 : 12,
+                    ),
+                  ),
                   padding: const EdgeInsets.all(12),
                   child: QrImageView(
                     data: uri,
@@ -242,7 +249,7 @@ class _InterconnectPairScanPageState extends State<_InterconnectPairScanPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(t.sync_pair_scan)),
+      appBar: FushiAppBar(title: Text(t.sync_pair_scan)),
       body: MobileScanner(
         onDetect: _onDetect,
         errorBuilder: (BuildContext ctx, MobileScannerException error) =>

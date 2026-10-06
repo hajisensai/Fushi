@@ -508,6 +508,20 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  /// 打开/关闭「启动 Fushi 时自动启动 Anki」（issue #1949）。只在下次启动时生效。
+  Future<void> setAutoLaunchAnkiDesktop(bool enabled) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(autoLaunchAnkiDesktop: enabled));
+    state = state.copyWith(settings: updated);
+  }
+
+  /// 写入 Anki 桌面版入口程序路径；空串 = 清除（回到平台默认入口）。
+  Future<void> setAnkiDesktopExecutable(String path) async {
+    final updated = await _repository
+        .updateSettings((s) => s.copyWith(ankiDesktopExecutable: path.trim()));
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> setBatchMiningEnabled(bool enabled) async {
     final updated = await _repository
         .updateSettings((s) => s.copyWith(batchMiningEnabled: enabled));

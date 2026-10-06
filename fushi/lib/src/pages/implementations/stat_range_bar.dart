@@ -81,6 +81,16 @@ class StatRangeBar extends StatelessWidget {
               ),
             ],
           ),
+          // 2026-10 体验优化：学习日历点某天会把范围切到单日，原先只能再点
+          // 「月」芯片 + 连按箭头才回得去。单日态下给一个显眼的「本月」快捷
+          // 入口，一步回到当月（锚点跟随今日）。
+          if (range.mode == StatRangeMode.day)
+            FushiActionChip(
+              key: const ValueKey<String>('stat-range-back-to-month'),
+              label: t.stat_this_month,
+              icon: Icons.calendar_month_outlined,
+              onPressed: () => onChanged(const StatRangeSelection()),
+            ),
         ],
       ),
     );
@@ -241,30 +251,53 @@ Widget buildStatRangeSummary(
             style: Theme.of(context).textTheme.titleMedium,
           ),
           SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.card * 2,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              for (final (String label, String value) in cells)
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      value,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
+          // 等宽列网格（2026-10-04 用户截图）：原先是按内容宽度排的 Wrap，每行
+          // 能塞几个取决于数字长短——手机上第一行两格、第二行两格、第三行三格，
+          // 列不对齐，像随手堆的。改成手机 2 列、宽屏 4 列的等宽格，数字过长时
+          // 在格内等比缩小而不是换行或撑出。
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double gap = tokens.spacing.card;
+              final int columns = constraints.maxWidth >= 520 ? 4 : 2;
+              final double cellWidth =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+              return Wrap(
+                spacing: gap,
+                runSpacing: tokens.spacing.gap,
+                children: <Widget>[
+                  for (final (String label, String value) in cells)
+                    SizedBox(
+                      width: cellWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(
+                              value,
+                              maxLines: 1,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.metadata.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    Text(
-                      label,
-                      style: tokens.type.metadata.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-            ],
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -287,12 +320,9 @@ Widget buildStatRangeCalendarSection(
         e.key: math.max(e.value.ms ~/ 1000, 1),
   };
   return Padding(
-    padding: EdgeInsets.fromLTRB(
-      tokens.spacing.card,
-      tokens.spacing.card,
-      tokens.spacing.card,
-      0,
-    ),
+    // 底部留一个 card 间距：此前为 0，热力图最后一行与下方「时长 · 区间」
+    // 图表标题贴死（2026-10-04 用户截图）。
+    padding: EdgeInsets.all(tokens.spacing.card),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -305,8 +335,8 @@ Widget buildStatRangeCalendarSection(
           valueByDateKey: values,
           now: now,
           baseColor: tokens.surfaces.primary,
-          emptyColor: tokens.surfaces.overlay,
-          emptyBorderColor: tokens.surfaces.outline,
+          emptyColor: statHeatmapEmptyColors(context).$1,
+          emptyBorderColor: statHeatmapEmptyColors(context).$2,
           valueLabel: (String dateKey, int _) {
             final StatDayData? d = byDay[dateKey];
             final String day = formatStatHeatmapDay(dateKey);

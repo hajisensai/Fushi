@@ -289,10 +289,7 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
     if (_error != null) {
       body = Text(t.media_stats_load_failed);
     } else if (summary == null) {
-      body = const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(child: CircularProgressIndicator()),
-      );
+      body = const FushiLoadingView();
     } else if (summary.isEmpty) {
       body = Text(
         t.media_stats_empty,
@@ -301,7 +298,7 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
     } else {
       body = _buildSummary(theme, summary);
     }
-    return AlertDialog(
+    return FushiAlertDialog(
       key: const ValueKey<String>('media-item-stats-dialog'),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -321,12 +318,12 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
       content: SizedBox(width: 420, child: SingleChildScrollView(child: body)),
       actions: <Widget>[
         if (summary != null && summary.sessions.isNotEmpty)
-          TextButton(
+          FushiTextButton(
             key: const ValueKey<String>('media-item-stats-sessions'),
             onPressed: () => unawaited(_openSessions(summary)),
             child: Text(t.stat_sessions_show_all),
           ),
-        TextButton(
+        FushiTextButton(
           autofocus: true,
           onPressed: () => Navigator.of(context).maybePop(),
           child: Text(MaterialLocalizations.of(context).closeButtonLabel),

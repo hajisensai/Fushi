@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
@@ -8,7 +7,12 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 
 /// Android receiver entry point. The page intentionally accepts a repository
 /// instead of discovering hosts globally, so only already-paired candidates
@@ -45,15 +49,6 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   }
 
   Future<void> _loadHosts() async {
-    if (!Platform.isAndroid) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = t.game_stream_android_only;
-        });
-      }
-      return;
-    }
     setState(() {
       _loading = true;
       _error = null;
@@ -102,7 +97,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   }
 
   Future<void> _join(_GameStreamHost host, GameStreamSession session) async {
-    if (_joining || !Platform.isAndroid) return;
+    if (_joining) return;
     setState(() {
       _joining = true;
       _error = null;
@@ -136,32 +131,28 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      appBar: FushiAppBar(
         title: Text(t.game_stream_join),
         actions: <Widget>[
-          IconButton(
+          FushiIconButtonControl(
             tooltip: t.refresh,
             onPressed: _loading || _joining ? null : _loadHosts,
-            icon: const Icon(Icons.refresh),
+            icon: const FushiIcon(Icons.refresh),
           ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const FushiLoadingView()
           : _buildBody(context),
     );
   }
 
   Widget _buildBody(BuildContext context) {
     if (_hosts.every((_GameStreamHost host) => host.sessions.isEmpty)) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            _error ?? t.game_stream_none,
-            textAlign: TextAlign.center,
-          ),
-        ),
+      // 空态 / 失败态走共享占位件（两套设计系统统一的图标 + 文案层级）。
+      return FushiPlaceholderMessage(
+        icon: _error == null ? Icons.cast_outlined : Icons.error_outline,
+        message: _error ?? t.game_stream_none,
       );
     }
     return ListView(
@@ -172,7 +163,9 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
             padding: const EdgeInsets.only(bottom: 12),
             child: Text(
               _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              style: TextStyle(
+                color: fushiStatusColor(context, FushiStatusTone.error),
+              ),
             ),
           ),
         for (final _GameStreamHost host in _hosts)
@@ -181,10 +174,10 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
               margin: const EdgeInsets.only(bottom: 8),
               padding: EdgeInsets.zero,
               child: FushiListItem(
-                leading: const Icon(Icons.cast),
+                leading: const FushiIcon(Icons.cast),
                 title: Text(host.peer.deviceName ?? host.peer.url),
                 subtitle: Text(t.game_stream_available),
-                trailing: FilledButton(
+                trailing: FushiFilledButton(
                   onPressed: _joining
                       ? null
                       : () => unawaited(_join(host, session)),

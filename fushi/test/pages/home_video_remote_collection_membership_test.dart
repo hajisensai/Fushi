@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_download_progress.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -246,6 +247,11 @@ void main() {
       section: VideoLibrarySection.series,
       downloads: manager,
     ));
+    // 下载中的封面进度环（Expressive 波浪 / 变形指示）是常驻动画，pumpAndSettle
+    // 永远等不到静止；按「减少动态效果」渲染，环静止、语义不变。
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
     await tester.pumpAndSettle();
 
     final Finder badge =
@@ -260,9 +266,9 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<CircularProgressIndicator>(find.descendant(
+          .widget<FushiDownloadProgressRing>(find.descendant(
             of: badge,
-            matching: find.byType(CircularProgressIndicator),
+            matching: find.byType(FushiDownloadProgressRing),
           ))
           .value,
       0.5,

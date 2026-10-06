@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -23,7 +24,7 @@ Future<void> showAnkiDeckRepositionDialog(
   required AnkiViewModel viewModel,
   required List<String> loadedFrequencyDictionaries,
 }) {
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext ctx) => _RepositionDialog(
       viewModel: viewModel,
@@ -117,7 +118,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         _deckName != null &&
         (!dictsMode || widget.loadedDictionaries.isNotEmpty);
 
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.anki_reposition_title),
       content: SizedBox(
         width: 480,
@@ -128,7 +129,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
             children: <Widget>[
               Text(t.anki_reposition_hint, style: hintStyle),
               const SizedBox(height: 12),
-              DropdownButtonFormField<int>(
+              FushiDropdownButtonFormField<int>(
                 key: const Key('anki_reposition_deck'),
                 value: _deckId,
                 decoration: InputDecoration(
@@ -153,18 +154,18 @@ class _RepositionDialogState extends State<_RepositionDialog> {
               const SizedBox(height: 16),
               Text(t.anki_reposition_source, style: theme.textTheme.labelLarge),
               const SizedBox(height: 6),
-              SegmentedButton<AnkiRepositionSource>(
+              FushiSegmentedButton<AnkiRepositionSource>(
                 key: const Key('anki_reposition_source'),
                 segments: <ButtonSegment<AnkiRepositionSource>>[
                   ButtonSegment<AnkiRepositionSource>(
                     value: AnkiRepositionSource.dictionaries,
                     label: Text(t.anki_reposition_source_dictionaries),
-                    icon: const Icon(Icons.menu_book_outlined),
+                    icon: const FushiIcon(Icons.menu_book_outlined),
                   ),
                   ButtonSegment<AnkiRepositionSource>(
                     value: AnkiRepositionSource.field,
                     label: Text(t.anki_reposition_source_field),
-                    icon: const Icon(Icons.text_fields),
+                    icon: const FushiIcon(Icons.text_fields),
                   ),
                 ],
                 selected: <AnkiRepositionSource>{_source},
@@ -187,7 +188,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
               ),
               Text(t.anki_reposition_gather_order_hint, style: hintStyle),
               if (_snapshot != null) ...<Widget>[
-                const Divider(height: 24),
+                const FushiDividerControl(height: 24),
                 AdaptiveSettingsRow(
                   key: const Key('anki_reposition_undo'),
                   icon: Icons.undo,
@@ -210,11 +211,11 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: _busy ? null : () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        FilledButton(
+        FushiFilledButton(
           key: const Key('anki_reposition_preview'),
           onPressed: canRun ? _previewAndApply : null,
           child: Text(t.anki_reposition_preview),
@@ -243,7 +244,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         runSpacing: 4,
         children: <Widget>[
           for (final String name in loaded)
-            FilterChip(
+            FushiFilterChip(
               key: Key('anki_reposition_dict_$name'),
               label: Text(name),
               selected: _dictionaries.contains(name),
@@ -264,7 +265,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       if (loaded.length > 1 &&
           (_dictionaries.isEmpty || _dictionaries.length > 1)) ...<Widget>[
         const SizedBox(height: 8),
-        DropdownButtonFormField<FrequencyAggregate>(
+        FushiDropdownButtonFormField<FrequencyAggregate>(
           key: const Key('anki_reposition_aggregate'),
           value: _aggregate,
           decoration: InputDecoration(labelText: t.anki_reposition_aggregate),
@@ -312,13 +313,13 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       if (!mounted) return;
       if (plan == null) {
         messenger?.showSnackBar(
-          SnackBar(content: Text(t.anki_reposition_cancelled)),
+          FushiSnackBar(content: Text(t.anki_reposition_cancelled)),
         );
         return;
       }
       if (plan.total == 0) {
         messenger?.showSnackBar(
-          SnackBar(content: Text(t.anki_reposition_empty)),
+          FushiSnackBar(content: Text(t.anki_reposition_empty)),
         );
         return;
       }
@@ -335,7 +336,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         cancellable: false,
       );
       if (!mounted || outcome == null) return;
-      messenger?.showSnackBar(SnackBar(
+      messenger?.showSnackBar(FushiSnackBar(
         content: Text(outcome.failures.isNotEmpty
             ? t.anki_reposition_partial(
                 failed: outcome.failures.length,
@@ -352,11 +353,11 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       await _refreshSnapshot();
     } on AnkiRepositionCancelled {
       messenger?.showSnackBar(
-        SnackBar(content: Text(t.anki_reposition_cancelled)),
+        FushiSnackBar(content: Text(t.anki_reposition_cancelled)),
       );
     } catch (e) {
       messenger?.showSnackBar(
-        SnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -382,7 +383,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
         cancellable: false,
       );
       if (!mounted || outcome == null) return;
-      messenger?.showSnackBar(SnackBar(
+      messenger?.showSnackBar(FushiSnackBar(
         content: Text(outcome.failures.isEmpty
             ? t.anki_reposition_undo_done(
                 count: outcome.restored,
@@ -396,7 +397,7 @@ class _RepositionDialogState extends State<_RepositionDialog> {
       await _refreshSnapshot();
     } catch (e) {
       messenger?.showSnackBar(
-        SnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),
+        FushiSnackBar(content: Text(t.anki_reposition_failed(error: '$e'))),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -420,14 +421,14 @@ Future<T?> runAnkiRepositionWithProgress<T>(
   final ValueNotifier<bool> cancelRequested = ValueNotifier<bool>(false);
   BuildContext? dialogContext;
   bool dialogClosed = false;
-  unawaited(showDialog<void>(
+  unawaited(showAppDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (BuildContext ctx) {
       dialogContext = ctx;
       return PopScope(
         canPop: false,
-        child: AlertDialog(
+        child: FushiAlertDialog(
           title: Text(t.anki_reposition_progress_title),
           content: SizedBox(
             width: 360,
@@ -438,7 +439,7 @@ Future<T?> runAnkiRepositionWithProgress<T>(
               ValueListenableBuilder<bool>(
                 valueListenable: cancelRequested,
                 builder: (BuildContext _, bool requested, Widget? __) =>
-                    TextButton(
+                    FushiTextButton(
                   onPressed:
                       requested ? null : () => cancelRequested.value = true,
                   child: Text(t.dialog_cancel),
@@ -450,7 +451,7 @@ Future<T?> runAnkiRepositionWithProgress<T>(
               // AnkiConnect 的分钟级串行任务，桌面 Anki 一睡眠就没有尽头。iOS 既
               // 没有系统返回键、对话框路由也没有侧滑返回，用户只能杀进程。这颗
               // 按钮只把 UI 与任务解绑（任务继续在 Anki 端跑完），不谎称能中止。
-              TextButton(
+              FushiTextButton(
                 onPressed: () => Navigator.of(ctx).pop(),
                 child: Text(t.dialog_background_close),
               ),
@@ -505,7 +506,7 @@ class _RepositionProgressBody extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            LinearProgressIndicator(
+            FushiLinearProgressIndicator(
               value: determinate ? p.done / p.total : null,
             ),
             const SizedBox(height: 12),
@@ -523,7 +524,7 @@ Future<bool> showAnkiRepositionPreviewDialog(
   AnkiRepositionPlan plan, {
   int maxRows = 40,
 }) async {
-  final bool? confirmed = await showDialog<bool>(
+  final bool? confirmed = await showAppDialog<bool>(
     context: context,
     builder: (BuildContext ctx) {
       final ThemeData theme = Theme.of(ctx);
@@ -532,7 +533,7 @@ Future<bool> showAnkiRepositionPreviewDialog(
         color: theme.colorScheme.onSurfaceVariant,
       );
       final List<AnkiRepositionCard> rows = plan.ordered.take(maxRows).toList();
-      return AlertDialog(
+      return FushiAlertDialog(
         title: Text(t.anki_reposition_preview),
         content: SizedBox(
           width: 480,
@@ -592,11 +593,11 @@ Future<bool> showAnkiRepositionPreviewDialog(
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.dialog_cancel),
           ),
-          FilledButton(
+          FushiFilledButton(
             key: const Key('anki_reposition_apply'),
             onPressed:
                 plan.changed == 0 ? null : () => Navigator.of(ctx).pop(true),

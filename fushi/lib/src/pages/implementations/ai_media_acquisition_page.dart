@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart';
@@ -275,11 +276,11 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(t.ai_media_acquire_title(domain: widget.domainLabel)),
-      ),
+    // 统一页面壳（MD3 大标题 / Apple 大标题 + 玻璃返回钮），与其它子页一致。
+    return FushiPageScaffold(
+      title: t.ai_media_acquire_title(domain: widget.domainLabel),
       body: SafeArea(
+        top: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -288,24 +289,25 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
               child: Row(
                 children: <Widget>[
                   Expanded(
-                    child: TextField(
+                    child: FushiTextFieldControl(
                       key: const ValueKey<String>('ai-media-acquire-input'),
                       controller: _input,
                       autofocus: widget.initialQuery?.trim().isEmpty ?? true,
                       textInputAction: TextInputAction.search,
                       onSubmitted: (String _) => unawaited(_submit()),
+                      // 搜索胶囊（前缀放大镜）：MD3 填充式全圆角 / Apple 无色
+                      // 透明玻璃胶囊——这一栏就是「说一句话去搜」。
                       decoration: InputDecoration(
                         hintText: t.ai_media_acquire_hint,
-                        border: const OutlineInputBorder(),
-                        isDense: true,
+                        prefixIcon: const FushiIcon(Icons.search),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton.icon(
+                  FushiFilledButton.icon(
                     key: const ValueKey<String>('ai-media-acquire-send'),
                     onPressed: _busy ? null : () => unawaited(_submit()),
-                    icon: const Icon(Icons.auto_awesome_outlined),
+                    icon: const FushiIcon(Icons.auto_awesome_outlined),
                     label: Text(t.ai_media_acquire_send),
                   ),
                 ],
@@ -323,18 +325,18 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
               ),
             if (_aiDegraded)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text(
-                  t.ai_media_acquire_ai_failed,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                // AI 降级是「仍可用、但没有智能推荐」的警告：统一提示块（中性底
+                // + 单色警告图标），不再是一行红字像报错。
+                child: FushiInlineNotice(
                   key: const ValueKey<String>('ai-media-acquire-degraded'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
+                  severity: FushiNoticeSeverity.warning,
+                  message: t.ai_media_acquire_ai_failed,
                 ),
               ),
             if (_busy) ...<Widget>[
               const SizedBox(height: 8),
-              const LinearProgressIndicator(),
+              const FushiLinearProgressIndicator(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 child: Text(switch (_phase) {
@@ -354,15 +356,10 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
 
   Widget _buildResults(ThemeData theme) {
     if (_phase == _Phase.done && _candidates.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            t.ai_media_acquire_no_results,
-            key: const ValueKey<String>('ai-media-acquire-empty'),
-            textAlign: TextAlign.center,
-          ),
-        ),
+      return FushiPlaceholderMessage(
+        key: const ValueKey<String>('ai-media-acquire-empty'),
+        icon: Icons.search_off_rounded,
+        message: t.ai_media_acquire_no_results,
       );
     }
     final List<MediaAcquisitionCandidate> picked = <MediaAcquisitionCandidate>[
@@ -373,30 +370,49 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
       for (final MediaAcquisitionCandidate c in _candidates)
         if (!_picks.contains(c.id)) c,
     ];
+    // 推荐 / 其它各是一个共享分组列表（MD3 分段卡 / Apple inset grouped），
+    // 组标题缩进到行文字起点。
+    const EdgeInsets groupPadding = EdgeInsets.symmetric(horizontal: 16);
     return ListView(
       key: const ValueKey<String>('ai-media-acquire-results'),
       padding: const EdgeInsets.only(bottom: 24),
       children: <Widget>[
         if (picked.isNotEmpty) ...<Widget>[
           _sectionLabel(theme, t.ai_media_acquire_recommended),
-          for (final MediaAcquisitionCandidate c in picked)
-            _candidateTile(theme, c, recommended: true),
+          FushiGroupedList(
+            padding: groupPadding,
+            children: <Widget>[
+              for (final MediaAcquisitionCandidate c in picked)
+                _candidateTile(theme, c, recommended: true),
+            ],
+          ),
         ],
         if (others.isNotEmpty && picked.isNotEmpty)
           _sectionLabel(theme, t.ai_media_acquire_others),
-        for (final MediaAcquisitionCandidate c in others)
-          _candidateTile(theme, c, recommended: false),
+        if (others.isNotEmpty)
+          FushiGroupedList(
+            padding: groupPadding,
+            children: <Widget>[
+              for (final MediaAcquisitionCandidate c in others)
+                _candidateTile(theme, c, recommended: false),
+            ],
+          ),
       ],
     );
   }
 
+  // 分组标题（与设置分组同口径）：MD3 = titleSmall 主色 w600；Apple = 13 号
+  // semibold secondaryLabel 灰字（inset grouped 的 section header 不上强调色）。
   Widget _sectionLabel(ThemeData theme, String label) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+    padding: const EdgeInsets.fromLTRB(32, 16, 32, 6),
     child: Text(
       label,
-      style: theme.textTheme.labelLarge?.copyWith(
-        color: theme.colorScheme.primary,
-      ),
+      style: isGlassDesign(context)
+          ? settingsAppleSectionTitleStyle(context)
+          : theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
     ),
   );
 
@@ -411,20 +427,20 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     if (acquiring) {
       action = const SizedBox.square(
         dimension: 24,
-        child: CircularProgressIndicator(strokeWidth: 2),
+        child: FushiCircularProgressIndicator(strokeWidth: 2),
       );
     } else if (acquired) {
-      action = Tooltip(
+      action = FushiTooltip(
         message: t.ai_media_acquire_started,
-        child: Icon(Icons.check_circle, color: theme.colorScheme.primary),
+        child: FushiIcon(Icons.check_circle, color: theme.colorScheme.primary),
       );
     } else if (recommended) {
-      action = FilledButton(
+      action = FushiFilledButton(
         onPressed: () => unawaited(_acquire(c)),
         child: Text(t.ai_media_acquire_download),
       );
     } else {
-      action = OutlinedButton(
+      action = FushiOutlinedButton(
         onPressed: () => unawaited(_acquire(c)),
         child: Text(t.ai_media_acquire_download),
       );
@@ -432,7 +448,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
     return FushiListItem(
       key: ValueKey<String>('ai-media-acquire-candidate-${c.id}'),
       leading: recommended
-          ? Icon(Icons.auto_awesome, color: theme.colorScheme.primary)
+          ? FushiIcon(Icons.auto_awesome, color: theme.colorScheme.primary)
           : null,
       title: Text(c.title),
       titleMaxLines: 2,

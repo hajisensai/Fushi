@@ -181,7 +181,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.book_scrape_title),
       content: SizedBox(
         width: 560,
@@ -192,7 +192,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             Row(
               children: <Widget>[
                 Expanded(
-                  child: TextField(
+                  child: FushiTextFieldControl(
                     controller: _queryCtrl,
                     decoration: InputDecoration(
                       isDense: true,
@@ -203,7 +203,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton(
+                FushiFilledButton(
                   onPressed: _searching ? null : _search,
                   child: Text(t.book_scrape_search),
                 ),
@@ -220,7 +220,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
@@ -230,7 +230,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
 
   Widget _buildResults(ThemeData theme, FushiDesignTokens tokens) {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     final Object? failure = _searchFailure;
     if (failure != null) {
@@ -247,7 +247,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     }
     return ListView.separated(
       itemCount: _results.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
+      separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
       itemBuilder: (BuildContext context, int index) =>
           _buildTile(theme, tokens, _results[index]),
     );
@@ -290,14 +290,14 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed:
                 _applyingCandidate != null ? null : () => _use(candidate),
             child: identical(_applyingCandidate, candidate)
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(t.book_scrape_use),
           ),

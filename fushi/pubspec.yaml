@@ -2,7 +2,7 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 2.9.1+1351
+version: 2.9.1+1352
 environment:
   sdk: ">=3.8.0 <4.0.0"
   flutter: "^3.41.6"
@@ -41,6 +41,7 @@ dependencies:
   clipboard: ^0.1.3
   collection:
   cupertino_icons: ^1.0.8
+  liquid_glass_widgets: ^1.8.1
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
   device_info_plus: ^9.0.0
@@ -88,6 +89,10 @@ dependencies:
   flutter_exit_app: ^1.0.5
   flutter_html: ^3.0.0
   flutter_inappwebview: ^6.1.5
+  # Linux WebView 后端（WPE WebKit）。6.1.5 的 flutter_inappwebview 不 endorse
+  # Linux，必须由 app 直接依赖实现包才会注册；vendored 原因见该包 pubspec 顶部。
+  flutter_inappwebview_linux:
+    path: ../packages/flutter_inappwebview_linux
   flutter_logs: ^2.1.11
   # v101 统一更新提醒的系统通知后端。选 20.x 而不是 22.x：22 起要求
   # `sdk: ^3.10.0`，会把本包的 SDK 下界从 3.8 顶上去；20.1.0 的
@@ -95,7 +100,7 @@ dependencies:
   # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
   flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
-  # WebRTC 游戏串流（Windows 主机 + Android 接收端）。
+  # WebRTC 游戏串流（Windows 主机；五端都可当接收端）。
   # 钉精确版本，不用 caret：WGC 客户区采集的入口只在
   # ci/patches/hosted/flutter_webrtc-1.6.2+hotfix.3/ 那份补丁里，而补丁目录按
   # 精确版本命名、apply-patches.sh 对目标缺失只打一行 WARNING 不判红。约束一旦

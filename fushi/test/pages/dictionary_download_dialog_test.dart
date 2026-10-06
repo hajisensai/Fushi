@@ -7,6 +7,15 @@ import 'package:fushi/src/models/dictionary_download_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import '../helpers/glass_unwrap.dart';
+
+/// 推过对话框出入场转场。进度框里的 MD3 Expressive 波浪进度条常驻动画，
+/// pumpAndSettle 在它在场时永远不会返回。
+Future<void> _pumpPastTransitions(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(seconds: 1));
+}
 
 void main() {
   setUp(() {
@@ -67,7 +76,7 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
   });
 
   group('BUG-1499 进度框：取消与后台化', () {
@@ -136,8 +145,9 @@ void main() {
         initialMessage: 'start',
         body: (DictionaryDownloadJob job) async {
           job.markDownloadPhase();
-          // 给一个确定的比例：留 0 会让 LinearProgressIndicator 退化成不定态动画，
-          // pumpAndSettle 永远等不到静止（那是测试脚手架的事，不是产品行为）。
+          // 给一个确定的比例。MD3 Expressive 的波浪进度条确定态也一直在流动，
+          // 进度框在场时 pumpAndSettle 永远等不到静止（那是测试脚手架的事，
+          // 不是产品行为），所以这两条用 [_pumpPastTransitions] 走完路由转场。
           job.progress.value = 0.5;
           await hold.future;
           return const DictionaryDownloadOutcome(message: 'finished');
@@ -157,11 +167,11 @@ void main() {
           ),
         ),
       ));
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
       expect(find.text(t.dict_download_hide), findsOneWidget);
 
       await tester.tap(find.text(t.dict_download_hide));
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
 
       expect(find.text(t.dict_download_hide), findsNothing, reason: '进度框收起来了');
       expect(find.text('dictionary page'), findsOneWidget,
@@ -170,7 +180,7 @@ void main() {
 
       hold.complete();
       expect(await running, isTrue);
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
 
       expect(outcomes.single.message, 'finished',
           reason: '结果由 controller 送出，与页面/对话框是否还在无关');
@@ -220,12 +230,12 @@ void main() {
           ),
         ),
       ));
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
       expect(find.text(t.dict_download_hide), findsOneWidget);
 
       hold.complete();
       expect(await running, isTrue);
-      await tester.pumpAndSettle();
+      await _pumpPastTransitions(tester);
 
       expect(find.text(t.dict_download_hide), findsNothing,
           reason: '任务结束进度框应自己消失');
@@ -536,29 +546,23 @@ void main() {
 
       expect(
         tester
-            .widget<TextButton>(
-              find.byKey(const ValueKey<String>('dict-download-select-all')),
-            )
+            .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(const ValueKey<String>('dict-download-select-all'))),)
             .onPressed,
         isNull,
       );
       expect(
         tester
-            .widget<TextButton>(
-              find.byKey(
+            .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(
                 const ValueKey<String>('dict-download-invert-selection'),
-              ),
-            )
+              )),)
             .onPressed,
         isNull,
       );
       expect(
         tester
-            .widget<Checkbox>(
-              find.byKey(
+            .widget<Checkbox>(glassUnwrap<Checkbox>(find.byKey(
                 const ValueKey<String>('dict-download-category-check-jaEn'),
-              ),
-            )
+              )),)
             .onChanged,
         isNull,
         reason: '本类全已安装时说「已全选」是谎话，框必须点不动',

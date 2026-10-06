@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 
-import 'package:gap/gap.dart';
 import 'package:fushi/src/utils/misc/crash_dump_locator.dart';
 import 'package:fushi/utils.dart';
 
@@ -75,8 +74,6 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme cs = Theme.of(context).colorScheme;
     return FushiPageScaffold(
       title: t.crash_dump_label(n: _dumps.length),
       actions: <Widget>[
@@ -97,30 +94,18 @@ class _CrashDumpPageState extends State<CrashDumpPage> {
           // 隐私提示（常驻）：.dmp 含进程内存快照。
           Padding(
             padding: const EdgeInsets.all(12),
-            child: FushiCard(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Icon(Icons.privacy_tip_outlined,
-                      size: 20, color: cs.onSurfaceVariant),
-                  const Gap(4),
-                  Expanded(
-                    child: Text(
-                      t.crash_dump_privacy_notice,
-                      style: tokens.type.metadata,
-                    ),
-                  ),
-                ],
-              ),
+            // 统一提示块：MD3 中性填充 r12 / Apple tertiaryFill r10，图标单色，
+            // 不再拿整张卡片装一行提示（卡片在 Apple 下是内容底板语义）。
+            child: FushiInlineNotice(
+              icon: Icons.privacy_tip_outlined,
+              message: t.crash_dump_privacy_notice,
             ),
           ),
           Expanded(
             child: _dumps.isEmpty
-                ? Center(
-                    child: Text(
-                      t.crash_dump_empty,
-                      style: tokens.type.listSubtitle,
-                    ),
+                ? FushiPlaceholderMessage(
+                    icon: Icons.bug_report_outlined,
+                    message: t.crash_dump_empty,
                   )
                 : ListView.builder(
                     itemCount: _dumps.length,

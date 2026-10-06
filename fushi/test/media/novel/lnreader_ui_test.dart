@@ -126,12 +126,8 @@ void main() {
     expect(find.textContaining(t.novel_store_builtin_label), findsOneWidget);
     expect(find.byTooltip(t.mihon_store_remove), findsNothing);
     expect(find.byTooltip(t.mihon_store_edit), findsNothing);
-    expect(
-      find.byWidgetPredicate(
-        (Widget w) => w is FushiIconButton && w.label == t.mihon_store_add,
-      ),
-      findsOneWidget,
-    );
+    // 「添加仓库」是仓库页顶部的主操作按钮。
+    expect(find.text(t.mihon_store_add), findsOneWidget);
     expect(find.byType(MangaExtensionManagementTile), findsNothing);
   });
 
