@@ -40,9 +40,9 @@ const Map<String, Map<String, int>> _legacy = <String, Map<String, int>>{
   'lib/src/pages/implementations/ai_video_acquisition_page.dart': <String, int>{
     'GlassTextField': 1,
   },
-  // 设置页搜索框：设置重设计分支（sh-settings-redesign）在改这个文件，
-  // 合并后改用 FushiSearchBar。
-  'lib/src/settings/settings_home_page.dart': <String, int>{
+  // 设置页重设计把同一 Apple 玻璃搜索胶囊抽到共享 SettingsSearchBar；
+  // 仅搬迁原有一处预算，不豁免整个 settings_kit，也不增加裸控件总数。
+  'lib/src/settings/settings_kit.dart': <String, int>{
     'CupertinoSearchTextField': 1,
   },
   // AdaptiveSettingsTextField 的 Apple 分支：iOS 表单的玻璃输入框（标签在框
