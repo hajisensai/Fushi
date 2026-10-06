@@ -1228,10 +1228,6 @@ void main() {
           'surfaceContainerHigh from the scheme generated from the cover art, so '
           'the desktop title bar blends into the blurred cover backdrop — '
           'content-derived color, same class as history_reader_page.',
-      'lib/src/media/manga/aidoku/aidoku_cover_image.dart':
-          'Missing-cover placeholder letterbox (surfaceContainerHighest) is cover '
-          'art, replacing a hard-coded black 7% that vanished in dark themes — '
-          'same reviewed exception class as series_shelf_card.',
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart':
           'Remote manga cover placeholder / decode-failure letterbox '
           '(surfaceContainerHighest) is cover art, replacing black12 — same '
@@ -1606,9 +1602,6 @@ void main() {
       },
       'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart': <String>{
         'surfaceContainerHigh',
-      },
-      'lib/src/media/manga/aidoku/aidoku_cover_image.dart': <String>{
-        'surfaceContainerHighest',
       },
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart': <String>{
         'surfaceContainerHighest',
