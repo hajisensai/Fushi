@@ -255,10 +255,16 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
     );
   }
 
-  Widget _skeleton(double gutter) {
+  Widget _skeleton(BuildContext context, double gutter) {
     // 骨架：三行占位分段卡，与真实行同高，读表完成后原位替换。
     return ListView(
-      padding: EdgeInsets.symmetric(horizontal: gutter, vertical: 8),
+      // 顶部让出「状态栏 + 浮动页头」，与真实列表同位。
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        8 + MediaQuery.paddingOf(context).top,
+        gutter,
+        8,
+      ),
       children: <Widget>[
         FushiSkeletonShimmer(
           child: FushiGroupedList(
@@ -291,13 +297,16 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   Widget _buildBody(BuildContext context, bool switchesApp) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gutter = tokens.spacing.page;
-    if (!_loaded) return _skeleton(gutter);
+    if (!_loaded) return _skeleton(context, gutter);
     // 空态走统一占位（M3E 色块图标 + 文案）。
     if (_rows.isEmpty) {
-      return Center(
-        child: FushiPlaceholderMessage(
-          icon: FushiIcons.success,
-          message: t.anki_pending_mines_empty,
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.success,
+            message: t.anki_pending_mines_empty,
+          ),
         ),
       );
     }
@@ -344,7 +353,8 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
           context,
           EdgeInsets.fromLTRB(
             gutter,
-            8,
+            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+            8 + MediaQuery.paddingOf(context).top,
             gutter,
             // 给悬浮 FAB 让出位置。
             tokens.spacing.section * 2 + 72,
@@ -363,7 +373,10 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
     final bool switchesApp = _repo?.switchesAppPerNote ?? false;
     return FushiPageScaffold(
       title: t.anki_pending_mines_title,
-      body: _buildBody(context, switchesApp),
+      // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
+      body: Builder(
+        builder: (BuildContext context) => _buildBody(context, switchesApp),
+      ),
       floatingActionButton: _rows.isEmpty
           ? null
           : FushiFab(
