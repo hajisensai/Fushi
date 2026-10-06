@@ -1,7 +1,9 @@
 import 'dart:io' show File;
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -84,7 +86,7 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
                       : updateFeedKindLabel(kind),
                 ),
                 confirmLabel: t.updates_history_clear_confirm_action,
-                leadingIcon: Icons.delete_sweep_outlined,
+                leadingIcon: FushiIcons.deleteSweep,
               ),
         );
     if (confirmed == null || !mounted) return;
@@ -111,17 +113,17 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
       title: t.updates_center_title,
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.done_all_outlined,
+          icon: FushiIcons.checklist,
           tooltip: t.updates_mark_all_seen,
           onTap: _entries.isEmpty ? null : _markAllSeen,
         ),
         FushiIconButton(
-          icon: Icons.delete_sweep_outlined,
+          icon: FushiIcons.deleteSweep,
           tooltip: t.updates_history_clear,
           onTap: _loading || _entries.isEmpty ? null : _clear,
         ),
         FushiIconButton(
-          icon: Icons.refresh,
+          icon: FushiIcons.refresh,
           tooltip: t.refresh,
           onTap: _loading ? null : _load,
         ),
@@ -147,7 +149,12 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap),
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          0,
+          tokens.spacing.page,
+          tokens.spacing.gap,
+        ),
         child: Row(
           children: <Widget>[
             _filterChip(label: t.updates_filter_all, kind: null),
@@ -179,13 +186,33 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     if (_entries.isEmpty) {
       return _UpdatesEmptyState(tokens: tokens);
     }
-    return ListView.builder(
-      padding: EdgeInsets.all(tokens.spacing.gap),
-      itemCount: _entries.length,
-      itemBuilder: (BuildContext context, int index) {
-        final UpdateFeedEntryRow entry = _entries[index];
-        return _UpdateEntryTile(entry: entry, onTap: () => _open(entry));
-      },
+    // M3E 分段卡片列表（首尾大圆角、行间 2px），首屏错峰进场；切筛选重开窗口。
+    return FushiEntranceScope(
+      replayKey: _filter,
+      child: ListView.builder(
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            tokens.spacing.gap,
+            tokens.spacing.page,
+            tokens.spacing.section,
+          ),
+        ),
+        itemCount: _entries.length,
+        itemBuilder: fushiStaggeredItemBuilder((
+          BuildContext context,
+          int index,
+        ) {
+          final UpdateFeedEntryRow entry = _entries[index];
+          return FushiGroupedListItem(
+            index: index,
+            count: _entries.length,
+            onTap: () => _open(entry),
+            child: _UpdateEntryTile(entry: entry),
+          );
+        }),
+      ),
     );
   }
 }
@@ -200,17 +227,16 @@ String updateFeedKindLabel(UpdateFeedKind kind) => switch (kind) {
 };
 
 IconData updateFeedKindIcon(UpdateFeedKind kind) => switch (kind) {
-  UpdateFeedKind.videoEpisode => Icons.movie_outlined,
-  UpdateFeedKind.mangaChapter => Icons.photo_library_outlined,
-  UpdateFeedKind.mangaExtension => Icons.extension_outlined,
-  UpdateFeedKind.appRelease => Icons.system_update_outlined,
+  UpdateFeedKind.videoEpisode => FushiIcons.video,
+  UpdateFeedKind.mangaChapter => FushiIcons.manga,
+  UpdateFeedKind.mangaExtension => FushiIcons.browserExtension,
+  UpdateFeedKind.appRelease => FushiIcons.downloading,
 };
 
 class _UpdateEntryTile extends StatelessWidget {
-  const _UpdateEntryTile({required this.entry, required this.onTap});
+  const _UpdateEntryTile({required this.entry});
 
   final UpdateFeedEntryRow entry;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -232,20 +258,23 @@ class _UpdateEntryTile extends StatelessWidget {
           DateTime.fromMillisecondsSinceEpoch(publishedAt),
         ),
     ].join(' · ');
-    // 已读图标：MD3 = outline；Apple 下 colorScheme.outline 映射成分隔线色，
-    // 作图标几乎看不见，改用 tertiaryLabel（iOS 弱化图标的系统色）。
-    final Color iconColor = unseen
-        ? theme.colorScheme.primary
-        : (isGlassDesign(context)
-              ? appleColorsOf(context).tertiaryLabel
-              : theme.colorScheme.outline);
+    final IconData kindIcon = kind == null
+        ? FushiIcons.notifications
+        : updateFeedKindIcon(kind);
+    // 未读 = primary 色块形状底，已读 = 中性底（M3E 行首图标底；Apple 下
+    // FushiListLeadingIcon 自己换成 iOS 设置式图标方块）。
+    final Widget kindLeading = FushiListLeadingIcon(
+      kindIcon,
+      shape: unseen ? FushiLeadingShape.cookie : FushiLeadingShape.circle,
+      tone: unseen ? FushiCardTone.primary : FushiCardTone.neutral,
+    );
     // 走共享的 FushiListItem 而不是裸 ListTile：普通页面外壳的 MD3 决策收口在
     // 组件层（md3_design_system_static_test 守着这条），每页自己拼一遍 ListTile
     // 正是那条守卫要拦的东西。
     return FushiListItem(
       leading: hasImage
           ? ClipRRect(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: FushiM3eShape.smallRadius,
               child: Image.file(
                 File(imagePath),
                 width: 64,
@@ -258,34 +287,31 @@ class _UpdateEntryTile extends StatelessWidget {
                     'UpdatesCenterPage.coverDecode',
                     '$imagePath: $error',
                   );
-                  return FushiIcon(
-                    kind == null
-                        ? Icons.notifications_outlined
-                        : updateFeedKindIcon(kind),
-                    color: iconColor,
-                  );
+                  return kindLeading;
                 },
               ),
             )
-          : FushiIcon(
-              kind == null
-                  ? Icons.notifications_outlined
-                  : updateFeedKindIcon(kind),
-              color: iconColor,
-            ),
+          : kindLeading,
       title: Text(
         entry.title,
         style: unseen
-            ? theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w600)
-            : theme.textTheme.bodyLarge,
+            ? context.fushiType.bodyLargeEmphasized
+            : context.fushiType.bodyLarge,
       ),
       subtitle: subtitle.isEmpty ? null : Text(subtitle),
       subtitleMaxLines: 1,
       // 未读点：与「加粗 = 未读」同一个事实的第二个可见表征，不靠字重也能分辨。
       trailing: unseen
-          ? FushiIcon(Icons.circle, size: 8, color: theme.colorScheme.primary)
+          ? DecoratedBox(
+              decoration: BoxDecoration(
+                color: isGlassDesign(context)
+                    ? appleColorsOf(context).accent
+                    : theme.colorScheme.primary,
+                shape: BoxShape.circle,
+              ),
+              child: const SizedBox.square(dimension: 8),
+            )
           : null,
-      onTap: onTap,
     );
   }
 }
@@ -300,7 +326,7 @@ class _UpdatesEmptyState extends StatelessWidget {
     // 统一空态：MD3 中性分组底块 / Apple 无底块大图标 + 灰字，各自在
     // FushiPlaceholderMessage 里分派；提示语作次级说明。
     return FushiPlaceholderMessage(
-      icon: Icons.notifications_none_outlined,
+      icon: FushiIcons.notifications,
       message: t.updates_center_empty,
       detail: t.updates_center_empty_hint,
     );
