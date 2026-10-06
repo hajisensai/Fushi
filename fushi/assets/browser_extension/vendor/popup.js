@@ -5651,6 +5651,16 @@ function __fushiClearDictToneMarks(root) {
 // 排过调色的根（词条容器 / 首个词条）：主题变化时逐个重做。脱离文档的在重做时剔除。
 var __fushiM3eKnownRoots = null;
 
+// HBK-AUDIT-029：换词会整批替换词条节点；调色登记表与根集合是强引用 Set，不剔除就把每一次
+// 查词的旧词条（及其整棵子树）一直留在内存里。每次排调色时剔除已脱离文档的节点——它们不会再
+// 显示，也无需复原。
+function __fushiPruneDetachedTone() {
+    for (const set of [__fushiM3eTonedNodes, __fushiM3eKnownRoots]) {
+        if (!set) continue;
+        set.forEach((n) => { if (n && n.isConnected === false) set.delete(n); });
+    }
+}
+
 // 主题变化后的可逆重调色：复原 → 按当前明暗重做。宿主热更新主题后也可直接调用。
 function __fushiRetoneDictColors() {
     __fushiRestoreDictTone();
@@ -5717,6 +5727,7 @@ function __fushiScheduleM3eDictTone(root) {
     __fushiM3eToneRoots.add(root);
     if (!__fushiM3eKnownRoots) __fushiM3eKnownRoots = new Set();
     __fushiM3eKnownRoots.add(root);
+    __fushiPruneDetachedTone();
     __fushiObserveM3eToneHosts();
     if (__fushiM3eToneRaf) return;
     __fushiM3eToneRaf = requestAnimationFrame(() => {
