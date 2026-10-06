@@ -3289,13 +3289,13 @@ class _HomePageState extends BasePageState<HomePage>
                   // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
                   // 与「接拖放的那个」永远是同一个。
                   isActive: () => _visibleTab == tab,
-                  // 隐藏 tab 不参与系统返回（HBK-AUDIT-017）；库页壳里的视图可见性
-                  // 与它取与，外层 tab 藏起时里面的「当前」视图也不拦返回。焦点不在
-                  // 这一层排除：切 tab 与聚焦查词搜索框在同一同步调用里发生
-                  // （_selectTabFromNav），那时还没重建，排除焦点会吞掉聚焦请求。
+                  // 隐藏 tab 不参与焦点遍历与系统返回（HBK-AUDIT-017）；库页壳里的
+                  // 视图可见性与它取与，外层 tab 藏起时里面的「当前」视图也不拦
+                  // 返回、不持焦点。「切 tab 同时聚焦搜索框」只发生在查词 tab
+                  // （_selectTabFromNav），它不是保活 tab、切过去才挂载并在挂载后
+                  // 消费聚焦请求，不经过这一层。
                   child: SectionVisibilityScope(
                     visible: visible == tab,
-                    excludeFocus: false,
                     child: _keepAliveTabContent(tab, visible: visible == tab),
                   ),
                 ),

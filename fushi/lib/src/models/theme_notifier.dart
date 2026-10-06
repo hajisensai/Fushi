@@ -1472,11 +1472,31 @@ class ThemeNotifier extends ChangeNotifier {
     return themePresets[appThemeKey]?.variant ?? kFushiDefaultSchemeVariant;
   }
 
-  /// 当前主题的种子色（浏览器扩展「跟随 Fushi」按同一种子派生另一明暗用）。
-  Color get activeSeedColor => _seedColor;
+  /// 当前主题**实际生成方案所用**的种子色（浏览器扩展「跟随 Fushi」按同一种子派生另一明暗用）。
+  ///
+  /// HBK-AUDIT-030：系统取色（system-theme）与 [buildSystemThemeColorScheme] 同口径——桌面用
+  /// 系统强调色、取不到才用兜底种子；Android 壁纸调色板（[_systemPalette]）不是由单个种子生成的，
+  /// 返回 null（扩展收不到种子就不按种子派生）。以前这里恒为 [_seedColor]，系统取色下落成
+  /// 默认种子，扩展派生的另一明暗与 app 实际配色对不上。
+  Color? get activeSeedColor {
+    if (appThemeKey == 'system-theme') {
+      if (_systemPalette != null) return null;
+      return _systemAccentColor ?? _seedColor;
+    }
+    return _seedColor;
+  }
 
-  /// 当前主题的 M3 方案变体（同上）。
-  DynamicSchemeVariant get activeSchemeVariant => _variant;
+  /// 当前主题的 M3 方案变体（同上）。系统取色与 [buildSystemThemeColorScheme] 同口径：
+  /// 无彩度强调色用 tonalSpot，其余用默认变体。
+  DynamicSchemeVariant get activeSchemeVariant {
+    if (appThemeKey == 'system-theme') {
+      final Color? seed = activeSeedColor;
+      return seed != null && isAchromaticSeed(seed)
+          ? DynamicSchemeVariant.tonalSpot
+          : kFushiDefaultSchemeVariant;
+    }
+    return _variant;
+  }
 
   ThemeData get theme => _buildThemeData(Brightness.light);
   ThemeData get darkTheme => _buildThemeData(Brightness.dark);

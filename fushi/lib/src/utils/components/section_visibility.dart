@@ -32,31 +32,31 @@ class SectionVisibility extends InheritedWidget {
       visible != oldWidget.visible;
 }
 
-/// 包一个保活分区：隐藏时排除焦点，并向子树发布（与祖先取与后的）可见性。
+/// 包一个保活分区：向子树发布（与祖先取与后的）可见性，并按**有效可见性**
+/// 排除焦点——外层 tab 隐藏时，里面本地「当前」的视图同样拿不到焦点、收不到
+/// 按键（HBK-AUDIT-017 残留：只按本层 [visible] 排除时，外层隐藏、内层当前的
+/// 子树仍 hasFocus 且吃键）。
+///
+/// 由隐转显的那次同步调用里（尚未重建）向分区内 requestFocus 会被这里吞掉；
+/// 需要「切过去就聚焦」的宿主要在分区重建之后再请求焦点（后帧，或像查词 tab
+/// 那样由非保活页自己在挂载后消费请求）。
 class SectionVisibilityScope extends StatelessWidget {
   const SectionVisibilityScope({
     required this.visible,
     required this.child,
     super.key,
-    this.excludeFocus = true,
   });
 
   /// 本分区是否为当前分区（与宿主 `Offstage.offstage` 取反同一个判据）。
   final bool visible;
   final Widget child;
 
-  /// 隐藏时是否排除焦点。宿主若在「切到本分区」的同一同步调用里就向分区内
-  /// 请求焦点（此时还没重建、ExcludeFocus 仍在排除，请求会被吞掉），传 false
-  /// 只发布可见性、焦点由宿主自己管。
-  final bool excludeFocus;
-
   @override
   Widget build(BuildContext context) {
+    final bool effective = visible && SectionVisibility.of(context);
     return SectionVisibility._(
-      visible: visible && SectionVisibility.of(context),
-      child: excludeFocus
-          ? ExcludeFocus(excluding: !visible, child: child)
-          : child,
+      visible: effective,
+      child: ExcludeFocus(excluding: !effective, child: child),
     );
   }
 }

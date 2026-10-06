@@ -149,15 +149,35 @@
     var s = (scheme === 'light' || scheme === 'dark') ? scheme : resolve();
     if (paletteId === 'app') {
       // 跟随 Fushi：app 下发的就是它当前 ColorScheme 的原值（纯黑、明暗、自定义角色都在里面）。
-      var own = palette.tokensFromAppTheme(appMirror && appMirror[s], s);
+      // app 两种明暗都下发过、且与 app 当前主题同源时直接用，不自行派生（HBK-AUDIT-030）。
+      var mine = appMirror && appMirror[s];
+      var otherScheme = s === 'dark' ? 'light' : 'dark';
+      var current = appMirror && appMirror.current === otherScheme ? appMirror[otherScheme] : null;
+      var own = (mine && !mirrorStale(mine, current, s)) ? palette.tokensFromAppTheme(mine, s) : null;
       if (own) return own;
-      // app 只下发过另一种明暗（查词弹窗跟 app 当前明暗，扩展页面 auto 时可能跟系统）：按 app 随
-      // theme 下发的种子 / 变体 / 纯黑派生本明暗——与 app 自己切到这一明暗的算法相同。
-      var other = palette.specFromAppTheme(appMirror && appMirror[s === 'dark' ? 'light' : 'dark']);
-      return other ? palette.derive(other.spec, s, { pureBlack: other.pureBlack }) : null;
+      // app 只下发过另一种明暗（查词弹窗跟 app 当前明暗，扩展页面 auto 时可能跟系统），或本明暗
+      // 那份是换主题之前留下的旧镜像：按 app 当前那份随 theme 下发的种子 / 变体 / 纯黑派生本明暗
+      // ——与 app 自己切到这一明暗的算法相同。
+      var other = palette.specFromAppTheme(current || (appMirror && appMirror[otherScheme]));
+      if (other) return palette.derive(other.spec, s, { pureBlack: other.pureBlack });
+      return mine ? palette.tokensFromAppTheme(mine, s) : null;
     }
     var spec = palette.specFor(paletteId, customThemes);
     return spec ? palette.derive(spec, s, { pureBlack: pureBlack }) : null;
+  }
+
+  // 本明暗镜像是否早于 app 当前主题（两份都带生成元数据且不一致 = 中间换过主题）。
+  var MIRROR_META_KEYS = ['--fushi-theme-seed', '--fushi-theme-variant', '--fushi-theme-neutral',
+    '--fushi-pure-black', '--fushi-theme-system'];
+  function mirrorStale(mine, current, scheme) {
+    if (!mine || !current || !current['--fushi-theme-variant']) return false;
+    for (var i = 0; i < MIRROR_META_KEYS.length; i++) {
+      var k = MIRROR_META_KEYS[i];
+      // 纯黑只影响深色，浅色镜像不因它判旧。
+      if (k === '--fushi-pure-black' && scheme !== 'dark') continue;
+      if ((mine[k] || '') !== (current[k] || '')) return true;
+    }
+    return false;
   }
 
   // 查词弹窗要覆盖的 app 下发变量（键名同 browserExtensionThemeColors）。'app'（跟随 Fushi）下为

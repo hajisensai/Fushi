@@ -3838,8 +3838,12 @@ class AppModel with ChangeNotifier {
       '--md-on-error': cssRgb(s.onError),
       '--md-error-container': cssRgb(s.errorContainer),
       '--md-on-error-container': cssRgb(s.onErrorContainer),
-      '--fushi-theme-seed': cssRgb(themeNotifier.activeSeedColor),
+      if (themeNotifier.activeSeedColor != null)
+        '--fushi-theme-seed': cssRgb(themeNotifier.activeSeedColor!),
       '--fushi-theme-variant': themeNotifier.activeSchemeVariant.name,
+      // 系统取色：方案直接由强调色 fromSeed 生成，不走自定义 / 预设的无彩度中性派生。
+      '--fushi-theme-system':
+          themeNotifier.appThemeKey == 'system-theme' ? '1' : '0',
       '--fushi-theme-neutral':
           themeNotifier.activeCustomThemeNeutralDerived ? '1' : '0',
       '--fushi-pure-black': themeNotifier.pureBlackDark ? '1' : '0',

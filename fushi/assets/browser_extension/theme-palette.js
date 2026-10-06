@@ -338,7 +338,8 @@
     var variant = (spec && typeof spec.variant === 'string' && MC.VARIANTS.indexOf(spec.variant) >= 0)
       ? spec.variant : DEFAULT_VARIANT;
     var achromatic = isAchromatic(seed);
-    var neutral = !!(spec && spec.neutral) || achromatic;
+    // app 的系统取色（buildSystemThemeColorScheme）直接 fromSeed，不走无彩度中性派生。
+    var neutral = !!(spec && spec.neutral) || (achromatic && !(spec && spec.systemAccent));
     var s = MC.schemeFromSeed(seed, dark, neutral ? 'monochrome' : variant, 0);
     var out = {};
     for (var k in s) out[k] = s[k] >>> 0;
@@ -491,6 +492,7 @@
         seed: seed,
         variant: (typeof variant === 'string' && MC && MC.VARIANTS.indexOf(variant) >= 0) ? variant : DEFAULT_VARIANT,
         neutral: mirror['--fushi-theme-neutral'] === '1',
+        systemAccent: mirror['--fushi-theme-system'] === '1',
       },
       pureBlack: mirror['--fushi-pure-black'] === '1',
       approximate: fromPrimary,

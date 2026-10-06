@@ -5,6 +5,7 @@
 // 焦点节点仍可被 Tab 遍历到。SectionVisibilityScope / SectionPopScope 在分区
 // 可见性层统一裁剪这两种资格。
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
 
@@ -14,7 +15,6 @@ void main() {
     required bool outerVisible,
     required bool innerVisible,
     required VoidCallback onIntercept,
-    bool excludeFocus = true,
   }) async {
     await tester.pumpWidget(
       const MaterialApp(home: Scaffold(body: Text('root'))),
@@ -27,7 +27,6 @@ void main() {
         builder: (_) => Scaffold(
           body: SectionVisibilityScope(
             visible: outerVisible,
-            excludeFocus: excludeFocus,
             child: SectionVisibilityScope(
               visible: innerVisible,
               child: SectionPopScope(
@@ -78,7 +77,6 @@ void main() {
       outerVisible: false,
       innerVisible: true,
       onIntercept: () => intercepted++,
-      excludeFocus: false,
     );
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -86,24 +84,13 @@ void main() {
     expect(find.text('root'), findsOneWidget);
   });
 
-  testWidgets('隐藏分区排除焦点；excludeFocus: false 只发布可见性', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('隐藏分区排除焦点', (WidgetTester tester) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
-          body: Column(
-            children: <Widget>[
-              SectionVisibilityScope(
-                visible: false,
-                child: TextField(key: ValueKey<String>('hidden')),
-              ),
-              SectionVisibilityScope(
-                visible: false,
-                excludeFocus: false,
-                child: TextField(key: ValueKey<String>('host-managed')),
-              ),
-            ],
+          body: SectionVisibilityScope(
+            visible: false,
+            child: TextField(key: ValueKey<String>('hidden')),
           ),
         ),
       ),
@@ -117,15 +104,83 @@ void main() {
     hidden.focusNode.requestFocus();
     await tester.pump();
     expect(hidden.focusNode.hasFocus, isFalse);
+  });
 
-    final EditableText managed = tester.widget<EditableText>(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('host-managed')),
-        matching: find.byType(EditableText),
+  // 迁自 Codex 第五轮复现 section_visibility_ancestor_focus_repro.dart：外层
+  // tab（HomePage 保活层）隐藏、库页壳里本地「当前」视图 visible:true 时，
+  // 子树不能持焦点、不能吃按键。
+  for (final bool outerVisible in <bool>[true, false]) {
+    testWidgets('外层可见=$outerVisible 决定内层当前视图的焦点与按键', (
+      WidgetTester tester,
+    ) async {
+      final FocusNode node = FocusNode(debugLabel: 'library-section-field');
+      addTearDown(node.dispose);
+      int keyDownCount = 0;
+      bool? effectiveVisibility;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Offstage(
+              offstage: !outerVisible,
+              child: SectionVisibilityScope(
+                visible: outerVisible,
+                child: SectionVisibilityScope(
+                  visible: true,
+                  child: Builder(
+                    builder: (BuildContext context) {
+                      effectiveVisibility = SectionVisibility.of(context);
+                      return Focus(
+                        focusNode: node,
+                        onKeyEvent: (FocusNode node, KeyEvent event) {
+                          if (event is KeyDownEvent) keyDownCount++;
+                          return KeyEventResult.handled;
+                        },
+                        child: const SizedBox(width: 200, height: 48),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      node.requestFocus();
+      await tester.pump();
+      final bool hasFocus = node.hasFocus;
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.pump();
+      expect(effectiveVisibility, outerVisible);
+      expect(hasFocus, outerVisible);
+      expect(keyDownCount, outerVisible ? 1 : 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('外层由隐转显后，内层当前视图重新可聚焦', (WidgetTester tester) async {
+    final FocusNode node = FocusNode(debugLabel: 'reshown');
+    addTearDown(node.dispose);
+    Widget app(bool outer) => MaterialApp(
+      home: Scaffold(
+        body: SectionVisibilityScope(
+          visible: outer,
+          child: SectionVisibilityScope(
+            visible: true,
+            child: Focus(
+              focusNode: node,
+              child: const SizedBox(width: 10, height: 10),
+            ),
+          ),
+        ),
       ),
     );
-    managed.focusNode.requestFocus();
+    await tester.pumpWidget(app(false));
+    node.requestFocus();
     await tester.pump();
-    expect(managed.focusNode.hasFocus, isTrue);
+    expect(node.hasFocus, isFalse);
+    await tester.pumpWidget(app(true));
+    node.requestFocus();
+    await tester.pump();
+    expect(node.hasFocus, isTrue);
   });
 }
