@@ -428,10 +428,15 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
+    // 总览卡改成环形图后（df6adc1）类目行落在 800×600 视口外，先滚入再点。
+    await tester.ensureVisible(_rowText(t.storage_category_covers));
+    await tester.pumpAndSettle();
     await tester.tap(_rowText(t.storage_category_covers));
     await tester.pumpAndSettle();
     expect(find.text('video_covers/a.jpg'), findsOneWidget);
 
+    await tester.ensureVisible(find.byIcon(FushiIcons.delete).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.byIcon(FushiIcons.delete).first);
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, t.dialog_delete));
@@ -460,6 +465,8 @@ void main() {
     await tester.pumpWidget(wrap(view(service: service())));
     await tester.pumpAndSettle();
 
+    await tester.ensureVisible(_rowText(t.storage_category_custom_fonts));
+    await tester.pumpAndSettle();
     await tester.tap(_rowText(t.storage_category_custom_fonts));
     await tester.pumpAndSettle();
     expect(find.text('custom_fonts/mine.ttf'), findsOneWidget);
