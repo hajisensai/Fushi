@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2768 条。点号进各自文件。
+> 共 2769 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3023](bugs/BUG-3023-audio-missing-notice-squeezed.md) | ✅ | ✅ | 音频来源弹窗：丢失文件提示把说明挤成一列字、重新选择按钮被推出视口 |
 | [BUG-3022](bugs/BUG-3022-ocr-settings-zero-duration-animated-size.md) | ✅ | ✅ | 漫画 OCR 设置在减弱动态效果下 AnimatedSize 零时长断言 |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
