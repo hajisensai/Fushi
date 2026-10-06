@@ -55,6 +55,8 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
+    show WheelScrollForwarder;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -1894,104 +1896,112 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       selectedTextThreadKey: selectedTextThreadKey,
     );
     final TexthookerLineEntry? selectedLine = _selectedLine(lines);
-    return Column(
-      children: <Widget>[
-        if (state.externalWindowMode) _buildExternalWindowBar(context),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints box) {
-                final bool compact = box.maxWidth < 840;
-                // 页顶会话状态条：游戏 / 捕获状态 / 音频源 / 游戏内查词合并成一处，
-                // 主操作带文字标签，次要工具成组。
-                final Widget overview = _SessionOverviewCard(
-                  state: state,
-                  readiness: readiness,
-                  compact: compact,
-                  actions: sessionActions,
-                  footer: <Widget>[
-                    if (Platform.isWindows)
-                      GalAttachedLookupWorkbench(
-                        controller:
-                            GalHookTextOverlayController.instance.attachedText,
-                        hasSelectedBodyThread:
-                            selectedTextThreadKey != null &&
-                            textThreads.any(
-                              (TexthookerTextThread thread) =>
-                                  thread.key == selectedTextThreadKey,
-                            ),
-                        bodyPreview: _selectedThreadPreview(
-                          textThreads,
-                          selectedTextThreadKey,
+    // 工作台是固定版面（会话卡 + 自带滚动的台词面板）：滚轮停在状态卡、线程 /
+    // 筛选行、卡片头、空白处时转给台词列表，任意位置都滚得动；指针下还能滚的
+    // 嵌套滚动区（列表本身、侧板内容）仍由它自己接。不改成整页滚动：「跟随
+    // 实时」每来一句就把列表推到底，整页滚动会让状态卡（停止监听 / 游戏内
+    // 查词）在捕获期间常驻滚出视口，宽屏的本句详情侧板也没法再贴着列表。
+    return WheelScrollForwarder(
+      controller: _scroll,
+      child: Column(
+        children: <Widget>[
+          if (state.externalWindowMode) _buildExternalWindowBar(context),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints box) {
+                  final bool compact = box.maxWidth < 840;
+                  // 页顶会话状态条：游戏 / 捕获状态 / 音频源 / 游戏内查词合并成一处，
+                  // 主操作带文字标签，次要工具成组。
+                  final Widget overview = _SessionOverviewCard(
+                    state: state,
+                    readiness: readiness,
+                    compact: compact,
+                    actions: sessionActions,
+                    footer: <Widget>[
+                      if (Platform.isWindows)
+                        GalAttachedLookupWorkbench(
+                          controller:
+                              GalHookTextOverlayController.instance.attachedText,
+                          hasSelectedBodyThread:
+                              selectedTextThreadKey != null &&
+                              textThreads.any(
+                                (TexthookerTextThread thread) =>
+                                    thread.key == selectedTextThreadKey,
+                              ),
+                          bodyPreview: _selectedThreadPreview(
+                            textThreads,
+                            selectedTextThreadKey,
+                          ),
                         ),
-                      ),
-                  ],
-                );
-                final Widget live = _buildLiveLinesPanel(
-                  context,
-                  lines,
-                  textThreads,
-                  selectedTextThreadKey,
-                  readiness: readiness,
-                );
-                // 「本句音轨」不再常驻占 1/3 宽度：只有选中一句台词才出现——宽屏
-                // 是右侧详情侧板，窄屏是底部本句条 + 底部 sheet。健康状态在工具组
-                // 「健康状态」对话框（同页签栏的「兼容性诊断」也有完整版）。
-                final Widget lineTracks =
-                    readiness == GalWorkbenchReadiness.waitingForThread
-                    ? const _ThreadSelectionRequiredCard()
-                    : _LineTracksCard(
-                        session: _session,
-                        line: selectedLine,
-                        onClose: _clearSelectedLine,
-                      );
-                if (box.maxWidth >= kGalWorkbenchWideBreakpoint) {
+                    ],
+                  );
+                  final Widget live = _buildLiveLinesPanel(
+                    context,
+                    lines,
+                    textThreads,
+                    selectedTextThreadKey,
+                    readiness: readiness,
+                  );
+                  // 「本句音轨」不再常驻占 1/3 宽度：只有选中一句台词才出现——宽屏
+                  // 是右侧详情侧板，窄屏是底部本句条 + 底部 sheet。健康状态在工具组
+                  // 「健康状态」对话框（同页签栏的「兼容性诊断」也有完整版）。
+                  final Widget lineTracks =
+                      readiness == GalWorkbenchReadiness.waitingForThread
+                      ? const _ThreadSelectionRequiredCard()
+                      : _LineTracksCard(
+                          session: _session,
+                          line: selectedLine,
+                          onClose: _clearSelectedLine,
+                        );
+                  if (box.maxWidth >= kGalWorkbenchWideBreakpoint) {
+                    return Column(
+                      children: <Widget>[
+                        overview,
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              Expanded(child: live),
+                              GalWorkbenchDetailPane(
+                                open: selectedLine != null,
+                                child: lineTracks,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  }
                   return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
                       overview,
                       const SizedBox(height: 12),
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            Expanded(child: live),
-                            GalWorkbenchDetailPane(
-                              open: selectedLine != null,
-                              child: lineTracks,
-                            ),
-                          ],
-                        ),
+                      Expanded(child: live),
+                      GalWorkbenchBottomReveal(
+                        child: selectedLine == null
+                            ? null
+                            : _SelectedLineBar(
+                                key: const ValueKey<String>(
+                                  'game-selected-line-bar',
+                                ),
+                                line: selectedLine,
+                                onOpenTracks: () =>
+                                    unawaited(_showLineTracksSheet()),
+                                onClose: _clearSelectedLine,
+                              ),
                       ),
                     ],
                   );
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    overview,
-                    const SizedBox(height: 12),
-                    Expanded(child: live),
-                    GalWorkbenchBottomReveal(
-                      child: selectedLine == null
-                          ? null
-                          : _SelectedLineBar(
-                              key: const ValueKey<String>(
-                                'game-selected-line-bar',
-                              ),
-                              line: selectedLine,
-                              onOpenTracks: () =>
-                                  unawaited(_showLineTracksSheet()),
-                              onClose: _clearSelectedLine,
-                            ),
-                    ),
-                  ],
-                );
-              },
+                },
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

@@ -39,6 +39,10 @@ const Duration kDesktopWheelScrollDuration = Duration(milliseconds: 140);
 /// 是同步完成的，一个全局标志足够。
 bool _rewinding = false;
 
+/// 见 [SmoothWheelScrollScope.forwardPointerScroll]：本次裁决里被转发滚动的
+/// position（不在指针下也照常补间）。只在同步 `pointerScroll` 期间非空。
+ScrollPosition? _forwardedTarget;
+
 /// 全 app 唯一的鼠标滚轮「无极滚动」层（BUG-2834，接替 BUG-1959/1960 的
 /// `FushiScrollController`）。
 ///
@@ -70,6 +74,21 @@ class SmoothWheelScrollScope extends StatefulWidget {
   /// 按滚动**方向**做判断的监听者必须忽略这段通知：它不是用户输入，紧接着的
   /// 补间会把位置带回目标。只读位置 / 尺寸的监听者不受影响。
   static bool get isRewinding => _rewinding;
+
+  /// 把一档滚轮**转发**给不在指针下的 [position]（[WheelScrollForwarder] 用：
+  /// 固定版面里鼠标停在非滚动区时滚它的主滚动区）。
+  ///
+  /// 根部补间只认指针下的滚动区（排除被监听器同步联动的跟随者），转发目标
+  /// 不在指针下，直接 `pointerScroll` 会退化成单帧瞬移；经这里登记后照常补间。
+  static void forwardPointerScroll(ScrollPosition position, double delta) {
+    final ScrollPosition? previous = _forwardedTarget;
+    _forwardedTarget = position;
+    try {
+      position.pointerScroll(delta);
+    } finally {
+      _forwardedTarget = previous;
+    }
+  }
 
   @override
   State<SmoothWheelScrollScope> createState() => _SmoothWheelScrollScopeState();
@@ -160,8 +179,12 @@ class _SmoothWheelScrollScopeState extends State<SmoothWheelScrollScope> {
     final BuildContext? origin = n.context;
     if (origin == null) return false;
     final ScrollableState? scrollable = Scrollable.maybeOf(origin);
-    if (scrollable == null || !_isUnderPointer(scrollable, event)) return false;
+    if (scrollable == null) return false;
     final ScrollPosition p = scrollable.position;
+    if (!identical(p, _forwardedTarget) &&
+        !_isUnderPointer(scrollable, event)) {
+      return false;
+    }
     final double delta = n.scrollDelta ?? 0;
     final _WheelStep? step = _steps[p];
     if (step == null) {
@@ -246,5 +269,62 @@ class _SmoothWheelScrollScopeState extends State<SmoothWheelScrollScope> {
       onNotification: _onScrollUpdate,
       child: widget.child,
     ),
+  );
+}
+
+/// 固定版面（版面不整体滚动、只有一块主滚动区）的**滚轮转发层**：鼠标停在
+/// [child] 里任何没有接住这一档滚轮的位置（状态卡、筛选行、卡片头、空白处），
+/// 都把它转给 [controller] 的主滚动区——不再只有指针正好在列表上才滚得动。
+///
+/// 只是 [PointerSignalResolver] 里的**兜底**：命中路径由内向外登记、先登记者
+/// 胜出，指针下的嵌套滚动区（列表本身、横滚 chip 行的 Shift+滚轮、侧板里的
+/// 可滚内容）只要还能往这个方向滚就由它自己接，这里不抢。经
+/// [SmoothWheelScrollScope.forwardPointerScroll] 转发，根部补间照常生效。
+/// 只处理滚轮（[PointerScrollEvent]）：触屏拖动 / 触控板手势仍各归各的滚动区。
+class WheelScrollForwarder extends StatelessWidget {
+  const WheelScrollForwarder({
+    required this.controller,
+    required this.child,
+    super.key,
+  });
+
+  /// 主滚动区的控制器；没挂上（列表为空态）或挂了多个 position 时不转发。
+  final ScrollController controller;
+
+  final Widget child;
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    if (controller.positions.length != 1) return;
+    final ScrollPosition p = controller.position;
+    if (!p.hasContentDimensions || !p.hasPixels) return;
+    if (!p.physics.shouldAcceptUserOffset(p)) return;
+    double delta = p.axis == Axis.vertical
+        ? event.scrollDelta.dy
+        : event.scrollDelta.dx;
+    if (axisDirectionIsReversed(p.axisDirection)) delta = -delta;
+    if (delta == 0) return;
+    final double target = (p.pixels + delta)
+        .clamp(p.minScrollExtent, p.maxScrollExtent)
+        .toDouble();
+    // 已在这一头的边上：不登记，留给外层（与 Scrollable 自己的判据一致）。
+    if (target == p.pixels) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      PointerSignalEvent _,
+    ) {
+      if (controller.positions.length != 1 ||
+          !identical(controller.position, p)) {
+        return;
+      }
+      SmoothWheelScrollScope.forwardPointerScroll(p, delta);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    // 空白处（Padding / 卡片间隙）没有子组件命中，也要接住滚轮。
+    behavior: HitTestBehavior.translucent,
+    onPointerSignal: _onPointerSignal,
+    child: child,
   );
 }
