@@ -157,14 +157,19 @@ Future<void> _unmount(WidgetTester tester) async {
 /// 是胶囊右侧的 FAB（只有 tooltip），放不下的目的地在「更多」菜单里。
 Future<void> _tapNav(WidgetTester tester, String label) async {
   final Finder nav = find.byKey(fushiMaterialNavKey);
-  final Finder text = find.descendant(of: nav, matching: find.text(label));
+  // hitTestable：悬浮底栏常驻一枚透明 + IgnorePointer 的「最小化小胶囊」，里面是
+  // 当前项的标签与 tooltip（当前是查词时就是「查词」），点它会穿透到下面的目的地；
+  // 下面 tooltip 分支同理。
+  final Finder text =
+      find.descendant(of: nav, matching: find.text(label)).hitTestable();
   if (text.evaluate().isNotEmpty) {
     expect(text, findsOneWidget, reason: '底栏上应有「$label」这个 destination');
     await tester.tap(text);
     await _settle(tester);
     return;
   }
-  final Finder tip = find.descendant(of: nav, matching: find.byTooltip(label));
+  final Finder tip =
+      find.descendant(of: nav, matching: find.byTooltip(label)).hitTestable();
   if (tip.evaluate().isNotEmpty) {
     await tester.tap(tip.first);
     await _settle(tester);
