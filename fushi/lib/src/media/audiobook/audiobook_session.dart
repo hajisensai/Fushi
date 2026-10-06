@@ -602,9 +602,9 @@ class AudiobookSession extends ChangeNotifier {
     _skipNextSub?.cancel();
     _skipPrevSub?.cancel();
     _floatingLyricSub?.cancel();
-    _playStreamSub = _controlStreams.playStream.listen((_) {
-      controller.togglePlayPause();
-    });
+    _playStreamSub = _controlStreams.playIntentStream.listen(
+      (MediaPlayIntent intent) => applyMediaPlayIntent(controller, intent),
+    );
     _seekStreamSub = _controlStreams.seekStream.listen((Duration pos) {
       controller.seekMs(pos.inMilliseconds);
     });
@@ -953,18 +953,42 @@ class FloatingLyricStyle {
   }
 }
 
+/// 系统媒体控制意图是否需要切换播放态：PLAY / PAUSE 有方向、只在状态不一致时切换
+/// （幂等——播放中补发的 PLAY 不得把声音暂停），耳机单击恒切换（BUG-2961）。
+bool mediaPlayIntentNeedsToggle(
+  MediaPlayIntent intent, {
+  required bool isPlaying,
+}) =>
+    switch (intent) {
+      MediaPlayIntent.play => !isPlaying,
+      MediaPlayIntent.pause => isPlaying,
+      MediaPlayIntent.toggle => true,
+    };
+
+/// 把系统媒体控制意图落到控制器上。复用 [AudiobookPlayerController.togglePlayPause]
+/// 的完整语义（清单句试听终点等），不另开第二条播放入口。
+void applyMediaPlayIntent(
+  AudiobookPlayerController controller,
+  MediaPlayIntent intent,
+) {
+  if (!mediaPlayIntentNeedsToggle(intent, isPlaying: controller.isPlaying)) {
+    return;
+  }
+  unawaited(controller.togglePlayPause());
+}
+
 /// audioHandler 控制流集合（lock-screen / 通知按钮 → 控制器）。由 AppModel 的
 /// `AudioController` 提供，会话订阅它在后台也能接 play/seek/skip。
 class AudioControlStreams {
   const AudioControlStreams({
-    required this.playStream,
+    required this.playIntentStream,
     required this.seekStream,
     required this.skipNextStream,
     required this.skipPreviousStream,
     required this.toggleFloatingLyricStream,
   });
 
-  final Stream<void> playStream;
+  final Stream<MediaPlayIntent> playIntentStream;
   final Stream<Duration> seekStream;
   final Stream<void> skipNextStream;
   final Stream<void> skipPreviousStream;
