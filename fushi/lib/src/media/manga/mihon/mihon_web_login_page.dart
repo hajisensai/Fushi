@@ -467,6 +467,9 @@ class _MihonWebLoginPageState extends State<MihonWebLoginPage> {
       // M3E 浮动页头（FushiPageScaffold）：关闭 + 标题胶囊 + 「完成」动作。
       child: FushiPageScaffold(
         title: widget.sourceName,
+        // 不叠放：正文是平台 WebView（登录页），内容滚动在 WebView 内部、拿不到
+        // MediaQuery 顶部让位，叠到页头底下会被胶囊盖住且无法滚出。
+        extendBodyBehindHeader: false,
         leading: FushiIconButtonControl(
           icon: const FushiIcon(FushiIcons.close),
           tooltip: MaterialLocalizations.of(context).closeButtonTooltip,

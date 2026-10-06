@@ -99,6 +99,10 @@ class _MangaOnlineSourcesViewState
         context: context,
         builder: (BuildContext context) => FushiPageScaffold(
           title: t.mihon_source_browse_mokuro,
+          // 不叠放：MokuroMoeCatalogView 是「固定搜索行 / 卷选择头 + 网格 / 列表
+          // + 底部动作行」的竖排正文，搜索行嵌在视图状态里、挪不进 headerBottom，
+          // 叠到页头底下会被胶囊盖住。
+          extendBodyBehindHeader: false,
           body: MokuroMoeCatalogView(db: appModel.database, embedded: true),
         ),
       ),
