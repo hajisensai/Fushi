@@ -269,7 +269,12 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         switchOutCurve: context.fushiMotion.effectsFast.curve,
         child: KeyedSubtree(
           key: ValueKey<String>(_bodyStateKey),
-          child: _buildBody(theme),
+          // 页头浮在正文上（脚手架默认 extendBodyBehindHeader）：顶部让位要从
+          // body 子树里的 context 读（State 的 context 在脚手架之上）。
+          child: Builder(
+            builder: (BuildContext context) =>
+                _buildBody(theme, MediaQuery.paddingOf(context).top),
+          ),
         ),
       ),
     );
@@ -369,9 +374,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
     );
   }
 
-  Widget _buildBody(ThemeData theme) {
+  Widget _buildBody(ThemeData theme, double topInset) {
     if (_loading) {
-      return _buildSkeleton();
+      return _buildSkeleton(topInset);
     }
     final String? errorDetail = _errorDetail;
     if (errorDetail != null) {
@@ -404,8 +409,8 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool wide = constraints.maxWidth >= _wideLayoutMinWidth;
           return wide
-              ? _buildWeekColumns(theme, buckets)
-              : _buildDayList(theme, buckets);
+              ? _buildWeekColumns(theme, buckets, topInset)
+              : _buildDayList(theme, buckets, topInset);
         },
       ),
     );
@@ -413,7 +418,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
 
   /// 加载骨架：与按天分组列表同轮廓（日标题条 + 时刻 + 封面块 + 两条文字），
   /// 整组共享一道有界闪光。
-  Widget _buildSkeleton() {
+  Widget _buildSkeleton(double topInset) {
     Widget row() => Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
@@ -440,7 +445,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
         key: const ValueKey<String>('airing-calendar-skeleton'),
         primary: false,
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 12),
+        padding: EdgeInsets.only(top: topInset, bottom: 12),
         children: <Widget>[
           for (int day = 0; day < 2; day++) ...<Widget>[
             Padding(
@@ -464,16 +469,20 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   Widget _buildError(ThemeData theme, String detail, AniListFailureKind? kind) {
     // 走共享 [FushiPlaceholderMessage]（M3E errorContainer 色块 / Apple
     // ContentUnavailableView）：接口提示 + 原始错误串作说明行。
-    return FushiPlaceholderMessage(
-      icon: FushiIcons.cloudOff,
-      tone: FushiPlaceholderTone.error,
-      message: t.download_airing_calendar_error,
-      details: <String>[?anilistFailureNotice(kind), detail],
-      detailMaxLines: 4,
-      action: FushiFilledButton.tonalIcon(
-        icon: const FushiIcon(FushiIcons.refresh),
-        label: Text(t.anime_download_retry),
-        onPressed: () => unawaited(_load(force: true)),
+    // SafeArea：页头浮在正文上，不滚动的占位整体让开页头。
+    return SafeArea(
+      bottom: false,
+      child: FushiPlaceholderMessage(
+        icon: FushiIcons.cloudOff,
+        tone: FushiPlaceholderTone.error,
+        message: t.download_airing_calendar_error,
+        details: <String>[?anilistFailureNotice(kind), detail],
+        detailMaxLines: 4,
+        action: FushiFilledButton.tonalIcon(
+          icon: const FushiIcon(FushiIcons.refresh),
+          label: Text(t.anime_download_retry),
+          onPressed: () => unawaited(_load(force: true)),
+        ),
       ),
     );
   }
@@ -485,7 +494,10 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   }) {
     // 空状态走共享 [FushiPlaceholderMessage]（M3E 色块图标 / Apple
     // ContentUnavailableView），不再手写图标 + 文字列。
-    return FushiPlaceholderMessage(icon: icon, message: message);
+    return SafeArea(
+      bottom: false,
+      child: FushiPlaceholderMessage(icon: icon, message: message),
+    );
   }
 
   /// 宽屏：周一到周日七列；列头是日标题色块（今天 = primaryContainer），
@@ -493,10 +505,12 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   Widget _buildWeekColumns(
     ThemeData theme,
     List<List<AniListAiringEpisode>> buckets,
+    double topInset,
   ) {
     int order = 0;
+    // 七列各自滚动、列头固定：整块让开浮动页头（列内容滚到列头下，不进页头底下）。
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+      padding: EdgeInsets.fromLTRB(8, 4 + topInset, 8, 0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -543,10 +557,14 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
   Widget _buildDayList(
     ThemeData theme,
     List<List<AniListAiringEpisode>> buckets,
+    double topInset,
   ) {
     int order = 0;
     return ListView(
-      padding: EdgeInsets.only(bottom: 12 + bottomSafeInsetOf(context)),
+      padding: EdgeInsets.only(
+        top: topInset,
+        bottom: 12 + bottomSafeInsetOf(context),
+      ),
       children: <Widget>[
         for (int i = 0; i < 7; i++)
           if (buckets[i].isNotEmpty) ...<Widget>[
