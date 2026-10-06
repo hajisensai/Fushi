@@ -165,7 +165,7 @@ void main() {
     await tester.pump();
 
     final Finder feedback =
-        find.byWidgetPredicate((Widget w) => w is Material && w.elevation == 6);
+        find.byWidgetPredicate((Widget w) => w is Material && w.elevation == 8);
     expect(feedback, findsOneWidget);
     expect(tester.getSize(feedback).height, rowH,
         reason: 'feedback must wrap only the row, not the inter-row spacing');
