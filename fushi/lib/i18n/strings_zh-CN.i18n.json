@@ -6774,5 +6774,8 @@
   "anki_video_template_fallback_body": "「$noteType」不能直接播放同步视频片段，这张卡已改用 GIF + 音频。适配模板后即可制作视频卡。",
   "anki_video_template_fallback_dismiss": "知道了",
   "anki_video_template_fallback_adapt": "去适配",
-  "audiobook_transcribe_audio_incomplete": "音频文件已损坏或没有下载完整，只能解出其中一部分。请重新下载或替换文件后再转录。"
+  "audiobook_transcribe_audio_incomplete": "音频文件已损坏或没有下载完整，只能解出其中一部分。请重新下载或替换文件后再转录。",
+  "window_caption_minimize": "最小化",
+  "window_caption_maximize": "最大化",
+  "window_caption_restore": "还原"
 }

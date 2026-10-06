@@ -381,6 +381,12 @@ void FloatingBallWindow::SetExpanded(bool expand) {
 }
 
 void FloatingBallWindow::AnimateProgress(double target, int full_ms) {
+  if (!config_.animate) {
+    CancelAnimations();
+    SetProgress(target);
+    if (target <= 0.0) DestroyMenuWindow();
+    return;
+  }
   progress_anim_.active = true;
   progress_anim_.from = progress_;
   progress_anim_.to = target;
@@ -826,14 +832,19 @@ void FloatingBallWindow::EndDrag() {
   dock_left_ = g.DockLeftForBallLeft(ball_left_);
   fraction_ = g.FractionForTop(ball_top_);
   const fb::Geometry settled = CurrentGeometry();
-  snap_anim_.active = true;
+  snap_anim_.active = config_.animate;
   snap_anim_.from_left = ball_left_;
   snap_anim_.from_top = ball_top_;
   snap_anim_.to_left = settled.CollapsedBallLeft();
   snap_anim_.to_top = settled.BallTop();
   snap_anim_.start_ms = NowMs();
+  if (!config_.animate) {
+    CancelAnimations();
+    ball_left_ = snap_anim_.to_left;
+    ball_top_ = snap_anim_.to_top;
+  }
   RenderBall();
-  EnsureAnimationTimer();
+  if (config_.animate) EnsureAnimationTimer();
   if (on_position_) on_position_(dock_left_, fraction_);
 }
 

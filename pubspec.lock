@@ -699,12 +699,11 @@ packages:
     source: hosted
     version: "1.1.0"
   flutter_colorpicker:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: flutter_colorpicker
-      sha256: "969de5f6f9e2a570ac660fb7b501551451ea2a1ab9e2097e89475f60e07816ea"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/flutter_colorpicker"
+      relative: true
+    source: path
     version: "1.1.0"
   flutter_driver:
     dependency: transitive

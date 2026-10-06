@@ -6774,5 +6774,8 @@
   "anki_video_template_fallback_body": "The note type $noteType can't play synchronized video clips, so this card used GIF + audio instead. Adapt the template to create video cards.",
   "anki_video_template_fallback_dismiss": "Got it",
   "anki_video_template_fallback_adapt": "Adapt",
-  "audiobook_transcribe_audio_incomplete": "The audio file is damaged or not fully downloaded, so only part of it can be decoded. Re-download or replace the file, then transcribe again."
+  "audiobook_transcribe_audio_incomplete": "The audio file is damaged or not fully downloaded, so only part of it can be decoded. Re-download or replace the file, then transcribe again.",
+  "window_caption_minimize": "Minimize",
+  "window_caption_maximize": "Maximize",
+  "window_caption_restore": "Restore"
 }

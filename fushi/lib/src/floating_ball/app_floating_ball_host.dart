@@ -336,6 +336,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 当前主题给原生系统球的配色（build 里按 Theme 刷新；变了就重新下发）。
   Map<String, int> _systemBallColors = const <String, int>{};
+  bool _systemBallAnimate = true;
 
   /// 刘海 / 灵动岛所在的边（只有 iOS 会有值），见 [appFloatingBallViewport]。
   ///
@@ -522,10 +523,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final Map<String, String> labels = floatingBallNativeLabels();
     final Map<String, int> icons = floatingBallNativeIcons();
     final Map<String, int> colors = _systemBallColors;
-    // 文案 / 配色进签名：切换界面语言或主题后原生球也要换。
+    final bool animate = _systemBallAnimate;
+    // 动效也进签名：系统减弱动画切换时配色可能完全没变。
     final String signature =
         '${actions.join(',')}|${labels.values.join('|')}|'
-        '${colors.values.join(',')}';
+        '${colors.values.join(',')}|$animate';
     if (!force && signature == _systemSignature) return;
     final int generation = ++_systemGeneration;
     _systemRequested = true;
@@ -593,6 +595,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         labels: labels,
         icons: icons,
         colors: colors,
+        animate: animate,
         ocrLanguage: kFloatingBallOcrLanguage,
         iconImages: iconImages,
         ballImage: ballImage,
@@ -622,14 +625,22 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     unawaited(FloatingBallChannel.stopSystemBall());
   }
 
-  /// 主题变了（预设 / 明暗 / 纯黑 / 自定义主题 / 墨水屏）：原生系统球跟着换色。
-  void _syncSystemBallColors(ColorScheme scheme, {required bool eink}) {
+  /// 配色与动效独立同步：无障碍开关变化也要让已运行的系统球收到新策略。
+  void _syncSystemBallAppearance(
+    ColorScheme scheme, {
+    required bool eink,
+    required bool animate,
+  }) {
     final Map<String, int> colors = floatingBallNativeColors(
       scheme,
       eink: eink,
     );
-    if (_mapEquals(colors, _systemBallColors)) return;
+    if (_mapEquals(colors, _systemBallColors) &&
+        animate == _systemBallAnimate) {
+      return;
+    }
     _systemBallColors = colors;
+    _systemBallAnimate = animate;
     // build 里触发：等这一帧结束再下发，不在 build 期间改状态。
     if (_prefs != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _syncSystemBall());
@@ -1151,9 +1162,10 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final AppModel appModel = ref.watch(appProvider);
     if (!appModel.isInitialised) return const SizedBox.shrink();
     final PreferencesRepository prefs = appModel.prefsRepo;
-    _syncSystemBallColors(
+    _syncSystemBallAppearance(
       Theme.of(context).colorScheme,
       eink: isEinkTheme(context) || appModel.einkMode,
+      animate: !appModel.einkMode && fushiMotionEnabled(context),
     );
     _attachPrefs(prefs);
     _flushExternalLookup();

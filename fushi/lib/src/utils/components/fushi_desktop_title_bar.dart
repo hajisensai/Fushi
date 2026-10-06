@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart'
     show hdrHostActiveGlobal;
 import 'package:fushi/src/platform/desktop/macos_traffic_lights.dart';
@@ -841,11 +842,26 @@ class _FushiCaptionButtonState extends State<_FushiCaptionButton> {
   }
 
   String? _semanticLabel(BuildContext context) {
-    if (widget.glyph != _CaptionGlyph.close) return null;
-    return Localizations.of<MaterialLocalizations>(
-      context,
-      MaterialLocalizations,
-    )?.closeButtonTooltip;
+    if (widget.glyph == _CaptionGlyph.close) {
+      return Localizations.of<MaterialLocalizations>(
+        context,
+        MaterialLocalizations,
+      )?.closeButtonTooltip;
+    }
+    // Follow the same locale as the built-in close label, including a bare
+    // MaterialApp host. Reading Localizations also rebuilds names on a locale
+    // change; a global `t` lookup alone would not establish that dependency.
+    final Locale locale = Localizations.localeOf(context);
+    final translations = AppLocaleUtils.parseLocaleParts(
+      languageCode: locale.languageCode,
+      scriptCode: locale.scriptCode,
+      countryCode: locale.countryCode,
+    ).translations;
+    return widget.glyph == _CaptionGlyph.minimize
+        ? translations.window_caption_minimize
+        : widget.maximized
+        ? translations.window_caption_restore
+        : translations.window_caption_maximize;
   }
 
   @override

@@ -135,9 +135,11 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
   }
 
   Future<void> _testConnection() async {
-    await _saveCredentials();
+    if (_isTesting || !mounted) return;
     setState(() => _isTesting = true);
     try {
+      await _saveCredentials();
+      if (!mounted) return;
       final String message = await widget.runTest(_texts, _switchValue);
       if (mounted) _showSnackBar(context, message);
     } finally {

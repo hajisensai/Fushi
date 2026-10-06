@@ -485,6 +485,26 @@ add_custom_target(fushi_windows_floating_ball_hit_region_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_floating_ball_hit_region_gate)
 
+# HBK-AUDIT-051: the native ball must honor the host's reduced-motion policy
+# for expand/collapse/snap and live config updates, while preserving callbacks.
+# The test intercepts HWND/timer/monitor boundaries and renders only to memory.
+add_executable(fushi_windows_floating_ball_motion_test
+  "tests/floating_ball_motion_test.cpp"
+)
+apply_standard_settings(fushi_windows_floating_ball_motion_test)
+target_compile_definitions(fushi_windows_floating_ball_motion_test PRIVATE
+  "NOMINMAX" "_WIN32_WINNT=0x0A00" "WINVER=0x0A00")
+target_include_directories(fushi_windows_floating_ball_motion_test PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/tests/floating_ball_stubs")
+target_link_libraries(fushi_windows_floating_ball_motion_test PRIVATE
+  d2d1 dwrite windowscodecs gdi32 user32 ole32 comctl32 uuid)
+add_custom_target(fushi_windows_floating_ball_motion_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_floating_ball_motion_test>"
+  DEPENDS fushi_windows_floating_ball_motion_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_floating_ball_motion_gate)
+
 # 桌面应用外悬浮球「截屏识字」与 Windows 系统 OCR 的纯逻辑（screen_ocr_logic.h）：
 # OCR 词拼接（CJK 不插空格）、识别语言挑选、OCR 最大边长缩放、截哪块显示器、
 # 冻结层提示条布局与点击归类；以及 system_ocr 工作线程回话队列（worker_reply_queue.h）。
