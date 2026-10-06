@@ -35,7 +35,8 @@ enum ModuleId {
   video('module_video_enabled'),
 
   /// 游戏。Windows 上是本机 galgame 库与文本/语音捕获（galgame hook 平台边界）；
-  /// Android 上是串流接收端的远端游戏库（从已配对 Windows 主机启动并串流）。
+  /// Android / iOS / macOS / Linux 上是串流接收端的远端游戏库（从已配对 Windows
+  /// 主机启动并串流）。iOS 上只有串流这一种形态，不属于 App Store 受限能力。
   /// 两种形态见 [GamesModuleForm]。
   games('module_games_enabled'),
 
