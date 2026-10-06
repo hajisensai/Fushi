@@ -511,6 +511,8 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       child: FushiPageScaffold(
         title: _anime.title,
         subtitle: widget.sourceContext.source.name,
+        // 正文铺到悬浮页头底下：背景一直画到窗口顶端。
+        extendBodyBehindHeader: true,
         bottomNavigationBar: selection == null
             ? null
             : _buildBatchActionBar(selection),

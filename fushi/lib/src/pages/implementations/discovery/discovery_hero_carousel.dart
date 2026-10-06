@@ -27,6 +27,8 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_carousel.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiTopFadeScrim;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
@@ -596,9 +598,6 @@ class DiscoveryScrollTopFade extends StatefulWidget {
   State<DiscoveryScrollTopFade> createState() => _DiscoveryScrollTopFadeState();
 }
 
-/// 渐隐带高度（逻辑像素）。
-const double _kScrollTopFadeHeight = 20;
-
 class _DiscoveryScrollTopFadeState extends State<DiscoveryScrollTopFade> {
   bool _scrolled = false;
   bool _updateScheduled = false;
@@ -641,23 +640,17 @@ class _DiscoveryScrollTopFadeState extends State<DiscoveryScrollTopFade> {
                 top: 0,
                 left: 0,
                 right: 0,
-                height: _kScrollTopFadeHeight,
                 child: IgnorePointer(
                   child: AnimatedOpacity(
                     opacity: _scrolled ? 1 : 0,
                     duration: fushiMotionDuration(context, FushiMotion.short),
                     curve: FushiMotion.standard,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: <Color>[
-                            background,
-                            background.withValues(alpha: 0),
-                          ],
-                        ),
-                      ),
+                    // 共享的平滑渐隐（smoothstep，无 Mach 带）：顶边紧贴搜索 /
+                    // 筛选行下的不透明页面底色，从 1 起才看不出切线。
+                    child: FushiTopFadeScrim(
+                      solidHeight: 0,
+                      topOpacity: 1,
+                      color: background,
                     ),
                   ),
                 ),

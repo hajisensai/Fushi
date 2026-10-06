@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiTopFadeScrim, kFushiTopFadeExtent;
+    show FushiTopFadeScrim, kFushiTopFadeExtent, kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope;
@@ -678,31 +678,70 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       actionsPadding: actionsPadding,
       animateColor: animateColor,
     );
-    // 栏透明、正文视口顶边就是栏下沿：内容滚到栏底下时在这条线上被一刀硬切
-    // （「头部下沿硬切线」）。内容已滚离顶部时，在栏下沿往下铺一段页面底色渐隐
-    // （与 [FushiPageScaffold] 收起页头时的 [FushiTopFadeScrim] 同一份），
-    // 内容柔和淡出。渐隐画在栏外（Stack 不裁），不占正文版面、不接指针。
+    // 内容滚离顶部后的顶部可读性遮罩：只用共享的 [FushiTopFadeScrim]（无硬边
+    // 的平滑渐变），按正文与栏的几何关系分两种画法——
+    //
+    // - 正文在栏**下面**开始（普通 Scaffold）：正文视口顶边就是栏下沿，内容
+    //   在这条线上被裁掉，线以上是不透明的页面底色。渐隐从栏下沿往下画、顶边
+    //   不透明度 1（与线上的底色同色同值），切线被完全藏住。
+    // - 正文**铺到栏底下**（[Scaffold.extendBodyBehindAppBar]，详情页 fanart
+    //   背景一直铺到窗口顶）：内容从窗口顶端起就在栏后面滚。渐隐必须从栏的
+    //   顶端开始、跨过整条栏连续降到 0——曾经仍从栏下沿起画（栏内透明），不
+    //   透明度在下沿处从 0 跳到 0.92，滚动后集卡在栏下沿被一条水平硬边切开。
+    //
+    // 渐隐画在栏外（Stack 不裁），不占正文版面、不接指针。
+    final ScaffoldState? scaffold = Scaffold.maybeOf(context);
+    final bool bodyBehindBar = scaffold?.widget.extendBodyBehindAppBar ?? false;
+    final Color? scaffoldColor = scaffold?.widget.backgroundColor;
+    final Color? scrimColor =
+        scaffoldColor != null && scaffoldColor.a >= 1 ? scaffoldColor : null;
+    Widget fadeIn(Widget scrim) => ValueListenableBuilder<bool>(
+          valueListenable: scrolledUnder,
+          builder: (BuildContext context, bool under, Widget? scrim) =>
+              AnimatedOpacity(
+            opacity: under ? 1 : 0,
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            child: scrim,
+          ),
+          child: scrim,
+        );
     return Stack(
       clipBehavior: Clip.none,
       fit: StackFit.passthrough,
       children: <Widget>[
-        bar,
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: -kFushiTopFadeExtent,
-          height: kFushiTopFadeExtent,
-          child: ValueListenableBuilder<bool>(
-            valueListenable: scrolledUnder,
-            builder: (BuildContext context, bool under, Widget? scrim) =>
-                AnimatedOpacity(
-                  opacity: under ? 1 : 0,
-                  duration: fushiMotionDuration(context, FushiMotion.short),
-                  child: scrim,
+        if (bodyBehindBar)
+          Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: -kFushiTopFadeExtent,
+            child: fadeIn(
+              LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    FushiTopFadeScrim(
+                  solidHeight: 0,
+                  fadeExtent: constraints.maxHeight,
+                  topOpacity: kFushiTopScrimOverlayOpacity,
+                  color: scrimColor,
                 ),
-            child: const FushiTopFadeScrim(solidHeight: 0),
+              ),
+            ),
           ),
-        ),
+        bar,
+        if (!bodyBehindBar)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: -kFushiTopFadeExtent,
+            height: kFushiTopFadeExtent,
+            child: fadeIn(
+              FushiTopFadeScrim(
+                solidHeight: 0,
+                topOpacity: 1,
+                color: scrimColor,
+              ),
+            ),
+          ),
       ],
     );
   }

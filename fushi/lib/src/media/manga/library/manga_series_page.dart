@@ -1413,7 +1413,12 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget build(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
-    return FushiPageScaffold(title: title, body: _buildBody(context));
+    // 正文铺到悬浮页头底下：封面模糊背景一直画到窗口顶端，页头只是胶囊。
+    return FushiPageScaffold(
+      title: title,
+      extendBodyBehindHeader: true,
+      body: _buildBody(context),
+    );
   }
 
   /// hero 标题上方的来源名（本地卷 / 源名 / 扩展包名）。
@@ -1436,10 +1441,16 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
   Widget _buildBody(BuildContext context) {
     if (_loading) return const MediaDetailSkeleton();
     final Object? fatal = _fatalError;
-    if (fatal != null) return _buildFatalError(context, fatal);
+    // 页头浮在正文上（extendBodyBehindHeader）：错误态自己让开页头。
+    if (fatal != null) {
+      return SafeArea(bottom: false, child: _buildFatalError(context, fatal));
+    }
     final OnlineMangaUnavailable? loadError = _refreshError;
     if (loadError != null && _hasNothingToShow) {
-      return _buildLoadError(context, loadError);
+      return SafeArea(
+        bottom: false,
+        child: _buildLoadError(context, loadError),
+      );
     }
     final double page = FushiDesignTokens.of(context).spacing.page;
     final Widget? ocrBanner = _isLocal ? null : _buildOcrBanner(context);

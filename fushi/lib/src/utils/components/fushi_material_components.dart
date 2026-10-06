@@ -38,7 +38,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiTopFadeScrim;
+    show FushiHeightReporter, FushiTopFadeScrim, kFushiTopFadeExtent,
+        kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration;
@@ -4056,11 +4057,21 @@ class FushiPageScaffold extends StatefulWidget {
     this.headerBottom,
     this.bottomNavigationBar,
     this.headerCompact,
+    this.extendBodyBehindHeader = false,
   });
 
   final String title;
   final String? subtitle;
   final Widget body;
+
+  /// 正文铺到页头底下（与 [Scaffold.extendBodyBehindAppBar] 同义）：页头只是
+  /// 几颗浮在正文上的胶囊，正文从窗口顶端画起（详情页的 fanart / 模糊背景
+  /// 一直铺到顶）。正文经 `MediaQuery.paddingOf(context).top` 拿到「状态栏 +
+  /// 页头」的让位高度，自己决定哪些东西让开（[MediaDetailLayout] 即如此）。
+  /// 内容滚离顶部后的可读性只靠共享 [FushiTopFadeScrim] 从顶端连续渐隐，
+  /// 不画任何整宽底带。只在 Material（M3E 悬浮页头）下生效；Apple 设计系统
+  /// 的页头不是悬浮胶囊，仍按竖排处理。
+  final bool extendBodyBehindHeader;
   final List<Widget> actions;
   final Widget? leading;
 
@@ -4092,6 +4103,27 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 页头恒在）。
   final FushiScrollAwayController _chrome = FushiScrollAwayController();
 
+  /// [FushiPageScaffold.extendBodyBehindHeader] 下页头的实测高度（不含状态栏）。
+  double _headerHeight = 0;
+
+  /// [FushiPageScaffold.extendBodyBehindHeader] 下正文是否已滚离顶部（内容在
+  /// 页头底下）：驱动顶部渐隐遮罩。
+  final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
+
+  void _onHeaderHeight(double height) {
+    if (!mounted || height == _headerHeight) return;
+    setState(() => _headerHeight = height);
+  }
+
+  bool _trackScrolledUnder(Notification notification) {
+    if (notification is ScrollUpdateNotification &&
+        notification.depth == 0 &&
+        notification.metrics.axis == Axis.vertical) {
+      _scrolledUnder.value = notification.metrics.extentBefore > 0;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -4108,6 +4140,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     PageScrollRegistry.pop(_scrollController);
     _scrollController.dispose();
     _chrome.dispose();
+    _scrolledUnder.dispose();
     super.dispose();
   }
 
@@ -4117,6 +4150,19 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     final Widget? effectiveLeading = widget.leading ??
         (widget.automaticallyImplyLeading ? _defaultLeading(context) : null);
     final bool floatingChrome = !isGlassDesign(context);
+    final bool extendBody = widget.extendBodyBehindHeader && floatingChrome;
+    final Widget header = FushiScrollAwayChrome(
+      controller: _chrome,
+      enabled: floatingChrome,
+      child: FushiPageHeader(
+        title: widget.title,
+        subtitle: widget.subtitle,
+        leading: effectiveLeading,
+        actions: widget.actions,
+        bottom: widget.headerBottom,
+        compact: widget.headerCompact ?? effectiveLeading != null,
+      ),
+    );
     return PrimaryScrollController(
       controller: _scrollController,
       // Inherit on EVERY platform. The default is mobile-only, which would
@@ -4131,7 +4177,9 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
         floatingActionButton: widget.floatingActionButton,
         floatingActionButtonLocation: widget.floatingActionButtonLocation,
         bottomNavigationBar: widget.bottomNavigationBar,
-        body: SafeArea(
+        body: extendBody
+            ? _buildBodyBehindHeader(context, header)
+            : SafeArea(
           // bottom:false —— 底部安全区（iOS home indicator / Android 手势条）**不在这里
           // 扣**，交给 body 自己按 [bottomSafeInsetOf] 加进内容 padding（BUG-2440）。
           // SafeArea 扣底是把 viewport 硬切在手势条之上：那条 34pt 变成一条谁也用不了的
@@ -4153,18 +4201,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
             children: <Widget>[
               // 结构恒定：两套设计系统都挂着收起外壳与滚动监听，Apple 下只是
               // 不喂通知（页头恒显示）。
-              FushiScrollAwayChrome(
-                controller: _chrome,
-                enabled: floatingChrome,
-                child: FushiPageHeader(
-                  title: widget.title,
-                  subtitle: widget.subtitle,
-                  leading: effectiveLeading,
-                  actions: widget.actions,
-                  bottom: widget.headerBottom,
-                  compact: widget.headerCompact ?? effectiveLeading != null,
-                ),
-              ),
+              header,
               Expanded(
                 // 页头收起只上移淡出、占位高度不变（不改正文视口，BUG-2975），
                 // 正文顶边因此停在一段空白下沿；收起时在正文顶边加一道渐隐，
@@ -4194,7 +4231,13 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                           ),
                           child: scrim,
                         ),
-                        child: const FushiTopFadeScrim(solidHeight: 0),
+                        // 遮罩顶边紧贴页头让出的那段页面底色（正文视口在这条
+                        // 线上被裁掉）：从 1 起才看不出切线。
+                        child: FushiTopFadeScrim(
+                          solidHeight: 0,
+                          topOpacity: 1,
+                          color: tokens.surfaces.page,
+                        ),
                       ),
                     ),
                   ],
@@ -4203,6 +4246,69 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// [FushiPageScaffold.extendBodyBehindHeader]：正文占满整页（从窗口顶端画
+  /// 起），页头浮在它上面；正文的 MediaQuery 顶部 padding = 状态栏 + 页头实测
+  /// 高度（与 [Scaffold.extendBodyBehindAppBar] 同一约定）。页头收起只是上移
+  /// 淡出，让位高度恒定，不改正文版面。左右安全区照常扣（横屏刘海）。
+  Widget _buildBodyBehindHeader(BuildContext context, Widget header) {
+    final MediaQueryData media = MediaQuery.of(context);
+    final double statusTop = media.padding.top;
+    final double inset = statusTop + _headerHeight;
+    return SafeArea(
+      top: false,
+      bottom: false,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: MediaQuery(
+              data: media.copyWith(
+                padding: media.padding.copyWith(top: inset, left: 0, right: 0),
+                viewPadding: media.viewPadding.copyWith(top: inset),
+              ),
+              child: NotificationListener<Notification>(
+                onNotification: (Notification notification) {
+                  _trackScrolledUnder(notification);
+                  return _chrome.handleNotification(notification);
+                },
+                child: widget.body,
+              ),
+            ),
+          ),
+          // 顶部可读性：从窗口顶端起、跨过整条页头连续降到 0 的共享渐隐
+          // （无实色段、无硬边），只在内容滚到页头底下时出现。
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _scrolledUnder,
+              builder: (BuildContext context, bool under, Widget? scrim) =>
+                  AnimatedOpacity(
+                opacity: under ? 1 : 0,
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: scrim,
+              ),
+              child: FushiTopFadeScrim(
+                solidHeight: 0,
+                fadeExtent: inset + kFushiTopFadeExtent,
+                topOpacity: kFushiTopScrimOverlayOpacity,
+              ),
+            ),
+          ),
+          Positioned(
+            top: statusTop,
+            left: 0,
+            right: 0,
+            child: FushiHeightReporter(
+              onHeight: _onHeaderHeight,
+              child: header,
+            ),
+          ),
+        ],
       ),
     );
   }

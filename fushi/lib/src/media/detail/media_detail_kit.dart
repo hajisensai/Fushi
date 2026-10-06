@@ -1526,13 +1526,10 @@ class MediaDetailLayout extends StatelessWidget {
             top: false,
             sliver: SliverToBoxAdapter(child: SizedBox(height: bottomPadding)),
           );
-          // 顶部柔和 scrim：内容滚到浮动顶栏之下时渐隐，无硬边（不是实色底带）。
-          final Widget topScrim = Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _MediaDetailTopScrim(height: topInset),
-          );
+          // 顶部可读性遮罩**不在这里画**：内容滚到浮动顶栏下面时的渐隐归顶栏
+          // 自己（[FushiAppBar] / [FushiPageScaffold] 页头，共享的
+          // [FushiTopFadeScrim]）。布局曾经再叠一层 55% 底色渐变，与顶栏那层
+          // 叠加后在栏下沿形成一道浅色带 + 硬边。
           if (!twoPane) {
             return Stack(
               children: <Widget>[
@@ -1549,7 +1546,6 @@ class MediaDetailLayout extends StatelessWidget {
                     bottom,
                   ],
                 ),
-                if (topInset > 0) topScrim,
               ],
             );
           }
@@ -1598,7 +1594,6 @@ class MediaDetailLayout extends StatelessWidget {
                   ),
                 ],
               ),
-              if (topInset > 0) topScrim,
             ],
           );
         },
@@ -1616,41 +1611,6 @@ class _MediaDetailTopInsetScope extends InheritedWidget {
   @override
   bool updateShouldNotify(_MediaDetailTopInsetScope oldWidget) =>
       top != oldWidget.top;
-}
-
-/// 浮动顶栏背后的柔和渐隐：页面底色自顶 55% 渐到全透明，长度 = 顶栏让位 + 24。
-/// 不接指针、不参与语义；墨水屏不画（底色本来就是实色，渐变在墨水屏上是脏点）。
-class _MediaDetailTopScrim extends StatelessWidget {
-  const _MediaDetailTopScrim({required this.height});
-
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    if (height <= 0 || isEinkTheme(context)) return const SizedBox.shrink();
-    final Color base = Theme.of(context).colorScheme.surface;
-    return IgnorePointer(
-      child: ExcludeSemantics(
-        child: SizedBox(
-          height: height + 24,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: <Color>[
-                  base.withValues(alpha: 0.55),
-                  base.withValues(alpha: 0.28),
-                  base.withValues(alpha: 0),
-                ],
-                stops: const <double>[0, 0.6, 1],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _MediaDetailSidePaneScope extends InheritedWidget {

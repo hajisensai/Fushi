@@ -377,6 +377,8 @@ class _LnReaderNovelDetailPageState
     return FushiPageScaffold(
       title: novel?.name.isNotEmpty == true ? novel!.name : widget.item.name,
       subtitle: widget.plugin.name,
+      // 正文铺到悬浮页头底下：封面模糊背景一直画到窗口顶端。
+      extendBodyBehindHeader: true,
       body: _buildBody(context),
     );
   }

@@ -1046,7 +1046,12 @@ class _MediaServerPageFrameState extends State<MediaServerPageFrame> {
                           curve: motion.effectsDefault.curve,
                           child: scrim,
                         ),
-                    child: const FushiTopFadeScrim(solidHeight: 0),
+                    // 顶边紧贴页头让出的不透明底色（正文视口在这条线上被
+                    // 裁掉）：从 1 起才看不出切线。
+                    child: const FushiTopFadeScrim(
+                      solidHeight: 0,
+                      topOpacity: 1,
+                    ),
                   ),
                 ),
               ],

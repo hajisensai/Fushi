@@ -246,7 +246,11 @@ class FushiFloatingChromeInsetPadding extends StatelessWidget {
                         ? 0
                         : 1,
                     duration: fushiMotionDuration(context, FushiMotion.short),
-                    child: const FushiTopFadeScrim(solidHeight: 0),
+                    // 遮罩顶边紧贴让出的那段（页面底色），从 1 起才没有接缝。
+                    child: const FushiTopFadeScrim(
+                      solidHeight: 0,
+                      topOpacity: 1,
+                    ),
                   ),
                 ),
               ],
@@ -412,30 +416,80 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 }
 
 /// 浮动工具区背后的顶部渐隐遮罩（M3E 浮动工具栏：内容滚到工具栏底下时柔和
-/// 淡出，而不是被一条实色底带硬切）。
+/// 淡出，而不是被一条实色底带硬切）。**所有浮动顶栏页面的顶部可读性只走这一个
+/// 组件**（顶栏 [FushiAppBar] 悬浮形态、[FushiPageScaffold] 页头、库页
+/// [FushiFloatingChromeOverlay]），页面不得自己画整宽底带 / 渐变。
 ///
-/// 自顶向下：[solidHeight] 内是近实色的页面底色（约 90%→80%），其后 [fadeExtent]
-/// 内渐变到全透明。不接指针、不参与语义。颜色取 [color]，缺省为页面底色
-/// （[ThemeData.scaffoldBackgroundColor]）。
+/// 不透明度曲线自顶向下**单调、连续、无平台**：
+/// - [solidHeight] 内是一段「肩」：从 [topOpacity] 二次缓降到 0.82 倍（顶端
+///   斜率为 0，没有一刀切的实色矩形）；
+/// - 其后 [fadeExtent] 内按 smoothstep 降到 0（两端斜率都为 0）。
+///
+/// 曾经的形态是「0.92 → 0.8 的实色段 + 20 px 线性降到 0」：线性渐变的起止点
+/// 斜率突变，在模糊 fanart 上看得见一道 Mach 带；而顶栏把它从栏下沿开始画（栏内
+/// 透明），不透明度在下沿处从 0 跳到 0.92——详情页滚动后栏下沿那条「水平硬边」
+/// 就是它。
+///
+/// [topOpacity] 的取法：遮罩顶边紧贴一块**不透明的同色底**（正文视口被页头 /
+/// 顶栏裁在这条线上，线以上是页面底色）时传 1，接缝两侧颜色一致、看不出切线；
+/// 遮罩从窗口顶端起盖在可滚动内容上（[Scaffold.extendBodyBehindAppBar]）时用
+/// [kFushiTopScrimOverlayOpacity]。
+///
+/// 不接指针、不参与语义。颜色取 [color]，缺省为页面底色
+/// （[fushiTopFadeScrimColor]）。
 class FushiTopFadeScrim extends StatelessWidget {
   const FushiTopFadeScrim({
     required this.solidHeight,
     this.fadeExtent = kFushiTopFadeExtent,
+    this.topOpacity = 0.92,
     this.color,
     super.key,
   });
 
   final double solidHeight;
   final double fadeExtent;
+
+  /// 顶边的不透明度（乘在 [color] 自身的 alpha 上）。
+  final double topOpacity;
   final Color? color;
+
+  /// 肩段末端相对 [topOpacity] 的比例。
+  static const double _kShoulderFloor = 0.82;
+
+  /// 肩段 / 渐隐段各取多少个采样点（多段线性近似平滑曲线，段数足够多时
+  /// 肉眼看不到折点）。
+  static const int _kShoulderSamples = 4;
+  static const int _kFadeSamples = 10;
 
   @override
   Widget build(BuildContext context) {
     final double solid = math.max(0.0, solidHeight);
-    final double height = solid + fadeExtent;
-    if (height <= 0) return const SizedBox.shrink();
+    final double fade = math.max(1.0, fadeExtent);
+    final double height = solid + fade;
     final Color base = color ?? fushiTopFadeScrimColor(context);
-    final double solidStop = solid / height;
+    final double top = base.a * topOpacity.clamp(0.0, 1.0);
+    final List<Color> colors = <Color>[];
+    final List<double> stops = <double>[];
+    void sample(double y, double alpha) {
+      colors.add(base.withValues(alpha: alpha.clamp(0.0, 1.0)));
+      stops.add((y / height).clamp(0.0, 1.0));
+    }
+
+    final double fadeStart;
+    if (solid > 0) {
+      for (int i = 0; i <= _kShoulderSamples; i++) {
+        final double u = i / _kShoulderSamples;
+        sample(solid * u, top * (1 - (1 - _kShoulderFloor) * u * u));
+      }
+      fadeStart = top * _kShoulderFloor;
+    } else {
+      fadeStart = top;
+    }
+    for (int i = solid > 0 ? 1 : 0; i <= _kFadeSamples; i++) {
+      final double v = i / _kFadeSamples;
+      final double eased = v * v * (3 - 2 * v);
+      sample(solid + fade * v, fadeStart * (1 - eased));
+    }
     return IgnorePointer(
       child: ExcludeSemantics(
         child: SizedBox(
@@ -445,12 +499,8 @@ class FushiTopFadeScrim extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: <Color>[
-                  base.withValues(alpha: base.a * 0.92),
-                  base.withValues(alpha: base.a * 0.8),
-                  base.withValues(alpha: 0),
-                ],
-                stops: <double>[0, solidStop, 1],
+                colors: colors,
+                stops: stops,
               ),
             ),
           ),
@@ -468,8 +518,13 @@ Color fushiTopFadeScrimColor(BuildContext context) {
   return FushiDesignTokens.of(context).surfaces.page;
 }
 
-/// [FushiTopFadeScrim] 渐隐段的默认长度（胶囊下沿再往下 20）。
-const double kFushiTopFadeExtent = 20;
+/// [FushiTopFadeScrim] 渐隐段的默认长度（胶囊 / 栏下沿再往下 32）。
+const double kFushiTopFadeExtent = 32;
+
+/// 遮罩盖在可滚动内容上、从窗口顶端起画时的顶边不透明度（见
+/// [FushiTopFadeScrim.topOpacity]）：够让悬浮胶囊之间的内容退后，又不至于在
+/// fanart 上压出一条浅色带。
+const double kFushiTopScrimOverlayOpacity = 0.72;
 
 /// 版面完成后把子组件高度报给 [onHeight]（变了才报，本帧结束后回调）。
 class FushiHeightReporter extends SingleChildRenderObjectWidget {
