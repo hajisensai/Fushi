@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show pickTargetCollectionForMembers;
@@ -1308,42 +1309,46 @@ class _MemberGridTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        borderRadius: tokens.radii.cardRadius,
-        onTap: onTap,
-        onLongPress: onLongPress,
-        onSecondaryTapUp: (TapUpDetails d) => onMenu(d.globalPosition),
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            _HoverableMemberCard(child: child),
-            if (selecting) ...<Widget>[
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: AnimatedContainer(
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    decoration: BoxDecoration(
-                      borderRadius: tokens.radii.cardRadius,
-                      color: selected
-                          ? scheme.primary.withValues(alpha: 0.18)
-                          : Colors.transparent,
-                      border: Border.all(
-                        color: selected ? scheme.primary : Colors.transparent,
-                        width: 3,
+    return ContextMenuTrigger(
+      onInvoke: onMenu,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: tokens.radii.cardRadius,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              _HoverableMemberCard(child: child),
+              if (selecting) ...<Widget>[
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedContainer(
+                      duration: fushiMotionDuration(context, FushiMotion.short),
+                      decoration: BoxDecoration(
+                        borderRadius: tokens.radii.cardRadius,
+                        color: selected
+                            ? scheme.primary.withValues(alpha: 0.18)
+                            : Colors.transparent,
+                        border: Border.all(
+                          color: selected ? scheme.primary : Colors.transparent,
+                          width: 3,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: IgnorePointer(child: _SelectionMark(selected: selected)),
-              ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IgnorePointer(
+                    child: _SelectionMark(selected: selected),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1406,82 +1411,85 @@ class _MemberListRow extends StatelessWidget {
             ),
       ),
     );
-    return Padding(
-      padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-      child: Material(
-        color: selected
-            ? scheme.secondaryContainer
-            : apple
-            ? Colors.transparent
-            : scheme.surfaceContainerLow,
-        borderRadius: apple
-            ? FushiM3eShape.smallRadius
-            : FushiM3eShape.cardRadius,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          onSecondaryTapUp: (TapUpDetails d) => onMenu(d.globalPosition),
-          child: Padding(
-            padding: EdgeInsets.all(tokens.spacing.gap * 1.25),
-            child: Row(
-              children: <Widget>[
-                thumb,
-                SizedBox(width: tokens.spacing.gap * 1.5),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        entry.displayTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: tokens.type.listTitle.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (progress != null) ...<Widget>[
-                        SizedBox(height: tokens.spacing.gap),
-                        ClipRRect(
-                          borderRadius: FushiBorderRadius.chip,
-                          child: FushiLinearProgressIndicator(
-                            value: progress.clamp(0.0, 1.0),
-                            minHeight: 4,
-                            color: scheme.primary,
-                            backgroundColor: scheme.surfaceContainerHighest,
+    return ContextMenuTrigger(
+      onInvoke: onMenu,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+        child: Material(
+          color: selected
+              ? scheme.secondaryContainer
+              : apple
+              ? Colors.transparent
+              : scheme.surfaceContainerLow,
+          borderRadius: apple
+              ? FushiM3eShape.smallRadius
+              : FushiM3eShape.cardRadius,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: Padding(
+              padding: EdgeInsets.all(tokens.spacing.gap * 1.25),
+              child: Row(
+                children: <Widget>[
+                  thumb,
+                  SizedBox(width: tokens.spacing.gap * 1.5),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          entry.displayTitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: tokens.type.listTitle.copyWith(
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
+                        if (progress != null) ...<Widget>[
+                          SizedBox(height: tokens.spacing.gap),
+                          ClipRRect(
+                            borderRadius: FushiBorderRadius.chip,
+                            child: FushiLinearProgressIndicator(
+                              value: progress.clamp(0.0, 1.0),
+                              minHeight: 4,
+                              color: scheme.primary,
+                              backgroundColor: scheme.surfaceContainerHighest,
+                            ),
+                          ),
+                        ],
+                        if (status != null) ...<Widget>[
+                          SizedBox(height: tokens.spacing.gap / 2),
+                          Text(
+                            progress != null && progress > 0 && progress < 1
+                                ? '$status · ${(progress * 100).round()}%'
+                                : status,
+                            style: tokens.type.metadata,
+                          ),
+                        ],
                       ],
-                      if (status != null) ...<Widget>[
-                        SizedBox(height: tokens.spacing.gap / 2),
-                        Text(
-                          progress != null && progress > 0 && progress < 1
-                              ? '$status · ${(progress * 100).round()}%'
-                              : status,
-                          style: tokens.type.metadata,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
-                if (selecting)
-                  _SelectionMark(selected: selected)
-                else
-                  Builder(
-                    builder: (BuildContext buttonContext) =>
-                        FushiIconButtonControl(
-                          tooltip: t.shelf_toolbar_more,
-                          icon: const FushiIcon(FushiIcons.more),
-                          onPressed: () {
-                            final RenderBox box =
-                                buttonContext.findRenderObject()! as RenderBox;
-                            onMenu(
-                              box.localToGlobal(box.size.center(Offset.zero)),
-                            );
-                          },
-                        ),
-                  ),
-              ],
+                  if (selecting)
+                    _SelectionMark(selected: selected)
+                  else
+                    Builder(
+                      builder: (BuildContext buttonContext) =>
+                          FushiIconButtonControl(
+                            tooltip: t.shelf_toolbar_more,
+                            icon: const FushiIcon(FushiIcons.more),
+                            onPressed: () {
+                              final RenderBox box =
+                                  buttonContext.findRenderObject()!
+                                      as RenderBox;
+                              onMenu(
+                                box.localToGlobal(box.size.center(Offset.zero)),
+                              );
+                            },
+                          ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),
