@@ -17,22 +17,22 @@
       "sha256": "af69b5f9a268230084512a86d906556cd06687a9b0ed3f6b125427f95becf6a8"
     },
     {
-      "name": "fushi-2.9.1-debug.17195-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17195-ios.ipa",
-      "releaseSequence": 17195,
-      "tag": "v2.9.1-debug.17195+a2a7287",
-      "version": "2.9.1-debug.17195",
-      "size": 76493481,
-      "sha256": "8ebf4782cfee94bcdef1df8749d8c59f2e191ac934f2b82931acf0b57353273e"
+      "name": "fushi-2.9.1-debug.17199-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17199-ios.ipa",
+      "releaseSequence": 17199,
+      "tag": "v2.9.1-debug.17199+8531e2e",
+      "version": "2.9.1-debug.17199",
+      "size": 76493337,
+      "sha256": "a24bce45077242d5f01788101eb53a91d5b046053e4d70a86fe01eedbe67603c"
     },
     {
-      "name": "fushi-2.9.1-debug.17195-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17195-macos.zip",
-      "releaseSequence": 17195,
-      "tag": "v2.9.1-debug.17195+a2a7287",
-      "version": "2.9.1-debug.17195",
-      "size": 378874874,
-      "sha256": "75ba5f1978d97fb44b826c0dabaa5d812a48291e7537f73c77206a70a07cf6d7"
+      "name": "fushi-2.9.1-debug.17199-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.9.1-debug.17199-macos.zip",
+      "releaseSequence": 17199,
+      "tag": "v2.9.1-debug.17199+8531e2e",
+      "version": "2.9.1-debug.17199",
+      "size": 378875242,
+      "sha256": "ed1dfce971a068e82a358f16839003f8990bdd6b965174d227363a8cf73543c9"
     },
     {
       "name": "fushi-2.9.1-debug.17199-windows-setup.exe",
