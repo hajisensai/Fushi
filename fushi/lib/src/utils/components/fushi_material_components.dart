@@ -1929,12 +1929,23 @@ class FushiSelectableChip extends StatelessWidget {
     // 仅图标模式（TODO-640）：图标当作 chip 的 label（不再放进 avatar + 文字），
     // chip 收成正方裸图标；需 leadingIcon 非空才生效，否则退化为普通文字 chip。
     final bool effectiveIconOnly = iconOnly && leadingIcon != null;
-    final Widget? effectiveAvatar = effectiveIconOnly
+    final Widget? baseAvatar = effectiveIconOnly
         ? null
         : (avatar ??
             (leadingIcon == null
                 ? null
                 : FushiIcon(leadingIcon, size: 18, color: foreground)));
+    // 有前导图标时选中 = 图标原位换成对勾（M3 filter chip），不走 RawChip 自带
+    // 对勾：后者会在 avatar 上叠深色圆形 scrim（见 fushiChipLeadingCheckSwap）。
+    // 槽宽不变，选中前后文字不位移。
+    final Widget? effectiveAvatar = baseAvatar == null
+        ? null
+        : fushiChipLeadingCheckSwap(
+            context,
+            avatar: baseAvatar,
+            selected: selected,
+            checkColor: foreground,
+          );
     final Widget labelWidget = effectiveIconOnly
         ? FushiIcon(leadingIcon, size: 18, color: foreground)
         : Text(
@@ -1976,8 +1987,9 @@ class FushiSelectableChip extends StatelessWidget {
       // 仅图标模式下 label 是 Icon，去掉 ChoiceChip 默认 label padding 让图标居中收紧。
       labelPadding: effectiveIconOnly ? EdgeInsets.zero : null,
       selected: selected,
-      // MD3 filter chip 的选中信号是对勾；仅图标模式没有位置放它。
-      showCheckmark: !effectiveIconOnly,
+      // MD3 filter chip 的选中信号是对勾；仅图标模式没有位置放它，有前导图标时
+      // 对勾由前导槽原位替换（effectiveAvatar），只有纯文字 chip 用 RawChip 对勾。
+      showCheckmark: !effectiveIconOnly && effectiveAvatar == null,
       checkmarkColor: foreground,
       selectedColor: selectedFill,
       backgroundColor: eink ? Colors.transparent : colors.surfaceContainerHigh,

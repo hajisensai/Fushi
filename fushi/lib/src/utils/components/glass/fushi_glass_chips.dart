@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -539,6 +540,52 @@ class FushiChip extends StatelessWidget implements FushiShapedMenuTrigger {
   }
 }
 
+/// MD3 / M3E 选中 chip 的前导槽：前导图标 ↔ 对勾原位交叉变形。
+///
+/// Flutter 的 RawChip 在「有 avatar 且 showCheckmark」时，选中会先按
+/// avatarBorder（默认圆形）在 avatar 上叠一层硬编码的 `0x60191919` 深色 scrim
+/// （`_kSelectScrimColor`，chip.dart `_paintSelectionOverlay`），再在上面画白色
+/// 对勾——视觉上就是图标被套进一枚深灰实心圆盘、图标发白发脏，不是 M3 规范
+/// （2026-10-06 统计中心媒体筛选条）。该 scrim 不受 ChipTheme 控制。
+///
+/// M3 filter chip 规范：选中容器 secondaryContainer，前导图标被对勾**原位**替换，
+/// 颜色 onSecondaryContainer。所以有 avatar 的 chip 一律关掉 RawChip 自带对勾，
+/// 由这里在同一槽位交叉淡化 + 缩放（M3E shape morph 的轻量形态）：槽宽不变，
+/// 选中前后文字不位移；墨水屏 / 减弱动态效果下 [fushiMotionDuration] 归零即瞬切。
+Widget fushiChipLeadingCheckSwap(
+  BuildContext context, {
+  required Widget avatar,
+  required bool selected,
+  Color? checkColor,
+  double checkSize = 18,
+}) {
+  final Widget current = selected
+      ? FushiIcon(
+          Icons.check,
+          key: const ValueKey<String>('fushi-chip-leading-check'),
+          size: checkSize,
+          color: checkColor,
+        )
+      : KeyedSubtree(
+          key: const ValueKey<String>('fushi-chip-leading-avatar'),
+          child: avatar,
+        );
+  return AnimatedSwitcher(
+    duration: fushiMotionDuration(context, FushiMotion.short),
+    switchInCurve: FushiMotion.enter,
+    switchOutCurve: FushiMotion.exit,
+    transitionBuilder: (Widget child, Animation<double> animation) =>
+        FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.6, end: 1).animate(animation),
+            child: child,
+          ),
+        ),
+    child: current,
+  );
+}
+
 /// [ChoiceChip] 的设计系统分派版（含 `.elevated`）。
 class FushiChoiceChip extends StatelessWidget {
   const FushiChoiceChip({
@@ -691,9 +738,26 @@ class FushiChoiceChip extends StatelessWidget {
         tooltip: tooltip,
       );
     }
+    // 有前导图标且要画对勾时：对勾原位替换图标，不走 RawChip 自带对勾（深色
+    // 圆形 scrim，见 [fushiChipLeadingCheckSwap]）。全局 chipTheme 关了对勾时
+    // 维持原样（选中只靠填充）。
+    final Widget? leading = avatar;
+    final bool wantsCheckmark =
+        showCheckmark ?? ChipTheme.of(context).showCheckmark ?? true;
+    final Widget? effectiveAvatar = leading != null && wantsCheckmark
+        ? fushiChipLeadingCheckSwap(
+            context,
+            avatar: leading,
+            selected: selected,
+            checkColor: checkmarkColor ?? labelStyle?.color,
+          )
+        : leading;
+    final bool? effectiveShowCheckmark = leading != null && wantsCheckmark
+        ? false
+        : showCheckmark;
     if (_elevated) {
       return ChoiceChip.elevated(
-        avatar: avatar,
+        avatar: effectiveAvatar,
         label: label,
         labelStyle: labelStyle,
         labelPadding: labelPadding,
@@ -718,7 +782,7 @@ class FushiChoiceChip extends StatelessWidget {
         surfaceTintColor: surfaceTintColor,
         iconTheme: iconTheme,
         selectedShadowColor: selectedShadowColor,
-        showCheckmark: showCheckmark,
+        showCheckmark: effectiveShowCheckmark,
         checkmarkColor: checkmarkColor,
         avatarBorder: avatarBorder,
         avatarBoxConstraints: avatarBoxConstraints,
@@ -727,7 +791,7 @@ class FushiChoiceChip extends StatelessWidget {
       );
     }
     return ChoiceChip(
-      avatar: avatar,
+      avatar: effectiveAvatar,
       label: label,
       labelStyle: labelStyle,
       labelPadding: labelPadding,
@@ -752,7 +816,7 @@ class FushiChoiceChip extends StatelessWidget {
       surfaceTintColor: surfaceTintColor,
       iconTheme: iconTheme,
       selectedShadowColor: selectedShadowColor,
-      showCheckmark: showCheckmark,
+      showCheckmark: effectiveShowCheckmark,
       checkmarkColor: checkmarkColor,
       avatarBorder: avatarBorder,
       avatarBoxConstraints: avatarBoxConstraints,
@@ -966,7 +1030,7 @@ class FushiFilterChip extends StatelessWidget {
     // 排除态：errorContainer 底 + onErrorContainer 减号与文字，不画对勾（对勾
     // 会顶掉减号）。
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Widget? effectiveAvatar = exclude
+    final Widget? leadingAvatar = exclude
         ? (avatar ??
               FushiIcon(Icons.remove, size: 18, color: scheme.onErrorContainer))
         : avatar;
@@ -979,7 +1043,19 @@ class FushiFilterChip extends StatelessWidget {
             color: labelStyle?.color ?? scheme.onErrorContainer,
           )
         : labelStyle;
-    final bool effectiveShowCheckmark = exclude ? false : (showCheckmark ?? true);
+    final bool wantsCheckmark = exclude ? false : (showCheckmark ?? true);
+    // 有前导图标时对勾原位替换图标，不走 RawChip 自带对勾（深色圆形 scrim，见
+    // [fushiChipLeadingCheckSwap]）。
+    final Widget? leading = leadingAvatar;
+    final Widget? effectiveAvatar = leading != null && wantsCheckmark
+        ? fushiChipLeadingCheckSwap(
+            context,
+            avatar: leading,
+            selected: effectiveSelected,
+            checkColor: checkmarkColor ?? effectiveLabelStyle?.color,
+          )
+        : leading;
+    final bool effectiveShowCheckmark = wantsCheckmark && leading == null;
     if (_elevated) {
       return FilterChip.elevated(
         avatar: effectiveAvatar,
