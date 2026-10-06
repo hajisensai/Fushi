@@ -401,6 +401,13 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // 复制完都清掉 app 选区高亮；查词路径由 [_handleTextSelected] 自行收敛到词典匹配长度。
   Future<void> _handleSelectionMenu(ReaderSelectionData data) async {
     if (!mounted) return;
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (_sideSheetOpen || _appearanceSheetOpen ||
+        _studyClockModalDepth > 0 || (owner != null && !owner.isCurrent)) {
+      // A delayed WebView message must not recreate controls over another route.
+      await _clearReaderAppSelection();
+      return;
+    }
     if (data.text.isEmpty) {
       await _clearReaderAppSelection();
       return;
@@ -446,46 +453,53 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // BUG-1438：本操作条是插进**根 Overlay** 的 OverlayEntry，落在全局
     // FushiAppUiScale 的缩放画布内，已天然跟随界面大小；不得再乘
     // _readerImageMenuScale（那是给中和层内 chrome 用的），否则视觉尺寸是 scale²。
-    const double barHeight = kMinInteractiveDimension;
-    const double gap = 8;
-    const double handleReserve = 32 + gap;
-
     final RenderBox? webBox =
         _surfaceWebViewKey.currentContext?.findRenderObject() as RenderBox?;
-    final Map<String, double>? r = data.rect;
-    double selectionTop;
-    double selectionBottom;
-    if (r != null && webBox != null) {
-      // BUG-1438：选区矩形的**两个角**都要过 localToGlobal→globalToLocal，不能只映射
-      // 顶边再加上未换算的 height。`r` 来自 WebView（中和层内的真实像素），而
-      // selectionTop 已在 Overlay 画布空间——两者相加是混量纲，界面大小≠100% 时
-      // 「上方放不下→翻到选区下方」这一分支会偏 (1−1/scale)×选区高。
+    // 本操作条要同时避开两样东西，所以两个矩形分开传：
+    //   data.rect        —— 选区**正文**（首字 rect），面板的锚点（与原实现同源）；
+    //   data.handlesRect —— 两端 32px 手柄触控盒的并集，只是**要避开的障碍**。
+    // 合并成一个矩形传（此前 `handlesRect ?? rect`）会把锚点也换成手柄并集：横排两球挂在
+    // 字下方、并集 top 落在正文里；竖排起球在字上方、页顶放不下时会翻到并集底端 —— 面板
+    // 于是从选区头部掉到选区尾部下方。
+    // 两个矩形的角都过同一条变换链（WebView local -> global -> Overlay local），吸收界面缩放。
+    Rect? mapToOverlay(Map<String, double>? r) {
+      if (r == null || webBox == null) return null;
       final double rx = r['x'] ?? 0;
       final double ry = r['y'] ?? 0;
       final Offset topGlobal = webBox.localToGlobal(Offset(rx, ry));
       final Offset bottomGlobal = webBox.localToGlobal(
-        Offset(rx, ry + (r['height'] ?? 0)),
+        Offset(rx + (r['width'] ?? 0), ry + (r['height'] ?? 0)),
       );
-      selectionTop = overlayBox.globalToLocal(topGlobal).dy;
-      selectionBottom = overlayBox.globalToLocal(bottomGlobal).dy;
-    } else {
-      selectionTop = overlaySize.height / 2;
-      selectionBottom = selectionTop;
+      return Rect.fromPoints(
+        overlayBox.globalToLocal(topGlobal),
+        overlayBox.globalToLocal(bottomGlobal),
+      );
     }
 
-    double top = selectionTop - gap - barHeight;
-    if (top < gap) {
-      top = selectionBottom + handleReserve;
+    final Rect? gripsRect = mapToOverlay(data.handlesRect);
+    // 按**单个球**避让（data.handlesBoxes）；只有并集时退回并集，两者都没有就不避让。
+    final List<Rect> gripBoxes = <Rect>[];
+    final List<Map<String, double>>? rawGripBoxes = data.handlesBoxes;
+    if (rawGripBoxes != null) {
+      for (final Map<String, double> box in rawGripBoxes) {
+        final Rect? mapped = mapToOverlay(box);
+        if (mapped != null) gripBoxes.add(mapped);
+      }
+    } else if (gripsRect != null) {
+      gripBoxes.add(gripsRect);
     }
-    top = top.clamp(
-      gap,
-      (overlaySize.height - barHeight - gap).clamp(gap, double.infinity),
-    );
+    final Rect selectionRect = mapToOverlay(data.rect) ??
+        gripsRect ??
+        Rect.fromLTWH(0, overlaySize.height / 2, 0, 0);
 
     final bool hasAudio = _audiobookController != null &&
         _audiobookController!.chapterCueCount > 0;
     final ThemeData theme = Theme.of(overlayContext);
     final bool glass = isGlassDesign(overlayContext);
+    // 工具条高度：MD3 条与 Apple 玻璃胶囊同高。定位由
+    // [ReaderSelectionToolbarLayout] 负责，这个常量只服务 glass 分支的形状
+    // （`const LiquidRoundedSuperellipse(borderRadius: barHeight / 2)` 要求它是 const）。
+    const double barHeight = kMinInteractiveDimension;
 
     // Apple 分支专用：iOS 26 编辑菜单里的一格。MD3 走下方
     // [ReaderSelectionActionBar]（按宽度降级 + 溢出菜单）。
@@ -548,60 +562,64 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 2026-10 体验优化：原本整条 Row 套 FittedBox(scaleDown)，按钮一多就被等比
     // 缩到 0.5 倍（字和触控目标都太小）。改由 [ReaderSelectionActionBar] 按可用
     // 宽度降级：带文字 → 只图标 + Tooltip → 前 3 颗常驻 + ⋮ 溢出菜单。
-    return Positioned(
-      left: gap,
-      right: gap,
-      top: top,
-      child: glass
-          // Apple：iOS 26 文本编辑菜单——浮在正文上的液态玻璃胶囊（控件层），
-          // 高度同 MD3 条（[barHeight]），定位算法不变。iOS / macOS 正文是
-          // 原生 WebView 平台视图，着色器采不到它，走 BackdropFilter 回退。
-          ? Align(
-              alignment: Alignment.center,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: GlassContainer(
-                  useOwnLayer: true,
-                  quality: fushiGlassQuality(overlayContext, prominent: true),
-                  settings: fushiGlassSettingsOverPlatformView(overlayContext),
-                  shape: const LiquidRoundedSuperellipse(
-                    borderRadius: barHeight / 2,
-                  ),
-                  platformViewBackdrop:
-                      fushiGlassOverPlatformView(overlayContext),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: glassSelectionButtons(),
+    return Positioned.fill(
+      child: CustomSingleChildLayout(
+        delegate: ReaderSelectionToolbarLayout(
+          selectionRect: selectionRect,
+          gripBoxes: gripBoxes,
+          safeInsets: MediaQuery.paddingOf(overlayContext),
+        ),
+        child: glass
+            // Apple：iOS 26 文本编辑菜单——浮在正文上的液态玻璃胶囊（控件层），
+            // 高度同 MD3 条（[barHeight]），定位算法不变。iOS / macOS 正文是
+            // 原生 WebView 平台视图，着色器采不到它，走 BackdropFilter 回退。
+            ? Align(
+                alignment: Alignment.center,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: GlassContainer(
+                    useOwnLayer: true,
+                    quality: fushiGlassQuality(overlayContext, prominent: true),
+                    settings: fushiGlassSettingsOverPlatformView(overlayContext),
+                    shape: const LiquidRoundedSuperellipse(
+                      borderRadius: barHeight / 2,
+                    ),
+                    platformViewBackdrop:
+                        fushiGlassOverPlatformView(overlayContext),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: glassSelectionButtons(),
+                      ),
                     ),
                   ),
                 ),
+              )
+            : ReaderSelectionActionBar(
+                color: theme.popupMenuTheme.color ??
+                    theme.colorScheme.surfaceContainerHigh,
+                items: <ReaderSelectionActionItem>[
+                  item(Icons.search_outlined, t.search, 'search'),
+                  item(Icons.copy_outlined, t.copy, 'copy'),
+                  if (isAndroidPlatform)
+                    item(Icons.share_outlined, t.share, 'share'),
+                  if (isAndroidPlatform)
+                    item(
+                      Icons.travel_explore,
+                      t.selection_web_search,
+                      'webSearch',
+                    ),
+                  item(Icons.star_border, t.action_favorite, 'favorite'),
+                  if (hasAudio)
+                    item(
+                      Icons.movie_creation_outlined,
+                      t.audiobook_export_clip,
+                      'export',
+                    ),
+                ],
               ),
-            )
-          : ReaderSelectionActionBar(
-              color: theme.popupMenuTheme.color ??
-                  theme.colorScheme.surfaceContainerHigh,
-              items: <ReaderSelectionActionItem>[
-                item(Icons.search_outlined, t.search, 'search'),
-                item(Icons.copy_outlined, t.copy, 'copy'),
-                if (isAndroidPlatform)
-                  item(Icons.share_outlined, t.share, 'share'),
-                if (isAndroidPlatform)
-                  item(
-                    Icons.travel_explore,
-                    t.selection_web_search,
-                    'webSearch',
-                  ),
-                item(Icons.star_border, t.action_favorite, 'favorite'),
-                if (hasAudio)
-                  item(
-                    Icons.movie_creation_outlined,
-                    t.audiobook_export_clip,
-                    'export',
-                  ),
-              ],
-            ),
+      ),
     );
   }
 
@@ -938,9 +956,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
   /// [resolvedFile] 非空 = 兄弟卷插图（BUG-2521）：文件由卷上下文解析、不经本书
   /// 解压目录，右键分享菜单也不挂（它按 [imgUrl] 在本书目录里找文件，找不到）。
-  void _openImageViewer(String imgUrl, {File? resolvedFile}) {
+  Future<void> _openImageViewer(String imgUrl, {File? resolvedFile}) async {
     final File? file = resolvedFile ?? _readerImageFileForUrl(imgUrl);
     if (file == null) return;
+    await _clearReaderAppSelection();
+    if (!mounted) return;
     final bool contextMenu = resolvedFile == null;
     // BUG-2208：全屏看图期间停表（路由 pop 后按判据续表）。
     unawaited(
@@ -980,9 +1000,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // reuses [_navigateToChapter] (no second navigation path). Reads
   // [_currentChapter] only -- never writes reader/WebView state.
 
-  void _openGallery() {
+  Future<void> _openGallery() async {
     final EpubBook? book = _book;
     if (book == null) return;
+    await _clearReaderAppSelection();
+    if (!mounted) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
     final List<TtuTocEntry> toc = _buildTtuToc();
@@ -2261,6 +2283,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
     _sideSheetOpen = true;
     try {
+      // BUG-3049: DOM grips and the host action bar share this route boundary.
+      await _clearReaderAppSelection();
+      if (!mounted) return;
       if (movableSettings) {
         await showReaderSettingsSideDialog<void>(
           context: context,
@@ -2849,6 +2874,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 统计侧栏「打开完整记录」→ 统计中心（阅读 tab）。侧栏本身不停表，但这是
   /// 压住正文的全页路由（BUG-2208），与画廊同款经 [_withStudyClockPaused]。
   Future<void> _openStatisticsCenter() async {
+    if (!mounted) return;
+    await _clearReaderAppSelection();
     if (!mounted) return;
     await _withStudyClockPaused(
       () => Navigator.of(context).push(

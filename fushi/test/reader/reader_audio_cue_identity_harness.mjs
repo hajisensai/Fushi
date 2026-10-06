@@ -21,7 +21,8 @@ try {
     const result = await driver.evalOnPage('<!doctype html><meta charset="utf-8"><body>', `(async () => {
       (0, eval)(${JSON.stringify(source)});
       window.flutter_inappwebview = {callHandler: (name, payload) => {
-        window.lastPayload = JSON.parse(payload);
+        if (typeof payload === 'string') window.lastPayload = JSON.parse(payload);
+        window.lastEvent = name;
       }};
       window.__fushiCssHighlightsSupported = true;
       const reader = window.fushiReader;

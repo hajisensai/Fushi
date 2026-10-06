@@ -1273,13 +1273,22 @@ window.__fushiInstallShell = function(C) {
     this.__restoreCharOffset = typeof charOffset === 'number' ? charOffset : null;
     this.__restoreCharOffsetEnd = endCharOffset;
   },
-  // BUG-2748：用户亲手挪了视口（连续模式的滚轮 / 触摸原生滚动 / 拖滚动条 / 方向与翻页键
-  // 原生滚动 / 查词弹窗遮罩转发的滚动），与 paginate 同一语义：放弃迟到图片锚与恢复锚。
-  // 否则滚远后前方懒图 load，reapplyImageLateAnchor 把视口拽回最近一次揭示 / 恢复的目标。
-  // 连续 shell 的输入监听见 continuousShellSource 末尾；Dart 转发见 _evaluateScrollForward。
+  // BUG-2748：捕获阶段只认领滚动意图，放弃迟到图片锚与恢复锚。
+  // 输入不代表位移：手柄 touchmove、边界 wheel、滚动条 pointerdown 都可能没滚动。
+  // 选区只在真实滚动坐标变化或成功翻页后清理，不能在 target 手柄监听前清掉它。
   noteUserScroll: function() {
     this.clearImageLateAnchor();
     this._setRestoreCharAnchor(null);
+  },
+  // 连续滚动保留活动拖选；显式翻页 / 分页程序化换页则结束旧拖选会话。
+  // shell 决定失效语义，selection 模块负责完整清理及 Flutter 通知。
+  _clearSelectionOnViewportChange: function(force) {
+    var s = window.fushiSelection;
+    if (force && s && typeof s.clearSelection === 'function') {
+      s.clearSelection();
+    } else if (s && typeof s.clearSelectionOnViewportChange === 'function') {
+      s.clearSelectionOnViewportChange();
+    }
   },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
@@ -2565,9 +2574,15 @@ $kSentenceAudioRubyGapJs
     this.lockRootViewport();
   },
   setPagePosition: function(context, position) {
+    var before = this.getPagePosition(context);
     var clamped = Math.min(Math.max(0, position), context.physicalMaxScroll);
     window.lastPageScroll = clamped;
     this.assignPagePosition(context, clamped);
+    // paginate、进度 / 字符 / fragment 恢复、音频定位共用此收口。
+    // 同位置的 settle / rAF 重写不清，避免清掉落点后新建的选区。
+    if (this.getPagePosition(context) !== before) {
+      this._clearSelectionOnViewportChange(true);
+    }
     return clamped;
   },
   registerSnapScroll: function(initialScroll) {
@@ -3574,6 +3589,16 @@ $kSentenceAudioRubyGapJs
     var root = document.scrollingElement || document.documentElement;
     return this.isVertical() ? window.scrollX : root.scrollTop;
   },
+  // 原生 / 转发 / 程序化滚动都按内容轴实际坐标判定；重复或子元素 scroll 不清选区。
+  // 先更新快照，即使正在拖选也不把这次位移留到松手后再补清。
+  _onContinuousViewportScroll: function() {
+    var position = this._readContinuousScroll();
+    var previous = this.__selectionViewportScroll;
+    this.__selectionViewportScroll = position;
+    if (typeof previous === 'number' && position !== previous) {
+      this._clearSelectionOnViewportChange();
+    }
+  },
   _writeContinuousScroll: function(pos) {
     if (this.isVertical()) {
       window.scrollTo(pos, 0);
@@ -3837,8 +3862,7 @@ $kSentenceAudioRubyGapJs
     this.clearImageLateAnchor();
     this._setRestoreCharAnchor(null);
     var vertical = this.isVertical();
-    var root = document.scrollingElement || document.documentElement;
-    var before = vertical ? window.scrollX : root.scrollTop;
+    var before = this._readContinuousScroll();
     var wm = window.getComputedStyle(document.body).writingMode;
     var amount = vertical
       ? Math.max(1, Math.floor(window.innerWidth * 0.9))
@@ -3850,8 +3874,11 @@ $kSentenceAudioRubyGapJs
     } else {
       window.scrollBy({left: 0, top: step, behavior: 'auto'});
     }
-    var after = vertical ? window.scrollX : root.scrollTop;
+    var after = this._readContinuousScroll();
+    // scroll 事件稍后送达时不再重复清理（其间用户可能已经重新选词）。
+    this.__selectionViewportScroll = after;
     var moved = Math.abs(after - before) > 1;
+    if (moved) this._clearSelectionOnViewportChange(true);
     return moved ? "scrolled" : "limit";
   },
   getFirstVisibleCharOffset: function() {
@@ -4325,6 +4352,19 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
   // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
   // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
+})();
+// 每次安装 shell 都以当前真实滚动位初始化快照；监听按文档装一次、动态读当前 reader。
+// document capture 同时覆盖根文档滚动和元素滚动，后者只有内容轴变化才会清选区。
+(function() {
+  window.fushiReader.__selectionViewportScroll = window.fushiReader._readContinuousScroll();
+  if (window.__fushiContinuousViewportScrollInstalled) return;
+  window.__fushiContinuousViewportScrollInstalled = true;
+  document.addEventListener('scroll', function() {
+    var r = window.fushiReader;
+    if (r && r._isContinuousShell && r._isContinuousShell()) {
+      r._onContinuousViewportScroll();
+    }
+  }, {capture: true, passive: true});
 })();
 // BUG-2748：连续模式用户滚动的输入入口统一在这里认领，调 noteUserScroll（语义见 _sharedJs）。
 // 连续模式的视口由原生滚动驱动，没有分页那种单一 paginate 入口：滚轮（webview 层的 wheel
