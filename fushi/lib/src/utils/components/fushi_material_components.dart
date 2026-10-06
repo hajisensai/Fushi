@@ -2001,7 +2001,9 @@ class FushiSelectableChip extends StatelessWidget {
           : BorderSide.none,
       shape: const StadiumBorder(),
       visualDensity: VisualDensity.compact,
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      // 视觉保持紧凑 32 高；触控平台（主题 padded）由 RawChip 给出 48 高的
+      // 命中与语义区，桌面精确指针（主题 shrinkWrap）照旧紧凑（HBK-AUDIT-038）。
+      materialTapTargetSize: Theme.of(context).materialTapTargetSize,
       onSelected: onSelected,
     );
     // 仅图标模式默认用 label 作 tooltip（图标语义靠 hover / 长按文字说明），
@@ -4996,7 +4998,12 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
-    final Color foreground = color ?? cs.onSurface;
+    // 选中项底是 secondaryContainer（墨水屏不铺底），前景必须用配对的
+    // onSecondaryContainer：onSurface 在白 surface 深色自定义主题下与该底只有
+    // 约 2.1:1（HBK-AUDIT-041）。调用方显式给的 color（如 destructive）优先。
+    final bool onContainer = selected && !isEinkTheme(context);
+    final Color foreground =
+        color ?? (onContainer ? cs.onSecondaryContainer : cs.onSurface);
     final TextStyle textStyle = (tt.bodyMedium ?? const TextStyle()).copyWith(
       fontSize: 14,
       color: foreground,
@@ -5008,7 +5015,12 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
       child: Row(
         children: <Widget>[
           if (icon != null) ...<Widget>[
-            FushiIcon(icon, size: 20, color: color ?? cs.onSurfaceVariant),
+            FushiIcon(
+              icon,
+              size: 20,
+              color: color ??
+                  (onContainer ? cs.onSecondaryContainer : cs.onSurfaceVariant),
+            ),
             const SizedBox(width: 12),
           ],
           Expanded(
@@ -5021,7 +5033,12 @@ class _FushiPopupMenuItemContent extends StatelessWidget {
           ),
           if (selected) ...<Widget>[
             const SizedBox(width: 12),
-            FushiIcon(FushiIcons.check, size: 20, color: color ?? cs.primary),
+            FushiIcon(
+              FushiIcons.check,
+              size: 20,
+              color:
+                  color ?? (onContainer ? cs.onSecondaryContainer : cs.primary),
+            ),
           ],
         ],
       ),

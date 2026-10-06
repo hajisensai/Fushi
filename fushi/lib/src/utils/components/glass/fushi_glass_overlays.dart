@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -1369,7 +1370,7 @@ Widget _appleMenuDivider(BuildContext context) {
 // 动效：Apple = iOS / macOS 26 的「从按钮变形展开」——玻璃面板从触发器的
 // 位置、尺寸、圆角出发，弹簧过渡到最终矩形，内容随后淡入；关闭反向收回触发器。
 // MD3 = 淡入 + 从锚定边向外的下拉展开（翻到上方时自下而上）。
-// 系统「减少动态效果」（MediaQuery.disableAnimations）下直接出现。
+// 系统「减少动态效果」与墨水屏（fushiMotionEnabled）下直接出现。
 // ---------------------------------------------------------------------------
 
 /// 菜单与触发器之间的间距。
@@ -1542,7 +1543,8 @@ Future<T?> showFushiMenu<T>({
         _FushiMenuRoute<T>(
           apple: apple,
           appleRadius: apple ? _menuRadius(context) : 0,
-          reduceMotion: MediaQuery.maybeDisableAnimationsOf(context) ?? false,
+          // 墨水屏与系统减弱动效同一入口（fushiMotionEnabled），HBK-AUDIT-042。
+          reduceMotion: !fushiMotionEnabled(context),
           focusItemOnOpen: keyboardOpened,
           position: position,
           positionBuilder: positionBuilder,

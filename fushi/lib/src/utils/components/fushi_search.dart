@@ -457,6 +457,7 @@ Future<String?> showFushiSearchView({
   }
   final String? result = await navigator.push<String>(
     _FushiSearchViewRoute(
+      motionEnabled: fushiMotionEnabled(context),
       capturedThemes: InheritedTheme.capture(
         from: context,
         to: navigator.context,
@@ -518,7 +519,11 @@ class _FushiSearchViewRoute extends PopupRoute<String> {
     required this.config,
     required this.anchorRect,
     required this.barrierLabel,
+    required this.motionEnabled,
   });
+
+  /// 打开时的动效资格（墨水屏 / 系统减弱动效 → false，路由瞬开瞬关）。
+  final bool motionEnabled;
 
   final CapturedThemes capturedThemes;
   final _FushiSearchViewConfig config;
@@ -534,10 +539,12 @@ class _FushiSearchViewRoute extends PopupRoute<String> {
   Color? get barrierColor => null;
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 500);
+  Duration get transitionDuration =>
+      motionEnabled ? const Duration(milliseconds: 500) : Duration.zero;
 
   @override
-  Duration get reverseTransitionDuration => FushiMotion.longReverse;
+  Duration get reverseTransitionDuration =>
+      motionEnabled ? FushiMotion.longReverse : Duration.zero;
 
   @override
   Widget buildPage(
