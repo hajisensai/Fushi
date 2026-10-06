@@ -933,8 +933,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: "packages/asr_core"
-      ref: "976963acdb8c842aece9d9ddb16a921fefb8f586"
-      resolved-ref: "976963acdb8c842aece9d9ddb16a921fefb8f586"
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
+      resolved-ref: f4984a897594ebded3c34f4c260f92f605da4aa0
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -942,8 +942,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_onnx_ffi"
-      ref: "976963acdb8c842aece9d9ddb16a921fefb8f586"
-      resolved-ref: "976963acdb8c842aece9d9ddb16a921fefb8f586"
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
+      resolved-ref: f4984a897594ebded3c34f4c260f92f605da4aa0
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
@@ -951,8 +951,8 @@ packages:
     dependency: transitive
     description:
       path: "packages/asr_subtitles"
-      ref: "976963acdb8c842aece9d9ddb16a921fefb8f586"
-      resolved-ref: "976963acdb8c842aece9d9ddb16a921fefb8f586"
+      ref: f4984a897594ebded3c34f4c260f92f605da4aa0
+      resolved-ref: f4984a897594ebded3c34f4c260f92f605da4aa0
       url: "https://github.com/hajisensai/fushi-subtitles.git"
     source: git
     version: "0.1.0"
