@@ -488,6 +488,12 @@ class _HomeGamePageState extends State<HomeGamePage> {
             ),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
             // 「工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
+            // 网格 / 列表切换（与视频库「全部视频」同位：页头动作）。只在真库页
+            // 时出现——注入 libraryBuilder 的测试宿主没有 ProviderScope。
+            actions: <Widget>[
+              if (widget.libraryBuilder == null)
+                const GamesLibraryLayoutToggle(),
+            ],
           ),
           Expanded(
             child: Column(
