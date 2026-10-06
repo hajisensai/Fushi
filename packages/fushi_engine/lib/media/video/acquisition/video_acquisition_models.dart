@@ -458,13 +458,22 @@ class VideoAcquisitionSay {
 /// [label] 是**已经确定的显示文本**（作品标题、来源名、分辨率串这类不需要翻译
 /// 的字面量）；null 时页面按 (slot, id) 取 i18n。
 class VideoAcquisitionOption {
-  const VideoAcquisitionOption({required this.id, this.label, this.hint});
+  const VideoAcquisitionOption({
+    required this.id,
+    this.label,
+    this.hint,
+    this.args = const <String, Object?>{},
+  });
 
   final String id;
   final String? label;
 
-  /// 副标题（作品年份 / 类型、版本卡做种数…）。
+  /// 副标题（作品年份 / 类型…）。
   final String? hint;
+
+  /// 与语言无关的参数，由渲染方按自己的语言出文案。候选版本（`alt:<i>`）带
+  /// [videoAcquisitionVersionArgs] 那一份事实，与当前版本卡同一口径（BUG-2958）。
+  final Map<String, Object?> args;
 }
 
 /// 当前挂起的问题：最多一个。
@@ -1271,11 +1280,11 @@ class VideoAcquisitionSubmitSubscriptionEffect extends VideoAcquisitionEffect {
   final bool installSubtitles;
 }
 
-/// 找 [item] 所在的系列。
+/// 找锚点作品所在的系列。
 class VideoAcquisitionLoadFranchiseEffect extends VideoAcquisitionEffect {
-  const VideoAcquisitionLoadFranchiseEffect(this.item);
+  const VideoAcquisitionLoadFranchiseEffect(this.query);
 
-  final VideoDiscoveryItem item;
+  final VideoFranchiseQuery query;
 }
 
 /// 系列还没查完：调 [more]（上一批 [VideoFranchise.more]）接着查下一批，结果照样
