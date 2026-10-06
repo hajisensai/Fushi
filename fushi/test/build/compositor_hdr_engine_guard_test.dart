@@ -35,6 +35,23 @@ void main() {
     }
   });
 
+  test('artifacts.json 指向本仓 release 资产、带 SHA-256（CI 据此安装补丁引擎）', () {
+    final Map<String, Object?> artifacts =
+        jsonDecode(_read('$patchDir/artifacts.json')) as Map<String, Object?>;
+    final String patchVersion = artifacts['patchVersion']! as String;
+    final String url = artifacts['url']! as String;
+    expect(artifacts['engineVersion'], matches(RegExp(r'^[0-9a-f]{40}$')));
+    expect(artifacts['sha256'], matches(RegExp(r'^[0-9a-f]{64}$')));
+    expect(
+      url,
+      startsWith('https://github.com/hajisensai/Fushi/releases/download/'),
+    );
+    expect(url, contains('flutter-engine-$flutterVersion-$patchVersion/'));
+    // 引擎 release 的 tag 不能像 app 版本号：app 更新检查与发布 workflow 都按
+    // 「数字或 v+数字开头」认 app release。
+    expect(url, isNot(contains('/download/v')));
+  });
+
   test('补丁是 LF（git apply 在 CRLF 补丁上整份失败）', () {
     for (final String name in <String>[
       'engine-hdr-output.patch',
