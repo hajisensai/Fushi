@@ -150,15 +150,38 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   bool _loaded = false;
   bool _sending = false;
 
+  /// 最近一次读表失败（成功后清空）。首次读表就失败时结束骨架、显示错误态与
+  /// 重试；已有数据时刷新失败保留旧列表（BUG-2996）。
+  Object? _loadError;
+
   @override
   Future<void> reload() async {
-    final List<PendingMineRow> rows = await store.all();
-    if (mounted) {
-      setState(() {
-        _rows = rows;
-        _loaded = true;
-      });
+    try {
+      final List<PendingMineRow> rows = await store.all();
+      if (mounted) {
+        setState(() {
+          _rows = rows;
+          _loaded = true;
+          _loadError = null;
+        });
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('PendingMinesPage.reload', e, stack);
+      if (mounted) {
+        setState(() {
+          _loaded = true;
+          _loadError = e;
+        });
+      }
     }
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _loaded = false;
+      _loadError = null;
+    });
+    unawaited(reload());
   }
 
   PendingMiningAnkiRepository? get _repo {
@@ -298,6 +321,26 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gutter = tokens.spacing.page;
     if (!_loaded) return _skeleton(context, gutter);
+    final Object? loadError = _loadError;
+    if (loadError != null && _rows.isEmpty) {
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.error_load_failed,
+            detail: '$loadError',
+            action: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('pending-mines-load-retry'),
+              onPressed: _retryLoad,
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ),
+      );
+    }
     // 空态走统一占位（M3E 色块图标 + 文案）。
     if (_rows.isEmpty) {
       return SafeArea(
