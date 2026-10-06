@@ -43,6 +43,8 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
 import 'package:fushi/src/media/audiobook/lyrics_cue_text.dart';
@@ -2141,6 +2143,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 覆盖层外观给出的歌词 HTML 主题（设计系统 / 封面取色变化时热更）。
   LyricsHtmlTheme? _lyricsHtmlTheme;
+
+  /// 歌词模式的书中插图状态（进歌词模式时异步探测装入，退出时丢弃）；null =
+  /// 不在歌词模式 / 还没探测完 / 这本书没有可显示的插图。
+  LyricsIllustrationController? _lyricsIllustrations;
+
+  /// 插图探测的代次：退出歌词模式（或重进）后，在途的探测结果作废。
+  int _lyricsIllustrationGeneration = 0;
 
   /// 当前可交互文档的 WebView：歌词覆盖层在场时是歌词 WebView，否则是正文。
   /// 选词 / 清选区 / 查词高亮这类「对用户正在看的那份文档」的操作都走它。

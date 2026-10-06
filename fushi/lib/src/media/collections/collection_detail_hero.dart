@@ -1,6 +1,6 @@
 /// 合集详情页 hero（书架 / 漫画库 / 游戏库共用）：堆叠封面大图 + 合集名 + 项数 /
 /// 读完数 + 整体进度（M3E 波浪条 + Display 级百分比；Apple 细线条）+ 「继续」主
-/// 按钮（M3E 扩展 FAB；Apple 填充按钮）+ 彩色标签 chip 与「编辑标签」。
+/// 按钮（M3E 尺寸档 M 填充按钮；Apple 填充胶囊）+ 彩色标签 chip 与「编辑标签」。
 ///
 /// 宽屏（[wide]）封面在左、信息在右；窄屏上下堆叠、封面居中。只吃纯值与回调，
 /// 数据求值（续读是哪一本、进度怎么算）在页面与 `collection_member_view.dart`。
@@ -240,8 +240,12 @@ class _HeroProgress extends StatelessWidget {
   }
 }
 
-/// 「继续 / 开始」主按钮：M3E 扩展 FAB（圆角方、primaryContainer、按压回弹），
-/// Apple 强调色填充按钮。副文案是目标条目名。
+/// 「继续 / 开始」主按钮：M3E 尺寸档 M 的填充按钮（56 高、左右 24 留白，按压
+/// 形变），Apple 强调色填充胶囊。副文案是目标条目名。
+///
+/// 不能用扩展 FAB：它把图标 + 文字按无界宽度排版后居中，可用宽度不够时内容
+/// 从两侧溢出按钮（手机上长条目名把播放图标挤到按钮左缘外，BUG-3063）。填充
+/// 按钮的文字是 Flexible，宽度不够就按省略号收缩，左右留白恒等于尺寸档 token。
 class _ContinueButton extends StatelessWidget {
   const _ContinueButton({
     required this.started,
@@ -261,37 +265,18 @@ class _ContinueButton extends StatelessWidget {
     final String text = subtitle == null || subtitle!.isEmpty
         ? label
         : '$label · $subtitle';
-    if (isGlassDesign(context)) {
-      return FushiFilledButton(
-        key: const ValueKey<String>('collection_detail_continue'),
-        onPressed: onPressed,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const FushiIcon(FushiIcons.play, size: 20),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
-      );
-    }
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 420),
-      child: FushiFab(
+      child: FushiFilledButton.icon(
         key: const ValueKey<String>('collection_detail_continue'),
-        heroTag: null,
+        size: FushiButtonSize.m,
         onPressed: onPressed,
-        icon: const FushiIcon(FushiIcons.play, size: 28),
-        label: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320),
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700),
-          ),
+        icon: const FushiIcon(FushiIcons.play),
+        label: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
     );

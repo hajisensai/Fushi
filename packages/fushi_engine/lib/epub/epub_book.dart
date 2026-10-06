@@ -361,6 +361,7 @@ class EpubBook {
       int normCharOffset, {
       int charOffset = 0,
       List<String> leadingAnchorIds = const <String>[],
+      bool sharesLineWithText = false,
     }) {
       final String? key = normalizeEpubImageKey(resolvedSrc);
       if (key == null || !seen.add(key)) return;
@@ -372,6 +373,7 @@ class EpubBook {
         normCharOffset: normCharOffset,
         charOffset: charOffset,
         leadingAnchorIds: leadingAnchorIds,
+        sharesLineWithText: sharesLineWithText,
       ));
     }
 
@@ -397,6 +399,7 @@ class EpubBook {
           _normCharOffsetOf(hit.charsBefore, scan.totalChars),
           charOffset: hit.charsBefore,
           leadingAnchorIds: hit.leadingAnchorIds,
+          sharesLineWithText: hit.sharesLineWithText,
         );
       }
     }
@@ -446,6 +449,7 @@ class EpubBook {
           src: src,
           charsBefore: chars,
           leadingAnchorIds: idsAtCount,
+          sharesLineWithText: _sharesBlockWithText(node),
         ));
       }
       for (final html_dom.Node child in node.nodes) {
@@ -455,6 +459,71 @@ class EpubBook {
 
     if (body != null) visit(body);
     return _ChapterImageScan(hits: hits, totalChars: chars);
+  }
+
+  /// Block-level tags that end the walk in [_sharesBlockWithText]: an image's
+  /// nearest one of these is the "line box" it is typeset in.
+  static const Set<String> _imageBlockTags = <String>{
+    'address',
+    'article',
+    'aside',
+    'blockquote',
+    'body',
+    'center',
+    'dd',
+    'div',
+    'dl',
+    'dt',
+    'figcaption',
+    'figure',
+    'footer',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'h5',
+    'h6',
+    'header',
+    'li',
+    'main',
+    'nav',
+    'ol',
+    'p',
+    'pre',
+    'section',
+    'table',
+    'td',
+    'th',
+    'tr',
+    'ul',
+  };
+
+  /// See [EpubImageRef.sharesLineWithText]: walks from [element] up to its
+  /// nearest block-level ancestor and reports whether that block's own inline
+  /// content holds any non-whitespace text outside ruby annotations. Nested
+  /// blocks are not descended into: `<body><img/><p>text</p></body>` puts the
+  /// image in a line of its own, `<p>「<img/>」</p>` does not.
+  static bool _sharesBlockWithText(html_dom.Element element) {
+    html_dom.Element? block = element;
+    while (block != null &&
+        !_imageBlockTags.contains((block.localName ?? '').toLowerCase())) {
+      block = block.parent;
+    }
+    if (block == null) return false;
+    bool hasText(html_dom.Node node) {
+      if (node is html_dom.Text) return node.data.trim().isNotEmpty;
+      if (node is html_dom.Element && !identical(node, block)) {
+        final String tag = (node.localName ?? '').toLowerCase();
+        if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return false;
+        if (_imageBlockTags.contains(tag)) return false;
+      }
+      for (final html_dom.Node child in node.nodes) {
+        if (hasText(child)) return true;
+      }
+      return false;
+    }
+
+    return hasText(block);
   }
 
   /// The image references [element] itself carries (chapter-relative, in
@@ -621,6 +690,7 @@ class EpubImageRef {
     this.normCharOffset = 0,
     this.charOffset = 0,
     this.leadingAnchorIds = const <String>[],
+    this.sharesLineWithText = false,
   });
 
   final int chapterIndex;
@@ -656,6 +726,16 @@ class EpubImageRef {
   /// image and anchor at one offset. An anchor listed here precedes the image;
   /// one at the same offset that is not listed follows it.
   final List<String> leadingAnchorIds;
+
+  /// Whether this image is typeset inside a run of text: its nearest
+  /// block-level ancestor (`<p>`, `<div>`, `<h2>`, `<li>`…) also carries
+  /// readable text (ruby annotations excluded). That is how an EPUB embeds a
+  /// glyph it has no font for (外字 / gaiji), a heading ornament, or an inline
+  /// icon; a full-page plate sits in a block of its own. Layout evidence only
+  /// — callers combine it with the image's pixel size (a large picture with a
+  /// caption in the same `<p>` is still an illustration). Always false for the
+  /// OPF cover entry.
+  final bool sharesLineWithText;
 
   /// The spine chapter to navigate to for this image. Same as [chapterIndex]
   /// except for a cover that no chapter references ([kEpubCoverChapterIndex]),
@@ -693,6 +773,7 @@ class _ChapterImageHit {
     required this.src,
     required this.charsBefore,
     required this.leadingAnchorIds,
+    required this.sharesLineWithText,
   });
 
   /// The raw, chapter-relative reference (not yet resolved).
@@ -703,6 +784,9 @@ class _ChapterImageHit {
 
   /// See [EpubImageRef.leadingAnchorIds].
   final List<String> leadingAnchorIds;
+
+  /// See [EpubImageRef.sharesLineWithText].
+  final bool sharesLineWithText;
 }
 
 class _ChapterImageScan {
