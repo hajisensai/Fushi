@@ -200,12 +200,16 @@ void main() {
       }
     });
 
-    test('top fade scrims live only in shared components', () {
+    test('top fade scrims live in shared components or approved hosts', () {
       const Set<String> allowed = <String>{
         'lib/src/utils/components/fushi_floating_chrome.dart',
         'lib/src/utils/components/fushi_material_components.dart',
         'lib/src/utils/components/glass/fushi_glass_bars.dart',
         'lib/src/pages/implementations/discovery/discovery_hero_carousel.dart',
+        // Narrow settings owns its header without the embedded page shell.
+        'lib/src/settings/settings_home_page.dart',
+        // The shared detail shell owns one scrim above its scrolling body.
+        'lib/src/settings/settings_kit.dart',
       };
       final List<String> offenders = <String>[];
       for (final FileSystemEntity entity in Directory(

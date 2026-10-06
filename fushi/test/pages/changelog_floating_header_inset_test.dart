@@ -5,7 +5,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/changelog_page.dart';
-import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/utils.dart';
 
 void main() {

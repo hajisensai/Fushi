@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
 import 'package:fushi/utils.dart';
 
 /// 有声书侧板（2026-10 重设计）：正在播放卡 + 「章节 / 设置」页签；章节页顶部是
@@ -48,7 +49,15 @@ void main() {
   testWidgets('无控制器：正在播放卡给导入入口，没有句子页签', (tester) async {
     await tester.pumpWidget(_host(_panel(onImport: () {})));
     await tester.pump();
-    expect(find.text(t.audio_import), findsOneWidget);
+    // 正在播放卡（无控制器时的空态）给导入入口；章节页的「对齐与转录」卡也有
+    // 一个导入按钮（059b4bd7f36），所以按卡片限定范围。
+    expect(
+      find.descendant(
+        of: find.byType(ReaderPanelEmpty),
+        matching: find.text(t.audio_import),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.byKey(
         const ValueKey<String>('fushi_audiobook_tab_button_sentences'),
