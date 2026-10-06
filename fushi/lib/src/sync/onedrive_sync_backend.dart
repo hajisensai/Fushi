@@ -354,7 +354,7 @@ class OneDriveSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
     final request = http.StreamedRequest(
@@ -374,7 +374,7 @@ class OneDriveSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     // Get the download URL from item metadata.
     final metaResp = await _graphGet('/me/drive/items/$fileId');
