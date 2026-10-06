@@ -36,6 +36,52 @@ void main() {
     expect(host, isNot(contains('DwmExtendFrameIntoClientArea')));
   });
 
+  // BUG-2964：主窗 DWM 合成状态只能由一处按 main_surface_composition.h 派生。
+  // 边框延伸进客户区的像素会被画成边框 / 标题栏材质（不透明，盖在 blur-behind
+  // 透出来的视频上）：隐藏标题栏阴影的 {0,0,1,0} 曾在 HDR 画面顶上画出一条
+  // DWMWA_CAPTION_COLOR 横线（实测客户区第 0 行 = 主题底色）；窗口阴影伸到客户区
+  // 第 0 行下方，透明像素会把它露出来（顶行暗 8-17%），全屏直通时要关掉 NC 渲染。
+  test('主窗 DWM 合成只有一个写入者，随 HDR 直通 / 全屏进出重算（BUG-2964）', () {
+    expect(
+      'DwmExtendFrameIntoClientArea('.allMatches(window).length,
+      1,
+      reason: '边距写入必须只在 ApplyMainSurfaceComposition 一处',
+    );
+    expect(
+      'DWMWA_NCRENDERING_POLICY'.allMatches(window).length,
+      1,
+      reason: 'NC 渲染策略写入必须只在 ApplyMainSurfaceComposition 一处',
+    );
+    final String body = _functionBody(
+      window,
+      'void FlutterWindow::ApplyMainSurfaceComposition(',
+      mustContain: 'const fushi::MainSurfaceState& state',
+    );
+    expect(body, contains('fushi::MainFrameMargins(state)'));
+    expect(body, contains('DwmExtendFrameIntoClientArea('));
+    expect(body, contains('fushi::MainSurfaceNcRenderingDisabled(state)'));
+    expect(body, contains('DWMWA_NCRENDERING_POLICY'));
+    // 宿主窗切透明时通知主窗（不在宿主窗里私改主窗 DWM 状态）。
+    expect(host, contains('on_main_passthrough_(enable);'));
+    expect(window, contains('SetMainVideoPassthrough(enabled);'));
+    final String setter = _functionBody(
+      window,
+      'void FlutterWindow::SetMainVideoPassthrough(',
+    );
+    expect(setter, contains('SetVideoPassthrough(enabled);'));
+    expect(setter, contains('ApplyMainSurfaceComposition();'));
+    // 全屏切换：退出时先按「非全屏」恢复 NC 渲染（边框还在屏外），再还原几何；
+    // 进出之后都按真实状态再下发一次。
+    final int leaving = window.indexOf('leaving.fullscreen = false;');
+    final int setFullscreen = window.indexOf('SetFullscreen(enter);');
+    expect(leaving, greaterThan(0));
+    expect(setFullscreen, greaterThan(leaving));
+    expect(
+      window.substring(setFullscreen, setFullscreen + 120),
+      contains('ApplyMainSurfaceComposition();'),
+    );
+  });
+
   test('z-order 只以主窗为锚插到其后，绝不对主窗设 TOPMOST', () {
     expect(host, contains('SetWindowPos(hwnd_, main_,'));
     expect(host, isNot(contains('HWND_TOPMOST')));
@@ -168,3 +214,21 @@ String _fushiDir() {
 String _runnerDir() => '${_fushiDir()}/windows/runner';
 
 String _read(String path) => File(path).readAsStringSync();
+
+/// [source] 里以 [signature] 开头的 C++ 函数定义，截到第一个列首的 `}`。
+/// [mustContain] 用来在同名重载里挑出目标那一个。
+String _functionBody(String source, String signature, {String? mustContain}) {
+  final RegExp end = RegExp(r'\r?\n\}\r?\n');
+  int from = 0;
+  while (true) {
+    final int at = source.indexOf(signature, from);
+    expect(at, greaterThanOrEqualTo(0), reason: signature);
+    final Match? close = end.firstMatch(source.substring(at));
+    expect(close, isNotNull, reason: signature);
+    final String body = source.substring(at, at + close!.start);
+    if (mustContain == null || body.contains(mustContain)) {
+      return body;
+    }
+    from = at + signature.length;
+  }
+}

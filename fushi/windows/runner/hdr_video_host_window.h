@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include <functional>
+
 namespace fushi {
 
 // Windows HDR passthrough host (docs/plans/2026-08-30-video-hdr-passthrough.md
@@ -17,7 +19,12 @@ namespace fushi {
 // .codex-test/hdr-passthrough/RESULTS.md).
 class HdrVideoHostWindow {
  public:
-  explicit HdrVideoHostWindow(HWND main);
+  // |on_main_passthrough| is told whenever the main window enters / leaves
+  // the see-through passthrough state, so the main window's owner can keep
+  // its own DWM frame margins and surface fill consistent with it (BUG-2964,
+  // main_surface_composition.h). Never invoked from the destructor.
+  HdrVideoHostWindow(HWND main,
+                     std::function<void(bool)> on_main_passthrough);
   ~HdrVideoHostWindow();
 
   HdrVideoHostWindow(const HdrVideoHostWindow&) = delete;
@@ -53,6 +60,7 @@ class HdrVideoHostWindow {
   void ResizeChildren();
 
   HWND main_;
+  std::function<void(bool)> on_main_passthrough_;
   HWND hwnd_ = nullptr;
   RECT client_rect_ = {};
   bool has_rect_ = false;
