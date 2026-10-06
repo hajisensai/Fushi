@@ -245,6 +245,57 @@ void main() {
     }
   });
 
+  for (final ModuleId selected
+      in PreferencesRepository.kPopupBottomDockedModules) {
+    testWidgets(
+      'module dock switch ${selected.name} OFF→ON preserves other modules',
+      (WidgetTester tester) async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
+        final AppModel appModel = await _prefsBackedAppModel(
+          db,
+          platform: platformOf(windows: true, ios: false),
+        );
+        await appModel.setPopupBottomDocked(true);
+        await tester.pumpWidget(_harness(db, appModel));
+        await tester.pump(const Duration(milliseconds: 100));
+
+        for (final bool enabled in <bool>[false, true]) {
+          // Exercise the rendered schema callback, not an AppModel setter.
+          tester
+              .widget<AdaptiveSettingsSwitchRow>(moduleRow(selected))
+              .onChanged!(enabled);
+          await tester.pump(const Duration(milliseconds: 50));
+
+          expect(
+            await db.getPref('popup_bottom_docked_${selected.name}'),
+            PrefCodec.encode(enabled),
+          );
+          for (final ModuleId module
+              in PreferencesRepository.kPopupBottomDockedModules) {
+            final bool expected = module == selected ? enabled : true;
+            expect(
+              appModel.popupBottomDockedIn(module),
+              expected,
+              reason: '$selected must change only its own stored preference',
+            );
+            expect(
+              appModel.popupBottomDockedFor(module),
+              expected,
+              reason: 'the popup consumer must use the effective $module value',
+            );
+          }
+          expect(appModel.popupBottomDocked, isTrue);
+          expect(
+            appModel.popupBottomDockedFor(null),
+            isTrue,
+            reason: 'non-module hosts continue to follow the master switch',
+          );
+        }
+      },
+    );
+  }
+
   testWidgets('iOS games (stream only) keeps the dock switch',
       (WidgetTester tester) async {
     final FushiDatabase db = _testDb();

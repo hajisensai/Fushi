@@ -888,6 +888,61 @@ void main() {
       expect(starts(), hasLength(1));
     }
 
+    for (final String actionId in <String>['popup_lookup', 'screen_ocr']) {
+      testWidgets(
+        'system $actionId OFF→ON updates native actions in isolation',
+        (WidgetTester tester) async {
+          mockNative(tester);
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(FloatingBallChannel.channel, null),
+          );
+          const List<String> allActions = <String>[
+            'lookup',
+            'popup_lookup',
+            'clipboard',
+            'screen_ocr',
+          ];
+          await startSystemBall(tester);
+          expect(startedActions(starts().single), allActions);
+
+          final List<String> remaining = allActions
+              .where((String id) => id != actionId)
+              .toList();
+          await tester.runAsync(() async {
+            await prefs.setFloatingBallButtons(
+              FloatingBallScope.system,
+              remaining,
+            );
+            await debugLatestSystemBallSync;
+          });
+          await tester.pump();
+          expect(starts(), hasLength(2));
+          expect(
+            startedActions(starts().last),
+            remaining,
+            reason: 'only $actionId disappears from the actual native payload',
+          );
+
+          await tester.runAsync(() async {
+            await prefs.setFloatingBallButtons(
+              FloatingBallScope.system,
+              allActions,
+            );
+            await debugLatestSystemBallSync;
+          });
+          await tester.pump();
+          expect(starts(), hasLength(3));
+          expect(
+            startedActions(starts().last),
+            allActions,
+            reason:
+                '$actionId returns without changing the other native actions',
+          );
+        },
+      );
+    }
+
     testWidgets('出厂「仅应用内」：用户在应用外球上点关闭 → 关掉「应用外显示」', (
       WidgetTester tester,
     ) async {
