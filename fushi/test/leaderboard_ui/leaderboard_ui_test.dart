@@ -494,6 +494,9 @@ void main() {
   });
 
   testWidgets('已开启：页头、我的名次、榜单行与「更新于」', (WidgetTester tester) async {
+    // 触控平台的筛选 chip 命中区是 48 高（HBK-AUDIT-038），默认 800x600 下
+    // 懒构建 ListView 会把榜单行挤出屏外。
+    tallView(tester);
     final LeaderboardService service = await activeService(tester);
     await tester.pumpWidget(wrap(service, const LeaderboardTab()));
     await settle(tester);

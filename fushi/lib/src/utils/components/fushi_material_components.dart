@@ -1311,7 +1311,19 @@ class FushiSearchField extends StatelessWidget {
     // 触控平台的命中 / 语义区域至少 48（HBK-AUDIT-020）：regular 档外观仍是
     // 40 高的工具条胶囊，外面让出 4px 的上下边距给扩大的目标；桌面精确指针
     // （shrinkWrap）原样不动。
-    final Widget touchSearchBar = FushiTouchTargetPadding(child: searchBar);
+    //
+    // 焦点登记要包在触控外扩层里面：环按登记锚点的盒子画，锚点必须是 40 高的
+    // 可见胶囊，而不是外扩后的 48 高命中区，否则触控平台上环上下各偏出 4px。
+    final Widget anchoredSearchBar = focusId == null ||
+            FushiFocusRoot.maybeControllerOf(context) == null
+        ? searchBar
+        : FushiFocusRegistration(
+            id: focusId!,
+            focusNode: focusNode,
+            child: searchBar,
+          );
+    final Widget touchSearchBar =
+        FushiTouchTargetPadding(child: anchoredSearchBar);
     // 物理回车的兜底：提交动作本该由平台 text-input 桥转成 onSubmitted，但那条
     // 路要穿过 engine 的输入插件，桌面端一旦没走到，按回车就是「什么也没发生」，
     // 用户只能靠改动输入再等防抖才搜得出来（BUG-2620）。键事件这一层是确定性的，
@@ -1344,13 +1356,7 @@ class FushiSearchField extends StatelessWidget {
       },
       child: touchSearchBar,
     );
-    if (focusId == null) return submittable;
-    if (FushiFocusRoot.maybeControllerOf(context) == null) return submittable;
-    return FushiFocusRegistration(
-      id: focusId!,
-      focusNode: focusNode,
-      child: submittable,
-    );
+    return submittable;
   }
 }
 
@@ -2006,18 +2012,25 @@ class FushiSelectableChip extends StatelessWidget {
           : BorderSide.none,
       shape: const StadiumBorder(),
       visualDensity: VisualDensity.compact,
-      // 视觉保持紧凑 32 高；触控平台（主题 padded）由 RawChip 给出 48 高的
-      // 命中与语义区，桌面精确指针（主题 shrinkWrap）照旧紧凑（HBK-AUDIT-038）。
-      materialTapTargetSize: Theme.of(context).materialTapTargetSize,
+      // 视觉保持紧凑；触控命中与语义区由外层 FushiTouchTargetPadding 补到 48
+      // （HBK-AUDIT-038）。不能改成 padded：RawChip 的 padded 命中区会被
+      // VisualDensity.compact 的 -8 吃掉，只剩 40。
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       onSelected: onSelected,
     );
     // 仅图标模式默认用 label 作 tooltip（图标语义靠 hover / 长按文字说明），
     // 显式 tooltip 优先。普通模式仍按传入 tooltip（null 则不包 Tooltip）。
     final String? effectiveTooltip =
         tooltip ?? (effectiveIconOnly ? label : null);
+    // 触控平台（主题 padded）把命中 / 语义区补到 48 高，桌面精确指针原样。
+    // MergeSemantics 把 chip 自带的点按 / 选中语义并进这枚 48 高的节点，否则
+    // 无障碍点按目标仍是 chip 自身的 32 高节点。
+    final Widget touchChip = MergeSemantics(
+      child: FushiTouchTargetPadding(child: chip),
+    );
     final Widget withTooltip = effectiveTooltip == null
-        ? chip
-        : Tooltip(message: effectiveTooltip, child: chip);
+        ? touchChip
+        : Tooltip(message: effectiveTooltip, child: touchChip);
     return _wrapChipFocus(context, withTooltip);
   }
 
