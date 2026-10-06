@@ -5,8 +5,8 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/utils.dart';
 
-/// 有声书侧板（2026-10 重设计）：正在播放卡 + 「句子 / 章节 / 设置」页签；资源
-/// （对齐 / 转录 / 导入）收进设置页底部的次级分组。
+/// 有声书侧板（2026-10 重设计）：正在播放卡 + 「章节 / 设置」页签；章节页顶部是
+/// 收听概览与「对齐与转录」卡（资源操作），设置页只放 settingsBuilder。
 Widget _host(Widget child, {Size size = const Size(400, 800)}) => MaterialApp(
   home: Scaffold(
     body: Center(
@@ -83,7 +83,7 @@ void main() {
     expect(jumped, 7);
   });
 
-  testWidgets('设置页：settingsBuilder + 资源次级分组按回调显隐', (tester) async {
+  testWidgets('设置页只放 settingsBuilder', (tester) async {
     await tester.pumpWidget(
       _host(
         _panel(onImport: () {}, onPickAlignment: () {}, initialTab: 'settings'),
@@ -91,7 +91,21 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('SETTINGS_TAB'), findsOneWidget);
+    expect(find.text(t.reader_audiobook_section_tools), findsNothing);
+  });
+
+  testWidgets('章节页顶部：对齐与转录卡按回调显隐（2026-10-06 从设置页挪来）', (tester) async {
+    await tester.pumpWidget(
+      _host(
+        _panel(onImport: () {}, onPickAlignment: () {}, initialTab: 'chapters'),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.text(t.reader_audiobook_section_tools), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_audiobook_source_card')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey<String>('fushi_audiobook_panel_alignment')),
       findsOneWidget,

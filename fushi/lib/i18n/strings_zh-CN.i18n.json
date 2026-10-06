@@ -6720,5 +6720,12 @@
   "game_library_play_time": "游玩时长",
   "ai_interconnect_host_title": "交给互联电脑办",
   "ai_interconnect_host_hint": "「AI 下视频」整场对话经 Fushi 互联交给这台设备：用它的 AI 指派与下载管线，这边只负责对话。与「下载 › 下载执行设备」是同一项设置。",
-  "ai_interconnect_host_unpaired": "还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。"
+  "ai_interconnect_host_unpaired": "还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。",
+  "reader_audiobook_section_overview": "收听概览",
+  "reader_audiobook_overview_listened": "已听",
+  "reader_audiobook_overview_left": "剩余时长",
+  "reader_audiobook_overview_chapter_left": "本章剩余",
+  "reader_audiobook_source_audio_files": "$n 个音频文件",
+  "reader_audiobook_source_no_alignment": "未选择对齐文件",
+  "reader_audiobook_empty_hint": "导入音频，边听边读这本书"
 }

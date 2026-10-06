@@ -6720,5 +6720,12 @@
   "game_library_play_time": "Play time",
   "ai_interconnect_host_title": "Run on a paired computer",
   "ai_interconnect_host_hint": "AI video downloads hand the whole conversation to this device over Fushi Interconnect: it uses that device's AI assignment and download setup. Same setting as Downloads › Execution device.",
-  "ai_interconnect_host_unpaired": "No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI."
+  "ai_interconnect_host_unpaired": "No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.",
+  "reader_audiobook_section_overview": "Overview",
+  "reader_audiobook_overview_listened": "Listened",
+  "reader_audiobook_overview_left": "Time left",
+  "reader_audiobook_overview_chapter_left": "Chapter left",
+  "reader_audiobook_source_audio_files": "$n audio files",
+  "reader_audiobook_source_no_alignment": "No alignment file",
+  "reader_audiobook_empty_hint": "Import audio to listen along with this book"
 }
