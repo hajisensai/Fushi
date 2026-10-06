@@ -312,6 +312,12 @@ const APP_THEME_MIRROR_KEYS = [
   '--md-primary-container', '--md-on-primary-container', '--md-secondary-container',
   '--md-on-secondary-container', '--md-tertiary', '--md-on-tertiary', '--md-tertiary-container',
   '--md-on-tertiary-container', '--md-surface-container-highest', '--md-error',
+  // 完整 ColorScheme 表面 / 反色 / 错误容器角色，以及生成它的种子 / 变体 / 纯黑（app 2026-10-06 起随
+  // theme 下发）：「跟随 Fushi」时扩展页面与 app 逐色一致，另一明暗按同一种子同一算法派生。
+  '--md-surface', '--md-surface-container-lowest', '--md-surface-container-low', '--md-outline',
+  '--md-inverse-surface', '--md-inverse-on-surface', '--md-inverse-primary', '--md-secondary',
+  '--md-on-secondary', '--md-on-error', '--md-error-container', '--md-on-error-container',
+  '--fushi-theme-seed', '--fushi-theme-variant', '--fushi-theme-neutral', '--fushi-pure-black',
 ];
 let appThemeMirror = null;
 let appThemeMirrorLoaded = null;

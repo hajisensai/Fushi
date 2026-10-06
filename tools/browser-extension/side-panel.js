@@ -1166,13 +1166,30 @@
       toast(tr('subs_loaded', { provider: providerName ? providerName + ' ' : '', n: data.cues.length }));
     }
   }
+  // 查字幕的结果提示（无结果 / 只列了前 N 条）：语义 info 色块 + 左侧图标，与工具栏菜单 / 设置页的
+  // 提示条同一套 .fushi-notice（material.css「语义 tonal 色块」）。
+  function subsNotice(text) {
+    var notice = document.createElement('div');
+    notice.className = 'subs-empty fushi-notice';
+    notice.setAttribute('data-tone', 'info');
+    notice.setAttribute('role', 'status');
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon('info', { size: 20 }) : null;
+    if (glyph) {
+      var slot = document.createElement('span');
+      slot.className = 'msr-slot';
+      slot.setAttribute('aria-hidden', 'true');
+      slot.appendChild(glyph);
+      notice.appendChild(slot);
+    }
+    var copy = document.createElement('span');
+    copy.textContent = text;
+    notice.appendChild(copy);
+    return notice;
+  }
   function renderSubsResults(candidates, truncated) {
     subsResultsEl.textContent = '';
     if (!candidates.length) {
-      var empty = document.createElement('div');
-      empty.className = 'subs-empty';
-      empty.textContent = tr('subs_no_results');
-      subsResultsEl.appendChild(empty);
+      subsResultsEl.appendChild(subsNotice(tr('subs_no_results')));
       subsResultsEl.hidden = false;
       return;
     }
@@ -1199,12 +1216,7 @@
       row.addEventListener('click', function () { subsInstall(candidate); });
       subsResultsEl.appendChild(row);
     });
-    if (truncated) {
-      var more = document.createElement('div');
-      more.className = 'subs-empty';
-      more.textContent = tr('subs_truncated');
-      subsResultsEl.appendChild(more);
-    }
+    if (truncated) subsResultsEl.appendChild(subsNotice(tr('subs_truncated')));
     subsResultsEl.hidden = false;
   }
   var subsSearching = false;

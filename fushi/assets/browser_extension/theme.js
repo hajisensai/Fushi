@@ -8,10 +8,13 @@
 // colorScheme 提示带进查词请求，让 app 按该明暗生成 --md-* 配色（否则 data-theme 深、
 // --md-* 浅就是 BUG-688 那种主题分裂）。
 //
-// 调色板（与 Fushi 本体同一套主题模型，见 theme-palette.js）：
-//   extensionPalette = 'fushi'（theme.css 默认绿）| 'app'（跟随 Fushi：用查词响应镜像的 app
-//   配色 appThemeMirror[light|dark]）| 预设 key | 'custom:<id>'；extensionCustomThemes 是
-//   自定义主题列表。非默认调色板时把派生出的 --fushi-* 落成一条 <style>：扩展页面写在 :root，
+// 调色板（与 Fushi 本体同一套主题模型与生成算法，见 theme-palette.js）：
+//   extensionPalette = 'app'（跟随 Fushi，缺省：用查词响应镜像的 app 配色 appThemeMirror[light|dark]）|
+//   M3 经典预设 key（m3-*，与 app 同名同种子同变体；旧扩展预设 id 只读映射到最接近的一款）|
+//   'custom:<id>'；extensionCustomThemes 是自定义主题列表。
+//   extensionPureBlack（与 app 的 pure_black_dark 同义）：深色下页面底为真黑；只作用于预设 / 自定义
+//   调色板——跟随 Fushi 时纯黑随 app 下发的方案一起来。从没写过时，旧选了「纯黑」预设
+//   （black-theme）的用户缺省开，与 app 的只读兜底同律。非默认调色板时把派生出的 --fushi-* 落成一条 <style>：扩展页面写在 :root，
 //   宿主网页里只写到 #fushi-* 浮层宿主（与 generate-content-css.mjs 重根同一份宿主清单），
 //   绝不碰宿主页 :root。查词弹窗的 --md-* 由 popupVars() 给三处弹窗壳覆盖，弹窗与其它表面
 //   同一款主题。
@@ -36,6 +39,7 @@
   var CUSTOM_KEY = 'extensionCustomThemes';
   var APP_MIRROR_KEY = 'appThemeMirror';
   var STYLE_KEY = 'extensionStyle';
+  var PURE_BLACK_KEY = 'extensionPureBlack';
   // 已退役的材质设置键（只用于清理旧存储）。
   var RETIRED_KEYS = ['extensionMaterial', 'appGlassMirror'];
   var STYLE_ID = 'fushi-theme-palette';
@@ -52,6 +56,7 @@
   var paletteId = (window.fushiThemePalette && window.fushiThemePalette.DEFAULT_PALETTE) || 'app';
   var customThemes = [];
   var appMirror = null;
+  var pureBlack = false;
   var subscribers = [];
   var palette = window.fushiThemePalette || null;
 
@@ -137,35 +142,30 @@
     return explicit() || (paletteId === 'app' ? appScheme() : null);
   }
 
-  // 当前调色板在某明暗下的 --fushi-* token；默认 'fushi'（或 app 镜像缺席、自定义 id 失效）
-  // 回 null = 交给 theme.css 原样。
+  // 当前调色板在某明暗下的 --fushi-* token；app 镜像缺席 / 自定义 id 失效回 null = 交给 theme.css
+  // 原样（theme.css ① 是 app 缺省种子按同一算法生成的值）。
   function tokens(scheme) {
-    if (!palette) return null;
+    if (!palette || !palette.available) return null;
     var s = (scheme === 'light' || scheme === 'dark') ? scheme : resolve();
     if (paletteId === 'app') {
-      var own = palette.tokensFromAppTheme(appMirror && appMirror[s]);
+      // 跟随 Fushi：app 下发的就是它当前 ColorScheme 的原值（纯黑、明暗、自定义角色都在里面）。
+      var own = palette.tokensFromAppTheme(appMirror && appMirror[s], s);
       if (own) return own;
-      // app 只下发过另一种明暗（查词弹窗跟 app 当前明暗，扩展页面 auto 时跟系统）：用那份的主色
-      // 色相按本明暗派生，仍是 app 的主题色，而不是退回 theme.css 的扩展绿。
-      var other = appMirror && appMirror[s === 'dark' ? 'light' : 'dark'];
-      var seed = other && palette.parseCssColor(other['--md-primary']);
-      return seed ? palette.derive({ seed: palette.toHex(seed) }, s) : null;
+      // app 只下发过另一种明暗（查词弹窗跟 app 当前明暗，扩展页面 auto 时可能跟系统）：按 app 随
+      // theme 下发的种子 / 变体 / 纯黑派生本明暗——与 app 自己切到这一明暗的算法相同。
+      var other = palette.specFromAppTheme(appMirror && appMirror[s === 'dark' ? 'light' : 'dark']);
+      return other ? palette.derive(other.spec, s, { pureBlack: other.pureBlack }) : null;
     }
-    if (paletteId === 'fushi') return null;
     var spec = palette.specFor(paletteId, customThemes);
-    return spec ? palette.derive(spec, s) : null;
+    return spec ? palette.derive(spec, s, { pureBlack: pureBlack }) : null;
   }
 
-  // 查词弹窗要覆盖的 app 下发变量（键名同 browserExtensionThemeColors）。只有 'app'（跟随 Fushi）下
-  // 为 null——弹窗本来就吃 app 下发的配色，与扩展页面的 app 镜像同源。'fushi'（扩展绿）以前也回
-  // null，弹窗于是用 app 的配色、侧边栏 / 设置页却是 theme.css 的绿（用户截图：弹窗薰衣草、侧栏绿），
-  // 现在按扩展绿那款预设派生，弹窗与其它表面同色。
+  // 查词弹窗要覆盖的 app 下发变量（键名同 browserExtensionThemeColors）。'app'（跟随 Fushi）下为
+  // null——弹窗本来就吃 app 下发的配色，与扩展页面的 app 镜像同源。
   function popupVars(scheme) {
     if (!palette || paletteId === 'app') return null;
     var s = (scheme === 'light' || scheme === 'dark') ? scheme : resolve();
-    var t = tokens(s);
-    if (!t && paletteId === 'fushi') t = palette.derive(palette.specFor('fushi'), s);
-    return palette.popupVarsFromTokens(t);
+    return palette.popupVarsFromTokens(tokens(s));
   }
 
   // 把弹窗覆盖变量套到弹窗容器上（content.js / side-panel.js / nested-popup.js 三处共用）。
@@ -261,6 +261,19 @@
     notify();
   }
 
+  function setPureBlack(v) {
+    var n = v === true;
+    if (n === pureBlack) return;
+    pureBlack = n;
+    notify();
+  }
+
+  // extensionPureBlack 没写过时的缺省：旧「纯黑」预设用户保持纯黑（只读兜底，不改写存储）。
+  function pureBlackFrom(stored, rawPalette) {
+    if (typeof stored === 'boolean') return stored;
+    return rawPalette === 'black-theme';
+  }
+
   function setAppMirror(v) {
     appMirror = (v && typeof v === 'object') ? v : null;
     if (paletteId === 'app') notify();
@@ -310,11 +323,12 @@
     paletteId = palette ? palette.normalizePaletteId(c[PALETTE_KEY]) : 'app';
     customThemes = palette ? palette.normalizeCustomThemes(c[CUSTOM_KEY]) : [];
     appMirror = (c[APP_MIRROR_KEY] && typeof c[APP_MIRROR_KEY] === 'object') ? c[APP_MIRROR_KEY] : null;
+    pureBlack = pureBlackFrom(c[PURE_BLACK_KEY], c[PALETTE_KEY]);
     notify();
   }
 
   try {
-    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY, STYLE_KEY];
+    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY, STYLE_KEY, PURE_BLACK_KEY];
     var p = chrome.storage.local.get(keys, readAll);
     if (p && typeof p.then === 'function') p.then(readAll, function () {});
   } catch (_) {}
@@ -333,6 +347,7 @@
       if (changes[PALETTE_KEY]) setPalette(changes[PALETTE_KEY].newValue);
       if (changes[CUSTOM_KEY]) setCustomThemes(changes[CUSTOM_KEY].newValue);
       if (changes[APP_MIRROR_KEY]) setAppMirror(changes[APP_MIRROR_KEY].newValue);
+      if (changes[PURE_BLACK_KEY]) setPureBlack(changes[PURE_BLACK_KEY].newValue === true);
     });
   } catch (_) {}
   try {
@@ -355,6 +370,9 @@
     CUSTOM_KEY: CUSTOM_KEY,
     APP_MIRROR_KEY: APP_MIRROR_KEY,
     STYLE_KEY: STYLE_KEY,
+    PURE_BLACK_KEY: PURE_BLACK_KEY,
+    pureBlackFrom: pureBlackFrom,
+    get pureBlack() { return pureBlack; },
     get preference() { return pref; },
     get style() { return style; },
     get palette() { return paletteId; },
@@ -379,5 +397,6 @@
     setPalette: setPalette,
     setCustomThemes: setCustomThemes,
     setAppMirror: setAppMirror,
+    setPureBlack: setPureBlack,
   };
 })();

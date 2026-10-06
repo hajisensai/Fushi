@@ -5599,9 +5599,92 @@ function postProcessRuby(container) {
  * 只改颜色，不动结构 / 字号 / 间距。只在 M3E（html.fushi-m3e 或扩展容器 .fushi-m3e）且
  * data-theme=dark 时运行；浅色主题、Apple 设计系统、墨水屏零变化。每个元素只处理一次
  * （postProcessRuby 对首个词条会走两遍）。
+ *
+ * HBK-AUDIT-015：调色是**可逆**的。改写前把元素原本的内联 background-color / color（值 +
+ * 优先级）记在元素上，登记进 __fushiM3eTonedNodes；主题切换（宿主热更新只注入 CSS 变量 /
+ * 改 data-theme / class，不重建词条）时由观察器排一帧 __fushiRetoneDictColors：先全部复原
+ * 成原始内联值，再按**新**明暗重读计算色重新调色。暗→浅不再残留暗块，浅→暗也会调色；
+ * 只改颜色，不重建任何节点，选区 / 焦点 / 展开状态不受影响。
  * ===================================================================== */
 var __fushiM3eToneRoots = null;
 var __fushiM3eToneRaf = 0;
+var __fushiM3eTonedNodes = null;
+var __fushiM3eObserved = null;
+var __fushiM3eObserver = null;
+
+function __fushiM3eRememberInline(node, prop) {
+    const key = prop === 'color' ? '__fushiM3eOrigColor' : '__fushiM3eOrigBg';
+    if (node[key]) return;
+    node[key] = {
+        value: node.style.getPropertyValue(prop),
+        priority: node.style.getPropertyPriority(prop),
+    };
+    if (!__fushiM3eTonedNodes) __fushiM3eTonedNodes = new Set();
+    __fushiM3eTonedNodes.add(node);
+}
+
+// 把调色写过的内联色全部还原成调色前的原值（原本没有内联值的就移除），清掉一次性标记。
+function __fushiRestoreDictTone() {
+    if (!__fushiM3eTonedNodes) return;
+    __fushiM3eTonedNodes.forEach((node) => {
+        try {
+            for (const [key, prop] of [['__fushiM3eOrigBg', 'background-color'], ['__fushiM3eOrigColor', 'color']]) {
+                const orig = node[key];
+                if (!orig) continue;
+                if (orig.value) node.style.setProperty(prop, orig.value, orig.priority);
+                else node.style.removeProperty(prop);
+                node[key] = null;
+            }
+        } catch (_) { /* 节点已脱离文档 */ }
+    });
+    __fushiM3eTonedNodes.clear();
+}
+
+// 清掉「已处理」标记（含只读过、没改写的节点），让下一轮按新明暗重新判定。
+function __fushiClearDictToneMarks(root) {
+    if (!root || !root.querySelectorAll) return;
+    const all = [root, ...root.querySelectorAll('.glossary-group > div[data-dictionary], .glossary-group > div[data-dictionary] *')];
+    all.forEach((n) => { n.__fushiM3eToned = false; n.__fushiM3eTextToned = false; });
+}
+
+// 主题变化后的可逆重调色：复原 → 按当前明暗重做。宿主热更新主题后也可直接调用。
+function __fushiRetoneDictColors() {
+    __fushiRestoreDictTone();
+    const container = __fushiContainer();
+    const root = container || document.body;
+    if (!root) return;
+    __fushiClearDictToneMarks(root);
+    __fushiScheduleM3eDictTone(root);
+}
+window.__fushiRetoneDictColors = __fushiRetoneDictColors;
+
+// 观察明暗 / 主题载体（documentElement 与弹窗容器的 data-theme / class / style——宿主热更新只
+// 写 CSS 变量也落在 style 上），变化时排一帧重调色。只观察属性，不观察子树：调色自己写的是
+// 词条节点的内联色，不会自激。
+function __fushiObserveM3eToneHosts() {
+    if (typeof MutationObserver !== 'function') return;
+    if (!__fushiM3eObserver) {
+        __fushiM3eObserved = new WeakSet();
+        let pending = 0;
+        __fushiM3eObserver = new MutationObserver(() => {
+            if (pending || typeof requestAnimationFrame !== 'function') return;
+            pending = requestAnimationFrame(() => {
+                pending = 0;
+                const dark = __fushiM3eDarkSurface();
+                // 明暗没变且当前也没有调过色的节点：无事可做。
+                if (dark === __fushiM3eLastDark && !(dark && __fushiM3eTonedNodes && __fushiM3eTonedNodes.size)) return;
+                __fushiRetoneDictColors();
+            });
+        });
+    }
+    const opts = { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] };
+    for (const target of [document.documentElement, __fushiContainer()]) {
+        if (!target || __fushiM3eObserved.has(target)) continue;
+        __fushiM3eObserved.add(target);
+        try { __fushiM3eObserver.observe(target, opts); } catch (_) { /* 不可观察：只能等宿主显式调用 */ }
+    }
+}
+var __fushiM3eLastDark = null;
 
 function __fushiM3eDarkSurface() {
     try {
@@ -5622,12 +5705,16 @@ function __fushiScheduleM3eDictTone(root) {
         typeof getComputedStyle !== 'function') return;
     if (!__fushiM3eToneRoots) __fushiM3eToneRoots = new Set();
     __fushiM3eToneRoots.add(root);
+    __fushiObserveM3eToneHosts();
     if (__fushiM3eToneRaf) return;
     __fushiM3eToneRaf = requestAnimationFrame(() => {
         __fushiM3eToneRaf = 0;
         const roots = [...__fushiM3eToneRoots];
         __fushiM3eToneRoots.clear();
-        if (!__fushiM3eDarkSurface()) return;
+        const dark = __fushiM3eDarkSurface();
+        __fushiM3eLastDark = dark;
+        // 非暗色：上一轮暗色调过的颜色必须复原（不能只是「不再调色」）。
+        if (!dark) { __fushiRestoreDictTone(); return; }
         roots.forEach((r) => {
             try {
                 if (r.isConnected !== false) __fushiToneDictColors(r);
@@ -5702,11 +5789,13 @@ function __fushiToneDictColors(root) {
     // 相 2（写）。
     toned.forEach(({ node, bg }) => {
         const hsl = __fushiRgbToHsl(bg);
+        __fushiM3eRememberInline(node, 'background-color');
         node.style.setProperty('background-color',
             __fushiHslCss(hsl.h, Math.min(hsl.s, 0.5), 0.22, bg.a), 'important');
     });
     textFixes.forEach(({ n, fg }) => {
         const hsl = __fushiRgbToHsl(fg);
+        __fushiM3eRememberInline(n, 'color');
         n.style.setProperty('color',
             __fushiHslCss(hsl.h, Math.min(hsl.s, 0.6), 0.82, fg.a), 'important');
     });

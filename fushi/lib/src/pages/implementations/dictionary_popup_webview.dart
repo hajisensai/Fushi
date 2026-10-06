@@ -1475,7 +1475,12 @@ JSON.stringify((function(){
     final String themeVarsJs = _buildStaticSettings().themeVarsJs;
     if (themeVarsJs == _lastThemeVarsJs) return;
     _lastThemeVarsJs = themeVarsJs;
-    _controller!.evaluateJavascript(source: themeVarsJs);
+    // HBK-AUDIT-015：M3E 暗色下词典浅底的调色是 JS 写进词条的内联色，CSS 变量换了它不会跟着变；
+    // 注入新变量后让 popup.js 复原再按新明暗重调（不重建词条，选区 / 展开状态不受影响）。
+    _controller!.evaluateJavascript(
+      source: '$themeVarsJs\n'
+          'window.__fushiRetoneDictColors && window.__fushiRetoneDictColors();',
+    );
   }
 
   /// in-app 弹窗的静态段（主题变量 + 字体 + 全部 window.* 设置）。与

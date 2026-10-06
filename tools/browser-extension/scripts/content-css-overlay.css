@@ -160,7 +160,8 @@
 }
 
 /* ── toast（content.js fushiToast）：M3E snackbar ──
-   inverse-surface 实色 + 大圆角（expressive）+ level3 投影 + body-medium 字阶，弹簧上浮入场。
+   inverse-surface 实色 + --fushi-shape-snackbar（= app kFushiM3eInverseSurfaceRadius 24，与扩展页面的
+   snackbar 同值）+ level3 投影 + body-medium 字阶，弹簧上浮入场。
    定位 / 显隐 opacity / 可点态是 JS 的行内样式；data-visible 由 JS 写（1 = 出现，0 = 淡出）。
    #fushi-toast 在 theme.css 重根宿主清单里，data-theme / data-style 由 JS 按扩展主题写。 */
 #fushi-toast {
@@ -168,7 +169,7 @@
     min-height: 48px;
     padding: 14px 16px;
     border: 0;
-    border-radius: var(--md-sys-shape-corner-large);
+    border-radius: var(--fushi-shape-snackbar);
     color: var(--md-sys-color-inverse-on-surface);
     background-color: var(--md-sys-color-inverse-surface);
     background-image: none;
@@ -1188,19 +1189,20 @@
     outline-offset: 2px;
 }
 
-/* 「站点自带轨」提示：tertiary-container 色调卡 + info 前置图标，整块可点（一键改成替换原生字幕）。 */
+/* 「站点自带轨」提示：info 语义色块（secondary-container，与 app FushiInlineNotice 的 info 同色、
+   --fushi-shape-notice 16 圆角、无描边）+ info 前置图标，整块可点（一键改成替换原生字幕）。 */
 #fushi-player-controls .fushi-pc-hint {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
+    gap: 12px;
     box-sizing: border-box;
     width: 100%;
     margin: 4px 0;
-    padding: 10px 12px;
+    padding: 12px 16px;
     border: 0;
-    border-radius: var(--md-sys-shape-corner-medium);
-    background: var(--md-sys-color-tertiary-container);
-    color: var(--md-sys-color-on-tertiary-container);
+    border-radius: var(--fushi-shape-notice);
+    background: var(--md-sys-color-secondary-container);
+    color: var(--md-sys-color-on-secondary-container);
     font: inherit;
     font-size: var(--md-sys-typescale-body-small-size);
     line-height: var(--md-sys-typescale-body-small-line-height);
@@ -1214,7 +1216,7 @@
 }
 
 #fushi-player-controls .fushi-pc-hint:hover {
-    background: color-mix(in oklch, var(--md-sys-color-on-tertiary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-tertiary-container));
+    background: color-mix(in oklch, var(--md-sys-color-on-secondary-container) var(--md-sys-state-hover-opacity), var(--md-sys-color-secondary-container));
 }
 
 /* 样式子页的返回行：arrow_back + title-small，整行 48px。 */
@@ -1407,7 +1409,8 @@
     border-top: 1px solid var(--md-sys-color-outline-variant);
 }
 
-/* 底栏两颗：恢复默认 = 描边按钮，全部设置 = tonal 按钮；40px 全圆，按下圆角收紧。 */
+/* 底栏两颗：恢复默认 = 描边按钮（outline-variant 描边 + on-surface 字，同 app outlinedButtonTheme），
+   全部设置 = tonal 按钮；40px 全圆、label-large 强调字重，按下圆角收紧。 */
 #fushi-player-controls .fushi-pc-foot button {
     flex: 1 1 0;
     display: inline-flex;
@@ -1420,10 +1423,10 @@
     border: 1px solid var(--md-sys-color-outline-variant);
     border-radius: var(--md-sys-shape-corner-full);
     background: transparent;
-    color: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-surface);
     font: inherit;
     font-size: var(--md-sys-typescale-label-large-size);
-    font-weight: var(--md-sys-typescale-weight-medium);
+    font-weight: var(--md-sys-typescale-weight-emphasized);
     cursor: pointer;
     transition:
         border-radius var(--fushi-dur-medium) var(--fushi-ease-spatial),
@@ -1431,7 +1434,7 @@
 }
 
 #fushi-player-controls .fushi-pc-foot button:hover {
-    background: color-mix(in oklch, var(--md-sys-color-primary) var(--md-sys-state-hover-opacity), transparent);
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
 }
 
 #fushi-player-controls .fushi-pc-foot button.fushi-pc-foot-more {

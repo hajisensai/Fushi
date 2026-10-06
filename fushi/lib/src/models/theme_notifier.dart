@@ -1472,6 +1472,12 @@ class ThemeNotifier extends ChangeNotifier {
     return themePresets[appThemeKey]?.variant ?? kFushiDefaultSchemeVariant;
   }
 
+  /// 当前主题的种子色（浏览器扩展「跟随 Fushi」按同一种子派生另一明暗用）。
+  Color get activeSeedColor => _seedColor;
+
+  /// 当前主题的 M3 方案变体（同上）。
+  DynamicSchemeVariant get activeSchemeVariant => _variant;
+
   ThemeData get theme => _buildThemeData(Brightness.light);
   ThemeData get darkTheme => _buildThemeData(Brightness.dark);
 
