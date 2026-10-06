@@ -310,6 +310,43 @@ void main() {
       expect(web.queries, <String>['哆啦A梦', 'ドラえもん', 'Doraemon']);
       expect(askedFranchise, '哆啦A梦');
     });
+
+    test('BUG-2960 资料源走不动只交回 0 部（名字是锚点标题）：锚点仍在清单里、'
+        '清单按系列名命名', () async {
+      final VideoDiscoveryItem movieAnchor = _item(
+        'm2019',
+        'ドラえもん のび太の月面探査記',
+        year: 2019,
+      );
+      final VideoFranchise? result = await expandVideoFranchiseFromWeb(
+        anchor: movieAnchor,
+        seriesNames: const <String>['哆啦A梦'],
+        known: VideoFranchise(
+          name: 'ドラえもん のび太の月面探査記',
+          series: const <VideoDiscoveryItem>[],
+          movies: const <VideoDiscoveryItem>[],
+          truncated: true,
+        ),
+        web: _FakeWeb(<WebKnowledgePage>[_page('p', 't')]),
+        listWorks: (_, _) async => const <AiFranchiseWork>[
+          AiFranchiseWork(
+            title: '大雄的宝岛',
+            originalTitle: 'のび太の宝島',
+            year: 2018,
+            kind: VideoMetadataMediaKind.movie,
+          ),
+        ],
+        findCandidates: (_) async => <VideoDiscoveryItem>[
+          _item('m2018', 'のび太の宝島', year: 2018),
+        ],
+      );
+      expect(result!.name, '哆啦A梦');
+      expect(
+        result.movies.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['m2018', 'm2019'],
+      );
+      expect(result.truncated, isTrue);
+    });
   });
 
   group('BUG-2960 aiFranchiseWebQueries', () {
@@ -328,6 +365,21 @@ void main() {
           knownName: 'ドラえもん',
         ),
         <String>['ドラえもん', '哆啦A梦', 'Doraemon'],
+      );
+    });
+
+    test('资料源拿锚点标题当系列名（MAL 关联链走不动）时不占首位', () {
+      expect(
+        aiFranchiseWebQueries(
+          anchor: movie,
+          seriesNames: const <String>['哆啦A梦'],
+          knownName: 'ドラえもん のび太の月面探査記',
+        ),
+        <String>[
+          '哆啦A梦',
+          'ドラえもん のび太の月面探査記',
+          'Doraemon: Nobita no Getsumen Tansaki',
+        ],
       );
     });
 

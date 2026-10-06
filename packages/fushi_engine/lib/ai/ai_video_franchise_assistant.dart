@@ -230,22 +230,32 @@ const int kAiFranchiseMaxWebQueries = 3;
 /// 自己的标题垫底：锚点是单部剧场版时，它只搜得到那一部的条目，列不出系列
 /// （BUG-2960：「全部哆啦A梦剧场版」拿《のび太の月面探査記》去搜，三站都只回
 /// 那一部的页面；用 `Doraemon` 搜到的 ANN 条目才列着全部剧场版）。
+///
+/// 与锚点同名的「系列名」不带任何系列信息（MAL 关联链走不动时就拿锚点标题当系列
+/// 名），一律按锚点标题算、排到最后。
 List<String> aiFranchiseWebQueries({
   required VideoMediaReference anchor,
   required List<String> seriesNames,
   String? knownName,
 }) {
   final Map<String, String> byKey = <String, String>{};
-  for (final String? raw in <String?>[
-    knownName,
-    ...seriesNames,
-    anchor.title,
-    anchor.originalTitle,
-  ]) {
+  void add(String? raw) {
     final String name = raw?.trim() ?? '';
-    if (name.isEmpty) continue;
+    if (name.isEmpty) return;
     byKey.putIfAbsent(TitleNormalizer.normalize(name), () => name);
   }
+
+  final Set<String> anchorKeys = <String>{
+    for (final String? title in <String?>[anchor.title, anchor.originalTitle])
+      if (title != null) TitleNormalizer.normalize(title),
+  };
+  for (final String? name in <String?>[knownName, ...seriesNames]) {
+    if (name != null && !anchorKeys.contains(TitleNormalizer.normalize(name))) {
+      add(name);
+    }
+  }
+  add(anchor.title);
+  add(anchor.originalTitle);
   return byKey.values.take(kAiFranchiseMaxWebQueries).toList();
 }
 
@@ -309,20 +319,22 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
         }
       }
     }
+    // 锚点本就是系列成员：资料源走不动时（MAL 关联链 0 部）它不一定在 [known]
+    // 里，上面又把它当「已知」跳过——两头都不收，清单里就没有用户选的那一部
+    // （BUG-2960）。
+    (reference.mediaKind == VideoMetadataMediaKind.movie ? movies : series)
+        .insert(0, anchor);
+    // 联网这份排前面：合并结果的名字取它，即最像系列名的那个查询词。
     return mergeVideoFranchises(<VideoFranchise?>[
+      VideoFranchise(name: franchise, series: series, movies: movies),
       known ??
+          // 资料源整个不可用：清单只有联网补全核对上的那部分（BUG-2936）。
           VideoFranchise(
             name: franchise,
-            series: <VideoDiscoveryItem>[
-              if (reference.mediaKind == VideoMetadataMediaKind.tv) anchor,
-            ],
-            movies: <VideoDiscoveryItem>[
-              if (reference.mediaKind == VideoMetadataMediaKind.movie) anchor,
-            ],
-            // 资料源整个不可用：清单只有联网补全核对上的那部分（BUG-2936）。
+            series: const <VideoDiscoveryItem>[],
+            movies: const <VideoDiscoveryItem>[],
             truncated: true,
           ),
-      VideoFranchise(name: franchise, series: series, movies: movies),
     ]);
   } on Object catch (error, stack) {
     engineLog.logDiagnostic(
