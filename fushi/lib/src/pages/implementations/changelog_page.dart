@@ -87,18 +87,22 @@ class _ChangelogPageState extends State<ChangelogPage>
           onTap: _loading ? null : _load,
         ),
       ],
-      body: _buildBody(context),
+      // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
+      body: Builder(builder: _buildBody),
     );
   }
 
   Widget _buildBody(BuildContext context) {
     if (_loading) {
-      return buildLoading();
+      return SafeArea(bottom: false, child: buildLoading());
     }
     if (_releases.isEmpty) {
-      return _ChangelogEmptyState(
-        onRetry: _load,
-        onOpenReleases: _openReleasesPage,
+      return SafeArea(
+        bottom: false,
+        child: _ChangelogEmptyState(
+          onRetry: _load,
+          onOpenReleases: _openReleasesPage,
+        ),
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -112,7 +116,8 @@ class _ChangelogPageState extends State<ChangelogPage>
           context,
           EdgeInsets.fromLTRB(
             tokens.spacing.page,
-            tokens.spacing.gap,
+            // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头」。
+            tokens.spacing.gap + MediaQuery.paddingOf(context).top,
             tokens.spacing.page,
             tokens.spacing.section,
           ),
