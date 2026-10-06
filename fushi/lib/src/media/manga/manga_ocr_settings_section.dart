@@ -573,9 +573,8 @@ class _MangaOcrSettingsSectionState
   }
 
   /// 「导入本地模型」按钮：下载中/导入中禁用（两条路径会动同一批文件）。
-  ///
-  /// [outlined]：阅读器侧板版式与主按钮成组时用描边按钮（设置页版式仍是文字按钮）。
-  Widget _importButton({bool outlined = false}) {
+  /// 两种版式都在状态卡里与主按钮成组，统一用描边按钮。
+  Widget _importButton() {
     final VoidCallback? onPressed = (_importing || _downloading)
         ? null
         : () => unawaited(_showImportDialog());
@@ -587,15 +586,7 @@ class _MangaOcrSettingsSectionState
         : const FushiIcon(FushiIcons.importFile, size: 18);
     final Widget label =
         Text(_importing ? t.manga_ocr_import_running : t.manga_ocr_import);
-    if (outlined) {
-      return FushiOutlinedButton.icon(
-        key: const ValueKey<String>('manga_ocr_import_button'),
-        onPressed: onPressed,
-        icon: icon,
-        label: label,
-      );
-    }
-    return FushiTextButton.icon(
+    return FushiOutlinedButton.icon(
       key: const ValueKey<String>('manga_ocr_import_button'),
       onPressed: onPressed,
       icon: icon,
@@ -724,7 +715,7 @@ class _MangaOcrSettingsSectionState
   /// 文档或试错。
   ///
   /// 平台不适用的项**保留在列表里**只置灰（不裁项）：裁掉会让「已存 external_mokuro
-  /// 的偏好」在移动端找不到匹配 value 而触发 Dropdown 断言。
+  /// 的偏好」在移动端找不到对应项，引擎行与单选卡片组都显示不出当前选择。
   List<_EngineOption> _engineOptions() {
     return <_EngineOption>[
       _EngineOption(
@@ -893,7 +884,6 @@ class _MangaOcrSettingsSectionState
       subtitle: current == null
           ? null
           : '${current.label}\n${current.description}',
-      subtitleMaxLines: 5,
       icon: _engineIcon(selected.preference),
       showIcon: true,
       trailing: FushiIcon(
@@ -1374,7 +1364,7 @@ class _MangaOcrSettingsSectionState
             icon: const FushiIcon(FushiIcons.download, size: 18),
             label: Text(t.manga_ocr_download),
           ),
-          _importButton(outlined: true),
+          _importButton(),
         ],
       );
     }
@@ -1387,7 +1377,7 @@ class _MangaOcrSettingsSectionState
       subtitle: t.manga_ocr_model_disk_usage(
         size: _formatBytes(status.diskBytes),
       ),
-      actions: <Widget>[_deleteButton(), _importButton(outlined: true)],
+      actions: <Widget>[_deleteButton(), _importButton()],
     );
   }
 
@@ -1461,7 +1451,7 @@ class _MangaOcrSettingsSectionState
                 : t.manga_ocr_download,
           ),
         ),
-        _importButton(outlined: true),
+        _importButton(),
         // 模型不全但磁盘上有残留时也得能直接清掉。
         if (status?.hasAnyFiles ?? false) _deleteButton(),
       ],
