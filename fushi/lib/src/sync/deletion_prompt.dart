@@ -159,7 +159,11 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
     return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
+      // 底部「取消 / 删除」钉住，只让正文滚：M3E 分组勾选卡把正文撑高后，整框
+      // 一起滚会把「删除」推到 74% 高度之外，矮窗口（800x600）里要先滚才按得到。
+      scrollable: false,
       child: FushiModalSheetFrame(
+        scrollable: true,
         title: widget.title,
         leadingIcon: FushiIcons.delete,
         bodyPadding: EdgeInsets.fromLTRB(
