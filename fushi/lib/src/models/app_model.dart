@@ -609,9 +609,16 @@ class AppModel with ChangeNotifier {
   /// schema builders (e.g. the sync/backup destination) that read [database]
   /// without running the full [initialise] path.
   @visibleForTesting
-  void wireDatabaseForTesting(FushiDatabase db) {
+  void wireDatabaseForTesting(
+    FushiDatabase db, {
+    DictionaryRepository? dictionaryRepository,
+  }) {
     _database = db;
     _databaseOpened = true;
+    if (dictionaryRepository != null) {
+      dictRepo = dictionaryRepository;
+      _dictionaryRepoReady = true;
+    }
   }
 
   /// 全应用共享的冲突弹窗调度器：三处同步入口（手动 / 关书后 / app 启动）
@@ -1492,6 +1499,16 @@ class AppModel with ChangeNotifier {
     // the ones that would otherwise leak or double-register before re-running
     // (the late fields below are reassigned by initialise()).
     if (_databaseOpened) {
+      try {
+        await _flushDictionaryWritesBeforeClose();
+      } catch (e, stack) {
+        // Keep the old connection/repository alive if flushing fails; opening
+        // another DB instance would abandon the uncommitted state.
+        ErrorLogService.instance.log('AppModel.retryInitialise.flush', e, stack);
+        _initError = '$e';
+        notifyListeners();
+        return;
+      }
       _prefsRepo?.removeListener(notifyListeners);
       if (_themeListenerAdded) {
         themeNotifier.removeListener(notifyListeners);
@@ -1504,6 +1521,10 @@ class AppModel with ChangeNotifier {
             .log('AppModel.retryInitialise.close', e, stack);
       }
       _databaseOpened = false;
+      if (_dictionaryRepoReady) {
+        dictRepo.dispose();
+        _dictionaryRepoReady = false;
+      }
       // 仓储绑的是刚被关掉的那个 db 实例，必须丢掉让它重建（否则重试后所有游戏库
       // 读写都打在已关闭的连接上）。
       _galgameRepo = null;
@@ -7905,7 +7926,14 @@ class AppModel with ChangeNotifier {
     await quiesceBackgroundDatabaseWriters(
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
+    await _flushDictionaryWritesBeforeClose();
     await _database.close();
+  }
+
+  /// Metadata operations queued in Dart have not necessarily reached Drift.
+  /// Every DB close boundary must drain them, including partial-init retries.
+  Future<void> _flushDictionaryWritesBeforeClose() async {
+    if (_dictionaryRepoReady) await dictRepo.flushPendingWritesNow();
   }
 
   /// Safely shutdown and stop database operations.
@@ -7920,6 +7948,7 @@ class AppModel with ChangeNotifier {
     uninstallCollectionsSyncWatcher();
     _prefsRepo?.removeListener(notifyListeners);
     databaseCloseNotifier.notifyListeners();
+    await _flushDictionaryWritesBeforeClose();
     await _database.close();
     FushiDicts.disposeInstance();
   }

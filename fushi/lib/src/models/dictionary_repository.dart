@@ -548,6 +548,8 @@ class DictionaryRepository {
 
   Timer? _historyPersistTimer;
   DateTime? _historyDirtySince;
+  Future<void>? _historyWrite;
+  int _historyGeneration = 0;
 
   /// 逐条序列化 memo（对象身份键，弱引用不阻回收）：历史 10 条里通常 9 条对象
   /// 与上次完全相同，flush 时只需序列化新增那条。就地变更字段（scrollPosition）
@@ -597,6 +599,7 @@ class DictionaryRepository {
   /// Trailing debounce：连续查词只落库一次；[_historyPersistMaxDelay] 封顶，
   /// 防止 <300ms 间隔的连续查词把 flush 无限推迟（强杀丢整段）。
   void _schedulePersistDictionaryHistory() {
+    _historyGeneration++;
     final DateTime now = DateTime.now();
     _historyDirtySince ??= now;
     _historyPersistTimer?.cancel();
@@ -604,11 +607,18 @@ class DictionaryRepository {
         now.difference(_historyDirtySince!) >= _historyPersistMaxDelay;
     _historyPersistTimer = Timer(
       capReached ? Duration.zero : _historyPersistDebounce,
-      () => unawaited(_flushDictionaryHistory()),
+      () => unawaited(flushDictionaryHistoryNow().catchError(
+        (Object error, StackTrace stack) {
+          // Keep dirty state for the next explicit flush or lookup. The timer
+          // has no caller to receive a failure; lifecycle flushes still throw.
+          ErrorLogService.instance.log('DictRepo.historyPersist', error, stack);
+        },
+      )),
     );
   }
 
   void _cancelPendingHistoryPersist() {
+    _historyGeneration++;
     _historyPersistTimer?.cancel();
     _historyPersistTimer = null;
     _historyDirtySince = null;
@@ -617,12 +627,17 @@ class DictionaryRepository {
   /// 立即写穿 pending 的历史变更；无 pending 时 no-op。退出 flush
   /// （[ExitFlushRegistry]）与 [loadFromDb] 重载前对齐用。
   Future<void> flushDictionaryHistoryNow() async {
-    if (_historyPersistTimer == null && _historyDirtySince == null) return;
-    await _flushDictionaryHistory();
+    while (_historyWrite != null || _historyDirtySince != null) {
+      await (_historyWrite ?? _flushDictionaryHistory());
+    }
   }
 
-  Future<void> _flushDictionaryHistory() async {
-    _cancelPendingHistoryPersist();
+  Future<void> _flushDictionaryHistory() {
+    // One in-flight snapshot at a time. A close must wait for it even after
+    // the debounce timer fired, and failure must leave the snapshot retryable.
+    _historyPersistTimer?.cancel();
+    _historyPersistTimer = null;
+    final int generation = _historyGeneration;
     final items = <DictionaryHistoryCompanion>[];
     for (int i = 0; i < _dictionaryHistoryResults.length; i++) {
       final DictionarySearchResult r = _dictionaryHistoryResults[i];
@@ -633,7 +648,17 @@ class DictionaryRepository {
     }
     // 序列化段与上面的取消/快照在同一同步区间内完成；此后 clear 等竞态由
     // drift 单连接 FIFO 保序（本次写先入队，后续 clear 的 DELETE 后到后赢）。
-    await _db.replaceAllDictionaryHistory(items);
+    late final Future<void> writing;
+    writing = Future<void>.sync(() => _db.replaceAllDictionaryHistory(items))
+        .then<void>((_) {
+          // A newer lookup, clear, or dispose supersedes this snapshot.
+          if (_historyGeneration == generation) _historyDirtySince = null;
+        })
+        .whenComplete(() {
+          if (identical(_historyWrite, writing)) _historyWrite = null;
+        });
+    _historyWrite = writing;
+    return writing;
   }
 
   /// Release in-memory caches. Replaces the inherited ChangeNotifier.dispose
