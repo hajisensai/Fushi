@@ -957,7 +957,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 按钮条触摸高度，随界面大小缩放（TODO-067）。
   double get _videoButtonBarHeight =>
-      (_appleChrome ? _videoButtonBarHeightBase : _videoM3eButtonBarHeightBase) *
+      (_appleChrome
+          ? _videoButtonBarHeightBase
+          : _videoM3eButtonBarHeightBase) *
       _videoUiScale;
 
   /// M3E 底栏 / 顶栏胶囊高（2026-10-06 遮挡最小化重做）：40 按钮 + 上下各 4 = 48。
@@ -966,12 +968,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 顶/底栏控制图标尺寸，随界面大小缩放（TODO-067）。与查词弹窗 ×appUiScale 同口径。
   /// Apple 设计系统下取 SF Symbols 在 AVKit 控件条里的字形尺寸（24，玻璃胶囊里
   /// 32 的 Material 字形显得笨重）；按钮命中区仍是 IconButton 的 字形 + 16。
-  double get _videoControlIconSize => _videoControlIconSizeBase * _videoUiScale * (_appleChrome ? _videoAppleControlIconSizeBase / _videoControlIconSizeBase : 1.0);
+  double get _videoControlIconSize =>
+      _videoControlIconSizeBase *
+      _videoUiScale *
+      (_appleChrome
+          ? _videoAppleControlIconSizeBase / _videoControlIconSizeBase
+          : 1.0);
 
   /// 中央播放/暂停键尺寸，随界面大小缩放（TODO-067）。Apple 下主播放键比其余
   /// 按钮大一档（32 vs 24），与 AVKit 底栏同一层级关系。
   double get _videoPlayPauseIconSize =>
-      _videoPlayPauseIconSizeBase * _videoUiScale * (_appleChrome ? _videoApplePlayPauseIconSizeBase / _videoPlayPauseIconSizeBase : 1.0);
+      _videoPlayPauseIconSizeBase *
+      _videoUiScale *
+      (_appleChrome
+          ? _videoApplePlayPauseIconSizeBase / _videoPlayPauseIconSizeBase
+          : 1.0);
 
   static const double _videoAppleControlIconSizeBase = 24;
   static const double _videoApplePlayPauseIconSizeBase = 32;
@@ -1005,11 +1016,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// M3E 浮动工具栏离播放区底边的距离（胶囊下沿到画面底边）：与阅读器 / 漫画的
   /// 共享浮动工具栏同一个窗口边距。
-  static const double _videoM3eFloatingEdgeInset = kFushiFloatingToolbarEdgeMargin;
+  static const double _videoM3eFloatingEdgeInset =
+      kFushiFloatingToolbarEdgeMargin;
 
   /// M3E 浮动工具栏左右离播放区边缘的距离（胶囊外缘）。共享浮动工具栏的窗口边距，
   /// 也恰是 media_kit 默认的按钮行左右边距，桌面按钮行几何因此不变。
-  static const double _videoM3eFloatingSideInset = kFushiFloatingToolbarEdgeMargin;
+  static const double _videoM3eFloatingSideInset =
+      kFushiFloatingToolbarEdgeMargin;
 
   /// 进度条几何推导里桌面「按钮行高」要叠加的抬升（见 [_floatingChromeBottomLift]）。
   ///
@@ -1021,8 +1034,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       : 0;
 
   /// M3E 桌面细轨中线高出按钮行上沿的量（Apple / 墨水屏外的 M3E 才有）。
-  double get _videoM3eDesktopTrackRaise =>
-      _m3eChrome && _isDesktopVideoControls
+  double get _videoM3eDesktopTrackRaise => _m3eChrome && _isDesktopVideoControls
       ? 10 * _videoUiScale * _controlsDensityScale
       : 0;
 
@@ -1065,13 +1077,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final double trackCenter;
     final double hitTop;
     if (_isDesktopVideoControls) {
-      final double containerBottom = _floatingChromeBottomLift +
+      final double containerBottom =
+          _floatingChromeBottomLift +
           barHeight -
           _videoDesktopSeekBarButtonBarOverlap * d;
       trackCenter = containerBottom + _videoM3eDesktopTrackBottomInset;
       hitTop = containerBottom + _videoDesktopSeekBarContainerHeight * d;
     } else {
-      final double containerBottom = _videoBottomChromeBaseline +
+      final double containerBottom =
+          _videoBottomChromeBaseline +
           _videoBottomSystemInset() +
           _floatingChromeBottomLift +
           barHeight +
@@ -1101,16 +1115,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_isDesktopVideoControls) {
       buttonBottom = _floatingChromeBottomLift;
       // 桌面：进度条容器骑按钮行上沿、被下压 overlap，轨道在容器竖直正中。
-      trackCenter = buttonBottom +
+      trackCenter =
+          buttonBottom +
           barHeight -
           _videoDesktopSeekBarButtonBarOverlap * d +
           _videoDesktopSeekBarContainerHeight * d / 2;
     } else {
-      buttonBottom = _videoBottomChromeBaseline +
+      buttonBottom =
+          _videoBottomChromeBaseline +
           _videoBottomSystemInset() +
           _floatingChromeBottomLift;
       // 移动：进度条容器在按钮行上方 gap 处，轨道贴容器底缘。
-      trackCenter = buttonBottom +
+      trackCenter =
+          buttonBottom +
           barHeight +
           _videoSeekBarButtonGap * d +
           _videoSeekBarTrackHeight * d / 2;
@@ -6321,97 +6338,97 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-2953：浮层自带导航层，弹窗里唤出的右键「查词 / 复制」菜单与顶栏溢出菜单
     // 推进它而不是根 Navigator——否则菜单被 Overlay.rearrange 压到本 entry 之下。
     return LookupOverlayNavigator(
-     child: FushiAppUiScaleNeutralizer(
-      child: Theme(
-        data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            // LayoutBuilder 的 builder 在 layout 阶段运行，可能晚于本 State 的 deactivate
-            // （退视频/退全屏同帧）；此刻读 appModel(ref.read)/mixinTheme 会做失效祖先查找
-            // 抛异常红屏（BUG-121）。销毁期标志置位则空渲染兜底。
-            if (!mounted || _overlayInert) return const SizedBox.shrink();
-            final Size screen = Size(
-              constraints.maxWidth,
-              constraints.maxHeight,
-            );
-            return Stack(
-              // BUG-135: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
-              // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。用
-              // Clip.none 让它在屏外照常栅格化保持温热（不盖任何控件）。
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                // Dismiss barrier while a popup is visible OR a lookup is
-                // searching (搜索→就绪才显示：搜索期浮层还没显示，barrier 仍要拦点击
-                // 并支持点同句另一字切换查词)。仅剩隐藏热槽时不拦，放行给视频。
-                //
-                // BUG-1327：对话框期间（[lookupPopupHiddenByDialog]）连 barrier 一起撤，
-                // 否则它把落在对话框上的点击吃掉、还判成「点弹窗外面」清整栈。判据收口在
-                // [shouldShowLookupDismissBarrier]（三个根 Overlay 表面共用）。
-                if (shouldShowLookupDismissBarrier(
-                  hasVisiblePopup: _hasVisiblePopup,
-                  isSearching: _popup.isSearchingUi,
-                  hiddenByDialog: lookupPopupHiddenByDialog,
-                ))
-                  Positioned.fill(
-                    // BUG-861：barrier 转发 hover——首弹后 barrier 盖住字幕，字幕盒
-                    // MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
-                    // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
-                    //
-                    // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
-                    // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
-                    // 外面这层 [MouseRegion] 只为补「指针移出**整个窗口**」这一路：
-                    // 那种情况下 barrier 一个 hover 事件都不会再来，只靠
-                    // [_evaluateHoverLeave] 会永远等不到判定、视频卡在暂停。
-                    // （移到浮层上也会 exit，为什么无害见
-                    // [_handlePointerLeftLookupSurface]。）
-                    //
-                    // BUG-2633：`opaque: false` 的 MouseRegion 会把 barrier 认领的
-                    // 命中翻成 false（见 [lookupOverlayHitClaim]），滚轮 / 指针就穿到
-                    // 视频页——外面必须再包一层认领命中的壳，barrier 才真的是 barrier。
-                    child: lookupOverlayHitClaim(
-                      child: MouseRegion(
-                        opaque: false,
-                        onExit: (PointerExitEvent _) =>
-                            _handlePointerLeftLookupSurface(),
-                        child: LookupDismissBarrier(
-                          // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并
-                          // 保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                          onTapDismiss: _onDismissBarrierTap,
-                          // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
-                          onSwipeDismiss: _dismissTopNestedPopup,
-                          swipeEnabled:
-                              ReaderFushiSource.instance.enableSwipeToClose,
-                          // BUG-2770：触摸半边未设置时所有平台默认开。
-                          touchSwipeEnabled: ReaderFushiSource
-                              .instance
-                              .enableTouchSwipeToClose,
-                          sensitivity: ReaderFushiSource
-                              .instance
-                              .dismissSwipeSensitivity,
-                          onPointerHover: _onDismissBarrierHover,
-                          // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的
-                          // 地方（barrier 命中行为 opaque，页面根 Listener 收不到）。
-                          onNonPrimaryButtonDown:
-                              onDismissBarrierNonPrimaryButton,
+      child: FushiAppUiScaleNeutralizer(
+        child: Theme(
+          data: appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              // LayoutBuilder 的 builder 在 layout 阶段运行，可能晚于本 State 的 deactivate
+              // （退视频/退全屏同帧）；此刻读 appModel(ref.read)/mixinTheme 会做失效祖先查找
+              // 抛异常红屏（BUG-121）。销毁期标志置位则空渲染兜底。
+              if (!mounted || _overlayInert) return const SizedBox.shrink();
+              final Size screen = Size(
+                constraints.maxWidth,
+                constraints.maxHeight,
+              );
+              return Stack(
+                // BUG-135: 隐藏热槽被停到屏幕右外侧（buildNestedPopupLayer），默认
+                // Clip.hardEdge 会把它裁掉 → 原生 WebView 可能不再渲染、丢失预热。用
+                // Clip.none 让它在屏外照常栅格化保持温热（不盖任何控件）。
+                clipBehavior: Clip.none,
+                children: <Widget>[
+                  // Dismiss barrier while a popup is visible OR a lookup is
+                  // searching (搜索→就绪才显示：搜索期浮层还没显示，barrier 仍要拦点击
+                  // 并支持点同句另一字切换查词)。仅剩隐藏热槽时不拦，放行给视频。
+                  //
+                  // BUG-1327：对话框期间（[lookupPopupHiddenByDialog]）连 barrier 一起撤，
+                  // 否则它把落在对话框上的点击吃掉、还判成「点弹窗外面」清整栈。判据收口在
+                  // [shouldShowLookupDismissBarrier]（三个根 Overlay 表面共用）。
+                  if (shouldShowLookupDismissBarrier(
+                    hasVisiblePopup: _hasVisiblePopup,
+                    isSearching: _popup.isSearchingUi,
+                    hiddenByDialog: lookupPopupHiddenByDialog,
+                  ))
+                    Positioned.fill(
+                      // BUG-861：barrier 转发 hover——首弹后 barrier 盖住字幕，字幕盒
+                      // MouseRegion 收不到 hover，此处是「按住 Shift 连续切换查词」唯一
+                      // 还能接 hover 的入口（与 reader onDismissBarrierHover 同语义）。
+                      //
+                      // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
+                      // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
+                      // 外面这层 [MouseRegion] 只为补「指针移出**整个窗口**」这一路：
+                      // 那种情况下 barrier 一个 hover 事件都不会再来，只靠
+                      // [_evaluateHoverLeave] 会永远等不到判定、视频卡在暂停。
+                      // （移到浮层上也会 exit，为什么无害见
+                      // [_handlePointerLeftLookupSurface]。）
+                      //
+                      // BUG-2633：`opaque: false` 的 MouseRegion 会把 barrier 认领的
+                      // 命中翻成 false（见 [lookupOverlayHitClaim]），滚轮 / 指针就穿到
+                      // 视频页——外面必须再包一层认领命中的壳，barrier 才真的是 barrier。
+                      child: lookupOverlayHitClaim(
+                        child: MouseRegion(
+                          opaque: false,
+                          onExit: (PointerExitEvent _) =>
+                              _handlePointerLeftLookupSurface(),
+                          child: LookupDismissBarrier(
+                            // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并
+                            // 保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                            onTapDismiss: _onDismissBarrierTap,
+                            // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
+                            onSwipeDismiss: _dismissTopNestedPopup,
+                            swipeEnabled:
+                                ReaderFushiSource.instance.enableSwipeToClose,
+                            // BUG-2770：触摸半边未设置时所有平台默认开。
+                            touchSwipeEnabled: ReaderFushiSource
+                                .instance
+                                .enableTouchSwipeToClose,
+                            sensitivity: ReaderFushiSource
+                                .instance
+                                .dismissSwipeSensitivity,
+                            onPointerHover: _onDismissBarrierHover,
+                            // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的
+                            // 地方（barrier 命中行为 opaque，页面根 Listener 收不到）。
+                            onNonPrimaryButtonDown:
+                                onDismissBarrierNonPrimaryButton,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
-                if (_popup.isSearchingUi && _popup.pendingRect != null)
-                  buildPopupLoadingPlaceholder(
-                    rect: _popup.pendingRect!,
-                    screen: screen,
-                  ),
-                for (int i = 0; i < _popup.entries.length; i++)
-                  _buildNestedPopupLayer(i, screen),
-                ...buildParkedRealmLayers(screen: screen, controller: _popup),
-              ],
-            );
-          },
+                  // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
+                  if (_popup.isSearchingUi && _popup.pendingRect != null)
+                    buildPopupLoadingPlaceholder(
+                      rect: _popup.pendingRect!,
+                      screen: screen,
+                    ),
+                  for (int i = 0; i < _popup.entries.length; i++)
+                    _buildNestedPopupLayer(i, screen),
+                  ...buildParkedRealmLayers(screen: screen, controller: _popup),
+                ],
+              );
+            },
+          ),
         ),
       ),
-     ),
     );
   }
 
@@ -7560,7 +7577,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.subtitleTrack:
         {
           final String? source = _currentSubtitleSource;
-          on = source != null &&
+          on =
+              source != null &&
               source.isNotEmpty &&
               source != SubtitleSource.offSentinel;
         }
@@ -7584,11 +7602,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   );
 
   /// 倍速≠1.0 时倍速按钮换成显示数值的 secondary tonal 胶囊（M3E）。
-  Widget _m3eSpeedValueButton({
-    required VoidCallback onPressed,
-  }) {
-    final ColorScheme chrome =
-        videoM3eChromeScheme(Theme.of(context).colorScheme);
+  Widget _m3eSpeedValueButton({required VoidCallback onPressed}) {
+    final ColorScheme chrome = videoM3eChromeScheme(
+      Theme.of(context).colorScheme,
+    );
     final double extent = _m3eButtonExtent;
     final String label = _playbackSpeed == _playbackSpeed.roundToDouble()
         ? '${_playbackSpeed.toStringAsFixed(1)}x'
@@ -7612,7 +7629,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                   maxLines: 1,
                   style: TextStyle(
                     color: chrome.onSecondaryContainer,
-                    fontSize: 14 * _videoUiScale * _controlsDensityScale,
+                    fontSize:
+                        Theme.of(context).textTheme.labelLarge!.fontSize! *
+                        _videoUiScale *
+                        _controlsDensityScale,
                     fontWeight: FontWeight.w700,
                     fontFeatures: const <FontFeature>[
                       FontFeature.tabularFigures(),
@@ -7818,7 +7838,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                       horizontal: 16 * scale,
                       vertical: 6 * scale,
                     )
-                  : EdgeInsets.fromLTRB(4 * scale, 4 * scale, 16 * scale, 4 * scale),
+                  : EdgeInsets.fromLTRB(
+                      4 * scale,
+                      4 * scale,
+                      16 * scale,
+                      4 * scale,
+                    ),
               child: back == null
                   ? text
                   : Row(
@@ -7842,7 +7867,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _m3eBackMergedIntoTitle(VideoControlLayout layout) {
     if (!_m3eChrome || !_controlsDensity.showTopBar) return false;
     if (_topBarTitleSlot() != VideoControlSlot.topCenter) return false;
-    final List<VideoControlItem> left = layout.itemsIn(VideoControlSlot.topLeft);
+    final List<VideoControlItem> left = layout.itemsIn(
+      VideoControlSlot.topLeft,
+    );
     return left.length == 1 &&
         left.single == VideoControlItem.back &&
         _shouldRenderControlItem(VideoControlItem.back);
@@ -8211,7 +8238,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
     // 右上按钮组的最后一段挂「⋯」：移出播放器、又不属于右下传输 / 学习组的动作
     // （音轨、片段导出、上下集、上下章……）常驻这里。
-    final bool lastTopRightSegment = slot == VideoControlSlot.topRight &&
+    final bool lastTopRightSegment =
+        slot == VideoControlSlot.topRight &&
         (titleIndex < 0
             ? segment == VideoTopBarSegment.lead
             : segment == VideoTopBarSegment.tail);
@@ -8700,22 +8728,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （[_foldedBarEntries]）。
   static const Set<VideoControlItem> _kVideoBottomFoldedItems =
       <VideoControlItem>{
-    VideoControlItem.seekBackward,
-    VideoControlItem.seekForward,
-    VideoControlItem.previousCue,
-    VideoControlItem.replayCue,
-    VideoControlItem.nextCue,
-    VideoControlItem.frameBackward,
-    VideoControlItem.frameForward,
-    VideoControlItem.favoriteSentence,
-    VideoControlItem.customAction1,
-    VideoControlItem.customAction2,
-    VideoControlItem.customAction3,
-    VideoControlItem.customAction4,
-    VideoControlItem.speed,
-    VideoControlItem.subtitleTrack,
-    VideoControlItem.fullscreen,
-  };
+        VideoControlItem.seekBackward,
+        VideoControlItem.seekForward,
+        VideoControlItem.previousCue,
+        VideoControlItem.replayCue,
+        VideoControlItem.nextCue,
+        VideoControlItem.frameBackward,
+        VideoControlItem.frameForward,
+        VideoControlItem.favoriteSentence,
+        VideoControlItem.customAction1,
+        VideoControlItem.customAction2,
+        VideoControlItem.customAction3,
+        VideoControlItem.customAction4,
+        VideoControlItem.speed,
+        VideoControlItem.subtitleTrack,
+        VideoControlItem.fullscreen,
+      };
 
   /// 被用户布局**移出播放器**的动作，作为常驻「⋯」菜单项（[VideoBarEntry.folded]）
   /// 挂在 [slot] 那条栏尾：默认精简布局把不常用的按钮移出播放器，但动作仍一键可达；
@@ -8773,8 +8801,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 时间读数是一枚 secondary tonal 小胶囊（半透明，M3E 关键处色块）；墨水屏
       // 保持纯白字。
       final bool eink = isEinkTheme(context);
-      final ColorScheme chrome =
-          videoM3eChromeScheme(Theme.of(context).colorScheme);
+      final ColorScheme chrome = videoM3eChromeScheme(
+        Theme.of(context).colorScheme,
+      );
       final double k = _videoUiScale * _controlsDensityScale;
       final Widget indicator = ValueListenableBuilder<bool>(
         valueListenable: _videoTimeShowsRemaining,
@@ -8861,7 +8890,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           child: Padding(
             padding: EdgeInsets.all(8 * _videoUiScale),
             child: FushiIcon(
-              forward ? CupertinoIcons.goforward_10 : CupertinoIcons.gobackward_10,
+              forward
+                  ? CupertinoIcons.goforward_10
+                  : CupertinoIcons.gobackward_10,
               size: _videoControlIconSize,
               color: color,
               semanticLabel: label,
@@ -8930,7 +8961,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             child: FushiIcon(
               icon,
               size: _videoControlIconSize * 0.9,
-              color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
+              color: _videoChromeButtonForeground(
+                Theme.of(context).colorScheme,
+              ),
             ),
           ),
         ),
@@ -8948,10 +8981,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ? _controlPopoverLinkFor(slot, VideoControlItem.speed)
         : null;
     void onPressed() => _activateVideoControlButton(
-          button,
-          popoverLink: popoverLink,
-          sourceSlot: slot,
-        );
+      button,
+      popoverLink: popoverLink,
+      sourceSlot: slot,
+    );
     final VideoControlItem? item = VideoControlItem.fromLegacy(button);
     final Widget controlButton = ListenableBuilder(
       listenable: _videoChromeToneListenable,
@@ -10749,10 +10782,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           serial: (_doubleTapRipple.value?.serial ?? 0) + 1,
         );
       } else {
-        _showOsd(
-          label,
-          icon: forward ? Icons.fast_forward : Icons.fast_rewind,
-        );
+        _showOsd(label, icon: forward ? Icons.fast_forward : Icons.fast_rewind);
       }
     }
 

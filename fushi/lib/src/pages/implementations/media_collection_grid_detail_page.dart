@@ -75,7 +75,8 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     String mediaType,
     String entryKey, {
     VoidCallback? onRemoveFromCollection,
-  }) memberCardBuilder;
+  })
+  memberCardBuilder;
 
   /// 打开某成员（点卡片 / 菜单「打开」/ hero「继续」）。null = 不提供打开。卡片自身的
   /// 手势被 [IgnorePointer] 屏蔽（避免其内部 long-press 与网格触摸拖拽争用），故「打开」
@@ -91,7 +92,8 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     String mediaType,
     String entryKey, {
     required VoidCallback onRemoveFromCollection,
-  })? onShowMemberMenu;
+  })?
+  onShowMemberMenu;
 
   /// 改名 / 删除 / 移出成员后刷新书架。
   final VoidCallback onChanged;
@@ -102,7 +104,8 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
     bool deleteStatistics,
-  )? onDeleteMembersMedia;
+  )?
+  onDeleteMembersMedia;
 
   /// 「同时删除统计数据」勾选行的副标题；null = 不提供该选项。
   final String? deleteMembersStatisticsSubtitle;
@@ -115,7 +118,8 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
   final Future<void> Function(
     List<MediaCollectionItemRow> members,
     bool completed,
-  )? onSetMembersCompleted;
+  )?
+  onSetMembersCompleted;
 
   @override
   State<MediaCollectionGridDetailPage> createState() =>
@@ -202,8 +206,9 @@ class _MediaCollectionGridDetailPageState
 
   Future<void> _reload() async {
     final FushiDatabase db = widget.database;
-    final List<MediaCollectionItemRow> rows =
-        await db.getCollectionItems(widget.collection.id);
+    final List<MediaCollectionItemRow> rows = await db.getCollectionItems(
+      widget.collection.id,
+    );
     final Map<String, ({String title, int importedAt})> meta =
         await loadCollectionMemberMeta(db);
     final Map<String, Set<int>> tagIds = <String, Set<int>>{};
@@ -215,12 +220,14 @@ class _MediaCollectionGridDetailPageState
       };
     }
     final List<BookTagRow> allTags = await db.getAllTags();
-    final List<BookTagRow> collectionTags =
-        await db.getTagsForCollection(widget.collection.id);
+    final List<BookTagRow> collectionTags = await db.getTagsForCollection(
+      widget.collection.id,
+    );
     CollectionMemberSort? savedSort;
     if (!_sortPrefLoaded) {
-      final String? raw =
-          await db.getPref(collectionDetailSortPrefKey(widget.collection.id));
+      final String? raw = await db.getPref(
+        collectionDetailSortPrefKey(widget.collection.id),
+      );
       for (final CollectionMemberSort s in CollectionMemberSort.values) {
         if (s.name == raw) savedSort = s;
       }
@@ -296,13 +303,11 @@ class _MediaCollectionGridDetailPageState
       _sort = CollectionMemberSort.manual;
     });
     await _persistSort(CollectionMemberSort.manual);
-    await widget.database.reorderCollectionItems(
-      widget.collection.id,
-      <CollectionMemberKey>[
-        for (final MediaCollectionItemRow r in next)
-          (mediaType: r.mediaType, entryKey: r.entryKey),
-      ],
-    );
+    await widget.database
+        .reorderCollectionItems(widget.collection.id, <CollectionMemberKey>[
+          for (final MediaCollectionItemRow r in next)
+            (mediaType: r.mediaType, entryKey: r.entryKey),
+        ]);
     widget.onChanged();
   }
 
@@ -311,15 +316,14 @@ class _MediaCollectionGridDetailPageState
     // 勾选行；否则退回纯解链删除。确认框统一走 [confirmDetailCollectionDelete]。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _rows.isNotEmpty;
-    final FushiDestructiveConfirmResult? result =
-        await confirmDetailCollectionDelete(
+    final FushiDestructiveConfirmResult?
+    result = await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_books : null,
-      statisticsSubtitle:
-          canDeleteMembers ? widget.deleteMembersStatisticsSubtitle : null,
+      statisticsSubtitle: canDeleteMembers
+          ? widget.deleteMembersStatisticsSubtitle
+          : null,
       checkedDisclosure: canDeleteMembers
-          ? buildDeletionDisclosure(
-              target: DeletionDisclosureTarget.shelfBook,
-            )
+          ? buildDeletionDisclosure(target: DeletionDisclosureTarget.shelfBook)
           : null,
     );
     if (result == null || !mounted) return;
@@ -332,7 +336,9 @@ class _MediaCollectionGridDetailPageState
       );
     }
     await deleteMediaCollectionWithAssets(
-        widget.database, widget.collection.id);
+      widget.database,
+      widget.collection.id,
+    );
     if (!mounted) return;
     widget.onChanged();
     Navigator.of(context).maybePop();
@@ -341,7 +347,10 @@ class _MediaCollectionGridDetailPageState
   Future<void> _removeMember(MediaCollectionItemRow row) async {
     // 按成员行值移出（行值可能是对端未知种类）→ raw 版，保证移得掉。
     await widget.database.removeFromCollectionRaw(
-        widget.collection.id, row.mediaType, row.entryKey);
+      widget.collection.id,
+      row.mediaType,
+      row.entryKey,
+    );
     if (!mounted) return;
     widget.onChanged();
     await _afterMembershipChange();
@@ -349,8 +358,8 @@ class _MediaCollectionGridDetailPageState
 
   /// 移出 / 移走成员后：移空则合集已自删（removeFromCollection），退回上层；否则重载。
   Future<void> _afterMembershipChange() async {
-    final List<MediaCollectionItemRow> remaining =
-        await widget.database.getCollectionItems(widget.collection.id);
+    final List<MediaCollectionItemRow> remaining = await widget.database
+        .getCollectionItems(widget.collection.id);
     if (!mounted) return;
     if (remaining.isEmpty) {
       Navigator.of(context).maybePop();
@@ -382,24 +391,25 @@ class _MediaCollectionGridDetailPageState
       _visibleRows = visible;
     });
     await _persistSort(CollectionMemberSort.manual);
-    await widget.database.reorderCollectionItems(
-      widget.collection.id,
-      <CollectionMemberKey>[
-        for (final MediaCollectionItemRow r in visible)
-          (mediaType: r.mediaType, entryKey: r.entryKey),
-      ],
-    );
+    await widget.database
+        .reorderCollectionItems(widget.collection.id, <CollectionMemberKey>[
+          for (final MediaCollectionItemRow r in visible)
+            (mediaType: r.mediaType, entryKey: r.entryKey),
+        ]);
     widget.onChanged();
   }
 
   /// 长按（原地松手）/ 右键上下文菜单：移出合集 + 可选打开。
   Future<void> _showMemberMenu(
-      MediaCollectionItemRow row, Offset globalPosition) async {
+    MediaCollectionItemRow row,
+    Offset globalPosition,
+  ) async {
     final Future<void> Function(
       String mediaType,
       String entryKey, {
       required VoidCallback onRemoveFromCollection,
-    })? shared = widget.onShowMemberMenu;
+    })?
+    shared = widget.onShowMemberMenu;
     if (shared != null) {
       // BUG-2969：调用方的卡片菜单（与库页同一份），移出合集仍走本页流程。
       await shared(
@@ -410,8 +420,9 @@ class _MediaCollectionGridDetailPageState
       if (mounted) await _reload();
       return;
     }
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (overlay is! RenderBox) return;
     // BUG-781：[globalPosition] 是真实视口坐标，经 Overlay 的 RenderBox 换算到根
     // Navigator Overlay 坐标系（吸收 FushiAppUiScale 的整体缩放）；scale=1 时逐像素等价。
@@ -484,21 +495,24 @@ class _MediaCollectionGridDetailPageState
   }
 
   List<MediaCollectionItemRow> get _selectedRows => <MediaCollectionItemRow>[
-        for (final MediaCollectionItemRow r in _rows)
-          if (_selected.contains('${r.mediaType}|${r.entryKey}')) r,
-      ];
+    for (final MediaCollectionItemRow r in _rows)
+      if (_selected.contains('${r.mediaType}|${r.entryKey}')) r,
+  ];
 
   void _endSelection() => setState(() {
-        _selecting = false;
-        _selected.clear();
-      });
+    _selecting = false;
+    _selected.clear();
+  });
 
   Future<void> _batchRemove() async {
     final List<MediaCollectionItemRow> rows = _selectedRows;
     if (rows.isEmpty || !await confirmDetailRemoveMember() || !mounted) return;
     for (final MediaCollectionItemRow row in rows) {
       await widget.database.removeFromCollectionRaw(
-          widget.collection.id, row.mediaType, row.entryKey);
+        widget.collection.id,
+        row.mediaType,
+        row.entryKey,
+      );
     }
     if (!mounted) return;
     widget.onChanged();
@@ -520,8 +534,10 @@ class _MediaCollectionGridDetailPageState
       if (ref != null) refs.add(ref);
     }
     if (refs.isEmpty || !mounted) return;
-    final bool changed =
-        await showTagPicker(context, targets: TagTargets(media: refs));
+    final bool changed = await showTagPicker(
+      context,
+      targets: TagTargets(media: refs),
+    );
     if (!mounted) return;
     if (changed) widget.onChanged();
     await _reload();
@@ -557,12 +573,18 @@ class _MediaCollectionGridDetailPageState
     if (target == null || target == widget.collection.id || !mounted) return;
     // 先加进目标再移出本合集：移空自删发生在最后一步，目标里成员已就位。
     for (final MediaCollectionItemRow row in rows) {
-      await widget.database
-          .addToCollectionRaw(target, row.mediaType, row.entryKey);
+      await widget.database.addToCollectionRaw(
+        target,
+        row.mediaType,
+        row.entryKey,
+      );
     }
     for (final MediaCollectionItemRow row in rows) {
       await widget.database.removeFromCollectionRaw(
-          widget.collection.id, row.mediaType, row.entryKey);
+        widget.collection.id,
+        row.mediaType,
+        row.entryKey,
+      );
     }
     if (!mounted) return;
     widget.onChanged();
@@ -652,7 +674,8 @@ class _MediaCollectionGridDetailPageState
       tagIds: _tagFilter,
       status: _statusFilter,
     );
-    final bool filtered = _search.text.trim().isNotEmpty ||
+    final bool filtered =
+        _search.text.trim().isNotEmpty ||
         _tagFilter.isNotEmpty ||
         _statusFilter != null;
 
@@ -669,21 +692,19 @@ class _MediaCollectionGridDetailPageState
         child: _loading
             ? Center(child: adaptiveIndicator(context: context))
             : entries.isEmpty
-                ? _EmptyCollection(
-                    onBack: () => Navigator.of(context).maybePop(),
-                  )
-                : PopScope(
-                    canPop: !_selecting,
-                    onPopInvokedWithResult: (bool didPop, Object? _) {
-                      if (!didPop && _selecting) _endSelection();
-                    },
-                    child: Stack(
-                      children: <Widget>[
-                        _buildScroll(entries, arranged, cards, filtered),
-                        _buildSelectionBar(),
-                      ],
-                    ),
-                  ),
+            ? _EmptyCollection(onBack: () => Navigator.of(context).maybePop())
+            : PopScope(
+                canPop: !_selecting,
+                onPopInvokedWithResult: (bool didPop, Object? _) {
+                  if (!didPop && _selecting) _endSelection();
+                },
+                child: Stack(
+                  children: <Widget>[
+                    _buildScroll(entries, arranged, cards, filtered),
+                    _buildSelectionBar(),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -701,13 +722,15 @@ class _MediaCollectionGridDetailPageState
         final double hPad = wide ? tokens.spacing.card * 1.5 : 12;
         final ({int finished, int counted, double? progress}) summary =
             summarizeCollectionMembers(entries);
-        final CollectionMemberEntry? next =
-            widget.onOpenMember == null ? null : pickContinueMember(entries);
+        final CollectionMemberEntry? next = widget.onOpenMember == null
+            ? null
+            : pickContinueMember(entries);
         final List<Widget> covers = <Widget>[
           for (final CollectionMemberEntry e in entries)
             if (e.info?.cover case final Widget cover) cover,
         ];
-        final bool canReorder = _sort == CollectionMemberSort.manual &&
+        final bool canReorder =
+            _sort == CollectionMemberSort.manual &&
             !filtered &&
             !_selecting &&
             _viewMode == CollectionMemberViewMode.grid;
@@ -726,7 +749,7 @@ class _MediaCollectionGridDetailPageState
           onContinue: next == null
               ? null
               : () =>
-                  widget.onOpenMember!(next.row.mediaType, next.row.entryKey),
+                    widget.onOpenMember!(next.row.mediaType, next.row.entryKey),
           onEditTags: _editCollectionTags,
         );
 
@@ -796,18 +819,19 @@ class _MediaCollectionGridDetailPageState
                 itemCount: arranged.length,
                 itemBuilder: (BuildContext context, int i) =>
                     FushiStaggeredEntrance(
-                  index: i,
-                  child: _MemberListRow(
-                    key: ValueKey<String>('member-row-${arranged[i].key}'),
-                    entry: arranged[i],
-                    selecting: _selecting,
-                    selected: _selected.contains(arranged[i].key),
-                    showStatus: widget.memberInfoOf != null,
-                    onTap: () => _activate(arranged[i]),
-                    onLongPress: () => _toggleSelected(arranged[i]),
-                    onMenu: (Offset p) => _showMemberMenu(arranged[i].row, p),
-                  ),
-                ),
+                      index: i,
+                      child: _MemberListRow(
+                        key: ValueKey<String>('member-row-${arranged[i].key}'),
+                        entry: arranged[i],
+                        selecting: _selecting,
+                        selected: _selected.contains(arranged[i].key),
+                        showStatus: widget.memberInfoOf != null,
+                        onTap: () => _activate(arranged[i]),
+                        onLongPress: () => _toggleSelected(arranged[i]),
+                        onMenu: (Offset p) =>
+                            _showMemberMenu(arranged[i].row, p),
+                      ),
+                    ),
               ),
             ),
           );
@@ -831,16 +855,18 @@ class _MediaCollectionGridDetailPageState
                   onActivateItem: widget.onOpenMember == null
                       ? null
                       : (int i) => widget.onOpenMember!(
-                            arranged[i].row.mediaType,
-                            arranged[i].row.entryKey,
-                          ),
+                          arranged[i].row.mediaType,
+                          arranged[i].row.entryKey,
+                        ),
                   onContextMenu: (int i, Offset globalPosition) =>
                       _showMemberMenu(arranged[i].row, globalPosition),
                   itemBuilder: (BuildContext context, int i) =>
                       FushiStaggeredEntrance(
-                    index: i,
-                    child: _HoverableMemberCard(child: cards[arranged[i].key]!),
-                  ),
+                        index: i,
+                        child: _HoverableMemberCard(
+                          child: cards[arranged[i].key]!,
+                        ),
+                      ),
                 ),
               ),
             ),
@@ -914,7 +940,8 @@ class _MediaCollectionGridDetailPageState
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int activeFilters =
         _tagFilter.length + (_statusFilter == null ? 0 : 1);
-    final bool hasFilterDims = widget.memberInfoOf != null ||
+    final bool hasFilterDims =
+        widget.memberInfoOf != null ||
         entries.any((CollectionMemberEntry e) => e.tagIds.isNotEmpty);
     final Widget search = FushiSearchField(
       fieldKey: const ValueKey<String>('collection_detail_search'),
@@ -963,7 +990,9 @@ class _MediaCollectionGridDetailPageState
           return Row(
             children: <Widget>[
               SizedBox(
-                  width: (c.maxWidth * 0.4).clamp(240.0, 420.0), child: search),
+                width: (c.maxWidth * 0.4).clamp(240.0, 420.0),
+                child: search,
+              ),
               const Spacer(),
               actions,
             ],
@@ -983,17 +1012,17 @@ class _MediaCollectionGridDetailPageState
 
   Widget _buildSortMenu(List<CollectionMemberEntry> arranged) {
     String label(CollectionMemberSort s) => switch (s) {
-          CollectionMemberSort.manual => t.collection_detail_sort_manual,
-          CollectionMemberSort.volume => t.collection_detail_sort_volume,
-          CollectionMemberSort.added => t.collection_detail_sort_added,
-          CollectionMemberSort.read => t.collection_detail_sort_read,
-        };
+      CollectionMemberSort.manual => t.collection_detail_sort_manual,
+      CollectionMemberSort.volume => t.collection_detail_sort_volume,
+      CollectionMemberSort.added => t.collection_detail_sort_added,
+      CollectionMemberSort.read => t.collection_detail_sort_read,
+    };
     IconData icon(CollectionMemberSort s) => switch (s) {
-          CollectionMemberSort.manual => FushiIcons.dragIndicator,
-          CollectionMemberSort.volume => FushiIcons.sortByAlpha,
-          CollectionMemberSort.added => FushiIcons.history,
-          CollectionMemberSort.read => FushiIcons.schedule,
-        };
+      CollectionMemberSort.manual => FushiIcons.dragIndicator,
+      CollectionMemberSort.volume => FushiIcons.sortByAlpha,
+      CollectionMemberSort.added => FushiIcons.history,
+      CollectionMemberSort.read => FushiIcons.schedule,
+    };
     return FushiMenuAnchor(
       menuChildren: <Widget>[
         for (final CollectionMemberSort s in CollectionMemberSort.values)
@@ -1021,12 +1050,13 @@ class _MediaCollectionGridDetailPageState
       ],
       builder: (BuildContext context, MenuController controller, Widget? _) =>
           FushiIconButton(
-        key: const ValueKey<String>('collection_detail_sort'),
-        icon: FushiIcons.sort,
-        tooltip: t.sort_by,
-        selected: _sort != CollectionMemberSort.volume,
-        onTap: () => controller.isOpen ? controller.close() : controller.open(),
-      ),
+            key: const ValueKey<String>('collection_detail_sort'),
+            icon: FushiIcons.sort,
+            tooltip: t.sort_by,
+            selected: _sort != CollectionMemberSort.volume,
+            onTap: () =>
+                controller.isOpen ? controller.close() : controller.open(),
+          ),
     );
   }
 
@@ -1042,10 +1072,10 @@ class _MediaCollectionGridDetailPageState
         if (present.contains(tag.id)) tag,
     ];
     String statusLabel(ShelfReadStatus s) => switch (s) {
-          ShelfReadStatus.unread => t.shelf_filter_read_status_unread,
-          ShelfReadStatus.reading => t.shelf_filter_read_status_reading,
-          ShelfReadStatus.finished => t.shelf_filter_read_status_finished,
-        };
+      ShelfReadStatus.unread => t.shelf_filter_read_status_unread,
+      ShelfReadStatus.reading => t.shelf_filter_read_status_reading,
+      ShelfReadStatus.finished => t.shelf_filter_read_status_finished,
+    };
     final Widget panel = !_filtersOpen
         ? const SizedBox(width: double.infinity)
         : Padding(
@@ -1059,7 +1089,8 @@ class _MediaCollectionGridDetailPageState
                   for (final ShelfReadStatus s in ShelfReadStatus.values)
                     FushiTagToggleChip(
                       key: ValueKey<String>(
-                          'collection_detail_status_${s.name}'),
+                        'collection_detail_status_${s.name}',
+                      ),
                       label: statusLabel(s),
                       color: scheme.primary,
                       state: _statusFilter == s
@@ -1111,7 +1142,8 @@ class _MediaCollectionGridDetailPageState
       Color foreground,
       Color selectedContainer,
       Color selectedForeground,
-    }) palette = fushiFloatingToolbarPalette(context);
+    })
+    palette = fushiFloatingToolbarPalette(context);
     final Widget countPill = FushiFloatingPill(
       color: palette.container,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1127,10 +1159,9 @@ class _MediaCollectionGridDetailPageState
             padding: const EdgeInsetsDirectional.only(end: 12),
             child: Text(
               t.batch_selected_count(n: _selected.length),
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(color: palette.foreground),
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(color: palette.foreground),
             ),
           ),
         ],
@@ -1347,8 +1378,9 @@ class _MemberListRow extends StatelessWidget {
     final ColorScheme scheme = theme.colorScheme;
     final bool apple = isGlassDesign(context);
     final CollectionMemberInfo? info = entry.info;
-    final double? progress =
-        info == null ? null : (info.completed ? 1.0 : info.progress);
+    final double? progress = info == null
+        ? null
+        : (info.completed ? 1.0 : info.progress);
     final String? status = !showStatus || info == null
         ? null
         : switch (info.readStatus) {
@@ -1361,7 +1393,8 @@ class _MemberListRow extends StatelessWidget {
       child: SizedBox(
         width: 44,
         height: 66,
-        child: info?.cover ??
+        child:
+            info?.cover ??
             ColoredBox(
               color: scheme.secondaryContainer,
               child: Center(
@@ -1379,8 +1412,8 @@ class _MemberListRow extends StatelessWidget {
         color: selected
             ? scheme.secondaryContainer
             : apple
-                ? Colors.transparent
-                : scheme.surfaceContainerLow,
+            ? Colors.transparent
+            : scheme.surfaceContainerLow,
         borderRadius: apple
             ? FushiM3eShape.smallRadius
             : FushiM3eShape.cardRadius,
@@ -1403,14 +1436,15 @@ class _MemberListRow extends StatelessWidget {
                         entry.displayTitle,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: tokens.type.listTitle
-                            .copyWith(fontWeight: FontWeight.w600),
+                        style: tokens.type.listTitle.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       if (progress != null) ...<Widget>[
                         SizedBox(height: tokens.spacing.gap),
                         ClipRRect(
                           borderRadius: FushiBorderRadius.chip,
-                          child: LinearProgressIndicator(
+                          child: FushiLinearProgressIndicator(
                             value: progress.clamp(0.0, 1.0),
                             minHeight: 4,
                             color: scheme.primary,
@@ -1436,14 +1470,16 @@ class _MemberListRow extends StatelessWidget {
                   Builder(
                     builder: (BuildContext buttonContext) =>
                         FushiIconButtonControl(
-                      tooltip: t.shelf_toolbar_more,
-                      icon: const FushiIcon(FushiIcons.more),
-                      onPressed: () {
-                        final RenderBox box =
-                            buttonContext.findRenderObject()! as RenderBox;
-                        onMenu(box.localToGlobal(box.size.center(Offset.zero)));
-                      },
-                    ),
+                          tooltip: t.shelf_toolbar_more,
+                          icon: const FushiIcon(FushiIcons.more),
+                          onPressed: () {
+                            final RenderBox box =
+                                buttonContext.findRenderObject()! as RenderBox;
+                            onMenu(
+                              box.localToGlobal(box.size.center(Offset.zero)),
+                            );
+                          },
+                        ),
                   ),
               ],
             ),
@@ -1527,10 +1563,9 @@ class _EmptyCollection extends StatelessWidget {
               SizedBox(height: tokens.spacing.card),
               Text(
                 t.collection_empty,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w700),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
               ),
               SizedBox(height: tokens.spacing.gap),
               Text(
@@ -1542,8 +1577,9 @@ class _EmptyCollection extends StatelessWidget {
               FushiFilledButton(
                 key: const ValueKey<String>('collection_detail_empty_back'),
                 onPressed: onBack,
-                child:
-                    Text(MaterialLocalizations.of(context).backButtonTooltip),
+                child: Text(
+                  MaterialLocalizations.of(context).backButtonTooltip,
+                ),
               ),
             ],
           ),
@@ -1591,8 +1627,9 @@ class _HoverableMemberCardState extends State<_HoverableMemberCard> {
                           borderRadius: tokens.radii.cardRadius,
                         )
                       : BoxDecoration(
-                          color:
-                              tokens.surfaces.onSurface.withValues(alpha: 0.08),
+                          color: tokens.surfaces.onSurface.withValues(
+                            alpha: 0.08,
+                          ),
                           borderRadius: tokens.radii.cardRadius,
                         ),
                 ),

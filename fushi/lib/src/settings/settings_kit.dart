@@ -925,8 +925,7 @@ class SettingsEmptyState extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: apple
-                  ? TextStyle(
-                      fontSize: 17,
+                  ? theme.textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: appleColorsOf(context).label,
                     )
@@ -940,8 +939,7 @@ class SettingsEmptyState extends StatelessWidget {
                 message!,
                 textAlign: TextAlign.center,
                 style: apple
-                    ? TextStyle(
-                        fontSize: 15,
+                    ? theme.textTheme.bodyMedium?.copyWith(
                         color: appleColorsOf(context).secondaryLabel,
                       )
                     : theme.textTheme.bodyMedium?.copyWith(
@@ -1103,8 +1101,7 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
     }
 
     final TextStyle expandedTitle = apple
-        ? TextStyle(
-            fontSize: 28,
+        ? (theme.textTheme.headlineLarge ?? const TextStyle()).copyWith(
             fontWeight: FontWeight.w700,
             color: appleColorsOf(context).label,
           )
@@ -1113,8 +1110,7 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
             color: scheme.onSurface,
           );
     final TextStyle collapsedTitle = apple
-        ? TextStyle(
-            fontSize: 17,
+        ? (theme.textTheme.titleLarge ?? const TextStyle()).copyWith(
             fontWeight: FontWeight.w600,
             color: appleColorsOf(context).label,
           )
@@ -1123,7 +1119,9 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
             color: scheme.onSurface,
           );
     final TextStyle subtitleStyle = apple
-        ? TextStyle(fontSize: 12, color: appleColorsOf(context).secondaryLabel)
+        ? (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+            color: appleColorsOf(context).secondaryLabel,
+          )
         : (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
             color: scheme.primary,
             fontWeight: FontWeight.w600,

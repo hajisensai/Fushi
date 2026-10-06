@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 // Material 3 Expressive（2025-05）的进度与加载指示，自绘实现。
 //
@@ -169,12 +170,12 @@ class _FushiWavyLinearProgressState extends State<FushiWavyLinearProgress>
             duration: motion
                 ? const Duration(milliseconds: 300)
                 : Duration.zero,
-            curve: Curves.easeOut,
+            curve: FushiMotion.enter,
             builder: (BuildContext context, double liveAmp, Widget? _) {
               return TweenAnimationBuilder<double>(
                 tween: Tween<double>(end: (value ?? 0).clamp(0.0, 1.0)),
                 duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOut,
+                curve: FushiMotion.enter,
                 builder:
                     (BuildContext context, double animatedValue, Widget? _) {
                       return CustomPaint(
@@ -416,7 +417,7 @@ class _FushiWavyCircularProgressState extends State<FushiWavyCircularProgress>
             child: TweenAnimationBuilder<double>(
               tween: Tween<double>(end: (value ?? 0).clamp(0.0, 1.0)),
               duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOut,
+              curve: FushiMotion.enter,
               builder: (BuildContext context, double animatedValue, Widget? _) {
                 return CustomPaint(
                   painter: _WavyCircularPainter(

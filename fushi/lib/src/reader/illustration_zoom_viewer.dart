@@ -84,7 +84,7 @@ class IllustrationZoomViewer extends StatelessWidget {
           builder: (BuildContext context, double t, Widget? child) {
             final double pop = const Cubic(0.42, 1.67, 0.21, 0.90).transform(t);
             return Opacity(
-              opacity: Curves.easeOut.transform(t),
+              opacity: FushiMotion.enter.transform(t),
               child: Transform.scale(scale: 0.92 + 0.08 * pop, child: child),
             );
           },

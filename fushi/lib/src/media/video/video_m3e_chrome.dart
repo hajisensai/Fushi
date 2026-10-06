@@ -149,7 +149,7 @@ class VideoM3eBottomScrim extends StatelessWidget {
           return AnimatedOpacity(
             opacity: shown ? 1.0 : 0.0,
             duration: einkSafeDuration(context, duration),
-            curve: Curves.easeInOut,
+            curve: FushiMotion.standard,
             child: child,
           );
         },
@@ -1603,7 +1603,7 @@ class _VideoM3eDoubleTapRippleState extends State<VideoM3eDoubleTapRipple>
                                   : e.origin.dx,
                               e.origin.dy,
                             ),
-                            progress: Curves.easeOutCubic.transform(
+                            progress: FushiMotion.enter.transform(
                               (t / 0.7).clamp(0.0, 1.0),
                             ),
                             maxRadius: math.max(sideW, h),

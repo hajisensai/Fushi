@@ -74,10 +74,10 @@ class FushiPlaceholderMessage extends StatelessWidget {
 
   /// [detail] + [details] 中非空的行，按顺序。
   List<String> get _detailLines => <String>[
-        if (detail != null && detail!.isNotEmpty) detail!,
-        for (final String line in details)
-          if (line.isNotEmpty) line,
-      ];
+    if (detail != null && detail!.isNotEmpty) detail!,
+    for (final String line in details)
+      if (line.isNotEmpty) line,
+  ];
 
   /// 可选行动按钮（如空态的「导入」、错误态的「重试」），渲染在文案下方。
   final Widget? action;
@@ -113,7 +113,8 @@ class FushiPlaceholderMessage extends StatelessWidget {
         Text(
           message,
           textAlign: TextAlign.center,
-          style: messageStyle ??
+          style:
+              messageStyle ??
               tt.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: color ?? cs.onSurface,
@@ -126,15 +127,10 @@ class FushiPlaceholderMessage extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: detailMaxLines,
             overflow: detailMaxLines == null ? null : TextOverflow.ellipsis,
-            style: tt.bodyMedium?.copyWith(
-              color: color ?? cs.onSurfaceVariant,
-            ),
+            style: tt.bodyMedium?.copyWith(color: color ?? cs.onSurfaceVariant),
           ),
         ],
-        if (action != null) ...<Widget>[
-          const SizedBox(height: 20),
-          action!,
-        ],
+        if (action != null) ...<Widget>[const SizedBox(height: 20), action!],
       ],
     );
     final Duration duration = fushiMotionDuration(
@@ -152,12 +148,11 @@ class FushiPlaceholderMessage extends StatelessWidget {
               end: 1,
             ),
             duration: duration,
-            curve: Curves.linear,
             builder: (BuildContext context, double t, Widget? _) {
               // 色块用 expressive spatial 弹入（带过冲），文案晚 80ms 淡入上浮。
-              final double pop =
-                  const Cubic(0.42, 1.67, 0.21, 0.90).transform(t);
-              final double fade = Curves.easeOut.transform(
+              final double pop = context.fushiMotion.spatialFast.curve
+                  .transform(t);
+              final double fade = FushiMotion.enter.transform(
                 ((t - 0.16) / 0.84).clamp(0.0, 1.0),
               );
               return Column(
@@ -200,7 +195,8 @@ class FushiPlaceholderMessage extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: messageStyle ??
+                style:
+                    messageStyle ??
                     tt.titleMedium?.copyWith(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
@@ -219,10 +215,7 @@ class FushiPlaceholderMessage extends StatelessWidget {
                   style: tt.bodyMedium?.copyWith(color: apple.secondaryLabel),
                 ),
               ],
-              if (action != null) ...[
-                const SizedBox(height: 18),
-                action!,
-              ],
+              if (action != null) ...[const SizedBox(height: 18), action!],
             ],
           ),
         ),

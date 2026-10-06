@@ -75,8 +75,9 @@ class CollectionDetailHeroCard extends StatelessWidget {
     ];
 
     final Widget info = Column(
-      crossAxisAlignment:
-          wide ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      crossAxisAlignment: wide
+          ? CrossAxisAlignment.start
+          : CrossAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Text(
@@ -151,10 +152,7 @@ class CollectionDetailHeroCard extends StatelessWidget {
           );
 
     if (apple) {
-      return Padding(
-        padding: EdgeInsets.all(tokens.spacing.card),
-        child: body,
-      );
+      return Padding(padding: EdgeInsets.all(tokens.spacing.card), child: body);
     }
     // M3E：饱和的 primaryContainer 大色块分区（圆角 28），把 hero 和成员区分开。
     return Container(
@@ -191,7 +189,7 @@ class _HeroProgress extends StatelessWidget {
     final Widget bar = apple || isEinkTheme(context)
         ? ClipRRect(
             borderRadius: FushiBorderRadius.chip,
-            child: LinearProgressIndicator(
+            child: FushiLinearProgressIndicator(
               value: v,
               minHeight: 4,
               color: scheme.primary,
@@ -212,8 +210,10 @@ class _HeroProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(t.collection_detail_progress_label,
-            style: tokens.type.sectionLabel),
+        Text(
+          t.collection_detail_progress_label,
+          style: tokens.type.sectionLabel,
+        ),
         SizedBox(height: tokens.spacing.gap / 2),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -221,14 +221,15 @@ class _HeroProgress extends StatelessWidget {
             Text(
               '$percent%',
               key: const ValueKey<String>('collection_detail_hero_percent'),
-              style: (apple
-                      ? theme.textTheme.titleLarge
-                      : theme.textTheme.displaySmall)
-                  ?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: apple ? null : scheme.primary,
-                height: 1,
-              ),
+              style:
+                  (apple
+                          ? theme.textTheme.titleLarge
+                          : theme.textTheme.displaySmall)
+                      ?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: apple ? null : scheme.primary,
+                        height: 1,
+                      ),
             ),
             SizedBox(width: tokens.spacing.gap * 1.5),
             Expanded(child: bar),
@@ -254,10 +255,12 @@ class _ContinueButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String label =
-        started ? t.collection_detail_continue : t.collection_detail_start;
-    final String text =
-        subtitle == null || subtitle!.isEmpty ? label : '$label · $subtitle';
+    final String label = started
+        ? t.collection_detail_continue
+        : t.collection_detail_start;
+    final String text = subtitle == null || subtitle!.isEmpty
+        ? label
+        : '$label · $subtitle';
     if (isGlassDesign(context)) {
       return FushiFilledButton(
         key: const ValueKey<String>('collection_detail_continue'),
@@ -276,25 +279,18 @@ class _ContinueButton extends StatelessWidget {
     }
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 420),
-      child: FushiPressScale(
-        scale: 0.95,
-        child: FloatingActionButton.extended(
-          key: const ValueKey<String>('collection_detail_continue'),
-          heroTag: null,
-          elevation: 2,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(20)),
-          ),
-          onPressed: onPressed,
-          icon: const FushiIcon(FushiIcons.play, size: 28),
-          label: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 320),
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+      child: FushiFab(
+        key: const ValueKey<String>('collection_detail_continue'),
+        heroTag: null,
+        onPressed: onPressed,
+        icon: const FushiIcon(FushiIcons.play, size: 28),
+        label: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 320),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
       ),
@@ -347,9 +343,10 @@ class _HeroActionChip extends StatelessWidget {
                   const SizedBox(width: 6),
                   Text(
                     label,
-                    style: (Theme.of(context).textTheme.labelLarge ??
-                            const TextStyle())
-                        .copyWith(color: fg, fontWeight: FontWeight.w600),
+                    style:
+                        (Theme.of(context).textTheme.labelLarge ??
+                                const TextStyle())
+                            .copyWith(color: fg, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),

@@ -77,10 +77,7 @@ abstract final class FushiToast {
   /// pending 信息）。有 navigator overlay（主 app，桌面与移动）时走自绘 overlay
   /// （会顶替上一条，让 pending → 结果自然过渡）；无 overlay 的独立弹窗 Activity
   /// 降级为原生着色 toast（无图标但仍着色，绝不静默）。
-  static void showMine({
-    required String msg,
-    required MineToastStatus status,
-  }) {
+  static void showMine({required String msg, required MineToastStatus status}) {
     final overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay != null) {
       _showMineOverlay(overlay: overlay, msg: msg, status: status);
@@ -126,10 +123,8 @@ abstract final class FushiToast {
 
     final _FushiToastHandle handle = _FushiToastHandle();
     final entry = OverlayEntry(
-      builder: (BuildContext context) => _FushiToastExitScope(
-        handle: handle,
-        child: builder(context),
-      ),
+      builder: (BuildContext context) =>
+          _FushiToastExitScope(handle: handle, child: builder(context)),
     );
     _currentEntry = entry;
     overlay.insert(entry);
@@ -288,20 +283,24 @@ class _FushiToastViewState extends State<_FushiToastView>
     );
     _opacity = CurvedAnimation(
       parent: _controller,
-      curve: const Interval(0, 0.45, curve: Curves.easeOut),
-      reverseCurve: Curves.easeIn,
+      curve: const Interval(0, 0.45, curve: FushiMotion.enter),
+      reverseCurve: FushiMotion.exit,
     );
     _slide = Tween<Offset>(begin: const Offset(0, 0.35), end: Offset.zero)
-        .animate(CurvedAnimation(
-      parent: _controller,
-      curve: _kToastSpatialCurve,
-      reverseCurve: Curves.easeIn,
-    ));
-    _scale = Tween<double>(begin: 0.86, end: 1).animate(CurvedAnimation(
-      parent: _controller,
-      curve: _kToastSpatialCurve,
-      reverseCurve: Curves.easeIn,
-    ));
+        .animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: _kToastSpatialCurve,
+            reverseCurve: FushiMotion.exit,
+          ),
+        );
+    _scale = Tween<double>(begin: 0.86, end: 1).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: _kToastSpatialCurve,
+        reverseCurve: FushiMotion.exit,
+      ),
+    );
     _controller.forward();
   }
 
@@ -327,8 +326,9 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   Widget build(BuildContext context) {
-    final Widget body =
-        isGlassDesign(context) ? _buildApple(context) : _buildMaterial(context);
+    final Widget body = isGlassDesign(context)
+        ? _buildApple(context)
+        : _buildMaterial(context);
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,
@@ -382,8 +382,12 @@ class _FushiToastViewState extends State<_FushiToastView>
     final bool eink = isEinkTheme(context);
     final Color surface = widget.backgroundColor ?? cs.inverseSurface;
     final Color foreground = widget.textColor ?? cs.onInverseSurface;
-    final Color? semantic =
-        _md3SeverityColor(context, widget.severity, surface, foreground);
+    final Color? semantic = _md3SeverityColor(
+      context,
+      widget.severity,
+      surface,
+      foreground,
+    );
     final IconData? icon = widget.icon;
     // M3E：反色全胶囊（单行 48 高时圆角 24 = 半高），语义图标落在同色 20% 的圆形
     // 色块里（图标本身仍是语义色）；多行退成 24 圆角块。
@@ -454,9 +458,11 @@ class _FushiToastViewState extends State<_FushiToastView>
     final bool dark = theme.colorScheme.brightness == Brightness.dark;
     // 系统「降低透明度」/ 增强对比度下（材质 off）不模糊、实色铺满。
     final bool translucent = glassMaterialOf(context) != FushiGlassMaterial.off;
-    final Color fill = widget.backgroundColor ??
-        (dark ? const Color(0xFF2C2C2E) : Colors.white)
-            .withValues(alpha: translucent ? 0.92 : 1);
+    final Color fill =
+        widget.backgroundColor ??
+        (dark ? const Color(0xFF2C2C2E) : Colors.white).withValues(
+          alpha: translucent ? 0.92 : 1,
+        );
     final Color foreground = widget.textColor ?? apple.label;
     final Widget content = ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 48, maxWidth: 480),

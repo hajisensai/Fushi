@@ -1069,8 +1069,6 @@ class FushiFloatingActionsPill extends StatelessWidget {
                 : Duration.zero,
             // 曲线放进 transitionBuilder 里分属性施加（缩放 spatial、透明度
             // effects），这里交出线性进度。
-            switchInCurve: Curves.linear,
-            switchOutCurve: Curves.linear,
             layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
               alignment: AlignmentDirectional.centerEnd,
               clipBehavior: Clip.none,

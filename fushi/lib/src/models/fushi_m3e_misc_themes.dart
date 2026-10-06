@@ -106,7 +106,6 @@ BadgeThemeData fushiM3eBadgeTheme({
     largeSize: 16,
     padding: const EdgeInsets.symmetric(horizontal: 4),
     textStyle: (tt.labelSmall ?? const TextStyle()).copyWith(
-      fontSize: 11,
       fontWeight: FontWeight.w700,
       height: 1,
     ),

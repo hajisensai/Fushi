@@ -17,7 +17,10 @@ import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
-    show FushiSpring, fushiExpressiveDefaultSpatial, fushiExpressiveMotionEnabled;
+    show
+        FushiSpring,
+        fushiExpressiveDefaultSpatial,
+        fushiExpressiveMotionEnabled;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
@@ -67,7 +70,10 @@ Widget _maybeBadge({
   // key 挂在外层 KeyedSubtree：导航药丸的 AnimatedSwitcher 靠它区分线框 /
   // 实心两态图标。
   if (!item.experimentalBadge) return KeyedSubtree(key: key, child: child);
-  return KeyedSubtree(key: key, child: Badge(child: child));
+  return KeyedSubtree(
+    key: key,
+    child: Badge(child: child),
+  );
 }
 
 /// Marks the root of the self-drawn Material navigation (bottom bar / side rail)
@@ -261,10 +267,12 @@ Widget adaptiveBottomBar({
         currentIndex: currentIndex,
         onTap: onTap,
         items: items
-            .map((AdaptiveNavItem e) => BottomNavigationBarItem(
-                  icon: _maybeBadge(item: e, child: FushiIcon(e.icon)),
-                  label: e.label,
-                ))
+            .map(
+              (AdaptiveNavItem e) => BottomNavigationBarItem(
+                icon: _maybeBadge(item: e, child: FushiIcon(e.icon)),
+                label: e.label,
+              ),
+            )
             .toList(),
       ),
     );
@@ -376,7 +384,8 @@ class _MaterialNavCluster extends StatelessWidget {
   /// 最小化圆用单独的 `nav-mini-bar`。
   Widget _buildGlassTabBar(BuildContext context) {
     final int? rawSearch = glassSearchIndex;
-    final int? search = rawSearch != null &&
+    final int? search =
+        rawSearch != null &&
             rawSearch >= 0 &&
             rawSearch < items.length &&
             items.length > 1
@@ -445,8 +454,9 @@ class _MaterialNavCluster extends StatelessWidget {
           );
         }
 
-        final int? selectedPos =
-            selectedInCapsule ? capsuleIndices.indexOf(currentIndex) : null;
+        final int? selectedPos = selectedInCapsule
+            ? capsuleIndices.indexOf(currentIndex)
+            : null;
         return SizedBox(
           height: kGlassNavBarCapsuleHeight,
           child: Row(
@@ -573,8 +583,9 @@ class _MaterialNavCluster extends StatelessWidget {
   double _materialCapsuleHeight(BuildContext context) {
     if (!showLabels) return kAdaptiveNavBarContentHeight;
     final TextStyle style =
-        (Theme.of(context).textTheme.labelMedium ?? const TextStyle())
-            .copyWith(fontSize: 12, fontWeight: FontWeight.w600);
+        (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
+          fontWeight: FontWeight.w600,
+        );
     final TextPainter painter = TextPainter(
       text: TextSpan(text: 'Ag国', style: style),
       textDirection: Directionality.of(context),
@@ -614,8 +625,9 @@ class _MaterialNavCluster extends StatelessWidget {
     }
     final double width = box.maxWidth;
     final TextStyle style =
-        (Theme.of(context).textTheme.labelMedium ?? const TextStyle())
-            .copyWith(fontSize: 12, fontWeight: FontWeight.w600);
+        (Theme.of(context).textTheme.labelMedium ?? const TextStyle()).copyWith(
+          fontWeight: FontWeight.w600,
+        );
     final TextScaler scaler = MediaQuery.textScalerOf(context);
     final TextDirection direction = Directionality.of(context);
     double need(String label) {
@@ -712,9 +724,9 @@ class _MaterialNavCluster extends StatelessWidget {
     // （2026-10-05 用户反馈：此前一度改成「仅选中项显示标签」，要求恢复全部文字）。
     // 侧栏与玻璃胶囊恒为完整形态（cellWidth: null）。
     List<Widget> buildTiles({required double? cellWidth}) => <Widget>[
-          for (int i = 0; i < items.length; i++)
-            _cell(context, i, cellWidth: cellWidth),
-        ];
+      for (int i = 0; i < items.length; i++)
+        _cell(context, i, cellWidth: cellWidth),
+    ];
 
     // 结构恒定：无论 MD3 / 毛玻璃 / 液态 / 玻璃设计系统，外层永远是同一个
     // [_NavSurfaceBackdrop]，带 [fushiMaterialNavKey] 的 Material 永远在它的
@@ -785,11 +797,11 @@ class _MaterialNavCluster extends StatelessWidget {
                 constraints: BoxConstraints(
                   minHeight: glassDesign
                       ? kGlassNavBarCapsuleHeight +
-                          _kGlassNavBarTopGap +
-                          glassBottom
+                            _kGlassNavBarTopGap +
+                            glassBottom
                       : kAdaptiveNavBarContentHeight +
-                          kAdaptiveNavBarFloatingTopGap +
-                          glassBottom,
+                            kAdaptiveNavBarFloatingTopGap +
+                            glassBottom,
                 ),
                 child: Padding(
                   padding: glassDesign
@@ -828,7 +840,9 @@ class _MaterialNavCluster extends StatelessWidget {
     // 两套的行都从上往下排（品牌位在顶），不再在剩余高度里居中。
     final double railWidth = railExtended
         ? (glassDesign ? kGlassNavSidebarWidth : kMaterialNavRailExpandedWidth)
-        : (glassDesign ? kAdaptiveNavRailWidth : kMaterialNavRailCollapsedWidth);
+        : (glassDesign
+              ? kAdaptiveNavRailWidth
+              : kMaterialNavRailCollapsedWidth);
     const double glassInset = _kGlassSidebarMargin + 8;
     final VoidCallback? toggle = glassDesign ? null : onToggleExtended;
     final Widget? menu = toggle == null
@@ -856,10 +870,7 @@ class _MaterialNavCluster extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           if (menu != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: menu,
-            ),
+            Padding(padding: const EdgeInsets.only(bottom: 4), child: menu),
           if (brand != null)
             Align(
               alignment: railExtended
@@ -910,9 +921,9 @@ class _MaterialNavCluster extends StatelessWidget {
                           horizontal: railExtended
                               ? glassInset
                               : (kAdaptiveNavRailWidth -
-                                      2 * _kGlassSidebarMargin -
-                                      _kGlassSidebarCollapsedCellWidth) /
-                                  2,
+                                        2 * _kGlassSidebarMargin -
+                                        _kGlassSidebarCollapsedCellWidth) /
+                                    2,
                           vertical: glassInset,
                         )
                       : EdgeInsets.symmetric(
@@ -935,16 +946,17 @@ class _MaterialNavCluster extends StatelessWidget {
                           child: _SlidingIndicatorScope(
                             selectedId:
                                 currentIndex >= 0 && currentIndex < items.length
-                                    ? FushiFocusId('$idPrefix-$currentIndex')
-                                    : null,
+                                ? FushiFocusId('$idPrefix-$currentIndex')
+                                : null,
                             color: isEinkTheme(context)
                                 ? colors.onSurface
                                 : colors.secondaryContainer,
                             child: Column(
                               children: <Widget>[
                                 const SizedBox(height: 8),
-                                for (final Widget tile
-                                    in buildTiles(cellWidth: null))
+                                for (final Widget tile in buildTiles(
+                                  cellWidth: null,
+                                ))
                                   Padding(
                                     padding: EdgeInsets.symmetric(
                                       vertical: glassDesign
@@ -1117,8 +1129,9 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
     _expand();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final FushiFocusController? controller =
-          FushiFocusRoot.maybeControllerOf(context);
+      final FushiFocusController? controller = FushiFocusRoot.maybeControllerOf(
+        context,
+      );
       if (controller == null) return;
       for (final FushiFocusId id in widget.expandFocusIds) {
         if (controller.requestById(id)) return;
@@ -1148,18 +1161,14 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
     final bool eink = isEinkTheme(context);
-    final Color capsuleColor =
-        eink ? colors.surfaceContainer : colors.tertiaryContainer;
-    final Color content =
-        eink ? colors.onSurface : colors.onTertiaryContainer;
+    final Color capsuleColor = eink
+        ? colors.surfaceContainer
+        : colors.tertiaryContainer;
+    final Color content = eink ? colors.onSurface : colors.onTertiaryContainer;
     final Color indicator = eink ? colors.onSurface : colors.tertiary;
     final Color onIndicator = eink ? colors.surface : colors.onTertiary;
-    final TextStyle miniLabelStyle =
-        (textTheme.labelLarge ?? const TextStyle()).copyWith(
-      fontSize: 14,
-      fontWeight: FontWeight.w600,
-      color: onIndicator,
-    );
+    final TextStyle miniLabelStyle = (textTheme.labelLarge ?? const TextStyle())
+        .copyWith(fontWeight: FontWeight.w600, color: onIndicator);
     final AdaptiveNavItem? current = widget.currentItem;
     final Widget mini = current == null
         ? const SizedBox.shrink()
@@ -1203,8 +1212,9 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                     builder: (BuildContext context, Widget? _) {
                       final double target = _min.target;
                       final double raw = _min.value;
-                      final double t =
-                          (raw - target).abs() < 0.001 ? target : raw;
+                      final double t = (raw - target).abs() < 0.001
+                          ? target
+                          : raw;
                       final double shown = t.clamp(0.0, 1.0);
                       final double width = (full + (miniWidth - full) * t)
                           .clamp(miniWidth * 0.9, full);
@@ -1252,8 +1262,8 @@ class _MaterialFloatingBarState extends State<_MaterialFloatingBar>
                                           child: Padding(
                                             padding:
                                                 const EdgeInsetsDirectional.only(
-                                              start: _kMiniInset,
-                                            ),
+                                                  start: _kMiniInset,
+                                                ),
                                             child: mini,
                                           ),
                                         ),
@@ -1384,11 +1394,15 @@ class _NavBarFab extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    final Color color = eink ? colors.surfaceContainer : colors.primaryContainer;
-    final Color foreground =
-        eink ? colors.onSurface : colors.onPrimaryContainer;
-    final IconData icon =
-        fab.selected ? (fab.selectedIcon ?? fab.icon) : fab.icon;
+    final Color color = eink
+        ? colors.surfaceContainer
+        : colors.primaryContainer;
+    final Color foreground = eink
+        ? colors.onSurface
+        : colors.onPrimaryContainer;
+    final IconData icon = fab.selected
+        ? (fab.selectedIcon ?? fab.icon)
+        : fab.icon;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     final Widget glyph = FushiIcon(
       icon,
@@ -1540,7 +1554,8 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedId != widget.selectedId) {
       final Rect? from = _painted ?? _rectOf(oldWidget.selectedId);
-      final bool animate = fushiExpressiveMotionEnabled(context) &&
+      final bool animate =
+          fushiExpressiveMotionEnabled(context) &&
           from != null &&
           oldWidget.selectedId != null;
       _progress.animateTo(0, animate: false);
@@ -1556,8 +1571,7 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
   void _revealSelected() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
-      final BuildContext? slot =
-          _slots[widget.selectedId]?.currentContext;
+      final BuildContext? slot = _slots[widget.selectedId]?.currentContext;
       if (slot == null || !slot.mounted) return;
       final Duration duration = fushiMotionDuration(slot, FushiMotion.medium);
       await Scrollable.ensureVisible(
@@ -1616,7 +1630,8 @@ class _SlidingIndicatorScopeState extends State<_SlidingIndicatorScope>
 }
 
 class _SlidingIndicatorPainter extends CustomPainter {
-  _SlidingIndicatorPainter(this.state) : super(repaint: state._progress.animation);
+  _SlidingIndicatorPainter(this.state)
+    : super(repaint: state._progress.animation);
 
   final _SlidingIndicatorScopeState state;
 
@@ -1801,8 +1816,9 @@ class _NavMoreCell extends StatefulWidget {
 class _NavMoreCellState extends State<_NavMoreCell> {
   Future<void> _open() async {
     final RenderObject? cell = context.findRenderObject();
-    final RenderObject? overlay =
-        Overlay.of(context).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
     if (cell is! RenderBox || overlay is! RenderBox) return;
     final Rect rect =
         cell.localToGlobal(Offset.zero, ancestor: overlay) & cell.size;
@@ -1816,14 +1832,14 @@ class _NavMoreCellState extends State<_NavMoreCell> {
     // 换成 surface 底 + 反色指示器。
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    final Color menuColor =
-        eink ? colors.surfaceContainer : colors.tertiaryContainer;
+    final Color menuColor = eink
+        ? colors.surfaceContainer
+        : colors.tertiaryContainer;
     final Color content = eink ? colors.onSurface : colors.onTertiaryContainer;
     final Color indicator = eink ? colors.onSurface : colors.tertiary;
     final Color onIndicator = eink ? colors.surface : colors.onTertiary;
     final TextStyle labelStyle =
-        (Theme.of(context).textTheme.labelLarge ?? const TextStyle())
-            .copyWith(fontSize: 14);
+        (Theme.of(context).textTheme.labelLarge ?? const TextStyle());
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
     final int? picked = await showMenu<int>(
       context: context,
@@ -1972,8 +1988,9 @@ class _NavRailMenuButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final String tooltip =
-        extended ? t.home_nav_rail_collapse : t.home_nav_rail_expand;
+    final String tooltip = extended
+        ? t.home_nav_rail_collapse
+        : t.home_nav_rail_expand;
     final IconData icon = extended ? FushiIcons.chevronLeft : FushiIcons.menu;
     const BorderRadius radius = BorderRadius.all(
       Radius.circular(_kMaterialMenuPillHeight / 2),
@@ -2008,15 +2025,17 @@ class _NavRailMenuButton extends StatelessWidget {
                   switchOutCurve: FushiMotion.exit,
                   transitionBuilder:
                       (Widget child, Animation<double> animation) {
-                    return FadeTransition(
-                      opacity: animation,
-                      child: RotationTransition(
-                        turns: Tween<double>(begin: -0.125, end: 0)
-                            .animate(animation),
-                        child: child,
-                      ),
-                    );
-                  },
+                        return FadeTransition(
+                          opacity: animation,
+                          child: RotationTransition(
+                            turns: Tween<double>(
+                              begin: -0.125,
+                              end: 0,
+                            ).animate(animation),
+                            child: child,
+                          ),
+                        );
+                      },
                   child: FushiIcon(
                     icon,
                     key: ValueKey<IconData>(icon),
@@ -2081,8 +2100,10 @@ class _GlassTabCapsule extends StatefulWidget {
 
 class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
   /// 透镜鼓出时超出 lens 原尺寸的量（库 GlassTabBar.bottom 默认 12 / 8）。
-  static const EdgeInsets _kLensExpansion =
-      EdgeInsets.symmetric(horizontal: 10, vertical: 7);
+  static const EdgeInsets _kLensExpansion = EdgeInsets.symmetric(
+    horizontal: 10,
+    vertical: 7,
+  );
 
   bool _down = false;
   bool _dragging = false;
@@ -2125,9 +2146,10 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
   void _onDragEnd() {
     if (!_dragging) return;
     final double align = _dragAlign ?? 0;
-    final int pos = ((align + 1) / 2 * (widget.itemCount - 1))
-        .round()
-        .clamp(0, widget.itemCount - 1);
+    final int pos = ((align + 1) / 2 * (widget.itemCount - 1)).round().clamp(
+      0,
+      widget.itemCount - 1,
+    );
     setState(() {
       _dragging = false;
       _down = false;
@@ -2152,8 +2174,8 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
     final Color restColor = solid
         ? apple.tertiaryGroupedBackground
         : (dark
-            ? Colors.white.withValues(alpha: 0.10)
-            : Colors.black.withValues(alpha: 0.07));
+              ? Colors.white.withValues(alpha: 0.10)
+              : Colors.black.withValues(alpha: 0.07));
     // 透镜：几乎无色、一圈细亮边 + 折射。深色收低光照与 rim，避免拖动时
     // 整颗透镜泛白。
     final LiquidGlassSettings lensSettings = LiquidGlassSettings(
@@ -2269,35 +2291,39 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
                               duration: const Duration(milliseconds: 350),
                             ),
                             active: _dragging,
-                            builder: (
-                              BuildContext context,
-                              double value,
-                              double velocity,
-                              Widget? _,
-                            ) {
-                              return SpringBuilder(
-                                value: morph &&
-                                        _lensEnabled &&
-                                        (_down ||
-                                            _dragging ||
-                                            (value - target).abs() > 0.05)
-                                    ? 1.0
-                                    : 0.0,
-                                spring: GlassSpring.snappy(
-                                  duration: const Duration(milliseconds: 300),
-                                ),
-                                builder: (
+                            builder:
+                                (
                                   BuildContext context,
-                                  double thickness,
+                                  double value,
+                                  double velocity,
                                   Widget? _,
-                                ) =>
-                                    content(
-                                  reduceMotion ? align : value,
-                                  reduceMotion ? 0 : velocity,
-                                  thickness,
-                                ),
-                              );
-                            },
+                                ) {
+                                  return SpringBuilder(
+                                    value:
+                                        morph &&
+                                            _lensEnabled &&
+                                            (_down ||
+                                                _dragging ||
+                                                (value - target).abs() > 0.05)
+                                        ? 1.0
+                                        : 0.0,
+                                    spring: GlassSpring.snappy(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                    ),
+                                    builder:
+                                        (
+                                          BuildContext context,
+                                          double thickness,
+                                          Widget? _,
+                                        ) => content(
+                                          reduceMotion ? align : value,
+                                          reduceMotion ? 0 : velocity,
+                                          thickness,
+                                        ),
+                                  );
+                                },
                           ),
                         ),
                       ),
@@ -2436,8 +2462,9 @@ class _NavFocusCellState extends State<_NavFocusCell> {
 
   @override
   Widget build(BuildContext context) {
-    final _SlidingIndicatorScopeState? slider =
-        _SlidingIndicatorScope.maybeOf(context)?.state;
+    final _SlidingIndicatorScopeState? slider = _SlidingIndicatorScope.maybeOf(
+      context,
+    )?.state;
     if (!identical(slider, _slider)) {
       _slider?.unregister(id, _indicatorKey);
       _slider = slider;
@@ -2509,10 +2536,11 @@ class _NavFocusCellState extends State<_NavFocusCell> {
         overlayColor: glassDesign
             ? WidgetStateProperty.resolveWith<Color>(
                 (Set<WidgetState> states) =>
-                    !horizontal && !selected &&
-                            states.contains(WidgetState.hovered)
-                        ? glassHover
-                        : Colors.transparent,
+                    !horizontal &&
+                        !selected &&
+                        states.contains(WidgetState.hovered)
+                    ? glassHover
+                    : Colors.transparent,
               )
             : null,
         child: Padding(
@@ -2615,8 +2643,9 @@ class _FushiNavTile extends StatelessWidget {
     // 选中态走强调色（用户 2026-10-04）：强调色实底 + 其前景色，与设置页
     // 侧栏同一套；默认单色主题即黑底白字 / 白底黑字。
     final Color fg = selected ? apple.onAccent : apple.label;
-    final Color fill =
-        selected ? apple.accent : apple.accent.withValues(alpha: 0);
+    final Color fill = selected
+        ? apple.accent
+        : apple.accent.withValues(alpha: 0);
     // 底栏的选中气泡是玻璃里一枚更亮的无色透明 lens（iOS 26 标签栏 / Music
     // 演示 indicatorColor = label@20%，参照 Niratan 的选中 pill 不着强调色）+
     // 一圈细高光边 + 柔和投影；强调色只落在选中项的图标与文字上。系统降低透明度
@@ -2627,8 +2656,8 @@ class _FushiNavTile extends StatelessWidget {
     final Color tabFg = selected ? apple.accent : apple.label;
     final Color lensFill = selected
         ? (solidLens
-            ? apple.tertiaryGroupedBackground
-            : apple.label.withValues(alpha: darkMode ? 0.16 : 0.1))
+              ? apple.tertiaryGroupedBackground
+              : apple.label.withValues(alpha: darkMode ? 0.16 : 0.1))
         : apple.label.withValues(alpha: 0);
     final Border? lensRim = selected && !solidLens
         ? Border.all(
@@ -2645,12 +2674,13 @@ class _FushiNavTile extends StatelessWidget {
             ),
           ]
         : null;
-    final IconData icon =
-        selected ? (item.selectedIcon ?? item.icon) : item.icon;
+    final IconData icon = selected
+        ? (item.selectedIcon ?? item.icon)
+        : item.icon;
     Widget glyph(double size, {Color? color}) => _maybeBadge(
-          item: item,
-          child: FushiIcon(icon, size: size, color: color ?? fg),
-        );
+      item: item,
+      child: FushiIcon(icon, size: size, color: color ?? fg),
+    );
     if (horizontal && iconOnly) {
       const double extent =
           kGlassNavBarCapsuleHeight - 2 * _kGlassNavBarInnerPadding;
@@ -2762,7 +2792,6 @@ class _FushiNavTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: (textTheme.bodyMedium ?? const TextStyle()).copyWith(
-                fontSize: 14,
                 color: fg,
                 fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
               ),
@@ -2795,8 +2824,9 @@ class _FushiNavTile extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final TextTheme textTheme = Theme.of(context).textTheme;
     final bool eink = isEinkTheme(context);
-    final _SlidingIndicatorRegistry? slider =
-        _SlidingIndicatorScope.maybeOf(context);
+    final _SlidingIndicatorRegistry? slider = _SlidingIndicatorScope.maybeOf(
+      context,
+    );
     // 滑块正在纵向滑：本行先不填色；有滑块时填色瞬间切换（动效由滑块给），
     // 否则落定交接处会多一段淡入。
     final bool sliding = slider?.sliding ?? false;
@@ -2809,8 +2839,9 @@ class _FushiNavTile extends StatelessWidget {
     final Duration duration = slider != null
         ? Duration.zero
         : fushiMotionDuration(context, FushiMotion.short);
-    final IconData icon =
-        selected ? (item.selectedIcon ?? item.icon) : item.icon;
+    final IconData icon = selected
+        ? (item.selectedIcon ?? item.icon)
+        : item.icon;
     // 选中药丸撑满整行（2026-10-05 用户反馈「这个条的长度不对」）：旧实现药丸
     // 只包住图标 + 文字，而外层 InkWell 的悬停 / 焦点状态层是整行宽，选中项上
     // 就叠出一枚短的强调色药丸 + 一条更长的灰色底。现在两者同宽同圆角；选中时
@@ -2840,7 +2871,6 @@ class _FushiNavTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: (textTheme.labelLarge ?? const TextStyle()).copyWith(
-                fontSize: 14,
                 color: fg,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
@@ -2875,18 +2905,21 @@ class _FushiNavTile extends StatelessWidget {
     // 之差；改反色药丸（segmentedButtonTheme / chipTheme 同一套处理）。
     final bool eink = isEinkTheme(context);
     // 滑动指示器正在项间滑：本格药丸先不填色，只留那一枚滑块。
-    final bool sliding = _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
+    final bool sliding =
+        _SlidingIndicatorScope.maybeOf(context)?.sliding ?? false;
     final Color pillColor = sliding
         ? Colors.transparent
         : bar?.indicator ??
-            (eink ? colors.onSurface : colors.secondaryContainer);
-    final Color pillIconColor = bar?.onIndicator ??
+              (eink ? colors.onSurface : colors.secondaryContainer);
+    final Color pillIconColor =
+        bar?.onIndicator ??
         (eink ? colors.surface : colors.onSecondaryContainer);
     final Color idleColor = bar?.content ?? colors.onSurfaceVariant;
     final Color selectedLabelColor = bar?.content ?? colors.onSurface;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final IconData icon =
-        selected ? (item.selectedIcon ?? item.icon) : item.icon;
+    final IconData icon = selected
+        ? (item.selectedIcon ?? item.icon)
+        : item.icon;
     // 图标线框 ↔ 实心切换：一次轻缩放交叉淡化。
     final Widget glyph = AnimatedSwitcher(
       duration: duration,
@@ -3012,8 +3045,8 @@ class _NavIndicatorPillState extends State<_NavIndicatorPill>
   Color _fillFor(double t) => t >= 1
       ? widget.color
       : t <= 0
-          ? Colors.transparent
-          : widget.color.withValues(alpha: widget.color.a * t.clamp(0.0, 1.0));
+      ? Colors.transparent
+      : widget.color.withValues(alpha: widget.color.a * t.clamp(0.0, 1.0));
 
   @override
   Widget build(BuildContext context) {
@@ -3165,8 +3198,9 @@ class GamepadNavCluster extends StatefulWidget {
 }
 
 class _GamepadNavClusterState extends State<GamepadNavCluster> {
-  late final FushiFocusId _focusId =
-      FushiFocusId('nav-cluster-${identityHashCode(this)}');
+  late final FushiFocusId _focusId = FushiFocusId(
+    'nav-cluster-${identityHashCode(this)}',
+  );
 
   void _step(int delta) {
     if (widget.count <= 0) return;
@@ -3189,10 +3223,12 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
         GamepadButtonIntent: GamepadButtonForwardingAction(
           ancestorContext: context,
           handle: (GamepadButton button) {
-            final GamepadButton prev =
-                horizontal ? GamepadButton.dpadLeft : GamepadButton.dpadUp;
-            final GamepadButton next =
-                horizontal ? GamepadButton.dpadRight : GamepadButton.dpadDown;
+            final GamepadButton prev = horizontal
+                ? GamepadButton.dpadLeft
+                : GamepadButton.dpadUp;
+            final GamepadButton next = horizontal
+                ? GamepadButton.dpadRight
+                : GamepadButton.dpadDown;
             if (button == next) {
               _step(1);
               return true;
@@ -3208,12 +3244,20 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
       child: Shortcuts(
         // Android delivers the D-pad as arrow keys; mirror the along-axis step.
         shortcuts: <ShortcutActivator, Intent>{
-          SingleActivator(horizontal
-              ? LogicalKeyboardKey.arrowLeft
-              : LogicalKeyboardKey.arrowUp): const _NavStepIntent(-1),
-          SingleActivator(horizontal
-              ? LogicalKeyboardKey.arrowRight
-              : LogicalKeyboardKey.arrowDown): const _NavStepIntent(1),
+          SingleActivator(
+            horizontal
+                ? LogicalKeyboardKey.arrowLeft
+                : LogicalKeyboardKey.arrowUp,
+          ): const _NavStepIntent(
+            -1,
+          ),
+          SingleActivator(
+            horizontal
+                ? LogicalKeyboardKey.arrowRight
+                : LogicalKeyboardKey.arrowDown,
+          ): const _NavStepIntent(
+            1,
+          ),
         },
         child: Actions(
           actions: <Type, Action<Intent>>{
@@ -3284,18 +3328,18 @@ class _CupertinoAppBarWithBottom extends StatelessWidget
   final CupertinoNavigationBar navBar;
   final PreferredSizeWidget bottom;
 
-  const _CupertinoAppBarWithBottom(
-      {required this.navBar, required this.bottom});
+  const _CupertinoAppBarWithBottom({
+    required this.navBar,
+    required this.bottom,
+  });
 
   @override
   Size get preferredSize => Size.fromHeight(
-      navBar.preferredSize.height + bottom.preferredSize.height);
+    navBar.preferredSize.height + bottom.preferredSize.height,
+  );
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [navBar, bottom],
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: [navBar, bottom]);
   }
 }
