@@ -229,14 +229,6 @@ class _VideoSourceScrapeTaskPanelState
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // 有待办列表时 AI 结论卡是列表的首项、跟着滚（见
-                        // [_buildPendingWorks]）；只有列表不在（加载 / 出错 /
-                        // 清空）时才钉在这里。
-                        if (_pendingNotice case final String notice
-                            when !_pendingListShown) ...<Widget>[
-                          _buildPendingNoticeCard(notice),
-                          const SizedBox(height: 12),
-                        ],
                         Expanded(child: _buildPendingWorks()),
                       ],
                     ),
@@ -451,12 +443,6 @@ class _VideoSourceScrapeTaskPanelState
     );
   }
 
-  /// 待确认队列：条目来自当前计划（不是历史 run 快照），手动指定按 stableKey
-  /// 对应的真实作品执行——绑定入口永远不会指向已消失的作品。
-  /// 待办 tab 正以列表呈现（AI 结论卡此时并进列表首项）。
-  bool get _pendingListShown =>
-      !_loadingPending && _pendingError == null && _pendingWorks.isNotEmpty;
-
   /// AI 识别结论卡（tertiary 色块 + AI 图标 + 可选中文案）。
   Widget _buildPendingNoticeCard(String notice) {
     return FushiCard(
@@ -473,24 +459,22 @@ class _VideoSourceScrapeTaskPanelState
     );
   }
 
-  /// 待办列表。AI 结论卡（多行理由 + 12 内边距的色块）放在列表首项随列表滚，
-  /// 不再钉在列表上方：弹窗高度按屏高的 65% 算，矮窗口里 tab 正文只剩一两百
-  /// 像素，钉住的结论卡会把固定部分顶出 tab、整列溢出（与「当前任务」tab
-  /// 平铺成单一列表同一思路，BUG-2594）。
+  /// 待确认队列来自当前计划，手动指定按 stableKey 对应真实作品。
+  /// AI 结论与所有状态共用一个滚动正文：最后一项识别后清空、重新加载或
+  /// 加载失败时也不能把多行结论重新钉到列表外，否则矮窗口仍会溢出。
   Widget _buildPendingWorks() {
+    Widget? status;
     if (_loadingPending) {
-      return const FushiLoadingView();
-    }
-    if (_pendingError case final Object error) {
-      return _buildLoadError(error, _reloadPendingWorks);
-    }
-    if (_pendingWorks.isEmpty) {
-      return FushiPlaceholderMessage(
+      status = const FushiLoadingView();
+    } else if (_pendingError case final Object error) {
+      status = _buildLoadErrorMessage(error, _reloadPendingWorks);
+    } else if (_pendingWorks.isEmpty) {
+      status = FushiPlaceholderMessage(
         icon: FushiIcons.success,
         message: t.video_source_scrape_pending_empty,
       );
     }
-    final int count = _pendingWorks.length;
+    final int count = status == null ? _pendingWorks.length : 1;
     final String? notice = _pendingNotice;
     final int lead = notice == null ? 0 : 1;
     return FushiEntranceScope(
@@ -507,6 +491,7 @@ class _VideoSourceScrapeTaskPanelState
               child: _buildPendingNoticeCard(notice),
             );
           }
+          if (status != null) return status;
           final int index = position - lead;
           final VideoPendingScrapeWork entry = _pendingWorks[index];
           final bool pending = widget.controller.isManualRequestPending(
@@ -745,20 +730,19 @@ class _VideoSourceScrapeTaskPanelState
   /// 列表加载失败：全应用统一的错误态（errorContainer 色块图标 + 原因 + 重试）。
   /// 外层 ListView 让小窗口下也能滚到「重新加载」按钮。
   Widget _buildLoadError(Object error, Future<void> Function() reload) =>
-      ListView(
-        children: <Widget>[
-          FushiPlaceholderMessage(
-            tone: FushiPlaceholderTone.error,
-            icon: FushiIcons.error,
-            message: t.video_source_scrape_list_load_failed,
-            detail: error.toString(),
-            action: FushiFilledButton.tonalIcon(
-              onPressed: () => unawaited(reload()),
-              icon: const FushiIcon(FushiIcons.refresh, size: 18),
-              label: Text(t.video_source_scrape_list_reload),
-            ),
-          ),
-        ],
+      ListView(children: <Widget>[_buildLoadErrorMessage(error, reload)]);
+
+  Widget _buildLoadErrorMessage(Object error, Future<void> Function() reload) =>
+      FushiPlaceholderMessage(
+        tone: FushiPlaceholderTone.error,
+        icon: FushiIcons.error,
+        message: t.video_source_scrape_list_load_failed,
+        detail: error.toString(),
+        action: FushiFilledButton.tonalIcon(
+          onPressed: () => unawaited(reload()),
+          icon: const FushiIcon(FushiIcons.refresh, size: 18),
+          label: Text(t.video_source_scrape_list_reload),
+        ),
       );
 
   String _runSubtitle(VideoSourceScrapeRunRow run) {

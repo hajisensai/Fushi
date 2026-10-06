@@ -254,9 +254,13 @@ Future<int> _seedUnresolvedRun(FushiDatabase db, int sourceId) =>
 /// 支持「AI 识别」的 runner：[available] 模拟「设置 › AI」有没有指派提供商。
 class _AiIdentifyRunner
     implements VideoSourceScrapeRunner, VideoSourceScrapeAiIdentify {
-  _AiIdentifyRunner({required this.available});
+  _AiIdentifyRunner({
+    required this.available,
+    this.reason = 'same year and studio',
+  });
 
   bool available;
+  final String reason;
   final List<String> identifiedKeys = <String>[];
 
   @override
@@ -291,10 +295,10 @@ class _AiIdentifyRunner
         SourceScrapeIssue(
           workTitle: workTitle,
           message: encodeVideoScrapeAiIdentityNote(
-            const AiVideoIdentityDecision(
+            AiVideoIdentityDecision(
               key: 'anidb:65733',
               confidence: 0.93,
-              reason: 'same year and studio',
+              reason: reason,
             ),
           ),
           workKey: workStableKey,
@@ -368,19 +372,23 @@ Future<void> _openPendingTab(
   WidgetTester tester,
   FushiDatabase db,
   VideoSourceScrapeTaskController controller,
-  VideoPendingScrapeWork entry,
-) async {
+  VideoPendingScrapeWork entry, {
+  Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: Builder(
         builder: (BuildContext context) => Scaffold(
           body: TextButton(
-            onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
-              context: context,
-              controller: controller,
-              loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
-              loadPendingWorks: () async => <VideoPendingScrapeWork>[entry],
-            )),
+            onPressed: () => unawaited(
+              showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                loadPendingWorks: loadPendingWorks ??
+                    () async => <VideoPendingScrapeWork>[entry],
+              ),
+            ),
             child: const Text('Open tasks'),
           ),
         ),
@@ -389,12 +397,14 @@ Future<void> _openPendingTab(
   );
   await tester.tap(find.text('Open tasks'));
   await tester.pumpAndSettle();
-  await tester
-      .tap(find.byKey(const ValueKey<String>('video-source-tab-pending')));
+  await tester.tap(
+    find.byKey(const ValueKey<String>('video-source-tab-pending')),
+  );
   await tester.pumpAndSettle();
   expect(
     find.byKey(
-        const ValueKey<String>('video-source-pending-work-book:movie-a')),
+      const ValueKey<String>('video-source-pending-work-book:movie-a'),
+    ),
     findsOneWidget,
   );
 }
@@ -958,6 +968,99 @@ void main() {
   });
 
   group('AI identify in the pending tab', () {
+    for (final bool reloadFails in <bool>[false, true]) {
+      testWidgets(
+          'long AI conclusion scrolls during reload and after '
+          '${reloadFails ? 'failure' : 'the last work is cleared'}', (
+        WidgetTester tester,
+      ) async {
+        await tester.binding.setSurfaceSize(const Size(800, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoPendingScrapeWork entry = await _seedPendingWork(db);
+        final _AiIdentifyRunner runner = _AiIdentifyRunner(
+          available: true,
+          reason: List<String>.generate(
+            20,
+            (int index) => 'AI evidence $index: matching year and studio.',
+          ).join('\n'),
+        );
+        final VideoSourceScrapeTaskController controller =
+            VideoSourceScrapeTaskController(runner);
+        addTearDown(controller.dispose);
+        final Completer<List<VideoPendingScrapeWork>> reload =
+            Completer<List<VideoPendingScrapeWork>>();
+        bool retried = false;
+        await _openPendingTab(
+          tester,
+          db,
+          controller,
+          entry,
+          loadPendingWorks: () async {
+            if (runner.identifiedKeys.isEmpty) {
+              return <VideoPendingScrapeWork>[entry];
+            }
+            if (retried) return <VideoPendingScrapeWork>[];
+            return reload.future;
+          },
+        );
+        await tester.tap(find.byKey(_aiButtonKey));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(runner.identifiedKeys, <String>['book:movie-a']);
+        expect(find.textContaining('AI evidence 19'), findsOneWidget);
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '长结论在等待重新加载时也必须滚动，不能固定在正文外',
+        );
+
+        if (reloadFails) {
+          reload.completeError(StateError('pending refresh failed'));
+        } else {
+          reload.complete(<VideoPendingScrapeWork>[]);
+        }
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byKey(_aiButtonKey), findsNothing);
+        final Finder list = find.byKey(
+          const PageStorageKey<String>('video-source-pending-list'),
+        );
+        final Finder scrollable =
+            find.descendant(of: list, matching: find.byType(Scrollable)).first;
+        final Finder outcome = find.text(
+          reloadFails
+              ? t.video_source_scrape_list_reload
+              : t.video_source_scrape_pending_empty,
+        );
+        await tester.scrollUntilVisible(outcome, 200, scrollable: scrollable);
+        await tester.pumpAndSettle();
+        expect(
+          outcome.hitTestable(),
+          findsOneWidget,
+          reason: '结论底下的空态或重试按钮必须能滚进正文视口',
+        );
+        expect(tester.takeException(), isNull);
+        if (reloadFails) {
+          retried = true;
+          await tester.tap(outcome);
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.text(t.video_source_scrape_pending_empty),
+            200,
+            scrollable: scrollable,
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.text(t.video_source_scrape_pending_empty).hitTestable(),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      });
+    }
+
     testWidgets('available AI: the button runs identifyWorkWithAi once',
         (WidgetTester tester) async {
       final FushiDatabase db = _memDb();
