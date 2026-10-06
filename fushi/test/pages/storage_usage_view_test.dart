@@ -97,8 +97,8 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.storage_category_books), findsOneWidget);
-    expect(find.text(t.storage_category_dictionaries), findsOneWidget);
+    expect(_rowText(t.storage_category_books), findsOneWidget);
+    expect(_rowText(t.storage_category_dictionaries), findsOneWidget);
     expect(find.text(t.storage_overview_total), findsOneWidget);
     // 书籍类目 2 KB（类目行 trailing）。
     expect(find.text('2.0 KB'), findsWidgets);
@@ -127,7 +127,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 展开书籍类目 → 出现书条目。
-    await tester.tap(find.text(t.storage_category_books));
+    await tester.tap(_rowText(t.storage_category_books));
     await tester.pumpAndSettle();
     expect(find.text('吾輩は猫である'), findsOneWidget);
 
@@ -189,7 +189,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(t.storage_category_books));
+    await tester.tap(_rowText(t.storage_category_books));
     await tester.pumpAndSettle();
     expect(find.text('ひとりぼっち'), findsOneWidget);
     // 音频大小真的显示出来了（旧实现这里是 0 B）。
@@ -230,9 +230,9 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text(t.storage_category_database));
+    await tester.ensureVisible(_rowText(t.storage_category_database));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.storage_category_database));
+    await tester.tap(_rowText(t.storage_category_database));
     await tester.pumpAndSettle();
 
     // 原始文件名不再逐条铺开，取而代之的是一条带文件数的翻译标题。
@@ -297,9 +297,9 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text(t.storage_category_database));
+    await tester.ensureVisible(_rowText(t.storage_category_database));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.storage_category_database));
+    await tester.tap(_rowText(t.storage_category_database));
     await tester.pumpAndSettle();
 
     await tester.ensureVisible(find.byTooltip(t.dialog_delete));
@@ -337,9 +337,9 @@ void main() {
     // 展开前明细不在树上。
     expect(find.text('custom_fonts/NotoSerif.ttf'), findsNothing);
 
-    await tester.ensureVisible(find.text(t.storage_category_custom_fonts));
+    await tester.ensureVisible(_rowText(t.storage_category_custom_fonts));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.storage_category_custom_fonts));
+    await tester.tap(_rowText(t.storage_category_custom_fonts));
     await tester.pumpAndSettle();
 
     expect(find.text('custom_fonts/NotoSerif.ttf'), findsOneWidget);
@@ -355,7 +355,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 类目行还在（如实显示占用），但下载/删除入口已回归漫画 OCR 设置区。
-    expect(find.text(t.storage_category_ocr_models), findsOneWidget);
+    expect(_rowText(t.storage_category_ocr_models), findsOneWidget);
     expect(find.byTooltip(t.manga_ocr_delete), findsNothing);
     expect(find.byTooltip(t.manga_ocr_download), findsNothing);
   });
@@ -404,7 +404,7 @@ void main() {
     await tester.pumpWidget(wrap(view(service: service())));
     await tester.pumpAndSettle();
 
-    expect(find.text(t.storage_category_shaders), findsOneWidget);
+    expect(_rowText(t.storage_category_shaders), findsOneWidget);
     expect(find.byTooltip(t.storage_shaders_delete_anime4k), findsNothing);
   });
 
@@ -428,7 +428,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(t.storage_category_covers));
+    await tester.tap(_rowText(t.storage_category_covers));
     await tester.pumpAndSettle();
     expect(find.text('video_covers/a.jpg'), findsOneWidget);
 
@@ -460,9 +460,16 @@ void main() {
     await tester.pumpWidget(wrap(view(service: service())));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text(t.storage_category_custom_fonts));
+    await tester.tap(_rowText(t.storage_category_custom_fonts));
     await tester.pumpAndSettle();
     expect(find.text('custom_fonts/mine.ttf'), findsOneWidget);
     expect(find.byIcon(FushiIcons.delete), findsNothing);
   });
 }
+
+/// 类目名在总览卡图例里也出现一次；行为断言（展开 / 删除）只认磁盘占用列表
+/// 的类目行。
+Finder _rowText(String text) => find.descendant(
+      of: find.byType(AdaptiveSettingsRow),
+      matching: find.text(text),
+    );
