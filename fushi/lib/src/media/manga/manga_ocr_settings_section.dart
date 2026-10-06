@@ -1399,6 +1399,11 @@ class _MangaOcrSettingsSectionState
                 '${(value * 100).round()}%',
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w700,
+                  // 与所在强调卡（secondary）同一配对前景，见 [_panelModelCard]。
+                  color: fushiCardToneColors(
+                    context,
+                    FushiCardTone.secondary,
+                  )?.onContainer,
                   fontFeatures: const <FontFeature>[
                     FontFeature.tabularFigures(),
                   ],
@@ -1472,6 +1477,12 @@ class _MangaOcrSettingsSectionState
     List<Widget> actions = const <Widget>[],
   }) {
     final bool emphasis = tone != FushiCardTone.neutral;
+    // 卡内文字只取排版角色，颜色跟卡片的配对前景走（secondaryContainer →
+    // onSecondaryContainer）。textTheme 的样式自带页面 onSurface 色，原样传给
+    // Text 会盖掉 FushiCard 写进 DefaultTextStyle 的前景——自定义主题下浅色
+    // surface + 深色容器就成了深底黑字（HBK-AUDIT-022）。中性卡 onCard 为 null，
+    // copyWith(color: null) 保持原样。
+    final Color? onCard = fushiCardToneColors(context, tone)?.onContainer;
     return FushiCard(
       key: const ValueKey<String>('manga_ocr_model_card'),
       tone: tone,
@@ -1504,6 +1515,7 @@ class _MangaOcrSettingsSectionState
                         title,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
+                          color: onCard,
                         ),
                       ),
                       if (subtitle != null && subtitle.isNotEmpty)
@@ -1511,7 +1523,9 @@ class _MangaOcrSettingsSectionState
                           padding: const EdgeInsets.only(top: 2),
                           child: Text(
                             subtitle,
-                            style: theme.textTheme.bodyMedium,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: onCard,
+                            ),
                           ),
                         ),
                     ],
@@ -1529,7 +1543,10 @@ class _MangaOcrSettingsSectionState
             ],
             for (final String note in notes) ...<Widget>[
               const SizedBox(height: 6),
-              Text(note, style: theme.textTheme.bodySmall),
+              Text(
+                note,
+                style: theme.textTheme.bodySmall?.copyWith(color: onCard),
+              ),
             ],
             if (actions.isNotEmpty) ...<Widget>[
               const SizedBox(height: 16),
