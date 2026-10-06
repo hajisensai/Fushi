@@ -33,8 +33,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2959](bugs/BUG-2959-server-port-conflict-masked.md) | 🚧 | 🚧 | 服务端端口被占时只报drift Bad state No element |
-| [BUG-2958](bugs/BUG-2958-ai-acquire-alt-version-details.md) | 🚧 | 🚧 | AI下视频备选版本chip缺做种来源集数编码 |
+| [BUG-2959](bugs/BUG-2959-server-port-conflict-masked.md) | ✅ | ✅ | 服务端端口被占时只报drift Bad state No element |
+| [BUG-2958](bugs/BUG-2958-ai-acquire-alt-version-details.md) | ✅ | ✅ | AI下视频备选版本chip缺做种来源集数编码 |
 | [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
 | [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
