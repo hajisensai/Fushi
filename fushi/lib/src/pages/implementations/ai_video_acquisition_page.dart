@@ -304,25 +304,34 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         : t.ai_video_acquire_recommend_preference_switch(index: index);
   }
 
-  String _summaryText(Map<String, Object?> a) {
-    final List<String> parts = <String>[
-      if ('${a['releaseGroup'] ?? ''}'.isNotEmpty) '${a['releaseGroup']}',
-      if ('${a['resolution'] ?? ''}'.isNotEmpty) '${a['resolution']}',
-      if ('${a['source'] ?? ''}'.isNotEmpty) '${a['source']}',
-      '${a['provider'] ?? ''}',
-    ];
-    final String body = a['batch'] == true
+  /// 一个版本的可比较事实（`videoAcquisitionVersionArgs`）：当前版本卡与候选版本
+  /// chip 共用，两处说法一致才比得出差别（BUG-2958）。
+  String _versionBody(Map<String, Object?> a) {
+    final String version = <String>[
+      for (final String key in const <String>[
+        'releaseGroup',
+        'resolution',
+        'source',
+        'traits',
+        'provider',
+      ])
+        if ('${a[key] ?? ''}'.isNotEmpty) '${a[key]}',
+    ].join(' · ');
+    return a['batch'] == true
         ? t.ai_video_acquire_summary_batch(
-            version: parts.join(' · '),
+            version: version,
             seeders: '${a['seeders'] ?? 0}',
           )
         : t.ai_video_acquire_summary(
-            version: parts.join(' · '),
+            version: version,
             count: '${a['count'] ?? 0}',
             seeders: '${a['seeders'] ?? 0}',
           );
+  }
+
+  String _summaryText(Map<String, Object?> a) {
     final List<String> lines = <String>[
-      body,
+      _versionBody(a),
       <String>[
         if (a['total'] is int && (a['total']! as int) > 1)
           t.ai_video_acquire_summary_position(
@@ -392,7 +401,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         );
     }
     if (o.id.startsWith(kVideoAcquisitionOptionAltPrefix)) {
-      return _alternativeLabel(o.id);
+      return _alternativeLabel(o);
     }
     return switch (slot) {
       VideoAcquisitionSlot.mode || VideoAcquisitionSlot.subscribeFallback =>
@@ -411,15 +420,26 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     };
   }
 
-  /// 候选版本 chip：`组 · 分辨率 · 片源 · 每集体积`（全是字面量事实，不翻译）。
-  String _alternativeLabel(String optionId) {
+  /// 候选版本 chip：与当前版本卡同一份事实（组 · 分辨率 · 片源 · 编码 · 站点 ·
+  /// 集数 / 合集 · 做种 · 每集体积）。旧 host 的选项不带 args，退回它投影好的
+  /// 字面量标签。
+  String _alternativeLabel(VideoAcquisitionOption o) {
+    if (o.args.isNotEmpty) {
+      return <String>[
+        _versionBody(o.args),
+        if (o.args['bytesPerEpisode'] is int)
+          t.ai_video_acquire_summary_size(
+            size: formatDiscoveryBytes(o.args['bytesPerEpisode']! as int),
+          ),
+      ].join(' · ');
+    }
     final int? index = int.tryParse(
-      optionId.substring(kVideoAcquisitionOptionAltPrefix.length),
+      o.id.substring(kVideoAcquisitionOptionAltPrefix.length),
     );
     if (index == null ||
         index < 0 ||
         index >= _state.alternativeLabels.length) {
-      return optionId;
+      return o.id;
     }
     return _state.alternativeLabels[index];
   }
@@ -581,7 +601,10 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                             key: const ValueKey<String>(
                               'ai-video-acquire-restart',
                             ),
-                            avatar: const FushiIcon(Icons.add_rounded, size: 16),
+                            avatar: const FushiIcon(
+                              Icons.add_rounded,
+                              size: 16,
+                            ),
                             label: Text(t.ai_video_acquire_restart),
                             onPressed: () =>
                                 unawaited(widget.service.restart()),
@@ -655,7 +678,9 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       child: Padding(
         padding: const EdgeInsets.only(top: 8),
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxWidth < 640 ? maxWidth : 640),
+          constraints: BoxConstraints(
+            maxWidth: maxWidth < 640 ? maxWidth : 640,
+          ),
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: fill,
@@ -913,7 +938,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                 glass ? CupertinoIcons.arrow_up : Icons.send_rounded,
               ),
             ),
-          SizedBox(width: tokens.spacing.gap),
+            SizedBox(width: tokens.spacing.gap),
             FushiIconButtonControl(
               key: const ValueKey<String>('ai-video-acquire-cancel'),
               tooltip: t.cancel,
