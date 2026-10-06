@@ -279,24 +279,34 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
           onTap: _share,
         ),
       ],
-      body: FushiRefreshIndicator(
-        onRefresh: () async {
-          await Future.wait(<Future<void>>[
-            _loadCard(),
-            _loadShelf(reset: true),
-          ]);
-        },
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.all(tokens.spacing.card),
+      body: Builder(
+        builder: (BuildContext context) => FushiRefreshIndicator(
+          // 正文铺到悬浮页头底下：指示器与列表都让出「状态栏 + 页头」（Builder
+          // 的 context 在页头脚手架之内才读得到这段 padding）。
+          edgeOffset: MediaQuery.paddingOf(context).top,
+          onRefresh: () async {
+            await Future.wait(<Future<void>>[
+              _loadCard(),
+              _loadShelf(reset: true),
+            ]);
+          },
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + MediaQuery.paddingOf(context).top,
+                tokens.spacing.card,
+                tokens.spacing.card,
+              ),
+            ),
+            children: <Widget>[
+              _buildCard(tokens),
+              SizedBox(height: tokens.spacing.card),
+              ..._buildShelf(tokens),
+            ],
           ),
-          children: <Widget>[
-            _buildCard(tokens),
-            SizedBox(height: tokens.spacing.card),
-            ..._buildShelf(tokens),
-          ],
         ),
       ),
     );

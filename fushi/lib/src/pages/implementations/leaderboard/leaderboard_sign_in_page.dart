@@ -199,122 +199,134 @@ class _LeaderboardSignInPageState extends ConsumerState<LeaderboardSignInPage> {
       title: _register
           ? t.leaderboard_signin_register_title
           : t.leaderboard_signin_login_title,
-      body: ListView(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.all(tokens.spacing.card),
-        ),
-        children: <Widget>[
-          Text(
-            _register
-                ? t.leaderboard_signin_register_hint
-                : t.leaderboard_signin_login_hint,
-            style: tokens.type.listSubtitle,
-          ),
-          SizedBox(height: tokens.spacing.card),
-          FushiTextField(
-            key: const ValueKey<String>('leaderboard-signin-email'),
-            controller: _email,
-            autofocus: true,
-            keyboardType: TextInputType.emailAddress,
-            labelText: t.leaderboard_signin_email,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (String _) => unawaited(_sendCode()),
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('leaderboard-signin-send'),
-              onPressed: _sending || _cooldown > 0
-                  ? null
-                  : () => unawaited(_sendCode()),
-              icon: const FushiIcon(FushiIcons.emailUnread),
-              label: Text(sendLabel),
+      body: Builder(
+        builder: (BuildContext context) => ListView(
+          // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」（Builder 的
+          // context 在页头脚手架之内才读得到这段 padding）。
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.card + MediaQuery.paddingOf(context).top,
+              tokens.spacing.card,
+              tokens.spacing.card,
             ),
           ),
-          if (_info != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Text(_info!, style: tokens.type.metadata),
-          ],
-          if (!_register && _codeSent) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                Text(
-                  t.leaderboard_signin_login_code_hint,
-                  style: tokens.type.metadata,
-                ),
-                FushiTextButton(
-                  key: const ValueKey<String>('leaderboard-signin-to-register'),
-                  onPressed: () => _switchMode(LeaderboardSignInMode.register),
-                  child: Text(t.leaderboard_signin_switch_register),
-                ),
-              ],
-            ),
-          ],
-          SizedBox(height: tokens.spacing.card),
-          FushiTextField(
-            key: const ValueKey<String>('leaderboard-signin-code'),
-            controller: _code,
-            readOnly: !_codeSent,
-            keyboardType: TextInputType.number,
-            labelText: t.leaderboard_signin_code,
-          ),
-          if (_register) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            FushiTextField(
-              key: const ValueKey<String>('leaderboard-signin-nickname'),
-              controller: _nickname,
-              labelText: t.leaderboard_signin_nickname,
-              hintText: t.leaderboard_signin_nickname_hint,
-            ),
-          ],
-          SizedBox(height: tokens.spacing.card),
-          const LeaderboardPublicDataList(),
-          LeaderboardConsentTile(
-            key: const ValueKey<String>('leaderboard-signin-consent'),
-            value: _consent,
-            label: _register
-                ? t.leaderboard_signin_consent
-                : t.leaderboard_signin_consent_login,
-            onChanged: (bool v) => setState(() => _consent = v),
-          ),
-          if (_error != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
+          children: <Widget>[
             Text(
-              _error!,
-              key: const ValueKey<String>('leaderboard-signin-error'),
-              style: tokens.type.listSubtitle.copyWith(color: colors.error),
+              _register
+                  ? t.leaderboard_signin_register_hint
+                  : t.leaderboard_signin_login_hint,
+              style: tokens.type.listSubtitle,
             ),
-            if (_register && _errorCode == 'email_taken')
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FushiTextButton(
-                  key: const ValueKey<String>('leaderboard-signin-to-login'),
-                  onPressed: () => _switchMode(LeaderboardSignInMode.login),
-                  child: Text(t.leaderboard_signin_switch_login),
-                ),
+            SizedBox(height: tokens.spacing.card),
+            FushiTextField(
+              key: const ValueKey<String>('leaderboard-signin-email'),
+              controller: _email,
+              autofocus: true,
+              keyboardType: TextInputType.emailAddress,
+              labelText: t.leaderboard_signin_email,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (String _) => unawaited(_sendCode()),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FushiFilledButton.tonalIcon(
+                key: const ValueKey<String>('leaderboard-signin-send'),
+                onPressed: _sending || _cooldown > 0
+                    ? null
+                    : () => unawaited(_sendCode()),
+                icon: const FushiIcon(FushiIcons.emailUnread),
+                label: Text(sendLabel),
               ),
-          ],
-          SizedBox(height: tokens.spacing.card),
-          FushiFilledButton(
-            key: const ValueKey<String>('leaderboard-signin-submit'),
-            onPressed: _canSubmit ? () => unawaited(_submit()) : null,
-            child: _submitting
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: FushiCircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Text(
-                    _register
-                        ? t.leaderboard_signin_register_action
-                        : t.leaderboard_signin_login_action,
+            ),
+            if (_info != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(_info!, style: tokens.type.metadata),
+            ],
+            if (!_register && _codeSent) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  Text(
+                    t.leaderboard_signin_login_code_hint,
+                    style: tokens.type.metadata,
                   ),
-          ),
-        ],
+                  FushiTextButton(
+                    key: const ValueKey<String>(
+                      'leaderboard-signin-to-register',
+                    ),
+                    onPressed: () =>
+                        _switchMode(LeaderboardSignInMode.register),
+                    child: Text(t.leaderboard_signin_switch_register),
+                  ),
+                ],
+              ),
+            ],
+            SizedBox(height: tokens.spacing.card),
+            FushiTextField(
+              key: const ValueKey<String>('leaderboard-signin-code'),
+              controller: _code,
+              readOnly: !_codeSent,
+              keyboardType: TextInputType.number,
+              labelText: t.leaderboard_signin_code,
+            ),
+            if (_register) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              FushiTextField(
+                key: const ValueKey<String>('leaderboard-signin-nickname'),
+                controller: _nickname,
+                labelText: t.leaderboard_signin_nickname,
+                hintText: t.leaderboard_signin_nickname_hint,
+              ),
+            ],
+            SizedBox(height: tokens.spacing.card),
+            const LeaderboardPublicDataList(),
+            LeaderboardConsentTile(
+              key: const ValueKey<String>('leaderboard-signin-consent'),
+              value: _consent,
+              label: _register
+                  ? t.leaderboard_signin_consent
+                  : t.leaderboard_signin_consent_login,
+              onChanged: (bool v) => setState(() => _consent = v),
+            ),
+            if (_error != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                _error!,
+                key: const ValueKey<String>('leaderboard-signin-error'),
+                style: tokens.type.listSubtitle.copyWith(color: colors.error),
+              ),
+              if (_register && _errorCode == 'email_taken')
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FushiTextButton(
+                    key: const ValueKey<String>('leaderboard-signin-to-login'),
+                    onPressed: () => _switchMode(LeaderboardSignInMode.login),
+                    child: Text(t.leaderboard_signin_switch_login),
+                  ),
+                ),
+            ],
+            SizedBox(height: tokens.spacing.card),
+            FushiFilledButton(
+              key: const ValueKey<String>('leaderboard-signin-submit'),
+              onPressed: _canSubmit ? () => unawaited(_submit()) : null,
+              child: _submitting
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text(
+                      _register
+                          ? t.leaderboard_signin_register_action
+                          : t.leaderboard_signin_login_action,
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

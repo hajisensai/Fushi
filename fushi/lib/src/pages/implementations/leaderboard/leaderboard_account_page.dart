@@ -323,149 +323,158 @@ class _LeaderboardAccountPageState
     final String visibility = self?.visibility ?? kLeaderboardVisibilityPublic;
     return FushiPageScaffold(
       title: t.leaderboard_account_title,
-      body: ListView(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.all(tokens.spacing.card),
-        ),
-        children: <Widget>[
-          if (_error != null)
-            Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: Text(
-                _error!,
-                key: const ValueKey<String>('leaderboard-account-error'),
-                style: tokens.type.listSubtitle.copyWith(color: colors.error),
-              ),
+      body: Builder(
+        builder: (BuildContext context) => ListView(
+          // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」（Builder 的
+          // context 在页头脚手架之内才读得到这段 padding）。
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.card + MediaQuery.paddingOf(context).top,
+              tokens.spacing.card,
+              tokens.spacing.card,
             ),
-          if (_busy) const FushiLinearProgressIndicator(),
-          FushiCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    if (self != null)
-                      LeaderboardAvatar(account: self.account, size: 56),
-                    SizedBox(width: tokens.spacing.card),
-                    Expanded(
-                      child: Text(
-                        self?.account.tag ?? '',
-                        style: tokens.type.listTitle,
+          ),
+          children: <Widget>[
+            if (_error != null)
+              Padding(
+                padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+                child: Text(
+                  _error!,
+                  key: const ValueKey<String>('leaderboard-account-error'),
+                  style: tokens.type.listSubtitle.copyWith(color: colors.error),
+                ),
+              ),
+            if (_busy) const FushiLinearProgressIndicator(),
+            FushiCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      if (self != null)
+                        LeaderboardAvatar(account: self.account, size: 56),
+                      SizedBox(width: tokens.spacing.card),
+                      Expanded(
+                        child: Text(
+                          self?.account.tag ?? '',
+                          style: tokens.type.listTitle,
+                        ),
                       ),
-                    ),
-                    FushiOutlinedButton.icon(
-                      onPressed: _busy ? null : () => unawaited(_pickAvatar()),
-                      icon: const FushiIcon(FushiIcons.image),
-                      label: Text(t.leaderboard_account_avatar),
-                    ),
-                  ],
-                ),
-                SizedBox(height: tokens.spacing.card),
-                FushiTextField(
-                  controller: _nickname,
-                  labelText: t.leaderboard_signin_nickname,
-                  onSubmitted: (String _) => unawaited(_saveNickname()),
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FushiFilledButton.tonal(
-                    onPressed: _busy ? null : () => unawaited(_saveNickname()),
-                    child: Text(t.leaderboard_account_save_nickname),
+                      FushiOutlinedButton.icon(
+                        onPressed: _busy ? null : () => unawaited(_pickAvatar()),
+                        icon: const FushiIcon(FushiIcons.image),
+                        label: Text(t.leaderboard_account_avatar),
+                      ),
+                    ],
                   ),
-                ),
-              ],
-            ),
-          ),
-          LeaderboardSectionTitle(t.leaderboard_account_visibility),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-            child: LeaderboardChoiceRow<String>(
-              values: const <String>[
-                kLeaderboardVisibilityPublic,
-                kLeaderboardVisibilityFriends,
-              ],
-              selected: visibility,
-              labelOf: (String v) => v == kLeaderboardVisibilityPublic
-                  ? t.leaderboard_account_visibility_public
-                  : t.leaderboard_account_visibility_friends,
-              onSelected: (String v) {
-                if (_busy || v == visibility) return;
-                unawaited(
-                  _run(
-                    'updateVisibility',
-                    () => service.updateProfile(visibility: v),
+                  SizedBox(height: tokens.spacing.card),
+                  FushiTextField(
+                    controller: _nickname,
+                    labelText: t.leaderboard_signin_nickname,
+                    onSubmitted: (String _) => unawaited(_saveNickname()),
                   ),
-                );
-              },
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              0,
-            ),
-            child: Text(
-              t.leaderboard_account_visibility_hint,
-              style: tokens.type.metadata,
-            ),
-          ),
-          SizedBox(height: tokens.spacing.card),
-          FushiListItem(
-            key: const ValueKey<String>('leaderboard-account-upload'),
-            title: Text(t.leaderboard_account_upload),
-            subtitle: Text(t.leaderboard_account_upload_hint),
-            subtitleMaxLines: 3,
-            trailing: ExcludeFocus(
-              child: FushiSwitch(
-                value: account?.uploadEnabled ?? false,
-                onChanged: _busy || account == null
-                    ? null
-                    : (bool v) => unawaited(_setUpload(v)),
+                  SizedBox(height: tokens.spacing.gap),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FushiFilledButton.tonal(
+                      onPressed: _busy ? null : () => unawaited(_saveNickname()),
+                      child: Text(t.leaderboard_account_save_nickname),
+                    ),
+                  ),
+                ],
               ),
             ),
-            onTap: _busy || account == null
-                ? null
-                : () => unawaited(_setUpload(!account.uploadEnabled)),
-          ),
-          LeaderboardSectionTitle(t.leaderboard_account_devices),
-          ..._deviceRows(),
-          LeaderboardSectionTitle(t.leaderboard_account_recovery),
-          FushiListItem(
-            leading: const FushiIcon(FushiIcons.key),
-            title: Text(t.leaderboard_recovery_export_title),
-            subtitle: Text(t.leaderboard_recovery_export_hint),
-            onTap: () => unawaited(_exportRecovery()),
-          ),
-          FushiListItem(
-            leading: const FushiIcon(FushiIcons.download),
-            title: Text(t.leaderboard_recovery_import_title),
-            subtitle: Text(t.leaderboard_recovery_import_message),
-            onTap: () =>
-                unawaited(showLeaderboardRecoveryImportDialog(context)),
-          ),
-          LeaderboardSectionTitle(t.leaderboard_account_danger),
-          FushiListItem(
-            leading: const FushiIcon(FushiIcons.logout),
-            title: Text(t.leaderboard_account_sign_out),
-            subtitle: Text(t.leaderboard_account_sign_out_message),
-            onTap: _busy ? null : () => unawaited(_signOut()),
-          ),
-          FushiListItem(
-            key: const ValueKey<String>('leaderboard-account-delete'),
-            leading: FushiIcon(FushiIcons.delete, color: colors.error),
-            title: Text(
-              t.leaderboard_account_delete,
-              style: TextStyle(color: colors.error),
+            LeaderboardSectionTitle(t.leaderboard_account_visibility),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+              child: LeaderboardChoiceRow<String>(
+                values: const <String>[
+                  kLeaderboardVisibilityPublic,
+                  kLeaderboardVisibilityFriends,
+                ],
+                selected: visibility,
+                labelOf: (String v) => v == kLeaderboardVisibilityPublic
+                    ? t.leaderboard_account_visibility_public
+                    : t.leaderboard_account_visibility_friends,
+                onSelected: (String v) {
+                  if (_busy || v == visibility) return;
+                  unawaited(
+                    _run(
+                      'updateVisibility',
+                      () => service.updateProfile(visibility: v),
+                    ),
+                  );
+                },
+              ),
             ),
-            subtitle: Text(t.leaderboard_account_delete_message),
-            subtitleMaxLines: 3,
-            onTap: _busy ? null : () => unawaited(_delete()),
-          ),
-        ],
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.gap,
+                tokens.spacing.card,
+                0,
+              ),
+              child: Text(
+                t.leaderboard_account_visibility_hint,
+                style: tokens.type.metadata,
+              ),
+            ),
+            SizedBox(height: tokens.spacing.card),
+            FushiListItem(
+              key: const ValueKey<String>('leaderboard-account-upload'),
+              title: Text(t.leaderboard_account_upload),
+              subtitle: Text(t.leaderboard_account_upload_hint),
+              subtitleMaxLines: 3,
+              trailing: ExcludeFocus(
+                child: FushiSwitch(
+                  value: account?.uploadEnabled ?? false,
+                  onChanged: _busy || account == null
+                      ? null
+                      : (bool v) => unawaited(_setUpload(v)),
+                ),
+              ),
+              onTap: _busy || account == null
+                  ? null
+                  : () => unawaited(_setUpload(!account.uploadEnabled)),
+            ),
+            LeaderboardSectionTitle(t.leaderboard_account_devices),
+            ..._deviceRows(),
+            LeaderboardSectionTitle(t.leaderboard_account_recovery),
+            FushiListItem(
+              leading: const FushiIcon(FushiIcons.key),
+              title: Text(t.leaderboard_recovery_export_title),
+              subtitle: Text(t.leaderboard_recovery_export_hint),
+              onTap: () => unawaited(_exportRecovery()),
+            ),
+            FushiListItem(
+              leading: const FushiIcon(FushiIcons.download),
+              title: Text(t.leaderboard_recovery_import_title),
+              subtitle: Text(t.leaderboard_recovery_import_message),
+              onTap: () =>
+                  unawaited(showLeaderboardRecoveryImportDialog(context)),
+            ),
+            LeaderboardSectionTitle(t.leaderboard_account_danger),
+            FushiListItem(
+              leading: const FushiIcon(FushiIcons.logout),
+              title: Text(t.leaderboard_account_sign_out),
+              subtitle: Text(t.leaderboard_account_sign_out_message),
+              onTap: _busy ? null : () => unawaited(_signOut()),
+            ),
+            FushiListItem(
+              key: const ValueKey<String>('leaderboard-account-delete'),
+              leading: FushiIcon(FushiIcons.delete, color: colors.error),
+              title: Text(
+                t.leaderboard_account_delete,
+                style: TextStyle(color: colors.error),
+              ),
+              subtitle: Text(t.leaderboard_account_delete_message),
+              subtitleMaxLines: 3,
+              onTap: _busy ? null : () => unawaited(_delete()),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -178,150 +178,169 @@ class _LeaderboardFriendsPageState
           onTap: _load,
         ),
       ],
-      body: ListView(
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.all(tokens.spacing.card),
-        ),
-        children: <Widget>[
-          FushiCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  t.leaderboard_friends_my_code,
-                  style: tokens.type.metadata,
-                ),
-                SelectableText(
-                  myCode,
-                  key: const ValueKey<String>('leaderboard-friend-code'),
-                  style: tokens.type.pageTitle,
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                Wrap(
-                  spacing: tokens.spacing.gap,
-                  runSpacing: tokens.spacing.gap,
-                  children: <Widget>[
-                    FushiOutlinedButton.icon(
-                      onPressed: myCode.isEmpty
-                          ? null
-                          : () => unawaited(leaderboardCopy(myCode)),
-                      icon: const FushiIcon(FushiIcons.copy),
-                      label: Text(t.leaderboard_copy),
-                    ),
-                    FushiOutlinedButton.icon(
-                      onPressed: myCode.isEmpty
-                          ? null
-                          : () => unawaited(
-                              FushiShare.shareText(
-                                t.leaderboard_friends_share_text(code: myCode),
-                              ),
-                            ),
-                      icon: const FushiIcon(FushiIcons.share),
-                      label: Text(t.leaderboard_share),
-                    ),
-                  ],
-                ),
-              ],
+      body: Builder(
+        builder: (BuildContext context) => ListView(
+          // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」（Builder 的
+          // context 在页头脚手架之内才读得到这段 padding）。
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              tokens.spacing.card + MediaQuery.paddingOf(context).top,
+              tokens.spacing.card,
+              tokens.spacing.card,
             ),
           ),
-          SizedBox(height: tokens.spacing.card),
-          FushiCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                FushiTextField(
-                  key: const ValueKey<String>('leaderboard-friend-add-field'),
-                  controller: _code,
-                  labelText: t.leaderboard_friends_add_hint,
-                  onSubmitted: (String _) => unawaited(_add()),
-                ),
-                SizedBox(height: tokens.spacing.gap),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FushiFilledButton.icon(
-                    onPressed: _adding ? null : () => unawaited(_add()),
-                    icon: const FushiIcon(FushiIcons.personAdd),
-                    label: Text(t.leaderboard_friends_add),
+          children: <Widget>[
+            FushiCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    t.leaderboard_friends_my_code,
+                    style: tokens.type.metadata,
                   ),
-                ),
-                if (_addMessage != null) ...<Widget>[
+                  SelectableText(
+                    myCode,
+                    key: const ValueKey<String>('leaderboard-friend-code'),
+                    style: tokens.type.pageTitle,
+                  ),
                   SizedBox(height: tokens.spacing.gap),
-                  Text(_addMessage!, style: tokens.type.metadata),
-                ],
-              ],
-            ),
-          ),
-          if (_error != null)
-            LeaderboardErrorView(
-              error: _error!,
-              onRetry: () => unawaited(_load()),
-            )
-          else if (list == null)
-            const FushiLoadingView()
-          else if (client != null) ...<Widget>[
-            LeaderboardSectionTitle(
-              t.leaderboard_friends_incoming(n: list.incoming.length),
-            ),
-            for (final FriendRequest r in list.incoming)
-              _row(r.account, leaderboardDate(r.at), <Widget>[
-                FushiTextButton(
-                  onPressed: () => unawaited(
-                    _act(r.account.id, () async {
-                      await client.addFriend(r.account.id);
-                    }),
-                  ),
-                  child: Text(t.leaderboard_user_accept),
-                ),
-                FushiTextButton(
-                  onPressed: () => unawaited(
-                    _act(r.account.id, () => client.removeFriend(r.account.id)),
-                  ),
-                  child: Text(t.leaderboard_friends_decline),
-                ),
-              ]),
-            LeaderboardSectionTitle(
-              t.leaderboard_friends_outgoing(n: list.outgoing.length),
-            ),
-            for (final FriendRequest r in list.outgoing)
-              _row(r.account, leaderboardDate(r.at), <Widget>[
-                FushiTextButton(
-                  onPressed: () => unawaited(
-                    _act(r.account.id, () => client.removeFriend(r.account.id)),
-                  ),
-                  child: Text(t.leaderboard_friends_withdraw),
-                ),
-              ]),
-            LeaderboardSectionTitle(
-              t.leaderboard_friends_list(n: list.friends.length),
-            ),
-            if (list.friends.isEmpty)
-              Text(t.leaderboard_friends_empty, style: tokens.type.metadata),
-            for (final Friend f in list.friends)
-              _row(
-                f.account,
-                t.leaderboard_friends_since(date: leaderboardDate(f.since)),
-                <Widget>[
-                  FushiTextButton(
-                    onPressed: () => unawaited(_removeFriend(f.account)),
-                    style: TextButton.styleFrom(foregroundColor: colors.error),
-                    child: Text(t.leaderboard_friends_remove),
+                  Wrap(
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap,
+                    children: <Widget>[
+                      FushiOutlinedButton.icon(
+                        onPressed: myCode.isEmpty
+                            ? null
+                            : () => unawaited(leaderboardCopy(myCode)),
+                        icon: const FushiIcon(FushiIcons.copy),
+                        label: Text(t.leaderboard_copy),
+                      ),
+                      FushiOutlinedButton.icon(
+                        onPressed: myCode.isEmpty
+                            ? null
+                            : () => unawaited(
+                                FushiShare.shareText(
+                                  t.leaderboard_friends_share_text(
+                                    code: myCode,
+                                  ),
+                                ),
+                              ),
+                        icon: const FushiIcon(FushiIcons.share),
+                        label: Text(t.leaderboard_share),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            LeaderboardSectionTitle(
-              t.leaderboard_friends_blocked(n: _blocked.length),
             ),
-            for (final LeaderboardAccount a in _blocked)
-              _row(a, null, <Widget>[
-                FushiTextButton(
-                  onPressed: () =>
-                      unawaited(_act(a.id, () => client.unblock(a.id))),
-                  child: Text(t.leaderboard_friends_unblock),
+            SizedBox(height: tokens.spacing.card),
+            FushiCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  FushiTextField(
+                    key: const ValueKey<String>('leaderboard-friend-add-field'),
+                    controller: _code,
+                    labelText: t.leaderboard_friends_add_hint,
+                    onSubmitted: (String _) => unawaited(_add()),
+                  ),
+                  SizedBox(height: tokens.spacing.gap),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FushiFilledButton.icon(
+                      onPressed: _adding ? null : () => unawaited(_add()),
+                      icon: const FushiIcon(FushiIcons.personAdd),
+                      label: Text(t.leaderboard_friends_add),
+                    ),
+                  ),
+                  if (_addMessage != null) ...<Widget>[
+                    SizedBox(height: tokens.spacing.gap),
+                    Text(_addMessage!, style: tokens.type.metadata),
+                  ],
+                ],
+              ),
+            ),
+            if (_error != null)
+              LeaderboardErrorView(
+                error: _error!,
+                onRetry: () => unawaited(_load()),
+              )
+            else if (list == null)
+              const FushiLoadingView()
+            else if (client != null) ...<Widget>[
+              LeaderboardSectionTitle(
+                t.leaderboard_friends_incoming(n: list.incoming.length),
+              ),
+              for (final FriendRequest r in list.incoming)
+                _row(r.account, leaderboardDate(r.at), <Widget>[
+                  FushiTextButton(
+                    onPressed: () => unawaited(
+                      _act(r.account.id, () async {
+                        await client.addFriend(r.account.id);
+                      }),
+                    ),
+                    child: Text(t.leaderboard_user_accept),
+                  ),
+                  FushiTextButton(
+                    onPressed: () => unawaited(
+                      _act(
+                        r.account.id,
+                        () => client.removeFriend(r.account.id),
+                      ),
+                    ),
+                    child: Text(t.leaderboard_friends_decline),
+                  ),
+                ]),
+              LeaderboardSectionTitle(
+                t.leaderboard_friends_outgoing(n: list.outgoing.length),
+              ),
+              for (final FriendRequest r in list.outgoing)
+                _row(r.account, leaderboardDate(r.at), <Widget>[
+                  FushiTextButton(
+                    onPressed: () => unawaited(
+                      _act(
+                        r.account.id,
+                        () => client.removeFriend(r.account.id),
+                      ),
+                    ),
+                    child: Text(t.leaderboard_friends_withdraw),
+                  ),
+                ]),
+              LeaderboardSectionTitle(
+                t.leaderboard_friends_list(n: list.friends.length),
+              ),
+              if (list.friends.isEmpty)
+                Text(t.leaderboard_friends_empty, style: tokens.type.metadata),
+              for (final Friend f in list.friends)
+                _row(
+                  f.account,
+                  t.leaderboard_friends_since(date: leaderboardDate(f.since)),
+                  <Widget>[
+                    FushiTextButton(
+                      onPressed: () => unawaited(_removeFriend(f.account)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: colors.error,
+                      ),
+                      child: Text(t.leaderboard_friends_remove),
+                    ),
+                  ],
                 ),
-              ]),
+              LeaderboardSectionTitle(
+                t.leaderboard_friends_blocked(n: _blocked.length),
+              ),
+              for (final LeaderboardAccount a in _blocked)
+                _row(a, null, <Widget>[
+                  FushiTextButton(
+                    onPressed: () =>
+                        unawaited(_act(a.id, () => client.unblock(a.id))),
+                    child: Text(t.leaderboard_friends_unblock),
+                  ),
+                ]),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

@@ -65,13 +65,17 @@ class _LeaderboardTabState extends ConsumerState<LeaderboardTab> {
     return FutureBuilder<void>(
       future: _loaded,
       builder: (BuildContext context, AsyncSnapshot<void> snap) {
+        // 加载 / 错误态不滚动：让开悬浮页头（正文铺在页头底下）。
         if (snap.connectionState != ConnectionState.done) {
-          return const FushiLoadingView();
+          return const SafeArea(bottom: false, child: FushiLoadingView());
         }
         if (snap.hasError) {
-          return LeaderboardErrorView(
-            error: snap.error!,
-            onRetry: () => setState(() => _loaded = service.load()),
+          return SafeArea(
+            bottom: false,
+            child: LeaderboardErrorView(
+              error: snap.error!,
+              onRetry: () => setState(() => _loaded = service.load()),
+            ),
           );
         }
         return service.status == LeaderboardStatus.active
@@ -101,9 +105,15 @@ class LeaderboardIntroView extends ConsumerWidget {
         .accountGoneNotice;
     return ListView(
       key: const ValueKey<String>('leaderboard-intro'),
+      // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」。
       padding: withBottomSafeInset(
         context,
-        EdgeInsets.all(tokens.spacing.card),
+        EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.card + MediaQuery.paddingOf(context).top,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
       ),
       children: <Widget>[
         if (accountGone) ...<Widget>[
@@ -409,15 +419,21 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final LeaderboardService service = ref.watch(leaderboardServiceProvider);
     return FushiRefreshIndicator(
+      // 下拉指示器从悬浮页头下沿出现，而不是藏在页头后面。
+      edgeOffset: MediaQuery.paddingOf(context).top,
       onRefresh: () async {
         await Future.wait(<Future<void>>[_refreshSelf(), _reload()]);
       },
       child: ListView(
         key: const ValueKey<String>('leaderboard-active'),
         physics: const AlwaysScrollableScrollPhysics(),
+        // 正文铺到悬浮页头底下：顶部让出「状态栏 + 页头」。
         padding: withBottomSafeInset(
           context,
-          EdgeInsets.only(bottom: tokens.spacing.card * 2),
+          EdgeInsets.only(
+            top: MediaQuery.paddingOf(context).top,
+            bottom: tokens.spacing.card * 2,
+          ),
         ),
         children: <Widget>[
           _buildHeader(tokens, service),
