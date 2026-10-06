@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -311,7 +313,7 @@ void main() {
       return local.shift(ref.localToGlobal(Offset.zero));
     }
 
-    testWidgets('手机宽：竖排目的地、64 高、全部标签可见', (WidgetTester tester) async {
+    testWidgets('手机宽：竖排目的地、按标签行高精确适配、全部标签可见', (WidgetTester tester) async {
       await pumpBar(tester, width: 420);
       // 胶囊高 = max(64, 药丸 32 + 缝 4 + 标签实际行高 + 上下留白)（fb665edc33a：
       // 按标签行高撑开，免得标签下半截被圆角裁掉），不再是恒 64。
@@ -320,7 +322,36 @@ void main() {
           bar.height -
           kAdaptiveNavBarFloatingTopGap -
           kAdaptiveNavFloatingMargin;
-      expect(capsule, greaterThanOrEqualTo(kAdaptiveNavBarContentHeight));
+      // 64 是下限而非唯一尺寸，但不能只断言 >= 64：任意多出的空白也会假绿。
+      // fb665edc33a 的几何契约：上下各 10、药丸、间隔 4、真实标签行高，
+      // 向上取整后至少 64；字体度量来自当前宿主，不能按此次 CI 的 88 硬编码。
+      final BuildContext barContext = tester.element(
+        find.byKey(fushiMaterialNavKey),
+      );
+      final TextStyle labelStyle =
+          (Theme.of(barContext).textTheme.labelMedium ?? const TextStyle())
+              .copyWith(fontSize: 12, fontWeight: FontWeight.w600);
+      final TextPainter labelMeasure = TextPainter(
+        text: TextSpan(text: 'Ag国', style: labelStyle),
+        textDirection: Directionality.of(barContext),
+        textScaler: MediaQuery.textScalerOf(
+          barContext,
+        ).clamp(maxScaleFactor: 1.3),
+        maxLines: 1,
+      )..layout();
+      final double labelHeight = labelMeasure.height;
+      labelMeasure.dispose();
+      const double verticalPadding = 10;
+      const double labelGap = 4;
+      final double expectedCapsule = math.max(
+        kAdaptiveNavBarContentHeight,
+        (2 * verticalPadding +
+                AdaptiveNavTileMetrics.pillHeight +
+                labelGap +
+                labelHeight)
+            .ceilToDouble(),
+      );
+      expect(capsule, expectedCapsule, reason: '胶囊只为标签行高让位，不得凭空增加高度');
       for (final AdaptiveNavItem item in items) {
         expect(labelPainted(tester, item.label), isTrue, reason: item.label);
         final Rect icon = tester.getRect(find.byIcon(item.icon).hitTestable());
