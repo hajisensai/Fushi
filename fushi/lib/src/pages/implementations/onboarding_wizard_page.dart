@@ -571,7 +571,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     final bool noDecks = anki.settings.availableDecks.isEmpty;
     return <OnboardingAction>[
       OnboardingAction(
-        icon: noDecks ? FushiIcons.link : FushiFushiIcons.sync,
+        icon: noDecks ? FushiIcons.link : FushiIcons.sync,
         // BUG-1902：拉到牌组之后这颗按钮的实际作用就是「刷新牌组与笔记类型」
         // （调的一直是 fetchConfiguration）。继续叫「测试连接」会让用户在 Anki
         // 里新建了牌组后找不到刷新入口。
