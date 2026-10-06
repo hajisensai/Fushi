@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
@@ -71,15 +72,21 @@ void main() {
     if (store.existsSync()) store.deleteSync(recursive: true);
   });
 
-  Future<void> pumpHost(WidgetTester tester, {bool themeEink = false}) async {
+  Future<void> pumpHost(
+    WidgetTester tester, {
+    bool themeEink = false,
+    Future<Object?> Function(MethodCall call)? systemReply,
+  }) async {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       FloatingBallChannel.channel,
       (MethodCall call) async {
         if (call.method == 'startSystemBall') {
           starts.add(call.arguments as Map<Object?, Object?>);
-          return true;
+          return systemReply == null ? true : await systemReply(call);
         }
-        if (call.method == 'takeSystemBallClosedByUser') return false;
+        if (call.method == 'takeSystemBallClosedByUser') {
+          return systemReply == null ? false : await systemReply(call);
+        }
         return null;
       },
     );
@@ -143,6 +150,33 @@ void main() {
     }
     expect(starts, hasLength(count));
     await tester.pump();
+  }
+
+  Future<void> expectSyncFinished(
+    WidgetTester tester,
+    Future<void> sync,
+  ) async {
+    bool finished = false;
+    Object? failure;
+    unawaited(
+      sync.then<void>(
+        (_) {
+          finished = true;
+        },
+        onError: (Object error, StackTrace stack) {
+          failure = error;
+          finished = true;
+        },
+      ),
+    );
+    for (int i = 0; i < 200 && !finished; ++i) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+    expect(finished, isTrue, reason: 'Every gated host sync must finish');
+    expect(failure, isNull);
   }
 
   Future<void> enableSystemBall(WidgetTester tester) async {
@@ -241,6 +275,93 @@ void main() {
         expect(starts.last['actions'], equals(originalActions));
       }
       await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'labels ABA before asset preparation discards the stale false request',
+    (WidgetTester tester) async {
+      final Completer<bool> closedReply = Completer<bool>();
+      bool holdNextClosed = false;
+      bool closedReadEntered = false;
+      await pumpHost(
+        tester,
+        systemReply: (MethodCall call) async {
+          if (call.method == 'startSystemBall') return true;
+          if (holdNextClosed) {
+            holdNextClosed = false;
+            closedReadEntered = true;
+            return closedReply.future;
+          }
+          return false;
+        },
+      );
+      try {
+        await enableSystemBall(tester);
+        await expectSyncFinished(tester, debugLatestSystemBallSync!);
+        holdNextClosed = true;
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(false));
+        await tester.pump();
+        expect(closedReadEntered, isTrue);
+        final Future<void> falseSync = debugLatestSystemBallSync!;
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(true));
+        final Future<void> trueSync = debugLatestSystemBallSync!;
+        closedReply.complete(false);
+        await expectSyncFinished(tester, falseSync);
+        await expectSyncFinished(tester, trueSync);
+        expect(
+          starts.map((Map<Object?, Object?> args) => args['showLabels']),
+          <bool>[true, true],
+          reason: 'Only the latest generation may reach native start',
+        );
+        expect(prefs.floatingBallShowLabels, isTrue);
+      } finally {
+        if (!closedReply.isCompleted) closedReply.complete(false);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
+    },
+  );
+
+  testWidgets(
+    'labels ABA while native start reply is pending resends the latest true',
+    (WidgetTester tester) async {
+      final Completer<bool> startReply = Completer<bool>();
+      bool holdNextStart = false;
+      await pumpHost(
+        tester,
+        systemReply: (MethodCall call) async {
+          if (call.method == 'takeSystemBallClosedByUser') return false;
+          if (holdNextStart) {
+            holdNextStart = false;
+            return startReply.future;
+          }
+          return true;
+        },
+      );
+      try {
+        await enableSystemBall(tester);
+        await expectSyncFinished(tester, debugLatestSystemBallSync!);
+        holdNextStart = true;
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(false));
+        await expectStarts(tester, 2);
+        final Future<void> falseSync = debugLatestSystemBallSync!;
+        expect(starts.last['showLabels'], isFalse);
+        await tester.runAsync(() => prefs.setFloatingBallShowLabels(true));
+        final Future<void> trueSync = debugLatestSystemBallSync!;
+        startReply.complete(true);
+        await expectSyncFinished(tester, falseSync);
+        await expectSyncFinished(tester, trueSync);
+        expect(
+          starts.map((Map<Object?, Object?> args) => args['showLabels']),
+          <bool>[true, false, true],
+          reason:
+              'An older response must not preserve the false native setting',
+        );
+        expect(prefs.floatingBallShowLabels, isTrue);
+      } finally {
+        if (!startReply.isCompleted) startReply.complete(true);
+        await tester.pumpWidget(const SizedBox.shrink());
+      }
     },
   );
 }

@@ -530,6 +530,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         '${actions.join(',')}|${labels.values.join('|')}|'
         '${colors.values.join(',')}|$animate|$showLabels';
     if (!force && signature == _systemSignature) return;
+    // 新请求在途时旧签名不再代表稳态：A→B→A 必须让最后的 A 取代 B，
+    // 不能因上一次成功下发过 A 就提前返回，留下 B 越过后面的 stale 门。
+    _systemSignature = null;
     final int generation = ++_systemGeneration;
     _systemRequested = true;
     // 起球要 await 原生回话与桌面资源；回来时还是最新一代、开关还开着，才继续。
