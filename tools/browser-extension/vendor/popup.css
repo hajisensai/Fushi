@@ -3108,18 +3108,27 @@ html.fushi-m3e .mined-action-btn:where(:not(:disabled)):active {
     transform: scale(0.96);
 }
 
-html.fushi-m3e .mined-action-btn.ghost {
-    color: var(--md-sys-color-primary);
-    border-color: var(--md-sys-color-outline-variant);
-}
-
 html.fushi-m3e .mined-action-btn.filled {
     background: var(--md-sys-color-primary);
     color: var(--md-sys-color-on-primary);
 }
 
+/* 操作失败提示：error 语义色块（app FushiInlineNotice 的 error = errorContainer / onErrorContainer、
+   16 圆角、无描边）。app 不下发 --md-error-container 时按 error 淡染回退。 */
 html.fushi-m3e .mined-action-error {
-    color: var(--md-sys-color-error);
+    padding: 12px 16px;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-error-container, color-mix(in srgb, var(--md-sys-color-error) 14%, var(--md-sys-color-surface)));
+    color: var(--md-on-error-container, var(--md-sys-color-on-surface));
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
+}
+
+/* 「新增为重复卡」旁的次要动作：M3 outlined button（outline-variant 描边 + on-surface 字，同 app
+   outlinedButtonTheme），不再用主色字。 */
+html.fushi-m3e .mined-action-btn.ghost {
+    color: var(--md-sys-color-on-surface);
+    border-color: var(--md-sys-color-outline-variant);
 }
 
 /* ── 减弱动态效果：过渡与按压位移归零（颜色状态层保留，瞬时切换）── */
