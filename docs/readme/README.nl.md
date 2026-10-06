@@ -151,7 +151,6 @@ Fushi bouwt voort op de volgende projecten en het volgende ecosysteem:
 | [Mihon](https://github.com/mihonapp/mihon) | Ecosysteem van manga-bronextensies |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Ecosysteem van anime-bronextensies (extensions-lib 14–16, dezelfde runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga-extensieruntime voor desktop |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI van de manga-bronruntime |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Referentie voor de streaming-ondertitelbrug van de browserextensie |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Architectuurreferentie voor anime-identificatie en -scraping |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Referentie voor de informatiearchitectuur van de galgamebibliotheek |

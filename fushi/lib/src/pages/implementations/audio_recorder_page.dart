@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:multi_value_listenable_builder/multi_value_listenable_builder.dart';
@@ -72,7 +74,7 @@ class _AudioRecorderDialogPageState
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.creator_enhancement_audio_recorder,
-        leadingIcon: Icons.mic_none_outlined,
+        leadingIcon: FushiIcons.mic,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -102,11 +104,18 @@ class _AudioRecorderDialogPageState
       ];
 
   Widget buildContent() {
+    // M3E：播放器放进一张饱和色块卡——录音中是 errorContainer（录音态一眼可辨），
+    // 平时 secondaryContainer；Apple 下 FushiCard 自动换成强调色淡染。
     return SizedBox(
       width: double.maxFinite,
-      child: _audioFile == null || _isRecording
-          ? buildDisabledPlayer()
-          : buildAudioPlayer(),
+      child: FushiCard(
+        pressScale: false,
+        tone: _isRecording ? FushiCardTone.error : FushiCardTone.secondary,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: _audioFile == null || _isRecording
+            ? buildDisabledPlayer()
+            : buildAudioPlayer(),
+      ),
     );
   }
 
@@ -152,26 +161,29 @@ class _AudioRecorderDialogPageState
         _playerStateNotifier,
       ],
       builder: (context, values, _) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         PlayerState? playerState = values.elementAt(0);
 
-        IconData iconData = Icons.play_arrow_outlined;
+        IconData iconData = FushiIcons.filled(FushiIcons.play);
+        bool playing = false;
 
         if (playerState == null ||
             playerState.processingState == ProcessingState.completed) {
-          iconData = Icons.play_arrow_outlined;
+          iconData = FushiIcons.filled(FushiIcons.play);
         } else if (playerState.playing) {
-          iconData = Icons.pause_outlined;
+          iconData = FushiIcons.filled(FushiIcons.pause);
+          playing = true;
         } else {
-          iconData = Icons.play_arrow_outlined;
+          iconData = FushiIcons.filled(FushiIcons.play);
         }
 
-        return FushiIconButton(
-          icon: iconData,
-          size: 24,
-          padding: EdgeInsets.all(tokens.spacing.gap),
+        // M3E：实心主色播放钮，播放中弹簧变形成方圆角（形状即状态）。
+        return FushiIconButtonControl.filled(
+          icon: FushiIcon(iconData),
+          shape: playing
+              ? FushiIconButtonShape.square
+              : FushiIconButtonShape.round,
           tooltip: playerState?.playing == true ? t.pause : t.play,
-          onTap: () async {
+          onPressed: () async {
             AudioSession? session;
             if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
               session = await AudioSession.instance;
@@ -254,8 +266,14 @@ class _AudioRecorderDialogPageState
           return FushiTimeFormat.getVideoDurationText(duration).trim();
         }
 
-        return Text(
-          '${getPositionText()} / ${getDurationText()}',
+        return Padding(
+          padding: const EdgeInsetsDirectional.only(start: 8),
+          child: Text(
+            '${getPositionText()} / ${getDurationText()}',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
+          ),
         );
       },
     );
@@ -341,16 +359,10 @@ class _AudioRecorderDialogPageState
                     ),
                   )
                 else
-                  Opacity(
-                    opacity: 0.5,
-                    child: FushiIconButton(
-                      icon: Icons.play_arrow_outlined,
-                      size: 24,
-                      enabled: false,
-                      disabledColor: theme.colorScheme.onSurfaceVariant,
-                      padding: EdgeInsets.all(tokens.spacing.gap),
-                      tooltip: t.play,
-                    ),
+                  FushiIconButtonControl.filled(
+                    icon: FushiIcon(FushiIcons.filled(FushiIcons.play)),
+                    tooltip: t.play,
+                    onPressed: null,
                   ),
                 if (showTime)
                   const Opacity(

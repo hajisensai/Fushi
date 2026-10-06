@@ -1,10 +1,10 @@
-/// 三域在线源（小说 LNReader / 漫画 Mihon · Aidoku / 视频 Aniyomi）共用的源浏览页。
+/// 三域在线源（小说 LNReader / 漫画 Mihon / 视频 Aniyomi）共用的源浏览页。
 ///
-/// 2026-09-27「浏览」阶段 2：此前 `MihonSourceBrowsePage`、`LnReaderSourceBrowsePage`、
-/// `AidokuSourceBrowsePage` 是三份「形状照抄」的拷贝（注释里各自写着「版式与 Mihon
+/// 2026-09-27「浏览」阶段 2：此前 `MihonSourceBrowsePage`、`LnReaderSourceBrowsePage`
+/// 与已移除的 Aidoku 源浏览页是三份「形状照抄」的拷贝（注释里各自写着「版式与 Mihon
 /// 一致」），每处修复都要改三遍。现在页面只有这一份，差异全部收进
 /// [OnlineSourceCatalog] 适配器：
-/// - 浏览列表：Mihon / LNReader 是「热门 / 最新」，Aidoku 是源自己声明的 listing；
+/// - 浏览列表：Mihon / LNReader 是「热门 / 最新」；
 /// - 筛选：弹什么框、应用后落到搜索（Mihon）还是回到第一个列表（LNReader 的筛选作用
 ///   在热门上）；
 /// - 封面取图、详情页、Cloudflare 验证入口。
@@ -23,6 +23,9 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 一个浏览列表（「热门」「最新」或源声明的 listing）。
 @immutable
@@ -107,7 +110,7 @@ abstract class OnlineSourceCatalog<T> {
 
   /// 失败给用户看的一句话（行内错误与 toast 共用）。
   ///
-  /// 2026-10 体验优化：原先页面直接 `'$error'`，Aidoku 的 [buildVerifyAction]
+  /// 2026-10 体验优化：原先页面直接 `'$error'`，[buildVerifyAction]
   /// 又把同一个错误再画一遍，同一句话上下出现两次。文案只从这里出，
   /// [buildVerifyAction] 只负责「可点的验证入口」，不再重复画错误文字。
   String describeError(Object error) => describeOnlineSourceError(error);
@@ -340,16 +343,15 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         padding: const EdgeInsets.only(top: 8),
         child: Row(
           children: <Widget>[
-            // 2026-10 体验优化：统一为 FushiSearchField（焦点登记 / 回车兜底 /
-            // 移动端收键盘与其它搜索框一致）。仍是「提交才搜」，onChanged 空转。
+            // 共享 M3E 搜索栏（焦点登记 / 回车兜底 / Esc 清空 / 移动端收键盘与
+            // 其它搜索框一致）。仍是「提交才搜」，不挂 onQueryChanged。
             Expanded(
-              child: FushiSearchField(
+              child: FushiSearchBar(
                 fieldKey: ValueKey<String>('${prefix}_search_field'),
                 focusId: FushiFocusId('$prefix-online-browse-search'),
                 controller: _searchController,
                 focusNode: _searchFocus,
                 hintText: _catalog.searchHint,
-                onChanged: (String _) {},
                 onSubmitted: _search,
                 onClear: () {
                   _searchController.clear();
@@ -359,11 +361,11 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
             ),
             if (_prepared && _catalog.hasFilters) ...<Widget>[
               const SizedBox(width: 8),
-              FushiIconButtonControl(
+              FushiIconButtonControl.filledTonal(
                 key: ValueKey<String>('${prefix}_filters'),
                 tooltip: _catalog.filtersTooltip,
                 onPressed: _showFilters,
-                icon: const FushiIcon(Icons.tune),
+                icon: const FushiIcon(FushiIcons.filter),
               ),
             ],
           ],
@@ -413,23 +415,24 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
   }
 
   Widget _buildResults() {
-    // 2026-10 体验优化：加载 / 错误 / 空态统一 FushiPlaceholderMessage +
-    // adaptiveIndicator，重试统一 FilledButton.icon(refresh_rounded, 重试)。
+    // 加载 = 与封面网格同轮廓的骨架；错误 / 空态统一 FushiPlaceholderMessage
+    // （错误走 errorContainer 色块）。
     if (_loading && _items.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
+      return _buildSkeleton();
     }
     final Object? error = _error;
     if (error != null && _items.isEmpty) {
       return FushiPlaceholderMessage(
         key: ValueKey<String>('${_catalog.keyPrefix}_error'),
-        icon: Icons.error_outline,
+        icon: FushiIcons.error,
+        tone: FushiPlaceholderTone.error,
         message: _catalog.describeError(error),
         action: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FushiFilledButton.icon(
+            FushiFilledButton.tonalIcon(
               onPressed: () => unawaited(_retry()),
-              icon: const FushiIcon(Icons.refresh_rounded),
+              icon: const FushiIcon(FushiIcons.refresh),
               label: Text(t.retry),
             ),
             const SizedBox(height: 8),
@@ -444,7 +447,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
     }
     if (_items.isEmpty) {
       return FushiPlaceholderMessage(
-        icon: Icons.search_off_outlined,
+        icon: FushiIcons.searchOff,
         message: _catalog.emptyText,
         action: _catalog.verifyOnEmpty
             ? _catalog.buildVerifyAction(
@@ -482,10 +485,11 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                   return Center(
                     child: _loading
                         ? adaptiveIndicator(context: context)
-                        : FushiIconButtonControl(
+                        : FushiIconButtonControl.filledTonal(
                             key: ValueKey<String>('${prefix}_more'),
+                            size: FushiIconButtonSize.m,
                             onPressed: () => unawaited(_load(reset: false)),
-                            icon: const FushiIcon(Icons.add_circle_outline),
+                            icon: const FushiIcon(FushiIcons.add),
                           ),
                   );
                 }
@@ -502,17 +506,55 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
                     children: <Widget>[
                       Expanded(child: _catalog.buildCover(context, item)),
                       Padding(
-                        padding: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
                         child: Text(
                           _catalog.titleOf(item),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
+                          style: context.fushiType.titleSmall,
                         ),
                       ),
                     ],
                   ),
                 );
               }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 首屏加载骨架：与结果网格同列数、同比例的封面块 + 两条标题条，整组共享
+  /// 一道有界闪光。
+  Widget _buildSkeleton() {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
+        return FushiSkeletonShimmer(
+          child: GridView.builder(
+            key: ValueKey<String>('${_catalog.keyPrefix}_skeleton'),
+            primary: false,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              childAspectRatio: 0.62,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: columns * 3,
+            itemBuilder: (BuildContext context, int index) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Expanded(
+                  child: FushiSkeleton(borderRadius: FushiM3eShape.cardRadius),
+                ),
+                const SizedBox(height: 10),
+                FushiSkeleton.line(widthFactor: 0.9),
+                const SizedBox(height: 6),
+                FushiSkeleton.line(widthFactor: 0.5),
+              ],
             ),
           ),
         );

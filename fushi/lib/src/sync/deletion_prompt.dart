@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/deletion_disclosure.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/deletion_propagation_availability.dart';
 import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
@@ -160,7 +161,7 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
       maxHeightFactor: 0.74,
       child: FushiModalSheetFrame(
         title: widget.title,
-        leadingIcon: Icons.delete_outline,
+        leadingIcon: FushiIcons.delete,
         bodyPadding: EdgeInsets.fromLTRB(
             tokens.spacing.card, 0, tokens.spacing.card, tokens.spacing.gap),
         footerPadding: EdgeInsets.fromLTRB(tokens.spacing.card,
@@ -177,34 +178,45 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
               ),
             ],
             SizedBox(height: tokens.spacing.gap),
-            if (widget.canSyncEverywhere)
-              DeleteConfirmCheckboxRow(
-                title: t.delete_scope_sync_everywhere,
-                subtitle: _syncDelete
-                    ? t.delete_scope_sync_everywhere_desc
-                    : t.delete_scope_keep_local_desc,
-                value: _syncDelete,
-                onChanged: (bool v) => setState(() => _syncDelete = v),
-              )
-            else
+            if (!widget.canSyncEverywhere) ...<Widget>[
               const DeleteScopeUnavailableNote(),
-            if (widget.localFilesSubtitle != null)
-              DeleteLocalFilesRow(
-                value: _deleteLocalFiles,
-                subtitle: widget.localFilesSubtitle!,
-                onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
-              ),
-            if (widget.statisticsSubtitle != null)
-              DeleteStatisticsRow(
-                value: _deleteStatistics,
-                subtitle: widget.statisticsSubtitle!,
-                onChanged: (bool v) => setState(() => _deleteStatistics = v),
-              ),
-            if (widget.canSyncEverywhere || widget.localFilesSubtitle != null)
-              DeleteRememberChoicesRow(
-                value: _rememberChoices,
-                onChanged: (bool v) => setState(() => _rememberChoices = v),
-              ),
+              SizedBox(height: tokens.spacing.gap / 2),
+            ],
+            // M3E：勾选项收成一组分段卡片（首尾大圆角、行间 2）。
+            FushiGroupedList(
+              children: <Widget>[
+                if (widget.canSyncEverywhere)
+                  DeleteConfirmCheckboxRow(
+                    title: t.delete_scope_sync_everywhere,
+                    subtitle: _syncDelete
+                        ? t.delete_scope_sync_everywhere_desc
+                        : t.delete_scope_keep_local_desc,
+                    value: _syncDelete,
+                    onChanged: (bool v) => setState(() => _syncDelete = v),
+                  ),
+                if (widget.localFilesSubtitle != null)
+                  DeleteLocalFilesRow(
+                    value: _deleteLocalFiles,
+                    subtitle: widget.localFilesSubtitle!,
+                    onChanged: (bool v) =>
+                        setState(() => _deleteLocalFiles = v),
+                  ),
+                if (widget.statisticsSubtitle != null)
+                  DeleteStatisticsRow(
+                    value: _deleteStatistics,
+                    subtitle: widget.statisticsSubtitle!,
+                    onChanged: (bool v) =>
+                        setState(() => _deleteStatistics = v),
+                  ),
+                if (widget.canSyncEverywhere ||
+                    widget.localFilesSubtitle != null)
+                  DeleteRememberChoicesRow(
+                    value: _rememberChoices,
+                    onChanged: (bool v) =>
+                        setState(() => _rememberChoices = v),
+                  ),
+              ],
+            ),
           ],
         ),
         footer: Wrap(
@@ -286,7 +298,7 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.delete_prompt_title,
-        leadingIcon: Icons.delete_sweep_outlined,
+        leadingIcon: FushiIcons.deleteSweep,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -313,24 +325,27 @@ class _DeletionPromptDialogState extends State<DeletionPromptDialog> {
                 constraints: BoxConstraints(
                   maxHeight: MediaQuery.of(context).size.height * 0.44,
                 ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: widget.views.length,
-                  itemBuilder: (_, int i) {
-                    final DeletionCandidateView v = widget.views[i];
-                    return AdaptiveSettingsRow(
-                      title: v.title,
-                      onTap: () => _toggle(i),
-                      trailing: FushiIcon(
-                        _checked.contains(i)
-                            ? Icons.check_box
-                            : Icons.check_box_outline_blank,
-                        color: _checked.contains(i)
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    );
-                  },
+                child: FushiEntranceScope(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: widget.views.length,
+                    // M3E：候选是分段卡片（首尾大圆角、行间 2），错峰进场。
+                    itemBuilder: fushiStaggeredItemBuilder(
+                      (BuildContext context, int i) {
+                        final DeletionCandidateView v = widget.views[i];
+                        return FushiGroupedListItem(
+                          index: i,
+                          count: widget.views.length,
+                          child: DeleteConfirmCheckboxRow(
+                            title: v.title,
+                            value: _checked.contains(i),
+                            destructive: true,
+                            onChanged: (bool _) => _toggle(i),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),

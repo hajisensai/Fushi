@@ -108,13 +108,33 @@
     return (pref === 'light' || pref === 'dark') ? pref : null;
   }
 
-  // 本刻应生效的明暗。fallback 是「跟随」时的次级来源（查词弹窗传 app 的
-  // --fushi-color-scheme），没有则跟随系统。
+  // app 最近一次下发的明暗（background.js 镜像进 appThemeMirror.current）。
+  function appScheme() {
+    var cur = appMirror && appMirror.current;
+    return (cur === 'light' || cur === 'dark') ? cur : null;
+  }
+
+  // 本刻应生效的明暗。明暗只由明暗设置决定，调色板（预设 / 自定义 / 扩展绿）只决定配色家族
+  // （用户 2026-10-06「切换主题时如果我是深色就要继续保持深色」）：
+  //   · 显式 light / dark → 它；
+  //   · 自动 + 跟随 Fushi → 跟 app 的明暗（查词弹窗传进来的 --fushi-color-scheme，扩展页面用镜像的
+  //     appThemeMirror.current），弹窗与侧边栏 / 设置页 / 页内浮层同一明暗；
+  //   · 自动 + 其它调色板 → 跟系统（弹窗也是：它的颜色由 applyPopupPalette 按这个明暗覆盖）。
   function resolve(fallback) {
     var e = explicit();
     if (e) return e;
-    if (fallback === 'light' || fallback === 'dark') return fallback;
+    if (paletteId === 'app') {
+      if (fallback === 'light' || fallback === 'dark') return fallback;
+      var a = appScheme();
+      if (a) return a;
+    }
     return systemScheme();
+  }
+
+  // 扩展页面根上要写的 data-theme：显式值，或「跟随 Fushi」时 app 的明暗；否则 null（交给
+  // prefers-color-scheme）。
+  function documentScheme() {
+    return explicit() || (paletteId === 'app' ? appScheme() : null);
   }
 
   // 当前调色板在某明暗下的 --fushi-* token；默认 'fushi'（或 app 镜像缺席、自定义 id 失效）
@@ -255,7 +275,7 @@
   function applyToDocument(doc) {
     doc = doc || document;
     function apply() {
-      var e = explicit();
+      var e = documentScheme();
       try {
         var root = doc.documentElement;
         if (!root) return;
@@ -346,6 +366,7 @@
     stampStyle: stampStyle,
     applyPopupStyle: applyPopupStyle,
     resolve: resolve,
+    documentScheme: documentScheme,
     tokens: tokens,
     popupVars: popupVars,
     applyPopupPalette: applyPopupPalette,

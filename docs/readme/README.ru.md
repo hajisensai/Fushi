@@ -151,7 +151,6 @@ Fushi опирается на следующие проекты и экосис�
 | [Mihon](https://github.com/mihonapp/mihon) | Экосистема расширений источников манги |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Экосистема расширений источников аниме (extensions-lib 14–16, та же среда выполнения) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Среда выполнения расширений манги для десктопа |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI среды выполнения источников манги |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Референс моста субтитров стриминга для расширения браузера |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Референс архитектуры идентификации и скрейпинга аниме |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Референс информационной архитектуры библиотеки galgame |

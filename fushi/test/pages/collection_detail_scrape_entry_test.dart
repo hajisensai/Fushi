@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
@@ -120,7 +121,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(
@@ -141,7 +142,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(
@@ -161,7 +162,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(find.text(t.collection_cover_set), findsOneWidget,
@@ -181,7 +182,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(find.text(t.collection_cover_set), findsOneWidget);
@@ -204,7 +205,7 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.more_horiz));
+    await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
 
     expect(find.text(t.collection_cover_set), findsOneWidget,

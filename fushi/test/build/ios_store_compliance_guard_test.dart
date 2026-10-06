@@ -8,7 +8,7 @@ import 'package:fushi/src/models/store_compliance.dart';
 import '../helpers/source_guard.dart';
 
 /// iOS 版按 App Store 审核指南剔除三类能力：内置外部发现源与各库页的发现视图、
-/// 在线漫画源宿主（Aidoku / Mihon / mokuro.moe）、下载中心。
+/// 在线漫画源宿主（Mihon / mokuro.moe）、下载中心。
 ///
 /// 这组守卫钉的是**合规边界不会被悄悄改回来**。它比一般的行为测试更需要存在，
 /// 因为这条边界的失效是**静默**的：漏掉任何一处，本地五个平台照样全绿、CI 照样
@@ -16,8 +16,9 @@ import '../helpers/source_guard.dart';
 /// 这条边界。所以判据两侧都要断言——Dart 判据一侧（下面第一组），以及每个消费点
 /// 确实问了那个判据（后面几组，源码扫描）。
 ///
-/// iOS 原生侧单独一组：Aidoku 的 iOS 宿主是**内嵌 Rust 静态库**（WASM 解释器），
-/// 光把 Dart 工厂关掉、二进制里仍然带着它，是最容易在审核里翻车的那种残留。
+/// iOS 原生侧单独一组：已移除的 Aidoku 的 iOS 宿主曾是**内嵌 Rust 静态库**（WASM
+/// 解释器），光把 Dart 工厂关掉、二进制里仍然带着它，是最容易在审核里翻车的那种
+/// 残留；Aidoku 现已从本仓整体移除，那组守卫钉住它不会被加回来。
 void main() {
   String read(String relativeToFushi) {
     final File file = File(relativeToFushi);
@@ -633,30 +634,30 @@ void main() {
     });
   });
 
-  group('Aidoku 的 iOS 宿主已整条移除', () {
-    test('Dart 工厂不认任何平台（macOS 宿主随后也已移除）', () {
-      final String runtime = compactCode(
-        read('lib/src/media/manga/aidoku/aidoku_runtime.dart'),
-      );
-      expect(runtime, contains('staticboolgetisSupported=>false;'));
+  group('Aidoku 已从本仓整体移除', () {
+    test('Dart 功能层（运行时 / 仓库 / 安装包 / 源浏览）不再存在', () {
       expect(
-        runtime,
-        isNot(contains('Platform.isIOS')),
-        reason: 'iOS 分支必须消失，而不是留着抛异常——留着就还需要 native 侧配合。',
-      );
-      expect(
-        runtime,
-        isNot(contains('Platform.isMacOS')),
+        Directory('lib/src/media/manga/aidoku').existsSync(),
+        isFalse,
         reason:
-            'macOS 子进程宿主随 Rust CLI、打包脚本与 CI 步骤一并移除；'
-            '分支留着就是一条指向不存在 helper 的死路径。',
+            'Aidoku 的 Dart 功能层已整体删除；目录回来就意味着有人在把「运行时加载 '
+            '第三方 WASM 源」这条能力接回来，必须先过 onlineMangaSource 合规门。',
       );
+      final List<String> offenders = <String>[
+        for (final FileSystemEntity entity
+            in Directory('lib').listSync(recursive: true))
+          if (entity is File &&
+              entity.path.endsWith('.dart') &&
+              entity
+                  .readAsStringSync()
+                  .contains('package:fushi/src/media/manga/aidoku/'))
+            entity.path,
+      ];
+      expect(offenders, isEmpty);
       expect(
-        runtime,
-        isNot(contains('classIosAidokuRuntime')),
-        reason:
-            'MethodChannel 实现随 native 一起删；留着就是一条指向不存在 '
-            'handler 的死路径。',
+        Directory('../native/aidoku_runtime').existsSync(),
+        isFalse,
+        reason: 'Rust 宿主源码随 iOS / macOS 宿主一并移除。',
       );
     });
 
@@ -718,12 +719,8 @@ void main() {
 
     test('macOS 侧的 Aidoku 宿主也已整条移除', () {
       // 曾是反向断言「不要顺手把 macOS 也删了」；macOS 宿主随后按同一口径移除，
-      // 这里改钉新事实：Dart 侧没有子进程实现，两条 macOS workflow 也不再打
-      // runtime 进 bundle，发布包里不带 WASM 解释器。
-      expect(
-        read('lib/src/media/manga/aidoku/aidoku_runtime.dart'),
-        isNot(contains('DesktopAidokuRuntime')),
-      );
+      // 这里改钉新事实：两条 macOS workflow 不再打 runtime 进 bundle，发布包里
+      // 不带 WASM 解释器。
       for (final String path in <String>[
         '../.github/workflows/build-multiplatform.yml',
         '../.github/workflows/release-desktop.yml',

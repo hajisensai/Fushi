@@ -9,12 +9,14 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 // MD3（Material 3 Expressive）歌词播放页。
 //
@@ -167,7 +169,7 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             child: FushiIconButtonControl.filledTonal(
               tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
               onPressed: callbacks.onClose,
-              icon: const FushiIcon(Icons.close_rounded),
+              icon: const FushiIcon(FushiIcons.close),
             ),
           ),
         ],
@@ -488,7 +490,7 @@ class _WidePanel extends StatelessWidget {
                   FushiIconButtonControl(
                     tooltip: t.reading_statistics,
                     onPressed: callbacks.onOpenStatistics,
-                    icon: const FushiIcon(Icons.insights_rounded),
+                    icon: const FushiIcon(FushiIcons.statistics),
                   ),
                   _MoreButton(onMore: callbacks.onMore),
                 ],
@@ -625,7 +627,7 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
                 color: FushiDesignTokens.of(context).surfaces.overlay,
                 child: Center(
                   child: FushiIcon(
-                    Icons.menu_book_rounded,
+                    FushiIcons.books,
                     size: math.min(w, h) * 0.32,
                     color: cs.onSurfaceVariant,
                   ),
@@ -801,10 +803,10 @@ class _StatsChips extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: <Widget>[
-            chip(Icons.speed_rounded, _speedText(stats)),
-            if (progress != null) chip(Icons.menu_book_rounded, progress),
+            chip(FushiIcons.speed, _speedText(stats)),
+            if (progress != null) chip(FushiIcons.books, progress),
             chip(
-              stats.tracking ? Icons.timer_outlined : Icons.timer_off_outlined,
+              stats.tracking ? FushiIcons.timer : Icons.timer_off_outlined,
               _sessionText(stats),
             ),
           ],
@@ -1309,7 +1311,7 @@ class _TransportGroup extends StatelessWidget {
           width: sideWidth,
           tooltip: t.prev_sentence,
           onPressed: callbacks.onPreviousCue,
-          icon: const FushiIcon(Icons.skip_previous_rounded),
+          icon: const FushiIcon(FushiIcons.skipPrevious),
         ),
         _ExpressivePlayButton(
           isPlaying: isPlaying,
@@ -1321,7 +1323,7 @@ class _TransportGroup extends StatelessWidget {
           width: sideWidth,
           tooltip: t.next_sentence,
           onPressed: callbacks.onNextCue,
-          icon: const FushiIcon(Icons.skip_next_rounded),
+          icon: const FushiIcon(FushiIcons.skipNext),
         ),
       ],
     );
@@ -1393,7 +1395,9 @@ class _ExpressivePlayButtonState extends State<_ExpressivePlayButton>
             child: ScaleTransition(scale: animation, child: child),
           ),
       child: FushiIcon(
-        widget.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+        widget.isPlaying
+            ? FushiIcons.filled(FushiIcons.pause)
+            : FushiIcons.filled(FushiIcons.play),
         key: ValueKey<bool>(widget.isPlaying),
         size: size * 0.46,
       ),
@@ -1492,8 +1496,8 @@ class _MaskButton extends StatelessWidget {
       tooltip: t.lyrics_blur,
       isSelected: masked,
       onPressed: onPressed,
-      icon: const FushiIcon(Icons.visibility_rounded),
-      selectedIcon: const FushiIcon(Icons.visibility_off_rounded),
+      icon: const FushiIcon(FushiIcons.visibility),
+      selectedIcon: const FushiIcon(FushiIcons.visibilityOff),
     );
   }
 }
@@ -1521,7 +1525,7 @@ class _TypographyButton extends StatelessWidget {
             ),
           );
         },
-        icon: const FushiIcon(Icons.text_fields_rounded),
+        icon: const FushiIcon(FushiIcons.textFields),
       ),
     );
   }
@@ -1547,7 +1551,7 @@ class _MoreButton extends StatelessWidget {
             ),
           );
         },
-        icon: const FushiIcon(Icons.more_horiz_rounded),
+        icon: const FushiIcon(FushiIcons.moreHoriz),
       ),
     );
   }
@@ -1608,21 +1612,30 @@ class _NarrowTopBar extends StatelessWidget {
             ],
           ),
         ),
-        _MaskButton(
-          masked: data.lyricsMasked,
-          onPressed: callbacks.onToggleMask,
-        ),
-        if (callbacks.onTypography != null)
-          _TypographyButton(onTypography: callbacks.onTypography!),
-        FushiIconButtonControl(
-          tooltip: t.reading_statistics,
-          onPressed: callbacks.onOpenStatistics,
-          icon: const FushiIcon(Icons.insights_rounded),
-        ),
-        FushiIconButtonControl(
-          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-          onPressed: callbacks.onClose,
-          icon: const FushiIcon(Icons.close_rounded),
+        // 动作组收进一颗悬浮胶囊（与 FushiFloatingTopBar 右侧按钮组同一外观）。
+        FushiFloatingPill(
+          color: fushiFloatingToolbarPalette(context).container,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _MaskButton(
+                masked: data.lyricsMasked,
+                onPressed: callbacks.onToggleMask,
+              ),
+              if (callbacks.onTypography != null)
+                _TypographyButton(onTypography: callbacks.onTypography!),
+              FushiIconButtonControl(
+                tooltip: t.reading_statistics,
+                onPressed: callbacks.onOpenStatistics,
+                icon: const FushiIcon(FushiIcons.statistics),
+              ),
+              FushiIconButtonControl(
+                tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+                onPressed: callbacks.onClose,
+                icon: const FushiIcon(FushiIcons.close),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -1639,54 +1652,62 @@ class _NarrowControlBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    return Material(
-      color: cs.surfaceContainer,
-      shape: const RoundedRectangleBorder(borderRadius: _kLargeBorderRadius),
-      elevation: 3,
-      shadowColor: cs.shadow.withValues(alpha: 0.4),
-      surfaceTintColor: Colors.transparent,
-      clipBehavior: Clip.none,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _WavySeekBar(
-              clock: data.clock,
-              isPlaying: data.isPlaying,
-              onSeek: callbacks.onSeek,
-              strokeWidth: 5,
-              barHeight: 36,
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 64,
-              // 极窄宽度（< 320）下整行等比缩小，不溢出。
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  spacing: 12,
-                  children: <Widget>[
-                    _SpeedButton(
-                      speed: data.speed,
-                      onSpeedChanged: callbacks.onSpeedChanged,
-                    ),
-                    _TransportGroup(
-                      isPlaying: data.isPlaying,
-                      callbacks: callbacks,
-                      playSize: 64,
-                      sideSize: FushiIconButtonSize.m,
-                      sideWidth: FushiIconButtonWidth.narrow,
-                    ),
-                    _MoreButton(onMore: callbacks.onMore),
-                  ],
+    // 与底部浮动导航 / 浮动工具栏同一套悬浮外观（fushiFloatingPillDecoration：
+    // 同一 container 色、同一投影、墨水屏描边无影），只是圆角取 28 的大圆角卡
+    // （两行内容放不进全圆胶囊）。
+    const OutlinedBorder shape = RoundedRectangleBorder(
+      borderRadius: _kLargeBorderRadius,
+    );
+    return DecoratedBox(
+      decoration: fushiFloatingPillDecoration(
+        context,
+        color: fushiFloatingToolbarPalette(context).container,
+        shape: shape,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        shape: shape,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _WavySeekBar(
+                clock: data.clock,
+                isPlaying: data.isPlaying,
+                onSeek: callbacks.onSeek,
+                strokeWidth: 5,
+                barHeight: 36,
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 64,
+                // 极窄宽度（< 320）下整行等比缩小，不溢出。
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 12,
+                    children: <Widget>[
+                      _SpeedButton(
+                        speed: data.speed,
+                        onSpeedChanged: callbacks.onSpeedChanged,
+                      ),
+                      _TransportGroup(
+                        isPlaying: data.isPlaying,
+                        callbacks: callbacks,
+                        playSize: 64,
+                        sideSize: FushiIconButtonSize.m,
+                        sideWidth: FushiIconButtonWidth.narrow,
+                      ),
+                      _MoreButton(onMore: callbacks.onMore),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

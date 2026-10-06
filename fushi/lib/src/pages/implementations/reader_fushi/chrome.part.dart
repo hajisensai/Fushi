@@ -3654,7 +3654,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (appModel.einkMode) {
       final bool dark = appModel.isDarkMode;
       final ReaderThemeColors themed = resolveReaderThemeColors(
-        themeKey: appModel.appThemeKey,
+        themeKey: appModel.readerThemeKey,
         presetMap: _themeMap,
         scheme: appModel.buildColorScheme(
           dark ? Brightness.dark : Brightness.light,
@@ -3665,7 +3665,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       return einkReaderThemeColors(themed, dark: dark);
     }
     return resolveReaderThemeColors(
-      themeKey: appModel.appThemeKey,
+      themeKey: appModel.readerThemeKey,
       presetMap: _themeMap,
       scheme: appModel.buildColorScheme(
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
@@ -3682,13 +3682,49 @@ extension _ReaderChrome on _ReaderFushiPageState {
   FushiReaderPalette? get _followThemePalette {
     if (appModel.einkMode) return null;
     return readerFollowThemePalette(
-      themeKey: appModel.appThemeKey,
+      themeKey: appModel.readerThemeKey,
       presetMap: _themeMap,
       scheme: appModel.buildColorScheme(
         appModel.isDarkMode ? Brightness.dark : Brightness.light,
       ),
       customOverrides: _customReaderThemeOverrides,
     );
+  }
+
+  /// 当前主题 key 的手调纸色预设此刻是否生效（明暗与 app 一致，见
+  /// [readerPresetFor]）；墨水屏下 CSS 另走纯黑白，这里只管非墨水屏。
+  bool get _readerPresetApplies =>
+      readerPresetFor(
+        themeKey: appModel.readerThemeKey,
+        presetMap: _themeMap,
+        scheme: appModel.buildColorScheme(
+          appModel.isDarkMode ? Brightness.dark : Brightness.light,
+        ),
+      ) !=
+      null;
+
+  /// 正文 CSS 依赖的全部配色输入的指纹（五角色 + 跟随主题的额外槽位 + 预设是否生效
+  /// + 墨水屏明暗）。
+  Object _readerThemeSignature() {
+    final FushiReaderPalette? palette = _followThemePalette;
+    return (
+      _readerThemeColors,
+      palette?.rubyText,
+      palette?.nativeSelection,
+      _readerPresetApplies,
+      appModel.einkMode,
+      appModel.isDarkMode,
+    );
+  }
+
+  /// app 主题 / 明暗在阅读器外变了：配色指纹变化才重注入正文 CSS（分页 / 滚动 /
+  /// VN 共用同一份 CSS），并同步词典弹窗 / 歌词 / chrome。
+  void _onAppThemeMaybeChanged() {
+    if (!mounted || _settings == null) return;
+    if (_readerThemeSignature() == _cssThemeSignature) return;
+    _invalidateStyleCache();
+    unawaited(_onThemeChanged());
+    unawaited(_applyStylesLive());
   }
 
   Color _themeBackgroundColor() => _readerThemeColors.bg;
@@ -3714,7 +3750,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // HBK-AUDIT-117: persist the reader theme here, in the theme-change flow,
     // instead of as a hidden side effect of _applyChapterHighlights (which only
     // ran when the chapter had favorites).
-    await _settings?.setTheme(appModel.appThemeKey);
+    await _settings?.setTheme(appModel.readerThemeKey);
     _syncDictionaryTheme();
     if (appModel.showFloatingLyric) {
       // reader 主题变了：让 session 用新的 reader 样式重刷悬浮窗

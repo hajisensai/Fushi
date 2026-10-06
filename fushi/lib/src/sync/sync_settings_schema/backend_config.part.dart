@@ -180,17 +180,32 @@ class _CredentialConfigWidgetState extends State<_CredentialConfigWidget> {
             const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
-            child: _isTesting
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: adaptiveIndicator(context: context, strokeWidth: 2),
-                  )
-                : FushiFilledButton.tonal(
-                    onPressed: _testConnection,
-                    child:
-                        widget.testButtonChild ?? Text(t.sync_test_connection),
-                  ),
+            // 测试中 ↔ 按钮之间走 effects 弹簧交叉淡入（减弱动态效果下瞬切）。
+            child: AnimatedSwitcher(
+              duration: context.fushiMotion.effectsFast.duration,
+              switchInCurve: context.fushiMotion.effectsFast.curve,
+              switchOutCurve: context.fushiMotion.effectsFast.curve,
+              child: _isTesting
+                  ? SizedBox(
+                      key: const ValueKey<String>('testing'),
+                      width: 24,
+                      height: 24,
+                      child:
+                          adaptiveIndicator(context: context, strokeWidth: 2),
+                    )
+                  : widget.testButtonChild != null
+                      ? FushiFilledButton.tonal(
+                          key: const ValueKey<String>('test'),
+                          onPressed: _testConnection,
+                          child: widget.testButtonChild!,
+                        )
+                      : FushiFilledButton.tonalIcon(
+                          key: const ValueKey<String>('test'),
+                          onPressed: _testConnection,
+                          icon: const FushiIcon(FushiIcons.wifi),
+                          label: Text(t.sync_test_connection),
+                        ),
+            ),
           ),
         ],
       ),
@@ -272,7 +287,7 @@ class _WebDavConfigWidget extends StatelessWidget {
       testButtonChild: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          const FushiIcon(Icons.wifi_find, size: 18),
+          const FushiIcon(FushiIcons.wifi, size: 18),
           const SizedBox(width: 8),
           Text(t.sync_test_connection),
         ],
@@ -357,7 +372,7 @@ class _BackendSelectorWidgetState extends State<_BackendSelectorWidget> {
     final state = _syncSettings(widget.settingsContext);
     return AdaptiveSettingsPickerRow<SyncBackendType>(
       title: t.sync_backend,
-      icon: Icons.cloud_outlined,
+      icon: FushiIcons.cloud,
       selected: state.backendType,
       options: _selectableBackends(state.backendType)
           .map(

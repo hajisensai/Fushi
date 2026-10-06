@@ -30,6 +30,8 @@ import 'package:fushi/src/media/audiobook/asr_local_model_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_job_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
@@ -172,30 +174,52 @@ class _SubtitleSourceChooser extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> rows = <Widget>[
+      FushiListItem(
+        leading: const FushiListLeadingIcon(FushiIcons.subtitles),
+        title: Text(t.srt_import_pick_subtitle_files),
+        trailing: const FushiIcon(FushiIcons.chevronRight),
+        onTap: () => Navigator.pop(context, SubtitleSourceChoice.pickFile),
+      ),
+      FushiListItem(
+        leading: const FushiListLeadingIcon(
+          FushiIcons.voice,
+          shape: FushiLeadingShape.cookie,
+          tone: FushiCardTone.primary,
+        ),
+        title: Text(t.audiobook_transcribe_action),
+        subtitle: Text(t.audiobook_subtitle_source_transcribe_hint),
+        trailing: const FushiIcon(FushiIcons.chevronRight),
+        onTap: () => Navigator.pop(context, SubtitleSourceChoice.transcribe),
+      ),
+    ];
     return FushiModalSheetFrame(
       title: t.audiobook_subtitle_source_title,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FushiListItem(
-            leading: const FushiIcon(Icons.subtitles_outlined),
-            title: Text(t.srt_import_pick_subtitle_files),
-            onTap: () => Navigator.pop(context, SubtitleSourceChoice.pickFile),
-          ),
-          FushiListItem(
-            leading: const FushiIcon(Icons.record_voice_over_outlined),
-            title: Text(t.audiobook_transcribe_action),
-            subtitle: Text(t.audiobook_subtitle_source_transcribe_hint),
-            onTap: () =>
-                Navigator.pop(context, SubtitleSourceChoice.transcribe),
-          ),
-        ],
+      leadingIcon: FushiIcons.subtitles,
+      bodyPadding: const EdgeInsets.symmetric(horizontal: 16),
+      // 两个来源作分段卡（首尾大圆角、行间 2），错峰进场。
+      body: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < rows.length; i++)
+              FushiStaggeredEntrance(
+                index: i,
+                child: FushiGroupedListItem(
+                  index: i,
+                  count: rows.length,
+                  child: rows[i],
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// 导出转录产物：桌面走存盘对话框（默认文件名 = 首个音频同名 `.srt`、起始目录 =
+// 导出转录产物：桌面走存盘对话框（默认文件名 = 首个音频同名 `.srt`、起始目录 =
 /// 音频所在目录），移动端走系统分享。返回是否真的导出了（用户取消返回 false）。
 /// [saveFilePicker] 可注入，测试里替换掉真的平台对话框。
 ///
@@ -1078,157 +1102,267 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       _phase == _Phase.paused ||
       _phase == _Phase.error;
 
+  /// 状态卡的 M3E tonal 色块：失败 error、完成 tertiary、进行中 primary、
+  /// 其余（待下载 / 就绪 / 已暂停 / 检查中）中性。
+  FushiCardTone _statusTone() {
+    switch (_phase) {
+      case _Phase.error:
+        return FushiCardTone.error;
+      case _Phase.finished:
+        return FushiCardTone.tertiary;
+      case _Phase.downloading:
+      case _Phase.loading:
+      case _Phase.running:
+      case _Phase.pausing:
+        return FushiCardTone.primary;
+      case _Phase.checking:
+      case _Phase.needDownload:
+      case _Phase.ready:
+      case _Phase.paused:
+        return FushiCardTone.neutral;
+    }
+  }
+
+  IconData _statusIcon() {
+    switch (_phase) {
+      case _Phase.error:
+        return FushiIcons.error;
+      case _Phase.finished:
+        return FushiIcons.success;
+      case _Phase.downloading:
+        return FushiIcons.downloading;
+      case _Phase.running:
+        return FushiIcons.voice;
+      case _Phase.pausing:
+      case _Phase.paused:
+        return FushiIcons.pause;
+      case _Phase.needDownload:
+        return FushiIcons.cloudDownload;
+      case _Phase.ready:
+        return FushiIcons.check;
+      case _Phase.checking:
+      case _Phase.loading:
+        return FushiIcons.pending;
+    }
+  }
+
+  /// 一个选项分段：标题 + 控件，作为分段卡里的一格（首尾大圆角、行间 2）。
+  Widget _optionSegment(
+    BuildContext context, {
+    required int index,
+    required int count,
+    required String label,
+    required Widget child,
+  }) {
+    return FushiStaggeredEntrance(
+      index: index,
+      child: FushiGroupedListItem(
+        index: index,
+        count: count,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(label, style: context.fushiType.titleSmallEmphasized),
+              const SizedBox(height: 8),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final FushiMotionScheme motion = context.fushiMotion;
     final bool showProgressBar = _phase == _Phase.downloading ||
         _phase == _Phase.running ||
         _phase == _Phase.pausing ||
         _phase == _Phase.loading ||
         _phase == _Phase.checking;
-    return FushiModalSheetFrame(
-      title: t.audiobook_transcribe_title,
-      leadingIcon: Icons.record_voice_over_outlined,
-      scrollable: true,
-      bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(t.audiobook_transcribe_intro, style: tokens.type.metadata),
-          SizedBox(height: tokens.spacing.rowVertical),
-          Text(
-            t.audiobook_transcribe_language_label,
-            style: tokens.type.listTitle,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          // 语言多到分段按钮放不下（8 种起步），改下拉；每项副标题是该语言的模型名。
-          GamepadMenuDropdown<AsrLanguage>(
-            key: const ValueKey<String>('asr-transcribe-language'),
-            entries: <GamepadDropdownEntry<AsrLanguage>>[
-              for (final AsrLanguage language in AsrLanguage.values)
-                (value: language, label: asrLanguageLabel(language)),
-            ],
-            selected: _language,
-            enabled: _canChangePreference,
-            entrySubtitle: (AsrLanguage language) =>
-                asrModelPackFor(language).displayName,
-            onChanged: _changeLanguage,
-          ),
-          SizedBox(height: tokens.spacing.rowVertical),
-          Text(
-            t.audiobook_transcribe_model_label,
-            style: tokens.type.listTitle,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          // 模型：这门语言下注册表里认得的包。第一项就是当前生效的那个
-          // （`asrModelPackFor` 同样取「第一个服务它的包」），所以不另算选中项。
-          // 下拉与「手动指定」同一行：弹层本来就长（语言 / 模型 / 加速 / 状态 /
-          // 进度条），模型区多占一行会把「加速」整段挤出首屏。
-          Builder(
-            builder: (BuildContext ctx) {
-              final List<AsrEngineOption> options = _engineOptions();
-              return Row(
-                children: <Widget>[
-                  Expanded(
-                    child: GamepadMenuDropdown<String>(
-                      key: const ValueKey<String>('asr-transcribe-model'),
-                      entries: <GamepadDropdownEntry<String>>[
-                        for (final AsrEngineOption option in options)
-                          (value: option.id, label: option.label),
-                      ],
-                      selected: _selectedEngineId(),
-                      enabled: _canChangePreference && options.length > 1,
-                      entrySubtitle: (String id) => _modelSubtitle(
-                        options.firstWhere((AsrEngineOption o) => o.id == id),
-                      ),
-                      onChanged: _changeEngine,
+    final List<(String, Widget)> options = <(String, Widget)>[
+      (
+        t.audiobook_transcribe_language_label,
+        // 语言多到分段按钮放不下（8 种起步），改下拉；每项副标题是该语言的模型名。
+        GamepadMenuDropdown<AsrLanguage>(
+          key: const ValueKey<String>('asr-transcribe-language'),
+          entries: <GamepadDropdownEntry<AsrLanguage>>[
+            for (final AsrLanguage language in AsrLanguage.values)
+              (value: language, label: asrLanguageLabel(language)),
+          ],
+          selected: _language,
+          enabled: _canChangePreference,
+          entrySubtitle: (AsrLanguage language) =>
+              asrModelPackFor(language).displayName,
+          onChanged: _changeLanguage,
+        ),
+      ),
+      (
+        t.audiobook_transcribe_model_label,
+        // 模型：这门语言下注册表里认得的包。第一项就是当前生效的那个
+        // （`asrModelPackFor` 同样取「第一个服务它的包」），所以不另算选中项。
+        // 下拉与「手动指定」同一行：弹层本来就长（语言 / 模型 / 加速 / 状态 /
+        // 进度条），模型区多占一行会把「加速」整段挤出首屏。
+        Builder(
+          builder: (BuildContext ctx) {
+            final List<AsrEngineOption> engineOptions = _engineOptions();
+            return Row(
+              children: <Widget>[
+                Expanded(
+                  child: GamepadMenuDropdown<String>(
+                    key: const ValueKey<String>('asr-transcribe-model'),
+                    entries: <GamepadDropdownEntry<String>>[
+                      for (final AsrEngineOption option in engineOptions)
+                        (value: option.id, label: option.label),
+                    ],
+                    selected: _selectedEngineId(),
+                    enabled: _canChangePreference && engineOptions.length > 1,
+                    entrySubtitle: (String id) => _modelSubtitle(
+                      engineOptions
+                          .firstWhere((AsrEngineOption o) => o.id == id),
                     ),
+                    onChanged: _changeEngine,
                   ),
-                  SizedBox(width: tokens.spacing.gap),
-                  FushiIconButtonControl(
-                    key: const ValueKey<String>('asr-transcribe-model-add'),
-                    tooltip: t.audiobook_transcribe_model_custom_add,
-                    icon: const FushiIcon(Icons.create_new_folder_outlined),
-                    // 选中系统语音时接入本地 ONNX 模型没有意义（那是另一个引擎的
-                    // 东西）——留着可点会让用户以为接进来就能给系统语音用。
-                    onPressed: _canChangePreference &&
-                            _selectedEngineId() != kAppleSpeechEngineId
-                        ? _addLocalModel
-                        : null,
-                  ),
-                ],
-              );
-            },
-          ),
-          SizedBox(height: tokens.spacing.rowVertical),
-          Text(
-            t.audiobook_transcribe_accel_label,
-            style: tokens.type.listTitle,
-          ),
-          SizedBox(height: tokens.spacing.gap),
-          adaptiveSegmentedButton<AsrAccelerationPreference>(
-            context: context,
-            segments: <ButtonSegment<AsrAccelerationPreference>>[
-              ButtonSegment<AsrAccelerationPreference>(
-                value: AsrAccelerationPreference.auto,
-                label: Text(t.audiobook_transcribe_accel_auto),
-              ),
-              ButtonSegment<AsrAccelerationPreference>(
-                value: AsrAccelerationPreference.cpuOnly,
-                label: Text(t.audiobook_transcribe_accel_cpu),
-              ),
-              // 上游只在 macOS 接受 coreml（别的平台 plan() 直接抛
-              // UnsupportedError），auto 在 macOS 仍走 INT8 CPU，CoreML 是显式
-              // 选项——按 defaultTargetPlatform 露出，widget 测试可覆盖。
-              if (defaultTargetPlatform == TargetPlatform.macOS)
-                ButtonSegment<AsrAccelerationPreference>(
-                  value: AsrAccelerationPreference.coreml,
-                  label: Text(t.audiobook_transcribe_accel_coreml),
                 ),
-            ],
-            selected: <AsrAccelerationPreference>{_preference},
-            onSelectionChanged: !_canChangePreference
-                ? (Set<AsrAccelerationPreference> _) {}
-                : (Set<AsrAccelerationPreference> s) {
-                    _preference = s.first;
-                    _refreshPlan();
-                  },
-          ),
-          if (_remoteTarget != null) ...<Widget>[
-            SizedBox(height: tokens.spacing.rowVertical),
-            Text(
-              t.audiobook_transcribe_run_location,
-              style: tokens.type.listTitle,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            GamepadMenuDropdown<bool>(
-              key: const ValueKey<String>('asr-transcribe-run-location'),
-              entries: <GamepadDropdownEntry<bool>>[
-                (value: false, label: t.audiobook_transcribe_run_local),
-                (
-                  value: true,
-                  label: t.audiobook_transcribe_run_remote(
-                    device: _remoteTarget!.label,
-                  ),
+                SizedBox(width: tokens.spacing.gap),
+                FushiIconButtonControl.filledTonal(
+                  key: const ValueKey<String>('asr-transcribe-model-add'),
+                  tooltip: t.audiobook_transcribe_model_custom_add,
+                  icon: const FushiIcon(FushiIcons.folderOpen),
+                  // 选中系统语音时接入本地 ONNX 模型没有意义（那是另一个引擎的
+                  // 东西）——留着可点会让用户以为接进来就能给系统语音用。
+                  onPressed: _canChangePreference &&
+                          _selectedEngineId() != kAppleSpeechEngineId
+                      ? _addLocalModel
+                      : null,
                 ),
               ],
-              selected: _runRemote,
-              enabled: _canChangePreference,
-              onChanged: (bool v) => setState(() => _runRemote = v),
+            );
+          },
+        ),
+      ),
+      (
+        t.audiobook_transcribe_accel_label,
+        FushiSegmentedButton<AsrAccelerationPreference>(
+          segments: <ButtonSegment<AsrAccelerationPreference>>[
+            ButtonSegment<AsrAccelerationPreference>(
+              value: AsrAccelerationPreference.auto,
+              label: Text(t.audiobook_transcribe_accel_auto),
+            ),
+            ButtonSegment<AsrAccelerationPreference>(
+              value: AsrAccelerationPreference.cpuOnly,
+              label: Text(t.audiobook_transcribe_accel_cpu),
+            ),
+            // 上游只在 macOS 接受 coreml（别的平台 plan() 直接抛
+            // UnsupportedError），auto 在 macOS 仍走 INT8 CPU，CoreML 是显式
+            // 选项——按 defaultTargetPlatform 露出，widget 测试可覆盖。
+            if (defaultTargetPlatform == TargetPlatform.macOS)
+              ButtonSegment<AsrAccelerationPreference>(
+                value: AsrAccelerationPreference.coreml,
+                label: Text(t.audiobook_transcribe_accel_coreml),
+              ),
+          ],
+          selected: <AsrAccelerationPreference>{_preference},
+          showSelectedIcon: false,
+          onSelectionChanged: !_canChangePreference
+              ? (Set<AsrAccelerationPreference> _) {}
+              : (Set<AsrAccelerationPreference> s) {
+                  _preference = s.first;
+                  _refreshPlan();
+                },
+        ),
+      ),
+      if (_remoteTarget != null)
+        (
+          t.audiobook_transcribe_run_location,
+          GamepadMenuDropdown<bool>(
+            key: const ValueKey<String>('asr-transcribe-run-location'),
+            entries: <GamepadDropdownEntry<bool>>[
+              (value: false, label: t.audiobook_transcribe_run_local),
+              (
+                value: true,
+                label: t.audiobook_transcribe_run_remote(
+                  device: _remoteTarget!.label,
+                ),
+              ),
+            ],
+            selected: _runRemote,
+            enabled: _canChangePreference,
+            onChanged: (bool v) => setState(() => _runRemote = v),
+          ),
+        ),
+    ];
+    return FushiModalSheetFrame(
+      title: t.audiobook_transcribe_title,
+      leadingIcon: FushiIcons.voice,
+      scrollable: true,
+      bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
+      body: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(t.audiobook_transcribe_intro, style: tokens.type.metadata),
+            SizedBox(height: tokens.spacing.rowVertical),
+            for (int i = 0; i < options.length; i++)
+              _optionSegment(
+                context,
+                index: i,
+                count: options.length,
+                label: options[i].$1,
+                child: options[i].$2,
+              ),
+            SizedBox(height: tokens.spacing.rowVertical),
+            // 状态卡：tonal 色块随阶段变色，进行中在卡内出波浪进度。
+            FushiStaggeredEntrance(
+              index: options.length,
+              child: FushiCard(
+                key: const ValueKey<String>('asr-transcribe-status-card'),
+                tone: _statusTone(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        FushiIcon(_statusIcon(), size: 20),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            _statusLine(),
+                            key: const ValueKey<String>(
+                              'asr-transcribe-status',
+                            ),
+                            style: context.fushiType.bodyMedium.tabular,
+                          ),
+                        ),
+                      ],
+                    ),
+                    AnimatedSize(
+                      duration: motion.spatialDefault.duration,
+                      curve: motion.spatialDefault.curve,
+                      alignment: Alignment.topCenter,
+                      child: showProgressBar
+                          ? Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: FushiLinearProgressIndicator(
+                                value: _progressValue(),
+                              ),
+                            )
+                          : const SizedBox(width: double.infinity),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
-          SizedBox(height: tokens.spacing.rowVertical),
-          Text(
-            _statusLine(),
-            key: const ValueKey<String>('asr-transcribe-status'),
-            style: tokens.type.metadata,
-          ),
-          if (showProgressBar) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            FushiLinearProgressIndicator(value: _progressValue()),
-          ],
-        ],
+        ),
       ),
       // Wrap 而不是 Row：完成态有三个按钮，窄窗/移动端一行放不下会横向溢出。
       footer: Wrap(
@@ -1257,12 +1391,12 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         add(
           _runRemote && _remoteTarget != null
               ? FushiFilledButton.icon(
-                  icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
+                  icon: const FushiIcon(FushiIcons.play, size: 18),
                   label: Text(t.audiobook_transcribe_start),
                   onPressed: _startTranscription,
                 )
               : FushiFilledButton.icon(
-                  icon: const FushiIcon(Icons.download_outlined, size: 18),
+                  icon: const FushiIcon(FushiIcons.download, size: 18),
                   label: Text(t.audiobook_transcribe_model_download),
                   onPressed: _startDownload,
                 ),
@@ -1270,7 +1404,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.ready:
         add(
           FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.play, size: 18),
             label: Text(t.audiobook_transcribe_start),
             onPressed: _startTranscription,
           ),
@@ -1284,7 +1418,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
         add(
           FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.play_arrow_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.play, size: 18),
             label: Text(t.audiobook_transcribe_resume),
             onPressed: _startTranscription,
           ),
@@ -1292,7 +1426,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.running:
         add(
           FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.pause_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.pause, size: 18),
             label: Text(t.audiobook_transcribe_pause),
             onPressed: _pause,
           ),
@@ -1306,14 +1440,14 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
         );
         add(
           FushiOutlinedButton.icon(
-            icon: const FushiIcon(Icons.save_alt_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.save, size: 18),
             label: Text(t.audiobook_transcribe_export),
             onPressed: _finishedSrt == null ? null : _export,
           ),
         );
         add(
           FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.check_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.check, size: 18),
             label: Text(t.audiobook_transcribe_use_result),
             onPressed: _finishedSrt == null
                 ? null
@@ -1323,7 +1457,7 @@ class _AsrTranscribeSheetState extends State<AsrTranscribeSheet> {
       case _Phase.error:
         add(
           FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.refresh_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.refresh, size: 18),
             label: Text(t.audiobook_transcribe_resume),
             onPressed: _refreshPlan,
           ),

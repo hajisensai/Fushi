@@ -135,7 +135,7 @@ class BrowseSubPage extends StatelessWidget {
 ///
 /// 书 / 视频两域的实现此前住在 `MediaSourcesPage`（书 / 视频「导入」视图的后三段），
 /// 漫画在 `MangaSourcesPage`；2026-09-27 起三域统一搬进「浏览」，导入页只剩本地
-/// 来源。漫画域原样委托给 [MangaOnlineSourcesView]（它带着 Aidoku 仓库状态）。
+/// 来源。漫画域原样委托给 [MangaOnlineSourcesView]。
 ///
 /// 🔴 滚动容器是 [CustomScrollView]：扩展目录是按仓库分组懒建的 sliver
 /// （1400+ 条不能一次全建，BUG-1441）。

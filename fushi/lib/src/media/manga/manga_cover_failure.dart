@@ -29,7 +29,7 @@ class MangaCoverFailure extends StatelessWidget {
   final Object? error;
   final VoidCallback onRetry;
 
-  /// Mihon runtime；Aidoku 封面没有挑战求解器，传 null 即恒走重试图标。
+  /// Mihon runtime；没有挑战求解器的来源传 null，即恒走重试图标。
   final Object? runtime;
   /// 底色；null 时跟随主题中性色（surfaceContainerHighest），深浅色都可读。
   final Color? backgroundColor;

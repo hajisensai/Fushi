@@ -1189,7 +1189,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
   }
 
   Future<void> _syncThemeSelection() async {
-    await _updateSetting('theme', widget.appModel.appThemeKey);
+    await _updateSetting('theme', widget.appModel.readerThemeKey);
     await widget.onThemeChanged?.call();
   }
 

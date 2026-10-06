@@ -820,10 +820,10 @@ void main() {
           'Now-listening media mini-bar: surface role + book-cover thumbnail '
           'radius are media-subsystem content chrome (same category as the '
           'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme. Glass/MD3 redesign: the '
-          'MD3 branch is now a floating card (surfaceContainerHigh, inset 12, '
-          'elevation 2) that the recommended-pack download mini-bar mirrors '
-          'tone-for-tone — the two bars are one media mini-bar family.',
+          'hero), driven off the active ColorScheme. M3E redesign: the '
+          'Material branch is a floating capsule sharing the floating '
+          'toolbar pill decoration (surfaceContainer, full radius); only the '
+          'e-ink strip (surfaceContainerHighest) and the cover radius remain.',
       'lib/src/models/app_model.dart':
           'AppModel builds the FloatingLyricStyle data object (overlay font '
           'size is user content passed to the platform overlay), not an '
@@ -1217,10 +1217,6 @@ void main() {
           'surfaceContainerHigh from the scheme generated from the cover art, so '
           'the desktop title bar blends into the blurred cover backdrop — '
           'content-derived color, same class as history_reader_page.',
-      'lib/src/media/manga/aidoku/aidoku_cover_image.dart':
-          'Missing-cover placeholder letterbox (surfaceContainerHighest) is cover '
-          'art, replacing a hard-coded black 7% that vanished in dark themes — '
-          'same reviewed exception class as series_shelf_card.',
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart':
           'Remote manga cover placeholder / decode-failure letterbox '
           '(surfaceContainerHighest) is cover art, replacing black12 — same '
@@ -1320,7 +1316,6 @@ void main() {
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
         'surfaceContainerHighest',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
@@ -1420,7 +1415,6 @@ void main() {
       'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
         'BorderRadius.circular(',
         'VisualDensity.compact',
-        'surfaceContainerHighest',
         'fontSize:',
       },
       // BUG-2187 重设计后预览区改用的 token：SegmentedButton 的紧凑密度与
@@ -1590,9 +1584,6 @@ void main() {
       },
       'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart': <String>{
         'surfaceContainerHigh',
-      },
-      'lib/src/media/manga/aidoku/aidoku_cover_image.dart': <String>{
-        'surfaceContainerHighest',
       },
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart': <String>{
         'surfaceContainerHighest',
@@ -3275,11 +3266,11 @@ void main() {
       'Widget buildBrightnessSelector(SettingsContext settingsContext)',
     );
 
-    // Theme circles preview the generated scheme (primary/secondary/tertiary/
-    // surface) via the four-quadrant FushiSchemeSwatch, not a single seed
-    // colour — see fushiSchemeSwatchColors.
-    expect(themeSelector, contains('FushiSchemeSwatch('));
-    expect(themeSelector, contains('fushiSchemeSwatchColors('));
+    // 2026-10 M3E：主题是色板网格卡（种子色块 + primary/secondary/tertiary
+    // 三色条 + 名称），三色条取自按当前明暗生成的真实 scheme，不是单一种子色。
+    expect(themeSelector, contains('FushiThemePresetCard('));
+    expect(themeSelector, contains('scheme: AppModel.buildPresetColorScheme('));
+    expect(themeSelector, isNot(contains('entry.value.brightness')));
     expect(source, isNot(contains('class _ColorSwatch')));
     expect(themeSelector, isNot(contains('_ColorSwatch(')));
     expect(themeSelector, isNot(contains('Container(')));
