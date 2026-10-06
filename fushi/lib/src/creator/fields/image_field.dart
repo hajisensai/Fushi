@@ -2,7 +2,10 @@ import 'package:carousel_slider/carousel_slider.dart' hide CarouselController;
 import 'package:change_notifier_builder/change_notifier_builder.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:progress_indicators/progress_indicators.dart';
 import 'package:gap/gap.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -20,7 +23,7 @@ class ImageField extends ImageExportField {
           label: 'Image',
           description: 'Visual supplement. Text field can be used to enter'
               ' search terms for image sources.',
-          icon: Icons.image_outlined,
+          icon: FushiIcons.image,
         );
 
   /// Get the singleton instance of this field.
@@ -156,11 +159,23 @@ class ImageField extends ImageExportField {
           ),
           itemBuilder: (context, index, realIndex) {
             if (index == itemCount) {
-              return Container(
-                color: Theme.of(context)
-                    .colorScheme
-                    .outlineVariant
-                    .withValues(alpha: 0.12),
+              // 「不使用图片」页：M3E secondaryContainer 色块卡 + 居中图标，而不是一块淡灰。
+              final ColorScheme scheme = Theme.of(context).colorScheme;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: scheme.secondaryContainer,
+                    borderRadius: FushiM3eShape.cardRadius,
+                  ),
+                  child: Center(
+                    child: FushiIcon(
+                      FushiIcons.visibilityOff,
+                      size: 32,
+                      color: scheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
               );
             }
 
@@ -209,9 +224,13 @@ class ImageField extends ImageExportField {
               onLongPressCancel: _dismissLongPressPreview,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: buildImage(
-                  image: currentImageSuggestions![index],
-                  fit: BoxFit.fitHeight,
+                // M3E 小件圆角（12）：候选图不再是硬直角。
+                child: ClipRRect(
+                  borderRadius: FushiM3eShape.smallRadius,
+                  child: buildImage(
+                    image: currentImageSuggestions![index],
+                    fit: BoxFit.fitHeight,
+                  ),
                 ),
               ),
             );

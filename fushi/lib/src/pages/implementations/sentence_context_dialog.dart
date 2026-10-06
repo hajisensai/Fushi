@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// BUG-763/766「制卡·选择句子上下文」**app 原生顶层对话框**。
@@ -322,10 +324,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     // 当前句整句半粗（对齐 Niratan `.body.weight(.semibold)`），命中词再加重 + 底色。
     final TextStyle base = (theme.textTheme.bodyMedium ?? const TextStyle())
         .copyWith(fontWeight: FontWeight.w500);
+    // M3E：命中词用 tertiaryContainer 饱和色块（不再 primary 叠透明度），落在
+    // primaryContainer 的当前句卡上仍分得清层次。
     final TextStyle hl = base.copyWith(
-      color: scheme.primary,
+      color: scheme.onTertiaryContainer,
       fontWeight: FontWeight.w700,
-      backgroundColor: scheme.primary.withValues(alpha: 0.30),
+      backgroundColor: scheme.tertiaryContainer,
     );
     if (text.isEmpty) {
       return Text('', style: base);
@@ -368,7 +372,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
         constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
         onPressed:
             _busy || _editing ? null : () => _startEdit(slot, index, text),
-        icon: const FushiIcon(Icons.edit_outlined, size: 16),
+        icon: const FushiIcon(FushiIcons.edit, size: 16),
       );
 
   /// 编辑态的卡内容：多行输入框 + 「放弃修改 / 确认修改」。
@@ -388,7 +392,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             textInputAction: TextInputAction.newline,
             style: theme.textTheme.bodyMedium,
             decoration: const InputDecoration(
-              border: OutlineInputBorder(),
+              border: FushiOutlinedFieldBorder(),
               isDense: true,
               contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             ),
@@ -426,17 +430,13 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     // 这一张卡是不是正被编辑：编辑态换成输入框，且不再走下面的缩略/降透明层
     // （改文本时该看清楚它，不该比别的卡更淡）。
     final bool editingThis = _editSlot == slot && _editIndex == index;
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 走共享 MD3 卡片外壳（FushiCard）而非裸 Container+BoxDecoration：
-    // 当前句用更高一档的容器令牌 surfaces.search + primary 描边区分，上/下句用
-    // surfaces.card。非当前句保留 transparent 1px 描边，令内容起点严格对齐
-    // （等价旧的透明 Border.all，避免仅当前句多 1px 内缩）。对齐 Niratan 原设计：
-    // 当前句留白更足（12）、上下文句收一档（10）。
+    // M3E 卡片：当前句是 primaryContainer 饱和色块（卡内文字自动取
+    // onPrimaryContainer），上/下句是中性 filled 卡。对齐 Niratan 原设计：
+    // 当前句留白更足（14）、上下文句收一档（10）。
     final Widget card = FushiCard(
       padding:
-          EdgeInsets.symmetric(horizontal: 12, vertical: current ? 12 : 10),
-      color: current ? tokens.surfaces.search : tokens.surfaces.card,
-      borderColor: current ? tokens.surfaces.primary : Colors.transparent,
+          EdgeInsets.symmetric(horizontal: 14, vertical: current ? 14 : 10),
+      tone: current ? FushiCardTone.primary : FushiCardTone.neutral,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -445,8 +445,11 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
               Expanded(
                 child: Text(
                   label,
-                  style: theme.textTheme.labelSmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
+                  style: current
+                      ? context.fushiType.labelMediumEmphasized
+                          .copyWith(color: scheme.onPrimaryContainer)
+                      : context.fushiType.labelSmall
+                          .copyWith(color: scheme.onSurfaceVariant),
                 ),
               ),
               // 编辑入口只在宿主真的能落地编辑时出现（editSentence == null 整颗不渲染）。
@@ -455,7 +458,13 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             ],
           ),
           const SizedBox(height: 4),
-          if (editingThis) _editor(theme) else child,
+          // 进入 / 退出编辑态：输入框与正文之间做尺寸 + 淡入切换（M3E spring）。
+          AnimatedSize(
+            duration: context.fushiMotion.spatialDefault.duration,
+            curve: context.fushiMotion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: editingThis ? _editor(theme) : child,
+          ),
         ],
       ),
     );
@@ -517,20 +526,28 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   /// 收紧到 compact 视觉密度 + 收敛内边距/最小尺寸——横屏矮窗里四颗按钮占位太重
   /// （用户报「这个选项占位太大」），压扁后给句子预览让出竖向空间。
   Widget _adjustButton({
-    required IconData icon,
+    required Widget icon,
     required String label,
     required VoidCallback? onPressed,
   }) =>
       FushiOutlinedButton.icon(
         onPressed: onPressed,
-        style: OutlinedButton.styleFrom(
-          visualDensity: VisualDensity.compact,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          minimumSize: const Size(0, 36),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        icon: FushiIcon(icon, size: 18),
+        // M3E XS 档（32 高胶囊）：横屏矮窗里四颗按钮占位要小。
+        size: FushiButtonSize.xs,
+        icon: icon,
         label: Text(label),
+      );
+
+  /// 「−」：语义图标子集里没有 remove 字形，用数学减号字形占位（与 add 同字号）。
+  Widget _minusGlyph() => SizedBox.square(
+        dimension: 18,
+        child: Center(
+          child: Text(
+            '−',
+            style: context.fushiType.titleMediumEmphasized,
+            textScaler: TextScaler.noScaling,
+          ),
+        ),
       );
 
   @override
@@ -564,7 +581,9 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     final List<Widget> spacedCards = <Widget>[];
     for (int i = 0; i < cards.length; i++) {
       if (i > 0) spacedCards.add(const SizedBox(height: 6));
-      spacedCards.add(cards[i]);
+      // 首屏错峰进场（FushiEntranceScope 窗口外挂载的卡——±上下文后补进来的——
+      // 瞬间出现，不拖影）。
+      spacedCards.add(FushiStaggeredEntrance(index: i, child: cards[i]));
     }
 
     // 往返在路上（[_busy]）时 Esc / Android 返回 / 点遮罩都不许把对话框 pop 掉：
@@ -572,6 +591,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     return PopScope(
       canPop: !_busy,
       child: FushiAlertDialog(
+        // M3E 对话框：图标徽标（饼干形 primaryContainer）+ 圆角 28 由主题给。
+        icon: const FushiDialogHeroIcon(
+          icon: FushiIcons.quote,
+          tone: FushiHeroTone.primary,
+          size: 48,
+        ),
         // BUG-922：横屏矮窗里正文竖向空间不足时，旧的 `Flexible(SingleChildScrollView)`
         // 会把整块滚动区让给固定的计数/按钮区、塌成 0 高——句子预览整段消失，只剩选项
         // （用户报「手机上看不见句子，只有选项」）。改为让整个对话框正文可滚动
@@ -603,7 +628,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             FushiIconButtonControl(
               tooltip: t.popup_ctx_cancel,
               onPressed: _locked ? null : _cancel,
-              icon: const FushiIcon(Icons.close, size: 20),
+              icon: const FushiIcon(FushiIcons.close, size: 20),
             ),
           ],
         ),
@@ -611,7 +636,8 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
           width: 460,
           child: _loading
               ? SizedBox(height: 80, child: buildLoading())
-              : Column(
+              : FushiEntranceScope(
+                  child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
@@ -639,14 +665,14 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                             runSpacing: 8,
                             children: <Widget>[
                               _adjustButton(
-                                icon: Icons.remove,
+                                icon: _minusGlyph(),
                                 label: t.popup_ctx_prev_minus,
                                 onPressed: _locked || _prev.isEmpty
                                     ? null
                                     : () => _adjust(prevDir: true, plus: false),
                               ),
                               _adjustButton(
-                                icon: Icons.add,
+                                icon: const FushiIcon(FushiIcons.add, size: 18),
                                 label: t.popup_ctx_prev_plus,
                                 onPressed: _locked || _prevAtMax
                                     ? null
@@ -663,14 +689,14 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                             alignment: WrapAlignment.end,
                             children: <Widget>[
                               _adjustButton(
-                                icon: Icons.remove,
+                                icon: _minusGlyph(),
                                 label: t.popup_ctx_next_minus,
                                 onPressed: _locked || _next.isEmpty
                                     ? null
                                     : () => _adjust(prevDir: false, plus: false),
                               ),
                               _adjustButton(
-                                icon: Icons.add,
+                                icon: const FushiIcon(FushiIcons.add, size: 18),
                                 label: t.popup_ctx_next_plus,
                                 onPressed: _locked || _nextAtMax
                                     ? null
@@ -683,6 +709,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
                     ),
                   ],
                 ),
+                ),
         ),
         // 底部动作对齐 Niratan footer：右下角 Cancel + Confirm Mining（主按钮）。
         actions: <Widget>[
@@ -692,7 +719,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
             FushiTextButton.icon(
               onPressed: _locked ? null : _togglePreview,
               icon: FushiIcon(
-                _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                _previewing ? FushiIcons.stop : FushiIcons.play,
               ),
               label: Text(
                 _previewing ? t.popup_ctx_preview_stop : t.popup_ctx_preview_audio,
