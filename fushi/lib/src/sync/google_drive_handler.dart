@@ -671,7 +671,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final length = await file.length();
     final contentType = _guessContentType(fileName);
@@ -682,7 +682,8 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
       int bytesUploaded = 0;
       final stream = file.openRead().map((chunk) {
         bytesUploaded += chunk.length;
-        onProgress?.call(length > 0 ? bytesUploaded / length : 0);
+        onProgress?.call(
+            length > 0 ? bytesUploaded / length : 0, bytesUploaded);
         return chunk;
       });
       final media = drive.Media(stream, length, contentType: contentType);
@@ -724,7 +725,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await _call((api) async {
       final metadata = await api.files.get(

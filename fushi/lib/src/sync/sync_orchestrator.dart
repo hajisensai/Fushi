@@ -537,6 +537,7 @@ class SyncOrchestrator {
     required int itemTotal,
     String? title,
     double? fileFraction,
+    int? fileBytes,
   }) {
     final cb = onProgress;
     if (cb == null) return;
@@ -546,8 +547,15 @@ class SyncOrchestrator {
       itemTotal: itemTotal,
       title: title,
       fileFraction: fileFraction,
+      bytesPerSecond: fileBytes == null
+          ? null
+          : _rateMeter.sample((phase, itemIndex, title), fileBytes),
     ));
   }
+
+  /// One meter for the whole run: per-file byte counts fold into its running
+  /// total, so the rate carries across files and phases instead of restarting.
+  final TransferRateMeter _rateMeter = TransferRateMeter();
 
   int _tmpCounter = 0;
 
@@ -629,11 +637,12 @@ class SyncOrchestrator {
       bookResults = await SyncManager(
         db: _db,
         backend: _backend,
-        onContentProgress: (double f) => _emit(SyncPhase.readingData,
+        onContentProgress: (double f, [int? b]) => _emit(SyncPhase.readingData,
             itemIndex: readingDone,
             itemTotal: readingTotal,
             title: readingTitle,
-            fileFraction: f),
+            fileFraction: f,
+            fileBytes: b),
       ).syncAllBooks(
         syncStats: syncStats,
         statsSyncMode: statsSyncMode,
@@ -1216,11 +1225,12 @@ class SyncOrchestrator {
               priorEntry.sizeBytes == size;
           if (!(remoteHasByName && manifestSameSize)) {
             await _backend.putAsset(ns, assetName, file,
-                onProgress: (double f) => _emit(SyncPhase.videos,
+                onProgress: (double f, [int? b]) => _emit(SyncPhase.videos,
                     itemIndex: index,
                     itemTotal: total,
                     title: v.title,
-                    fileFraction: f));
+                    fileFraction: f,
+                    fileBytes: b));
             remoteSizeByName[assetName] = size;
             report.videosExported++;
           }
@@ -1328,11 +1338,12 @@ class SyncOrchestrator {
           tempDir: _tempDir,
           // 下载远端书文件夹时一并补下其有声书包（修复云有声书「只上传拿不回」缺口）。
           audioDatabaseRoot: _audioDatabaseRoot,
-          onProgress: (double f) => _emit(SyncPhase.books,
+          onProgress: (double f, [int? b]) => _emit(SyncPhase.books,
               itemIndex: i,
               itemTotal: total,
               title: folder.name,
-              fileFraction: f),
+              fileFraction: f,
+              fileBytes: b),
         )) {
           report.booksImported++;
         }
@@ -1477,11 +1488,12 @@ class SyncOrchestrator {
         );
         await _backend.putAsset(
             ns, '${d.displayName}$_localAudioAssetSuffix', tmp,
-            onProgress: (double f) => _emit(SyncPhase.localAudio,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
                 itemIndex: index,
                 itemTotal: total,
                 title: d.displayName,
-                fileFraction: f));
+                fileFraction: f,
+                fileBytes: b));
         report.localAudioExported++;
       } catch (e) {
         report.noteError('export local audio "${d.displayName}"', e);
@@ -1504,11 +1516,12 @@ class SyncOrchestrator {
       try {
         tmp = _tmpFile(_localAudioAssetSuffix);
         await _backend.getAsset(e.id, tmp,
-            onProgress: (double f) => _emit(SyncPhase.localAudio,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.localAudio,
                 itemIndex: index,
                 itemTotal: total,
                 title: e.name,
-                fileFraction: f));
+                fileFraction: f,
+                fileBytes: b));
         final LocalAudioPackageContents contents =
             await _packages.importLocalAudioPackage(
           packageFile: tmp,
@@ -1574,11 +1587,12 @@ class SyncOrchestrator {
             outputFile: tmp,
           );
           await _backend.putAsset(folderId, kSyncAudiobookAssetName, tmp,
-              onProgress: (double f) => _emit(SyncPhase.audiobooks,
+              onProgress: (double f, [int? b]) => _emit(SyncPhase.audiobooks,
                   itemIndex: i,
                   itemTotal: total,
                   title: book.title,
-                  fileFraction: f));
+                  fileFraction: f,
+                  fileBytes: b));
           report.audiobooksExported++;
         }
       } catch (e) {
@@ -1663,7 +1677,8 @@ Future<bool> importRemoteBookFolder({
     'hibiki_remote_${DateTime.now().microsecondsSinceEpoch}.epub',
   ));
   try {
-    await backend.getAsset(epub.id, tmp, onProgress: onProgress);
+    await backend.getAsset(epub.id, tmp,
+        onProgress: syncTransferFractionOnly(onProgress));
     // 漫画包与 EPUB 共用同一个 `<title>.epub` 资产名（云盘 push 侧同契约），故按
     // **内容**嗅探分流：zip 根含 manga.json = 漫画书目录整树包，走 MangaImporter
     // 的既有两遍式校验落库；否则按 EPUB。与互联通道（host importBookFromFile /
