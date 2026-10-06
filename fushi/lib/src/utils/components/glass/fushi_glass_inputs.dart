@@ -74,7 +74,7 @@ bool _isSearchDecoration(InputDecoration decoration) {
   if (icon == null) return false;
   // 调用点的放大镜已迁到语义图标层 `FushiIcons.search`（FushiSymbols 字族码位，
   // 与 Icons.search 不相等）；只认旧 Material 图标会让全部搜索框丢掉胶囊形态
-  // ——MD3 退成 12 圆角方框、Apple 退成 48 高普通输入框（BUG-3045）。线框与
+  // ——MD3 退成 12 圆角方框、Apple 退成 48 高普通输入框（BUG-3054）。线框与
   // 实心两个字族都认。
   if (isFushiSymbol(icon) && icon.codePoint == FushiIcons.search.codePoint) {
     return true;
