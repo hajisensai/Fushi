@@ -144,7 +144,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
   final Future<void> Function(MediaCollectionRow collection)?
       onChooseTmdbOrdering;
 
-  /// 「在线搜索封面」（BUG-2955）：在资料源里搜作品、取它的封面图，返回下载好的
+  /// 「在线搜索封面」（BUG-2999）：在资料源里搜作品、取它的封面图，返回下载好的
   /// 临时文件（取消 / 失败返回 null，失败提示由回调自己给）。由库页注入——候选
   /// 搜索要刮削 controller，详情页不自造。null = 菜单项不渲染。
   final Future<File?> Function(String workTitle)? onPickOnlineCover;

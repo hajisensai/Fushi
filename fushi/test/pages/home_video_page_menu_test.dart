@@ -55,7 +55,7 @@ class _IdleScrapeRunner implements VideoSourceScrapeRunner {
       SourceScrapeReport(sourceIds: <int>[source.id]);
 }
 
-/// 支持手动候选搜索的 runner（BUG-2955 在线搜索封面）：只记录搜了什么。
+/// 支持手动候选搜索的 runner（BUG-2999 在线搜索封面）：只记录搜了什么。
 class _CoverSearchScrapeRunner extends _IdleScrapeRunner
     implements VideoSourceScrapeManualBinding {
   final List<String> queries = <String>[];
@@ -688,9 +688,9 @@ void main() {
     });
   });
 
-  // BUG-2955：设置封面曾经只剩「选择封面图片」（本地文件）。在线入口与「手动指定
+  // BUG-2999：设置封面曾经只剩「选择封面图片」（本地文件）。在线入口与「手动指定
   // 作品」共用同一条候选搜索，所以只有 controller 支持手动搜索时才画。
-  group('视频卡「在线搜索封面」（BUG-2955）', () {
+  group('视频卡「在线搜索封面」（BUG-2999）', () {
     testWidgets('支持手动搜索的 controller 下菜单有在线入口，点开按视频标题搜索',
         (WidgetTester tester) async {
       await seedTaggedVideo();

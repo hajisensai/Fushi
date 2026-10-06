@@ -143,7 +143,7 @@ void main() {
             return http.Response('[{"id":7,"name":"Test Show"}]', 200);
           }
           if (request.url.path.endsWith('/entries/7/files')) {
-            // 带集号的列表之外，还会再列一次全表补回整季压缩包（BUG-2956）。
+            // 带集号的列表之外，还会再列一次全表补回整季压缩包（BUG-3000）。
             expect(
               request.url.queryParameters['episode'],
               anyOf('2', isNull),

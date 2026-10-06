@@ -86,7 +86,7 @@ class VideoWorkDetailPage extends StatefulWidget {
   final Future<void> Function(MediaCollectionRow collection)?
       onChooseTmdbOrdering;
 
-  /// 透传给合集详情页的「在线搜索封面」（BUG-2955）。null = 不渲染该菜单项。
+  /// 透传给合集详情页的「在线搜索封面」（BUG-2999）。null = 不渲染该菜单项。
   final Future<File?> Function(String workTitle)? onPickOnlineCover;
 
   @override

@@ -729,9 +729,9 @@ void main() {
     expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
   });
 
-  // BUG-2956：截图里 key 输入框明明有值，顶部却报「请先填写 Jimaku API key」——
+  // BUG-3000：截图里 key 输入框明明有值，顶部却报「请先填写 Jimaku API key」——
   // 判据看的是「有没有 registry」而不是 key。key 填了还拿不到来源时，要说真实原因。
-  testWidgets('BUG-2956 key 已填但没有任何来源：不再报「请先填写 key」',
+  testWidgets('BUG-3000 key 已填但没有任何来源：不再报「请先填写 key」',
       (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();
     // 绑了系列 → 进页即直接搜来源（不经 AniList），走到无来源分支。

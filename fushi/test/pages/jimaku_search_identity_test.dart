@@ -490,7 +490,7 @@ void main() {
         findsOneWidget,
         reason: 'key 过期时用户换多少次关键词都不会好，必须把真实原因说出来',
       );
-      // BUG-2956：只给状态码用户仍看不出是 key 的问题，要直说。
+      // BUG-3000：只给状态码用户仍看不出是 key 的问题，要直说。
       expect(
         find.textContaining(
           t.video_subtitle_error_key_rejected(provider: 'Jimaku'),

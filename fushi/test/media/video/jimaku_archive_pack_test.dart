@@ -20,7 +20,7 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-2956 跟进：Jimaku 整季压缩包（zip 解包 / rar、7z 明确不支持）。
+/// BUG-3000 跟进：Jimaku 整季压缩包（zip 解包 / rar、7z 明确不支持）。
 ///
 /// files 响应按 Jimaku 真实形状（`{url, name, size, last_modified}`）伪造，压缩包
 /// 是内存里现编的 zip。

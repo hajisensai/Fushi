@@ -245,12 +245,12 @@ int? subtitleFailureStatusCode(Object? error) =>
 /// 拼法本身走 i18n（`video_subtitle_error_with_code`），不在这里写死全角括号——
 /// 中英文的括号形态不同，硬编码等于让英文界面也吃到全角括号。
 ///
-/// 鉴权被拒与连不上两类换成说清原因的文案（BUG-2956）：只给「搜索失败（HTTP 401）」
+/// 鉴权被拒与连不上两类换成说清原因的文案（BUG-3000）：只给「搜索失败（HTTP 401）」
 /// 用户看不出是 key 的问题，会继续换关键词瞎试。
 String describeSubtitleFailure(String baseMessage, Object? error) {
   final int? status = subtitleFailureStatusCode(error);
   final String message = switch (error) {
-    // 整季压缩包（BUG-2956 跟进）：解不开的格式 / 包里没有这一集。
+    // 整季压缩包（BUG-3000 跟进）：解不开的格式 / 包里没有这一集。
     ExternalProviderFailure(
       operation: kSubtitleArchiveOperation,
       kind: ExternalProviderFailureKind.unsupported,
@@ -605,7 +605,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }
 
   /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
-  /// key 却仍然没有来源 = 来源全被关掉了（BUG-2956）。
+  /// key 却仍然没有来源 = 来源全被关掉了（BUG-3000）。
   String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
       ? t.video_jimaku_no_key
       : t.video_subtitle_sources_all_disabled;
@@ -791,7 +791,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         ?.call();
     if (registry == null || registry.providers.isEmpty) {
       if (!mounted) return;
-      // BUG-2956：这里曾只把候选清空、不设错误——没有任何来源可问时页面却显示
+      // BUG-3000：这里曾只把候选清空、不设错误——没有任何来源可问时页面却显示
       // 「找不到字幕」，像是搜过了而 Jimaku 上没有。要说清是「没问」。
       setState(() {
         _candidates = const <JimakuCandidate>[];

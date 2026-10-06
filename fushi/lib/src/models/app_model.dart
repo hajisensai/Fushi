@@ -4872,7 +4872,7 @@ class AppModel with ChangeNotifier {
   /// 优先复用下载管线那一套（同一批 provider 实例、同一份 AJATT 目录缓存）。但
   /// 管线只在**浏览（下载）模块开着**、且 [startAnimeDownloadService] 跑完前面的
   /// 旧任务迁移 / torrent 会话恢复之后才启动，而「给一个视频找字幕」跟下不下载种子
-  /// 毫无关系。BUG-2956：字幕工作台曾直接读 [videoSubtitleRegistry]，管线没起来
+  /// 毫无关系。BUG-3000：字幕工作台曾直接读 [videoSubtitleRegistry]，管线没起来
   /// （模块关着 / 启动途中 / 启动抛错）时拿到 null，合集页就报「请先填写 Jimaku
   /// API key」、单集页静默显示「找不到字幕」——哪怕输入框里的 key 好好的。所以管线
   /// 不在时按同一份工厂现建一套，缓存复用；配置变更由

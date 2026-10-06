@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
-// BUG-2954：阅读器实时 hook（按钮布局 / 反转底栏 / 样式 / 排版热更新）是
+// BUG-3001：阅读器实时 hook（按钮布局 / 反转底栏 / 样式 / 排版热更新）是
 // ReaderFushiSource 上的静态回调。旧实现每个阅读器页 dispose 时无条件置 null；
 // 切卷走 pushReplacement，新页 initState 先登记、旧页转场结束才 dispose，于是
 // 仍在显示的新阅读器的 hook 被抹掉——之后在书内设置里改按钮位置，偏好写进去了

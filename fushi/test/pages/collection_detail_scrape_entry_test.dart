@@ -174,10 +174,10 @@ void main() {
     );
   });
 
-  // BUG-2955：设置封面曾经只剩本地文件——2026-08-23 换 canonical 资料源时旧
+  // BUG-2999：设置封面曾经只剩本地文件——2026-08-23 换 canonical 资料源时旧
   // 「在线匹配海报」整条删掉，没有接到新资料源上。在线入口由库页注入（候选搜索
   // 要刮削 controller），注入了就必须在菜单里、且真的调用注入的实现。
-  testWidgets('BUG-2955 未注入在线选图时不渲染在线搜索封面', (WidgetTester tester) async {
+  testWidgets('BUG-2999 未注入在线选图时不渲染在线搜索封面', (WidgetTester tester) async {
     useSurface(tester);
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
@@ -193,7 +193,7 @@ void main() {
     );
   });
 
-  testWidgets('BUG-2955 注入在线选图后管理菜单提供在线搜索封面并按合集名搜索',
+  testWidgets('BUG-2999 注入在线选图后管理菜单提供在线搜索封面并按合集名搜索',
       (WidgetTester tester) async {
     useSurface(tester);
     final List<String> searched = <String>[];

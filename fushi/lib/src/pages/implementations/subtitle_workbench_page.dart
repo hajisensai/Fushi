@@ -74,7 +74,7 @@ class SubtitleCollectionSpec {
 /// 工作台依赖的宿主能力（全部可注入，便于 widget 测试不碰 AppModel）。
 abstract interface class SubtitleWorkbenchHost {
   /// 交互式查字幕用的字幕来源（每次搜索 / 下载现取：填 key 会重建 runtime）。
-  /// null = 一个来源都没配。**不能**依赖下载管线是否已启动（BUG-2956）。
+  /// null = 一个来源都没配。**不能**依赖下载管线是否已启动（BUG-3000）。
   Future<VideoSubtitleRegistry?> subtitleRegistry();
   String get jimakuApiKey;
   Future<void> setJimakuApiKey(String key);

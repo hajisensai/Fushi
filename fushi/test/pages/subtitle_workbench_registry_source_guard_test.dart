@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2956 守卫：字幕工作台的字幕来源不得绑在下载管线的生命周期上。
+/// BUG-3000 守卫：字幕工作台的字幕来源不得绑在下载管线的生命周期上。
 ///
 /// `AppModel.videoSubtitleRegistry` 只在下载管线启动后才有值（浏览模块关着 / 启动
 /// 途中 / 启动抛错时恒为 null）。工作台曾直接读它，于是 key 明明填了，合集页报

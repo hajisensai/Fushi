@@ -1,4 +1,4 @@
-## BUG-2956 · Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕
+## BUG-3000 · Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕
 - **报告**：2026-10-05（用户：「字幕搜索有问题」，Windows 繁中 UI，Mirai Nikki VCB-Studio 合集。合集页 Jimaku API 金鑰框有值，顶部却红字「請先填寫 Jimaku API key」，番剧 chip 列出四条、来源「找不到字幕」；单集页集数 7 同样「找不到字幕」）
 - **真实性**：✅ 真 bug。key 本身读得对：输入框与 provider 装配都读偏好 `jimaku_api_key`（`fushi/lib/src/models/preferences_repository.dart:2048`、`fushi/lib/src/media/video/subtitle/configured_subtitle_providers.dart:35`）。真正的问题是**字幕工作台拿不到字幕来源 registry**：
   - `fushi/lib/src/pages/implementations/subtitle_workbench_page.dart:96` 生产宿主直接读 `appModel.videoSubtitleRegistry`。

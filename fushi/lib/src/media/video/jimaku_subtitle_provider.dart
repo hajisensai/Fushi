@@ -65,7 +65,7 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
           episode: episode,
           throwOnError: true,
         );
-        // 整季压缩包（BUG-2956 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
+        // 整季压缩包（BUG-3000 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
         // `Show (01-26).zip` 这类整季包猜不出单集，会被服务端滤掉。带集号查时再列
         // 一次不带集号的全表，只从里面补压缩包。
         final List<JimakuFile> packs = <JimakuFile>[

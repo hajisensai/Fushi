@@ -3247,7 +3247,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _pickCover(book);
             },
           ),
-          // 在线搜索封面（BUG-2955）：2026-08-23 把旧 Bangumi/TMDB 刮削链整条换成
+          // 在线搜索封面（BUG-2999）：2026-08-23 把旧 Bangumi/TMDB 刮削链整条换成
           // canonical 资料源时，单集菜单的「在线匹配海报」随旧弹窗一起删了、没有
           // 接到新资料源上，设置封面从此只剩本地文件。这里接回到 AniDB / MAL /
           // TMDB 的同一条候选搜索。

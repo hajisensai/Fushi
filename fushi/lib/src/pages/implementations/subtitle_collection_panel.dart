@@ -381,7 +381,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   /// 一个字幕来源都拿不到时的提示：没填 Jimaku key 才说「请先填写 key」；填了
-  /// key 却仍然没有来源 = 来源全被关掉了，不能再拿缺 key 糊弄（BUG-2956）。
+  /// key 却仍然没有来源 = 来源全被关掉了，不能再拿缺 key 糊弄（BUG-3000）。
   String _noSourceMessage() => _apiKeyCtrl.text.trim().isEmpty
       ? t.video_jimaku_no_key
       : t.video_subtitle_sources_all_disabled;
@@ -846,7 +846,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final List<VideoSubtitleCandidate> matches =
         source.index.byEpisode[episode] ?? const <VideoSubtitleCandidate>[];
     if (matches.isEmpty) {
-      // 整季包（BUG-2956 跟进）：没有单集文件的集，下载时从包里按集号拆。
+      // 整季包（BUG-3000 跟进）：没有单集文件的集，下载时从包里按集号拆。
       final SubtitleArchiveFormat? pack = source.unpackablePackFormat;
       if (pack != null) {
         return Text(

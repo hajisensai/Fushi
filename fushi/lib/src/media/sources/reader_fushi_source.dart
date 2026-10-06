@@ -218,7 +218,7 @@ class DeleteBookResult {
   final LocalFileDeleteReport localFiles;
 }
 
-/// 一个阅读器页登记给 [ReaderFushiSource] 的一组实时 hook（BUG-2954）。按对象
+/// 一个阅读器页登记给 [ReaderFushiSource] 的一组实时 hook（BUG-3001）。按对象
 /// 身份登记 / 注销，见 [ReaderFushiSource.attachLiveHooks]。
 class ReaderLiveHooks {
   const ReaderLiveHooks({
@@ -1267,7 +1267,7 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// reflow would otherwise zero `window.scrollY` and bounce to chapter start).
   static VoidCallback? onChromeReanchorLive;
 
-  /// 四个实时 hook 的持有者栈（BUG-2954）。同一时刻可能挂着不止一个阅读器页：
+  /// 四个实时 hook 的持有者栈（BUG-3001）。同一时刻可能挂着不止一个阅读器页：
   /// 切卷走 `pushReplacement`，新页 initState 注册 hook 时旧页要等转场结束才
   /// dispose；卡片来源也可能在一个阅读器上再叠开一个。旧实现由各页 dispose
   /// 无条件把四个 hook 置 null，后销毁的那一页会把仍在显示的阅读器的 hook 一起

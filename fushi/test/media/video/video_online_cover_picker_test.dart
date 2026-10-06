@@ -4,7 +4,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 
-/// BUG-2955：视频「在线搜索封面」从候选作品取封面图 URL 的判据。
+/// BUG-2999：视频「在线搜索封面」从候选作品取封面图 URL 的判据。
 void main() {
   const VideoMetadataLookup lookup = VideoMetadataLookup(
     provider: VideoMetadataProviderKind.anidb,

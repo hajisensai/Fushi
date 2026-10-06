@@ -95,9 +95,9 @@ void main() {
     );
   });
 
-  // BUG-2956：填了 key 却一个来源都拿不到（宿主给 null registry）时，曾经只清空
+  // BUG-3000：填了 key 却一个来源都拿不到（宿主给 null registry）时，曾经只清空
   // 候选、显示「找不到字幕」，像是 Jimaku 上没有——实际是根本没问。
-  testWidgets('BUG-2956 拿不到任何字幕来源时报真实原因，不显示成找不到字幕',
+  testWidgets('BUG-3000 拿不到任何字幕来源时报真实原因，不显示成找不到字幕',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;

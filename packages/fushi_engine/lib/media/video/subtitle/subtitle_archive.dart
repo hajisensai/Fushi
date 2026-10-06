@@ -1,7 +1,7 @@
 /// 字幕压缩包（整季包）解包：所有字幕来源共用的唯一实现。
 ///
 /// 最早只长在 SubDL 里（`extractSubdlSubtitles`）——SubDL 的下载体本来就是 zip。
-/// Jimaku 上大量老番只有整季 zip / rar / 7z（BUG-2956 跟进），于是抽到这里，
+/// Jimaku 上大量老番只有整季 zip / rar / 7z（BUG-3000 跟进），于是抽到这里，
 /// SubDL 与 Jimaku 共用同一套「解 zip → 只留文本字幕 → 按集号挑」的判据。
 ///
 /// 只能解 zip：仓库没有 RAR / 7z 解码依赖（`archive` 3.x 不支持这两种）。遇到它们

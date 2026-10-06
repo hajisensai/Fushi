@@ -2081,7 +2081,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _appearanceSheetOpen => _chrome.appearanceSheetOpen;
   set _appearanceSheetOpen(bool value) => _chrome.appearanceSheetOpen = value;
 
-  /// 本页登记在 [ReaderFushiSource] 持有者栈里的实时 hook（BUG-2954）。
+  /// 本页登记在 [ReaderFushiSource] 持有者栈里的实时 hook（BUG-3001）。
   ReaderLiveHooks? _liveHooks;
 
   // BUG-969：设置实时预览的合并执行器。拖 slider 时 onSettingsChangedLive 每个
@@ -2609,7 +2609,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     // (keyboard/gamepad) highlight mode; rebuild it when the mode flips so it
     // appears/disappears with the input device, not only on focus changes.
     FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
-    // BUG-2954：四个 hook 作为一组登记到持有者栈，dispose 只注销自己那组。
+    // BUG-3001：四个 hook 作为一组登记到持有者栈，dispose 只注销自己那组。
     _liveHooks = ReaderLiveHooks(
       settingsChanged: () {
         if (!mounted) return;
@@ -3284,7 +3284,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       ReaderFushiPage.debugFlushReadingStats = null;
       return true;
     }());
-    // BUG-2954：只注销自己登记的那组；切卷（pushReplacement）时新页已先登记，
+    // BUG-3001：只注销自己登记的那组；切卷（pushReplacement）时新页已先登记，
     // 旧页晚于它 dispose 不能把新页的 hook 一起置 null。
     final ReaderLiveHooks? liveHooks = _liveHooks;
     if (liveHooks != null) {

@@ -10,7 +10,7 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-/// BUG-2956：Jimaku 请求本身的契约——按 https://jimaku.cc/api/docs 的真实响应形状
+/// BUG-3000：Jimaku 请求本身的契约——按 https://jimaku.cc/api/docs 的真实响应形状
 /// 伪造 HTTP，钉住鉴权头、选中番剧（AniList id）后的检索参数、集数参数，以及
 /// 401 不会被吞成「找不到字幕」。
 ///
