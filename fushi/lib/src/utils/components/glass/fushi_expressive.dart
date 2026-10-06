@@ -122,12 +122,17 @@ class FushiSpring {
       _controller.value = target;
       return;
     }
+    // snapToEnd：模拟按容差（1e-3）判定结束时把值吸到目标上。不吸附的话控制器
+    // 停在离目标约千分之一处，位移 / 尺寸永久带亚像素残差（浮动工具条收起后
+    // 底边仍探进叠放区、展开后不贴顶，BUG-3046）。与
+    // [FushiSpringSpec.simulation] 同口径。
     _controller.animateWith(
       SpringSimulation(
         _spring,
         _controller.value,
         target,
         _controller.velocity,
+        snapToEnd: true,
       ),
     );
   }
