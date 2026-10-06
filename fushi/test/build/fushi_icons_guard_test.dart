@@ -8,6 +8,13 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
+import '../helpers/scan_scale.dart';
+import '../helpers/source_guard.dart';
+
+int _legacyIconCount(String source) => RegExp(
+  r'(?<![\w.])Icons\.[a-z0-9_]+',
+).allMatches(maskCommentsAndStrings(source)).length;
+
 /// M3E 语义图标层守卫（2026-10-05「图标和配色也统一成 m3e」）。
 ///
 /// 1. 映射层自洽：语义名唯一、实心版都在实心字族、Apple 设计系统每个语义名都有
@@ -19,6 +26,21 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 ///    `Icons.*`；存量文件只能减不能增。迁完一个文件就把它的计数调低 / 删掉。
 ///    确需新增语义名：改 `tool/icons/gen_fushi_symbols.py` 的 SYMBOLS 表重跑。
 void main() {
+  test('棘轮扫描只统计真实 Icons 引用，忽略生成注释与字符串', () {
+    expect(
+      _legacyIconCount('''
+/// 取代 Icons.comment_outlined / Icons.comment
+/* Icons.comments_disabled */
+final example = 'Icons.comment';
+final icon = Icons.comment_outlined;
+final solid = Icons.comment;
+final semantic = FushiIcons.danmaku;
+final apple = CupertinoIcons.chat_bubble;
+'''),
+      2,
+    );
+  });
+
   group('映射层', () {
     test('语义名与码位：线框字族、无重复名、实心版落在实心字族', () {
       expect(FushiIcons.all, isNotEmpty);
@@ -84,7 +106,9 @@ void main() {
         'lib/src/settings',
       ).listSync()) {
         if (f is! File || !f.path.endsWith('.dart')) continue;
-        for (final RegExpMatch m in destIcon.allMatches(f.readAsStringSync())) {
+        for (final RegExpMatch m in destIcon.allMatches(
+          maskCommentsAndStrings(f.readAsStringSync()),
+        )) {
           final String expr = m.group(1)!.trim();
           if (RegExp(r'(?<![\w.])Icons\.').hasMatch(expr)) {
             hits.add('${f.uri.pathSegments.last}: $expr');
@@ -103,17 +127,24 @@ void main() {
               ).readAsStringSync(),
             )
             as Map<String, dynamic>;
-    final RegExp legacy = RegExp(r'(?<![\w.])Icons\.[a-z0-9_]+');
     final List<String> over = <String>[];
+    int scanned = 0;
     for (final FileSystemEntity f in Directory(
       'lib',
     ).listSync(recursive: true)) {
       if (f is! File || !f.path.endsWith('.dart')) continue;
+      scanned++;
       final String rel = f.path.replaceAll(r'\', '/');
-      final int n = legacy.allMatches(f.readAsStringSync()).length;
+      final int n = _legacyIconCount(f.readAsStringSync());
       final int cap = (allow[rel] as int?) ?? 0;
       if (n > cap) over.add('$rel: $n > $cap');
     }
+    expectScanScale(
+      scanned,
+      what: 'lib Dart files for semantic icon ratchet',
+      atLeast: 1200,
+      measured: 1550,
+    );
     expect(
       over,
       isEmpty,
