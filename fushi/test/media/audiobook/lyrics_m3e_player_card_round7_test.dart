@@ -143,4 +143,72 @@ void main() {
     expect(sleepAnchor!.context.mounted, isTrue);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  for (final double width in <double>[320, 280]) {
+    testWidgets(
+      '$width wide new seek buttons retain 48 dp interactive bounds',
+      (WidgetTester tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = Size(width, 640);
+        addTearDown(tester.view.reset);
+        final List<int> relativeSeeks = <int>[];
+        final List<String> otherActions = <String>[];
+        await tester.pumpWidget(
+          _app(
+            textScale: 1,
+            platform: TargetPlatform.android,
+            onSeekRelative: relativeSeeks.add,
+            onOtherAction: otherActions.add,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        final List<Size> sizes = <Size>[];
+        final List<List<int>> centerHits = <List<int>>[];
+        final List<List<int>> edgeHits = <List<int>>[];
+        for (final String key in <String>[
+          'lyrics_seek_back_button',
+          'lyrics_seek_forward_button',
+        ]) {
+          final RenderBox box = tester.renderObject<RenderBox>(
+            find.byKey(ValueKey<String>(key)),
+          );
+          final Offset origin = box.localToGlobal(Offset.zero);
+          final Offset end = box.localToGlobal(
+            box.size.bottomRight(Offset.zero),
+          );
+          sizes.add(Size(end.dx - origin.dx, end.dy - origin.dy));
+          final Offset center = box.localToGlobal(box.size.center(Offset.zero));
+          relativeSeeks.clear();
+          await tester.tapAt(center);
+          await tester.pump();
+          centerHits.add(List<int>.of(relativeSeeks));
+          relativeSeeks.clear();
+          // A 48 dp hit region includes this point. This is beyond the measured
+          // 44.67 dp transformed box (the pre-fix 320 layout), so it detects a
+          // real miss, not just scaling.
+          await tester.tapAt(center + const Offset(0, 23));
+          await tester.pump();
+          edgeHits.add(List<int>.of(relativeSeeks));
+        }
+        await tester.pumpWidget(const SizedBox.shrink());
+        final String evidence =
+            'sizes=$sizes centerHits=$centerHits edgeHits=$edgeHits '
+            'otherActions=$otherActions';
+        debugPrint(evidence);
+        expect(centerHits, <List<int>>[
+          <int>[-10],
+          <int>[10],
+        ], reason: evidence);
+        expect(edgeHits, <List<int>>[
+          <int>[-10],
+          <int>[10],
+        ], reason: evidence);
+        expect(otherActions, isEmpty, reason: evidence);
+        for (final Size size in sizes) {
+          expect(size.width, greaterThanOrEqualTo(48), reason: evidence);
+          expect(size.height, greaterThanOrEqualTo(48), reason: evidence);
+        }
+      },
+    );
+  }
 }

@@ -1552,6 +1552,8 @@ class _TransportGroup extends StatelessWidget {
     required this.playSize,
     required this.sideSize,
     required this.sideWidth,
+    this.spacing = 8,
+    this.showRelativeSeek = true,
   });
 
   final bool isPlaying;
@@ -1559,21 +1561,21 @@ class _TransportGroup extends StatelessWidget {
   final double playSize;
   final FushiIconButtonSize sideSize;
   final FushiIconButtonWidth sideWidth;
+  final double spacing;
+
+  /// false = ±10 秒不在这一行（窄屏放不下时挪到进度条两侧，见
+  /// [_NarrowControlBar]）。
+  final bool showRelativeSeek;
 
   @override
   Widget build(BuildContext context) {
-    final ValueChanged<int>? seekBy = callbacks.onSeekRelative;
+    final ValueChanged<int>? seekBy = showRelativeSeek
+        ? callbacks.onSeekRelative
+        : null;
     return FushiButtonGroup(
-      spacing: 8,
+      spacing: spacing,
       children: <Widget>[
-        if (seekBy != null)
-          FushiIconButtonControl.filledTonal(
-            key: const ValueKey<String>('lyrics_seek_back_button'),
-            size: FushiIconButtonSize.s,
-            tooltip: '-10s',
-            onPressed: () => seekBy(-10),
-            icon: const FushiIcon(FushiIcons.replay10),
-          ),
+        if (seekBy != null) _relativeSeekButton(-10, seekBy),
         FushiIconButtonControl.filledTonal(
           size: sideSize,
           width: sideWidth,
@@ -1593,17 +1595,24 @@ class _TransportGroup extends StatelessWidget {
           onPressed: callbacks.onNextCue,
           icon: const FushiIcon(FushiIcons.skipNext),
         ),
-        if (seekBy != null)
-          FushiIconButtonControl.filledTonal(
-            key: const ValueKey<String>('lyrics_seek_forward_button'),
-            size: FushiIconButtonSize.s,
-            tooltip: '+10s',
-            onPressed: () => seekBy(10),
-            icon: const FushiIcon(FushiIcons.forward10),
-          ),
+        if (seekBy != null) _relativeSeekButton(10, seekBy),
       ],
     );
   }
+}
+
+/// ±10 秒小号 tonal 圆钮（播放键组里或窄屏进度条两侧共用同一颗）。
+Widget _relativeSeekButton(int seconds, ValueChanged<int> seekBy) {
+  final bool back = seconds < 0;
+  return FushiIconButtonControl.filledTonal(
+    key: ValueKey<String>(
+      back ? 'lyrics_seek_back_button' : 'lyrics_seek_forward_button',
+    ),
+    size: FushiIconButtonSize.s,
+    tooltip: back ? '-10s' : '+10s',
+    onPressed: () => seekBy(seconds),
+    icon: FushiIcon(back ? FushiIcons.replay10 : FushiIcons.forward10),
+  );
 }
 
 /// 大号 Expressive 播放键：播放中是圆、暂停时是圆角方（圆角 = 边长 30%），两态
@@ -2023,6 +2032,29 @@ class _NarrowControlBar extends StatelessWidget {
   /// 头行：小封面 + 章名（让位）+ 倍速·睡眠·⋯ 胶囊（自然尺寸，不被压扁）。
   /// 宽度不够时先省掉小封面，再不够连章名一起省；胶囊本身比整行还宽的极端
   /// 宽度才等比缩小兜底，不溢出（HBK048：280 宽右溢 2.9px）。
+  /// 播放键行怎么排（HBK049）：之前五颗键整组 FittedBox，320 宽时连 ±10 秒
+  /// 一起缩到 44.67，触控平台偏中心点按落空。现在按命中区的真实宽度（触控
+  /// 平台每颗至少 48）挑一档：放得下就原样；放不下先收间距、播放键 64→56；
+  /// 再放不下把 ±10 秒挪到进度条两侧，播放键行只留上一句 / 播放 / 下一句。
+  ({double playSize, double spacing, bool inlineSeek}) _transportLayout() {
+    if (callbacks.onSeekRelative == null) {
+      return (playSize: 64, spacing: 8, inlineSeek: false);
+    }
+    final double tap = geometry.tapDimension;
+    final double seekWidth = math.max(40, tap);
+    final double sideWidth = math.max(48, tap);
+    double width(double play, double spacing) =>
+        2 * seekWidth + 2 * sideWidth + play + 4 * spacing;
+    final double inner = geometry.innerWidth;
+    if (width(64, 8) <= inner) {
+      return (playSize: 64, spacing: 8, inlineSeek: true);
+    }
+    if (width(56, 4) <= inner) {
+      return (playSize: 56, spacing: 4, inlineSeek: true);
+    }
+    return (playSize: 64, spacing: 8, inlineSeek: false);
+  }
+
   Widget _buildHeader(String chapter) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -2083,6 +2115,11 @@ class _NarrowControlBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String chapter = (data.chapterLabel ?? '').trim();
+    final ({double playSize, double spacing, bool inlineSeek}) transport =
+        _transportLayout();
+    final ValueChanged<int>? seekAside = transport.inlineSeek
+        ? null
+        : callbacks.onSeekRelative;
     return _SpringEntrance(
       child: _PlayerCard(
         padding: const EdgeInsets.all(_kNarrowCardPadding),
@@ -2097,30 +2134,47 @@ class _NarrowControlBar extends StatelessWidget {
             const SizedBox(height: 6),
             SizedBox(
               height: geometry.seekRowHeight,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: _WavySeekBar(
-                    clock: data.clock,
-                    isPlaying: data.isPlaying,
-                    onSeek: callbacks.onSeek,
-                    strokeWidth: 5,
-                    barHeight: _kNarrowSeekBarHeight,
+              child: Row(
+                children: <Widget>[
+                  if (seekAside != null) ...<Widget>[
+                    _relativeSeekButton(-10, seekAside),
+                    const SizedBox(width: 4),
+                  ],
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: _WavySeekBar(
+                          clock: data.clock,
+                          isPlaying: data.isPlaying,
+                          onSeek: callbacks.onSeek,
+                          strokeWidth: 5,
+                          barHeight: _kNarrowSeekBarHeight,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  if (seekAside != null) ...<Widget>[
+                    const SizedBox(width: 4),
+                    _relativeSeekButton(10, seekAside),
+                  ],
+                ],
               ),
             ),
             const SizedBox(height: 8),
             SizedBox(
               height: _kNarrowTransportHeight,
-              // 极窄宽度（< 320）下整行等比缩小，不溢出。
+              // 正常宽度下各键自然尺寸；只有连 ±10 秒挪走后都放不下的极端宽度
+              // 才等比缩小兜底。
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: _TransportGroup(
                   isPlaying: data.isPlaying,
                   callbacks: callbacks,
-                  playSize: 64,
+                  playSize: transport.playSize,
+                  spacing: transport.spacing,
+                  showRelativeSeek: transport.inlineSeek,
                   sideSize: FushiIconButtonSize.m,
                   sideWidth: FushiIconButtonWidth.narrow,
                 ),
