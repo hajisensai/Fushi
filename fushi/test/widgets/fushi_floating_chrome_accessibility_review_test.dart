@@ -7,6 +7,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/section_visibility.dart';
 
 Widget _app(
   Widget child, {
@@ -159,16 +160,15 @@ void main() {
     int hiddenSelectionExits = 0;
     await tester.pumpWidget(_app(const Scaffold(body: Text('Landing route'))));
     final NavigatorState navigator = tester.state(find.byType(Navigator));
-    // This is the same PopScope contract used by the reader/video multi-select
-    // pages. The real shell, Offstage, ModalRoute and back dispatch are exercised.
+    // This is the same SectionPopScope contract used by the reader/video
+    // multi-select pages. The real shell, Offstage, ModalRoute and back
+    // dispatch are exercised.
     navigator.push<void>(
       MaterialPageRoute<void>(
         builder: (BuildContext context) => _libraryShell(
-          PopScope<void>(
-            canPop: false,
-            onPopInvokedWithResult: (bool didPop, Object? result) {
-              if (!didPop) hiddenSelectionExits++;
-            },
+          SectionPopScope(
+            intercepting: true,
+            onIntercept: () => hiddenSelectionExits++,
             child: const Text('Selected library items'),
           ),
         ),
@@ -187,9 +187,7 @@ void main() {
     );
     expect(find.text('Landing route'), findsOneWidget);
     expect(find.text('Visible browse content'), findsNothing);
-    // Still red on the integration HEAD (hidden PopScope consumes one back);
-    // tracked by the HBK-AUDIT-017 task, which owns media_library_shell.
-  }, skip: true);
+  });
 
   for (final bool reducedMotion in <bool>[false, true]) {
     testWidgets(
