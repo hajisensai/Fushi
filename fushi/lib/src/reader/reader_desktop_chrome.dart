@@ -20,6 +20,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/physics.dart' show SpringSimulation;
+import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -750,6 +751,7 @@ Future<T?> showReaderSideSheet<T>({
     from: context,
     to: Navigator.of(context).context,
   );
+  final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
   final bool motion = fushiMotionEnabled(context);
   final Size window = MediaQuery.sizeOf(context);
   final ReaderPanelPresentation openedAs = readerPanelPresentationFor(
@@ -800,7 +802,14 @@ Future<T?> showReaderSideSheet<T>({
         );
       }
 
-      return themes.wrap(Builder(builder: buildSheet));
+      final Widget child = Builder(builder: buildSheet);
+      if (themeHost == null) return themes.wrap(child);
+      return _ReaderSideSheetThemes(
+        source: context,
+        initialThemes: themes,
+        changes: themeHost.themeChanges,
+        child: child,
+      );
     },
     transitionBuilder: (
       BuildContext ctx,
@@ -832,6 +841,58 @@ Future<T?> showReaderSideSheet<T>({
       );
     },
   );
+}
+
+/// BUG-3008: a capture is a snapshot, even when the source Theme merely passes
+/// through the app theme. Keep the same panel subtree and refresh the snapshot
+/// after the reader host publishes its effective theme. Never look up ancestors
+/// during build: the source page may be deactivating before this route closes.
+class _ReaderSideSheetThemes extends StatefulWidget {
+  const _ReaderSideSheetThemes({
+    required this.source,
+    required this.initialThemes,
+    required this.changes,
+    required this.child,
+  });
+
+  final BuildContext source;
+  final CapturedThemes initialThemes;
+  final ValueListenable<ThemeData?> changes;
+  final Widget child;
+
+  @override
+  State<_ReaderSideSheetThemes> createState() => _ReaderSideSheetThemesState();
+}
+
+class _ReaderSideSheetThemesState extends State<_ReaderSideSheetThemes> {
+  late CapturedThemes _themes;
+
+  @override
+  void initState() {
+    super.initState();
+    _themes = widget.initialThemes;
+    widget.changes.addListener(_refreshThemes);
+    // Also cover a theme change between push and the route's first build.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshThemes());
+  }
+
+  void _refreshThemes() {
+    if (!mounted || !widget.source.mounted) return;
+    final CapturedThemes themes = InheritedTheme.capture(
+      from: widget.source,
+      to: Navigator.of(widget.source).context,
+    );
+    setState(() => _themes = themes);
+  }
+
+  @override
+  void dispose() {
+    widget.changes.removeListener(_refreshThemes);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => _themes.wrap(widget.child);
 }
 
 /// 面板底色：Apple = 分组页底（白 / 纯黑），里面的设置分组卡
