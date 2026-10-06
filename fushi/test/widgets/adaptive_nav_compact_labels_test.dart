@@ -109,9 +109,7 @@ void main() {
 
   // 2026-10-06 悬浮底栏：放不下时不再把标签压成「浏览…」，而是按模块顺序
   // 从前往后放，剩下的收进最右的「更多」。出现在栏上的入口标签都完整显示。
-  testWidgets('360dp 宽 8 个入口：栏上入口标签完整显示，其余收进「更多」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('360dp 宽 8 个入口：栏上入口标签完整显示，其余收进「更多」', (WidgetTester tester) async {
     int tapped = -1;
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
@@ -152,6 +150,13 @@ void main() {
 
     // 「更多」菜单列出其余入口，选中即切过去。
     await tester.tap(find.text('More'));
+    await tester.pump();
+    // BUG-3005：逐帧经过进场中段，不能只看动画落定后的菜单。原生菜单
+    // 会把 route 曲线的值送入 Interval，欠阻尼回弹越过 1 就会断言。
+    for (int frame = 0; frame < 24; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.takeException(), isNull, reason: '菜单进场第 $frame 帧');
+    }
     await tester.pumpAndSettle();
     for (int i = shown.length; i < 8; i++) {
       expect(find.text('Tab$i'), findsOneWidget, reason: '菜单里有 Tab$i');
@@ -161,9 +166,7 @@ void main() {
     expect(tapped, 7);
   });
 
-  testWidgets('长标签放不下时整条收进「更多」而不是省略或溢出', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('长标签放不下时整条收进「更多」而不是省略或溢出', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);

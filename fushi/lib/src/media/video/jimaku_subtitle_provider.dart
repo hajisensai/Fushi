@@ -95,6 +95,7 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
               season: request.effectiveSeason,
               providerPriority: priority,
               wantedEpisode: episode,
+              requestedLanguages: request.languages,
             ),
           );
         }
@@ -149,11 +150,22 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
       // 整季包：与 SubDL 同一套解包（RAR / 7z 抛 unsupported）。单集按搜索时的集号
       // 从包内挑，挑不出就报错——给第 1 集的字幕等于静默装错；全部文件随下载带回，
       // 合集批量据此逐集拆分。
-      final List<ArchivedSubtitle> entries = extractArchivedSubtitles(
+      final List<ArchivedSubtitle> extracted = extractArchivedSubtitles(
         bytes,
         fallbackFileName: candidate.file.name,
         providerId: 'jimaku',
       );
+      // 搜索时无法从包名判断语言，只能解包后执行同一硬过滤。把过滤后的条目交给
+      // 批量下载，避免它重新选回被用户明确排除的语言；条目语言优先于包名。
+      final List<ArchivedSubtitle> entries = extracted
+          .where(
+            (ArchivedSubtitle entry) =>
+                candidate.requestedLanguages.isEmpty ||
+                candidate.requestedLanguages.contains(
+                  detectSubtitleLanguage(entry.fileName) ?? candidate.language,
+                ),
+          )
+          .toList();
       final ArchivedSubtitle? picked = pickArchivedSubtitle(
         entries,
         episode: candidate.wantedEpisode,
@@ -173,9 +185,7 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
       return VideoSubtitleDownload(
         bytes: picked.bytes,
         fileName: picked.fileName,
-        language: candidate.language.isNotEmpty
-            ? candidate.language
-            : detectSubtitleLanguage(picked.fileName) ?? '',
+        language: detectSubtitleLanguage(picked.fileName) ?? candidate.language,
         archiveEntries: entries,
       );
     } on Object catch (error) {
@@ -219,30 +229,35 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
     required String language,
     required int? season,
     required int providerPriority,
+    required List<String> requestedLanguages,
     this.wantedEpisode,
-  }) : super(
-          providerId: 'jimaku',
-          remoteId: '${entry.id}:${file.name}',
-          fileName: file.name,
-          language: language,
-          providerPriority: providerPriority,
-          releaseName: entry.name,
-          season: season,
-          // 整季包没有单集集号（`(01-26).zip` 会被解析成第 1 集），否则批量会把整包
-          // 当成第 1 集的字幕。
-          episode: file.archiveFormat == null ? file.episode : null,
-          fileSize: file.size,
-          uploadedAtMs: file.lastModifiedMs,
-          collectionId: '${entry.id}',
-          collectionLabel: entry.name,
-          archiveFormat: file.archiveFormat,
-        );
+  }) : requestedLanguages = List<String>.unmodifiable(requestedLanguages),
+       super(
+         providerId: 'jimaku',
+         remoteId: '${entry.id}:${file.name}',
+         fileName: file.name,
+         language: language,
+         providerPriority: providerPriority,
+         releaseName: entry.name,
+         season: season,
+         // 整季包没有单集集号（`(01-26).zip` 会被解析成第 1 集），否则批量会把整包
+         // 当成第 1 集的字幕。
+         episode: file.archiveFormat == null ? file.episode : null,
+         fileSize: file.size,
+         uploadedAtMs: file.lastModifiedMs,
+         collectionId: '${entry.id}',
+         collectionLabel: entry.name,
+         archiveFormat: file.archiveFormat,
+       );
 
   final JimakuEntry entry;
   final JimakuFile file;
 
   /// 搜索时请求的集号：整季包下载后按它从包内挑文件（null = 没给集号）。
   final int? wantedEpisode;
+
+  /// 显式语言硬过滤：无语言标签的压缩包延迟到解包后按内部文件名判断。
+  final List<String> requestedLanguages;
 }
 
 ExternalProviderFailure _jimakuFailure(String operation, Object error) {

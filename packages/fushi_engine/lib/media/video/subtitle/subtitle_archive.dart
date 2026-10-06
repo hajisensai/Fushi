@@ -150,18 +150,24 @@ List<ArchivedSubtitle> extractArchivedSubtitles(
 
 /// 多文件包里挑出要用的那一个。纯函数，便于单测。
 ///
-/// 只有一个直接用；没给集号用第一个（zip 内顺序通常就是集序）；给了集号按文件名
+/// 没给集号用第一个（zip 内顺序通常就是集序）；给了集号按文件名
 /// 解析集号（[parseSubtitleEpisode]）取命中的第一个。命中不了时：
 /// [fallbackToFirst] 为 true 退回第一个（SubDL 的既有语义：它的包由服务端按集号
 /// 区间圈过）；为 false 返回 null——整季包里挑不出这一集时，给第一集的字幕等于
-/// 静默装错（Jimaku 用这一档）。
+/// 静默装错（Jimaku 用这一档）。单文件且无法解析集号时保留直接使用的兼容行为；
+/// 但文件名带明确集号时，严格模式仍须匹配请求，不能把另一集当成唯一候选直接使用。
 ArchivedSubtitle? pickArchivedSubtitle(
   List<ArchivedSubtitle> files, {
   int? episode,
   bool fallbackToFirst = true,
 }) {
   if (files.isEmpty) return null;
-  if (files.length == 1 || episode == null) return files.first;
+  if (episode == null) return files.first;
+  if (files.length == 1 &&
+      (fallbackToFirst ||
+          parseSubtitleEpisode(files.single.fileName) == null)) {
+    return files.single;
+  }
   for (final ArchivedSubtitle file in files) {
     if (parseSubtitleEpisode(file.fileName) == episode) return file;
   }

@@ -104,19 +104,21 @@ class _FakeJimaku {
   });
 }
 
-VideoSubtitleSearchRequest _request({int? episode}) =>
-    VideoSubtitleSearchRequest(
-      media: VideoMediaReference(
-        providerId: 'anilist',
-        mediaId: '10620',
-        mediaKind: VideoMetadataMediaKind.tv,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-        title: 'Mirai Nikki',
-        anilistId: 10620,
-      ),
-      episode: episode,
-      languages: const <String>['ja'],
-    );
+VideoSubtitleSearchRequest _request({
+  int? episode,
+  List<String> languages = const <String>['ja'],
+}) => VideoSubtitleSearchRequest(
+  media: VideoMediaReference(
+    providerId: 'anilist',
+    mediaId: '10620',
+    mediaKind: VideoMetadataMediaKind.tv,
+    discoveryCategory: VideoDiscoveryCategory.anime,
+    title: 'Mirai Nikki',
+    anilistId: 10620,
+  ),
+  episode: episode,
+  languages: languages,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -220,6 +222,73 @@ void main() {
     );
   });
 
+  for (final String fileName in <String>[
+    '[Group] Mirai Nikki - 02.ja.srt',
+    'subtitle.ja.srt',
+  ]) {
+    test('单文件包：匹配或未标集号的 $fileName 保留可下载', () async {
+      final _FakeJimaku fake = _FakeJimaku(
+        zipBytes: _zip(<String, String>{fileName: _srt(2)}),
+      );
+      final JimakuVideoSubtitleProvider provider = providerFor(fake);
+      final VideoSubtitleCandidate zip =
+          (await provider.search(_request(episode: 2))).items.firstWhere(
+            (VideoSubtitleCandidate c) => c.fileName.endsWith('.zip'),
+          );
+
+      final VideoSubtitleDownload download = await provider.download(zip);
+
+      expect(download.fileName, fileName);
+      expect(utf8.decode(download.bytes), contains('ep2'));
+    });
+  }
+
+  test('单文件包：明确是其他集时不能绕过严格集号匹配', () async {
+    final _FakeJimaku fake = _FakeJimaku(
+      zipBytes: _zip(<String, String>{
+        '[Group] Mirai Nikki - 01.ja.srt': _srt(1),
+        'readme.txt': 'not a subtitle',
+      }),
+    );
+    final JimakuVideoSubtitleProvider provider = providerFor(fake);
+    final VideoSubtitleCandidate zip =
+        (await provider.search(_request(episode: 9))).items.firstWhere(
+          (VideoSubtitleCandidate c) => c.fileName.endsWith('.zip'),
+        );
+
+    await expectLater(
+      provider.download(zip),
+      throwsA(
+        isA<ExternalProviderFailure>()
+            .having(
+              (ExternalProviderFailure f) => f.kind,
+              'kind',
+              ExternalProviderFailureKind.notFound,
+            )
+            .having(
+              (ExternalProviderFailure f) => f.operation,
+              'operation',
+              kSubtitleArchiveOperation,
+            ),
+      ),
+    );
+  });
+
+  test('单文件包：SubDL 的非严格回退行为不变', () {
+    final ArchivedSubtitle only = ArchivedSubtitle(
+      fileName: 'Mirai Nikki - 01.ja.srt',
+      bytes: Uint8List.fromList(utf8.encode(_srt(1))),
+    );
+    expect(
+      pickArchivedSubtitle(<ArchivedSubtitle>[only], episode: 9),
+      same(only),
+    );
+    expect(
+      pickArchivedSubtitle(<ArchivedSubtitle>[only], fallbackToFirst: false),
+      same(only),
+    );
+  });
+
   test('RAR 包下载给出「暂不支持解包」，不把压缩流当字幕落盘', () async {
     final _FakeJimaku fake = _FakeJimaku(zipBytes: pack);
     final JimakuVideoSubtitleProvider provider = providerFor(fake);
@@ -238,6 +307,121 @@ void main() {
       t.video_subtitle_error_archive_unsupported,
     );
   });
+
+  test('混合语言包：显式日语过滤在解包后生效，批量条目也不带回英文', () async {
+    final _FakeJimaku fake = _FakeJimaku(
+      zipBytes: _zip(<String, String>{
+        'Mirai Nikki - 02.en.srt': _srt(2),
+        'Mirai Nikki - 02.ja.srt': _srt(2),
+      }),
+    );
+    final JimakuVideoSubtitleProvider provider = providerFor(fake);
+    final VideoSubtitleCandidate zip =
+        (await provider.search(_request(episode: 2))).items.firstWhere(
+          (VideoSubtitleCandidate c) => c.fileName.endsWith('.zip'),
+        );
+
+    final VideoSubtitleDownload download = await provider.download(zip);
+
+    expect(download.fileName, 'Mirai Nikki - 02.ja.srt');
+    expect(download.language, 'ja');
+    expect(
+      download.archiveEntries.map((ArchivedSubtitle e) => e.fileName),
+      <String>['Mirai Nikki - 02.ja.srt'],
+    );
+  });
+
+  for (final String rejectedName in <String>[
+    'Mirai Nikki - 02.en.srt',
+    'subtitle.srt',
+  ]) {
+    test('混合语言包：明确只要日语时不采用 $rejectedName', () async {
+      final _FakeJimaku fake = _FakeJimaku(
+        zipBytes: _zip(<String, String>{rejectedName: _srt(2)}),
+      );
+      final JimakuVideoSubtitleProvider provider = providerFor(fake);
+      final VideoSubtitleCandidate zip =
+          (await provider.search(_request(episode: 2))).items.firstWhere(
+            (VideoSubtitleCandidate c) => c.fileName.endsWith('.zip'),
+          );
+      await expectLater(
+        provider.download(zip),
+        throwsA(
+          isA<ExternalProviderFailure>().having(
+            (ExternalProviderFailure f) => f.kind,
+            'kind',
+            ExternalProviderFailureKind.notFound,
+          ),
+        ),
+      );
+    });
+  }
+
+  test('无语言单文件包：未要求硬过滤时仍可下载', () async {
+    final _FakeJimaku fake = _FakeJimaku(
+      zipBytes: _zip(<String, String>{'subtitle.srt': _srt(2)}),
+    );
+    final JimakuVideoSubtitleProvider provider = providerFor(fake);
+    final VideoSubtitleCandidate zip =
+        (await provider.search(
+          _request(episode: 2, languages: const <String>[]),
+        )).items.firstWhere(
+          (VideoSubtitleCandidate c) => c.fileName.endsWith('.zip'),
+        );
+    final VideoSubtitleDownload download = await provider.download(zip);
+    expect(download.fileName, 'subtitle.srt');
+    expect(download.language, isEmpty);
+  });
+
+  for (final String preferred in <String>['ja', 'en']) {
+    test('合集混合语言包：$preferred 优先，缺首选仍回退并逐文件标记语言', () async {
+      final _FakeJimaku fake = _FakeJimaku(
+        zipBytes: _zip(<String, String>{
+          'Mirai Nikki - 01.en.srt': _srt(1),
+          'Mirai Nikki - 01.ja.srt': _srt(1),
+          'Mirai Nikki - 02.en.srt': _srt(2),
+          'Mirai Nikki - 03.ja.srt': _srt(3),
+        }),
+      );
+      final JimakuVideoSubtitleProvider provider = providerFor(fake);
+      final List<VideoSubtitleCandidate> candidates = (await provider.search(
+        _request(languages: const <String>[]),
+      )).items;
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'jimaku_pack_languages',
+      );
+      addTearDown(() => tmp.delete(recursive: true));
+
+      final List<SubtitleBatchItem> results = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: candidates,
+        targets: <SubtitleBatchTarget>[
+          for (int i = 1; i <= 3; i++)
+            SubtitleBatchTarget(
+              bookUid: 'video/ep$i',
+              title: 'Mirai Nikki - 0$i',
+              videoPath: '/v/Mirai Nikki - 0$i.mkv',
+              sortIndex: i - 1,
+              isStream: false,
+            ),
+        ],
+        saveDirectory: tmp.path,
+        preferredLanguage: preferred,
+      );
+
+      expect(
+        results.map((SubtitleBatchItem item) => item.status),
+        everyElement(SubtitleBatchStatus.done),
+      );
+      expect(results.map((SubtitleBatchItem item) => item.language), <String>[
+        preferred,
+        'en',
+        'ja',
+      ]);
+      expect(results.first.subtitlePath, endsWith('01.$preferred.srt'));
+      expect(fake.zipDownloads, 1);
+    });
+  }
 
   test('合集：整季 zip 只下载一次，按集号逐集拆分落盘', () async {
     final _FakeJimaku fake = _FakeJimaku(zipBytes: pack);

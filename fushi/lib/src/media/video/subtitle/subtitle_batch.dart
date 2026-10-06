@@ -11,7 +11,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
-    show detectSubtitleLanguage, parseSubtitleEpisode;
+    show detectSubtitleLanguage, jimakuLanguageRank, parseSubtitleEpisode;
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
@@ -115,7 +115,7 @@ class _ArchivePackSplitter {
   _ArchivePackSplitter({
     required this.registry,
     required List<VideoSubtitleCandidate> candidates,
-    String? preferredLanguage,
+    this.preferredLanguage,
   }) : _packs =
            <VideoSubtitleCandidate>[
              for (final VideoSubtitleCandidate c in candidates)
@@ -130,6 +130,7 @@ class _ArchivePackSplitter {
        );
 
   final VideoSubtitleRegistry registry;
+  final String? preferredLanguage;
   final List<VideoSubtitleCandidate> _packs;
   final bool _hasUnsupported;
   final Map<String, Future<VideoSubtitleDownload?>> _downloads =
@@ -152,14 +153,33 @@ class _ArchivePackSplitter {
       final VideoSubtitleDownload? download =
           await (_downloads[pack.identityKey] ??= _download(pack));
       if (download == null) continue;
-      final List<ArchivedSubtitle> entries = download.archiveEntries.isEmpty
-          ? <ArchivedSubtitle>[
-              ArchivedSubtitle(
-                fileName: download.fileName,
-                bytes: download.bytes,
-              ),
-            ]
-          : download.archiveEntries;
+      // 真整季包逐文件认语言；单文件下载保留 provider 已解析的标签。
+      String languageOf(ArchivedSubtitle entry) =>
+          download.archiveEntries.isEmpty && download.language.isNotEmpty
+          ? download.language
+          : detectSubtitleLanguage(entry.fileName) ?? pack.language;
+      final List<ArchivedSubtitle> entries =
+          List<ArchivedSubtitle>.of(
+            download.archiveEntries.isEmpty
+                ? <ArchivedSubtitle>[
+                    ArchivedSubtitle(
+                      fileName: download.fileName,
+                      bytes: download.bytes,
+                    ),
+                  ]
+                : download.archiveEntries,
+          )..sort((ArchivedSubtitle a, ArchivedSubtitle b) {
+            final int rankA = jimakuLanguageRank(
+              languageOf(a),
+              preferred: preferredLanguage,
+            );
+            final int rankB = jimakuLanguageRank(
+              languageOf(b),
+              preferred: preferredLanguage,
+            );
+            if (rankA != rankB) return rankA.compareTo(rankB);
+            return a.fileName.toLowerCase().compareTo(b.fileName.toLowerCase());
+          });
       // 多目标时只认集号精确命中：一个文件发给 N 集等于静默装错。
       ArchivedSubtitle? picked;
       for (final ArchivedSubtitle entry in entries) {
@@ -175,9 +195,7 @@ class _ArchivePackSplitter {
       return VideoSubtitleDownload(
         bytes: picked.bytes,
         fileName: picked.fileName,
-        language: download.language.isNotEmpty
-            ? download.language
-            : detectSubtitleLanguage(picked.fileName) ?? '',
+        language: languageOf(picked),
       );
     }
     return null;

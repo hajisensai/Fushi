@@ -1812,7 +1812,7 @@ class _NavMoreCellState extends State<_NavMoreCell> {
     );
     // 菜单与底栏胶囊同一套配色（2026-10-06 用户「颜色要和底部栏一致」）：
     // tertiaryContainer 底 + onTertiaryContainer 字 / 图标，当前项是同款 tertiary
-    // 指示器胶囊（不打勾）；大圆角，从「更多」处按带回弹的曲线展开。墨水屏
+    // 指示器胶囊（不打勾）；大圆角，从「更多」处展开。墨水屏
     // 换成 surface 底 + 反色指示器。
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
@@ -1838,7 +1838,10 @@ class _NavMoreCellState extends State<_NavMoreCell> {
       ),
       menuPadding: const EdgeInsets.symmetric(vertical: 8),
       popUpAnimationStyle: AnimationStyle(
-        curve: FushiMotion.release,
+        // BUG-3005：原生菜单把这条曲线用于整条 route.animation，随后会再
+        // 经 Interval 驱动尺寸与透明度；spatial 回弹超过 1 会让 Interval
+        // 断言。这里必须用保持 0..1 的 effects 弹簧。
+        curve: FushiMotion.enter,
         duration: duration,
         reverseCurve: FushiMotion.exit,
         reverseDuration: fushiMotionDuration(context, FushiMotion.short),
