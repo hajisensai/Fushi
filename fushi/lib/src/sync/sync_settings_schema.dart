@@ -253,7 +253,7 @@ SettingsDestination buildSyncBackupDestination() {
           SettingsSwitchItem(
             id: 'sync.auto_sync',
             title: t.sync_auto_sync,
-            icon: FushiFushiIcons.sync,
+            icon: FushiIcons.sync,
             // Auto-sync is an OUTBOUND switch: it triggers app-open/background/
             // book-close pushes through the resolved backend. Outbound only
             // vanishes when the selected sync method IS the interconnect and

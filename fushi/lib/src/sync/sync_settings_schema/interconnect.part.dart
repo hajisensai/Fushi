@@ -45,7 +45,7 @@ class _InterconnectStatusPill extends StatelessWidget {
           container: cs.secondaryContainer,
           onContainer: cs.onSecondaryContainer,
         );
-    final Color fg = eink ? cs.onSurface : colors.onContainer;
+    final Color fg = eink ? cs.onSurface : (colors.onContainer ?? cs.onSecondaryContainer);
     final FushiSpringSpec effects = context.fushiMotion.effectsDefault;
     return Align(
       alignment: AlignmentDirectional.centerStart,
