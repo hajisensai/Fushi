@@ -526,7 +526,7 @@ class _BrowserExtensionPageState extends ConsumerState<BrowserExtensionPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLowest,
+        color: FushiDesignTokens.of(context).surfaces.page,
         borderRadius: BorderRadius.vertical(
           top: first ? outer : inner,
           bottom: first ? inner : outer,
@@ -884,9 +884,9 @@ class _HeroPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
+        shape: const StadiumBorder(),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1322,7 +1322,7 @@ class _BrowserExtensionInstallStepsState
         return Container(
           padding: const EdgeInsetsDirectional.fromSTEB(14, 4, 4, 4),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: FushiDesignTokens.of(context).surfaces.overlay,
             borderRadius: BorderRadius.circular(SettingsKitRadii.small(style)),
           ),
           child: inline
@@ -1379,7 +1379,7 @@ class _BrowserExtensionInstallStepsState
         Container(
           padding: const EdgeInsetsDirectional.fromSTEB(14, 6, 4, 6),
           decoration: BoxDecoration(
-            color: theme.colorScheme.surfaceContainerHighest,
+            color: FushiDesignTokens.of(context).surfaces.overlay,
             borderRadius: BorderRadius.circular(SettingsKitRadii.small(style)),
           ),
           child: Row(
@@ -1494,7 +1494,11 @@ class _StepIndicator extends StatelessWidget {
         final double radius =
             active && expressive ? lerpDouble(extent / 2, 10, c)! : extent / 2;
         final Color fill =
-            Color.lerp(scheme.surfaceContainerHighest, scheme.primary, c)!;
+            Color.lerp(
+              FushiDesignTokens.of(context).surfaces.overlay,
+              scheme.primary,
+              c,
+            )!;
         final Color fg =
             Color.lerp(scheme.onSurfaceVariant, scheme.onPrimary, c)!;
         return Transform.scale(
@@ -1554,7 +1558,8 @@ FushiCardColors _cardToneColors(BuildContext context, FushiCardTone tone) {
   final FushiCardColors? colors = fushiCardToneColors(context, tone);
   final ColorScheme cs = Theme.of(context).colorScheme;
   return FushiCardColors(
-    container: colors?.container ?? cs.surfaceContainerHigh,
+    container:
+        colors?.container ?? FushiDesignTokens.of(context).surfaces.search,
     onContainer: colors?.onContainer ?? cs.onSurface,
   );
 }

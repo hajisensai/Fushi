@@ -793,7 +793,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         decoration: ShapeDecoration(
           color: apple ? appleColorsOf(context).accent : cs.tertiaryContainer,
           shape: apple
-              ? RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))
+              ? const RoundedRectangleBorder(
+                  borderRadius: FushiM3eShape.smallRadius,
+                )
               : const FushiCookieBorder(lobes: 9),
         ),
         child: FushiIcon(
@@ -1479,7 +1481,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             child: Material(
               type: MaterialType.transparency,
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: FushiM3eShape.smallRadius,
                 onTap: () => _setEditingName(true),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -1500,7 +1502,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                               : style,
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: FushiDesignTokens.of(context).spacing.gap,
+                      ),
                       FushiIcon(
                         FushiIcons.edit,
                         size: 20,
@@ -2146,7 +2150,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: cs.tertiaryContainer,
-          borderRadius: BorderRadius.circular(compact ? 8 : 12),
+          borderRadius: FushiM3eShape.smallRadius,
         ),
         child: FushiIcon(
           FushiIcons.books,
@@ -2178,7 +2182,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ),
         decoration: BoxDecoration(
           color: cs.secondaryContainer,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: FushiM3eShape.smallRadius,
         ),
         child: Text(
           t.theme_preview_tag,
@@ -2215,7 +2219,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         padding: EdgeInsets.all(compact ? gap : gap + gap / 2),
         decoration: BoxDecoration(
           color: cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(compact ? 16 : 20),
+          borderRadius: compact
+              ? FushiM3eShape.smallRadius
+              : FushiM3eShape.cardRadius,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2340,7 +2346,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         padding: EdgeInsets.all(compact ? gap : gap * 2),
         decoration: BoxDecoration(
           color: reader.bg,
-          borderRadius: BorderRadius.circular(compact ? 12 : 16),
+          borderRadius: compact
+              ? FushiM3eShape.smallRadius
+              : FushiM3eShape.cardRadius,
           border: Border.all(
             color: Theme.of(context).dividerColor.withValues(alpha: 0.4),
           ),
@@ -2425,7 +2433,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           child: DecoratedBox(
             position: DecorationPosition.foreground,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: FushiM3eShape.smallRadius,
               border: Border.all(
                 width: 2,
                 color: ring.withValues(alpha: settled),
@@ -2690,7 +2698,7 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
               height: 40,
               decoration: BoxDecoration(
                 color: current,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: FushiM3eShape.smallRadius,
                 border: Border.all(color: cs.outlineVariant),
               ),
             ),

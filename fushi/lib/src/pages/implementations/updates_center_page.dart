@@ -259,7 +259,7 @@ class _UpdateEntryTile extends StatelessWidget {
       tone: unseen ? FushiCardTone.primary : FushiCardTone.neutral,
     );
     // 走共享的 FushiListItem 而不是裸 ListTile：普通页面外壳的 MD3 决策收口在
-    // 组件层（md3_design_system_static_test 守着这条），每页自己拼一遍 ListTile
+    // 组件层（m3e_design_system_static_test 守着这条），每页自己拼一遍 ListTile
     // 正是那条守卫要拦的东西。
     return FushiListItem(
       leading: hasImage

@@ -1381,7 +1381,9 @@ class _MemberListRow extends StatelessWidget {
             : apple
                 ? Colors.transparent
                 : scheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(apple ? 12 : 20),
+        borderRadius: apple
+            ? FushiM3eShape.smallRadius
+            : FushiM3eShape.cardRadius,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -1407,7 +1409,7 @@ class _MemberListRow extends StatelessWidget {
                       if (progress != null) ...<Widget>[
                         SizedBox(height: tokens.spacing.gap),
                         ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: FushiBorderRadius.chip,
                           child: LinearProgressIndicator(
                             value: progress.clamp(0.0, 1.0),
                             minHeight: 4,

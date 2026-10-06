@@ -451,11 +451,7 @@ class _AiMediaAcquisitionPageState extends State<AiMediaAcquisitionPage> {
             ),
           ),
           const SizedBox(width: 16),
-          FushiSkeleton(
-            width: 72,
-            height: 36,
-            borderRadius: BorderRadius.circular(18),
-          ),
+          SizedBox(width: 72, child: FushiSkeleton.line(height: 36)),
         ],
       ),
     );

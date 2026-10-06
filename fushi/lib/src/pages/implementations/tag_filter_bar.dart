@@ -10,7 +10,6 @@ import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
-import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -150,7 +149,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     // 排序的入口），有筛选时行尾一枚「清除」chip。
     final List<Widget> leadingChips = <Widget>[
       if (tagsOnly && widget.showTagManagement)
-        _TagBarActionChip(
+        FushiTagActionChip(
           key: const ValueKey<String>('library_tag_manage_chip'),
           icon: FushiIcons.settings,
           label: t.tag_manage,
@@ -159,7 +158,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     ];
     final List<Widget> trailingChips = <Widget>[
       if (tagsOnly && selectedIds.isNotEmpty)
-        _TagBarActionChip(
+        FushiTagActionChip(
           key: const ValueKey<String>('library_tag_clear_chip'),
           icon: FushiIcons.filterOff,
           label: t.tag_clear_filter,
@@ -481,67 +480,6 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
       state: isSelected ? TagCheckState.all : TagCheckState.none,
       dimmed: isDimmed,
       onTap: onTap,
-    );
-  }
-}
-
-/// 标签栏首尾的动作 chip（「管理」「清除」）：M3E 是 secondaryContainer 色块的
-/// 圆角方 chip（与彩色标签 chip 一眼区分），Apple 是玻璃胶囊。
-class _TagBarActionChip extends StatelessWidget {
-  const _TagBarActionChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    super.key,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    if (isGlassDesign(context)) {
-      return FushiTagChip(label: label, onTap: onTap);
-    }
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    final bool eink = isEinkTheme(context);
-    final Color fill = eink ? scheme.surface : scheme.secondaryContainer;
-    final Color fg = eink ? scheme.onSurface : scheme.onSecondaryContainer;
-    final OutlinedBorder shape = RoundedRectangleBorder(
-      borderRadius: const BorderRadius.all(Radius.circular(12)),
-      side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
-    );
-    return FushiPressScale(
-      scale: 0.94,
-      child: Material(
-        color: fill,
-        shape: shape,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          customBorder: shape,
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 36),
-            child: Padding(
-              padding: const EdgeInsetsDirectional.fromSTEB(10, 6, 14, 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  FushiIcon(icon, size: 18, color: fg),
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: (Theme.of(context).textTheme.labelLarge ??
-                            const TextStyle())
-                        .copyWith(color: fg, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

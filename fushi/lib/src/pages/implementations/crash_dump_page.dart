@@ -22,7 +22,7 @@ import 'package:fushi/src/settings/settings_kit.dart';
 ///
 /// 视觉 chrome 全部走共享 MD3 组件（[FushiPageScaffold] / [FushiCard] /
 /// [FushiListTile] / [FushiIconButton] + [FushiDesignTokens] 字体 token），不
-/// 重新打开本地 MD3 决策（受 md3_design_system_static_test 守卫）。
+/// 重新打开本地 MD3 决策（受 m3e_design_system_static_test 守卫）。
 class CrashDumpPage extends StatefulWidget {
   const CrashDumpPage({super.key});
 

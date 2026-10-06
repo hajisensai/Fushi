@@ -2092,9 +2092,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             foregroundColor: cs.onSurface,
             backgroundColor: selected
                 ? cs.primaryContainer
-                : cs.surfaceContainerHigh,
+                : FushiDesignTokens.of(context).surfaces.search,
             disabledForegroundColor: cs.onSurface.withValues(alpha: 0.38),
-            disabledBackgroundColor: cs.surfaceContainerHigh,
+            disabledBackgroundColor: FushiDesignTokens.of(context).surfaces.search,
           ),
           color: selected ? cs.onPrimaryContainer : cs.onSurface,
           icon: FushiIcon(icon, size: 20),
@@ -2105,7 +2105,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 字号 −/+ 合成一枚分段步进器：两端是按钮，中间是当前倍率。
     final Widget fontStepper = DecoratedBox(
       decoration: ShapeDecoration(
-        color: cs.surfaceContainerHigh,
+        color: FushiDesignTokens.of(context).surfaces.search,
         shape: const StadiumBorder(),
       ),
       child: Row(
@@ -2232,7 +2232,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                     fixedSize: const Size.square(40),
                     minimumSize: const Size.square(40),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    backgroundColor: cs.surfaceContainerHigh,
+                    backgroundColor: FushiDesignTokens.of(context).surfaces.search,
                   ),
                   color: cs.onSurface,
                   icon: const FushiIcon(FushiIcons.close, size: 20),
@@ -2377,7 +2377,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         ? cs.primaryContainer
         : hovered
             ? cs.surfaceContainer
-            : cs.surfaceContainerLow;
+            : FushiDesignTokens.of(context).surfaces.group;
     final Color textColor = selected ? cs.onPrimaryContainer : cs.onSurface;
     final Color secondary =
         selected ? cs.onPrimaryContainer : cs.onSurfaceVariant;
@@ -2668,7 +2668,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
               width: 56,
               height: 56,
               decoration: ShapeDecoration(
-                color: cs.surfaceContainerHigh,
+                color: FushiDesignTokens.of(context).surfaces.search,
                 shape: const RoundedRectangleBorder(
                   borderRadius: BorderRadius.all(Radius.circular(18)),
                 ),
@@ -2703,7 +2703,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           height: 52,
           padding: const EdgeInsets.fromLTRB(_kM3eRowPadLeft, 12, 16, 12),
           decoration: BoxDecoration(
-            color: cs.surfaceContainerLow,
+            color: FushiDesignTokens.of(context).surfaces.group,
             borderRadius: BorderRadius.vertical(
               top: Radius.circular(
                 first ? _kM3eRowOuterRadius : _kM3eRowInnerRadius,
@@ -2719,7 +2719,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 width: 40,
                 height: 18,
                 decoration: ShapeDecoration(
-                  color: cs.surfaceContainerHighest,
+                  color: FushiDesignTokens.of(context).surfaces.overlay,
                   shape: const StadiumBorder(),
                 ),
               ),
@@ -2731,8 +2731,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   child: Container(
                     height: 14,
                     decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(7),
+                      color: FushiDesignTokens.of(context).surfaces.overlay,
+                      borderRadius: FushiM3eShape.smallRadius,
                     ),
                   ),
                 ),

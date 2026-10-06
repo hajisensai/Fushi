@@ -75,14 +75,16 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
 
   Widget _buildActions(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
+    final double gap = tokens.spacing.gap;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Wrap(
           alignment: WrapAlignment.center,
-          spacing: 8,
-          runSpacing: 8,
+          spacing: gap,
+          runSpacing: gap,
           children: <Widget>[
             if (widget.onRetry case final VoidCallback retry)
               FushiFilledButton.tonalIcon(
@@ -114,7 +116,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    const SizedBox(height: 12),
+                    SizedBox(height: tokens.spacing.rowVertical),
                     // 详情块限高 + 内部滚动：长异常链（含底层 SocketException 全文）
                     // 不把「复制」按钮推出可视区，用户永远够得着上报入口。
                     ConstrainedBox(
@@ -123,9 +125,9 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                         width: double.infinity,
                         child: FushiCard(
                           tone: FushiCardTone.error,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: tokens.spacing.rowVertical,
+                            vertical: gap,
                           ),
                           borderRadius: FushiM3eShape.smallRadius,
                           child: SingleChildScrollView(
@@ -144,7 +146,7 @@ class _ScrapeFailureViewState extends State<ScrapeFailureView> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    SizedBox(height: gap),
                     FushiTextButton.icon(
                       icon: const FushiIcon(FushiIcons.copy, size: 18),
                       label: Text(t.copy_error),

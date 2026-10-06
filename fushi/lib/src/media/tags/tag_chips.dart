@@ -348,3 +348,81 @@ class FushiTagInputChip extends StatelessWidget {
     );
   }
 }
+
+/// 标签栏首尾的动作 chip（「管理」「清除」）：M3E 是 secondaryContainer 色块的
+/// 圆角方 chip（小形状档 [FushiM3eShape.smallRadius]，与 [FushiTagToggleChip] 的
+/// 胶囊一眼区分），Apple 是玻璃胶囊（委托 [FushiTagChip]），墨水屏页面底 + 描边。
+///
+/// 与 [FushiTagToggleChip] 同高（M3 chip 容器 36 / 前置图标 18），图标与文字间距、
+/// 内边距走 [FushiSpacingTokens]。
+class FushiTagActionChip extends StatelessWidget {
+  const FushiTagActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    super.key,
+  });
+
+  /// M3 chip 前置图标边长（与 [FushiTagToggleChip] 的勾号同档）。
+  static const double iconSize = 18;
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return FushiTagChip(label: label, onTap: onTap);
+    }
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final double gap = tokens.spacing.gap;
+    final Color fill = eink ? scheme.surface : scheme.secondaryContainer;
+    final Color fg = eink ? scheme.onSurface : scheme.onSecondaryContainer;
+    final OutlinedBorder shape = RoundedRectangleBorder(
+      borderRadius: FushiM3eShape.smallRadius,
+      side: eink ? BorderSide(color: scheme.outline) : BorderSide.none,
+    );
+    return FushiPressScale(
+      scale: 0.94,
+      child: Material(
+        color: fill,
+        shape: shape,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          customBorder: shape,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: tokens.density.compactControlHeight,
+            ),
+            child: Padding(
+              padding: EdgeInsetsDirectional.fromSTEB(
+                gap * 1.25,
+                gap * 0.75,
+                gap * 1.75,
+                gap * 0.75,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  FushiIcon(icon, size: iconSize, color: fg),
+                  SizedBox(width: gap * 0.75),
+                  Text(
+                    label,
+                    style: tokens.type.controlLabel.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

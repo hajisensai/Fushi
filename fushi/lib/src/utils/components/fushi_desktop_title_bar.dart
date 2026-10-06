@@ -666,7 +666,7 @@ const double _kCaptionGlyphSize = 10;
 /// M3E 窗口按钮组：一枚半透明 tonal 胶囊（与页面浮动页头的动作组同一种
 /// 「胶囊里一排 standard 图标按钮」形态，只是压成标题行的高度）。
 ///
-/// - 无页面上报色：surfaceContainerHigh 半透明，浮在页面背景 + 柔光上；
+/// - 无页面上报色：共享 search 面色（MD3 = surfaceContainerHigh）半透明，浮在页面背景 + 柔光上；
 /// - 页面上报色（阅读器纸色等）：从页面前景色派生一层极淡的色块，不引入
 ///   根主题的 surface（纸色与根主题明暗可能相反）；
 /// - 窗口失焦：胶囊变淡（按钮前景同步降低不透明度，见 [_FushiCaptionButton]）；
@@ -696,7 +696,9 @@ class _FushiCaptionButtonGroup extends StatelessWidget {
         alpha: pageForeground.a * (active ? 0.08 : 0.04),
       );
     } else {
-      fill = cs.surfaceContainerHigh.withValues(alpha: active ? 0.72 : 0.48);
+      fill = FushiDesignTokens.of(
+        context,
+      ).surfaces.search.withValues(alpha: active ? 0.72 : 0.48);
     }
     final BorderSide side = eink
         ? BorderSide(color: pageForeground ?? cs.outline)

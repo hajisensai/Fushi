@@ -1,3 +1,8 @@
+// M3E 设计体系静态守卫（原 md3_design_system_static_test；用户 2026-10-06：
+// 「md3 静态检查其实现在是 m3e」）。本仓 Material 一律按 Material 3 Expressive
+// 做：形状走 FushiM3eShape / SettingsKitRadii / FushiDesignTokens.radii，字号走
+// context.fushiType 字阶，色调容器走 FushiDesignTokens.surfaces（或文件自己处理
+// Apple 分支），组件走共享 Fushi* 原语。判据细节见文件末 [_m3eChromeHits]。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -92,10 +97,16 @@ void main() {
     'lib/src/pages/implementations/media_source_picker_dialog_page.dart':
         <String>['FushiListItem'],
     'lib/src/pages/base_source_page.dart': <String>['FushiPopupSurface'],
+    // 2026-10 统计中心重设计：区块卡收敛成共享 StatSectionCard（stat_shared.dart，
+    // 内部就是一张 FushiCard），页面不再直接写 FushiCard——共享壳在下一条钉住。
     'lib/src/pages/implementations/reading_statistics_page.dart': <String>[
       'FushiPageScaffold',
-      'FushiCard',
+      'StatSectionCard',
       'FushiDesignTokens',
+    ],
+    'lib/src/pages/implementations/stat_shared.dart': <String>[
+      'class StatSectionCard',
+      'FushiCard(',
     ],
     'lib/src/pages/implementations/collections_page.dart': <String>[
       'FushiPageScaffold',
@@ -144,10 +155,18 @@ void main() {
       '_buildCategoryTile',
       '_buildDictCheckbox',
     ],
+    // 整页标签选择器收口成 sheet 同一个 TagPickerPanel（深链兼容壳）：页面只剩
+    // FushiPageScaffold；面板本体的共享 M3E 原语在下一条钉住。
     'lib/src/pages/implementations/tag_picker_page.dart': <String>[
       'FushiPageScaffold',
-      'FushiCard',
-      'FushiListItem',
+      'TagPickerPanel(',
+    ],
+    'lib/src/media/tags/tag_picker_sheet.dart': <String>[
+      'class TagPickerPanel',
+      'FushiModalSheetFrame(',
+      'FushiSearchField(',
+      'FushiTagInputChip(',
+      'FushiTagToggleChip(',
     ],
     // BUG-2589：书架端「查看插图」只剩装载壳，画廊本体是阅读器内的
     // ReaderGalleryPage（自带顶栏，不走 FushiToolScaffold / FushiCard）。
@@ -225,8 +244,9 @@ void main() {
       'IconButton.filledTonal',
       'FushiDesignTokens',
     ],
+    // 2026-10 M3E 标签管理：筛选 chip 改为带标签色的共享 FushiTagToggleChip。
     'lib/src/pages/implementations/tag_filter_sheet.dart': <String>[
-      'FushiSelectableChip',
+      'FushiTagToggleChip',
       'FushiModalSheetFrame',
     ],
     'lib/src/media/audiobook/subtitle_rematch.dart': <String>[
@@ -290,7 +310,7 @@ void main() {
     ],
   };
 
-  test('MD3 design token and shared component files exist', () {
+  test('M3E design token and shared component files exist', () {
     for (final MapEntry<String, List<String>> entry
         in requiredComponentTokens.entries) {
       final File file = File(entry.key);
@@ -306,7 +326,7 @@ void main() {
     }
   });
 
-  test('high exposure surfaces use shared MD3 components', () {
+  test('high exposure surfaces use shared M3E components', () {
     for (final MapEntry<String, List<String>> entry
         in migratedSurfaces.entries) {
       final File file = File(entry.key);
@@ -512,7 +532,9 @@ void main() {
       ],
       'lib/src/pages/implementations/custom_theme_page.dart': <String>[
         'TextField(',
-        'BorderRadius.circular(',
+        // M3E：形状 token（SettingsKitRadii / FushiM3eShape）喂给
+        // BorderRadius.circular 是规范用法，禁的是页面手写数字圆角。
+        r're:BorderRadius\.circular\(\s*[0-9.]',
         'fontSize:',
         'Widget _colorDot(',
         'shape: BoxShape.circle',
@@ -615,16 +637,20 @@ void main() {
             )
           : _withoutSharedComponentNames(fileSource);
       for (final String banned in entry.value) {
+        // `re:` 前缀 = 正则判据（只禁数字字面量这类需要边界的形态）。
+        final Matcher matcher = banned.startsWith('re:')
+            ? isNot(matches(RegExp(banned.substring(3))))
+            : isNot(contains(banned));
         expect(
           source,
-          isNot(contains(banned)),
+          matcher,
           reason: '${entry.key} still contains $banned',
         );
       }
     }
   });
 
-  test('ordinary page chrome does not reopen local MD3 decisions', () {
+  test('ordinary page chrome does not reopen local M3E decisions', () {
     const List<String> forbidden = <String>[
       'BorderRadius.circular(',
       'VisualDensity.compact',
@@ -671,26 +697,31 @@ void main() {
           'radius MD3 12 / Apple 10, Apple HIG text sizes for buttons, tabs, '
           'list tiles, app bars) ARE the shared tokens pages read through '
           'Theme.of — same reviewed exception class as fushi_design_tokens.',
+      'lib/src/models/fushi_m3e_misc_themes.dart':
+          'M3E component-theme source split out of buildFushiThemeData '
+          '(snackbar / tooltip / badge / scrollbar / date-time picker): the '
+          'surface roles and the badge label size (M3E label-small 11) it '
+          'writes ARE the component themes pages consume through Theme.of — '
+          'same reviewed exception class as theme_notifier.',
+      'lib/src/utils/fushi_color_roles.dart':
+          'M3E color-role helper (ColorScheme extension): containerOf maps '
+          'FushiTone.neutral to surfaceContainerHighest — it is the shared '
+          'role mapping pages call instead of picking a surface tone '
+          'themselves, same reviewed exception class as fushi_design_tokens.',
       'lib/src/pages/implementations/custom_theme_page.dart':
           'Theme preview studio intentionally displays user-selected colors.',
+      'lib/src/pages/implementations/font_preview/font_library_widgets.dart':
+          'Font library specimens: every fontSize: sizes the font sample being '
+          'previewed (grid / list / glyph cells, the adjustable detail '
+          'specimen and its ruby, the reserved specimen height), i.e. content '
+          'size, not UI type — UI labels in the file use fushiType / the '
+          'shared sectionLabel token. Same class as font_target_preview.',
       'lib/src/pages/implementations/font_preview/font_target_preview.dart':
           'Font preview specimens size sample content (ruby, subtitle, game '
           'dialogue) relative to the rendered sample, not UI type.',
       'lib/src/floating_ball/desktop_system_ball_assets.dart':
           'Rasterizes Material icon glyphs into PNGs for the native desktop '
           'ball window; the font size is the bitmap edge, not UI type.',
-      'lib/src/pages/implementations/reading_statistics_page.dart':
-          'Chart and metric preview content keeps small chart typography.',
-      // PR#247 首页活动热力图加翻页 + 选中日数值气泡：GitHub 式贡献热力图是数据可视化
-      // 组件（格子强度按 colorScheme 映射色阶），header 的选中日数值气泡（_bubbleChip
-      // 用 surfaceContainerHighest tonal 底 + labelMedium 文本）是图表标注内容，非普通
-      // 页面 chrome——同 reading_statistics_page / video_statistics_page 的图表内容豁免类。
-      'lib/src/utils/components/stat_contribution_heatmap.dart':
-          'Contribution heatmap is a data-visualization component (cell '
-          'intensity maps to a colorScheme scale); the selected-day value '
-          'bubble (_bubbleChip surfaceContainerHighest tonal chip) is chart '
-          'annotation content, not ordinary page chrome — same reviewed '
-          'exception class as reading_statistics_page / video_statistics_page.',
       'lib/src/pages/implementations/dictionary_popup_native.dart':
           'Dictionary popup chip/content typography is dense lookup content.',
       'lib/src/pages/implementations/popup_settings_injection.dart':
@@ -707,30 +738,6 @@ void main() {
           'global_lookup_render.',
       'lib/src/pages/implementations/history_reader_page.dart':
           'History preview uses content-derived surface and text metrics.',
-      'lib/src/pages/implementations/reader_fushi_history_page.dart':
-          'Book-cover overlays and drag affordances are reader-shelf content.',
-      // CoverBadge 是压在封面图上的角标胶囊（字幕/云端/播放列表等），把书架/
-      // 视频卡上至少三份手抄的同款胶囊收口成一个组件。胶囊几何（radius 10）
-      // 与固定深色 scrim 沿用被收口的既有角标像素规格——封面叠层内容，
-      // 非普通页面 chrome，同书架封面叠层豁免类。
-      'lib/src/utils/components/cover_badge.dart':
-          'CoverBadge is the shared cover-art overlay pill (subtitle/cloud/'
-          'playlist badges) consolidating at least three hand-copied '
-          'badge implementations; its fixed dark scrim and pill radius '
-          'preserve the existing badge pixel spec — cover overlay '
-          'content, not ordinary page chrome, same reviewed exception '
-          'class as the reader-shelf book-cover overlays. The badge label is '
-          'pinned to 11 w600 so it stays legible on the fixed scrim at cover '
-          'scale regardless of the app type roles.',
-      // TODO-947 系列/合集折叠卡的马赛克封面（2x2 成员封面网格）是书架内容/封面美术，
-      // 不是页面 chrome：letterbox 底 surfaceContainerHighest 与格子圆角
-      // BorderRadius.circular(cellRadius) 是封面拼图单元，同「书架封面/拖放」豁免类。
-      'lib/src/pages/implementations/series_shelf_card.dart':
-          'TODO-947 series/collection folder card paints a 2x2 mosaic of member '
-          'book covers; the letterbox surface (surfaceContainerHighest) and '
-          'cell corner radius (BorderRadius.circular(cellRadius)) are cover '
-          'art / reader-shelf content, not ordinary page chrome — same '
-          'reviewed exception class as the reader-shelf book-cover overlays.',
       // 作品详情页共享布局（本地系列 + Jellyfin/Emby 详情页同一套）：hero 上的
       // 徽标/标签/人物胶囊（BorderRadius.circular + 压在封面上的 12px 小字）、
       // 集卡（surfaceContainerLow 卡底 + 集简介小字）与每集封面缩略图（ClipRRect
@@ -749,19 +756,6 @@ void main() {
           'step to surfaceContainerHigh (iOS selected-row raised fill), '
           'because primaryContainer is a gray fill under the monochrome '
           'accent and becomes invisible on the card.',
-      // galgame 游戏库页把每个游戏渲染成封面卡片（有 coverPath 用 Image.file，
-      // 否则 surfaceContainerHighest letterbox + 手柄图标占位），点击卡片启动游戏
-      // 进入制卡。卡片外框 Card + 无封面占位面色 surfaceContainerHighest 是游戏
-      // 封面美术 / 媒体书架内容，非普通页面 chrome，同 series_shelf_card 马赛克封面
-      // / media_collection_detail_page 每集封面 / 书架封面豁免类。
-      'lib/src/pages/implementations/games_library_page.dart':
-          'Galgame library renders each game as a cover card (Image.file cover '
-          'or surfaceContainerHighest letterbox + gamepad-icon placeholder '
-          'when no cover); the card frame (Card) and no-cover placeholder '
-          'surface (surfaceContainerHighest) are game cover art / media-shelf '
-          'content, not ordinary page chrome — same reviewed exception class '
-          'as series_shelf_card mosaic covers / media_collection_detail_page '
-          'per-episode covers / reader-shelf book covers.',
       // TODO-587: 书架页拆成主壳 + reader_history/*.part.dart 五个 part 文件，
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/remote.part.dart':
@@ -827,7 +821,15 @@ void main() {
       'lib/src/models/app_model.dart':
           'AppModel builds the FloatingLyricStyle data object (overlay font '
           'size is user content passed to the platform overlay), not an '
-          'ordinary page-chrome TextStyle.',
+          'ordinary page-chrome TextStyle. Its surfaceContainerHigh / '
+          'surfaceContainerLowest hits feed the popup / browser-extension CSS '
+          'variable map (the full ColorScheme mirrored to WebView), a token '
+          'bridge like popup_theme_css, not page chrome.',
+      'lib/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart':
+          'The fontSize: hit is the LyricsTypographyPanel constructor '
+          'argument (the user-chosen lyric size the panel edits), not a '
+          'TextStyle — the panel itself renders through fushiType. Same '
+          'reviewed exception class as gal_hook_text_overlay_controller.',
       'lib/src/lookup/gal_hook_text_overlay_controller.dart':
           'BUG-1095: the fontSize: hits are named arguments of the '
           'GalHookTextOverlayChannel MethodChannel wrapper (the caption '
@@ -938,15 +940,6 @@ void main() {
           'surfaceContainerHigh is the translucent dark-scheme container of '
           'the centre transport. Same reviewed media-page overlay class as '
           'video_apple_chrome / video_volume_overlays.',
-      'lib/src/media/video/video_m3e_panel_theme.dart':
-          '2026-10-06 M3 Expressive player panel theme: the player settings / '
-          'track / quality / chapter panels float over the video on the fixed '
-          'neutral dark chrome surface, so this file builds the panel '
-          'ColorScheme (hue-free grey container ramp lifted one step above the '
-          '#2D2D2D panel, white foreground) and re-runs the theme factory with '
-          'it. The surfaceContainer* names are ColorScheme.copyWith role '
-          'assignments of that scheme, not page chrome decisions — same '
-          'reviewed media-page overlay class as video_m3e_chrome.',
       'lib/src/media/video/video_quick_settings_sheet.dart':
           'Video settings sheet category bar (2026-10-05 M3E connected button '
           'group): the segment corner radii (10 idle / pill selected), the '
@@ -976,13 +969,6 @@ void main() {
       // monospace 逃生口）随行声明与内嵌 builder 迁移到下面的新文件
       // （video_settings_actions.dart 的 monospace 字号 2026-10-06 已改走排版
       // 令牌，不再命中违禁 token，豁免随之删除）。
-      'lib/src/media/video/video_control_layout_editor.dart':
-          'Video control 9-slot drag editor extracted verbatim from '
-          'video_quick_settings_sheet.dart (stage B): the stage preview '
-          'canvas paints a surfaceContainerHigh/Highest gradient as a mock '
-          'video frame behind the drop slots (visualization content, not '
-          'ordinary page chrome) — same reviewed media-page exception '
-          'class as the sheet entry it came from.',
       'lib/src/settings/settings_schema_video.dart':
           'Home video settings expose the same user-configurable subtitle '
           'caption font size (VideoSubtitleStyle.copyWith(fontSize:)) for '
@@ -1147,10 +1133,6 @@ void main() {
       // 1) 设计系统实现层：glass/ 下的 Fushi* 组件与新增 / 改写的共享组件——
       //    与 fushi_design_tokens / fushi_material_components 同一「共享原语本身」类，
       //    页面经它们拿到圆角 / 面色 / 字号，所以它们自己必然写出这些值。
-      'lib/src/utils/components/glass/fushi_apple_palette.dart':
-          kGlassDesignSystemImplementation,
-      'lib/src/utils/components/glass/fushi_expressive.dart':
-          kGlassDesignSystemImplementation,
       'lib/src/utils/components/glass/fushi_glass_bars.dart':
           kGlassDesignSystemImplementation,
       'lib/src/utils/components/glass/fushi_glass_buttons.dart':
@@ -1158,8 +1140,6 @@ void main() {
       'lib/src/utils/components/glass/fushi_glass_chips.dart':
           kGlassDesignSystemImplementation,
       'lib/src/utils/components/glass/fushi_glass_feedback.dart':
-          kGlassDesignSystemImplementation,
-      'lib/src/utils/components/glass/fushi_glass_inputs.dart':
           kGlassDesignSystemImplementation,
       'lib/src/utils/components/glass/fushi_glass_lists.dart':
           kGlassDesignSystemImplementation,
@@ -1173,8 +1153,6 @@ void main() {
       // 搜索栏 / 浮动页头 + Apple 分支的 iOS 字号），同「共享原语本身」类。
       'lib/src/settings/settings_kit.dart': kSharedComponentImplementation,
       'lib/src/utils/adaptive/adaptive_navigation.dart':
-          kSharedComponentImplementation,
-      'lib/src/utils/components/batch_action_bar.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_bottom_action_bar.dart':
           kSharedComponentImplementation,
@@ -1192,8 +1170,6 @@ void main() {
           kSharedComponentImplementation,
       'lib/src/utils/components/library_section_tabs.dart':
           kSharedComponentImplementation,
-      'lib/src/utils/components/shelf_card_widgets.dart':
-          kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart':
           kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
@@ -1203,11 +1179,6 @@ void main() {
           'lines, popup rectangle) so the user can see where the lookup popup '
           'lands; the radii and surface are preview content, not page chrome — '
           'same reviewed exception class as the theme preview cards.',
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart':
-          'Lyrics player top edge under the Apple design system takes '
-          'surfaceContainerHigh from the scheme generated from the cover art, so '
-          'the desktop title bar blends into the blurred cover backdrop — '
-          'content-derived color, same class as history_reader_page.',
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart':
           'Remote manga cover placeholder / decode-failure letterbox '
           '(surfaceContainerHighest) is cover art, replacing black12 — same '
@@ -1220,11 +1191,6 @@ void main() {
           'Cover decode-failure tile background (surfaceContainerHighest, caller '
           'may override) is cover art — same reviewed exception class as '
           'series_shelf_card.',
-      'lib/src/media/video/video_apple_chrome.dart':
-          'Apple video player chrome: the round glass transport buttons clip '
-          'their press highlight to a circle (radius = size / 2); geometry of a '
-          'circular control over video, not a radius decision — same class as '
-          'the video-subsystem player chrome.',
       'lib/src/media/video/video_side_panel.dart':
           'Shared floating side panel of the video player (subtitle / audio / '
           'chapter panels): the e-ink side-panel surface (surfaceContainerLow '
@@ -1251,23 +1217,11 @@ void main() {
           'Apple branch of the shortcut key-cap chip pins its label to 12 w500 '
           '(macOS key-cap label); the MD3 branch stays on the shared tag chip '
           'type. FushiTypeRoles has no Apple key-cap role yet.',
-      'lib/src/pages/implementations/video_discovery_page.dart':
-          'Apple branch of the filter control turns the shared FushiCard into a '
-          'clear capsule (radius = control height / 2); the MD3 branch keeps the '
-          'FushiCard token radius.',
-      'lib/src/reader/reader_floating_ball.dart':
-          'Reader floating-ball action buttons clip their press highlight to a '
-          'circle (radius = size / 2) — circular control geometry on the reading '
-          'surface, same class as reader_fushi/chrome.part.dart.',
       'lib/src/settings/settings_home_page.dart':
           'Settings shell under the Apple design system: the iOS large title '
           '(34 bold) and the CupertinoSearchTextField metrics (radius, 13 / 17 '
           'text) reproduce the iOS / macOS Settings app header; the MD3 branch '
           'stays on the shared settings primitives.',
-      'lib/src/sync/sync_settings_schema/interconnect_link.part.dart':
-          'Pairing QR code sits on a fixed white card (quiet zone must stay white '
-          'for camera scanners) with a rounded corner (MD3 12 / Apple 16) — QR '
-          'content, not ordinary page chrome.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1299,15 +1253,15 @@ void main() {
       'lib/src/lookup/gal_hook_text_overlay_controller.dart': <String>{
         'fontSize:',
       },
+      'lib/src/media/audiobook/lyrics_player/lyrics_typography_panel.dart':
+          <String>{'fontSize:'},
       'lib/src/media/audiobook/audiobook_bridge.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/audiobook_clip_text_render.dart': <String>{
-        'BorderRadius.circular(',
         'fontSize:',
       },
       'lib/src/media/audiobook/audiobook_session.dart': <String>{'fontSize:'},
       'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
         'fontSize:',
@@ -1323,32 +1277,19 @@ void main() {
         'surfaceContainerHighest',
       },
       'lib/src/media/video/video_chapter_panel.dart': <String>{'fontSize:'},
-      'lib/src/media/video/video_control_layout_editor.dart': <String>{
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
-      },
       'lib/src/media/video/video_danmaku_text_metrics.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/video/video_episode_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_episode_rail.dart': <String>{
-        'surfaceContainerHighest',
         'fontSize:',
       },
       'lib/src/media/video/video_m3e_chrome.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
         'fontSize:',
-      },
-      'lib/src/media/video/video_m3e_panel_theme.dart': <String>{
-        'surfaceContainerLow',
-        'surfaceContainerLowest',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_quick_settings_sheet.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
         'fontSize:',
       },
       'lib/src/media/video/video_long_press_speed_badge.dart': <String>{
@@ -1366,7 +1307,6 @@ void main() {
       'lib/src/media/video/video_subtitle_style.dart': <String>{'fontSize:'},
       'lib/src/media/video/subtitle_style_preview.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerLow',
         'fontSize:',
       },
       'lib/src/media/video/subtitle_transcript_text.dart': <String>{
@@ -1386,10 +1326,18 @@ void main() {
       },
       'lib/src/models/app_model.dart': <String>{
         'surfaceContainerHigh',
+        'surfaceContainerLowest',
         'fontSize:',
       },
+      'lib/src/models/fushi_m3e_misc_themes.dart': <String>{
+        'fontSize:',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/utils/fushi_color_roles.dart': <String>{
+        'surfaceContainerHighest',
+      },
       'lib/src/models/theme_notifier.dart': <String>{
-        'BorderRadius.circular(',
         'fontSize:',
         'surfaceContainerLow',
         'surfaceContainerLowest',
@@ -1397,7 +1345,6 @@ void main() {
         'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/anime_download_dialog.dart': <String>{
-        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
@@ -1406,30 +1353,24 @@ void main() {
       // chrome（原先的 surfaceContainerLow 已不复存在，留着会变死豁免）。
       'lib/src/pages/implementations/custom_theme_page.dart': <String>{
         'VisualDensity.compact',
-        'surfaceContainerHighest',
       },
       // 字体样张：振假名、视频字幕、游戏台词的字号按样张内容等比推导（字幕照播放器
       // 1080p 基准缩放），是内容尺寸而非界面字号。
       'lib/src/pages/implementations/font_preview/font_target_preview.dart':
           <String>{'fontSize:'},
+      'lib/src/pages/implementations/font_preview/font_library_widgets.dart':
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/dictionary_popup_native.dart': <String>{
-        'surfaceContainerHighest',
-      },
-      'lib/src/pages/implementations/games_library_page.dart': <String>{
         'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/history_reader_page.dart': <String>{
         'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/subtitle_search_panel.dart': <String>{
-        'BorderRadius.circular(',
         'VisualDensity.compact',
       },
       'lib/src/media/collections/collection_detail_layout.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerLow',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/dictionary_popup_theme.dart': <String>{
         'surfaceContainerHigh',
@@ -1442,41 +1383,20 @@ void main() {
       },
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart': <String>{
         'BorderRadius.circular(',
-        // VisualDensity.compact 已随 BUG-2166 批的 chrome 拆分搬到
-        // lib/src/reader/reader_statistics_sheet.dart，本文件已无此 token，
-        // 留着就是死豁免（会给它无声开着回来的门）。
-        'surfaceContainerHigh',
-        // BUG-2434：查词弹窗覆盖主题的中性梯度（surfaceContainerHighest /
-        // Low / Lowest）已搬到 dictionary_popup_theme.dart，本文件不再命中，
-        // 按同一条「不留死豁免」纪律删除，范围随代码走。
         'fontSize:',
       },
       'lib/src/reader/illustration_zoom_viewer.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_desktop_chrome.dart': <String>{
-        'surfaceContainerLow',
         'fontSize:',
       },
       'lib/src/reader/reader_status_footer.dart': <String>{
         'fontSize:',
-        'BorderRadius.circular(',
-      },
-      'lib/src/reader/reader_audiobook_panel.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHighest',
-      },
-      'lib/src/reader/reader_statistics_sheet.dart': <String>{
-        'surfaceContainerHighest',
-        'BorderRadius.circular(',
       },
       'lib/src/reader/reader_panel_kit.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
       },
       'lib/src/reader/reader_navigation_widgets.dart': <String>{
         'BorderRadius.circular(',
-      },
-      'lib/src/media/audiobook/reader_quick_settings_sheet.dart': <String>{
-        'VisualDensity.compact',
       },
       'lib/src/reader/reader_settings_preview.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
@@ -1484,9 +1404,6 @@ void main() {
       },
       'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
           <String>{'BorderRadius.circular(', 'fontSize:'},
-      'lib/src/pages/implementations/reader_fushi_history_page.dart': <String>{
-        'surfaceContainerHighest',
-      },
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },
@@ -1494,15 +1411,8 @@ void main() {
         'VisualDensity.compact',
         'surfaceContainerHighest',
       },
-      'lib/src/pages/implementations/reading_statistics_page.dart': <String>{
-        'surfaceContainerHighest',
-      },
       'lib/src/pages/implementations/sentence_context_dialog.dart': <String>{
         'VisualDensity.compact',
-      },
-      'lib/src/pages/implementations/series_shelf_card.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHighest',
       },
       'lib/src/pages/implementations/video_fushi/controls_popover.part.dart':
           <String>{'surfaceContainerHighest', 'fontSize:'},
@@ -1517,7 +1427,6 @@ void main() {
           <String>{
             'BorderRadius.circular(',
             'VisualDensity.compact',
-            'fontSize:',
           },
       'lib/src/pages/implementations/video_fushi/layout.part.dart': <String>{
         'fontSize:',
@@ -1525,10 +1434,11 @@ void main() {
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
-        'ListTile(',
       },
       'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
-          <String>{'BorderRadius.circular(', 'fontSize:'},
+          <String>{
+            'fontSize:',
+          },
       'lib/src/pages/implementations/video_fushi_page.dart': <String>{
         'fontSize:',
       },
@@ -1536,38 +1446,25 @@ void main() {
       'lib/src/utils/components/clipboard_lookup_text_panel.dart': <String>{
         'fontSize:',
       },
-      'lib/src/utils/components/cover_badge.dart': <String>{
-        'fontSize:',
-      },
       'lib/src/utils/components/fushi_design_tokens.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerLow',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
         'fontSize:',
       },
       'lib/src/utils/components/fushi_material_components.dart': <String>{
-        'BorderRadius.circular(',
         'VisualDensity.compact',
-        'surfaceContainerHigh',
         'fontSize:',
       },
       'lib/src/utils/components/settings_shared.dart': <String>{
-        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
-      'lib/src/utils/components/stat_contribution_heatmap.dart': <String>{
+      'lib/src/utils/popup_theme_css.dart': <String>{
+        'surfaceContainerLow',
+        'surfaceContainerHigh',
         'surfaceContainerHighest',
       },
-      'lib/src/utils/popup_theme_css.dart': <String>{'surfaceContainerHigh'},
       // Apple 玻璃设计系统 + MD3 Expressive 重设计（PR glass-material），见 allowedFiles。
       'lib/src/lookup/lookup_popup_size_preview.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerLow',
-      },
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart': <String>{
-        'surfaceContainerHigh',
       },
       'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart': <String>{
         'surfaceContainerHighest',
@@ -1578,21 +1475,14 @@ void main() {
       'lib/src/media/manga/manga_cover_failure.dart': <String>{
         'surfaceContainerHighest',
       },
-      'lib/src/media/video/video_apple_chrome.dart': <String>{
-        'BorderRadius.circular(',
-      },
       'lib/src/media/video/video_side_panel.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerLow',
         'fontSize:',
       },
       'lib/src/onboarding/recommended_pack_download_mini_bar.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
       },
       'lib/src/pages/implementations/ai_video_acquisition_page.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHigh',
       },
       'lib/src/pages/implementations/discovery/discovery_layout.dart': <String>{
         'BorderRadius.circular(',
@@ -1603,35 +1493,19 @@ void main() {
       'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': <String>{
         'fontSize:',
       },
-      'lib/src/pages/implementations/video_discovery_page.dart': <String>{
-        'BorderRadius.circular(',
-      },
-      'lib/src/reader/reader_floating_ball.dart': <String>{
-        'BorderRadius.circular(',
-      },
       'lib/src/settings/glass_settings_renderer.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
       },
       'lib/src/settings/settings_kit.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
         'fontSize:',
       },
       'lib/src/settings/settings_home_page.dart': <String>{
-        'BorderRadius.circular(',
         'fontSize:',
-      },
-      'lib/src/sync/sync_settings_schema/interconnect_link.part.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
-      },
-      'lib/src/utils/components/batch_action_bar.dart': <String>{
-        'surfaceContainerHigh',
       },
       'lib/src/utils/components/fushi_bottom_action_bar.dart': <String>{
         'fontSize:',
@@ -1641,8 +1515,6 @@ void main() {
         'fontSize:',
       },
       'lib/src/utils/components/fushi_dropdown.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHigh',
         'fontSize:',
       },
       'lib/src/utils/components/fushi_icon_button.dart': <String>{
@@ -1655,44 +1527,24 @@ void main() {
         'fontSize:',
       },
       'lib/src/utils/components/fushi_tag.dart': <String>{
-        'surfaceContainerHighest',
         'fontSize:',
-      },
-      'lib/src/utils/components/glass/fushi_apple_palette.dart': <String>{
-        'surfaceContainerLow',
-        'surfaceContainerLowest',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
-      },
-      'lib/src/utils/components/glass/fushi_expressive.dart': <String>{
-        'surfaceContainerHighest',
       },
       'lib/src/utils/components/glass/fushi_glass_bars.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
       },
       'lib/src/utils/components/glass/fushi_glass_buttons.dart': <String>{
-        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
       'lib/src/utils/components/glass/fushi_glass_chips.dart': <String>{
-        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
       'lib/src/utils/components/glass/fushi_glass_feedback.dart': <String>{
-        'BorderRadius.circular(',
         'fontSize:',
       },
-      'lib/src/utils/components/glass/fushi_glass_inputs.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHigh',
-      },
       'lib/src/utils/components/glass/fushi_glass_lists.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
         'fontSize:',
         'Card(',
         'ListTile(',
@@ -1709,11 +1561,6 @@ void main() {
       },
       'lib/src/utils/components/library_section_tabs.dart': <String>{
         'fontSize:',
-      },
-      'lib/src/utils/components/shelf_card_widgets.dart': <String>{
-        'BorderRadius.circular(',
-        'surfaceContainerHigh',
-        'surfaceContainerHighest',
       },
       'lib/src/utils/misc/fushi_toast.dart': <String>{
         'fontSize:',
@@ -1758,7 +1605,7 @@ void main() {
       final String source = _withoutSharedComponentNames(
         maskComments(file.readAsStringSync()),
       );
-      final List<String> hits = _forbiddenChromeHits(source, forbidden);
+      final List<String> hits = _m3eChromeHits(source, forbidden);
       if (hits.isEmpty) continue;
       if (reason != null && reason.isNotEmpty) {
         liveAllowlistKeys.add(path);
@@ -1782,7 +1629,8 @@ void main() {
       violations,
       isEmpty,
       reason:
-          'Route ordinary visual chrome through shared MD3 components, or '
+          'Route ordinary visual chrome through shared M3E components and '
+          'tokens (FushiM3eShape / FushiDesignTokens / context.fushiType), or '
           'add a reviewed allowlist reason for true content exceptions:\n'
           '${violations.join('\n')}',
     );
@@ -1816,7 +1664,7 @@ void main() {
       isEmpty,
       reason:
           'TODO-2715: these exempted tokens no longer occur in the file. '
-          'A token that has been routed through the shared MD3 components must '
+          'A token that has been routed through the shared M3E components must '
           'be removed from allowedTokens, otherwise the exemption silently '
           'holds the door open for it to come back:\n${deadTokens.join('\n')}',
     );
@@ -2087,18 +1935,25 @@ void main() {
     }
   });
 
-  test('scrape failure detail uses the shared MD3 card and design tokens', () {
+  test('scrape failure detail uses the shared M3E card and design tokens', () {
     final String source = File(
       'lib/src/media/metadata/scrape_failure_view.dart',
     ).readAsStringSync();
 
+    // M3E（2026-10-06）：失败态走全应用共享的 FushiPlaceholderMessage（error
+    // tone），详情块是 error tone 的 FushiCard + M3E 小形状档；面色 / 圆角来自
+    // 卡片 tone 与 FushiM3eShape，不再是 MD3 时代的 overlay 面 + cardRadius。
+    expect(source, contains('FushiPlaceholderMessage('));
     expect(source, contains('FushiCard('));
+    expect(source, contains('FushiCardTone.error'));
+    expect(source, contains('FushiM3eShape.'));
     expect(source, contains('FushiDesignTokens.of(context)'));
-    expect(source, contains('tokens.surfaces.overlay'));
-    expect(source, contains('tokens.radii.cardRadius'));
     expect(source, contains('tokens.spacing.gap'));
     expect(source, isNot(contains('surfaceContainerHighest')));
     expect(source, isNot(contains('BorderRadius.circular(')));
+    expect(source, isNot(contains('const SizedBox(height: 8)')));
+    expect(source, isNot(contains('const SizedBox(height: 12)')));
+    expect(source, isNot(contains('spacing: 8,')));
   });
 
   test('reader history hover overlays use design tokens', () {
@@ -2117,7 +1972,7 @@ void main() {
     expect(tagDropTarget, isNot(contains('BorderRadius.circular(12)')));
   });
 
-  test('shared tag filter bar uses shared MD3 tag chips', () {
+  test('shared tag filter bar uses shared M3E tag chips', () {
     // 标签筛选栏已从书架页内联类 _TagBarContent 提取为共享组件
     // FushiTagFilterBar（书架 + 视频 tab 共用），此处对整份共享组件文件做约束。
     final String tagBar = File(
@@ -2126,6 +1981,22 @@ void main() {
 
     expect(tagBar, contains('class FushiTagFilterBar'));
     expect(tagBar, contains('FushiTagChip('));
+    // 首尾「管理」「清除」动作 chip 走共享标签 chip 套件（tag_chips.dart），
+    // 不在标签栏里私拼一枚。
+    expect(tagBar, contains('FushiTagActionChip('));
+    expect(tagBar, isNot(contains('class _TagBarActionChip')));
+    final String tagChips = File(
+      'lib/src/media/tags/tag_chips.dart',
+    ).readAsStringSync();
+    final String actionChip = _sectionSource(
+      tagChips,
+      'class FushiTagActionChip',
+      tagChips.length,
+    );
+    expect(actionChip, contains('FushiDesignTokens.of(context)'));
+    expect(actionChip, contains('FushiM3eShape.smallRadius'));
+    expect(actionChip, isNot(contains('Radius.circular(')));
+    expect(actionChip, isNot(contains('const SizedBox(width: 6)')));
     expect(tagBar, contains('FushiIconButton('));
     expect(tagBar, contains('tokens.spacing'));
     expect(tagBar, contains('tokens.surfaces.outline'));
@@ -2143,7 +2014,7 @@ void main() {
     expect(tagBar, isNot(contains('const SizedBox(width: 6)')));
   });
 
-  test('shared icon button uses MD3 design tokens', () {
+  test('shared icon button uses M3E design tokens', () {
     final String source = File(
       'lib/src/utils/components/fushi_icon_button.dart',
     ).readAsStringSync();
@@ -2168,7 +2039,7 @@ void main() {
     expect(buildSource, isNot(contains('const EdgeInsets.all(8)')));
   });
 
-  test('reader history card layout uses shared MD3 spacing tokens', () {
+  test('reader history card layout uses shared M3E spacing tokens', () {
     final String source = readReaderHistorySource();
     final String cardLayout = _functionSource(
       source,
@@ -2206,7 +2077,7 @@ void main() {
   });
 
   test(
-    'book long-press frame uses visible cover block and MD3 action layout',
+    'book long-press frame uses visible cover block and M3E action layout',
     () {
       // TODO-557 把长按对话框封面从「Stack/Positioned.fill + LinearGradient scrim
       // 背景」（TODO-455 引入、让封面几乎不可见）改回「Column 顶部可见封面块」：
@@ -2274,7 +2145,7 @@ void main() {
     },
   );
 
-  test('settings renderer rows use shared MD3 row primitives', () {
+  test('settings renderer rows use shared M3E row primitives', () {
     // schema 行渲染已从两个渲染器收口到共享 settings_schema_widgets.SettingsSchemaItem。
     final String source = File(
       'lib/src/settings/settings_schema_widgets.dart',
@@ -2296,7 +2167,7 @@ void main() {
     );
   });
 
-  test('reader history selection chrome uses shared MD3 tokens', () {
+  test('reader history selection chrome uses shared M3E tokens', () {
     final String source = readReaderHistorySource();
     final String cardShell = _functionSource(
       source,
@@ -2334,7 +2205,7 @@ void main() {
     expect(sharedSelection, isNot(contains('theme.colorScheme.outline')));
   });
 
-  test('reader history batch actions use shared MD3 spacing tokens', () {
+  test('reader history batch actions use shared M3E spacing tokens', () {
     final String source = readReaderHistorySource();
     final String batchActionBar = _functionSource(
       source,
@@ -2380,7 +2251,7 @@ void main() {
     expect(source, isNot(contains('padding: const EdgeInsets.all(24)')));
   });
 
-  test('reader history title footer and drag target use shared MD3 tokens', () {
+  test('reader history title footer and drag target use shared M3E tokens', () {
     final String source = readReaderHistorySource();
     // 巡检 PR-3：footer 实现提取到共享 ShelfCardFooter（书卡 / SeriesShelfCard
     // 共用），MD3 token 守卫跟随到共享文件。
@@ -2424,7 +2295,7 @@ void main() {
     expect(dragTarget, isNot(contains('size: 32')));
   });
 
-  test('reader history action dialogs use shared MD3 dialog chrome', () {
+  test('reader history action dialogs use shared M3E dialog chrome', () {
     final String source = readReaderHistorySource();
     final String deleteDialog = _sectionSource(
       source,
@@ -2447,7 +2318,7 @@ void main() {
     }
   });
 
-  test('reader page prompt dialogs use shared MD3 dialog chrome', () {
+  test('reader page prompt dialogs use shared M3E dialog chrome', () {
     final String source = readReaderPageSource();
     final String readerAudiobookPart = File(
       'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
@@ -2503,7 +2374,7 @@ void main() {
     expect(sentenceActionBar, isNot(contains('const SizedBox(width: 8)')));
   });
 
-  test('audiobook import dialogs use shared MD3 dialog chrome', () {
+  test('audiobook import dialogs use shared M3E dialog chrome', () {
     final String bookImportSource = File(
       'lib/src/media/audiobook/book_import_dialog.dart',
     ).readAsStringSync();
@@ -2554,7 +2425,12 @@ void main() {
     final String srtReimportSource = File(
       'lib/src/media/audiobook/srt_book_reimport_dialog.dart',
     ).readAsStringSync();
-    expect(srtReimportSource, contains('return ImportDialogFrame('));
+    // HBK-AUDIT-037：外框包在 buildImportPopGuard(child: ...) 里（导入中禁关），
+    // 仍是同一个共享 ImportDialogFrame。
+    expect(
+      srtReimportSource,
+      matches(RegExp(r'(return|child:)\s+ImportDialogFrame\(')),
+    );
     expect(srtReimportSource, isNot(contains('adaptiveAlertDialog(')));
     expect(sharedImportFrame, contains('FushiDialogFrame('));
     expect(sharedImportFrame, contains('FushiModalSheetFrame('));
@@ -2570,7 +2446,7 @@ void main() {
     }
   });
 
-  test('audiobook import file rows use shared MD3 icon buttons', () {
+  test('audiobook import file rows use shared M3E icon buttons', () {
     final Map<String, List<String>> rowSections = <String, List<String>>{
       'lib/src/media/audiobook/book_import_dialog.dart': <String>[
         'Widget _epubRow()',
@@ -2612,7 +2488,7 @@ void main() {
     }
   });
 
-  test('audiobook import progress chrome uses shared MD3 tokens', () {
+  test('audiobook import progress chrome uses shared M3E tokens', () {
     final String bookImportSource = File(
       'lib/src/media/audiobook/book_import_dialog.dart',
     ).readAsStringSync();
@@ -2654,7 +2530,9 @@ void main() {
     ]) {
       expect(section, contains('FushiDesignTokens.of(context)'));
       expect(section, contains('tokens.spacing'));
-      expect(section, contains('tokens.type.metadata'));
+      // M3E：导入中进度收敛成共享 ImportProgressCard（下方钉住它的排版走
+      // context.fushiType），flow 不再自己拼 metadata 文本行。
+      expect(section, contains('ImportProgressCard('));
       expect(section, contains('buildImportAction('));
       expect(section, isNot(contains('Theme.of(context).textTheme.bodySmall')));
       expect(section, isNot(contains('Theme.of(context).colorScheme.primary')));
@@ -2669,9 +2547,19 @@ void main() {
       expect(section, isNot(contains('const SizedBox(height: 16)')));
       expect(section, isNot(contains('height: 64')));
     }
+
+    final String progressCard = _sectionSource(
+      bookImportSource,
+      'class ImportProgressCard',
+      bookImportSource.length,
+    );
+    expect(progressCard, contains('FushiCard('));
+    expect(progressCard, contains('context.fushiType'));
+    expect(progressCard, isNot(contains('Theme.of(context).textTheme')));
+    expect(progressCard, isNot(contains('fontSize:')));
   });
 
-  test('sentenceAudioHighlight rematch controls use shared MD3 tokens', () {
+  test('sentenceAudioHighlight rematch controls use shared M3E tokens', () {
     final String source = File(
       'lib/src/media/audiobook/subtitle_rematch.dart',
     ).readAsStringSync();
@@ -2717,7 +2605,7 @@ void main() {
     }
   });
 
-  test('audiobook play bar uses shared MD3 spacing tokens', () {
+  test('audiobook play bar uses shared M3E spacing tokens', () {
     final String source = File(
       'lib/src/media/audiobook/audiobook_play_bar.dart',
     ).readAsStringSync();
@@ -2736,7 +2624,7 @@ void main() {
     expect(playBarBuild, isNot(contains('const SizedBox(width: 4)')));
   });
 
-  test('anki integration dialogs use shared MD3 dialog chrome', () {
+  test('anki integration dialogs use shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/models/anki_integration.dart',
     ).readAsStringSync();
@@ -2758,7 +2646,7 @@ void main() {
     expect(apiDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('update checker dialogs use shared MD3 dialog chrome', () {
+  test('update checker dialogs use shared M3E dialog chrome', () {
     // TODO-584 拆分后: _showUpdateDialog/_showFallbackDialog 随 UpdateChecker
     // 门面进 release part; UpdateAvailableDialog/_DownloadOverlay 进 ui part。
     final String releaseSource = File(
@@ -2796,7 +2684,7 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('sync feedback dialogs use shared MD3 dialog chrome', () {
+  test('sync feedback dialogs use shared M3E dialog chrome', () {
     final String messageSource = File(
       'lib/src/sync/sync_message_dialog.dart',
     ).readAsStringSync();
@@ -2817,7 +2705,7 @@ void main() {
     expect(combined, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('settings action dialogs use shared MD3 inset tokens', () {
+  test('settings action dialogs use shared M3E inset tokens', () {
     final String source = File(
       'lib/src/settings/settings_actions.dart',
     ).readAsStringSync();
@@ -2841,7 +2729,7 @@ void main() {
     );
   });
 
-  test('sync settings custom controls use shared MD3 rows', () {
+  test('sync settings custom controls use shared M3E rows', () {
     // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，AdaptiveSettingsSwitchRow/
     // PickerRow/FushiListItem 正向断言与 Dropdown/SwitchListTile/ListTile 负向断言
     // 都覆盖全部 part。
@@ -2855,7 +2743,7 @@ void main() {
     expect(source, isNot(contains('ListTile(')));
   });
 
-  test('popup menus use the shared MD3 menu item primitive', () {
+  test('popup menus use the shared M3E menu item primitive', () {
     final List<String> menuFiles = <String>[
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
       // Gamepad add menu lives in the binding-edit-dialog part of the
@@ -2909,7 +2797,7 @@ void main() {
     }
   });
 
-  test('transient routes use shared MD3 motion tokens', () {
+  test('transient routes use shared M3E motion tokens', () {
     final File motionFile = File(
       'lib/src/utils/components/fushi_motion_tokens.dart',
     );
@@ -2981,7 +2869,7 @@ void main() {
     expect(sync, isNot(contains('showDialog<int>(')));
   });
 
-  test('shared MD3 primitives animate state changes', () {
+  test('shared M3E primitives animate state changes', () {
     final String motion = File(
       'lib/src/utils/components/fushi_motion_tokens.dart',
     ).readAsStringSync();
@@ -3001,20 +2889,36 @@ void main() {
     ]) {
       final String section = _sectionSource(components, start, end);
       expect(section, contains('AnimatedContainer('));
-      // MD3 状态动画时长必须来自 fushiMd3StateDuration；FushiCard 经
-      // einkSafeDuration 包装（eink 下归零，非 eink 恒等于 MD3 token）也算
-      // 合规——守卫的意图是「用 MD3 token」，不是「禁止 eink 例外」。
+      // 状态动画时长 / 曲线必须来自共享动效 token：MD3 时代的
+      // fushiMd3StateDuration / fushiMd3StateCurve，或 M3E 弹簧推导的
+      // FushiMotion.short（effects default）/ FushiMotion.standard（2026-10 M3E
+      // 列表与卡片共享层把 FushiListItem 迁到了后者）。经 einkSafeDuration 包装
+      // （eink 下归零）也算合规——守卫的意图是「用共享 token」，不是「禁止 eink
+      // 例外」；禁止的是页面 / 组件自写 Duration 字面量。
+      const List<String> durationTokens = <String>[
+        'fushiMd3StateDuration',
+        'FushiMotion.short',
+      ];
       expect(
-        section.contains('duration: fushiMd3StateDuration') ||
-            section.contains(
-              'duration: einkSafeDuration(context, fushiMd3StateDuration)',
-            ),
+        durationTokens.any(
+          (String token) =>
+              section.contains('duration: $token') ||
+              section.contains('duration: einkSafeDuration(context, $token)'),
+        ),
         isTrue,
         reason:
-            '$start section must animate with fushiMd3StateDuration '
-            '(optionally eink-gated via einkSafeDuration)',
+            '$start section must animate with a shared state-motion token '
+            '(fushiMd3StateDuration or M3E FushiMotion.short, optionally '
+            'eink-gated via einkSafeDuration)',
       );
-      expect(section, contains('curve: fushiMd3StateCurve'));
+      expect(
+        section.contains('curve: fushiMd3StateCurve') ||
+            section.contains('curve: FushiMotion.standard'),
+        isTrue,
+        reason:
+            '$start section must use fushiMd3StateCurve or the M3E '
+            'FushiMotion.standard spring curve',
+      );
     }
   });
 
@@ -3042,7 +2946,7 @@ void main() {
     },
   );
 
-  test('dictionary and popup surfaces use shared MD3 primitives', () {
+  test('dictionary and popup surfaces use shared M3E primitives', () {
     final String dictionaryManager = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ).readAsStringSync();
@@ -3203,25 +3107,34 @@ void main() {
     }
   });
 
-  test('custom theme preview uses shared MD3 card shell', () {
+  test('custom theme preview uses shared M3E card shell', () {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
-    // 锚点随 BUG-2187 的自定义主题重设计更新：预览卡不再收 ColorScheme 参数
-    // （改从 _scheme 取），后继函数由 _swatch 变成 _buildReaderPreview。
-    // 守的不变式没变：预览卡走共享 FushiCard 壳，不得自开裸 Card。
+    // 锚点随 2026-10 M3E 自定义主题编辑器重设计更新：预览卡多了 compact 参数
+    // （吸顶紧凑预览），后继函数是 _buildAppPreview。
+    // 判据随设计更新：预览壳画的是**用户正在编辑的配色**（_scheme 的 surface /
+    // outlineVariant，随编辑动画过渡），而 FushiCard 只认 app 当前主题的面色，
+    // 套它就预览不出用户选的颜色——所以壳是一个 AnimatedContainer。守的不变式：
+    // 不自开裸 Card；形状取共享设置套件的容器圆角 token；间距走 FushiDesignTokens。
     final String previewCard = _functionSource(
       source,
-      'Widget _buildPreviewCard()',
-      'Widget _buildReaderPreview(',
+      'Widget _buildPreviewCard({bool compact = false})',
+      'Widget _buildAppPreview(',
     );
-    expect(previewCard, contains('FushiCard('));
     final String normalized = _withoutSharedComponentNames(previewCard);
-    expect(normalized, isNot(contains('return Card(')));
-    expect(normalized, isNot(contains('child: Card(')));
+    // 标识符左边界：函数签名 `_buildPreviewCard({` 自己就含 `Card(`，不是裸 Card。
+    expect(_containsForbiddenChrome(normalized, 'Card('), isFalse);
+    expect(previewCard, contains('SettingsKitRadii.container('));
+    expect(previewCard, contains('tokens.spacing'));
+    expect(
+      RegExp(r'BorderRadius\.circular\(\d').hasMatch(previewCard),
+      isFalse,
+      reason: 'preview shell radius must come from SettingsKitRadii',
+    );
   });
 
-  test('custom theme page uses shared MD3 spacing tokens', () {
+  test('custom theme page uses shared M3E spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
@@ -3238,7 +3151,7 @@ void main() {
     expect(source, isNot(contains('const EdgeInsets.symmetric(horizontal: 6')));
   });
 
-  test('theme selector uses shared MD3 swatches', () {
+  test('theme selector uses shared M3E swatches', () {
     final String source = File(
       'lib/src/settings/settings_actions.dart',
     ).readAsStringSync();
@@ -3259,7 +3172,7 @@ void main() {
     expect(themeSelector, isNot(contains('BoxDecoration(')));
   });
 
-  test('custom theme import dialog uses shared MD3 dialog chrome', () {
+  test('custom theme import dialog uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
@@ -3277,7 +3190,7 @@ void main() {
     expect(importDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('tag filter sheet uses shared MD3 spacing tokens', () {
+  test('tag filter sheet uses shared M3E spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/tag_filter_sheet.dart',
     ).readAsStringSync();
@@ -3294,7 +3207,7 @@ void main() {
     expect(source, isNot(contains('runSpacing: 4')));
   });
 
-  test('app icon custom confirmation uses shared MD3 dialog chrome', () {
+  test('app icon custom confirmation uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/miscellaneous_settings_page.dart',
     ).readAsStringSync();
@@ -3309,7 +3222,7 @@ void main() {
     expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('shortcut reset confirmation uses shared MD3 dialog chrome', () {
+  test('shortcut reset confirmation uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings_page.dart',
     ).readAsStringSync();
@@ -3324,7 +3237,7 @@ void main() {
     expect(confirmDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('shortcut binding editor uses shared MD3 dialog chrome', () {
+  test('shortcut binding editor uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings/'
       'binding_edit_dialog.part.dart',
@@ -3340,7 +3253,7 @@ void main() {
     expect(editDialog, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('shortcut action rows use shared MD3 list and tag chips', () {
+  test('shortcut action rows use shared M3E list and tag chips', () {
     // _ActionTile + _MouseChip are the whole action_tile part (shortcut
     // settings refactor), so the section spans from the tile class to EOF.
     final String source = File(
@@ -3398,7 +3311,7 @@ void main() {
     expect(source, isNot(contains('const EdgeInsets.fromLTRB(16, 16, 8, 4)')));
   });
 
-  test('shortcut binding editor uses shared MD3 tag chips', () {
+  test('shortcut binding editor uses shared M3E tag chips', () {
     final String source = File(
       'lib/src/pages/implementations/shortcut_settings/'
       'binding_edit_dialog.part.dart',
@@ -3412,7 +3325,14 @@ void main() {
     expect(editDialog, contains('FushiTagChip('));
     expect(editDialog, contains('onDeleted:'));
     expect(editDialog, contains('FushiOverflowMenu<GamepadButton>('));
-    expect(editDialog, contains('tokens.radii.controlRadius'));
+    // 捕获块圆角：MD3 时代是 tokens.radii.controlRadius，M3E 改用形状档
+    // FushiM3eShape（激活态 listActive）；两者都是共享 token，禁的是字面量。
+    expect(
+      editDialog.contains('tokens.radii.controlRadius') ||
+          editDialog.contains('FushiM3eShape.'),
+      isTrue,
+      reason: 'capture block radius must come from a shared shape token',
+    );
     expect(editDialog, contains('tokens.spacing'));
     expect(editDialog, isNot(contains('PopupMenuButton')));
     expect(editDialog, isNot(contains('=> Chip(')));
@@ -3425,7 +3345,7 @@ void main() {
     );
   });
 
-  test('custom font dialogs use shared MD3 dialog chrome', () {
+  test('custom font dialogs use shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/custom_fonts_page.dart',
     ).readAsStringSync();
@@ -3476,7 +3396,7 @@ void main() {
     expect(source, isNot(contains('ReorderableDragStartListener(')));
   });
 
-  test('system font picker search uses shared MD3 spacing tokens', () {
+  test('system font picker search uses shared M3E spacing tokens', () {
     // 系统字体选择页已换成独立文件里的浏览页（每款字体用自己渲染日文样张）。
     final String source = File(
       'lib/src/pages/implementations/font_preview/system_font_browser_page.dart',
@@ -3495,7 +3415,7 @@ void main() {
     );
   });
 
-  test('book CSS confirmation dialog uses shared MD3 dialog chrome', () {
+  test('book CSS confirmation dialog uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/book_css_editor_page.dart',
     ).readAsStringSync();
@@ -3510,7 +3430,7 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('book CSS editor shell uses shared MD3 spacing tokens', () {
+  test('book CSS editor shell uses shared M3E spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/book_css_editor_page.dart',
     ).readAsStringSync();
@@ -3536,7 +3456,7 @@ void main() {
     expect(editorBuild, isNot(contains('runSpacing: 4')));
   });
 
-  test('collection dialogs use shared MD3 dialog chrome', () {
+  test('collection dialogs use shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/collections_page.dart',
     ).readAsStringSync();
@@ -3558,7 +3478,7 @@ void main() {
     }
   });
 
-  test('collection list rows use shared MD3 primitives', () {
+  test('collection list rows use shared M3E primitives', () {
     final String source = File(
       'lib/src/pages/implementations/collections_page.dart',
     ).readAsStringSync();
@@ -3583,7 +3503,7 @@ void main() {
     expect(containsIdentifierCall(itemSource, 'Card'), isFalse);
   });
 
-  test('media item edit dialog uses shared MD3 dialog chrome', () {
+  test('media item edit dialog uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
     ).readAsStringSync();
@@ -3599,7 +3519,7 @@ void main() {
   });
 
   test(
-    'media item cover override uses MD3 card chrome instead of fake input',
+    'media item cover override uses M3E card chrome instead of fake input',
     () {
       final String source = File(
         'lib/src/pages/implementations/media_item_edit_dialog_page.dart',
@@ -3624,7 +3544,7 @@ void main() {
     },
   );
 
-  test('page chrome surfaces use shared MD3 spacing tokens', () {
+  test('page chrome surfaces use shared M3E spacing tokens', () {
     final String homeSource = File(
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
@@ -3743,7 +3663,7 @@ void main() {
     );
   });
 
-  test('open stash dialogs use shared MD3 dialog chrome', () {
+  test('open stash dialogs use shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/open_stash_dialog_page.dart',
     ).readAsStringSync();
@@ -3755,7 +3675,7 @@ void main() {
     expect(source, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('home dictionary clear dialog uses shared MD3 dialog chrome', () {
+  test('home dictionary clear dialog uses shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/home_dictionary_page.dart',
     ).readAsStringSync();
@@ -3777,7 +3697,7 @@ void main() {
     expect(dialogSource, isNot(contains('adaptiveAlertDialog(')));
   });
 
-  test('home dictionary list chrome uses shared MD3 spacing tokens', () {
+  test('home dictionary list chrome uses shared M3E spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/home_dictionary_page.dart',
     ).readAsStringSync();
@@ -3815,7 +3735,7 @@ void main() {
     expect(historyList, isNot(contains('const SizedBox(width: 4)')));
   });
 
-  test('dictionary confirmation dialogs use shared MD3 dialog chrome', () {
+  test('dictionary confirmation dialogs use shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ).readAsStringSync();
@@ -3864,7 +3784,7 @@ void main() {
     }
   });
 
-  test('dictionary download dialogs use shared MD3 dialog chrome', () {
+  test('dictionary download dialogs use shared M3E dialog chrome', () {
     final String source = File(
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ).readAsStringSync();
@@ -3901,7 +3821,7 @@ void main() {
     }
   });
 
-  test('reader popup audio controls use shared MD3 micro spacing tokens', () {
+  test('reader popup audio controls use shared M3E micro spacing tokens', () {
     final String source = File(
       'lib/src/pages/implementations/reader_fushi_page.dart',
     ).readAsStringSync();
@@ -3919,7 +3839,7 @@ void main() {
     );
   });
 
-  test('MD3 review report does not reopen completed app chrome scope', () {
+  test('M3E review report does not reopen completed app chrome scope', () {
     final String report = File(
       '../docs/reviews/2026-05-26-project-review.md',
     ).readAsStringSync();
@@ -3946,6 +3866,9 @@ void main() {
 String _withoutSharedComponentNames(String source) {
   return source
       .replaceAll('FushiCard(', 'FushiSharedPanel(')
+      // 统计中心共享区块卡（stat_shared.dart，内部是 FushiCard）：名字里的
+      // `Card(` 不是裸 Card。
+      .replaceAll('StatSectionCard(', 'StatSharedSection(')
       .replaceAll('FushiListItem(', 'FushiSharedRow(')
       .replaceAll('FushiListTile(', 'FushiSharedTile(')
       .replaceAll('FushiIconButton(', 'FushiSharedIconControl(')
@@ -3966,6 +3889,34 @@ String _withoutTransparentInkHosts(String source) {
     ),
     'TransparentInkHost(child: InkWell(',
   );
+}
+
+/// 全树「普通页面 chrome」扫描的 M3E 判据（2026-10-06 守卫由 MD3 改为 M3E）。
+///
+/// 在 [_forbiddenChromeHits] 的基础上按 M3E 设计体系收窄两类 token：
+/// - **形状**：M3E 的形状档本身就是共享 token（[FushiM3eShape] / `tokens.radii` /
+///   `SettingsKitRadii`），`BorderRadius.circular(<token>)` 是在用形状系统；只有
+///   数字字面量 `BorderRadius.circular(12)` 才是页面本地重开的形状决策。
+/// - **色调容器**：`surfaceContainerLow … Highest` 是 M3E tonal 色彩角色本身，
+///   M3E 组件直接读它们是规范用法。但 Apple 设计系统不认这套色调——读它们的文件
+///   必须同时处理 Apple 分支（`isGlassDesign(` / `appleColorsOf(` /
+///   `FushiAppleColors`），否则 Apple 下会漏出 Material 色调，这类仍判违规。
+///
+/// 其余 token（`fontSize:`、`VisualDensity.compact`、裸 `Card(` / `ListTile(` …）
+/// 判据不变：M3E 字阶走 `context.fushiType`，组件走共享 Fushi* 原语。
+List<String> _m3eChromeHits(String source, List<String> forbidden) {
+  final bool appleAware = RegExp(
+    r'isGlassDesign\(|appleColorsOf\(|FushiAppleColors',
+  ).hasMatch(source);
+  return _forbiddenChromeHits(source, forbidden)
+      .where((String token) {
+        if (token == 'BorderRadius.circular(') {
+          return RegExp(r'BorderRadius\.circular\(\s*[0-9.]').hasMatch(source);
+        }
+        if (_wholeIdentifierTokens.contains(token)) return !appleAware;
+        return true;
+      })
+      .toList(growable: false);
 }
 
 List<String> _forbiddenChromeHits(String source, List<String> forbidden) {

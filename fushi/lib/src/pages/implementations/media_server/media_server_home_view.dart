@@ -388,7 +388,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
       child: FushiSkeleton(
         width: 120,
         height: 18,
-        borderRadius: BorderRadius.circular(9),
+        borderRadius: FushiM3eShape.smallRadius,
       ),
     );
     return FushiSkeletonShimmer(

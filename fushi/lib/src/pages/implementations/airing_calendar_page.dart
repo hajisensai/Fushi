@@ -330,7 +330,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
                         : tinted
                             ? theme.colorScheme.primaryContainer
                             : theme.colorScheme.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(tinted ? 20 : 12),
+                    borderRadius: tinted
+                        ? FushiM3eShape.cardRadius
+                        : FushiM3eShape.smallRadius,
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -452,7 +454,7 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
               child: FushiSkeleton(
                 height: 44,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(FushiM3eShape.listActive),
               ),
             ),
             FushiGroupedList(
@@ -621,7 +623,9 @@ class _AiringCalendarPageState extends ConsumerState<AiringCalendarPage> {
       padding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(isToday ? 20 : 16),
+        borderRadius: BorderRadius.circular(
+          isToday ? FushiM3eShape.card : FushiM3eShape.listActive,
+        ),
       ),
       child: Row(
         children: <Widget>[

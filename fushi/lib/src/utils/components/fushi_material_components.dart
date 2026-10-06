@@ -1360,7 +1360,7 @@ class FushiSearchField extends StatelessWidget {
 /// 此前 [FushiSearchField] 用的是 MD3 搜索条形态（高填充容器色、圆角 12、高约 56），
 /// 导致同一导航里「发现」页与「全部视频」页两种外观，且比同行的筛选按钮更高。
 ///
-/// 常量定义放在类之后：`md3_design_system_static_test` 用 `class FushiSearchField`
+/// 常量定义放在类之后：`m3e_design_system_static_test` 用 `class FushiSearchField`
 /// 这个字面量当上一段切片的终点，插在类前会把这段注释卷进它的扫描面。
 const double kFushiSearchFieldHeight = 40;
 

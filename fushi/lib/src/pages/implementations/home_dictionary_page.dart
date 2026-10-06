@@ -2143,9 +2143,9 @@ class _SearchFocusLift extends StatelessWidget {
       child: AnimatedContainer(
         duration: duration,
         curve: FushiMotion.standard,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: focused
+        decoration: ShapeDecoration(
+          shape: const StadiumBorder(),
+          shadows: focused
               ? <BoxShadow>[
                   BoxShadow(
                     color: cs.shadow.withValues(alpha: 0.18),
@@ -2250,35 +2250,16 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final TextTheme tt = Theme.of(context).textTheme;
-    final TextStyle? titleBase = tt.titleMedium;
-    final TextStyle? subtitleBase = tt.bodySmall;
     final bool reveal = _hovered || _focused;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: FushiListItem(
-        // 只给字号 / 字重，不写死颜色：选中行的未着色文字由分段外壳切到
-        // onSecondaryContainer。
-        title: Text(
-          widget.term,
-          style: TextStyle(
-            fontSize: titleBase?.fontSize,
-            fontWeight: titleBase?.fontWeight,
-            height: titleBase?.height,
-            letterSpacing: titleBase?.letterSpacing,
-          ),
-        ),
-        subtitle: widget.subtitle == null
-            ? null
-            : Text(
-                widget.subtitle!,
-                style: TextStyle(
-                  fontSize: subtitleBase?.fontSize,
-                  height: subtitleBase?.height,
-                  letterSpacing: subtitleBase?.letterSpacing,
-                ),
-              ),
+        // 字阶与前景色都交给 FushiListItem 的列表规格（listTitle / bodyMedium），
+        // 不写死颜色：选中行的文字由分段外壳切到 onSecondaryContainer。
+        title: Text(widget.term),
+        subtitle: widget.subtitle == null ? null : Text(widget.subtitle!),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[

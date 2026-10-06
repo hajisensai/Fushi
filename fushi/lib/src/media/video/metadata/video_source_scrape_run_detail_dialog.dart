@@ -434,7 +434,7 @@ class _TimelineNode extends StatelessWidget {
       painter: _TimelineRailPainter(
         dotColor: dotColor,
         lineColor: cs.outlineVariant,
-        haloColor: cs.surfaceContainerHigh,
+        haloColor: FushiDesignTokens.of(context).surfaces.search,
         isFirst: isFirst,
         isLast: isLast,
         railWidth: _railWidth,

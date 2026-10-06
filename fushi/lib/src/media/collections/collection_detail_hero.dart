@@ -166,7 +166,7 @@ class CollectionDetailHeroCard extends StatelessWidget {
                 scheme.primaryContainer.withValues(alpha: 0.62),
                 scheme.surfaceContainerLow,
               ),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: FushiM3eShape.containerLargeRadius,
         border: eink ? Border.all(color: scheme.outline) : null,
       ),
       child: body,
@@ -190,7 +190,7 @@ class _HeroProgress extends StatelessWidget {
     final int percent = (v * 100).round();
     final Widget bar = apple || isEinkTheme(context)
         ? ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: FushiBorderRadius.chip,
             child: LinearProgressIndicator(
               value: v,
               minHeight: 4,

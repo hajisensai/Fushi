@@ -1001,11 +1001,11 @@ class _ToolPill extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
+      decoration: ShapeDecoration(
         color: isGlassDesign(context)
             ? appleColorsOf(context).fill
             : cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(999),
+        shape: const StadiumBorder(),
       ),
       child: child,
     );

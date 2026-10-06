@@ -808,9 +808,10 @@ class StatSheetHeader extends StatelessWidget {
                   title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: statSectionTitleStyle(
-                    context,
-                  ).copyWith(fontSize: theme.textTheme.titleLarge?.fontSize),
+                  style: context.fushiType.titleLarge.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: statSectionTitleStyle(context).color,
+                  ),
                 ),
                 if (sub != null && sub.isNotEmpty) ...<Widget>[
                   SizedBox(height: tokens.spacing.gap / 2),

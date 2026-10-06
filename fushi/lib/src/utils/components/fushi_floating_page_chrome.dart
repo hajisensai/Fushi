@@ -148,7 +148,6 @@ class FushiPageChromeTitle extends StatelessWidget {
   /// 把一行文字的行盒钉死在 `fontSize × height`：[forceStrutHeight] 让调用方
   /// Text 自带的 height / 字体度量都不再改变行盒高度。
   static Widget _fixedLine(Widget child, TextStyle style) {
-    final double fontSize = style.fontSize ?? 14;
     return DefaultTextStyle.merge(
       style: style,
       maxLines: 1,
@@ -158,8 +157,8 @@ class FushiPageChromeTitle extends StatelessWidget {
         leadingDistribution: TextLeadingDistribution.even,
       ),
       child: _StrutScope(
-        strut: StrutStyle(
-          fontSize: fontSize,
+        strut: StrutStyle.fromTextStyle(
+          style,
           height: style.height ?? _kTitleLineHeight,
           leadingDistribution: TextLeadingDistribution.even,
           forceStrutHeight: true,

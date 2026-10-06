@@ -759,7 +759,7 @@ class _ScopeSelector extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: scheme.secondaryContainer.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: FushiM3eShape.cardRadius,
       ),
       child: Padding(
         padding: EdgeInsets.all(tokens.spacing.gap * 1.5),

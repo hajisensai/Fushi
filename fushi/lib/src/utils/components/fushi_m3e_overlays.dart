@@ -15,6 +15,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
     show FushiTextFieldControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -931,7 +933,9 @@ class _FushiTextInputDialogState extends State<_FushiTextInputDialog> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 error,
-                style: TextStyle(color: cs.error, fontSize: 13),
+                style: FushiAppleMetrics.of(
+                  context,
+                ).footnoteStyle(context).copyWith(color: cs.error),
               ),
             ),
         ],

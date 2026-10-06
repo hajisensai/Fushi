@@ -8,6 +8,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassButton, GlassButtonStyle, LiquidRoundedRectangle;
 
@@ -1032,7 +1033,11 @@ class FushiFilterChip extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final Widget? leadingAvatar = exclude
         ? (avatar ??
-              FushiIcon(Icons.remove, size: 18, color: scheme.onErrorContainer))
+              FushiIcon(
+                FushiIcons.remove,
+                size: 18,
+                color: scheme.onErrorContainer,
+              ))
         : avatar;
     final bool effectiveSelected = selected || exclude;
     final Color? effectiveSelectedColor = exclude

@@ -779,11 +779,7 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
       child: Text(
         text,
         style: apple
-            ? TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: appleColorsOf(context).secondaryLabel,
-              )
+            ? FushiDesignTokens.of(context).type.sectionLabel
             : theme.textTheme.labelLarge?.copyWith(
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w700,
@@ -832,10 +828,7 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
                 entry.name,
                 style:
                     (apple
-                            ? const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                              )
+                            ? theme.textTheme.headlineMedium
                             : theme.textTheme.headlineSmall)
                         ?.copyWith(fontWeight: FontWeight.w700),
               ),

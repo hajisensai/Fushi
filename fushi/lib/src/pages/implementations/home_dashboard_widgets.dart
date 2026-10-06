@@ -97,11 +97,7 @@ class HomeGoalSkeleton extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
       child: Row(
         children: <Widget>[
-          HomeSkeletonBlock(
-            width: 48,
-            height: 48,
-            radius: BorderRadius.circular(24),
-          ),
+          const FushiSkeleton(width: 48, height: 48, circle: true),
           SizedBox(width: tokens.spacing.card),
           Expanded(
             child: Column(
@@ -285,8 +281,7 @@ class HomeGoalRing extends StatelessWidget {
           if (value != null)
             Text(
               '${(value * 100).round()}%',
-              style: tokens.type.metadata.copyWith(
-                fontSize: size * 0.22,
+              style: context.fushiType.labelSmall.copyWith(
                 fontWeight: FontWeight.w600,
                 color: tokens.surfaces.onSurface,
               ),
@@ -345,9 +340,7 @@ class HomeContinueHero extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool apple = isGlassDesign(context);
     final bool eink = isEinkTheme(context);
-    final BorderRadius radius = apple
-        ? BorderRadius.circular(16)
-        : BorderRadius.circular(tokens.radii.group);
+    final BorderRadius radius = fushiCardBorderRadius(context);
     final Color fill = apple
         ? appleColorsOf(context).tertiaryFill
         : Color.alphaBlend(

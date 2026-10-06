@@ -556,7 +556,7 @@ class _TagSummaryCard extends StatelessWidget {
       padding: EdgeInsets.all(apple ? tokens.spacing.gap : tokens.spacing.card),
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: FushiM3eShape.containerLargeRadius,
         border: eink ? Border.all(color: theme.colorScheme.outline) : null,
       ),
       child: Row(
@@ -697,7 +697,7 @@ class _TagBadge extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FushiM3eShape.smallRadius,
         border: Border.all(color: edge),
       ),
       child: Text(

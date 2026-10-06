@@ -859,7 +859,7 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
       height: h,
       child: cover == null
           ? ColoredBox(
-              color: cs.surfaceContainerHighest,
+              color: FushiDesignTokens.of(context).surfaces.overlay,
               child: Center(
                 child: AnimatedBuilder(
                   animation: _playScale.animation,
@@ -1784,12 +1784,11 @@ class _SecondaryActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
     final ValueChanged<LyricsMenuAnchor>? onSleep = callbacks.onSleepTimer;
     final ValueChanged<LyricsMenuAnchor>? onTypography = callbacks.onTypography;
     return DecoratedBox(
       decoration: ShapeDecoration(
-        color: cs.surfaceContainerHighest,
+        color: FushiDesignTokens.of(context).surfaces.overlay,
         shape: const StadiumBorder(),
       ),
       child: Padding(

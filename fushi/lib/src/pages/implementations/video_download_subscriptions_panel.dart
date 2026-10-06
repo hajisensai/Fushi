@@ -944,9 +944,9 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
                         horizontal: 8,
                         vertical: 2,
                       ),
-                      decoration: BoxDecoration(
+                      decoration: ShapeDecoration(
                         color: cs.error,
-                        borderRadius: BorderRadius.circular(999),
+                        shape: const StadiumBorder(),
                       ),
                       child: Text(
                         '$failed',

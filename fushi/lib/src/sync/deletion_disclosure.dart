@@ -186,11 +186,12 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
-    // M3E：说明放进 surfaceContainerHigh 小圆角色块（墨水屏只留描边），与上下
+    // M3E：说明放进共享 search 色调（MD3 即 surfaceContainerHigh）的小圆角色块
+    // （墨水屏只留描边），与上下
     // 勾选分组区分开——它不是可操作的行。
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: eink ? colors.surface : colors.surfaceContainerHigh,
+        color: eink ? colors.surface : tokens.surfaces.search,
         borderRadius: FushiM3eShape.smallRadius,
         border: eink ? Border.all(color: colors.outline) : null,
       ),

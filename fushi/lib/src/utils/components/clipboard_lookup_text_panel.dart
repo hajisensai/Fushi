@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 /// BUG-175 / TODO-222 要求源文本条与弹窗 headword **同级**；那个 headword 不是
 /// Flutter 排版角色，而是 WebView 里 `assets/popup/popup.css` 的
 /// `.expression { font-size: 26px }`。所以这个数字是**跨边界对齐常量**，不是本地
-/// 重新拍板的 MD3 字号——守卫用 `md3_design_system_static_test.dart` 的
+/// 重新拍板的 MD3 字号——守卫用 `m3e_design_system_static_test.dart` 的
 /// 「source lookup strip headword size stays pinned to the popup CSS」把它与
 /// popup.css 钉在一起，改哪边都会红。
 ///

@@ -217,7 +217,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
           // 与旁边的搜索胶囊同形（M3E：全圆角、surfaceContainerHigh 填充、
           // 静止无描边），不再是一颗小圆角描边方块挨着一枚胶囊。
           filled: true,
-          fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+          fillColor: tokens.surfaces.search,
           border: _pillBorder,
           enabledBorder: _pillBorder,
           focusedBorder: _pillBorder.copyWith(

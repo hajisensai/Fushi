@@ -38,7 +38,7 @@ const double kReaderDesktopHeaderHeight = 48;
 /// 不跟随 app 全局 MD3 排版令牌——它要和顶部进度胶囊
 /// （[kTopProgressFontSize] = 12）、底部状态行（[kReaderStatusFooterFontSize]）
 /// 成一族，比正文小一档而比进度胶囊大一档。具名而不写死数字，是为了让
-/// md3_design_system_static_test 的豁免有个可指的真相源。
+/// m3e_design_system_static_test 的豁免有个可指的真相源。
 const double kReaderDesktopHeaderTitleFontSize = 14;
 
 /// 悬浮工具栏样式（M3E floating toolbar，默认）下胶囊离窗口边 / 状态行的外边距。

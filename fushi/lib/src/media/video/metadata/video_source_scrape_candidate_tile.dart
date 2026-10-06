@@ -207,7 +207,7 @@ class _CandidateCoverPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     return ColoredBox(
-      color: cs.surfaceContainerHighest,
+      color: FushiDesignTokens.of(context).surfaces.overlay,
       child: Center(
         child: FushiIcon(
           FushiIcons.video,
@@ -233,7 +233,7 @@ class _AiSuggestionBlock extends StatelessWidget {
     final FushiCardColors colors =
         fushiCardToneColors(context, FushiCardTone.tertiary) ??
             FushiCardColors(
-              container: cs.surfaceContainerHighest,
+              container: FushiDesignTokens.of(context).surfaces.overlay,
               onContainer: cs.onSurface,
             );
     final int? percent = this.percent;
