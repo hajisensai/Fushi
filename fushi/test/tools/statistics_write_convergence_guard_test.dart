@@ -97,6 +97,7 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/reading_statistics_page.dart',
   'lib/src/pages/implementations/video_statistics_page.dart',
   'lib/src/pages/implementations/game_statistics_page.dart',
+  'lib/src/platform/desktop/ctl/ctl_settings_routes.dart',
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/statistics_center_page.dart',
   'lib/src/pages/implementations/stat_period_detail_sheet.dart',

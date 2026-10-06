@@ -80,6 +80,7 @@ import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
+import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/video_control_bar.dart';
 import 'package:fushi/src/media/video/video_top_bar_slots.dart';
@@ -296,6 +297,7 @@ part 'video_fushi/subtitle_caret.part.dart';
 part 'video_fushi/fullscreen.part.dart';
 part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
+part 'video_fushi/playback_remote.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -1483,6 +1485,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double? get debugVolume => _controller?.volume;
 
   VideoPlayerController? _controller;
+
+  /// 桌面控制通道遥控面（见 `video_fushi/playback_remote.part.dart`）。
+  late final _VideoPagePlaybackRemote _playbackRemote =
+      _VideoPagePlaybackRemote(this);
 
   /// BUG-772：首开时新建但尚未赋给 [_controller] 的「在途」controller。持有它，才能在
   /// 用户于 `await controller.load()` 完成前退出页时，于 [dispose] 主动 dispose 取消它
@@ -2755,6 +2761,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       'page open platform=${Platform.operatingSystem}',
     );
     _registerExternalNavigation();
+    // 桌面控制通道遥控（`fushi_cli play`）：按路由压栈顺序登记，最上层的视频页优先。
+    videoPlaybackRemotes.register(_playbackRemote);
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown);
     }
@@ -5333,6 +5341,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
+    videoPlaybackRemotes.unregister(_playbackRemote);
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // BUG-2043：加载中就被退出（ESC / 系统返回）而还没压上全屏路由 → 接管来的原生
     // 全屏由本页亲自退，不能把窗口留在「原生全屏、栈上无全屏路由」的悬空态。

@@ -74,6 +74,8 @@ dependencies:
     path: ../packages/fushi_core
   fushi_dictionary:
     path: ../packages/fushi_dictionary
+  fushi_cli:
+    path: ../packages/fushi_cli
   fushi_engine:
     path: ../packages/fushi_engine
   fushi_anki:

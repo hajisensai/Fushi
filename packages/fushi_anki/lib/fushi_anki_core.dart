@@ -26,3 +26,5 @@ export 'src/lapis_preset.dart';
 export 'src/lapis_style_preview.dart';
 export 'src/lapis_styling.dart';
 export 'src/lapis_template_preview.dart';
+
+export 'src/anki_video_template.dart';

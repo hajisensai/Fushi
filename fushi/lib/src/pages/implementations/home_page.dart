@@ -26,10 +26,7 @@ import 'package:fushi/src/onboarding/recommended_pack_tutorial_state.dart';
 import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show
-        FushiFloatingChromeInset,
-        FushiHeightReporter,
-        kFushiFloatingChromeGap;
+    show FushiFloatingChromeInset, FushiHeightReporter, kFushiFloatingChromeGap;
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
@@ -78,20 +75,15 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
-import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
-import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
-import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
@@ -160,25 +152,24 @@ export 'package:fushi/src/models/home_tab.dart';
 /// 说成「macOS 恒 false」。收成一个快照后平台判据只在 [ModuleId.availableOn] 判
 /// 一次，两个调用点各减七行，也不可能再漏配。
 List<HomeTab> homeActiveTabs(ModuleVisibility visibility) => <HomeTab>[
-      HomeTab.home,
-      // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
-      // 首页/设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它们）。
-      if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
-      if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
-      if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
-      if (visibility.isEnabled(ModuleId.games)) HomeTab.games,
-      // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
-      // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
-      // 视频/游戏之后。
-      if (visibility.isEnabled(ModuleId.browse)) HomeTab.browse,
-      if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
-      // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
-      // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
-      // [ModuleId.availableOn]），位置紧邻设置之前。
-      if (visibility.isEnabled(ModuleId.browserExtension))
-        HomeTab.browserExtension,
-      HomeTab.settings,
-    ];
+  HomeTab.home,
+  // 七个库页/工具 tab 都可按「功能模块」偏好隐藏（设置 → 外观 → 功能模块）；
+  // 首页/设置恒在，是全部隐藏后的安全回退面（故 [ModuleId] 里没有它们）。
+  if (visibility.isEnabled(ModuleId.books)) HomeTab.books,
+  if (visibility.isEnabled(ModuleId.manga)) HomeTab.manga,
+  if (visibility.isEnabled(ModuleId.video)) HomeTab.video,
+  if (visibility.isEnabled(ModuleId.games)) HomeTab.games,
+  // 下载 tab（统一下载中心）：除番剧 torrent 外还承载通用磁力（书）与漫画
+  // 「在线目录」卷下载队列，所以不随视频开关联动，只听自己的模块开关；位置在
+  // 视频/游戏之后。
+  if (visibility.isEnabled(ModuleId.browse)) HomeTab.browse,
+  if (visibility.isEnabled(ModuleId.lookup)) HomeTab.dictionaries,
+  // 浏览器扩展管理（安装引导 + 连接检测 + 版本）独立成页，仅桌面出现（手机浏览器
+  // 不支持加载未解压扩展，故按平台而非实验开关门控——平台判据在
+  // [ModuleId.availableOn]），位置紧邻设置之前。
+  if (visibility.isEnabled(ModuleId.browserExtension)) HomeTab.browserExtension,
+  HomeTab.settings,
+];
 
 /// 启动落地 tab。「启动默认打开查词」只在查词 tab 真的可见时成立——查词模块被
 /// 关掉时返回它会让 `_currentTab` 从第一帧起就指向一个不在 [homeActiveTabs] 里的
@@ -210,8 +201,9 @@ HomeTab homeTabForVisualIndex({
   required int visualIndex,
   required bool reversed,
 }) {
-  final int logicalIndex =
-      reversed ? (tabs.length - 1 - visualIndex) : visualIndex;
+  final int logicalIndex = reversed
+      ? (tabs.length - 1 - visualIndex)
+      : visualIndex;
   // 回退到恒在的 home（书架 tab 现可被「功能模块」偏好隐藏，不再是安全回退）。
   if (logicalIndex < 0 || logicalIndex >= tabs.length) return HomeTab.home;
   return tabs[logicalIndex];
@@ -222,8 +214,9 @@ HomeTab homeTabForVisualIndex({
 /// 的 builder 里（Approach B，让 MacosWindow 包住整个 navigator，pushed 路由也拿到
 /// MacosWindowScope）构建，与 HomePage 自绘的 rail / 底栏驱动**同一个**选中身份。
 /// 非 macOS 平台不读写它，纯 no-op。
-final ValueNotifier<HomeTab> homeShellTabNotifier =
-    ValueNotifier<HomeTab>(HomeTab.home);
+final ValueNotifier<HomeTab> homeShellTabNotifier = ValueNotifier<HomeTab>(
+  HomeTab.home,
+);
 
 /// 单个 [HomeTab] 的导航项（图标 + 标签）。顶层函数，供 HomePage 的 rail/底栏与 macOS
 /// 根侧栏共用，保证三处标签/图标一致。
@@ -295,15 +288,17 @@ Sidebar buildFushiMacosSidebar({required List<HomeTab> activeTabs}) {
   return Sidebar(
     minWidth: 220,
     builder: (BuildContext context, ScrollController scrollController) {
-      final List<AdaptiveNavItem> items =
-          activeTabs.map(homeNavItemFor).toList();
+      final List<AdaptiveNavItem> items = activeTabs
+          .map(homeNavItemFor)
+          .toList();
       return ValueListenableBuilder<HomeTab>(
         valueListenable: homeShellTabNotifier,
         builder: (BuildContext context, HomeTab current, _) {
           // 当前 tab 若已不在可见列表（刚关掉实验开关仍停在 video），回落到书架，
           // 避免 SidebarItems.currentIndex 越界。
-          final int currentIndex =
-              activeTabs.contains(current) ? activeTabs.indexOf(current) : 0;
+          final int currentIndex = activeTabs.contains(current)
+              ? activeTabs.indexOf(current)
+              : 0;
           return SidebarItems(
             currentIndex: currentIndex,
             onChanged: (int i) {
@@ -348,8 +343,7 @@ class _ProductionVideoDiscoveryController implements VideoDiscoveryController {
   Future<ProviderBatchResult<VideoDiscoveryPage>> load(
     VideoDiscoveryRequest request, {
     void Function(ProviderBatchResult<VideoDiscoveryPage> partial)? onProgress,
-  }) =>
-      service.load(request, onProgress: onProgress);
+  }) => service.load(request, onProgress: onProgress);
 
   @override
   String displayNameFor(String providerId) =>
@@ -422,14 +416,21 @@ class _HomePageState extends BasePageState<HomePage>
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
   final Map<HomeTab, ScrollController> _tabScrollControllers =
       <HomeTab, ScrollController>{};
-  VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
-  VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
-  String? _videoSourceScrapeConfigFingerprint;
-  VideoLibraryScrapeSweep? _videoScrapeSweep;
+
+  /// 刮削协调器 / 任务控制器 / 补刮调度器的持有者（见 [VideoScrapeRuntime]）。
+  /// 本页是它唯一的生命周期主人，并把它登记到 [AppModel.videoScrapeRuntime]。
+  late final VideoScrapeRuntime _videoScrapeRuntime = VideoScrapeRuntime.forApp(
+    appModelNoUpdate,
+    onTaskChanged: _onVideoSourceScrapeTaskChanged,
+    onLibraryChanged: () {
+      if (mounted) _notifyVideoLibraryChanged();
+    },
+  );
   bool _videoSourceScrapePanelOpen = false;
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
   String? _videoDiscoveryConfigFingerprint;
+
   /// 待送达浏览页的跳转请求：只在跳转那一帧非空，送达后即清（见 [_openBrowseTab]）。
   BrowseNavigationRequest? _browseRequest;
 
@@ -452,8 +453,9 @@ class _HomePageState extends BasePageState<HomePage>
     super.initState();
     // 7a：把本页持有的刮削控制器借给互联 host（远程候选搜索 / 重刮）。getter 按
     // 当前偏好惰性建，所以解析器每次都返回配置正确的那一个。
-    appModelNoUpdate.videoScrapeControllerResolver =
-        () async => _videoSourceScrapeController;
+    appModelNoUpdate.videoScrapeControllerResolver = () async =>
+        _videoSourceScrapeController;
+    appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
 
     _currentTab = homeInitialTab(
       startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
@@ -471,8 +473,8 @@ class _HomePageState extends BasePageState<HomePage>
     WidgetsBinding.instance.addObserver(this);
     assert(() {
       HomePage.debugSelectTab = _selectTab;
-      HomePage.debugVideoDiscoveryActions =
-          () => _productionVideoDiscoveryActions;
+      HomePage.debugVideoDiscoveryActions = () =>
+          _productionVideoDiscoveryActions;
       return true;
     }());
     appModelNoUpdate.databaseCloseNotifier.addListener(refresh);
@@ -481,8 +483,9 @@ class _HomePageState extends BasePageState<HomePage>
     // ——spec 2026-07-10 §7 后服务由 AppModel 持有 app 级监听，消费按
     // resolveDesktopLookupConsumer 分区（mainTab 仍只归 HomeDictionaryPage），
     // HomePage 根节点依旧不消费查词请求。
-    appModelNoUpdate.homeDictionaryTabRequest
-        .addListener(_onHomeDictionaryTabRequested);
+    appModelNoUpdate.homeDictionaryTabRequest.addListener(
+      _onHomeDictionaryTabRequested,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
@@ -516,7 +519,8 @@ class _HomePageState extends BasePageState<HomePage>
 
       if (!tutorialOffered && appModel.isFirstTimeSetup) {
         appModel.setLastSelectedDictionaryFormat(
-            JapaneseLanguage.instance.standardFormat);
+          JapaneseLanguage.instance.standardFormat,
+        );
         appModel.setFirstTimeSetupFlag();
         // 全新安装：把新手引导标成「待完成」再进下面的弹出分支。既有安装升级
         // 上来时该键缺省即 true（不弹）；中途杀进程下次启动值仍是 false，会
@@ -624,11 +628,13 @@ class _HomePageState extends BasePageState<HomePage>
       // 已知产物时，自动备份后推送新 styling（手改内容绝不自动覆盖，Anki 未
       // 运行静默跳过）。服务内部有每进程一次的闸门，HomePage 重建不会重跑。
       if (mounted) {
-        unawaited(LapisTemplateService(ref.read(ankiRepositoryProvider))
-            .maybeAutoMigrateOnStartup()
-            .catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log('HomePage.lapisAutoMigrate', e, s);
-        }));
+        unawaited(
+          LapisTemplateService(
+            ref.read(ankiRepositoryProvider),
+          ).maybeAutoMigrateOnStartup().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log('HomePage.lapisAutoMigrate', e, s);
+          }),
+        );
       }
 
       // Anki 媒体去重的自动处理：**默认关**，只有用户在设置页主动打开才会跑。
@@ -637,9 +643,10 @@ class _HomePageState extends BasePageState<HomePage>
       // [AnkiMediaDedupRunner.maybeAutoRunOnStartup]，这里不做二次决策）。
       if (mounted) {
         unawaited(
-            _maybeAutoDedupAnkiMedia().catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log('HomePage.ankiMediaDedupAuto', e, s);
-        }));
+          _maybeAutoDedupAnkiMedia().catchError((Object e, StackTrace s) {
+            ErrorLogService.instance.log('HomePage.ankiMediaDedupAuto', e, s);
+          }),
+        );
       }
 
       _maybeSyncLeaderboard();
@@ -650,51 +657,64 @@ class _HomePageState extends BasePageState<HomePage>
   /// 上传关闭 / 30 分钟内同步或尝试过都是 no-op（节流在服务里）；失败只记日志。
   void _maybeSyncLeaderboard() {
     if (!mounted) return;
-    unawaited(Future<void>(
-      () => ref.read(leaderboardServiceProvider).maybeSyncInBackground(),
-    ).catchError((Object e, StackTrace s) {
-      ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
-    }));
+    unawaited(
+      Future<void>(
+        () => ref.read(leaderboardServiceProvider).maybeSyncInBackground(),
+      ).catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
+      }),
+    );
   }
 
   /// 启动期自动处理一轮 Anki 媒体去重的 UI 侧收尾：报结果，或提示 + 等确认。
   Future<void> _maybeAutoDedupAnkiMedia() async {
-    final AnkiMediaDedupAutoOutcome? outcome =
-        await AnkiMediaDedupRunner(ref.read(ankiRepositoryProvider))
-            .maybeAutoRunOnStartup();
+    final AnkiMediaDedupAutoOutcome? outcome = await AnkiMediaDedupRunner(
+      ref.read(ankiRepositoryProvider),
+    ).maybeAutoRunOnStartup();
     if (outcome == null || !mounted) return;
     final AnkiMediaDedupReport? applied = outcome.applied;
     if (applied != null) {
       // 用户显式选了「自动直接删除」：只报结果。
-      ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(
-        content: Text(t.anki_dedup_auto_done(
-          count: '${applied.duplicatesRemoved}',
-          size: formatAnkiMediaDedupBytes(applied.bytesSaved),
-        )),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        FushiSnackBar(
+          content: Text(
+            t.anki_dedup_auto_done(
+              count: '${applied.duplicatesRemoved}',
+              size: formatAnkiMediaDedupBytes(applied.bytesSaved),
+            ),
+          ),
+        ),
+      );
       return;
     }
     if (!outcome.needsConfirmation) return;
     // 保守路径（默认）：只提示。用户点「查看」才摊开逐条清单，再点删除才真删。
-    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(
-      content: Text(t.anki_dedup_auto_found(
-        count: '${outcome.plan.duplicatesRemoved}',
-        size: formatAnkiMediaDedupBytes(outcome.plan.bytesSaved),
-      )),
-      duration: const Duration(seconds: 10),
-      action: SnackBarAction(
-        label: t.anki_dedup_auto_review,
-        onPressed: () => unawaited(_reviewAutoDedupPlan(outcome.plan)),
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(
+        content: Text(
+          t.anki_dedup_auto_found(
+            count: '${outcome.plan.duplicatesRemoved}',
+            size: formatAnkiMediaDedupBytes(outcome.plan.bytesSaved),
+          ),
+        ),
+        duration: const Duration(seconds: 10),
+        action: SnackBarAction(
+          label: t.anki_dedup_auto_review,
+          onPressed: () => unawaited(_reviewAutoDedupPlan(outcome.plan)),
+        ),
       ),
-    ));
+    );
   }
 
   /// 「查看」→ 逐条清单 + 删除确认 → 真删（带进度对话框，可取消）→ 结果
   /// 报告。与设置页手动路径同一套弹窗（见 anki_media_dedup_dialogs.dart）。
   Future<void> _reviewAutoDedupPlan(AnkiMediaDedupReport plan) async {
     if (!mounted) return;
-    final bool confirmed =
-        await showAnkiMediaDedupPlanDialog(context, plan, offerDelete: true);
+    final bool confirmed = await showAnkiMediaDedupPlanDialog(
+      context,
+      plan,
+      offerDelete: true,
+    );
     if (!confirmed || !mounted) return;
     final AnkiMediaDedupReport? result = await runAnkiMediaDedupWithProgress(
       context,
@@ -728,10 +748,11 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Future<void> _backfillVideoMetadataWorks() async {
-    final List<SourceLibraryRow> sources =
-        await appModel.database.getMediaSourcesByKind('video');
-    final VideoSourceMetadataIndexer indexer =
-        VideoSourceMetadataIndexer(appModel.database);
+    final List<SourceLibraryRow> sources = await appModel.database
+        .getMediaSourcesByKind('video');
+    final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(
+      appModel.database,
+    );
     bool changed = false;
     for (final SourceLibraryRow source in sources) {
       try {
@@ -769,8 +790,8 @@ class _HomePageState extends BasePageState<HomePage>
     // （focusSearch: false）不碰焦点——它们正要把 pending 的词填进去出词卡。
     final DictionaryFocusIntent? focus =
         appModelNoUpdate.homeDictionaryTabRequest.value.focusSearch
-            ? DictionaryFocusIntent.selectQuery
-            : null;
+        ? DictionaryFocusIntent.selectQuery
+        : null;
     if (_currentTab == HomeTab.dictionaries &&
         (ModalRoute.of(context)?.isCurrent ?? true)) {
       // 已经显示着：不切 tab，但聚焦意图仍要落地（否则「已在查词页时按热键」
@@ -791,13 +812,16 @@ class _HomePageState extends BasePageState<HomePage>
     _largeTitle.dispose();
     _shellActions.dispose();
     appModelNoUpdate.videoScrapeControllerResolver = null;
+    if (identical(appModelNoUpdate.videoScrapeRuntime, _videoScrapeRuntime)) {
+      appModelNoUpdate.videoScrapeRuntime = null;
+    }
     assert(() {
       HomePage.debugSelectTab = null;
       HomePage.debugVideoDiscoveryActions = null;
       return true;
     }());
     _periodicSyncTimer?.cancel();
-    _shutdownVideoSourceScrape();
+    _videoScrapeRuntime.shutdown();
     _videoDiscoveryService?.close();
     _videoDiscoveryService = null;
     _videoDiscoveryController = null;
@@ -809,8 +833,9 @@ class _HomePageState extends BasePageState<HomePage>
     _keyboardFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     appModelNoUpdate.databaseCloseNotifier.removeListener(refresh);
-    appModelNoUpdate.homeDictionaryTabRequest
-        .removeListener(_onHomeDictionaryTabRequested);
+    appModelNoUpdate.homeDictionaryTabRequest.removeListener(
+      _onHomeDictionaryTabRequested,
+    );
     homeShellTabNotifier.removeListener(_onShellTabRequested);
     super.dispose();
   }
@@ -830,7 +855,7 @@ class _HomePageState extends BasePageState<HomePage>
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
     } else if (AppLifecycleState.detached == state) {
-      _videoSourceScrapeTaskController?.markInterrupted();
+      _videoScrapeRuntime.currentController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
       if (appModel.lowMemoryMode) {
         PaintingBinding.instance.imageCache.clear();
@@ -863,8 +888,10 @@ class _HomePageState extends BasePageState<HomePage>
     if (!DesktopForegroundGuard.isMainWindowForeground()) return;
     final ModalRoute<Object?>? owner = ModalRoute.of(context);
     if (owner != null && !owner.isCurrent) return;
-    final FushiFocusController? controller =
-        FushiFocusRoot.maybeControllerOf(context, listen: false);
+    final FushiFocusController? controller = FushiFocusRoot.maybeControllerOf(
+      context,
+      listen: false,
+    );
     if (controller != null) {
       controller.ensureFocus();
       return;
@@ -887,8 +914,9 @@ class _HomePageState extends BasePageState<HomePage>
     // 焦点还停在本页键事件 sink 上）就放行冒泡，让 app 根的页面滚动兜底接住
     // ——按下沿的四个方向键在下面走的是**同一个**仲裁（六件套不在本页 return），
     // 重复沿若还自己 bootstrap 焦点，就成了「按一下滚页、按住却把焦点甩到首个卡片」。
-    final TraversalDirection? repeatDir =
-        event is KeyRepeatEvent ? arrowFocusMoveDirection(event) : null;
+    final TraversalDirection? repeatDir = event is KeyRepeatEvent
+        ? arrowFocusMoveDirection(event)
+        : null;
     if (repeatDir != null) {
       if (focusedEditableText() != null) return KeyEventResult.ignored;
       return arrowKeyClaimedByFocus(context, repeatDir)
@@ -922,7 +950,8 @@ class _HomePageState extends BasePageState<HomePage>
     // 回退，避免搜索框打字误触 Ctrl+数字等快捷键。
     final PhysicalKeyboardKey? imeFallbackPhysicalKey =
         focusedEditableText() == null ? event.physicalKey : null;
-    ShortcutAction? action = appModel.shortcutRegistry.resolveKeyboard(
+    ShortcutAction? action =
+        appModel.shortcutRegistry.resolveKeyboard(
           event.logicalKey,
           modifiers: modifiers,
           scope: ShortcutScope.home,
@@ -946,7 +975,8 @@ class _HomePageState extends BasePageState<HomePage>
     if (action == null) {
       final GamepadButton? gamepad = GamepadButton.fromKeyEvent(event);
       if (gamepad != null) {
-        action = appModel.shortcutRegistry.resolveGamepad(
+        action =
+            appModel.shortcutRegistry.resolveGamepad(
               gamepad,
               scope: ShortcutScope.home,
             ) ??
@@ -1066,8 +1096,9 @@ class _HomePageState extends BasePageState<HomePage>
     final Route<void>? existing = _standaloneDictionaryRoute;
     if (existing != null && existing.isActive) {
       // 已经开着：翻到最上层即可，绝不叠第二个查词页。
-      Navigator.of(context)
-          .popUntil((Route<Object?> route) => route == existing);
+      Navigator.of(
+        context,
+      ).popUntil((Route<Object?> route) => route == existing);
       requestFocus();
       return;
     }
@@ -1076,11 +1107,13 @@ class _HomePageState extends BasePageState<HomePage>
       builder: (_) => _StandaloneDictionaryRoute(focusSignal: _dictFocusSignal),
     );
     _standaloneDictionaryRoute = route;
-    unawaited(Navigator.of(context).push<void>(route).whenComplete(() {
-      if (identical(_standaloneDictionaryRoute, route)) {
-        _standaloneDictionaryRoute = null;
-      }
-    }));
+    unawaited(
+      Navigator.of(context).push<void>(route).whenComplete(() {
+        if (identical(_standaloneDictionaryRoute, route)) {
+          _standaloneDictionaryRoute = null;
+        }
+      }),
+    );
     // 请求是可挂起的 pending，页面挂载后自己取；不必等帧。
     requestFocus();
   }
@@ -1095,8 +1128,9 @@ class _HomePageState extends BasePageState<HomePage>
     _selectTab(tab);
     if (tab != HomeTab.dictionaries) return;
     if (!_activeTabs().contains(HomeTab.dictionaries)) return;
-    _dictFocusSignal.value =
-        const DictionaryFocusRequest(DictionaryFocusIntent.clearQuery);
+    _dictFocusSignal.value = const DictionaryFocusRequest(
+      DictionaryFocusIntent.clearQuery,
+    );
   }
 
   /// 统一切换顶层 tab：进入「设置」前记录来源 tab，供设置全屏返回箭头切回。
@@ -1242,7 +1276,8 @@ class _HomePageState extends BasePageState<HomePage>
   /// Returns true when consumed; false lets the GamepadService fall back to
   /// directional focus / activate / global back.
   bool _handleGamepadButton(GamepadButton button) {
-    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
+    final ShortcutAction? action =
+        appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.home,
         ) ??
@@ -1266,103 +1301,105 @@ class _HomePageState extends BasePageState<HomePage>
     }
 
     final Widget home = ValueListenableBuilder<bool>(
-        valueListenable: syncInProgress,
-        builder: (context, syncing, child) => PopScope(
-              canPop: !syncing,
-              onPopInvokedWithResult: (didPop, _) async {
-                if (didPop) return;
-                // 同 route 多 PopScope 的回调全部遍历，故此顶层同步 PopScope 在设置
-                // tab 上也会被触发；设置 tab 的返回由内层 PopScope 切回来源 tab，
-                // 这里据 [shouldWarnOnExit] 收窄到非设置 tab 才弹同步告警（TODO-698）。
-                if (_visibleTab == HomeTab.settings) return;
-                final bool? confirmed = await showAppDialog<bool>(
-                  context: context,
-                  builder: (BuildContext ctx) => _SyncExitWarningDialog(
-                    onCancel: () => Navigator.pop(ctx, false),
-                    onExit: () => Navigator.pop(ctx, true),
-                  ),
-                );
-                if (confirmed == true) {
-                  SystemNavigator.pop();
+      valueListenable: syncInProgress,
+      builder: (context, syncing, child) => PopScope(
+        canPop: !syncing,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          // 同 route 多 PopScope 的回调全部遍历，故此顶层同步 PopScope 在设置
+          // tab 上也会被触发；设置 tab 的返回由内层 PopScope 切回来源 tab，
+          // 这里据 [shouldWarnOnExit] 收窄到非设置 tab 才弹同步告警（TODO-698）。
+          if (_visibleTab == HomeTab.settings) return;
+          final bool? confirmed = await showAppDialog<bool>(
+            context: context,
+            builder: (BuildContext ctx) => _SyncExitWarningDialog(
+              onCancel: () => Navigator.pop(ctx, false),
+              onExit: () => Navigator.pop(ctx, true),
+            ),
+          );
+          if (confirmed == true) {
+            SystemNavigator.pop();
+          }
+        },
+        child: child!,
+      ),
+      child: Actions(
+        // Desktop gamepad path: the GamepadService dispatches
+        // GamepadButtonIntent here (no gameButton* key events on desktop).
+        // Resolving it against home/global routes polled controller input
+        // through the same actions as the key-event path.
+        actions: <Type, Action<Intent>>{
+          GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+            onInvoke: (GamepadButtonIntent intent) =>
+                _handleGamepadButton(intent.button),
+          ),
+        },
+        child: Focus(
+          // Autofocus on every platform: on mobile no field on the home tabs
+          // grabs focus at mount, so without this the FocusManager has no
+          // primary focus and hardware-keyboard / gamepad shortcuts never
+          // reach _handleKeyEvent until the user taps something. The home
+          // search field focuses on demand, so this never fights an editable.
+          autofocus: true,
+          // But this wrapper spans the whole page, so it must NOT be a
+          // traversal target: otherwise directional (keyboard arrow /
+          // gamepad) navigation lands on it and the focus ring covers the
+          // entire window. skipTraversal keeps it as a key-event sink only;
+          // Tab/arrow/D-pad traversal moves between the real controls and
+          // the ring follows them. Shortcut keys still bubble up here.
+          skipTraversal: true,
+          focusNode: _keyboardFocusNode,
+          onKeyEvent: _handleKeyEvent,
+          // 鼠标通道与键盘挂在同一层：作用域（整页）与解析阶梯都必须与
+          // [_handleKeyEvent] 对齐，挂低了就会重演 BUG-1864 那种「注册表声明整页、
+          // 挂载点只在子树，焦点一进面板整张表就够不着」。
+          //
+          // `translucent`：本层不画东西，默认 deferToChild 会让空白区收不到按下。
+          // [Listener] 不进手势竞技场、不消费事件，下面那个 GestureDetector 的
+          // onTap（只认主键）与所有子控件照常工作。
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: _handleHomePointerDown,
+            child: GestureDetector(
+              onTap: () {
+                final FocusNode? current = FocusManager.instance.primaryFocus;
+                if (current != null && current != _keyboardFocusNode) {
+                  current.unfocus();
                 }
               },
-              child: child!,
-            ),
-        child: Actions(
-            // Desktop gamepad path: the GamepadService dispatches
-            // GamepadButtonIntent here (no gameButton* key events on desktop).
-            // Resolving it against home/global routes polled controller input
-            // through the same actions as the key-event path.
-            actions: <Type, Action<Intent>>{
-              GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-                onInvoke: (GamepadButtonIntent intent) =>
-                    _handleGamepadButton(intent.button),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // BUG-401: classify on the real physical width
+                  // (logical × appUiScale). This LayoutBuilder sits INSIDE
+                  // FushiAppUiScale, so `constraints.maxWidth` is the
+                  // inflated logical canvas width; reading it directly kept
+                  // desktop locked to the nav-rail layout and the phone
+                  // (bottom-bar) layout was unreachable however narrow the
+                  // real window got dragged.
+                  // macOS-native shell: a real root MacosWindow + Sidebar
+                  // (built in main.dart, Approach B) replaces the self-drawn
+                  // rail/bottom-bar. MacosWindow manages its own breakpoints, so
+                  // HomePage only renders the tab body here — checked before the
+                  // size-class switch.
+                  if (isMacosPlatform(context)) {
+                    return _buildMacosLayout();
+                  }
+                  final sizeClass = windowSizeClassReal(
+                    constraints.maxWidth,
+                    FushiAppUiScale.of(context),
+                  );
+                  // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
+                  if (sizeClass == WindowSizeClass.compact) {
+                    return _buildMobileLayout();
+                  }
+                  return _buildDesktopLayout(sizeClass);
+                },
               ),
-            },
-            child: Focus(
-                // Autofocus on every platform: on mobile no field on the home tabs
-                // grabs focus at mount, so without this the FocusManager has no
-                // primary focus and hardware-keyboard / gamepad shortcuts never
-                // reach _handleKeyEvent until the user taps something. The home
-                // search field focuses on demand, so this never fights an editable.
-                autofocus: true,
-                // But this wrapper spans the whole page, so it must NOT be a
-                // traversal target: otherwise directional (keyboard arrow /
-                // gamepad) navigation lands on it and the focus ring covers the
-                // entire window. skipTraversal keeps it as a key-event sink only;
-                // Tab/arrow/D-pad traversal moves between the real controls and
-                // the ring follows them. Shortcut keys still bubble up here.
-                skipTraversal: true,
-                focusNode: _keyboardFocusNode,
-                onKeyEvent: _handleKeyEvent,
-                // 鼠标通道与键盘挂在同一层：作用域（整页）与解析阶梯都必须与
-                // [_handleKeyEvent] 对齐，挂低了就会重演 BUG-1864 那种「注册表声明整页、
-                // 挂载点只在子树，焦点一进面板整张表就够不着」。
-                //
-                // `translucent`：本层不画东西，默认 deferToChild 会让空白区收不到按下。
-                // [Listener] 不进手势竞技场、不消费事件，下面那个 GestureDetector 的
-                // onTap（只认主键）与所有子控件照常工作。
-                child: Listener(
-                  behavior: HitTestBehavior.translucent,
-                  onPointerDown: _handleHomePointerDown,
-                  child: GestureDetector(
-                    onTap: () {
-                      final FocusNode? current =
-                          FocusManager.instance.primaryFocus;
-                      if (current != null && current != _keyboardFocusNode) {
-                        current.unfocus();
-                      }
-                    },
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        // BUG-401: classify on the real physical width
-                        // (logical × appUiScale). This LayoutBuilder sits INSIDE
-                        // FushiAppUiScale, so `constraints.maxWidth` is the
-                        // inflated logical canvas width; reading it directly kept
-                        // desktop locked to the nav-rail layout and the phone
-                        // (bottom-bar) layout was unreachable however narrow the
-                        // real window got dragged.
-                        // macOS-native shell: a real root MacosWindow + Sidebar
-                        // (built in main.dart, Approach B) replaces the self-drawn
-                        // rail/bottom-bar. MacosWindow manages its own breakpoints, so
-                        // HomePage only renders the tab body here — checked before the
-                        // size-class switch.
-                        if (isMacosPlatform(context)) {
-                          return _buildMacosLayout();
-                        }
-                        final sizeClass = windowSizeClassReal(
-                          constraints.maxWidth,
-                          FushiAppUiScale.of(context),
-                        );
-                        // compact(<600) → 底栏；medium/expanded(≥600，含竖屏平板) → 侧边布局。
-                        if (sizeClass == WindowSizeClass.compact) {
-                          return _buildMobileLayout();
-                        }
-                        return _buildDesktopLayout(sizeClass);
-                      },
-                    ),
-                  ),
-                ))));
+            ),
+          ),
+        ),
+      ),
+    );
     // 桌面剪贴板/热键查词不再叠加独立 overlay 页；监听生命周期收窄到查词 tab。
     // 系统窗口材质（Windows 11 Mica / macOS vibrancy）生效时首页外壳 scaffold
     // 半透明让系统背景透出；push 出去的页面不受影响，仍是实心底。玻璃设计系统
@@ -1381,8 +1418,9 @@ class _HomePageState extends BasePageState<HomePage>
         return Theme(
           data: mica
               ? theme.copyWith(
-                  scaffoldBackgroundColor:
-                      theme.colorScheme.surface.withValues(alpha: 0.6),
+                  scaffoldBackgroundColor: theme.colorScheme.surface.withValues(
+                    alpha: 0.6,
+                  ),
                 )
               : theme,
           child: child!,
@@ -1412,7 +1450,8 @@ class _HomePageState extends BasePageState<HomePage>
     _largeTitle.syncScope(_visibleTab);
     final bool apple = isGlassDesign(context);
     final bool overlayTitle = !apple && _tabHasFloatingChrome(_visibleTab);
-    final bool narrow = windowSizeClassReal(
+    final bool narrow =
+        windowSizeClassReal(
           MediaQuery.sizeOf(context).width,
           FushiAppUiScale.of(context),
         ) ==
@@ -1422,8 +1461,8 @@ class _HomePageState extends BasePageState<HomePage>
     final double titleInset = !overlayTitle
         ? 0
         : narrow
-            ? kFushiFloatingChromeGap
-            : _overlayTitleHeight + 6;
+        ? kFushiFloatingChromeGap
+        : _overlayTitleHeight + 6;
     return NotificationListener<Notification>(
       onNotification: (Notification notification) {
         // 隐藏的保活 tab / 分区后台加载发来的尺寸通知不算数。
@@ -1448,9 +1487,8 @@ class _HomePageState extends BasePageState<HomePage>
         children: <Widget>[
           ListenableBuilder(
             listenable: _largeTitle,
-            builder: (BuildContext context, Widget? _) => overlayTitle
-                ? const SizedBox.shrink()
-                : _buildShellTitleBar(),
+            builder: (BuildContext context, Widget? _) =>
+                overlayTitle ? const SizedBox.shrink() : _buildShellTitleBar(),
           ),
           Expanded(
             child: _withAppleTopEdge(
@@ -1472,24 +1510,24 @@ class _HomePageState extends BasePageState<HomePage>
   /// 不随滚动在「裸大字」与「胶囊」之间切换：否则同样停在顶部的视频页与漫画
   /// 页一个是胶囊、一个是裸大字（2026-10-06 用户截图「标题形态不一致」）。
   Widget _buildShellTitleBar() => FushiShellLargeTitleBar(
-        title: _shellTitleFor(_visibleTab),
-        collapsed: _largeTitle.collapsed ||
-            (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
-        actions: _shellActions,
-      );
+    title: _shellTitleFor(_visibleTab),
+    collapsed:
+        _largeTitle.collapsed ||
+        (!isGlassDesign(context) && _tabHasFloatingChrome(_visibleTab)),
+    actions: _shellActions,
+  );
 
   /// 内容顶部是叠放浮动工具栏（[FushiFloatingChromeOverlay]）的 tab：这些库页
   /// 的主滚动视图 / 分区都消费 [FushiFloatingChromeInset]，外壳大标题可以叠在
   /// 它们上面。
   static bool _tabHasFloatingChrome(HomeTab tab) => switch (tab) {
-        HomeTab.books ||
-        HomeTab.manga ||
-        HomeTab.video ||
-        HomeTab.games ||
-        HomeTab.browse =>
-          true,
-        _ => false,
-      };
+    HomeTab.books ||
+    HomeTab.manga ||
+    HomeTab.video ||
+    HomeTab.games ||
+    HomeTab.browse => true,
+    _ => false,
+  };
 
   /// 叠放大标题条的实测高度（取见过的最大值 = 展开高度；收起变矮不改它，
   /// 所以内容让出的高度恒定）。
@@ -1512,20 +1550,19 @@ class _HomePageState extends BasePageState<HomePage>
   /// （[FushiFloatingChromeOverlay]）在**页签胶囊之下**画，并把这段标题区一并
   /// 盖住——遮罩若画在这里，就压在页签胶囊上面了（用户 2026-10-06 截图）。
   List<Widget> _floatingTitleOverlay() => <Widget>[
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: FushiHeightReporter(
-            onHeight: _onOverlayTitleHeight,
-            child: ListenableBuilder(
-              listenable: _largeTitle,
-              builder: (BuildContext context, Widget? _) =>
-                  _buildShellTitleBar(),
-            ),
-          ),
+    Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: FushiHeightReporter(
+        onHeight: _onOverlayTitleHeight,
+        child: ListenableBuilder(
+          listenable: _largeTitle,
+          builder: (BuildContext context, Widget? _) => _buildShellTitleBar(),
         ),
-      ];
+      ),
+    ),
+  ];
 
   /// 外壳大标题条下面那条 scroll edge 带（Apple：内容滚上去之后内容区顶部的
   /// soft 渐隐）；[overlay] 是叠在内容上的大标题条（MD3 库页，见
@@ -1549,10 +1586,10 @@ class _HomePageState extends BasePageState<HomePage>
               listenable: _appleChrome,
               builder: (BuildContext context, Widget? _) =>
                   FushiAppleScrollEdge(
-                side: FushiScrollEdgeSide.top,
-                visible: _appleChrome.contentUnderTop,
-                blur: false,
-              ),
+                    side: FushiScrollEdgeSide.top,
+                    visible: _appleChrome.contentUnderTop,
+                    blur: false,
+                  ),
             ),
           ),
         ...overlay,
@@ -1565,15 +1602,14 @@ class _HomePageState extends BasePageState<HomePage>
   /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、浏览器扩展与设置
   /// 自带标题或不需要，返回 null。
   String? _shellTitleFor(HomeTab tab) => switch (tab) {
-        HomeTab.books ||
-        HomeTab.manga ||
-        HomeTab.video ||
-        HomeTab.games ||
-        HomeTab.browse ||
-        HomeTab.dictionaries =>
-          homeNavItemFor(tab).label,
-        HomeTab.home || HomeTab.browserExtension || HomeTab.settings => null,
-      };
+    HomeTab.books ||
+    HomeTab.manga ||
+    HomeTab.video ||
+    HomeTab.games ||
+    HomeTab.browse ||
+    HomeTab.dictionaries => homeNavItemFor(tab).label,
+    HomeTab.home || HomeTab.browserExtension || HomeTab.settings => null,
+  };
 
   /// 单个 [HomeTab] 的导航项（图标 + 标签）。底栏/侧栏/macOS 根侧栏共用同一顶层
   /// [homeNavItemFor]，保证三处标签/选中图标一致。
@@ -1666,8 +1702,9 @@ class _HomePageState extends BasePageState<HomePage>
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
-    final List<AdaptiveNavItem> displayItems =
-        reversed ? items.reversed.toList() : items;
+    final List<AdaptiveNavItem> displayItems = reversed
+        ? items.reversed.toList()
+        : items;
     final int visualIndex = homeVisualIndexForTab(
       tabs: tabs,
       tab: _visibleTab,
@@ -1675,11 +1712,13 @@ class _HomePageState extends BasePageState<HomePage>
     );
 
     void selectVisual(int index) {
-      _selectTabFromNav(homeTabForVisualIndex(
-        tabs: tabs,
-        visualIndex: index,
-        reversed: reversed,
-      ));
+      _selectTabFromNav(
+        homeTabForVisualIndex(
+          tabs: tabs,
+          visualIndex: index,
+          reversed: reversed,
+        ),
+      );
     }
 
     return Scaffold(
@@ -1776,8 +1815,9 @@ class _HomePageState extends BasePageState<HomePage>
     final List<HomeTab> tabs = _activeTabs();
     final bool reversed = appModel.reverseNavigationBar;
     final List<AdaptiveNavItem> items = _navItems(tabs);
-    final List<AdaptiveNavItem> displayItems =
-        reversed ? items.reversed.toList() : items;
+    final List<AdaptiveNavItem> displayItems = reversed
+        ? items.reversed.toList()
+        : items;
     final int visualIndex = homeVisualIndexForTab(
       tabs: tabs,
       tab: _visibleTab,
@@ -1799,12 +1839,12 @@ class _HomePageState extends BasePageState<HomePage>
     // 胶囊下面时底部有一段 scroll edge 渐隐（状态都在 [_appleChrome]）。
     // MD3：同一项拆成悬浮胶囊右侧的大号 FAB（M3E floating toolbar + FAB）。
     final int? glassSearchIndex = tabs.contains(HomeTab.dictionaries)
-            ? homeVisualIndexForTab(
-                tabs: tabs,
-                tab: HomeTab.dictionaries,
-                reversed: reversed,
-              )
-            : null;
+        ? homeVisualIndexForTab(
+            tabs: tabs,
+            tab: HomeTab.dictionaries,
+            reversed: reversed,
+          )
+        : null;
     return Scaffold(
       resizeToAvoidBottomInset: false,
       extendBody: true,
@@ -1825,11 +1865,13 @@ class _HomePageState extends BasePageState<HomePage>
             context: context,
             currentIndex: visualIndex,
             onTap: (int index) {
-              _selectTabFromNav(homeTabForVisualIndex(
-                tabs: tabs,
-                visualIndex: index,
-                reversed: reversed,
-              ));
+              _selectTabFromNav(
+                homeTabForVisualIndex(
+                  tabs: tabs,
+                  visualIndex: index,
+                  reversed: reversed,
+                ),
+              );
             },
             items: displayItems,
             glassMinimized: _appleChrome.minimized,
@@ -1850,7 +1892,7 @@ class _HomePageState extends BasePageState<HomePage>
   AdaptiveNavFab? _shellPageFab() {
     if (isGlassDesign(context)) return null;
     final VideoSourceScrapeTaskController? controller =
-        _videoSourceScrapeTaskController;
+        _videoScrapeRuntime.currentController;
     if (controller == null || !controller.isBusy) return null;
     return AdaptiveNavFab(
       icon: _scrapeTaskIcon(controller),
@@ -1862,8 +1904,8 @@ class _HomePageState extends BasePageState<HomePage>
   /// 视频源后台补刮任务面板的图标：进行中 = 同步，等用户确认 = 待处理。
   IconData _scrapeTaskIcon(VideoSourceScrapeTaskController controller) =>
       controller.pendingConfirmation == null
-          ? FushiIcons.sync
-          : FushiIcons.pending;
+      ? FushiIcons.sync
+      : FushiIcons.pending;
 
   /// 当前是不是 MD3 手机布局（页面 FAB 已经并进悬浮底栏，body 不再自己画）。
   bool _shellFabHostedByBar = false;
@@ -1963,8 +2005,9 @@ class _HomePageState extends BasePageState<HomePage>
       onOpenDownloads: browseReachable
           ? () => _popToBrowseTab(BrowseTab.downloads)
           : null,
-      onOpenSubscriptions:
-          browseReachable ? _openVideoDiscoverySubscriptionsPanel : null,
+      onOpenSubscriptions: browseReachable
+          ? _openVideoDiscoverySubscriptionsPanel
+          : null,
       // 取消不经下载 tab，所以**不随** browseReachable 门控：下载模块被关掉的
       // 用户照样可能有一条在飞的任务需要停掉。
       onCancelDownloads: _cancelVideoDiscoveryDownloads,
@@ -1992,14 +2035,14 @@ class _HomePageState extends BasePageState<HomePage>
     final BuildContext dialogContext = context;
     final FushiDestructiveConfirmResult? confirmed =
         await showAppDialog<FushiDestructiveConfirmResult>(
-      context: dialogContext,
-      builder: (BuildContext _) => FushiDestructiveConfirmDialog(
-        title: t.video_discovery_cancel_downloads_title,
-        message: t.video_discovery_cancel_downloads_body(n: jobIds.length),
-        confirmLabel: t.cancel,
-        leadingIcon: Icons.close,
-      ),
-    );
+          context: dialogContext,
+          builder: (BuildContext _) => FushiDestructiveConfirmDialog(
+            title: t.video_discovery_cancel_downloads_title,
+            message: t.video_discovery_cancel_downloads_body(n: jobIds.length),
+            confirmLabel: t.cancel,
+            leadingIcon: Icons.close,
+          ),
+        );
     if (confirmed == null) return;
 
     int cancelled = 0;
@@ -2008,8 +2051,11 @@ class _HomePageState extends BasePageState<HomePage>
         await pipeline.cancelJob(jobId);
         cancelled++;
       } catch (e, stack) {
-        ErrorLogService.instance
-            .log('HomePage.cancelVideoDiscoveryDownload', e, stack);
+        ErrorLogService.instance.log(
+          'HomePage.cancelVideoDiscoveryDownload',
+          e,
+          stack,
+        );
       }
     }
     // 一条都没取消掉必须说话：cancelJob 在 backendTaskId 还没落库、或后端解析不
@@ -2055,8 +2101,9 @@ class _HomePageState extends BasePageState<HomePage>
   Future<VideoDiscoveryDetailData> _loadVideoDiscoveryDetails(
     VideoDiscoveryItem item,
   ) async {
-    final VideoMetadataWork? work =
-        await _videoDiscoveryService?.loadDetails(item);
+    final VideoMetadataWork? work = await _videoDiscoveryService?.loadDetails(
+      item,
+    );
     if (work == null) return VideoDiscoveryDetailData(item: item);
     final String? romajiTitle =
         work.romajiTitle ?? item.metadataWork?.romajiTitle;
@@ -2065,19 +2112,16 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoDiscoveryItem detailedItem = VideoDiscoveryItem(
       // 列表条目（尤其 TMDB）只带原名；详情里的罗马音 / 英文名前置进别名，
       // 「搜索资源」的默认检索词才会优先它们（nyaa 发布名多用罗马音）。
-      reference: item.reference.withLeadingAliases(
-        <String?>[romajiTitle, englishTitle],
-      ),
+      reference: item.reference.withLeadingAliases(<String?>[
+        romajiTitle,
+        englishTitle,
+      ]),
       overview: work.plot ?? item.overview,
-      posterUrl: _videoMetadataImageUrl(
-            work,
-            VideoMetadataImageKind.cover,
-          ) ??
+      posterUrl:
+          _videoMetadataImageUrl(work, VideoMetadataImageKind.cover) ??
           item.posterUrl,
-      backdropUrl: _videoMetadataImageUrl(
-            work,
-            VideoMetadataImageKind.backdrop,
-          ) ??
+      backdropUrl:
+          _videoMetadataImageUrl(work, VideoMetadataImageKind.backdrop) ??
           item.backdropUrl,
       score: work.rating ?? item.score,
       releaseDate: work.premiered ?? item.releaseDate,
@@ -2092,8 +2136,9 @@ class _HomePageState extends BasePageState<HomePage>
         <String, VideoDiscoveryPerson>{};
     for (final VideoMetadataCredit credit in work.credits) {
       final VideoMetadataPerson person = credit.person;
-      final String key =
-          person.id?.trim().isNotEmpty == true ? person.id! : person.name;
+      final String key = person.id?.trim().isNotEmpty == true
+          ? person.id!
+          : person.name;
       people.putIfAbsent(
         key,
         () => VideoDiscoveryPerson(
@@ -2107,10 +2152,7 @@ class _HomePageState extends BasePageState<HomePage>
       item: detailedItem,
       facts: <VideoDiscoveryFact>[
         if (work.year != null)
-          VideoDiscoveryFact(
-            label: t.video_filter_year,
-            value: '${work.year}',
-          ),
+          VideoDiscoveryFact(label: t.video_filter_year, value: '${work.year}'),
         if (work.episodeCount != null)
           VideoDiscoveryFact(
             label: t.video_scrape_episodes,
@@ -2143,10 +2185,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 「开始配置」按钮（[VideoDownloadBackendSetupPrompt]），那边据此决定要不要
   /// 自动重试原提交——不给回执的话，用户配完还得自己再找一遍刚才那条 release。
   Future<bool> _promptDownloadBackendSetup(BuildContext context) =>
-      promptDownloadBackendSetup(
-        context: context,
-        appModel: appModelNoUpdate,
-      );
+      promptDownloadBackendSetup(context: context, appModel: appModelNoUpdate);
 
   /// 受管视频来源清单；为空时**弹「添加视频来源」引导**，用户加完再读一次。
   ///
@@ -2162,13 +2201,13 @@ class _HomePageState extends BasePageState<HomePage>
   Future<List<MediaSourceRow>> _managedVideoDownloadSourcesOrPrompt(
     BuildContext context,
   ) async {
-    final List<MediaSourceRow> sources =
-        await appModelNoUpdate.getManagedVideoDownloadSources();
+    final List<MediaSourceRow> sources = await appModelNoUpdate
+        .getManagedVideoDownloadSources();
     if (sources.isNotEmpty || !context.mounted) return sources;
     final bool added = await promptManagedVideoSourceSetup(context: context);
     if (!added) return const <MediaSourceRow>[];
-    final List<MediaSourceRow> retried =
-        await appModelNoUpdate.getManagedVideoDownloadSources();
+    final List<MediaSourceRow> retried = await appModelNoUpdate
+        .getManagedVideoDownloadSources();
     if (retried.isEmpty && context.mounted) {
       _showVideoDiscoveryMessage(context, t.download_no_managed_video_source);
     }
@@ -2200,10 +2239,10 @@ class _HomePageState extends BasePageState<HomePage>
     // 本地下载后端 / 落地源都不是硬前置——手机上常常两个都没有。
     final InterconnectDownloadClient downloadClient =
         InterconnectDownloadClient(
-      repo: SyncRepository(appModelNoUpdate.database),
-    );
-    final List<HostDownloadTarget> remoteTargets =
-        await downloadClient.probeAll();
+          repo: SyncRepository(appModelNoUpdate.database),
+        );
+    final List<HostDownloadTarget> remoteTargets = await downloadClient
+        .probeAll();
     if (!context.mounted) return;
     if (registry == null || (pipeline == null && remoteTargets.isEmpty)) {
       unawaited(_promptDownloadBackendSetup(context));
@@ -2213,8 +2252,8 @@ class _HomePageState extends BasePageState<HomePage>
     final List<MediaSourceRow> sources = pipeline == null
         ? const <MediaSourceRow>[]
         : remoteTargets.isEmpty
-            ? await _managedVideoDownloadSourcesOrPrompt(context)
-            : await appModelNoUpdate.getManagedVideoDownloadSources();
+        ? await _managedVideoDownloadSourcesOrPrompt(context)
+        : await appModelNoUpdate.getManagedVideoDownloadSources();
     // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
@@ -2239,29 +2278,31 @@ class _HomePageState extends BasePageState<HomePage>
               appModelNoUpdate.prefsRepo.downloadExecutionHostUrl,
           onRemoteSubmit:
               (VideoDiscoveryRemoteDownloadSelection selection) async {
-            final VideoResourceCandidate resource = selection.resource;
-            // host 只收磁链：索引器没给现成磁链就用 infoHash 造一条；两者都没有
-            // （Torznab 只给 .torrent 地址）的候选投不了远端，如实报。
-            final String? infoHash = resource.infoHash;
-            final String? magnet = resource.magnetUri ??
-                (infoHash == null
-                    ? null
-                    : magnetUriFromInfoHash(
-                        infoHash,
-                        displayName: resource.title,
-                      ));
-            if (magnet == null) {
-              throw const HostDownloadException('magnet_only');
-            }
-            await downloadClient.addMagnet(
-              selection.target,
-              magnetUri: magnet,
-              title: resource.title,
-              mediaKind: selection.media.mediaKind == VideoMetadataMediaKind.tv
-                  ? 'tv'
-                  : 'movie',
-            );
-          },
+                final VideoResourceCandidate resource = selection.resource;
+                // host 只收磁链：索引器没给现成磁链就用 infoHash 造一条；两者都没有
+                // （Torznab 只给 .torrent 地址）的候选投不了远端，如实报。
+                final String? infoHash = resource.infoHash;
+                final String? magnet =
+                    resource.magnetUri ??
+                    (infoHash == null
+                        ? null
+                        : magnetUriFromInfoHash(
+                            infoHash,
+                            displayName: resource.title,
+                          ));
+                if (magnet == null) {
+                  throw const HostDownloadException('magnet_only');
+                }
+                await downloadClient.addMagnet(
+                  selection.target,
+                  magnetUri: magnet,
+                  title: resource.title,
+                  mediaKind:
+                      selection.media.mediaKind == VideoMetadataMediaKind.tv
+                      ? 'tv'
+                      : 'movie',
+                );
+              },
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
             if (pipeline == null) {
               // 本机没有管线时 sources 为空、「本机」档不渲染，这里到不了；留
@@ -2270,8 +2311,8 @@ class _HomePageState extends BasePageState<HomePage>
                 'no local download pipeline',
               );
             }
-            final VideoDownloadBackendTarget target =
-                await appModelNoUpdate.currentVideoDownloadBackendTarget();
+            final VideoDownloadBackendTarget target = await appModelNoUpdate
+                .currentVideoDownloadBackendTarget();
             await enqueueLocalVideoDownload(
               pipeline: pipeline,
               coverUrl: item.posterUrl,
@@ -2310,12 +2351,13 @@ class _HomePageState extends BasePageState<HomePage>
     // 本地下载后端/落地源都不是硬前置。
     final InterconnectSubscriptionClient remoteClient =
         InterconnectSubscriptionClient(
-      repo: SyncRepository(appModelNoUpdate.database),
-    );
-    final List<HostSubscriptionTarget> remoteTargets =
-        await remoteClient.probeAll();
+          repo: SyncRepository(appModelNoUpdate.database),
+        );
+    final List<HostSubscriptionTarget> remoteTargets = await remoteClient
+        .probeAll();
     if (!context.mounted) return;
-    final bool localRunnable = registry != null &&
+    final bool localRunnable =
+        registry != null &&
         appModelNoUpdate.videoDownloadPipelineService != null &&
         appModelNoUpdate.videoDownloadSubscriptionService != null;
     if (registry == null || (!localRunnable && remoteTargets.isEmpty)) {
@@ -2345,39 +2387,43 @@ class _HomePageState extends BasePageState<HomePage>
           remoteTargets: remoteTargets,
           onRemoteSubmit:
               (VideoDiscoveryRemoteSubscriptionSelection selection) async {
-            final VideoMediaReference reference = selection.media;
-            await remoteClient.create(
-              selection.target,
-              HostSubscriptionCreate(
-                // 与本地订阅同一个稳定 id：同一作品在同一台 host 上重复订阅只 upsert。
-                subscriptionId: videoDiscoverySubscriptionId(reference),
-                title: reference.title,
-                searchQuery: videoResourceSubscriptionSearchQuery(reference),
-                mediaKind: reference.mediaKind.name,
-                // 整包与电影同属「一次下完就结束」：按追更建出来的规则在整包上
-                // 结构性地永不命中（BUG-2619）。
-                mode: selection.batchRelease ||
-                        reference.mediaKind == VideoMetadataMediaKind.movie
-                    ? 'oneShot'
-                    : 'ongoing',
-                resourceProvider:
-                    persistedVideoResourceProviderId(selection.resource),
-                identityJson: encodeVideoMediaReference(reference),
-                metadataProvider: reference.providerId,
-                externalId: reference.mediaId,
-                discoveryCategory: reference.discoveryCategory.name,
-                year: reference.year,
-                season: reference.season,
-                coverUrl: item.posterUrl,
-                filterJson: selection.filter.json,
-                startAfterEpisode: selection.startAfterEpisode,
-                subtitlePolicy: selection.subtitlePolicy.name,
-              ),
-            );
-          },
+                final VideoMediaReference reference = selection.media;
+                await remoteClient.create(
+                  selection.target,
+                  HostSubscriptionCreate(
+                    // 与本地订阅同一个稳定 id：同一作品在同一台 host 上重复订阅只 upsert。
+                    subscriptionId: videoDiscoverySubscriptionId(reference),
+                    title: reference.title,
+                    searchQuery: videoResourceSubscriptionSearchQuery(
+                      reference,
+                    ),
+                    mediaKind: reference.mediaKind.name,
+                    // 整包与电影同属「一次下完就结束」：按追更建出来的规则在整包上
+                    // 结构性地永不命中（BUG-2619）。
+                    mode:
+                        selection.batchRelease ||
+                            reference.mediaKind == VideoMetadataMediaKind.movie
+                        ? 'oneShot'
+                        : 'ongoing',
+                    resourceProvider: persistedVideoResourceProviderId(
+                      selection.resource,
+                    ),
+                    identityJson: encodeVideoMediaReference(reference),
+                    metadataProvider: reference.providerId,
+                    externalId: reference.mediaId,
+                    discoveryCategory: reference.discoveryCategory.name,
+                    year: reference.year,
+                    season: reference.season,
+                    coverUrl: item.posterUrl,
+                    filterJson: selection.filter.json,
+                    startAfterEpisode: selection.startAfterEpisode,
+                    subtitlePolicy: selection.subtitlePolicy.name,
+                  ),
+                );
+              },
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
-            final VideoDownloadBackendTarget target =
-                await appModelNoUpdate.currentVideoDownloadBackendTarget();
+            final VideoDownloadBackendTarget target = await appModelNoUpdate
+                .currentVideoDownloadBackendTarget();
             await createLocalVideoDownloadSubscription(
               database: appModelNoUpdate.database,
               // 身份仍取发现条目；页面补齐的罗马字 / 英文别名（BUG-2794）并进来，
@@ -2582,16 +2628,15 @@ class _HomePageState extends BasePageState<HomePage>
     HostAssistantTarget target,
     String reason,
   ) {
-    _showVideoDiscoveryMessage(
-      context,
-      switch (reason) {
-        kHostAssistantReasonNoProvider =>
-          t.ai_video_acquire_remote_no_provider(device: target.label),
-        kHostAssistantReasonNotReady =>
-          t.ai_video_acquire_remote_not_ready(device: target.label),
-        _ => t.ai_video_acquire_remote_unsupported(device: target.label),
-      },
-    );
+    _showVideoDiscoveryMessage(context, switch (reason) {
+      kHostAssistantReasonNoProvider => t.ai_video_acquire_remote_no_provider(
+        device: target.label,
+      ),
+      kHostAssistantReasonNotReady => t.ai_video_acquire_remote_not_ready(
+        device: target.label,
+      ),
+      _ => t.ai_video_acquire_remote_unsupported(device: target.label),
+    });
   }
 
   Future<void> _openVideoDiscoverySubtitleSearch(
@@ -2630,51 +2675,50 @@ class _HomePageState extends BasePageState<HomePage>
           attachableJobs: attachableJobs,
           onAttach: pipeline == null
               ? null
-              : (
-                  VideoDownloadJobRow job,
-                  VideoSubtitleCandidate candidate,
-                ) =>
-                  pipeline.attachSubtitleSelection(
-                    jobId: job.jobId,
-                    candidate: candidate,
-                    season: item.reference.season,
-                    episode: item.reference.episode,
-                  ),
-          onInstalled: (
-            SubtitleInstallTarget target,
-            String selectedPath,
-            String installedPath,
-          ) async {
-            if (target != SubtitleInstallTarget.existingVideo) return;
-            // BUG-1504：字幕下载成功 ≠ 挂上了。此前这里只在 attached 时刷新，
-            // 「视频不在库」「格式不支持」「文件坏」「落库失败」全部静默，弹窗
-            // 照样关掉报喜。现在每条失败都由这里 await 到手并呈现给用户——文案
-            // 与主页拖放同源（[subtitleAttachMessage]）。
-            final VideoBookRow? book =
-                await _videoRepository.findByVideoPath(selectedPath);
-            if (book == null) {
-              if (!context.mounted) return;
-              _showVideoDiscoveryMessage(
-                context,
-                t.video_subtitle_attach_book_missing,
-              );
-              return;
-            }
-            final SubtitleAttachResult result = await attachSubtitleToVideoBook(
-              repo: _videoRepository,
-              book: book,
-              subtitlePath: installedPath,
-            );
-            if (result.outcome == SubtitleAttachOutcome.attached) {
-              _notifyVideoLibraryChanged();
-              return;
-            }
-            if (!context.mounted) return;
-            _showVideoDiscoveryMessage(
-              context,
-              subtitleAttachMessage(result, title: book.title),
-            );
-          },
+              : (VideoDownloadJobRow job, VideoSubtitleCandidate candidate) =>
+                    pipeline.attachSubtitleSelection(
+                      jobId: job.jobId,
+                      candidate: candidate,
+                      season: item.reference.season,
+                      episode: item.reference.episode,
+                    ),
+          onInstalled:
+              (
+                SubtitleInstallTarget target,
+                String selectedPath,
+                String installedPath,
+              ) async {
+                if (target != SubtitleInstallTarget.existingVideo) return;
+                // BUG-1504：字幕下载成功 ≠ 挂上了。此前这里只在 attached 时刷新，
+                // 「视频不在库」「格式不支持」「文件坏」「落库失败」全部静默，弹窗
+                // 照样关掉报喜。现在每条失败都由这里 await 到手并呈现给用户——文案
+                // 与主页拖放同源（[subtitleAttachMessage]）。
+                final VideoBookRow? book = await _videoRepository
+                    .findByVideoPath(selectedPath);
+                if (book == null) {
+                  if (!context.mounted) return;
+                  _showVideoDiscoveryMessage(
+                    context,
+                    t.video_subtitle_attach_book_missing,
+                  );
+                  return;
+                }
+                final SubtitleAttachResult result =
+                    await attachSubtitleToVideoBook(
+                      repo: _videoRepository,
+                      book: book,
+                      subtitlePath: installedPath,
+                    );
+                if (result.outcome == SubtitleAttachOutcome.attached) {
+                  _notifyVideoLibraryChanged();
+                  return;
+                }
+                if (!context.mounted) return;
+                _showVideoDiscoveryMessage(
+                  context,
+                  subtitleAttachMessage(result, title: book.title),
+                );
+              },
         ),
       ),
     );
@@ -2686,9 +2730,9 @@ class _HomePageState extends BasePageState<HomePage>
 
   void _showVideoDiscoveryMessage(BuildContext context, String message) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      FushiSnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   void _openBrowseTab(
@@ -2738,18 +2782,18 @@ class _HomePageState extends BasePageState<HomePage>
       onListen: () {
         subscriptions.add(
           appModelNoUpdate.database.watchVideoDownloadJobs().listen(
-                (_) => unawaited(emit()),
-              ),
+            (_) => unawaited(emit()),
+          ),
         );
         subscriptions.add(
           appModelNoUpdate.database.watchVideoDownloadSubscriptions().listen(
-                (_) => unawaited(emit()),
-              ),
+            (_) => unawaited(emit()),
+          ),
         );
         subscriptions.add(
           _videoRepository.watchVideoBookUids().listen(
-                (_) => unawaited(emit()),
-              ),
+            (_) => unawaited(emit()),
+          ),
         );
         _videoLibraryRefreshSignal.addListener(onLibraryRefresh);
         unawaited(emit());
@@ -2769,23 +2813,28 @@ class _HomePageState extends BasePageState<HomePage>
   ) async {
     final List<VideoDownloadJobRow> jobs =
         (await appModelNoUpdate.database.getVideoDownloadJobs())
-            .where((VideoDownloadJobRow row) => _discoveryIdentityMatches(
-                  reference,
-                  row.metadataProvider,
-                  row.externalId,
-                ))
+            .where(
+              (VideoDownloadJobRow row) => _discoveryIdentityMatches(
+                reference,
+                row.metadataProvider,
+                row.externalId,
+              ),
+            )
             .toList(growable: false);
     final List<VideoDownloadSubscriptionRow> subscriptions =
         await _matchingVideoDiscoverySubscriptions(reference);
-    final _LocalDiscoveryTarget? local =
-        await _resolveLocalDiscoveryTarget(reference);
+    final _LocalDiscoveryTarget? local = await _resolveLocalDiscoveryTarget(
+      reference,
+    );
     // 「在飞」是**任意一条** active，不是排序后第一条 active。同一部作品可以并存
     // 多条下载（换源重下时旧的还在跑），而排序是 priority DESC, createdAt DESC
     // —— 新提交的那条一旦完成，仍在跑的旧任务就会被判成「不忙」，取消入口跟着
     // 消失、进度也不再显示。
     final List<VideoDownloadJobRow> activeJobs = jobs
-        .where((VideoDownloadJobRow row) =>
-            row.lifecycle == VideoDownloadJobLifecycle.active)
+        .where(
+          (VideoDownloadJobRow row) =>
+              row.lifecycle == VideoDownloadJobLifecycle.active,
+        )
         .toList(growable: false);
     // 状态文案优先讲还在跑的那条；都跑完了才退回排序首条（完成 / 失败 / 已取消）。
     final VideoDownloadJobRow? job = activeJobs.firstOrNull ?? jobs.firstOrNull;
@@ -2835,30 +2884,24 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   String _videoDownloadStageLabel(String stage) => switch (stage) {
-        VideoDownloadJobStage.enqueue => t.download_status_queued,
-        VideoDownloadJobStage.download => t.download_task_status_downloading,
-        VideoDownloadJobStage.organize => t.download_task_status_moving,
-        VideoDownloadJobStage.subtitle => t.video_loading_subtitle,
-        VideoDownloadJobStage.import => t.import_step_persisting,
-        VideoDownloadJobStage.scrape => t.video_source_scrape_phase_applying,
-        _ => t.video_discovery_pipeline_idle,
-      };
+    VideoDownloadJobStage.enqueue => t.download_status_queued,
+    VideoDownloadJobStage.download => t.download_task_status_downloading,
+    VideoDownloadJobStage.organize => t.download_task_status_moving,
+    VideoDownloadJobStage.subtitle => t.video_loading_subtitle,
+    VideoDownloadJobStage.import => t.import_step_persisting,
+    VideoDownloadJobStage.scrape => t.video_source_scrape_phase_applying,
+    _ => t.video_discovery_pipeline_idle,
+  };
 
   Future<List<VideoDownloadSubscriptionRow>>
-      _matchingVideoDiscoverySubscriptions(
-    VideoMediaReference reference,
-  ) =>
-          matchingVideoDiscoverySubscriptions(
-            appModelNoUpdate.database,
-            reference,
-          );
+  _matchingVideoDiscoverySubscriptions(VideoMediaReference reference) =>
+      matchingVideoDiscoverySubscriptions(appModelNoUpdate.database, reference);
 
   bool _discoveryIdentityMatches(
     VideoMediaReference reference,
     String? provider,
     String? externalId,
-  ) =>
-      videoDiscoveryIdentityMatches(reference, provider, externalId);
+  ) => videoDiscoveryIdentityMatches(reference, provider, externalId);
 
   /// 「这条发现条目在本地对应什么」的**单一**解析。
   ///
@@ -2873,15 +2916,16 @@ class _HomePageState extends BasePageState<HomePage>
   Future<_LocalDiscoveryTarget?> _resolveLocalDiscoveryTarget(
     VideoMediaReference reference,
   ) async {
-    final VideoMetadataWorkRow? work =
-        await _findLocalVideoDiscoveryWork(reference);
+    final VideoMetadataWorkRow? work = await _findLocalVideoDiscoveryWork(
+      reference,
+    );
     if (work != null) {
       return _LocalDiscoveryTarget(work: work, collectionId: work.collectionId);
     }
     final int? anilistId = reference.anilistId;
     if (anilistId == null) return null;
-    final List<MediaCollectionRow> collections =
-        await appModelNoUpdate.database.getAllMediaCollections();
+    final List<MediaCollectionRow> collections = await appModelNoUpdate.database
+        .getAllMediaCollections();
     for (final MediaCollectionRow row in collections) {
       if (row.anilistId == anilistId) {
         return _LocalDiscoveryTarget(work: null, collectionId: row.id);
@@ -2893,21 +2937,21 @@ class _HomePageState extends BasePageState<HomePage>
   Future<VideoMetadataWorkRow?> _findLocalVideoDiscoveryWork(
     VideoMediaReference reference,
   ) async {
-    final List<VideoMetadataWorkRow> works =
-        await appModelNoUpdate.database.getAllVideoMetadataWorks();
+    final List<VideoMetadataWorkRow> works = await appModelNoUpdate.database
+        .getAllVideoMetadataWorks();
     for (final VideoMetadataWorkRow work in works) {
       if (work.mediaType != reference.mediaKind.name) continue;
       final List<VideoMetadataProviderIdentityRow> identities =
           await appModelNoUpdate.database.getVideoMetadataProviderIdentities(
-        workId: work.id,
-      );
+            workId: work.id,
+          );
       if (identities.any(
         (VideoMetadataProviderIdentityRow identity) =>
             _discoveryIdentityMatches(
-          reference,
-          identity.provider,
-          identity.externalId,
-        ),
+              reference,
+              identity.provider,
+              identity.externalId,
+            ),
       )) {
         return work;
       }
@@ -2919,13 +2963,14 @@ class _HomePageState extends BasePageState<HomePage>
     BuildContext context,
     VideoDiscoveryItem item,
   ) async {
-    final _LocalDiscoveryTarget? target =
-        await _resolveLocalDiscoveryTarget(item.reference);
+    final _LocalDiscoveryTarget? target = await _resolveLocalDiscoveryTarget(
+      item.reference,
+    );
     if (target == null || !context.mounted) return;
     final String? bookUid = target.work?.bookUid;
     if (bookUid != null) {
-      final VideoBookRow? book =
-          await appModelNoUpdate.database.getVideoBookByBookUid(bookUid);
+      final VideoBookRow? book = await appModelNoUpdate.database
+          .getVideoBookByBookUid(bookUid);
       if (book == null || !context.mounted) return;
       await openLocalVideoBook(
         context: context,
@@ -2936,13 +2981,13 @@ class _HomePageState extends BasePageState<HomePage>
     }
     final int? collectionId = target.collectionId;
     if (collectionId == null) return;
-    final List<MediaCollectionItemRow> items =
-        await appModelNoUpdate.database.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await appModelNoUpdate.database
+        .getCollectionItems(collectionId);
     final List<VideoBookRow> members = <VideoBookRow>[];
     for (final MediaCollectionItemRow entry in items) {
       if (MediaKind.tryParse(entry.mediaType) != MediaKind.video) continue;
-      final VideoBookRow? book =
-          await appModelNoUpdate.database.getVideoBookByBookUid(entry.entryKey);
+      final VideoBookRow? book = await appModelNoUpdate.database
+          .getVideoBookByBookUid(entry.entryKey);
       if (book != null) members.add(book);
     }
     if (members.isEmpty || !context.mounted) return;
@@ -2969,77 +3014,11 @@ class _HomePageState extends BasePageState<HomePage>
     _videoLibraryRefreshSignal.value++;
   }
 
-  VideoSourceScrapeTaskController get _videoSourceScrapeController {
-    final VideoSourceScrapeTaskController? existing =
-        _videoSourceScrapeTaskController;
-    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    final VideoSourceScrapeGlobalConfig config =
-        VideoSourceScrapeGlobalConfig.fromPreferences(
-      appModelNoUpdate.prefsRepo,
-      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
-      uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
-    );
-    // BUG-2581：指纹统一取 [VideoSourceScrapeGlobalConfig.runtimeFingerprint]，
-    // 别再手抄字段——这里曾漏掉哈希开关与 AniDB 账号，填好账号后仍复用旧协调器。
-    final String fingerprint = config.runtimeFingerprint;
-    if (existing != null &&
-        (existing.isBusy ||
-            _videoSourceScrapeConfigFingerprint == fingerprint)) {
-      return existing;
-    }
-    existing?.removeListener(_onVideoSourceScrapeTaskChanged);
-    existing?.dispose();
-    _videoSourceScrapeCoordinator?.close();
-    // 顾问每次现取偏好里的指派，所以 AI 指派不进上面的配置指纹：用户改了指派
-    // 立即生效，不需要重建协调器；判定缓存与补刮账本按它现算的能力键作废。
-    final PreferencesAiVideoIdentityAdvisor aiIdentityAdvisor =
-        PreferencesAiVideoIdentityAdvisor(appModelNoUpdate.prefsRepo);
-    final VideoSourceScrapeCoordinator coordinator =
-        VideoSourceScrapeCoordinator(
-      database: appModel.database,
-      config: config,
-      // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
-      // 为了单测不联网。
-      enableOfflineTitleIndex: true,
-      aiIdentityAdvisor: aiIdentityAdvisor,
-    );
-    _videoSourceScrapeCoordinator = coordinator;
-    _videoSourceScrapeConfigFingerprint = fingerprint;
-    final VideoSourceScrapeTaskController controller =
-        VideoSourceScrapeTaskController(coordinator)
-          ..addListener(_onVideoSourceScrapeTaskChanged);
-    _videoSourceScrapeTaskController = controller;
-    // 补刮调度器跟随 controller 重建，绝不持有已 dispose 的旧 controller。
-    _videoScrapeSweep = VideoLibraryScrapeSweep(
-      database: appModel.database,
-      controller: controller,
-      isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
-      // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
-      isHashReady: () => config.anidbHashReady,
-      // 「自动试过 / 刷新过」落盘跨进程：否则每次启动都把查无/歧义作品重刮一轮、
-      // 把哈希查询失败的文件整份重读（用户感知为「每次打开都在重新加载资料」）。
-      ledger: VideoScrapeSweepLedger.inSupportDirectory(),
-      configFingerprint: fingerprint,
-      // 配上 / 换掉 AI 后，之前「试过没认出」的作品立即重新进补刮。
-      aiCapabilityKey: () => aiIdentityAdvisor.capabilityKey,
-      // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
-      tmdbChangedTvIds: ({required DateTime since}) {
-        final VideoMetadataProvider? tmdb =
-            coordinator.registry.provider(VideoMetadataProviderKind.tmdb);
-        return tmdb is TmdbVideoMetadataProvider && tmdb.isAvailable
-            ? tmdb.changedTvShowIds(since: since)
-            : Future<Set<int>>.value(const <int>{});
-      },
-    );
-    return controller;
-  }
+  VideoSourceScrapeTaskController get _videoSourceScrapeController =>
+      _videoScrapeRuntime.controller;
 
-  VideoLibraryScrapeSweep get _videoLibraryScrapeSweep {
-    // 确保 controller/sweep 已按当前配置构建。
-    final VideoSourceScrapeTaskController _ = _videoSourceScrapeController;
-    return _videoScrapeSweep!;
-  }
+  VideoLibraryScrapeSweep get _videoLibraryScrapeSweep =>
+      _videoScrapeRuntime.sweep;
 
   /// 外壳只画「后台任务」浮钮（忙 / 有待确认两态），视频页角标读同两个量；
   /// 进度本身由任务面板自己监听。controller 每条进度都会通知（哈希期间每 MiB
@@ -3049,10 +3028,12 @@ class _HomePageState extends BasePageState<HomePage>
 
   void _onVideoSourceScrapeTaskChanged() {
     final VideoSourceScrapeTaskController? controller =
-        _videoSourceScrapeTaskController;
+        _videoScrapeRuntime.currentController;
     if (!mounted || controller == null) return;
-    final (bool, bool) next =
-        (controller.isBusy, controller.pendingConfirmation != null);
+    final (bool, bool) next = (
+      controller.isBusy,
+      controller.pendingConfirmation != null,
+    );
     if (next == _videoScrapeShellState) return;
     _videoScrapeShellState = next;
     setState(() {});
@@ -3073,8 +3054,8 @@ class _HomePageState extends BasePageState<HomePage>
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
           if (sourceId == null) return;
-          final SourceLibraryRow? source =
-              await appModel.database.getMediaSourceById(sourceId);
+          final SourceLibraryRow? source = await appModel.database
+              .getMediaSourceById(sourceId);
           if (source == null) return;
           await _scrapeVideoSource(source);
         },
@@ -3086,18 +3067,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   Future<SourceScrapeReport> _observeVideoSourceScrape(
     Future<SourceScrapeReport> task,
-  ) {
-    unawaited(task.then<void>((SourceScrapeReport _) {
-      if (mounted) _notifyVideoLibraryChanged();
-    }, onError: (Object error, StackTrace stackTrace) {
-      ErrorLogService.instance.log(
-        'HomePage.videoSourceScrape',
-        error,
-        stackTrace,
-      );
-    }));
-    return task;
-  }
+  ) => _videoScrapeRuntime.observe(task);
 
   Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
     final ({bool proceed, bool grant}) overwrite =
@@ -3118,16 +3088,16 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Future<void> _scrapeAllVideosFromSources() async {
-    final List<SourceLibraryRow> sources =
-        await appModel.database.getMediaSourcesByKind('video');
+    final List<SourceLibraryRow> sources = await appModel.database
+        .getMediaSourcesByKind('video');
     final List<SourceLibraryRow> localSources = sources
         .where((SourceLibraryRow source) => source.transport == 'local')
         .toList(growable: false);
     if (!mounted) return;
     if (localSources.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        FushiSnackBar(content: Text(t.media_source_no_sources)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.media_source_no_sources)));
       return;
     }
     final ({bool proceed, bool grant}) overwrite =
@@ -3159,8 +3129,8 @@ class _HomePageState extends BasePageState<HomePage>
   ) async {
     bool requested = false;
     for (final SourceLibraryRow source in sources) {
-      final VideoSourceScrapeSettingRow? settings =
-          await appModel.database.getVideoSourceScrapeSettings(source.id);
+      final VideoSourceScrapeSettingRow? settings = await appModel.database
+          .getVideoSourceScrapeSettings(source.id);
       if (settings?.allowExternalOverwrite == true &&
           (settings?.nfoPolicy == 'overwrite' ||
               settings?.imagePolicy == 'overwrite')) {
@@ -3173,12 +3143,8 @@ class _HomePageState extends BasePageState<HomePage>
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
-        title: Text(
-          t.video_source_scrape_external_overwrite_confirm_title,
-        ),
-        content: Text(
-          t.video_source_scrape_external_overwrite_confirm_body,
-        ),
+        title: Text(t.video_source_scrape_external_overwrite_confirm_title),
+        content: Text(t.video_source_scrape_external_overwrite_confirm_body),
         actions: <Widget>[
           adaptiveDialogAction(
             context: dialogContext,
@@ -3197,48 +3163,14 @@ class _HomePageState extends BasePageState<HomePage>
     return (proceed: confirmed == true, grant: confirmed == true);
   }
 
-  /// Widget dispose 不能 await；先标记中断并让在途 Future 到下一取消边界，再关闭
-  /// HTTP client/ChangeNotifier，避免已释放 notifier 或已关闭 client 被异步任务继续用。
-  void _shutdownVideoSourceScrape() {
-    final VideoSourceScrapeTaskController? controller =
-        _videoSourceScrapeTaskController;
-    final VideoSourceScrapeCoordinator? coordinator =
-        _videoSourceScrapeCoordinator;
-    _videoSourceScrapeTaskController = null;
-    _videoSourceScrapeCoordinator = null;
-    _videoSourceScrapeConfigFingerprint = null;
-    _videoScrapeSweep = null;
-    if (controller == null) {
-      coordinator?.close();
-      return;
-    }
-    controller.removeListener(_onVideoSourceScrapeTaskChanged);
-    controller.markInterrupted();
-    final Future<SourceScrapeReport>? active = controller.activeTask;
-    if (active == null) {
-      controller.dispose();
-      coordinator?.close();
-      return;
-    }
-    unawaited(active
-        .then<void>(
-      (_) {},
-      onError: (Object _, StackTrace __) {},
-    )
-        .whenComplete(() {
-      controller.dispose();
-      coordinator?.close();
-    }));
-  }
-
   Future<void> _onVideoSourceScanCompleted(
     SourceLibraryRow source,
     SourceScanSummary summary,
   ) async {
     _notifyVideoLibraryChanged();
     if (!summary.succeeded) return;
-    final VideoSourceScrapeSettingRow? settings =
-        await appModel.database.getVideoSourceScrapeSettings(source.id);
+    final VideoSourceScrapeSettingRow? settings = await appModel.database
+        .getVideoSourceScrapeSettings(source.id);
     if (!mounted ||
         settings?.enabled == false ||
         settings?.autoAfterScan != true ||
@@ -3307,7 +3239,7 @@ class _HomePageState extends BasePageState<HomePage>
             key: ValueKey<HomeTab>(visible),
             child: _buildTabContent(visible),
           ),
-        if (_videoSourceScrapeTaskController case final controller?)
+        if (_videoScrapeRuntime.currentController case final controller?)
           if (controller.isBusy && !_shellFabHostedByBar)
             Positioned(
               right: 20,
@@ -3386,40 +3318,38 @@ class _HomePageState extends BasePageState<HomePage>
     final Widget content = switch (tab) {
       HomeTab.home => HomeDashboardPage(videoRepo: _videoRepository),
       HomeTab.video => VideoLibraryShell(
-          repository: _videoRepository,
-          libraryRefreshSignal: _videoLibraryRefreshSignal,
-          scrapeTaskController: _videoSourceScrapeController,
-          onScrapeAll: _scrapeAllVideosFromSources,
-          onClearAllScrapeRecords: _clearAllVideoScrapeRecords,
-          onScrapeSource: _scrapeVideoSource,
-          onVideoScanCompleted: _onVideoSourceScanCompleted,
-          onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
-          onLibraryChanged: _notifyVideoLibraryChanged,
-          // 补刮的触发点收口在视频页：首次进入 / 切回 / 库里多出条目时各调一次
-          // （BUG-2199）。旧实现把它挂在 HomePage 的进 tab 时机上并以进程为幂等
-          // 键，于是本次会话下载入库的作品永远赶不上那唯一一轮。
-          loadPendingScrapeWorks: () =>
-              _videoLibraryScrapeSweep.sweepAndListPending(),
-          mediaServerServersLoader: _loadMediaServerEntries,
-          // 视频库「发现」分区与浏览页签共用同一个生产端口（同一实例）。
-          discoveryController: _productionVideoDiscoveryController,
-          discoveryActions: _productionVideoDiscoveryActions,
-          systemBackActive: _visibleTab == HomeTab.video,
-        ),
+        repository: _videoRepository,
+        libraryRefreshSignal: _videoLibraryRefreshSignal,
+        scrapeTaskController: _videoSourceScrapeController,
+        onScrapeAll: _scrapeAllVideosFromSources,
+        onClearAllScrapeRecords: _clearAllVideoScrapeRecords,
+        onScrapeSource: _scrapeVideoSource,
+        onVideoScanCompleted: _onVideoSourceScanCompleted,
+        onOpenScrapeTasks: () => unawaited(_openVideoSourceScrapeTasks()),
+        onLibraryChanged: _notifyVideoLibraryChanged,
+        // 补刮的触发点收口在视频页：首次进入 / 切回 / 库里多出条目时各调一次
+        // （BUG-2199）。旧实现把它挂在 HomePage 的进 tab 时机上并以进程为幂等
+        // 键，于是本次会话下载入库的作品永远赶不上那唯一一轮。
+        loadPendingScrapeWorks: () =>
+            _videoLibraryScrapeSweep.sweepAndListPending(),
+        mediaServerServersLoader: _loadMediaServerEntries,
+        // 视频库「发现」分区与浏览页签共用同一个生产端口（同一实例）。
+        discoveryController: _productionVideoDiscoveryController,
+        discoveryActions: _productionVideoDiscoveryActions,
+        systemBackActive: _visibleTab == HomeTab.video,
+      ),
       HomeTab.browse => BrowsePage(
-          navigationRequest: _browseRequest,
-          videoDiscoveryController: _productionVideoDiscoveryController,
-          videoDiscoveryActions: _productionVideoDiscoveryActions,
-        ),
-      HomeTab.dictionaries => HomeDictionaryPage(
-          focusSignal: _dictFocusSignal,
-        ),
+        navigationRequest: _browseRequest,
+        videoDiscoveryController: _productionVideoDiscoveryController,
+        videoDiscoveryActions: _productionVideoDiscoveryActions,
+      ),
+      HomeTab.dictionaries => HomeDictionaryPage(focusSignal: _dictFocusSignal),
       // 非 Windows 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
       // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
-      HomeTab.games => appModelNoUpdate.gamesModuleForm ==
-              GamesModuleForm.streamClient
-          ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
-          : const HomeGamePage(),
+      HomeTab.games =>
+        appModelNoUpdate.gamesModuleForm == GamesModuleForm.streamClient
+            ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
+            : const HomeGamePage(),
       HomeTab.browserExtension => const BrowserExtensionPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统
@@ -3597,7 +3527,8 @@ class HomeSettingsTabContent extends StatelessWidget {
         if (didPop) return;
         onReturnToPreviousTab();
       },
-      child: child ??
+      child:
+          child ??
           FushiSettingsContent(
             onBack: showBackButton ? onReturnToPreviousTab : null,
           ),
@@ -3606,10 +3537,7 @@ class HomeSettingsTabContent extends StatelessWidget {
 }
 
 class _SyncExitWarningDialog extends StatelessWidget {
-  const _SyncExitWarningDialog({
-    required this.onCancel,
-    required this.onExit,
-  });
+  const _SyncExitWarningDialog({required this.onCancel, required this.onExit});
 
   final VoidCallback onCancel;
   final VoidCallback onExit;

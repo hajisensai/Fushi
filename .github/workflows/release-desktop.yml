@@ -747,6 +747,25 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
           path: native\fushi_anki_sync\target\release\fushi-anki-sync.exe
+      # fushi_cli（packages/fushi_cli）：桌面客户端命令行。fushi.exe 是 GUI 子系统，拿不到
+      # stdout、退出码也不可靠，所以 CLI 是单独的控制台 exe，经本机控制通道驱动 app。
+      # 纯 Dart、无原生资产，dart compile exe 直出；放 fushi.exe 同级（CLI 按同级目录
+      # 找 app 自动拉起），安装包的 `{#SourceDir}\*` 整目录收录，不用改 .iss。
+      - name: Build and bundle fushi_cli
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            throw "Missing Windows release bundle directory: $targetDir"
+          }
+          $exe = Join-Path $targetDir 'fushi_cli.exe'
+          dart compile exe packages/fushi_cli/bin/fushi_cli.dart -o $exe
+          if ($LASTEXITCODE -ne 0) { throw "dart compile exe fushi_cli failed ($LASTEXITCODE)" }
+          # 冒烟：能起、能出帮助。app 不在跑时 status 应返回 69（EX_UNAVAILABLE），不是崩溃。
+          & $exe --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "fushi_cli --help failed ($LASTEXITCODE)" }
+          & $exe status | Out-Null
+          if ($LASTEXITCODE -ne 69) { throw "fushi_cli status expected exit 69 (not running), got $LASTEXITCODE" }
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
