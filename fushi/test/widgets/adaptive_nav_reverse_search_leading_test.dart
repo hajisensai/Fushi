@@ -216,8 +216,8 @@ void main() {
 
   group('MD3 悬浮底栏放不下时的「更多」', () {
     // 手机常见的 7 个 tab（首页 / 书架 / 漫画 / 视频 / 浏览 / 查词 / 设置），
-    // 纯图标在 390 宽放不下：关闭反转时首页一侧全显示、末尾收进最右的「更多」；
-    // 开启反转时镜像——首页一侧仍全显示（在最右），「更多」在最左紧挨查词 FAB。
+    // 纯图标在 320 宽（最窄手机）放不下：关闭反转时首页一侧全显示、末尾收进
+    // 最右的「更多」；开启反转时镜像——首页一侧仍全显示（在最右），「更多」在最左紧挨查词 FAB。
     const List<AdaptiveNavItem> seven = <AdaptiveNavItem>[
       AdaptiveNavItem(icon: Icons.home_outlined, label: '首页'),
       AdaptiveNavItem(icon: Icons.menu_book_outlined, label: '书架'),
@@ -233,7 +233,7 @@ void main() {
       WidgetTester tester, {
       required bool reversed,
     }) async {
-      tester.view.physicalSize = const Size(390, 800);
+      tester.view.physicalSize = const Size(320, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final List<AdaptiveNavItem> display = reversed
