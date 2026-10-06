@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3034](bugs/BUG-3034-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
 | [BUG-3031](bugs/BUG-3031-manual-download-reduced-motion.md) | ✅ | ✅ | 手动下载切换输入时零时长尺寸动画在布局中触发重入 |
 | [BUG-3028](bugs/BUG-3028-delete-confirm-footer-scrolls.md) | ✅ | ✅ | 删除确认框的「删除」按钮在矮窗口里被滚出可视区 |
 | [BUG-3024](bugs/BUG-3024-settings-reset-narrow-row.md) | ✅ | ✅ | 设置恢复默认按钮挤压窄面板标题导致溢出 |
@@ -84,7 +85,6 @@
 | [BUG-2967](bugs/BUG-2967-android-first-lookup-after-idle-anki-main-thread.md) | ✅ | ✅ | Android 空闲后首次查词卡顿：AnkiDroid 制卡态探测在主线程冷启动 AnkiDroid |
 | [BUG-2966](bugs/BUG-2966-home-ja-untranslated.md) | ✅ | ✅ | 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译 |
 | [BUG-2965](bugs/BUG-2965-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
-| [BUG-2964](bugs/BUG-2964-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
 | [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |
 | [BUG-2963](bugs/BUG-2963-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-2962](bugs/BUG-2962-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |

@@ -126,7 +126,7 @@ void main() {
       expect(body.contains('await Future.wait<Object?>('), isTrue);
       expect(body.contains('await db.getAllMediaImages()'), isFalse);
       expect(body.contains('await db.getAllCollectionItems()'), isFalse);
-      // BUG-2964：合集归属只查本机条目（SQL 侧收窄），不再两次全表物化成员表。
+      // BUG-3034：合集归属只查本机条目（SQL 侧收窄），不再两次全表物化成员表。
       expect(body.contains('db.getLocalPrimaryCollectionMembership()'), isTrue);
       expect(body.contains('getPrimaryCollectionIdByEntry()'), isFalse);
       expect(body.contains('getAllCollectionItems()'), isFalse);

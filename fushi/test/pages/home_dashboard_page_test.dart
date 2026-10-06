@@ -1532,7 +1532,7 @@ void main() {
     expect(find.byType(HomeContinueHero), findsOneWidget);
   });
 
-  testWidgets('BUG-2964 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批',
+  testWidgets('BUG-3034 · 切回首页（页面重建）首帧直接用上一轮快照，不再挂骨架等整批',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1.0;

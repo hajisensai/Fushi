@@ -391,11 +391,11 @@ void main() {
     await emitted;
   });
 
-  // BUG-2964：首页专用的 getLocalPrimaryCollectionMembership 只为本机库里还在的
+  // BUG-3034：首页专用的 getLocalPrimaryCollectionMembership 只为本机库里还在的
   // 条目查折叠归属主合集 + 组内 sortIndex。口径必须与「getPrimaryCollectionIdByEntry
   // + getAllCollectionItems 内存分组」逐键一致，只是把本机不存在的成员（在线源 /
   // 播放列表挂进来的集数）挡在 SQL 侧，不再整表搬进 Dart。
-  test('BUG-2964 getLocalPrimaryCollectionMembership：本机条目口径与旧两步一致',
+  test('BUG-3034 getLocalPrimaryCollectionMembership：本机条目口径与旧两步一致',
       () async {
     final db = await _openDb();
     for (final String uid in <String>['v1', 'v2']) {

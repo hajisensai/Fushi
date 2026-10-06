@@ -105,7 +105,7 @@ bool isDashboardContinueBook(MediaItem item, Set<String> completedBookKeys) {
 /// → 最近添加）+ 侧列（flex 2：学习卡 → 追踪 → 活动），随窗口铺满；窄屏单列
 /// （继续 → 学习 → 最近添加 → 追踪 → 活动）。书与阅读位置走 Riverpod provider
 /// （响应式）；视频 / 统计 / 活动等本地聚合在 [initState] 一次并发载入，结果按
-/// 数据库实例做快照（BUG-2964），重建时首帧直接用快照渲染。
+/// 数据库实例做快照（BUG-3034），重建时首帧直接用快照渲染。
 class HomeDashboardPage extends BaseModuleTabPage {
   const HomeDashboardPage({
     super.key,
@@ -219,7 +219,7 @@ class _ContinueEntry {
 /// 首页本地聚合的一次完整结果（[_HomeDashboardPageState._loadDashboardDataUnsafe]
 /// 的产物），按数据库实例缓存在 [_HomeDashboardPageState._snapshots]。
 ///
-/// BUG-2964：首页不在 keep-alive 名单里，每次切回首页都整页重建、`initState`
+/// BUG-3034：首页不在 keep-alive 名单里，每次切回首页都整页重建、`initState`
 /// 重跑整批聚合——几百毫秒里各区只能挂骨架。快照让重建的首帧直接用上一轮的结果
 /// 渲染（旧数据先上屏），后台照常重拉一轮再替换，体感从「每次都等」变成「瞬开」。
 /// 只存本地聚合，远端补位（互联）仍由 [_loadRemoteDashboardData] 增量到达。
@@ -588,7 +588,7 @@ class _HomeDashboardPageState
   /// [_snapshots] 快照时重建首帧直接视为已完成。
   bool _initialLoadDone = false;
 
-  /// 按数据库实例缓存的上一轮本地聚合（BUG-2964，见 [_HomeDashboardSnapshot]）。
+  /// 按数据库实例缓存的上一轮本地聚合（BUG-3034，见 [_HomeDashboardSnapshot]）。
   /// [Expando] 随数据库实例回收，换库 / 测试各自建库天然隔离。
   static final Expando<_HomeDashboardSnapshot> _snapshots =
       Expando<_HomeDashboardSnapshot>('home-dashboard-snapshot');
@@ -762,7 +762,7 @@ class _HomeDashboardPageState
     final Future<List<MediaCollectionRow>> collectionsF =
         db.getAllMediaCollections();
     // 折叠归属主合集 + 组内 sortIndex 一次查回，且只查本机库里还在的条目
-    // （BUG-2964：原先 getPrimaryCollectionIdByEntry + getAllCollectionItems 两次
+    // （BUG-3034：原先 getPrimaryCollectionIdByEntry + getAllCollectionItems 两次
     // 全表物化，在线源 / 播放列表合集把成员表撑到八万行时单这两步 640–950 ms）。
     final Future<Map<String, ({int collectionId, int sortIndex})>>
         membershipF = db.getLocalPrimaryCollectionMembership();
