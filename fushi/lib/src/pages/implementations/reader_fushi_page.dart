@@ -78,6 +78,8 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
+import 'package:fushi/src/reader/reader_audiobook_panel.dart'
+    show AudiobookSleepTimer;
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
 import 'package:fushi/src/reader/reader_script_compactor.dart';

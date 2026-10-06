@@ -110,10 +110,18 @@ class LyricsPlayerData {
     required this.speed,
     required this.lyricsMasked,
     required this.clock,
+    this.chapterLabel,
+    this.sleepTimerMinutes,
   });
 
   /// 书名。
   final String title;
+
+  /// 当前章名（正文跟随音频所在的目录项）；未知为 null。只用于显示。
+  final String? chapterLabel;
+
+  /// 睡眠定时剩余分钟；没开定时为 null。只用于显示（定时本身挂在播放控制器上）。
+  final int? sleepTimerMinutes;
 
   /// 封面（无封面为 null，设计系统画占位）。
   final ImageProvider? cover;
@@ -174,7 +182,15 @@ class LyricsPlayerCallbacks {
     required this.onMore,
     required this.onTapBackground,
     this.onTypography,
+    this.onSeekRelative,
+    this.onSleepTimer,
   });
+
+  /// 后退 / 前进若干秒（负数后退）。null = 不显示 ±10 秒键。
+  final ValueChanged<int>? onSeekRelative;
+
+  /// 睡眠定时菜单（锚定在按钮上，从按钮 context 取歌词模式主题）。null = 不显示。
+  final ValueChanged<LyricsMenuAnchor>? onSleepTimer;
 
   /// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。参数带按钮的全局矩形与
   /// 按钮自己的 context（面板从它取歌词模式主题）。null = 不显示该键。
@@ -262,7 +278,12 @@ class LyricsHtmlTheme {
     required this.contextBlurPx,
     required this.rowRadius,
     required this.hoverFill,
+    this.pastOpacityFactor = 1,
   });
+
+  /// 已读句（当前句之前）的不透明度再乘的系数（1 = 与后文对称，不额外淡化）。
+  /// 手动浏览态不生效（浏览时统一 [browsingOpacity]）。
+  final double pastOpacityFactor;
 
   /// 非当前行文字色（不含透明度，透明度由 [contextOpacities] 决定）。
   final Color textColor;
@@ -318,7 +339,8 @@ class LyricsHtmlTheme {
       other.alignStart == alignStart &&
       other.contextBlurPx == contextBlurPx &&
       other.rowRadius == rowRadius &&
-      other.hoverFill == hoverFill;
+      other.hoverFill == hoverFill &&
+      other.pastOpacityFactor == pastOpacityFactor;
 
   @override
   int get hashCode => Object.hash(
@@ -335,5 +357,6 @@ class LyricsHtmlTheme {
     contextBlurPx,
     rowRadius,
     hoverFill,
+    pastOpacityFactor,
   );
 }

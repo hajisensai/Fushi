@@ -10,9 +10,12 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiExpressiveShape, FushiExpressiveShapeBorder;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -38,9 +41,9 @@ const BorderRadius _kLargeBorderRadius = BorderRadius.all(
   Radius.circular(_kLargeRadius),
 );
 
-/// 窄屏底部控制条的高度（不含外边距）：进度条 36 + 时间约 18 + 间距 8 + 按钮行
-/// 64 + 上下内边距各 14，再留几像素给系统字号放大。
-const double _kNarrowBarHeight = 160;
+/// 窄屏底部控制条的高度（不含外边距）：章名行 44 + 间距 6 + 进度条 36 + 时间约
+/// 18 + 间距 8 + 按钮行 64 + 上下内边距各 14，再留几像素给系统字号放大。
+const double _kNarrowBarHeight = 210;
 
 /// 窄屏顶栏高度。
 const double _kNarrowTopBarHeight = 56;
@@ -211,6 +214,8 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
       contextBlurPx: 0,
       rowRadius: 16,
       hoverFill: cs.onSurface.withValues(alpha: 0.08),
+      // 已读句再退一档（M3E：读过的退到背景、要读的更清楚）。
+      pastOpacityFactor: 0.7,
     );
   }
 }
@@ -413,18 +418,18 @@ class _WidePanel extends StatelessWidget {
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
 
-  /// 封面以外的内容大约要的高度（书名 / chip / 进度 / 按钮两行 + 间距）。
-  static const double _reservedHeight = 360;
+  /// 封面以外的内容大约要的高度（播放卡：章名 / 书名 / chip / 进度 / 按钮两行 +
+  /// 内边距与间距）。
+  static const double _reservedHeight = 430;
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
         final double coverSide = math.min(
           width,
-          constraints.maxHeight - _reservedHeight - 28,
+          constraints.maxHeight - _reservedHeight - 24,
         );
         // 太矮（横屏手机）就不放封面，免得封面挤成邮票。
         final bool showCover = coverSide >= 120;
@@ -433,67 +438,62 @@ class _WidePanel extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             if (showCover) ...<Widget>[
-              Center(
-                child: _CoverTile(
-                  cover: data.cover,
-                  side: coverSide,
-                  isPlaying: data.isPlaying,
+              _SpringEntrance(
+                child: Center(
+                  child: _CoverTile(
+                    cover: data.cover,
+                    side: coverSide,
+                    isPlaying: data.isPlaying,
+                  ),
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
             ],
-            Text(
-              data.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleLarge?.copyWith(
-                color: theme.colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _StatsChips(clock: data.clock),
-            const SizedBox(height: 20),
-            _WavySeekBar(
-              clock: data.clock,
-              isPlaying: data.isPlaying,
-              onSeek: callbacks.onSeek,
-              strokeWidth: 6,
-              barHeight: 40,
-            ),
-            const SizedBox(height: 12),
-            Center(
-              child: _TransportGroup(
-                isPlaying: data.isPlaying,
-                callbacks: callbacks,
-                playSize: 88,
-                sideSize: FushiIconButtonSize.m,
-                sideWidth: FushiIconButtonWidth.wide,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Center(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                spacing: 8,
-                children: <Widget>[
-                  _SpeedButton(
-                    speed: data.speed,
-                    onSpeedChanged: callbacks.onSpeedChanged,
-                  ),
-                  _MaskButton(
-                    masked: data.lyricsMasked,
-                    onPressed: callbacks.onToggleMask,
-                  ),
-                  if (callbacks.onTypography != null)
-                    _TypographyButton(onTypography: callbacks.onTypography!),
-                  FushiIconButtonControl(
-                    tooltip: t.reading_statistics,
-                    onPressed: callbacks.onOpenStatistics,
-                    icon: const FushiIcon(FushiIcons.statistics),
-                  ),
-                  _MoreButton(onMore: callbacks.onMore),
-                ],
+            _SpringEntrance(
+              delay: 0.18,
+              child: _PlayerCard(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _TitleBlock(
+                      title: data.title,
+                      chapterLabel: data.chapterLabel,
+                      large: true,
+                    ),
+                    const SizedBox(height: 12),
+                    _StatsChips(clock: data.clock),
+                    const SizedBox(height: 14),
+                    _WavySeekBar(
+                      clock: data.clock,
+                      isPlaying: data.isPlaying,
+                      onSeek: callbacks.onSeek,
+                      strokeWidth: 6,
+                      barHeight: 40,
+                    ),
+                    const SizedBox(height: 8),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _TransportGroup(
+                        isPlaying: data.isPlaying,
+                        callbacks: callbacks,
+                        playSize: 88,
+                        sideSize: FushiIconButtonSize.m,
+                        sideWidth: FushiIconButtonWidth.standard,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _SecondaryActions(
+                        data: data,
+                        callbacks: callbacks,
+                        full: true,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -510,8 +510,147 @@ class _WidePanel extends StatelessWidget {
   }
 }
 
-/// 大封面卡：圆角 28、按封面原比例放进 [side]×[side] 的方框。桌面悬停时朝指针
-/// 轻微 3D 倾斜并上浮（阴影加深）；播放中略放大、暂停略缩小（弹簧）。
+/// 播放器浮动卡：与底部浮动导航 / 浮动工具栏同一套悬浮外观
+/// （[fushiFloatingPillDecoration]：同一 container 色、同一投影、墨水屏描边无影），
+/// 圆角取 28 的 extra-large 大圆角卡。宽屏左栏与窄屏底部控制条共用。
+class _PlayerCard extends StatelessWidget {
+  const _PlayerCard({required this.child, required this.padding});
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    const OutlinedBorder shape = RoundedRectangleBorder(
+      borderRadius: _kLargeBorderRadius,
+    );
+    return DecoratedBox(
+      decoration: fushiFloatingPillDecoration(
+        context,
+        color: fushiFloatingToolbarPalette(context).container,
+        shape: shape,
+      ),
+      child: Material(
+        type: MaterialType.transparency,
+        shape: shape,
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+
+/// 章名（强调色 overline）+ 书名（M3E Emphasized）。章名未知时只显示书名。
+class _TitleBlock extends StatelessWidget {
+  const _TitleBlock({
+    required this.title,
+    required this.chapterLabel,
+    required this.large,
+  });
+
+  final String title;
+  final String? chapterLabel;
+
+  /// 宽屏大字（headlineSmall Emphasized、两行）/ 窄屏紧凑（一行）。
+  final bool large;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final String chapter = (chapterLabel ?? '').trim();
+    final TextStyle chapterStyle =
+        (large ? type.labelLargeEmphasized : type.labelMediumEmphasized)
+            .copyWith(color: cs.primary);
+    final TextStyle titleStyle =
+        (large ? type.headlineSmallEmphasized : type.titleSmallEmphasized)
+            .copyWith(color: cs.onSurface);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (chapter.isNotEmpty)
+          // 换章：新章名从下方弹入（spatial 弹簧位移 + effects 淡入）。
+          AnimatedSwitcher(
+            duration: motion.spatialDefault.duration,
+            switchInCurve: motion.effectsDefault.curve,
+            switchOutCurve: motion.effectsFast.curve,
+            layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+              alignment: AlignmentDirectional.centerStart,
+              children: <Widget>[...previous, if (current != null) current],
+            ),
+            transitionBuilder: (Widget child, Animation<double> animation) =>
+                FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position:
+                        Tween<Offset>(
+                          begin: const Offset(0, 0.5),
+                          end: Offset.zero,
+                        ).animate(
+                          CurvedAnimation(
+                            parent: animation,
+                            curve: motion.spatialDefault.curve,
+                          ),
+                        ),
+                    child: child,
+                  ),
+                ),
+            child: Text(
+              chapter,
+              key: ValueKey<String>('lyrics_chapter_$chapter'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: chapterStyle,
+            ),
+          ),
+        if (title.isNotEmpty)
+          Text(
+            title,
+            maxLines: large ? 2 : 1,
+            overflow: TextOverflow.ellipsis,
+            style: titleStyle,
+          ),
+      ],
+    );
+  }
+}
+
+/// 进场：spatial 弹簧从下方上移 + effects 淡入（墨水屏 / 减弱动态效果时长归零，
+/// 直接落位）。[delay] 是占总时长的比例，做错峰。
+class _SpringEntrance extends StatelessWidget {
+  const _SpringEntrance({required this.child, this.delay = 0});
+
+  final Widget child;
+  final double delay;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiMotionScheme motion = context.fushiMotion;
+    final double d = delay.clamp(0.0, 0.6);
+    Duration total(Duration base) =>
+        base == Duration.zero ? Duration.zero : base * (1 / (1 - d));
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: total(motion.effectsSlow.duration),
+      curve: Interval(d, 1, curve: motion.effectsSlow.curve),
+      builder: (BuildContext context, double fade, Widget? child) =>
+          Opacity(opacity: fade.clamp(0.0, 1.0), child: child),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: total(motion.spatialSlow.duration),
+        curve: Interval(d, 1, curve: motion.spatialSlow.curve),
+        builder: (BuildContext context, double v, Widget? child) =>
+            Transform.translate(offset: Offset(0, 28 * (1 - v)), child: child),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// 大封面卡：按封面原比例放进 [side]×[side] 的方框。M3E 形状变形：播放中圆角 28、
+/// 暂停时圆角弹到 48 并略缩小（与播放键「播放圆 / 暂停圆角方」同一根弹簧节奏）。
+/// 桌面悬停时朝指针轻微 3D 倾斜并上浮（阴影加深）。无封面画 9 瓣饼干形徽标。
 class _CoverTile extends StatefulWidget {
   const _CoverTile({
     required this.cover,
@@ -617,29 +756,46 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
     final double w = _aspect >= 1 ? side : side * _aspect;
     final double h = _aspect >= 1 ? side / _aspect : side;
     final ImageProvider? cover = widget.cover;
-    final Widget face = ClipRRect(
-      borderRadius: _kLargeBorderRadius,
-      child: SizedBox(
-        width: w,
-        height: h,
-        child: cover == null
-            ? ColoredBox(
-                color: FushiDesignTokens.of(context).surfaces.overlay,
-                child: Center(
-                  child: FushiIcon(
-                    FushiIcons.books,
-                    size: math.min(w, h) * 0.32,
-                    color: cs.onSurfaceVariant,
+    final double badge = math.min(w, h) * 0.46;
+    final Widget face = SizedBox(
+      width: w,
+      height: h,
+      child: cover == null
+          ? ColoredBox(
+              color: cs.surfaceContainerHighest,
+              child: Center(
+                child: AnimatedBuilder(
+                  animation: _playScale.animation,
+                  builder: (BuildContext context, Widget? child) =>
+                      DecoratedBox(
+                        decoration: ShapeDecoration(
+                          color: cs.primaryContainer,
+                          shape: FushiExpressiveShapeBorder(
+                            FushiExpressiveShape.cookie9,
+                            rotation: _playScale.value * math.pi / 9,
+                          ),
+                        ),
+                        child: child,
+                      ),
+                  child: SizedBox.square(
+                    dimension: badge,
+                    child: Center(
+                      child: FushiIcon(
+                        FushiIcons.books,
+                        size: badge * 0.46,
+                        color: cs.onPrimaryContainer,
+                      ),
+                    ),
                   ),
                 ),
-              )
-            : Image(
-                image: cover,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.medium,
-                gaplessPlayback: true,
               ),
-      ),
+            )
+          : Image(
+              image: cover,
+              fit: BoxFit.cover,
+              filterQuality: FilterQuality.medium,
+              gaplessPlayback: true,
+            ),
     );
     final Offset tilt = _hover ?? Offset.zero;
     final double liftTarget = _hover == null ? 0 : 1;
@@ -666,6 +822,10 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
                       // 播放 1.0、暂停 0.92；悬停再放大 2%。
                       final double scale =
                           0.92 + 0.08 * _playScale.value + 0.02 * lift;
+                      // 形状变形：播放 28、暂停 48（弹簧过冲时不让圆角为负）。
+                      final BorderRadius radius = BorderRadius.circular(
+                        math.max(4.0, 48 - 20 * _playScale.value),
+                      );
                       // 约 ±3.5°：指针在右边，卡片右侧朝里压（rotateY 正）。
                       final Matrix4 transform = Matrix4.identity()
                         ..setEntry(3, 2, 0.0012)
@@ -678,7 +838,7 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
                         transform: transform,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            borderRadius: _kLargeBorderRadius,
+                            borderRadius: radius,
                             boxShadow: <BoxShadow>[
                               BoxShadow(
                                 color: cs.shadow.withValues(
@@ -689,7 +849,7 @@ class _CoverTileState extends State<_CoverTile> with TickerProviderStateMixin {
                               ),
                             ],
                           ),
-                          child: child,
+                          child: ClipRRect(borderRadius: radius, child: child),
                         ),
                       );
                     },
@@ -806,7 +966,7 @@ class _StatsChips extends StatelessWidget {
             chip(FushiIcons.speed, _speedText(stats)),
             if (progress != null) chip(FushiIcons.books, progress),
             chip(
-              stats.tracking ? FushiIcons.timer : Icons.timer_off_outlined,
+              stats.tracking ? FushiIcons.timer : FushiIcons.timerOff,
               _sessionText(stats),
             ),
           ],
@@ -1285,7 +1445,9 @@ class _SeekPainter extends CustomPainter {
 // 播放键组
 // ---------------------------------------------------------------------------
 
-/// 上一句 / 播放 / 下一句：M3 Expressive 标准按钮组（按下的变宽、邻居让出）。
+/// −10 秒 / 上一句 / 播放 / 下一句 / +10 秒：M3 Expressive 标准按钮组（按下的
+/// 变宽、邻居让出）。±10 秒是小号 tonal 圆钮，只在页面给了 [LyricsPlayerCallbacks
+/// .onSeekRelative] 时出现。
 class _TransportGroup extends StatelessWidget {
   const _TransportGroup({
     required this.isPlaying,
@@ -1303,9 +1465,18 @@ class _TransportGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final ValueChanged<int>? seekBy = callbacks.onSeekRelative;
     return FushiButtonGroup(
       spacing: 8,
       children: <Widget>[
+        if (seekBy != null)
+          FushiIconButtonControl.filledTonal(
+            key: const ValueKey<String>('lyrics_seek_back_button'),
+            size: FushiIconButtonSize.s,
+            tooltip: '-10s',
+            onPressed: () => seekBy(-10),
+            icon: const FushiIcon(FushiIcons.replay10),
+          ),
         FushiIconButtonControl.filledTonal(
           size: sideSize,
           width: sideWidth,
@@ -1325,6 +1496,14 @@ class _TransportGroup extends StatelessWidget {
           onPressed: callbacks.onNextCue,
           icon: const FushiIcon(FushiIcons.skipNext),
         ),
+        if (seekBy != null)
+          FushiIconButtonControl.filledTonal(
+            key: const ValueKey<String>('lyrics_seek_forward_button'),
+            size: FushiIconButtonSize.s,
+            tooltip: '+10s',
+            onPressed: () => seekBy(10),
+            icon: const FushiIcon(FushiIcons.forward10),
+          ),
       ],
     );
   }
@@ -1483,7 +1662,101 @@ class _SpeedButton extends StatelessWidget {
   }
 }
 
-/// 遮罩（听力沉浸模糊）切换：toggle 图标键，开着时是选中态。
+//// 次要操作工具条：一颗 surfaceContainerHighest 胶囊里的 M3E 标准按钮组（按下
+/// 变宽、邻居让出）——倍速 / 睡眠定时 / 遮罩 / Aa / 统计 / ⋯。[full] = false 时只放
+/// 倍速 / 睡眠定时 / ⋯（窄屏：遮罩 / Aa / 统计在顶栏胶囊里）。
+class _SecondaryActions extends StatelessWidget {
+  const _SecondaryActions({
+    required this.data,
+    required this.callbacks,
+    required this.full,
+  });
+
+  final LyricsPlayerData data;
+  final LyricsPlayerCallbacks callbacks;
+  final bool full;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final ValueChanged<LyricsMenuAnchor>? onSleep = callbacks.onSleepTimer;
+    final ValueChanged<LyricsMenuAnchor>? onTypography = callbacks.onTypography;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: cs.surfaceContainerHighest,
+        shape: const StadiumBorder(),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: FushiButtonGroup(
+          spacing: 2,
+          children: <Widget>[
+            _SpeedButton(
+              speed: data.speed,
+              onSpeedChanged: callbacks.onSpeedChanged,
+            ),
+            if (onSleep != null)
+              _SleepButton(
+                minutes: data.sleepTimerMinutes,
+                onSleepTimer: onSleep,
+              ),
+            if (full) ...<Widget>[
+              _MaskButton(
+                masked: data.lyricsMasked,
+                onPressed: callbacks.onToggleMask,
+              ),
+              if (onTypography != null)
+                _TypographyButton(onTypography: onTypography),
+              FushiIconButtonControl(
+                tooltip: t.reading_statistics,
+                onPressed: callbacks.onOpenStatistics,
+                icon: const FushiIcon(FushiIcons.statistics),
+              ),
+            ],
+            _MoreButton(onMore: callbacks.onMore),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 睡眠定时：开着时是选中态（实心图标），提示里写剩余分钟；点开锚定菜单
+/// （关闭 / 15 / 30 / 45 / 60 分钟，由页面弹，与有声书侧栏同一个定时器）。
+class _SleepButton extends StatelessWidget {
+  const _SleepButton({required this.minutes, required this.onSleepTimer});
+
+  final int? minutes;
+  final ValueChanged<LyricsMenuAnchor> onSleepTimer;
+
+  @override
+  Widget build(BuildContext context) {
+    final int? m = minutes;
+    return Builder(
+      builder: (BuildContext anchor) => FushiIconButtonControl(
+        key: const ValueKey<String>('lyrics_sleep_timer_button'),
+        tooltip: m == null
+            ? t.reader_audiobook_sleep_timer
+            : t.reader_audiobook_sleep_remaining(n: m),
+        isSelected: m != null,
+        onPressed: () {
+          final RenderObject? box = anchor.findRenderObject();
+          if (box is! RenderBox || !box.hasSize) return;
+          onSleepTimer(
+            LyricsMenuAnchor(
+              rect: box.localToGlobal(Offset.zero) & box.size,
+              context: anchor,
+            ),
+          );
+        },
+        icon: const FushiIcon(FushiIcons.timer),
+        selectedIcon: FushiIcon(FushiIcons.filled(FushiIcons.timer)),
+      ),
+    );
+  }
+}
+
+// 遮罩（听力沉浸模糊）切换：toggle 图标键，开着时是选中态。
 class _MaskButton extends StatelessWidget {
   const _MaskButton({required this.masked, required this.onPressed});
 
@@ -1502,7 +1775,6 @@ class _MaskButton extends StatelessWidget {
   }
 }
 
-/// ⋯ 更多：把按钮的全局矩形与 context 交给页面锚定菜单（菜单从它取主题）。
 /// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
 class _TypographyButton extends StatelessWidget {
   const _TypographyButton({required this.onTypography});
@@ -1531,6 +1803,7 @@ class _TypographyButton extends StatelessWidget {
   }
 }
 
+/// ⋯ 更多：把按钮的全局矩形与 context 交给页面锚定菜单（菜单从它取主题）。
 class _MoreButton extends StatelessWidget {
   const _MoreButton({required this.onMore});
 
@@ -1561,7 +1834,7 @@ class _MoreButton extends StatelessWidget {
 // 窄屏
 // ---------------------------------------------------------------------------
 
-/// 窄屏顶栏：书名 + 一行读数小字；右侧遮罩 / 统计 / 关闭。
+/// 窄屏顶栏：书名 + 一行读数小字；右侧遮罩 / Aa / 统计 / 关闭（悬浮胶囊）。
 class _NarrowTopBar extends StatelessWidget {
   const _NarrowTopBar({required this.data, required this.callbacks});
 
@@ -1570,8 +1843,8 @@ class _NarrowTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
     return Row(
       children: <Widget>[
         Expanded(
@@ -1583,10 +1856,7 @@ class _NarrowTopBar extends StatelessWidget {
                 data.title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: cs.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: type.titleMediumEmphasized.copyWith(color: cs.onSurface),
               ),
               _StatsBuilder(
                 clock: data.clock,
@@ -1600,11 +1870,8 @@ class _NarrowTopBar extends StatelessWidget {
                     ].join('  ·  '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(
+                    style: type.bodySmall.tabular.copyWith(
                       color: cs.onSurfaceVariant,
-                      fontFeatures: const <FontFeature>[
-                        FontFeature.tabularFigures(),
-                      ],
                     ),
                   );
                 },
@@ -1642,8 +1909,9 @@ class _NarrowTopBar extends StatelessWidget {
   }
 }
 
-/// 窄屏底部悬浮控制条：surfaceContainer 圆角 28 卡片，波浪进度 + 时间，下面一行
-/// 倍速 / 上一句·播放·下一句 / 更多。
+/// 窄屏底部浮动播放卡（与宽屏左栏同一张 [_PlayerCard]）：第一行小封面（形状
+/// 变形）+ 章名 / 书名 + 倍速·睡眠定时·⋯ 工具条；下面波浪进度 + 时间；最下一行
+/// −10 秒 / 上一句 / 播放 / 下一句 / +10 秒。
 class _NarrowControlBar extends StatelessWidget {
   const _NarrowControlBar({required this.data, required this.callbacks});
 
@@ -1652,63 +1920,124 @@ class _NarrowControlBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 与底部浮动导航 / 浮动工具栏同一套悬浮外观（fushiFloatingPillDecoration：
-    // 同一 container 色、同一投影、墨水屏描边无影），只是圆角取 28 的大圆角卡
-    // （两行内容放不进全圆胶囊）。
-    const OutlinedBorder shape = RoundedRectangleBorder(
-      borderRadius: _kLargeBorderRadius,
-    );
-    return DecoratedBox(
-      decoration: fushiFloatingPillDecoration(
-        context,
-        color: fushiFloatingToolbarPalette(context).container,
-        shape: shape,
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        shape: shape,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _WavySeekBar(
+    final String chapter = (data.chapterLabel ?? '').trim();
+    return _SpringEntrance(
+      child: _PlayerCard(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              height: 44,
+              child: Row(
+                children: <Widget>[
+                  _MiniCover(
+                    cover: data.cover,
+                    isPlaying: data.isPlaying,
+                    size: 44,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _TitleBlock(
+                      // 书名已在顶栏：这里有章名就只放章名（强调色），没有才放书名。
+                      title: chapter.isEmpty ? data.title : '',
+                      chapterLabel: chapter.isEmpty ? null : chapter,
+                      large: false,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _SecondaryActions(
+                      data: data,
+                      callbacks: callbacks,
+                      full: false,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: _WavySeekBar(
                 clock: data.clock,
                 isPlaying: data.isPlaying,
                 onSeek: callbacks.onSeek,
                 strokeWidth: 5,
                 barHeight: 36,
               ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 64,
-                // 极窄宽度（< 320）下整行等比缩小，不溢出。
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    spacing: 12,
-                    children: <Widget>[
-                      _SpeedButton(
-                        speed: data.speed,
-                        onSpeedChanged: callbacks.onSpeedChanged,
-                      ),
-                      _TransportGroup(
-                        isPlaying: data.isPlaying,
-                        callbacks: callbacks,
-                        playSize: 64,
-                        sideSize: FushiIconButtonSize.m,
-                        sideWidth: FushiIconButtonWidth.narrow,
-                      ),
-                      _MoreButton(onMore: callbacks.onMore),
-                    ],
-                  ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 64,
+              // 极窄宽度（< 320）下整行等比缩小，不溢出。
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: _TransportGroup(
+                  isPlaying: data.isPlaying,
+                  callbacks: callbacks,
+                  playSize: 64,
+                  sideSize: FushiIconButtonSize.m,
+                  sideWidth: FushiIconButtonWidth.narrow,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// 窄屏小封面：播放中圆角方（圆角 = 边长 28%）、暂停时弹成正圆（spatial 弹簧，
+/// 降级时直接落值）。无封面画 primaryContainer 底 + 书本图标。
+class _MiniCover extends StatelessWidget {
+  const _MiniCover({
+    required this.cover,
+    required this.isPlaying,
+    required this.size,
+  });
+
+  final ImageProvider? cover;
+  final bool isPlaying;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final ImageProvider? image = cover;
+    final int cache = (size * MediaQuery.devicePixelRatioOf(context)).round();
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: isPlaying ? size * 0.28 : size / 2),
+      duration: motion.spatialDefault.duration,
+      curve: motion.spatialDefault.curve,
+      builder: (BuildContext context, double radius, Widget? child) =>
+          ClipRRect(
+            borderRadius: BorderRadius.circular(radius.clamp(2.0, size / 2)),
+            child: child,
+          ),
+      child: SizedBox.square(
+        dimension: size,
+        child: image == null
+            ? ColoredBox(
+                color: cs.primaryContainer,
+                child: Center(
+                  child: FushiIcon(
+                    FushiIcons.books,
+                    size: size * 0.5,
+                    color: cs.onPrimaryContainer,
+                  ),
+                ),
+              )
+            : Image(
+                image: ResizeImage.resizeIfNeeded(cache, null, image),
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.medium,
+                gaplessPlayback: true,
+              ),
       ),
     );
   }

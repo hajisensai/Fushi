@@ -71,6 +71,7 @@ class LyricsModeHtml {
         current.withValues(alpha: 0.16),
       ),
       '--ly-pill-fg': _css(current),
+      '--ly-past-k': theme.pastOpacityFactor.clamp(0.0, 1.0).toStringAsFixed(3),
     };
     return (
       vars: vars,
@@ -79,6 +80,7 @@ class LyricsModeHtml {
         'ly-sweep',
         if (theme.edgeFade > 0) 'ly-fade',
         if (theme.contextBlurPx > 0) 'ly-ctxblur',
+        if (theme.pastOpacityFactor < 1) 'ly-past-dim',
       ],
     );
   }
@@ -363,6 +365,25 @@ body.ly-themed .cue.current {
 body.ly-themed { scrollbar-width: none; }
 body.ly-themed::-webkit-scrollbar { width: 0; height: 0; }
 body.ly-browsing .cue:not(.current) { opacity: var(--ly-op-browse, 0.6); }
+/* 已读句淡化（M3E）：当前句之前的行在对称阶梯上再乘 --ly-past-k，读过的退到背景、
+   要读的更清楚。只认「不是当前句、也不在当前句之后」的兄弟（:not 复杂选择器，
+   WebView2 / Android WebView / WKWebView 均支持）；手动浏览态让位给统一透明度。 */
+body.ly-past-dim:not(.ly-browsing) .cue:not(.current):not(.current ~ .cue) {
+  opacity: calc(var(--ly-op4, 0.15) * var(--ly-past-k, 1));
+}
+body.ly-past-dim:not(.ly-browsing) .cue.near-1:not(.current ~ .cue) {
+  opacity: calc(var(--ly-op1, 0.55) * var(--ly-past-k, 1));
+}
+body.ly-past-dim:not(.ly-browsing) .cue.near-2:not(.current ~ .cue) {
+  opacity: calc(var(--ly-op2, 0.35) * var(--ly-past-k, 1));
+}
+body.ly-past-dim:not(.ly-browsing) .cue.near-3:not(.current ~ .cue) {
+  opacity: calc(var(--ly-op3, 0.25) * var(--ly-past-k, 1));
+}
+/* 系统「减弱动态效果」/ 墨水屏：行切换的放大 / 淡入淡出直接落值（滚动已由
+   __lyricsReduceMotion 改为直接落位）。 */
+body.ly-reduce .cue,
+body.ly-reduce #ly-follow { transition: none !important; }
 body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
 @media (hover: hover) {
   body.ly-themed .cue:hover { background-color: var(--ly-hover, transparent); }

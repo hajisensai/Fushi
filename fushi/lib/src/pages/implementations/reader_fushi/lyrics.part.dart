@@ -471,6 +471,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       speed: ctrl.speed,
       lyricsMasked: ReaderFushiSource.instance.lyricsBlur,
       clock: _ReaderLyricsClock(this),
+      // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
+      chapterLabel: _book == null ? null : _currentChapterLabel(),
+      sleepTimerMinutes: AudiobookSleepTimer.of(ctrl).remainingMinutes,
     );
   }
 
@@ -491,6 +494,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           unawaited(_showLyricsMoreMenu(anchor)),
       onTypography: (LyricsMenuAnchor anchor) =>
           unawaited(_showLyricsTypographyPanel(anchor)),
+      // ±10 秒与有声书侧栏同一条 seekRelative 漏斗。
+      onSeekRelative: (int seconds) => unawaited(ctrl.seekRelative(seconds)),
+      onSleepTimer: (LyricsMenuAnchor anchor) =>
+          unawaited(_showLyricsSleepTimerMenu(ctrl, anchor)),
       onTapBackground: () {
         if (isDictionaryShown) clearDictionaryResult();
         _focusOwnership.reclaim(FocusReclaimCause.gesture);
@@ -526,6 +533,56 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       onOpenMore: () =>
           unawaited(_showAppearanceSheet(initialSettingsTab: 'lyrics')),
     );
+  }
+
+  /// 睡眠定时：与有声书侧栏的定时 chip 同一个 [AudiobookSleepTimer]（挂在控制器
+  /// 上，关掉歌词模式照样走）。菜单从按钮 context 弹，跟随歌词模式主题。
+  Future<void> _showLyricsSleepTimerMenu(
+    AudiobookPlayerController ctrl,
+    LyricsMenuAnchor menuAnchor,
+  ) async {
+    final BuildContext menuContext = menuAnchor.context;
+    if (!mounted || !menuContext.mounted) return;
+    final RenderBox overlay =
+        Overlay.of(menuContext).context.findRenderObject()! as RenderBox;
+    final Rect local = Rect.fromPoints(
+      overlay.globalToLocal(menuAnchor.rect.topLeft),
+      overlay.globalToLocal(menuAnchor.rect.bottomRight),
+    );
+    final AudiobookSleepTimer timer = AudiobookSleepTimer.of(ctrl);
+    final int? remaining = timer.remainingMinutes;
+    const List<int> options = <int>[15, 30, 45, 60];
+    final int? choice = await showFushiMenu<int>(
+      context: menuContext,
+      position: RelativeRect.fromRect(local, Offset.zero & overlay.size),
+      items: <PopupMenuEntry<int>>[
+        PopupMenuItem<int>(
+          value: 0,
+          enabled: remaining != null,
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(FushiIcons.timerOff, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(t.reader_audiobook_sleep_off)),
+            ],
+          ),
+        ),
+        for (final int m in options)
+          PopupMenuItem<int>(
+            value: m,
+            child: Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.timer, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(t.stat_format_minutes(n: m))),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (choice == null || !mounted) return;
+    timer.start(choice == 0 ? null : choice);
+    _rebuild(() {});
   }
 
   /// 👁：歌词遮罩（听力沉浸模糊，设置项 `lyrics_blur`）。与设置面板同一个偏好。
@@ -701,6 +758,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final LyricsHtmlTheme? theme = _lyricsHtmlTheme;
     await controller.evaluateJavascript(
       source: 'window.__lyricsReduceMotion = $reduceMotion;'
+          "document.body.classList.toggle('ly-reduce', $reduceMotion);"
           '${theme == null ? '' : LyricsModeHtml.applyThemeInvocation(theme, textColorOverride: _lyricsCustomTextColor(), currentColorOverride: _lyricsCustomHighlightColor())}',
     );
     if (!currentLyricsLoad()) return;
