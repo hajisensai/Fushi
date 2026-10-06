@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart' show maskComments;
+
 const String _patchPath =
     '../ci/patches/hosted/media_kit-1.2.6/lib/src/player/native/core/initializer.dart';
 
@@ -59,10 +61,7 @@ Future<ProcessResult> _runProbe(String library, String mode) async {
 
 void main() {
   test('BUG-3003: create/dispose share the Windows debug event backend', () {
-    final String code = File(_patchPath)
-        .readAsLinesSync()
-        .where((String line) => !line.trimLeft().startsWith('//'))
-        .join('\n');
+    final String code = maskComments(File(_patchPath).readAsStringSync());
     expect(
       code,
       contains('isExecmemRestricted || (Platform.isWindows && kDebugMode)'),
