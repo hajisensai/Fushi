@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2813 条。点号进各自文件。
+> 共 2819 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -74,12 +74,18 @@
 | [BUG-3019](bugs/BUG-3019-settings-stepper-touch-width.md) | ✅ | ✅ | 设置步进器迁移后声明宽度少算触控区导致标题挤压 |
 | [BUG-3018](bugs/BUG-3018-smoke-navigation-destinations.md) | ✅ | ✅ | 桌面 smoke 把侧栏菜单图标算成首个导航目的地 |
 | [BUG-3015](bugs/BUG-3015-reorder-feedback-entrance-replay.md) | ✅ | ✅ | 开页进场期间拖动列表行时反馈副本重新变透明 |
+| [BUG-3014](bugs/BUG-3014-isolated-startup-legacy-support-migration.md) | ✅ | ✅ | 隔离集成测试启动仍可能迁移用户真实支持目录 |
+| [BUG-3013](bugs/BUG-3013-dictionary-popup-route-residue.md) | ✅ | ✅ | 首页查词浮层跨不透明路由持续残留 |
+| [BUG-3012](bugs/BUG-3012-apple-empty-tooltip-bubble.md) | ✅ | ✅ | 共享Tooltip在Apple分支把空消息变成可显示的空玻璃气泡 |
 | [BUG-3011](bugs/BUG-3011-horizontal-filter-mouse-drag.md) | ✅ | ✅ | 新增横向筛选与导航区未启用桌面鼠标拖动 |
 | [BUG-3010](bugs/BUG-3010-tag-reorder-scaled-handle.md) | ✅ | ✅ | 标签管理重排使用SDK浮层导致非默认界面缩放下拖拽错位 |
 | [BUG-3009](bugs/BUG-3009-raw-component-guard-empty-scan.md) | ✅ | ✅ | 组件棘轮守卫路径替换空串导致零文件扫描并静默通过 |
+| [BUG-3008](bugs/BUG-3008-reader-settings-live-theme.md) | ✅ | ✅ | 阅读设置侧栏保持打开切换主题后仍显示旧颜色 |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
 | [BUG-3005](bugs/BUG-3005-nav-more-spring-range.md) | ✅ | ✅ | 导航底栏更多菜单弹簧过冲导致打开时断言 |
+| [BUG-3003](bugs/BUG-3003-windows-media-hot-restart.md) | ✅ | ✅ | Windows 视频页热重启调用已销毁的 Dart 回调导致原生崩溃 |
+| [BUG-3002](bugs/BUG-3002-popup-document-reload-blank.md) | ✅ | ✅ | 视频查词弹窗文档重载后保留旧渲染账本导致内容空白 |
 | [BUG-3001](bugs/BUG-3001-reader-live-hooks-cleared.md) | ✅ | ✅ | 阅读器按钮布局等实时设置在切卷/叠开阅读器后改了不生效，须退出重进 |
 | [BUG-3000](bugs/BUG-3000-jimaku-key-not-found.md) | ✅ | ✅ | Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕 |
 | [BUG-2999](bugs/BUG-2999-video-cover-online-search.md) | ✅ | ✅ | 视频设置封面只能选本地文件，在线搜索封面入口丢失 |
