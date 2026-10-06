@@ -1615,52 +1615,53 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             onTap: _openClearSheet,
           ),
       ],
-      body: _loading
-          // 加载耗时源是逐书 cue + 音频文件存在性扫描（[_load]），可能数秒——补一行
-          // 说明文案，用户知道在等什么（巡检 PR-3）。
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  adaptiveIndicator(context: context),
-                  SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
-                  Text(
-                    t.collection_loading_hint,
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
+      // 类型筛选条原本固定在正文顶部：页头浮在正文上之后会被胶囊盖住，所以随
+      // 页头一起进 headerBottom（页头 → 筛选纵向堆叠、一起收起）。
+      headerBottom:
+          !_loading && _items.isNotEmpty ? _buildTypeFilterBar() : null,
+      // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动页头）。
+      body: Builder(
+        builder: (BuildContext context) => _loading
+            // 加载耗时源是逐书 cue + 音频文件存在性扫描（[_load]），可能数秒——补一行
+            // 说明文案，用户知道在等什么（巡检 PR-3）。
+            ? SafeArea(
+                bottom: false,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      adaptiveIndicator(context: context),
+                      SizedBox(
+                        height: FushiDesignTokens.of(context).spacing.gap,
+                      ),
+                      Text(
+                        t.collection_loading_hint,
+                        style: textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            )
-          : _items.isEmpty
-              ? Center(
-                  child: FushiPlaceholderMessage(
-                    icon: FushiIcons.collection,
-                    message: t.no_collections,
-                  ),
-                )
-              : Column(
-                  children: <Widget>[
-                    _buildTypeFilterBar(),
-                    Expanded(
-                      child: _visibleItems.isEmpty
-                          ? Center(
-                              child: FushiPlaceholderMessage(
-                                icon: FushiIcons.collection,
-                                message: t.no_collections,
-                              ),
-                            )
-                          : _buildGroupedListView(),
-                    ),
-                  ],
                 ),
+              )
+            : _items.isEmpty || _visibleItems.isEmpty
+                ? SafeArea(
+                    bottom: false,
+                    child: Center(
+                      child: FushiPlaceholderMessage(
+                        icon: FushiIcons.collection,
+                        message: t.no_collections,
+                      ),
+                    ),
+                  )
+                : _buildGroupedListView(context),
+      ),
     );
   }
 
   /// 阶段 3（统计中心大改造）：收藏列表按「合集 → 媒体」两级分节（合集名在左作
   /// 节头；未分组殿后；节/小节按最新收藏倒序，行保持时间倒序）。
-  Widget _buildGroupedListView() {
+  Widget _buildGroupedListView(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<CollectionGroupRow<_CollectionItem>> rows = groupCollectionItems(
       items: _visibleItems,
@@ -1697,7 +1698,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // M3E 错峰进场：首屏的节头与收藏行按序弹入，滚动带出的行瞬间出现。
     return FushiEntranceScope(
       child: ListView.builder(
-        padding: EdgeInsets.only(bottom: tokens.spacing.card),
+        // 正文滚到浮动页头底下：顶部让出「状态栏 + 页头（含筛选条）」。
+        padding: EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top,
+          bottom: tokens.spacing.card,
+        ),
         itemCount: rows.length,
         itemBuilder: (BuildContext context, int index) =>
             FushiStaggeredEntrance(
@@ -1884,12 +1889,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     return HorizontalDragScrollable(
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap / 2,
-          tokens.spacing.card,
-          tokens.spacing.gap / 2,
-        ),
+        // 挂在页头 headerBottom 里：页头已有左右内边距，这里不再叠加。
         child: Row(
           children: <Widget>[
             chip(null, t.collection_filter_all),
