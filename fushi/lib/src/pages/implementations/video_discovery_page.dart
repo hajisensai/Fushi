@@ -11,6 +11,12 @@ import 'package:fushi/src/pages/implementations/airing_calendar_page.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeInsetSpacer,
+        FushiFloatingChromeInsetPadding,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
@@ -480,14 +486,26 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
 
   @override
   Widget build(BuildContext context) {
+    // 库页外壳里（有 [FushiFloatingChromeScope]）：搜索行 / 筛选行与外壳的
+    // 页签同一套 M3E 浮动工具区——叠在内容上、跟着同一份显隐收起，正文从
+    // 顶端画起、经 [FushiFloatingChromeInset] 让位，滚上去的内容在胶囊背后
+    // 可见，顶部只有外壳那段短渐隐。曾经是 Column[页头, 控件, Expanded(正文)]：
+    // 控件区是一整块不透明底，加上外壳工具区，往下一滚顶部两三百 px 全白。
+    // 不在外壳里时 [FushiFloatingChromeOverlay] 退化成原来的竖排。
+    final bool floating = FushiFloatingChromeScope.maybeOf(context) != null;
+    final Widget body = _buildBody();
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
-      child: Column(
-        children: <Widget>[
-          if (_headerVisible) _buildHeader(),
-          _buildControls(),
-          Expanded(child: DiscoveryScrollTopFade(child: _buildBody())),
-        ],
+      child: FushiFloatingChromeOverlay(
+        chrome: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (_headerVisible) _buildHeader(),
+            _buildControls(),
+          ],
+        ),
+        child: floating ? body : DiscoveryScrollTopFade(child: body),
       ),
     );
   }
@@ -1018,36 +1036,40 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     if (_loading && _works.isEmpty && _popular.isEmpty) {
       // 首屏骨架：Hero + 一条横滑行占住版面，数据到达时原地换成真内容，
       // 而不是一枚居中转圈之后整页跳出来。静态骨架，不挂无限动画。
-      return ListView(
-        key: const ValueKey<String>('video-discovery-skeleton'),
-        physics: const NeverScrollableScrollPhysics(),
-        children: <Widget>[
-          const DiscoveryHeroSkeleton(),
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) =>
-                DiscoveryShelf(
-              title: t.video_discovery_hot,
-              loading: true,
-              shape: DiscoveryCoverShape.landscape,
-              titleMaxLines: 1,
-              itemWidth: _shelfItemWidth(constraints.maxWidth),
-              itemCount: 0,
-              itemBuilder: (BuildContext context, int index) =>
-                  const SizedBox.shrink(),
+      return FushiFloatingChromeInsetPadding(
+        child: ListView(
+          key: const ValueKey<String>('video-discovery-skeleton'),
+          physics: const NeverScrollableScrollPhysics(),
+          children: <Widget>[
+            const DiscoveryHeroSkeleton(),
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) =>
+                  DiscoveryShelf(
+                title: t.video_discovery_hot,
+                loading: true,
+                shape: DiscoveryCoverShape.landscape,
+                titleMaxLines: 1,
+                itemWidth: _shelfItemWidth(constraints.maxWidth),
+                itemCount: 0,
+                itemBuilder: (BuildContext context, int index) =>
+                    const SizedBox.shrink(),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
     if (_totalFailure && _works.isEmpty && _popular.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: Icons.cloud_off_outlined,
-        message: t.video_discovery_load_failed,
-        action: FushiFilledButton.icon(
-          key: const ValueKey<String>('video-discovery-retry'),
-          onPressed: () => unawaited(_reload()),
-          icon: const FushiIcon(Icons.refresh_rounded),
-          label: Text(t.retry),
+      return FushiFloatingChromeInsetPadding(
+        child: FushiPlaceholderMessage(
+          icon: Icons.cloud_off_outlined,
+          message: t.video_discovery_load_failed,
+          action: FushiFilledButton.icon(
+            key: const ValueKey<String>('video-discovery-retry'),
+            onPressed: () => unawaited(_reload()),
+            icon: const FushiIcon(Icons.refresh_rounded),
+            label: Text(t.retry),
+          ),
         ),
       );
     }
@@ -1060,6 +1082,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       key: const PageStorageKey<String>('video-discovery-scroll'),
       controller: _scrollController,
       slivers: <Widget>[
+        // 让出叠放在上面的浮动工具区（外壳页签 + 本页搜索 / 筛选行）。
+        const SliverToBoxAdapter(child: FushiFloatingChromeInsetSpacer()),
         if (_failures.isNotEmpty)
           SliverToBoxAdapter(
             child: DiscoveryProviderWarningBanner(

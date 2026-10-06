@@ -313,10 +313,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
               isActive: () => _section == section,
               // 子区整体让出浮动工具栏的高度（工具栏叠在内容上，见下方
               // [FushiFloatingChromeOverlay]）。
+              // 发现子区例外：它把自己的搜索 / 筛选行叠进浮动工具区、主滚动
+              // 视图自己让位（[MediaDiscoveryPage]），整体下移会把 inset 归零、
+              // 内容又被切在工具区下沿。
               child: SectionPrimaryScrollScope(
-                child: FushiFloatingChromeInsetPadding(
-                  child: sections[section]!,
-                ),
+                child: section == GameSection.discover
+                    ? sections[section]!
+                    : FushiFloatingChromeInsetPadding(
+                        child: sections[section]!,
+                      ),
               ),
             ),
         ],

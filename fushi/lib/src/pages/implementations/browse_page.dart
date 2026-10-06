@@ -607,6 +607,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       onChanged: _selectResourceDomain,
       focusIdPrefix: 'browse-discover-domain',
       onEdgeOverscroll: (int delta) => _handOffFrom(BrowseTab.discover, delta),
+      // 各域发现页把自己的搜索 / 筛选行叠进浮动工具区、主滚动视图自己让位
+      // （内容在胶囊背后可见，不再被整块控件区底色盖住）。
+      pageHandlesInset: true,
       pageBuilder: (_DownloadsResourceDomain domain) => KeyedSubtree(
         key: ValueKey<String>('downloads-resource-${domain.name}'),
         child: _buildResourceDomain(domain),

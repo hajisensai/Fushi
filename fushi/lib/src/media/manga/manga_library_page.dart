@@ -52,6 +52,8 @@ class MangaLibraryPage extends StatelessWidget {
         if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.discover,
+            // 发现页把自己的搜索 / 筛选行叠进浮动工具区，主滚动视图自己让位。
+            handlesChromeInset: true,
             label: t.library_view_discover,
             // 「浏览来源」节经库页壳的 [MediaLibraryShellScope] 切到本页「来源」。
             builder: (BuildContext context, Widget navigation) => Consumer(

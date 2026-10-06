@@ -439,13 +439,10 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           enabled: active,
           child: _dropScoped(
             () => _section == section,
-            // 来源 / 扩展的主滚动视图自己把工具区高度加成顶部内边距（工具区
-            // 收起后不留空白）；发现页仍整体下移。
-            section == VideoLibrarySection.discover
-                ? FushiFloatingChromeInsetPadding(
-                    child: build(section, _navigationFor(active, navigation)),
-                  )
-                : build(section, _navigationFor(active, navigation)),
+            // 来源 / 扩展 / 发现的主滚动视图都自己把工具区高度加成顶部内边距
+            // （发现页的搜索 / 筛选行也叠进浮动工具区，见 [VideoDiscoveryPage]），
+            // 工具区收起后不留空白、内容在胶囊背后可见。
+            build(section, _navigationFor(active, navigation)),
           ),
         ),
       ),

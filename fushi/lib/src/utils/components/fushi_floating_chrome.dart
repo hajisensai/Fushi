@@ -208,6 +208,19 @@ class FushiFloatingChromeInset extends InheritedWidget {
       top != oldWidget.top;
 }
 
+/// 高度 = 所在位置的 [FushiFloatingChromeInset] 的空白：主滚动视图的第一个
+/// sliver / 子项用它让出叠放在上面的浮动工具区。自己读 inset（用它自己的
+/// context），所以页面在 State 方法里构建正文时也能拿到嵌套工具区的值——直接
+/// 用 State 的 context 读只会读到外层（嵌套的 [FushiFloatingChromeOverlay] 在
+/// 它下面）。
+class FushiFloatingChromeInsetSpacer extends StatelessWidget {
+  const FushiFloatingChromeInsetSpacer({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      SizedBox(height: FushiFloatingChromeInset.of(context));
+}
+
 /// 把 [child] 整体下移 [FushiFloatingChromeInset] 的高度（不会自己加顶部内边距
 /// 的页面用；高度恒定，不随工具区显隐变）。子树里的 inset 归零，不重复让。
 class FushiFloatingChromeInsetPadding extends StatelessWidget {

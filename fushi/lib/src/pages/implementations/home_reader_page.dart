@@ -63,6 +63,8 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         if (StoreRestrictedCapability.externalDiscovery.isAvailable)
           MediaLibraryViewSpec(
             kind: MediaLibraryViewKind.discover,
+            // 发现页把自己的搜索 / 筛选行叠进浮动工具区，主滚动视图自己让位。
+            handlesChromeInset: true,
             label: t.library_view_discover,
             builder: (BuildContext context, Widget navigation) =>
                 MediaDiscoveryPage(
