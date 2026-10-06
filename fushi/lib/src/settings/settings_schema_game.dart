@@ -282,6 +282,21 @@ SettingsDestination buildGameDestination() {
             },
           ),
           SettingsSwitchItem(
+            id: 'game.gal_hook_toolbar_labels',
+            title: t.gal_hook_toolbar_labels,
+            subtitle: t.gal_hook_toolbar_labels_hint,
+            icon: FushiIcons.title,
+            defaultValue: PreferencesRepository.galHookToolbarLabelsDefault,
+            visible: (_) => Platform.isWindows,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.galHookToolbarLabels,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setGalHookToolbarLabels(value);
+              await GalHookTextOverlayChannel.setToolbarLabels(value);
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSwitchItem(
             id: 'game.gal_hook_passthrough_blocks_mouse',
             title: t.gal_hook_passthrough_blocks_mouse,
             subtitle: t.gal_hook_passthrough_blocks_mouse_hint,

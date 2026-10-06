@@ -1380,6 +1380,8 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     bool toolbarAutoHide = true,
     bool passThroughBlocksMouse = true,
     List<String>? slotTooltips,
+    List<String>? slotLabels,
+    bool toolbarLabels = false,
   }) {
     return _instance.showImpl(<String, Object?>{
       'fontSize': fontSize,
@@ -1388,6 +1390,10 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       // 不传 = native 侧无提示（老 payload 行为），工具条本身照常可点。
       if (slotTooltips != null && slotTooltips.isNotEmpty)
         'slotTooltips': slotTooltips,
+      // 图标下方短标签（同下标）。不传 = native 不画文字，只有图标。
+      if (slotLabels != null && slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      // 工具条文字说明开关；浮窗比整排窄时 native 自行退回纯图标。
+      'toolbarLabels': toolbarLabels,
       if (fontPath != null) 'fontPath': fontPath,
       'letterSpacing': letterSpacing,
       'lineHeight': lineHeight,
@@ -1560,6 +1566,15 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>(
       'setToolbarAutoHide',
+      <String, Object?>{'enabled': enabled},
+    );
+  }
+
+  /// 工具条文字说明 live 下发。
+  static Future<void> setToolbarLabels(bool enabled) async {
+    if (!_instance.isSupported) return;
+    await _instance.channel.invokeMethod<void>(
+      'setToolbarLabels',
       <String, Object?>{'enabled': enabled},
     );
   }

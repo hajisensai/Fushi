@@ -8994,6 +8994,10 @@ class AppModel with ChangeNotifier {
   Future<void> setGalHookToolbarAutoHide(bool value) =>
       prefsRepo.setGalHookToolbarAutoHide(value);
 
+  bool get galHookToolbarLabels => prefsRepo.galHookToolbarLabels;
+  Future<void> setGalHookToolbarLabels(bool value) =>
+      prefsRepo.setGalHookToolbarLabels(value);
+
   bool get galHookPassThroughBlocksMouse =>
       prefsRepo.galHookPassThroughBlocksMouse;
   Future<void> setGalHookPassThroughBlocksMouse(bool value) =>

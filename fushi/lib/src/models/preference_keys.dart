@@ -169,6 +169,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'gal_hook_text_vertical_alignment',
   'gal_hook_text_window_bg_opacity',
   'gal_hook_toolbar_auto_hide',
+  'gal_hook_toolbar_labels',
   'gal_mining_animated_format',
   'gal_mining_clip_format',
   'gal_mining_image_mode',

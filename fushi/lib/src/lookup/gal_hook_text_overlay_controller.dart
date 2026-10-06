@@ -66,6 +66,8 @@ typedef GalHookToolbarPalette = ({
   int toolbarHoverColor,
   int toolbarActiveBgColor,
   int toolbarActiveIconColor,
+  int toolbarTooltipBgColor,
+  int toolbarTooltipTextColor,
   int highlightColor,
 });
 
@@ -112,6 +114,8 @@ GalHookToolbarPalette galHookToolbarPalette(
       toolbarHoverColor: 0,
       toolbarActiveBgColor: 0,
       toolbarActiveIconColor: 0,
+      toolbarTooltipBgColor: 0,
+      toolbarTooltipTextColor: 0,
       highlightColor: kGalHookTextLegacyHighlightColor,
     );
   }
@@ -126,6 +130,8 @@ GalHookToolbarPalette galHookToolbarPalette(
       toolbarHoverColor: 0x29000000,
       toolbarActiveBgColor: 0xFF000000,
       toolbarActiveIconColor: 0xFFFFFFFF,
+      toolbarTooltipBgColor: 0xFF000000,
+      toolbarTooltipTextColor: 0xFFFFFFFF,
       highlightColor: 0x66808080,
     );
   }
@@ -137,6 +143,9 @@ GalHookToolbarPalette galHookToolbarPalette(
   final int bodyActive =
       0xFF000000 | (argb(scheme.primaryFixedDim) & 0x00FFFFFF);
   final int highlight = _galHookHighlightColor(scheme, textColor);
+  // 槽位悬停提示气泡 = M3 plain tooltip：inverseSurface 底 + onInverseSurface 字。
+  final int tooltipBg = _argbWithAlpha(scheme.inverseSurface, 0xFF);
+  final int tooltipText = _argbWithAlpha(scheme.onInverseSurface, 0xFF);
   final FushiAppleColors? apple = theme.extension<FushiAppleColors>();
   if (apple != null) {
     return (
@@ -148,6 +157,8 @@ GalHookToolbarPalette galHookToolbarPalette(
       toolbarHoverColor: argb(apple.fill),
       toolbarActiveBgColor: _argbWithAlpha(apple.accent, 0x2E),
       toolbarActiveIconColor: 0xFF000000 | (argb(apple.accent) & 0x00FFFFFF),
+      toolbarTooltipBgColor: tooltipBg,
+      toolbarTooltipTextColor: tooltipText,
       highlightColor: highlight,
     );
   }
@@ -163,6 +174,8 @@ GalHookToolbarPalette galHookToolbarPalette(
     ),
     toolbarActiveBgColor: _argbWithAlpha(scheme.secondaryContainer, 0xFF),
     toolbarActiveIconColor: _argbWithAlpha(scheme.onSecondaryContainer, 0xFF),
+    toolbarTooltipBgColor: tooltipBg,
+    toolbarTooltipTextColor: tooltipText,
     highlightColor: highlight,
   );
 }
@@ -242,6 +255,8 @@ Map<String, Object?> galHookToolbarThemeArgs(GalHookToolbarPalette palette) =>
       'toolbarHoverColor': palette.toolbarHoverColor,
       'toolbarActiveBgColor': palette.toolbarActiveBgColor,
       'toolbarActiveIconColor': palette.toolbarActiveIconColor,
+      'toolbarTooltipBgColor': palette.toolbarTooltipBgColor,
+      'toolbarTooltipTextColor': palette.toolbarTooltipTextColor,
       'highlightColor': palette.highlightColor,
     };
 
@@ -1478,6 +1493,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
         toolbarAutoHide: _readToolbarAutoHide(),
         passThroughBlocksMouse: _readPassThroughBlocksMouse(),
         slotTooltips: _slotTooltips,
+        slotLabels: _slotLabels,
+        toolbarLabels: _readToolbarLabels(),
       );
       _pushedHoverAutoLookup = hoverAutoLookup;
       // native 在 show 里把语音控件复位（见 flutter_window.cpp），本地镜像跟着复位，
@@ -1524,6 +1541,20 @@ class GalHookTextOverlayController extends ChangeNotifier {
     t.game_hook_btn_workbench,
     t.game_hook_btn_topmost,
     t.game_hook_btn_close,
+  ];
+
+  /// 工具条槽位图标下的短标签，下标同 [_slotTooltips]（与 native
+  /// `hook_toolbar::kSlotActions` 严格同序）。
+  List<String> get _slotLabels => <String>[
+    t.gal_hook_toolbar_label_replay,
+    t.gal_hook_toolbar_label_recapture,
+    t.gal_hook_toolbar_label_follow,
+    t.gal_hook_toolbar_label_passthrough,
+    t.gal_hook_toolbar_label_transparency,
+    t.gal_hook_toolbar_label_lock,
+    t.gal_hook_toolbar_label_workbench,
+    t.gal_hook_toolbar_label_topmost,
+    t.gal_hook_toolbar_label_close,
   ];
 
   int get _backgroundColor {
@@ -1734,6 +1765,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     return stored is bool
         ? stored
         : PreferencesRepository.galHookToolbarAutoHideDefault;
+  }
+
+  bool _readToolbarLabels() {
+    final Object? stored = _readPreference(
+      'gal_hook_toolbar_labels',
+      PreferencesRepository.galHookToolbarLabelsDefault,
+    );
+    return stored is bool
+        ? stored
+        : PreferencesRepository.galHookToolbarLabelsDefault;
   }
 
   bool _readPassThroughBlocksMouse() {

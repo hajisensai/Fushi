@@ -6728,5 +6728,16 @@
   "reader_audiobook_overview_chapter_left": "本章剩余",
   "reader_audiobook_source_audio_files": "$n 个音频文件",
   "reader_audiobook_source_no_alignment": "未选择对齐文件",
-  "reader_audiobook_empty_hint": "导入音频，边听边读这本书"
+  "reader_audiobook_empty_hint": "导入音频，边听边读这本书",
+  "gal_hook_toolbar_label_replay": "重播",
+  "gal_hook_toolbar_label_recapture": "重录",
+  "gal_hook_toolbar_label_follow": "跟随",
+  "gal_hook_toolbar_label_passthrough": "穿透",
+  "gal_hook_toolbar_label_transparency": "底板",
+  "gal_hook_toolbar_label_lock": "锁定",
+  "gal_hook_toolbar_label_workbench": "工作台",
+  "gal_hook_toolbar_label_topmost": "置顶",
+  "gal_hook_toolbar_label_close": "关闭",
+  "gal_hook_toolbar_labels": "工具条显示文字",
+  "gal_hook_toolbar_labels_hint": "在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示"
 }

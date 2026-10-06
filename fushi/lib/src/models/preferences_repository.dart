@@ -3364,6 +3364,20 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 工具条每个按钮图标下显示短文字说明（默认开）。浮窗比整排窄时 native 自动
+  /// 退回纯图标，悬停提示照常。
+  static const bool galHookToolbarLabelsDefault = true;
+
+  bool get galHookToolbarLabels =>
+      getPref('gal_hook_toolbar_labels',
+          defaultValue: galHookToolbarLabelsDefault) ==
+      true;
+
+  Future<void> setGalHookToolbarLabels(bool value) async {
+    await setPref('gal_hook_toolbar_labels', value);
+    notifyListeners();
+  }
+
   /// 穿透态下浮窗是否仍拦截落在**文字行盒**上的鼠标（默认 true = 拦截，点字查词才
   /// 成立）。关掉后整窗对游戏彻底透明——用户原话「穿透不彻底等于彻底不穿透」。
   static const bool galHookPassThroughBlocksMouseDefault = true;

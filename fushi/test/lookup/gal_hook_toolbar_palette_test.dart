@@ -61,6 +61,16 @@ void main() {
         palette.toolbarHoverColor & 0x00FFFFFF,
         scheme.onSurfaceVariant.toARGB32() & 0x00FFFFFF,
       );
+      // 槽位提示气泡 = M3 plain tooltip。
+      expect(palette.toolbarTooltipBgColor, scheme.inverseSurface.toARGB32());
+      expect(
+        palette.toolbarTooltipTextColor,
+        scheme.onInverseSurface.toARGB32(),
+      );
+      expect(
+        galHookToolbarThemeArgs(palette)['toolbarTooltipBgColor'],
+        palette.toolbarTooltipBgColor,
+      );
     }
   });
 
