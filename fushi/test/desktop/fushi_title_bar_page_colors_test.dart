@@ -80,9 +80,9 @@ void main() {
     child: Scaffold(backgroundColor: paper),
   );
 
-  testWidgets('没有页面上报时顶栏用根主题 surface', (WidgetTester tester) async {
+  testWidgets('没有页面上报时顶栏透明，浮在页面上', (WidgetTester tester) async {
     final ColorScheme scheme = await pumpShell(tester, const Scaffold());
-    expect(captionColor(tester), scheme.surface);
+    expect(captionColor(tester), Colors.transparent);
     expect(titleColor(tester), isNull);
     expect(
       scheme.surface,
@@ -92,7 +92,7 @@ void main() {
   });
 
   testWidgets('阅读器上报纸色后顶栏底色 / 标题色跟随，关书后回落', (WidgetTester tester) async {
-    final ColorScheme scheme = await pumpShell(tester, const Scaffold());
+    await pumpShell(tester, const Scaffold());
 
     navigatorKey.currentState!.push(
       MaterialPageRoute<void>(builder: (_) => reader()),
@@ -103,12 +103,12 @@ void main() {
 
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
-    expect(captionColor(tester), scheme.surface);
+    expect(captionColor(tester), Colors.transparent);
     expect(FushiDesktopTitleBar.pageColors.value, isNull);
   });
 
   testWidgets('被另一整页盖住时撤回、回到阅读器时恢复；弹窗不撤回', (WidgetTester tester) async {
-    final ColorScheme scheme = await pumpShell(tester, reader());
+    await pumpShell(tester, reader());
     expect(captionColor(tester), paper);
 
     // 弹窗（PopupRoute）不推动 PageRoute 的 secondaryAnimation：顶栏不闪色。
@@ -126,7 +126,7 @@ void main() {
       MaterialPageRoute<void>(builder: (_) => const Scaffold()),
     );
     await tester.pumpAndSettle();
-    expect(captionColor(tester), scheme.surface);
+    expect(captionColor(tester), Colors.transparent);
 
     navigatorKey.currentState!.pop();
     await tester.pumpAndSettle();
@@ -152,8 +152,11 @@ void main() {
     expect(caption, Color.alphaBlend(const Color(0x80000000), scheme.surface));
     final ColoredBox frame = tester.widget<ColoredBox>(
       find
-          .ancestor(of: find.byType(Column), matching: find.byType(ColoredBox))
-          .first,
+          .ancestor(
+            of: find.byType(DragToMoveArea),
+            matching: find.byType(ColoredBox),
+          )
+          .at(1),
     );
     expect(frame.color, Colors.transparent, reason: '内容区底色仍听 HDR 让开');
   });

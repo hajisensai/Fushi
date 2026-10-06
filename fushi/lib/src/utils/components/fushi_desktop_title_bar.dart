@@ -349,34 +349,79 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
               child: column,
             );
           },
-          child: Column(
-            // The frame is always wrapped in DragToResizeArea's Stack, which
-            // hands its non-positioned child loose constraints. Stretch makes
-            // the cross axis tight regardless, so hiding the caption row cannot
-            // change how wide the page below lays out.
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (!hideFrame)
-                ValueListenableBuilder<FushiTitleBarColors?>(
-                  valueListenable: FushiDesktopTitleBar._pageColors,
-                  builder: _buildCaptionRow,
-                ),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    // The title bar consumes real layout height. Rebase the
-                    // Navigator's MediaQuery to the remaining viewport so
-                    // native WebViews paginate against their actual surface,
-                    // rather than clipping the last title-bar-height pixels.
-                    final MediaQueryData mediaQuery = MediaQuery.of(context);
-                    return MediaQuery(
-                      data: mediaQuery.copyWith(size: constraints.biggest),
-                      child: widget.child,
-                    );
-                  },
-                ),
-              ),
-            ],
+          // 叠放而不是竖排（2026-10-06「app 顶栏和主要界面没有融为一体」）：
+          // 曾经是 Column[标题行, Expanded(页面)]——页面从 y = 32 才开始画，
+          // 标题行是一条独立的带子，详情页的 fanart / 模糊背景在它下沿被一刀
+          // 切开，左栏封面顶端也被这条线截掉。
+          //
+          // 现在页面占满整个窗口（从 y = 0 画起），标题行浮在它上面；页面经
+          // MediaQuery 顶部 padding 拿到标题行的让位高度（与状态栏 / 刘海同一
+          // 约定：Scaffold 顶栏、SafeArea、[MediaDetailLayout] 自动让开），
+          // 背景与可滚动内容照常铺到标题行底下，标题行本身透明。
+          //
+          // 上报了页面配色的沉浸页（阅读器纸色、视频 / 串流黑底、漫画底色、
+          // 歌词背景，见 [FushiTitleBarColorScope]）仍按「标题行实色 + 页面从
+          // 标题行下沿开始」排：它们的 WebView 分页 / 画面几何按可见视口算，
+          // 不能被标题行压住一截。两种排法只差页面的 top 偏移与 padding，
+          // 子树结构恒定，不会重挂 Navigator。
+          child: ValueListenableBuilder<FushiTitleBarColors?>(
+            valueListenable: FushiDesktopTitleBar._pageColors,
+            builder: (
+              BuildContext context,
+              FushiTitleBarColors? page,
+              Widget? _,
+            ) {
+              final double caption =
+                  hideFrame ? 0 : FushiDesktopTitleBar.height;
+              final bool overlay = page == null;
+              final double offset = overlay ? 0 : caption;
+              final double inset = overlay ? caption : 0;
+              return LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) {
+                  // The caption no longer consumes layout height in overlay
+                  // mode; the page gets the whole window plus a top inset. In
+                  // offset mode, rebase the Navigator's MediaQuery to the
+                  // remaining viewport so native WebViews paginate against
+                  // their actual surface rather than clipping the last
+                  // title-bar-height pixels.
+                  final MediaQueryData mediaQuery = MediaQuery.of(context);
+                  final Size size = Size(
+                    constraints.maxWidth,
+                    math.max(0, constraints.maxHeight - offset),
+                  );
+                  return Stack(
+                    children: <Widget>[
+                      Positioned(
+                        top: offset,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: MediaQuery(
+                          data: mediaQuery.copyWith(
+                            size: size,
+                            padding: mediaQuery.padding.copyWith(
+                              top: mediaQuery.padding.top + inset,
+                            ),
+                            viewPadding: mediaQuery.viewPadding.copyWith(
+                              top: mediaQuery.viewPadding.top + inset,
+                            ),
+                          ),
+                          child: widget.child,
+                        ),
+                      ),
+                      if (!hideFrame)
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          right: 0,
+                          height: FushiDesktopTitleBar.height,
+                          child: _buildCaptionRow(context, page, null),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
           ),
         );
         // Keep resize ownership in the same state machine as the caption.
@@ -414,8 +459,10 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
     // 标题行自带不透明底色、不听 hdrHostActiveGlobal：HDR 直通时下方页面区整层
     // 透明，标题行若跟着透就能看见后面的窗口。页面上报色可能带透明度，先叠到
     // surface 上再用——结果恒不透明，不靠上报方自觉。
+    // 没有页面上报色 = 标题行浮在页面上、完全透明：页面背景（含详情页
+    // fanart）从窗口顶端铺起，与下面的主界面是同一张，没有接缝。
     final Color captionFill = page == null
-        ? colors.surface
+        ? Colors.transparent
         : Color.alphaBlend(page.background, colors.surface);
     // 窗口按钮按平台而不是按设计系统（用户 2026-10-04）：macOS 一律用系统原生
     // 红绿灯（左上角，顶栏只给它们留位），Windows / Linux 一律是 MD3 那组按钮。
@@ -426,7 +473,40 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
       // 页面上报了延伸背景（歌词模式）：在底色之上画同一张背景的顶部一截。
       child: Stack(
         fit: StackFit.expand,
+        // 窗口按钮背后的柔光可以画出标题行（向下渐隐到 0），不裁。
+        clipBehavior: Clip.none,
         children: <Widget>[
+          // 透明标题行浮在页面背景（如详情页 fanart）上时，窗口按钮背后垫一团
+          // 无硬边的柔光保证可读：右上角起的径向渐变，压扁成椭圆，边缘处
+          // 不透明度已降到 0。只给 Windows 那组按钮（macOS 红绿灯是系统画的）。
+          if (page == null && !trafficLights)
+            Positioned(
+              top: 0,
+              right: 0,
+              width: _kCaptionHaloExtent,
+              height: _kCaptionHaloExtent,
+              child: IgnorePointer(
+                child: Transform(
+                  alignment: Alignment.topRight,
+                  transform: Matrix4.diagonal3Values(1, 0.4, 1),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(
+                        center: Alignment.topRight,
+                        radius: 1,
+                        colors: <Color>[
+                          colors.surface.withValues(alpha: 0.62),
+                          colors.surface.withValues(alpha: 0.4),
+                          colors.surface.withValues(alpha: 0.14),
+                          colors.surface.withValues(alpha: 0),
+                        ],
+                        stops: const <double>[0, 0.35, 0.7, 1],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ValueListenableBuilder<FushiTitleBarBackdrop?>(
             valueListenable: FushiDesktopTitleBar._pageBackdrop,
             builder: (
@@ -701,6 +781,9 @@ class _FushiTitleBarColorScopeState extends State<FushiTitleBarColorScope> {
     return widget.child;
   }
 }
+
+/// 透明标题行上窗口按钮背后柔光的半径（压扁前；见 [_buildCaptionRow]）。
+const double _kCaptionHaloExtent = 200;
 
 /// macOS 系统红绿灯占位宽度（三枚按钮 + 左右边距，与 AppKit 标准标题栏一致）。
 const double _kTrafficLightsReserve = 78;

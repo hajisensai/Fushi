@@ -11,8 +11,6 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim, kFushiTopFadeExtent, kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
-import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
-    show FushiTitleBarColorScope;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
@@ -266,25 +264,20 @@ class _BackIconTheme extends StatelessWidget {
 /// 所以它正好盖在正文顶部；不参与命中测试。[enabled] 为 false（MD3）时只是
 /// 一层透传的 Stack。
 ///
-/// MD3 下同一个滚动判据还喂桌面自绘顶栏：主题顶栏滚到内容上面后换成
-/// surfaceContainer（[md3ScrolledColor]），而自绘顶栏挂在 Navigator 外只认根
-/// 主题 surface——不跟着上报，两条栏之间就切出一道色带。只有贴着窗口顶、
-/// 横跨整个 Navigator 宽的顶栏才上报（对话框 / 分栏里的顶栏不碰窗口顶栏）。
+/// （曾经 MD3 下还把「滚到内容上面后的顶栏底色」上报给桌面自绘标题栏，让
+/// 两条栏同色。2026-10-06 起标题栏浮在页面上、本身透明，顶栏经 MediaQuery
+/// 顶部 padding 自己铺到标题栏底下，颜色天然连续；再上报反而会把标题栏切进
+/// 「沉浸页」排法、整页随滚动上下跳 32 px，所以拿掉了。）
 class _AppleBarScrollEdge extends StatefulWidget {
   const _AppleBarScrollEdge({
     required this.enabled,
     required this.notificationPredicate,
     required this.child,
-    this.md3ScrolledColor,
   });
 
   final bool enabled;
   final ScrollNotificationPredicate notificationPredicate;
   final Widget child;
-
-  /// MD3 顶栏滚到内容上面之后的实际底色；null = 不随滚动换色（Apple、显式
-  /// 底色、透明顶栏），不向桌面顶栏上报。
-  final Color? md3ScrolledColor;
 
   @override
   State<_AppleBarScrollEdge> createState() => _AppleBarScrollEdgeState();
@@ -309,30 +302,8 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
     super.dispose();
   }
 
-  /// 本栏是否贴着窗口顶、横跨整个根 Navigator（= 紧挨在桌面自绘顶栏下面）。
-  bool _spansWindowTop() {
-    final RenderObject? box = context.findRenderObject();
-    final RenderObject? nav = Navigator.maybeOf(
-      context,
-      rootNavigator: true,
-    )?.context.findRenderObject();
-    if (box is! RenderBox || nav is! RenderBox) return false;
-    if (!box.hasSize || !nav.hasSize || !box.attached || !nav.attached) {
-      return false;
-    }
-    final Rect rect = MatrixUtils.transformRect(
-      box.getTransformTo(nav),
-      Offset.zero & box.size,
-    );
-    return rect.top.abs() < 1 &&
-        rect.left.abs() < 1 &&
-        (rect.right - nav.size.width).abs() < 1;
-  }
-
-  bool _atWindowTop = false;
-
   void _handleScroll(ScrollNotification notification) {
-    if (!widget.enabled && widget.md3ScrolledColor == null) return;
+    if (!widget.enabled) return;
     if (notification is! ScrollUpdateNotification ||
         !widget.notificationPredicate(notification)) {
       return;
@@ -344,28 +315,13 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
       AxisDirection.left || AxisDirection.right => _scrolledUnder,
     };
     if (under != _scrolledUnder && mounted) {
-      final bool atTop = !widget.enabled && under && _spansWindowTop();
-      setState(() {
-        _scrolledUnder = under;
-        _atWindowTop = atTop;
-      });
+      setState(() => _scrolledUnder = under);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final Color? scrolled = widget.md3ScrolledColor;
-    // 结构恒定：两套设计系统、滚没滚动都挂着这层上报，只换 colors（null =
-    // 不表态，顶栏回落根主题）。
-    return FushiTitleBarColorScope(
-      colors: !widget.enabled && scrolled != null && _scrolledUnder &&
-              _atWindowTop
-          ? (
-              background: scrolled,
-              foreground: Theme.of(context).colorScheme.onSurfaceVariant,
-            )
-          : null,
-      child: Stack(
+    return Stack(
         clipBehavior: Clip.none,
         fit: StackFit.passthrough,
         children: <Widget>[
@@ -382,30 +338,8 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
               ),
             ),
         ],
-      ),
     );
   }
-}
-
-/// MD3 主题顶栏滚到内容上面之后的底色（[AppBarTheme.backgroundColor] 是
-/// 按 scrolledUnder 解析的 [WidgetStateColor]）；调用方给了显式底色、强制透明、
-/// 或主题底色不随滚动变时返回 null。
-Color? _md3ScrolledAppBarColor(
-  BuildContext context, {
-  required Color? backgroundColor,
-  required bool forceMaterialTransparency,
-  required bool primary,
-}) {
-  if (backgroundColor != null || forceMaterialTransparency || !primary) {
-    return null;
-  }
-  final Color? themed = AppBarTheme.of(context).backgroundColor;
-  if (themed is! WidgetStateColor) return null;
-  final Color scrolled = themed.resolve(<WidgetState>{
-    WidgetState.scrolledUnder,
-  });
-  final Color idle = themed.resolve(<WidgetState>{});
-  return scrolled == idle || scrolled.a < 1 ? null : scrolled;
 }
 
 /// [AppBar] 的设计系统分派版。[preferredSize] 与 AppBar 同一对象形态
@@ -500,14 +434,6 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       child: _AppleBarScrollEdge(
         enabled: glass,
         notificationPredicate: notificationPredicate,
-        md3ScrolledColor: glass || floating
-            ? null
-            : _md3ScrolledAppBarColor(
-                context,
-                backgroundColor: backgroundColor,
-                forceMaterialTransparency: forceMaterialTransparency,
-                primary: primary,
-              ),
         child: _M3eAppBarScrollAway(
           enabled: floating,
           notificationPredicate: notificationPredicate,
