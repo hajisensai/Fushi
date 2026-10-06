@@ -568,7 +568,7 @@ void main() {
       );
       expect(
         pages.sessions.single.request.engineSignature,
-        startsWith('$kLocalMangaOcrEngineSignature-'),
+        startsWith('${kDefaultMangaOcrLocalModel.cacheSignature}-'),
         reason: '模型齐全时签名要带已安装模型指纹（BUG-1173）',
       );
     });
