@@ -8,6 +8,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
@@ -111,6 +112,10 @@ Widget _host(_RecordingAppModel appModel, Widget home) {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        // 与生产根同构：取色器（flutter_colorpicker）的 hex 输入框仍是 SDK 旧
+        // Material TextField，靠根上的 LegacyDesignCompatibility（446e7b695a2）。
+        builder: (BuildContext context, Widget? child) =>
+            LegacyDesignCompatibility(child: child!),
         theme: ThemeData.light(useMaterial3: true),
         home: home,
       ),

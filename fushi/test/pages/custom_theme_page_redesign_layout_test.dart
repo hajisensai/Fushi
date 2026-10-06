@@ -6,6 +6,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -66,6 +67,10 @@ Future<void> _pumpPage(
       overrides: <Override>[appProvider.overrideWith((ref) => _FakeAppModel())],
       child: TranslationProvider(
         child: MaterialApp(
+          // 与生产根同构：取色器（flutter_colorpicker）的 hex 输入框仍是 SDK 旧
+          // Material TextField，靠根上的 LegacyDesignCompatibility（446e7b695a2）。
+          builder: (BuildContext context, Widget? child) =>
+              LegacyDesignCompatibility(child: child!),
           theme: theme,
           themeAnimationDuration: Duration.zero,
           home: const FushiGlassScope(child: CustomThemePage()),
