@@ -270,7 +270,12 @@ void main() {
       of: autoAddRow,
       matching: find.byType(Switch),
     );
-    await tester.ensureVisible(autoAddSwitch);
+    // 居中滚入（与生产焦点滚动 FushiFocusScroll 同为 alignment 0.5）：设置页
+    // 内容会滚到浮动页头底下（0a6d4be），贴视口顶边的行被页头盖住，tap 落空。
+    await Scrollable.ensureVisible(
+      tester.element(autoAddSwitch),
+      alignment: 0.5,
+    );
     await tester.pump();
     await tester.tap(autoAddSwitch);
     await tester.pump();
