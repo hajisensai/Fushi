@@ -2911,13 +2911,18 @@ html.fushi-m3e .inline-action-button {
         transform var(--md-sys-motion-spring-fast-spatial-duration) var(--md-sys-motion-spring-fast-spatial);
 }
 
-html.fushi-m3e .inline-action-button:where(:not(:disabled)):hover {
+/* HBK-AUDIT-021：通用状态层不作用于词条头部按钮——头部按钮自带语义底色（未制卡 primary、已制卡
+   primaryContainer、最新 tertiaryContainer、收藏 tertiaryContainer、其余 secondaryContainer），
+   状态层由上面 .header-buttons 段以 background-image 叠加在原底色上。通用规则与默认底色同
+   specificity 且排在后面，以前会把 background-color 换成 currentColor 薄染：未制卡按钮一悬停就丢
+   primary 底、只剩 onPrimary 的白色十字。:where() 不改 specificity。 */
+html.fushi-m3e .inline-action-button:where(:not(:disabled)):where(:not(.header-buttons > *)):hover {
     opacity: 1;
     background-color: color-mix(in srgb, currentColor var(--md-sys-state-hover-opacity), transparent);
     box-shadow: 0 0 0 5px color-mix(in srgb, currentColor var(--md-sys-state-hover-opacity), transparent);
 }
 
-html.fushi-m3e .inline-action-button:where(:not(:disabled)):focus-visible {
+html.fushi-m3e .inline-action-button:where(:not(:disabled)):where(:not(.header-buttons > *)):focus-visible {
     opacity: 1;
     outline: none;
     background-color: color-mix(in srgb, currentColor var(--md-sys-state-focus-opacity), transparent);
@@ -2925,7 +2930,7 @@ html.fushi-m3e .inline-action-button:where(:not(:disabled)):focus-visible {
         0 0 0 7px var(--md-sys-color-primary);
 }
 
-html.fushi-m3e .inline-action-button:where(:not(:disabled)):active {
+html.fushi-m3e .inline-action-button:where(:not(:disabled)):where(:not(.header-buttons > *)):active {
     opacity: 1;
     border-radius: var(--md-sys-shape-corner-small);
     transform: scale(0.86);

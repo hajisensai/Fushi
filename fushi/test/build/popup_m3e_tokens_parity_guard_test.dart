@@ -134,7 +134,7 @@ void main() {
       reason: '扩展 content.css 生成器不处理嵌套 at-rule',
     );
     for (final String sel in const <String>[
-      'html.fushi-m3e .inline-action-button:where(:not(:disabled)):active {',
+      'html.fushi-m3e .inline-action-button:where(:not(:disabled)):where(:not(.header-buttons > *)):active {',
       'html.fushi-m3e .fushi-btn-tip {',
       'html.fushi-m3e .grammar-tooltip {',
       'html.fushi-m3e .fushi-audio-menu {',
