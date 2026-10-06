@@ -412,7 +412,7 @@ const Map<StorageCategoryId, List<String>> kStorageCategoryDocumentsChildren =
 };
 
 /// `<support>/ocr_models`（[StorageCategoryId.ocrModels] 的根；
-/// `MangaOcrServiceImpl.defaultMangaOcrModelsDir` 是它下面的 `manga/`）。
+/// 各本机模型落在它下面的兄弟目录，见 `MangaOcrLocalModel.modelsDirectory`）。
 const String kOcrModelsSupportChild = 'ocr_models';
 
 /// 同步递归求目录字节数（isolate 入口；每个 entry 单独容错——扫描中途被删/

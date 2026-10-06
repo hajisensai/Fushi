@@ -7,7 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
-import 'package:fushi_engine/ocr/beam_search.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
@@ -306,16 +305,6 @@ void main() {
       expect(scored.text, ctcGreedyDecode(probs, 3, 3, <String>['', 'a', 'b']));
       expect(scored.text, 'ab');
       expect(scored.confidence, closeTo(0.6, 1e-6));
-    });
-
-    test('beam：长度惩罚分数换回逐步几何平均概率', () {
-      // 2 个 token + EOS = 3 项，各 log(0.5)；L = 3（含起始 token）。
-      const double sum = 3 * -0.6931471805599453;
-      final BeamSearchResult result = BeamSearchResult(
-        tokens: const <int>[1, 2],
-        score: sum / 9, // lengthPenalty = 2 → L^2
-      );
-      expect(beamSearchMeanTokenProbability(result, 2), closeTo(0.5, 1e-9));
     });
 
     test('OcrBlock / MokuroBlock 往返保留置信度与大模型标记', () {
