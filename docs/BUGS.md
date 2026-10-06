@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2719 条。点号进各自文件。
+> 共 2720 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
 | [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
 | [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
