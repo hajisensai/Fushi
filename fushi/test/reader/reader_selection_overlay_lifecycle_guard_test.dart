@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
 
-// BUG-2960: route/bridge wiring guard. Actual DOM geometry and Android platform
+// BUG-3049: route/bridge wiring guard. Actual DOM geometry and Android platform
 // composition still require the device matrix; a source guard is not a UI test.
 void main() {
   final String chrome = File(

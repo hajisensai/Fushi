@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2727 条。点号进各自文件。
+> 共 2732 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3050](bugs/BUG-3050-reader-selection-toolbar-grip-overlap.md) | ✅ | ✅ | 竖排选择操作条遮挡选择球，视口边缘手柄难以抓取 |
+| [BUG-3049](bugs/BUG-3049-reader-selection-overlay-lifecycle.md) | ✅ | ✅ | 阅读器选中时打开导航、插图、统计或有声书，选择控件残留在覆盖页面上 |
+| [BUG-3048](bugs/BUG-3048-reader-selection-persists-across-page-turn.md) | ✅ | ✅ | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
+| [BUG-3047](bugs/BUG-3047-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
+| [BUG-3046](bugs/BUG-3046-reader-selection-handle-covers-glyph.md) | 🚧 | 🚧 | 页边缘选择手柄避让回归：触控盒和选择球遮挡选中字 |
 | [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
 | [BUG-2965](bugs/BUG-2965-movie-pack-numbered-files-become-extras.md) | ✅ | ✅ | 剧场版合集包Movie 01…25被误判带集号，只入库一部其余进Extras |
 | [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |

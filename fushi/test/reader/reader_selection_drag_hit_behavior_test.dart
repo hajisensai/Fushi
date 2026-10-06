@@ -30,7 +30,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test(
     'selection drag hit-testing: gaps / line ends / line pitch keep the handle '
-    'moving (BUG-2958)',
+    'moving (BUG-3047)',
     () async {
       final String nodeExe = _resolveNode();
       final File harness = File(

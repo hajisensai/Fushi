@@ -1,4 +1,4 @@
-## BUG-2959 · 移动端划词后翻页，选择高亮与两端手柄留在新页面上
+## BUG-3048 · 移动端划词后翻页，选择高亮与两端手柄留在新页面上
 
 - **报告**：2026-10-05；首轮修复后用户继续反馈切页仍有手柄。
 - **真实性**：✅ 真 bug。原分页从未清选择；首轮把清理接在 `noteUserScroll`，但它是 capture 阶段输入意图而不是已发生位移。连续模式手柄 touchmove 在 target handler 前就被清掉；只保护 dragAnchor 漏掉 activeHandle。另有 VN 独立 renderScreen 路径和分页程序化定位没有经过原 paginate 清理点，旧手柄直接挂 html，正文替换不销毁它。

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 
-/// BUG-2959：移动端划词后翻页，选择高亮与两端手柄留在新页面上。
+/// BUG-3048：移动端划词后翻页，选择高亮与两端手柄留在新页面上。
 ///
 /// 根因：**翻页路径从来没有清过选区**。`reader_pagination_scripts.dart` 里只有两处
 /// `window.fushiSelection.clearSelection()`，且都挂在**有声书句子音频**的收口上

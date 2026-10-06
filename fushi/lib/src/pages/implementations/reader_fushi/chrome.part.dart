@@ -2278,7 +2278,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
     _sideSheetOpen = true;
     try {
-      // BUG-2960: DOM grips and the host action bar share this route boundary.
+      // BUG-3049: DOM grips and the host action bar share this route boundary.
       await _clearReaderAppSelection();
       if (!mounted) return;
       if (movableSettings) {

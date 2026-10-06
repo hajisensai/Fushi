@@ -1,4 +1,4 @@
-## BUG-2960 · 阅读器选中时打开导航、插图、统计或有声书，选择控件残留在覆盖页面上
+## BUG-3049 · 阅读器选中时打开导航、插图、统计或有声书，选择控件残留在覆盖页面上
 
 - **报告**：2026-10-05（用户：选中状态打开导航、浏览插图、阅读统计，手柄浮在上面；后续补充点击有声书仍会上浮）。
 - **真实性**：✅ 真 bug。JS 手柄和 Flutter 非模态操作条是两个独立生命周期。原 `chrome.part.dart` 的 `_presentSideSheet`、画廊/看图/统计中心入口不清理选择；未绑定音频的耳机键直接进入 `audiobook.part.dart:2153` `_openAudioImportDialog`，绕过侧栏。操作条通过 `Overlay.insert` 插入，无法随阅读器路由自动收起；JS `clearSelection` 原来也不通知 Flutter。源路径均位于 `fushi/lib/src/pages/implementations/reader_fushi/`。
