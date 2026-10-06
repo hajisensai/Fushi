@@ -23,6 +23,21 @@ class AssetEntry {
   final int? sizeBytes;
 }
 
+/// 单个文件传输的进度回调。
+///
+/// [fraction] 是 0..1 的完成比例；[bytesDone] 是本文件已传输的字节数——传输层
+/// 数得出就带上（同步进度据此算速率），数不出（一次性写入等）就省略。
+///
+/// 第二个参数是**可选位置参数**：实现方覆盖时仍可把参数声明成
+/// `void Function(double)?`（函数参数逆变，合法覆盖），只报比例的后端与测试替身
+/// 不必改；调用方传入的闭包则须接受两个参数。
+typedef SyncTransferProgress = void Function(double fraction, [int? bytesDone]);
+
+/// 把只关心比例的回调接到 [SyncTransferProgress] 参数上（丢弃字节数）。
+SyncTransferProgress? syncTransferFractionOnly(
+  void Function(double fraction)? onProgress,
+) => onProgress == null ? null : (double f, [int? _]) => onProgress(f);
+
 /// 与业务无关的资产存取层：在“命名空间”（文件夹/前缀）下存/取/列二进制资产，
 /// 外加通用 JSON 读写。每个 `SyncBackend` 都实现它，供同步编排器统一调用。
 abstract class SyncAssetStore {
@@ -43,14 +58,14 @@ abstract class SyncAssetStore {
     String namespaceId,
     String name,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   });
 
   /// 下载 [assetId] 指向的资产到 [destination]。
   Future<void> getAsset(
     String assetId,
     File destination, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   });
 
   /// 读取 [assetId] 指向的 JSON 资产；不存在或非 JSON 返回 null。

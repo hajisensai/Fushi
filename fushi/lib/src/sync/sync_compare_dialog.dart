@@ -871,7 +871,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         final manager = SyncManager(
           db: widget.db,
           backend: widget.backend,
-          onContentProgress: (fraction) {
+          onContentProgress: (double fraction, [int? _]) {
             if (mounted && total > 0) {
               setState(
                   () => _progress = (done + fraction.clamp(0.0, 1.0)) / total);
