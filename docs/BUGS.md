@@ -29,13 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2771 条。点号进各自文件。
+> 共 2776 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3053](bugs/BUG-3053-theme-compact-preview-too-tall.md) | ✅ | ✅ | MD3 窄屏自定义主题吸顶预览超过视口三分之一（示意开关挤成三行） |
 | [BUG-3052](bugs/BUG-3052-theme-role-picker-sheet-overflow.md) | ✅ | ✅ | 自定义主题角色选色 sheet 在矮窗口底部溢出、推荐色点不到 |
 | [BUG-3050](bugs/BUG-3050-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
+| [BUG-3049](bugs/BUG-3049-fab-menu-keyboard-focus.md) | ✅ | ✅ | FushiFabMenu 键盘展开后焦点留在 FAB：首帧菜单项不在树里，后帧回调 requestFocus 落空 |
+| [BUG-3048](bugs/BUG-3048-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
+| [BUG-3047](bugs/BUG-3047-vertical-slider-fills-width.md) | ✅ | ✅ | 竖直 FushiSlider（MD3）横向吃满父级宽度：Slider 在有界高度下撑满、旋转后成一大块 |
+| [BUG-3046](bugs/BUG-3046-fushi-spring-no-snap.md) | ✅ | ✅ | FushiSpring 弹簧落定不吸附终值：浮动工具条停在离目标约 1e-3 处（亚像素偏移） |
+| [BUG-3045](bugs/BUG-3045-search-capsule-symbol-icon.md) | ✅ | ✅ | 搜索框图标迁到 FushiIcons.search 后不再被认成搜索框：MD3 丢全胶囊、Apple 丢 36 高胶囊 |
 | [BUG-3027](bugs/BUG-3027-indexedstack-keyboard-scroll-hidden-pane.md) | ✅ | ✅ | 键盘翻页滚到 IndexedStack 隐藏子区（Flutter 3.47 IndexedStack 不再包 Visibility） |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
