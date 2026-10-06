@@ -264,6 +264,10 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
     // Apple 设计系统下仍是同一套页头的玻璃形态。
     return FushiPageScaffold(
       title: t.video_subtitle_workbench_title,
+      // 不叠放：正文是字幕面板（内部 Column + Expanded 的定高版面：顶部控件行
+      // 固定、只有列表区各自滚动），不是单一滚动视图，叠到页头底下顶部控件会被
+      // 胶囊盖住。
+      extendBodyBehindHeader: false,
       // 作用域开关与标题**同一行**。原来它挂在 `AppBar.bottom` 上独占 56px：
       // 标题行右侧整条空着，开关与面板之间又多一截死白。
       //
