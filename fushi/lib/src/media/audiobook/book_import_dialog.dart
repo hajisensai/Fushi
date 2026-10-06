@@ -1342,6 +1342,12 @@ class ImportDropZoneCard extends StatelessWidget {
               duration: motion.spatialDefault.duration,
               switchInCurve: motion.spatialDefault.curve,
               switchOutCurve: motion.effectsFast.curve,
+              // 默认的淡入转场会把 spatial 弹簧的过冲直接喂给透明度。
+              transitionBuilder: (Widget child, Animation<double> animation) =>
+                  FadeTransition(
+                opacity: fushiUnitClamped(animation),
+                child: child,
+              ),
               child: FushiDialogHeroIcon(
                 key: ValueKey<bool>(selected),
                 icon: selected ? FushiIcons.success : icon,

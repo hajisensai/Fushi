@@ -461,7 +461,10 @@ class _MangaPanelRadioContent extends StatelessWidget {
               transitionBuilder: (Widget child, Animation<double> a) =>
                   ScaleTransition(
                     scale: Tween<double>(begin: 0.7, end: 1).animate(a),
-                    child: FadeTransition(opacity: a, child: child),
+                    child: FadeTransition(
+                      opacity: fushiUnitClamped(a),
+                      child: child,
+                    ),
                   ),
               child: FushiListLeadingIcon(
                 option.icon!,
