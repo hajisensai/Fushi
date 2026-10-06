@@ -543,8 +543,8 @@ class _GroupDivider extends StatelessWidget {
 /// 最低）先全部平铺成图标按钮；放不下时从**最低优先级**起依次收进「⋯」，全放得下
 /// 就不画「⋯」。标题胶囊保底 [kFushiFloatingTopBarTitleMinWidth]（可省略号压缩），
 /// 保底优先于高优先级动作。展开方向带 [kFushiFloatingTopBarOverflowHysteresis] 的
-/// 回差，窗口在临界宽度附近缩放时不来回跳；按钮数变化时动作胶囊宽度走
-/// [AnimatedSize] 平滑过渡。
+/// 回差，窗口在临界宽度附近缩放时不来回跳。动作胶囊按目标宽度立即布局、不做
+/// 尺寸动画——收缩时动画保留的旧宽度会让任意一帧溢出（HBK034）。
 class FushiFloatingTopBar extends StatefulWidget {
   const FushiFloatingTopBar({
     super.key,
@@ -821,16 +821,13 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
             ),
             if (hasActions) ...<Widget>[
               const SizedBox(width: 8),
-              AnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                curve: FushiMotion.standard,
-                alignment: AlignmentDirectional.centerEnd,
-                child: FushiFloatingToolbar(
-                  groups: split.groups,
-                  overflow: split.overflow,
-                  colors: colors,
-                  compact: true,
-                ),
+              // 不做尺寸动画（HBK034）：AnimatedSize 收缩时会保留旧宽度一帧，窗口
+              // 骤缩时右侧溢出。按目标宽度立即布局，防抖靠展开回差。
+              FushiFloatingToolbar(
+                groups: split.groups,
+                overflow: split.overflow,
+                colors: colors,
+                compact: true,
               ),
             ],
           ],
@@ -1004,20 +1001,29 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
     ),
   );
 
+  /// 透明度：M3E default effects 弹簧（临界阻尼、不过冲）。透明度是 effects
+  /// 属性，不跟位移共用上面的 spatial 弹簧（HBK-AUDIT-023）；同目标、同一
+  /// 降级开关。
+  late final FushiSpring _fade = FushiSpring(
+    vsync: this,
+    initial: widget.visible ? 1 : 0,
+    spring: FushiSprings.effectsDefault.description,
+  );
+
   @override
   void didUpdateWidget(FushiChromeReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.visible != widget.visible) {
-      _t.animateTo(
-        widget.visible ? 1 : 0,
-        animate: fushiMotionEnabled(context),
-      );
+      final bool animate = fushiMotionEnabled(context);
+      _t.animateTo(widget.visible ? 1 : 0, animate: animate);
+      _fade.animateTo(widget.visible ? 1 : 0, animate: animate);
     }
   }
 
   @override
   void dispose() {
     _t.dispose();
+    _fade.dispose();
     super.dispose();
   }
 
@@ -1034,11 +1040,12 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _t.animation,
+      animation: Listenable.merge(<Listenable>[_t.animation, _fade.animation]),
       child: widget.child,
       builder: (BuildContext context, Widget? child) {
         final double v = _t.value;
-        final bool hidden = !widget.visible && v <= 0.001;
+        final double opacity = _fade.value.clamp(0.0, 1.0);
+        final bool hidden = !widget.visible && v <= 0.001 && opacity <= 0.001;
         return Offstage(
           offstage: hidden,
           child: IgnorePointer(
@@ -1046,7 +1053,7 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
             child: ExcludeSemantics(
               excluding: !widget.visible,
               child: Opacity(
-                opacity: v.clamp(0.0, 1.0),
+                opacity: opacity,
                 child: Transform.translate(offset: _offsetFor(v), child: child),
               ),
             ),
