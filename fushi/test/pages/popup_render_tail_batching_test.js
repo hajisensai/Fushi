@@ -15,6 +15,8 @@
 //      `style.fushi-custom-css` 之前——回到每块一份就是 N×M 个样式表逐个让全文档样式失效。
 //   ⑦ ResizeObserver 通知的高度与上一轮 masonry 量到的一致时不重铺；真实变化才排一帧；
 //      renderPopup 换代断开旧 observer（热槽跨查词不攒已摘除卡片的强引用）。
+//   ⑧ BUG-2998：辞典展开/收起后按当前高度重新分列；同高通知不振荡、窄屏回落单列，
+//      只移动原 DOM 卡片，保持展开状态与滚动位置。
 //
 // Run: node fushi/test/pages/popup_render_tail_batching_test.js
 // (also driven from popup_render_tail_batching_test.dart inside `flutter test`).
@@ -268,7 +270,7 @@ function loadPopup(opts) {
   const exported = source + `
     ;window.__test = {
       layoutMasonry, markMasonryDirty, scheduleMasonry, scheduleMasonryAll,
-      scheduleRenderTail, observeMasonryTargets, ensureDictionaryStyle,
+      scheduleRenderTail, observeMasonryTargets, ensureDictionaryStyle, createGlossarySection,
     };
   `;
   vm.runInContext(exported, sandbox, { filename: 'popup.js' });
@@ -528,6 +530,94 @@ function drainFrames(sb) {
   sb.window.lookupEntries = [];
   sb.window.renderPopup();
   assert.ok((sb.__roDisconnects || 0) >= 1, 'renderPopup disconnects the previous observer');
+}
+
+// ---------- ⑧ BUG-2998：同词条辞典展开 / 收起重新使用当前空间 ----------
+// 执行生产 createGlossarySection / ResizeObserver / RAF / layoutMasonry 全链路；
+// 假 DOM 只提供浏览器的尺寸读数，列号、位置、容器高度都由真实 popup.js 算出。
+{
+  const log = [];
+  const sb = loadPopup({ log, dictColumns: 2 });
+  const container = setupContainer(sb);
+  container.scrollTop = 72;
+  sb.window.collapseDictionaries = true;
+  sb.window.autoExpandRows = 0;
+  const body = makeBody(sb, container, 0);
+  const expandedHeights = [100, 400, 80, 80];
+  const cards = expandedHeights.map((height, index) => {
+    const card = sb.window.__test.createGlossarySection(`Dictionary ${index}`,
+      [{ content: '"synthetic definition"', definitionTags: '', termTags: '' }],
+      index, 0, expandedHeights.length);
+    assert.strictEqual(card.tagName, 'DETAILS', 'use production disclosure elements');
+    // The minimal DOM does not reflect className into classList automatically.
+    card.classList.add('glossary-group');
+    Object.defineProperty(card, '_height', { get: () => card.open ? height : 40 });
+    body.appendChild(card);
+    return card;
+  });
+  cards[0].open = true;
+  const cleanBody = makeBody(sb, container, 3);
+  sb.window.__test.layoutMasonry();
+  sb.window.__test.observeMasonryTargets();
+  const observer = sb.__ro;
+  const columns = () => cards.map(card => Number(card.dataset.masonryCol));
+  const positions = () => cards.map(card => card.style.transform);
+  assert.deepStrictEqual(columns(), [0, 1, 1, 1], 'initial shortest-column packing');
+  assert.strictEqual(body.style.height, '132px');
+  const initialPositions = positions();
+  const initialNodes = [...body.children];
+  const cleanPositions = cleanBody.children.map(card => card.style.transform);
+
+  cards[1].open = true;
+  log.length = 0;
+  observer.cb([{ target: cards[1] }]);
+  observer.cb([{ target: cards[1] }]);
+  assert.strictEqual(sb.__frames.length, 1, 'repeated changes coalesce into one frame');
+  assert.strictEqual(drainFrames(sb), 1);
+  assert.deepStrictEqual(columns(), [0, 1, 0, 0],
+    'expanded second dictionary moves later cards into the newly shortest column');
+  assert.strictEqual(body.style.height, '400px', 'expanded layout avoids the old 492px column');
+  assert.strictEqual(cards[2].style.transform, 'translate(0px, 106px)');
+  assert.ok(!log.some(event => event.op === 'read:height' && event.el.parentElement === cleanBody),
+    'another term body is not remeasured for this disclosure');
+  assert.deepStrictEqual(cleanBody.children.map(card => card.style.transform), cleanPositions);
+
+  const expandedPositions = positions();
+  for (let iteration = 0; iteration < 5; iteration++) {
+    observer.cb(cards.map(target => ({ target })));
+    assert.strictEqual(sb.__frames.length, 0, 'same-height notifications must not loop');
+    sb.window.__test.scheduleMasonryAll();
+    assert.strictEqual(drainFrames(sb), 1);
+    assert.deepStrictEqual(positions(), expandedPositions, 'unchanged explicit measurement is stable');
+  }
+
+  cards[1].open = false;
+  observer.cb([{ target: cards[1] }]);
+  assert.strictEqual(drainFrames(sb), 1);
+  assert.deepStrictEqual(columns(), [0, 1, 1, 1], 'collapse redistributes using the smaller height');
+  assert.deepStrictEqual(positions(), initialPositions, 'collapse restores the compact layout');
+  assert.strictEqual(body.style.height, '132px');
+  assert.deepStrictEqual(body.children, initialNodes, 'relayout preserves the original DOM cards and order');
+  assert.strictEqual(cards[0].open, true, 'another dictionary keeps its disclosure state');
+  assert.strictEqual(cards[1].open, false, 'the changed dictionary stays collapsed');
+  assert.strictEqual(container.scrollTop, 72, 'relayout does not reset the scroll position');
+
+  sb.window.innerWidth = 240;
+  body.clientWidth = 240;
+  sb.window.__test.scheduleMasonryAll();
+  drainFrames(sb);
+  assert.strictEqual(body.dataset.masonryCols, undefined, 'narrow viewport falls back to CSS single column');
+  for (const card of cards) {
+    assert.strictEqual(card.style.position, '');
+    assert.strictEqual(card.style.transform, '');
+    assert.strictEqual(card.dataset.masonryCol, undefined);
+  }
+  cards[1].open = true;
+  observer.cb([{ target: cards[1] }]);
+  drainFrames(sb);
+  assert.strictEqual(body.style.height, '', 'single-column disclosure remains natural CSS flow');
+  assert.deepStrictEqual(body.children, initialNodes);
+  assert.strictEqual(container.scrollTop, 72);
 }
 
 console.log('all assertions passed');
