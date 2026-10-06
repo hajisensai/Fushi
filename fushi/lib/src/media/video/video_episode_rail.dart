@@ -67,6 +67,7 @@ class VideoEpisodeRail extends StatefulWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 20),
     this.indices,
     this.active = true,
+    this.claimFocusOnMount = false,
   });
 
   final List<VideoEpisodeEntry> episodes;
@@ -86,6 +87,12 @@ class VideoEpisodeRail extends StatefulWidget {
   /// 轨道所在面板是否正在显示。常驻挂载的播放器面板由 false → true 时把当前集
   /// 滚到正中并把焦点交给当前集卡（方向键 / 手柄直接从当前集出发）。
   final bool active;
+
+  /// 新挂载时（且 [active]）就认领当前集焦点。面板重新打开时若回到了另一季，
+  /// 轨道是**新建**的、没有 [active] 的 false → true 边沿可接，由面板置位本
+  /// 开关（HBK-AUDIT-025）；用户在打开的面板里点季 chip 换出的轨道不置位，
+  /// 焦点留在 chip 上。
+  final bool claimFocusOnMount;
 
   /// 卡片上下为抬升 / 放大留的余量（逻辑 px）。
   static const double liftPadding = 10;
@@ -109,23 +116,32 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail> {
   @override
   void initState() {
     super.initState();
+    if (widget.active && widget.claimFocusOnMount) {
+      _claimCurrent();
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _revealCurrent(animate: false),
     );
+  }
+
+  /// 无动画定位到当前集（面板本身在 spring 进场），下一帧再把焦点交给当前集
+  /// 卡——卡片可能本来在懒加载范围外，要等定位后的那一帧建出来。
+  void _claimCurrent() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _revealCurrent(animate: false);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _focusCurrent());
+      WidgetsBinding.instance.scheduleFrame();
+    });
+    WidgetsBinding.instance.scheduleFrame();
   }
 
   @override
   void didUpdateWidget(covariant VideoEpisodeRail oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.active && !oldWidget.active) {
-      // 面板打开：先无动画定位到当前集（面板本身在 spring 进场），下一帧再把
-      // 焦点交给当前集卡——卡片可能本来在懒加载范围外，要等定位后的那一帧建出来。
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _revealCurrent(animate: false);
-        WidgetsBinding.instance.addPostFrameCallback((_) => _focusCurrent());
-        WidgetsBinding.instance.scheduleFrame();
-      });
-      WidgetsBinding.instance.scheduleFrame();
+      // 面板打开：定位并认领当前集焦点。
+      _claimCurrent();
       return;
     }
     if (oldWidget.currentIndex != widget.currentIndex ||
@@ -366,15 +382,6 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
                   children: <Widget>[
                     _EpisodeCover(entry: widget.entry, colorScheme: cs),
                     const _EpisodeScrim(),
-                    if (selected)
-                      PositionedDirectional(
-                        top: 8,
-                        start: 8,
-                        child: _NowPlayingPill(
-                          colorScheme: cs,
-                          fontSize: widget.fontSize,
-                        ),
-                      ),
                     if (widget.entry.completed ||
                         (widget.entry.started && widget.entry.progress == null))
                       PositionedDirectional(
@@ -385,7 +392,7 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
                           colorScheme: cs,
                         ),
                       ),
-                    _buildCaption(context, cs),
+                    Positioned.fill(child: _buildOverlayText(context, cs)),
                     if (_showProgress)
                       PositionedDirectional(
                         start: 10,
@@ -412,57 +419,98 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
     return !widget.entry.completed && progress != null && progress > 0.005;
   }
 
-  Widget _buildCaption(BuildContext context, ColorScheme cs) {
+  /// 卡面文字层：「正在播放」胶囊在上、集号 + 标题在下，**纵向排布**而不是各自
+  /// 绝对定位——窄屏 + 大字号（系统 200% 文字）下两层不会叠在一起
+  /// （HBK-AUDIT-024）。标题行数按剩余高度在 2 → 1 之间收。
+  Widget _buildOverlayText(BuildContext context, ColorScheme cs) {
+    final double fontSize = widget.fontSize;
+    final bool selected = widget.selected;
+    final TextScaler scaler = MediaQuery.textScalerOf(context);
+    final double bottomInset = _showProgress ? 16 : 10;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double titleLine = scaler.scale(fontSize) * 1.2;
+        final double pillHeight =
+            selected ? scaler.scale(fontSize + 2) * 1.2 + fontSize * 0.36 : 0;
+        final double available = constraints.maxHeight -
+            8 -
+            bottomInset -
+            (selected ? pillHeight + 6 : 0);
+        final int titleLines = available >= titleLine * 2 ? 2 : 1;
+        return Padding(
+          padding: EdgeInsetsDirectional.fromSTEB(8, 8, 10, bottomInset),
+          // 两段都放进弹性槽：极端尺寸下各自被压缩 / 省略，而不是溢出报错。
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (selected)
+                Flexible(
+                  child: _NowPlayingPill(colorScheme: cs, fontSize: fontSize),
+                ),
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.bottomStart,
+                  child: Padding(
+                    padding: EdgeInsetsDirectional.only(
+                      start: 2,
+                      top: selected ? 6 : 0,
+                    ),
+                    child: _buildCaption(context, cs, titleLines),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCaption(BuildContext context, ColorScheme cs, int titleLines) {
     final FushiTypography type = context.fushiType;
     final double fontSize = widget.fontSize;
     final bool selected = widget.selected;
-    return PositionedDirectional(
-      start: 10,
-      end: 10,
-      bottom: _showProgress ? 16 : 10,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: fontSize * 0.5,
-              vertical: fontSize * 0.14,
-            ),
-            decoration: ShapeDecoration(
-              color: selected ? cs.primaryContainer : cs.secondaryContainer,
-              shape: const StadiumBorder(),
-            ),
-            child: Text(
-              '$_displayNumber'.padLeft(2, '0'),
-              maxLines: 1,
-              softWrap: false,
-              style: type.labelLargeEmphasized.tabular.copyWith(
-                color:
-                    selected ? cs.onPrimaryContainer : cs.onSecondaryContainer,
-                fontSize: fontSize - 1,
-                height: 1.2,
-              ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: <Widget>[
+        Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: fontSize * 0.5,
+            vertical: fontSize * 0.14,
+          ),
+          decoration: ShapeDecoration(
+            color: selected ? cs.primaryContainer : cs.secondaryContainer,
+            shape: const StadiumBorder(),
+          ),
+          child: Text(
+            '$_displayNumber'.padLeft(2, '0'),
+            maxLines: 1,
+            softWrap: false,
+            style: type.labelLargeEmphasized.tabular.copyWith(
+              color: selected ? cs.onPrimaryContainer : cs.onSecondaryContainer,
+              fontSize: fontSize - 1,
+              height: 1.2,
             ),
           ),
-          SizedBox(width: fontSize * 0.5),
-          Expanded(
-            child: Text(
-              widget.entry.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: type.titleSmall.copyWith(
-                color: Colors.white,
-                fontSize: fontSize,
-                height: 1.2,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                shadows: const <Shadow>[
-                  Shadow(color: Color(0x99000000), blurRadius: 6),
-                ],
-              ),
+        ),
+        SizedBox(width: fontSize * 0.5),
+        Expanded(
+          child: Text(
+            widget.entry.title,
+            maxLines: titleLines,
+            overflow: TextOverflow.ellipsis,
+            style: type.titleSmall.copyWith(
+              color: Colors.white,
+              fontSize: fontSize,
+              height: 1.2,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+              shadows: const <Shadow>[
+                Shadow(color: Color(0x99000000), blurRadius: 6),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -520,13 +568,16 @@ class _NowPlayingPill extends StatelessWidget {
             color: cs.onPrimary,
           ),
           SizedBox(width: fontSize * 0.2),
-          Text(
-            t.reader_audiobook_now_playing,
-            maxLines: 1,
-            softWrap: false,
-            style: context.fushiType.labelMediumEmphasized.copyWith(
-              color: cs.onPrimary,
-              fontSize: fontSize - 2,
+          Flexible(
+            child: Text(
+              t.reader_audiobook_now_playing,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.labelMediumEmphasized.copyWith(
+                color: cs.onPrimary,
+                fontSize: fontSize - 2,
+              ),
             ),
           ),
         ],

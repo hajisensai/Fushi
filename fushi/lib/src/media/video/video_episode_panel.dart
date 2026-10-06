@@ -86,6 +86,11 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
   bool _canPageBack = false;
   bool _canPageForward = false;
 
+  /// 重新打开后本帧新建的轨道要自己认领当前集焦点（HBK-AUDIT-025）：重开会把
+  /// 季切回当前集所在季，那条轨道是新挂载的，接不到 active 的显隐边沿。帧末清掉，
+  /// 之后用户点季 chip 换出的轨道不抢焦点。
+  bool _claimFocusOnMount = false;
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +111,12 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     final bool reopened = widget.visible && !oldWidget.visible;
     if (episodesChanged || currentChanged || reopened) {
       _rebuildSections(followCurrent: true);
+    }
+    if (reopened) {
+      _claimFocusOnMount = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _claimFocusOnMount = false;
+      });
     }
   }
 
@@ -170,7 +181,11 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
 
   /// 卡片宽：按面板内宽决定一屏几张（窄屏 / 竖屏约 1.6 张，平板 2.6，桌面
   /// 3.6~4.6），再按字号定下限（大字号下集号 + 两行标题要放得下）。
-  double _cardWidthFor(double innerWidth) {
+  ///
+  /// 系统文字缩放（[textScale]，如 200%）同样计入下限：卡面是 16:9，字变大而卡
+  /// 不变高时「正在播放」胶囊与两行标题挤不下（HBK-AUDIT-024）。下限封顶在一屏
+  /// 内宽的 92%，再宽就只剩一张卡。
+  double _cardWidthFor(double innerWidth, double textScale) {
     final double perView = innerWidth < 480
         ? 1.6
         : innerWidth < 760
@@ -179,9 +194,15 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
         ? 3.6
         : 4.6;
     final double fontScale = (widget.fontSize / 14).clamp(0.9, 1.6);
-    final double minWidth = (150 * fontScale).clamp(140.0, 240.0);
+    final double typeScale = fontScale * textScale.clamp(1.0, 3.0);
+    final double screenCap = innerWidth * 0.92;
+    final double minWidth = (150 * typeScale).clamp(
+      140.0,
+      screenCap < 140 ? 140.0 : screenCap,
+    );
     final double fitted = innerWidth / perView - 12;
-    return fitted.clamp(minWidth, 300.0);
+    final double maxWidth = minWidth > 300 ? minWidth : 300.0;
+    return fitted.clamp(minWidth, maxWidth);
   }
 
   @override
@@ -194,7 +215,11 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
         final bool compact = available < 600;
         final double margin = compact ? 8 : 16;
         final double surfaceWidth = (available - margin * 2).clamp(0.0, 1440.0);
-        final double cardWidth = _cardWidthFor(surfaceWidth - 40);
+        final double cardWidth = _cardWidthFor(
+          surfaceWidth - 40,
+          MediaQuery.textScalerOf(context).scale(widget.fontSize) /
+              widget.fontSize,
+        );
         return Material(
           type: MaterialType.transparency,
           child: SizedBox(
@@ -356,7 +381,9 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: SizedBox(
-        height: widget.fontSize * 2 + 16,
+        // 跟系统文字缩放走：200% 字号下 chip 不被固定高度压扁。
+        height:
+            MediaQuery.textScalerOf(context).scale(widget.fontSize) * 2 + 20,
         child: FushiHorizontalEdgeFade(
           child: HorizontalDragScrollable(
             child: ListView.separated(
@@ -421,6 +448,7 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
           fontSize: widget.fontSize,
           cardWidth: cardWidth,
           active: widget.visible,
+          claimFocusOnMount: _claimFocusOnMount,
           padding: const EdgeInsets.symmetric(horizontal: 20),
         ),
       ),
