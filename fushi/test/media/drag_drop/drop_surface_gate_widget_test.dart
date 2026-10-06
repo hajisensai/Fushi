@@ -18,6 +18,23 @@ import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../../helpers/source_guard.dart';
+
+bool _gameSectionsHaveDropGates(String source) {
+  final String build = maskCommentsAndStrings(
+    methodBody(source, 'Widget build(BuildContext context)'),
+  ).replaceAll(RegExp(r'\s+'), '');
+  // 8039dc48e2f / 5f0c0c3a4bd：浮动工具栏让位插在门内，不能因此让门
+  // 与枚举/child 的关系退化成三个互不相干的全文件 contains。
+  return build.contains(
+    'IndexedStack(index:_section.index,children:<Widget>['
+    'for(finalGameSectionsectioninGameSection.values)'
+    'DropSurfaceScope(isActive:()=>_section==section,'
+    'child:SectionPrimaryScrollScope('
+    'child:_chromeInsetFor(section,child:sections[section]!),),),],)',
+  );
+}
+
 /// 拖放「谁接这一次 OS drop」的**端到端**守卫（BUG-1752 复审）。
 ///
 /// 与 drop_surface_routing_test.dart 的区别：那边是手写 isActive: () => false 之后
@@ -285,21 +302,65 @@ void main() {
     // 在 widget 测试里 pump 不出来，故这一条守的是**结构**：子区表按 GameSection
     // 建、按 GameSection.values 展开，包裹只有一处，新增子区不可能漏掉。
     test('子区按 GameSection.values 展开且逐个套上 DropSurfaceScope', () {
-      final String src =
-          File('lib/src/pages/implementations/home_game_page.dart')
-              .readAsStringSync();
+      final String src = File(
+        'lib/src/pages/implementations/home_game_page.dart',
+      ).readAsStringSync();
       // 断言字面量：'for (final GameSection section in GameSection.values)'
       expect(
-          src.contains('for (final GameSection section in GameSection.values)'),
-          isTrue,
-          reason: 'IndexedStack 的 children 必须由枚举展开，'
-              '否则「索引==枚举序」和「每个子区都被包裹」都只是口头约定');
+        src.contains('for (final GameSection section in GameSection.values)'),
+        isTrue,
+        reason:
+            'IndexedStack 的 children 必须由枚举展开，'
+            '否则「索引==枚举序」和「每个子区都被包裹」都只是口头约定',
+      );
       // 断言字面量：'isActive: () => _section == section,'
-      expect(src.contains('isActive: () => _section == section,'), isTrue,
-          reason: '判据必须与 index: _section.index 同源，且在 drop 落地那一刻求值');
-      // 断言字面量：'child: sections[section]!,'
-      expect(src.contains('child: sections[section]!,'), isTrue,
-          reason: '子区内容只能从 GameSection 建的表里取，不许再往 children 里塞裸 widget');
+      expect(
+        src.contains('isActive: () => _section == section,'),
+        isTrue,
+        reason: '判据必须与 index: _section.index 同源，且在 drop 落地那一刻求值',
+      );
+      expect(
+        _gameSectionsHaveDropGates(src),
+        isTrue,
+        reason:
+            '每个枚举子区必须在实时 DropSurfaceScope 门内，'
+            '再经滚动作用域与 chrome 让位取得 sections[section]；'
+            'children 不许插入裸 widget',
+      );
+    });
+
+    test('结构守卫拒绝恒开门、错误子区和绕过门的裸 child', () {
+      final String src = File(
+        'lib/src/pages/implementations/home_game_page.dart',
+      ).readAsStringSync();
+      expect(
+        _gameSectionsHaveDropGates(
+          src.replaceFirst(
+            'isActive: () => _section == section,',
+            'isActive: () => true, /* isActive: () => _section == section, */',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        _gameSectionsHaveDropGates(
+          src.replaceFirst(
+            'child: sections[section]!',
+            'child: sections[_section]!',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        _gameSectionsHaveDropGates(
+          src.replaceFirst(
+            'for (final GameSection section in GameSection.values)',
+            'const SizedBox(), '
+                'for (final GameSection section in GameSection.values)',
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 }
