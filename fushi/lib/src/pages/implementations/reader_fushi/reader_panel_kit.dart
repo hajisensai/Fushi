@@ -639,66 +639,75 @@ class ReaderPanelListItem extends StatelessWidget {
         : fushiNeutralSecondaryForeground(context);
     final IconData? icon = current ? currentIcon : leadingIcon;
     final String? sub = subtitle?.trim();
+    // 当前项高亮底色补间过渡（当前章 / 当前句切换时不是硬切）；减弱动态与墨水屏
+    // 下时长归零。
     return Semantics(
       selected: current,
-      child: Material(
-        color: current ? currentBg : currentBg.withValues(alpha: 0),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(
-            Radius.circular(readerPanelSmallRadius(context) + 4),
-          ),
+      child: TweenAnimationBuilder<Color?>(
+        tween: ColorTween(
+          end: current ? currentBg : currentBg.withValues(alpha: 0),
         ),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: readerPanelRowMinHeight(context),
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.standard,
+        builder: (BuildContext context, Color? bg, Widget? child) => Material(
+          color: bg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(
+              Radius.circular(readerPanelSmallRadius(context) + 4),
             ),
-            child: Padding(
-              padding: EdgeInsetsDirectional.fromSTEB(12 + indent, 8, 12, 8),
-              child: Row(
-                children: <Widget>[
-                  if (icon != null) ...<Widget>[
-                    FushiIcon(icon, size: 20, color: fg),
-                    const SizedBox(width: 12),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(
-                          title,
-                          maxLines: titleMaxLines,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: fg,
-                            fontWeight: current
-                                ? FontWeight.w700
-                                : FontWeight.w400,
-                          ),
-                        ),
-                        if (sub != null && sub.isNotEmpty)
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: readerPanelRowMinHeight(context),
+              ),
+              child: Padding(
+                padding: EdgeInsetsDirectional.fromSTEB(12 + indent, 8, 12, 8),
+                child: Row(
+                  children: <Widget>[
+                    if (icon != null) ...<Widget>[
+                      FushiIcon(icon, size: 20, color: fg),
+                      const SizedBox(width: 12),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
                           Text(
-                            sub,
-                            maxLines: 1,
+                            title,
+                            maxLines: titleMaxLines,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: secondary,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: fg,
+                              fontWeight: current
+                                  ? FontWeight.w700
+                                  : FontWeight.w400,
                             ),
                           ),
-                      ],
+                          if (sub != null && sub.isNotEmpty)
+                            Text(
+                              sub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: secondary,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  if (trailing != null) ...<Widget>[
-                    const SizedBox(width: 8),
-                    DefaultTextStyle.merge(
-                      style: TextStyle(color: secondary),
-                      child: trailing!,
-                    ),
+                    if (trailing != null) ...<Widget>[
+                      const SizedBox(width: 8),
+                      DefaultTextStyle.merge(
+                        style: TextStyle(color: secondary),
+                        child: trailing!,
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
