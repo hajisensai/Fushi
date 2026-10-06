@@ -8,7 +8,7 @@
 #          (idempotent: an already applied patch is skipped)
 #   build  gn + ninja flutter_windows for each -Modes entry
 #   stage  copy outputs into the overlay layout under <Root>\artifacts\<patch>
-#   pack   zip the staged overlay (without .pdb) and print artifacts.json
+#   pack   zip the staged overlay (pdbs included) and print artifacts.json
 #
 # Example (everything):
 #   tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-output-1
@@ -159,14 +159,11 @@ if ($Steps -contains 'stage') {
 if ($Steps -contains 'pack') {
   if (-not $PatchVersion) { throw 'pack needs -PatchVersion.' }
   $zip = Join-Path $Root "flutter-engine-windows-$FlutterVersion-$PatchVersion.zip"
-  $tmp = "$staged-pack"
-  if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
-  # Symbols stay local (hundreds of MB); the overlay removes any stale pdb.
-  Copy-Item $staged $tmp -Recurse
-  Get-ChildItem $tmp -Recurse -Filter '*.pdb' | Remove-Item -Force
+  # The pdbs ship too (~200 MB zipped): flutter_tools requires
+  # flutter_windows.dll.pdb next to the dll, and matching symbols are what
+  # makes a crash in the patched engine diagnosable.
   if (Test-Path $zip) { Remove-Item $zip -Force }
-  Compress-Archive -Path (Join-Path $tmp '*') -DestinationPath $zip -CompressionLevel Optimal
-  Remove-Item $tmp -Recurse -Force
+  Compress-Archive -Path (Join-Path $staged '*') -DestinationPath $zip -CompressionLevel Optimal
   $meta = Get-Content (Join-Path $staged 'engine-overlay.json') -Raw | ConvertFrom-Json
   [ordered]@{
     engineVersion = $meta.engineVersion

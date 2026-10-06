@@ -1,6 +1,6 @@
 {
   "engineVersion": "4c525dac5ebe5971c5708ef73558ed8edcf4a362",
-  "patchVersion": "hdr-output-1",
-  "url": "https://github.com/hajisensai/Fushi/releases/download/flutter-engine-3.44.0-hdr-output-1/flutter-engine-windows-3.44.0-hdr-output-1.zip",
-  "sha256": "bac01b7fe0841cab1359b3a7639600ebed2061d0bb3f7be9f409284de491f57a"
+  "patchVersion": "hdr-output-2",
+  "url": "https://github.com/hajisensai/Fushi/releases/download/flutter-engine-3.44.0-hdr-output-2/flutter-engine-windows-3.44.0-hdr-output-2.zip",
+  "sha256": "dfae21a239152740b4271e5a4be9e946f8ea7371d5bb517146a00a45e5526d72"
 }

@@ -61,7 +61,8 @@ tool/flutter_engine/build_patched_engine.ps1 -Root D:\fe -PatchVersion hdr-outpu
 步骤：sync（clone 3.44.0 + `gclient sync`）→ patch（两份补丁，已打过则跳过）→
 build（`gn --runtime-mode <mode>` + `ninja flutter_windows`，与官方产物同配置）→
 stage（按 `windows-x64{,-profile,-release}` 布局 + `engine-overlay.json`）→
-pack（去掉 pdb 打 zip，打印 `artifacts.json` 片段：填上发布地址后放进本目录）。
+pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutter_windows.dll.pdb`，
+缺了 assemble 直接失败；打印 `artifacts.json` 片段：填上发布地址后放进本目录）。
 
 安装：`tool/engine_overlay.ps1 -ArtifactDir <stage 目录>` 或
 `-Manifest ci/patches/flutter-engine/3.44.0/artifacts.json`（下载 + SHA-256 校验），
@@ -71,7 +72,8 @@ pack（去掉 pdb 打 zip，打印 `artifacts.json` 片段：填上发布地址�
 
 ## 当前产物
 
-`artifacts.json` → release `flutter-engine-3.44.0-hdr-output-1`（prerelease、非 Latest；
+`artifacts.json` → release `flutter-engine-3.44.0-hdr-output-2`（prerelease、非 Latest；
+`-1` 是同一批 DLL 但缺 pdb，`flutter build windows` 用它会在 assemble 失败，勿用；
 tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。
 重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着
 给旧提交复现用。
