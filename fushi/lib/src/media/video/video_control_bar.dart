@@ -103,6 +103,9 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.nextChapter:
     case VideoControlItem.chapterList:
       return 40;
+    // 弹幕开关：用户主动拖上来的才在栏上，设置面板另有同一开关，放不下时可以先收。
+    case VideoControlItem.danmaku:
+      return 35;
     case VideoControlItem.clipExport:
       return 30;
     case VideoControlItem.customAction1:

@@ -7554,6 +7554,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         on = panel == _VideoSidePanelKind.chapters;
       case VideoControlItem.settings:
         on = panel == _VideoSidePanelKind.settings;
+      // 弹幕开关：开着 = secondary tonal 选中态（M3E toggle），关 = 中性。
+      case VideoControlItem.danmaku:
+        on = appModel.videoDanmakuEnabled;
       case VideoControlItem.subtitleTrack:
         {
           final String? source = _currentSubtitleSource;
@@ -7963,6 +7966,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.previousChapter:
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
+      case VideoControlItem.danmaku:
       // 自定义「快捷键」按钮就是一个普通图标按钮：图标 / tooltip 由绑定动作决定
       // （见 `_videoControlItemIcon` / `_videoControlItemTooltip`），点击走
       // `_activateVideoControlItem` 查动作表。没有任何专属渲染需求。
@@ -8103,6 +8107,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
         return _hasChapters;
+      // 弹幕只对本地文件加载（sidecar / Dandanplay 按文件 hash 匹配，见
+      // `_loadDanmakuForVideo`）；远端流没有本地路径 = 没有弹幕来源，与章节 / 选集
+      // 一样直接不渲染，免得放一个按了也不会有弹幕的开关。
+      case VideoControlItem.danmaku:
+        return _currentVideoPath != null;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -8354,6 +8363,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.last_page;
       case VideoControlItem.chapterList:
         return Icons.format_list_numbered;
+      // 图标表达当前状态（同沉浸锁）：开 = 弹幕气泡，关 = 划掉的气泡。
+      case VideoControlItem.danmaku:
+        return appModel.videoDanmakuEnabled
+            ? FushiIcons.danmaku
+            : FushiIcons.danmakuOff;
       // Non-chip special renders never reach here (filtered by isChipRenderable).
       case VideoControlItem.volume:
       case VideoControlItem.title:
@@ -8429,6 +8443,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return t.shortcut_action_video_next_chapter;
       case VideoControlItem.chapterList:
         return t.video_chapters;
+      // tooltip 说「按下会怎样」：开着时提示隐藏，关着时提示显示。
+      case VideoControlItem.danmaku:
+        return appModel.videoDanmakuEnabled
+            ? t.video_control_danmaku_hide
+            : t.video_control_danmaku_show;
       case VideoControlItem.volume:
       case VideoControlItem.title:
       case VideoControlItem.positionIndicator:
@@ -8585,6 +8604,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.chapterList:
         _showChapterPanel(controller, sourceSlot: sourceSlot);
         break;
+      case VideoControlItem.danmaku:
+        // 与设置面板「显示弹幕」开关同一出口（[_setVideoDanmakuEnabled]：写穿
+        // `video_danmaku_enabled` 偏好，开则按当前视频重新加载、关则清空可见弹幕）。
+        _pokeControlsVisible();
+        unawaited(_setVideoDanmakuEnabled(!appModel.videoDanmakuEnabled));
+        break;
       // Non-chip / handled-by-legacy items never reach here.
       case VideoControlItem.volume:
       case VideoControlItem.title:
@@ -8710,6 +8735,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             item != VideoControlItem.playPause &&
             item != VideoControlItem.positionIndicator &&
             item != VideoControlItem.volume &&
+            // 弹幕开关只在用户亲手拖上播放器时出现（默认不出现，也不进「⋯」）；
+            // 设置面板里另有同一个开关。
+            item != VideoControlItem.danmaku &&
             item.isChipRenderable &&
             _shouldRenderControlItem(item))
           VideoBarEntry(

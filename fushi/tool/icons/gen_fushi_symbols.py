@@ -282,6 +282,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("bulletList", "format_list_bulleted", "format_list_bulleted_outlined", "format_list_bulleted", "项目列表 / 目录"),
     ("formatShapes", "format_shapes", "format_shapes_outlined", "format_shapes", "排版形状"),
     ("forum", "forum", "forum_outlined", "forum", "讨论 / 评论"),
+    ("danmaku", "comment", "comment_outlined", "comment", "弹幕（开）"),
+    ("danmakuOff", "comments_disabled", "comments_disabled_outlined", "comments_disabled", "弹幕（关）"),
     ("forward10", "forward_10", "forward_10_outlined", "forward_10", "前进 10"),
     ("replay10", "replay_10", "replay_10_outlined", "replay_10", "后退 10"),
     ("commandKey", "keyboard_command_key", "keyboard_command_key_outlined", "keyboard_command_key", "Command 键"),
@@ -378,6 +380,8 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "toc": ("list_dash", "list_dash"),
     "alignCenterVertical": ("text_aligncenter", "text_aligncenter"),
     "webAssetOff": ("xmark_rectangle", "xmark_rectangle_fill"),
+    "danmaku": ("chat_bubble_text", "chat_bubble_text_fill"),
+    "danmakuOff": ("chat_bubble", "chat_bubble_fill"),
 }
 
 

@@ -184,6 +184,8 @@ void main() {
       for (final VideoControlSlot slot in VideoControlSlot.values) {
         seen.addAll(d.itemsIn(slot));
       }
+      // 弹幕开关默认不在播放器上（落 removed），也算「有着落」。
+      seen.addAll(d.removedItems);
       expect(seen.toSet(), VideoControlItem.values.toSet());
       expect(seen, hasLength(VideoControlItem.values.length));
     });
@@ -1155,5 +1157,94 @@ void main() {
       expect(
           decoded.removedItems, isNot(contains(VideoControlItem.frameForward)));
     });
+  });
+
+  // 2026-10-06 用户请求：弹幕开关是可选控件——默认不出现，但能拖进任意可编辑槽位。
+  group('danmaku toggle control item', () {
+    test('round-trips its storage id', () {
+      expect(VideoControlItem.danmaku.storageValue, 'danmaku');
+      expect(VideoControlItem.fromStorage('danmaku'), VideoControlItem.danmaku);
+    });
+
+    test('is offered in the editor palette', () {
+      expect(VideoControlItem.danmaku.isChipRenderable, isTrue);
+      expect(VideoControlItem.customizableItems,
+          contains(VideoControlItem.danmaku));
+      expect(VideoControlItem.danmaku.canRemoveFromPlayer(), isTrue);
+      expect(
+          VideoControlItem.danmaku.canRemoveFromPlayer(isTouchControls: true),
+          isTrue);
+    });
+
+    test('factory chrome leaves it off the player', () {
+      final VideoControlLayout fresh = VideoControlLayout.decode('');
+      expect(fresh.isOnPlayer(VideoControlItem.danmaku), isFalse);
+      expect(fresh.removedItems, contains(VideoControlItem.danmaku));
+      expect(VideoControlLayout.defaults.isOnPlayer(VideoControlItem.danmaku),
+          isFalse);
+    });
+
+    test('a saved layout from before the item existed does not surface it', () {
+      final VideoControlLayout decoded = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 3,
+          'slots': <String, List<String>>{
+            'bottomCenter': <String>['playPause'],
+            'bottomRight': <String>['volume', 'fullscreen'],
+          },
+        }),
+      );
+      expect(decoded.isOnPlayer(VideoControlItem.danmaku), isFalse);
+      expect(decoded.removedItems, contains(VideoControlItem.danmaku));
+    });
+
+    test('a v1 legacy layout does not surface it either', () {
+      final VideoControlLayout migrated = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 1,
+          'placements': <String, String>{'speed': 'bottom'},
+        }),
+      );
+      expect(migrated.isOnPlayer(VideoControlItem.danmaku), isFalse);
+    });
+
+    test('can be dragged onto the player and survives encode/decode', () {
+      final VideoControlLayout placed = VideoControlLayout.currentChrome
+          .moveItem(VideoControlItem.danmaku, VideoControlSlot.bottomRight);
+      expect(placed.isOnPlayer(VideoControlItem.danmaku), isTrue);
+      expect(placed.removedItems, isNot(contains(VideoControlItem.danmaku)));
+      final VideoControlLayout reloaded =
+          VideoControlLayout.decode(placed.encode());
+      expect(reloaded.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.danmaku));
+    });
+
+    test('an unknown future id in a saved layout is skipped, not a crash', () {
+      final VideoControlLayout decoded = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 3,
+          'slots': <String, List<String>>{
+            'bottomRight': <String>['danmaku', 'notARealButton', 'volume'],
+          },
+          'removed': <String>['alsoNotReal'],
+        }),
+      );
+      expect(decoded.itemsIn(VideoControlSlot.bottomRight),
+          contains(VideoControlItem.danmaku));
+    });
+  });
+
+  test('player page keeps the danmaku toggle out of the ⋯ overflow menu', () {
+    final String page = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final int start = page.indexOf('List<VideoBarEntry> _foldedBarEntries(');
+    expect(start, greaterThan(0));
+    final String body = page.substring(start, start + 1500);
+    expect(body, contains('item != VideoControlItem.danmaku'),
+        reason: '弹幕开关默认不出现：被移出播放器时不能混进「⋯」菜单');
+    // 按钮复用设置面板同一出口，不新增平行状态。
+    expect(page,
+        contains('_setVideoDanmakuEnabled(!appModel.videoDanmakuEnabled)'));
   });
 }

@@ -6739,5 +6739,8 @@
   "gal_hook_toolbar_label_topmost": "置顶",
   "gal_hook_toolbar_label_close": "关闭",
   "gal_hook_toolbar_labels": "工具条显示文字",
-  "gal_hook_toolbar_labels_hint": "在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示"
+  "gal_hook_toolbar_labels_hint": "在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示",
+  "video_control_danmaku": "弹幕开关",
+  "video_control_danmaku_show": "显示弹幕",
+  "video_control_danmaku_hide": "隐藏弹幕"
 }
