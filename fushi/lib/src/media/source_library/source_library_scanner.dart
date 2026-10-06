@@ -1355,8 +1355,8 @@ class SourceLibraryScanner {
           ? Value<int?>(stale.lastPlayedAt)
           : const Value<int?>.absent(),
       completedAt: live.completedAt == null && stale.completedAt != null
-          ? Value<int?>(stale.completedAt)
-          : const Value<int?>.absent(),
+          ? Value<DateTime?>(stale.completedAt)
+          : const Value<DateTime?>.absent(),
     ));
     for (final BookTagRow tag in await _db.getTagsForVideoBook(stale.bookUid)) {
       await _db.addTagToVideoBook(live.bookUid, tag.id);
