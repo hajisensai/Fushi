@@ -178,6 +178,9 @@ void main() {
       await tester.pumpWidget(
         _probe((c) => apple = c.fushiMotion, glass: true),
       );
+      // MaterialApp 换主题走 AnimatedTheme 过渡：换主题那一帧仍是旧主题
+      // （Tween.transform(0) == begin），过渡结束后才读得到玻璃设计系统。
+      await tester.pumpAndSettle();
       expect(material.spatialDefault, FushiSprings.spatialDefault);
       expect(material.enabled, isTrue);
       expect(apple.spatialDefault, FushiMotionScheme.apple.spatialDefault);

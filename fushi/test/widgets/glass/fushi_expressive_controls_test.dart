@@ -602,6 +602,8 @@ void main() {
         (_) => FushiSwitch(value: false, onChanged: (_) {}),
         eink: true,
       );
+      // 换主题走 MaterialApp 的 AnimatedTheme 过渡，首帧仍是旧主题。
+      await tester.pumpAndSettle();
       expect(tester.widget<Switch>(find.byType(Switch)).thumbIcon, isNull);
     });
   });
