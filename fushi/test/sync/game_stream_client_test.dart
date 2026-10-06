@@ -77,6 +77,15 @@ void main() {
             code: 'game_stream_off',
           ),
           (
+            status: 403,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'unauthorized_peer',
+              'error': 'Not a paired device',
+            }),
+            code: 'unauthorized_peer',
+          ),
+          (
             status: 500,
             body: '<html>Server failed</html>',
             code: 'http_rejected',

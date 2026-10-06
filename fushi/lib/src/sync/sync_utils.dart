@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:fushi/src/sync/sync_file_ref.dart' show SyncFileRef;
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
+import 'package:fushi_engine/sync/sync_asset_store.dart'
+    show SyncTransferProgress;
 
 /// The single sync root folder name used by every backend (cloud + LAN).
 ///
@@ -145,7 +147,7 @@ Future<void> writeSyncStreamToFile({
   required Stream<List<int>> source,
   required File destination,
   int? totalBytes,
-  void Function(double progress)? onProgress,
+  SyncTransferProgress? onProgress,
   void Function(Object error)? onCleanupError,
 }) async {
   final IOSink sink = destination.openWrite();
@@ -156,7 +158,7 @@ Future<void> writeSyncStreamToFile({
       sink.add(chunk);
       bytesReceived += chunk.length;
       if (totalBytes != null && totalBytes > 0) {
-        onProgress?.call(bytesReceived / totalBytes);
+        onProgress?.call(bytesReceived / totalBytes, bytesReceived);
       }
     }
     success = true;

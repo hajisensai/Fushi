@@ -244,6 +244,38 @@ void main() {
     expect(find.text(t.game_stream_host_outdated), findsNothing);
   });
 
+  testWidgets('a host with game stream off says to turn it on, not update', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTransport transport = _FakeTransport(
+      (String path, Map<String, dynamic> body) =>
+          throw const GameStreamRequestError(
+            statusCode: 404,
+            code: 'game_stream_off',
+          ),
+    );
+    await _pump(tester, transport: transport);
+
+    expect(find.text(t.game_stream_host_stream_off), findsOneWidget);
+    expect(find.text(t.game_stream_host_outdated), findsNothing);
+  });
+
+  testWidgets('a host refusing an unpaired credential says to re-pair', (
+    WidgetTester tester,
+  ) async {
+    final _FakeTransport transport = _FakeTransport(
+      (String path, Map<String, dynamic> body) =>
+          throw const GameStreamRequestError(
+            statusCode: 403,
+            code: 'unauthorized_peer',
+          ),
+    );
+    await _pump(tester, transport: transport);
+
+    expect(find.text(t.game_stream_host_unauthorized), findsOneWidget);
+    expect(find.text(t.game_stream_host_outdated), findsNothing);
+  });
+
   testWidgets('a current host without a library says so and keeps sessions', (
     WidgetTester tester,
   ) async {

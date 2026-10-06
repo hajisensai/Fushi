@@ -195,7 +195,7 @@ class ObfuscatingSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final tmp = await _obfuscateToTemp(file);
     try {
@@ -214,7 +214,7 @@ class ObfuscatingSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final tmp = await _createTempFile('obf_dn_');
     try {
@@ -281,7 +281,7 @@ class ObfuscatingSyncBackend extends SyncBackend
     String namespaceId,
     String name,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final tmp = await _obfuscateToTemp(file);
     try {
@@ -295,7 +295,7 @@ class ObfuscatingSyncBackend extends SyncBackend
   Future<void> getAsset(
     String assetId,
     File destination, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     final tmp = await _createTempFile('obf_get_');
     try {

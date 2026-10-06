@@ -165,7 +165,8 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
     if (asset == null) {
       throw SyncBackendError('remote video asset missing: $assetName');
     }
-    await backend.getAsset(asset.id, destination, onProgress: onProgress);
+    await backend.getAsset(asset.id, destination,
+        onProgress: syncTransferFractionOnly(onProgress));
   }
 }
 
