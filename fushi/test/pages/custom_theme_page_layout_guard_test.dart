@@ -3,23 +3,36 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
-bool _pinsSurfaceThroughSharedScheme(String page, String notifier) {
+bool _pinsSurfaceThroughSharedScheme(
+  String page,
+  String notifier,
+  String appModel,
+) {
   String code(String source, String signature) => maskCommentsAndStrings(
     methodBody(source, signature),
   ).replaceAll(RegExp(r'\s+'), '');
 
   final String entry = code(page, 'CustomThemeEntry _buildEntry(');
   final String preview = code(page, 'ColorScheme _buildSchemeFor(');
-  final String runtime = code(
+  // 190147fb54f：编辑页经 AppModel 门面取配色（不穿透 themeNotifier），门面与
+  // ThemeNotifier 同名方法都委托到同一个顶层纯函数——派生链仍只有一份。
+  final String facade = code(appModel, 'ColorScheme buildCustomThemeColorScheme(');
+  final String delegate = code(
     notifier,
     'ColorScheme buildCustomThemeColorScheme(',
+  );
+  final String runtime = code(
+    notifier,
+    'ColorScheme buildCustomThemeEntryColorScheme(',
   );
   return entry.contains('returnCustomThemeEntry(') &&
       entry.contains('surfaceColor:argb(_overrides[_ThemeRole.surface]),') &&
       preview.contains(
-        'returnappModelNoUpdate.themeNotifier.buildCustomThemeColorScheme('
+        'returnappModelNoUpdate.buildCustomThemeColorScheme('
         '_buildEntry(),brightness,);',
       ) &&
+      facade.contains('theme_notifier.buildCustomThemeEntryColorScheme(') &&
+      delegate.contains('buildCustomThemeEntryColorScheme(') &&
       runtime.contains('returnbuildFushiColorScheme(') &&
       runtime.contains('surface:role(entry.surfaceColor),');
 }
@@ -42,6 +55,9 @@ void main() {
   ).readAsStringSync();
   final String notifier = File(
     'lib/src/models/theme_notifier.dart',
+  ).readAsStringSync();
+  final String appModel = File(
+    'lib/src/models/app_model.dart',
   ).readAsStringSync();
 
   group('CustomThemePage · 选色器不在滚动主路径上', () {
@@ -151,7 +167,7 @@ void main() {
       expect(
         // 45fc6d88b17 将预览接到运行期共享入口：覆盖色先写草稿 entry，
         // 再由 ThemeNotifier 派生。必须守住三段，不能只找全文件里的 surface。
-        _pinsSurfaceThroughSharedScheme(source, notifier),
+        _pinsSurfaceThroughSharedScheme(source, notifier, appModel),
         isTrue,
       );
       expect(source.contains('t.theme_role_surface'), isTrue);
@@ -165,6 +181,7 @@ void main() {
             'surfaceColor: null,',
           ),
           notifier,
+          appModel,
         ),
         isFalse,
       );
@@ -172,6 +189,7 @@ void main() {
         _pinsSurfaceThroughSharedScheme(
           source.replaceFirst('_buildEntry(),', '_otherEntry(),'),
           notifier,
+          appModel,
         ),
         isFalse,
       );
@@ -182,6 +200,7 @@ void main() {
             'surface: role(entry.surfaceColor),',
             'surface: null, /* surface: role(entry.surfaceColor), */',
           ),
+          appModel,
         ),
         isFalse,
       );
@@ -195,11 +214,15 @@ void main() {
     test('墨水屏模式下预览同样黑白', () {
       expect(
         methodBody(source, 'ColorScheme _buildSchemeFor('),
-        contains('themeNotifier.buildCustomThemeColorScheme('),
+        contains('appModelNoUpdate.buildCustomThemeColorScheme('),
+      );
+      expect(
+        methodBody(appModel, 'ColorScheme buildCustomThemeColorScheme('),
+        contains('einkMode: einkMode'),
       );
       final String scheme = methodBody(
         notifier,
-        'ColorScheme buildCustomThemeColorScheme(',
+        'ColorScheme buildCustomThemeEntryColorScheme(',
       );
       expect(scheme, contains('einkMode'));
       expect(scheme, contains('buildEinkColorScheme('));
