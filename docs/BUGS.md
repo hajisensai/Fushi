@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2775 条。点号进各自文件。
+> 共 2776 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3024](bugs/BUG-3024-settings-reset-narrow-row.md) | ✅ | ✅ | 设置恢复默认按钮挤压窄面板标题导致溢出 |
 | [BUG-3021](bugs/BUG-3021-tag-picker-video-counter.md) | ✅ | ✅ | 统一标签面板对视频批量操作仍显示本书 |
 | [BUG-3020](bugs/BUG-3020-placeholder-short-viewport.md) | ✅ | ✅ | 紧凑错误状态图标与说明高度超过可用视口 |
 | [BUG-3019](bugs/BUG-3019-settings-stepper-touch-width.md) | ✅ | ✅ | 设置步进器迁移后声明宽度少算触控区导致标题挤压 |

@@ -36,6 +36,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show kSettingsRowLabelMinWidth, settingsRowHasLeadingIcon;
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -1384,27 +1386,68 @@ class SettingsModifiedRow extends StatelessWidget {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final Color dot = apple ? appleColorsOf(context).accent : scheme.primary;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double horizontalInset = apple
+        ? FushiAppleMetrics.of(context).rowHorizontal
+        : tokens.spacing.rowHorizontal;
+    final double iconWidth = apple
+        ? FushiAppleMetrics.of(context).iconTileSize
+        : 30; // Matches the shared settings row's leading icon slot.
+    final double labelWidth =
+        (kSettingsRowLabelMinWidth * MediaQuery.textScalerOf(context).scale(1))
+            .clamp(kSettingsRowLabelMinWidth, 2 * kSettingsRowLabelMinWidth)
+            .toDouble();
+    final double contentMinWidth =
+        2 * horizontalInset +
+        labelWidth +
+        (settingsRowHasLeadingIcon(child)
+            ? iconWidth + tokens.spacing.gap + 4
+            : 0);
+    // The reset control keeps its full touch target. Below this width it gets
+    // its own line so the settings row can use the entire pane width.
+    const double resetWidth = kMinInteractiveDimension + 4;
     return Stack(
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(child: child),
-            AnimatedSize(
-              duration: fushiMotionDuration(context, FushiMotion.short),
-              curve: FushiMotion.standard,
-              child: modified
-                  ? Padding(
-                      padding: const EdgeInsetsDirectional.only(end: 4),
-                      child: FushiIconButtonControl(
-                        key: const ValueKey<String>('settings-reset-default'),
-                        icon: const FushiIcon(FushiIcons.undo),
-                        tooltip: t.settings_reset_to_default,
-                        onPressed: onReset,
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ],
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool stacked =
+                constraints.maxWidth < contentMinWidth + resetWidth;
+            return Flex(
+              direction: stacked ? Axis.vertical : Axis.horizontal,
+              crossAxisAlignment: stacked
+                  ? CrossAxisAlignment.stretch
+                  : CrossAxisAlignment.center,
+              children: <Widget>[
+                // Keep the same element ancestry while width / modified changes.
+                Flexible(
+                  flex: stacked ? 0 : 1,
+                  fit: FlexFit.tight,
+                  child: child,
+                ),
+                AnimatedSize(
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  curve: FushiMotion.standard,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    widthFactor: 1,
+                    child: modified
+                        ? Padding(
+                            padding: const EdgeInsetsDirectional.only(end: 4),
+                            child: FushiIconButtonControl(
+                              key: const ValueKey<String>(
+                                'settings-reset-default',
+                              ),
+                              icon: const FushiIcon(FushiIcons.undo),
+                              tooltip: t.settings_reset_to_default,
+                              onPressed: onReset,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         PositionedDirectional(
           start: 3,
