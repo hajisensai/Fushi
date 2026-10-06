@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2768 条。点号进各自文件。
+> 共 2769 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3033](bugs/BUG-3033-pending-ai-outcome-scroll.md) | ✅ | ✅ | AI识别长结论在待确认清空或刷新时溢出 |
 | [BUG-3028](bugs/BUG-3028-delete-confirm-footer-scrolls.md) | ✅ | ✅ | 删除确认框的「删除」按钮在矮窗口里被滚出可视区 |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
