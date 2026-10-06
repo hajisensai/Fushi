@@ -10,6 +10,7 @@ import 'package:fushi/media.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -158,7 +159,7 @@ void main() {
   }
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
   }
 
