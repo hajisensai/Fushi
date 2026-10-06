@@ -373,3 +373,44 @@ jobs:
     - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
       working-directory: fushi
       run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
+
+    # The compact summary omits RenderFlex creation sites. Print complete
+    # diagnostics for failed tests into the job log (GitHub masks secrets here),
+    # keeping the original test step's failure and avoiding another test run.
+    - name: Show complete failed-test diagnostics
+      if: failure()
+      shell: bash
+      run: |
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        path = Path('.codex-test/flutter-test/flutter_test.jsonl')
+        if not path.is_file():
+            print('No test event log was produced.')
+            raise SystemExit(0)
+        events = []
+        for line in path.read_text(encoding='utf-8').splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+        failed = {
+            event.get('testID') for event in events
+            if event.get('type') == 'error' or (
+                event.get('type') == 'testDone'
+                and event.get('result') in ('failure', 'error')
+            )
+        }
+        for event in events:
+            if event.get('type') == 'testStart' and event['test']['id'] in failed:
+                print('\nFAILED TEST:', event['test']['name'])
+            elif event.get('testID') in failed:
+                if event.get('type') == 'print':
+                    print(event.get('message', ''))
+                elif event.get('type') == 'error':
+                    print(event.get('error', ''))
+                    print(event.get('stackTrace', ''))
+        PY
