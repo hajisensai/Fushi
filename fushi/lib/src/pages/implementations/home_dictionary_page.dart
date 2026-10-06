@@ -187,6 +187,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// Overlay 仍可能同帧重建 [_buildPopupOverlay] → 读已失效 State 的 appModel/Theme 红屏；
   /// 置位后 builder 一律空渲染。
   bool _overlayInert = false;
+  bool _popupOverlayRebuildScheduled = false;
 
   bool _isSearching = false;
   String _lastQuery = '';
@@ -501,6 +502,31 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     // TODO-058：弹窗 controller 现持有挂起层兜底 Timer，dispose 取消防泄漏。
     _popup.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 根 Overlay 的浮层不跟宿主路由一起隐藏：普通不透明路由完成转场后，以及
+    // 保活 tab 隐藏时，宿主的 TickerMode 会关闭。跟随这一可见性信号让浮层让位，
+    // 保留查词会话供返回时恢复；非不透明菜单不关闭宿主的 TickerMode。
+    final bool nextInert = !TickerMode.of(context);
+    if (nextInert != _overlayInert) {
+      _overlayInert = nextInert;
+      _schedulePopupOverlayRebuild();
+    }
+  }
+
+  void _schedulePopupOverlayRebuild() {
+    if (_popupOverlayRebuildScheduled) return;
+    _popupOverlayRebuildScheduled = true;
+    // 依赖变化发生在宿主 build 期间，根 Overlay 是祖先，不能当帧反向标脏。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _popupOverlayRebuildScheduled = false;
+      if (!mounted) return;
+      final OverlayEntry? entry = _popupOverlayEntry;
+      if (entry != null && entry.mounted) entry.markNeedsBuild();
+    });
   }
 
   /// TODO-617：切 tab 销毁本页的根 Overlay 兜底（BUG-121 同范式）。本 State deactivate
