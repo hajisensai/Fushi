@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
+import 'package:flutter/semantics.dart'
+    show SemanticsAction, SemanticsData, SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
@@ -57,6 +59,23 @@ void main() {
         tester.view.devicePixelRatio = 1;
         addTearDown(tester.view.reset);
         const Key actionKey = ValueKey<String>('labels-test-lookup');
+        SemanticsNode accessibleAction() {
+          // Tooltip exposes the accessible description through `tooltip`, not
+          // `label`. Start at the real icon so getSemantics resolves its merged
+          // actionable node, rather than an ancestor Material/container node.
+          final Finder icon = find.descendant(
+            of: find.byKey(actionKey),
+            matching: find.byIcon(Icons.search),
+          );
+          expect(icon, findsOneWidget);
+          final SemanticsNode node = tester.getSemantics(icon);
+          final SemanticsData data = node.getSemanticsData();
+          expect(data.tooltip, 'Lookup example');
+          expect(data.flagsCollection.isButton, isTrue);
+          expect(data.hasAction(SemanticsAction.tap), isTrue);
+          return node;
+        }
+
         try {
           await tester.pumpWidget(
             MaterialApp(
@@ -106,6 +125,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(find.text('Lookup example'), findsOneWidget);
+          accessibleAction();
           final Offset oldLabelCenter = tester.getCenter(
             find.text('Lookup example'),
           );
@@ -117,7 +137,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.text('Lookup example'), findsNothing);
           expect(find.byTooltip('Lookup example'), findsOneWidget);
-          expect(find.bySemanticsLabel('Lookup example'), findsOneWidget);
+          final SemanticsNode hiddenLabelAction = accessibleAction();
           expect(tester.getCenter(find.byKey(actionKey)), originalIconCenter);
           await tester.tapAt(oldLabelCenter);
           await tester.pump();
@@ -127,6 +147,16 @@ void main() {
             reason: 'Hidden labels must not leave invisible input surfaces',
           );
           expect(invoked, 0);
+          tester.binding.pipelineOwner.semanticsOwner!.performAction(
+            hiddenLabelAction.id,
+            SemanticsAction.tap,
+          );
+          await tester.pumpAndSettle();
+          expect(
+            invoked,
+            1,
+            reason: 'The named icon remains an accessible action',
+          );
 
           showLabels.value = true;
           await tester.pumpAndSettle();
@@ -135,7 +165,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.byKey(actionKey));
           await tester.pumpAndSettle();
-          expect(invoked, 1);
+          expect(invoked, 2);
         } finally {
           await tester.pumpWidget(const SizedBox.shrink());
           semantics.dispose();
