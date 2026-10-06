@@ -176,6 +176,13 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<fushi::HdrVideoHostWindow> hdr_video_host_;
   void RegisterHdrVideoHostChannel();
 
+  // HDR inside Flutter's own swap chain: the patched engine's
+  // FlutterDesktopViewSetHdrOutput, or null on a stock engine.
+  using ViewSetHdrOutputFn = bool (*)(FlutterDesktopViewRef, bool, float);
+  static ViewSetHdrOutputFn ResolveViewSetHdrOutput();
+  // Returns whether the view's HDR output is on afterwards.
+  bool SetCompositorHdrOutput(bool enabled, float sdr_white_nits);
+
   // Magpie 缩放状态监听（仅 Windows）：Magpie 通过
   // RegisterWindowMessage(L"MagpieScalingChanged") 向所有顶层窗口广播缩放状态。
   // runner 收到后经此 channel 把 onScalingChanged 单向推给 Dart（见

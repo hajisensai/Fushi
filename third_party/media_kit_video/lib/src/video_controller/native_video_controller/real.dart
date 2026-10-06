@@ -235,6 +235,34 @@ class NativeVideoController extends PlatformVideoController {
     }
   }
 
+  /// HIBIKI FORK (HDR in the Flutter compositor): see
+  /// [PlatformVideoController.setHdrOutput].
+  @override
+  Future<bool> setHdrOutput({
+    required bool enabled,
+    required double referenceWhiteNits,
+    required double targetPeakNits,
+  }) async {
+    if (!Platform.isWindows) return false;
+    final handle = await player.handle;
+    try {
+      final dynamic active = await _channel.invokeMethod(
+        'VideoOutputManager.SetHdrOutput',
+        {
+          'handle': handle.toString(),
+          'enabled': enabled,
+          'referenceWhiteNits': referenceWhiteNits,
+          'targetPeakNits': targetPeakNits,
+        },
+      );
+      return active == true;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
   /// Disposes the instance. Releases allocated resources back to the system.
   Future<void> _dispose() async {
     super.dispose();

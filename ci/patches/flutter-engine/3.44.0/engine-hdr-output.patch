@@ -1,0 +1,1280 @@
+diff --git a/engine/src/flutter/shell/platform/common/public/flutter_texture_registrar.h b/engine/src/flutter/shell/platform/common/public/flutter_texture_registrar.h
+index 9979e9a2..3bec41f2 100644
+--- a/engine/src/flutter/shell/platform/common/public/flutter_texture_registrar.h
++++ b/engine/src/flutter/shell/platform/common/public/flutter_texture_registrar.h
+@@ -49,7 +49,13 @@ typedef enum {
+   kFlutterDesktopPixelFormatRGBA8888,
+   // Represents a 32-bit BGRA color format with 8 bits each for blue, green, red
+   // and alpha.
+-  kFlutterDesktopPixelFormatBGRA8888
++  kFlutterDesktopPixelFormatBGRA8888,
++  // Fushi patch (HDR output): a 64-bit RGBA format with a 16-bit float per
++  // channel (DXGI_FORMAT_R16G16B16A16_FLOAT). Values are extended-range sRGB
++  // encoded: 1.0 is SDR white, values above 1.0 are HDR highlights. Only
++  // supported for GPU surface textures on engines that export
++  // FlutterDesktopViewSetHdrOutput.
++  kFlutterDesktopPixelFormatRGBA16F
+ } FlutterDesktopPixelFormat;
+ 
+ // An image buffer object.
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder.cc b/engine/src/flutter/shell/platform/embedder/embedder.cc
+index a9a4b213..12c2b124 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder.cc
+@@ -286,12 +286,21 @@ static const flutter::DlIRect FlutterRectToDlIRect(FlutterRect flutter_rect) {
+ #define GL_BGRA8_EXT 0x93A1
+ #endif
+ 
++// Fushi patch (HDR output): half-float backing stores / external textures.
++#ifndef GL_RGBA16F
++#define GL_RGBA16F 0x881A
++#endif
++
+ static std::optional<SkColorType> FlutterFormatToSkColorType(uint32_t format) {
+   switch (format) {
+     case GL_BGRA8_EXT:
+       return kBGRA_8888_SkColorType;
+     case GL_RGBA8:
+       return kRGBA_8888_SkColorType;
++    case GL_RGBA16F:
++      // Unclamped half float: extended-range (HDR) values above 1.0 survive
++      // rendering into the backing store.
++      return kRGBA_F16_SkColorType;
+     default:
+       FML_LOG(ERROR) << "Cannot convert format " << format
+                      << " to SkColorType.";
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
+index d6279fee..bdde33b0 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_external_texture_gl.cc
+@@ -102,11 +102,16 @@ sk_sp<DlImage> EmbedderExternalTextureGL::ResolveTextureSkia(
+   auto gr_backend_texture = GrBackendTextures::MakeGL(
+       width, height, skgpu::Mipmapped::kNo, gr_texture_info);
+   SkImages::TextureReleaseProc release_proc = texture->destruction_callback;
++  // Fushi patch (HDR output): half-float external textures (HDR video) keep
++  // their extended-range values instead of being read as 8-bit.
++  const SkColorType color_type = texture->format == 0x881A /* GL_RGBA16F */
++                                     ? kRGBA_F16_SkColorType
++                                     : kRGBA_8888_SkColorType;
+   auto image =
+       SkImages::BorrowTextureFrom(context,                   // context
+                                   gr_backend_texture,        // texture handle
+                                   kTopLeft_GrSurfaceOrigin,  // origin
+-                                  kRGBA_8888_SkColorType,    // color type
++                                  color_type,                // color type
+                                   kPremul_SkAlphaType,       // alpha type
+                                   nullptr,                   // colorspace
+                                   release_proc,       // texture release proc
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_external_view.h b/engine/src/flutter/shell/platform/embedder/embedder_external_view.h
+index 809a60a1..4da0c734 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_external_view.h
++++ b/engine/src/flutter/shell/platform/embedder/embedder_external_view.h
+@@ -47,22 +47,32 @@ class EmbedderExternalView {
+ 
+   struct RenderTargetDescriptor {
+     DlISize surface_size;
++    // Fushi patch (HDR output): see GetEmbedderRenderTargetFormatGeneration.
++    uint64_t format_generation;
+ 
+     explicit RenderTargetDescriptor(const DlISize& p_surface_size)
+-        : surface_size(p_surface_size) {}
++        : surface_size(p_surface_size),
++          format_generation(GetEmbedderRenderTargetFormatGeneration()) {}
++
++    RenderTargetDescriptor(const DlISize& p_surface_size,
++                           uint64_t p_format_generation)
++        : surface_size(p_surface_size),
++          format_generation(p_format_generation) {}
+ 
+     struct Hash {
+       constexpr std::size_t operator()(
+           const RenderTargetDescriptor& desc) const {
+         return fml::HashCombine(desc.surface_size.width,
+-                                desc.surface_size.height);
++                                desc.surface_size.height,
++                                desc.format_generation);
+       }
+     };
+ 
+     struct Equal {
+       bool operator()(const RenderTargetDescriptor& lhs,
+                       const RenderTargetDescriptor& rhs) const {
+-        return lhs.surface_size == rhs.surface_size;
++        return lhs.surface_size == rhs.surface_size &&
++               lhs.format_generation == rhs.format_generation;
+       }
+     };
+   };
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_render_target.cc b/engine/src/flutter/shell/platform/embedder/embedder_render_target.cc
+index 69259e3a..f256cf20 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_render_target.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_render_target.cc
+@@ -4,14 +4,29 @@
+ 
+ #include "flutter/shell/platform/embedder/embedder_render_target.h"
+ 
++#include <atomic>
+ #include <optional>
+ #include <utility>
+ 
+ namespace flutter {
+ 
++namespace {
++std::atomic<uint64_t> g_render_target_format_generation{0};
++}  // namespace
++
++uint64_t GetEmbedderRenderTargetFormatGeneration() {
++  return g_render_target_format_generation.load(std::memory_order_acquire);
++}
++
++void BumpEmbedderRenderTargetFormatGeneration() {
++  g_render_target_format_generation.fetch_add(1, std::memory_order_acq_rel);
++}
++
+ EmbedderRenderTarget::EmbedderRenderTarget(FlutterBackingStore backing_store,
+                                            fml::closure on_release)
+-    : backing_store_(backing_store), on_release_(std::move(on_release)) {
++    : backing_store_(backing_store),
++      on_release_(std::move(on_release)),
++      format_generation_(GetEmbedderRenderTargetFormatGeneration()) {
+   // TODO(38468): The optimization to elide backing store updates between frames
+   // has not been implemented yet.
+   backing_store_.did_update = true;
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_render_target.h b/engine/src/flutter/shell/platform/embedder/embedder_render_target.h
+index 80d08c66..016666f8 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_render_target.h
++++ b/engine/src/flutter/shell/platform/embedder/embedder_render_target.h
+@@ -10,6 +10,7 @@
+ #include "flutter/fml/closure.h"
+ #include "flutter/fml/macros.h"
+ #include "flutter/shell/platform/embedder/embedder.h"
++#include "flutter/shell/platform/embedder/embedder_render_target_format_generation.h"
+ #include "third_party/skia/include/core/SkSurface.h"
+ 
+ namespace impeller {
+@@ -109,6 +110,12 @@ class EmbedderRenderTarget {
+   /// @return     The result of the operation.
+   virtual SetCurrentResult MaybeClearCurrent() const { return {true, false}; }
+ 
++  //----------------------------------------------------------------------------
++  /// @brief      The backing store format generation this render target was
++  ///             created under. @see GetEmbedderRenderTargetFormatGeneration
++  ///
++  uint64_t GetFormatGeneration() const { return format_generation_; }
++
+  protected:
+   //----------------------------------------------------------------------------
+   /// @brief      Creates a render target whose backing store is managed by the
+@@ -130,6 +137,8 @@ class EmbedderRenderTarget {
+ 
+   fml::closure on_release_;
+ 
++  const uint64_t format_generation_;
++
+   FML_DISALLOW_COPY_AND_ASSIGN(EmbedderRenderTarget);
+ };
+ 
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_render_target_cache.cc b/engine/src/flutter/shell/platform/embedder/embedder_render_target_cache.cc
+index ac0da639..eb52949e 100644
+--- a/engine/src/flutter/shell/platform/embedder/embedder_render_target_cache.cc
++++ b/engine/src/flutter/shell/platform/embedder/embedder_render_target_cache.cc
+@@ -37,8 +37,11 @@ void EmbedderRenderTargetCache::CacheRenderTarget(
+   if (target == nullptr) {
+     return;
+   }
++  // Fushi patch (HDR output): keyed by the generation the target was created
++  // under, so a target allocated before a backing store format change is
++  // never handed out again (lookups use the current generation).
+   auto desc = EmbedderExternalView::RenderTargetDescriptor{
+-      target->GetRenderTargetSize()};
++      target->GetRenderTargetSize(), target->GetFormatGeneration()};
+   cached_render_targets_.insert(std::make_pair(desc, std::move(target)));
+ }
+ 
+diff --git a/engine/src/flutter/shell/platform/embedder/embedder_render_target_format_generation.h b/engine/src/flutter/shell/platform/embedder/embedder_render_target_format_generation.h
+new file mode 100644
+index 00000000..5ab8fc20
+--- /dev/null
++++ b/engine/src/flutter/shell/platform/embedder/embedder_render_target_format_generation.h
+@@ -0,0 +1,33 @@
++// Copyright 2013 The Flutter Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_RENDER_TARGET_FORMAT_GENERATION_H_
++#define FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_RENDER_TARGET_FORMAT_GENERATION_H_
++
++#include <cstdint>
++
++namespace flutter {
++
++//------------------------------------------------------------------------------
++/// @brief      Fushi patch (HDR output): process-wide generation of the format
++///             embedders allocate backing stores with.
++///
++///             Render targets are cached by surface size alone and reused for
++///             as long as the size stays the same, so an embedder that starts
++///             allocating a different format (e.g. RGBA16F for HDR output)
++///             would otherwise never see its new format used. Each render
++///             target records the generation it was created under; the cache
++///             never hands out a target from an older generation. An embedder
++///             bumps the generation whenever its backing store format changes;
++///             stale targets are then collected on the next frame.
++///
++///             Free of Skia includes so platform embedders can use it.
++///             Defined in embedder_render_target.cc.
++///
++uint64_t GetEmbedderRenderTargetFormatGeneration();
++void BumpEmbedderRenderTargetFormatGeneration();
++
++}  // namespace flutter
++
++#endif  // FLUTTER_SHELL_PLATFORM_EMBEDDER_EMBEDDER_RENDER_TARGET_FORMAT_GENERATION_H_
+diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
+index 2e2de8a9..7c11c107 100644
+--- a/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
++++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.cc
+@@ -5,6 +5,7 @@
+ #include "flutter/shell/platform/windows/compositor_opengl.h"
+ 
+ #include "GLES3/gl3.h"
++#include "flutter/shell/platform/embedder/embedder_render_target_format_generation.h"
+ #include "flutter/shell/platform/windows/flutter_windows_engine.h"
+ #include "flutter/shell/platform/windows/flutter_windows_view.h"
+ 
+@@ -14,10 +15,164 @@ namespace {
+ 
+ constexpr uint32_t kWindowFrameBufferId = 0;
+ 
++// Fushi patch (HDR output).
++constexpr uint32_t kHalfFloatOes = 0x8D61;  // GL_HALF_FLOAT_OES (ES 2.0)
++constexpr float kScRgbReferenceNits = 80.0f;
++
+ // The metadata for an OpenGL framebuffer backing store.
+ struct FramebufferBackingStore {
+   uint32_t framebuffer_id;
+   uint32_t texture_id;
++  // Fushi patch (HDR output): RGBA16F (extended-range sRGB) contents.
++  bool half_float = false;
++};
++
++// Fushi patch (HDR output): a full-surface quad. The backing store and the
++// window surface share orientation (the stock path blits 1:1), so texture
++// coordinates map straight from clip space.
++constexpr char kOutputVertexShader[] = R"(
++attribute vec2 a_position;
++varying vec2 v_uv;
++void main() {
++  v_uv = a_position * 0.5 + 0.5;
++  gl_Position = vec4(a_position, 0.0, 1.0);
++}
++)";
++
++// Backing stores hold premultiplied, extended-range sRGB (1.0 = SDR white,
++// HDR video highlights above 1.0). scRGB is linear with 1.0 = 80 nits: un-
++// premultiply, decode with the sign-preserving sRGB EOTF (negative values
++// carry wide-gamut colour), scale SDR white to the user's SDR brightness,
++// premultiply again.
++constexpr char kOutputFragmentShader[] = R"(
++precision highp float;
++varying vec2 v_uv;
++uniform sampler2D u_texture;
++uniform float u_scale;
++uniform float u_decode;
++vec3 srgb_to_linear(vec3 c) {
++  vec3 a = abs(c);
++  vec3 lo = a / 12.92;
++  vec3 hi = pow((a + 0.055) / 1.055, vec3(2.4));
++  return sign(c) * mix(lo, hi, step(vec3(0.04045), a));
++}
++void main() {
++  vec4 p = texture2D(u_texture, v_uv);
++  if (u_decode < 0.5) {
++    gl_FragColor = p;
++    return;
++  }
++  vec3 c = p.a > 0.0 ? p.rgb / p.a : vec3(0.0);
++  gl_FragColor = vec4(srgb_to_linear(c) * u_scale * p.a, p.a);
++}
++)";
++
++// Fushi patch (HDR output). The window surface is presented on the same GL
++// context Skia renders with, and Skia caches the GL bindings it set (programs,
++// textures per unit, the array buffer, vertex attribute pointers). The output
++// pass must leave every piece of state it touches exactly as it found it:
++// leaking GL_ARRAY_BUFFER = 0 makes Skia's next draw read its VBO offsets as
++// client pointers and crash inside ANGLE's vertex copy.
++class ScopedOutputPassState {
++ public:
++  ScopedOutputPassState(const impeller::ProcTableGLES& gl,
++                        const impeller::ProcTableGLES::Resolver& resolver,
++                        bool es3)
++      : gl_(gl), es3_(es3) {
++    get_attrib_iv_ = reinterpret_cast<decltype(glGetVertexAttribiv)*>(
++        resolver("glGetVertexAttribiv"));
++    get_attrib_pointer_ =
++        reinterpret_cast<decltype(glGetVertexAttribPointerv)*>(
++            resolver("glGetVertexAttribPointerv"));
++    gl_.GetIntegerv(GL_FRAMEBUFFER_BINDING, &draw_framebuffer_);
++    read_framebuffer_ = draw_framebuffer_;
++    if (es3_) {
++      gl_.GetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_framebuffer_);
++    }
++    gl_.GetIntegerv(GL_VIEWPORT, viewport_);
++    for (size_t i = 0; i < kCapabilityCount; i++) {
++      gl_.GetBooleanv(kCapabilities[i], &enabled_[i]);
++    }
++    gl_.GetIntegerv(GL_CURRENT_PROGRAM, &program_);
++    gl_.GetIntegerv(GL_ACTIVE_TEXTURE, &active_texture_);
++    gl_.ActiveTexture(GL_TEXTURE0);
++    gl_.GetIntegerv(GL_TEXTURE_BINDING_2D, &texture0_);
++    gl_.GetIntegerv(GL_ARRAY_BUFFER_BINDING, &array_buffer_);
++    if (get_attrib_iv_ != nullptr && get_attrib_pointer_ != nullptr) {
++      get_attrib_iv_(0, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &attrib_enabled_);
++      get_attrib_iv_(0, GL_VERTEX_ATTRIB_ARRAY_SIZE, &attrib_size_);
++      get_attrib_iv_(0, GL_VERTEX_ATTRIB_ARRAY_TYPE, &attrib_type_);
++      get_attrib_iv_(0, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, &attrib_normalized_);
++      get_attrib_iv_(0, GL_VERTEX_ATTRIB_ARRAY_STRIDE, &attrib_stride_);
++      get_attrib_iv_(0, GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING, &attrib_buffer_);
++      get_attrib_pointer_(0, GL_VERTEX_ATTRIB_ARRAY_POINTER, &attrib_pointer_);
++      attrib_saved_ = true;
++    }
++  }
++
++  ~ScopedOutputPassState() {
++    if (attrib_saved_) {
++      gl_.BindBuffer(GL_ARRAY_BUFFER, attrib_buffer_);
++      gl_.VertexAttribPointer(0, attrib_size_, attrib_type_,
++                              attrib_normalized_ ? GL_TRUE : GL_FALSE,
++                              attrib_stride_, attrib_pointer_);
++      if (attrib_enabled_) {
++        gl_.EnableVertexAttribArray(0);
++      } else {
++        gl_.DisableVertexAttribArray(0);
++      }
++    }
++    gl_.BindBuffer(GL_ARRAY_BUFFER, array_buffer_);
++    gl_.ActiveTexture(GL_TEXTURE0);
++    gl_.BindTexture(GL_TEXTURE_2D, texture0_);
++    gl_.ActiveTexture(active_texture_);
++    gl_.UseProgram(program_);
++    for (size_t i = 0; i < kCapabilityCount; i++) {
++      if (enabled_[i]) {
++        gl_.Enable(kCapabilities[i]);
++      } else {
++        gl_.Disable(kCapabilities[i]);
++      }
++    }
++    gl_.Viewport(viewport_[0], viewport_[1], viewport_[2], viewport_[3]);
++    if (es3_) {
++      gl_.BindFramebuffer(GL_DRAW_FRAMEBUFFER, draw_framebuffer_);
++      gl_.BindFramebuffer(GL_READ_FRAMEBUFFER, read_framebuffer_);
++    } else {
++      gl_.BindFramebuffer(GL_FRAMEBUFFER, draw_framebuffer_);
++    }
++  }
++
++  // Whether the vertex attribute 0 state could be saved; without it the pass
++  // must not run (it would clobber the attribute irrecoverably).
++  bool attrib_saved() const { return attrib_saved_; }
++
++ private:
++  static constexpr GLenum kCapabilities[] = {
++      GL_SCISSOR_TEST, GL_BLEND, GL_DEPTH_TEST, GL_STENCIL_TEST, GL_CULL_FACE};
++  static constexpr size_t kCapabilityCount =
++      sizeof(kCapabilities) / sizeof(kCapabilities[0]);
++
++  const impeller::ProcTableGLES& gl_;
++  const bool es3_;
++  decltype(glGetVertexAttribiv)* get_attrib_iv_ = nullptr;
++  decltype(glGetVertexAttribPointerv)* get_attrib_pointer_ = nullptr;
++  GLint draw_framebuffer_ = 0;
++  GLint read_framebuffer_ = 0;
++  GLint viewport_[4] = {};
++  GLboolean enabled_[kCapabilityCount] = {};
++  GLint program_ = 0;
++  GLint active_texture_ = GL_TEXTURE0;
++  GLint texture0_ = 0;
++  GLint array_buffer_ = 0;
++  bool attrib_saved_ = false;
++  GLint attrib_enabled_ = 0;
++  GLint attrib_size_ = 4;
++  GLint attrib_type_ = GL_FLOAT;
++  GLint attrib_normalized_ = 0;
++  GLint attrib_stride_ = 0;
++  GLint attrib_buffer_ = 0;
++  void* attrib_pointer_ = nullptr;
+ };
+ 
+ typedef const impeller::GLProc<decltype(glBlitFramebuffer)> BlitFramebufferProc;
+@@ -50,6 +205,12 @@ bool CompositorOpenGL::CreateBackingStore(
+ 
+   auto store = std::make_unique<FramebufferBackingStore>();
+ 
++  // Fushi patch (HDR output): half-float backing stores for views with HDR
++  // output requested (Skia path only).
++  FlutterWindowsView* view = engine_->view(config.view_id);
++  store->half_float =
++      !enable_impeller_ && view != nullptr && view->hdr_output_requested();
++
+   gl_->GenTextures(1, &store->texture_id);
+   gl_->GenFramebuffers(1, &store->framebuffer_id);
+ 
+@@ -60,9 +221,32 @@ bool CompositorOpenGL::CreateBackingStore(
+   gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   gl_->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-  gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.general_format, config.size.width,
+-                  config.size.height, 0, format_.general_format,
+-                  GL_UNSIGNED_BYTE, nullptr);
++  if (store->half_float && !half_float_renderable_) {
++    store->half_float = false;
++  }
++  if (logged_half_float_ != static_cast<int>(store->half_float)) {
++    logged_half_float_ = static_cast<int>(store->half_float);
++    FML_LOG(IMPORTANT) << "HDR output: backing stores "
++                       << (store->half_float ? "RGBA16F" : "8-bit")
++                       << " (renderable=" << half_float_renderable_
++                       << " sized=" << half_float_sized_format_ << ")";
++  }
++  if (store->half_float) {
++    // ES 3.0 takes the sized internal format; an ES 2.0 context (what the
++    // Windows embedder requests) needs the unsized form with
++    // OES_texture_half_float.
++    if (half_float_sized_format_) {
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, config.size.width,
++                      config.size.height, 0, GL_RGBA, GL_HALF_FLOAT, nullptr);
++    } else {
++      gl_->TexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, config.size.width,
++                      config.size.height, 0, GL_RGBA, kHalfFloatOes, nullptr);
++    }
++  } else {
++    gl_->TexImage2D(GL_TEXTURE_2D, 0, format_.general_format,
++                    config.size.width, config.size.height, 0,
++                    format_.general_format, GL_UNSIGNED_BYTE, nullptr);
++  }
+   gl_->BindTexture(GL_TEXTURE_2D, 0);
+ 
+   if (enable_impeller_) {
+@@ -96,7 +280,10 @@ bool CompositorOpenGL::CreateBackingStore(
+   result->type = kFlutterBackingStoreTypeOpenGL;
+   result->open_gl.type = kFlutterOpenGLTargetTypeFramebuffer;
+   result->open_gl.framebuffer.name = store->framebuffer_id;
+-  result->open_gl.framebuffer.target = format_.sized_format;
++  // Fushi patch (HDR output): GL_RGBA16F makes the embedder wrap the store as
++  // an unclamped kRGBA_F16 Skia surface.
++  result->open_gl.framebuffer.target =
++      store->half_float ? GL_RGBA16F : format_.sized_format;
+   result->open_gl.framebuffer.user_data = store.release();
+   result->open_gl.framebuffer.destruction_callback = [](void* user_data) {
+     // Backing store destroyed in `CompositorOpenGL::CollectBackingStore`, set
+@@ -160,11 +347,46 @@ bool CompositorOpenGL::Present(FlutterWindowsView* view,
+   FML_DCHECK(view->surface() != nullptr);
+   FML_DCHECK(view->surface()->IsValid());
+ 
++  // Fushi patch (HDR output): follow a requested output format change.
++  if (!view->EnsureSurfaceFormat()) {
++    return false;
++  }
++
+   egl::WindowSurface* surface = view->surface();
+   if (!surface->MakeCurrent()) {
+     return false;
+   }
+ 
++  // Fushi patch (HDR output). A cached backing store from before an output
++  // format change can still reach us when the platform thread switched while
++  // this frame was being prepared: present it correctly anyway and make the
++  // next frame reallocate (the generation bump invalidates the cache).
++  // Compared against what CreateBackingStore would allocate *now*, so an
++  // unsupported half-float request cannot make every frame bump again.
++  const auto* store = static_cast<const FramebufferBackingStore*>(
++      layers[0]->backing_store->open_gl.framebuffer.user_data);
++  const bool want_half_float = !enable_impeller_ && half_float_renderable_ &&
++                               view->hdr_output_requested();
++  if (store->half_float != want_half_float) {
++    BumpEmbedderRenderTargetFormatGeneration();
++    engine_->ScheduleFrame();
++  }
++  if (store->half_float && hdr_probe_countdown_ > 0 &&
++      --hdr_probe_countdown_ == 0) {
++    ProbeBackingStore(store->framebuffer_id, width, height);
++  }
++  if (surface->is_hdr() || store->half_float) {
++    if (!DrawToSurface(store->texture_id, width, height,
++                       /*decode=*/surface->is_hdr(), view->sdr_white_nits())) {
++      return false;
++    }
++    if (!surface->SwapBuffers()) {
++      return false;
++    }
++    view->OnFramePresented();
++    return true;
++  }
++
+   auto source_id = layers[0]->backing_store->open_gl.framebuffer.name;
+ 
+   // Disable the scissor test as it can affect blit operations.
+@@ -227,10 +449,134 @@ bool CompositorOpenGL::Initialize() {
+     return false;
+   }
+ 
++  // Fushi patch (HDR output): can backing stores be half float?
++  const auto* description = gl_->GetDescription();
++  half_float_sized_format_ =
++      description->GetGlVersion().IsAtLeast(impeller::Version(3));
++  half_float_renderable_ =
++      half_float_sized_format_
++          ? (description->HasExtension("GL_EXT_color_buffer_half_float") ||
++             description->HasExtension("GL_EXT_color_buffer_float"))
++          : (description->HasExtension("GL_OES_texture_half_float") &&
++             description->HasExtension("GL_EXT_color_buffer_half_float"));
++
+   is_initialized_ = true;
+   return true;
+ }
+ 
++void CompositorOpenGL::ProbeBackingStore(uint32_t framebuffer_id,
++                                         size_t width,
++                                         size_t height) {
++  GLint previous = 0;
++  gl_->GetIntegerv(GL_FRAMEBUFFER_BINDING, &previous);
++  gl_->BindFramebuffer(GL_FRAMEBUFFER, framebuffer_id);
++  const GLint y = static_cast<GLint>(height / 2);
++  for (size_t i = 1; i < 4; i++) {
++    const GLint x = static_cast<GLint>(width * i / 4);
++    GLfloat p[4] = {};
++    gl_->ReadPixels(x, y, 1, 1, GL_RGBA, GL_FLOAT, p);
++    FML_LOG(IMPORTANT) << "HDR probe backing store (" << x << "," << y
++                       << ") = " << p[0] << " " << p[1] << " " << p[2] << " "
++                       << p[3];
++  }
++  gl_->BindFramebuffer(GL_FRAMEBUFFER, previous);
++}
++
++bool CompositorOpenGL::InitializeOutputProgram() {
++  if (output_program_ != 0) {
++    return true;
++  }
++  auto compile = [this](GLenum type, const char* source) -> GLuint {
++    GLuint shader = gl_->CreateShader(type);
++    gl_->ShaderSource(shader, 1, &source, nullptr);
++    gl_->CompileShader(shader);
++    GLint ok = GL_FALSE;
++    gl_->GetShaderiv(shader, GL_COMPILE_STATUS, &ok);
++    if (ok != GL_TRUE) {
++      FML_LOG(ERROR) << "HDR output shader failed to compile.";
++      gl_->DeleteShader(shader);
++      return 0;
++    }
++    return shader;
++  };
++  GLuint vertex = compile(GL_VERTEX_SHADER, kOutputVertexShader);
++  GLuint fragment = compile(GL_FRAGMENT_SHADER, kOutputFragmentShader);
++  if (vertex == 0 || fragment == 0) {
++    if (vertex != 0) {
++      gl_->DeleteShader(vertex);
++    }
++    if (fragment != 0) {
++      gl_->DeleteShader(fragment);
++    }
++    return false;
++  }
++  GLuint program = gl_->CreateProgram();
++  gl_->AttachShader(program, vertex);
++  gl_->AttachShader(program, fragment);
++  gl_->BindAttribLocation(program, 0, "a_position");
++  gl_->LinkProgram(program);
++  gl_->DeleteShader(vertex);
++  gl_->DeleteShader(fragment);
++  GLint linked = GL_FALSE;
++  gl_->GetProgramiv(program, GL_LINK_STATUS, &linked);
++  if (linked != GL_TRUE) {
++    FML_LOG(ERROR) << "HDR output program failed to link.";
++    gl_->DeleteProgram(program);
++    return false;
++  }
++  static const GLfloat kQuad[] = {-1.0f, -1.0f, 1.0f, -1.0f,
++                                  -1.0f, 1.0f,  1.0f, 1.0f};
++  GLuint buffer = 0;
++  gl_->GenBuffers(1, &buffer);
++  gl_->BindBuffer(GL_ARRAY_BUFFER, buffer);
++  gl_->BufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
++  output_vertex_buffer_ = buffer;
++  output_program_ = program;
++  output_texture_location_ = gl_->GetUniformLocation(program, "u_texture");
++  output_scale_location_ = gl_->GetUniformLocation(program, "u_scale");
++  output_decode_location_ = gl_->GetUniformLocation(program, "u_decode");
++  return true;
++}
++
++bool CompositorOpenGL::DrawToSurface(uint32_t texture_id,
++                                     int width,
++                                     int height,
++                                     bool decode,
++                                     float sdr_white_nits) {
++  const GLfloat scale = sdr_white_nits / kScRgbReferenceNits;
++  const GLfloat decode_flag = decode ? 1.0f : 0.0f;
++
++  // Skia does not re-validate its cached GL bindings between frames; restore
++  // everything this pass changes (see ScopedOutputPassState). Constructed
++  // before the lazy program/buffer setup, which binds the array buffer too.
++  ScopedOutputPassState saved(*gl_, resolver_, half_float_sized_format_);
++  if (!saved.attrib_saved()) {
++    FML_LOG(ERROR) << "HDR output: cannot query vertex attribute state.";
++    return false;
++  }
++  if (!InitializeOutputProgram()) {
++    return false;
++  }
++  gl_->BindFramebuffer(GL_FRAMEBUFFER, kWindowFrameBufferId);
++  gl_->Viewport(0, 0, width, height);
++  gl_->Disable(GL_SCISSOR_TEST);
++  gl_->Disable(GL_BLEND);
++  gl_->Disable(GL_DEPTH_TEST);
++  gl_->Disable(GL_STENCIL_TEST);
++  gl_->Disable(GL_CULL_FACE);
++  gl_->UseProgram(output_program_);
++  gl_->ActiveTexture(GL_TEXTURE0);
++  gl_->BindTexture(GL_TEXTURE_2D, texture_id);
++  gl_->Uniform1i(output_texture_location_, 0);
++  gl_->Uniform1fv(output_scale_location_, 1, &scale);
++  gl_->Uniform1fv(output_decode_location_, 1, &decode_flag);
++  gl_->BindBuffer(GL_ARRAY_BUFFER, output_vertex_buffer_);
++  gl_->EnableVertexAttribArray(0);
++  gl_->VertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
++  gl_->DrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++  return true;
++}
++
+ bool CompositorOpenGL::Clear(FlutterWindowsView* view) {
+   FML_DCHECK(is_initialized_);
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/compositor_opengl.h b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
+index 18451c46..ecf036dd 100644
+--- a/engine/src/flutter/shell/platform/windows/compositor_opengl.h
++++ b/engine/src/flutter/shell/platform/windows/compositor_opengl.h
+@@ -63,9 +63,45 @@ class CompositorOpenGL : public Compositor {
+   // Whether the Impeller rendering backend is enabled.
+   bool enable_impeller_ = false;
+ 
++  // Fushi patch (HDR output): program that copies a backing store to the
++  // window surface, optionally decoding extended-range sRGB into scRGB.
++  // Zero until first needed.
++  // Whether half-float backing stores are renderable in this context, and
++  // whether to allocate them with the sized (ES 3) internal format.
++  bool half_float_renderable_ = false;
++  bool half_float_sized_format_ = false;
++
++  uint32_t output_program_ = 0;
++  uint32_t output_vertex_buffer_ = 0;
++  // Last backing store format reported in the log (-1 = none yet).
++  int logged_half_float_ = -1;
++  // Diagnostics: FUSHI_HDR_PROBE logs backing store pixels once.
++  // Half-float frames left before the probe fires (-1 = disabled).
++  int hdr_probe_countdown_ =
++      ::GetEnvironmentVariableA("FUSHI_HDR_PROBE", nullptr, 0) > 0 ? 120 : -1;
++  void ProbeBackingStore(uint32_t framebuffer_id, size_t width, size_t height);
++  int32_t output_texture_location_ = -1;
++  int32_t output_scale_location_ = -1;
++  int32_t output_decode_location_ = -1;
++
+   // Initialize the compositor. This must run on the raster thread.
+   bool Initialize();
+ 
++  // Fushi patch (HDR output): lazily builds |output_program_|.
++  bool InitializeOutputProgram();
++
++  // Fushi patch (HDR output): draws |texture_id| over the whole bound window
++  // surface. With |decode|, the texture holds extended-range sRGB and is
++  // written as scRGB: linear, scaled so that 1.0 (SDR white) lands at
++  // |sdr_white_nits| (scRGB 1.0 = 80 nits). Without, it is copied as is (used
++  // when a half-float backing store meets an 8-bit surface, which
++  // glBlitFramebuffer cannot convert).
++  bool DrawToSurface(uint32_t texture_id,
++                     int width,
++                     int height,
++                     bool decode,
++                     float sdr_white_nits);
++
+   // Clear the view's surface and removes any previously presented layers.
+   bool Clear(FlutterWindowsView* view);
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.cc b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+index 64fb765b..486f4914 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.cc
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "flutter/shell/platform/windows/egl/manager.h"
+ 
++#include <string>
+ #include <vector>
+ 
+ #include "flutter/fml/logging.h"
+@@ -196,6 +197,7 @@ bool Manager::InitializeConfig() {
+       ::eglChooseConfig(display_, config_attributes, &config_, 1, &num_config);
+ 
+   if (result == EGL_TRUE && num_config > 0) {
++    InitializeHdrConfig();
+     return true;
+   }
+ 
+@@ -203,18 +205,78 @@ bool Manager::InitializeConfig() {
+   return false;
+ }
+ 
++// Fushi patch (HDR output): optional half-float config. Never fails the
++// manager; without it HDR output is simply unavailable.
++void Manager::InitializeHdrConfig() {
++  const char* extensions = ::eglQueryString(display_, EGL_EXTENSIONS);
++  const std::string ext = extensions != nullptr ? extensions : "";
++  // The scRGB colour space attribute is what makes DWM keep values above 1.0:
++  // a half-float swap chain left at its default (sRGB, G22) colour space is
++  // composed clamped to [0, 1]. (ANGLE's D3D11 backend only gains this
++  // extension through the companion ANGLE patch.)
++  if (ext.find("EGL_EXT_pixel_format_float") == std::string::npos ||
++      ext.find("EGL_KHR_no_config_context") == std::string::npos ||
++      ext.find("EGL_EXT_gl_colorspace_scrgb_linear") == std::string::npos) {
++    return;
++  }
++  const EGLint hdr_attributes[] = {
++      EGL_RED_SIZE,
++      16,
++      EGL_GREEN_SIZE,
++      16,
++      EGL_BLUE_SIZE,
++      16,
++      EGL_ALPHA_SIZE,
++      16,
++      EGL_COLOR_COMPONENT_TYPE_EXT,
++      EGL_COLOR_COMPONENT_TYPE_FLOAT_EXT,
++      EGL_SURFACE_TYPE,
++      EGL_WINDOW_BIT | EGL_PBUFFER_BIT,
++      EGL_NONE};
++  EGLConfig config = nullptr;
++  EGLint num_config = 0;
++  if (::eglChooseConfig(display_, hdr_attributes, &config, 1, &num_config) !=
++          EGL_TRUE ||
++      num_config < 1) {
++    return;
++  }
++  EGLint red_size = 0;
++  EGLint component_type = 0;
++  ::eglGetConfigAttrib(display_, config, EGL_RED_SIZE, &red_size);
++  ::eglGetConfigAttrib(display_, config, EGL_COLOR_COMPONENT_TYPE_EXT,
++                       &component_type);
++  if (red_size != 16 || component_type != EGL_COLOR_COMPONENT_TYPE_FLOAT_EXT) {
++    return;
++  }
++  hdr_config_ = config;
++}
++
+ bool Manager::InitializeContexts() {
+   const EGLint context_attributes[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+ 
+-  auto const render_context =
+-      ::eglCreateContext(display_, config_, EGL_NO_CONTEXT, context_attributes);
++  // Fushi patch (HDR output): a config-less context can be made current with
++  // both 8-bit and half-float surfaces. Only used when a half-float config
++  // exists; otherwise the stock config-bound contexts are created.
++  no_config_contexts_ = hdr_config_ != nullptr;
++  EGLConfig context_config = no_config_contexts_ ? EGL_NO_CONFIG_KHR : config_;
++
++  auto render_context = ::eglCreateContext(display_, context_config,
++                                           EGL_NO_CONTEXT, context_attributes);
++  if (render_context == EGL_NO_CONTEXT && no_config_contexts_) {
++    // Never let the optional HDR path cost the stock renderer: fall back to
++    // config-bound contexts and report HDR surfaces as unavailable.
++    no_config_contexts_ = false;
++    context_config = config_;
++    render_context = ::eglCreateContext(display_, context_config,
++                                        EGL_NO_CONTEXT, context_attributes);
++  }
+   if (render_context == EGL_NO_CONTEXT) {
+     LogEGLError("Failed to create EGL render context");
+     return false;
+   }
+ 
+-  auto const resource_context =
+-      ::eglCreateContext(display_, config_, render_context, context_attributes);
++  auto const resource_context = ::eglCreateContext(
++      display_, context_config, render_context, context_attributes);
+   if (resource_context == EGL_NO_CONTEXT) {
+     LogEGLError("Failed to create EGL resource context");
+     return false;
+@@ -283,9 +345,26 @@ bool Manager::IsValid() const {
+ std::unique_ptr<WindowSurface> Manager::CreateWindowSurface(HWND hwnd,
+                                                             size_t width,
+                                                             size_t height) {
++  return CreateWindowSurfaceWithConfig(hwnd, width, height, /*hdr=*/false);
++}
++
++std::unique_ptr<WindowSurface> Manager::CreateHdrWindowSurface(HWND hwnd,
++                                                               size_t width,
++                                                               size_t height) {
++  return CreateWindowSurfaceWithConfig(hwnd, width, height, /*hdr=*/true);
++}
++
++std::unique_ptr<WindowSurface> Manager::CreateWindowSurfaceWithConfig(
++    HWND hwnd,
++    size_t width,
++    size_t height,
++    bool hdr) {
+   if (!hwnd || !is_valid_) {
+     return nullptr;
+   }
++  if (hdr && !SupportsHdrSurfaces()) {
++    return nullptr;
++  }
+ 
+   // Disable ANGLE's automatic surface resizing and provide an explicit size.
+   // The surface will need to be destroyed and re-created if the HWND is
+@@ -298,16 +377,33 @@ std::unique_ptr<WindowSurface> Manager::CreateWindowSurface(HWND hwnd,
+                                        static_cast<EGLint>(height),
+                                        EGL_NONE};
+ 
++  // Fushi patch (HDR output): a half-float (R16G16B16A16_FLOAT) swap chain
++  // tagged scRGB (DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709: linear, BT.709
++  // primaries, 1.0 = 80 nits). Without the tag DWM treats it as sRGB and
++  // clamps everything above 1.0.
++  const EGLint hdr_surface_attributes[] = {EGL_FIXED_SIZE_ANGLE,
++                                           EGL_TRUE,
++                                           EGL_WIDTH,
++                                           static_cast<EGLint>(width),
++                                           EGL_HEIGHT,
++                                           static_cast<EGLint>(height),
++                                           EGL_GL_COLORSPACE_KHR,
++                                           EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT,
++                                           EGL_NONE};
++
+   auto const surface = ::eglCreateWindowSurface(
+-      display_, config_, static_cast<EGLNativeWindowType>(hwnd),
+-      surface_attributes);
++      display_, hdr ? hdr_config_ : config_,
++      static_cast<EGLNativeWindowType>(hwnd),
++      hdr ? hdr_surface_attributes : surface_attributes);
+   if (surface == EGL_NO_SURFACE) {
+     LogEGLError("Surface creation failed.");
+     return nullptr;
+   }
+ 
+-  return std::make_unique<WindowSurface>(display_, render_context_->GetHandle(),
+-                                         surface, width, height);
++  auto window_surface = std::make_unique<WindowSurface>(
++      display_, render_context_->GetHandle(), surface, width, height);
++  window_surface->set_hdr(hdr);
++  return window_surface;
+ }
+ 
+ bool Manager::HasContextCurrent() {
+@@ -316,9 +412,13 @@ bool Manager::HasContextCurrent() {
+ 
+ EGLSurface Manager::CreateSurfaceFromHandle(EGLenum handle_type,
+                                             EGLClientBuffer handle,
+-                                            const EGLint* attributes) const {
+-  return ::eglCreatePbufferFromClientBuffer(display_, handle_type, handle,
+-                                            config_, attributes);
++                                            const EGLint* attributes,
++                                            bool hdr) const {
++  if (hdr && !SupportsHdrSurfaces()) {
++    return EGL_NO_SURFACE;
++  }
++  return ::eglCreatePbufferFromClientBuffer(
++      display_, handle_type, handle, hdr ? hdr_config_ : config_, attributes);
+ }
+ 
+ bool Manager::GetDevice(ID3D11Device** device) {
+diff --git a/engine/src/flutter/shell/platform/windows/egl/manager.h b/engine/src/flutter/shell/platform/windows/egl/manager.h
+index 420b0060..91f972f3 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/manager.h
++++ b/engine/src/flutter/shell/platform/windows/egl/manager.h
+@@ -60,13 +60,30 @@ class Manager {
+                                                              size_t width,
+                                                              size_t height);
+ 
++  // Fushi patch (HDR output): like |CreateWindowSurface| but with a half-float
++  // (scRGB) swap chain. Returns nullptr unless |SupportsHdrSurfaces|.
++  virtual std::unique_ptr<WindowSurface> CreateHdrWindowSurface(HWND hwnd,
++                                                                size_t width,
++                                                                size_t height);
++
+   // Check if the current thread has a context bound.
+   bool HasContextCurrent();
+ 
+   // Creates a |EGLSurface| from the provided handle.
++  //
++  // Fushi patch (HDR output): |hdr| selects the half-float config, which a
++  // half-float client buffer (e.g. a DXGI R16G16B16A16_FLOAT texture) needs.
+   EGLSurface CreateSurfaceFromHandle(EGLenum handle_type,
+                                      EGLClientBuffer handle,
+-                                     const EGLint* attributes) const;
++                                     const EGLint* attributes,
++                                     bool hdr = false) const;
++
++  // Fushi patch (HDR output): whether half-float window / client-buffer
++  // surfaces are available. Requires EGL_EXT_pixel_format_float and
++  // EGL_KHR_no_config_context (the contexts must accept both configs).
++  bool SupportsHdrSurfaces() const {
++    return hdr_config_ != nullptr && no_config_contexts_;
++  }
+ 
+   // Gets the |EGLDisplay|.
+   EGLDisplay egl_display() const { return display_; };
+@@ -103,6 +120,15 @@ class Manager {
+   // Initialize the EGL configs.
+   bool InitializeConfig();
+ 
++  // Fushi patch (HDR output): picks |hdr_config_| when available.
++  void InitializeHdrConfig();
++
++  // Shared implementation of |CreateWindowSurface| / |CreateHdrWindowSurface|.
++  std::unique_ptr<WindowSurface> CreateWindowSurfaceWithConfig(HWND hwnd,
++                                                               size_t width,
++                                                               size_t height,
++                                                               bool hdr);
++
+   // Initialize the EGL render and resource contexts.
+   bool InitializeContexts();
+ 
+@@ -120,6 +146,14 @@ class Manager {
+   // EGL framebuffer configuration.
+   EGLConfig config_ = nullptr;
+ 
++  // Fushi patch (HDR output): half-float framebuffer configuration, or null.
++  EGLConfig hdr_config_ = nullptr;
++
++  // Fushi patch (HDR output): whether the contexts were created without a
++  // config (EGL_KHR_no_config_context), i.e. are compatible with both
++  // |config_| and |hdr_config_| surfaces.
++  bool no_config_contexts_ = false;
++
+   // The EGL context used to render Flutter views.
+   std::unique_ptr<Context> render_context_;
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/egl/window_surface.h b/engine/src/flutter/shell/platform/windows/egl/window_surface.h
+index 658e476e..e5c1c5ae 100644
+--- a/engine/src/flutter/shell/platform/windows/egl/window_surface.h
++++ b/engine/src/flutter/shell/platform/windows/egl/window_surface.h
+@@ -41,10 +41,15 @@ class WindowSurface : public Surface {
+   // Get whether the surface's buffer swap blocks until the v-blank.
+   virtual bool vsync_enabled() const;
+ 
++  // Fushi patch (HDR output): whether this is a half-float (scRGB) surface.
++  bool is_hdr() const { return is_hdr_; }
++  void set_hdr(bool hdr) { is_hdr_ = hdr; }
++
+  private:
+   size_t width_ = 0;
+   size_t height_ = 0;
+   bool vsync_enabled_ = true;
++  bool is_hdr_ = false;
+ 
+   FML_DISALLOW_COPY_AND_ASSIGN(WindowSurface);
+ };
+diff --git a/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc b/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
+index d09ed3fc..7228c4b6 100644
+--- a/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
++++ b/engine/src/flutter/shell/platform/windows/external_texture_d3d.cc
+@@ -42,7 +42,9 @@ bool ExternalTextureD3d::PopulateTexture(size_t width,
+   // Populate the texture object used by the engine.
+   opengl_texture->target = GL_TEXTURE_2D;
+   opengl_texture->name = gl_texture_;
+-  opengl_texture->format = GL_RGBA8_OES;
++  // Fushi patch (HDR output): half-float textures keep extended-range values.
++  opengl_texture->format = is_half_float_ ? 0x881A /* GL_RGBA16F */
++                                          : GL_RGBA8_OES;
+   opengl_texture->destruction_callback = nullptr;
+   opengl_texture->user_data = nullptr;
+   opengl_texture->width = SAFE_ACCESS(descriptor, visible_width, 0);
+@@ -81,8 +83,16 @@ bool ExternalTextureD3d::CreateOrUpdateTexture(
+   }
+ 
+   auto handle = SAFE_ACCESS(descriptor, handle, nullptr);
+-  if (handle != last_surface_handle_) {
++  const bool half_float = SAFE_ACCESS(descriptor, format,
++                                      kFlutterDesktopPixelFormatNone) ==
++                          kFlutterDesktopPixelFormatRGBA16F;
++  if (handle != last_surface_handle_ || half_float != is_half_float_) {
+     ReleaseImage();
++    if (half_float != is_half_float_) {
++      FML_LOG(IMPORTANT) << "HDR output: external texture "
++                         << (half_float ? "RGBA16F" : "8-bit");
++    }
++    is_half_float_ = half_float;
+ 
+     EGLint attributes[] = {
+         EGL_WIDTH,
+@@ -99,7 +109,7 @@ bool ExternalTextureD3d::CreateOrUpdateTexture(
+         (type_ == kFlutterDesktopGpuSurfaceTypeD3d11Texture2D)
+             ? EGL_D3D_TEXTURE_ANGLE
+             : EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE,
+-        handle, attributes);
++        handle, attributes, /*hdr=*/is_half_float_);
+ 
+     if (egl_surface_ == EGL_NO_SURFACE ||
+         eglBindTexImage(egl_manager_->egl_display(), egl_surface_,
+diff --git a/engine/src/flutter/shell/platform/windows/external_texture_d3d.h b/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
+index 628c2065..cb8943bb 100644
+--- a/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
++++ b/engine/src/flutter/shell/platform/windows/external_texture_d3d.h
+@@ -47,6 +47,9 @@ class ExternalTextureD3d : public ExternalTexture {
+   GLuint gl_texture_ = 0;
+   EGLSurface egl_surface_ = EGL_NO_SURFACE;
+   void* last_surface_handle_ = nullptr;
++  // Fushi patch (HDR output): whether the bound surface is
++  // kFlutterDesktopPixelFormatRGBA16F (half float, extended range).
++  bool is_half_float_ = false;
+ 
+   FML_DISALLOW_COPY_AND_ASSIGN(ExternalTextureD3d);
+ };
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows.cc b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+index 2e0a0c3c..82948226 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows.cc
+@@ -254,6 +254,15 @@ HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view) {
+   return ViewFromHandle(view)->GetWindowHandle();
+ }
+ 
++bool FlutterDesktopViewSetHdrOutput(FlutterDesktopViewRef view,
++                                    bool enabled,
++                                    float sdr_white_nits) {
++  if (view == nullptr) {
++    return false;
++  }
++  return ViewFromHandle(view)->SetHdrOutput(enabled, sdr_white_nits);
++}
++
+ IDXGIAdapter* FlutterDesktopViewGetGraphicsAdapter(FlutterDesktopViewRef view) {
+   auto engine = ViewFromHandle(view)->GetEngine();
+   IDXGIAdapter* adapter;
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
+index 720a65a7..3b9f9474 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_engine.h
+@@ -182,6 +182,10 @@ class FlutterWindowsEngine {
+   // rendering using software instead of OpenGL.
+   egl::Manager* egl_manager() const { return egl_manager_.get(); }
+ 
++  // Fushi patch (HDR output): HDR output is only implemented for the Skia
++  // OpenGL path.
++  bool impeller_enabled() const { return enable_impeller_; }
++
+   WindowProcDelegateManager* window_proc_delegate_manager() {
+     return window_proc_delegate_manager_.get();
+   }
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+index 5fa04fe1..3161605a 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.cc
+@@ -12,6 +12,7 @@
+ #include "flutter/fml/platform/win/wstring_conversion.h"
+ #include "flutter/fml/synchronization/waitable_event.h"
+ #include "flutter/shell/platform/common/accessibility_bridge.h"
++#include "flutter/shell/platform/embedder/embedder_render_target_format_generation.h"
+ #include "flutter/shell/platform/windows/keyboard_key_channel_handler.h"
+ #include "flutter/shell/platform/windows/text_input_plugin.h"
+ #include "flutter/third_party/accessibility/ax/platform/ax_platform_node_win.h"
+@@ -805,8 +806,7 @@ void FlutterWindowsView::CreateRenderSurface() {
+ 
+   if (engine_->egl_manager()) {
+     PhysicalWindowBounds bounds = binding_handler_->GetPhysicalWindowBounds();
+-    surface_ = engine_->egl_manager()->CreateWindowSurface(
+-        GetWindowHandle(), bounds.width, bounds.height);
++    surface_ = CreateWindowSurfaceForOutput(bounds.width, bounds.height);
+ 
+     UpdateVsync(*engine_, surface_.get(), NeedsVsync());
+ 
+@@ -834,8 +834,7 @@ bool FlutterWindowsView::ResizeRenderSurface(size_t width, size_t height) {
+   }
+ 
+   std::unique_ptr<egl::WindowSurface> resized_surface =
+-      engine_->egl_manager()->CreateWindowSurface(GetWindowHandle(), width,
+-                                                  height);
++      CreateWindowSurfaceForOutput(width, height);
+   if (!resized_surface) {
+     FML_LOG(ERROR) << "View resize failed to create surface";
+     return false;
+@@ -857,6 +856,87 @@ egl::WindowSurface* FlutterWindowsView::surface() const {
+   return surface_.get();
+ }
+ 
++std::unique_ptr<egl::WindowSurface>
++FlutterWindowsView::CreateWindowSurfaceForOutput(size_t width,
++                                                 size_t height) const {
++  egl::Manager* manager = engine_->egl_manager();
++  if (manager == nullptr) {
++    return nullptr;
++  }
++  if (hdr_output_requested() && manager->SupportsHdrSurfaces()) {
++    std::unique_ptr<egl::WindowSurface> hdr_surface =
++        manager->CreateHdrWindowSurface(GetWindowHandle(), width, height);
++    if (hdr_surface) {
++      return hdr_surface;
++    }
++    FML_LOG(ERROR) << "HDR window surface creation failed; using 8-bit.";
++  }
++  return manager->CreateWindowSurface(GetWindowHandle(), width, height);
++}
++
++bool FlutterWindowsView::SetHdrOutput(bool enabled, float sdr_white_nits) {
++  if (enabled) {
++    egl::Manager* manager = engine_->egl_manager();
++    if (manager == nullptr || !manager->SupportsHdrSurfaces() ||
++        engine_->impeller_enabled() || !(sdr_white_nits > 0.0f)) {
++      enabled = false;
++      sdr_white_nits = 80.0f;
++      if (!hdr_output_requested()) {
++        return false;
++      }
++      // Fall through: turn a previously enabled HDR output off.
++    }
++  }
++  sdr_white_nits_.store(enabled ? sdr_white_nits : 80.0f,
++                        std::memory_order_release);
++  const bool was_enabled =
++      hdr_output_requested_.exchange(enabled, std::memory_order_acq_rel);
++  if (was_enabled != enabled) {
++    // Backing stores are cached by size; make the next frame allocate them
++    // in the new format (see GetEmbedderRenderTargetFormatGeneration).
++    BumpEmbedderRenderTargetFormatGeneration();
++    FML_LOG(IMPORTANT) << "HDR output " << (enabled ? "on" : "off")
++                       << " (SDR white " << sdr_white_nits << " nits)";
++  }
++  engine_->ScheduleFrame();
++  return enabled;
++}
++
++bool FlutterWindowsView::EnsureSurfaceFormat() {
++  if (surface_ == nullptr || !surface_->IsValid()) {
++    return true;
++  }
++  egl::Manager* manager = engine_->egl_manager();
++  const bool want_hdr = hdr_output_requested() && manager != nullptr &&
++                        manager->SupportsHdrSurfaces();
++  if (surface_->is_hdr() == want_hdr) {
++    return true;
++  }
++
++  std::unique_lock<std::mutex> lock(resize_mutex_);
++  const size_t width = surface_->width();
++  const size_t height = surface_->height();
++  auto const existing_vsync = surface_->vsync_enabled();
++  if (!surface_->Destroy()) {
++    FML_LOG(ERROR) << "Output format switch failed to destroy surface";
++    return false;
++  }
++  std::unique_ptr<egl::WindowSurface> new_surface =
++      CreateWindowSurfaceForOutput(width, height);
++  if (!new_surface) {
++    FML_LOG(ERROR) << "Output format switch failed to create surface";
++    return false;
++  }
++  if (!new_surface->MakeCurrent() ||
++      !new_surface->SetVSyncEnabled(existing_vsync)) {
++    FML_LOG(ERROR) << "Output format switch failed to set vsync";
++  }
++  surface_ = std::move(new_surface);
++  FML_LOG(IMPORTANT) << "HDR output: window surface "
++                     << (surface_->is_hdr() ? "RGBA16F scRGB" : "8-bit");
++  return true;
++}
++
+ void FlutterWindowsView::OnHighContrastChanged() {
+   engine_->UpdateHighContrastMode();
+ }
+diff --git a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
+index 2f68436b..be32cf5c 100644
+--- a/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
++++ b/engine/src/flutter/shell/platform/windows/flutter_windows_view.h
+@@ -5,6 +5,7 @@
+ #ifndef FLUTTER_SHELL_PLATFORM_WINDOWS_FLUTTER_WINDOWS_VIEW_H_
+ #define FLUTTER_SHELL_PLATFORM_WINDOWS_FLUTTER_WINDOWS_VIEW_H_
+ 
++#include <atomic>
+ #include <memory>
+ #include <mutex>
+ #include <string>
+@@ -97,6 +98,25 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+   // Tells the engine to generate a new frame
+   void ForceRedraw();
+ 
++  // Fushi patch (HDR output): see |FlutterDesktopViewSetHdrOutput|. Called on
++  // the platform thread. Returns false (and stays on 8-bit output) when the
++  // engine cannot provide HDR output.
++  bool SetHdrOutput(bool enabled, float sdr_white_nits);
++
++  // Fushi patch (HDR output): the requested output, read on the raster thread.
++  bool hdr_output_requested() const {
++    return hdr_output_requested_.load(std::memory_order_acquire);
++  }
++  float sdr_white_nits() const {
++    return sdr_white_nits_.load(std::memory_order_acquire);
++  }
++
++  // Fushi patch (HDR output): re-creates the surface (same size) when its
++  // format no longer matches |hdr_output_requested|. Must run on the raster
++  // thread; binds the surface to the current thread like
++  // |ResizeRenderSurface|. Returns false if the surface could not be created.
++  bool EnsureSurfaceFormat();
++
+   // Callback to clear a previously presented software bitmap.
+   virtual bool ClearSoftwareBitmap();
+ 
+@@ -343,6 +363,12 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+   // Width and height are the surface's desired physical pixel dimensions.
+   bool ResizeRenderSurface(size_t width, size_t height);
+ 
++  // Fushi patch (HDR output): creates a window surface in the requested
++  // output format.
++  std::unique_ptr<egl::WindowSurface> CreateWindowSurfaceForOutput(
++      size_t width,
++      size_t height) const;
++
+   // Sends a window metrics update to the Flutter engine using current window
+   // dimensions in physical pixels.
+   void SendWindowMetrics(size_t width, size_t height, double pixel_ratio) const;
+@@ -473,6 +499,11 @@ class FlutterWindowsView : public WindowBindingHandlerDelegate {
+   // or if surface creation failed.
+   std::unique_ptr<egl::WindowSurface> surface_ = nullptr;
+ 
++  // Fushi patch (HDR output): requested output, written on the platform
++  // thread, read on the raster thread.
++  std::atomic<bool> hdr_output_requested_{false};
++  std::atomic<float> sdr_white_nits_{80.0f};
++
+   // Keeps track of pointer states in relation to the window.
+   std::unordered_map<int32_t, std::unique_ptr<PointerState>> pointer_states_;
+ 
+diff --git a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+index 527566b4..23a1fcf7 100644
+--- a/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
++++ b/engine/src/flutter/shell/platform/windows/public/flutter_windows.h
+@@ -266,6 +266,27 @@ FLUTTER_EXPORT HWND FlutterDesktopViewGetHWND(FlutterDesktopViewRef view);
+ FLUTTER_EXPORT IDXGIAdapter* FlutterDesktopViewGetGraphicsAdapter(
+     FlutterDesktopViewRef view);
+ 
++// Fushi patch (HDR output): switches |view| between standard 8-bit output and
++// HDR output.
++//
++// With HDR output on, the view renders into half-float backing stores whose
++// contents are extended-range sRGB (1.0 = SDR white, values above 1.0 are
++// HDR highlights, e.g. from |kFlutterDesktopPixelFormatRGBA16F| textures), and
++// presents through a half-float scRGB swap chain. |sdr_white_nits| is the
++// luminance SDR white is displayed at (Windows "SDR content brightness"); it
++// must be positive. Off restores the stock 8-bit pipeline exactly.
++//
++// Takes effect from the next frame. Returns whether HDR output is on after the
++// call: false when it was turned off, or when it cannot be provided (no
++// half-float window surface support, software rendering, or Impeller), in
++// which case the view stays on 8-bit output.
++//
++// Engines without this patch do not export the symbol; resolve it with
++// GetProcAddress so the host keeps running on a stock engine.
++FLUTTER_EXPORT bool FlutterDesktopViewSetHdrOutput(FlutterDesktopViewRef view,
++                                                   bool enabled,
++                                                   float sdr_white_nits);
++
+ // Retrieves the DXGI adapter used for rendering. Returns true if the adapter
+ // was successfully retrieved, or false if an error occured.
+ // The caller must provide a valid pointer to an IDXGIAdapter* and is
