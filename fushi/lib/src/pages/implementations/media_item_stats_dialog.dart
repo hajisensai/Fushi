@@ -13,6 +13,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
@@ -24,6 +25,7 @@ import 'package:fushi/src/pages/implementations/stat_trends.dart'
     show computeCph;
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 一个库条目（或一个合集）在统计域里的身份。
@@ -293,15 +295,17 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
     } else if (summary == null) {
       body = const FushiLoadingView();
     } else if (summary.isEmpty) {
-      body = Text(
-        t.media_stats_empty,
+      body = FushiPlaceholderMessage(
         key: const ValueKey<String>('media-item-stats-empty'),
+        icon: FushiIcons.statistics,
+        message: t.media_stats_empty,
       );
     } else {
       body = _buildSummary(theme, summary);
     }
     return FushiAlertDialog(
       key: const ValueKey<String>('media-item-stats-dialog'),
+      icon: const FushiIcon(FushiIcons.barChart),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -325,10 +329,11 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
             onPressed: () => unawaited(_openSessions(summary)),
             child: Text(t.stat_sessions_show_all),
           ),
-        FushiTextButton(
+        FushiDialogAction(
+          label: MaterialLocalizations.of(context).closeButtonLabel,
+          kind: FushiDialogActionKind.primary,
           autofocus: true,
           onPressed: () => Navigator.of(context).maybePop(),
-          child: Text(MaterialLocalizations.of(context).closeButtonLabel),
         ),
       ],
     );
@@ -351,19 +356,19 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
         caption: chars(s.totalChars),
       ),
       StatKpiTile(
-        icon: Icons.today_outlined,
+        icon: FushiIcons.calendar,
         label: t.stat_today,
         value: formatStatTime(s.todayMs),
         caption: chars(s.todayChars),
       ),
       StatKpiTile(
-        icon: Icons.date_range_outlined,
+        icon: FushiIcons.calendar,
         label: t.media_stats_last_7_days,
         value: formatStatTime(s.weekMs),
         caption: chars(s.weekChars),
       ),
       StatKpiTile(
-        icon: Icons.calendar_month_outlined,
+        icon: FushiIcons.calendar,
         label: t.stat_last_30_days,
         value: formatStatTime(s.monthMs),
         caption: chars(s.monthChars),

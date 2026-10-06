@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_item_edit_dialog_page.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:transparent_image/transparent_image.dart';
 
 void main() {
@@ -35,8 +36,8 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(FushiCard), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
-    expect(find.byIcon(Icons.file_upload_outlined), findsOneWidget);
-    expect(find.byIcon(Icons.undo_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.upload), findsOneWidget);
+    expect(find.byIcon(FushiIcons.undo), findsOneWidget);
   });
 
   testWidgets('media item edit dialog frame fits compact content', (
