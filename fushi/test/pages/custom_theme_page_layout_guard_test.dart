@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// 自定义主题编辑页重设计（2026-09）的结构守卫。
 ///
@@ -136,7 +137,19 @@ void main() {
     });
 
     test('墨水屏模式下预览同样黑白', () {
-      expect(source.contains('buildEinkColorScheme('), isTrue);
+      expect(
+        methodBody(source, 'ColorScheme _buildSchemeFor('),
+        contains('themeNotifier.buildCustomThemeColorScheme('),
+      );
+      final String notifier = File(
+        'lib/src/models/theme_notifier.dart',
+      ).readAsStringSync();
+      final String scheme = methodBody(
+        notifier,
+        'ColorScheme buildCustomThemeColorScheme(',
+      );
+      expect(scheme, contains('einkMode'));
+      expect(scheme, contains('buildEinkColorScheme('));
     });
   });
 }
