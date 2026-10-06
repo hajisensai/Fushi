@@ -541,6 +541,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 游戏库是否用列表布局（`games_library_layout` == 'list'）；默认海报网格。
+  bool get gamesLibraryListLayout =>
+      (getPref('games_library_layout', defaultValue: 'grid') as String) ==
+      'list';
+
+  Future<void> setGamesLibraryListLayout(bool list) async {
+    await setPref('games_library_layout', list ? 'list' : 'grid');
+    notifyListeners();
+  }
+
   /// 多端库联合视图（spec 2026-07-12 §2.1/§2.4）：书架/视频页主网格是否把「远端有、
   /// 本地无」的条目渲染成占位卡（云角标 + 远端封面，点击下载/流播）。**默认 true**——
   /// 用户拍板远端混排默认开。关闭时占位卡全部不渲染，两页只剩本地库。离线/未配对/

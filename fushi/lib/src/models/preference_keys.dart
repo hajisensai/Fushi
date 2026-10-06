@@ -176,6 +176,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'galgame_library',
   'galgame_library_view',
   'games_collapsed_collection_ids',
+  // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
+  // 页头切换钮写入，跨会话记住。
+  'games_library_layout',
   'global_dict_css',
   'harmonic_frequency',
   // bool（默认 true，BUG-1891）：进视频页时是否自动向 Jellyfin/Emby 服务器枚举

@@ -1299,6 +1299,9 @@ enum ImportTitleSource {
 /// primaryContainer 饱和色块并显示所选文件名，图标徽标弹簧换成对勾。
 ///
 /// 书籍 / 有声书导入框共用（[AudiobookImportDialog] 也从这里取）。
+///
+/// 桌面正拖着文件悬停在对话框上时（[FushiFileDropTarget.dragHoveringOf]）卡片
+/// spring 轻放大并亮成 primary 色块，告诉用户「松手就收」。
 class ImportDropZoneCard extends StatelessWidget {
   const ImportDropZoneCard({
     required this.icon,
@@ -1322,53 +1325,60 @@ class ImportDropZoneCard extends StatelessWidget {
     final FushiTypography type = context.fushiType;
     final FushiMotionScheme motion = context.fushiMotion;
     final String? sub = subtitle;
-    return FushiCard(
-      variant: selected ? FushiCardVariant.filled : FushiCardVariant.outlined,
-      tone: selected ? FushiCardTone.primary : FushiCardTone.neutral,
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      child: Row(
-        children: <Widget>[
-          AnimatedSwitcher(
-            duration: motion.spatialDefault.duration,
-            switchInCurve: motion.spatialDefault.curve,
-            switchOutCurve: motion.effectsFast.curve,
-            child: FushiDialogHeroIcon(
-              key: ValueKey<bool>(selected),
-              icon: selected ? FushiIcons.success : icon,
-              tone: selected ? FushiHeroTone.primary : FushiHeroTone.neutral,
-              size: 56,
+    final bool dragging = FushiFileDropTarget.dragHoveringOf(context);
+    final bool lit = selected || dragging;
+    return AnimatedScale(
+      scale: dragging ? 1.02 : 1,
+      duration: motion.spatialFast.duration,
+      curve: motion.spatialFast.curve,
+      child: FushiCard(
+        variant: lit ? FushiCardVariant.filled : FushiCardVariant.outlined,
+        tone: lit ? FushiCardTone.primary : FushiCardTone.neutral,
+        onTap: onTap,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+        child: Row(
+          children: <Widget>[
+            AnimatedSwitcher(
+              duration: motion.spatialDefault.duration,
+              switchInCurve: motion.spatialDefault.curve,
+              switchOutCurve: motion.effectsFast.curve,
+              child: FushiDialogHeroIcon(
+                key: ValueKey<bool>(selected),
+                icon: selected ? FushiIcons.success : icon,
+                tone: lit ? FushiHeroTone.primary : FushiHeroTone.neutral,
+                size: 56,
+              ),
             ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
-                  style: type.titleMediumEmphasized,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (sub != null && sub.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 4),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
                   Text(
-                    sub,
-                    style: type.bodyMedium,
+                    title,
+                    style: type.titleMediumEmphasized,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  if (sub != null && sub.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 4),
+                    Text(
+                      sub,
+                      style: type.bodyMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          if (onTap != null) ...<Widget>[
-            const SizedBox(width: 8),
-            const FushiIcon(FushiIcons.chevronRight),
+            if (onTap != null) ...<Widget>[
+              const SizedBox(width: 8),
+              const FushiIcon(FushiIcons.chevronRight),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
