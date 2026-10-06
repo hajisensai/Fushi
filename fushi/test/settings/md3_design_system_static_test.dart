@@ -2008,6 +2008,7 @@ void main() {
       'extends StatefulWidget',
       'Widget build(',
       'package:flutter/material.dart',
+      'package:material_ui/material_ui.dart',
     ]) {
       expect(
         code,

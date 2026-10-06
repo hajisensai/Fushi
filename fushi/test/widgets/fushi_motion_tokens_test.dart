@@ -1,6 +1,6 @@
 // M3 Expressive 动效 token（2026-10-05）：弹簧数值、归一化曲线、兼容常量与
 // 弹簧落定时长一致、设计系统映射、两档降级。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';

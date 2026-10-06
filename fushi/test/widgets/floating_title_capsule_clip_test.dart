@@ -5,7 +5,7 @@
 // 内层又一层 minHeight 56 → 标题胶囊实高 68；而 FushiAppBar 的工具栏只有 56，
 // AppBar 默认用 Clip.hardEdge 把工具栏裁在 56 里——多出的 12 被一刀切掉。
 // 守住：胶囊恒为 kFushiPageChromeExtent、完整落在 AppBar 内、栏不裁投影。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';

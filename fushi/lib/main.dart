@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui'
     show AppExitResponse, PlatformDispatcher;
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
@@ -12,7 +13,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -2299,11 +2299,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           ],
           home: home,
           locale: locale,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-          ],
+          // material_ui 的 delegates 已含 Cupertino + Widgets 三份本地化。
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           supportedLocales: appModel.locales.values,
           themeMode: themeMode,
           theme: appModel.theme,
@@ -2365,6 +2362,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       fontFamily: appModel.appFontFamily),
                   // 玻璃设计系统的组件配色 / 渲染档位作用域（结构恒定，
                   // 见 FushiGlassScope 类注释）。
+                  // LegacyDesignCompatibility：把新 material_ui / cupertino_ui
+                  // 主题与本地化桥给仍用 SDK 旧 Material / Cupertino 的第三方
+                  // 组件（必须在上面这层 CupertinoTheme 之内）。
+                  child: LegacyDesignCompatibility(
                   child: FushiGlassScope(
                   child: LayoutBuilder(
                     builder:
@@ -2520,6 +2521,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       }
                       return navigation;
                     },
+                  ),
                   ),
                   ),
                 ),

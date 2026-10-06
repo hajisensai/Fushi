@@ -6,7 +6,7 @@
 /// 数据求值（续读是哪一本、进度怎么算）在页面与 `collection_member_view.dart`。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';

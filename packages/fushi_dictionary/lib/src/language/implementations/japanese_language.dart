@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:fushi_dictionary/src/language/ruby_text.dart';

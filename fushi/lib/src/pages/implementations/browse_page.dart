@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show AudiobookRepository, AudiobookStorage, SrtBookRepository;

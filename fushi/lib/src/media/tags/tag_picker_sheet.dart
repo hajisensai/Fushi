@@ -11,7 +11,7 @@
 library;
 
 import 'package:drift/native.dart' show SqliteException;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/media_search_text.dart';

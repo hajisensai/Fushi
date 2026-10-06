@@ -3,7 +3,7 @@
 // theme_legacy_selection_contract_repro.dart 迁来，另加「重启后仍成立」与「已显式存过的不改写」。
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/theme_notifier.dart';

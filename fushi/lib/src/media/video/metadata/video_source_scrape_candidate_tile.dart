@@ -2,7 +2,7 @@
 /// 避免「选一个作品」这件事在两处各长一套 UI 而慢慢漂开。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';

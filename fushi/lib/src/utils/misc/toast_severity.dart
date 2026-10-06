@@ -11,7 +11,7 @@
 /// 用户只能靠读文字分辨「成了还是崩了」。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 通知语义。

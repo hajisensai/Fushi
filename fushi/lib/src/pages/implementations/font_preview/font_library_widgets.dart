@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart';
 import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';

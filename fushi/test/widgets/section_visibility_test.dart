@@ -4,7 +4,7 @@
 // `canPop: false` 拦住返回键，回调还在看不见的地方退出多选；藏起来的视图里的
 // 焦点节点仍可被 Tab 遍历到。SectionVisibilityScope / SectionPopScope 在分区
 // 可见性层统一裁剪这两种资格。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';

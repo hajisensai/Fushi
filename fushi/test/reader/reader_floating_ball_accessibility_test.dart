@@ -3,7 +3,7 @@
 // - HBK027：触摸展开后焦点留在正文，Esc 仍要收起（键盘展开同样收起并还焦点）；
 // - HBK026：动作按钮画 40dp，命中区仍 ≥ 48dp；
 // - HBK028：MediaQuery.disableAnimations（系统减弱动态效果）下展开直接落位。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';

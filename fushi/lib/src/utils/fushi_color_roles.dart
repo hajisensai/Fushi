@@ -14,7 +14,7 @@
 // - 禁用：内容 `onSurface` × [FushiStateLayer.disabledContent]，容器 × [FushiStateLayer.disabledContainer]。
 // - 遮罩：[FushiColorRoles.modalScrim]（scrim × 0.32，M3 规范值）。
 // - Apple 设计系统的表面 / 文字仍走 `FushiAppleColors`（iOS 语义色），不经本文件。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// M3 状态层透明度（Material 3 / M3E 规范值），全应用唯一来源。
 abstract final class FushiStateLayer {

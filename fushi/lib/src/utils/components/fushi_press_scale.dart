@@ -1,5 +1,5 @@
 import 'package:flutter/gestures.dart' show kPrimaryButton, kTouchSlop;
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart' show LocaleSettings, t;
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 

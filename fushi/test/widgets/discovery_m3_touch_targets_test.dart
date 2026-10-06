@@ -1,7 +1,7 @@
 // HBK-AUDIT-020 regression: on touch platforms the discovery search field keeps
 // its 40-tall capsule look but its hit / semantics region is >= 48 (Android
 // guidance); pointer-only desktop density stays at the compact 40.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/utils.dart';

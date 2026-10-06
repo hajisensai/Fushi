@@ -1,7 +1,7 @@
 import 'dart:async' show unawaited;
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';

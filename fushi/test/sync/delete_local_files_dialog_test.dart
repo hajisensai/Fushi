@@ -4,7 +4,7 @@
 /// 区，而「会保留」那条同时收窄成「书籍与字幕原件」。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:fushi/i18n/strings.g.dart';

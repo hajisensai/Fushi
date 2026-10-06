@@ -10,7 +10,7 @@
 // 旧实现把 `@` 当噪声剥掉却没人承接竖排语义，`\frz270` 照转 → 只剩单向 90°，整行躺倒。
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

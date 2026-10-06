@@ -4,7 +4,7 @@
 // 页面在 >=820 宽时走左右分栏、控件列固定 340——窄屏 Column 布局会溢出，所以
 // 用例统一先放大逻辑窗口（[useWideWindow]），再用 addTearDown 还原，不泄漏给
 // 同进程其它测试。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';

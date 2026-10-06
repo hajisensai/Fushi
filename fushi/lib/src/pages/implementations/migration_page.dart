@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:external_path/external_path.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/migration/migration_exporter.dart';
 import 'package:fushi/src/migration/migration_readonly.dart';

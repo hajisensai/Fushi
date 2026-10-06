@@ -1,6 +1,6 @@
 // 2026-10 UI / 动效重做的行为测试：按压反馈、错峰进场、导航药丸展开、
 // 动效降级（墨水屏 / 系统减弱动态效果）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';

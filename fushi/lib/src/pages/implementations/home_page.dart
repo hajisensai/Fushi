@@ -5,7 +5,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:macos_ui/macos_ui.dart'
     show

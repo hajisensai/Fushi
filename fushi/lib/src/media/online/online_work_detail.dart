@@ -15,7 +15,7 @@
 /// 保持可用：不传新参数时同样走新骨架。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';

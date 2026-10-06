@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
@@ -118,7 +119,9 @@ class _FloatingDictAppState extends ConsumerState<FloatingDictApp> {
       // 独立 entry point 不经主 app 的根作用域：玻璃设计系统的组件配色 / 渲染
       // 档位在这里自己挂（结构恒定，MD3 下也挂，见 [FushiGlassScope]）。
       builder: (BuildContext context, Widget? child) =>
-          FushiGlassScope(child: child ?? const SizedBox.shrink()),
+          LegacyDesignCompatibility(
+        child: FushiGlassScope(child: child ?? const SizedBox.shrink()),
+      ),
       home: FloatingDictPage(
         channel: widget.channel,
         pendingSearch: _pendingSearch,

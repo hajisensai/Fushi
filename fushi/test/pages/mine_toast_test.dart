@@ -2,7 +2,7 @@
 // 配 Material 图标并给图标上语义色（浮条底色恒为主题 inverseSurface），走
 // 应用 navigator overlay 的自绘路径。这正是本次新增的、区别于弹窗内 mine 按钮图标
 // 变化的、可见的桌面/移动统一制卡反馈通道。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';

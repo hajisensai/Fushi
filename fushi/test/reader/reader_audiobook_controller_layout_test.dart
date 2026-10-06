@@ -1,6 +1,6 @@
 // HBK039 回归（Codex 第 6 轮复现迁入）：挂真实非空控制器的有声书侧板在窄宽 /
 // 矮高下不溢出（既有测试只用 null 控制器，没覆盖正在播放卡的完整控件）。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'

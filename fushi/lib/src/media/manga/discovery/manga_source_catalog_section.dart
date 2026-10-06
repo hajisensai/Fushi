@@ -14,7 +14,7 @@
 /// 宿主的平台（iOS）这一节仍在原位，只列内置来源。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';

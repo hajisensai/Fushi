@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// 启动品牌标的前景图：与 Android 12+ 系统启动画面

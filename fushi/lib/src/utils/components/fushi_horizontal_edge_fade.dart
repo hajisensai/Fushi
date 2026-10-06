@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// 横向滚动行两端的渐隐（M3E：横滑行溢出窗口边缘时柔和淡出，而不是被
 /// 一刀切掉，同时暗示「还能横滑」）。

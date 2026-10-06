@@ -8,7 +8,7 @@
 // 本文件只做「类型 → 本地化文案/图标」的纯映射，不读写注册表、不触碰
 // 绑定序列化。
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 视频侧栏「当前项自动滚动」共享机器（TODO-424 章节 / TODO-638 剧集面板同款）：

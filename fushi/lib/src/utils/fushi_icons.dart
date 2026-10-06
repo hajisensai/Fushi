@@ -12,7 +12,7 @@
 //   直接 `Icon(FushiIcons.x)` 也能显示正确字形，只是没有这些自适应。
 // - 缺语义名就去 tool/icons/gen_fushi_symbols.py 的 SYMBOLS 表加一行重跑，
 //   不要在调用点手写 `IconData(0x…, fontFamily: 'FushiSymbols')`（码位必须在字体子集里）。
-import 'package:flutter/cupertino.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
 part 'fushi_icons.g.dart';
 

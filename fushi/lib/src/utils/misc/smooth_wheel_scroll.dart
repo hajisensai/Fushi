@@ -2,7 +2,7 @@ import 'dart:async' show scheduleMicrotask, unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 
 /// 粗滚轮一档才需要补间；触控板 / 高精度滚轮本来就连续上报小 delta，再套一层动画

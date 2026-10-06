@@ -2,7 +2,7 @@
 // **真实指针移动**。Flutter MouseTracker 在「字幕盒挪到静止指针之下」或子树重挂时也会
 // 派发 onEnter——鼠标一动没动，`\pos` 招牌一出现在鼠标停放点，控制条就像被划过一样弹出。
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

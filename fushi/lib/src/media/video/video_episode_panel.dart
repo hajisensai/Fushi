@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/video_episode_rail.dart';
 import 'package:fushi/src/media/video/video_side_panel.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';

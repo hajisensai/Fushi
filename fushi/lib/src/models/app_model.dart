@@ -7,7 +7,7 @@ import 'dart:ui';
 // audio_service moved to AudioController
 // external_app_launcher moved to AnkiIntegration
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';

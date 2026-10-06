@@ -2,7 +2,7 @@
 // (bc65b9dc94c); pages with explicit scroll padding must add the header
 // inset (MediaQuery.paddingOf(context).top) or their first item sits under
 // the header. Migrated from the Codex round-5 repro.
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/changelog_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';

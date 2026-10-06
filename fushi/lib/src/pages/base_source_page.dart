@@ -4,7 +4,7 @@ import 'package:fushi/src/anki/source_review_session.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';

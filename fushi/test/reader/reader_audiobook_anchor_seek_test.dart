@@ -1,7 +1,7 @@
 // HBK040 回归（Codex 第 6 轮复现迁入）：同一 spine 内按锚点分节的目录项，点击
 // 后音频定位到锚点处的那句，而不是整个 spine 的首句。cue 查找是真的，只拦最终
 // 的原生 seek。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;

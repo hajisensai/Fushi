@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart'
+import 'package:material_ui/material_ui.dart'
     show BuildContext, Color, ColorScheme, Theme, ThemeData;
 import 'package:fushi_anki/fushi_anki.dart';
 

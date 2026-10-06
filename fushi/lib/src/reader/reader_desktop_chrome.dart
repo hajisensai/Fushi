@@ -17,7 +17,7 @@
 /// `readerStatusFooterEnabled`）。
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/physics.dart' show SpringSimulation;
 import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';

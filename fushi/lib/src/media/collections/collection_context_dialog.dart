@@ -1,5 +1,5 @@
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';

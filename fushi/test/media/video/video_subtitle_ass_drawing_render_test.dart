@@ -4,7 +4,7 @@
 //   currentCue / activeCues）不见它，overlay 经 activeDrawingCues 取同刻在屏的绘图；
 // - overlay 用 [AssDrawingPainter] 画路径，盒尺寸 = 包围盒 × 显示缩放，按 `\an`/`\pos`
 //   落位（libass 语义：绘图按包围盒对齐，不按坐标原点）；纯字幕模式不画。
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';

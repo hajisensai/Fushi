@@ -7,7 +7,7 @@
 //      绝不留下关不掉的模态遮罩。
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
