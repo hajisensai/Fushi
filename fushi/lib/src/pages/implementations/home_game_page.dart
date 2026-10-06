@@ -172,6 +172,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
   /// 「导入」视图的进行中标记：选文件 / 拖放落库期间拖放区底部亮波浪进度。
   bool _importBusy = false;
 
+  /// 桌面正拖着文件悬停在导入视图上（[FushiFileDropTarget.onHoverChanged]）：
+  /// 拖拽期间指针 hover 事件不到达，拖放区卡片的放大变色改由这一位驱动。
+  bool _importDragHovering = false;
+
+  void _setImportDragHovering(bool value) {
+    if (!mounted || _importDragHovering == value) return;
+    setState(() => _importDragHovering = value);
+  }
+
   /// 包住一次导入：期间点亮进度，结束（成功 / 取消 / 抛错）后熄灭。异常照常
   /// 抛回调用方——拖放路径的唯一错误咽喉在 `FushiFileDropTarget.runDrop`，这里
   /// 不能吞。
@@ -375,6 +384,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     // 完全没反应——页面上还写着「也可以把 .exe 拖进来」。
     return FushiFileDropTarget(
       debugLabel: 'game-import',
+      onHoverChanged: _setImportDragHovering,
       // 必须把这个 future 交回去：`FushiFileDropTarget.runDrop` 特意 await 回调，
       // 那是拖放路径上**唯一**的错误咽喉（否则 repo.load()/addAll() 抛出时异常
       // 直接漂进 zone，用户看到的只有「拖了没反应」——正是本页要修的症状）。
@@ -432,6 +442,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                         index: 1,
                         child: _GameImportDropZone(
                           busy: _importBusy,
+                          dragHovering: _importDragHovering,
                           // IndexedStack 急切构建全部子区，本视图在无
                           // ProviderScope 的 widget 测试里也会被 build——
                           // 容器只在点按时解析，构建期零 provider 依赖。
@@ -535,13 +546,19 @@ class _HomeGamePageState extends State<HomeGamePage> {
 /// 游戏「导入」视图的拖放区卡片（M3E）：28 圆角虚线描边 + 饱和容器色块，中间是
 /// 花瓣形状图标、主按钮「添加游戏」与拖放提示，导入进行中底部亮波浪进度。
 ///
-/// 拖放命中由外层 [FushiFileDropTarget] 处理（它不暴露「正拖着悬停」状态），
-/// 这里的悬停反馈只跟指针悬停：spring 轻放大 + 描边 / 底色转强调色。
+/// 拖放命中由外层 [FushiFileDropTarget] 处理；它经 `onHoverChanged` 报出的
+/// 「正拖着文件悬停」由 [dragHovering] 传进来，与指针悬停同款反馈：spring 轻放大
+/// + 描边 / 底色转强调色（拖拽期间 MouseRegion 收不到 hover，只能靠这一位）。
 class _GameImportDropZone extends StatelessWidget {
-  const _GameImportDropZone({required this.busy, required this.onAdd});
+  const _GameImportDropZone({
+    required this.busy,
+    required this.onAdd,
+    this.dragHovering = false,
+  });
 
   final bool busy;
   final Future<void> Function() onAdd;
+  final bool dragHovering;
 
   @override
   Widget build(BuildContext context) {
@@ -553,6 +570,7 @@ class _GameImportDropZone extends StatelessWidget {
         apple ? FushiM3eShape.small : FushiM3eShape.containerLarge;
     return FushiHoverLift(
       scale: 1.01,
+      forceLifted: dragHovering,
       builder: (BuildContext context, bool hovering) {
         final Color fill = eink
             ? colors.surface

@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -128,6 +129,9 @@ class _QuickImportSectionState extends State<QuickImportSection> {
 
 /// 拖放区卡片：28 圆角（Apple 12）虚线描边 + 饱和容器色块，悬停 spring 轻放大、
 /// 底色转 primaryContainer。与游戏「导入」视图同一视觉语言。
+///
+/// 位于某个 [FushiFileDropTarget] 子树里时，桌面正拖着文件悬停那一段也给同款
+/// 反馈（拖拽期间指针 hover 事件不到达，读 [FushiFileDropTarget.dragHoveringOf]）。
 class _ImportDropZone extends StatelessWidget {
   const _ImportDropZone({
     required this.icon,
@@ -156,6 +160,7 @@ class _ImportDropZone extends StatelessWidget {
     final QuickImportAction? secondary = this.secondary;
     return FushiHoverLift(
       scale: 1.01,
+      forceLifted: FushiFileDropTarget.dragHoveringOf(context),
       builder: (BuildContext context, bool hovering) {
         final Color fill = eink
             ? colors.surface
