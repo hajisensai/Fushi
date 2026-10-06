@@ -5,13 +5,17 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart' show GameStreamRejection, kGameStreamWireVersion;
+import 'package:fushi_server/src/admin/admin_api.dart';
+import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
+import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
+import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
 import 'dictionary_host_test.dart' show importTestDictionary;
@@ -28,6 +32,9 @@ void main() {
   late HeadlessHost host;
   late HttpClient client;
   late String token;
+  late ServerConfig hostConfig;
+  late ServerPaths hostPaths;
+  late ServerIdentity hostIdentity;
 
   setUp(() async {
     client = HttpClient();
@@ -41,6 +48,9 @@ void main() {
     token = identity.hostToken;
     final ServerPaths paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
+    hostConfig = config;
+    hostPaths = paths;
+    hostIdentity = identity;
     if (haveLib) {
       // 导入在 host 起来之前做（模拟「已推送过词典的服务端重启」），先指定原生库。
       FushiDicts.nativeLibraryPath = libPath;
@@ -140,5 +150,42 @@ void main() {
     }
     expect(rows, hasLength(1));
     expect(jsonDecode(rows.single.resultJson)['searchTerm'], '食べた');
+  });
+
+  group('admin 代调互联（/api/admin/host/*）', () {
+    Future<shelf.Response> viaAdmin(String method, String rest, {Map<String, String>? headers}) {
+      final AdminApi api = AdminApi(
+        AdminContext(
+          config: hostConfig,
+          configFile: File(p.join(tmp.path, 'fushi_server.yaml')),
+          paths: hostPaths,
+          log: ServerLog(file: File(p.join(tmp.path, 'admin.log'))),
+          db: db,
+          identity: hostIdentity,
+          host: host,
+          startedAt: DateTime.now(),
+        ),
+      );
+      return api.handle(shelf.Request(method, Uri.parse('http://localhost/api/admin/host/$rest'), headers: headers));
+    }
+
+    test('以 host 身份进到互联接口：调用方自带的凭据被剥掉，不影响鉴权', () async {
+      final shelf.Response res = await viaAdmin(
+        'GET',
+        'capabilities',
+        headers: <String, String>{'authorization': 'Basic ${base64Encode(utf8.encode('x:wrong'))}'},
+      );
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> caps = Map<String, dynamic>.from(jsonDecode(await res.readAsString()) as Map);
+      expect(caps['gameStream'], isFalse);
+    });
+
+    test('配对路由（含 dot-segment 绕行写法）一律 403，不进互联', () async {
+      for (final String rest in <String>['pair', 'pair/v2', 'pair/v2/confirm', 'x/../pair', 'x/%2E%2E/pair/v2']) {
+        final shelf.Response res = await viaAdmin('POST', rest);
+        expect(res.statusCode, 403, reason: rest);
+        await res.readAsString();
+      }
+    });
   });
 }
