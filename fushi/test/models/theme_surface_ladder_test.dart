@@ -244,12 +244,17 @@ void main() {
     ).readAsStringSync();
     // system-theme 分支：Android 壁纸调色板与桌面 accent seed 推出的阶梯间距
     // 本来就不同，不收口这里两端观感不一致。
+    // 4c32e76e6e4 起 system-theme 也吃「纯黑深色背景」开关：系统方案先落到局部
+    // 变量，再按开关走纯黑阶梯或统一阶梯——两条出口都必须过阶梯。
     expect(
       RegExp(
-        r'applyFushiSurfaceLadder\(\s*buildSystemThemeColorScheme\(',
+        r'final ColorScheme (\w+) = buildSystemThemeColorScheme\([^;]*\);\s*'
+        r'return pureBlackDark\s*\?\s*'
+        r'applyFushiPureBlackSurfaceLadder\(\1\)\s*:\s*'
+        r'applyFushiSurfaceLadder\(\1\);',
       ).hasMatch(src),
       isTrue,
-      reason: 'system-theme 分支必须过 applyFushiSurfaceLadder',
+      reason: 'system-theme 分支必须过 applyFushiSurfaceLadder（纯黑时过纯黑阶梯）',
     );
     // 预设 / 自定义分支：未钉死 surface 时的出口。
     expect(
