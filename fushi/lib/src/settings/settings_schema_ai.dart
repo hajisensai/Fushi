@@ -5,6 +5,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/pages/implementations/ai_interconnect_host_row.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -94,6 +95,16 @@ SettingsDestination buildAiDestination() {
             StoreRestrictedCapability.externalDiscovery.isAvailable &&
             c.appModel.moduleVisibility.isEnabled(ModuleId.browse),
         items: <SettingsItem>[
+          // 经 Fushi 互联交给已配对电脑办（PR #1749 的 `/api/assistant` 会话）：判据一直是
+          // 「下载执行设备」偏好，此前只挂在下载设置页，AI 页看不到这条路。这里是同一
+          // 偏好的第二处入口；未配对时给可见说明 + 去配对，而不是整行消失。
+          SettingsCustomItem.rows(
+            id: 'ai.interconnect_host',
+            searchTitle: t.ai_interconnect_host_title,
+            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
+                ? <Widget>[AiInterconnectHostRow(appModel: c.appModel)]
+                : const <Widget>[],
+          ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_quality',
             dropdown: true,

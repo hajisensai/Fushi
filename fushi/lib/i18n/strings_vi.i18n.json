@@ -6717,5 +6717,8 @@
   "creator_crop_image_unreadable": "This image can't be opened",
   "game_library_view_list": "List view",
   "game_library_view_grid": "Grid view",
-  "game_library_play_time": "Play time"
+  "game_library_play_time": "Play time",
+  "ai_interconnect_host_title": "Run on a paired computer",
+  "ai_interconnect_host_hint": "AI video downloads hand the whole conversation to this device over Fushi Interconnect: it uses that device's AI assignment and download setup. Same setting as Downloads › Execution device.",
+  "ai_interconnect_host_unpaired": "No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI."
 }
