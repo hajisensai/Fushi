@@ -244,28 +244,36 @@ class OnlineServicesOnboardingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => FushiPageScaffold(
         title: t.settings_destination_services,
-        body: SingleChildScrollView(
-          // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，滚动内容末尾自己
-          // 补上 home indicator / 手势条的高度。
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.all(FushiDesignTokens.of(context).spacing.page),
-          ),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: OnlineServicesOnboardingView(
-                items: onlineServiceOnboardingItems(),
-                onConfigure: () => Navigator.of(context).push<void>(
-                  adaptivePageRoute<void>(
-                    context: context,
-                    builder: (_) => SettingsDetailPage(
-                        destination: buildServicesDestination()),
+        // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
+        // 页头），内容才能滚到页头底下。
+        body: Builder(
+          builder: (BuildContext context) => SingleChildScrollView(
+            // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，滚动内容末尾自己
+            // 补上 home indicator / 手势条的高度。
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.all(FushiDesignTokens.of(context).spacing.page)
+                  .copyWith(
+                top: FushiDesignTokens.of(context).spacing.page +
+                    MediaQuery.paddingOf(context).top,
+              ),
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: OnlineServicesOnboardingView(
+                  items: onlineServiceOnboardingItems(),
+                  onConfigure: () => Navigator.of(context).push<void>(
+                    adaptivePageRoute<void>(
+                      context: context,
+                      builder: (_) => SettingsDetailPage(
+                          destination: buildServicesDestination()),
+                    ),
                   ),
-                ),
-                onOpenLink: (Uri url) => launchUrl(
-                  url,
-                  mode: LaunchMode.externalApplication,
+                  onOpenLink: (Uri url) => launchUrl(
+                    url,
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
               ),
             ),
