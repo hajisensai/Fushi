@@ -138,4 +138,38 @@ void main() {
     expect(reset.center.dy, closeTo(content.center.dy, 0.01));
     expect(tester.takeException(), isNull);
   });
+  for (final double width in <double>[104, 500]) {
+    testWidgets(
+      'bounded $width px host keeps the modified row content height',
+      (WidgetTester tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: width,
+                  height: 600,
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: SettingsModifiedRow(
+                      key: const ValueKey<String>('bounded-modified-row'),
+                      modified: true,
+                      onReset: () {},
+                      child: const SizedBox(height: 120),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final Size row = tester.getSize(
+          find.byKey(const ValueKey<String>('bounded-modified-row')),
+        );
+        expect(row.height, 120 + (width == 104 ? kMinInteractiveDimension : 0));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }

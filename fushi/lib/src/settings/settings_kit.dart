@@ -1413,6 +1413,7 @@ class SettingsModifiedRow extends StatelessWidget {
             final bool stacked =
                 constraints.maxWidth < contentMinWidth + resetWidth;
             return Flex(
+              mainAxisSize: MainAxisSize.min,
               direction: stacked ? Axis.vertical : Axis.horizontal,
               crossAxisAlignment: stacked
                   ? CrossAxisAlignment.stretch
@@ -1430,6 +1431,7 @@ class SettingsModifiedRow extends StatelessWidget {
                   child: Align(
                     alignment: AlignmentDirectional.centerEnd,
                     widthFactor: 1,
+                    heightFactor: 1,
                     child: modified
                         ? Padding(
                             padding: const EdgeInsetsDirectional.only(end: 4),
