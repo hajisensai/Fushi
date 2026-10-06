@@ -48,6 +48,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
         FushiFloatingChromeController,
+        FushiFloatingChromeInset,
         FushiFloatingChromeInsetPadding,
         FushiFloatingChromeOverlay,
         FushiFloatingChromeScope;
@@ -1283,14 +1284,21 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool servicesEnabled = ref
+        .watch(appProvider)
+        .moduleVisibility
+        .isEnabled(ModuleId.services);
     return BrowseSubPage(
       title: t.download_settings,
       // 与设置详情页同一种页面：页边距由这里给，正文全是真正的设置分组
       // （MD3 分段卡 / Apple inset grouped），组件自己不再缩进。
-      child: ListView(
+      // 页头浮在正文上：顶部让位（浮动工具区 inset）从 BrowseSubPage 正文子树
+      // 里读（本 build 的 context 在页面壳之上）。
+      child: Builder(
+        builder: (BuildContext context) => ListView(
         padding: EdgeInsets.fromLTRB(
           tokens.spacing.page,
-          tokens.spacing.gap,
+          tokens.spacing.gap + FushiFloatingChromeInset.of(context),
           tokens.spacing.page,
           tokens.spacing.page + MediaQuery.paddingOf(context).bottom,
         ),
@@ -1300,10 +1308,7 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
           // 下载设置页留一条跳转，番剧下载对话框「去设置」落到这里仍能一步到达。
           // 「在线服务」分类被 [ModuleId.services] 关掉时这一组不渲染：它指向的
           // 设置分类此刻已从设置页消失，留着就是一条通往不存在页面的死路。
-          if (ref
-              .watch(appProvider)
-              .moduleVisibility
-              .isEnabled(ModuleId.services))
+          if (servicesEnabled)
             AdaptiveSettingsSection(
               children: <Widget>[
                 Builder(
@@ -1329,6 +1334,7 @@ class BrowseDownloadSettingsPage extends ConsumerWidget {
             scope: VideoExternalProviderScope.downloadRouting,
           ),
         ],
+      ),
       ),
     );
   }
