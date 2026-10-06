@@ -167,7 +167,7 @@ void main() {
       // 的占位 / 加载 / 错误态，以及下面这些已审过的点。只许减，不许加。
       const Map<String, int> allowed = <String, int>{
         'lib/src/pages/implementations/browse_page.dart': 1,
-        'lib/src/pages/implementations/home_game_page.dart': 2,
+        'lib/src/pages/implementations/home_game_page.dart': 1,
         'lib/src/pages/implementations/home_reader_page.dart': 1,
         'lib/src/pages/implementations/media_discovery_page.dart': 7,
         'lib/src/pages/implementations/media_library_shell.dart': 1,

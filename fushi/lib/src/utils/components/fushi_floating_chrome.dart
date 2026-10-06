@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
@@ -208,6 +209,169 @@ class FushiFloatingChromeInset extends InheritedWidget {
       top != oldWidget.top;
 }
 
+/// 浮动工具区此刻的**可见下沿**（逻辑 px，相对页面顶边；随收起 / 弹回动画
+/// 连续变化，完全收起为 0）。由 [FushiFloatingChromeOverlay] 下发，嵌套时取
+/// 最内层（它的下沿最低）。
+///
+/// 只给「跟随工具区」的东西用：固定版面的顶部让位
+/// （[FushiFloatingChromeVisiblePadding]）、吸顶小标题的钉住位置
+/// （[FushiFloatingChromePinnedOffset]）、跳转定位
+/// （[fushiRevealBelowFloatingChrome]）。滚动内容的让位仍是恒定的
+/// [FushiFloatingChromeInset]（让位随动画变会改视口，滚轮来回自激）。
+class FushiFloatingChromeVisibleExtent extends InheritedWidget {
+  const FushiFloatingChromeVisibleExtent({
+    required this.extent,
+    required super.child,
+    super.key,
+  });
+
+  final ValueListenable<double> extent;
+
+  /// 最近的可见下沿；不在浮动工具区下为 null。不建立依赖（值本身可监听）。
+  static ValueListenable<double>? maybeOf(BuildContext context) => context
+      .getInheritedWidgetOfExactType<FushiFloatingChromeVisibleExtent>()
+      ?.extent;
+
+  /// 此刻的可见下沿；不在浮动工具区下为 0。
+  static double valueOf(BuildContext context) => maybeOf(context)?.value ?? 0;
+
+  @override
+  bool updateShouldNotify(FushiFloatingChromeVisibleExtent oldWidget) =>
+      !identical(extent, oldWidget.extent);
+}
+
+/// **固定版面**（没有整页滚动视图可以让位的页面，如游戏捕获工作台）的顶部
+/// 让位：顶部 padding = 工具区此刻的可见下沿，随收起动画连续缩到 0——工具区
+/// 收起后版面跟着上移、不留空白。子树里的 inset 归零。
+///
+/// 滚动页面不要用它（视口随动画变会让滚动位置被夹紧、自激），用
+/// [FushiFloatingChromeScrollInset]。
+class FushiFloatingChromeVisiblePadding extends StatelessWidget {
+  const FushiFloatingChromeVisiblePadding({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget inner = FushiFloatingChromeInset(top: 0, child: child);
+    final ValueListenable<double>? extent =
+        FushiFloatingChromeVisibleExtent.maybeOf(context);
+    if (extent == null) {
+      return Padding(
+        padding: EdgeInsets.only(top: FushiFloatingChromeInset.of(context)),
+        child: inner,
+      );
+    }
+    return ValueListenableBuilder<double>(
+      valueListenable: extent,
+      child: inner,
+      builder: (BuildContext context, double top, Widget? child) => Padding(
+        padding: EdgeInsets.only(top: top),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// 把 [target] 所在分组滚到**工具区可见下沿之下**（再隔 [gap]），而不是视口顶
+/// ——视口顶在浮动工具区底下，目标会被胶囊挡住。跳转条（设置分组、诊断分组
+/// 等）统一用它。不在浮动工具区下返回 false，调用方走原来的定位。
+bool fushiRevealBelowFloatingChrome(
+  BuildContext target, {
+  required Duration duration,
+  double gap = 8,
+}) {
+  final ValueListenable<double>? extent =
+      FushiFloatingChromeVisibleExtent.maybeOf(target);
+  if (extent == null) return false;
+  final RenderObject? object = target.findRenderObject();
+  final ScrollableState? scrollable = Scrollable.maybeOf(target);
+  if (object == null || scrollable == null || !object.attached) return false;
+  final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+    object,
+  );
+  if (viewport == null) return false;
+  final ScrollPosition position = scrollable.position;
+  final double reveal = viewport.getOffsetToReveal(object, 0).offset;
+  final double to = (reveal - extent.value - gap).clamp(
+    position.minScrollExtent,
+    position.maxScrollExtent,
+  );
+  if (duration == Duration.zero) {
+    position.jumpTo(to);
+  } else {
+    position.animateTo(to, duration: duration, curve: FushiMotion.standard);
+  }
+  return true;
+}
+
+/// 吸顶小标题（[PinnedHeaderSliver] 等的子组件）钉住时**钉在工具区可见下沿**，
+/// 而不是视口顶（那里被浮动工具区挡住）：自己贴着视口顶时，按可见下沿把内容
+/// 往下画，随收起动画跟着上移。只改绘制位置（小标题不接指针），不改版面。
+class FushiFloatingChromePinnedOffset extends SingleChildRenderObjectWidget {
+  const FushiFloatingChromePinnedOffset({required super.child, super.key});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPinnedOffset(FushiFloatingChromeVisibleExtent.maybeOf(context));
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPinnedOffset renderObject,
+  ) {
+    renderObject.extent = FushiFloatingChromeVisibleExtent.maybeOf(context);
+  }
+}
+
+class _RenderPinnedOffset extends RenderProxyBox {
+  _RenderPinnedOffset(this._extent);
+
+  ValueListenable<double>? _extent;
+
+  set extent(ValueListenable<double>? value) {
+    if (identical(value, _extent)) return;
+    if (attached) _extent?.removeListener(markNeedsPaint);
+    _extent = value;
+    if (attached) _extent?.addListener(markNeedsPaint);
+    markNeedsPaint();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _extent?.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _extent?.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  double _shift() {
+    final double extent = _extent?.value ?? 0;
+    if (extent <= 0) return 0;
+    final RenderAbstractViewport? viewport = RenderAbstractViewport.maybeOf(
+      this,
+    );
+    if (viewport is! RenderBox) return 0;
+    final double top = MatrixUtils.transformPoint(
+      getTransformTo(viewport),
+      Offset.zero,
+    ).dy;
+    // 贴着视口顶 = 正在钉住（还在正常位置时不动）。
+    return top <= 0.5 ? extent : 0;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final RenderBox? box = child;
+    if (box == null) return;
+    context.paintChild(box, offset + Offset(0, _shift()));
+  }
+}
+
 /// 库页浮动工具区下的**唯一页面入口**（2026-10-06 结构收口）：把叠放工具区的
 /// 让位高度 [FushiFloatingChromeInset] 换成 `MediaQuery` 顶部 padding 交给
 /// [child]，子树里的 inset 归零。
@@ -338,6 +502,21 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 
   FushiFloatingChromeController? _controller;
 
+  /// 工具区此刻的可见下沿（相对本层顶边，含收起动画中途）：下发给页面做
+  /// 「跟随工具区」的让位 / 吸顶 / 跳转定位（[FushiFloatingChromeVisibleExtent]）。
+  final ValueNotifier<double> _visibleBottom = ValueNotifier<double>(0);
+
+  /// 本层工具区完全显示时的下沿（外层 inset + 本层实测高度）。
+  double _travel = 0;
+
+  void _syncVisibleBottom() {
+    final FushiSpring? spring = _shown;
+    final double shown = spring == null
+        ? 1
+        : spring.value.clamp(0.0, 1.0).toDouble();
+    _visibleBottom.value = _travel * shown;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -347,11 +526,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     if (controller == null) return;
     final FushiSpring? spring = _shown;
     if (spring == null) {
-      _shown = FushiSpring(
+      final FushiSpring created = FushiSpring(
         vsync: this,
         initial: controller.visible ? 1 : 0,
         spring: fushiExpressiveDefaultSpatial,
       );
+      created.animation.addListener(_syncVisibleBottom);
+      _shown = created;
     } else {
       spring.animateTo(
         controller.visible ? 1 : 0,
@@ -362,7 +543,9 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
 
   @override
   void dispose() {
+    _shown?.animation.removeListener(_syncVisibleBottom);
     _shown?.dispose();
+    _visibleBottom.dispose();
     super.dispose();
   }
 
@@ -386,6 +569,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     }
     final double outer = FushiFloatingChromeInset.of(context);
     final double travel = outer + _chromeHeight;
+    if (travel != _travel) {
+      _travel = travel;
+      // 构建期间不改通知值（监听者会在构建中 setState）：本帧末再同步。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncVisibleBottom();
+      });
+    }
     // 嵌套的工具区（页面自己的搜索 / 筛选行叠在外壳页签之下）不再画第二层
     // 遮罩：两层「从视口顶边起、顶端不透明」的渐隐叠在一起，就是库页往下滚
     // 时页签下面那一整块白底（2026-10-06 用户截图）。顶部可读性只归最外层。
@@ -414,7 +604,10 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     return Stack(
       children: <Widget>[
         Positioned.fill(
-          child: FushiFloatingChromeInset(top: travel, child: widget.child),
+          child: FushiFloatingChromeVisibleExtent(
+            extent: _visibleBottom,
+            child: FushiFloatingChromeInset(top: travel, child: widget.child),
+          ),
         ),
         // 顶部渐隐遮罩 + 工具区：同一弹簧驱动。遮罩只盖「此刻看得见的工具区」
         // 再往下渐隐一段，收起后只剩顶边一条柔和淡出——不再有整块实色底带把
@@ -852,7 +1045,8 @@ class FushiFloatingActionsPill extends StatelessWidget {
             ),
             transitionBuilder: (Widget child, Animation<double> animation) =>
                 FadeTransition(
-                  opacity: animation,
+                  // 弹簧过冲的值不进透明度（只认 0..1）；缩放保留回弹。
+                  opacity: fushiUnitClamped(animation),
                   child: ScaleTransition(
                     scale: Tween<double>(begin: 0.8, end: 1).animate(animation),
                     alignment: AlignmentDirectional.centerEnd.resolve(

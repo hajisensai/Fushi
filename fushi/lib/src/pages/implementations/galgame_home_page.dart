@@ -34,6 +34,8 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromePinnedOffset;
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -1114,9 +1116,12 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
           SliverMainAxisGroup(
             key: ValueKey<String>('game-timeline-${g.dateKey}'),
             slivers: <Widget>[
+              // 钉住时钉在浮动工具区的可见下沿（随收起动画上移），不被胶囊挡住。
               PinnedHeaderSliver(
-                child: _TimelineDateHeader(
-                  label: _timelineDayLabel(g.dateKey, todayKey, yesterdayKey),
+                child: FushiFloatingChromePinnedOffset(
+                  child: _TimelineDateHeader(
+                    label: _timelineDayLabel(g.dateKey, todayKey, yesterdayKey),
+                  ),
                 ),
               ),
               SliverList.builder(

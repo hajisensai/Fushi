@@ -356,7 +356,8 @@ class _HomeGamePageState extends State<HomeGamePage> {
   ///   工具区（嵌套 [FushiFloatingChromeOverlay]），要读外层的让位，不能在这里
   ///   归零。
   /// - 捕获工作台：定高工作台版面（会话卡 + 自带滚动的台词面板），没有整页滚动
-  ///   视图可以吃让位，仍整体下移。
+  ///   视图可以吃让位：[FushiFloatingChromeVisiblePadding] 按工具区此刻的可见
+  ///   下沿让位，随收起动画缩到 0。
   Widget _chromeInsetFor(GameSection section, {required Widget child}) =>
       switch (section) {
         GameSection.dashboard ||
@@ -367,7 +368,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
         GameSection.diagnostics ||
         GameSection.discover =>
           child,
-        GameSection.monitor => FushiFloatingChromeInsetPadding(child: child),
+        // 捕获工作台是定高版面（会话卡 + 自带滚动的台词面板），没有整页滚动
+        // 视图可让位：顶部按工具区**此刻的可见下沿**让位，随收起动画缩到 0，
+        // 收起后版面跟着上移、不留空白。
+        GameSection.monitor => FushiFloatingChromeVisiblePadding(child: child),
       };
 
   /// 游戏「发现」视图：与「浏览 › 发现 › 游戏」同一个生产发现页，页头主位放本模块
