@@ -1043,6 +1043,10 @@ FloatingLyricWindow::Style StyleFromArgs(const flutter::EncodableMap* args) {
       ArgbFromValue(args, "toolbarActiveBgColor", style.toolbar_active_bg_color);
   style.toolbar_active_icon_color = ArgbFromValue(
       args, "toolbarActiveIconColor", style.toolbar_active_icon_color);
+  style.toolbar_tooltip_bg_color = ArgbFromValue(
+      args, "toolbarTooltipBgColor", style.toolbar_tooltip_bg_color);
+  style.toolbar_tooltip_text_color = ArgbFromValue(
+      args, "toolbarTooltipTextColor", style.toolbar_tooltip_text_color);
   // TODO-708 P2: 圆角半径 / 窗宽（逻辑 dp）。旧 payload 缺字段回退结构体默认 0=平台默认。
   style.corner_radius = DoubleFromValue(args, "cornerRadius", style.corner_radius);
   style.window_width = DoubleFromValue(args, "windowWidth", style.window_width);
@@ -2270,6 +2274,10 @@ void FlutterWindow::RegisterFloatingBallChannel() {
                   colors, "onButtonContainer", config.on_button_container);
               config.outline =
                   ArgbFromValue(colors, "outline", config.outline);
+              config.ball_open =
+                  ArgbFromValue(colors, "ballOpen", config.primary);
+              config.on_ball_open =
+                  ArgbFromValue(colors, "onBallOpen", config.on_ball_open);
             }
           }
           const bool dock_left = StringFromValue(args, "dock", "right") == "left";
@@ -3063,6 +3071,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
           hook_toolbar::SetSlotTooltips(
               hook_toolbar::Profile::kGalHook,
               WideListFromValue(args, "slotTooltips"));
+          // 图标下方短标签（同下标）。缺键 = 空表 = 不画文字。
+          hook_toolbar::SetSlotLabels(hook_toolbar::Profile::kGalHook,
+                                      WideListFromValue(args, "slotLabels"));
           gal_hook_text_window_->UpdateStyle(StyleFromArgs(args));
           gal_hook_text_window_->SetClickLookupEnabled(
               BoolFromValue(args, "clickLookupEnabled", true));
@@ -3074,6 +3085,8 @@ void FlutterWindow::RegisterGalHookTextChannel() {
               IntFromValue(args, "lookupTrigger", 0));
           gal_hook_text_window_->SetToolbarAutoHide(
               BoolFromValue(args, "toolbarAutoHide", true));
+          gal_hook_text_window_->SetToolbarLabels(
+              BoolFromValue(args, "toolbarLabels", false));
           gal_hook_text_window_->SetPassThroughBlocksMouse(
               BoolFromValue(args, "passThroughBlocksMouse", true));
           // 置顶按会话复位（与 locked / passThrough / following 同规矩）：上一局
@@ -3127,6 +3140,10 @@ void FlutterWindow::RegisterGalHookTextChannel() {
         } else if (method == "setToolbarAutoHide") {
           gal_hook_text_window_->SetToolbarAutoHide(
               BoolFromValue(args, "enabled", true));
+          result->Success();
+        } else if (method == "setToolbarLabels") {
+          gal_hook_text_window_->SetToolbarLabels(
+              BoolFromValue(args, "enabled", false));
           result->Success();
         } else if (method == "setPassThroughBlocksMouse") {
           gal_hook_text_window_->SetPassThroughBlocksMouse(
