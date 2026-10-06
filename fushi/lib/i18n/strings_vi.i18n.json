@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Chuyển sang chạm trực tiếp",
   "game_stream_touch_trackpad": "Chuyển sang bàn di chuột",
   "game_stream_remote_launch_title": "Cho phép khởi chạy từ xa",
-  "game_stream_remote_launch_hint": "Thiết bị Android đã ghép nối có thể khởi động game từ thư viện của PC này và phát trực tiếp",
+  "game_stream_remote_launch_hint": "Thiết bị đã ghép nối có thể khởi động game từ thư viện của PC này và phát trực tiếp",
   "manga_reader_ocr_volume": "Nhận dạng tập này",
   "manga_reader_ocr_queued": "Đang chờ",
   "manga_reader_ocr_unavailable_short": "Không có công cụ OCR · hãy tải mô hình hoặc đổi công cụ trong cài đặt OCR",

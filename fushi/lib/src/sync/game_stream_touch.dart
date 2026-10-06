@@ -292,8 +292,8 @@ class GameStreamMouseInterpreter {
   final bool extraButtonsSupported;
   final bool wheelSupported;
 
-  /// Logical pixels of wheel / pan travel per host wheel notch. Desktop
-  /// embedders report one wheel notch as roughly 50-60 logical pixels.
+  /// Logical pixels of trackpad pan per host wheel notch. A mouse wheel passes
+  /// its platform's detent size to [scroll] instead.
   static const double scrollStep = 50;
 
   static const List<(int, String)> _buttons = <(int, String)>[
@@ -332,20 +332,25 @@ class GameStreamMouseInterpreter {
     return out;
   }
 
-  /// A wheel / trackpad scroll of [delta] logical pixels at [position];
-  /// positive is down/right, as Flutter reports it and the host expects.
-  List<GameStreamPointerCommand> scroll(Offset position, Offset delta) {
+  /// A wheel / trackpad scroll of [delta] logical pixels at [position], one
+  /// host notch per [step] pixels; positive is down/right, as Flutter reports
+  /// it and the host expects.
+  List<GameStreamPointerCommand> scroll(
+    Offset position,
+    Offset delta, {
+    double step = scrollStep,
+  }) {
     if (!wheelSupported) return const <GameStreamPointerCommand>[];
     _position = position;
     _scrollRemainderX += delta.dx;
     _scrollRemainderY += delta.dy;
-    final int notchesX = (_scrollRemainderX / scrollStep).truncate();
-    final int notchesY = (_scrollRemainderY / scrollStep).truncate();
+    final int notchesX = (_scrollRemainderX / step).truncate();
+    final int notchesY = (_scrollRemainderY / step).truncate();
     if (notchesX == 0 && notchesY == 0) {
       return const <GameStreamPointerCommand>[];
     }
-    _scrollRemainderX -= notchesX * scrollStep;
-    _scrollRemainderY -= notchesY * scrollStep;
+    _scrollRemainderX -= notchesX * step;
+    _scrollRemainderY -= notchesY * step;
     return <GameStreamPointerCommand>[
       GameStreamPointerCommand.wheel(
         position,

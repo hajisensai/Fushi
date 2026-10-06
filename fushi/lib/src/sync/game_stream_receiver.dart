@@ -158,25 +158,31 @@ Future<void> prepareGameStreamMediaAudio() async {
   await WebRTC.initialize(
     options: <String, dynamic>{
       'androidAudioConfiguration': android.toMap(),
-      // No capture, so echo cancellation / noise suppression can only colour
-      // the game audio.
-      'bypassVoiceProcessing': true,
+      // iOS's voice-processing I/O unit is the call path itself; nothing is
+      // captured here, so it can only colour the game audio. Android only uses
+      // the flag for capture effects -- and taking it drops the low-latency
+      // playout path -- so it is not set there.
+      if (defaultTargetPlatform == TargetPlatform.iOS)
+        'bypassVoiceProcessing': true,
     },
   );
   await Helper.setAndroidAudioConfiguration(android);
   await Helper.setAppleAudioConfiguration(kGameStreamAppleAudioConfiguration);
 }
 
-/// iOS session for stream playback: the media category (speaker, Bluetooth
-/// headphones, AirPlay) rather than a call.
+/// iOS session for stream playback: the media category rather than a call.
+///
+/// The options set is explicitly empty. Playback already routes to the
+/// speaker, Bluetooth headphones and AirPlay; the call options (allowAirPlay,
+/// defaultToSpeaker, ...) are only valid with PlayAndRecord, and the plugin
+/// ignores the error when a category/option pair is rejected -- the session
+/// would silently stay on the old category. Leaving the key out would keep the
+/// options of whatever configuration came before.
 final AppleAudioConfiguration kGameStreamAppleAudioConfiguration =
     AppleAudioConfiguration(
       appleAudioCategory: AppleAudioCategory.playback,
       appleAudioMode: AppleAudioMode.moviePlayback,
-      appleAudioCategoryOptions: <AppleAudioCategoryOption>{
-        AppleAudioCategoryOption.allowBluetoothA2DP,
-        AppleAudioCategoryOption.allowAirPlay,
-      },
+      appleAudioCategoryOptions: <AppleAudioCategoryOption>{},
     );
 
 /// Receiver for an already joined Fushi session. The host owns SDP

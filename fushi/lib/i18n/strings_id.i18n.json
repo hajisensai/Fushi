@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Beralih ke sentuh langsung",
   "game_stream_touch_trackpad": "Beralih ke trackpad",
   "game_stream_remote_launch_title": "Izinkan peluncuran jarak jauh",
-  "game_stream_remote_launch_hint": "Perangkat Android terpasang dapat memulai game dari pustaka PC ini dan streaming",
+  "game_stream_remote_launch_hint": "Perangkat terpasang dapat memulai game dari pustaka PC ini dan streaming",
   "manga_reader_ocr_volume": "Kenali volume ini",
   "manga_reader_ocr_queued": "Dalam antrean",
   "manga_reader_ocr_unavailable_short": "Tidak ada mesin OCR · unduh model atau ganti mesin di pengaturan OCR",

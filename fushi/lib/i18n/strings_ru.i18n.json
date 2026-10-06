@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Переключить на прямое касание",
   "game_stream_touch_trackpad": "Переключить на трекпад",
   "game_stream_remote_launch_title": "Разрешить удалённый запуск",
-  "game_stream_remote_launch_hint": "Сопряжённые устройства Android могут запускать игры из библиотеки этого ПК и транслировать их",
+  "game_stream_remote_launch_hint": "Сопряжённые устройства могут запускать игры из библиотеки этого ПК и транслировать их",
   "manga_reader_ocr_volume": "Распознать том",
   "manga_reader_ocr_queued": "В очереди",
   "manga_reader_ocr_unavailable_short": "Нет движка OCR · загрузите модель или смените движок в настройках OCR",

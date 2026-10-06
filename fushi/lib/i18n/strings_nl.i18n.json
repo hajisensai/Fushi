@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Overschakelen naar directe aanraking",
   "game_stream_touch_trackpad": "Overschakelen naar trackpad",
   "game_stream_remote_launch_title": "Starten op afstand toestaan",
-  "game_stream_remote_launch_hint": "Gekoppelde Android-apparaten kunnen games uit de bibliotheek van deze pc starten en streamen",
+  "game_stream_remote_launch_hint": "Gekoppelde apparaten kunnen games uit de bibliotheek van deze pc starten en streamen",
   "manga_reader_ocr_volume": "Dit deel herkennen",
   "manga_reader_ocr_queued": "In wachtrij",
   "manga_reader_ocr_unavailable_short": "Geen OCR-engine · download een model of kies een andere engine in de OCR-instellingen",

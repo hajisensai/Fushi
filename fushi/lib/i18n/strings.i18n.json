@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "game_stream_remote_launch_hint": "Paired devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "Recognize this volume",
   "manga_reader_ocr_queued": "Queued",
   "manga_reader_ocr_unavailable_short": "No OCR engine · download a model or switch engines in OCR settings",
