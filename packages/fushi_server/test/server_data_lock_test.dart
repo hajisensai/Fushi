@@ -17,18 +17,20 @@ import 'package:test/test.dart';
 import 'command_harness.dart';
 import 'support/dart_executable.dart';
 
-/// 起一个子进程拿住数据目录锁，等它报 `locked`。
-Future<Process> _holdLock(String dataDir, String mode) async {
+/// 起一个子进程拿住数据目录锁，等它报 `locked <pid>`；返回进程与它自报的 pid
+/// （即写进锁文件的那个；Windows 上与 [Process.pid] 不同，见 hold_data_lock.dart）。
+Future<({Process proc, int pid})> _holdLock(String dataDir, String mode) async {
   final Process proc = await Process.start(dartExecutable(), <String>[
     p.join('test', 'support', 'hold_data_lock.dart'),
     dataDir,
     mode,
     'test holder',
   ]);
-  final Completer<void> ready = Completer<void>();
+  final Completer<int> ready = Completer<int>();
   final StringBuffer err = StringBuffer();
   proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((String line) {
-    if (line == 'locked' && !ready.isCompleted) ready.complete();
+    final int? holderPid = line.startsWith('locked ') ? int.tryParse(line.substring(7)) : null;
+    if (holderPid != null && !ready.isCompleted) ready.complete(holderPid);
   });
   proc.stderr.transform(utf8.decoder).listen(err.write);
   unawaited(
@@ -36,8 +38,8 @@ Future<Process> _holdLock(String dataDir, String mode) async {
       if (!ready.isCompleted) ready.completeError(StateError('持锁进程提前退出 $code: $err'));
     }),
   );
-  await ready.future.timeout(const Duration(minutes: 2));
-  return proc;
+  final int holderPid = await ready.future.timeout(const Duration(minutes: 2));
+  return (proc: proc, pid: holderPid);
 }
 
 Future<void> _releaseHolder(Process proc) async {
@@ -54,7 +56,7 @@ void main() {
   List<String> cli(List<String> args) => <String>['-c', h.configFile.path, ...args];
 
   test('serve 持锁：离线命令 75、第二个 serve 75；锁释放后可用', () async {
-    final Process holder = await _holdLock(h.dataDir, 'serve');
+    final ({Process proc, int pid}) holder = await _holdLock(h.dataDir, 'serve');
     try {
       expect(await runFushiServerCli(cli(<String>['status'])), 75);
       expect(await runFushiServerCli(cli(<String>['serve', '--no-scan'])), 75);
@@ -68,20 +70,20 @@ void main() {
       expect(e.holder?.isServe, isTrue);
       expect(e.describe(), allOf(contains('pid ${holder.pid}'), contains('http://127.0.0.1:38766'), contains('ctl')));
     } finally {
-      await _releaseHolder(holder);
+      await _releaseHolder(holder.proc);
     }
     expect(await runFushiServerCli(cli(<String>['status'])), 0);
   });
 
   test('离线命令持锁：serve 拒绝启动 75，提示是离线命令占用', () async {
-    final Process holder = await _holdLock(h.dataDir, 'offline');
+    final ({Process proc, int pid}) holder = await _holdLock(h.dataDir, 'offline');
     try {
       expect(await runFushiServerCli(cli(<String>['serve', '--no-scan'])), 75);
       final ServerDataLockedException e = await _expectLocked(h.dataDir);
       expect(e.holder?.mode, 'offline');
       expect(e.describe(), allOf(contains('离线命令'), contains('pid ${holder.pid}'), contains('test holder')));
     } finally {
-      await _releaseHolder(holder);
+      await _releaseHolder(holder.proc);
     }
     // 锁释放后持有者信息被清空，再拿锁不受影响。
     final ServerDataLock lock = await ServerDataLock.acquire(h.dataDir, mode: 'offline');

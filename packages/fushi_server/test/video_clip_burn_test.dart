@@ -25,7 +25,10 @@ ArgResults _parse(List<String> args) {
 bool _hasLibassFfmpeg() {
   try {
     final ProcessResult r = Process.runSync('ffmpeg', <String>['-hide_banner', '-filters']);
-    return r.exitCode == 0 && RegExp(r'^\s*\S+\s+subtitles\s', multiLine: true).hasMatch('${r.stdout}');
+    if (r.exitCode != 0 || !RegExp(r'^\s*\S+\s+subtitles\s', multiLine: true).hasMatch('${r.stdout}')) return false;
+    // 端到端量时长要 ffprobe：只有 ffmpeg 没有 ffprobe 的机器（常见于只装了单个 ffmpeg.exe）
+    // 照样 skip，而不是跑到一半抛 ProcessException。
+    return Process.runSync('ffprobe', <String>['-version']).exitCode == 0;
   } on ProcessException {
     return false;
   }
