@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -202,7 +202,7 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
               if (_busy)
                 const Padding(
                   padding: EdgeInsets.all(16),
-                  child: LinearProgressIndicator(),
+                  child: FushiLinearProgressIndicator(),
                 ),
               if (_error != null)
                 Padding(
@@ -222,7 +222,7 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
               if (!_busy && !available) ...<Widget>[
                 const SizedBox(height: 16),
                 Text(t.anki_video_template_unsupported),
-                TextButton(
+                FushiTextButton(
                   onPressed: () {
                     setState(() {
                       _busy = true;
@@ -235,7 +235,7 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
               ],
               if (available) ...<Widget>[
                 const SizedBox(height: 24),
-                DropdownButtonFormField<String>(
+                FushiDropdownButtonFormField<String>(
                   key: ValueKey<String>('field-$_field'),
                   initialValue: _field,
                   isExpanded: true,
@@ -259,7 +259,7 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
                         }),
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<AnkiVideoPlacement>(
+                FushiDropdownButtonFormField<AnkiVideoPlacement>(
                   key: ValueKey<AnkiVideoPlacement>(_placement),
                   initialValue: _placement,
                   isExpanded: true,
@@ -305,17 +305,17 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
                   spacing: 12,
                   runSpacing: 12,
                   children: <Widget>[
-                    OutlinedButton(
+                    FushiOutlinedButton(
                       onPressed: _busy || _field == null ? null : _showPreview,
                       child: Text(t.anki_video_template_preview),
                     ),
-                    FilledButton(
+                    FushiFilledButton(
                       onPressed: _busy || _field == null || !hasAudio
                           ? null
                           : () => unawaited(_write(restore: false)),
                       child: Text(t.anki_video_template_apply),
                     ),
-                    TextButton(
+                    FushiTextButton(
                       onPressed:
                           _busy ||
                               readAnkiVideoTemplateRecoveryOptions(

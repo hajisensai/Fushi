@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -95,7 +95,7 @@ Future<void> _showFallbackDialog(
 ) async {
   final bool? adapt = await showAppDialog<bool>(
     context: context,
-    builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+    builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
       title: Text(t.anki_video_template_fallback_title),
       content: Text(
         t.anki_video_template_fallback_body(noteType: noteTypeName),

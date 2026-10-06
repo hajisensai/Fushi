@@ -704,10 +704,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           ? t.anki_video_template_needed_hint
           : t.anki_video_template_media_hint,
       icon: notAdapted
-          ? Icons.warning_amber_outlined
-          : Icons.video_settings_outlined,
+          ? FushiIcons.warning
+          : FushiIcons.video,
       showIcon: true,
-      trailing: editable ? const Icon(Icons.chevron_right) : null,
+      trailing: editable ? const FushiIcon(FushiIcons.chevronRight) : null,
       onTap: editable ? () => _openVideoTemplate(settings, vm) : null,
     );
   }
