@@ -3397,6 +3397,13 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 不自动续表（统一判据 studyClockMayRun）。
       _studyClockLifecycleStopped = false;
       _syncStudyClockRunState();
+      // BUG-2961：后台听书期间视口这份「音频位置的投影」会丢：WebView 不可见被节流，
+      // 跟随滚动没落地；帧被冻结，积压的 post-frame（跨章恢复重锚的提交）到回前台第一
+      // 帧才执行，把视口拽回进章那一句。之前只能等下一次 cue 变化才纠正。排在第一帧
+      // 之后（积压回调之后）按跟随意图重新投影一次。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _audiobookController?.resyncReaderToAudio();
+      });
     }
   }
 
