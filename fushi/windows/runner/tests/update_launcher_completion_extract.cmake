@@ -1,0 +1,20 @@
+# Extract the actual production recovery function and final wait branch.
+# The C++ fixture supplies inert OS boundaries; there is no copied policy.
+if(NOT DEFINED LAUNCHER_SOURCE OR NOT DEFINED LAUNCHER_OUTPUT)
+  message(FATAL_ERROR "LAUNCHER_SOURCE and LAUNCHER_OUTPUT are required")
+endif()
+file(READ "${LAUNCHER_SOURCE}" _launcher_source)
+function(_launcher_extract start_marker end_marker output)
+  string(FIND "${_launcher_source}" "${start_marker}" start)
+  string(FIND "${_launcher_source}" "${end_marker}" end)
+  if(start LESS 0 OR end LESS 0 OR end LESS_EQUAL start)
+    message(FATAL_ERROR "Cannot extract live launcher completion block")
+  endif()
+  math(EXPR length "${end} - ${start}")
+  string(SUBSTRING "${_launcher_source}" ${start} ${length} fragment)
+  set(${output} "${fragment}" PARENT_SCOPE)
+endfunction()
+_launcher_extract("void EnsureAppBack(" "\n}  // namespace" _launcher_recover)
+_launcher_extract("  DWORD exit_code = 0;" "\n  return 0;\n}" _launcher_wait)
+file(WRITE "${LAUNCHER_OUTPUT}"
+  "// Generated from update_launcher.cpp; do not edit.\n${_launcher_recover}\nint CompleteInstallerWait(const ParsedArgs& args, InstallerRun run) {\n${_launcher_wait}\n  return 0;\n}\n")

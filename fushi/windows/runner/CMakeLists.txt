@@ -112,6 +112,10 @@ target_link_libraries(${BINARY_NAME} PRIVATE imm32)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
+# HBK-AUDIT-052: timeout/failed installer waits must not restart an app into a
+# bundle still being copied or rolled back. Uses live native function bodies.
+include("tests/update_launcher_completion_test.cmake")
+
 # BUG-1239: compile and execute the production IME Space predicate/dispatch
 # seam as part of every Windows runner build. Source-string tests could not
 # detect WM_KEYDOWN -> WM_KEYUP or removed Alt/Win guards.

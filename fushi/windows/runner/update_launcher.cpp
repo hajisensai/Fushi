@@ -571,22 +571,39 @@ int APIENTRY wWinMain(HINSTANCE, HINSTANCE, wchar_t*, int) {
                       {"installerLaunchedAt", JsonString(NowIsoUtc())},
                       {"installerPid", std::to_string(run.pid)}});
 
-  // 等安装器跑完，再确认 app 是否回来。等待失败（超时/句柄异常）不改变结论：
-  // 无论如何都要走 EnsureAppBack，它只看「现在还有没有 Fushi 活着」。
+  // Only a signaled installer handle proves its copy/rollback phase is over.
+  // On timeout or a failed wait, restarting the app could execute a partially
+  // replaced bundle and lock files the installer is still changing.
   DWORD exit_code = 0;
   bool exit_observed = false;
+  DWORD wait_result = WAIT_FAILED;
+  DWORD wait_error = ERROR_INVALID_HANDLE;
   if (run.process != nullptr) {
-    exit_observed =
-        ::WaitForSingleObject(run.process, kInstallerExitTimeoutMs) ==
-        WAIT_OBJECT_0;
+    wait_result = ::WaitForSingleObject(run.process, kInstallerExitTimeoutMs);
+    wait_error = wait_result == WAIT_FAILED ? ::GetLastError() : ERROR_SUCCESS;
+    exit_observed = wait_result == WAIT_OBJECT_0;
     if (exit_observed && !::GetExitCodeProcess(run.process, &exit_code)) {
       exit_code = 0;
     }
     ::CloseHandle(run.process);
     run.process = nullptr;
   }
+  if (!exit_observed) {
+    AppendMarkerFields(
+        args.marker_path,
+        {{"installerExitObserved", "false"},
+         {"installerWaitFinishedAt", JsonString(NowIsoUtc())},
+         {"installerWaitResult", std::to_string(wait_result)},
+         {"installerWaitTimedOut", wait_result == WAIT_TIMEOUT ? "true" : "false"},
+         {"installerWaitError", std::to_string(wait_error)}});
+    // The installer remains responsible for its own lifecycle and successful
+    // [Run] action. Do not terminate it or launch into an unconfirmed bundle.
+    return 5;
+  }
   AppendMarkerFields(args.marker_path,
-                     {{"installerExitedAt", JsonString(NowIsoUtc())}});
+                     {{"installerExitedAt", JsonString(NowIsoUtc())},
+                      {"installerExitObserved", "true"},
+                      {"installerExitCode", std::to_string(exit_code)}});
   EnsureAppBack(args, exit_code, exit_observed);
   return 0;
 }
