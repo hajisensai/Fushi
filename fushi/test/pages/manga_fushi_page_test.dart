@@ -363,9 +363,22 @@ void main() {
     // Linux 是无后端占位）——书行 + manga.json 全链路加载成功。
     expect(find.byKey(const ValueKey<String>('manga_content_ready')),
         findsOneWidget);
-    // 页码指示恢复到已存页：2 / 2（sectionIndex=1 → 1-based 第 2 页）。
-    expect(find.text('2 / 2'), findsOneWidget,
+    // 页码读数恢复到已存页：第 2 页 / 共 2 页（sectionIndex=1 → 1-based 第 2
+    // 页）。M3E chrome 把页码读数放在底部滑块胶囊里，当前页与总页数是两枚独立
+    // 数字（不再是顶栏的 `2 / 2` 胶囊）。
+    expect(
+        tester
+            .widget<Text>(
+                find.byKey(const ValueKey<String>('manga_slider_current_page')))
+            .data,
+        '2',
         reason: 'ReaderPositions.sectionIndex 必须恢复为当前页（0-based → 1-based 显示）');
+    expect(
+        tester
+            .widget<Text>(
+                find.byKey(const ValueKey<String>('manga_slider_page_count')))
+            .data,
+        '2');
   });
 
   testWidgets(
@@ -439,7 +452,23 @@ void main() {
             break;
           }
         }
-        expect(find.text('2 / 2'), findsOneWidget);
+        // 底部滑块胶囊的读数：当前页 2 / 总页数 2（来源回看直接打开第 2 页）。
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const ValueKey<String>('manga_slider_current_page')),
+              )
+              .data,
+          '2',
+        );
+        expect(
+          tester
+              .widget<Text>(
+                find.byKey(const ValueKey<String>('manga_slider_page_count')),
+              )
+              .data,
+          '2',
+        );
         await ExitFlushRegistry.instance.flushAll(clearCallbacks: false);
         final ReaderPosition? afterFlush = await positions.findByBookUid(uid);
         expect(afterFlush?.sectionIndex, original?.sectionIndex);
