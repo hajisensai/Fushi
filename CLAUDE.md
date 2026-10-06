@@ -138,6 +138,7 @@
     - 全量 analyze 由汇总方（Codex / 合并人）在推送前跑一次。
     - 汇总方不在本地重跑子代理已跑过的测试，改看 PR CI 结论，红了再定向复现。
   - **单人「修一个 bug → 提 PR」的流程不放宽**：推送前全量 analyze 照跑，改动覆盖的定向测试照跑。
+- **Flutter Widget Previewer（3.47）不作验证手段**（2026-10-06 实测，分支 `cc/widget-preview-eval`）：它只渲染 Web（DDC），本仓组件经 `theme_notifier → app_model` 引入 FFI / 64 位整数字面量，连 Fushi 主题都编不过；能跑的只有不经 `app_model` 的少数叶子组件，还要单独 host 包与 overrides 补丁。视觉验证用 widget test 真实像素预览或真机截图。等主题构建拆出 `app_model` 依赖图、上游修好 30 秒 DTD 超时与 workspace overrides 不继承后再评估。
 - **每条 PR 合入 `develop` 后固定加跑「目录枚举型守卫」整批**（51 条，一条命令 ~62 秒）——这批守卫用 `listSync(recursive: true)` 扫 `lib/` / `test/` / `integration_test/` 全树，**新 PR 的新文件自动落进它们的扫描面，而定向测试按功能域挑，结构上永远挑不到它们**。实测代价：不跑就是「刚合的 PR 把红带进 develop」，一天翻车四次、其中一条在 develop 上躺了一整天跨 5 条 PR；跑了之后累计 30 条合并零红。完整清单、单条命令、以及「清单过期了怎么按行为反向枚举重新推导」见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「合并后必跑：目录枚举型守卫清单」。
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `fushi/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
