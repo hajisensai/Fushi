@@ -444,7 +444,7 @@ Widget buildVideoQualityEntryRow(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
   return FushiListTileControl(
     dense: true,
-    leading: const FushiIcon(Icons.high_quality_outlined),
+    leading: const FushiIcon(FushiIcons.highQuality),
     title: Text(t.video_quality),
     subtitle: host.qualityCurrentLabel != null
         ? Text(host.qualityCurrentLabel!)
@@ -461,7 +461,7 @@ Widget buildVideoSkiaFallbackRow(SettingsContext context) {
   final VideoQuickSettingsHost host = videoQuickSettingsHostOf(context)!;
   return FushiListTileControl(
     dense: true,
-    leading: const FushiIcon(Icons.animation_outlined),
+    leading: const FushiIcon(FushiIcons.animation),
     title: Text(t.video_render_skia_fix_title),
     subtitle: Text(t.video_render_skia_fix_hint),
     trailing: const FushiIcon(FushiIcons.restart),

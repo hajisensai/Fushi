@@ -322,7 +322,7 @@ List<Widget> buildStatKpiTiles(BuildContext context, StatKpis kpis) {
     ),
     StatKpiTile(
       key: const ValueKey<String>('stat-kpi-streak'),
-      icon: Icons.local_fire_department_outlined,
+      icon: FushiIcons.streak,
       label: t.stat_streak,
       value: t.stat_format_days(n: kpis.streak),
       caption: t.stat_overview_active_days(n: kpis.activeDaysLast7),

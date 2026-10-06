@@ -321,23 +321,23 @@ extension ShortcutActionIcon on ShortcutAction {
       case ShortcutAction.videoPlay:
         return FushiIcons.playCircle;
       case ShortcutAction.videoPause:
-        return Icons.pause_circle_outline;
+        return FushiIcons.pauseCircle;
       case ShortcutAction.videoSeekBackward:
         return FushiIcons.fastRewind;
       case ShortcutAction.videoSeekForward:
         return FushiIcons.fastForward;
       case ShortcutAction.videoPreviousFrame:
-        return Icons.skip_previous_outlined;
+        return FushiIcons.stepBackward;
       case ShortcutAction.videoNextFrame:
-        return Icons.skip_next_outlined;
+        return FushiIcons.stepForward;
 
       // 倍速
       case ShortcutAction.videoSpeedUp:
         return FushiIcons.speed;
       case ShortcutAction.videoSpeedDown:
-        return Icons.slow_motion_video;
+        return FushiIcons.slowMotion;
       case ShortcutAction.videoResetSpeed:
-        return Icons.restore;
+        return FushiIcons.restart;
       case ShortcutAction.videoHoldSpeed:
         return FushiIcons.fastForward;
 
@@ -349,13 +349,13 @@ extension ShortcutActionIcon on ShortcutAction {
       case ShortcutAction.videoReplayCurrentSubtitle:
         return FushiIcons.replay;
       case ShortcutAction.videoReplayPreviousSubtitle:
-        return Icons.replay_5;
+        return FushiIcons.replay5;
 
       // 章节
       case ShortcutAction.videoPreviousChapter:
-        return Icons.first_page;
+        return FushiIcons.firstPage;
       case ShortcutAction.videoNextChapter:
-        return Icons.last_page;
+        return FushiIcons.lastPage;
 
       // 字幕显示 / 遮蔽
       case ShortcutAction.videoToggleSubtitleList:
@@ -363,33 +363,33 @@ extension ShortcutActionIcon on ShortcutAction {
       case ShortcutAction.videoSearchSubtitleList:
         return FushiIcons.search;
       case ShortcutAction.videoToggleSubtitleBlur:
-        return Icons.blur_on;
+        return FushiIcons.blur;
       case ShortcutAction.videoCycleSubtitleObscure:
         return FushiIcons.visibilityOff;
       case ShortcutAction.videoToggleSubtitleHide:
-        return Icons.subtitles_off_outlined;
+        return FushiIcons.subtitlesOff;
       case ShortcutAction.videoCycleSecondarySubtitleObscure:
-        return Icons.blur_linear;
+        return FushiIcons.blurLinear;
       case ShortcutAction.videoToggleSecondarySubtitleHide:
-        return Icons.closed_caption_disabled_outlined;
+        return FushiIcons.captionsOff;
 
       // 字幕对轴
       case ShortcutAction.videoOpenSubtitleAlign:
-        return Icons.graphic_eq;
+        return FushiIcons.audio;
       case ShortcutAction.videoSubtitleDelayIncrease:
-        return Icons.more_time;
+        return FushiIcons.moreTime;
       case ShortcutAction.videoSubtitleDelayDecrease:
         return FushiIcons.history;
       case ShortcutAction.videoAlignSubtitleToPrev:
-        return Icons.align_horizontal_left;
+        return FushiIcons.alignLeft;
       case ShortcutAction.videoAlignSubtitleToNext:
-        return Icons.align_horizontal_right;
+        return FushiIcons.alignRight;
 
       // 音量
       case ShortcutAction.videoVolumeUp:
         return FushiIcons.volumeUp;
       case ShortcutAction.videoVolumeDown:
-        return Icons.volume_down;
+        return FushiIcons.volumeDown;
       case ShortcutAction.videoToggleMute:
         return FushiIcons.volumeOff;
 
@@ -401,11 +401,11 @@ extension ShortcutActionIcon on ShortcutAction {
       case ShortcutAction.videoToggleMiniChrome:
         return FushiIcons.settings;
       case ShortcutAction.videoScreenshot:
-        return Icons.photo_camera_outlined;
+        return FushiIcons.camera;
       case ShortcutAction.videoScreenshotSubtitled:
         return FushiIcons.subtitles;
       case ShortcutAction.videoToggleShaderCompare:
-        return Icons.compare;
+        return FushiIcons.compare;
       case ShortcutAction.videoToggleImmersiveLock:
         return FushiIcons.lock;
 

@@ -350,7 +350,7 @@ class _MediaItemStatsDialogState extends State<MediaItemStatsDialog> {
     String? chars(int n) => hasChars ? formatStatChars(n) : null;
     final List<Widget> tiles = <Widget>[
       StatKpiTile(
-        icon: Icons.functions,
+        icon: FushiIcons.functions,
         label: t.media_stats_total,
         value: formatStatTime(s.totalMs),
         caption: chars(s.totalChars),

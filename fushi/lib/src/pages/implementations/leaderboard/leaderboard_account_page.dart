@@ -94,7 +94,7 @@ class _LeaderboardAccountPageState
               id: device.keyId,
             ),
             confirmLabel: t.leaderboard_account_device_remove,
-            leadingIcon: Icons.phonelink_erase_outlined,
+            leadingIcon: FushiIcons.deviceRemove,
           ),
         );
     if (ok == null || !mounted) return;
@@ -285,7 +285,7 @@ class _LeaderboardAccountPageState
         FushiListItem(
           key: ValueKey<String>('leaderboard-device-${d.keyId}'),
           leading: FushiIcon(
-            d.current ? Icons.smartphone : FushiIcons.devices,
+            d.current ? FushiIcons.phone : FushiIcons.devices,
           ),
           title: Text(
             d.current

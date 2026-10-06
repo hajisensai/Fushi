@@ -716,7 +716,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return StatKpiStrip(
       items: <StatKpiItem>[
         StatKpiItem(
-          icon: Icons.local_fire_department_outlined,
+          icon: FushiIcons.streak,
           value: t.stat_format_days(n: _streak),
           label: t.stat_streak,
         ),
@@ -726,14 +726,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           label: t.stat_today,
         ),
         StatKpiItem(
-          icon: Icons.trending_up,
+          icon: FushiIcons.trendingUp,
           value: formatStatChars(_weekChars),
           label: t.stat_this_week,
           delta: weekDelta,
           deltaUp: weekPct == null ? true : weekPct >= 0,
         ),
         StatKpiItem(
-          icon: Icons.show_chart,
+          icon: FushiIcons.lineChart,
           value: formatStatChars(dailyAvgChars),
           label: t.stat_daily_average,
         ),

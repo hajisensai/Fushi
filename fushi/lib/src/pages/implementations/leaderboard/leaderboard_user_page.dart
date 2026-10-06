@@ -390,7 +390,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
           FushiFilledButton.icon(
             key: const ValueKey<String>('leaderboard-user-add-friend'),
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const FushiIcon(Icons.person_add_alt_1_outlined),
+            icon: const FushiIcon(FushiIcons.personAdd),
             label: Text(t.leaderboard_user_add_friend),
           ),
         );
@@ -398,7 +398,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         buttons.add(
           FushiFilledButton.icon(
             onPressed: _relationBusy ? null : () => unawaited(_friendAction()),
-            icon: const FushiIcon(Icons.how_to_reg_outlined),
+            icon: const FushiIcon(FushiIcons.personCheck),
             label: Text(t.leaderboard_user_accept),
           ),
         );
@@ -413,7 +413,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
         buttons.add(
           FushiFilledButton.tonalIcon(
             onPressed: null,
-            icon: const FushiIcon(Icons.people_alt_outlined),
+            icon: const FushiIcon(FushiIcons.group),
             label: Text(t.leaderboard_user_is_friend),
           ),
         );

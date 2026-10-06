@@ -128,7 +128,7 @@ class _LeaderboardFriendsPageState
             title: t.leaderboard_friends_remove_title,
             message: t.leaderboard_friends_remove_message(user: a.tag),
             confirmLabel: t.leaderboard_friends_remove,
-            leadingIcon: Icons.person_remove_outlined,
+            leadingIcon: FushiIcons.personRemove,
           ),
         );
     if (ok == null || !mounted) return;
@@ -241,7 +241,7 @@ class _LeaderboardFriendsPageState
                   alignment: Alignment.centerLeft,
                   child: FushiFilledButton.icon(
                     onPressed: _adding ? null : () => unawaited(_add()),
-                    icon: const FushiIcon(Icons.person_add_alt_1_outlined),
+                    icon: const FushiIcon(FushiIcons.personAdd),
                     label: Text(t.leaderboard_friends_add),
                   ),
                 ),
