@@ -224,25 +224,31 @@ class _ExternalReaderImportPageState
         body: FushiEntranceScope(
           // 扫描结果 / 导入报告落地时重开进场窗口。
           replayKey: Object.hash(_preview, _report),
-          child: ListView(
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-            ),
-            children: <Widget>[
-              for (int i = 0; i < sections.length; i++)
-                Padding(
-                  padding: EdgeInsets.only(
-                    bottom: i == sections.length - 1 ? 0 : tokens.spacing.card,
-                  ),
-                  child: FushiStaggeredEntrance(index: i, child: sections[i]),
+          // 页头浮在正文上（脚手架默认 extendBodyBehindHeader）：顶部让位从
+          // body 子树的 context 读（State 的 context 在脚手架之上）。
+          child: Builder(
+            builder: (BuildContext context) => ListView(
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.fromLTRB(
+                  tokens.spacing.page,
+                  tokens.spacing.gap + MediaQuery.paddingOf(context).top,
+                  tokens.spacing.page,
+                  tokens.spacing.section,
                 ),
-            ],
+              ),
+              children: <Widget>[
+                for (int i = 0; i < sections.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(
+                      bottom: i == sections.length - 1
+                          ? 0
+                          : tokens.spacing.card,
+                    ),
+                    child: FushiStaggeredEntrance(index: i, child: sections[i]),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
