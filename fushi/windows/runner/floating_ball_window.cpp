@@ -75,16 +75,6 @@ uint32_t AlphaBlend(uint32_t fg, uint32_t bg) {
          channel(0);
 }
 
-uint32_t LerpColor(uint32_t from, uint32_t to, double t) {
-  auto channel = [&](int shift) {
-    const double a = (from >> shift) & 0xFF;
-    const double b = (to >> shift) & 0xFF;
-    return static_cast<uint32_t>(std::lround(a + (b - a) * t)) & 0xFF;
-  };
-  return (channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) |
-         channel(0);
-}
-
 double EaseOutBackPeakCached() {
   static const double peak = fb::EaseOutBackPeak();
   return peak;
@@ -882,7 +872,8 @@ void FloatingBallWindow::RenderBall() {
     DrawSoftShadow(cx, cy + (0.5f + static_cast<float>(t)) * scale, r, blur,
                    0.18f + 0.14f * static_cast<float>(t));
 
-    // 球面：圆形裁切的 Fushi 图标（cover：取中心正方形，已在 WIC 里缩到球径）。
+    // 球面：Dart 合成的 M3E FAB 球面（主题 primaryContainer + 吉祥物），按圆
+    // 裁切（cover：取中心正方形，已在 WIC 里缩到球径）。
     const D2D1_ELLIPSE disc = D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r);
     ID2D1Bitmap* image =
         BitmapFor("ball", config_.ball_image, image_px, /*crop_square=*/true);
@@ -901,23 +892,23 @@ void FloatingBallWindow::RenderBall() {
     }
     if (!painted) {
       ComPtr<ID2D1SolidColorBrush> fill;
-      if (SUCCEEDED(rt->CreateSolidColorBrush(ColorFromArgb(config_.primary),
-                                              fill.GetAddressOf()))) {
+      if (SUCCEEDED(rt->CreateSolidColorBrush(
+              ColorFromArgb(config_.ball_container), fill.GetAddressOf()))) {
         rt->FillEllipse(disc, fill.Get());
       }
     }
 
-    // 描边环：收起态细的前景色 35% 环 → 展开态主题色粗环。
-    const float stroke = (1.0f + 1.5f * static_cast<float>(t)) * scale;
-    const uint32_t ring = LerpColor(WithAlpha(config_.on_surface, 0.35),
-                                    config_.primary, t);
-    ComPtr<ID2D1SolidColorBrush> ring_brush;
-    if (SUCCEEDED(rt->CreateSolidColorBrush(ColorFromArgb(ring),
-                                            ring_brush.GetAddressOf()))) {
-      const float inset = stroke / 2;
-      rt->DrawEllipse(
-          D2D1::Ellipse(D2D1::Point2F(cx, cy), r - inset, r - inset),
-          ring_brush.Get(), stroke);
+    // 描边环：M3E FAB 无环，只有墨水屏（outline 不透明）画 1.5dp 描边。
+    if (((config_.outline >> 24) & 0xFF) != 0) {
+      const float stroke = 1.5f * scale;
+      ComPtr<ID2D1SolidColorBrush> ring_brush;
+      if (SUCCEEDED(rt->CreateSolidColorBrush(ColorFromArgb(config_.outline),
+                                              ring_brush.GetAddressOf()))) {
+        const float inset = stroke / 2;
+        rt->DrawEllipse(
+            D2D1::Ellipse(D2D1::Point2F(cx, cy), r - inset, r - inset),
+            ring_brush.Get(), stroke);
+      }
     }
   });
 }
@@ -927,9 +918,17 @@ void FloatingBallWindow::RenderMenu() {
     return;
   }
   const float scale = static_cast<float>(menu_scale_);
-  // 纸张底色上再调 6% 前景色（应用内 _ColumnButton 同一配方）。
+  // M3E tonal 小圆钮（应用内 _ColumnButton 同一配方）：secondaryContainer 底、
+  // onSecondaryContainer 状态层（图标 PNG 已由 Dart 着好色）；墨水屏 surface 底 +
+  // 描边、无阴影。Dart 没下发 M3E 键时按旧配方（surface 叠 6% onSurface）兜底。
   const uint32_t base =
-      AlphaBlend(WithAlpha(config_.on_surface, 0.06), config_.surface);
+      config_.button_container != 0
+          ? config_.button_container
+          : AlphaBlend(WithAlpha(config_.on_surface, 0.06), config_.surface);
+  const uint32_t on_base = config_.on_button_container != 0
+                               ? config_.on_button_container
+                               : config_.on_surface;
+  const bool outlined = ((config_.outline >> 24) & 0xFF) != 0;
   const UINT icon_px =
       static_cast<UINT>(std::ceil(fb::kIconDip * menu_scale_));
 
@@ -950,17 +949,26 @@ void FloatingBallWindow::RenderMenu() {
       const float cy = static_cast<float>(dcy);
       const float r = static_cast<float>(dr);
       const float opacity = static_cast<float>(dop);
-      // 轻阴影（≈ elevation 2）。
-      DrawSoftShadow(cx, cy + 1.0f * scale, r, 2.5f * scale, 0.24f * opacity);
+      // 轻阴影（M3E elevation level 1）；墨水屏不投影。
+      if (!outlined) {
+        DrawSoftShadow(cx, cy + 0.5f * scale, r, 2.0f * scale,
+                       0.20f * opacity);
+      }
       const D2D1_ELLIPSE disc = D2D1::Ellipse(D2D1::Point2F(cx, cy), r, r);
       brush->SetColor(ColorFromArgb(base, opacity));
       rt->FillEllipse(disc, brush.Get());
-      // 悬停 / 按下：前景色 8% / 12% 叠色。
+      // 悬停 / 按下：M3E 状态层 8% / 10%。
       if (i == pressed_ || i == hovered_) {
-        const double overlay = i == pressed_ ? 0.12 : 0.08;
-        brush->SetColor(
-            ColorFromArgb(WithAlpha(config_.on_surface, overlay), opacity));
+        const double overlay = i == pressed_ ? 0.10 : 0.08;
+        brush->SetColor(ColorFromArgb(WithAlpha(on_base, overlay), opacity));
         rt->FillEllipse(disc, brush.Get());
+      }
+      if (outlined) {
+        const float stroke = 1.5f * scale;
+        brush->SetColor(ColorFromArgb(config_.outline, opacity));
+        rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), r - stroke / 2,
+                                      r - stroke / 2),
+                        brush.Get(), stroke);
       }
       const auto icon_it = config_.icon_images.find(menu_ids_[i]);
       if (icon_it != config_.icon_images.end()) {

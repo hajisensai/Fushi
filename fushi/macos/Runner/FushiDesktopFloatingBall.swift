@@ -234,8 +234,9 @@ final class DesktopFloatingBallPanel: NSPanel {
   override var canBecomeMain: Bool { return false }
 }
 
-/// 球：圆形裁切的 Fushi 图标 + 描边环 + 随 t 加深的阴影。不透明度由面板
-/// alphaValue 管（连阴影一起淡）。
+/// 球：Dart 合成的 M3E FAB 球面（主题 primaryContainer + 吉祥物）按圆裁切 + 随 t
+/// 加深的阴影；只有墨水屏（outline 不透明）画描边环。不透明度由面板 alphaValue
+/// 管（连阴影一起淡）。
 final class DesktopFloatingBallView: NSView {
   weak var controller: DesktopFloatingBallController?
   var image: CGImage? { didSet { needsDisplay = true } }
@@ -243,6 +244,10 @@ final class DesktopFloatingBallView: NSView {
   var surface = DesktopFloatingBallColor(argb: 0xFFFF_FFFF) { didSet { needsDisplay = true } }
   var onSurface = DesktopFloatingBallColor(argb: 0xFF1C_1B1F) { didSet { needsDisplay = true } }
   var primary = DesktopFloatingBallColor(argb: 0xFF67_50A4) { didSet { needsDisplay = true } }
+  var ballContainer = DesktopFloatingBallColor(argb: 0xFFEA_DDFF) {
+    didSet { needsDisplay = true }
+  }
+  var outline = DesktopFloatingBallColor(argb: 0x0000_0000) { didSet { needsDisplay = true } }
 
   override var isOpaque: Bool { return false }
   override var mouseDownCanMoveWindow: Bool { return false }
@@ -268,12 +273,15 @@ final class DesktopFloatingBallView: NSView {
     guard let ctx = NSGraphicsContext.current?.cgContext else { return }
     let t = max(0, min(1, progress))
     let rect = ballRect
-    // 阴影（应用内 elevation 1 → 6 随 t 加深）：先画一个实心圆投影。
+    let outlined = outline.a > 0
+    // 阴影（M3E elevation level 1 → 3 随 t 加深；墨水屏不投影）：先画一个实心圆投影。
     ctx.saveGState()
-    ctx.setShadow(
-      offset: CGSize(width: 0, height: -(1 + 2 * t)), blur: 2 + 6 * t,
-      color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.18 + 0.14 * t))
-    ctx.setFillColor(surface.cgColor)
+    if !outlined {
+      ctx.setShadow(
+        offset: CGSize(width: 0, height: -(1 + 2 * t)), blur: 2 + 6 * t,
+        color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.18 + 0.14 * t))
+    }
+    ctx.setFillColor(ballContainer.cgColor)
     ctx.fillEllipse(in: rect)
     ctx.restoreGState()
     // 球面（BoxFit.cover：解码时已裁成中心正方形）。
@@ -284,15 +292,17 @@ final class DesktopFloatingBallView: NSView {
       ctx.interpolationQuality = .high
       ctx.draw(image, in: rect)
     } else {
-      ctx.setFillColor(primary.cgColor)
+      ctx.setFillColor(ballContainer.cgColor)
       ctx.fill(rect)
     }
     ctx.restoreGState()
-    // 描边环：收起态细的 onSurface@35%，随 t 换成主题色粗环。
-    let stroke = 1 + 1.5 * t
-    ctx.setStrokeColor(onSurface.withAlpha(0.35).lerp(to: primary, t).cgColor)
-    ctx.setLineWidth(stroke)
-    ctx.strokeEllipse(in: rect.insetBy(dx: stroke / 2, dy: stroke / 2))
+    // 描边环：M3E FAB 无环，只有墨水屏画 1.5pt 描边（描边无填色）。
+    if outlined {
+      let stroke: CGFloat = 1.5
+      ctx.setStrokeColor(outline.cgColor)
+      ctx.setLineWidth(stroke)
+      ctx.strokeEllipse(in: rect.insetBy(dx: stroke / 2, dy: stroke / 2))
+    }
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -321,8 +331,9 @@ final class DesktopFloatingBallMenuView: NSView {
   }
 }
 
-/// 一颗圆形按钮：surface 上叠 6% onSurface 的底 + 轻阴影 + 居中 22pt 图标；悬停 /
-/// 按下叠 onSurface 8% / 12%。视图按「按钮 + 阴影边」的名义尺寸画，动画缩放时
+/// 一颗圆形按钮：M3E tonal 小圆钮（[fill] = secondaryContainer）+ level 1 轻阴影 +
+/// 居中 22pt 图标（Dart 已按 onSecondaryContainer 着色）；悬停 / 按下叠
+/// [onFill] 8% / 10% 状态层。墨水屏（[outline] 不透明）：surface 底 + 描边、无阴影。视图按「按钮 + 阴影边」的名义尺寸画，动画缩放时
 /// 整体按 bounds 比例缩。
 final class DesktopFloatingBallButtonView: NSView {
   static var nominalSide: CGFloat {
@@ -333,20 +344,23 @@ final class DesktopFloatingBallButtonView: NSView {
   weak var controller: DesktopFloatingBallController?
   private let icon: NSImage?
   private let fallbackGlyph: String
-  private let surface: DesktopFloatingBallColor
-  private let onSurface: DesktopFloatingBallColor
+  private let fill: DesktopFloatingBallColor
+  private let onFill: DesktopFloatingBallColor
+  private let outline: DesktopFloatingBallColor
   private var trackingArea: NSTrackingArea?
   private var hovered = false { didSet { if hovered != oldValue { needsDisplay = true } } }
   private var pressed = false { didSet { if pressed != oldValue { needsDisplay = true } } }
 
   init(
     actionId: String, label: String, icon: NSImage?,
-    surface: DesktopFloatingBallColor, onSurface: DesktopFloatingBallColor
+    fill: DesktopFloatingBallColor, onFill: DesktopFloatingBallColor,
+    outline: DesktopFloatingBallColor
   ) {
     self.actionId = actionId
     self.icon = icon
-    self.surface = surface
-    self.onSurface = onSurface
+    self.fill = fill
+    self.onFill = onFill
+    self.outline = outline
     // 没有图标：退化成文案首字，至少认得出（同 Android）。
     self.fallbackGlyph = label.isEmpty ? "?" : String(label.prefix(1))
     let side = DesktopFloatingBallButtonView.nominalSide
@@ -431,17 +445,27 @@ final class DesktopFloatingBallButtonView: NSView {
     ctx.saveGState()
     ctx.scaleBy(x: unit, y: unit)
     let circle = CGRect(x: pad, y: pad, width: button, height: button)
-    // 底色 + 轻阴影（≈ elevation 2）。阴影偏移不受 CTM 影响，手动乘缩放。
+    let outlined = outline.a > 0
+    // 底色 + 轻阴影（M3E elevation level 1；墨水屏不投影）。阴影偏移不受 CTM 影响，
+    // 手动乘缩放。
     ctx.saveGState()
-    ctx.setShadow(
-      offset: CGSize(width: 0, height: -1 * unit), blur: 3 * unit,
-      color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.24))
-    ctx.setFillColor(onSurface.withAlpha(0.06).over(surface).cgColor)
+    if !outlined {
+      ctx.setShadow(
+        offset: CGSize(width: 0, height: -0.5 * unit), blur: 2 * unit,
+        color: CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.20))
+    }
+    ctx.setFillColor(fill.cgColor)
     ctx.fillEllipse(in: circle)
     ctx.restoreGState()
     if pressed || hovered {
-      ctx.setFillColor(onSurface.withAlpha(pressed ? 0.12 : 0.08).cgColor)
+      ctx.setFillColor(onFill.withAlpha(pressed ? 0.10 : 0.08).cgColor)
       ctx.fillEllipse(in: circle)
+    }
+    if outlined {
+      let stroke: CGFloat = 1.5
+      ctx.setStrokeColor(outline.cgColor)
+      ctx.setLineWidth(stroke)
+      ctx.strokeEllipse(in: circle.insetBy(dx: stroke / 2, dy: stroke / 2))
     }
     let iconSize = kFloatingBallIconSize
     let iconRect = CGRect(
@@ -450,7 +474,7 @@ final class DesktopFloatingBallButtonView: NSView {
     if let icon = icon {
       icon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1)
     } else {
-      let color = NSColor(cgColor: onSurface.cgColor) ?? NSColor.labelColor
+      let color = NSColor(cgColor: onFill.cgColor) ?? NSColor.labelColor
       let text = NSAttributedString(
         string: fallbackGlyph,
         attributes: [.font: NSFont.systemFont(ofSize: 16), .foregroundColor: color])
@@ -488,6 +512,11 @@ final class DesktopFloatingBallController: NSObject {
   private var surface = DesktopFloatingBallColor(argb: 0xFFFF_FFFF)
   private var onSurface = DesktopFloatingBallColor(argb: 0xFF1C_1B1F)
   private var primary = DesktopFloatingBallColor(argb: 0xFF67_50A4)
+  // M3E 角色（Dart floatingBallNativeColors）；nil = Dart 没下发，按旧配方兜底。
+  private var ballContainer: DesktopFloatingBallColor?
+  private var buttonContainer: DesktopFloatingBallColor?
+  private var onButtonContainer: DesktopFloatingBallColor?
+  private var outline = DesktopFloatingBallColor(argb: 0x0000_0000)
 
   // 位置：停靠边 + 纵向比例 + 所在屏幕（本进程内记忆；缺省主屏）。
   private var dockLeft = false
@@ -598,6 +627,10 @@ final class DesktopFloatingBallController: NSObject {
       surface = color("surface") ?? surface
       onSurface = color("onSurface") ?? onSurface
       primary = color("primary") ?? primary
+      ballContainer = color("ballContainer") ?? ballContainer
+      buttonContainer = color("buttonContainer") ?? buttonContainer
+      onButtonContainer = color("onButtonContainer") ?? onButtonContainer
+      outline = color("outline") ?? outline
     }
 
     if ballPanel == nil {
@@ -694,6 +727,8 @@ final class DesktopFloatingBallController: NSObject {
     view.surface = surface
     view.onSurface = onSurface
     view.primary = primary
+    view.ballContainer = ballContainer ?? primary
+    view.outline = outline
     let label = labels[kFloatingBallLabelBall] ?? "Fushi"
     view.toolTip = label
     view.setAccessibilityLabel(label)
@@ -865,7 +900,8 @@ final class DesktopFloatingBallController: NSObject {
     for (i, id) in ids.enumerated() {
       let button = DesktopFloatingBallButtonView(
         actionId: id, label: label(for: id), icon: icons[id],
-        surface: surface, onSurface: onSurface)
+        fill: buttonContainer ?? onSurface.withAlpha(0.06).over(surface),
+        onFill: onButtonContainer ?? onSurface, outline: outline)
       button.controller = self
       root.addSubview(button)
       menuButtons.append(button)

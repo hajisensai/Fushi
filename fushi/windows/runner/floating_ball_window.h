@@ -43,6 +43,13 @@ class FloatingBallWindow {
     uint32_t surface = 0xFFFEF7FF;
     uint32_t on_surface = 0xFF1D1B20;
     uint32_t primary = 0xFF6750A4;
+    // M3E 角色（Dart floatingBallNativeColors）：球本体 FAB 底色（球面 PNG 缺失
+    // 时的纯色兜底）、tonal 小圆钮底色 / 图标色、描边（只有墨水屏不透明，其余
+    // 全透明 = 不画环）。0 = Dart 没下发，按旧配方兜底。
+    uint32_t ball_container = 0xFFEADDFF;
+    uint32_t button_container = 0;
+    uint32_t on_button_container = 0;
+    uint32_t outline = 0;
   };
 
   // |anchor| = 球在屏幕上的矩形（物理像素、左上原点）。

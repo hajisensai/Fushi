@@ -2224,6 +2224,14 @@ void FlutterWindow::RegisterFloatingBallChannel() {
               config.on_surface =
                   ArgbFromValue(colors, "onSurface", config.on_surface);
               config.primary = ArgbFromValue(colors, "primary", config.primary);
+              config.ball_container = ArgbFromValue(colors, "ballContainer",
+                                                    config.ball_container);
+              config.button_container = ArgbFromValue(
+                  colors, "buttonContainer", config.button_container);
+              config.on_button_container = ArgbFromValue(
+                  colors, "onButtonContainer", config.on_button_container);
+              config.outline =
+                  ArgbFromValue(colors, "outline", config.outline);
             }
           }
           const bool dock_left = StringFromValue(args, "dock", "right") == "left";

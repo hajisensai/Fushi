@@ -111,8 +111,24 @@ void main() {
   test('按钮图标 / 配色来自 Dart（与应用内同一颗 IconData、同一套主题色）', () {
     expect(service, contains('PREF_ICONS'));
     expect(service, contains('PREF_COLORS'));
-    expect(service, contains('fonts/MaterialIcons-Regular.otf'));
-    expect(service, contains('assets/meta/icon.png'));
+    // 图标是 FushiIcons 语义图标（FushiSymbols 字体码位），不再是 Material Icons。
+    expect(service, contains('assets/icon_fonts/FushiSymbolsRounded.ttf'));
+    expect(service, isNot(contains('MaterialIcons-Regular.otf')));
+    // 球面 = 主题色 FAB + 与应用内同一只吉祥物、同一放大倍数。
+    expect(service, contains('"$kReaderFloatingBallIconAsset"'));
+    expect(
+      _floatConst(service, 'MASCOT_SCALE'),
+      closeTo(kReaderFloatingBallMascotScale, 1e-6),
+    );
+    // M3E 配色角色：球本体 / tonal 圆钮 / 墨水屏描边都取 Dart 下发的主题色。
+    for (final String key in <String>[
+      'ballContainer',
+      'buttonContainer',
+      'onButtonContainer',
+      'outline',
+    ]) {
+      expect(service, contains('"$key"'));
+    }
     final String channel = _read('FloatingBallChannel.java');
     expect(channel, contains('intMap(call.argument("icons"))'));
     expect(channel, contains('intMap(call.argument("colors"))'));
