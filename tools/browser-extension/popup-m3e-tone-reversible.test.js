@@ -103,3 +103,76 @@ test('暗色调色可逆：切回浅色复原原内联值（含 !important 优�
 test('宿主可显式调用 __fushiRetoneDictColors（主题热更新路径）', () => {
   assert.match(SRC, /window\.__fushiRetoneDictColors = __fushiRetoneDictColors;/);
 });
+
+// ── 由 tool/review_repros/popup_m3e_theme_transition.repro.mjs（HBK-AUDIT-015 复现）迁来 ──
+// 真源调色段 + 最小 DOM 边界；宿主主题热更新 = 改 data-theme 后调 __fushiRetoneDictColors
+// （dictionary_popup_webview.dart didChangeDependencies 注入 themeVarsJs 之后紧跟这一调用）。
+function reproFixture(initialTheme) {
+  const properties = new Map([
+    ['background-color', { value: 'rgb(255, 255, 255)', priority: '' }],
+    ['color', { value: 'rgb(0, 0, 0)', priority: '' }],
+  ]);
+  const card = {
+    tagName: 'DIV', isConnected: true,
+    matches: (selector) => selector === '.glossary-group > div[data-dictionary]',
+    querySelectorAll: () => [],
+    style: {
+      setProperty: (key, value, priority) => properties.set(key, { value, priority: priority || '' }),
+      getPropertyValue: (key) => (properties.get(key) || {}).value || '',
+      getPropertyPriority: (key) => (properties.get(key) || {}).priority || '',
+    },
+  };
+  const attributes = new Map([['data-theme', initialTheme]]);
+  const html = {
+    classList: { contains: (name) => name === 'fushi-m3e' },
+    getAttribute: (name) => attributes.get(name),
+    setAttribute: (name, value) => attributes.set(name, value),
+  };
+  let frames = [];
+  const scope = {
+    console, Set, WeakSet,
+    document: { documentElement: html },
+    __fushiContainer: () => null,
+    requestAnimationFrame: (callback) => (frames.push(callback), frames.length),
+    getComputedStyle: (node) => ({
+      backgroundColor: node.style.getPropertyValue('background-color'),
+      color: node.style.getPropertyValue('color'),
+    }),
+  };
+  vm.createContext(scope);
+  vm.runInContext(slice('var __fushiM3eToneRoots = null;', '// BUG-1898:'), scope, { filename: 'popup.js#m3e-tone' });
+  const flush = () => { const p = frames; frames = []; p.forEach((cb) => cb()); };
+  return {
+    card,
+    postProcess() { scope.__fushiScheduleM3eDictTone(card); flush(); },
+    setTheme(theme) { html.setAttribute('data-theme', theme); scope.__fushiRetoneDictColors(); flush(); },
+  };
+}
+
+test('HBK-AUDIT-015 复现：初始暗色调色、初始浅色保持', () => {
+  const dark = reproFixture('dark');
+  dark.postProcess();
+  assert.strictEqual(dark.card.style.getPropertyValue('background-color'), 'hsl(0, 0%, 22%)');
+  assert.strictEqual(dark.card.style.getPropertyValue('color'), 'hsl(0, 0%, 82%)');
+  assert.strictEqual(dark.card.style.getPropertyPriority('background-color'), 'important');
+  const light = reproFixture('light');
+  light.postProcess();
+  assert.strictEqual(light.card.style.getPropertyValue('background-color'), 'rgb(255, 255, 255)');
+});
+
+test('HBK-AUDIT-015 复现：暗→浅在现有 DOM 上复原；浅→暗对已渲染词条调色；浅色下再跑调度也复原', () => {
+  const a = reproFixture('dark');
+  a.postProcess();
+  a.setTheme('light');
+  assert.strictEqual(a.card.style.getPropertyValue('background-color'), 'rgb(255, 255, 255)');
+  assert.strictEqual(a.card.style.getPropertyValue('color'), 'rgb(0, 0, 0)');
+  const b = reproFixture('light');
+  b.postProcess();
+  b.setTheme('dark');
+  assert.strictEqual(b.card.style.getPropertyValue('background-color'), 'hsl(0, 0%, 22%)');
+  const c = reproFixture('dark');
+  c.postProcess();
+  c.setTheme('light');
+  c.postProcess();
+  assert.strictEqual(c.card.style.getPropertyValue('background-color'), 'rgb(255, 255, 255)');
+});

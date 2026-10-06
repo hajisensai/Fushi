@@ -5632,7 +5632,8 @@ function __fushiRestoreDictTone() {
                 const orig = node[key];
                 if (!orig) continue;
                 if (orig.value) node.style.setProperty(prop, orig.value, orig.priority);
-                else node.style.removeProperty(prop);
+                else if (typeof node.style.removeProperty === 'function') node.style.removeProperty(prop);
+                else node.style.setProperty(prop, '');
                 node[key] = null;
             }
         } catch (_) { /* 节点已脱离文档 */ }
@@ -5647,16 +5648,25 @@ function __fushiClearDictToneMarks(root) {
     all.forEach((n) => { n.__fushiM3eToned = false; n.__fushiM3eTextToned = false; });
 }
 
+// 排过调色的根（词条容器 / 首个词条）：主题变化时逐个重做。脱离文档的在重做时剔除。
+var __fushiM3eKnownRoots = null;
+
 // 主题变化后的可逆重调色：复原 → 按当前明暗重做。宿主热更新主题后也可直接调用。
 function __fushiRetoneDictColors() {
     __fushiRestoreDictTone();
+    const roots = __fushiM3eKnownRoots ? [...__fushiM3eKnownRoots] : [];
     const container = __fushiContainer();
-    const root = container || document.body;
-    if (!root) return;
-    __fushiClearDictToneMarks(root);
-    __fushiScheduleM3eDictTone(root);
+    if (container && !roots.includes(container)) roots.push(container);
+    roots.forEach((root) => {
+        if (root.isConnected === false) {
+            __fushiM3eKnownRoots.delete(root);
+            return;
+        }
+        __fushiClearDictToneMarks(root);
+        __fushiScheduleM3eDictTone(root);
+    });
 }
-window.__fushiRetoneDictColors = __fushiRetoneDictColors;
+if (typeof window !== 'undefined') window.__fushiRetoneDictColors = __fushiRetoneDictColors;
 
 // 观察明暗 / 主题载体（documentElement 与弹窗容器的 data-theme / class / style——宿主热更新只
 // 写 CSS 变量也落在 style 上），变化时排一帧重调色。只观察属性，不观察子树：调色自己写的是
@@ -5705,6 +5715,8 @@ function __fushiScheduleM3eDictTone(root) {
         typeof getComputedStyle !== 'function') return;
     if (!__fushiM3eToneRoots) __fushiM3eToneRoots = new Set();
     __fushiM3eToneRoots.add(root);
+    if (!__fushiM3eKnownRoots) __fushiM3eKnownRoots = new Set();
+    __fushiM3eKnownRoots.add(root);
     __fushiObserveM3eToneHosts();
     if (__fushiM3eToneRaf) return;
     __fushiM3eToneRaf = requestAnimationFrame(() => {
