@@ -992,6 +992,7 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
     return _AudiobookChapterList(
       currentEntry: currentEntry,
       leadCount: lead.length,
+      itemCount: lead.length + widget.toc.length,
       builder: (BuildContext context, ScrollController scroll,
               GlobalKey currentRowKey) =>
           ListView.builder(
@@ -1045,6 +1046,7 @@ class _AudiobookChapterList extends StatefulWidget {
   const _AudiobookChapterList({
     required this.currentEntry,
     required this.leadCount,
+    required this.itemCount,
     required this.builder,
   });
 
@@ -1053,6 +1055,9 @@ class _AudiobookChapterList extends StatefulWidget {
 
   /// 目录行之前的非目录项个数（概览卡等）。
   final int leadCount;
+
+  /// 列表总项数（lead + 目录）。
+  final int itemCount;
 
   final Widget Function(
     BuildContext context,
@@ -1065,11 +1070,19 @@ class _AudiobookChapterList extends StatefulWidget {
 }
 
 class _AudiobookChapterListState extends State<_AudiobookChapterList> {
+  /// 目标行没被懒构建时最多迭代估算几轮；每轮一帧，收敛不了就放手（不无界重试）。
+  static const int _maxRevealAttempts = 12;
+
   final ScrollController _scroll = ScrollController();
   final GlobalKey _currentRowKey = GlobalKey();
 
-  /// 上次自动滚到的章（-1 = 还没滚过）；当前章变了才再滚（页签重进 = 新实例）。
+  /// 已确实滚进视野的章（-1 = 还没有）。只在目标行真被构建并对齐后才写入，
+  /// 估算跳转没找到行时不写（HBK046：之前估算一次就标记完成，长标题 / 大字下
+  /// 行高远大于最小行高，跳过去仍差几千像素，之后再也不纠正）。
   int _scrolledEntry = -1;
+
+  /// 正在定位的章；定位进行中 ticker 重建不重复调度。
+  int _revealingEntry = -1;
 
   @override
   void dispose() {
@@ -1077,43 +1090,71 @@ class _AudiobookChapterListState extends State<_AudiobookChapterList> {
     super.dispose();
   }
 
-  /// 当前章行滚进视野（偏上 1/3）。行还没被懒构建出来时先按行高估一个位置跳过去，
-  /// 下一帧行在了再精确对齐。
-  void _revealCurrentChapter(int entry, {bool retry = true}) {
+  void _scheduleReveal() {
+    final int entry = widget.currentEntry;
+    if (entry < 0 || entry == _scrolledEntry || entry == _revealingEntry) {
+      return;
+    }
+    _revealingEntry = entry;
+    _revealStep(entry, 0);
+  }
+
+  void _revealStep(int entry, int attempt) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (entry != widget.currentEntry) {
+        // 当前章在定位途中变了：放弃这一轮，交给新章的定位。
+        if (_revealingEntry == entry) _revealingEntry = -1;
+        _scheduleReveal();
+        return;
+      }
       final BuildContext? row = _currentRowKey.currentContext;
-      final Duration d = fushiMotionDuration(context, FushiMotion.medium);
       if (row != null) {
+        _scrolledEntry = entry;
+        _revealingEntry = -1;
         unawaited(
           Scrollable.ensureVisible(
             row,
             alignment: 0.3,
-            duration: d,
+            duration: fushiMotionDuration(context, FushiMotion.medium),
             curve: FushiMotion.standard,
           ),
         );
         return;
       }
-      if (!retry || !_scroll.hasClients) return;
+      if (attempt >= _maxRevealAttempts || !_scroll.hasClients) {
+        _scrolledEntry = entry;
+        _revealingEntry = -1;
+        return;
+      }
       final ScrollPosition pos = _scroll.position;
-      final double estimate =
-          (widget.leadCount * 120 + entry * readerPanelRowMinHeight(context))
-              .toDouble();
-      _scroll.jumpTo(
-        estimate.clamp(pos.minScrollExtent, pos.maxScrollExtent),
-      );
-      _revealCurrentChapter(entry, retry: false);
+      final int index = widget.leadCount + entry;
+      // 首轮还没有实测行高：按最小行高估（最贴近 lead 卡之后的真实布局下界）。
+      // 之后用列表自己的平均项高（maxScrollExtent 是 SliverList 按已布局子项的
+      // 平均高度外推的，跳过去后真实行参与平均，逐轮收敛）。
+      final int itemCount = widget.itemCount;
+      final double average = itemCount <= 0
+          ? 0
+          : (pos.maxScrollExtent + pos.viewportDimension) / itemCount;
+      final double estimate = attempt == 0
+          ? widget.leadCount * 120.0 + entry * readerPanelRowMinHeight(context)
+          : index * average - pos.viewportDimension * 0.3;
+      final double target =
+          estimate.clamp(pos.minScrollExtent, pos.maxScrollExtent);
+      if (attempt > 0 && (target - pos.pixels).abs() < 1) {
+        // 估算原地不动却仍看不到目标：再跳也一样，放手。
+        _scrolledEntry = entry;
+        _revealingEntry = -1;
+        return;
+      }
+      _scroll.jumpTo(target);
+      _revealStep(entry, attempt + 1);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final int entry = widget.currentEntry;
-    if (entry >= 0 && entry != _scrolledEntry) {
-      _scrolledEntry = entry;
-      _revealCurrentChapter(entry);
-    }
+    _scheduleReveal();
     return widget.builder(context, _scroll, _currentRowKey);
   }
 }

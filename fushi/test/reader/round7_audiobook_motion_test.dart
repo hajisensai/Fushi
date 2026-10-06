@@ -110,6 +110,36 @@ void main() {
     );
   }
 
+  testWidgets('current distant long chapter is revealed at text scale two', (
+    WidgetTester tester,
+  ) async {
+    await _pumpPanel(
+      tester,
+      current: 80,
+      longTitles: true,
+      textScale: 2,
+      reduceMotion: true,
+    );
+    // Give the post-frame estimate/retry and several periodic ticks time to run.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump();
+    final ListView list = tester.widget<ListView>(find.byKey(_chaptersKey));
+    final Finder rowText = find.text(_title(80, true));
+    expect(
+      rowText,
+      findsOneWidget,
+      reason:
+          'The current chapter must be built and exposed after auto-reveal; '
+          'offset=${list.controller!.offset}, max=${list.controller!.position.maxScrollExtent}',
+    );
+    final Rect viewport = tester.getRect(find.byKey(_chaptersKey));
+    final Rect row = tester.getRect(rowText);
+    expect(row.top, greaterThanOrEqualTo(viewport.top));
+    expect(row.bottom, lessThanOrEqualTo(viewport.bottom));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets(
     'ticker does not undo manual chapter scroll in the same chapter',
     (WidgetTester tester) async {
