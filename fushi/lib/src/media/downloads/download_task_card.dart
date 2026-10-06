@@ -281,6 +281,21 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     final double? progress = widget.progress?.clamp(0, 1).toDouble();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiMotionScheme motion = context.fushiMotion;
+    final Duration expandDuration = motion.spatialDefault.duration;
+    final Widget disclosure = _expanded
+        ? Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.card,
+            ),
+            child: DefaultTextStyle(
+              style: theme.textTheme.bodySmall!,
+              child: widget.details,
+            ),
+          )
+        : const SizedBox(width: double.infinity);
     return FushiCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -323,25 +338,18 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
               child: _buildProgress(context, progress, tone),
             ),
           // 展开详情：spatial 弹簧撑开 / 收起高度（墨水屏与减弱动态效果下瞬时）。
-          AnimatedSize(
-            duration: motion.spatialDefault.duration,
-            curve: motion.spatialDefault.curve,
-            alignment: Alignment.topCenter,
-            child: _expanded
-                ? Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.spacing.card,
-                      0,
-                      tokens.spacing.card,
-                      tokens.spacing.card,
-                    ),
-                    child: DefaultTextStyle(
-                      style: theme.textTheme.bodySmall!,
-                      child: widget.details,
-                    ),
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
+          // 降级时 duration 为零，直接换子树、不经 AnimatedSize：零时长下
+          // RenderAnimatedSize 在自己的 performLayout 里 forward() 会同步走完
+          // 动画并 markNeedsLayout 自己（"mutated in its own performLayout"）。
+          if (expandDuration == Duration.zero)
+            disclosure
+          else
+            AnimatedSize(
+              duration: expandDuration,
+              curve: motion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
+              child: disclosure,
+            ),
         ],
       ),
     );

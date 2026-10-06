@@ -842,6 +842,12 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
     final int failed =
         itemCounts[VideoDownloadSubscriptionItemStatus.failed] ?? 0;
     final String? lastError = subscription.lastError?.trim();
+    final Widget history = expanded && itemsWatcher != null
+        ? _SubscriptionItemsSection(
+            subscription: subscription,
+            itemsWatcher: itemsWatcher!,
+          )
+        : const SizedBox(width: double.infinity);
     return FushiCard(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -1075,18 +1081,18 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
               ),
             ],
           ),
-          // 逐集历史：spatial 弹簧撑开 / 收起。
-          AnimatedSize(
-            duration: motion.spatialDefault.duration,
-            curve: motion.spatialDefault.curve,
-            alignment: Alignment.topCenter,
-            child: expanded && itemsWatcher != null
-                ? _SubscriptionItemsSection(
-                    subscription: subscription,
-                    itemsWatcher: itemsWatcher!,
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
+          // 逐集历史：spatial 弹簧撑开 / 收起。降级（墨水屏 / 减弱动态效果）时
+          // duration 为零，直接换子树：零时长的 RenderAnimatedSize 会在自己的
+          // performLayout 里同步走完动画并 markNeedsLayout 自己。
+          if (motion.spatialDefault.duration == Duration.zero)
+            history
+          else
+            AnimatedSize(
+              duration: motion.spatialDefault.duration,
+              curve: motion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
+              child: history,
+            ),
         ],
       ),
     );
