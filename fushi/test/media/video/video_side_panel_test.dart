@@ -31,9 +31,14 @@ void main() {
           )
           .first,
     );
-    // M3E：浮动面板与播放器悬浮胶囊同一层无色相中性深色表面
-    // （videoM3eFloatingColor，#2D2D2D @86%）；画面靠面板四周的留白与面板宽度露出。
-    expect(material.color, videoM3eFloatingColor());
+    // M3E：浮动面板与播放器悬浮胶囊同一层表面（videoM3eFloatingColor）。
+    // e3e7699afaa 起是「带一点主题色调的中性」——以 app 主色为种子的深色方案
+    // surfaceContainerHigh @86%，不再是无色相的 #2D2D2D；画面靠面板四周的留白
+    // 与面板宽度露出。
+    final ColorScheme appScheme = Theme.of(
+      tester.element(find.byType(VideoTranslucentSidePanel)),
+    ).colorScheme;
+    expect(material.color, videoM3eFloatingColor(appScheme));
     // 面板内容读中性主题：浅色 app 主题下标题也是白字（不是黑压黑）。
     final BuildContext ctx = tester.element(find.text('Speed'));
     expect(Theme.of(ctx).colorScheme.onSurface, Colors.white);

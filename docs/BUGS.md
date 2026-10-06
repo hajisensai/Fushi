@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2777 条。点号进各自文件。
+> 共 2778 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3028](bugs/BUG-3028-delete-confirm-footer-scrolls.md) | ✅ | ✅ | 删除确认框的「删除」按钮在矮窗口里被滚出可视区 |
 | [BUG-3024](bugs/BUG-3024-settings-reset-narrow-row.md) | ✅ | ✅ | 设置恢复默认按钮挤压窄面板标题导致溢出 |
 | [BUG-3021](bugs/BUG-3021-tag-picker-video-counter.md) | ✅ | ✅ | 统一标签面板对视频批量操作仍显示本书 |
 | [BUG-3020](bugs/BUG-3020-placeholder-short-viewport.md) | ✅ | ✅ | 紧凑错误状态图标与说明高度超过可用视口 |

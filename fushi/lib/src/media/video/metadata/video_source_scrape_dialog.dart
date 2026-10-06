@@ -229,20 +229,12 @@ class _VideoSourceScrapeTaskPanelState
                           ],
                         ),
                         const SizedBox(height: 12),
-                        if (_pendingNotice
-                            case final String notice) ...<Widget>[
-                          FushiCard(
-                            tone: FushiCardTone.tertiary,
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: <Widget>[
-                                const FushiIcon(FushiIcons.ai, size: 20),
-                                const SizedBox(width: 10),
-                                Expanded(child: SelectableText(notice)),
-                              ],
-                            ),
-                          ),
+                        // 有待办列表时 AI 结论卡是列表的首项、跟着滚（见
+                        // [_buildPendingWorks]）；只有列表不在（加载 / 出错 /
+                        // 清空）时才钉在这里。
+                        if (_pendingNotice case final String notice
+                            when !_pendingListShown) ...<Widget>[
+                          _buildPendingNoticeCard(notice),
                           const SizedBox(height: 12),
                         ],
                         Expanded(child: _buildPendingWorks()),
@@ -461,6 +453,30 @@ class _VideoSourceScrapeTaskPanelState
 
   /// 待确认队列：条目来自当前计划（不是历史 run 快照），手动指定按 stableKey
   /// 对应的真实作品执行——绑定入口永远不会指向已消失的作品。
+  /// 待办 tab 正以列表呈现（AI 结论卡此时并进列表首项）。
+  bool get _pendingListShown =>
+      !_loadingPending && _pendingError == null && _pendingWorks.isNotEmpty;
+
+  /// AI 识别结论卡（tertiary 色块 + AI 图标 + 可选中文案）。
+  Widget _buildPendingNoticeCard(String notice) {
+    return FushiCard(
+      tone: FushiCardTone.tertiary,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const FushiIcon(FushiIcons.ai, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: SelectableText(notice)),
+        ],
+      ),
+    );
+  }
+
+  /// 待办列表。AI 结论卡（多行理由 + 12 内边距的色块）放在列表首项随列表滚，
+  /// 不再钉在列表上方：弹窗高度按屏高的 65% 算，矮窗口里 tab 正文只剩一两百
+  /// 像素，钉住的结论卡会把固定部分顶出 tab、整列溢出（与「当前任务」tab
+  /// 平铺成单一列表同一思路，BUG-2594）。
   Widget _buildPendingWorks() {
     if (_loadingPending) {
       return const FushiLoadingView();
@@ -475,14 +491,23 @@ class _VideoSourceScrapeTaskPanelState
       );
     }
     final int count = _pendingWorks.length;
+    final String? notice = _pendingNotice;
+    final int lead = notice == null ? 0 : 1;
     return FushiEntranceScope(
       child: ListView.builder(
         key: const PageStorageKey<String>('video-source-pending-list'),
-        itemCount: count,
+        itemCount: lead + count,
         itemBuilder: fushiStaggeredItemBuilder((
           BuildContext context,
-          int index,
+          int position,
         ) {
+          if (notice != null && position == 0) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildPendingNoticeCard(notice),
+            );
+          }
+          final int index = position - lead;
           final VideoPendingScrapeWork entry = _pendingWorks[index];
           final bool pending = widget.controller.isManualRequestPending(
             sourceId: entry.source.id,

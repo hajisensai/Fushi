@@ -77,6 +77,10 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
   bool _hovering = false;
   bool _focused = false;
   bool _animating = false;
+
+  /// 程序化翻页（[_goTo]）的代次：新一次翻页打断旧动画时，旧调用的收尾不能把
+  /// [_animating] 提前清掉、也不能再补报一次落点（由新调用负责）。
+  int _goToSeq = 0;
   double _wheelAccumulated = 0;
   Timer? _autoTimer;
 
@@ -130,6 +134,10 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
   }
 
   void _onPageChanged(int page) {
+    // 程序化翻页途中 PageView 每越过一页都会报一次（0 → 3 回绕会报 1、2、3），
+    // 中间页不是用户停留的页：不报给调用方（视频发现页会按它预取 Hero 详情）、
+    // 不重置自动轮播，落点由 [_goTo] 收尾时补报。拖动 / 滚轮翻页不经此闸。
+    if (_animating) return;
     if (page == _page) return;
     setState(() => _page = page);
     widget.onPageChanged?.call(page);
@@ -143,6 +151,7 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
     if (target < 0 || target >= widget.itemCount) return;
     final bool hadFocus = keepFocus && _focusNode.hasFocus;
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
+    final int seq = ++_goToSeq;
     _animating = true;
     try {
       if (duration == Duration.zero) {
@@ -155,11 +164,12 @@ class _DiscoveryHeroCarouselState extends State<DiscoveryHeroCarousel> {
         );
       }
     } finally {
-      _animating = false;
+      if (seq == _goToSeq) _animating = false;
     }
-    if (!mounted) return;
-    // 动画被拖动 / 新动画打断时 onPageChanged 已按实际落点报过；这里补一次，
-    // 防止 jumpToPage 落点与 _page 不同步。
+    // 被更新的一次翻页打断：落点与焦点交给新调用收尾。
+    if (!mounted || seq != _goToSeq) return;
+    // 途中的越页通知被上面的闸挡掉了（被拖动打断时同理），这里按实际落点补报
+    // 一次，_page 与调用方都只看到停下来的那一页。
     final double? position = _controller.page;
     if (position != null) _onPageChanged(position.round());
     if (!hadFocus) return;

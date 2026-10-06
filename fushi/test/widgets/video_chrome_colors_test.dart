@@ -72,7 +72,23 @@ void main() {
           reason: '进度条前景必须走 chrome 固定亮色 helper');
       expect(src, isNot(contains('buttonBarButtonColor: cs.primary')),
           reason: '按钮条前景必须走 chrome 固定亮色 helper');
-      expect(src, contains('buttonBarButtonColor: _videoChromeAccent(cs)'));
+      expect(src, contains('seekBarPositionColor: _videoChromeAccent(cs)'));
+      // 6c30568d815 起按钮字形改走固定近白的中性前景（强调色只留给播放键 / 进度
+      // 已播段 / 开关「开」态），仍不随主题变暗。
+      expect(src,
+          contains('buttonBarButtonColor: _videoChromeButtonForeground(cs)'));
+      final String page = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
+      expect(
+        page,
+        matches(RegExp(
+          r'Color _videoChromeButtonForeground\(ColorScheme cs\) =>\s*'
+          r'videoChromeNeutralForeground;',
+        )),
+        reason: '按钮前景必须是固定亮色（videoChromeNeutralForeground），不能回到 '
+            'cs.primary / cs.onSurface',
+      );
     });
 
     test('浮层 alpha 收敛两档（无游离字面 alpha）', () {

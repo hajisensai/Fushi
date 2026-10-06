@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -295,6 +296,18 @@ void main() {
         .map((Transform t) => t.transform)
         .fold(Matrix4.identity(), (Matrix4 a, Matrix4 b) => a * b);
 
+    // 画面平面（x / y）上的最大缩放。Transform.scale 产出 diag(s, s, 1)，
+    // Matrix4.getMaxScaleOnAxis 会把恒为 1 的 z 轴算进来，量不到 2D 缩小。
+    double planarScaleOf(Matrix4 m) {
+      final double sx = math.sqrt(
+        m.entry(0, 0) * m.entry(0, 0) + m.entry(1, 0) * m.entry(1, 0),
+      );
+      final double sy = math.sqrt(
+        m.entry(0, 1) * m.entry(0, 1) + m.entry(1, 1) * m.entry(1, 1),
+      );
+      return math.max(sx, sy);
+    }
+
     testWidgets('挂载即从下方弹入，静止后回到原位、原尺寸', (WidgetTester tester) async {
       await pumpSlide(tester);
       // 刚挂载：还在偏移处。
@@ -302,7 +315,7 @@ void main() {
       await tester.pumpAndSettle();
       final Matrix4 m = transformOf(tester);
       expect(m.getTranslation().y, moreOrLessEquals(0, epsilon: 0.01));
-      expect(m.getMaxScaleOnAxis(), moreOrLessEquals(1, epsilon: 0.001));
+      expect(planarScaleOf(m), moreOrLessEquals(1, epsilon: 0.001));
     });
 
     testWidgets('隐藏时下滑并缩小，再显示时弹回', (WidgetTester tester) async {
@@ -312,7 +325,7 @@ void main() {
       await tester.pumpAndSettle();
       final Matrix4 hidden = transformOf(tester);
       expect(hidden.getTranslation().y, greaterThan(10));
-      expect(hidden.getMaxScaleOnAxis(), lessThan(0.95));
+      expect(planarScaleOf(hidden), lessThan(0.95));
       visible.value = true;
       await tester.pump(const Duration(milliseconds: 16));
       expect(transformOf(tester).getTranslation().y, greaterThan(1));
@@ -332,7 +345,7 @@ void main() {
       visible.value = false;
       await tester.pump();
       expect(transformOf(tester).getTranslation().y, 0);
-      expect(transformOf(tester).getMaxScaleOnAxis(), 1);
+      expect(planarScaleOf(transformOf(tester)), 1);
     });
   });
 

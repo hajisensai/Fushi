@@ -199,6 +199,8 @@ void main() {
                 embedded: true,
                 debugInitialMedia: _kMedia,
                 debugInitialTorrent: torrent,
+                // 节流按真实时钟记在静态表里，连跑多条搜索用例会越排越远。
+                debugNyaaMinRequestInterval: Duration.zero,
               ),
             ),
           ),

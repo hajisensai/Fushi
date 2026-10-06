@@ -233,6 +233,7 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
     this.sheet = false,
     @visibleForTesting this.debugInitialMedia,
     @visibleForTesting this.debugInitialTorrent,
+    @visibleForTesting this.debugNyaaMinRequestInterval,
   });
 
   /// 内联模式：直接铺在「下载」页里（无对话框外框、无标题栏、无取消按钮），
@@ -274,6 +275,13 @@ class AnimeDownloadDialog extends ConsumerStatefulWidget {
 
   /// 仅测试：初始即选中的种子（与 [debugInitialMedia] 联用直达确认推送阶段）。
   final NyaaTorrent? debugInitialTorrent;
+
+  /// 仅测试：覆盖 Nyaa 同 host 请求节流间隔（null = 生产默认
+  /// [kNyaaMinRequestInterval]）。节流按**真实时钟**记在进程级静态表里，
+  /// widget 测试的 fake-async 只推进假时间：同一进程里连跑的多条搜索用例会把
+  /// 预约时刻越排越远，等待超出骨架闪光的有界动画后 `pumpAndSettle` 提前收敛，
+  /// 断言读到的还是加载态。测试注入 [Duration.zero] 与其它 Nyaa 测试同口径。
+  final Duration? debugNyaaMinRequestInterval;
 
   /// 由 [showAnimeDownloadDialog] 经 [adaptiveModalSheet] 打开：只出 M3E 弹层
   /// 外壳（窄屏底部弹层 / 宽屏浮动面板由弹层路由给），不再自套对话框外框。
@@ -596,6 +604,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     try {
       nyaa = NyaaClient(
         client: await ref.read(appProvider).createDownloadHttpClient(),
+        minRequestInterval:
+            widget.debugNyaaMinRequestInterval ?? kNyaaMinRequestInterval,
       );
       if (!mounted || request.generation != _torrentRequestGeneration) {
         return;
@@ -1654,6 +1664,24 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     );
   }
 
+  /// 结果区（搜番 / 选种阶段的 `Expanded`）里的状态占位：结果区高度由窗口与
+  /// 上方查询框 / 筛选条 / 任务区瓜分，空态 / 错误态（M3E 72px 色块 + 多行说明 +
+  /// 行动按钮）放不下时必须能滚，而不是溢出裁掉「重试 / 去设置」。放得下时仍
+  /// 撑满结果区居中，观感与原先一致。只给有界高度的结果区用——确认阶段字幕区
+  /// 本身已嵌在外层滚动区里，不能再套。
+  Widget _scrollableResultStatus(Widget status) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: status),
+          ),
+        );
+      },
+    );
+  }
+
   /// 结果列表骨架（M3E 占位）：与分段结果行同轮廓——行首形状底 + 标题条 +
   /// 说明条，一层共享闪光扫过整组（有界、墨水屏 / 减弱动态效果下静止）。
   /// [shrinkWrap] 给嵌在外层滚动区里的字幕列表用。
@@ -1724,7 +1752,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     }
     if (_animeSearchError) {
       final AniListFailureKind? kind = _animeSearchErrorKind;
-      return _buildErrorRetry(
+      return _scrollableResultStatus(_buildErrorRetry(
         theme,
         t.anime_download_search_failed,
         _searchAnime,
@@ -1736,20 +1764,20 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             kind == AniListFailureKind.unreachable ||
             kind == AniListFailureKind.other,
         anilistNotice: anilistFailureNotice(kind),
-      );
+      ));
     }
     if (_searchedAnime && _animeMatches.isEmpty) {
-      return _buildNoResults(
+      return _scrollableResultStatus(_buildNoResults(
         theme,
         query: _animeQueryCtrl.text.trim(),
         filters: 'AniList · ANIME',
-      );
+      ));
     }
     if (_animeMatches.isEmpty) {
-      return FushiPlaceholderMessage(
+      return _scrollableResultStatus(FushiPlaceholderMessage(
         icon: FushiIcons.travelExplore,
         message: t.anime_download_search_start_hint,
-      );
+      ));
     }
     // 每次出新结果都重开进场窗口，结果行错峰淡入上移（spring）。
     return FushiEntranceScope(
@@ -1877,13 +1905,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       return _buildResultsSkeleton();
     }
     if (_torrentsError) {
-      return _buildErrorRetry(
+      return _scrollableResultStatus(_buildErrorRetry(
         theme,
         t.anime_download_search_failed,
         _fetchTorrents,
         detail: _torrentsErrorDetail,
         offerSettings: true,
-      );
+      ));
     }
     if (_torrentsLoaded && _torrents.isEmpty) {
       final _TorrentSearchSnapshot applied = _appliedTorrentSearch!;
@@ -1893,12 +1921,12 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         '1_3' => t.anime_download_category_non_english,
         _ => t.anime_download_category_all,
       };
-      return _buildNoResults(
+      return _scrollableResultStatus(_buildNoResults(
         theme,
         query: applied.query,
         filters:
             '$categoryLabel · ${applied.trustedOnly ? t.anime_download_trusted_only : t.anime_download_unfiltered}',
-      );
+      ));
     }
     // replayKey = 本次结果列表：重搜 / 换排序（新列表对象）都重播一次进场。
     return FushiEntranceScope(

@@ -62,6 +62,50 @@ void main() {
       expect(got, const DeleteDecision(scope: DeleteScope.keepLocalOnly));
     });
 
+    // BUG-3028：M3E 分组勾选卡把正文撑高后，外框整体滚动会把底部「删除」推出
+    // 0.74 高度的面板（800x600 下落在面板外、点上去打在遮罩上直接关框）。动作区
+    // 必须钉在面板内，只让正文滚。
+    testWidgets('BUG-3028 800x600 勾选项全开时「删除」仍钉在面板内、不滚就点得到', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 600);
+      addTearDown(tester.view.reset);
+      DeleteDecision? got;
+      await tester.pumpWidget(
+        app(
+          Builder(
+            builder: (BuildContext ctx) => TextButton(
+              onPressed: () async {
+                got = await showDeleteScopeConfirm(
+                  ctx,
+                  title: t.video_delete_title,
+                  message: 'msg',
+                  localFilesSubtitle: t.delete_local_files_video_desc,
+                  statisticsSubtitle: t.delete_statistics_video_desc,
+                );
+              },
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final Finder delete = find.text(t.dialog_delete);
+      expect(delete.hitTestable(), findsOneWidget,
+          reason: '「删除」不能落在面板外或被正文滚动挤出可视区');
+      final Rect panel = tester.getRect(
+        find.ancestor(of: delete, matching: find.byType(Material)).last,
+      );
+      expect(panel.contains(tester.getCenter(delete)), isTrue);
+      await tester.tap(delete);
+      await tester.pumpAndSettle();
+      expect(got, isNotNull, reason: '点中的是「删除」而不是遮罩');
+      expect(got!.deleteLocalFiles, isFalse);
+    });
+
     testWidgets('给了副标题 → 默认不勾；勾了才 deleteLocalFiles=true', (
       WidgetTester tester,
     ) async {

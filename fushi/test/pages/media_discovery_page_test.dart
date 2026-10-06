@@ -758,6 +758,12 @@ void main() {
     testWidgets('默认藏死种与疑似漫画、源内按做种降序、徽标来自行 class', (
       WidgetTester tester,
     ) async {
+      // 点开计数行后五条全显示：M3E 分段结果行（形状底 leading + 徽标行）比旧
+      // ListTile 高，默认 800×600 下排在最末的死种落进视口下沿外的缓存区
+      // （offstage）。不能靠滚动露出——滚近底部会触发自动翻页、多发请求，正好
+      // 破坏本用例「客户端过滤不重新请求」的断言；给足高度让五条同屏。
+      await tester.binding.setSurfaceSize(const Size(800, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await searchNyaa(tester);
       expect(requests, hasLength(1));
       expect(requests.single.queryParameters['c'], '3_0');

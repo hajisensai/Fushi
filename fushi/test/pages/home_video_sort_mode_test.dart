@@ -15,6 +15,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -171,7 +172,7 @@ void main() {
     );
 
     // 切「名称」：natural 序 → 第9话 < 第10话 < Beta。
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(FushiIcons.sort));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sort_title).last);
     await tester.pumpAndSettle();
@@ -183,7 +184,7 @@ void main() {
     expect(prefs.videoSortModeName, 'title', reason: '选择必须写穿偏好');
 
     // 切「导入时间」：新导入在前。
-    await tester.tap(find.byIcon(Icons.sort));
+    await tester.tap(find.byIcon(FushiIcons.sort));
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.sort_imported).last);
     await tester.pumpAndSettle();

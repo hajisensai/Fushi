@@ -290,11 +290,40 @@ void main() {
     );
   }
 
+  /// 壳此刻真正切到了 [kind]：浮动工具栏里那一份页签选中它，且该视图的叶子
+  /// 已构建并在台上（非 offstage）。2026-10-06 起视图一律拿空占位导航
+  /// （886df531704），不能再用「拿到真导航条」判当前视图。
+  void expectShellOn(
+    WidgetTester tester,
+    MediaLibraryViewKind kind,
+    String leafLabel, {
+    String? reason,
+  }) {
+    final FushiSectionTabBar<MediaLibraryViewKind> strip = tester.widget(
+      find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
+    );
+    expect(strip.selected, kind, reason: reason);
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) => w is _StatefulLeaf && w.label == leafLabel,
+      ),
+      findsOneWidget,
+      reason: reason,
+    );
+  }
+
   testWidgets('压一层路由：切视图时壳自己把它弹掉', (WidgetTester tester) async {
     await tester.pumpWidget(harness(<MediaLibraryViewSpec>[
       pushingSpec(MediaLibraryViewKind.library, '书架'),
       spec(1, MediaLibraryViewKind.sources, '导入'),
     ]));
+    // 壳的浮动工具栏叠在视图上（BUG-2975，94e818193fa），视图靠
+    // [FushiFloatingChromeInsetPadding] 让位；工具栏高度在首帧版面后才回报，
+    // 首帧让位为 0、视图顶端的按钮被页签压着。等回报生效那一帧再点，
+    // 并钉死按钮确实不在工具栏底下（点得中它本身）。
+    await tester.pump();
+    expect(find.text('push').hitTestable(), findsOneWidget,
+        reason: '视图必须让出浮动工具栏，顶端按钮不能被页签盖住');
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
     expect(find.text('第一层'), findsOneWidget);
@@ -303,7 +332,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('第一层'), findsNothing, reason: '壳上面的路由必须被弹掉');
-    expect(probe.gotRealNavigation[1], isTrue, reason: '壳切到了「导入」视图');
+    expectShellOn(tester, MediaLibraryViewKind.sources, '导入',
+        reason: '壳切到了「导入」视图');
   });
 
   testWidgets('压两层路由：同一个调用点照样一次弹干净（第二个入口不需要另写一套）',
@@ -312,6 +342,13 @@ void main() {
       pushingSpec(MediaLibraryViewKind.library, '书架'),
       spec(1, MediaLibraryViewKind.sources, '导入'),
     ]));
+    // 壳的浮动工具栏叠在视图上（BUG-2975，94e818193fa），视图靠
+    // [FushiFloatingChromeInsetPadding] 让位；工具栏高度在首帧版面后才回报，
+    // 首帧让位为 0、视图顶端的按钮被页签压着。等回报生效那一帧再点，
+    // 并钉死按钮确实不在工具栏底下（点得中它本身）。
+    await tester.pump();
+    expect(find.text('push').hitTestable(), findsOneWidget,
+        reason: '视图必须让出浮动工具栏，顶端按钮不能被页签盖住');
     await tester.tap(find.text('push'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('再推一层'));
@@ -324,7 +361,7 @@ void main() {
 
     expect(find.text('第一层'), findsNothing);
     expect(find.text('第一层+'), findsNothing);
-    expect(probe.gotRealNavigation[1], isTrue);
+    expectShellOn(tester, MediaLibraryViewKind.sources, '导入');
   });
 
   testWidgets('actionFor：壳没有声明该视图时返回 null（判据是「视图在」不是「壳在」）',

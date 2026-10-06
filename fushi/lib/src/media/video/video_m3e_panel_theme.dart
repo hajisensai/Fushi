@@ -42,10 +42,29 @@ final Expando<ThemeData> _panelThemeCache = Expando<ThemeData>(
   'videoM3ePanelTheme',
 );
 
-/// [base] 换成面板中性配色后重走主题工厂的结果（按 [base] 实例缓存）。
+/// 按**值**命中的最近几份结果（实例缓存未命中时的第二层）。
+///
+/// `Theme.of` 每次返回的是 `ThemeData.localize` 的产物，而那层 memo 只是 5 格
+/// FIFO：主题稍多（面板主题自己也要 localize）就被挤掉，同一份 app 主题每次
+/// rebuild 换一个新实例。只按实例缓存时面板每次 setState（时间轴滚动 30fps）都
+/// 重走整套主题工厂；产物里的组件主题带闭包、`==` 不等，`Theme` 于是逐帧通知，
+/// 面板内所有 `Theme.of` 依赖者跟着重建——横向 `Scrollable` 也在其中，
+/// `didChangeDependencies` 把 [ScrollPosition] 整个换掉。
+final List<(ThemeData, ThemeData)> _panelThemeByValue =
+    <(ThemeData, ThemeData)>[];
+const int _panelThemeByValueSize = 4;
+
+/// [base] 换成面板中性配色后重走主题工厂的结果（按 [base] 实例缓存，实例未命中
+/// 再按值找，保证同一份 app 主题恒得到同一个面板主题实例）。
 ThemeData videoM3ePanelTheme(ThemeData base) {
   final ThemeData? cached = _panelThemeCache[base];
   if (cached != null) return cached;
+  for (final (ThemeData seenBase, ThemeData seenTheme) in _panelThemeByValue) {
+    if (seenBase == base) {
+      _panelThemeCache[base] = seenTheme;
+      return seenTheme;
+    }
+  }
   final ColorScheme scheme = videoM3ePanelScheme(base.colorScheme);
   final ThemeData recolored = base.copyWith(
     textTheme: base.textTheme.apply(
@@ -55,6 +74,10 @@ ThemeData videoM3ePanelTheme(ThemeData base) {
   );
   final ThemeData theme = rethemeFushiWithScheme(recolored, scheme);
   _panelThemeCache[base] = theme;
+  if (_panelThemeByValue.length >= _panelThemeByValueSize) {
+    _panelThemeByValue.removeAt(0);
+  }
+  _panelThemeByValue.add((base, theme));
   return theme;
 }
 

@@ -4,6 +4,7 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
@@ -227,6 +228,24 @@ class _AiSuggestionBlock extends StatelessWidget {
   final String text;
   final int? percent;
 
+  /// 置信度是**静止**的量（不是在走的进度）：M3E 确定态波浪默认一直流动，
+  /// 放在这里既暗示「还在算」、又给每张候选卡挂一个常驻 ticker（弹窗开着就
+  /// 每帧重绘）。同下载任务卡暂停态的口径：M3E 停波收成实线；Apple / 墨水屏
+  /// 本来就是实线，走共享指示器。
+  Widget _confidenceMeter(BuildContext context, double value) {
+    if (isGlassDesign(context) || isEinkTheme(context)) {
+      return FushiLinearProgressIndicator(value: value);
+    }
+    final ThemeData theme = Theme.of(context);
+    return FushiWavyLinearProgress(
+      value: value,
+      color: theme.progressIndicatorTheme.color ?? theme.colorScheme.primary,
+      trackColor: theme.progressIndicatorTheme.linearTrackColor ??
+          theme.colorScheme.secondaryContainer,
+      waving: false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
@@ -267,9 +286,7 @@ class _AiSuggestionBlock extends StatelessWidget {
             ),
             if (percent != null) ...<Widget>[
               const SizedBox(height: 8),
-              FushiLinearProgressIndicator(
-                value: (percent / 100).clamp(0.0, 1.0),
-              ),
+              _confidenceMeter(context, (percent / 100).clamp(0.0, 1.0)),
             ],
           ],
         ),

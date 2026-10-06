@@ -21,6 +21,7 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -117,7 +118,7 @@ void main() {
       find.byKey(ValueKey<String>('remote_video_card_remote_video-$n'));
 
   Future<void> enterSelectionMode(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.checklist_outlined));
+    await tester.tap(find.byIcon(FushiIcons.checklist));
     await tester.pumpAndSettle();
   }
 
@@ -190,7 +191,7 @@ void main() {
 
     expect(remoteClient.downloadedIds, <String>['remote/video-1'],
         reason: '串行：第一个挂在闸门上时第二个不起');
-    expect(find.byIcon(Icons.checklist_outlined), findsOneWidget,
+    expect(find.byIcon(FushiIcons.checklist), findsOneWidget,
         reason: '批量下载一开始就退出多选态');
 
     remoteClient.release();

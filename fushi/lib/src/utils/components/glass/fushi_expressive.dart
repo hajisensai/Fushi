@@ -128,6 +128,9 @@ class FushiSpring {
         _controller.value,
         target,
         _controller.velocity,
+        // 收敛（落入容差）时把值钉在目标上：不钉的话停在 ±1e-3 内某处（如收起的
+        // 浮动工具栏残留 0.001px 位移），`value == target` 的提前返回也随之失准。
+        snapToEnd: true,
       ),
     );
   }
