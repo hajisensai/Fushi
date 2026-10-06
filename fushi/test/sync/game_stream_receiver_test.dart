@@ -295,7 +295,8 @@ void main() {
     expect(
       session['appleAudioCategoryOptions'],
       isEmpty,
-      reason: 'call options are invalid with playback and would make iOS '
+      reason:
+          'call options are invalid with playback and would make iOS '
           'reject the category; an absent key would keep the old options',
     );
   });
