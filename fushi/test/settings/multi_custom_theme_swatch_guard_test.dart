@@ -1,6 +1,20 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
+
+bool _hasDefaultNameHint(String page) {
+  final String nameField = maskCommentsAndStrings(
+    methodBody(page, 'Widget _buildNameField('),
+  ).replaceAll(RegExp(r'\s+'), '');
+  return nameField.contains(
+        'finalStringplaceholder=t.custom_theme_default_name('
+        'n:_defaultNameIndex,);',
+      ) &&
+      nameField.contains('controller:_nameController,') &&
+      nameField.contains('hintText:placeholder,') &&
+      nameField.contains('name.isEmpty?placeholder:name,');
+}
 
 // TODO-930 M1/M2 source-scan guards. A full widget test of the theme swatch row
 // or the editor would need the whole AppModel/InAppWebView stack; the structure
@@ -149,12 +163,38 @@ void main() {
         );
         // 「Custom N」默认名仍在——但只作为编辑页名称输入框未命名时的 hint 占位。
         expect(
-          page.contains('t.custom_theme_default_name(n:'),
+          // 4f886a5e37a 将名字改成可编辑标题并格式化为多行：只忽略空白，
+          // 同时钉住默认序号、输入框 hint 与未命名标题的真实接线。
+          _hasDefaultNameHint(page),
           isTrue,
           reason: 'default Custom N fallback must remain in the editor hint',
         );
       },
     );
+
+    test('default-name guard rejects a wrong index or disconnected hint', () {
+      expect(
+        _hasDefaultNameHint(
+          page.replaceFirst('n: _defaultNameIndex,', 'n: 1,'),
+        ),
+        isFalse,
+      );
+      expect(
+        _hasDefaultNameHint(
+          page.replaceFirst(
+            'hintText: placeholder,',
+            'hintText: null, /* hintText: placeholder, */',
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        _hasDefaultNameHint(
+          page.replaceFirst('name.isEmpty ? placeholder : name,', 'name,'),
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('M2 editor edits a specific entry with name + delete', () {

@@ -3,6 +3,27 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
+bool _pinsSurfaceThroughSharedScheme(String page, String notifier) {
+  String code(String source, String signature) => maskCommentsAndStrings(
+    methodBody(source, signature),
+  ).replaceAll(RegExp(r'\s+'), '');
+
+  final String entry = code(page, 'CustomThemeEntry _buildEntry(');
+  final String preview = code(page, 'ColorScheme _buildSchemeFor(');
+  final String runtime = code(
+    notifier,
+    'ColorScheme buildCustomThemeColorScheme(',
+  );
+  return entry.contains('returnCustomThemeEntry(') &&
+      entry.contains('surfaceColor:argb(_overrides[_ThemeRole.surface]),') &&
+      preview.contains(
+        'returnappModelNoUpdate.themeNotifier.buildCustomThemeColorScheme('
+        '_buildEntry(),brightness,);',
+      ) &&
+      runtime.contains('returnbuildFushiColorScheme(') &&
+      runtime.contains('surface:role(entry.surfaceColor),');
+}
+
 /// 自定义主题编辑页重设计（2026-09）的结构守卫。
 ///
 /// 用户原始抱怨：PC 上滚动灾难（包内 ColorPicker 按窗口宽撑满、每个启用的颜色都
@@ -18,6 +39,9 @@ import '../helpers/source_guard.dart';
 void main() {
   final String source = File(
     'lib/src/pages/implementations/custom_theme_page.dart',
+  ).readAsStringSync();
+  final String notifier = File(
+    'lib/src/models/theme_notifier.dart',
   ).readAsStringSync();
 
   group('CustomThemePage · 选色器不在滚动主路径上', () {
@@ -125,10 +149,42 @@ void main() {
     test('界面背景角色钉死 surface，与真机同一派生链', () {
       expect(source.contains('_ThemeRole.surface'), isTrue);
       expect(
-        source.contains('surface: _overrides[_ThemeRole.surface]'),
+        // 45fc6d88b17 将预览接到运行期共享入口：覆盖色先写草稿 entry，
+        // 再由 ThemeNotifier 派生。必须守住三段，不能只找全文件里的 surface。
+        _pinsSurfaceThroughSharedScheme(source, notifier),
         isTrue,
       );
       expect(source.contains('t.theme_role_surface'), isTrue);
+    });
+
+    test('surface 接线守卫拒绝丢失覆盖色、错误草稿及只剩注释的派生参数', () {
+      expect(
+        _pinsSurfaceThroughSharedScheme(
+          source.replaceFirst(
+            'surfaceColor: argb(_overrides[_ThemeRole.surface]),',
+            'surfaceColor: null,',
+          ),
+          notifier,
+        ),
+        isFalse,
+      );
+      expect(
+        _pinsSurfaceThroughSharedScheme(
+          source.replaceFirst('_buildEntry(),', '_otherEntry(),'),
+          notifier,
+        ),
+        isFalse,
+      );
+      expect(
+        _pinsSurfaceThroughSharedScheme(
+          source,
+          notifier.replaceFirst(
+            'surface: role(entry.surfaceColor),',
+            'surface: null, /* surface: role(entry.surfaceColor), */',
+          ),
+        ),
+        isFalse,
+      );
     });
 
     test('预览按角色框出影响位置', () {
@@ -141,9 +197,6 @@ void main() {
         methodBody(source, 'ColorScheme _buildSchemeFor('),
         contains('themeNotifier.buildCustomThemeColorScheme('),
       );
-      final String notifier = File(
-        'lib/src/models/theme_notifier.dart',
-      ).readAsStringSync();
       final String scheme = methodBody(
         notifier,
         'ColorScheme buildCustomThemeColorScheme(',
