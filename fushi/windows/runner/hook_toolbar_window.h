@@ -138,6 +138,15 @@ struct Style {
   uint32_t button_bg_color = 0x33000000;
   uint32_t active_color = 0xFFFFD54F;
   uint32_t bg_color = 0xCC000000;
+  // M3E floating toolbar (galgame hook overlay). Alpha 0 = legacy look: the pill
+  // borrows the caption bar's [bg_color], active slots are a 16% tint of
+  // [active_color], hover is [button_bg_color] at 55%. Non-zero = the Dart side
+  // resolved the app theme: the pill is this tonal surface container, fully
+  // rounded; active slots are filled with [active_bg_color]
+  // (secondaryContainer) under an [active_color] (onSecondaryContainer) glyph;
+  // hover paints [button_bg_color] as-is (an onSurfaceVariant state layer).
+  uint32_t surface_color = 0;
+  uint32_t active_bg_color = 0;
 };
 
 // Where to put the toolbar, in screen / client PHYSICAL px. Computed by the

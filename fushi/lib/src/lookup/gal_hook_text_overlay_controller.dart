@@ -36,6 +36,8 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -49,29 +51,68 @@ typedef GalHookPreferenceWriter =
 /// 个存储），所以单独开一条读取口而不是复用 [GalHookPreferenceReader]。
 typedef GalHookHoverAutoLookupReader = bool Function();
 
-/// Hook 浮窗工具条的配色（native D2D 绘制，Dart 只下发 ARGB）。
+/// Hook 浮窗工具条与台词层的配色（native D2D 绘制，Dart 只下发 ARGB）。
+///
+/// `buttonTextColor` / `buttonBgColor` / `activeColor` 是台词正文窗自己用的
+/// 历史三色（滚动条、非 hook 模式的窗内工具条），叠在游戏画面上，保持深底可读。
+/// `toolbar*` 是独立工具条窗（M3E 浮动工具栏）的主题色；`toolbarBgColor` alpha
+/// 为 0 时 native 走历史外观。`highlightColor` 是台词查词命中的底色块。
 typedef GalHookToolbarPalette = ({
   int buttonTextColor,
   int buttonBgColor,
   int activeColor,
+  int toolbarBgColor,
+  int toolbarIconColor,
+  int toolbarHoverColor,
+  int toolbarActiveBgColor,
+  int toolbarActiveIconColor,
+  int highlightColor,
 });
 
-/// M3E 重设计：工具条强调色跟随 app 主题，不再写死紫色。
+/// native 结构体默认的查词命中底色（琥珀 50%），没有主题时原样保留。
+const int kGalHookTextLegacyHighlightColor = 0x80FFD54F;
+
+int _argbWithAlpha(Color color, int alpha) =>
+    (alpha << 24) | (color.toARGB32() & 0x00FFFFFF);
+
+/// 查词命中底色：跨明暗恒定的 fixed 色阶，按台词填色的明暗取反差最大的一档——
+/// 浅色字（默认白字）垫 `onPrimaryFixedVariant`（tone 30），深色字垫
+/// `primaryFixed`（tone 90）。描边照旧画在其上，可读性不靠底色单独兜。
+int _galHookHighlightColor(ColorScheme scheme, int textColor) {
+  final double textLuminance = Color(textColor).computeLuminance();
+  final Color fill = textLuminance > 0.4
+      ? scheme.onPrimaryFixedVariant
+      : scheme.primaryFixed;
+  return _argbWithAlpha(fill, 0xC0);
+}
+
+/// M3E 重设计：工具条与查词高亮跟随 app 主题，不再写死紫色 / 琥珀。
 ///
-/// 工具条叠在游戏画面上、底板是用户配的深色半透明条，明暗主题都一样——所以取
-/// **跨明暗恒定**的 fixed 角色（M3E 对播放器 / 阅读器浮层的约定）：激活 = 主色
-/// `primaryFixedDim`（tone 80，深底上可读），悬停格 = 次色 `secondaryFixedDim` 的
-/// tonal 色块。alpha 与历史值逐位一致（悬停底 0x55、文字 / 激活不透明），悬停底
-/// 只画在悬停格、叠在 alpha ≥ 0x99 的底板之上，分层窗口的逐像素命中区不变。
+/// - 独立工具条窗 = M3E 浮动工具栏：tonal `surfaceContainer` 全圆角胶囊、图标
+///   `onSurfaceVariant`、激活态 `secondaryContainer` 圆底 + `onSecondaryContainer`
+///   图标、悬停 = `onSurfaceVariant` 8% 状态层。随主题明暗变化（浅色主题就是浅色
+///   工具栏），与主窗口的浮动工具栏同一副长相。
+/// - 正文窗的历史三色（滚动条等）仍取跨明暗恒定的 fixed 角色，因为它们画在台词
+///   底板 / 游戏画面上。
+/// - Apple 设计系统：系统二级分组底 + label 图标、强调色淡底 + 强调色图标。
+/// - 墨水屏：纯黑白。
 ///
-/// 墨水屏：纯黑白（白字白激活、灰悬停）。[theme] 为 null（主窗口导航树尚未建好、
-/// 或测试里的裸 AppModel）时回落到历史配色。
-GalHookToolbarPalette galHookToolbarPalette(ThemeData? theme) {
+/// [theme] 为 null（主窗口导航树尚未建好、或测试里的裸 AppModel）时回落到历史配色。
+GalHookToolbarPalette galHookToolbarPalette(
+  ThemeData? theme, {
+  int textColor = 0xFFFFFFFF,
+}) {
   if (theme == null) {
     return (
       buttonTextColor: kGalHookToolbarLegacyButtonTextColor,
       buttonBgColor: kGalHookToolbarLegacyButtonBgColor,
       activeColor: kGalHookToolbarLegacyActiveColor,
+      toolbarBgColor: 0,
+      toolbarIconColor: 0,
+      toolbarHoverColor: 0,
+      toolbarActiveBgColor: 0,
+      toolbarActiveIconColor: 0,
+      highlightColor: kGalHookTextLegacyHighlightColor,
     );
   }
   final bool eink = theme.extension<FushiEinkTheme>()?.einkMode ?? false;
@@ -80,18 +121,62 @@ GalHookToolbarPalette galHookToolbarPalette(ThemeData? theme) {
       buttonTextColor: 0xFFFFFFFF,
       buttonBgColor: 0x55FFFFFF,
       activeColor: 0xFFFFFFFF,
+      toolbarBgColor: 0xFFFFFFFF,
+      toolbarIconColor: 0xFF000000,
+      toolbarHoverColor: 0x29000000,
+      toolbarActiveBgColor: 0xFF000000,
+      toolbarActiveIconColor: 0xFFFFFFFF,
+      highlightColor: 0x66808080,
     );
   }
   final ColorScheme scheme = theme.colorScheme;
   int argb(Color color) => color.toARGB32();
+  final int bodyButtonBg =
+      (kGalHookToolbarLegacyButtonBgColor & 0xFF000000) |
+      (argb(scheme.secondaryFixedDim) & 0x00FFFFFF);
+  final int bodyActive =
+      0xFF000000 | (argb(scheme.primaryFixedDim) & 0x00FFFFFF);
+  final int highlight = _galHookHighlightColor(scheme, textColor);
+  final FushiAppleColors? apple = theme.extension<FushiAppleColors>();
+  if (apple != null) {
+    return (
+      buttonTextColor: kGalHookToolbarLegacyButtonTextColor,
+      buttonBgColor: bodyButtonBg,
+      activeColor: bodyActive,
+      toolbarBgColor: _argbWithAlpha(apple.secondaryGroupedBackground, 0xF2),
+      toolbarIconColor: 0xFF000000 | (argb(apple.label) & 0x00FFFFFF),
+      toolbarHoverColor: argb(apple.fill),
+      toolbarActiveBgColor: _argbWithAlpha(apple.accent, 0x2E),
+      toolbarActiveIconColor: 0xFF000000 | (argb(apple.accent) & 0x00FFFFFF),
+      highlightColor: highlight,
+    );
+  }
   return (
     buttonTextColor: kGalHookToolbarLegacyButtonTextColor,
-    buttonBgColor:
-        (kGalHookToolbarLegacyButtonBgColor & 0xFF000000) |
-        (argb(scheme.secondaryFixedDim) & 0x00FFFFFF),
-    activeColor: 0xFF000000 | (argb(scheme.primaryFixedDim) & 0x00FFFFFF),
+    buttonBgColor: bodyButtonBg,
+    activeColor: bodyActive,
+    toolbarBgColor: _argbWithAlpha(scheme.surfaceContainer, 0xFF),
+    toolbarIconColor: _argbWithAlpha(scheme.onSurfaceVariant, 0xFF),
+    toolbarHoverColor: _argbWithAlpha(
+      scheme.onSurfaceVariant,
+      (FushiStateLayer.hover * 255).round(),
+    ),
+    toolbarActiveBgColor: _argbWithAlpha(scheme.secondaryContainer, 0xFF),
+    toolbarActiveIconColor: _argbWithAlpha(scheme.onSecondaryContainer, 0xFF),
+    highlightColor: highlight,
   );
 }
+
+/// 下发给 native `show` / `updateStyle` 的工具条主题字段（历史三色另走具名参数）。
+Map<String, Object?> galHookToolbarThemeArgs(GalHookToolbarPalette palette) =>
+    <String, Object?>{
+      'toolbarBgColor': palette.toolbarBgColor,
+      'toolbarIconColor': palette.toolbarIconColor,
+      'toolbarHoverColor': palette.toolbarHoverColor,
+      'toolbarActiveBgColor': palette.toolbarActiveBgColor,
+      'toolbarActiveIconColor': palette.toolbarActiveIconColor,
+      'highlightColor': palette.highlightColor,
+    };
 
 /// App 级 Windows Hook 台词浮窗控制器。
 class GalHookTextOverlayController extends ChangeNotifier {
@@ -1316,6 +1401,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         buttonTextColor: palette.buttonTextColor,
         buttonBgColor: palette.buttonBgColor,
         activeColor: palette.activeColor,
+        themeArgs: galHookToolbarThemeArgs(palette),
         following: _following,
         passThrough: _passThrough,
         locked: _locked,
@@ -1378,12 +1464,28 @@ class GalHookTextOverlayController extends ChangeNotifier {
     return (alpha << 24) | (_backgroundBaseColor & 0x00FFFFFF);
   }
 
+  /// 主窗口树里 [GalHookOverlayThemeSync] 最近一次报上来的主题（随预设 / 明暗 /
+  /// 纯黑 / 自定义主题实时变化）。没报过时退回导航树的 context 现取。
+  ThemeData? _theme;
+
   /// 当前主题下的工具条配色；主窗口导航树没建好时回落历史配色。
   GalHookToolbarPalette _toolbarPalette() {
-    final BuildContext? context = _appModel?.navigatorKey.currentContext;
-    return galHookToolbarPalette(
-      context != null && context.mounted ? Theme.of(context) : null,
-    );
+    ThemeData? theme = _theme;
+    if (theme == null) {
+      final BuildContext? context = _appModel?.navigatorKey.currentContext;
+      theme = context != null && context.mounted ? Theme.of(context) : null;
+    }
+    return galHookToolbarPalette(theme, textColor: _textColor);
+  }
+
+  /// 主题变化入口（主窗口 [GalHookOverlayThemeSync] 在 build 里调用）：算出的
+  /// 配色变了且浮窗在屏上就整份重推样式，工具条与查词高亮当场换色。
+  void applyTheme(ThemeData theme) {
+    final GalHookToolbarPalette before = _toolbarPalette();
+    _theme = theme;
+    if (!_started || !_visible) return;
+    if (_toolbarPalette() == before) return;
+    unawaited(_pushStyle());
   }
 
   Future<void> _pushStyle() async {
@@ -1406,6 +1508,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       buttonTextColor: palette.buttonTextColor,
       buttonBgColor: palette.buttonBgColor,
       activeColor: palette.activeColor,
+      themeArgs: galHookToolbarThemeArgs(palette),
     );
     final GalLookupReferenceClientV1? client = _attachedText.currentClient;
     if (client != null) {

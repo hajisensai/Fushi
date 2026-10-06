@@ -1005,6 +1005,13 @@ hook_toolbar::Style FloatingLyricWindow::ToolbarStyle() const {
   style.button_bg_color = style_.button_bg_color;
   style.active_color = style_.active_color;
   style.bg_color = style_.bg_color;
+  if ((style_.toolbar_bg_color >> 24) != 0) {
+    style.surface_color = style_.toolbar_bg_color;
+    style.button_text_color = style_.toolbar_icon_color;
+    style.button_bg_color = style_.toolbar_hover_color;
+    style.active_bg_color = style_.toolbar_active_bg_color;
+    style.active_color = style_.toolbar_active_icon_color;
+  }
   return style;
 }
 

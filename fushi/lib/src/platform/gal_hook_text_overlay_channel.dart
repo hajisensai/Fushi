@@ -1370,6 +1370,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     int buttonTextColor = kGalHookToolbarLegacyButtonTextColor,
     int buttonBgColor = kGalHookToolbarLegacyButtonBgColor,
     int activeColor = kGalHookToolbarLegacyActiveColor,
+    Map<String, Object?> themeArgs = const <String, Object?>{},
     bool following = true,
     bool passThrough = false,
     bool locked = false,
@@ -1403,6 +1404,9 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'buttonTextColor': buttonTextColor,
       'buttonBgColor': buttonBgColor,
       'activeColor': activeColor,
+      // M3E 工具条 / 查词高亮的主题色（见 galHookToolbarThemeArgs）；缺省 = native
+      // 历史外观。
+      ...themeArgs,
       'windowWidth': 900.0,
       'windowHeight': 140.0,
       'cornerRadius': cornerRadius,
@@ -1469,6 +1473,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     int buttonTextColor = kGalHookToolbarLegacyButtonTextColor,
     int buttonBgColor = kGalHookToolbarLegacyButtonBgColor,
     int activeColor = kGalHookToolbarLegacyActiveColor,
+    Map<String, Object?> themeArgs = const <String, Object?>{},
   }) async {
     if (!_instance.isSupported) return;
     await _instance.channel.invokeMethod<void>('updateStyle', <String, Object?>{
@@ -1489,6 +1494,7 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
       'buttonTextColor': buttonTextColor,
       'buttonBgColor': buttonBgColor,
       'activeColor': activeColor,
+      ...themeArgs,
     });
   }
 

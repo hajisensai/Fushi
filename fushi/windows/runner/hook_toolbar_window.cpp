@@ -73,7 +73,9 @@ bool SameLayout(const hook_toolbar::Layout& a, const hook_toolbar::Layout& b) {
 bool SameStyle(const hook_toolbar::Style& a, const hook_toolbar::Style& b) {
   return a.button_text_color == b.button_text_color &&
          a.button_bg_color == b.button_bg_color &&
-         a.active_color == b.active_color && a.bg_color == b.bg_color;
+         a.active_color == b.active_color && a.bg_color == b.bg_color &&
+         a.surface_color == b.surface_color &&
+         a.active_bg_color == b.active_bg_color;
 }
 
 bool SameStates(const hook_toolbar::States& a, const hook_toolbar::States& b) {
@@ -960,7 +962,10 @@ void HookToolbarWindow::Render() {
   }
 
   const float opacity = hovered_ ? kHoverOpacity : kRestOpacity;
-  const float corner = std::max(2.0f, layout_.margin_px * 1.5f);
+  // M3E theme palette pushed from Dart (see hook_toolbar::Style::surface_color).
+  const bool m3e = (style_.surface_color >> 24) != 0;
+  const float corner = m3e ? static_cast<float>(height) / 2.0f
+                           : std::max(2.0f, layout_.margin_px * 1.5f);
 
   render_target_->BeginDraw();
   render_target_->Clear(D2D1::ColorF(0, 0, 0, 0));
@@ -969,7 +974,7 @@ void HookToolbarWindow::Render() {
   // so the escape hatch matches the caption bar the user configured; it is
   // floored to a visible value because a fully transparent escape hatch over a
   // fully transparent overlay cannot be found.
-  uint32_t pill = style_.bg_color;
+  uint32_t pill = m3e ? style_.surface_color : style_.bg_color;
   if ((pill >> 24) < 0x99) {
     pill = 0x99000000u | (pill & 0x00FFFFFFu);
   }
@@ -994,9 +999,18 @@ void HookToolbarWindow::Render() {
                                         btn_fg.GetAddressOf());
   render_target_->CreateSolidColorBrush(ColorFromArgb(style_.active_color),
                                         btn_active.GetAddressOf());
+  Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> btn_active_bg;
+  if (m3e) {
+    render_target_->CreateSolidColorBrush(
+        ColorFromArgb(style_.active_bg_color), btn_active_bg.GetAddressOf());
+  }
   if (btn_bg != nullptr) btn_bg->SetOpacity(opacity);
   if (btn_fg != nullptr) btn_fg->SetOpacity(opacity);
   if (btn_active != nullptr) btn_active->SetOpacity(opacity);
+  if (btn_active_bg != nullptr) btn_active_bg->SetOpacity(opacity);
+  // M3E icon buttons are full circles inside the full-round pill.
+  const float cell_corner =
+      m3e ? layout_.button_px / 2.0f : corner * 0.65f;
 
   const float btn = layout_.button_px;
   Microsoft::WRL::ComPtr<IDWriteTextFormat> icon_format;
@@ -1016,7 +1030,18 @@ void HookToolbarWindow::Render() {
     const float by = layout_.margin_px;
     const D2D1_RECT_F cell = D2D1::RectF(bx, by, bx + btn, by + btn);
     const bool active = hook_toolbar::SlotActive(profile_, slot, states_);
-    if (active && btn_active != nullptr) {
+    if (m3e && active && btn_active_bg != nullptr) {
+      render_target_->FillRoundedRectangle(
+          D2D1::RoundedRect(cell, cell_corner, cell_corner),
+          btn_active_bg.Get());
+      if (slot == hovered_slot_ && btn_bg != nullptr) {
+        render_target_->FillRoundedRectangle(
+            D2D1::RoundedRect(cell, cell_corner, cell_corner), btn_bg.Get());
+      }
+    } else if (m3e && slot == hovered_slot_ && btn_bg != nullptr) {
+      render_target_->FillRoundedRectangle(
+          D2D1::RoundedRect(cell, cell_corner, cell_corner), btn_bg.Get());
+    } else if (active && btn_active != nullptr) {
       btn_active->SetOpacity(opacity * 0.16f);
       render_target_->FillRoundedRectangle(
           D2D1::RoundedRect(cell, corner * 0.65f, corner * 0.65f),

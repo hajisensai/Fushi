@@ -98,6 +98,15 @@ class FloatingLyricWindow {
     uint32_t button_bg_color = 0x33000000;
     uint32_t highlight_color = 0x80FFD54F;
     uint32_t active_color = 0xFFFFD54F;
+    // M3E floating toolbar palette resolved from the app theme on the Dart side
+    // (galgame hook overlay only). toolbar_bg_color alpha 0 = field absent ->
+    // the pass-through toolbar keeps the legacy look built from the four colours
+    // above. See hook_toolbar::Style::surface_color.
+    uint32_t toolbar_bg_color = 0;
+    uint32_t toolbar_icon_color = 0;
+    uint32_t toolbar_hover_color = 0;
+    uint32_t toolbar_active_bg_color = 0;
+    uint32_t toolbar_active_icon_color = 0;
     // TODO-708 P2: 窗宽/窗高仍用 0 = 平台原生默认（720dip 起始宽 + 可拖拽）：0 宽窗
     // 不是合法用户取值，拿它当哨兵没有歧义。
     //

@@ -58,6 +58,7 @@ import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/gal_hook_overlay_theme_sync.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -2400,6 +2401,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                               child!,
                               const AppFloatingBallHost(),
                               const FloatingLyricLookupHost(),
+                              // galgame Hook 浮窗（native 窗口）跟随 app 主题。
+                              const GalHookOverlayThemeSync(),
                             ],
                           ),
                         ),
