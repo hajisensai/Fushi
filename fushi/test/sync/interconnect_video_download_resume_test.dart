@@ -65,6 +65,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
 /// ffprobe / ffmpeg 替身：探得出时长（转码闸门之一），没有内嵌字幕轨。
 class _ProbeBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
       FfmpegRunResult(returnCode: 0, output: '');

@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -37,10 +38,12 @@ import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/assistant_host.dart';
+import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
 import 'package:fushi_server/src/lan_advertiser.dart';
 import 'package:fushi_server/src/profile_hub.dart';
+import 'package:fushi_server/src/remote_mining_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
@@ -82,7 +85,9 @@ class HeadlessHost {
     required this.prefs,
     required this.identity,
     bool Function()? p2pAvailable,
+    ServerDictionaryHost? dictionaryHost,
   })  : _config = config,
+        _injectedDictionaryHost = dictionaryHost,
         _p2pAvailable =
             p2pAvailable ?? (() => InterconnectP2pRuntime.isAvailable);
 
@@ -101,6 +106,9 @@ class HeadlessHost {
   final ServerIdentity identity;
 
   FushiSyncServer? _server;
+
+  /// 运行中的互联 server（未启动为 null）；admin API 经它进程内代调互联接口。
+  FushiSyncServer? get syncServer => _server;
   LanAdvertiser? _advertiser;
   InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;
@@ -109,6 +117,10 @@ class HeadlessHost {
   ServerDownloadHost? _downloads;
   ServerAnkiLanding? _anki;
   ServerVideoScrape? _videoScrape;
+
+  /// 测试注入的词典引擎（指定原生库 / 变形表目录）；null = [start] 按 bundle 布局建。
+  final ServerDictionaryHost? _injectedDictionaryHost;
+  ServerDictionaryHost? _dictionaries;
   final _AsyncMutex _mutex = _AsyncMutex();
 
   /// 互联「配置文件」寄存处（对端推来 / 拉走的配置方案；WebUI 列表与指定也走它）。
@@ -152,6 +164,10 @@ class HeadlessHost {
 
   /// Anki 落地（手机的待发卡经互联同步进来，这里写进 Anki 并同步）。
   ServerAnkiLanding? get anki => _anki;
+
+  /// 词典引擎（互联查词 / 词典媒体）。[start] 之后非空；原生库不可用时
+  /// `available == false`，查词路由不接线（对端按 capabilities `lookup.dictionary` 判断）。
+  ServerDictionaryHost? get dictionaries => _dictionaries;
 
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
@@ -222,6 +238,30 @@ class HeadlessHost {
     await downloads.start();
     _downloads = downloads;
 
+    // 词典引擎：原生库随包（bin/../lib/libfushidicts_ffi.so）或 FUSHI_DICTS_LIB 指定；
+    // 加载不了只留痕，服务端照常起，词典退回纯存储中转。
+    final ServerDictionaryHost dictionaries = _injectedDictionaryHost ??
+        ServerDictionaryHost(db: db, dictionaryResourceRoot: paths.dictionaryResources);
+    _dictionaries = dictionaries;
+    if (!await dictionaries.start()) {
+      engineLog.logDiagnostic(
+        'HeadlessHost',
+        '${dictionaries.unavailableReason}；互联查词不可用（放 libfushidicts_ffi 到 bin/../lib/ 或设 '
+            '$kFushiDictsLibEnv）',
+      );
+    }
+
+    // Anki 落地 / 互联制卡共用一份同步客户端会话；没带 fushi-anki-sync 时制卡路由不接线。
+    final ServerAnkiLanding anki = ServerAnkiLanding(
+      prefs: prefs,
+      db: db,
+      support: paths.support,
+      syncData: paths.syncData,
+      deviceId: identity.deviceId,
+      deviceName: config.deviceName,
+    );
+    _anki = anki;
+
     _loopbackOnly = _isLoopbackBind(config.bind);
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: paths.syncData.path,
@@ -242,6 +282,16 @@ class HeadlessHost {
       // 「AI 下视频」助手会话：手机把下载执行设备设成服务端时整场在这里跑。没配
       // `ai:` 段时能力位如实报 no_provider（路由照挂，客户端好区分「不懂」与「没配」）。
       assistant: createServerAssistantHost(config: () => config, prefs: prefs, db: db, downloads: downloads),
+      // 互联查词 / 查词历史 / 词典媒体：装了词典引擎才接线。
+      remoteLookupService: dictionaries.available ? ServerRemoteLookupService(dictionaries) : null,
+      historyService: dictionaries.available ? ServerRemoteHistoryService(db) : null,
+      dictionaryMediaProvider: dictionaries.available ? dictionaries.mediaFile : null,
+      // 互联制卡（/api/mine、/api/mine/forward、/api/duplicate、/api/anki/*）：落到
+      // 本机 Anki 同步客户端库，需要随包的 fushi-anki-sync。
+      miningService: anki.available ? ServerRemoteMiningService.forLanding(anki, dictionaries: dictionaries) : null,
+      // 游戏串流需要 Windows 桌面 app 与正在跑的游戏，服务端恒不提供：不注入，
+      // 路由回 501 unsupported、capabilities 报 `gameStream: false`。
+      gameStreamService: null,
     )
       ..onPairRequest = _approvePairing
       ..onPairPinGenerated = _generatePin
@@ -267,15 +317,7 @@ class HeadlessHost {
     // 这里抛出去会让它没有拥有者（泄漏一个在跑的 server，审查问题 12）。
     await _attachP2p(server);
 
-    final ServerAnkiLanding anki = ServerAnkiLanding(
-      prefs: prefs,
-      db: db,
-      support: paths.support,
-      syncData: paths.syncData,
-      deviceId: identity.deviceId,
-      deviceName: config.deviceName,
-    )..start();
-    _anki = anki;
+    anki.start();
 
     _advertiser = LanAdvertiser(
       deviceName: config.deviceName,
@@ -455,6 +497,10 @@ class HeadlessHost {
     // 下载管线借用它，管线停了再关。
     _videoScrape?.close();
     _videoScrape = null;
+    // 引擎持有词典文件映射：停机释放（与 app 切数据根同一个出口）。启动半途失败
+    // 也走这里——词典引擎在绑端口之前就装好了。
+    if (_dictionaries?.available ?? false) FushiDicts.disposeInstance();
+    _dictionaries = null;
   }
 
   // ── 配对回调 ──────────────────────────────────────────────────────────
@@ -536,8 +582,8 @@ class HeadlessHost {
         db: db,
         dictionaryResourceRoot: paths.dictionaryResources,
         packages: SyncAssetPackageService(db: db),
-        // 第 0 期服务端不装词典 FFI 引擎，导入/删除词典只改 DB 与目录。
-        refreshDictionaryCache: () async {},
+        // 导入 / 删除词典后按 DB 重载引擎（没装引擎时是空操作，只改 DB 与目录）。
+        refreshDictionaryCache: () async => _dictionaries?.refresh(),
         runExclusive: _mutex.run,
         importBookFromFile: (File bookFile) async {
           if (await isMangaPackage(bookFile)) {

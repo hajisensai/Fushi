@@ -96,6 +96,48 @@ class ServerVideoScrape {
   /// 仍待人工指定身份的作品数（查无 / 歧义；客户端经互联的「待确认」处理）。
   Future<int> pendingCount() async => (await _sweep.pendingWorks()).length;
 
+  /// 对一部待确认作品跑一次 AI 识别（[VideoSourceScrapeCoordinator.identifyWorkWithAi]）。
+  ///
+  /// 只认待确认清单里的作品（[workKey] 是清单的 `id`，即 `stableKey`）：AI 识别就是
+  /// 为「自动刮削没认出来」准备的；已识别的作品要换身份走 identify。
+  /// 不在清单里抛 [StateError]。
+  Future<Map<String, Object?>> identifyPendingWithAi(String workKey) async {
+    final VideoPendingScrapeWork? entry = (await _sweep.pendingWorks())
+        .where((VideoPendingScrapeWork e) => e.work.stableKey == workKey)
+        .firstOrNull;
+    if (entry == null) throw StateError('work "$workKey" is not in the pending list');
+    final SourceScrapeReport report = await coordinator.identifyWorkWithAi(
+      source: entry.source,
+      workTitle: entry.work.title,
+      workStableKey: workKey,
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (VideoSourceScrapeProgress _) {},
+    );
+    return scrapeReportJson(report);
+  }
+
+  /// 待人工指定身份的作品清单（带最近一次没认出来的原因）。`key` 与互联
+  /// `/api/library/metadata/*` 的作品键同形，可直接喂给 `ctl scrape search|identify`。
+  Future<List<Map<String, Object?>>> pendingWorks() async => <Map<String, Object?>>[
+        for (final VideoPendingScrapeWork entry in await _sweep.pendingWorksWithReasons())
+          <String, Object?>{
+            'id': entry.work.stableKey,
+            'title': entry.work.title,
+            'source': entry.source.id,
+            'members': entry.work.members.length,
+            'key': entry.work.collection == null
+                ? <String, Object?>{'bookUid': entry.work.members.single.bookUid}
+                : <String, Object?>{
+                    'collection': <String, Object?>{
+                      'name': entry.work.collection!.name,
+                      'collectionType': entry.work.collection!.collectionType,
+                    },
+                  },
+            if (entry.pendingNote != null) 'status': entry.pendingNote!.cause.name,
+            if (entry.pendingNote != null) 'reason': entry.pendingNote!.reason,
+          },
+      ];
+
   /// 给 WebUI / admin status 的刮削状态。
   Map<String, Object?> status() {
     final VideoSourceScrapeProgress progress = controller.progress;
@@ -135,3 +177,14 @@ String resolveServerTmdbApiKey(ServerConfig config, PrefStore prefs) {
   if (fromConfig.isNotEmpty) return fromConfig;
   return (prefs.getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String).trim();
 }
+
+/// [SourceScrapeReport] 的 JSON 摘要（admin / CLI 输出用）。
+Map<String, Object?> scrapeReportJson(SourceScrapeReport report) => <String, Object?>{
+      'sourceIds': report.sourceIds,
+      'totalWorks': report.totalWorks,
+      'succeededWorks': report.succeededWorks,
+      'failedWorks': report.failedWorks,
+      'pendingConfirmations': report.pendingConfirmations,
+      'cancelled': report.cancelled,
+      'errors': <String>[for (final SourceScrapeIssue e in report.errors) '$e'],
+    };

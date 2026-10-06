@@ -1800,10 +1800,14 @@ extension _ReaderNavigation on _ReaderFushiPageState {
   /// `modalPaused`）：进入时 `stop()` 结算到此刻并封段落库，退出后按判据续表
   /// （手动暂停 / 后台仍不续）。查词浮窗与 Anki 制卡对话框**不**经这里——那是阅读的
   /// 一部分。计数而非 bool：面板里再开对话框（有声书面板 → 导入）嵌套时不会提前续表。
-  Future<T> _withStudyClockPaused<T>(Future<T> Function() body) async {
+  Future<T?> _withStudyClockPaused<T>(Future<T?> Function() body) async {
     _studyClockModalDepth++;
     _syncStudyClockRunState();
     try {
+      // Every reader-covering modal (including unbound audio import) shares
+      // the same selection boundary. Set depth before awaiting WebView cleanup.
+      await _clearReaderAppSelection();
+      if (!mounted) return null;
       return await body();
     } finally {
       _studyClockModalDepth--;

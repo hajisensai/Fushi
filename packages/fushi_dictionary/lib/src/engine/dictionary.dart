@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import '../language/language.dart';
+import '../language/language_base.dart';
 
 enum DictionaryType { term, frequency, pitch, kanji }
 
