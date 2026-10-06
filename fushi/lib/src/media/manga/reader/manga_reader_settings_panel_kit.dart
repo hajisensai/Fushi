@@ -119,14 +119,12 @@ class _MangaPanelRowHeader extends StatelessWidget {
     this.subtitle,
     this.icon,
     this.info,
-    this.trailing,
   });
 
   final String title;
   final String? subtitle;
   final IconData? icon;
   final String? info;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -166,7 +164,6 @@ class _MangaPanelRowHeader extends StatelessWidget {
             ],
           ),
         ),
-        if (trailing != null) trailing!,
         if (info != null) MangaPanelInfoButton(title: title, message: info!),
       ],
     );

@@ -2,15 +2,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 
 import '../helpers/glass_unwrap.dart';
-import 'widget_test_helpers.dart';
+import 'widget_test_helpers.dart' as helpers;
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 // FushiSearchBar / FushiSearchView（M3E 搜索共享层）的行为契约：防抖、IME
 // 组字期间不出查询、清空、Esc 清空 / 失焦并归还焦点、提交跳过防抖；搜索视图
 // 窄屏全屏 / 宽屏 docked、展开收起、最近搜索、Esc 关闭后焦点回到搜索栏。
+
+// These tests assert input contracts, independently of GPU splash assets.
+Widget buildTestApp(Widget child) => helpers.buildTestApp(
+  child,
+  theme: ThemeData.light(
+    useMaterial3: true,
+  ).copyWith(splashFactory: NoSplash.splashFactory),
+);
 
 Future<void> _pumpBar(
   WidgetTester tester,
@@ -416,7 +425,7 @@ void main() {
     });
 
     test('弹簧曲线 0→1，末端落在 1', () {
-      final FushiSpringCurve curve = FushiSpringCurve();
+      const FushiSpringCurve curve = FushiSpringCurve.spatial;
       expect(curve.transform(0), 0);
       expect(curve.transform(1), 1);
       expect(curve.transform(0.3), greaterThan(0.5));

@@ -5,10 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
-    show FushiCookieBorder;
-import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
-    show FushiButtonGroup;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -635,7 +631,14 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 8, 14),
-              child: Row(children: <Widget>[cover, info, group]),
+              child: Row(
+                children: <Widget>[
+                  cover,
+                  info,
+                  group,
+                  AudiobookFollowAudioButton(controller: c, foregroundColor: fg),
+                ],
+              ),
             ),
             Positioned(
               left: 24,

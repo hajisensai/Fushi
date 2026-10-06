@@ -1696,8 +1696,7 @@ SettingsResetSpec? settingsResetSpecFor(
     );
   }
   if (item is SettingsSegmentedItem) {
-    final SettingsSegmentedItem<Object> segmented =
-        item as SettingsSegmentedItem<Object>;
+    final SettingsSegmentedItem<Object> segmented = item;
     final Object? defaultValue = segmented.defaultValue;
     if (defaultValue == null) return null;
     return SettingsResetSpec(

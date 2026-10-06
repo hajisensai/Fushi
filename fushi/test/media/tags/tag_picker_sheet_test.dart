@@ -7,6 +7,8 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiDialogFrame;
 import 'package:fushi_core/fushi_core.dart';
 
 import '../../helpers/test_platform_services.dart';
@@ -48,6 +50,7 @@ void main() {
       ],
       child: TranslationProvider(
         child: MaterialApp(
+          theme: ThemeData(splashFactory: NoSplash.splashFactory),
           home: Builder(
             builder: (BuildContext context) => Scaffold(
               body: Center(
@@ -217,6 +220,14 @@ void main() {
     expect(find.byType(BottomSheet), findsOneWidget);
     expect(find.byType(TagPickerPanel), findsOneWidget);
     expect(tester.takeException(), isNull);
+
+    // Re-pumping the same MaterialApp preserves its Navigator and open routes.
+    // Close the narrow picker through its actual action before opening a new
+    // route at the wide breakpoint.
+    await tester.tap(find.byKey(const ValueKey<String>('tag_picker_done')));
+    await settle(tester);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(TagPickerPanel), findsNothing);
 
     await pumpAndOpen(tester, db, targets, size: const Size(1600, 900));
     expect(find.byType(BottomSheet), findsNothing);

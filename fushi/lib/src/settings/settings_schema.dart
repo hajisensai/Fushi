@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/settings/settings_context.dart';

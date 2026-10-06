@@ -1258,7 +1258,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       for (final CustomFontCatalogRow row in _fonts) _traitsOf(row),
     ];
     bool any(bool Function(FontLibraryTraits traits) test) => traits.any(test);
-    return <FontLibraryFilter>[
+    return <FontLibraryFilter>{
       FontLibraryFilter.all,
       FontLibraryFilter.imported,
       FontLibraryFilter.system,
@@ -1281,7 +1281,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         FontLibraryFilter.system,
       }.contains(_filter))
         _filter,
-    ].toSet().toList();
+    }.toList();
   }
 
   String _filterLabel(FontLibraryFilter filter) => switch (filter) {

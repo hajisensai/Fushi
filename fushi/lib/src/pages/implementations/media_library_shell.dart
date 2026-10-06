@@ -5,8 +5,6 @@ import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show fushiNotificationFromVisibleSubtree;
-import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
-    show FushiShellActionsSlot, FushiShellTitleScope;
 import 'package:fushi/utils.dart';
 
 /// 库页视图种类：一个顶层 tab 内部的几个平级视图。

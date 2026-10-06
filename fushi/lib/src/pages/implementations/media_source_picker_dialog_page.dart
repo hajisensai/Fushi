@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for picking a source for a media type.

@@ -18,7 +18,7 @@ import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_theme_assistant.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
-    show buildEinkColorScheme, isAchromaticSeed, kCustomThemeDefaultSeed;
+    show isAchromaticSeed, kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/utils.dart';
@@ -256,6 +256,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         _overrides[_ThemeRole.container]?.toARGB32(),
         _overrides[_ThemeRole.surface]?.toARGB32(),
         appModelNoUpdate.einkMode,
+        appModelNoUpdate.pureBlackDark,
       );
 
   ColorScheme _schemeFor(Brightness brightness) {
@@ -268,18 +269,9 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   ColorScheme _buildSchemeFor(Brightness brightness) {
-    // 墨水屏模式下真机整套 ColorScheme 会被黑白顶掉，预览必须同样如此，
-    // 否则编辑页彩色、书里黑白。
-    if (appModelNoUpdate.einkMode) return buildEinkColorScheme(brightness);
-    return buildFushiColorScheme(
-      seedColor: _resolvedAccent,
-      brightness: brightness,
-      primary: _accentAutoTone ? null : _resolvedAccent,
-      secondary: _overrides[_ThemeRole.secondary],
-      tertiary: _overrides[_ThemeRole.tertiary],
-      primaryContainer: _overrides[_ThemeRole.container],
-      surface: _overrides[_ThemeRole.surface],
-      neutralDerived: _neutralDerived,
+    return appModelNoUpdate.themeNotifier.buildCustomThemeColorScheme(
+      _buildEntry(),
+      brightness,
     );
   }
 

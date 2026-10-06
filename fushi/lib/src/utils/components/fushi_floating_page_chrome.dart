@@ -255,6 +255,7 @@ class FushiScrollAwayController extends ChangeNotifier {
   static const double revealZone = 56;
 
   bool _hidden = false;
+  ScrollDirection _userDirection = ScrollDirection.idle;
 
   /// 页头当前是否收起。
   bool get hidden => _hidden;
@@ -274,6 +275,7 @@ class FushiScrollAwayController extends ChangeNotifier {
     if (SmoothWheelScrollScope.isRewinding) return false;
     if (notification is UserScrollNotification) {
       if (notification.metrics.axis != Axis.vertical) return false;
+      _userDirection = notification.direction;
       switch (notification.direction) {
         case ScrollDirection.reverse:
           if (notification.metrics.extentBefore > revealZone) hidden = true;
@@ -283,9 +285,17 @@ class FushiScrollAwayController extends ChangeNotifier {
           break;
       }
     } else if (notification is ScrollUpdateNotification) {
-      if (notification.metrics.axis == Axis.vertical &&
-          notification.metrics.extentBefore <= 0) {
+      if (notification.metrics.axis != Axis.vertical) return false;
+      if (notification.metrics.extentBefore <= 0) {
         hidden = false;
+      } else if (_userDirection == ScrollDirection.reverse &&
+          notification.dragDetails != null &&
+          notification.metrics.extentBefore > revealZone) {
+        // UserScrollNotification only fires when the direction changes. A drag
+        // that starts at the top must also be able to cross the reveal zone in
+        // its subsequent updates. Require a real drag so programmatic scrolls
+        // and viewport corrections cannot hide the header.
+        hidden = true;
       }
     }
     return false;

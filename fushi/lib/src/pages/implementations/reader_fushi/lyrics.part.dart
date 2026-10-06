@@ -523,7 +523,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           reload: _loadLyricsPage,
         ),
       ),
-      onOpenMore: () => unawaited(_showAppearanceSheet()),
+      onOpenMore: () =>
+          unawaited(_showAppearanceSheet(initialSettingsTab: 'lyrics')),
     );
   }
 

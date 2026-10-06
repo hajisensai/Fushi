@@ -678,7 +678,7 @@ class CollectionWorkDetailsSection extends StatelessWidget {
           MediaDetailSectionHeader(t.video_work_details),
           if (renderOverview)
             MediaDetailSynopsis(
-              text: overview!,
+              text: overview,
               selectable: true,
               collapsedLines: 6,
             ),

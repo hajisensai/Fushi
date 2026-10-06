@@ -8,7 +8,6 @@ import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/models/theme_notifier.dart';

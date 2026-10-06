@@ -175,15 +175,15 @@ void main() {
       ],
     );
 
-    // 分段面本身（行间缝是 FushiCard 的外边距，量面与面之间）。
-    Finder surface(int i) => find
-        .descendant(of: card(i), matching: find.byType(AnimatedContainer))
-        .first;
-
     Finder card(int i) => find.descendant(
       of: find.byKey(ValueKey<int>(i)),
       matching: find.byType(FushiCard),
     );
+
+    // 分段面本身（行间缝是 FushiCard 的外边距，量面与面之间）。
+    Finder surface(int i) => find
+        .descendant(of: card(i), matching: find.byType(AnimatedContainer))
+        .first;
 
     testWidgets('组首尾外侧大圆角、中间小圆角、行间 2px', (WidgetTester tester) async {
       await _pump(tester, group());

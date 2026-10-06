@@ -1286,6 +1286,7 @@ class FushiSearchField extends StatelessWidget {
               key: fieldKey,
               controller: controller,
               focusNode: focusNode,
+              autofocus: autofocus,
               style: tokens.type.listTitle,
               textAlignVertical: TextAlignVertical.center,
               decoration: decoration,
