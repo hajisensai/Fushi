@@ -1525,7 +1525,7 @@ class _SleepTimerChip extends StatelessWidget {
           ).context.findRenderObject();
           if (box is! RenderBox || overlay is! RenderBox) return;
           final Offset at = box.localToGlobal(Offset.zero, ancestor: overlay);
-          final int? choice = await showMenu<int>(
+          final int? choice = await showFushiMenu<int>(
             context: anchor,
             position: RelativeRect.fromRect(
               at & box.size,

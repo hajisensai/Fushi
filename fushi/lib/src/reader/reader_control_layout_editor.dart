@@ -176,8 +176,8 @@ class ReaderControlLayoutEditor extends StatelessWidget {
       FushiToast.show(msg: reject, severity: ToastSeverity.warning);
       return;
     }
-    final ControlLayout<ReaderControlSlot, ReaderControlItem> next =
-        layout.core.moveItem(item, target, index: index);
+    final ControlLayout<ReaderControlSlot, ReaderControlItem> next = layout.core
+        .moveItem(item, target, index: index);
     if (next == layout.core) return;
     unawaited(changed(ReaderControlLayout.fromCore(next)));
   }
@@ -203,8 +203,9 @@ class ReaderControlLayoutEditor extends StatelessWidget {
     ReaderControlItem item,
   ) async {
     final RenderObject? box = chipContext.findRenderObject();
-    final RenderObject? overlay =
-        Overlay.of(chipContext).context.findRenderObject();
+    final RenderObject? overlay = Overlay.of(
+      chipContext,
+    ).context.findRenderObject();
     if (box is! RenderBox || overlay is! RenderBox) return;
     final Offset topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
     final RelativeRect position = RelativeRect.fromRect(
@@ -214,7 +215,7 @@ class ReaderControlLayoutEditor extends StatelessWidget {
     final ReaderControlSlot current = _slotOf(item);
     final List<ReaderControlItem> siblings = _itemsIn(current);
     final int at = siblings.indexOf(item);
-    final String? choice = await showMenu<String>(
+    final String? choice = await showFushiMenu<String>(
       context: chipContext,
       position: position,
       items: <PopupMenuEntry<String>>[
@@ -268,20 +269,19 @@ class ReaderControlLayoutEditor extends StatelessWidget {
   }
 
   static String _zoneLabel(ReaderControlSlot slot) => switch (slot) {
-        ReaderControlSlot.overflow => t.reader_control_slot_overflow,
-        ReaderControlSlot.hidden => t.reader_control_zone_hidden,
-        _ => readerControlSlotLabel(slot),
-      };
+    ReaderControlSlot.overflow => t.reader_control_slot_overflow,
+    ReaderControlSlot.hidden => t.reader_control_zone_hidden,
+    _ => readerControlSlotLabel(slot),
+  };
 
   static IconData _zoneIcon(ReaderControlSlot slot) => switch (slot) {
-        ReaderControlSlot.topLeft ||
-        ReaderControlSlot.topCenter ||
-        ReaderControlSlot.topRight =>
-          FushiIcons.alignTop,
-        ReaderControlSlot.overflow => FushiIcons.moreHoriz,
-        ReaderControlSlot.hidden => FushiIcons.visibilityOff,
-        _ => FushiIcons.alignBottom,
-      };
+    ReaderControlSlot.topLeft ||
+    ReaderControlSlot.topCenter ||
+    ReaderControlSlot.topRight => FushiIcons.alignTop,
+    ReaderControlSlot.overflow => FushiIcons.moreHoriz,
+    ReaderControlSlot.hidden => FushiIcons.visibilityOff,
+    _ => FushiIcons.alignBottom,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -289,16 +289,16 @@ class ReaderControlLayoutEditor extends StatelessWidget {
     final bool glass = isGlassDesign(context);
     final bool showsTitle = layout.showsTitle;
     Widget zone(ReaderControlSlot slot, {String? label}) => _ZoneRow(
-          key: ValueKey<String>('reader-control-edit-slot-${slot.name}'),
-          slot: slot,
-          label: label ?? _zoneLabel(slot),
-          icon: _zoneIcon(slot),
-          items: _itemsIn(slot),
-          touch: isTouchControls,
-          onDrop: (ReaderControlItem item, int? index) =>
-              _move(context, item, slot, index: index),
-          onChipActivate: _showMoveMenu,
-        );
+      key: ValueKey<String>('reader-control-edit-slot-${slot.name}'),
+      slot: slot,
+      label: label ?? _zoneLabel(slot),
+      icon: _zoneIcon(slot),
+      items: _itemsIn(slot),
+      touch: isTouchControls,
+      onDrop: (ReaderControlItem item, int? index) =>
+          _move(context, item, slot, index: index),
+      onChipActivate: _showMoveMenu,
+    );
     final List<Widget> sections = <Widget>[
       _ReaderToolbarPreview(
         key: const ValueKey<String>('reader-control-editor-preview'),
@@ -322,12 +322,10 @@ class ReaderControlLayoutEditor extends StatelessWidget {
             onChanged: onLayoutChanged == null
                 ? null
                 : (bool v) => _move(
-                      context,
-                      ReaderControlItem.title,
-                      v
-                          ? ReaderControlSlot.topCenter
-                          : ReaderControlSlot.hidden,
-                    ),
+                    context,
+                    ReaderControlItem.title,
+                    v ? ReaderControlSlot.topCenter : ReaderControlSlot.hidden,
+                  ),
           ),
           zone(ReaderControlSlot.topRight),
           ReaderPanelSectionLabel(
@@ -341,17 +339,13 @@ class ReaderControlLayoutEditor extends StatelessWidget {
         title: t.reader_control_slot_overflow,
         hint: t.reader_control_zone_overflow_hint,
         tone: ReaderPanelCardTone.neutral,
-        children: <Widget>[
-          zone(ReaderControlSlot.overflow, label: ''),
-        ],
+        children: <Widget>[zone(ReaderControlSlot.overflow, label: '')],
       ),
       _ZoneCard(
         title: t.reader_control_zone_hidden,
         hint: t.reader_control_zone_hidden_hint,
         tone: ReaderPanelCardTone.neutral,
-        children: <Widget>[
-          zone(ReaderControlSlot.hidden, label: ''),
-        ],
+        children: <Widget>[zone(ReaderControlSlot.hidden, label: '')],
       ),
       if (defaults != null && onLayoutChanged != null)
         Align(
@@ -366,8 +360,9 @@ class ReaderControlLayoutEditor extends StatelessWidget {
     ];
     return DefaultTextStyle.merge(
       style: TextStyle(
-        color:
-            glass ? appleColorsOf(context).label : theme.colorScheme.onSurface,
+        color: glass
+            ? appleColorsOf(context).label
+            : theme.colorScheme.onSurface,
       ),
       child: FushiEntranceScope(
         child: Column(
@@ -408,13 +403,13 @@ class _MenuRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FushiIcon(icon, size: 20),
-          const SizedBox(width: 12),
-          Flexible(child: Text(label)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: <Widget>[
+      FushiIcon(icon, size: 20),
+      const SizedBox(width: 12),
+      Flexible(child: Text(label)),
+    ],
+  );
 }
 
 /// 一个区（标题 + 说明 + 若干行）。M3E 常驻区是 primaryContainer 饱和色块。
@@ -506,114 +501,119 @@ class _ZoneRow extends StatelessWidget {
   final bool touch;
   final void Function(ReaderControlItem item, int? index) onDrop;
   final Future<void> Function(BuildContext chipContext, ReaderControlItem item)
-      onChipActivate;
+  onChipActivate;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final bool glass = isGlassDesign(context);
-    final Color accent =
-        glass ? appleColorsOf(context).accent : theme.colorScheme.primary;
+    final Color accent = glass
+        ? appleColorsOf(context).accent
+        : theme.colorScheme.primary;
     return DragTarget<ReaderControlItem>(
       onWillAcceptWithDetails: (DragTargetDetails<ReaderControlItem> d) =>
           d.data.canMoveToSlot(slot),
       onAcceptWithDetails: (DragTargetDetails<ReaderControlItem> d) =>
           onDrop(d.data, null),
-      builder: (
-        BuildContext context,
-        List<ReaderControlItem?> candidates,
-        List<dynamic> rejected,
-      ) {
-        final bool hovering = candidates.isNotEmpty;
-        return AnimatedContainer(
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: FushiMotion.standard,
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          padding: const EdgeInsets.all(6),
-          decoration: ShapeDecoration(
-            color: hovering
-                ? accent.withValues(alpha: 0.14)
-                : accent.withValues(alpha: 0),
-            shape: RoundedRectangleBorder(
-              borderRadius: const BorderRadius.all(Radius.circular(16)),
-              side: BorderSide(
-                color: rejected.isNotEmpty
-                    ? theme.colorScheme.error
-                    : hovering
+      builder:
+          (
+            BuildContext context,
+            List<ReaderControlItem?> candidates,
+            List<dynamic> rejected,
+          ) {
+            final bool hovering = candidates.isNotEmpty;
+            return AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.standard,
+              margin: const EdgeInsets.symmetric(vertical: 3),
+              padding: const EdgeInsets.all(6),
+              decoration: ShapeDecoration(
+                color: hovering
+                    ? accent.withValues(alpha: 0.14)
+                    : accent.withValues(alpha: 0),
+                shape: RoundedRectangleBorder(
+                  borderRadius: const BorderRadius.all(Radius.circular(16)),
+                  side: BorderSide(
+                    color: rejected.isNotEmpty
+                        ? theme.colorScheme.error
+                        : hovering
                         ? accent
                         : accent.withValues(alpha: 0),
-                width: 1.5,
-              ),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (label.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(left: 2, bottom: 4),
-                  child: Row(
-                    children: <Widget>[
-                      FushiIcon(icon, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        label,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
+                    width: 1.5,
                   ),
                 ),
-              AnimatedSize(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                curve: FushiMotion.standard,
-                alignment: Alignment.topLeft,
-                child: items.isEmpty
-                    ? SizedBox(
-                        height: 40,
-                        child: Center(
-                          child: FushiIcon(
-                            FushiIcons.add,
-                            color: accent.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      )
-                    : Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  if (label.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 2, bottom: 4),
+                      child: Row(
                         children: <Widget>[
-                          for (int i = 0; i < items.length; i++)
-                            DragTarget<ReaderControlItem>(
-                              onWillAcceptWithDetails:
-                                  (DragTargetDetails<ReaderControlItem> d) =>
-                                      d.data != items[i] &&
-                                      d.data.canMoveToSlot(slot),
-                              onAcceptWithDetails:
-                                  (DragTargetDetails<ReaderControlItem> d) =>
-                                      onDrop(d.data, i),
-                              builder: (
-                                BuildContext context,
-                                List<ReaderControlItem?> c,
-                                List<dynamic> r,
-                              ) =>
-                                  _DraggableChip(
-                                key: ValueKey<String>(
-                                  'reader-control-chip-${items[i].storageValue}',
-                                ),
-                                item: items[i],
-                                touch: touch,
-                                insertMarker: c.isNotEmpty,
-                                onActivate: onChipActivate,
-                              ),
+                          FushiIcon(icon, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            label,
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
+                          ),
                         ],
                       ),
+                    ),
+                  AnimatedSize(
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: FushiMotion.standard,
+                    alignment: Alignment.topLeft,
+                    child: items.isEmpty
+                        ? SizedBox(
+                            height: 40,
+                            child: Center(
+                              child: FushiIcon(
+                                FushiIcons.add,
+                                color: accent.withValues(alpha: 0.5),
+                              ),
+                            ),
+                          )
+                        : Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: <Widget>[
+                              for (int i = 0; i < items.length; i++)
+                                DragTarget<ReaderControlItem>(
+                                  onWillAcceptWithDetails:
+                                      (
+                                        DragTargetDetails<ReaderControlItem> d,
+                                      ) =>
+                                          d.data != items[i] &&
+                                          d.data.canMoveToSlot(slot),
+                                  onAcceptWithDetails:
+                                      (
+                                        DragTargetDetails<ReaderControlItem> d,
+                                      ) => onDrop(d.data, i),
+                                  builder:
+                                      (
+                                        BuildContext context,
+                                        List<ReaderControlItem?> c,
+                                        List<dynamic> r,
+                                      ) => _DraggableChip(
+                                        key: ValueKey<String>(
+                                          'reader-control-chip-${items[i].storageValue}',
+                                        ),
+                                        item: items[i],
+                                        touch: touch,
+                                        insertMarker: c.isNotEmpty,
+                                        onActivate: onChipActivate,
+                                      ),
+                                ),
+                            ],
+                          ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        );
-      },
+            );
+          },
     );
   }
 }
@@ -632,7 +632,7 @@ class _DraggableChip extends StatelessWidget {
   final bool touch;
   final bool insertMarker;
   final Future<void> Function(BuildContext chipContext, ReaderControlItem item)
-      onActivate;
+  onActivate;
 
   @override
   Widget build(BuildContext context) {
@@ -696,8 +696,9 @@ class _ChipFace extends StatelessWidget {
     final Color bg = glass
         ? appleColorsOf(context).tertiaryGroupedBackground
         : cs.secondaryContainer;
-    final Color fg =
-        glass ? appleColorsOf(context).label : cs.onSecondaryContainer;
+    final Color fg = glass
+        ? appleColorsOf(context).label
+        : cs.onSecondaryContainer;
     final Color marker = glass ? appleColorsOf(context).accent : cs.primary;
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -763,15 +764,15 @@ class _ReaderToolbarPreview extends StatelessWidget {
   final bool compact;
 
   FushiToolbarItem _item(ReaderControlItem i) => FushiToolbarItem(
-        icon: readerControlItemIcon(i),
-        label: readerControlItemLabel(i),
-        onPressed: null,
-      );
+    icon: readerControlItemIcon(i),
+    label: readerControlItemLabel(i),
+    onPressed: null,
+  );
 
   List<FushiToolbarItem> _items(ReaderControlSlot slot) => <FushiToolbarItem>[
-        for (final ReaderControlItem i in layout.itemsIn(slot))
-          if (i != ReaderControlItem.title) _item(i),
-      ];
+    for (final ReaderControlItem i in layout.itemsIn(slot))
+      if (i != ReaderControlItem.title) _item(i),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -783,8 +784,9 @@ class _ReaderToolbarPreview extends StatelessWidget {
       _items(ReaderControlSlot.bottomCenter),
       _items(ReaderControlSlot.bottomRight),
     ];
-    final bool hasBottom =
-        bottom.any((List<FushiToolbarItem> g) => g.isNotEmpty);
+    final bool hasBottom = bottom.any(
+      (List<FushiToolbarItem> g) => g.isNotEmpty,
+    );
     final String title = layout.showsTitle ? t.reader_control_title : '';
     final Widget top = floating
         ? FushiFloatingTopBar(
@@ -814,12 +816,12 @@ class _ReaderToolbarPreview extends StatelessWidget {
     final Widget? bottomBar = !hasBottom
         ? null
         : floating
-            ? FushiFloatingToolbar(groups: bottom, showLabels: compact)
-            : _DockedPreviewBar(
-                leading: bottom[0],
-                center: bottom[1],
-                trailing: bottom[2],
-              );
+        ? FushiFloatingToolbar(groups: bottom, showLabels: compact)
+        : _DockedPreviewBar(
+            leading: bottom[0],
+            center: bottom[1],
+            trailing: bottom[2],
+          );
     final Color paper = glass
         ? appleColorsOf(context).secondaryGroupedBackground
         : theme.colorScheme.surfaceContainer;
@@ -894,15 +896,15 @@ class _DockedPreviewBar extends StatelessWidget {
         ? appleColorsOf(context).label
         : theme.colorScheme.onSurfaceVariant;
     Widget icons(List<FushiToolbarItem> items) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (final FushiToolbarItem i in items)
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: FushiIcon(i.icon, color: fg, size: 22),
-              ),
-          ],
-        );
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final FushiToolbarItem i in items)
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: FushiIcon(i.icon, color: fg, size: 22),
+          ),
+      ],
+    );
     return ColoredBox(
       color: theme.colorScheme.surfaceContainer,
       child: SizedBox(

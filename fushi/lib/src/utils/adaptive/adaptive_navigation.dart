@@ -30,6 +30,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show showFushiMenu;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
         AnimatedGlassIndicator,
@@ -1847,7 +1849,7 @@ class _NavMoreCellState extends State<_NavMoreCell> {
     final TextStyle labelStyle =
         (Theme.of(context).textTheme.labelLarge ?? const TextStyle());
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    final int? picked = await showMenu<int>(
+    final int? picked = await showFushiMenu<int>(
       context: context,
       position: position,
       color: menuColor,
