@@ -19,6 +19,7 @@ import 'package:fushi/src/reader/reader_navigation_widgets.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/settings/theme_preset_card.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -134,6 +135,10 @@ void main() {
         of: brightnessRow,
         matching: find.byType(SettingsChoiceMenuRow),
       );
+      // 2026-10 M3E 主题预设卡（FushiThemePresetCard）比旧色块高得多，720 高的
+      // 视窗里「明暗」行被推到首屏以下——像用户一样先滚到它。
+      await tester.ensureVisible(menuRow);
+      await tester.pumpAndSettle();
       expect(menuRow.hitTestable(), findsOneWidget);
       expect(tester.getRect(menuRow).left, greaterThanOrEqualTo(48));
       expect(tester.getRect(menuRow).right, lessThanOrEqualTo(320));
@@ -301,7 +306,8 @@ void main() {
     // 主页不渲染内联「排版设置」卡标题 / 主题选择器 / 字号步进（都在 layout 子页）。
     expect(find.text(t.display_settings), findsNothing);
     expect(find.text(t.reader_theme), findsNothing);
-    expect(find.byType(FushiSchemeSwatch), findsNothing);
+    // 2026-10 M3E：主题色卡由 FushiSchemeSwatch 换成预设卡 FushiThemePresetCard。
+    expect(find.byType(FushiThemePresetCard), findsNothing);
     expect(find.text(t.reader_font_size), findsNothing);
     expect(find.byType(ListTile), findsNothing);
 
@@ -320,7 +326,7 @@ void main() {
 
     // TODO-802：主题选择器并入「布局与显示」子页顶部（外观组已删）。
     expect(find.text(t.reader_theme), findsOneWidget);
-    expect(find.byType(FushiSchemeSwatch), findsWidgets);
+    expect(find.byType(FushiThemePresetCard), findsWidgets);
     // TODO-774：字号/行高（schema 投影）也在 layout 子页。
     expect(find.text(t.reader_font_size), findsOneWidget);
     expect(find.text(t.reader_line_height), findsOneWidget);
