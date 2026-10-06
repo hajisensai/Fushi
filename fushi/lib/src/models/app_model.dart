@@ -1290,7 +1290,7 @@ class AppModel with ChangeNotifier {
       }());
     },
     controlStreams: AudioControlStreams(
-      playStream: audioCtrl.playStream,
+      playIntentStream: audioCtrl.playIntentStream,
       seekStream: audioCtrl.seekStream,
       skipNextStream: audioCtrl.skipNextStream,
       skipPreviousStream: audioCtrl.skipPreviousStream,
@@ -7319,7 +7319,8 @@ class AppModel with ChangeNotifier {
 
   // ── player streams & audio handler (delegated to AudioController) ───
 
-  Stream<void> get playStream => audioCtrl.playStream;
+  Stream<MediaPlayIntent> get playIntentStream =>
+      audioCtrl.playIntentStream;
   Stream<Duration> get seekStream => audioCtrl.seekStream;
   Stream<void> get rewindStream => audioCtrl.rewindStream;
   Stream<void> get fastForwardStream => audioCtrl.fastForwardStream;
