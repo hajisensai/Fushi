@@ -38,6 +38,10 @@ import '../helpers/test_platform_services.dart';
 /// 让覆盖测试不对「别处已覆盖」的项裸喊 UNVERIFIED/FAIL，且强制每个 changed
 /// 但未 effect-verified 的设置都必须有去处（no silent caps）。
 const Map<String, String> kCoveredElsewhere = <String, String>{
+  // 悬浮球「显示按钮文字」：生效点在悬浮球展开态（应用内球 / 系统球原生面），
+  // 设置页 harness 里没有展开的悬浮球。行为由 floating_ball_labels_test 咬住。
+  'floatingBall/Show button labels':
+      'test/floating_ball/floating_ball_labels_test.dart',
   // v101 更新提醒的五个开关：写 prefsRepo（changed=true），生效点在
   // UpdateFeedService.publishBatch——关掉的域整批丢弃（不投递/不红点/不通知）、
   // 系统通知总开关只掐通知不掐红点。harness 里没有投递方（订阅检查、漫画刷新、
