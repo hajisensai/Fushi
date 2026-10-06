@@ -15,6 +15,8 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
+export 'package:fushi_engine/sync/sync_asset_store.dart'
+    show SyncTransferProgress, syncTransferFractionOnly;
 export 'package:fushi_engine/sync/sync_backend_type.dart';
 
 
@@ -242,12 +244,12 @@ abstract class SyncBackend implements SyncAssetStore {
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   });
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   });
   Future<SyncFileRef?> findContentFile(String folderId, String fileName);
 
@@ -310,7 +312,7 @@ mixin SyncAssetStoreDefaults on SyncBackend {
     String namespaceId,
     String name,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await ensureAssetReady();
     // Delegates to the already-locking uploadContentFile; do not re-wrap.
@@ -326,7 +328,7 @@ mixin SyncAssetStoreDefaults on SyncBackend {
   Future<void> getAsset(
     String assetId,
     File destination, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) async {
     await ensureAssetReady();
     // Delegates to the already-locking downloadContentFile; do not re-wrap.
