@@ -6728,5 +6728,6 @@
   "download_task_add_options": "下载选项",
   "download_subscription_summary": "$n 个订阅 · $enabled 个启用",
   "subscription_rules_title": "规则",
-  "subscription_history_title": "匹配历史"
+  "subscription_history_title": "匹配历史",
+  "creator_crop_image_unreadable": "无法打开这张图片"
 }
