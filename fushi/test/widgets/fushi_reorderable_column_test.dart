@@ -212,8 +212,9 @@ void main() {
       await gesture.moveBy(const Offset(0, 30));
       await tester.pump();
 
-      final Finder feedback = find.byWidgetPredicate(
-        (Widget w) => w is Material && w.elevation == 6,
+      final Finder feedback = find.descendant(
+        of: find.byType(FushiReorderDragProxy),
+        matching: find.byType(Material),
       );
       expect(feedback, findsOneWidget);
       expect(
