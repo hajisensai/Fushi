@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 源码守卫：锁定「视频功能已毕业为常驻 tab，移除所有实验性视觉标记」，防回归：
 ///   1. 设置页不再有「实验性功能」区块里的视频开关（功能不再受开关门控）。
 ///   2. 底栏视频 tab 图标不带实验性小圆点徽标（视频已是常驻功能）。
@@ -61,11 +63,10 @@ void main() {
     test('实验性目的地用共享 Badge 叠加图标', () {
       // 01b40f7d304 收口到共享控件；无 label 仍是小圆点。
       // 锚定方法本体，别让其它导航分支的徽标调用代偿这里的回归。
-      final int start = navSrc.indexOf('Widget _maybeBadge({');
-      expect(start, greaterThanOrEqualTo(0));
-      final int end = navSrc.indexOf('\n}', start);
-      expect(end, greaterThan(start));
-      final String body = navSrc.substring(start, end);
+      // 命名参数也有顶格 `}`，用共享词法配对定位真正的方法体结尾。
+      final String body = maskComments(
+        methodBody(navSrc, 'Widget _maybeBadge('),
+      );
       expect(body, contains('if (!item.experimentalBadge)'));
       expect(body, contains('FushiBadgeControl(child: child)'));
       expect(body, isNot(contains('label:')));
