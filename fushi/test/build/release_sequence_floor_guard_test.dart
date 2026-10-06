@@ -38,64 +38,141 @@ void main() {
   const int historicalMaxSequence = 10546;
 
   test('前置：序号脚本与 workflows 目录都在', () {
-    expect(seqScript.existsSync(), isTrue,
-        reason: '缺 ${seqScript.absolute.path}——序号算式的单一真相源没了，'
-            '本守卫的全部断言失去对象。');
-    expect(workflowsDir.existsSync(), isTrue,
-        reason: 'expected ${workflowsDir.absolute.path}');
+    expect(
+      seqScript.existsSync(),
+      isTrue,
+      reason:
+          '缺 ${seqScript.absolute.path}——序号算式的单一真相源没了，'
+          '本守卫的全部断言失去对象。',
+    );
+    expect(
+      workflowsDir.existsSync(),
+      isTrue,
+      reason: 'expected ${workflowsDir.absolute.path}',
+    );
   });
 
-  final String scriptText =
-      seqScript.existsSync() ? seqScript.readAsStringSync() : '';
+  final String scriptText = seqScript.existsSync()
+      ? seqScript.readAsStringSync()
+      : '';
 
   test('脚本里能解析出 RELEASE_SEQUENCE_FLOOR', () {
-    expect(_parseFloor(scriptText), isNotNull,
-        reason: '在 tool/release_sequence.sh 里找不到形如 '
-            'RELEASE_SEQUENCE_FLOOR=<数字> 的赋值。改了变量名就同步改这条守卫，'
-            '否则下面「序号越过历史最大值」的断言会静默跑空。');
+    expect(
+      _parseFloor(scriptText),
+      isNotNull,
+      reason:
+          '在 tool/release_sequence.sh 里找不到形如 '
+          'RELEASE_SEQUENCE_FLOOR=<数字> 的赋值。改了变量名就同步改这条守卫，'
+          '否则下面「序号越过历史最大值」的断言会静默跑空。',
+    );
   });
 
   test('当前分支的序号越过历史最大值（计数被截断的 checkout 下自动跳过）', () {
     final int? floor = _parseFloor(scriptText);
     if (floor == null) return; // 上一条已经红了，这里不重复报。
 
-    final ProcessResult count = Process.runSync(
-      'git',
-      <String>['rev-list', '--count', 'HEAD'],
-      workingDirectory: repoRoot.path,
-    );
+    final ProcessResult count = Process.runSync('git', <String>[
+      'rev-list',
+      '--count',
+      'HEAD',
+    ], workingDirectory: repoRoot.path);
     // 拿不到 git（沙箱里跑测试）时不制造假红。
     if (count.exitCode != 0) return;
     final int? commits = int.tryParse((count.stdout as String).trim());
     if (commits == null) return;
 
-    // CI 的测试 job 用默认 fetch-depth（=1）checkout，计数会是个位数——那时测
-    // 计数等于测 checkout 深度，不是测地板，跳过。
-    //
-    // **不用 `git rev-parse --is-shallow-repository` 当闸门**：那条只看
-    // `.git/shallow` 标记在不在，一次历史很久以前的浅拉取会把标记永久留下，
-    // 于是本条断言在本机永远静默跳过——守卫看着绿，其实一行都没守。
-    // 这个坑是本守卫第一次变异实测（把地板改成 100）时暴露的：变异没被抓住。
-    const int truncatedCheckoutCeiling = 1000;
-    if (commits < truncatedCheckoutCeiling) return;
+    // 深度可以超过 1000，计数大小不能证明历史完整；另一方面，全仓存在
+    // shallow 标记也可能只影响别的分支。只认 HEAD 实际可达的截断边界。
+    if (_headHasShallowBoundary(repoRoot)) {
+      markTestSkipped(
+        'HEAD 的可达历史触及 git shallow 边界，$commits 次提交只是截断计数；'
+        '需要完整 HEAD 历史才能校验发布序号地板。',
+      );
+      return;
+    }
 
-    expect(commits + floor, greaterThan(historicalMaxSequence),
-        reason: '当前分支序号 = 提交计数 $commits + 地板 $floor = '
-            '${commits + floor}，没有越过历史最大已发布序号 '
-            '$historicalMaxSequence。从这个分支出的包：Android 装不上'
-            '（versionCode 更小）、app 内更新器判「不比本机新」、清单守卫拒收。'
-            '把 tool/release_sequence.sh 里的 RELEASE_SEQUENCE_FLOOR 抬到'
-            '足够高，并同步更新本守卫的 historicalMaxSequence。');
+    expect(
+      commits + floor,
+      greaterThan(historicalMaxSequence),
+      reason:
+          '当前分支序号 = 提交计数 $commits + 地板 $floor = '
+          '${commits + floor}，没有越过历史最大已发布序号 '
+          '$historicalMaxSequence。从这个分支出的包：Android 装不上'
+          '（versionCode 更小）、app 内更新器判「不比本机新」、清单守卫拒收。'
+          '把 tool/release_sequence.sh 里的 RELEASE_SEQUENCE_FLOOR 抬到'
+          '足够高，并同步更新本守卫的 historicalMaxSequence。',
+    );
+  });
+
+  group('HEAD 浅历史判定：独立临时 Git 仓库', () {
+    final bool gitAvailable = _gitAvailable();
+    for (final String scenario in <String>[
+      'complete',
+      'unrelated-branch',
+      'head-boundary',
+    ]) {
+      test(scenario, () {
+        final Directory tempRoot = Directory.systemTemp.absolute;
+        final Directory repo = tempRoot.createTempSync('release-floor-guard-');
+        addTearDown(() {
+          // 仅删除本测试创建的临时仓库，不能触及运行测试的共享 checkout。
+          expect(repo.parent.absolute.path, tempRoot.path);
+          repo.deleteSync(recursive: true);
+        });
+        _git(repo, <String>['init', '--initial-branch=main']);
+        void commit(String message) => _git(repo, <String>[
+          '-c',
+          'user.name=Release floor test',
+          '-c',
+          'user.email=release-floor@example.invalid',
+          '-c',
+          'commit.gpgsign=false',
+          '-c',
+          'core.hooksPath=${repo.path}/no-hooks',
+          'commit',
+          '--allow-empty',
+          '-m',
+          message,
+        ]);
+        commit('root');
+        final String root = _git(repo, <String>['rev-parse', 'HEAD']);
+        commit('main tip');
+        final String mainTip = _git(repo, <String>['rev-parse', 'HEAD']);
+        _git(repo, <String>['checkout', '-b', 'side', root]);
+        commit('side tip');
+        final String sideTip = _git(repo, <String>['rev-parse', 'HEAD']);
+        _git(repo, <String>['checkout', 'main']);
+        if (scenario != 'complete') {
+          final File shallow = File(
+            _git(repo, <String>[
+              'rev-parse',
+              '--path-format=absolute',
+              '--git-path',
+              'shallow',
+            ]),
+          );
+          shallow.writeAsStringSync(
+            '$sideTip\n${scenario == 'head-boundary' ? '$mainTip\n' : ''}',
+          );
+          expect(
+            _git(repo, <String>['rev-parse', '--is-shallow-repository']),
+            'true',
+          );
+        }
+        expect(_headHasShallowBoundary(repo), scenario == 'head-boundary');
+      }, skip: gitAvailable ? false : 'git 不可用，无法创建历史判定测试仓库');
+    }
   });
 
   final List<File> workflows = workflowsDir.existsSync()
       ? (workflowsDir
-          .listSync()
-          .whereType<File>()
-          .where(
-              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path)))
+            .listSync()
+            .whereType<File>()
+            .where(
+              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
+            )
+            .toList()
+          ..sort((File a, File b) => a.path.compareTo(b.path)))
       : <File>[];
 
   /// 走共享脚本的赋值点。
@@ -105,8 +182,11 @@ void main() {
   final List<String> bareAssignments = <String>[];
 
   const String scriptCall =
-      'RELEASE_SEQUENCE=' r'$(bash tool/release_sequence.sh)';
-  const String bareCall = 'RELEASE_SEQUENCE=' r'$(git rev-list';
+      'RELEASE_SEQUENCE='
+      r'$(bash tool/release_sequence.sh)';
+  const String bareCall =
+      'RELEASE_SEQUENCE='
+      r'$(git rev-list';
 
   for (final File workflow in workflows) {
     final String name = workflow.uri.pathSegments.last;
@@ -119,19 +199,27 @@ void main() {
 
   test('守卫没跑空：扫到了走共享脚本的序号赋值点', () {
     expect(workflows, isNotEmpty, reason: '一个 workflow 都没扫到');
-    expect(viaScript, isNotEmpty,
-        reason: '一处 `$scriptCall` 都没扫到。要么 workflow 改了写法，要么本守卫'
-            '的匹配串过期了——无论哪种，下面那条「无裸赋值」的断言此刻都是空转，'
-            '先修守卫再谈绿。');
+    expect(
+      viaScript,
+      isNotEmpty,
+      reason:
+          '一处 `$scriptCall` 都没扫到。要么 workflow 改了写法，要么本守卫'
+          '的匹配串过期了——无论哪种，下面那条「无裸赋值」的断言此刻都是空转，'
+          '先修守卫再谈绿。',
+    );
   });
 
   test('workflow 里没有绕过地板的裸 rev-list 赋值', () {
-    expect(bareAssignments, isEmpty,
-        reason: '这些地方直接用 `git rev-list --count HEAD` 当序号，绕过了 '
-            'tool/release_sequence.sh 的一次性地板。历史一旦被重写，这些点算出的'
-            '序号会倒退到已发布序号之下，用户侧表现为「永远收不到更新 / 装不上包」，'
-            '而 CI 全绿：\n'
-            '${bareAssignments.map((String w) => "  $w").join("\n")}');
+    expect(
+      bareAssignments,
+      isEmpty,
+      reason:
+          '这些地方直接用 `git rev-list --count HEAD` 当序号，绕过了 '
+          'tool/release_sequence.sh 的一次性地板。历史一旦被重写，这些点算出的'
+          '序号会倒退到已发布序号之下，用户侧表现为「永远收不到更新 / 装不上包」，'
+          '而 CI 全绿：\n'
+          '${bareAssignments.map((String w) => "  $w").join("\n")}',
+    );
   });
 
   test('调用共享脚本的 step 不得设 working-directory（BUG-1596）', () {
@@ -163,13 +251,17 @@ void main() {
         }
       }
     }
-    expect(offenders, isEmpty,
-        reason: '这些 step 给根相对的 `bash tool/release_sequence.sh` 设了 '
-            'working-directory，脚本会解析到不存在的子目录路径，step 直接 '
-            'exit 127（BUG-1596）。要么去掉 working-directory 并把 step 里其余'
-            '相对路径改成根相对（对齐 release-desktop.yml 的同名 step），要么'
-            '别在这个 step 里调共享序号脚本：\n'
-            '${offenders.map((String w) => "  $w").join("\n")}');
+    expect(
+      offenders,
+      isEmpty,
+      reason:
+          '这些 step 给根相对的 `bash tool/release_sequence.sh` 设了 '
+          'working-directory，脚本会解析到不存在的子目录路径，step 直接 '
+          'exit 127（BUG-1596）。要么去掉 working-directory 并把 step 里其余'
+          '相对路径改成根相对（对齐 release-desktop.yml 的同名 step），要么'
+          '别在这个 step 里调共享序号脚本：\n'
+          '${offenders.map((String w) => "  $w").join("\n")}',
+    );
   });
 }
 
@@ -186,4 +278,53 @@ int? _parseFloor(String scriptText) {
     return int.tryParse(trimmed.substring(key.length).trim());
   }
   return null;
+}
+
+/// shallow 文件可能来自共享仓库的其他分支；只有 HEAD 可达根与它相交才截断。
+bool _headHasShallowBoundary(Directory repo) {
+  final File shallow = File(
+    _git(repo, <String>[
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-path',
+      'shallow',
+    ]),
+  );
+  if (!shallow.existsSync()) return false;
+  final Set<String> boundaries = shallow
+      .readAsLinesSync()
+      .map((String line) => line.trim())
+      .where((String line) => line.isNotEmpty)
+      .toSet();
+  if (boundaries.isEmpty) return false;
+  return _git(repo, <String>[
+    'rev-list',
+    '--max-parents=0',
+    'HEAD',
+  ]).split('\n').map((String line) => line.trim()).any(boundaries.contains);
+}
+
+String _git(Directory repo, List<String> args) {
+  final ProcessResult result = Process.runSync(
+    'git',
+    args,
+    workingDirectory: repo.path,
+  );
+  if (result.exitCode != 0) {
+    throw ProcessException(
+      'git',
+      args,
+      result.stderr as String,
+      result.exitCode,
+    );
+  }
+  return (result.stdout as String).trim();
+}
+
+bool _gitAvailable() {
+  try {
+    return Process.runSync('git', <String>['--version']).exitCode == 0;
+  } on ProcessException {
+    return false;
+  }
 }
