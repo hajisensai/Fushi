@@ -32,13 +32,17 @@
   只搬运密钥，不跑 pub get / bootstrap。WorktreeCreate 钩子用此开关，避免在
   worktree 创建时同步阻塞数分钟；需要 flutter test 前再手动 tool/bootstrap.ps1。
 
+.PARAMETER SkipCacheSeed
+  不从兄弟 worktree 复制 flutter test 的增量编译缓存(见下方「预热 flutter test
+  编译缓存」一节)。默认会在 bootstrap 之后做这一步。
+
 .EXAMPLE
   # 在新建好的 worktree 目录里(cwd 在该 worktree 内)：
   pwsh -File tool/setup_worktree.ps1                # 搬密钥 + bootstrap
   pwsh -File tool/setup_worktree.ps1 -SkipBootstrap # 只搬密钥(秒级)
 #>
 [CmdletBinding()]
-param([switch]$SkipBootstrap)
+param([switch]$SkipBootstrap, [switch]$SkipCacheSeed)
 
 $ErrorActionPreference = "Stop"
 
@@ -116,11 +120,125 @@ if ($SkipBootstrap) {
 Write-Host "`n开始 bootstrap (pub get + 打补丁)..." -ForegroundColor Cyan
 $bootstrap = Join-Path $here 'tool/bootstrap.ps1'
 if (-not (Test-Path $bootstrap)) { throw "找不到 $bootstrap" }
+$bootstrapError = $null
 Push-Location $here
 try {
     & $bootstrap
 }
+catch {
+    # 先记下，预热照做再抛：本机 bootstrap 常死在 apply-patches(bash 走了 WSL)，
+    # 那时 pub get 已经成功，预热不依赖补丁(补丁打在全机共享的 pub cache 上)。
+    $bootstrapError = $_
+}
 finally {
     Pop-Location
 }
+
+# --- 预热 flutter test 编译缓存 ------------------------------------------------
+# 新 worktree 第一次 flutter test 慢在 frontend_server 从零编译(2026-10-07 实测
+# 同一测试冷启动编译 4.7 分钟、预热后 3.2 分钟；重负载下冷编译曾到 20 分钟)，
+# 不在 native-asset hooks(0.5~1.5 分钟)或 unit_test_assets(约 20 秒)。
+# flutter test 用 fushi/build/test_cache/build/<md5>.cache.dill.track.dill 做
+# --initialize-from-dill；文件名只由 dart-define / 前端参数 / Flutter 版本决定，
+# 与 worktree 路径无关，所以从兄弟 worktree 拷过来能被直接命中。
+# 内容安全性：frontend_server 拿到 dill 后按 package_config 重新解析每个
+# package: 库的文件路径，路径与 dill 里记录的不同(本仓 fushi 与 packages/* 必然
+# 如此)就整库重编，只复用 Flutter SDK 与 pub cache 里路径不变的库；再逐个比对
+# 源码字节，变了的也重编。所以拷来的 dill 只影响速度、不影响正确性(实测预热
+# 后产出的 dill 里源 worktree 的 fushi/lib、packages 路径为 0 处)。收益因此只
+# 是 SDK 与 pub 依赖那部分的编译时间。
+# 只拷 dill：.dart_tool/hooks_runner 的 input.json / 依赖哈希文件里写死了源
+# worktree 的绝对路径，且 hook 依赖环境变量 PATH 的哈希(每个 shell 都不同)，
+# 拷过来要么失效要么指向别人的目录；unit_test_assets 只按 mtime 判新旧，
+# 拷来会用别的提交的资源冒充当前提交，二者都不拷。
+function Get-FlutterSdkKey([string]$root) {
+    $cfg = Join-Path $root '.dart_tool/package_config.json'
+    if (-not (Test-Path -LiteralPath $cfg)) { return $null }
+    $text = [IO.File]::ReadAllText($cfg)
+    $sdkRoot = [regex]::Match($text, '"flutterRoot"\s*:\s*"([^"]*)"')
+    $sdkVersion = [regex]::Match($text, '"flutterVersion"\s*:\s*"([^"]*)"')
+    if (-not $sdkRoot.Success -or -not $sdkVersion.Success) { return $null }
+    return ($sdkRoot.Groups[1].Value.ToLowerInvariant() + '|' + $sdkVersion.Groups[1].Value)
+}
+
+function Get-LockHash([string]$root) {
+    $lock = Join-Path $root 'pubspec.lock'
+    if (-not (Test-Path -LiteralPath $lock)) { return $null }
+    return (Get-FileHash -LiteralPath $lock -Algorithm SHA256).Hash
+}
+
+function Invoke-TestKernelCacheSeed([string]$targetRoot) {
+    $rel = 'fushi/build/test_cache/build'
+    $targetDir = Join-Path $targetRoot $rel
+
+    $targetSdk = Get-FlutterSdkKey $targetRoot
+    if (-not $targetSdk) {
+        Write-Host "跳过预热：本 worktree 没有 .dart_tool/package_config.json(pub get 没成功)。" -ForegroundColor Yellow
+        return
+    }
+    $targetLock = Get-LockHash $targetRoot
+    if (-not $targetLock) {
+        Write-Host "跳过预热：本 worktree 没有 pubspec.lock。" -ForegroundColor Yellow
+        return
+    }
+    if ((Test-Path -LiteralPath $targetDir) -and
+        @(Get-ChildItem -LiteralPath $targetDir -Filter '*.dill' -File).Count -gt 0) {
+        Write-Host "跳过预热：本 worktree 已有 flutter test 编译缓存。" -ForegroundColor DarkGray
+        return
+    }
+
+    # 两分钟内还在写的 dill 可能是别人 flutter test 写到一半的，不拿。
+    $cutoff = (Get-Date).AddMinutes(-2)
+    $targetN = ($targetRoot -replace '\\', '/').TrimEnd('/')
+    $noCache = 0; $lockDiffers = 0; $sdkDiffers = 0
+    $best = $null; $bestDills = $null; $bestTime = [datetime]::MinValue
+
+    $lines = & git -C $targetRoot worktree list --porcelain | Select-String '^worktree '
+    foreach ($line in $lines) {
+        $wt = ($line.Line -replace '^worktree ', '').Trim()
+        if ((($wt -replace '\\', '/').TrimEnd('/')) -ieq $targetN) { continue }
+        $srcDir = Join-Path $wt $rel
+        if (-not (Test-Path -LiteralPath $srcDir)) { $noCache++; continue }
+        $dills = @(Get-ChildItem -LiteralPath $srcDir -Filter '*.dill' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Length -gt 0 -and $_.LastWriteTime -lt $cutoff })
+        if ($dills.Count -eq 0) { $noCache++; continue }
+        if ((Get-LockHash $wt) -ne $targetLock) { $lockDiffers++; continue }
+        if ((Get-FlutterSdkKey $wt) -ne $targetSdk) { $sdkDiffers++; continue }
+        $newest = ($dills | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+        if ($newest -gt $bestTime) {
+            $best = $wt; $bestDills = $dills; $bestTime = $newest
+        }
+    }
+
+    if (-not $best) {
+        Write-Host ("跳过预热：没有可用的兄弟 worktree(无缓存 {0} 个，pubspec.lock 不同 {1} 个，Flutter SDK 不同 {2} 个)。" -f $noCache, $lockDiffers, $sdkDiffers) -ForegroundColor Yellow
+        return
+    }
+
+    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+    $totalMb = 0
+    foreach ($d in $bestDills) {
+        # 先写临时名再改名：flutter test 不会读到拷了一半的 dill。
+        $tmp = Join-Path $targetDir ($d.Name + '.seeding')
+        Copy-Item -LiteralPath $d.FullName -Destination $tmp -Force
+        Move-Item -LiteralPath $tmp -Destination (Join-Path $targetDir $d.Name) -Force
+        $totalMb += [math]::Round($d.Length / 1MB)
+    }
+    Write-Host ("OK 已从 {0} 预热 flutter test 编译缓存：{1} 个 dill，约 {2} MB(最新写于 {3:yyyy-MM-dd HH:mm})。" -f $best, $bestDills.Count, $totalMb, $bestTime) -ForegroundColor Green
+}
+
+if ($SkipCacheSeed) {
+    Write-Host "`n已跳过 flutter test 编译缓存预热(-SkipCacheSeed)。" -ForegroundColor DarkGray
+}
+else {
+    Write-Host "`n预热 flutter test 编译缓存..." -ForegroundColor Cyan
+    try {
+        Invoke-TestKernelCacheSeed $here
+    }
+    catch {
+        Write-Host "预热失败(不影响 worktree 可用，首次 flutter test 只是慢)：$_" -ForegroundColor Yellow
+    }
+}
+
+if ($bootstrapError) { throw $bootstrapError }
 Write-Host "`nworktree 就绪。" -ForegroundColor Green
