@@ -35,10 +35,12 @@ import 'package:fushi/utils.dart';
 
 /// 「信息卡固定 + tab 内容独立滚动」形态所需的最小可用高度（dp）。
 ///
-/// 固定部分（标题行 + 96×136 封面的信息卡 + 进度条 + 五颗播放键 + 标签栏 + 间距）
-/// 实测约 312dp；再留 ≥128dp 给 tab 视口，才够看见几行章节。低于此高度就得整块
-/// 面板一起滚——见 [readerAudiobookPanelPinsHero]。
-const double kReaderAudiobookPanelPinnedMinHeight = 440.0;
+/// 固定部分在**挂了控制器**时（封面 + 当前句 + 进度条 + 大号时间 + 五颗传输键含
+/// 80 的播放 FAB + 倍速 chip 组 + 倍速滑块行 + 标签栏 + 间距）约 520dp；再留
+/// ≥128dp 给 tab 视口，才够看见几行章节。低于此高度就得整块面板一起滚——见
+/// [readerAudiobookPanelPinsHero]。曾是 440（按没有控制器的空状态卡估的），挂上
+/// 真实控制器后 400×460 底部溢出 108px（HBK039）。
+const double kReaderAudiobookPanelPinnedMinHeight = 660.0;
 
 /// 给定可用高度下，面板是否还能把信息卡钉住、只让 tab 内容滚。
 ///
@@ -69,6 +71,7 @@ class ReaderAudiobookPanel extends StatefulWidget {
     this.onAudioImport,
     this.onPickAlignment,
     this.onTranscribe,
+    this.cueStudyOffset,
     this.initialTab = 'chapters',
     this.tick = const Duration(seconds: 1),
   });
@@ -95,6 +98,12 @@ class ReaderAudiobookPanel extends StatefulWidget {
   final VoidCallback? onAudioImport;
   final VoidCallback? onPickAlignment;
   final VoidCallback? onTranscribe;
+
+  /// cue 音频坐标（[SubtitleRematchFragment.normCharStart]）→ 章内学习单位偏移
+  /// （与 [TtuTocEntry.anchorCharOffset] 同尺）。阅读器页给出；null / 映射不出时
+  /// 退回 cue 自身的 normCharStart。用于「同一 spine 内按锚点分节」的目录项把
+  /// 音频定位到锚点处的那句，而不是整个 spine 的首句（HBK040）。
+  final int? Function(SubtitleRematchFragment fragment)? cueStudyOffset;
 
   /// chapters / settings（见 [kReaderAudiobookPanelTabs]）。
   final String initialTab;
@@ -220,6 +229,37 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
   }
 
   static String _formatDuration(Duration d) => FushiTimeFormat.clockPadded(d);
+
+  /// 目录项 → 音频起点 cue 的记忆（按 cue 列表与目录的身份失效）：带锚点的条目
+  /// 要按锚点逐句换算偏移，面板每秒 tick 重建，不能每次重算。
+  final Map<int, AudioCue?> _entryCueMemo = <int, AudioCue?>{};
+  Object? _entryCueMemoCues;
+  Object? _entryCueMemoToc;
+
+  /// 目录第 [i] 项在音频里的起点 cue：无锚点（或锚在章首）= 该 spine 首句；
+  /// 有锚点 = 该 spine 里锚点处及之后的第一句（HBK040）。
+  AudioCue? _entryStartCue(AudiobookPlayerController ctrl, int i) {
+    final List<AudioCue> cues = ctrl.allBookCuesSnapshot;
+    if (!identical(cues, _entryCueMemoCues) ||
+        !identical(widget.toc, _entryCueMemoToc)) {
+      _entryCueMemo.clear();
+      _entryCueMemoCues = cues;
+      _entryCueMemoToc = widget.toc;
+    }
+    return _entryCueMemo.putIfAbsent(i, () {
+      final TtuTocEntry e = widget.toc[i];
+      return ctrl.sectionCueFrom(
+        e.index,
+        e.charOffsetInChapter,
+        offsetOf: widget.cueStudyOffset,
+      );
+    });
+  }
+
+  int? _entryStartMs(AudiobookPlayerController ctrl, int i) {
+    final AudioCue? cue = _entryStartCue(ctrl, i);
+    return cue == null ? null : ctrl.globalMsOfCue(cue);
+  }
 
   static String _formatMsValue(double ms) =>
       _formatDuration(Duration(milliseconds: ms.round()));
@@ -493,8 +533,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         durMs > 0 ? (pos.inMilliseconds / durMs).clamp(0.0, 1.0) : 0.0;
     final List<double> ticks = <double>[
       if (durMs > 0)
-        for (final TtuTocEntry e in widget.toc)
-          if (ctrl.sectionStartGlobalMs(e.index) case final int ms
+        for (int i = 0; i < widget.toc.length; i++)
+          if (_entryStartMs(ctrl, i) case final int ms
               when ms > 0 && ms < durMs)
             ms / durMs,
     ];
@@ -576,12 +616,19 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: <Widget>[
-              ReaderStatNumber(
-                key: const ValueKey<String>('fushi_audiobook_time'),
-                value: _formatDuration(pos),
-                color: fg,
+              // 窄面板（320）里大号时间按比例缩小，不把右侧剩余时间挤出去（HBK039）。
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: AlignmentDirectional.bottomStart,
+                  child: ReaderStatNumber(
+                    key: const ValueKey<String>('fushi_audiobook_time'),
+                    value: _formatDuration(pos),
+                    color: fg,
+                  ),
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               // 右端：剩余（-m:ss，按原速）在上、总时长在下。
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
@@ -614,45 +661,50 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           ),
         ),
         const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            FushiIconButtonControl(
-              tooltip: '-10s',
-              style: flat,
-              icon: const FushiIcon(Icons.replay_10_rounded),
-              onPressed: () => unawaited(ctrl.seekRelative(-10)),
-            ),
-            FushiIconButtonControl(
-              tooltip: t.prev_sentence,
-              style: flat,
-              iconSize: 36,
-              icon: const FushiIcon(Icons.skip_previous_rounded),
-              onPressed: () => unawaited(ctrl.skipToPrevCue()),
-            ),
-            const SizedBox(width: 6),
-            KeyedSubtree(
-              key: const ValueKey<String>('fushi_audiobook_panel_play'),
-              child: FushiPressScale(
-                scale: 0.92,
-                child: AudiobookPlayFab(controller: ctrl, size: 80),
+        // 五颗传输键（含 80 的播放 FAB）自然宽约 300：窄面板里整排等比缩小，
+        // 不溢出、不丢键（HBK039）。
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiIconButtonControl(
+                tooltip: '-10s',
+                style: flat,
+                icon: const FushiIcon(Icons.replay_10_rounded),
+                onPressed: () => unawaited(ctrl.seekRelative(-10)),
               ),
-            ),
-            const SizedBox(width: 6),
-            FushiIconButtonControl(
-              tooltip: t.next_sentence,
-              style: flat,
-              iconSize: 36,
-              icon: const FushiIcon(Icons.skip_next_rounded),
-              onPressed: () => unawaited(ctrl.skipToNextCue()),
-            ),
-            FushiIconButtonControl(
-              tooltip: '+10s',
-              style: flat,
-              icon: const FushiIcon(Icons.forward_10_rounded),
-              onPressed: () => unawaited(ctrl.seekRelative(10)),
-            ),
-          ],
+              FushiIconButtonControl(
+                tooltip: t.prev_sentence,
+                style: flat,
+                iconSize: 36,
+                icon: const FushiIcon(Icons.skip_previous_rounded),
+                onPressed: () => unawaited(ctrl.skipToPrevCue()),
+              ),
+              const SizedBox(width: 6),
+              KeyedSubtree(
+                key: const ValueKey<String>('fushi_audiobook_panel_play'),
+                child: FushiPressScale(
+                  scale: 0.92,
+                  child: AudiobookPlayFab(controller: ctrl, size: 80),
+                ),
+              ),
+              const SizedBox(width: 6),
+              FushiIconButtonControl(
+                tooltip: t.next_sentence,
+                style: flat,
+                iconSize: 36,
+                icon: const FushiIcon(Icons.skip_next_rounded),
+                onPressed: () => unawaited(ctrl.skipToNextCue()),
+              ),
+              FushiIconButtonControl(
+                tooltip: '+10s',
+                style: flat,
+                icon: const FushiIcon(Icons.forward_10_rounded),
+                onPressed: () => unawaited(ctrl.seekRelative(10)),
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 6),
         // 倍速预设 chip 组（M3E），下面一行是同款自定义拖动条；睡眠定时 chip。
@@ -920,8 +972,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
         -1;
     final int totalMs = ctrl?.totalDuration.inMilliseconds ?? 0;
     final List<int?> starts = <int?>[
-      for (final TtuTocEntry e in widget.toc)
-        ctrl?.sectionStartGlobalMs(e.index),
+      for (int i = 0; i < widget.toc.length; i++)
+        if (ctrl == null) null else _entryStartMs(ctrl, i),
     ];
     int? durationFor(int i) {
       final int? start = starts[i];
@@ -1002,7 +1054,8 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
           onTap: () async {
             Navigator.of(context).pop();
             await widget.onJumpSection(entry.index, entry.fragment);
-            final AudioCue? first = ctrl?.sectionFirstCue(entry.index);
+            final AudioCue? first =
+                ctrl == null ? null : _entryStartCue(ctrl, i);
             if (ctrl != null && first != null) {
               await ctrl.skipToCue(first);
             }

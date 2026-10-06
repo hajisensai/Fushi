@@ -2595,6 +2595,9 @@ extension _ReaderChrome on _ReaderFushiPageState {
               isAsrSupported
           ? () => unawaited(_transcribeFromAudiobookPanel())
           : null,
+      // 带锚点的子章节按锚点定位音频（HBK040）：与开书 / 跨章恢复同一条换算。
+      cueStudyOffset: (SubtitleRematchFragment f) =>
+          _studyRangeForAudioFragment(f)?.offset,
       lyricsMode: _lyricsMode,
       onToggleLyricsMode: _toggleLyricsMode,
       showFloatingLyric: appModel.showFloatingLyric,
