@@ -1649,7 +1649,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
       appModel.readerControlLayoutFor(compact: _readerCompactWidth);
 
   /// 工具栏样式：悬浮（默认，M3E floating toolbar）/ 贴边（整宽实体条）。
-  bool get _floatingToolbars => appModel.readerToolbarStyle != 'docked';
+  bool get _floatingToolbars =>
+      readerToolbarsFloating(appModel.readerToolbarStyle);
 
   /// 底部 chrome 的内容高（不含系统底 inset / 状态行带），挤压态据此预留。
   ///

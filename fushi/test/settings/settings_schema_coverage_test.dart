@@ -389,13 +389,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/pages/jimaku_default_language_test.dart',
   // e53dc0f 把 AJATT / 默认字幕语言从自绘卡拆成「在线服务」下的标准行，焦点
   // 遍历开始能驱动它们。默认字幕语言同上一条专项测试；AJATT 的生效点是
-  // configured_subtitle_providers.dart 按开关装不装 AjattVideoSubtitleProvider
-  // （要真网络客户端工厂），目前只有设置区的写穿测试，生效记 backlog。
+  // configured_subtitle_providers.dart 按开关装不装 AjattVideoSubtitleProvider，
+  // 专项测试走设置行写偏好 → 生产装配函数（假 HTTP 客户端）断言装 / 不装。
   'services/Default subtitle language':
       'test/pages/jimaku_default_language_test.dart',
   'services/AJATT':
-      'WIDGET-TODO: configured_subtitle_providers AJATT gate '
-      '(write-through: test/settings/video_external_provider_settings_section_test.dart)',
+      'test/media/video/subtitle/ajatt_setting_effect_test.dart',
   // mpv Lua 脚本装载开关。写 prefsRepo（changed=true），生效点在视频播放器创建后
   // 经 libmpv `load-script` 命令装载脚本目录（widget harness 无 libmpv Player，
   // 无可探渲染输入）；由专项测试咬住目录枚举（仅顶层 .lua、排序）、load-script
@@ -904,18 +903,20 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Reading timer start':
       'test/stats/reader_study_clock_start_mode_test.dart + '
       'test/pages/reader_study_clock_start_mode_wiring_guard_static_test.dart',
-  // · 阅读器工具栏样式（77a4712）：悬浮 / 贴边只改阅读器页 chrome 预留与重锚，
-  //   要活阅读器页；目前没有专项测试，记 backlog。
+  // · 阅读器工具栏样式（77a4712）：悬浮 / 贴边。阅读器页要活 WebView，专项测试
+  //   走设置行写偏好 → readerToolbarsFloating 换算（页面只经它，源码守卫）→
+  //   生产 ReaderStatusFooter 渲染形态（胶囊 vs 整宽实体条）。
   'reading/Toolbar style':
-      'WIDGET-TODO: ReaderFushiPage chrome floating vs docked reserve',
+      'test/reader/reader_toolbar_style_setting_effect_test.dart',
   // · 纯黑深色（4c32e76）：只在深色下把 surface 压成纯黑，harness 的 t2 渲染
   //   输入观测不到；由 ThemeNotifier 配色真值测试覆盖。
   'appearance/Pure black dark': 'test/models/theme_notifier_test.dart: '
       'pure black: legacy black-theme users keep it; toggle is independent',
   // · 底栏标签（690c490）：只影响首页 M3E 悬浮底栏的标签显隐，设置页 harness
-  //   不挂首页 shell；目前没有专项测试，记 backlog。
+  //   不挂首页 shell；专项测试走设置行写偏好 → 生产 adaptiveBottomBar 标签画 /
+  //   不画（+ 首页接线源码守卫）。
   'appearance/Show navigation bar labels':
-      'WIDGET-TODO: HomePage floating toolbar label visibility',
+      'test/widgets/nav_bar_labels_setting_effect_test.dart',
   // TODO-975: 顶部进度悬浮开关 + 悬浮控件自动隐藏延时。生效点在 reader 页悬浮
   // chrome 状态机（_topProgressReserve/_bottomChromeReserve 派生 + 自动隐藏定时器，
   // 非 reader CSS / 主题树）；由专项纯函数真值表 + 持久化 + 源码守卫覆盖。
