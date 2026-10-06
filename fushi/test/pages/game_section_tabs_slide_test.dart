@@ -16,8 +16,10 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 游戏的七个子区在 IndexedStack 里一起常驻，每页各挂一份 `selected` 为常量的页签：
 /// 切到别的子区时那一页的页签早就停在自己的位置上，指示条没有起点可滑。
-/// [HomeGamePage] 用 [LibrarySectionFollowScope] 广播真实所在子区，隐藏页的页签
-/// 跟着它走，被切出来的那一刻才从来源子区滑到自己。
+/// [HomeGamePage] 当时用 [LibrarySectionFollowScope] 广播真实所在子区，隐藏页的
+/// 页签跟着它走。2026-10-06 起外壳浮动工具栏只画一份页签（ad8496b2b86），
+/// `selected` 随子区变化，同一个 State 的指示器从来源子区滑到目标子区——本测试守
+/// 的「切子区时指示条在滑」这个用户可见结果不变。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
 Widget _stubLibrary(
@@ -45,20 +47,22 @@ void main() {
     LocaleSettings.setLocaleRaw('en');
   });
 
-  TabController controllerIn(WidgetTester tester, Key sectionKey) {
-    // 设置页此刻是 Offstage 保活的隐藏页：两层查找都得 skipOffstage: false
-    // （glassUnwrap 的 descendant 默认跳过 offstage，这里不能用）。MD3 下
-    // FushiTabBar 把原 TabBar 渲染在自己下面一层，byType(TabBar) 直接命中它。
-    final TabBar bar = tester.widget<TabBar>(
-      find.descendant(
-        of: find.byKey(sectionKey, skipOffstage: false),
-        matching: find.byType(TabBar, skipOffstage: false),
-      ),
+  TabController shellController(WidgetTester tester) {
+    // 2026-10-06 起分区页签由外壳浮动工具栏统一画一份（ad8496b2b86，
+    // [GameSectionTabsHostScope]），子区页头里那份留空：全树（含 offstage 子区）
+    // 恰好一份。MD3 下 FushiTabBar 把原 TabBar 渲染在自己下面一层。
+    final Finder bar = find.byType(
+      FushiSectionTabBar<GameSection>,
+      skipOffstage: false,
     );
-    return bar.controller!;
+    expect(bar, findsOneWidget, reason: '游戏外壳应恰好一份分区页签');
+    final TabBar tabBar = tester.widget<TabBar>(
+      find.descendant(of: bar, matching: find.byType(TabBar)),
+    );
+    return tabBar.controller!;
   }
 
-  testWidgets('库 → 设置：设置页的页签从「库」滑到「设置」，而不是原地落位',
+  testWidgets('库 → 设置：外壳页签从「库」滑到「设置」，而不是原地落位',
       (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1440, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -82,10 +86,9 @@ void main() {
         kGameSectionTabOrder.indexOf(GameSection.library).toDouble();
     final double to =
         kGameSectionTabOrder.indexOf(GameSection.settings).toDouble();
-    final TabController settingsTabs =
-        controllerIn(tester, HomeGamePage.settingsKey);
+    final TabController settingsTabs = shellController(tester);
     expect(settingsTabs.animation!.value, from,
-        reason: '隐藏的设置页页签应跟着用户真正所在的「库」');
+        reason: '外壳页签应停在用户真正所在的「库」');
 
     gameSectionNotifier.value = GameSection.settings;
     await tester.pump();
