@@ -76,22 +76,19 @@ void main() {
     await tester.pump(Duration(milliseconds: ms));
   }
 
-  // 弹簧在判定落定（吸附终值）前还有余振（600ms 时约 0.003 px），量化到
-  // 0.1 px 再比：肉眼不可见，仍能分清 8 / 12 / 16 / 20 / 48 这些档位。
-  double q(double v) => (v * 10).roundToDouble() / 10;
-  Radius qr(Radius r) => Radius.elliptical(q(r.x), q(r.y));
+  /// 精确终值必须等模拟真正落定：固定推进 600ms 仍可能有余振；
+  /// FushiSpring 的 snapToEnd 在 isDone 时才吸附目标。先启动 ticker 再等待，
+  /// 保留原始圆角参数，不能靠取整隐藏落定后的残差（BUG-3046）。
+  Future<void> settleSpring(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pumpAndSettle();
+  }
 
   BorderRadius? resolvedRadius(WidgetTester tester, Finder material) {
     final Material m = tester.widget<Material>(material);
     final ShapeBorder? shape = m.shape;
     if (shape is RoundedRectangleBorder) {
-      final BorderRadius br = shape.borderRadius.resolve(TextDirection.ltr);
-      return BorderRadius.only(
-        topLeft: qr(br.topLeft),
-        topRight: qr(br.topRight),
-        bottomLeft: qr(br.bottomLeft),
-        bottomRight: qr(br.bottomRight),
-      );
+      return shape.borderRadius.resolve(TextDirection.ltr);
     }
     if (shape is FushiMorphBorder) {
       final Size size = tester.getSize(material);
@@ -105,7 +102,7 @@ void main() {
       final double r =
           (shape.radius + (half - shape.radius) * shape.startPill.clamp(0, 1))
               .clamp(0.0, half);
-      return BorderRadius.circular(q(r));
+      return BorderRadius.circular(r);
     }
     return null;
   }
@@ -252,10 +249,10 @@ void main() {
       final TestGesture g = await tester.startGesture(
         tester.getCenter(find.byType(FilledButton)),
       );
-      await advance(tester, 600);
+      await settleSpring(tester);
       expect(resolvedRadius(tester, material), BorderRadius.circular(16));
       await g.up();
-      await advance(tester, 600);
+      await settleSpring(tester);
       expect(resolvedRadius(tester, material), BorderRadius.circular(48));
     });
   });
@@ -326,7 +323,7 @@ void main() {
       );
       expect(find.byType(FilledButton), findsOneWidget);
       await tester.tap(find.byType(FilledButton));
-      await advance(tester, 600);
+      await settleSpring(tester);
       expect(on, isTrue);
       expect(find.byIcon(Icons.bookmark), findsOneWidget);
       final Finder material = find
