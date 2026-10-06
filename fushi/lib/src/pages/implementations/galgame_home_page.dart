@@ -459,7 +459,13 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final Widget content;
     if (_games.isEmpty) {
       // 首次载入还没回来时给骨架，别把「仓储还没读完」画成「空库」。
-      content = _loaded ? _buildEmpty(context) : _buildSkeleton(context);
+      // 空态不滚动：让出浮动工具区（MediaQuery 顶部 padding）后再居中。
+      content = _loaded
+          ? Padding(
+              padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+              child: _buildEmpty(context),
+            )
+          : _buildSkeleton(context);
     } else {
       content = _buildBody(context);
     }
@@ -468,12 +474,16 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       child: Column(
         children: <Widget>[
           FushiPageHeader.customTitle(
-            title: GameSectionTabs(
-              selected: GameSection.dashboard,
-              focusIdPrefix: 'game-dashboard-tab',
-              onSelectLibrary: widget.onShowLibrary,
-              onSelectMonitor: widget.onShowMonitor,
-            ),
+            // 在游戏外壳里页签由浮动工具栏画：主位给零尺寸占位，页头整行零高度
+            // （动作登记进外壳动作组），不在工具区下面留一条钉死的空白带。
+            title: GameSectionTabsHostScope.hostedOf(context)
+                ? const SizedBox.shrink()
+                : GameSectionTabs(
+                    selected: GameSection.dashboard,
+                    focusIdPrefix: 'game-dashboard-tab',
+                    onSelectLibrary: widget.onShowLibrary,
+                    onSelectMonitor: widget.onShowMonitor,
+                  ),
             // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
             actions: <Widget>[
               // 主操作：M3E tonal 胶囊按钮，页头把它画在按钮组胶囊旁（不再
@@ -526,7 +536,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         physics: const NeverScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
           tokens.spacing.page,
-          tokens.spacing.rowVertical,
+          // 与正文同一处起点：浮动工具区的让位（MediaQuery 顶部 padding）。
+          tokens.spacing.rowVertical + MediaQuery.paddingOf(context).top,
           tokens.spacing.page,
           tokens.spacing.section,
         ),
@@ -602,13 +613,21 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 child: _buildRandomSection(context, randomGame),
               );
         final List<Widget> timeline = _buildTimelineSlivers(context);
+        // 浮动工具区的让位（游戏外壳经 [FushiFloatingChromeScrollInset] 交来的
+        // MediaQuery 顶部 padding）由首段内边距吃掉：内容从工具区下方开始、往下
+        // 滚时滚到工具区底下，工具区收起后顶部不留空白。吃掉后从子树摘掉，免得
+        // 卡片里的竖向列表 / SafeArea 再让一遍。
+        final double chromeTop = MediaQuery.paddingOf(context).top;
         return FushiEntranceScope(
-          child: CustomScrollView(
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: CustomScrollView(
             slivers: <Widget>[
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(
                   page,
-                  tokens.spacing.rowVertical,
+                  tokens.spacing.rowVertical + chromeTop,
                   page,
                   tokens.spacing.card,
                 ),
@@ -678,6 +697,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                 child: SizedBox(height: tokens.spacing.section),
               ),
             ],
+            ),
           ),
         );
       },
@@ -1524,12 +1544,15 @@ class _TimelineDateHeader extends StatelessWidget {
               ),
             ),
           );
-    return ColoredBox(
-      color: tokens.surfaces.page,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
-        child: Align(alignment: AlignmentDirectional.centerStart, child: text),
-      ),
+    final Widget row = Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
+      child: Align(alignment: AlignmentDirectional.centerStart, child: text),
     );
+    // M3E：吸顶的是一枚自带填色的胶囊，浮在内容上（内容从它两侧滚过），不再垫
+    // 一条整宽页面底色条——吸到视口顶时那条实色带就是工具区收起后顶部的一块
+    // 硬边，顶部可读性归外壳浮动工具区的共享遮罩。Apple（纯文字小标题）与墨水
+    // 屏（透明描边胶囊）没有自己的填色，仍垫底色免得文字压在内容上。
+    if (!apple && !eink) return row;
+    return ColoredBox(color: tokens.surfaces.page, child: row);
   }
 }

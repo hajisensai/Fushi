@@ -250,7 +250,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
             return widget.settingsBuilder?.call(context, navigation) ??
                 ModuleSettingsView(
                   destinationId: SettingsDestinationId.game,
-                  navigation: navigation,
+                  // 页签由外壳浮动工具栏画：页头主位给零尺寸占位，整行零高度，
+                  // 设置正文从工具区下方开始（不再隔一条空白带）。
+                  navigation: const SizedBox.shrink(),
                 );
           },
         ),
@@ -311,17 +313,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
             // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
             DropSurfaceScope(
               isActive: () => _section == section,
-              // 子区整体让出浮动工具栏的高度（工具栏叠在内容上，见下方
-              // [FushiFloatingChromeOverlay]）。
-              // 发现子区例外：它把自己的搜索 / 筛选行叠进浮动工具区、主滚动
-              // 视图自己让位（[MediaDiscoveryPage]），整体下移会把 inset 归零、
-              // 内容又被切在工具区下沿。
+              // 子区让出浮动工具栏的高度（工具栏叠在内容上，见下方
+              // [FushiFloatingChromeOverlay]），见 [_chromeInsetFor]。
               child: SectionPrimaryScrollScope(
-                child: section == GameSection.discover
-                    ? sections[section]!
-                    : FushiFloatingChromeInsetPadding(
-                        child: sections[section]!,
-                      ),
+                child: _chromeInsetFor(section, sections[section]!),
               ),
             ),
         ],
@@ -347,6 +342,30 @@ class _HomeGamePageState extends State<HomeGamePage> {
       ),
     );
   }
+
+  /// 子区怎么让出叠放的浮动工具区（2026-10-06 结构收口）：
+  ///
+  /// - 首页 / 导入 / 设置：主滚动视图自己吃掉让位——[FushiFloatingChromeScrollInset]
+  ///   把它交成 MediaQuery 顶部 padding，内容从工具区下方开始、往下滚时滚到
+  ///   工具区底下，工具区收起后顶部不留空白（旧的整体下移让出的那段永远是空的
+  ///   页面底色，往下一滚顶部就是一整块白，用户 2026-10-06 截图）。
+  /// - 库 / 诊断 / 发现：页面把自己的工具行（搜索筛选 / 分组跳转条）叠进浮动
+  ///   工具区（嵌套 [FushiFloatingChromeOverlay]），要读外层的让位，不能在这里
+  ///   归零。
+  /// - 捕获工作台：定高工作台版面（会话卡 + 自带滚动的台词面板），没有整页滚动
+  ///   视图可以吃让位，仍整体下移。
+  Widget _chromeInsetFor(GameSection section, Widget child) =>
+      switch (section) {
+        GameSection.dashboard ||
+        GameSection.importGames ||
+        GameSection.settings =>
+          FushiFloatingChromeScrollInset(child: child),
+        GameSection.library ||
+        GameSection.diagnostics ||
+        GameSection.discover =>
+          child,
+        GameSection.monitor => FushiFloatingChromeInsetPadding(child: child),
+      };
 
   /// 游戏「发现」视图：与「浏览 › 发现 › 游戏」同一个生产发现页，页头主位放本模块
   /// 的分段页签。
@@ -408,15 +427,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
         kind: DesktopContentKind.readerShelf,
         child: Column(
           children: <Widget>[
+            // 分区页签由外壳浮动工具栏画：主位给零尺寸占位，页头整行零高度。
             FushiPageHeader.customTitle(
-              title: GameSectionTabs(
-                selected: GameSection.importGames,
-                focusIdPrefix: 'game-import-tab',
-                onSelectDashboard: _showDashboard,
-                onSelectLibrary: _showLibrary,
-                onSelectMonitor: _showMonitor,
-                onSelectSettings: _showSettings,
-              ),
+              title: const SizedBox.shrink(),
               actions: const <Widget>[],
             ),
             Expanded(
@@ -425,10 +438,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
               // IndexedStack 急切构建：切到导入子区时重开进场窗口。
               child: FushiEntranceScope(
                 replayKey: _section == GameSection.importGames,
-                child: SingleChildScrollView(
+                // 浮动工具区的让位（[FushiFloatingChromeScrollInset] 交来的
+                // MediaQuery 顶部 padding）加进滚动内边距：内容滚到工具区底下。
+                // 必须在 Builder 里读——本方法拿的是 State 的 context，在让位
+                // 那层之上。
+                child: Builder(
+                  builder: (BuildContext context) => SingleChildScrollView(
                   padding: EdgeInsets.fromLTRB(
                     tokens.spacing.page,
-                    8,
+                    8 + MediaQuery.paddingOf(context).top,
                     tokens.spacing.page,
                     24,
                   ),
@@ -468,6 +486,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
                     ],
                   ),
                 ),
+                ),
               ),
             ),
           ],
@@ -477,20 +496,44 @@ class _HomeGamePageState extends State<HomeGamePage> {
   }
 
   Widget _buildLibrary(BuildContext context) {
+    // 顶部一条紧凑会话状态带（原两张总览大卡的收敛替身）：只留库页独有
+    // 的会话摘要，整条可点进入捕获工作台。诊断细节（序号缺口 / 端点连通）
+    // 归诊断页，不再挤占库页面积。
+    final Widget statusStrip = AnimatedBuilder(
+      animation: _controller,
+      builder: (BuildContext context, Widget? child) {
+        final GalHookSessionState state = _controller.state;
+        final lines = _controller.lines;
+        final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
+          state: state,
+          hasEngineSource: _controller.hasEngineSource,
+          selectedTextThreadKey: _controller.selectedTextThreadKey,
+        );
+        final double page = FushiDesignTokens.of(context).spacing.page;
+        // 左右取页边，与浮动页签胶囊 / 工具行 / 内容同一条左右缘。
+        return Padding(
+          padding: EdgeInsets.fromLTRB(page, 8, page, 0),
+          child: _CaptureStatusStrip(
+            lineCount: lines.length,
+            latestLine: lines.isEmpty ? null : lines.last.text,
+            state: state,
+            readiness: readiness,
+            onOpen: _showMonitor,
+          ),
+        );
+      },
+    );
+    final GameLibraryBuilder? libraryBuilder = widget.libraryBuilder;
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
           FushiPageHeader.customTitle(
             // 统计入口已收敛到首页 dashboard（用户定案 2026-09-01）。
-            title: GameSectionTabs(
-              selected: GameSection.library,
-              focusIdPrefix: 'game-library-tab',
-              onSelectDashboard: _showDashboard,
-              onSelectLibrary: _showLibrary,
-              onSelectMonitor: _showMonitor,
-              onSelectSettings: _showSettings,
-            ),
+            // 分区页签由外壳浮动工具栏画（[GameSectionTabsHostScope]）：主位给
+            // 零尺寸占位，页头整行零高度（动作登记进外壳动作组），不在工具区
+            // 下面留一条钉死的空白带。
+            title: const SizedBox.shrink(),
             // 顶部不再放「捕获工作台」图标钮——它与下方 GameSectionTabs 的
             // 「工作台」分段去向完全相同，纯冗余；入口收敛到分段导航 + 状态带。
             // 网格 / 列表切换（与视频库「全部视频」同位：页头动作）。只在真库页
@@ -501,52 +544,35 @@ class _HomeGamePageState extends State<HomeGamePage> {
             ],
           ),
           Expanded(
-            child: Column(
-              children: <Widget>[
-                // 顶部一条紧凑会话状态带（原两张总览大卡的收敛替身）：只留库页独有
-                // 的会话摘要，整条可点进入捕获工作台。诊断细节（序号缺口 / 端点连通）
-                // 归诊断页，不再挤占库页面积。
-                AnimatedBuilder(
-                  animation: _controller,
-                  builder: (BuildContext context, Widget? child) {
-                    final GalHookSessionState state = _controller.state;
-                    final lines = _controller.lines;
-                    final GalWorkbenchReadiness readiness =
-                        galWorkbenchReadiness(
-                      state: state,
-                      hasEngineSource: _controller.hasEngineSource,
-                      selectedTextThreadKey: _controller.selectedTextThreadKey,
-                    );
-                    final double page =
-                        FushiDesignTokens.of(context).spacing.page;
-                    // 左右取页边，与浮动页签胶囊 / 工具行 / 内容同一条左右缘。
-                    return Padding(
-                      padding: EdgeInsets.fromLTRB(page, 8, page, 12),
-                      child: _CaptureStatusStrip(
-                        lineCount: lines.length,
-                        latestLine: lines.isEmpty ? null : lines.last.text,
-                        state: state,
-                        readiness: readiness,
-                        onOpen: _showMonitor,
-                      ),
-                    );
-                  },
-                ),
-                const FushiDividerControl(height: 1),
-                Expanded(
-                  child: widget.libraryBuilder?.call(
-                        context,
-                        _controller,
-                        _showMonitor,
-                      ) ??
-                      GamesLibraryPage(
-                        embedded: true,
-                        sessionController: _controller,
-                        onLaunched: _showMonitor,
-                      ),
-                ),
-              ],
-            ),
+            // 生产路径：库页自己把搜索 / 筛选行叠进浮动工具区、主滚动视图消费
+            // 让位（本子区在 [build] 里不再整体下移）；状态带作为滚动内容的
+            // 第一块，随内容滚到工具区底下。
+            child: libraryBuilder == null
+                ? GamesLibraryPage(
+                    embedded: true,
+                    sessionController: _controller,
+                    onLaunched: _showMonitor,
+                    header: statusStrip,
+                  )
+                // 测试替身页不认识浮动工具区：状态带 + 替身整体下移让位。
+                : FushiFloatingChromeInsetPadding(
+                    child: Column(
+                      children: <Widget>[
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: statusStrip,
+                        ),
+                        const FushiDividerControl(height: 1),
+                        Expanded(
+                          child: libraryBuilder(
+                            context,
+                            _controller,
+                            _showMonitor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),

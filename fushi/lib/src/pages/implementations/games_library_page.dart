@@ -62,6 +62,8 @@ import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeOverlay, FushiFloatingChromeScrollInset;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -90,11 +92,17 @@ class GamesLibraryPage extends ConsumerStatefulWidget {
     this.embedded = false,
     this.sessionController,
     this.onLaunched,
+    this.header,
   });
 
   final bool embedded;
   final GalHookSessionController? sessionController;
   final VoidCallback? onLaunched;
+
+  /// 排在主滚动视图最前、随内容一起滚走的一块（游戏 tab 的捕获会话状态带）。
+  /// 它是内容不是工具：放进滚动视图而不是钉在搜索行上方，内容才能一路滚到
+  /// 浮动工具区底下，工具区收起后顶部不留一条钉死的带子。
+  final Widget? header;
 
   @override
   ConsumerState<GamesLibraryPage> createState() => _GamesLibraryPageState();
@@ -724,18 +732,28 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       debugLabel: 'games-library',
       onDrop: (List<String> paths, Offset position) =>
           unawaited(_handleDrop(paths, position)),
-      child: Column(
-        children: <Widget>[
-          if (_games.isNotEmpty) _buildToolbar(context, allTags),
-          if (_games.isNotEmpty) _buildTagFilterBar(allTags),
-          Expanded(
-            child: _buildBody(
-              context,
-              visible,
-              tagFilterActive: allowedIds != null,
-            ),
+      // 搜索 / 筛选行与标签行叠进库页外壳的浮动工具区（嵌套
+      // [FushiFloatingChromeOverlay]，与书架 / 视频库 / 发现页同构）：往下滚
+      // 跟外壳页签一起收起，内容滚到它们底下；主滚动视图经
+      // [FushiFloatingChromeScrollInset] 拿到 MediaQuery 顶部 padding 自己让位。
+      // 不在外壳里（独立 push）时 overlay 退化成「工具行 + 内容」竖排，与旧版面
+      // 一致。
+      child: FushiFloatingChromeOverlay(
+        chrome: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            if (_games.isNotEmpty) _buildToolbar(context, allTags),
+            if (_games.isNotEmpty) _buildTagFilterBar(allTags),
+          ],
+        ),
+        child: FushiFloatingChromeScrollInset(
+          child: _buildBody(
+            context,
+            visible,
+            tagFilterActive: allowedIds != null,
           ),
-        ],
+        ),
       ),
     );
     // 嵌在游戏 tab 里（生产路径）：单件入口已统一收敛到「导入」分段（与书 /
@@ -1257,8 +1275,18 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         builder: (BuildContext context, BoxConstraints constraints) {
           final _GameGridMetrics metrics =
               _GameGridMetrics.forWidth(constraints.maxWidth);
-          return CustomScrollView(
+          // 浮动工具区的让位（[FushiFloatingChromeScrollInset] 交来的 MediaQuery
+          // 顶部 padding）由首个 sliver 吃掉，再从子树里摘掉，免得卡片里的
+          // 竖向列表 / SafeArea 重复让一遍。
+          final Widget? header = widget.header;
+          final double chromeTop = MediaQuery.paddingOf(context).top;
+          return MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: CustomScrollView(
             slivers: <Widget>[
+              SliverToBoxAdapter(child: SizedBox(height: chromeTop)),
+              if (header != null) SliverToBoxAdapter(child: header),
               ..._buildPendingDownloadSlivers(context, metrics),
               ..._buildLibrarySlivers(
                 context,
@@ -1270,6 +1298,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
                 ),
               ),
             ],
+            ),
           );
         },
       ),
