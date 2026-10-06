@@ -68,22 +68,44 @@ void main() {
     await tester.pump();
   }
 
+  /// 点按 / 按键只是启动弹簧，ticker 在**下一帧**才记下起点：只泵一次带时长
+  /// 的帧时，那一帧恰是首帧（elapsed = 0），弹簧还停在起点。先泵一帧让动画
+  /// 开跑，再推进 [ms] 毫秒。
+  Future<void> advance(WidgetTester tester, int ms) async {
+    await tester.pump();
+    await tester.pump(Duration(milliseconds: ms));
+  }
+
+  // 弹簧在判定落定（吸附终值）前还有余振（600ms 时约 0.003 px），量化到
+  // 0.1 px 再比：肉眼不可见，仍能分清 8 / 12 / 16 / 20 / 48 这些档位。
+  double q(double v) => (v * 10).roundToDouble() / 10;
+  Radius qr(Radius r) => Radius.elliptical(q(r.x), q(r.y));
+
   BorderRadius? resolvedRadius(WidgetTester tester, Finder material) {
     final Material m = tester.widget<Material>(material);
     final ShapeBorder? shape = m.shape;
     if (shape is RoundedRectangleBorder) {
-      return shape.borderRadius.resolve(TextDirection.ltr);
+      final BorderRadius br = shape.borderRadius.resolve(TextDirection.ltr);
+      return BorderRadius.only(
+        topLeft: qr(br.topLeft),
+        topRight: qr(br.topRight),
+        bottomLeft: qr(br.bottomLeft),
+        bottomRight: qr(br.bottomRight),
+      );
     }
     if (shape is FushiMorphBorder) {
       final Size size = tester.getSize(material);
       final Path path = shape.getOuterPath(Offset.zero & size);
       // 取左上角：路径包围盒左上点到第一个非角点的距离不好量，直接比形状参数。
-      expect(path.getBounds().size, size);
+      // Path 以 float32 存点：非整数宽（80.3）读回差 1e-6 量级。
+      final Size bounds = path.getBounds().size;
+      expect(bounds.width, closeTo(size.width, 1e-3));
+      expect(bounds.height, closeTo(size.height, 1e-3));
       final double half = size.shortestSide / 2;
       final double r =
           (shape.radius + (half - shape.radius) * shape.startPill.clamp(0, 1))
               .clamp(0.0, half);
-      return BorderRadius.circular(r);
+      return BorderRadius.circular(q(r));
     }
     return null;
   }
@@ -230,10 +252,10 @@ void main() {
       final TestGesture g = await tester.startGesture(
         tester.getCenter(find.byType(FilledButton)),
       );
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       expect(resolvedRadius(tester, material), BorderRadius.circular(16));
       await g.up();
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       expect(resolvedRadius(tester, material), BorderRadius.circular(48));
     });
   });
@@ -258,7 +280,7 @@ void main() {
       );
       expect(find.byType(FilledButton), findsOneWidget);
       await tester.tap(find.byType(FilledButton));
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       expect(on, isTrue);
       expect(find.byIcon(Icons.bookmark), findsOneWidget);
       final Finder material = find
@@ -332,7 +354,7 @@ void main() {
       expect(primary, 1);
 
       await tester.tap(find.byIcon(FushiIcons.expandMore));
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       expect(find.text('CSV'), findsOneWidget);
       final Transform rotation = tester.widget<Transform>(
         find
@@ -347,13 +369,13 @@ void main() {
 
       // 点菜单外关闭（Esc 关闭由 MenuAnchor 自带）。
       await tester.tapAt(const Offset(4, 4));
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       expect(find.text('CSV'), findsNothing);
 
       await tester.tap(find.byIcon(FushiIcons.expandMore));
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       await tester.tap(find.text('JSON'));
-      await tester.pump(const Duration(milliseconds: 600));
+      await advance(tester, 600);
       expect(picked, 'json');
     });
 
@@ -464,12 +486,12 @@ void main() {
       );
       expect(find.text('Import'), findsNothing);
       await tester.tap(find.byType(FloatingActionButton));
-      await tester.pump(const Duration(milliseconds: 800));
+      await advance(tester, 800);
       expect(key.currentState!.isOpen, isTrue);
       expect(find.text('Import'), findsOneWidget);
       expect(find.byIcon(Icons.close_rounded), findsOneWidget);
       await tester.tap(find.text('Import'));
-      await tester.pump(const Duration(milliseconds: 800));
+      await advance(tester, 800);
       expect(imported, 1);
       expect(key.currentState!.isOpen, isFalse);
       expect(find.text('Import'), findsNothing);
@@ -481,11 +503,11 @@ void main() {
       fabFocus.requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-      await tester.pump(const Duration(milliseconds: 800));
+      await advance(tester, 800);
       expect(key.currentState!.isOpen, isTrue);
       expect(fabFocus.hasFocus, isFalse);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump(const Duration(milliseconds: 800));
+      await advance(tester, 800);
       expect(key.currentState!.isOpen, isFalse);
       expect(fabFocus.hasFocus, isTrue);
     });
