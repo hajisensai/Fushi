@@ -1,415 +1,15 @@
-import 'dart:async';
+/// 引擎查词结果（[FushiLookupResult]）→ [DictionarySearchResult] / 弹窗 JSON 的
+/// 纯逻辑（零 Flutter，无头服务端经 `fushi_dictionary_core.dart` 复用）。
+/// 依赖 material 的 `Language` 抽象类在 `language_base.dart`。
+library;
+
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:collection/collection.dart';
-import 'package:material_ui/material_ui.dart';
-import 'package:fushi_core/fushi_core.dart';
-
-import '../engine/fushidicts.dart';
-import '../formats/dictionary_format.dart';
+import '../engine/fushidicts_models.dart';
 import '../models/dictionary_entry.dart';
 import '../models/dictionary_search_result.dart';
-import 'language_utils.dart';
 import 'transform_description_i18n.dart';
-import '../models/fushi_text_selection.dart';
-
-/// Defines common characteristics required for tuning locale and text
-/// segmentation behaviour for different languages. Override the variables
-/// and functions of this abstract class in order to implement a target
-/// language.
-abstract class Language {
-  /// Initialise the language with the required details.
-  Language({
-    required this.languageName,
-    required this.languageCode,
-    required this.threeLetterCode,
-    required this.countryCode,
-    required this.textDirection,
-    required this.preferVerticalReading,
-    required this.isSpaceDelimited,
-    required this.textBaseline,
-    required this.helloWorld,
-    required this.standardFormat,
-    required this.defaultFontFamily,
-  });
-
-  /// The name of the language, as known to native speakers.
-  ///
-  /// For example, in the case of Japanese, this is '日本語'.
-  /// In the case of American English, this is 'English (US)'.
-  final String languageName;
-
-  /// The ISO 639-1 code or the international standard language code.
-  ///
-  /// For example, in the case of Japanese, this is 'ja'.
-  /// In the case of English, this is 'en'.
-  final String languageCode;
-
-  /// The ISO 639-3 code or the international standard language code.
-  ///
-  /// For example, in the case of Japanese, this is 'jpn'.
-  /// In the case of English, this is 'eng'.
-  final String threeLetterCode;
-
-  /// The ISO 3166-1 code or the international standard name of country.
-  ///
-  /// For example, in the case of Japanese, this is 'JP'.
-  /// In the case of (American) English, this is 'US'.
-  final String countryCode;
-
-  /// The reading direction of the language, for which reading should be
-  /// given a specific format by default. For example, Arabic is RTL, while
-  /// English is LTR.
-  final TextDirection textDirection;
-
-  /// Whether or not this language should prefer vertical reading.
-  final bool preferVerticalReading;
-
-  /// Whether or not this language essentially relies on spaces to  commonly
-  /// separate and discern words.
-  final bool isSpaceDelimited;
-
-  /// If this language uses an alphabetic or ideographic text baseline.
-  final TextBaseline textBaseline;
-
-  /// Testing text for the language's basic use. This is useful for testing
-  /// and pre-loading the database for use.
-  final String helloWorld;
-
-  /// A standard format that dictionaries of this language can be found in.
-  /// This is only to set this as the default last selected format on first
-  /// time setup.
-  final DictionaryFormat standardFormat;
-
-  /// Default font for a language.
-  final String defaultFontFamily;
-
-  /// Whether or not [initialise] has been called for the language.
-  bool _initialised = false;
-
-  /// Some implementations of tap-to-select are very unoptimised for a high
-  /// length of text. It is impractical to run text segmentation in some cases.
-  /// This value sets a length from the center from which input text for
-  /// [wordFromIndex] should be cut if longer. If null, the limit will not be
-  /// used.
-  int? indexMaxDistance;
-
-  /// This function is run at startup or when changing languages. It is not
-  /// called again if already run.
-  Future<void> initialise() async {
-    if (_initialised) {
-      return;
-    } else {
-      await prepareResources();
-      _initialised = true;
-    }
-  }
-
-  /// Extract a [Locale] from the language code and country code.
-  Locale get locale => Locale(languageCode, countryCode);
-
-  /// Prepare text segmentation tools and other dependencies necessary for this
-  /// langauge to function.
-  Future<void> prepareResources();
-
-  /// Given paragraph text and an index, yield the part of the text such that
-  /// the result is a sentence. Different languages may decide to use different
-  /// delimiters.
-  FushiTextSelection getSentenceFromParagraph({
-    required String paragraph,
-    required int index,
-    required int startOffset,
-    required int endOffset,
-  }) {
-    List<String> sentences = getSentences(paragraph);
-    int currentIndex = 0;
-    String sentenceToReturn = paragraph;
-
-    int sentenceLength = 0;
-
-    for (String sentence in sentences) {
-      sentenceToReturn = sentence;
-      sentenceLength = sentence.length;
-
-      currentIndex += sentenceLength;
-      if (currentIndex > index) {
-        break;
-      }
-    }
-
-    final int rawStart = sentenceLength - currentIndex + startOffset;
-    final int rawEnd = sentenceLength - currentIndex + endOffset;
-    TextRange range = TextRange(
-      start: rawStart.clamp(0, sentenceToReturn.length),
-      end: rawEnd.clamp(0, sentenceToReturn.length),
-    );
-    return FushiTextSelection(
-      text: sentenceToReturn,
-      range: range,
-    );
-  }
-
-  /// Returns a list of sentences for a block of text.
-  List<String> getSentences(String text) {
-    RegExp regex = RegExp(r'.{1,}?([。.?？!！]+|\n)');
-
-    Iterable<Match> matches = regex.allMatches(text);
-
-    if (matches.isEmpty) {
-      return [text];
-    }
-
-    List<String> sentences = regex.allMatchesWithSep(text);
-
-    return sentences;
-  }
-
-  /// The language and country code separated by a dash.
-  String get languageCountryCode => '$languageCode-$countryCode';
-
-  /// Given unsegmented [text], perform text segmentation particular to the
-  /// language and return a list of parsed words.
-  ///
-  /// For example, in the case of Japanese, '日本語は難しいです。', this should
-  /// ideally return a list containing '日本語', 'は', '難しい', 'です', '。'.
-  ///
-  /// In the case of English, 'This is a pen.' should ideally return a list
-  /// containing 'This', ' ', 'is', ' ', 'a', ' ', 'pen', '.'. Delimiters
-  /// should stay intact for languages that feature such, such as spaces.
-  List<String> textToWords(String text);
-
-  /// Given an [index] or a character position in given [text], return a word
-  /// such that it corresponds to a whole word from the parsed list of words
-  /// from [textToWords].
-  ///
-  /// For example, in the case of Japanese, the parameters '日本語は難しいです。'
-  /// and given index 2 (語), this should be '日本語'.
-  ///
-  /// In the case of English, 'This is a pen.' at index 10 (p), should return
-  /// the word 'pen'.
-  String wordFromIndex({
-    required String text,
-    required int index,
-  }) {
-    /// See [indexMaxDistance] above.
-    /// If the [indexMaxDistance] is not defined...
-    if (indexMaxDistance != null) {
-      /// If the length of text cut into two, incrmeented by one exceeds the
-      /// [indexMaxDistance] multiplied into two and incremented by one...
-      if (((text.length / 2) + 1) > ((indexMaxDistance! * 2) + 1)) {
-        /// Then get a substring of text, with the original index character
-        /// being the center and to its left and right, a maximum number of
-        /// [indexMaxDistance] characters...
-        ///
-        /// Of course, the indexes of those values will have to be in the range
-        /// of (0, length - 1)...
-        List<int> originalIndexTape = [];
-        List<int> indexTape = [];
-
-        int rangeStart = max(0, index - indexMaxDistance!);
-        int rangeEnd = min(text.length - 1, index + indexMaxDistance! + 1);
-
-        for (int i = 0; i < text.length; i++) {
-          originalIndexTape.add(i);
-        }
-
-        StringBuffer buffer = StringBuffer();
-        int newIndex = -1;
-
-        for (int i = 0; i < text.runes.length; i++) {
-          if (i >= rangeStart && i < rangeEnd) {
-            final String character =
-                String.fromCharCode(text.runes.elementAt(i));
-            buffer.write(character);
-
-            indexTape.add(i);
-            if (index == i) {
-              newIndex = indexTape.indexOf(i);
-            }
-          }
-        }
-
-        final String newText = buffer.toString();
-
-        return wordFromIndex(text: newText, index: newIndex);
-      }
-    }
-
-    List<String> words = textToWords(text);
-
-    List<String> wordTape = [];
-    for (int i = 0; i < words.length; i++) {
-      String word = words[i];
-      for (int j = 0; j < word.length; j++) {
-        wordTape.add(word);
-      }
-    }
-
-    if (index < 0 || index >= wordTape.length) return '';
-    String word = wordTape[index];
-
-    return word;
-  }
-
-  /// Gets a search term and for a space-delimited language, assumes the index
-  /// is within the range of the first word, with remainder words included.
-  /// For a language that is not space-delimited, this is simply the substring
-  /// function.
-  String getSearchTermFromIndex({
-    required String text,
-    required int index,
-  }) {
-    if (isSpaceDelimited) {
-      final workingBuffer = StringBuffer();
-      final termBuffer = StringBuffer();
-      List<String> words = textToWords(text.replaceAll('\n', ' '));
-
-      for (String word in words) {
-        workingBuffer.write(word);
-        if (workingBuffer.length > index) {
-          termBuffer.write(word);
-        }
-      }
-
-      return termBuffer.toString();
-    } else {
-      if (index < 0 || index >= text.length) return '';
-      return text.substring(index);
-    }
-  }
-
-  /// Returns the starting index from which the search term should be chopped
-  /// from, given a clicked index and full text. For a space-delimited language,
-  /// this will return the starting index of a clicked word. Otherwise, this
-  /// returns the clicked index itself.
-  TextRange getWordRange({
-    required FushiTextSelection selection,
-  }) {
-    final workingBuffer = StringBuffer();
-    String selectedWord = '';
-    int start = 0;
-
-    List<String> words = textToWords(selection.text.replaceAll('\n', ' '));
-
-    for (String word in words) {
-      workingBuffer.write(word);
-      selectedWord = word;
-
-      if (workingBuffer.length > selection.range.start) {
-        start = workingBuffer.length - word.length;
-        break;
-      }
-    }
-
-    int end = start + selectedWord.length;
-
-    return TextRange(start: start, end: end);
-  }
-
-  /// Get preliminary highlight length before a dictionary search.
-  FushiTextSelection getGuessHighlight({
-    required FushiTextSelection selection,
-  }) {
-    return FushiTextSelection(
-      text: selection.text,
-      range: getWordRange(selection: selection),
-    );
-  }
-
-  /// Get preliminary highlight length before a dictionary search.
-  int getGuessHighlightLength({
-    required String searchTerm,
-  }) {
-    final truncated =
-        searchTerm.length > 40 ? searchTerm.substring(0, 40) : searchTerm;
-    final word = textToWords(truncated)
-        .firstWhere((e) => e.trim().isNotEmpty, orElse: () => '');
-    final length = word.trim().length;
-    return length > 0 ? length : 1;
-  }
-
-  /// Get final highlight length after a dictionary search.
-  int getFinalHighlightLength({
-    required DictionarySearchResult? result,
-    required String searchTerm,
-  }) {
-    if (isSpaceDelimited) {
-      RegExp regex = RegExp('[ ]');
-
-      int numberOfWords =
-          result?.entries.firstOrNull?.word.splitWithDelim(regex).length ?? 1;
-      List<String> searchTermWords = searchTerm.splitWithDelim(regex);
-      return searchTermWords.sublist(0, numberOfWords).join().length;
-    } else {
-      return max(1, result?.bestLength ?? 0);
-    }
-  }
-
-  /// Returns the starting index from which the search term should be chopped
-  /// from, given a clicked index and full text. For a space-delimited language,
-  /// this will return the starting index of a clicked word. Otherwise, this
-  /// returns the clicked index itself.
-  int getStartingIndex({
-    required String text,
-    required int index,
-  }) {
-    if (isSpaceDelimited) {
-      final workingBuffer = StringBuffer();
-
-      List<String> words = textToWords(text.replaceAll('\n', ' '));
-
-      for (String word in words) {
-        workingBuffer.write(word);
-        if (workingBuffer.length > index) {
-          return workingBuffer.length - word.length;
-        }
-      }
-
-      return index;
-    } else {
-      return index;
-    }
-  }
-
-  /// Some languages may want to display custom widgets rather than the built
-  /// in word and reading text that is there by default. For example, Japanese
-  /// may want to display a furigana widget instead.
-  Widget getTermReadingOverrideWidget({
-    required BuildContext context,
-    required double dictionaryFontSize,
-    required DictionaryEntry entry,
-    required Function(String) onSearch,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          entry.word,
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge!
-              .copyWith(fontWeight: FontWeight.bold),
-        ),
-        Text(
-          entry.reading,
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-      ],
-    );
-  }
-
-  /// Some languages may have custom widgets for generating pronunciation
-  /// diagrams.
-  Widget getPitchWidget({
-    required double dictionaryFontSize,
-    required BuildContext context,
-    required String reading,
-    required int downstep,
-  }) {
-    return const SizedBox.shrink();
-  }
-}
 
 /// 弹窗上的一枚词形变化标签：变形名（`-て`）+ 该变形的语法说明。
 typedef DeinflectionTag = ({String name, String description});
@@ -441,7 +41,7 @@ List<DeinflectionTag> buildDeinflectionTags({
   }
   if (matched != deinflected && deinflected.isNotEmpty) {
     return <DeinflectionTag>[
-      (name: '$matched → $deinflected', description: '')
+      (name: '$matched → $deinflected', description: ''),
     ];
   }
   return const <DeinflectionTag>[];
@@ -489,11 +89,13 @@ List<DeinflectionTag> deinflectionTagsFromExtra(Map<String, dynamic> extra) {
           ),
     ]);
   }
-  return localizeDeinflectionTags(buildDeinflectionTags(
-    matched: (extra['matched'] ?? '').toString(),
-    deinflected: (extra['deinflected'] ?? '').toString(),
-    trace: const <FushiTransformGroup>[],
-  ));
+  return localizeDeinflectionTags(
+    buildDeinflectionTags(
+      matched: (extra['matched'] ?? '').toString(),
+      deinflected: (extra['deinflected'] ?? '').toString(),
+      trace: const <FushiTransformGroup>[],
+    ),
+  );
 }
 
 String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
@@ -505,29 +107,32 @@ String buildLookupEntryExtra(FushiLookupResult r, FushiGlossaryEntry g) {
     // 变形链带着语法说明一起随 entry 走。走 extra 的两条弹窗路径（原生弹窗、
     // buildLookupEntriesJson）本来只能看到 matched/deinflected，只好现编一条
     // 「matched → deinflected」且说明恒空——语法说明就是断在这里的。
-    'deinflectionTrace': deinflectionTagsToJson(buildDeinflectionTags(
-      matched: r.matched,
-      deinflected: r.deinflected,
-      trace: r.trace,
-    )),
+    'deinflectionTrace': deinflectionTagsToJson(
+      buildDeinflectionTags(
+        matched: r.matched,
+        deinflected: r.deinflected,
+        trace: r.trace,
+      ),
+    ),
     'frequencies': r.term.frequencies
-        .map((f) => {
-              'dictName': f.dictName,
-              'values': f.frequencies
-                  .map((v) => {
-                        'value': v.value,
-                        'display': v.displayValue,
-                      })
-                  .toList(),
-            })
+        .map(
+          (f) => {
+            'dictName': f.dictName,
+            'values': f.frequencies
+                .map((v) => {'value': v.value, 'display': v.displayValue})
+                .toList(),
+          },
+        )
         .toList(),
     'pitches': r.term.pitches
-        .map((p) => {
-              'dictName': p.dictName,
-              'positions': p.pitchPositions,
-              'patterns': p.patterns,
-              'transcriptions': p.transcriptions,
-            })
+        .map(
+          (p) => {
+            'dictName': p.dictName,
+            'positions': p.pitchPositions,
+            'patterns': p.patterns,
+            'transcriptions': p.transcriptions,
+          },
+        )
         .toList(),
   });
 }
@@ -567,8 +172,8 @@ DictionarySearchResult buildResultFromLookup({
     final List<FushiGlossaryEntry> glossaries = hiddenDictionaries.isEmpty
         ? r.term.glossaries
         : r.term.glossaries
-            .where((g) => !hiddenDictionaries.contains(g.dictName))
-            .toList();
+              .where((g) => !hiddenDictionaries.contains(g.dictName))
+              .toList();
     if (glossaries.isEmpty) continue;
     if (r.matched.length > bestLength) {
       bestLength = r.matched.length;
@@ -581,8 +186,10 @@ DictionarySearchResult buildResultFromLookup({
       truncated = true;
       break outer;
     }
-    final int headwordIndex =
-        headwords.putIfAbsent(headword, () => headwords.length);
+    final int headwordIndex = headwords.putIfAbsent(
+      headword,
+      () => headwords.length,
+    );
     for (final g in glossaries) {
       collected.add((
         entry: DictionaryEntry(
@@ -679,14 +286,18 @@ String buildPopupJsonFromLookup({
   final groupPitches = <String, List<FushiPitchEntry>>{};
   final seenFreqs = <String, Set<String>>{};
   final seenPitches = <String, Set<String>>{};
-  final groupGlossaries = <String,
-      List<
+  final groupGlossaries =
+      <
+        String,
+        List<
           ({
             String dictionary,
             String contentJson,
             String defTags,
             String termTags,
-          })>>{};
+          })
+        >
+      >{};
 
   // BUG-1472：与 [buildResultFromLookup] 同一处根因——预算按词头算，不按 glossary
   // 注释行算。这里本来就是按 key 分组的，所以「已有几个词头」= groupKeys.length。
@@ -755,8 +366,9 @@ String buildPopupJsonFromLookup({
       }
 
       final String m = g.glossary;
-      final String contentJson =
-          (m.isNotEmpty && (m[0] == '[' || m[0] == '{')) ? m : jsonEncode(m);
+      final String contentJson = (m.isNotEmpty && (m[0] == '[' || m[0] == '{'))
+          ? m
+          : jsonEncode(m);
       groupGlossaries[key]!.add((
         dictionary: g.dictName,
         contentJson: contentJson,
@@ -778,12 +390,19 @@ String buildPopupJsonFromLookup({
     sb.write(jsonEncode(groupMatched[key]));
     sb.write(',"rules":[],"deinflectionTrace":');
     // 弹窗 JSON 是显示路径 → 翻译；持久化的 extra 不翻（BUG-2038）。
-    sb.write(jsonEncode(
-        deinflectionTagsToJson(localizeDeinflectionTags(buildDeinflectionTags(
-      matched: groupMatched[key]!,
-      deinflected: groupDeinflected[key]!,
-      trace: groupTrace[key] ?? const <FushiTransformGroup>[],
-    )))));
+    sb.write(
+      jsonEncode(
+        deinflectionTagsToJson(
+          localizeDeinflectionTags(
+            buildDeinflectionTags(
+              matched: groupMatched[key]!,
+              deinflected: groupDeinflected[key]!,
+              trace: groupTrace[key] ?? const <FushiTransformGroup>[],
+            ),
+          ),
+        ),
+      ),
+    );
     sb.write(',"glossaries":[');
     final gl = _sortedByDictionaryOrder(
       groupGlossaries[key]!,
@@ -868,15 +487,17 @@ List<T> _sortedByDictionaryOrder<T>(
   final Map<int, int> groupOrder = <int, int>{};
   final List<({T item, int group, int rank, int sourceIndex})> indexed =
       <({T item, int group, int rank, int sourceIndex})>[
-    for (int i = 0; i < items.length; i++)
-      (
-        item: items[i],
-        group:
-            groupOrder.putIfAbsent(groupOf(items[i]), () => groupOrder.length),
-        rank: rank[dictNameOf(items[i])] ?? unknownRank,
-        sourceIndex: i,
-      ),
-  ];
+        for (int i = 0; i < items.length; i++)
+          (
+            item: items[i],
+            group: groupOrder.putIfAbsent(
+              groupOf(items[i]),
+              () => groupOrder.length,
+            ),
+            rank: rank[dictNameOf(items[i])] ?? unknownRank,
+            sourceIndex: i,
+          ),
+      ];
   indexed.sort((a, b) {
     final int byGroup = a.group.compareTo(b.group);
     if (byGroup != 0) return byGroup;
@@ -884,4 +505,42 @@ List<T> _sortedByDictionaryOrder<T>(
     return byRank != 0 ? byRank : a.sourceIndex.compareTo(b.sourceIndex);
   });
   return <T>[for (final item in indexed) item.item];
+}
+
+/// `Language.wordFromIndex` 的长文本截窗：以 [index] 为中心、左右各取至多
+/// [maxDistance] 个字符拼出新文本，并给出原 [index] 在新文本里的位置（取不到为 -1）。
+/// 原样抽自 `wordFromIndex`，让这段码点遍历留在本（零 Flutter）文件里。
+({String text, int index}) windowTextAroundIndex({
+  required String text,
+  required int index,
+  required int maxDistance,
+}) {
+  List<int> originalIndexTape = [];
+  List<int> indexTape = [];
+
+  int rangeStart = max(0, index - maxDistance);
+  int rangeEnd = min(text.length - 1, index + maxDistance + 1);
+
+  for (int i = 0; i < text.length; i++) {
+    originalIndexTape.add(i);
+  }
+
+  StringBuffer buffer = StringBuffer();
+  int newIndex = -1;
+
+  for (int i = 0; i < text.runes.length; i++) {
+    if (i >= rangeStart && i < rangeEnd) {
+      final String character = String.fromCharCode(text.runes.elementAt(i));
+      buffer.write(character);
+
+      indexTape.add(i);
+      if (index == i) {
+        newIndex = indexTape.indexOf(i);
+      }
+    }
+  }
+
+  final String newText = buffer.toString();
+
+  return (text: newText, index: newIndex);
 }

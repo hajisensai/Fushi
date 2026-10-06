@@ -13,11 +13,11 @@
 #   2. 服务端包测试（与 main.yml 同一个 runner：fushi/tool/flutter_test_failures.dart）；
 #   3. `dart build cli` + `--help` 冒烟：fushi_engine「闭包里没有 dart:ui」的最终门，
 #      也抓 sqlite3 native asset 构建断裂。
-# 带随包原生库（内置 torrent .so / onnxruntime / fushi_p2p / fushi-anki-sync）的完整
+# 带随包原生库（内置 torrent .so / onnxruntime / fushi_p2p / fushi-anki-sync / fushidicts）的完整
 # serve 冒烟仍只在 build-multiplatform.yml 的 linux-server job 里——它要冷编 libtorrent，
 # 不适合挂在轻量门上。2026-09-30 起那个 job 只剩服务端覆盖（Linux app 不再在 CI 构建），
 # PR 上由路径门在服务端的 Dart 依赖闭包（fushi_server / fushi_engine / core / anki / audio /
-# dictionary / platform / torrent / p2p）或三块原生库变动时开。
+# dictionary / platform / torrent / p2p）或四块原生库与变形表变动时开。
 #
 # 触发面：服务端自身 + 它最直接的依赖 fushi_engine（引擎改动同时也会触发 main.yml /
 # build-multiplatform.yml）+ 本文件。develop push 也跑：本仓日常大量直推 develop，

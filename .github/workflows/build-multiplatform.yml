@@ -94,7 +94,8 @@ jobs:
   #     native/fushi_torrent 进 Windows / macOS 包（iOS 没有内置 torrent 引擎），Mihon runtime
   #     只进 Windows / macOS。
   #   * server：linux-server job 的输入——服务端的 Dart 依赖闭包（fushi_server → fushi_engine
-  #     → core / anki / audio / dictionary / platform / torrent / p2p）、它随包的三块原生库、
+  #     → core / anki / audio / dictionary / platform / torrent / p2p）、它随包的四块原生库
+  #     （torrent / p2p / anki-sync / fushidicts）与随包的变形表 fushi/assets/transforms、
   #     持久库基建、本文件、依赖锁与 ci/ 补丁（fushi-subtitles 的 archive 兼容补丁）。
   # 守卫 fushi/test/build/multiplatform_pr_gating_guard_test.dart 按样例路径回放这套路由，
   # 并对账「每个 job 正文里调用到的 native/ packages/ tool/ tools/ ci/ .github/ 路径都被它的
@@ -155,7 +156,7 @@ jobs:
           windows_only='^(fushi/windows/|packages/(flutter_inappwebview_windows|gamepads_windows)/|packages/[^/]+/windows/|native/(fushi_torrent|galgame_hook|fushi_anki_sync)/|packages/fushi_torrent/|third_party/([^/]+/windows/|[^/]*windows[^/]*/|libplacebo-win/|m_extension_server/|jogamp/)|tool/mihon/|tools/(build_magpie_slim|bundle_7za)\.ps1$|\.github/actions/setup-fushi-anki-sync/)'
           macos_only='^(fushi/(macos|apple)/|packages/[^/]+/(macos|darwin)/|native/(fushi_anki_sync|fushi_torrent)/|packages/fushi_torrent/|\.github/scripts/verify_torrent_abi\.sh$|third_party/([^/]+/(macos|darwin)/|[^/]*macos[^/]*/|m_extension_server/|jogamp/)|tool/mihon/|\.github/actions/setup-fushi-anki-sync/)'
           ios_only='^(fushi/(ios|apple)/|packages/[^/]+/(ios|darwin)/|third_party/([^/]+/(ios|darwin)/|[^/]*ios[^/]*/))'
-          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p)/|native/(fushi_torrent|fushi_p2p|fushi_anki_sync)/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
+          server_only='^(pubspec\.(yaml|lock)$|ci/|packages/(fushi_server|fushi_engine|fushi_core|fushi_anki|fushi_audio|fushi_dictionary|fushi_platform|fushi_torrent|fushi_p2p)/|native/(fushi_torrent|fushi_p2p|fushi_anki_sync|fushidicts)/|fushi/assets/transforms/|\.github/workflows/build-multiplatform\.yml$|\.github/actions/(native-artifact-store|native-store-names|setup-fushi-anki-sync)/|\.github/scripts/verify_torrent_abi\.sh$)'
 
           # route <output> <正则变量名...>：清单里任一路径命中这些正则之一即开。
           route() {
@@ -353,10 +354,14 @@ jobs:
   #   * `dart build cli` 出 bundle，真进程起 `serve`，断言内置 torrent 引擎与 ASR plan
   #     都真的 dlopen 了随包库（server-gate 的 `--help` 冒烟不开 DB、不起服务，在这里被
   #     `serve` 冒烟完全覆盖，所以本 job 不再重复跑 `--help`）。
-  # fushidicts 的 gcc-14 ctest 不是服务端的东西（服务端不带 fushidicts），它随「Verify
-  # Linux C++23 compiler」一起搬去了 native-fushidicts-gate.yml 的 ctest-gcc job。
+  #   * 词典引擎 libfushidicts_ffi.so（native/fushidicts/build_linux_so.sh，gcc-14 + 静态
+  #     libstdc++）+ 变形表随包，ctypes 冒烟 + `dict add` + `serve` 后真查一次词
+  #     （「食べた」经去屈折命中「食べる」）。fushidicts 用到 std::ranges::to 等 GCC 14 才有
+  #     的 C++23 库特性（gcc-13 实测编不过），本 job 的 gcc-14 正好够用。
+  # fushidicts 的 gcc-14 **ctest** 仍在 native-fushidicts-gate.yml 的 ctest-gcc job（随
+  # 「Verify Linux C++23 compiler」一起搬过去的）；这里只编随包的那份 .so，不重复跑 ctest。
   #
-  # 触发：PR 上由 changes job 的 `server` 输出决定（服务端 Dart 依赖闭包 / 三块原生库源码 /
+  # 触发：PR 上由 changes job 的 `server` 输出决定（服务端 Dart 依赖闭包 / 四块原生库源码与变形表 /
   # 持久库基建 / 本文件 / 依赖锁 / ci 补丁）；push / 手动 dispatch 照旧整轮。
   # job 级 CC/CXX 与 native-cache-warm.yml 的 linux job 逐字一致：它们进了持久库名字的
   # 哈希，PR 读的三份件（torrent / p2p / anki-sync debug）由那边在 develop 上预存。
@@ -385,7 +390,7 @@ jobs:
         with:
           platform: linux
       # 只剩服务端原生库要的工具：vcpkg（cmake + ninja + pkg-config）按 job 级 CC/CXX
-      # 用 gcc-14 编静态 torrent bridge。apt 清单与 native-cache-warm.yml linux job 一致。
+      # 用 gcc-14 编静态 torrent bridge；fushidicts 的 .so 也用同一套 gcc-14 / cmake / ninja。apt 清单与 native-cache-warm.yml linux job 一致。
       - name: Install Linux build deps
         run: |
           sudo apt-get update
@@ -617,6 +622,39 @@ jobs:
           cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* \
             build/fushi_server_linux/bundle/lib/
           ls -la build/fushi_server_linux/bundle/lib
+      # (d) 词典引擎 libfushidicts_ffi.so：服务端按 `<exe>/../lib/libfushidicts_ffi.so` 定位
+      #     （dictionary_host.dart 的 resolveFushiDictsLibraryPath）。脚本用 job 级 CC/CXX
+      #     （gcc-14）编 Release，-static-libstdc++ -static-libgcc -Wl,--exclude-libs,ALL，
+      #     自检 ldd 里没有 libstdc++ / libgcc_s、只导出 FFI 符号。随后对 **bundle 里那一份**
+      #     做 ctypes create/destroy 冒烟（与 macOS job 校验随包 dylib 的那一步同一段 ctypes）。
+      #     去屈折变形表（fushi/assets/transforms）落 bundle/share/fushi/transforms，服务端
+      #     按 `<exe>/../share/fushi/transforms` 找；缺表只能查原形。
+      #     失败口径同其它随包库：构建失败即 job 失败。
+      - name: Build and bundle fushidicts for fushi_server (Linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushidicts/build_linux_so.sh
+          lib=build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
+          mkdir -p "$(dirname "$lib")"
+          cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so "$lib"
+          DICTS_LIB="$lib" python3 - <<'PY'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
+          lib.fushidicts_create.restype = ctypes.c_void_p
+          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.fushidicts_create()
+          if not handle:
+              raise SystemExit("fushidicts_create returned null")
+          lib.fushidicts_destroy(handle)
+          print("fushidicts .so smoke ok")
+          PY
+          share=build/fushi_server_linux/bundle/share/fushi
+          mkdir -p "$share"
+          rm -rf "$share/transforms"
+          cp -a fushi/assets/transforms "$share/transforms"
+          test -f "$share/transforms/manifest.json"
       - name: Smoke fushi_server with bundled native libs (Linux)
         shell: bash
         run: |
@@ -637,6 +675,24 @@ jobs:
             engine: embedded
           libraries: []
           YAML
+          # 词典：先用随包 CLI 离线导入一本一词条的 Yomitan 词典。`dict add` 加载不了
+          # libfushidicts_ffi 时退出 69（不导入半截），所以这一步本身就证明 bundle/lib 的
+          # 那份 .so 被服务端按 `<exe>/../lib/` 找到并能真导入。
+          python3 - "$cfg/ci-smoke-dict.zip" <<'PY'
+          import json
+          import sys
+          import zipfile
+          with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as z:
+              z.writestr("index.json", json.dumps({"title": "ci-smoke", "revision": "1", "format": 3}))
+              z.writestr("term_bank_1.json", json.dumps(
+                  [["食べる", "たべる", "", "v1", 0, ["to eat"], 1, ""]], ensure_ascii=False))
+          PY
+          build/fushi_server_linux/bundle/bin/fushi_server dict add "$cfg/ci-smoke-dict.zip" --json \
+            --config "$cfg/fushi_server.yaml"
+          dicts="$(build/fushi_server_linux/bundle/bin/fushi_server dict ls --json --config "$cfg/fushi_server.yaml")"
+          echo "$dicts"
+          grep -q '"name":"ci-smoke","type":"term"' <<< "$dicts" \
+            || { echo "::error::dict add did not land the smoke dictionary"; exit 1; }
           build/fushi_server_linux/bundle/bin/fushi_server serve --config "$cfg/fushi_server.yaml" \
             > "$cfg/serve.log" 2>&1 &
           pid=$!
@@ -654,6 +710,18 @@ jobs:
           models="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/models)"
           grep -q '"asr":\[' <<< "$models" || { echo "::error::models endpoint failed"; cat "$cfg/serve.log"; exit 1; }
           grep -q '"error"' <<< "$models" && { echo "::error::an ASR language failed to plan (onnxruntime not loadable?)"; echo "$models"; cat "$cfg/serve.log"; exit 1; }
+          # 词典引擎在 serve 里也加载成功：互联能力位 lookup.dictionary=true（加载失败时
+          # 查词路由不接线、这里是 false），再经 admin 代理真查一次——「食べた」要靠随包
+          # 变形表去屈折才命中「食べる」，同时验 .so 与 share/fushi/transforms 两样随包件。
+          caps="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/host/capabilities)"
+          grep -q '"lookup":{"dictionary":true' <<< "$caps" \
+            || { echo "::error::dictionary engine not loaded in serve (bundled libfushidicts_ffi.so)"; echo "$caps"; cat "$cfg/serve.log"; exit 1; }
+          lookup="$(curl -fsS -H 'Authorization: Bearer ci-smoke-token' -H 'Content-Type: application/json' \
+            -d '{"term":"食べた"}' http://127.0.0.1:48780/api/admin/host/lookup/dictionary)"
+          # 词典里只有「食べる」一条、查询串是「食べた」：响应里出现「食べる」只能是命中
+          # （不去屈折时前缀扫描只会试「食べた / 食べ / 食」，全落空）。
+          grep -qF '食べる' <<< "$lookup" \
+            || { echo "::error::lookup of 食べた did not deinflect to 食べる (transforms not bundled?)"; echo "$lookup"; cat "$cfg/serve.log"; exit 1; }
           kill $pid; wait $pid || true
           cat "$cfg/serve.log"
       - name: Upload fushi_server (Linux)

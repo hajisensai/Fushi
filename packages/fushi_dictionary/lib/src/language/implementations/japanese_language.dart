@@ -2,33 +2,32 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:fushi_dictionary/src/language/ruby_text.dart';
 
 import '../../engine/fushidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
-import '../language.dart';
+import '../language_base.dart';
 import '../language_utils.dart';
 import '../../models/fushi_text_selection.dart';
 
 /// Language implementation of the Japanese language.
 class JapaneseLanguage extends Language {
   JapaneseLanguage._privateConstructor()
-      : super(
-          languageName: '日本語',
-          languageCode: 'ja',
-          countryCode: 'JP',
-          threeLetterCode: 'jpn',
-          preferVerticalReading: true,
-          textDirection: TextDirection.ltr,
-          isSpaceDelimited: false,
-          textBaseline: TextBaseline.ideographic,
-          helloWorld: 'こんにちは世界',
-          standardFormat: YomichanFormat.instance,
-          defaultFontFamily: 'NotoSansJP',
-        );
+    : super(
+        languageName: '日本語',
+        languageCode: 'ja',
+        countryCode: 'JP',
+        threeLetterCode: 'jpn',
+        preferVerticalReading: true,
+        textDirection: TextDirection.ltr,
+        isSpaceDelimited: false,
+        textBaseline: TextBaseline.ideographic,
+        helloWorld: 'こんにちは世界',
+        standardFormat: YomichanFormat.instance,
+        defaultFontFamily: 'NotoSansJP',
+      );
 
   /// Get the singleton instance of this language.
   static JapaneseLanguage get instance => _instance;
@@ -91,10 +90,7 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  String wordFromIndex({
-    required String text,
-    required int index,
-  }) {
+  String wordFromIndex({required String text, required int index}) {
     if (index < 0 || index >= text.length) return '';
     final sub = text.substring(index);
     final len = _lookupMatchedLength(sub);
@@ -102,9 +98,7 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  TextRange getWordRange({
-    required FushiTextSelection selection,
-  }) {
+  TextRange getWordRange({required FushiTextSelection selection}) {
     final index = selection.range.start;
     if (index < 0 || index >= selection.text.length) {
       return TextRange(start: index, end: index + 1);
@@ -116,9 +110,7 @@ class JapaneseLanguage extends Language {
   }
 
   @override
-  int getGuessHighlightLength({
-    required String searchTerm,
-  }) {
+  int getGuessHighlightLength({required String searchTerm}) {
     final len = _lookupMatchedLength(searchTerm);
     return len > 0 ? len : 1;
   }
@@ -150,10 +142,9 @@ class JapaneseLanguage extends Language {
     if (entry.reading.isEmpty) {
       return RubyText(
         [RubyTextData(entry.word)],
-        style: Theme.of(context)
-            .textTheme
-            .titleLarge!
-            .copyWith(fontWeight: FontWeight.bold),
+        style: Theme.of(
+          context,
+        ).textTheme.titleLarge!.copyWith(fontWeight: FontWeight.bold),
         rubyStyle: Theme.of(context).textTheme.labelSmall,
         indexAction: indexAction,
         indexStyle: indexStyle,
@@ -162,14 +153,10 @@ class JapaneseLanguage extends Language {
 
     List<RubyTextData>? segments = fetchFurigana(entry: entry);
     return RubyText(
-      segments ??
-          [
-            RubyTextData(entry.word, ruby: entry.reading),
-          ],
-      style: Theme.of(context)
-          .textTheme
-          .titleLarge!
-          .copyWith(fontWeight: FontWeight.bold),
+      segments ?? [RubyTextData(entry.word, ruby: entry.reading)],
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge!.copyWith(fontWeight: FontWeight.bold),
       rubyStyle: Theme.of(context).textTheme.labelSmall,
       indexAction: indexAction,
       indexStyle: indexStyle,
@@ -182,8 +169,9 @@ class JapaneseLanguage extends Language {
       segmentsCache[entry] = cached;
       return cached;
     }
-    List<RubyTextData> furigana =
-        LanguageUtils.distributeFurigana(entry: entry);
+    List<RubyTextData> furigana = LanguageUtils.distributeFurigana(
+      entry: entry,
+    );
 
     segmentsCache[entry] = furigana;
     while (segmentsCache.length > _maxSegmentsCacheSize) {
@@ -210,16 +198,11 @@ class JapaneseLanguage extends Language {
       return Container(
         padding: const EdgeInsets.only(top: 1),
         decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(color: color),
-          ),
+          border: Border(top: BorderSide(color: color)),
         ),
         child: Text(
           text,
-          style: TextStyle(
-            color: color,
-            fontSize: dictionaryFontSize,
-          ),
+          style: TextStyle(color: color, fontSize: dictionaryFontSize),
         ),
       );
     }
@@ -235,10 +218,7 @@ class JapaneseLanguage extends Language {
         ),
         child: Text(
           text,
-          style: TextStyle(
-            color: color,
-            fontSize: dictionaryFontSize,
-          ),
+          style: TextStyle(color: color, fontSize: dictionaryFontSize),
         ),
       );
     }
@@ -247,16 +227,11 @@ class JapaneseLanguage extends Language {
       return Container(
         padding: const EdgeInsets.only(top: 1),
         decoration: const BoxDecoration(
-          border: Border(
-            top: BorderSide(color: Colors.transparent),
-          ),
+          border: Border(top: BorderSide(color: Colors.transparent)),
         ),
         child: Text(
           text,
-          style: TextStyle(
-            color: color,
-            fontSize: dictionaryFontSize,
-          ),
+          style: TextStyle(color: color, fontSize: dictionaryFontSize),
         ),
       );
     }
@@ -303,10 +278,7 @@ class JapaneseLanguage extends Language {
     listWidgets.add(
       Text(
         ' [$downstep]  ',
-        style: TextStyle(
-          color: color,
-          fontSize: dictionaryFontSize,
-        ),
+        style: TextStyle(color: color, fontSize: dictionaryFontSize),
       ),
     );
 
