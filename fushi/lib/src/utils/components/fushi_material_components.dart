@@ -1421,6 +1421,9 @@ class _FushiTouchTargetBox extends SingleChildRenderObjectWidget {
 class _RenderFushiTouchTargetBox extends RenderShiftedBox {
   _RenderFushiTouchTargetBox(this._minSize) : super(null);
 
+  /// 夹回子组件时离右 / 下边界留的距离（逻辑 px），让夹出的点落在开区间内。
+  static const double _kEdgeInset = 0.5;
+
   Size _minSize;
   set minSize(Size value) {
     if (_minSize == value) return;
@@ -1490,9 +1493,11 @@ class _RenderFushiTouchTargetBox extends RenderShiftedBox {
     // 落在让出的边距里：沿出界的那一维把触点收进子组件边界，其余照旧。
     final Offset childOffset = (child.parentData! as BoxParentData).offset;
     final Offset local = position - childOffset;
+    // 上限要收进开区间：[Size.contains] 不含右 / 下边界，夹到恰好等于宽 / 高
+    // 的点不算命中，下沿那半截让出的边距就点不到（Codex 第五轮）。
     final Offset clamped = Offset(
-      local.dx.clamp(0.0, child.size.width),
-      local.dy.clamp(0.0, child.size.height),
+      local.dx.clamp(0.0, math.max(0.0, child.size.width - _kEdgeInset)),
+      local.dy.clamp(0.0, math.max(0.0, child.size.height - _kEdgeInset)),
     );
     final Offset shift = clamped - local;
     return result.addWithRawTransform(

@@ -93,9 +93,12 @@ void main() {
         .first;
     expect(toolbarClip.clipBehavior, Clip.none);
   });
-  // HBK-AUDIT-007：标题 + 副标题都跟随系统字体缩放，1.3 倍时两行合计超过定高
-  // 胶囊。胶囊不能长高（BUG-2977），副标题降级为 tooltip；标题封顶到单行不溢出。
-  for (final double scale in <double>[1.0, 1.3, 2.0]) {
+  // HBK-AUDIT-007：标题 + 副标题都跟随系统字体缩放。56 高胶囊的文字预算 54；
+  // titleLarge 22 / labelMedium 12 两行需要 (22×1.2 + 12×1.25)×s = 41.4×s，
+  // 阈值 s ≈ 1.304：1.3 倍（53.82）仍放得下，1.4 倍（57.96）起放不下。胶囊不能
+  // 长高（BUG-2977），放不下时副标题降级为 tooltip；标题封顶到单行不溢出。
+  // （HBK-AUDIT-032：此前把 1.3 倍当成放不下，是测试期望错误。）
+  for (final double scale in <double>[1.0, 1.3, 1.4, 2.0]) {
     testWidgets('HBK-AUDIT-007 字体 ${scale}x：双行标题胶囊定高且不溢出', (
       WidgetTester tester,
     ) async {
@@ -128,7 +131,7 @@ void main() {
         kFushiPageChromeExtent,
       );
       expect(find.text('统计中心'), findsOneWidget);
-      if (scale == 1.0) {
+      if (scale <= 1.3) {
         expect(find.text('当前档案：默认'), findsOneWidget);
       } else {
         expect(find.text('当前档案：默认'), findsNothing);
@@ -181,7 +184,7 @@ void main() {
     });
   }
 
-  test('HBK-AUDIT-007 副标题容量判据：1.0 放得下、1.3 放不下', () {
+  test('HBK-AUDIT-007 副标题容量判据：1.0 / 1.3 放得下、1.4 放不下', () {
     expect(
       FushiPageChromeTitle.subtitleFits(
         textScaler: TextScaler.noScaling,
@@ -190,9 +193,19 @@ void main() {
       ),
       isTrue,
     );
+    // 1.3 倍：(26.4 + 15) × 1.3 = 53.82 ≤ 54，恰好放得下。
     expect(
       FushiPageChromeTitle.subtitleFits(
         textScaler: const TextScaler.linear(1.3),
+        titleFontSize: 22,
+        subtitleFontSize: 12,
+      ),
+      isTrue,
+    );
+    // 1.4 倍：57.96 > 54，放不下。
+    expect(
+      FushiPageChromeTitle.subtitleFits(
+        textScaler: const TextScaler.linear(1.4),
         titleFontSize: 22,
         subtitleFontSize: 12,
       ),

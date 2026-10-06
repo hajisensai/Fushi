@@ -100,6 +100,14 @@ void main() {
       await tester.tapAt(field.topCenter - const Offset(0, 2));
       await tester.pump();
       expect(focus.hasFocus, isTrue);
+      // The bottom margin is symmetric: Size.contains excludes the bottom edge,
+      // so the forwarded point must land strictly inside the capsule.
+      focus.unfocus();
+      await tester.pump();
+      expect(focus.hasFocus, isFalse);
+      await tester.tapAt(field.bottomCenter + const Offset(0, 2));
+      await tester.pump();
+      expect(focus.hasFocus, isTrue);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );
