@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import 'package:fushi/src/media/video/video_episode_panel.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
@@ -117,7 +118,7 @@ void main() {
       expect(
         find.descendant(
           of: card(3),
-          matching: find.byIcon(Icons.play_arrow_rounded),
+          matching: find.byIcon(FushiIcons.filled(FushiIcons.play)),
         ),
         findsOneWidget,
       );
@@ -179,7 +180,7 @@ void main() {
       expect(
         find.descendant(
           of: card(1),
-          matching: find.byIcon(Icons.play_arrow_rounded),
+          matching: find.byIcon(FushiIcons.filled(FushiIcons.play)),
         ),
         findsOneWidget,
       );

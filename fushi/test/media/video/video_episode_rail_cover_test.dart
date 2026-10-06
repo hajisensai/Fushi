@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/video_episode_rail.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -38,6 +39,6 @@ void main() {
       reason: '有封面的集卡必须走朝向自适应组件；裸 BoxFit.cover 会把竖版海报裁成中间一条',
     );
     // 无封面的集仍是占位图标，不经自适应组件。
-    expect(find.byIcon(Icons.movie_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.video), findsOneWidget);
   });
 }

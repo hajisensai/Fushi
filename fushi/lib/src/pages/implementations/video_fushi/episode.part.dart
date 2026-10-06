@@ -341,6 +341,7 @@ extension _VideoEpisode on _VideoFushiPageState {
               seriesFallback,
           completed: e.completed,
           started: e.started,
+          progress: e.progress,
         ),
     ];
     _episodePanelEntriesEpisodes = _episodes;
@@ -391,44 +392,50 @@ extension _VideoEpisode on _VideoFushiPageState {
     final bool neutral = videoM3ePanelNeutral(context);
     final ColorScheme pageCs = _videoChromeColorScheme(context);
     final ColorScheme cs = neutral ? videoM3ePanelScheme(pageCs) : pageCs;
-    final double panelHeight = (220 * _videoUiScale).clamp(200.0, 360.0);
-    final Duration duration =
-        einkSafeDuration(context, const Duration(milliseconds: 220));
+    // M3E 进出场：透明度走 effects 弹簧（不过冲），位移 + 轻微缩放走 spatial
+    // 弹簧（带一点回弹）；墨水屏 / 减弱动态效果下 token 时长归零，瞬时到位。
+    final FushiMotionScheme motion = context.fushiMotion;
     return PositionedDirectional(
       start: 0,
       end: 0,
       bottom: 0,
       child: FadingChromeGate(
         visible: visible,
-        duration: duration,
-        curve: Curves.easeOut,
+        duration: motion.effectsDefault.duration,
+        curve: motion.effectsDefault.curve,
         child: AnimatedSlide(
-          offset: visible ? Offset.zero : const Offset(0, 0.18),
-          duration: duration,
-          curve: Curves.easeOutCubic,
-          child: _withSidePanelOpaqueCursor(
-            SafeArea(
-              top: false,
-              // 手柄重设计 P3：轨道打开即把焦点领进面板（关闭还给页面焦点），
-              // D-pad 才能选集——本面板常驻挂载靠 FadingChromeGate 显隐，认领
-              // 必须跟 visible 边沿走而非挂载。
-              child: PanelFocusScope(
-                visible: visible,
-                restoreFocus: () =>
-                    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
-                child: VideoM3ePanelTheme(
-                  child: VideoEpisodePanel(
-                    key: const ValueKey<String>('video-episode-panel'),
-                    episodes: _episodePanelEntries(),
-                    currentIndex: _currentEpisode,
-                    onTapEpisode: _handleEpisodeListTap,
-                    onClose: _closeEpisodeList,
-                    colorScheme: cs,
-                    title: t.video_episode_list,
-                    emptyHint: t.video_episode_list_empty,
-                    seasonLabelOf: _episodeSeasonLabel,
-                    fontSize: 14 * _videoUiScale,
-                    height: panelHeight,
+          offset: visible ? Offset.zero : const Offset(0, 0.14),
+          duration: motion.spatialDefault.duration,
+          curve: motion.spatialDefault.curve,
+          child: AnimatedScale(
+            scale: visible ? 1 : 0.97,
+            alignment: Alignment.bottomCenter,
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            child: _withSidePanelOpaqueCursor(
+              SafeArea(
+                top: false,
+                // 手柄重设计 P3：轨道打开即把焦点领进面板（关闭还给页面焦点），
+                // D-pad 才能选集——本面板常驻挂载靠 FadingChromeGate 显隐，认领
+                // 必须跟 visible 边沿走而非挂载。
+                child: PanelFocusScope(
+                  visible: visible,
+                  restoreFocus: () =>
+                      _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+                  child: VideoM3ePanelTheme(
+                    child: VideoEpisodePanel(
+                      key: const ValueKey<String>('video-episode-panel'),
+                      episodes: _episodePanelEntries(),
+                      currentIndex: _currentEpisode,
+                      onTapEpisode: _handleEpisodeListTap,
+                      onClose: _closeEpisodeList,
+                      colorScheme: cs,
+                      title: t.video_episode_list,
+                      emptyHint: t.video_episode_list_empty,
+                      seasonLabelOf: _episodeSeasonLabel,
+                      fontSize: 14 * _videoUiScale,
+                      visible: visible,
+                    ),
                   ),
                 ),
               ),

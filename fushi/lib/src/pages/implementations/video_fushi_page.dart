@@ -486,6 +486,7 @@ class _PlaylistEpisodeRef {
     this.coverCacheKey,
     this.completed = false,
     this.started = false,
+    this.progress,
   });
   final String? bookUid;
   final String title;
@@ -511,6 +512,10 @@ class _PlaylistEpisodeRef {
   /// 支持，此前面板一直没喂。
   final bool completed;
   final bool started;
+
+  /// 观看进度 0..1（断点 / 时长），只在两者都已知时给（远端 host 下发时长；
+  /// 本地集行没有时长列，恒 null）。选集卡底部进度条的数据源，纯展示。
+  final double? progress;
 }
 
 class VideoFushiPage extends ConsumerStatefulWidget {
@@ -3485,6 +3490,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             // 断点即口径，与本地集（completedAt / lastPositionMs）对齐。
             completed: m.completedAt != null,
             started: m.positionMs > 0,
+            progress: (m.durationMs ?? 0) > 0 && m.positionMs > 0
+                ? (m.positionMs / m.durationMs!).clamp(0.0, 1.0)
+                : null,
           ),
       ];
       _activeRemoteMember = _remoteMembers[startIndex];

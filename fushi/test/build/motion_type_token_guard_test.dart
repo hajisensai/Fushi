@@ -77,7 +77,6 @@ const Map<String, int> _curveBudget = <String, int>{
   'lib/src/media/video/video_subtitle_overlay.dart': 1,
   'lib/src/pages/implementations/reader_fushi_page.dart': 1,
   'lib/src/pages/implementations/updates_dashboard_banner.dart': 1,
-  'lib/src/pages/implementations/video_fushi/episode.part.dart': 2,
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart': 1,
   'lib/src/reader/reader_desktop_chrome.dart': 1,
   'lib/src/settings/settings_search.dart': 1,

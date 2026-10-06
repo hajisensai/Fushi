@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_episode_rail.dart';
+import 'package:fushi/src/media/video/video_side_panel.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -9,13 +13,15 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 export 'package:fushi/src/media/video/video_episode_rail.dart'
     show VideoEpisodeEntry, VideoEpisodeRail;
 
-/// 视频播放列表的底部剧集轨道。
+/// 视频播放列表的底部选集面板。
 ///
-/// 不使用 modal sheet，也不再把画面挤成窄栏；面板在视频底部渐显，画面本身就是
-/// Jellyfin 式背景。字幕跳转列表仍保持 push-aside，二者由页面层互斥。
+/// 不使用 modal sheet，也不再把画面挤成窄栏；面板浮在视频底部，与播放器其它
+/// 浮层同一套表面（[VideoFloatingPanelSurface]：M3E 中性深色、圆角 28；Apple
+/// 液态玻璃；墨水屏实色描边）。字幕跳转列表仍保持 push-aside，二者由页面层互斥。
 ///
-/// 横向卡片的封面、缺图、选中态由共享 [VideoEpisodeRail] 渲染，合集详情页复用同一
-/// 组件，保证播放器内外视觉和交互一致。
+/// 卡片尺寸按面板宽度自适应（窄屏 / 竖屏约 1.6 张、宽屏 4~5 张一屏），桌面在
+/// 标题行给左右翻页按钮。横向卡片的封面、缺图、选中态由共享 [VideoEpisodeRail]
+/// 渲染。
 class VideoEpisodePanel extends StatefulWidget {
   const VideoEpisodePanel({
     super.key,
@@ -29,7 +35,7 @@ class VideoEpisodePanel extends StatefulWidget {
     this.seasonLabelOf,
     this.fontSize = 14,
     this.width = double.infinity,
-    this.height = 220,
+    this.visible = true,
   });
 
   /// 播放列表各集（有序，标题 + 可选封面）。空列表（单视频）时显示 [emptyHint]
@@ -58,7 +64,10 @@ class VideoEpisodePanel extends StatefulWidget {
   final String Function(String groupKey)? seasonLabelOf;
   final double fontSize;
   final double width;
-  final double height;
+
+  /// 面板当前是否显示（常驻挂载的播放器面板传真实显隐）。由隐到显时轨道把
+  /// 当前集滚到正中并让当前集卡领焦点。
+  final bool visible;
 
   @override
   State<VideoEpisodePanel> createState() => _VideoEpisodePanelState();
@@ -71,6 +80,12 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
       const <CollectionSeasonSection<int>>[];
   int _selectedSection = 0;
 
+  /// 每节一条轨道（换季 = 换一条新轨道，滚动位置互不串）；翻页按钮经它调轨道。
+  final Map<int, GlobalKey<VideoEpisodeRailState>> _railKeys =
+      <int, GlobalKey<VideoEpisodeRailState>>{};
+  bool _canPageBack = false;
+  bool _canPageForward = false;
+
   @override
   void initState() {
     super.initState();
@@ -81,14 +96,16 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
   void didUpdateWidget(covariant VideoEpisodePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 换集（含跨季自动连播 / 上下集）→ chip 跟到当前集所在季；列表整体换掉也
-    // 重算。用户手动切到别的季浏览、当前集没变时不打扰。
+    // 重算。用户手动切到别的季浏览、当前集没变时不打扰。重新打开面板时也回到
+    // 当前集所在季（上次可能停在别的季浏览）。
     final bool episodesChanged = !identical(
       oldWidget.episodes,
       widget.episodes,
     );
     final bool currentChanged = oldWidget.currentIndex != widget.currentIndex;
-    if (episodesChanged || currentChanged) {
-      _rebuildSections(followCurrent: currentChanged || episodesChanged);
+    final bool reopened = widget.visible && !oldWidget.visible;
+    if (episodesChanged || currentChanged || reopened) {
+      _rebuildSections(followCurrent: true);
     }
   }
 
@@ -126,94 +143,207 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
   String _labelOf(String groupKey) =>
       widget.seasonLabelOf?.call(groupKey) ?? groupKey;
 
+  GlobalKey<VideoEpisodeRailState> get _railKey => _railKeys.putIfAbsent(
+    _selectedSection,
+    () => GlobalKey<VideoEpisodeRailState>(
+      debugLabel: 'video-episode-rail-$_selectedSection',
+    ),
+  );
+
+  /// 轨道滚动 / 尺寸变化 → 刷新翻页按钮可用态（通知可能在布局阶段发出，帧末再改）。
+  bool _onRailMetrics(ScrollMetrics metrics, int depth) {
+    if (depth != 0 || metrics.axis != Axis.horizontal) return false;
+    final bool back = metrics.extentBefore > 0.5;
+    final bool forward = metrics.extentAfter > 0.5;
+    if (back != _canPageBack || forward != _canPageForward) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (back == _canPageBack && forward == _canPageForward) return;
+        setState(() {
+          _canPageBack = back;
+          _canPageForward = forward;
+        });
+      });
+    }
+    return false;
+  }
+
+  /// 卡片宽：按面板内宽决定一屏几张（窄屏 / 竖屏约 1.6 张，平板 2.6，桌面
+  /// 3.6~4.6），再按字号定下限（大字号下集号 + 两行标题要放得下）。
+  double _cardWidthFor(double innerWidth) {
+    final double perView = innerWidth < 480
+        ? 1.6
+        : innerWidth < 760
+        ? 2.6
+        : innerWidth < 1100
+        ? 3.6
+        : 4.6;
+    final double fontScale = (widget.fontSize / 14).clamp(0.9, 1.6);
+    final double minWidth = (150 * fontScale).clamp(140.0, 240.0);
+    final double fitted = innerWidth / perView - 12;
+    return fitted.clamp(minWidth, 300.0);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final ColorScheme cs = widget.colorScheme;
-    final double minimumHeight = 150 + widget.fontSize * 3;
-    final double panelHeight = widget.height < minimumHeight
-        ? minimumHeight
-        : widget.height;
-    return Material(
-      color: Colors.transparent,
-      child: SizedBox(
-        width: widget.width,
-        height: panelHeight,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                cs.surface.withValues(alpha: 0),
-                cs.surface.withValues(alpha: kVideoOverlaySolidAlpha),
-              ],
-              stops: const <double>[0, 0.38],
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final bool compact = available < 600;
+        final double margin = compact ? 8 : 16;
+        final double surfaceWidth = (available - margin * 2).clamp(0.0, 1440.0);
+        final double cardWidth = _cardWidthFor(surfaceWidth - 40);
+        return Material(
+          type: MaterialType.transparency,
+          child: SizedBox(
+            width: widget.width,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(margin, 0, margin, margin),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1440),
+                  child: VideoFloatingPanelSurface(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _buildHeader(context, compact),
+                        if (_hasSeasonChips) _buildSeasonChips(),
+                        if (widget.episodes.isEmpty)
+                          _buildEmpty()
+                        else
+                          _buildRail(cardWidth),
+                        const SizedBox(height: 10),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildHeader(cs),
-              if (_hasSeasonChips) _buildSeasonChips(cs),
-              Expanded(
-                child: widget.episodes.isEmpty
-                    ? _buildEmpty(cs)
-                    : _buildRail(cs),
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildHeader(ColorScheme cs) {
-    final double iconSize = widget.fontSize + 4;
+  Widget _buildHeader(BuildContext context, bool compact) {
+    final ColorScheme cs = widget.colorScheme;
+    final FushiTypography type = context.fushiType;
+    final double fs = widget.fontSize;
+    final bool hasCurrent =
+        widget.currentIndex >= 0 &&
+        widget.currentIndex < widget.episodes.length;
+    final bool showPager =
+        isDesktopPlatform && !compact && widget.episodes.isNotEmpty;
+    final Widget titleRow = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            widget.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: type.titleMediumEmphasized.copyWith(
+              color: cs.onSurface,
+              fontSize: fs + 3,
+            ),
+          ),
+        ),
+        if (widget.episodes.isNotEmpty) ...<Widget>[
+          SizedBox(width: fs * 0.6),
+          Container(
+            key: const ValueKey<String>('video-episode-count-badge'),
+            padding: EdgeInsets.symmetric(
+              horizontal: fs * 0.55,
+              vertical: fs * 0.12,
+            ),
+            decoration: ShapeDecoration(
+              color: cs.secondaryContainer,
+              shape: const StadiumBorder(),
+            ),
+            child: Text(
+              '${widget.episodes.length}',
+              maxLines: 1,
+              softWrap: false,
+              style: type.labelLargeEmphasized.tabular.copyWith(
+                color: cs.onSecondaryContainer,
+                fontSize: fs - 1,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+    final Widget? currentName = hasCurrent
+        ? Text(
+            widget.episodes[widget.currentIndex].title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: type.bodyMedium.copyWith(
+              color: cs.onSurfaceVariant,
+              fontSize: fs - 1,
+            ),
+          )
+        : null;
     return Padding(
       padding: const EdgeInsetsDirectional.only(
         start: 20,
-        end: 8,
+        end: 10,
         top: 12,
-        bottom: 10,
+        bottom: 4,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: cs.onSurface,
-                    fontSize: widget.fontSize + 2,
-                    fontWeight: FontWeight.w700,
+            // 窄屏：标题 + 徽标一行、当前集名换到下一行；宽屏三者同一行。
+            child: compact
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      titleRow,
+                      if (currentName != null) currentName,
+                    ],
+                  )
+                : Row(
+                    children: <Widget>[
+                      titleRow,
+                      if (currentName != null) ...<Widget>[
+                        SizedBox(width: fs),
+                        Expanded(child: currentName),
+                      ],
+                    ],
                   ),
-                ),
-                if (widget.currentIndex >= 0 &&
-                    widget.currentIndex < widget.episodes.length)
-                  Text(
-                    widget.episodes[widget.currentIndex].title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant,
-                      fontSize: widget.fontSize - 1,
-                    ),
-                  ),
-              ],
-            ),
           ),
-          FushiIconButtonControl(
+          if (showPager) ...<Widget>[
+            FushiIconButtonControl(
+              key: const ValueKey<String>('video-episode-page-back'),
+              tooltip: MaterialLocalizations.of(context).previousPageTooltip,
+              icon: FushiIcon(FushiIcons.chevronLeft, size: fs + 6),
+              color: cs.onSurface,
+              onPressed: _canPageBack
+                  ? () => _railKey.currentState?.pageBy(-1)
+                  : null,
+            ),
+            FushiIconButtonControl(
+              key: const ValueKey<String>('video-episode-page-forward'),
+              tooltip: MaterialLocalizations.of(context).nextPageTooltip,
+              icon: FushiIcon(FushiIcons.chevronRight, size: fs + 6),
+              color: cs.onSurface,
+              onPressed: _canPageForward
+                  ? () => _railKey.currentState?.pageBy(1)
+                  : null,
+            ),
+            const SizedBox(width: 4),
+          ],
+          FushiIconButtonControl.filledTonal(
             tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-            icon: FushiIcon(Icons.close, size: iconSize),
-            color: cs.onSurfaceVariant,
+            icon: FushiIcon(FushiIcons.close, size: fs + 4),
             onPressed: widget.onClose,
-            visualDensity: VisualDensity.compact,
           ),
         ],
       ),
@@ -222,74 +352,77 @@ class _VideoEpisodePanelState extends State<VideoEpisodePanel> {
 
   /// 季 chip 行（多季合集才渲染）：横向可滚，键盘/手柄经 Tab 落到 chip 上按
   /// Enter 切季。切季只换轨道内容，不换当前集、不触发播放。
-  Widget _buildSeasonChips(ColorScheme cs) {
-    return SizedBox(
-      height: widget.fontSize * 2 + 16,
-      child: HorizontalDragScrollable(
-        child: ListView.separated(
-          key: const ValueKey<String>('video-episode-season-chips'),
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsetsDirectional.only(
-            start: 20,
-            end: 20,
-            bottom: 8,
-          ),
-          itemCount: _sections.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (BuildContext context, int i) {
-            final String key = _sections[i].groupKey;
-            return FushiChoiceChip(
-              key: ValueKey<String>('video-episode-season-chip-$key'),
-              label: Text(_labelOf(key)),
-              labelStyle: TextStyle(fontSize: widget.fontSize - 1),
-              selected: i == _selectedSection,
-              visualDensity: VisualDensity.compact,
-              onSelected: (bool _) {
-                if (i == _selectedSection) return;
-                setState(() => _selectedSection = i);
+  Widget _buildSeasonChips() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: SizedBox(
+        height: widget.fontSize * 2 + 16,
+        child: FushiHorizontalEdgeFade(
+          child: HorizontalDragScrollable(
+            child: ListView.separated(
+              key: const ValueKey<String>('video-episode-season-chips'),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsetsDirectional.only(
+                start: 20,
+                end: 20,
+                bottom: 8,
+              ),
+              itemCount: _sections.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (BuildContext context, int i) {
+                final String key = _sections[i].groupKey;
+                return FushiChoiceChip(
+                  key: ValueKey<String>('video-episode-season-chip-$key'),
+                  label: Text(_labelOf(key)),
+                  labelStyle: TextStyle(fontSize: widget.fontSize - 1),
+                  selected: i == _selectedSection,
+                  onSelected: (bool _) {
+                    if (i == _selectedSection) return;
+                    setState(() => _selectedSection = i);
+                  },
+                );
               },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEmpty(ColorScheme cs) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          widget.emptyHint,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: cs.onSurfaceVariant,
-            fontSize: widget.fontSize,
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildRail(ColorScheme cs) {
-    final double scale = (widget.fontSize / 14).clamp(0.9, 1.35);
-    final double cardWidth = (184 * scale).clamp(160, 232);
-    return Align(
-      alignment: AlignmentDirectional.centerStart,
-      child: VideoEpisodeRail(
-        key: ValueKey<String>('video-episode-rail-$_selectedSection'),
-        episodes: _visibleIndices == null
-            ? widget.episodes
-            : <VideoEpisodeEntry>[
-                for (final int i in _visibleIndices!) widget.episodes[i],
-              ],
-        indices: _visibleIndices,
-        currentIndex: widget.currentIndex,
-        onTapEpisode: widget.onTapEpisode,
-        colorScheme: cs,
-        fontSize: widget.fontSize,
-        cardWidth: cardWidth,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+  Widget _buildEmpty() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+      child: FushiPlaceholderMessage(
+        icon: FushiIcons.video,
+        message: widget.emptyHint,
+      ),
+    );
+  }
+
+  Widget _buildRail(double cardWidth) {
+    final List<int>? visible = _visibleIndices;
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: (ScrollMetricsNotification n) =>
+          _onRailMetrics(n.metrics, n.depth),
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (ScrollNotification n) =>
+            _onRailMetrics(n.metrics, n.depth),
+        child: VideoEpisodeRail(
+          key: _railKey,
+          episodes: visible == null
+              ? widget.episodes
+              : <VideoEpisodeEntry>[
+                  for (final int i in visible) widget.episodes[i],
+                ],
+          indices: visible,
+          currentIndex: widget.currentIndex,
+          onTapEpisode: widget.onTapEpisode,
+          colorScheme: widget.colorScheme,
+          fontSize: widget.fontSize,
+          cardWidth: cardWidth,
+          active: widget.visible,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+        ),
       ),
     );
   }

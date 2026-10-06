@@ -1330,12 +1330,8 @@ void main() {
       'lib/src/media/video/video_danmaku_text_metrics.dart': <String>{
         'fontSize:',
       },
-      'lib/src/media/video/video_episode_panel.dart': <String>{
-        'VisualDensity.compact',
-        'fontSize:',
-      },
+      'lib/src/media/video/video_episode_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_episode_rail.dart': <String>{
-        'BorderRadius.circular(',
         'surfaceContainerHighest',
         'fontSize:',
       },
