@@ -69,6 +69,13 @@ pack（去掉 pdb 打 zip，打印 `artifacts.json` 片段：填上发布地址�
 `.github/actions/flutter-engine-overlay`，`artifacts.json` 不存在时用原版引擎构建（app
 运行期回退宿主窗，并打 warning）。
 
+## 当前产物
+
+`artifacts.json` → release `flutter-engine-3.44.0-hdr-output-1`（prerelease、非 Latest；
+tag 不以数字 / `v`+数字开头，app 更新检查与发布 workflow 都不会把它当 app 版本）。
+重编后换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`，旧 release 留着
+给旧提交复现用。
+
 ## 运行时契约
 
 - runner 用 `GetProcAddress` 解析 `FlutterDesktopViewSetHdrOutput`：原版引擎没有这个
