@@ -121,8 +121,18 @@ void main() {
       // 紧凑：不超过 420×900 视口高度的三分之一。
       expect(before.height, lessThan(900 / 3));
 
+      final ScrollPosition editorPosition = tester
+          .widget<SingleChildScrollView>(_editorList)
+          .controller!
+          .position;
+      final double pixelsBefore = editorPosition.pixels;
       await tester.drag(_editorList, const Offset(0, -600));
       await tester.pumpAndSettle();
+      expect(
+        editorPosition.pixels,
+        greaterThan(pixelsBefore),
+        reason: '真实拖动必须滚动编辑列表，不能让吸顶预览拦截手势后原地假通过',
+      );
       // 浮动页头随滚动收缩会让预览整体上移几像素，但它不随列表滚走、尺寸不变。
       final Rect after = tester.getRect(preview);
       expect(after.height, before.height);
