@@ -12,8 +12,12 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
+          // 与生产同形：头部是 M3E MediaDetailHero，作为 MediaDetailLayout 的
+          // header 通栏铺开、自带页边距（spacing.page）；外面再套一层 16 的列表
+          // 内边距是旧版（头部不自带边距）的宿主形状，会把窄屏可用宽度多吃掉
+          // 32，测的就不是真实版式了。
           body: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.zero,
             children: <Widget>[
               OnlineWorkHeader(
                 cover: const ColoredBox(
