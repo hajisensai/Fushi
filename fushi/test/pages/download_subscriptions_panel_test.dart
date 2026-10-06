@@ -13,6 +13,7 @@ import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/browse_page.dart';
@@ -125,6 +126,14 @@ class _FakeAppModel extends AppModel {
   @override
   FushiDatabase get database =>
       testDatabase ??= FushiDatabase.forTesting(NativeDatabase.memory());
+
+  /// M3E 任务中心（468ceed6a93）起浏览页 initState 读「下载执行设备」偏好给
+  /// 汇总卡的设备 chip；给一个落在同一内存库上的真偏好仓库（空库 = 本机）。
+  PreferencesRepository? testPrefsRepo;
+
+  @override
+  PreferencesRepository get prefsRepo =>
+      testPrefsRepo ??= PreferencesRepository(database);
 
   /// 发现排第一后，「下载」左邻在有小说在线源的平台上是「扩展」页签，它会建
   /// LNReader 管理器（根目录在数据库目录下）；给一个临时目录让它建得起来。
