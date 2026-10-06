@@ -239,6 +239,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     this.onSentenceContextPreview,
     this.onOpenSentenceContextModal,
     this.onScrolledToBottom,
+    this.onScrolledUnderChanged,
     this.onTopPullReleased,
     this.onRendered,
     this.onContentMetrics,
@@ -376,6 +377,10 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   final Future<void> Function(int entryIndex, String matched)?
       onOpenSentenceContextModal;
   final VoidCallback? onScrolledToBottom;
+
+  /// 正文是否已离开顶部（scrollTop > 0）。宿主据此给顶栏铺 M3「scrolled-under」底色，
+  /// 取代顶栏与正文之间那条常驻硬分隔线。只在跨过 0 时回调一次。
+  final ValueChanged<bool>? onScrolledUnderChanged;
   final VoidCallback? onTopPullReleased;
 
   /// Fired after the popup content finishes rendering (the `popupRendered` JS
@@ -824,6 +829,34 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
           ' && window.__fushiPopupZoomStep(${zoomIn ? 1 : -1});',
     );
   }
+
+  /// 顶栏 scrolled-under 判据：正文纵向滚动位置是否离开顶部。捕获阶段监听覆盖内层滚动
+  /// 容器（#entries-container 等）；只认纵向主滚动面，横向滚的义项表格不算。状态只在
+  /// 翻转时回报一次，换词重渲染把滚动归零时自然翻回 false。
+  static const String _scrolledUnderJs = '''
+(function(){
+  if(window.__fushiScrolledUnderInstalled) { window.__fushiScrolledUnderCheck && window.__fushiScrolledUnderCheck(); return; }
+  window.__fushiScrolledUnderInstalled=true;
+  var last=null;
+  function top(t){
+    var de=document.documentElement, b=document.body;
+    var st=Math.max(window.scrollY||0, de?de.scrollTop:0, b?b.scrollTop:0);
+    if(t&&t.nodeType===1&&t!==de&&t!==b&&t.scrollHeight>t.clientHeight&&t.id==='entries-container'){
+      st=Math.max(st,t.scrollTop);
+    }
+    return st;
+  }
+  function check(e){
+    var under=top(e&&e.target)>0;
+    if(under===last) return;
+    last=under;
+    try{ window.flutter_inappwebview.callHandler('popupScrolledUnder', under); }catch(_){}
+  }
+  window.__fushiScrolledUnderCheck=function(){ check(null); };
+  window.addEventListener('scroll',check,{capture:true,passive:true});
+  check(null);
+})();
+''';
 
   static const String _scrollCheckJs = '''
 (function(){
@@ -1650,6 +1683,7 @@ JSON.stringify((function(){
       window.__fushiRenderToken = $renderToken;
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
+      ${widget.onScrolledUnderChanged != null ? _scrolledUnderJs : ""}
     ''');
     // 诊断（2026-09-22）：注入量是「查词为什么卡」的直接证据。冷建 WebView 时
     // staticChanged 恒为真 ⇒ 数十 KB 的静态设置段要跟着每次查词一起发；命中热槽时它
@@ -2330,6 +2364,23 @@ JSON.stringify((function(){
               ErrorLogService.instance,
               () {
                 widget.onScrolledToBottom?.call();
+                return null;
+              },
+            );
+          },
+        );
+
+        controller.addJavaScriptHandler(
+          handlerName: 'popupScrolledUnder',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupScrolledUnder',
+              null,
+              ErrorLogService.instance,
+              () {
+                widget.onScrolledUnderChanged?.call(
+                  args.isNotEmpty && args.first == true,
+                );
                 return null;
               },
             );

@@ -1,6 +1,6 @@
 import 'dart:ui' show PointerDeviceKind;
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
 import 'package:flutter/services.dart' show KeyDownEvent, KeyEvent;
@@ -861,6 +861,63 @@ double dictionaryPopupTopActionExtent({required bool mobile}) =>
 /// 「⋯」溢出菜单（2026-10 体验优化），优先保住居中 header 与关闭按钮的宽度。
 const double kDictionaryPopupTopBarCompactWidth = 360;
 
+/// 每个查词层（按其 WebView GlobalKey）的「正文已滚离顶部」状态，见
+/// [DictionaryPopupLayer._scrolledUnder]。
+final Expando<ValueNotifier<bool>> _popupScrolledUnderOf =
+    Expando<ValueNotifier<bool>>('popupScrolledUnder');
+
+/// 顶栏的 M3 scrolled-under 底：正文滚离顶部时淡入 surfaceContainerHigh 底，回到顶部
+/// 淡回透明。玻璃设计系统与墨水屏不铺底（前者是材质、后者灰阶下色块读不出来），
+/// 无可渲染词条（搜索中 / 空态）时恒透明。
+class _PopupScrolledUnderBar extends StatelessWidget {
+  const _PopupScrolledUnderBar({
+    required this.scrolledUnder,
+    required this.enabled,
+    required this.child,
+  });
+
+  final ValueListenable<bool> scrolledUnder;
+  final bool enabled;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color? tone = dictionaryPopupToolGroupColor(context);
+    if (!enabled || tone == null) return child;
+    final Color under = Theme.of(context).colorScheme.surfaceContainer;
+    final Duration duration = fushiMotionDuration(
+      context,
+      const Duration(milliseconds: 200),
+    );
+    return ValueListenableBuilder<bool>(
+      valueListenable: scrolledUnder,
+      child: child,
+      builder: (BuildContext context, bool isUnder, Widget? child) {
+        return AnimatedContainer(
+          duration: duration,
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: isUnder ? under : under.withValues(alpha: 0),
+            boxShadow: isUnder
+                ? <BoxShadow>[
+                    BoxShadow(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .shadow
+                          .withValues(alpha: 0.12),
+                      blurRadius: 6,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
 /// 顶栏按钮组之间的间距、顶栏四周留白（M3E button group 口径）。
 const double _kTopBarGroupGap = 6;
 const double _kTopBarInset = 6;
@@ -1181,6 +1238,12 @@ class DictionaryPopupLayer extends StatelessWidget {
     );
   }
 
+  /// 本层正文是否已滚离顶部（顶栏 scrolled-under 底色的唯一真值）。按 [webViewKey]
+  /// 挂在 [Expando] 上：层是无状态 widget，而 WebView 身份（同一把 GlobalKey）跨重建
+  /// 稳定，键被回收时通知器随之回收。
+  ValueNotifier<bool> get _scrolledUnder =>
+      _popupScrolledUnderOf[webViewKey] ??= ValueNotifier<bool>(false);
+
   /// 顶栏按钮的命中区（见 [dictionaryPopupTopActionExtent]）。
   static double get _topActionExtent =>
       dictionaryPopupTopActionExtent(mobile: isMobilePlatform);
@@ -1213,21 +1276,17 @@ class DictionaryPopupLayer extends StatelessWidget {
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
       // BUG-2770：鼠标滑关关时仍按触摸开关挂 touchOnly 包装。
       final Widget topRegion = _wrapSwipeDismiss(topBar);
-      // TODO-1187：分隔线从 header widget 内的无条件底边框移到这里，只在「有 header
-      // 星标/音频行」且「有可渲染词条」时才画。无结果（「未找到搜索结果」占位）/ 搜索中
-      // 不画，消除悬在收藏行与占位卡之间的多余横线。app 外覆盖窗 / 嵌套返回层无
-      // [headerWidget]（topBar 只有关闭/返回按钮）—— 从来没有这条线，此处也不画，不受影响。
-      final bool showHeaderDivider =
-          headerWidget != null && _hasRenderableResults;
+      // M3E（2026-10-06，用户：「这条线很丑」）：顶栏与正文之间不再画常驻硬分隔线
+      // （旧 TODO-1187 的 0.5px Divider）。未滚动时两者只靠间距区分；正文一离开顶部，
+      // 顶栏铺上一层 surfaceContainerHigh 底（M3 top app bar 的 scrolled-under），
+      // 回到顶部再淡回透明。判据来自 WebView 的 `popupScrolledUnder` 回报。
       surfaceChild = Column(
         children: <Widget>[
-          topRegion,
-          if (showHeaderDivider)
-            FushiDividerControl(
-              height: 0.5,
-              thickness: 0.5,
-              color: Theme.of(context).dividerColor,
-            ),
+          _PopupScrolledUnderBar(
+            scrolledUnder: _scrolledUnder,
+            enabled: _hasRenderableResults,
+            child: topRegion,
+          ),
           Expanded(child: body),
         ],
       );
@@ -1767,6 +1826,8 @@ class DictionaryPopupLayer extends StatelessWidget {
             onClearSentenceDraft: onClearSentenceDraft,
             onSentenceContextPreview: onSentenceContextPreview,
             onScrolledToBottom: onScrolledToBottom,
+            onScrolledUnderChanged: (bool under) =>
+                _scrolledUnder.value = under,
             onRendered: onRendered,
             onContentMetrics: onContentMetrics,
             onRenderError: onRenderError,
