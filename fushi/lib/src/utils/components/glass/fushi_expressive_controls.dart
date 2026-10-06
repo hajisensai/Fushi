@@ -1237,7 +1237,10 @@ class FushiFabMenuState extends State<FushiFabMenu>
             1.2,
           );
           final double visible = t.clamp(0.0, 1.0);
-          if (visible <= 0.001) return const SizedBox.shrink();
+          // 收起时完全摘掉；展开途中（含弹簧首帧 visible 仍为 0）必须留在树里：
+          // 键盘 / 手柄展开后焦点在后帧回调里移进最近的菜单项，菜单项此刻不在
+          // 树里，requestFocus 落在未挂载的节点上，焦点就留在 FAB（BUG-3049）。
+          if (visible <= 0.001 && !_open) return const SizedBox.shrink();
           return Opacity(
             opacity: visible,
             child: Transform.translate(
