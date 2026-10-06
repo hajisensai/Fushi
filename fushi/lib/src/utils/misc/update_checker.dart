@@ -30,6 +30,7 @@ import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_landing.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/github_mirrors.dart';
 // 代理解析层（applyAppProxy / normalizeUserProxyHostPort 等）已提取为独立库
 // `src/utils/net/app_proxy.dart`（BUG-1348）：part 契约禁止 part 内 import，而同步层也要

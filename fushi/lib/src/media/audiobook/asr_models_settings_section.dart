@@ -7,6 +7,8 @@ import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 设置区「语音识别模型」组的正文（隶属**听**设置分类）。
@@ -267,15 +269,6 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     return '$language · $state';
   }
 
-  Widget _inset(Widget child) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-      ),
-      child: child,
-    );
-  }
-
   Widget _actions(_PackRow row) {
     final AsrTranscribePlan? plan = row.plan;
     if (row.loading || plan == null) {
@@ -300,7 +293,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
       return FushiOutlinedButton.icon(
         key: ValueKey<String>('asr-models-detach-${row.pack.id}'),
         onPressed: row.deleting ? null : () => unawaited(_detach(row)),
-        icon: const FushiIcon(Icons.link_off_outlined, size: 18),
+        icon: const FushiIcon(FushiIcons.linkOff, size: 18),
         label: Text(t.audiobook_transcribe_model_custom_detach),
       );
     }
@@ -313,7 +306,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
               height: 16,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const FushiIcon(Icons.delete_outline, size: 18),
+          : const FushiIcon(FushiIcons.delete, size: 18),
       label: Text(t.asr_models_delete),
     );
     if (status.ready) return delete;
@@ -325,7 +318,7 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
         FushiFilledButton.icon(
           key: ValueKey<String>('asr-models-download-${row.pack.id}'),
           onPressed: row.deleting ? null : () => _startDownload(row),
-          icon: const FushiIcon(Icons.download_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.download, size: 18),
           label: Text(t.asr_models_download),
         ),
         // 不全但磁盘上有残留（中断的 `.part`、另一变体的编码器）也得能清掉。
@@ -334,62 +327,190 @@ class _AsrModelsSettingsSectionState extends State<AsrModelsSettingsSection> {
     );
   }
 
-  Widget _row(ThemeData theme, _PackRow row) {
+  /// 状态徽标（M3E tonal 色块）：已就绪 / 下载中 / 下载了一部分 / 未下载 /
+  /// 查询失败。
+  Widget _statusBadge(_PackRow row) {
     final AsrModelStatus? status = row.plan?.modelStatus;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AdaptiveSettingsRow(
-          key: ValueKey<String>('asr-models-row-${row.pack.id}'),
-          title: row.pack.displayName,
-          subtitle: _subtitle(row),
-          icon: (status?.ready ?? false)
-              ? Icons.check_circle_outline
-              : Icons.download_outlined,
-          showIcon: true,
-          controlBelow: true,
-          trailing: Align(
-            alignment: Alignment.centerLeft,
-            child: _actions(row),
-          ),
-        ),
-        if (row.downloading) ...<Widget>[
-          _inset(
-            FushiLinearProgressIndicator(
-              value: row.downloadTotal > 0
-                  ? (row.downloadReceived / row.downloadTotal).clamp(0.0, 1.0)
-                  : null,
-            ),
-          ),
-          const SizedBox(height: 4),
-          _inset(
-            Text(
-              t.audiobook_transcribe_model_downloading(
-                name: row.downloadFile,
-                received: FushiByteFormat.bytes(row.downloadReceived),
-                total: FushiByteFormat.bytes(row.downloadTotal),
+    final (String text, IconData icon, FushiTagTone tone) = row.downloading
+        ? (
+            t.manga_panel_model_downloading,
+            FushiIcons.downloading,
+            FushiTagTone.accent,
+          )
+        : status == null
+            ? (
+                t.download_task_status_error,
+                FushiIcons.error,
+                FushiTagTone.error,
+              )
+            : status.ready
+                ? (
+                    t.manga_panel_model_ready,
+                    FushiIcons.downloadDone,
+                    FushiTagTone.success,
+                  )
+                : status.obtainedBytes > 0
+                    ? (
+                        t.asr_models_badge_partial,
+                        FushiIcons.pending,
+                        FushiTagTone.warning,
+                      )
+                    : (
+                        t.manga_panel_model_missing,
+                        FushiIcons.cloudDownload,
+                        FushiTagTone.neutral,
+                      );
+    return FushiTag(
+      key: ValueKey<String>('asr-models-status-${row.pack.id}'),
+      text: text,
+      icon: icon,
+      tone: tone,
+      dense: true,
+    );
+  }
+
+  /// 一个模型包一张分段卡：行首形状图标（就绪 = tertiary 实心勾、其余
+  /// secondary 语音）+ 名称 + 状态徽标；下一行语言 · 体积；下载中出波浪进度；
+  /// 底部动作。
+  Widget _row(BuildContext context, _PackRow row) {
+    final FushiTypography type = context.fushiType;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiMotionScheme motion = context.fushiMotion;
+    final AsrModelStatus? status = row.plan?.modelStatus;
+    final bool ready = status?.ready ?? false;
+    final bool showStatusBadge = !row.loading || row.downloading;
+    return Padding(
+      key: ValueKey<String>('asr-models-row-${row.pack.id}'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              FushiListLeadingIcon(
+                ready
+                    ? FushiIcons.filled(FushiIcons.success)
+                    : FushiIcons.voice,
+                shape: row.downloading
+                    ? FushiLeadingShape.cookie
+                    : FushiLeadingShape.circle,
+                tone: ready
+                    ? FushiCardTone.tertiary
+                    : row.downloading
+                        ? FushiCardTone.primary
+                        : FushiCardTone.secondary,
               ),
-              style: theme.textTheme.bodySmall,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            row.pack.displayName,
+                            style: type.titleMediumEmphasized,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (showStatusBadge) ...<Widget>[
+                          const SizedBox(width: 8),
+                          _statusBadge(row),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _subtitle(row),
+                      style: type.bodyMedium.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          AnimatedSize(
+            duration: motion.spatialDefault.duration,
+            curve: motion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: row.downloading
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        FushiLinearProgressIndicator(
+                          value: row.downloadTotal > 0
+                              ? (row.downloadReceived / row.downloadTotal)
+                                  .clamp(0.0, 1.0)
+                              : null,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          t.audiobook_transcribe_model_downloading(
+                            name: row.downloadFile,
+                            received:
+                                FushiByteFormat.bytes(row.downloadReceived),
+                            total: FushiByteFormat.bytes(row.downloadTotal),
+                          ),
+                          style: type.bodySmall.tabular.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 56),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: _actions(row),
             ),
           ),
-          const SizedBox(height: 8),
         ],
-      ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     // 透明 Material：cupertino 桌面嵌入渲染下设置正文没有 Material 祖先，而本组
     // 含按钮墨水。
     return Material(
       type: MaterialType.transparency,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (final _PackRow row in _rows) _row(theme, row),
-        ],
+      child: FushiEntranceScope(
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
+            vertical: 8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              // 分段卡（首尾大圆角、行间 2）整张错峰进场。
+              for (int i = 0; i < _rows.length; i++)
+                FushiStaggeredEntrance(
+                  key: ValueKey<String>('asr-models-entry-${_rows[i].pack.id}'),
+                  index: i,
+                  child: FushiGroupedListItem(
+                    index: i,
+                    count: _rows.length,
+                    child: _row(context, _rows[i]),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

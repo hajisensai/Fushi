@@ -1878,11 +1878,19 @@ class _HomePageState extends BasePageState<HomePage>
   /// 发现列表），切去别的 tab 再回来不该丢掉搜索词、结果与滚动再重拉；跨页跳转
   /// 改走 [BrowsePage.navigationRequest] 原地切页签。
   ///
+  /// 首页 dashboard 也保活（2026-10 切 tab 卡顿）：不保活时每切回一次就整页
+  /// dispose → 重挂载——整棵子树从零 inflate、`initState` 重跑整批统计聚合（全表
+  /// study_segments / 媒体图组 / 书架列表，行物化与聚合都在 UI isolate）、错峰
+  /// 进场动画整页重放、封面模糊垫底重新烘焙，就是用户说的「回到首页卡一下」。
+  /// 保活后它自己的表级变更流照常刷新数据；隐藏期间到达的变更推迟到切回时再
+  /// 重载（见 `_HomeDashboardPageState._reloadDeferredWhileHidden`）。
+  ///
   /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
   /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
   /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
   /// 若把它也保活会不再 re-mount 而漏消费。
   static const Set<HomeTab> _keepAliveTabs = <HomeTab>{
+    HomeTab.home,
     HomeTab.books,
     HomeTab.manga,
     HomeTab.video,
@@ -3254,6 +3262,9 @@ class _HomePageState extends BasePageState<HomePage>
     // （守卫 test/pages/home_tab_keepalive_guard_test.dart 钉的就是那一条）。
     final List<HomeTab> active = _activeTabs();
     _visitedKeepAliveTabs.removeWhere((HomeTab t) => !active.contains(t));
+    _hiddenTabContent.removeWhere(
+      (HomeTab t, Widget _) => !_visitedKeepAliveTabs.contains(t),
+    );
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
@@ -3273,7 +3284,7 @@ class _HomePageState extends BasePageState<HomePage>
                   // 上面 offstage 用的是同一个 `_visibleTab`，保证「看得见的那个」
                   // 与「接拖放的那个」永远是同一个。
                   isActive: () => _visibleTab == tab,
-                  child: _buildTabContent(tab),
+                  child: _keepAliveTabContent(tab, visible: visible == tab),
                 ),
               ),
             ),
@@ -3333,6 +3344,29 @@ class _HomePageState extends BasePageState<HomePage>
     final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
     await syncRepo.upsertMediaServer(config.withActiveRoute(url));
     ref.read(remoteLibraryCacheProvider).invalidateSource(config.sourceId);
+  }
+
+  /// 隐藏中的保活 tab 上一次构建出的内容 widget（2026-10 切 tab 卡顿）。
+  ///
+  /// [_buildTabContent] 每次都 new 出页面 widget（视频外壳、首页 dashboard 带着
+  /// 闭包与非 const 参数），而 Flutter 只在**同一个** widget 实例时跳过子树重建。
+  /// 于是每切一次 tab、乃至 HomePage 任何一次 setState，**所有访问过的**保活页
+  /// ——包括被 Offstage 藏起来、根本看不见的那几页——都要把整页 build 一遍：视频
+  /// 首页那一遍是全库过滤 + 四条横滚行重算 + 卡片逐个 update，正好压在切 tab 的
+  /// 那一帧上。
+  ///
+  /// 现在隐藏的 tab 冻结在它被藏起时构建的那份 widget 上：变成隐藏的那一帧照常
+  /// 重建一次（`systemBackActive` 等可见性相关参数要落到 false），之后原样复用、
+  /// 整棵子树跳过 build；重新可见时再按最新状态重建。页面自己的数据监听（表级
+  /// 变更流、Riverpod watch、ChangeNotifier）不受影响，照常驱动它们自己的 setState。
+  final Map<HomeTab, Widget> _hiddenTabContent = <HomeTab, Widget>{};
+
+  Widget _keepAliveTabContent(HomeTab tab, {required bool visible}) {
+    if (visible) {
+      _hiddenTabContent.remove(tab);
+      return _buildTabContent(tab);
+    }
+    return _hiddenTabContent[tab] ??= _buildTabContent(tab);
   }
 
   Widget _buildTabContent(HomeTab tab) {

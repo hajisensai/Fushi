@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// 删除目标的种类。删除确认框据此逐项披露「会删什么 / 会保留什么」，不再由各调用点
@@ -184,34 +185,37 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        FushiIcon(Icons.devices_outlined, size: 16, color: colors.onSurfaceVariant),
-        SizedBox(width: tokens.spacing.gap / 2),
-        Expanded(
-          child: Text(
-            t.delete_scope_no_channel,
-            style: tokens.type.listSubtitle
-                .copyWith(color: colors.onSurfaceVariant),
-          ),
+    final bool eink = isEinkTheme(context);
+    // M3E：说明放进 surfaceContainerHigh 小圆角色块（墨水屏只留描边），与上下
+    // 勾选分组区分开——它不是可操作的行。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eink ? colors.surface : colors.surfaceContainerHigh,
+        borderRadius: FushiM3eShape.smallRadius,
+        border: eink ? Border.all(color: colors.outline) : null,
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(tokens.spacing.gap),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            FushiIcon(FushiIcons.devices,
+                size: 18, color: colors.onSurfaceVariant),
+            SizedBox(width: tokens.spacing.gap),
+            Expanded(
+              child: Text(
+                t.delete_scope_no_channel,
+                style: tokens.type.listSubtitle
+                    .copyWith(color: colors.onSurfaceVariant),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-/// 两个删除确认框（`showDeleteScopeConfirm` / `ReaderHistoryDeleteDialog`）里
-/// **唯一**的勾选行形状：「从所有设备删除」与「同时删除本地文件」共用它，两个新老
-/// 选项不会各写一套长相。
-///
-/// 不覆盖下载任务面板那个确认框：它是 `AlertDialog`，会对 content 做 intrinsic
-/// 测量，而本行内部的 `AdaptiveSettingsRow` 含 `LayoutBuilder`（
-/// 「LayoutBuilder does not support returning intrinsic dimensions」直接崩）。
-/// 要连它一起统一得先把那个弹窗换成 `FushiModalSheetFrame`，是另一件事。
-///
-/// [destructive]：勾选态用 error 色。删用户自己的原件比「同步到别的设备」重，
-/// 视觉上必须区分得开。
 class DeleteConfirmCheckboxRow extends StatelessWidget {
   const DeleteConfirmCheckboxRow({
     required this.title,
@@ -235,11 +239,15 @@ class DeleteConfirmCheckboxRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       onTap: () => onChanged(!value),
-      trailing: FushiIcon(
-        value ? Icons.check_box : Icons.check_box_outline_blank,
-        color: value
-            ? (destructive ? colors.error : colors.primary)
-            : colors.onSurfaceVariant,
+      // M3E 勾选框（行本身是焦点目标与点按区，勾选框不再单独抢焦点）；
+      // 破坏性选项勾上后走 error 色。
+      trailing: ExcludeFocus(
+        child: FushiCheckbox(
+          value: value,
+          isError: destructive && value,
+          activeColor: destructive && value ? colors.error : null,
+          onChanged: (bool? v) => onChanged(v ?? !value),
+        ),
       ),
     );
   }
@@ -336,63 +344,74 @@ class DeletionDisclosureView extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
 
+    // M3E：「会被删除」是 errorContainer 色块、「会被保留」是 secondaryContainer
+    // 色块（Apple 落到系统色淡染，墨水屏只留描边），各自一枚圆底小图标领头。
     Widget section({
       required String label,
       required IconData icon,
-      required Color color,
+      required FushiCardTone tone,
+      required Color fallbackColor,
       required List<String> items,
     }) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              FushiIcon(icon, size: 16, color: color),
-              SizedBox(width: tokens.spacing.gap / 2),
-              Flexible(
+      final FushiCardColors? toneColors = fushiCardToneColors(context, tone);
+      final Color fg = toneColors?.onContainer ?? fallbackColor;
+      return FushiCard(
+        tone: tone,
+        pressScale: false,
+        borderRadius: FushiM3eShape.smallRadius,
+        padding: EdgeInsets.all(tokens.spacing.gap + 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                FushiIcon(icon, size: 18, color: fg),
+                SizedBox(width: tokens.spacing.gap),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: context.fushiType.labelLargeEmphasized
+                        .copyWith(color: fg),
+                  ),
+                ),
+              ],
+            ),
+            for (final String item in items)
+              Padding(
+                padding: EdgeInsets.only(
+                  left: 18 + tokens.spacing.gap,
+                  top: tokens.spacing.gap / 2,
+                ),
                 child: Text(
-                  label,
+                  '• $item',
                   style: tokens.type.listSubtitle.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w600,
+                    color: toneColors?.onContainer ?? colors.onSurfaceVariant,
                   ),
                 ),
               ),
-            ],
-          ),
-          for (final String item in items)
-            Padding(
-              padding: EdgeInsets.only(
-                left: tokens.spacing.gap + tokens.spacing.gap / 2,
-                top: tokens.spacing.gap / 4,
-              ),
-              child: Text(
-                '• $item',
-                style: tokens.type.listSubtitle.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       );
     }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         section(
           label: t.delete_disclosure_will_delete_label,
-          icon: Icons.delete_outline,
-          color: colors.error,
+          icon: FushiIcons.delete,
+          tone: FushiCardTone.error,
+          fallbackColor: colors.error,
           items: disclosure.willDelete,
         ),
-        SizedBox(height: tokens.spacing.gap),
+        SizedBox(height: tokens.spacing.gap / 2),
         section(
           label: t.delete_disclosure_will_keep_label,
-          icon: Icons.shield_outlined,
-          color: colors.primary,
+          icon: FushiIcons.shield,
+          tone: FushiCardTone.secondary,
+          fallbackColor: colors.primary,
           items: disclosure.willKeep,
         ),
       ],

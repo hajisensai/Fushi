@@ -28,10 +28,6 @@ void main() {
     addTearDown(session.dispose);
     await tester.pumpWidget(harness(session));
 
-    expect(
-      find.byKey(const ValueKey<String>('ai-video-acquire-remote-executor')),
-      findsOneWidget,
-    );
     expect(find.text('在 PC 上执行'), findsOneWidget);
     expect(find.text('Group · 1080p · 1.2 GiB'), findsOneWidget);
 

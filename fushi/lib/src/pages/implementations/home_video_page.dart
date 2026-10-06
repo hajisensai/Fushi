@@ -628,9 +628,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     setState(() {
       _remoteFuture = _loadRemoteVideos();
     });
-    // 每次切回视频页都重算一次待确认数：期间下载完成的作品要立刻能被看见，
-    // 顺带把它们送进自动补刮（BUG-2199）。
-    unawaited(_refreshPendingScrape());
+    // 切回视频页**不再**重跑在线补刮 / 待确认清单（2026-10 切 tab 卡顿）：那一轮
+    // 是「每个来源全库重列 + 逐文件 parseVideoFilename + 逐作品查规范身份」，全压在
+    // UI isolate 上，恰好与切 tab 的首帧撞在一起。它要追的变化都有自己的信号，且
+    // 这些监听在本页被 Offstage 隐藏时照常在跑：下载 / 导入入库走
+    // [_onVideoUidsChanged]（BUG-2199 的那条路径）、刮削结果落库走
+    // [_onScrapePresentationChanged]、批次结束走 [_onScrapeTaskBusyChanged]。
+    // 切 tab 本身不会让待确认数变化。
   }
 
   @override
@@ -1468,12 +1472,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // BUG-1891：Jellyfin/Emby 关掉「自动列出条目」且手里还没有清单 → 本轮一个
       // 请求都不发，也不渲染远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
       if (videos == null) return null;
-      final RemoteCollectionAdoptionService adoption =
-          RemoteCollectionAdoptionService(appModelNoUpdate.database);
-      for (final RemoteVideoInfo video in videos) {
-        await adoption.adoptVideo(video);
+      // 2026-10 切 tab 卡顿：[RemoteLibraryCache] 在 TTL 内回的是**同一个**清单
+      // 对象，而这份清单的合集收养已经落过库——再逐条收养一遍（每条一个事务）、
+      // 再整套重载十几张映射表，全是切回视频 tab 时压在 UI isolate 上的白功。
+      // 清单对象换了（TTL 过期重取 / 下拉强刷 / 换来源）才需要重新收养。
+      if (!identical(videos, _adoptedRemoteVideos)) {
+        final RemoteCollectionAdoptionService adoption =
+            RemoteCollectionAdoptionService(appModelNoUpdate.database);
+        for (final RemoteVideoInfo video in videos) {
+          await adoption.adoptVideo(video);
+        }
+        _adoptedRemoteVideos = videos;
+        if (mounted) await _loadLibraryMaps();
       }
-      if (mounted) await _loadLibraryMaps();
       // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
       final Set<String> localUids =
@@ -5498,6 +5509,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// [_loadRemoteVideos] 每次重取清单时清空（清单变了路径集合才会变；单纯滚动 /
   /// 重建不会），所以不会把「文件后来出现了」永远判成不存在。
   final Map<String, bool> _remoteCoverPathExists = <String, bool>{};
+
+  /// 最近一次已完成合集收养的远端清单（对象身份，见 [_loadRemoteVideos]）。
+  List<RemoteVideoInfo>? _adoptedRemoteVideos;
 
   bool _remoteCoverFileExists(String coverPath) =>
       _remoteCoverPathExists.putIfAbsent(

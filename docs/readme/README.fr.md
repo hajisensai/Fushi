@@ -151,7 +151,6 @@ Fushi s'appuie sur les projets et l'écosystème suivants :
 | [Mihon](https://github.com/mihonapp/mihon) | Écosystème d'extensions de sources manga |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Écosystème d'extensions de sources anime (extensions-lib 14–16, même runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime d'extensions manga pour le bureau |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI du runtime de sources manga |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Référence du pont de sous-titres en streaming pour l'extension navigateur |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Référence d'architecture pour l'identification et le scraping d'anime |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Référence d'architecture d'information de la bibliothèque galgame |

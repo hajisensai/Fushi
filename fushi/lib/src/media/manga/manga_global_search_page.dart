@@ -6,10 +6,6 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_cover_image.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
-import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
 import 'package:fushi/src/media/manga/manga_global_search_runner.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -17,22 +13,19 @@ import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
 
-/// 一次跨**所有已启用来源**搜索同一个书名的页面（Mihon 在线源 + Aidoku 已装包）。
+/// 一次跨**所有已启用来源**搜索同一个书名的页面（Mihon 在线源）。
 ///
 /// 每个来源独立成一段：各自并发发起搜索、各自更新状态，一个源慢或失败都不拖累其余。
-/// Cloudflare 保护的 Aidoku 源（MangaFire 等）headless 运行时解不了 JS 挑战，会被
-/// 标成「受 Cloudflare 保护」而不是崩掉整页——点进单源浏览页时同理。
+/// 被 Cloudflare 拦下的源会被标成「受 Cloudflare 保护」而不是崩掉整页。
 ///
-/// 平台差异只体现在**有哪些源**上：Mihon 仅桌面/安卓有宿主，Aidoku 只在 macOS/iOS
-/// 有宿主。调用方（`MangaDiscoveryPage`）负责把当前平台上「已启用」的两类源传进来，
-/// 本页不自己发现，方便测试注入。
+/// 平台差异只体现在**有哪些源**上：Mihon 仅桌面/安卓有宿主。调用方
+/// （`MangaDiscoveryPage`）负责把当前平台上「已启用」的源传进来，本页不自己发现，
+/// 方便测试注入。
 class MangaGlobalSearchPage extends StatefulWidget {
   const MangaGlobalSearchPage({
     required this.mihonManager,
     required this.mihonSources,
-    required this.aidokuPackages,
     super.key,
-    this.aidokuRuntime,
     this.initialQuery,
     this.onOpenSources,
   });
@@ -50,12 +43,6 @@ class MangaGlobalSearchPage extends StatefulWidget {
   /// 已启用、且扩展也启用的 Mihon 在线源。
   final List<MangaOnlineSourceRow> mihonSources;
 
-  /// 已启用的 Aidoku 已装包。
-  final List<AidokuInstalledPackage> aidokuPackages;
-
-  /// Aidoku 运行时。为空时按平台创建；测试注入假运行时。
-  final AidokuRuntime? aidokuRuntime;
-
   final String? initialQuery;
 
   @override
@@ -72,7 +59,6 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   List<MangaSourceSearchRun> _runs = const <MangaSourceSearchRun>[];
   int _generation = 0;
   bool _searched = false;
-  AidokuRuntime? _aidokuRuntime;
 
   @override
   void initState() {
@@ -92,19 +78,9 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   }
 
   List<MangaGlobalSource> _sources() => <MangaGlobalSource>[
-    for (final AidokuInstalledPackage package in widget.aidokuPackages)
-      AidokuGlobalSource(package),
     for (final MangaOnlineSourceRow row in widget.mihonSources)
       MihonGlobalSource(row),
   ];
-
-  /// 懒创建 Aidoku 运行时：无 Aidoku 源、或平台不支持时永不创建。
-  AidokuRuntime? _resolveAidokuRuntime() {
-    if (widget.aidokuRuntime != null) return widget.aidokuRuntime;
-    if (widget.aidokuPackages.isEmpty) return null;
-    if (!AidokuRuntimeFactory.isSupported) return null;
-    return _aidokuRuntime ??= AidokuRuntimeFactory.create();
-  }
 
   Future<void> _search() async {
     final String query = _searchController.text.trim();
@@ -118,10 +94,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       _runs = runs;
     });
     // 逐源扇出/限流/CF 分型在 runner（与统一发现框架共用有界并发原语）。
-    await MangaGlobalSearchRunner(
-      mihonManager: widget.mihonManager,
-      resolveAidokuRuntime: _resolveAidokuRuntime,
-    ).search(
+    await MangaGlobalSearchRunner(mihonManager: widget.mihonManager).search(
       runs: runs,
       query: query,
       isCancelled: () => !mounted || generation != _generation,
@@ -138,10 +111,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
       run.status = MangaSearchRunStatus.loading;
       run.error = null;
     });
-    await MangaGlobalSearchRunner(
-      mihonManager: widget.mihonManager,
-      resolveAidokuRuntime: _resolveAidokuRuntime,
-    ).search(
+    await MangaGlobalSearchRunner(mihonManager: widget.mihonManager).search(
       runs: <MangaSourceSearchRun>[run],
       query: _searchController.text.trim(),
       isCancelled: () => !mounted || generation != _generation,
@@ -175,22 +145,6 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           manager: manager,
           sourceContext: sourceContext,
           manga: manga,
-        ),
-      ),
-    );
-  }
-
-  void _openAidoku(AidokuInstalledPackage package, Map<String, Object?> manga) {
-    final AidokuRuntime? runtime = _resolveAidokuRuntime();
-    if (runtime == null) return;
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) => AidokuMangaDetailPage(
-          package: package,
-          runtime: runtime,
-          manga: manga,
-          sourceBaseUrl: null,
         ),
       ),
     );
@@ -329,7 +283,6 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   Widget _buildResultsStrip(MangaSourceSearchRun run) {
     final int count = switch (run.source) {
       MihonGlobalSource() => run.mihonItems.length,
-      AidokuGlobalSource() => run.aidokuItems.length,
     };
     // 桌面端默认 dragDevices 不含 mouse，横向滚动区必须包 HorizontalDragScrollable
     // 才能用鼠标左键拖动平移（横向滚动守卫）。
@@ -363,12 +316,6 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
           loadQueue: _imageQueue,
         );
         onTap = () => _openMihon(run, manga);
-      case AidokuGlobalSource(:final AidokuInstalledPackage package):
-        final Map<String, Object?> manga = run.aidokuItems[index];
-        title = manga['title']?.toString() ?? manga['key'].toString();
-        // 与单源浏览页同一封面组件（磁盘缓存 + 退避重试 + 可点重试）。
-        cover = AidokuCoverImage(url: manga['cover']?.toString());
-        onTap = () => _openAidoku(package, manga);
     }
     return SizedBox(
       width: 130,

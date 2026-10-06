@@ -22,9 +22,7 @@ void main() {
   };
 
   const Map<String, Map<String, int>> allowlist = <String, Map<String, int>>{
-    'SnackBar': <String, int>{
-      'lib/src/pages/implementations/anki_settings_page.dart': 3,
-    },
+    'SnackBar': <String, int>{},
     'Tooltip': <String, int>{
       'lib/src/media/audiobook/lyrics_player/lyrics_player_md3.dart': 2,
       'lib/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart': 1,

@@ -6,6 +6,7 @@ import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
 import 'package:fushi/utils.dart';
 
@@ -105,24 +106,35 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       titleMaxLines: 2,
       subtitleMaxLines: 3,
-      leading: Icon(
+      // M3E：行首状态用形状色块（tonal）区分——运行中 primary cookie、完成
+      // tertiary、失败 error、排队 / 取消 neutral。
+      leading: FushiListLeadingIcon(
         switch (job.status) {
-          AudiobookTranscribeJobStatus.queued => Icons.schedule_outlined,
-          AudiobookTranscribeJobStatus.running =>
-            Icons.record_voice_over_outlined,
-          AudiobookTranscribeJobStatus.done => Icons.check_circle_outline,
-          AudiobookTranscribeJobStatus.failed => Icons.error_outline,
-          AudiobookTranscribeJobStatus.cancelled => Icons.block_outlined,
+          AudiobookTranscribeJobStatus.queued => FushiIcons.schedule,
+          AudiobookTranscribeJobStatus.running => FushiIcons.voice,
+          AudiobookTranscribeJobStatus.done => FushiIcons.success,
+          AudiobookTranscribeJobStatus.failed => FushiIcons.error,
+          AudiobookTranscribeJobStatus.cancelled => FushiIcons.block,
         },
-        size: 20,
-        color: failed ? theme.colorScheme.error : null,
+        shape: job.status == AudiobookTranscribeJobStatus.running
+            ? FushiLeadingShape.cookie
+            : FushiLeadingShape.circle,
+        tone: switch (job.status) {
+          AudiobookTranscribeJobStatus.queued => FushiCardTone.neutral,
+          AudiobookTranscribeJobStatus.running => FushiCardTone.primary,
+          AudiobookTranscribeJobStatus.done => FushiCardTone.tertiary,
+          AudiobookTranscribeJobStatus.failed => FushiCardTone.error,
+          AudiobookTranscribeJobStatus.cancelled => FushiCardTone.neutral,
+        },
+        size: 36,
+        iconSize: 20,
       ),
       title: Text(job.title),
       subtitle: Text(
         status,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall?.copyWith(
+        style: context.fushiType.bodySmall.copyWith(
           color: failed ? theme.colorScheme.error : null,
         ),
       ),
@@ -133,7 +145,7 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
             FushiIconButton(
               key: ValueKey<String>('$rowKey-retry'),
               tooltip: t.retry,
-              icon: Icons.refresh,
+              icon: FushiIcons.refresh,
               size: 20,
               onTap: () => queue.retry(job.id),
             ),
@@ -141,7 +153,7 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
             FushiIconButton(
               key: ValueKey<String>('$rowKey-cancel'),
               tooltip: t.dialog_cancel,
-              icon: Icons.close,
+              icon: FushiIcons.close,
               size: 20,
               onTap: () => queue.cancel(job.id),
             ),
@@ -149,7 +161,7 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
             FushiIconButton(
               key: ValueKey<String>('$rowKey-clear'),
               tooltip: t.download_clear_finished,
-              icon: Icons.playlist_remove,
+              icon: FushiIcons.deleteSweep,
               size: 20,
               onTap: () => queue.remove(job.id),
             ),

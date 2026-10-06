@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/dictionary_settings_dialog_page.dart';
 
@@ -26,7 +27,7 @@ void main() {
     // 两个本地库行都渲染出来,且本地组提供「上移」重排控件(此前缺口:只读列表)。
     expect(find.text('android.db'), findsOneWidget);
     expect(find.text('cc-switch.sql'), findsOneWidget);
-    final Finder moveUp = find.byIcon(Icons.keyboard_arrow_up);
+    final Finder moveUp = find.byIcon(FushiIcons.expandLess);
     expect(moveUp, findsWidgets,
         reason: 'local audio rows must expose a move-up control');
 

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -75,12 +77,12 @@ class _ChangelogPageState extends State<ChangelogPage>
       title: t.settings_view_changelog,
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.open_in_new_outlined,
+          icon: FushiIcons.openInNew,
           tooltip: t.changelog_open_releases,
           onTap: _openReleasesPage,
         ),
         FushiIconButton(
-          icon: Icons.refresh,
+          icon: FushiIcons.refresh,
           tooltip: t.refresh,
           onTap: _loading ? null : _load,
         ),
@@ -100,17 +102,33 @@ class _ChangelogPageState extends State<ChangelogPage>
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return ListView.builder(
-      // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末条卡片得靠内容
-      // padding 自己让开 home indicator / 手势条。
-      padding: withBottomSafeInset(context, EdgeInsets.all(tokens.spacing.gap)),
-      itemCount: _releases.length,
-      itemBuilder: (BuildContext context, int index) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-          child: _ReleaseCard(release: _releases[index]),
-        );
-      },
+    // 首屏错峰进场（spring 上移 + 淡入）；重新拉取后重开窗口。
+    return FushiEntranceScope(
+      replayKey: _releases,
+      child: ListView.builder(
+        // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，末条卡片得靠内容
+        // padding 自己让开 home indicator / 手势条。
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            tokens.spacing.gap,
+            tokens.spacing.page,
+            tokens.spacing.section,
+          ),
+        ),
+        itemCount: _releases.length,
+        itemBuilder:
+            fushiStaggeredItemBuilder((BuildContext context, int index) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.card),
+            child: _ReleaseCard(
+              release: _releases[index],
+              latest: index == 0,
+            ),
+          );
+        }),
+      ),
     );
   }
 }
@@ -131,7 +149,7 @@ class _ChangelogEmptyState extends StatelessWidget {
     // 统一空态：MD3 中性分组底块 / Apple 无底块大图标 + 灰字（各自在
     // FushiPlaceholderMessage 里分派），不再自画 outline 色图标 + 裸文字。
     return FushiPlaceholderMessage(
-      icon: Icons.cloud_off_outlined,
+      icon: FushiIcons.cloudOff,
       message: t.changelog_empty,
       action: Wrap(
         alignment: WrapAlignment.center,
@@ -140,12 +158,12 @@ class _ChangelogEmptyState extends StatelessWidget {
         children: <Widget>[
           FushiOutlinedButton.icon(
             onPressed: onRetry,
-            icon: const FushiIcon(Icons.refresh),
+            icon: const FushiIcon(FushiIcons.refresh),
             label: Text(t.retry),
           ),
           FushiFilledButton.icon(
             onPressed: onOpenReleases,
-            icon: const FushiIcon(Icons.open_in_new_outlined),
+            icon: const FushiIcon(FushiIcons.openInNew),
             label: Text(t.changelog_open_releases),
           ),
         ],
@@ -156,9 +174,12 @@ class _ChangelogEmptyState extends StatelessWidget {
 
 /// 单个版本卡片：版本号 + 通道徽标 + 发布日期 + Markdown 正文。
 class _ReleaseCard extends StatelessWidget {
-  const _ReleaseCard({required this.release});
+  const _ReleaseCard({required this.release, this.latest = false});
 
   final Map<String, dynamic> release;
+
+  /// 列表首条（最新版本）：M3E 抬升卡 + primary 版本形状，与历史版本区分。
+  final bool latest;
 
   /// 发布日期取 `published_at`（ISO8601）的日期段（`YYYY-MM-DD`）；缺失返空串。
   String get _publishedDate {
@@ -184,15 +205,24 @@ class _ReleaseCard extends StatelessWidget {
     final String date = _publishedDate;
 
     return FushiCard(
+      variant: latest ? FushiCardVariant.elevated : FushiCardVariant.filled,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Row(
             children: <Widget>[
+              FushiListLeadingIcon(
+                FushiIcons.tag,
+                shape: latest
+                    ? FushiLeadingShape.cookie
+                    : FushiLeadingShape.circle,
+                tone: latest ? FushiCardTone.primary : FushiCardTone.neutral,
+              ),
+              SizedBox(width: tokens.spacing.gap),
               Flexible(
                 child: Text(
                   title,
-                  style: theme.textTheme.titleMedium,
+                  style: context.fushiType.titleLargeEmphasized,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

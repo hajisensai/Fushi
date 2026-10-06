@@ -76,7 +76,6 @@ void main() {
               child: MangaSourceCatalogSection(
                 catalog: catalog,
                 onOpenMokuro: () {},
-                onOpenAidoku: (_) {},
                 onOpenMihon: (_) {},
                 onOpenOpds: onOpenOpds,
               ),

@@ -4213,7 +4213,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// `Scaffold.appBar` 自动 [BackButton] 本就是 48×48 的 [IconButton]，而
   /// [FushiIconButton] 在 `padding: EdgeInsets.zero` + 无 constraints 下只有图标
   /// 本体那么大（24×24）——手机触屏上就成了「点不中的返回箭头」，也与
-  /// 本脚手架**显式**传入的 [BackButton]（aidoku 源浏览 / 新手引导）不是
+  /// 本脚手架**显式**传入的 [BackButton]（新手引导等）不是
   /// 同一命中口径。图标视觉尺寸不变，只把 InkWell 命中盒撑开。
   ///
   /// 与 [FushiToolScaffold] 同名方法看着一样但**不能合并**：那边整条工具条
@@ -4301,9 +4301,11 @@ class FushiToolScaffold extends StatelessWidget {
                 borderRadius: const BorderRadius.all(Radius.circular(22)),
                 prominent: true,
                 child: SizedBox(
-                  // MD3（M3E 悬浮工具条）：返回键 / 标题 / 动作各是一枚 48 高的
-                  // 悬浮胶囊，行高 52；Apple 保持 44 的玻璃胶囊条。
-                  height: isGlassDesign(context) ? 44 : 52,
+                  // MD3（M3E 悬浮工具条）：返回键 / 标题 / 动作各是一枚
+                  // [kFushiPageChromeExtent] 高的悬浮胶囊，行高与胶囊同高（行高
+                  // 小于胶囊会把返回圆压扁、标题胶囊下半截截平）；Apple 保持 44
+                  // 的玻璃胶囊条。
+                  height: isGlassDesign(context) ? 44 : kFushiPageChromeExtent,
                   // BUG-1184：动作区上界原先取 `MediaQuery.sizeOf(context).width * 0.48`
                   // ——**整窗宽**。这个脚手架并不总是占满窗口（嵌在分栏/对话框/受限宽面板
                   // 里时更常见），此时 0.48×整窗可以超过本行的真实可用宽，Row 直接右溢出。

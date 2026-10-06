@@ -140,14 +140,22 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     final appModel = ref.watch(appProvider);
 
     if (appModel.initError != null) {
+      // 初始化失败同样没有用户主题可用：走与冷启动占位同一份兜底主题，错误态
+      // 是贴顶的 M3E 面板（错误色块图标 + 原因 + 关闭），点外面也能关窗。
+      final brightness =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
+          theme: fallbackTheme,
           builder: _buildWithSpacing,
           home: Scaffold(
             backgroundColor: Colors.transparent,
-            body: Center(
-              child: Text(t.init_error_message(error: appModel.initError!)),
+            body: PopupDictionaryErrorView(
+              colorScheme: fallbackTheme.colorScheme,
+              message: t.init_error_message(error: appModel.initError!),
+              onDismiss: () => unawaited(PopupChannel.instance.finishPopup()),
             ),
           ),
         ),

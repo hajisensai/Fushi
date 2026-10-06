@@ -2,6 +2,9 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for selecting example sentences.
@@ -61,7 +64,7 @@ class _ExampleSentencesDialogPageState
       scrollable: false,
       child: FushiModalSheetFrame(
         title: t.creator_enhancement_sentence_picker,
-        leadingIcon: Icons.format_quote_outlined,
+        leadingIcon: FushiIcons.quote,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -91,7 +94,7 @@ class _ExampleSentencesDialogPageState
 
   Widget buildEmptyMessage() {
     return FushiPlaceholderMessage(
-      icon: Icons.search_off,
+      icon: FushiIcons.searchOff,
       message: t.no_sentences_found,
     );
   }
@@ -112,6 +115,11 @@ class _ExampleSentencesDialogPageState
   }
 
   Widget buildTextWidgets() {
+    // 例句卡错峰进场（spring 上浮 + 淡入），墨水屏 / 减弱动态效果下静止。
+    return FushiEntranceScope(child: _buildSentenceGrid());
+  }
+
+  Widget _buildSentenceGrid() {
     return MasonryGridView.builder(
       controller: _scrollController,
       gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
@@ -125,17 +133,23 @@ class _ExampleSentencesDialogPageState
       itemBuilder: (context, index) {
         String sentence = widget.exampleSentences[index];
 
-        return ValueListenableBuilder<bool>(
-          valueListenable: _valuesSelected[index]!,
-          builder: (context, value, child) {
-            return _SentenceCard(
-              sentence: sentence,
-              selected: value,
-              onTap: () {
-                _valuesSelected[index]!.value = !_valuesSelected[index]!.value;
-              },
-            );
-          },
+        // MasonryGridView 只收非空 IndexedWidgetBuilder，这里直接包
+        // FushiStaggeredEntrance（与 fushiStaggeredItemBuilder 同一实现）。
+        return FushiStaggeredEntrance(
+          index: index,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _valuesSelected[index]!,
+            builder: (context, value, child) {
+              return _SentenceCard(
+                sentence: sentence,
+                selected: value,
+                onTap: () {
+                  _valuesSelected[index]!.value =
+                      !_valuesSelected[index]!.value;
+                },
+              );
+            },
+          ),
         );
       },
     );
@@ -157,6 +171,7 @@ class _ExampleSentencesDialogPageState
   Widget buildSelectButton() {
     return adaptiveDialogAction(
       context: context,
+      isDefaultAction: true,
       onPressed: executeSelect,
       child: Text(t.dialog_select),
     );
@@ -199,19 +214,37 @@ class _SentenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    final FushiSpringSpec spring = context.fushiMotion.spatialFast;
 
-    // 选中态 = 中性填充（MD3 surfaceContainerHigh / Apple tertiaryFill）+
-    // 强调色描边；不再整卡 primaryContainer 彩色块。
-    return FushiCard(
-      onTap: onTap,
-      padding: EdgeInsets.all(tokens.spacing.card),
-      color: selected ? fushiNeutralBlockColor(context) : null,
-      borderColor: selected ? colors.primary : null,
-      child: Text(
-        sentence,
-        style: tokens.type.listTitle.copyWith(
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+    // M3E：选中态 = secondaryContainer 饱和色块（FushiCard tone，卡内文字随之
+    // 取 onSecondaryContainer）+ 右上角对勾弹簧弹入；不再是中性底 + 主色描边。
+    return Semantics(
+      selected: selected,
+      child: FushiCard(
+        onTap: onTap,
+        tone: selected ? FushiCardTone.secondary : FushiCardTone.neutral,
+        padding: EdgeInsets.all(tokens.spacing.card),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                sentence,
+                style: tokens.type.listTitle.copyWith(
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ),
+            AnimatedScale(
+              scale: selected ? 1 : 0,
+              duration: spring.duration,
+              curve: spring.curve,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(start: tokens.spacing.gap),
+                child: const FushiIcon(FushiIcons.success, size: 20),
+              ),
+            ),
+          ],
         ),
       ),
     );

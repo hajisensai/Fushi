@@ -151,7 +151,6 @@ Fushi được xây dựng dựa trên các dự án và hệ sinh thái sau:
 | [Mihon](https://github.com/mihonapp/mihon) | Hệ sinh thái tiện ích nguồn manga |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Hệ sinh thái tiện ích nguồn anime (extensions-lib 14–16, cùng runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Runtime tiện ích mở rộng manga cho máy tính |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | ABI runtime nguồn manga |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Tham khảo cầu nối phụ đề streaming cho tiện ích trình duyệt |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Tham khảo kiến trúc nhận dạng và thu thập dữ liệu anime |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Tham khảo kiến trúc thông tin thư viện galgame |

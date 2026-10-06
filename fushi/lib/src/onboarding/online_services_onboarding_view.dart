@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
@@ -99,74 +101,138 @@ bool get _dandanplayEmbedded =>
     DandanplayConfig.embeddedAppId.trim().isNotEmpty &&
     DandanplayConfig.embeddedAppSecret.trim().isNotEmpty;
 
+/// 服务条目在总览里的行首图标（按条目 id；未知 id 回落到云）。
+IconData onlineServiceOnboardingIcon(String id) => switch (id) {
+      'anidb' => FushiIcons.fingerprint,
+      'mal_anilist' => FushiIcons.globe,
+      'tmdb' => FushiIcons.video,
+      'jimaku' || 'opensubtitles' || 'subdl' => FushiIcons.subtitles,
+      'dandanplay' => FushiIcons.quote,
+      'servers' => FushiIcons.server,
+      _ => FushiIcons.cloud,
+    };
+
 /// 新手向导与视频提示共用的总览。展示和点击注册入口不会修改服务开关。
+///
+/// M3E：服务条目是一组分段卡片（首尾大圆角、行间 2px），行首是 M3E 形状图标底，
+/// 「需要什么」是一枚 tonal 色块标签；条目错峰进场。[showHeader] = false 时不画
+/// 自带的标题与说明（新手向导用自己的 hero 顶替）。
 class OnlineServicesOnboardingView extends StatelessWidget {
   const OnlineServicesOnboardingView({
     required this.items,
     required this.onConfigure,
     required this.onOpenLink,
+    this.showHeader = true,
     super.key,
   });
 
   final List<OnlineServiceOnboardingItem> items;
   final VoidCallback onConfigure;
   final ValueChanged<Uri> onOpenLink;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Text(t.onboarding_online_services_title,
-            style: theme.textTheme.headlineSmall),
-        SizedBox(height: tokens.spacing.gap),
-        Text(t.onboarding_online_services_body,
-            style: theme.textTheme.bodyMedium),
-        SizedBox(height: tokens.spacing.card),
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: FushiFilledButton.icon(
-            onPressed: onConfigure,
-            icon: const FushiIcon(Icons.settings_outlined),
-            label: Text(t.onboarding_online_services_configure),
+    final FushiTypography type = context.fushiType;
+    return FushiEntranceScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (showHeader) ...<Widget>[
+            Text(t.onboarding_online_services_title,
+                style: type.headlineSmallEmphasized),
+            SizedBox(height: tokens.spacing.gap),
+            Text(t.onboarding_online_services_body,
+                style: type.bodyLarge.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                )),
+            SizedBox(height: tokens.spacing.card),
+          ],
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FushiFilledButton.icon(
+              onPressed: onConfigure,
+              icon: const FushiIcon(FushiIcons.settings),
+              label: Text(t.onboarding_online_services_configure),
+            ),
           ),
-        ),
-        SizedBox(height: tokens.spacing.card),
-        for (final OnlineServiceOnboardingItem item in items)
-          Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-            child: FushiCard(
-              key: ValueKey<String>('online-service-${item.id}'),
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: EdgeInsets.all(tokens.spacing.card),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(item.title, style: theme.textTheme.titleMedium),
-                    SizedBox(height: tokens.spacing.gap / 2),
-                    Text(item.requirement,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: theme.colorScheme.primary,
-                        )),
-                    SizedBox(height: tokens.spacing.gap),
-                    Text(item.description),
-                    if (item.link != null) ...<Widget>[
-                      SizedBox(height: tokens.spacing.gap),
-                      FushiTextButton.icon(
-                        onPressed: () => onOpenLink(item.link!),
-                        icon: const FushiIcon(Icons.open_in_new_outlined),
-                        label: Text(t.onboarding_online_services_link),
-                      ),
-                    ],
-                  ],
+          SizedBox(height: tokens.spacing.card),
+          for (int i = 0; i < items.length; i++)
+            FushiStaggeredEntrance(
+              index: i,
+              child: FushiGroupedListItem(
+                key: ValueKey<String>('online-service-${items[i].id}'),
+                index: i,
+                count: items.length,
+                child: _OnlineServiceRow(
+                  item: items[i],
+                  onOpenLink: onOpenLink,
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OnlineServiceRow extends StatelessWidget {
+  const _OnlineServiceRow({required this.item, required this.onOpenLink});
+
+  final OnlineServiceOnboardingItem item;
+  final ValueChanged<Uri> onOpenLink;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Padding(
+      padding: EdgeInsets.all(tokens.spacing.card),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          FushiListLeadingIcon(
+            onlineServiceOnboardingIcon(item.id),
+            shape: FushiLeadingShape.square,
           ),
-      ],
+          SizedBox(width: tokens.spacing.card),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Wrap(
+                  spacing: tokens.spacing.gap,
+                  runSpacing: tokens.spacing.gap / 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: <Widget>[
+                    Text(item.title,
+                        style: context.fushiType.titleMediumEmphasized),
+                    FushiTagChip(
+                      label: item.requirement,
+                      color: theme.colorScheme.tertiaryContainer,
+                    ),
+                  ],
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(item.description,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    )),
+                if (item.link != null) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap / 2),
+                  FushiTextButton.icon(
+                    onPressed: () => onOpenLink(item.link!),
+                    icon: const FushiIcon(FushiIcons.openInNew),
+                    label: Text(t.onboarding_online_services_link),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -181,14 +247,18 @@ class OnlineServicesOnboardingPage extends StatelessWidget {
         body: SingleChildScrollView(
           // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，滚动内容末尾自己
           // 补上 home indicator / 手势条的高度。
-          padding: withBottomSafeInset(context, const EdgeInsets.all(24)),
+          padding: withBottomSafeInset(
+            context,
+            EdgeInsets.all(FushiDesignTokens.of(context).spacing.page),
+          ),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 720),
               child: OnlineServicesOnboardingView(
                 items: onlineServiceOnboardingItems(),
                 onConfigure: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
+                  adaptivePageRoute<void>(
+                    context: context,
                     builder: (_) => SettingsDetailPage(
                         destination: buildServicesDestination()),
                   ),

@@ -9,7 +9,9 @@ import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
@@ -275,6 +277,7 @@ class _FavoriteBatchMiningPageState
   Widget build(BuildContext context) {
     final int total = widget.items.length;
     final DictionarySearchResult? popupResult = _popupResult;
+    final double gutter = FushiDesignTokens.of(context).spacing.page;
     return PopScope(
       canPop: !_running,
       onPopInvokedWithResult: (bool didPop, Object? _) {
@@ -282,63 +285,89 @@ class _FavoriteBatchMiningPageState
         // 避免半路拆掉 WebView 让正在取的那条卡没头没尾。
         if (!didPop) _requestStop();
       },
-      child: Scaffold(
-        appBar: FushiAppBar(
-          title: Text(t.favorites_batch_mine_title),
-          actions: <Widget>[
-            if (_running)
-              FushiTextButton(
-                onPressed: _stopRequested ? null : _requestStop,
-                child: Text(t.stop),
-              ),
-            if (_finished)
-              FushiTextButton(
-                onPressed: () => Navigator.maybePop(context),
-                child: Text(t.dialog_done),
-              ),
-          ],
-        ),
+      child: FushiPageScaffold(
+        title: t.favorites_batch_mine_title,
+        actions: <Widget>[
+          if (_running)
+            FushiFilledButton.tonalIcon(
+              onPressed: _stopRequested ? null : _requestStop,
+              icon: const FushiIcon(FushiIcons.stop),
+              label: Text(t.stop),
+            ),
+          if (_finished)
+            FushiFilledButton.icon(
+              onPressed: () => Navigator.maybePop(context),
+              icon: const FushiIcon(FushiIcons.check),
+              label: Text(t.dialog_done),
+            ),
+        ],
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            FushiLinearProgressIndicator(value: total == 0 ? 1 : _done / total),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: Text(
-                _finished
+              padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 12),
+              child: _FavoriteBatchProgressCard(
+                done: _done,
+                total: total,
+                finished: _finished,
+                label: _finished
                     ? _summaryText(FavoriteBatchSummary.of(_results))
                     : t.favorites_batch_mine_progress(
                         done: _done,
                         total: total,
                       ),
-                style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
-            if (popupResult != null)
-              SizedBox(
-                height: _kPopupPreviewHeight,
-                // 只展示、不交互：批量流程自己取字段落卡，用户在这里点「+」会与批量
-                // 抢同一张卡。
-                child: IgnorePointer(
-                  child: FushiAppUiScaleNeutralizer(
-                    child: DictionaryPopupWebView(
-                      key: _popupKey,
-                      result: popupResult,
-                      onRendered: _onPopupRendered,
-                      onRenderError: _onPopupRenderError,
+            // 查词弹窗预览：结构恒定的尺寸动画外壳，结束后弹窗卸掉、外壳收起。
+            AnimatedSize(
+              duration: context.fushiMotion.spatialDefault.duration,
+              curve: context.fushiMotion.spatialDefault.curve,
+              alignment: Alignment.topCenter,
+              child: popupResult == null
+                  ? const SizedBox(width: double.infinity)
+                  : Padding(
+                      padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
+                      child: FushiCard(
+                        variant: FushiCardVariant.outlined,
+                        padding: const EdgeInsets.all(4),
+                        child: SizedBox(
+                          height: _kPopupPreviewHeight,
+                          // 只展示、不交互：批量流程自己取字段落卡，用户在这里点
+                          // 「+」会与批量抢同一张卡。
+                          child: IgnorePointer(
+                            child: FushiAppUiScaleNeutralizer(
+                              child: DictionaryPopupWebView(
+                                key: _popupKey,
+                                result: popupResult,
+                                onRendered: _onPopupRendered,
+                                onRenderError: _onPopupRenderError,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+            Expanded(
+              // 分段卡片列表：首尾大圆角、行间 2px；首屏错峰进场。
+              child: FushiEntranceScope(
+                child: ListView.builder(
+                  padding: withBottomSafeInset(
+                    context,
+                    EdgeInsets.fromLTRB(gutter, 0, gutter, 16),
+                  ),
+                  itemCount: total,
+                  itemBuilder: fushiStaggeredItemBuilder(
+                    (BuildContext context, int index) => FushiGroupedListItem(
+                      index: index,
+                      count: total,
+                      child: _FavoriteBatchItemTile(
+                        item: widget.items[index],
+                        result: _results[index],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            const FushiDividerControl(height: 1),
-            Expanded(
-              child: ListView.builder(
-                itemCount: total,
-                itemBuilder: (BuildContext context, int index) =>
-                    _FavoriteBatchItemTile(
-                      item: widget.items[index],
-                      result: _results[index],
-                    ),
               ),
             ),
           ],
@@ -356,6 +385,62 @@ class _FavoriteBatchMiningPageState
       );
 }
 
+/// 进度主卡：M3E primaryContainer 饱和色块 + Display 大数字 + 波浪进度条；
+/// 完成后换成 tertiary 色块与汇总文案（颜色变化走 effects 弹簧）。
+class _FavoriteBatchProgressCard extends StatelessWidget {
+  const _FavoriteBatchProgressCard({
+    required this.done,
+    required this.total,
+    required this.finished,
+    required this.label,
+  });
+
+  final int done;
+  final int total;
+  final bool finished;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiTypography type = context.fushiType;
+    final double value = total == 0 ? 1 : done / total;
+    return FushiCard(
+      tone: finished ? FushiCardTone.tertiary : FushiCardTone.primary,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              FushiIcon(
+                finished
+                    ? FushiIcons.filled(FushiIcons.success)
+                    : FushiIcons.ankiCard,
+              ),
+              const SizedBox(width: 12),
+              Text('$done', style: type.displaySmallEmphasized.tabular),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 6),
+                child: Text('/ $total', style: type.titleMedium.tabular),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(label, style: type.bodyMedium),
+          const SizedBox(height: 12),
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: value),
+            duration: context.fushiMotion.effectsDefault.duration,
+            curve: context.fushiMotion.effectsDefault.curve,
+            builder: (BuildContext context, double v, Widget? _) =>
+                FushiLinearProgressIndicator(value: v),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FavoriteBatchItemTile extends StatelessWidget {
   const _FavoriteBatchItemTile({required this.item, required this.result});
 
@@ -364,7 +449,6 @@ class _FavoriteBatchItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     final String headword =
         item.reading.isEmpty || item.reading == item.expression
         ? item.expression
@@ -379,7 +463,13 @@ class _FavoriteBatchItemTile extends StatelessWidget {
       if (result.message != null && result.message!.isNotEmpty) result.message!,
     ];
     return FushiListItem(
-      leading: _statusIcon(scheme),
+      leading: AnimatedSwitcher(
+        duration: context.fushiMotion.effectsFast.duration,
+        child: KeyedSubtree(
+          key: ValueKey<FavoriteBatchItemStatus>(result.status),
+          child: _statusIcon(context),
+        ),
+      ),
       title: Text(headword),
       subtitleMaxLines: 4,
       subtitle: lines.isEmpty
@@ -392,35 +482,36 @@ class _FavoriteBatchItemTile extends StatelessWidget {
     );
   }
 
-  Widget _statusIcon(ColorScheme scheme) => switch (result.status) {
-    FavoriteBatchItemStatus.pending => FushiIcon(
-      Icons.radio_button_unchecked,
-      color: scheme.outline,
+  /// 行首状态色块：成功 primary、重复 tertiary、失败 error、等待 / 跳过中性。
+  Widget _statusIcon(BuildContext context) => switch (result.status) {
+    FavoriteBatchItemStatus.pending => const FushiListLeadingIcon(
+      FushiIcons.pending,
+      tone: FushiCardTone.neutral,
     ),
     FavoriteBatchItemStatus.running => const SizedBox.square(
-      dimension: 24,
+      dimension: 40,
       child: Padding(
-        padding: EdgeInsets.all(2),
-        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
+        padding: EdgeInsets.all(8),
+        child: FushiCircularProgressIndicator(strokeWidth: 3),
       ),
     ),
-    FavoriteBatchItemStatus.added => FushiIcon(
+    FavoriteBatchItemStatus.added => FushiListLeadingIcon(
       result.textOnlyReason == null
-          ? Icons.check_circle
-          : Icons.check_circle_outline,
-      color: scheme.primary,
+          ? FushiIcons.filled(FushiIcons.success)
+          : FushiIcons.success,
+      tone: FushiCardTone.primary,
     ),
-    FavoriteBatchItemStatus.duplicate => FushiIcon(
-      Icons.library_add_check_outlined,
-      color: scheme.tertiary,
+    FavoriteBatchItemStatus.duplicate => const FushiListLeadingIcon(
+      FushiIcons.libraryAdd,
+      tone: FushiCardTone.tertiary,
     ),
-    FavoriteBatchItemStatus.failed => FushiIcon(
-      Icons.error_outline,
-      color: scheme.error,
+    FavoriteBatchItemStatus.failed => const FushiListLeadingIcon(
+      FushiIcons.error,
+      tone: FushiCardTone.error,
     ),
-    FavoriteBatchItemStatus.skipped => FushiIcon(
-      Icons.remove_circle_outline,
-      color: scheme.outline,
+    FavoriteBatchItemStatus.skipped => const FushiListLeadingIcon(
+      FushiIcons.block,
+      tone: FushiCardTone.neutral,
     ),
   };
 }
