@@ -1825,6 +1825,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
       child: CustomScrollView(
         primary: true,
         slivers: <Widget>[
+          // 壳的页头让位（状态栏 + 叠放页头 + 跳转条）：内容往下滚时滚到页头底下。
+          SliverToBoxAdapter(
+            child: SizedBox(height: MediaQuery.paddingOf(context).top),
+          ),
           SliverToBoxAdapter(child: toolbar),
           ..._buildFontSlivers(context, width, layout),
           SliverToBoxAdapter(child: preview),
@@ -1888,6 +1892,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
         tooltip: t.custom_fonts_import_file,
         onPressed: _fontsLoading ? null : _importFontFile,
       ),
+      // 字体库正文（CustomScrollView）首个 sliver 吃页头让位，滚到页头底下。
+      bodyConsumesTopPadding: true,
       bodyBuilder: (
         BuildContext context,
         ScrollController controller,
@@ -1931,9 +1937,10 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
                         ? const SizedBox.shrink(key: ValueKey<String>('none'))
                         : Padding(
                             key: const ValueKey<String>('font-detail-side'),
-                            padding: const EdgeInsetsDirectional.fromSTEB(
+                            // 宽屏侧栏不随正文滚动：顶部让开叠放的页头。
+                            padding: EdgeInsetsDirectional.fromSTEB(
                               0,
-                              4,
+                              4 + MediaQuery.paddingOf(context).top,
                               16,
                               16,
                             ),
