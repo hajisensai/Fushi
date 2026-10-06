@@ -38,12 +38,9 @@ class _FushiAnimatedSizeState extends State<FushiAnimatedSize> {
   Widget build(BuildContext context) {
     final Widget child = KeyedSubtree(key: _childKey, child: widget.child);
     if (widget.duration == Duration.zero) {
-      return Align(
-        alignment: widget.alignment,
-        widthFactor: 1,
-        heightFactor: 1,
-        child: child,
-      );
+      // AnimatedSize forwards its incoming constraints unchanged. Returning
+      // the child also preserves tight constraints; Align would loosen them.
+      return child;
     }
     return AnimatedSize(
       duration: widget.duration,

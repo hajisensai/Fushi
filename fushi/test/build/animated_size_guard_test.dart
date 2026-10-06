@@ -87,7 +87,7 @@ AnimatedSize(duration: motion.duration, child: x);
         source,
         matches(
           RegExp(
-            r'if\s*\(widget\.duration\s*==\s*Duration\.zero\)\s*\{\s*return Align\([\s\S]*?\);\s*\}\s*return AnimatedSize\(',
+            r'if\s*\(widget\.duration\s*==\s*Duration\.zero\)\s*\{\s*return child;\s*\}\s*return AnimatedSize\(',
           ),
         ),
       );
