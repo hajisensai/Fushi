@@ -1749,6 +1749,59 @@ HT_EXPORT int ht_add_trackers(void* session, const char* info_hash,
   }
 }
 
+// BUG-2950：运行期补 DHT 节点。fake-ip DNS（Clash TUN 等）下建号时的引导点
+// 主机名全被解析成 198.18.x.x 假地址，路由表永远 0 节点；Dart 侧经 DoH 拿到
+// 真实 IP 后从这里直接喂给 DHT（lt::session::add_dht_node，不改建号时的
+// 引导点设置）。[nodes] 以 \n 分隔，每行 "host:port"（IPv4 / 主机名，IPv6
+// 写成 "[addr]:port"），port 必须在 1..65535，非法行跳过。返回成功添加的
+// 条数（>=0）；session 为空或抛异常返回 -1。
+HT_EXPORT int ht_add_dht_nodes(void* session, const char* nodes) {
+  if (session == nullptr) return -1;
+  if (nodes == nullptr) return 0;
+  try {
+    lt::session* ses = as_session(session);
+    int added = 0;
+    const std::string input(nodes);
+    std::size_t start = 0;
+    while (start <= input.size()) {
+      const std::size_t end = input.find('\n', start);
+      std::string line = input.substr(
+          start, end == std::string::npos ? std::string::npos : end - start);
+      while (!line.empty() &&
+             std::isspace(static_cast<unsigned char>(line.back()))) {
+        line.pop_back();
+      }
+      while (!line.empty() &&
+             std::isspace(static_cast<unsigned char>(line.front()))) {
+        line.erase(line.begin());
+      }
+      const std::size_t colon = line.rfind(':');
+      if (colon != std::string::npos && colon > 0 &&
+          colon + 1 < line.size()) {
+        std::string host = line.substr(0, colon);
+        const std::string port_text = line.substr(colon + 1);
+        if (host.size() >= 2 && host.front() == '[' && host.back() == ']') {
+          host = host.substr(1, host.size() - 2);
+        }
+        bool digits = port_text.size() <= 5;
+        for (const char c : port_text) {
+          if (c < '0' || c > '9') digits = false;
+        }
+        const int port = digits ? std::atoi(port_text.c_str()) : 0;
+        if (!host.empty() && port > 0 && port <= 65535) {
+          ses->add_dht_node(std::make_pair(host, port));
+          ++added;
+        }
+      }
+      if (end == std::string::npos) break;
+      start = end + 1;
+    }
+    return added;
+  } catch (...) {
+    return -1;
+  }
+}
+
 HT_EXPORT char* ht_get_file_priorities(void* session, const char* info_hash) {
   if (session == nullptr) return json_error("session is null");
   try {

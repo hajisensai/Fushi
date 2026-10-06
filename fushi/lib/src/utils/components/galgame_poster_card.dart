@@ -1,30 +1,33 @@
 import 'package:flutter/material.dart';
 
-import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
-/// galgame 竖版海报卡（对齐 ReinaManager 库页/首页的卡片观感，见
-/// `docs/design/galgame-library-reina-visual-parity.md` §1）。
+/// galgame 竖版海报卡（游戏库 / 合集行 / 合集详情 / 串流库 / 在途下载占位共用）。
 ///
-/// 共享设计系统组件：封面 3:4、圆角 [FushiBorderRadius.poster]、hover 放大 1.05 +
-/// 阴影加深、选中 2px 主色环、封面底部可选「排序信息」渐变浮层、封面下方居中单行标题。
+/// 2026-10 游戏模块重设计：并入「封面即卡片」体系——交互壳是 [shelfCoverCard]
+/// （FushiCard：点击 / 长按 / 右键 / 焦点 / ActivateIntent / 按压下沉 / 状态层），
+/// 视觉是 [ShelfCoverFrame]（MD3 Expressive 12 圆角、悬停加一档柔和投影；Apple
+/// 10 圆角 + 0.5px 内描边 + Apple Arcade 式柔和投影；墨水屏 1px 描边无投影），
+/// 悬停抬升走 [FushiHoverLift]。标题直接落在页面底上（不再有整卡色块），封面下方
+/// 左对齐两行标题 + 可选一行元信息（游玩时长 / 最近游玩）。
 ///
-/// 刻意**不做文件 IO**：[cover] 由调用方传入（`Image.file` / 占位图 / 网络图都行），
-/// 这样卡片本身是纯 widget、可 widget-test，也不与封面来源耦合。
+/// 刻意**不做文件 IO**：[cover] 由调用方传入（`ShelfFileCover` / 占位图 / 网络图
+/// 都行），卡片本身是纯 widget、可 widget-test，也不与封面来源耦合。
 ///
-/// 圆角走 token、字号走 textTheme、颜色走 colorScheme 语义角色，是设计系统组件而非页面
-/// chrome，故在 MD3 静态守卫的 allowlist 内（同 `fushi_material_components.dart`）。
-class GalgamePosterCard extends StatefulWidget {
+/// 树结构恒定：选中 / 多选 / 角标只换值或在封面 Stack 内增删叶子，不按设计系统
+/// 增删包装层。
+class GalgamePosterCard extends StatelessWidget {
   const GalgamePosterCard({
     super.key,
     required this.cover,
     required this.title,
+    this.subtitle,
+    this.badge,
     this.overlayText,
     this.selected = false,
     this.multiSelected = false,
@@ -36,19 +39,26 @@ class GalgamePosterCard extends StatefulWidget {
     this.focusId,
   });
 
-  /// 封面 widget（3:4 会被外层裁剪；建议 `fit: BoxFit.cover`）。
+  /// 封面 widget（3:4 会被封面框裁剪；建议 `fit: BoxFit.cover`）。
   final Widget cover;
 
-  /// 标题（封面下方居中，单行省略）。
+  /// 标题（封面下方左对齐，两行省略，悬停显示全名）。
   final String title;
+
+  /// 标题下方一行元信息（游玩时长 / 最近游玩等）；null 不占行。
+  final String? subtitle;
+
+  /// 封面左上角状态角标（如 [CoverBadge] 的「在玩 / 玩过 / 搁置」）；多选态让位
+  /// 给勾选圈。
+  final Widget? badge;
 
   /// 封面底部「排序信息」浮层文本；null / 空则不显示浮层。
   final String? overlayText;
 
-  /// 选中态（当前详情/焦点）：加 2px 主色环。
+  /// 选中态（当前详情 / 焦点）：封面上画选中罩（主色细环 + 淡色罩），标题染主色。
   final bool selected;
 
-  /// 批量多选态：左上角方形勾标（预留，M1.5 暂不启用多选）。
+  /// 批量多选态：封面左上角勾选圈（与书架 / 视频库同一枚）。
   final bool multiSelected;
 
   final VoidCallback? onTap;
@@ -67,154 +77,112 @@ class GalgamePosterCard extends StatefulWidget {
   final FushiFocusId? focusId;
 
   @override
-  State<GalgamePosterCard> createState() => _GalgamePosterCardState();
-}
-
-class _GalgamePosterCardState extends State<GalgamePosterCard> {
-  @override
   Widget build(BuildContext context) {
-    // hover 态与缩放交给共享的 [FushiHoverLift]（书架 / 漫画 / 视频库同一套），
-    // 它顺带带来本组件原先缺的两处降级：墨水屏与「减弱动态效果」。
-    return FushiHoverLift(builder: _buildForHover);
+    // 悬停抬升交给共享的 [FushiHoverLift]（书架 / 漫画 / 视频库同一套，自带墨水屏
+    // 与「减弱动态效果」降级）；封面框经 [FushiHoverLift.liftedOf] 自己加深投影。
+    return FushiHoverLift(
+      builder: (BuildContext context, bool _) => _buildCard(context),
+    );
   }
 
-  Widget _buildForHover(BuildContext context, bool hovering) {
+  Widget _buildCard(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme colors = theme.colorScheme;
-
-    final Widget cover = _buildCover(context, colors, hovering);
-
-    final TextStyle? titleStyle = theme.textTheme.titleSmall?.copyWith(
-      fontWeight: FontWeight.w600,
-      color: widget.selected ? colors.primary : colors.onSurface,
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle titleStyle = shelfCardTitleStyle(context).copyWith(
+      color: selected ? theme.colorScheme.primary : null,
     );
-    final Widget titleText = Padding(
-      padding: const EdgeInsets.fromLTRB(6, 8, 6, 2),
-      // TODO-2490：两行仍放不下的长游戏名，桌面悬停显示完整标题；触屏走卡片
-      // 长按菜单（标题不限行）看全名。
-      child: ShelfTitleOverflowTooltip(
-        title: widget.title,
-        style: titleStyle,
-        maxLines: 2,
-        child: Text(
-          widget.title,
-          // BUG-1184：galgame 名普遍 20 字以上，窄屏卡宽只有约 136px，单行只看得到
-          // 开头六七个字。封面在 [Flexible] 里，标题变高只是等量压缩封面、不会溢出。
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: titleStyle,
-        ),
-      ),
-    );
+    final String? meta = subtitle;
 
-    final Widget card = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Flexible(child: cover),
-        titleText,
-      ],
-    );
-
-    // 缩放由外层 [FushiHoverLift] 负责；这里只留光标与手势。阴影仍随 hovering
-    // 在 [_buildCover] 里插值（那是卡片自己的视觉，壳不该知道）。
-    final Widget interactive = MouseRegion(
-      cursor:
-          widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
-      child: ContextMenuTrigger(
-        onInvoke: contextMenuInvoker(widget.onSecondaryTap),
-        behavior: HitTestBehavior.opaque,
-        child: GestureDetector(
-          onTap: widget.onTap,
-          onLongPress: widget.onLongPress,
-          behavior: HitTestBehavior.opaque,
-          child: card,
-        ),
-      ),
-    );
-
-    final Widget semantic = Semantics(
-      label: widget.semanticLabel ?? widget.title,
-      button: widget.onTap != null,
-      selected: widget.selected,
-      child: interactive,
-    );
-
-    // 焦点注册：与 FushiCard 同款——有 onTap 且存在焦点根时，注册焦点站点并把
-    // ActivateIntent（Enter / 手柄 A）接到 onTap。无焦点根（纯 widget-test）直接返回。
-    if (widget.onTap == null ||
-        FushiFocusRoot.maybeControllerOf(context) == null) {
-      return semantic;
-    }
-    // 手柄重设计 P4：长按 A = 鼠标长按/右键同一入口（onLongPress，游戏卡上是
-    // 上下文菜单）。[GamepadLongPressActions] 对 null onLongPress 透明。
-    return GamepadLongPressActions(
-      onLongPress: widget.onLongPress,
-      child: Actions(
-        actions: <Type, Action<Intent>>{
-          ActivateIntent: CallbackAction<ActivateIntent>(
-            onInvoke: (_) {
-              widget.onTap?.call();
-              return null;
-            },
-          ),
-        },
-        child: FushiFocusTarget(
-          id: widget.focusId ?? _fallbackFocusId,
-          child: semantic,
-        ),
-      ),
-    );
-  }
-
-  late final FushiFocusId _fallbackFocusId =
-      FushiFocusId('galgame-poster-${identityHashCode(this)}');
-
-  Widget _buildCover(BuildContext context, ColorScheme colors, bool hovering) {
-    const BorderRadius radius = FushiBorderRadius.poster;
-    final bool elevated = hovering || widget.selected;
-
-    return AspectRatio(
+    final Widget coverBox = AspectRatio(
       aspectRatio: 3 / 4,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          border: widget.selected
-              ? Border.all(color: colors.primary, width: 2)
-              : null,
-          boxShadow: <BoxShadow>[
-            BoxShadow(
-              color: colors.shadow.withValues(alpha: elevated ? 0.28 : 0.12),
-              blurRadius: elevated ? 16 : 6,
-              offset: Offset(0, elevated ? 8 : 3),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: radius,
+      child: ShelfCoverSelection(
+        selectionMode: multiSelected,
+        selected: selected || multiSelected,
+        child: ShelfCoverFrame(
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
-              widget.cover,
-              if (widget.overlayText != null && widget.overlayText!.isNotEmpty)
+              cover,
+              if (overlayText != null && overlayText!.isNotEmpty)
                 _buildSortOverlay(context),
-              if (widget.multiSelected) _buildSelectBadge(colors),
-              if (widget.trailing != null)
-                Positioned(top: 4, right: 4, child: widget.trailing!),
+              if (badge != null && !multiSelected)
+                Positioned(top: 6, left: 6, child: badge!),
+              if (trailing != null)
+                Positioned(top: 4, right: 4, child: trailing!),
             ],
           ),
         ),
       ),
     );
+
+    final Widget footer = Padding(
+      padding: const EdgeInsets.fromLTRB(2, 8, 2, 2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // TODO-2490：两行仍放不下的长游戏名，桌面悬停显示完整标题；触屏走卡片
+          // 长按菜单（标题不限行）看全名。
+          ShelfTitleOverflowTooltip(
+            title: title,
+            style: titleStyle,
+            maxLines: 2,
+            child: Text(
+              title,
+              // BUG-1184：galgame 名普遍 20 字以上，窄屏卡宽只有约 136px，单行只看
+              // 得到开头六七个字。封面在 [Flexible] 里，标题变高只是等量压缩封面。
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: titleStyle,
+            ),
+          ),
+          if (meta != null && meta.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                meta,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tokens.type.metadata,
+              ),
+            ),
+        ],
+      ),
+    );
+
+    final Widget card = shelfCoverCard(
+      focusId: focusId,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      onSecondaryTap: onSecondaryTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Flexible(child: coverBox),
+          footer,
+        ],
+      ),
+    );
+
+    // 手柄重设计 P4：长按 A = 鼠标长按 / 右键同一入口（onLongPress，游戏卡上是上下文
+    // 菜单）。[GamepadLongPressActions] 对 null onLongPress 透明（intent 继续上溯）。
+    return GamepadLongPressActions(
+      onLongPress: onLongPress,
+      child: Semantics(
+        label: semanticLabel ?? title,
+        button: onTap != null,
+        selected: selected,
+        child: MouseRegion(
+          cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+          child: card,
+        ),
+      ),
+    );
   }
 
-  /// 封面底部的排序信息渐变浮层：白字、单行、左对齐，底部深色渐变蒙版托底。
-  ///
-  /// 设计承 ReinaManager（AGPL-3.0，`references/ReinaManager`）卡片浮层的**风格**
-  /// （透明→深色三段渐变托底白字），但渐变透明度、stop 位置与内边距均为本仓自调
-  /// 数值，并非照搬其实现参数。
+  /// 封面底部的排序信息渐变浮层：白字、单行、左对齐，底部深色渐变托底（压在任意
+  /// 亮度的封面上都可读；两套设计系统同一份，墨水屏由封面框的实色描边兜底）。
   Widget _buildSortOverlay(BuildContext context) {
     return Positioned(
       left: 0,
@@ -229,43 +197,26 @@ class _GalgamePosterCardState extends State<GalgamePosterCard> {
               end: Alignment.bottomCenter,
               colors: <Color>[
                 Color(0x00000000),
-                Color(0x520F1720),
-                Color(0xD40F1720),
+                Color(0x52000000),
+                Color(0xC8000000),
               ],
               stops: <double>[0.0, 0.55, 1.0],
             ),
           ),
           child: Text(
-            widget.overlayText!,
+            overlayText!,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.left,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              shadows: const <Shadow>[
-                Shadow(color: Color(0x99000000), blurRadius: 2),
-              ],
-            ),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  shadows: const <Shadow>[
+                    Shadow(color: Color(0x99000000), blurRadius: 2),
+                  ],
+                ),
           ),
         ),
-      ),
-    );
-  }
-
-  /// 左上角方形多选勾标（20×20，主色底 + 勾）。
-  Widget _buildSelectBadge(ColorScheme colors) {
-    return Positioned(
-      top: 6,
-      left: 6,
-      child: Container(
-        width: 20,
-        height: 20,
-        decoration: BoxDecoration(
-          color: colors.primary,
-          borderRadius: FushiBorderRadius.chip,
-        ),
-        child: Icon(Icons.check, size: 14, color: colors.onPrimary),
       ),
     );
   }

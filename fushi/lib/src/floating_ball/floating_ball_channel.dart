@@ -134,6 +134,46 @@ class FloatingBallChannel {
   static Future<bool> takeSystemBallClosedByUser() async =>
       await _invoke<bool>('takeSystemBallClosedByUser') ?? false;
 
+  // ── 桌面（Windows / macOS）截屏识字 ────────────────────────────────
+
+  /// 截球所在的那块显示器并立刻盖上冻结层（契约见
+  /// `docs/specs/2026-09-30-desktop-system-floating-ball.md`「截屏识字」）。
+  /// [anchor] 是球的屏幕矩形（物理像素、左上原点），null 取光标所在显示器。
+  /// [labels] 键 `recognizing` / `hint` / `close`；[colors] 同 [startSystemBall]。
+  /// 原生没实现 / 通道出错时返回 `capture_failed`。
+  static Future<DesktopScreenOcrCapture> startScreenOcrCapture({
+    required Rect? anchor,
+    required Map<String, String> labels,
+    required Map<String, int> colors,
+  }) async {
+    final Map<Object?, Object?>? raw = await _invoke<Map<Object?, Object?>>(
+      'startScreenOcrCapture',
+      <String, Object?>{
+        'anchor': anchor == null
+            ? null
+            : <double>[anchor.left, anchor.top, anchor.right, anchor.bottom],
+        'labels': labels,
+        'colors': colors,
+      },
+    );
+    return DesktopScreenOcrCapture.fromWire(raw);
+  }
+
+  /// 在冻结层上画识别出的行框（截图像素坐标）；[message] 非空时替换顶部提示
+  /// （失败 / 没识别到字），null 时显示「点文字查词」。
+  static Future<void> updateScreenOcrOverlay({
+    List<Rect> lines = const <Rect>[],
+    String? message,
+  }) => _invoke<void>('updateScreenOcrOverlay', <String, Object?>{
+    'lines': <List<double>>[
+      for (final Rect r in lines) <double>[r.left, r.top, r.right, r.bottom],
+    ],
+    'message': message,
+  });
+
+  /// 关冻结层、恢复球（Dart 主动关，原生不回调 `screenOcrDismissed`）。
+  static Future<void> stopScreenOcr() => _invoke<void>('stopScreenOcr');
+
   // ── iOS ─────────────────────────────────────────────────────────────
 
   /// 截 app 自己的窗口，返回物理像素 PNG；失败返回 null。
@@ -179,6 +219,10 @@ class FloatingBallChannel {
   ///    屏幕上的矩形，物理像素、左上原点）→ [onSystemBallAction]；
   ///  - `systemBallPositionChanged {dock, fraction}`（桌面系统球拖动吸附后）→
   ///    [onSystemBallPositionChanged]；
+  ///  - `screenOcrTap {x, y}`（桌面冻结层上点了一下，截图像素坐标）→
+  ///    [onScreenOcrTap]；
+  ///  - `screenOcrDismissed`（桌面冻结层被 Esc / 右键 / 关闭钮关掉）→
+  ///    [onScreenOcrDismissed]；
   ///  - `sensorHousingEdgeChanged 'left'|'top'|'right'|'bottom'|null`（iOS 界面方向
   ///    变了，含横屏左 ↔ 右翻转——那种翻转窗口尺寸与对称安全区都不变，宿主的
   ///    didChangeMetrics 不一定触发，只能靠原生推）→ [onSensorHousingEdgeChanged]。
@@ -196,6 +240,8 @@ class FloatingBallChannel {
     void Function()? onSystemBallClosedByUser,
     void Function(String id, Rect? anchor)? onSystemBallAction,
     void Function(String dock, double fraction)? onSystemBallPositionChanged,
+    void Function(Offset point)? onScreenOcrTap,
+    void Function()? onScreenOcrDismissed,
     void Function(AxisDirection? edge)? onSensorHousingEdgeChanged,
   }) async {
     if (_handlerInstalled) return;
@@ -231,6 +277,16 @@ class FloatingBallChannel {
           if (dock is String && fraction is num) {
             onSystemBallPositionChanged?.call(dock, fraction.toDouble());
           }
+        case 'screenOcrTap':
+          final Object? args = call.arguments;
+          if (args is! Map) break;
+          final Object? x = args['x'];
+          final Object? y = args['y'];
+          if (x is num && y is num) {
+            onScreenOcrTap?.call(Offset(x.toDouble(), y.toDouble()));
+          }
+        case 'screenOcrDismissed':
+          onScreenOcrDismissed?.call();
         case 'sensorHousingEdgeChanged':
           onSensorHousingEdgeChanged?.call(
             sensorHousingEdgeFromWire(call.arguments),
@@ -268,4 +324,43 @@ class FloatingBallChannel {
     _handlerInstalled = false;
     channel.setMethodCallHandler(null);
   }
+}
+
+/// [FloatingBallChannel.startScreenOcrCapture] 的结果：成功带截图 PNG 与那块显示器
+/// 的屏幕矩形（物理像素、左上原点），失败带 [error]。
+class DesktopScreenOcrCapture {
+  const DesktopScreenOcrCapture.success({
+    required Uint8List this.png,
+    required Rect this.screen,
+  }) : error = null;
+
+  const DesktopScreenOcrCapture.failure(String this.error)
+    : png = null,
+      screen = null;
+
+  /// 原生回话 → 结果；形状不对一律当截屏失败。
+  factory DesktopScreenOcrCapture.fromWire(Map<Object?, Object?>? raw) {
+    if (raw == null) {
+      return const DesktopScreenOcrCapture.failure(captureFailed);
+    }
+    final Object? error = raw['error'];
+    if (error is String && error.isNotEmpty) {
+      return DesktopScreenOcrCapture.failure(error);
+    }
+    final Object? png = raw['png'];
+    final Rect? screen = FloatingBallChannel._rect(raw['screen']);
+    if (png is! Uint8List || png.isEmpty || screen == null || screen.isEmpty) {
+      return const DesktopScreenOcrCapture.failure(captureFailed);
+    }
+    return DesktopScreenOcrCapture.success(png: png, screen: screen);
+  }
+
+  /// 没有屏幕录制权限（macOS）：原生已弹系统授权请求。
+  static const String permissionDenied = 'permission_denied';
+
+  static const String captureFailed = 'capture_failed';
+
+  final Uint8List? png;
+  final Rect? screen;
+  final String? error;
 }

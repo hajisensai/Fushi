@@ -87,6 +87,25 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
+  /// 2026-10 体验优化：导入进行中禁止关闭对话框（返回键 / 点遮罩 / Esc）。
+  ///
+  /// 导入是不可中断的多步落库（复制文件 → 解析 → 匹配 → 写库），此前取消键与
+  /// 返回键在导入中照样能 pop，对话框没了而导入仍在后台跑完，用户以为已取消，
+  /// 回头书架里却多出一本（或半截失败没有任何提示）。没有真正的取消通道前，
+  /// 唯一诚实的做法是导入期间不让关。
+  Widget buildImportPopGuard({required Widget child}) {
+    return PopScope<Object?>(canPop: !importing, child: child);
+  }
+
+  /// 「取消」按钮：导入进行中禁用（理由同 [buildImportPopGuard]）。
+  Widget buildCancelAction(BuildContext context) {
+    return adaptiveDialogAction(
+      context: context,
+      onPressed: importing ? null : () => Navigator.pop(context),
+      child: Text(t.dialog_cancel),
+    );
+  }
+
   /// 「导入」确认按钮：导入中禁用并渲 spinner + 文案，否则渲 [t.dialog_import]。
   /// 两个导入对话框逐字相同的 action 收敛到此；Enter/默认键语义由
   /// `adaptiveDialogAction(isDefaultAction: true)` 原样保留，焦点行为不变。
@@ -133,7 +152,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
       SizedBox(height: tokens.spacing.card),
       ValueListenableBuilder<double>(
         valueListenable: progress,
-        builder: (_, value, __) => LinearProgressIndicator(value: value),
+        builder: (_, value, __) => FushiLinearProgressIndicator(value: value),
       ),
       SizedBox(height: tokens.spacing.gap / 2),
       ValueListenableBuilder<String>(

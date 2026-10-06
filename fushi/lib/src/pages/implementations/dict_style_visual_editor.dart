@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 词典查词结果的可视化样式面板：选部位 → 调属性。
@@ -67,11 +68,11 @@ class DictStyleVisualEditor extends StatelessWidget {
             runSpacing: tokens.spacing.gap,
             children: <Widget>[
               for (final DictStylePart part in DictStylePart.values)
-                FilterChip(
+                FushiFilterChip(
                   selected: part == selectedPart,
                   onSelected: (_) => onSelectPart(part),
                   avatar: _hasRules(part)
-                      ? const Icon(Icons.brush_outlined, size: 16)
+                      ? const FushiIcon(Icons.brush_outlined, size: 16)
                       : null,
                   label: Text(dictStylePartLabel(part)),
                 ),
@@ -84,7 +85,7 @@ class DictStyleVisualEditor extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Icon(
+                  FushiIcon(
                     Icons.info_outline,
                     size: 16,
                     color: tokens.surfaces.outline,
@@ -162,10 +163,10 @@ class DictStyleVisualEditor extends StatelessWidget {
           SizedBox(height: tokens.spacing.gap),
           Align(
             alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
+            child: FushiTextButton.icon(
               onPressed:
                   _props.isEmpty ? null : () => _update(const DictStyleProps()),
-              icon: const Icon(Icons.restart_alt, size: 18),
+              icon: const FushiIcon(Icons.restart_alt, size: 18),
               label: Text(t.dict_style_part_reset),
             ),
           ),
@@ -189,7 +190,7 @@ class DictStyleVisualEditor extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(child: Text(label, style: tokens.type.listSubtitle)),
-          SegmentedButton<int>(
+          FushiSegmentedButton<int>(
             showSelectedIcon: false,
             segments: <ButtonSegment<int>>[
               ButtonSegment<int>(
@@ -232,14 +233,14 @@ class DictStyleVisualEditor extends StatelessWidget {
   }) {
     return Column(
       children: <Widget>[
-        SwitchListTile.adaptive(
+        FushiSwitchListTile.adaptive(
           contentPadding: EdgeInsets.zero,
           title: Text(value == null ? label : '$label · ${format(value)}'),
           value: value != null,
           onChanged: (bool on) => onChanged(on ? enabledValue : null),
         ),
         if (value != null)
-          Slider(
+          FushiSlider(
             value: value.clamp(min, max),
             min: min,
             max: max,
@@ -324,7 +325,7 @@ class DictStyleVisualEditor extends StatelessWidget {
     Color picked = initial;
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog(
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
         content: SingleChildScrollView(
           child: ColorPicker(
             pickerColor: initial,
@@ -337,11 +338,11 @@ class DictStyleVisualEditor extends StatelessWidget {
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
             child: Text(t.dialog_cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             child: Text(t.dialog_ok),
           ),
@@ -426,7 +427,7 @@ class _ColorChoice extends StatelessWidget {
     // 会把这两样当「绕开设计系统的本地决策」抓出来，而它是对的：这里没有任何
     // 需要偏离 token 的理由。
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Tooltip(
+    return FushiTooltip(
       message: tooltip,
       child: InkWell(
         onTap: onTap,
@@ -444,13 +445,13 @@ class _ColorChoice extends StatelessWidget {
             ),
           ),
           child: showPaletteIcon
-              ? Icon(
+              ? FushiIcon(
                   Icons.colorize,
                   size: 16,
                   color: tokens.surfaces.onVariant,
                 )
               : (argb == null
-                  ? Icon(
+                  ? FushiIcon(
                       Icons.block,
                       size: 16,
                       color: tokens.surfaces.onVariant,

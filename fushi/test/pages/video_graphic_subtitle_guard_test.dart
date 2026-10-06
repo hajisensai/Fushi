@@ -74,7 +74,7 @@ void main() {
     expect(
       src.contains('t.video_subtitle_graphic_learning_hint'),
       isTrue,
-      reason: '菜单应说明图形轨不可查词，并引导外挂文字字幕或 ASR',
+      reason: '菜单应说明图形轨暂停后经 OCR 点字查词，并引导外挂文字字幕或 ASR 以求更准',
     );
     // 选中图形轨走画面渲染 + 专用提示。
     expect(src.contains('controller.selectEmbeddedGraphicTrack('), isTrue);
@@ -86,6 +86,41 @@ void main() {
       reason: '恢复路径应把图形 streamIndex 透传给 _applyLoad/load',
     );
     expect(src.contains('graphicStreamIndex'), isTrue);
+  });
+
+  test('视频页：图形轨有「整轨 OCR 成文字字幕」入口并当外挂字幕加载', () {
+    final String src = readVideoFushiSource();
+    final int tile = src.indexOf('Text(t.video_subtitle_graphic_ocr_track)');
+    expect(tile, greaterThan(-1), reason: '图形轨行下应有整轨 OCR 按钮');
+    expect(
+      src.indexOf(
+        '_generateSubtitleFromGraphicTrack(controller, source)',
+        tile,
+      ),
+      greaterThan(tile),
+      reason: '按钮应触发整轨 OCR',
+    );
+    final int method = src.indexOf(
+      'Future<void> _generateSubtitleFromGraphicTrack(',
+    );
+    expect(method, greaterThan(-1));
+    final String body = src.substring(method, src.indexOf('\n  }\n', method));
+    // 抽轨成 .sup → 解析 → 识别（AI 重读与漫画同一引擎装配）→ SRT。
+    for (final String step in <String>[
+      'extractGraphicSubtitleTrackToSup(',
+      'PgsSubtitleParser.parse(',
+      'prepare: _prepareGraphicSubtitleOcr',
+      'recognizeGraphicSubtitleCues(',
+      'buildGraphicSubtitleSrt(',
+      // 产物与 ASR 同口径：当外挂文字字幕加载，播放中即可点字查词。
+      '_importExternalSubtitle(controller, target)',
+      'on GraphicSubtitleOcrUnavailable',
+      'await session.close();',
+    ]) {
+      expect(body.contains(step), isTrue, reason: '整轨 OCR 缺少步骤：$step');
+    }
+    // 取消判据：换集 / 换播放器 / 离开页面即停。
+    expect(body.contains('isCancelled: () => !isCurrent()'), isTrue);
   });
 
   test('图形分支在加载遮罩之前 return，不弹遮罩（瞬时切轨）', () {

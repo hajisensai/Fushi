@@ -28,14 +28,27 @@ class MediaServerPlayRequest {
   bool get hasCollection => members.length > 1;
 }
 
+/// 下载出口的回调形态（与 [MediaServerPlayHandler] 同一份请求：下什么、同季
+/// 还有哪些）。
+typedef MediaServerDownloadHandler =
+    void Function(BuildContext context, MediaServerPlayRequest request);
+
 /// 一台服务器的浏览会话：浏览器 + 播放出口。首页 / 网格 / 详情三层视图共用同一份，
 /// 切服务器就是换一份会话，所以 PageStorage / 焦点 id 都用 [serverId] 做前缀，
 /// 两台服务器的滚动位置与搜索词不会串。
 class MediaServerSession {
-  const MediaServerSession({required this.browser, required this.play});
+  const MediaServerSession({
+    required this.browser,
+    required this.play,
+    this.download,
+  });
 
   final MediaServerBrowser browser;
   final MediaServerPlayHandler play;
+
+  /// 下载出口。null = 这台服务器的条目没有接下载管线，详情页不出「下载」次按钮
+  /// （UI 只留位置，不假装能下）。
+  final MediaServerDownloadHandler? download;
 
   String get serverId => browser.serverId;
 

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../integration_test/test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   testWidgets('findPrimaryNavigationTargets scopes icons to NavigationRail',
@@ -126,7 +127,7 @@ void main() {
 
     final Finder target = findSearchField();
 
-    expect(tester.widget<TextField>(target).key,
+    expect(tester.widget<TextField>(glassUnwrap<TextField>(target)).key,
         const ValueKey<String>('home_dictionary_search_field'));
   });
 

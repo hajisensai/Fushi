@@ -89,11 +89,12 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight,
+      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _videoGeometryBottomBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );
@@ -116,8 +117,8 @@ extension _VideoChapter on _VideoFushiPageState {
                 child: Padding(
                   // 水平内缩 16px 对齐 seekBarMargin；竖直由 band 锚定到 seek bar 轨道。
                   padding: EdgeInsets.only(
-                    left: 16,
-                    right: 16,
+                    left: _videoSeekBarSideInset,
+                    right: _videoSeekBarSideInset,
                     bottom: band.bottom,
                   ),
                   child: Align(
@@ -160,11 +161,12 @@ extension _VideoChapter on _VideoFushiPageState {
     final double tickHeight = _videoSeekBarTrackHeight + 8.0 * _videoUiScale;
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight,
+      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _videoGeometryBottomBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: tickHeight,
     );
@@ -183,7 +185,10 @@ extension _VideoChapter on _VideoFushiPageState {
             return IgnorePointer(
               child: Padding(
                 // 水平内缩 16px 对齐 seekBarMargin；轨道内宽由内部 LayoutBuilder 取。
-                padding: const EdgeInsets.only(left: 16, right: 16),
+                padding: EdgeInsets.only(
+                  left: _videoSeekBarSideInset,
+                  right: _videoSeekBarSideInset,
+                ),
                 child: LayoutBuilder(
                   builder: (BuildContext _, BoxConstraints constraints) {
                     return Stack(
@@ -224,6 +229,75 @@ extension _VideoChapter on _VideoFushiPageState {
         _pokeControlsVisible();
         unawaited(controller.seekToChapter(chapter.index));
       },
+    );
+  }
+
+  /// 「跳过片头 / 片尾」按钮（[videoSkippableChapterKind]）：播放位置落在名为
+  /// OP / ED 一类的章节、且后面还有下一章时，画面右下角（底栏上方）出一枚按钮，
+  /// 按下 = 下一章（与 `videoNextChapter` 快捷键同一路径 [VideoPlayerController
+  /// .nextChapter]）。没有章节 / 不在这类章节 / mini 档时不出现。
+  ///
+  /// MD3：主色容器 Expressive 胶囊（按下形变）；Apple：深色玻璃胶囊。按钮是普通
+  /// 可聚焦按钮（Tab / 手柄可达，Enter 触发），出现与消失带淡入 + 轻微上浮。
+  Widget _buildSkipChapterButton(VideoPlayerController controller) {
+    if (!_controlsDensity.showBottomButtonBar) return const SizedBox.shrink();
+    final double scale = _videoUiScale * _controlsDensityScale;
+    final double bottom = _videoBottomSystemInset() +
+        (_videoButtonBarHeight + _videoSeekBarContainerHeight) *
+            _controlsDensityScale +
+        _appleBottomLift +
+        20 * scale;
+    return Positioned(
+      right: 24 * scale,
+      bottom: bottom,
+      child: ListenableBuilder(
+        listenable: controller,
+        builder: (BuildContext context, Widget? _) {
+          VideoSkippableChapter? kind;
+          final List<VideoChapter> chapters = controller.chapters;
+          if (chapters.length > 1) {
+            final int index = controller.chapterIndexForPosition(
+              controller.positionMs ?? 0,
+            );
+            if (index >= 0 && index < chapters.length - 1) {
+              kind = videoSkippableChapterKind(chapters[index].title);
+            }
+          }
+          final VideoSkippableChapter? shown = kind;
+          final Widget child = shown == null
+              ? const SizedBox.shrink(key: ValueKey<String>('skip-none'))
+              : VideoSkipChapterButton(
+                  key: ValueKey<VideoSkippableChapter>(shown),
+                  label: shown == VideoSkippableChapter.opening
+                      ? t.video_skip_opening
+                      : t.video_skip_ending,
+                  scale: scale,
+                  apple: _appleChrome,
+                  onPressed: () {
+                    _pokeControlsVisible();
+                    unawaited(controller.nextChapter());
+                  },
+                );
+          return AnimatedSwitcher(
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            reverseDuration: fushiMotionDuration(context, FushiMotion.short),
+            switchInCurve: FushiMotion.enter,
+            switchOutCurve: FushiMotion.exit,
+            transitionBuilder: (Widget child, Animation<double> animation) =>
+                FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.4),
+                      end: Offset.zero,
+                    ).animate(animation),
+                    child: child,
+                  ),
+                ),
+            child: child,
+          );
+        },
+      ),
     );
   }
 

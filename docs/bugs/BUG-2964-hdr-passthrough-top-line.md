@@ -1,0 +1,15 @@
+## BUG-2964 · HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上
+- **报告**：2026-10-06（用户：「hdr 的视频全屏上面有一条横线」；同轮还报「进入 HDR 视频并全屏时会少一段时间的 fushi 覆盖层」「HDR 视频和界面感觉不在一个层级上」）
+- **真实性**：✅ 真 bug，根因在 runner 的主窗 DWM 合成状态，与 Flutter / mpv 无关。逐层排除（用户机器 + 隔离测试实例 + 独立 Win32 复现）：
+  - 现象实测：用户 Fushi HDR 全屏时屏幕第 0 行整行恒为 `(254,253,255)`（浅色主题底色），第 1 行起才是视频；隔离测试实例（深色主题）同位置恒为 `(23,15,18)`。
+  - Flutter：VM service `_flutter.screenshot` 取全屏光栅帧，第 0 行 `(0,0,0,0)` 全透明 → 不是 Flutter 画的。
+  - runner GDI 底色：临时把 `backdrop_brush_` 强制成品红，横线颜色不变 → 不是 GDI 底色。
+  - mpv：日志 `Window size: 3840x2160 (Borders: l=0 t=0 r=0 b=0)` → 视频铺满第 0 行。
+  - **根因 ①**：`fushi/windows/runner/flutter_window.cpp`（`ApplySystemBackdrop` 非 Mica 分支，原 `:4573`）`DwmExtendFrameIntoClientArea(hwnd, {0,0,1,0})` 把边框延伸进客户区顶部 1 px；`ApplyCaptionColors` 又把 `DWMWA_CAPTION_COLOR` 设成主题底色。DWM 把延伸进来的像素画成不透明的边框 / 标题栏材质；平时 Flutter 在那一行画不透明页面盖住它，HDR 直通时那一行是透明视频洞 → 露出一条标题栏色横线。独立复现（隐藏标题栏几何 + blur-behind + 红色宿主窗）：边距 `{0,0,1,0}` → 第 0 行 = 标题栏色；改 `{0,0,0,0}` → 第 0 行 = 宿主红；改回又出现。同理 Mica 的 `{-1}` 边距会让整块视频洞透出 Mica 而不是视频。
+  - **根因 ②**：DWM 窗口阴影画在窗口后面，隐藏标题栏只留 1 px 顶部非客户区，阴影伸到客户区第 0 行下方；透明像素把它露出来（测试实例顶行比第 1 行暗 17%，独立复现 255→235）。`DWMWA_NCRENDERING_POLICY=DISABLED` 后消失；不透明内容不受影响。
+  - **根因 ③（同一缺陷的另一面）**：GDI 往主窗表面写 alpha 0，DWM 按预乘色合成 → 主题底色 / BUG-1933 过渡截图被**叠加**到后方视频上（实测蓝底叠红宿主 = 品红），不是遮住。`Win32Window::PaintBackdrop` 只对 Mica 用黑刷，HDR 直通漏了。
+  - 架构缺陷：主窗的 DWM 合成（边距 / NC 渲染 / 表面填充）由 Mica 与 HDR 宿主窗各自写、互不知情。
+- **[x] ① 已修复** — 新增纯函数决策 `fushi/windows/runner/main_surface_composition.h`（`MainSurfaceState{system_backdrop, video_passthrough, fullscreen}` → 边距 / 是否透明表面 / 是否关 NC 渲染），`FlutterWindow::ApplyMainSurfaceComposition` 成为边距与 NC 策略的唯一写入者；`HdrVideoHostWindow` 切主窗透明时回调 `SetMainVideoPassthrough`；`Win32Window` 新增 `video_passthrough_`，透明表面一律黑刷且不贴 GDI 过渡截图；全屏通道退出前先恢复 NC 渲染（边框仍在屏外）再还原几何。直通期间边距 `{0,0,0,0}`，直通 + 全屏关 NC 渲染（边框在屏外，无可见代价；实测切换 10 次 / 202 采样子窗层零丢帧）。提交见本分支 `worktree-fix-hdr-fullscreen-overlay-gap`。
+- **[x] ② 已加自动化测试** — C++ `fushi/windows/runner/tests/main_surface_composition_test.cpp`（决策表，挂 runner 构建门，每次 Windows 构建执行）；源码守卫 `fushi/test/build/hdr_video_host_guard_test.dart`「主窗 DWM 合成只有一个写入者…」（`DwmExtendFrameIntoClientArea` / `DWMWA_NCRENDERING_POLICY` 全文件各只一处且在 `ApplyMainSurfaceComposition` 内、宿主窗回调、退出全屏顺序）。
+- **验证**：隔离测试实例（develop 构建 + HDR10 测试片，显示器 HDR10 1015 nit）HDR 全屏：修复前第 0 行 `(23,15,18)`，修复后第 0/1/2 行均为视频 `(0,167,255)`；NC 渲染 窗口=开 / HDR 全屏=关 / 退出后=开；SDR 片（`vo/libmpv`，无宿主窗）全屏 NC 渲染保持开。用户机器上的原始路径（浅色主题、真片源）未复测——需装新构建后确认。
+- **备注**：同轮用户报的「进全屏少一段时间的覆盖层」**不是**本条修掉的：录屏证据是进全屏后 Fushi 字幕层同一句字幕先变淡、整行消失约 0.9 s 再回来（控制条在），根因未定位，另行跟进。另在 F 键路径上稳定复现「退出全屏一次后再按 F，toggle 走到但 runner 收不到 setFullscreen」，用户双击路径未见，未定位。

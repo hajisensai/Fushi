@@ -75,44 +75,31 @@ class _OpenStashDialogPage extends BasePageState<OpenStashDialogPage> {
     List<Widget> widgets = [];
 
     appModel.getStash().forEachIndexed((index, segment) {
-      Widget widget = GestureDetector(
-        onTap: () {
-          if (_selectionNotifier.value == index) {
-            _selectionNotifier.value = null;
-          } else {
-            _selectionNotifier.value = index;
-          }
+      // 共享可选 chip（MD3 Expressive / Apple 中性灰选中 + 强调色字），
+      // 替换原先 GestureDetector + 手搭圆角方块：后者既不跟设计系统走，也不是
+      // 焦点停靠点（键盘 / 手柄选不中暂存词）。
+      Widget widget = ValueListenableBuilder<int?>(
+        valueListenable: _selectionNotifier,
+        builder: (context, value, child) {
+          final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+          return Padding(
+            padding: EdgeInsets.only(
+              top: tokens.spacing.gap,
+              right: tokens.spacing.gap,
+            ),
+            child: FushiSelectableChip(
+              label: segment,
+              selected: index == value,
+              onSelected: (_) {
+                if (_selectionNotifier.value == index) {
+                  _selectionNotifier.value = null;
+                } else {
+                  _selectionNotifier.value = index;
+                }
+              },
+            ),
+          );
         },
-        child: ValueListenableBuilder<int?>(
-          valueListenable: _selectionNotifier,
-          builder: (context, value, child) {
-            final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-            return Container(
-              padding: EdgeInsets.symmetric(
-                vertical: tokens.spacing.gap,
-                horizontal: tokens.spacing.gap + 4,
-              ),
-              margin: EdgeInsets.only(
-                top: tokens.spacing.gap,
-                right: tokens.spacing.gap,
-              ),
-              decoration: BoxDecoration(
-                color: index == _selectionNotifier.value
-                    ? theme.colorScheme.secondaryContainer
-                    : tokens.surfaces.card,
-                borderRadius: tokens.radii.chipRadius,
-              ),
-              child: SizedBox(
-                child: Text(
-                  segment,
-                  style: tokens.type.controlLabel.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
       );
 
       widgets.add(widget);

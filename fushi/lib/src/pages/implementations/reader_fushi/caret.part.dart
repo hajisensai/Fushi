@@ -626,6 +626,12 @@ extension _ReaderCaret on _ReaderFushiPageState {
           clearDictionaryResult();
           return KeyEventResult.handled;
         }
+        // ②' 歌词覆盖层在场 → 先回到下面的阅读器（Niratan：Esc 先退歌词再关窗口）。
+        //    覆盖层只是盖在正文上的一层，退一级就是把它掀开，不是退书。
+        if (_lyricsMode) {
+          unawaited(_toggleLyricsMode());
+          return KeyEventResult.handled;
+        }
         // ③ 窗口全屏中 → 先退全屏、留在书里；不在全屏才真的退书。用户裁定「Esc 也可以
         //    退出全屏」，次序见 [_exitWindowFullscreenOrPopReader]。非全屏时它只多读一次
         //    窗口状态就落回原来的 maybePop，退书路径本身没变。
@@ -779,10 +785,13 @@ extension _ReaderCaret on _ReaderFushiPageState {
   /// or returning from a dismissed popup). The reader's own fushiCaret restores
   /// its remembered position, so this re-shows the ring where the user left it.
   Future<void> _enterCaret() async {
-    if (_controller == null || !_readerContentReady || _caretBusy) return;
+    // 歌词覆盖层在场时焦点环进歌词 WebView（[_surfaceController]），否则进正文。
+    final InAppWebViewController? surface = _surfaceController;
+    if (surface == null || !_readerContentReady || _caretBusy) return;
+    if (_lyricsMode && !_lyricsPageReady) return;
     _caretBusy = true;
     try {
-      final Object? raw = await _controller!.evaluateJavascript(
+      final Object? raw = await surface.evaluateJavascript(
         source: _lyricsMode
             ? ReaderLyricsCaretScripts.enterInvocation()
             : ReaderCaretScripts.enterInvocation(),
@@ -792,7 +801,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
       if (ReaderCaretScripts.moveStatus(raw) != 'moved') return;
       if (_lyricsMode) {
         // 激活后暂停播放跟随滚动：setCue 只换高亮，不抢滚动。
-        await _controller!.evaluateJavascript(
+        await surface.evaluateJavascript(
           source: 'window.__lyricsCaretActive = true;',
         );
         _rebuild(() => _caretSurface = CaretSurface.lyrics);
@@ -815,11 +824,11 @@ extension _ReaderCaret on _ReaderFushiPageState {
         );
         break;
       case CaretSurface.lyrics:
-        _controller?.evaluateJavascript(
+        _lyricsController?.evaluateJavascript(
           source: ReaderLyricsCaretScripts.exitInvocation(),
         );
         // 退出焦点：恢复播放跟随并立即把当前播放行重新居中。
-        _controller?.evaluateJavascript(
+        _lyricsController?.evaluateJavascript(
           source:
               'window.__lyricsCaretActive = false;'
               'if(window.__lyricsScrollToCue&&window.__lyricsGetCurrentIndex)'
@@ -990,8 +999,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
       }
       return;
     }
-    if (_controller == null) return;
-    final Object? raw = await _controller!.evaluateJavascript(
+    final InAppWebViewController? caretWeb =
+        _caretOnLyrics ? _lyricsController : _controller;
+    if (caretWeb == null) return;
+    final Object? raw = await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
           ? ReaderLyricsCaretScripts.moveInvocation(physicalDir)
           : ReaderCaretScripts.moveInvocation(physicalDir),
@@ -1024,8 +1035,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
         await _caretTopPopupState?.caretScrollPage(forward);
         return;
       }
-      if (_controller == null) return;
-      final Object? raw = await _controller!.evaluateJavascript(
+      final InAppWebViewController? caretWeb =
+          _caretOnLyrics ? _lyricsController : _controller;
+      if (caretWeb == null) return;
+      final Object? raw = await caretWeb.evaluateJavascript(
         source: _caretOnLyrics
             ? ReaderLyricsCaretScripts.scrollPageInvocation(forward)
             : ReaderCaretScripts.scrollPageInvocation(forward),
@@ -1050,8 +1063,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
       await _caretTopPopupState?.caretLookup();
       return;
     }
-    if (_controller == null) return;
-    await _controller!.evaluateJavascript(
+    final InAppWebViewController? caretWeb =
+        _caretOnLyrics ? _lyricsController : _controller;
+    if (caretWeb == null) return;
+    await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
           ? ReaderLyricsCaretScripts.lookupInvocation()
           : ReaderCaretScripts.lookupInvocation(),
@@ -1068,8 +1083,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
       await _caretTopPopupState?.caretActivate();
       return;
     }
-    if (_controller == null) return;
-    await _controller!.evaluateJavascript(
+    final InAppWebViewController? caretWeb =
+        _caretOnLyrics ? _lyricsController : _controller;
+    if (caretWeb == null) return;
+    await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
           ? ReaderLyricsCaretScripts.activateInvocation()
           : ReaderCaretScripts.activateInvocation(),
@@ -1081,8 +1098,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
       await _caretTopPopupState?.caretLongPress();
       return;
     }
-    if (_controller == null) return;
-    await _controller!.evaluateJavascript(
+    final InAppWebViewController? caretWeb =
+        _caretOnLyrics ? _lyricsController : _controller;
+    if (caretWeb == null) return;
+    await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
           ? ReaderLyricsCaretScripts.longPressInvocation()
           : ReaderCaretScripts.longPressInvocation(),
@@ -1126,8 +1145,11 @@ extension _ReaderCaret on _ReaderFushiPageState {
   /// the cursor's node detached, JS re-anchors to the first visible character.
   /// Reader-only.
   Future<void> _caretRefresh() async {
-    if (_controller == null || (!_caretOnReader && !_caretOnLyrics)) return;
-    await _controller!.evaluateJavascript(
+    if (!_caretOnReader && !_caretOnLyrics) return;
+    final InAppWebViewController? caretWeb =
+        _caretOnLyrics ? _lyricsController : _controller;
+    if (caretWeb == null) return;
+    await caretWeb.evaluateJavascript(
       source: _caretOnLyrics
           ? ReaderLyricsCaretScripts.refreshInvocation()
           : ReaderCaretScripts.refreshInvocation(),

@@ -95,7 +95,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
         initialIndex: widget.initialTab.index,
         child: Column(
           children: <Widget>[
-            TabBar(
+            FushiTabBar(
               tabs: <Widget>[
                 Tab(text: t.stat_center_tab_overview),
                 Tab(text: t.home_filter_read),
@@ -195,6 +195,15 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   void _onRangeChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// 加载失败后的重试：先回到加载态（按钮不可连点），再重新聚合。
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
   }
 
   /// 当前范围：共享选择 × 本 tab 的今日 × 跨域最早有数据的一天。
@@ -300,14 +309,26 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   Widget _buildBody(FushiDesignTokens tokens) {
     if (_loading) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: Theme.of(context).colorScheme.primary,
-        ),
-      );
+      return const FushiLoadingView();
     }
     if (_error != null) {
-      return Center(child: Text(_error!, style: tokens.type.metadata));
+      // 2026-10 体验优化：不再把异常原文（英文堆栈片段）直接甩给用户；原文已在
+      // [_load] 写进错误日志，这里显示本地化的「加载出错」+ 重试。
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.error_load_failed, style: tokens.type.metadata),
+            SizedBox(height: tokens.spacing.gap),
+            TextButton.icon(
+              key: const ValueKey<String>('stat-overview-retry'),
+              onPressed: _retryLoad,
+              icon: const Icon(Icons.refresh),
+              label: Text(t.retry),
+            ),
+          ],
+        ),
+      );
     }
     final StatWindow w = _window;
     final StatRange range = _range;
@@ -376,8 +397,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
 
   /// 目标编辑：与阅读统计 tab 同一份表单、同一个持久化目标。
   Future<void> _editGoals() async {
-    final bool saved =
-        await showStatGoalEditDialog(context, ref.read(appProvider));
+    final bool saved = await showStatGoalEditDialog(
+      context,
+      ref.read(appProvider),
+      recentDailyAverage:
+          statRecentDailyAverageChars(_daily, _window.lastDayKeys(7)),
+    );
     if (saved && mounted) setState(() {});
   }
 
@@ -474,11 +499,20 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       t.stat_clear_all_overview_message,
     );
     if (!confirmed || !mounted) return;
+    // 2026-10 体验优化：三个域逐个清空可能要一两秒，期间旧数字还挂在页面上、
+    // 按钮还能再点。确认后立即进加载态（动作行按钮随 _loading 一起禁用），
+    // 清完重聚合，再给一条完成提示。
+    setState(() => _loading = true);
     final FushiDatabase db = ref.read(appProvider).database;
-    await db.clearAllReadingStatistics();
-    await db.clearAllVideoStatistics();
-    await db.clearAllGalgameStatistics();
-    if (mounted) await _load();
+    try {
+      await db.clearAllReadingStatistics();
+      await db.clearAllVideoStatistics();
+      await db.clearAllGalgameStatistics();
+    } finally {
+      // 清空失败也要重聚合退出加载态（异常照常向上抛，不吞）。
+      if (mounted) await _load();
+    }
+    if (mounted) FushiToast.show(msg: t.stat_cleared_toast);
   }
 
   /// 改一次会话（日期 / 字数）：走会话编辑的唯一入口（先在 StudyClock 上退役 uid
@@ -495,8 +529,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (mounted) await _load();
   }
 
-  /// 跨域「今日目标」进度卡（只读展示；编辑入口在首页/阅读统计页）。目标未设
-  /// 时整卡隐藏。
+  /// 跨域「今日目标」进度卡。目标未设时整卡隐藏（动作行的旗标按钮是常驻入口）。
+  /// 2026-10 体验优化：卡片本身可点，直接进目标编辑（此前只读，用户找不到改法）。
   Widget _buildGoalCard(FushiDesignTokens tokens, StatWindow w) {
     final int goal = ref.read(appProvider).readingGoalDailyChars;
     if (goal <= 0) return const SizedBox.shrink();
@@ -510,6 +544,7 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         0,
       ),
       child: FushiCard(
+        onTap: _loading ? null : () => unawaited(_editGoals()),
         child: Row(
           children: <Widget>[
             Text(t.stat_goal, style: tokens.type.metadata),
@@ -517,11 +552,13 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
             Expanded(
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 6,
-                  backgroundColor: tokens.surfaces.card,
-                  color: tokens.surfaces.primary,
+                  // 轨道不传 surfaces.card：它与外层 FushiCard 同一档面色，整条
+                  // 隐形；用进度条默认轨道（MD3 secondaryContainer / Apple
+                  // systemFill）。
+                  color: statChartColorsOf(context).series,
                 ),
               ),
             ),
@@ -587,8 +624,10 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       onTap: () => unawaited(_showPeriodDetail(label, contains)),
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatChars(chars)),
-        if (cph != null)
-          StatSummaryLine(label: t.stat_reading_speed, value: cph),
+        StatSummaryLine(
+          label: t.stat_reading_speed,
+          value: cph ?? kStatEmptyValue,
+        ),
         StatSummaryLine(label: t.stat_lookup, value: '${pick(_lookup)}'),
         StatSummaryLine(label: t.stat_mined, value: '${pick(_mined)}'),
         StatSummaryLine(label: t.stat_favorited, value: '${pick(_favorited)}'),

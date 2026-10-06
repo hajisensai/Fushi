@@ -73,11 +73,23 @@ function fushiTabSite(url) {
 // - cancel：fushiNfBatch.active（生成中/卡住残留）→ 可点，取消并清理（逃生口保留，队列空也可点）。
 // - generate：当前 tab 站点与队列中可生成项匹配 → 可点，标签带数量；跨站点剩余量进 hint。
 // - empty / unsupported / wrongSite：不可点 + hint 说明原因与下一步（wrongSite 引导点队列条目跳转）。
-function fushiGenButtonState(queue, batchActive, tabSite) {
+// YouTube 项不挑页面（用户 2026-10-04「点进去放一会儿视频才能制卡，能不能全自动」）：生成是
+// service worker 逐条调 /api/mine、服务端自己解析流，与当前 tab 无关 → 只要不是在 Netflix 页上
+// 录 Netflix，任何 tab 都能直接生成。ytBatch = background 回报的 {done,total}（进行中）或 null。
+// target 告诉 popup 点击后走哪条：'netflix' 需关 popup 让播放页就地录；'youtube' 留着看进度。
+function fushiGenButtonState(queue, batchActive, tabSite, ytBatch) {
   const t = fushiApT;
   if (batchActive) {
     return { mode: 'cancel', label: t('ap_gen_cancel'), enabled: true, hint: t('ap_gen_cancel_hint') };
   }
+  if (ytBatch && ytBatch.total > 0) {
+    return {
+      mode: 'running', label: t('gen_progress', { done: ytBatch.done || 0, total: ytBatch.total }),
+      enabled: false, hint: '',
+    };
+  }
+  // 当前 tab 还没查到（null）：不知道是不是 Netflix 播放页，点了可能走错分支 → 先禁用。
+  if (tabSite == null) return { mode: 'pending', label: t('ap_gen_start'), enabled: false, hint: '' };
   const list = Array.isArray(queue) ? queue : [];
   const nf = list.filter((q) => q && q.site === 'netflix' && q.netflixId).length;
   const yt = list.filter((q) => q && q.site === 'youtube' && q.youtubeId).length;
@@ -92,22 +104,20 @@ function fushiGenButtonState(queue, batchActive, tabSite) {
   }
   if (tabSite === 'netflix' && nf) {
     return {
-      mode: 'generate', label: t('ap_gen_start_record_n', { n: nf }), enabled: true,
+      mode: 'generate', target: 'netflix', label: t('ap_gen_start_record_n', { n: nf }), enabled: true,
       hint: yt ? t('ap_gen_other_youtube_hint', { n: yt }) : '',
     };
   }
-  if (tabSite === 'youtube' && yt) {
+  if (yt) {
     return {
-      mode: 'generate', label: t('ap_gen_start_n', { n: yt }), enabled: true,
+      mode: 'generate', target: 'youtube', label: t('ap_gen_start_n', { n: yt }), enabled: true,
       hint: nf ? t('ap_gen_other_netflix_hint', { n: nf }) : '',
     };
   }
-  const parts = [];
-  if (nf) parts.push(t('ap_gen_site_count', { site: 'Netflix', n: nf }));
-  if (yt) parts.push(t('ap_gen_site_count', { site: 'YouTube', n: yt }));
+  // 只剩 Netflix 项且不在 Netflix 页：录屏必须在播放页上，引导点队列条目跳过去。
   return {
     mode: 'wrongSite', label: t('ap_gen_start'), enabled: false,
-    hint: t('ap_gen_wrong_site_hint', { pending: parts.join(' · ') }),
+    hint: t('ap_gen_wrong_site_hint', { pending: t('ap_gen_site_count', { site: 'Netflix', n: nf }) }),
   };
 }
 
@@ -250,12 +260,18 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   // popup 打开时 query 一次当前 tab（popup 绑定于当前窗口活动 tab，生命周期内不变）；
   // 队列/批量状态经 storage.onChanged 实时驱动重算。
   let genTab = null; // {id,url}；query 回来前按 other 站点渲染（按钮先禁用，回来后立即修正）
+  // YouTube 批量进度：background 内存态是唯一真相源（SW 被杀 = 没有批量在跑），打开时问一次，
+  // 之后跟 fushiYtBatchProgress 广播走。
+  let ytBatch = null;
+  let genTabKnown = false; // tabs.query 回来前 tabSite=null → 按钮禁用
   function updateGenButton(queue, batch) {
     if (!genEl) return;
-    const state = fushiGenButtonState(queue, !!(batch && batch.active), fushiTabSite(genTab && genTab.url));
+    const state = fushiGenButtonState(
+      queue, !!(batch && batch.active), genTabKnown ? fushiTabSite(genTab && genTab.url) : null, ytBatch);
     genEl.textContent = state.label;
     genEl.disabled = !state.enabled;
     genEl.dataset.mode = state.mode;
+    genEl.dataset.target = state.target || '';
     if (genHintEl) {
       genHintEl.textContent = state.hint;
       genHintEl.hidden = !state.hint;
@@ -358,9 +374,12 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   }
 
   // 「开始生成/录制」：按钮点击=用户手势 → 拿当前 tab → 让 background 跑 fushiIconClick。
-  // Netflix：background 就地起录屏（复用本次 action 授予的 activeTab）；YouTube：跑队列服务端裁剪。
+  // Netflix：background 就地起录屏（复用本次 action 授予的 activeTab）；YouTube：background 自己
+  // 跑队列（服务端裁剪，不需要视频页），popup 留着显示进度。
   if (genEl) {
     genEl.addEventListener('click', () => {
+      // Netflix 就地录需当前页可见 → 关 popup；YouTube 在 SW 里跑，留着看「生成中 x/y」。
+      const keepOpen = genEl.dataset.target === 'youtube';
       try {
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
           const tab = tabs && tabs[0];
@@ -370,11 +389,31 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
               { type: 'fushiIconAction', tab: { id: tab.id, url: tab.url || '' } },
               () => { try { void chrome.runtime.lastError; } catch (_) {} });
           } catch (_) {}
-          window.close(); // 关闭 popup，让 content 就地跑（Netflix 就地录需当前页可见）
+          if (!keepOpen) window.close();
         });
       } catch (_) { window.close(); }
     });
   }
+  function applyYtBatch(batch) {
+    ytBatch = batch && batch.total > 0 ? batch : null;
+    readQueue().then((q) => refreshGenButton(q));
+  }
+  function queryYtBatch() {
+    try {
+      chrome.runtime.sendMessage({ type: 'fushiYtBatchStatus' }, (resp) => {
+        try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+        applyYtBatch(resp && resp.batch);
+      });
+    } catch (_) {}
+  }
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg && msg.type === 'fushiYtBatchProgress') applyYtBatch(msg.batch);
+    });
+  } catch (_) {}
+  queryYtBatch();
+  // running 态回问：SW 中途被杀就不会再有「结束」广播；重启后的 SW 内存态为 null → 解锁按钮。
+  setInterval(() => { if (ytBatch) queryYtBatch(); }, 3000);
 
   // 浏览器原生 Side Panel 入口。**这是全扩展唯一真正能开侧边栏的路径**（popup 在扩展上下文里，
   // 点击带瞬态用户激活），所以它必须一次都不能失手。
@@ -458,6 +497,7 @@ if (typeof document !== 'undefined' && typeof chrome !== 'undefined' && chrome.s
   try {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       genTab = (tabs && tabs[0]) || null;
+      genTabKnown = true;
       readQueue().then((q) => refreshGenButton(q));
     });
   } catch (_) {}

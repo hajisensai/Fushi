@@ -719,6 +719,180 @@ html.global-lookup .mine-button:not(:disabled) {
     opacity: 1;
 }
 
+/* 「选择音频源」菜单（♪ 触屏长按 / 桌面右键 / Shift+F10 打开，popup.js
+   openAudioSourceMenu）。列出当前词每个启用音频源各自解析出的候选，点项即播。
+   与 .audio-hint 同一套定位：挂在 __fushiOverlayParent() 顶层、position:fixed +
+   JS 按按钮屏幕坐标算好的 left/top（in-app 弹窗与 app 外覆盖窗都锚在按钮旁）。
+   基础外观是 MD3 tonal 菜单（surfaceContainerHigh 实底 + 柔和阴影）；玻璃宿主
+   （Apple 设计系统 html.fushi-glass-host / 扩展 .fushi-glass）在支持
+   backdrop-filter 时换成半透明玻璃（.is-glass）；墨水屏 .is-eink。两个 class 由 JS
+   applyAudioMenuTheme 从 <html> / 扩展弹窗容器镜像过来——扩展里菜单挂在 shadow root
+   顶层、不是容器后代，祖先选择器够不着。选中 / 聚焦项用主题主色
+   淡染（与链接、选中词典名同一强调色）。长按不弹系统 callout：按钮上关掉。 */
+.audio-button {
+    -webkit-touch-callout: none;
+}
+
+.fushi-audio-menu {
+    position: fixed;
+    z-index: 10001;
+    /* 宽度随内容：至少 200、至多 min(320, 视口 - 16)（JS 定位时再按弹窗可见区收紧
+       max-width，单位是菜单自身的样式 px）。 */
+    box-sizing: border-box;
+    width: max-content;
+    min-width: min(200px, calc(100vw - 16px));
+    max-width: min(320px, calc(100vw - 16px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 4px;
+    border-radius: 12px;
+    color: var(--text-color);
+    background: var(--md-surface-container-high, var(--surface-container-high));
+    border: 1px solid var(--md-outline-variant, var(--outline-variant));
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+    font-size: 13px;
+    line-height: 1.35;
+    -webkit-user-select: none;
+    user-select: none;
+    /* 与弹窗同一套出场：淡入 + 0.97→1 缩放，transform-origin 由 JS 放在贴按钮的那个角。 */
+    opacity: 0;
+    transform: scale(0.97);
+    transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.fushi-audio-menu.visible {
+    opacity: 1;
+    transform: none;
+}
+
+/* 系统要求减少动态效果（JS 读 prefers-reduced-motion 挂 .no-motion；这里不能写 @media，
+   generate-content-css.mjs 不处理嵌套 at-rule）。 */
+.fushi-audio-menu.no-motion {
+    transform: none;
+    transition: none;
+}
+
+.fushi-audio-menu-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+    justify-content: center;
+}
+
+.fushi-audio-menu-item:hover,
+.fushi-audio-menu-item:focus-visible {
+    background: color-mix(in srgb, var(--md-primary, var(--primary-color)) 14%, transparent);
+    color: var(--md-primary, var(--primary-color));
+    outline: none;
+}
+
+.fushi-audio-menu-item[aria-disabled="true"] {
+    cursor: default;
+    opacity: 0.6;
+    background: transparent;
+    color: inherit;
+}
+
+/* 主标签 = 音频源名、副标签 = 来自哪个配置源：各占一行，真放不下才省略号（整项 title
+   里有全文）。 */
+.fushi-audio-menu-name,
+.fushi-audio-menu-variant {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.fushi-audio-menu-name {
+    font-weight: 600;
+}
+
+.fushi-audio-menu-variant {
+    font-size: 11px;
+    opacity: 0.72;
+}
+
+/* 加载中：一行三点（不需要文案，aria-busy 由 JS 置）。不用 @keyframes / @supports /
+   @media：generate-content-css.mjs 不处理嵌套 at-rule，扩展 content.css 生成会直接报错。 */
+.fushi-audio-menu-loading {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    padding: 12px 10px;
+}
+
+.fushi-audio-menu-loading > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--md-primary, var(--primary-color));
+    opacity: 0.3;
+}
+
+.fushi-audio-menu-loading > span:nth-child(2) {
+    opacity: 0.55;
+}
+
+.fushi-audio-menu-loading > span:nth-child(3) {
+    opacity: 0.8;
+}
+
+/* 玻璃宿主：浮在词条之上的菜单必须先保证可读——近乎实心的填充（亮 96% / 暗 94%）
+   打底，模糊只是锦上添花（app 内 WebView 背后的 Flutter 画面采不到，扩展里不支持
+   backdrop-filter 的内核也一样）。描边与阴影加重，把菜单从同色系的弹窗面上托起来。
+   用户截图：旧的 78% 填充在深色下把背后的白字透得一清二楚，与菜单项叠成一片。 */
+.fushi-audio-menu.is-glass {
+    background: color-mix(in srgb, var(--md-surface-container-high, var(--background-color, #fff)) 96%, transparent);
+    border-color: color-mix(in srgb, var(--text-color) 14%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 6px rgba(0, 0, 0, 0.16), 0 14px 36px rgba(0, 0, 0, 0.32);
+}
+
+.fushi-audio-menu.is-glass[data-theme="dark"] {
+    background: color-mix(in srgb, var(--md-surface-container-high, var(--background-color, #000)) 94%, transparent);
+    border-color: color-mix(in srgb, var(--text-color) 18%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+/* 宿主声明背后采不到真模糊（app 内 iOS / macOS，html.fushi-solid-backdrop）：实底。 */
+.fushi-audio-menu.is-glass.is-solid {
+    background: var(--md-surface-container-high, var(--background-color));
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+/* 墨水屏：纯黑白、实线边框、无阴影无模糊无动画，聚焦项反色。 */
+.fushi-audio-menu.is-eink {
+    background: var(--background-color);
+    color: var(--text-color);
+    border: 1px solid var(--text-color);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    transition: none;
+}
+
+.fushi-audio-menu.is-eink .fushi-audio-menu-item:hover,
+.fushi-audio-menu.is-eink .fushi-audio-menu-item:focus-visible {
+    background: var(--text-color);
+    color: var(--background-color);
+}
+
 .entry-tags {
     margin-top: -4px;
     -webkit-user-select: none;
@@ -1725,6 +1899,91 @@ html[data-theme="dark"] {
     opacity: 0.5;
 }
 
+/* 查询中的加载态（popup.js renderPopupLoading，只在宿主声明 window.lookupPending
+   ——结果还没到——时出现；查完为空才画上面的 .no-results）。MD3 Expressive 加载
+   指示器的 CSS 版：48px 容器里一块主色圆角形状，在圆 / 软方 / 两种不规则圆角轮廓间
+   变形并旋转。占位盒子初始为空：150ms 阈值到、仍 pending 且文档可见时 JS 才插入
+   形状（或静止三点）并加 .visible（快查询不闪）；换 DOM / 文档隐藏即摘除，infinite
+   动画不会在停驻 / 隐藏的 WebView 里空转。墨水屏 / 减少动态效果（.is-static）只插
+   静止三点。 */
+.popup-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.15s ease-out;
+}
+
+.popup-loading.visible {
+    opacity: 1;
+}
+
+.popup-loading-shape {
+    width: 38px;
+    height: 38px;
+    margin: 5px;
+    border-radius: 50%;
+    background: var(--md-primary, var(--primary-color));
+    animation: fushi-popup-loading-morph 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.popup-loading-dots {
+    display: none;
+    gap: 6px;
+}
+
+.popup-loading-dots > span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--md-primary, var(--primary-color));
+}
+
+.popup-loading-dots > span:nth-child(1) {
+    opacity: 0.35;
+}
+
+.popup-loading-dots > span:nth-child(2) {
+    opacity: 0.6;
+}
+
+.popup-loading.is-static {
+    transition: none;
+}
+
+.popup-loading.is-static .popup-loading-shape {
+    display: none;
+}
+
+.popup-loading.is-static .popup-loading-dots {
+    display: flex;
+}
+
+@keyframes fushi-popup-loading-morph {
+    0% {
+        border-radius: 50%;
+        transform: rotate(0deg) scale(1);
+    }
+    25% {
+        border-radius: 32% 68% 62% 38% / 38% 34% 66% 62%;
+        transform: rotate(90deg) scale(0.92);
+    }
+    50% {
+        border-radius: 24%;
+        transform: rotate(180deg) scale(0.86);
+    }
+    75% {
+        border-radius: 62% 38% 34% 66% / 58% 64% 36% 42%;
+        transform: rotate(270deg) scale(0.94);
+    }
+    100% {
+        border-radius: 50%;
+        transform: rotate(360deg) scale(1);
+    }
+}
+
 /* TODO-094 S5: kanji dictionary card. Rendered above the term entries for a
    single-character lookup, showing the character's own readings (on/kun),
    radical, stroke count and meanings. Colours reuse the popup's existing MD3
@@ -2017,6 +2276,59 @@ html.global-lookup[data-theme="dark"] body {
 html.mined-action-open,
 html.mined-action-open body {
     min-height: 320px;
+}
+
+/* =====================================================================
+ * 材质宿主 + 强调色（app 内弹窗 / 扩展玻璃弹窗）。
+ *
+ * html.fushi-glass-host：app 内弹窗（MD3 与 Apple 两套设计系统，墨水屏与桌面全局
+ * 查词窗除外）由 popup_settings_injection.dart 的 _themeVariablesJs toggle 上来。
+ * 卡面由 Flutter FushiPopupSurface 画（app 内是压在正文上的玻璃，独立窗是不透明
+ * 面板），文档必须透明，词条直接
+ * 落在材质上——否则 --background-color 整块不透明底把玻璃盖死。生成器丢弃
+ * html.fushi-glass-host 开头的规则（扩展宿主永远不带这个类）。
+ *
+ * 强调色段用 :where(html.fushi-glass-host, .fushi-glass) 开头：app 内命中前者，
+ * 扩展里 content.js fushiApplyGlass 给 #entries-container 挂的 .fushi-glass 命中
+ * 后者，两边同一套「主题主色淡染」——词典名 / 频率 / 音调来源标签是主色 16% 的
+ * 淡染底 + 主色字（Apple 口径：强调色只上在字与小面积状态上，不铺实心彩块），
+ * 词形 / 变形标签是中性灰填充，顶栏动作按钮跟主色。:where() 零特异性，与被
+ * 覆盖的单类规则同级、靠排在其后生效；墨水屏两边都不挂这两个钩子。
+ * ===================================================================== */
+html.fushi-glass-host,
+html.fushi-glass-host body {
+    background: transparent;
+}
+
+/* 玻璃上的内嵌卡（汉字卡）改成正文色薄染：不透明的 surfaceContainer 在材质上
+   是一块突兀的实心板。 */
+html.fushi-glass-host[data-theme] {
+    --surface-container: color-mix(in srgb, var(--text-color) 6%, transparent);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .frequency-group {
+    border-color: color-mix(in srgb, var(--primary-color) 38%, transparent);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .frequency-dict-label,
+:where(html.fushi-glass-host, .fushi-glass) .pitch-dict-label {
+    background-color: color-mix(in srgb, var(--primary-color) 16%, transparent);
+    color: var(--primary-color);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .expr-tag,
+:where(html.fushi-glass-host, .fushi-glass) .deinflection-tag {
+    background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+}
+
+:where(html.fushi-glass-host, .fushi-glass) .audio-button,
+:where(html.fushi-glass-host, .fushi-glass) .open-anki-button,
+:where(html.fushi-glass-host, .fushi-glass) .favorite-button:where(:not(.favorited)),
+:where(html.fushi-glass-host, .fushi-glass) .mine-button:where(:not(.latest)) {
+    /* :not 包进 :where 保持 (0,1,0)：:disabled / .audio-unavailable / :hover 这些
+       (0,2,0) 的状态规则照旧压得过这里。 */
+    color: var(--primary-color);
+    opacity: 0.8;
 }
 
 /* =====================================================================

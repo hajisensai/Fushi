@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "Theo hệ thống",
   "opt_extensionTheme_option_light": "Sáng",
   "opt_extensionTheme_option_dark": "Tối",
+  "opt_page_subtitle": "Cài đặt chỉ được lưu trong trình duyệt này; hầu hết thay đổi có hiệu lực ngay.",
+  "opt_section_nav_aria_label": "Các mục cài đặt",
+  "opt_connection_section_heading": "Kết nối và chẩn đoán",
   "opt_palette_title": "Chủ đề màu",
   "opt_palette_desc": "Cùng mô hình chủ đề với Fushi: theo màu hiện tại của Fushi, một mẫu có sẵn, hoặc tùy chỉnh (một màu nhấn tạo ra cả bảng sáng lẫn tối). Áp dụng cho trang cài đặt, bảng phụ đề bên, menu thanh công cụ, ngăn phụ đề, hộp phụ đề trên video và cửa sổ tra từ.",
   "opt_extensionBrightness_title": "Sáng / tối",
@@ -297,7 +300,6 @@
   "ctx_confirm": "Tạo thẻ",
   "ctx_cancel": "Hủy",
   "gen_youtube_queue_empty": "Hàng đợi YouTube trống: bật phụ đề → Shift + rê chuột lên một từ → nhấn “khai thác” trong cửa sổ tra từ để xếp hàng, rồi tạo",
-  "gen_ext_updated_refresh": "Tiện ích đã được cập nhật; làm mới trang (F5) và thử lại",
   "gen_progress": "Đang tạo… {done}/{total}",
   "gen_partial_anki_unconfigured": "Tạo được một phần: Anki chưa được cấu hình — thiết lập Anki trong Fushi rồi thử lại (đã xử lý {done}, giữ lại {kept})",
   "gen_partial_anki_unconfigured_kept": "Tạo được một phần: Anki chưa được cấu hình — thiết lập Anki trong Fushi rồi thử lại (giữ lại {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "Các thẻ trong hàng đợi đến từ trang không hỗ trợ tạo hàng loạt; xóa từng mục hoặc xóa cả hàng đợi",
   "ap_gen_start_record_n": "Bắt đầu ghi hình & tạo ({n} thẻ)",
   "ap_gen_start_n": "Bắt đầu tạo ({n} thẻ)",
-  "ap_gen_other_youtube_hint": "Còn {n} thẻ trên YouTube — chuyển sang trang YouTube để tạo",
+  "ap_gen_other_youtube_hint": "Còn {n} thẻ YouTube — mở menu này ở bất kỳ trang nào ngoài Netflix để tạo",
   "ap_gen_other_netflix_hint": "Còn {n} thẻ trên Netflix — chuyển sang trang phát Netflix để tạo",
   "ap_gen_site_count": "{site} {n} thẻ",
   "ap_gen_wrong_site_hint": "Đang chờ: {pending} — nhấp một mục trong hàng đợi để nhảy đến trang video của nó, rồi tạo",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "Xóa tất cả?",
   "ap_queue_open_video_hint": "Nhấp để mở trang video",
   "ap_queue_remove_title": "Xóa khỏi hàng đợi",
-  "np_fushi_nested_close_aria_label": "Đóng lớp tra từ này",
   "theme_palette_app": "Theo Fushi",
   "theme_palette_app_pending": "Màu của Fushi sẽ có sau lần tra đầu tiên khi Fushi đang chạy",
   "theme_preset_fushi": "Xanh Fushi",
@@ -426,5 +427,5 @@
   "pc_style_more": "Tất cả cài đặt",
   "pc_hint_site_track": "Video này đang phát bản phụ đề của chính trang web, nên lớp phụ đề Fushi vẫn ẩn. Chạm để hiển thị phụ đề Fushi thay thế.",
   "opt_playerControls_title": "Nút phụ đề trong trình phát",
-  "opt_playerControls_desc": "Thêm một nút Fushi vào thanh điều khiển của chính trình phát (YouTube và Netflix; ở các trang khác, một nút tròn hiện ở góc dưới bên phải video khi con trỏ ở trên video). Menu của nút đổi đúng những cài đặt có trên trang này — phụ đề Fushi, thay phụ đề của trang, ẩn phụ đề, lệch thời gian và giao diện phụ đề — mà không phải rời khỏi video."
+  "opt_playerControls_desc": "Thêm một nút Fushi vào thanh điều khiển của chính trình phát (YouTube và Netflix; ở các trang khác, một nút tròn hiện ở góc trên bên phải video khi con trỏ ở trên video). Menu của nút đổi đúng những cài đặt có trên trang này — phụ đề Fushi, thay phụ đề của trang, ẩn phụ đề, lệch thời gian và giao diện phụ đề — mà không phải rời khỏi video."
 }

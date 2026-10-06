@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart'
     show PendingMineRow, PendingMineStatus;
@@ -180,14 +181,14 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   Future<void> _delete(PendingMineRow row) async {
     final bool? confirmed = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         content: Text(t.anki_pending_mines_delete_confirm),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(t.anki_pending_mines_delete),
           ),
@@ -212,49 +213,70 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
   Widget build(BuildContext context) {
     final bool switchesApp = _repo?.switchesAppPerNote ?? false;
     return Scaffold(
-      appBar: AppBar(title: Text(t.anki_pending_mines_title)),
+      appBar: FushiAppBar(title: Text(t.anki_pending_mines_title)),
+      // 空态走统一占位（图标 + 文案），不再是孤零零一行正文；行收进一个设置
+      // 分组：MD3 = 中性圆角组，Apple = inset grouped 实色组 + 细分隔线，而不是
+      // 散落在页面底色上的裸行。
       body: _rows.isEmpty
-          ? Center(child: Text(t.anki_pending_mines_empty))
+          ? Center(
+              child: FushiPlaceholderMessage(
+                icon: Icons.outbox_outlined,
+                message: t.anki_pending_mines_empty,
+              ),
+            )
           : ListView(
+              padding: EdgeInsets.only(
+                bottom: FushiDesignTokens.of(context).spacing.section * 2,
+              ),
               children: <Widget>[
                 if (switchesApp)
-                  AdaptiveSettingsRow(
-                    icon: Icons.info_outline,
-                    showIcon: true,
-                    title: t.anki_pending_mines_ankimobile_hint,
-                    titleMaxLines: 4,
+                  AdaptiveSettingsSection(
+                    children: <Widget>[
+                      AdaptiveSettingsRow(
+                        icon: Icons.info_outline,
+                        showIcon: true,
+                        title: t.anki_pending_mines_ankimobile_hint,
+                        titleMaxLines: 4,
+                      ),
+                    ],
                   ),
-                for (final PendingMineRow row in _rows)
-                  AdaptiveSettingsRow(
-                    title: row.reading.isEmpty
-                        ? row.expression
-                        : '${row.expression}【${row.reading}】',
-                    subtitle: _statusText(row),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        if (row.status == PendingMineStatus.failed)
-                          IconButton(
-                            tooltip: t.retry,
-                            icon: const Icon(Icons.refresh),
-                            onPressed: () => store.retry(row.id),
-                          ),
-                        IconButton(
-                          tooltip: t.anki_pending_mines_delete,
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _delete(row),
+                AdaptiveSettingsSection(
+                  children: <Widget>[
+                    for (final PendingMineRow row in _rows)
+                      AdaptiveSettingsRow(
+                        title: row.reading.isEmpty
+                            ? row.expression
+                            : '${row.expression}【${row.reading}】',
+                        subtitle: _statusText(row),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (row.status == PendingMineStatus.failed)
+                              FushiIconButtonControl(
+                                tooltip: t.retry,
+                                icon: const FushiIcon(Icons.refresh),
+                                onPressed: () => store.retry(row.id),
+                              ),
+                            FushiIconButtonControl(
+                              tooltip: t.anki_pending_mines_delete,
+                              icon: const FushiIcon(Icons.delete_outline),
+                              onPressed: () => _delete(row),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                  ],
+                ),
               ],
             ),
       floatingActionButton: _rows.isEmpty
           ? null
-          : FloatingActionButton.extended(
-              onPressed: _sending ? null : _sendAll,
-              icon: const Icon(Icons.send),
-              label: Text(t.anki_pending_mines_send_all),
+          : FushiGlassFab(
+              child: FloatingActionButton.extended(
+                onPressed: _sending ? null : _sendAll,
+                icon: const FushiIcon(Icons.send),
+                label: Text(t.anki_pending_mines_send_all),
+              ),
             ),
     );
   }

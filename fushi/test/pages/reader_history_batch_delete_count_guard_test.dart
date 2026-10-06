@@ -16,7 +16,13 @@ void main() {
       final int start = source.indexOf('Future<void> _batchDeleteConfirm(');
       expect(start, isNonNegative,
           reason: '_batchDeleteConfirm must exist in the shelf history page');
-      final int end = source.indexOf('Future<void>', start + 1);
+      // 2026-10 体验优化：确认后的执行体拆进 `_runBatchDelete`（外层负责忙碌态
+      // 进度弹窗），计数门控随之搬家；窗口延伸到执行体结尾，不变量不变。
+      final int runner =
+          source.indexOf('Future<void> _runBatchDelete(', start + 1);
+      expect(runner, isNonNegative,
+          reason: 'batch delete runner must follow _batchDeleteConfirm');
+      final int end = source.indexOf('Future<void>', runner + 1);
       final String body =
           end > start ? source.substring(start, end) : source.substring(start);
 

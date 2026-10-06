@@ -1,15 +1,20 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/utils.dart';
+
+/// MD3 底部让给悬浮新建按钮的高度：常规 FAB 56dp + Scaffold 的 FAB 外边距
+/// （上下各一份 [kFloatingActionButtonMargin]），末行才不被悬浮按钮压住。
+/// FAB 几何是组件尺寸而非间距令牌，集中在这一处具名常量里。
+const double _kMd3FabClearance = 56 + kFloatingActionButtonMargin * 2;
 
 const List<int> kTagPresetColors = [
   0xFFEF5350, // red
@@ -74,7 +79,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.tag_name_duplicate)),
+          FushiSnackBar(content: Text(t.tag_name_duplicate)),
         );
         return;
       }
@@ -95,7 +100,7 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.tag_name_duplicate)),
+          FushiSnackBar(content: Text(t.tag_name_duplicate)),
         );
         return;
       }
@@ -121,29 +126,21 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
       Offset.zero & overlay.size,
     );
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final _TagMenuAction? action = await showMenu<_TagMenuAction>(
+    final _TagMenuAction? action = await showFushiMenu<_TagMenuAction>(
       context: context,
       position: position,
+      // 共享菜单行（MD3 圆角高亮行 / Apple 玻璃菜单行），删除走危险色。
       items: <PopupMenuEntry<_TagMenuAction>>[
-        PopupMenuItem<_TagMenuAction>(
+        FushiPopupMenuItem<_TagMenuAction>(
           value: _TagMenuAction.edit,
-          child: Row(
-            children: <Widget>[
-              const Icon(Icons.edit_outlined, size: 20),
-              const SizedBox(width: 12),
-              Text(t.dialog_edit),
-            ],
-          ),
+          label: t.dialog_edit,
+          icon: Icons.edit_outlined,
         ),
-        PopupMenuItem<_TagMenuAction>(
+        FushiPopupMenuItem<_TagMenuAction>(
           value: _TagMenuAction.delete,
-          child: Row(
-            children: <Widget>[
-              Icon(Icons.delete_outline, size: 20, color: scheme.error),
-              const SizedBox(width: 12),
-              Text(t.dialog_delete, style: TextStyle(color: scheme.error)),
-            ],
-          ),
+          label: t.dialog_delete,
+          icon: Icons.delete_outline,
+          color: scheme.error,
         ),
       ],
     );
@@ -173,23 +170,6 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
     await _reload();
   }
 
-  // TODO-1166：一键把内置星级标签（1⭐..5⭐）补入标签池。
-  // 只增不删（[seedStarRatingTags] 命中同名即跳过），零误删风险：不会碰用户
-  // 自建标签，也不会动任何书籍映射。老用户想切到星级评分点这里即可，旧的
-  // 「在读/读完」标签由用户自行决定是否删除。
-  Future<void> _seedStarTags() async {
-    final int added = await seedStarRatingTags(_db);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          added > 0 ? t.tag_seed_stars_added : t.tag_seed_stars_exists,
-        ),
-      ),
-    );
-    await _reload();
-  }
-
   Future<TagEditResult?> _showTagEditDialog({
     required String title,
     required String initialName,
@@ -209,79 +189,131 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool apple = isGlassDesign(context);
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    // 行首色点的占位宽：与同设计系统的行首图标同宽，标题起点与其它列表对齐。
+    final double leadingWidth = apple ? metrics.leadingIconSize : 24;
     return FushiPageScaffold(
       title: t.tag_manage_title,
       actions: <Widget>[
-        IconButton(
-          icon: const Icon(Icons.star_outline),
-          tooltip: t.tag_seed_stars,
-          onPressed: _seedStarTags,
-        ),
+        // 新建入口按设计系统各取原生位置：Apple = 页头右上角「+」玻璃圆钮
+        // （iOS / macOS 列表页的添加动作在导航栏），MD3 = 右下 FAB。
+        if (apple)
+          FushiIconButtonControl(
+            key: const ValueKey<String>('tag-management-create'),
+            icon: const FushiIcon(Icons.add),
+            tooltip: t.tag_new,
+            onPressed: _createTag,
+          ),
       ],
-      floatingActionButton: FloatingActionButton(
-        onPressed: _createTag,
-        tooltip: t.tag_new,
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: apple
+          ? null
+          : FushiGlassFab(
+              child: FloatingActionButton(
+                onPressed: _createTag,
+                tooltip: t.tag_new,
+                child: const FushiIcon(Icons.add),
+              ),
+            ),
       body: _tags.isEmpty
           ? Center(
               child: FushiPlaceholderMessage(
                 icon: Icons.label_outline,
                 message: t.tag_no_tags_hint,
+                // 空状态直接给「新建标签」主按钮（FAB 之外的第二个入口，
+                // 首次进来的用户不必去找右下角）。
+                action: FushiFilledButton(
+                  key: const ValueKey<String>('tag-management-empty-create'),
+                  onPressed: _createTag,
+                  child: Text(t.tag_new),
+                ),
               ),
             )
+          // 2026-10-04 标签管理重做：整池标签读作一个分组（MD3 分段卡 /
+          // Apple inset grouped），行 = 色点 + 名称 + 行尾计数；底部留出 FAB
+          // 的位置，末行不被悬浮按钮压住。
           : ListView.builder(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                tokens.spacing.gap,
+                tokens.spacing.page,
+                // MD3 底部留出 FAB 的位置；Apple 新建在页头，不必留。
+                tokens.spacing.gap + (apple ? 0 : _kMd3FabClearance),
+              ),
               itemCount: _tags.length,
               itemBuilder: (context, index) {
                 final tag = _tags[index];
                 final count = _bookCounts[tag.id] ?? 0;
-                return Dismissible(
-                  key: ValueKey(tag.id),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    alignment: Alignment.centerRight,
-                    padding: EdgeInsets.only(right: tokens.spacing.card),
-                    color: theme.colorScheme.errorContainer,
-                    child: Icon(
-                      Icons.delete_outline,
-                      color: theme.colorScheme.onErrorContainer,
-                    ),
-                  ),
-                  confirmDismiss: (_) async {
-                    await _deleteTag(tag);
-                    return false;
-                  },
-                  child: Actions(
-                    actions: <Type, Action<Intent>>{
-                      // Gamepad: X = delete (the swipe-delete equivalent);
-                      // _deleteTag shows its own confirmation. A stays
-                      // activate = edit. Other buttons fall through (return
-                      // false) so focus traversal is unaffected.
-                      GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-                        onInvoke: (GamepadButtonIntent intent) {
-                          if (intent.button == GamepadButton.x) {
-                            _deleteTag(tag);
-                            return true;
-                          }
-                          return false;
-                        },
+                return FushiGroupedListItem(
+                  index: index,
+                  count: _tags.length,
+                  // Apple 分隔线从名称起点开始（跳过色点列）。
+                  separatorIndent:
+                      metrics.rowHorizontal + leadingWidth + metrics.leadingGap,
+                  child: Dismissible(
+                    key: ValueKey(tag.id),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      alignment: Alignment.centerRight,
+                      padding: EdgeInsets.only(right: tokens.spacing.card),
+                      // 与合集页滑动删除同一形态：实心 error 底 + onError 图标
+                      // （iOS 滑动删除也是实心系统红；Apple 下 error = 系统红）。
+                      // 背景在分组行里面，跟着行的圆角裁切。
+                      color: theme.colorScheme.error,
+                      child: FushiIcon(
+                        Icons.delete_outline,
+                        color: theme.colorScheme.onError,
                       ),
+                    ),
+                    confirmDismiss: (_) async {
+                      await _deleteTag(tag);
+                      return false;
                     },
-                    child: ContextMenuTrigger(
-                      // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
-                      onInvoke: (Offset position) => _showTagMenu(tag, position),
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onLongPressStart: (LongPressStartDetails d) =>
-                            _showTagMenu(tag, d.globalPosition),
-                        child: FushiListItem(
-                          leading: CircleAvatar(
-                            backgroundColor: Color(tag.colorValue),
-                            radius: 14,
+                    child: Actions(
+                      actions: <Type, Action<Intent>>{
+                        // Gamepad: X = delete (the swipe-delete equivalent);
+                        // _deleteTag shows its own confirmation. A stays
+                        // activate = edit. Other buttons fall through (return
+                        // false) so focus traversal is unaffected.
+                        GamepadButtonIntent:
+                            CallbackAction<GamepadButtonIntent>(
+                          onInvoke: (GamepadButtonIntent intent) {
+                            if (intent.button == GamepadButton.x) {
+                              _deleteTag(tag);
+                              return true;
+                            }
+                            return false;
+                          },
+                        ),
+                      },
+                      child: ContextMenuTrigger(
+                        // 右键菜单改由绑定表决定唤出键（默认仍是右键）；右键被别的动作占用时自动让位。
+                        onInvoke: (Offset position) => _showTagMenu(tag, position),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onLongPressStart: (LongPressStartDetails d) =>
+                              _showTagMenu(tag, d.globalPosition),
+                          child: FushiListItem(
+                            // 标签色是内容：只留一枚色点，不铺大色块底。
+                            leading: SizedBox(
+                              width: leadingWidth,
+                              child: Center(
+                                child: _TagColorDot(
+                                  color: Color(tag.colorValue),
+                                ),
+                              ),
+                            ),
+                            title: Text(tag.name),
+                            trailing: Text(
+                              t.tag_book_count(count: count),
+                              style: TextStyle(
+                                color: apple
+                                    ? appleColorsOf(context).secondaryLabel
+                                    : theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            onTap: () => _editTag(tag),
                           ),
-                          title: Text(tag.name),
-                          trailing: Text(t.tag_book_count(count: count)),
-                          onTap: () => _editTag(tag),
                         ),
                       ),
                     ),
@@ -289,6 +321,28 @@ class _TagManagementPageState extends ConsumerState<TagManagementPage> {
                 );
               },
             ),
+    );
+  }
+}
+
+/// 标签行首的颜色点：12dp 实心圆 + 一圈极淡描边（浅色标签在白底、深色标签
+/// 在黑底上都有边界）。标签色是用户内容，两套设计系统同一形态。
+class _TagColorDot extends StatelessWidget {
+  const _TagColorDot({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color edge = Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.12);
+    // 共享色块原语的圆点形态（不可点，没有水波 / 焦点）。
+    return FushiColorSwatch(
+      color: color,
+      size: 12,
+      shape: FushiColorSwatchShape.dot,
+      borderColor: edge,
     );
   }
 }
@@ -458,7 +512,7 @@ class TagEditDialogState extends State<TagEditDialog> {
                 final name = _nameController.text.trim();
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(t.tag_name_empty)),
+                    FushiSnackBar(content: Text(t.tag_name_empty)),
                   );
                   return;
                 }

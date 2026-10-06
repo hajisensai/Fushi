@@ -589,24 +589,42 @@ class ShortcutDefaults {
     ),
   };
 
+  /// BUG-2948：桌面默认里在 macOS 上**被系统先截走**、app 永远收不到的键，换成
+  /// macOS 上空闲的同义键（只换键盘通道，手柄 / 鼠标照桌面默认）。
+  /// * 有声书播放 / 暂停：桌面 Ctrl+Space 经 Ctrl→Meta 换成 Cmd+Space = Spotlight；
+  ///   Ctrl+Space 本身又是 macOS「切换输入法」（日语学习者必开）。Option+Space 空闲。
+  /// * 窗口全屏：F11 是 macOS「显示桌面」，且笔记本 F 行默认是媒体键。Ctrl+Cmd+F 是
+  ///   macOS 标准全屏键（Runner 菜单「Enter Full Screen」同键，Flutter 先拿到并消费）。
+  /// 老用户没改过的旧默认由 `FushiShortcutRegistry` 的 v13 迁移换过来。
+  static final Map<ShortcutAction, List<InputBinding>> _macOSKeyboardOverrides =
+      <ShortcutAction, List<InputBinding>>{
+    ShortcutAction.audiobookPlayPause: <InputBinding>[
+      _key(LogicalKeyboardKey.space, {ModifierKey.alt}),
+    ],
+    ShortcutAction.globalToggleFullscreen: <InputBinding>[
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.meta}),
+    ],
+  };
+
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
     for (final entry in _desktop.entries)
       entry.key: ShortcutBindingSet(
-        keyboardBindings: entry.value.keyboardBindings.map((b) {
-          // app 外全局查词热键**不做** Ctrl→Meta：⌘⌥D 是 macOS 系统级「打开/关闭
-          // Dock 隐藏」快捷键，系统热键先于应用的 RegisterEventHotKey 处理，
-          // 应用永远收不到。Ctrl⌥D 在 macOS 上空闲，保持与 Windows 同键。
-          if (entry.key == ShortcutAction.globalExternalLookup) {
-            return b;
-          }
-          if (b.modifiers.contains(ModifierKey.ctrl)) {
-            final newMods = Set<ModifierKey>.of(b.modifiers)
-              ..remove(ModifierKey.ctrl)
-              ..add(ModifierKey.meta);
-            return InputBinding(key: b.key, modifiers: newMods);
-          }
-          return b;
-        }).toList(growable: false),
+        keyboardBindings: _macOSKeyboardOverrides[entry.key] ??
+            entry.value.keyboardBindings.map((b) {
+              // app 外全局查词热键**不做** Ctrl→Meta：⌘⌥D 是 macOS 系统级「打开/关闭
+              // Dock 隐藏」快捷键，系统热键先于应用的 RegisterEventHotKey 处理，
+              // 应用永远收不到。Ctrl⌥D 在 macOS 上空闲，保持与 Windows 同键。
+              if (entry.key == ShortcutAction.globalExternalLookup) {
+                return b;
+              }
+              if (b.modifiers.contains(ModifierKey.ctrl)) {
+                final newMods = Set<ModifierKey>.of(b.modifiers)
+                  ..remove(ModifierKey.ctrl)
+                  ..add(ModifierKey.meta);
+                return InputBinding(key: b.key, modifiers: newMods);
+              }
+              return b;
+            }).toList(growable: false),
         gamepadBindings: entry.value.gamepadBindings,
         mouseBindings: entry.value.mouseBindings,
         // 滚轮绑定的修饰键不做 Ctrl→Meta 替换：Alt+滚轮在 macOS 上同样空闲，而

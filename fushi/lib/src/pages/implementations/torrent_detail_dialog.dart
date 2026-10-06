@@ -1,13 +1,17 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/embedded_torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/torrent_task_display.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
@@ -28,6 +32,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
   TorrentTaskDetailDialog({
     required AnimeDownloadPlan plan,
     super.key,
+    this.networkIssue,
     @visibleForTesting this.backendOverride,
   })  : torrentId = plan.id,
         title = plan.seriesTitle,
@@ -47,6 +52,7 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
     required this.initialSnapshot,
     required this.initialFiles,
     required this.liveDataAbsence,
+    this.networkIssue,
     super.key,
   }) : resolveBackendFromAppModel = false;
 
@@ -67,6 +73,10 @@ class TorrentTaskDetailDialog extends ConsumerStatefulWidget {
   /// job dialogs must never do that because their persisted backend identity
   /// can refer to another qBittorrent instance.
   final bool resolveBackendFromAppModel;
+
+  /// BUG-2950：内置引擎会话级网络诊断（通常是 `AppModel.torrentNetworkIssue`）。
+  /// 只在本任务走内置引擎时展示在「网络」区顶部；null = 不展示。
+  final ValueListenable<TorrentNetworkIssue>? networkIssue;
 
   @override
   ConsumerState<TorrentTaskDetailDialog> createState() =>
@@ -337,7 +347,7 @@ class _TorrentTaskDetailDialogState
                 ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
-          TabBar(
+          FushiTabBar(
             controller: _tabController,
             tabs: <Widget>[
               Tab(text: t.download_detail_tab_overview),
@@ -359,7 +369,7 @@ class _TorrentTaskDetailDialogState
           ),
           Align(
             alignment: Alignment.centerRight,
-            child: TextButton(
+            child: FushiTextButton(
               onPressed: () => Navigator.pop(context),
               child: Text(t.dialog_cancel),
             ),
@@ -405,7 +415,7 @@ class _TorrentTaskDetailDialogState
       return _buildEmptyNote(theme, _backendUnavailableMessage);
     }
     if (!state.attempted) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView();
     }
     if (state.failed || absentMessage == null) {
       return _buildEmptyNote(theme, t.error_load_failed);
@@ -507,7 +517,7 @@ class _TorrentTaskDetailDialogState
         Row(
           children: <Widget>[
             Expanded(
-              child: LinearProgressIndicator(
+              child: FushiLinearProgressIndicator(
                 value: snapshot.progress.clamp(0.0, 1.0),
                 minHeight: 6,
               ),
@@ -657,7 +667,19 @@ class _TorrentTaskDetailDialogState
     if (session == null) {
       return <Widget>[Text('…', style: theme.textTheme.bodySmall)];
     }
+    final ValueListenable<TorrentNetworkIssue>? networkIssue =
+        widget.networkIssue;
     return <Widget>[
+      // BUG-2950：诊断是内置引擎会话级的结论，qBittorrent 任务不套用。
+      if (networkIssue != null && _backend is EmbeddedTorrentBackend)
+        ValueListenableBuilder<TorrentNetworkIssue>(
+          valueListenable: networkIssue,
+          builder: (BuildContext context, TorrentNetworkIssue issue, _) =>
+              TorrentNetworkIssueBanner(
+            issue: issue,
+            margin: const EdgeInsets.only(bottom: 8),
+          ),
+        ),
       if (session.dhtEnabled != null)
         _statRow(
           theme,
@@ -731,7 +753,7 @@ class _TorrentTaskDetailDialogState
           subtitle: Row(
             children: <Widget>[
               Expanded(
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: file.progress.clamp(0.0, 1.0),
                   minHeight: 4,
                 ),
@@ -746,7 +768,7 @@ class _TorrentTaskDetailDialogState
           ),
           trailing: priority == null
               ? null
-              : DropdownButton<TorrentFilePriority>(
+              : FushiDropdownButton<TorrentFilePriority>(
                   value: priority,
                   isDense: true,
                   underline: const SizedBox.shrink(),

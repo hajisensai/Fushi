@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// Moonlight-style stream settings. Returns the edited settings, or null when
 /// dismissed without saving.
@@ -11,9 +13,9 @@ Future<GameStreamVideoSettings?> showGameStreamSettingsSheet(
   BuildContext context, {
   required GameStreamVideoSettings initial,
 }) {
-  return showModalBottomSheet<GameStreamVideoSettings>(
+  return adaptiveModalSheet<GameStreamVideoSettings>(
     context: context,
-    isScrollControlled: true,
+    showDragHandle: false,
     builder: (BuildContext context) =>
         GameStreamSettingsSheet(initial: initial),
   );
@@ -94,7 +96,7 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
                       style: theme.textTheme.titleLarge,
                     ),
                   ),
-                  TextButton(
+                  FushiTextButton(
                     onPressed: () => setState(() {
                       _bitrateTouched = false;
                       _settings = const GameStreamVideoSettings().copyWith(
@@ -107,7 +109,9 @@ class _GameStreamSettingsSheetState extends State<GameStreamSettingsSheet> {
                     }),
                     child: Text(t.game_stream_settings_reset),
                   ),
-                  FilledButton(
+                  // 两枚按钮之间留出间距：Apple 下是两颗相邻胶囊，贴着会粘成一块。
+                  const SizedBox(width: 8),
+                  FushiFilledButton(
                     key: GameStreamSettingsSheet.saveKey,
                     onPressed: () => Navigator.of(context).pop(_settings),
                     child: Text(t.game_stream_settings_save),

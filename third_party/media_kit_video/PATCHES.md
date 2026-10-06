@@ -681,3 +681,47 @@ carry the same upstream pattern but their payloads are stable for the lifetime
 of a controls subtree, so they are left untouched.
 
 Source-guard test: `fushi/test/pages/video_controls_theme_notify_guard_test.dart`.
+
+## Glass design system: rounded / thickening seek bar + scrim colour
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart` and
+`lib/media_kit_video_controls/src/controls/material.dart`, theme data classes
+and the two seek bar bodies.
+
+Fushi's Apple (iOS / macOS 26 Liquid Glass) design system draws the player
+chrome as a floating glass capsule with an AVKit-style scrubber: a thin rounded
+track that thickens while scrubbing, and only a very light scrim behind the
+bars. Upstream hard-codes all three looks, so the patch exposes them as theme
+fields whose defaults reproduce the upstream pixels exactly:
+
+- `seekBarRadius` (both themes, default `0.0`): track corner radius; `> 0`
+  switches the track to a rounded `BoxDecoration` with an anti-aliased clip so
+  the buffer / position fills follow the rounded ends.
+- `seekBarActiveHeight` (mobile theme, default `null`): track height while the
+  seek bar is pressed (`tapped`); `null` keeps the constant [seekBarHeight].
+  The desktop theme already had the equivalent `seekBarHoverHeight`.
+- `backdropColor` (desktop theme, default `0x61000000`): colour of the two
+  gradient scrims (was a hard-coded constant). The mobile theme already had a
+  `backdropColor` field.
+
+Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
+(only the Apple branch passes non-default values; MD3 leaves them untouched).
+
+## M3 Expressive chrome: host-painted seek-bar track
+
+`lib/media_kit_video_controls/src/controls/seek_bar_visual.dart` (new, exported
+from `media_kit_video_controls.dart`), plus the theme data classes and the two
+seek bar bodies in `material_desktop.dart` / `material.dart`.
+
+Fushi's MD3 design system draws the scrubber as a Material 3 Expressive wavy
+progress bar (wavy played segment while playing, flat when paused, a vertical
+handle, a time bubble while scrubbing). Upstream hard-codes the track as a
+stack of `Container`s, so the patch adds `seekBarTrackBuilder`
+(`VideoSeekBarTrackBuilder?`, both themes, default `null`). When set, the seek
+bar keeps its own `MouseRegion` / `Listener` / pan gestures, seek dispatch and
+every host callback, and only replaces the track painting with
+`seekBarTrackBuilder(context, VideoSeekBarVisual(...))`, which fills the hit
+box (`seekBarContainerHeight`). `null` = upstream track, pixel for pixel.
+
+Consumer: `fushi/lib/src/pages/implementations/video_fushi/controls_theme.part.dart`
+(MD3 branch only; the Apple branch keeps the theme-field scrubber above).

@@ -17,8 +17,12 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/media/online/online_source_error_text.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 一个浏览列表（「热门」「最新」或源声明的 listing）。
 @immutable
@@ -101,7 +105,15 @@ abstract class OnlineSourceCatalog<T> {
   /// 点封面进详情；null = 只读（试用预览）。
   void Function(BuildContext context, T item)? get openDetail;
 
-  /// Cloudflare 等站点验证入口；没有待解挑战时返回空占位即可。
+  /// 失败给用户看的一句话（行内错误与 toast 共用）。
+  ///
+  /// 2026-10 体验优化：原先页面直接 `'$error'`，Aidoku 的 [buildVerifyAction]
+  /// 又把同一个错误再画一遍，同一句话上下出现两次。文案只从这里出，
+  /// [buildVerifyAction] 只负责「可点的验证入口」，不再重复画错误文字。
+  String describeError(Object error) => describeOnlineSourceError(error);
+
+  /// Cloudflare 等站点验证入口；没有待解挑战时返回空占位即可。不要在这里
+  /// 再画错误文字（页面已用 [describeError] 画过一次）。
   Widget buildVerifyAction(
     BuildContext context, {
     required Object? error,
@@ -155,6 +167,7 @@ class OnlineSourceBrowsePage<T> extends StatefulWidget {
 
 class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
   bool _prepared = false;
   List<T> _items = <T>[];
   String? _listingId;
@@ -176,6 +189,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchFocus.dispose();
     _catalog.dispose();
     super.dispose();
   }
@@ -193,7 +207,8 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
           ? null
           : _catalog.listings.first.id;
       await _load(reset: true);
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('OnlineSourceBrowse.prepare', error, stack);
       if (mounted) {
         setState(() {
           _loading = false;
@@ -244,14 +259,19 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         );
         _loading = false;
       });
-    } on Object catch (error) {
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('OnlineSourceBrowse.load', error, stack);
       if (!mounted || generation != _generation) return;
       setState(() {
         _loading = false;
         _error = error;
       });
+      // 已有结果时行内错误不出现（只在空列表时画），这里用 toast；两者互斥。
       if (_items.isNotEmpty) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+        FushiToast.show(
+          msg: _catalog.describeError(error),
+          severity: ToastSeverity.error,
+        );
       }
     }
   }
@@ -320,25 +340,30 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         padding: const EdgeInsets.only(top: 8),
         child: Row(
           children: <Widget>[
+            // 2026-10 体验优化：统一为 FushiSearchField（焦点登记 / 回车兜底 /
+            // 移动端收键盘与其它搜索框一致）。仍是「提交才搜」，onChanged 空转。
             Expanded(
-              child: TextField(
-                key: ValueKey<String>('${prefix}_search_field'),
+              child: FushiSearchField(
+                fieldKey: ValueKey<String>('${prefix}_search_field'),
+                focusId: FushiFocusId('$prefix-online-browse-search'),
                 controller: _searchController,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: _catalog.searchHint,
-                  prefixIcon: const Icon(Icons.search),
-                ),
+                focusNode: _searchFocus,
+                hintText: _catalog.searchHint,
+                onChanged: (String _) {},
                 onSubmitted: _search,
+                onClear: () {
+                  _searchController.clear();
+                  _search('');
+                },
               ),
             ),
             if (_prepared && _catalog.hasFilters) ...<Widget>[
               const SizedBox(width: 8),
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('${prefix}_filters'),
                 tooltip: _catalog.filtersTooltip,
                 onPressed: _showFilters,
-                icon: const Icon(Icons.tune),
+                icon: const FushiIcon(Icons.tune),
               ),
             ],
           ],
@@ -388,51 +413,46 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
   }
 
   Widget _buildResults() {
+    // 2026-10 体验优化：加载 / 错误 / 空态统一 FushiPlaceholderMessage +
+    // adaptiveIndicator，重试统一 FilledButton.icon(refresh_rounded, 重试)。
     if (_loading && _items.isEmpty) {
       return Center(child: adaptiveIndicator(context: context));
     }
     final Object? error = _error;
     if (error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$error', textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => unawaited(_retry()),
-                icon: const Icon(Icons.refresh),
-                label: Text(t.refresh),
-              ),
-              const SizedBox(height: 8),
-              _catalog.buildVerifyAction(
-                context,
-                error: error,
-                onVerified: _retry,
-              ),
-            ],
-          ),
+      return FushiPlaceholderMessage(
+        key: ValueKey<String>('${_catalog.keyPrefix}_error'),
+        icon: Icons.error_outline,
+        message: _catalog.describeError(error),
+        action: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiFilledButton.icon(
+              onPressed: () => unawaited(_retry()),
+              icon: const FushiIcon(Icons.refresh_rounded),
+              label: Text(t.retry),
+            ),
+            const SizedBox(height: 8),
+            _catalog.buildVerifyAction(
+              context,
+              error: error,
+              onVerified: _retry,
+            ),
+          ],
         ),
       );
     }
     if (_items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(_catalog.emptyText),
-            if (_catalog.verifyOnEmpty) ...<Widget>[
-              const SizedBox(height: 12),
-              _catalog.buildVerifyAction(
+      return FushiPlaceholderMessage(
+        icon: Icons.search_off_outlined,
+        message: _catalog.emptyText,
+        action: _catalog.verifyOnEmpty
+            ? _catalog.buildVerifyAction(
                 context,
                 error: null,
                 onVerified: _retry,
-              ),
-            ],
-          ],
-        ),
+              )
+            : null,
       );
     }
     final String prefix = _catalog.keyPrefix;
@@ -442,51 +462,58 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
         return NotificationListener<ScrollNotification>(
           onNotification: _onScroll,
-          child: GridView.builder(
-            // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
-            // 补出手势条那一段；有 footer 时上面已摘掉，这里自动退回纯 16。
-            padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              childAspectRatio: 0.62,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: _items.length + (_hasNextPage ? 1 : 0),
-            itemBuilder: (BuildContext context, int index) {
-              if (index == _items.length) {
-                return Center(
-                  child: _loading
-                      ? adaptiveIndicator(context: context)
-                      : IconButton(
-                          key: ValueKey<String>('${prefix}_more'),
-                          onPressed: () => unawaited(_load(reset: false)),
-                          icon: const Icon(Icons.add_circle_outline),
+          child: FushiEntranceScope(
+            child: GridView.builder(
+              // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
+              // 补出手势条那一段；有 footer 时上面已摘掉，这里自动退回纯 16。
+              padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                childAspectRatio: 0.62,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: _items.length + (_hasNextPage ? 1 : 0),
+              itemBuilder: fushiStaggeredItemBuilder((
+                BuildContext context,
+                int index,
+              ) {
+                if (index == _items.length) {
+                  return Center(
+                    child: _loading
+                        ? adaptiveIndicator(context: context)
+                        : FushiIconButtonControl(
+                            key: ValueKey<String>('${prefix}_more'),
+                            onPressed: () => unawaited(_load(reset: false)),
+                            icon: const FushiIcon(Icons.add_circle_outline),
+                          ),
+                  );
+                }
+                final T item = _items[index];
+                return FushiCard(
+                  key: ValueKey<String>(
+                    '${prefix}_item_${_catalog.keyOf(item)}',
+                  ),
+                  padding: EdgeInsets.zero,
+                  onTap: open == null ? null : () => open(context, item),
+                  // FushiCard 内部已按同一圆角 token 裁剪，这里不再多包 ClipRRect。
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: _catalog.buildCover(context, item)),
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Text(
+                          _catalog.titleOf(item),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                );
-              }
-              final T item = _items[index];
-              return FushiCard(
-                key: ValueKey<String>('${prefix}_item_${_catalog.keyOf(item)}'),
-                padding: EdgeInsets.zero,
-                onTap: open == null ? null : () => open(context, item),
-                // FushiCard 内部已按同一圆角 token 裁剪，这里不再多包 ClipRRect。
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: _catalog.buildCover(context, item)),
-                    Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Text(
-                        _catalog.titleOf(item),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                    ],
+                  ),
+                );
+              }),
+            ),
           ),
         );
       },

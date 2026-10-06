@@ -53,11 +53,37 @@ class FushiHoverLift extends StatefulWidget {
 
   @override
   State<FushiHoverLift> createState() => _FushiHoverLiftState();
+
+  /// 最近一层 [FushiHoverLift] 当前是否处于抬升态（没有祖先时为 false）。
+  ///
+  /// 卡片内部的封面框（`ShelfCoverFrame`）靠它在悬停时加深阴影——各库页调用点
+  /// 的 builder 都把 hovering 位丢掉了（`(_, __) => card`），逐个改调用点要动一
+  /// 批高冲突的页面文件，故由壳自己往下广播。
+  static bool liftedOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiHoverLiftScope>()
+          ?.lifted ??
+      false;
+}
+
+/// [FushiHoverLift.liftedOf] 的载体。
+class _FushiHoverLiftScope extends InheritedWidget {
+  const _FushiHoverLiftScope({required this.lifted, required super.child});
+
+  final bool lifted;
+
+  @override
+  bool updateShouldNotify(_FushiHoverLiftScope oldWidget) =>
+      oldWidget.lifted != lifted;
 }
 
 /// 悬停缩放倍数：与 `docs/design/galgame-library-reina-visual-parity.md` 里定的
 /// 游戏库观感一致，推广到其余库页时不另立数值。
 const double kFushiHoverLiftScale = 1.05;
+
+/// Apple 设计系统下的悬停放大（macOS 26 的卡片悬停只是轻轻一抬，1.05 读作
+/// 「跳」）。只替换默认值；调用方显式传了别的 scale 时照用。
+const double kFushiAppleHoverLiftScale = 1.03;
 
 /// 悬停动画时长（游戏库既有实现的落地值）。
 const Duration kFushiHoverLiftDuration = Duration(milliseconds: 120);
@@ -203,20 +229,30 @@ class _FushiHoverLiftState extends State<FushiHoverLift>
           if (mounted) _setHover(false);
         });
       }
-      return widget.builder(context, false);
+      return _FushiHoverLiftScope(
+        lifted: false,
+        child: widget.builder(context, false),
+      );
     }
     // 2026-10 交互重做：悬停抬升之外再叠按压下沉——触屏上没有 hover，卡片
     // 此前点下去只有水波纹；按压反馈放在抬升**内层**，两者独立叠乘（桌面上
     // 悬停 1.05 × 按下 0.97），抬升的显式 Transform 仍是本组件最外层变换。
     final Widget content = FushiPressScale(
-      child: widget.builder(context, _lifted),
+      child: _FushiHoverLiftScope(
+        lifted: _lifted,
+        child: widget.builder(context, _lifted),
+      ),
     );
+    final double scale =
+        widget.scale == kFushiHoverLiftScale && isGlassDesign(context)
+            ? kFushiAppleHoverLiftScale
+            : widget.scale;
     if (!_animate) return _wrapHover(content);
     return _wrapHover(
       AnimatedBuilder(
         animation: _curved,
         builder: (BuildContext _, Widget? child) => Transform.scale(
-          scale: 1.0 + (widget.scale - 1.0) * _curved.value,
+          scale: 1.0 + (scale - 1.0) * _curved.value,
           child: child,
         ),
         child: content,

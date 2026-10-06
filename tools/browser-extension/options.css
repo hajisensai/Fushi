@@ -42,15 +42,49 @@ label { -webkit-tap-highlight-color: transparent; }
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
+a:focus-visible,
 summary:focus-visible {
   outline: 3px solid color-mix(in oklch, var(--focus) 54%, transparent);
   outline-offset: 3px;
 }
 
 .shell {
-  width: min(1080px, calc(100% - 40px));
+  width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
-  padding: clamp(32px, 7vw, 72px) 0 64px;
+  padding: clamp(20px, 4vw, 40px) 0 72px;
+}
+
+/* 页头：图标 + 扩展名 + 一句说明。只是让页面有个身份，不是宣传 hero。 */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 0 clamp(18px, 3vw, 28px);
+}
+
+.brand-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  box-shadow: 0 2px 10px color-mix(in oklch, var(--text) 16%, transparent);
+}
+
+.page-title { min-width: 0; }
+
+.page-title h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -.01em;
+}
+
+.page-title p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .section-kicker {
@@ -63,55 +97,69 @@ summary:focus-visible {
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr);
-  gap: clamp(32px, 6vw, 72px);
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: clamp(20px, 3vw, 36px);
   align-items: start;
 }
 
 .main-column { min-width: 0; }
 
+/* 每个分区一张卡：节标题在卡头，设置行在卡内以细分隔线分开。 */
 .section {
-  padding: 0 0 36px;
-  margin: 0 0 36px;
-  border-bottom: 1px solid var(--outline);
+  margin: 0 0 20px;
+  padding: 20px clamp(16px, 2.4vw, 28px) 8px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--text) 5%, transparent);
+  scroll-margin-top: 20px;
 }
 
 .section:last-child { margin-bottom: 0; }
 
 .section-heading {
   display: flex;
-  align-items: end;
+  align-items: start;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 14px;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
 }
-
-.section-heading.compact { align-items: start; }
 
 .section h2,
 .connection h2 {
   margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  letter-spacing: -.02em;
+  font-size: 20px;
+  line-height: 1.25;
+  letter-spacing: -.01em;
 }
 
+/* 「修改后立即生效」之类的节级提示：标题右侧的小胶囊，与标题顶对齐。 */
 .section-note {
   flex: 0 0 auto;
-  margin-bottom: 2px;
+  margin-top: 2px;
+  padding: 3px 10px;
+  border-radius: 999px;
   color: var(--muted);
+  background: var(--surface-muted);
   font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .setting-list { display: grid; }
 
+/* 文案在左、控件在右；行宽放不下「文案最小宽 + 控件」时控件整体换到文案下方（左对齐），
+   开关这类窄控件在手机宽度下仍与文案同行。 */
 .setting-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
-  min-height: 76px;
-  padding: 14px 4px;
-  border-top: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  gap: 12px 24px;
+  min-height: 68px;
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in oklch, var(--outline) 45%, transparent);
   cursor: pointer;
 }
 
@@ -124,8 +172,8 @@ summary:focus-visible {
 
 .setting-copy {
   display: grid;
-  gap: 5px;
-  flex: 1 1 auto;
+  gap: 4px;
+  flex: 1 1 260px;
   min-width: 0;
 }
 
@@ -136,7 +184,7 @@ summary:focus-visible {
 }
 
 .setting-copy small {
-  max-width: 620px;
+  max-width: 64ch;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.55;
@@ -145,7 +193,7 @@ summary:focus-visible {
 /* 「查词框大小」的数值输入：与开关同一列宽，右对齐，空值时显示「跟随应用」占位。 */
 .size-input {
   flex: 0 0 auto;
-  width: 118px;
+  width: 180px;
   padding: 9px 11px;
   border: 1px solid var(--outline);
   border-radius: 10px;
@@ -157,9 +205,11 @@ summary:focus-visible {
 
 .size-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
+/* 下拉与数值框统一 180px 宽：同一节里控件右缘、左缘都对齐，扫读时不跳。 */
 .select-input {
   flex: 0 0 auto;
-  max-width: 200px;
+  width: 180px;
+  max-width: 100%;
   padding: 9px 11px;
   border: 1px solid var(--outline);
   border-radius: 10px;
@@ -222,23 +272,53 @@ summary:focus-visible {
 
 .side-column {
   position: sticky;
-  top: 28px;
+  top: 20px;
   display: grid;
-  gap: 18px;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* 节导航：一列锚点链接，当前节（options.js bindSectionNav 写 aria-current）高亮。 */
+.section-nav {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface) 80%, transparent);
+}
+
+.section-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 1.35;
+  text-decoration: none;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+.section-link:hover { color: var(--text); background: color-mix(in oklch, var(--primary-soft) 55%, transparent); }
+
+.section-link[aria-current="true"] {
+  color: var(--primary-strong);
+  background: var(--primary-soft);
 }
 
 .connection {
-  padding: 22px;
-  border: 1px solid var(--outline);
+  padding: 18px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
   border-radius: var(--radius);
-  background: color-mix(in oklch, var(--surface) 94%, transparent);
+  background: var(--surface);
 }
 
 .connection-top {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 22px;
+  margin-bottom: 12px;
 }
 
 .connection-label {
@@ -272,8 +352,10 @@ summary:focus-visible {
   box-shadow: 0 0 0 5px color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
+.connection h2 { font-size: 17px; }
+
 .connection p {
-  margin: 10px 0 18px;
+  margin: 6px 0 12px;
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
@@ -307,16 +389,25 @@ summary:focus-visible {
 .icon-button:hover { background: var(--primary-soft); }
 .icon-button:active { transform: rotate(45deg); }
 
+/* 「连接与诊断」节：高级连接 / 性能日志是两张可展开的小卡，版本与提示在其下。 */
+.diagnostics-stack {
+  display: grid;
+  gap: 12px;
+  padding: 16px 0 14px;
+}
+
 .advanced {
-  border-top: 1px solid var(--outline);
-  border-bottom: 1px solid var(--outline);
+  padding: 0 14px;
+  border: 1px solid color-mix(in oklch, var(--outline) 62%, transparent);
+  border-radius: 14px;
+  background: color-mix(in oklch, var(--surface-muted) 45%, transparent);
 }
 
 .advanced summary {
   position: relative;
   display: grid;
   gap: 3px;
-  padding: 16px 28px 16px 2px;
+  padding: 14px 28px 14px 2px;
   cursor: pointer;
   list-style: none;
 }
@@ -326,7 +417,7 @@ summary:focus-visible {
 .advanced summary::after {
   content: "＋";
   position: absolute;
-  top: 19px;
+  top: 17px;
   right: 4px;
   color: var(--primary-strong);
   transition: transform 220ms var(--ease);
@@ -444,6 +535,7 @@ summary:focus-visible {
 }
 
 .text-button {
+  white-space: nowrap;
   border: 1px solid transparent;
   color: var(--primary-strong);
   background: transparent;
@@ -484,17 +576,35 @@ summary:focus-visible {
   transform: translate(-50%, 0);
 }
 
-@media (max-width: 760px) {
-  .shell { width: min(100% - 28px, 620px); padding-top: 28px; }
-  .layout { grid-template-columns: 1fr; gap: 36px; }
-  .side-column { position: static; grid-row: 1; }
-  .section { padding-bottom: 26px; margin-bottom: 28px; }
+/* 窄窗口：单列；连接卡在上，节导航变成吸顶的横向滚动条。 */
+@media (max-width: 900px) {
+  .shell { width: min(100% - 28px, 760px); }
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .side-column { display: contents; }
+  .section-nav {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 6px;
+    background: color-mix(in oklch, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    scrollbar-width: none;
+  }
+  .section-nav::-webkit-scrollbar { display: none; }
+  .section-link { flex: 0 0 auto; white-space: nowrap; padding: 7px 12px; font-size: 13px; }
+  .section { scroll-margin-top: 64px; }
 }
 
 @media (max-width: 460px) {
-  .section-heading { align-items: start; }
+  .shell { width: calc(100% - 20px); }
+  .section { padding-inline: 14px; border-radius: 16px; }
   .section-note { display: none; }
-  .setting-row { gap: 16px; }
+  .setting-row { gap: 10px 16px; }
+  .setting-copy { flex-basis: 200px; }
   .setting-copy small { line-height: 1.45; }
 }
 
@@ -507,7 +617,8 @@ summary:focus-visible {
   }
 }
 
-/* ── 配色主题：色块网格（与 app 设置页的主题选择器同一取向：一排圆点 + 名称，选中描边）。 ── */
+/* ── 配色主题：等大主题卡网格（与 app 设置页 FushiSchemeSwatch 同一取向：微缩界面预览 +
+   名称；选中 = 预览外留 2px 缝的主色环 + 右上角 ✓ 徽标）。卡片是浅玻璃，悬停微微浮起。 ── */
 .setting-row-block {
   flex-wrap: wrap;
   align-items: start;
@@ -516,53 +627,153 @@ summary:focus-visible {
 .setting-row-block .setting-copy { flex-basis: 100%; }
 
 .palette-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 12px;
   width: 100%;
-  padding-top: 4px;
+  padding-top: 6px;
 }
 
 .palette-swatch {
+  position: relative;
   display: grid;
   justify-items: center;
-  gap: 6px;
-  width: 78px;
-  padding: 6px 2px 4px;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: transparent;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 12px 8px 10px;
+  border: 1px solid var(--fushi-glass-edge, color-mix(in oklch, var(--outline) 50%, transparent));
+  border-radius: 18px;
+  background-color: var(--fushi-glass-fill-subtle, var(--surface));
+  background-image: linear-gradient(180deg, color-mix(in oklch, var(--fushi-glass-highlight, #fff) 35%, transparent), transparent 55%);
+  box-shadow: inset 0 1px 0 var(--fushi-glass-highlight, transparent), 0 1px 2px color-mix(in oklch, var(--text) 6%, transparent);
   color: var(--text);
   font: inherit;
   cursor: pointer;
+  outline: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
 }
 
-.palette-swatch:hover { background: color-mix(in oklch, var(--primary-soft) 55%, transparent); }
-.palette-swatch:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.palette-swatch.is-selected { border-color: var(--primary); background: var(--primary-soft); }
+.palette-swatch:hover {
+  transform: translateY(-2px);
+  background-color: var(--fushi-glass-fill-strong, var(--surface));
+  box-shadow: inset 0 1px 0 var(--fushi-glass-highlight, transparent), 0 10px 22px -12px color-mix(in oklch, var(--text) 40%, transparent);
+}
 
-.palette-dot {
-  --swatch-primary: var(--primary);
-  --swatch-surface: var(--surface);
+.palette-swatch:active { transform: translateY(0) scale(0.98); }
+
+.palette-swatch:focus-visible {
+  border-color: color-mix(in oklch, var(--primary) 55%, transparent);
+  box-shadow: inset 0 1px 0 var(--fushi-glass-highlight, transparent), 0 0 0 3px color-mix(in oklch, var(--primary) 28%, transparent);
+}
+
+.palette-preview {
+  --sw-bg: var(--bg);
+  --sw-bar: var(--fushi-surface-strong);
+  --sw-text: var(--text);
+  --sw-primary: var(--primary);
+  position: relative;
+  display: block;
+  width: 88px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 13px;
+  background: var(--sw-bg);
+  /* 细描边画在内容之上：浅色预览放在浅色卡片上也有边界。 */
+  box-shadow: inset 0 0 0 0.5px color-mix(in oklch, var(--text) 22%, transparent), 0 1px 3px color-mix(in oklch, var(--text) 14%, transparent);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  transition: outline-color 0.16s ease;
+}
+
+.pv-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 24%;
+  background: var(--sw-bar);
+}
+
+.pv-bar::after {
+  content: '';
+  position: absolute;
+  left: 12%;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sw-primary);
+  transform: translateY(-50%);
+}
+
+.pv-line {
+  position: absolute;
+  left: 12%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--sw-text);
+}
+
+.pv-line-1 { top: 36%; width: 62%; opacity: 0.9; }
+.pv-line-2 { top: 50%; width: 44%; height: 4px; opacity: 0.42; }
+
+.pv-pill {
+  position: absolute;
+  left: 12%;
+  top: 68%;
+  width: 42%;
+  height: 16%;
+  border-radius: 999px;
+  background: var(--sw-primary);
+}
+
+.palette-preview.is-pending {
+  background: repeating-linear-gradient(135deg, var(--surface-muted) 0 6px, var(--surface) 6px 12px);
+}
+
+.palette-swatch.is-selected .palette-preview { outline-color: var(--primary); }
+
+.palette-check {
+  position: absolute;
+  top: 5px;
+  right: 5px;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--outline) 70%, transparent);
-  background: linear-gradient(135deg, var(--swatch-primary) 0 50%, var(--swatch-surface) 50% 100%);
-  color: var(--muted);
-  font-size: 20px;
-  font-weight: 600;
-  box-shadow: 0 1px 4px color-mix(in oklch, var(--text) 18%, transparent);
+  color: var(--on-primary, #fff);
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--surface), 0 2px 6px color-mix(in oklch, var(--primary) 45%, transparent);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
-.palette-swatch.is-selected .palette-dot { border-color: var(--primary-strong); }
-.palette-dot.is-pending { background: repeating-linear-gradient(135deg, var(--surface-muted) 0 6px, var(--surface) 6px 12px); }
-.palette-add .palette-dot { background: var(--surface-muted); border-style: dashed; }
+.palette-swatch.is-selected .palette-check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 新建：同尺寸的虚线预览 + 居中 ＋。 */
+.palette-add .palette-preview {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed color-mix(in oklch, var(--muted) 60%, transparent);
+  color: var(--muted);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.palette-add:hover .palette-preview {
+  border-color: var(--primary);
+  color: var(--primary);
+}
 
 .palette-name {
-  max-width: 78px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -572,6 +783,11 @@ summary:focus-visible {
 }
 
 .palette-swatch.is-selected .palette-name { color: var(--primary-strong); font-weight: 690; }
+
+@media (prefers-reduced-motion: reduce) {
+  .palette-swatch:hover,
+  .palette-swatch:active { transform: none; }
+}
 
 /* 自定义主题编辑器：字段 + 明暗双预览（预览卡吃派生出的 --fushi-* 内联变量）。 */
 .custom-theme-editor {

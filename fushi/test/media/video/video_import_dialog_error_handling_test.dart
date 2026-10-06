@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// BUG-1117 守卫：VideoImportDialog 四个导入方法（_doImport / _importStreamUrl /
 /// _importPlaylistFromPath / _pickFolder）此前是 `try{}finally{}` 无 catch，
@@ -57,7 +58,7 @@ void main() {
 
       final Finder confirm =
           find.widgetWithText(FilledButton, t.video_import_confirm);
-      expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed, isNotNull);
       await tester.tap(confirm);
       await tester.pumpAndSettle();
 
@@ -70,7 +71,7 @@ void main() {
         isTrue,
       );
       // finally 复位 _busy：确认按钮恢复可用、spinner 消失（不再卡住）。
-      expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed, isNotNull);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
 

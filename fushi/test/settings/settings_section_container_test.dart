@@ -75,18 +75,30 @@ void main() {
     expect(find.text('Body closed'), findsNothing);
     expect(find.text('Body open'), findsOneWidget);
     expect(find.text('Body fixed'), findsOneWidget);
-    final AdaptiveSettingsSurface fixed = tester
-        .widget<AdaptiveSettingsSurface>(
-          find
-              .ancestor(
-                of: find.text('Header fixed'),
-                matching: find.byType(AdaptiveSettingsSurface),
-              )
-              .first,
+    // MD3 分段分组（Android 16 设置）下，不可折叠分组的标题画在分段卡上方，
+    // 不再是某个 AdaptiveSettingsSurface 的内嵌标题头；契约不变：标题与正文所在
+    // 的任何分组面都不提供折叠入口。
+    final Iterable<AdaptiveSettingsSurface> fixedSurfaces = tester
+        .widgetList<AdaptiveSettingsSurface>(
+          find.ancestor(
+            of: find.text('Header fixed'),
+            matching: find.byType(AdaptiveSettingsSurface),
+          ),
+        )
+        .followedBy(
+          tester.widgetList<AdaptiveSettingsSurface>(
+            find.ancestor(
+              of: find.text('Body fixed'),
+              matching: find.byType(AdaptiveSettingsSurface),
+            ),
+          ),
         );
+    expect(fixedSurfaces, isNotEmpty);
     expect(
-      fixed.onTitleTap,
-      isNull,
+      fixedSurfaces.every(
+        (AdaptiveSettingsSurface surface) => surface.onTitleTap == null,
+      ),
+      isTrue,
       reason: 'Core settings cannot be collapsed',
     );
     await toggleHeader(tester, 'closed');

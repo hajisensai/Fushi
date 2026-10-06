@@ -81,18 +81,22 @@ void main() {
     expect(find.byTooltip(slotLabel), findsWidgets);
 
     // 关键：tap 必须能穿过 Draggable 打开选择器。
+    // 「可用按钮」托盘的胶囊带名字，同名按钮（下一句字幕）可能已在编辑器里出现；
+    // 选择器是否弹出按「点之后多出来的那一处」判，点选取最后一处（弹窗在最上层）。
+    final Finder nextSubtitle =
+        find.text(ShortcutAction.videoNextSubtitle.label);
+    final int before = nextSubtitle.evaluate().length;
     await tester.tap(_slotChip(VideoControlItem.customAction1));
     await tester.pumpAndSettle();
     expect(
-      find.text(ShortcutAction.videoNextSubtitle.label),
-      findsOneWidget,
+      nextSubtitle,
+      findsNWidgets(before + 1),
       reason: '动作选择器没弹出来（tap 很可能被 Draggable 吃掉了）',
     );
 
-    await tester
-        .ensureVisible(find.text(ShortcutAction.videoNextSubtitle.label));
+    await tester.ensureVisible(nextSubtitle.last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(ShortcutAction.videoNextSubtitle.label));
+    await tester.tap(nextSubtitle.last);
     await tester.pumpAndSettle();
 
     expect(saved, isNotNull, reason: '选完动作没有回调落盘');

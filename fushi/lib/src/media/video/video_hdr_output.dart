@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
@@ -69,6 +70,7 @@ class HdrDisplayInfo {
     required this.colorSpace,
     required this.maxLuminance,
     required this.bitsPerColor,
+    this.sdrWhiteNits = 0,
   });
 
   static const HdrDisplayInfo unknown = HdrDisplayInfo(
@@ -81,6 +83,11 @@ class HdrDisplayInfo {
   final double maxLuminance;
   final int bitsPerColor;
 
+  /// Windows「SDR 内容亮度」滑块（`DISPLAYCONFIG_SDR_WHITE_LEVEL`，尼特）：HDR 模式下
+  /// DWM 把每个 SDR 窗口（含叠在 HDR 视频上的 Flutter 主窗）的 sRGB 1.0 映射到这个
+  /// 亮度。0 = 未知（查询失败 / 旧系统）。
+  final double sdrWhiteNits;
+
   /// 显示器当前是否以 HDR10 输出（判据只看当前 colorspace，不看面板能力——
   /// 面板支持 HDR 但 Windows 没开时仍是 SDR）。
   bool get isHdr => colorSpace == kDxgiColorSpaceHdr10;
@@ -90,15 +97,17 @@ class HdrDisplayInfo {
       other is HdrDisplayInfo &&
       other.colorSpace == colorSpace &&
       other.maxLuminance == maxLuminance &&
-      other.bitsPerColor == bitsPerColor;
+      other.bitsPerColor == bitsPerColor &&
+      other.sdrWhiteNits == sdrWhiteNits;
 
   @override
-  int get hashCode => Object.hash(colorSpace, maxLuminance, bitsPerColor);
+  int get hashCode =>
+      Object.hash(colorSpace, maxLuminance, bitsPerColor, sdrWhiteNits);
 
   @override
   String toString() =>
       'HdrDisplayInfo(colorSpace: $colorSpace, maxLuminance: $maxLuminance, '
-      'bitsPerColor: $bitsPerColor)';
+      'bitsPerColor: $bitsPerColor, sdrWhiteNits: $sdrWhiteNits)';
 }
 
 /// 片源是否 HDR：libmpv `video-params/primaries` 为 bt.2020 且 `gamma` 为 PQ / HLG。
@@ -235,6 +244,78 @@ Map<String, String> hdrHostFitProperties(VideoFitMode fit) {
   }
 }
 
+/// HDR 输出里图形（字幕 / 弹幕）白的亮度：BT.2408 graphics white，也是 libplacebo
+/// 的 `PL_COLOR_SDR_WHITE` 与 mpv `sub-hdr-peak` 的默认值——mpv 自己画字幕时就把它
+/// 放在这个亮度，片源里的参考白（漫散白）也在这里。
+const double kHdrGraphicsWhiteNits = 203;
+
+/// 叠在 HDR 视频上的 Flutter 图形层（字幕 / 弹幕）该乘的**线性**亮度系数。
+///
+/// 宿主窗模式下视频与图形各走一套亮度基准：mpv（gpu-next，HDR10）把参考白放在
+/// [kHdrGraphicsWhiteNits]，而 Flutter 主窗是 SDR 窗口，DWM 把它的白映射到用户的
+/// 「SDR 内容亮度」（[HdrDisplayInfo.sdrWhiteNits]，常见 200～480 尼特）。不归一时
+/// 字幕比画面里的白亮出一截、像一层贴上去的发光白（用户 2026-10-05 报「HDR 下字幕
+/// 颜色怪怪的」，实测该机 SDR 白 280 尼特）。归一后与 mpv 原生字幕同一亮度。
+///
+/// 只在宿主窗激活且显示器真处于 HDR 时 < 1：纹理路径 / SDR 显示器上视频与 Flutter
+/// 同在 SDR 基准里，无需换算。SDR 白低于 203 时 8-bit SDR 窗口无法更亮，取 1。
+double hdrGraphicsWhiteScale({
+  required bool hostActive,
+  required HdrDisplayInfo display,
+}) {
+  if (!hostActive || !display.isHdr || display.sdrWhiteNits <= 0) return 1;
+  final double scale = kHdrGraphicsWhiteNits / display.sdrWhiteNits;
+  return scale >= 1 ? 1 : scale;
+}
+
+/// 线性亮度系数 → sRGB 编码域的乘数。
+///
+/// Flutter 在编码域混色、DWM 按 sRGB EOTF 把 SDR 窗口解成线性再乘 SDR 白，所以要让
+/// 纯白落在 `scale` 倍线性亮度，编码值得是 sRGB OETF(scale)；其余颜色按幂律近似同比。
+double hdrGraphicsEncodedGain(double linearScale) {
+  if (linearScale >= 1) return 1;
+  if (linearScale <= 0) return 0;
+  if (linearScale <= 0.0031308) return 12.92 * linearScale;
+  return 1.055 * math.pow(linearScale, 1 / 2.4) - 0.055;
+}
+
+/// 把 [child]（字幕 / 弹幕这类画在视频平面上的图形）的亮度按 [linearScale] 压到 HDR
+/// 图形白（[hdrGraphicsWhiteScale]）。系数为 1 时不套滤镜（不引入 saveLayer）；进出
+/// 直通时子树经 [GlobalKey] 换父节点，字幕层的 State（悬停 / 选词光标 / 拖拽）不重建。
+class HdrGraphicsWhiteLevel extends StatefulWidget {
+  const HdrGraphicsWhiteLevel({
+    super.key,
+    required this.linearScale,
+    required this.child,
+  });
+
+  final double linearScale;
+  final Widget child;
+
+  @override
+  State<HdrGraphicsWhiteLevel> createState() => _HdrGraphicsWhiteLevelState();
+}
+
+class _HdrGraphicsWhiteLevelState extends State<HdrGraphicsWhiteLevel> {
+  final GlobalKey _subtreeKey = GlobalKey();
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget subtree = KeyedSubtree(key: _subtreeKey, child: widget.child);
+    final double gain = hdrGraphicsEncodedGain(widget.linearScale);
+    if (gain >= 1) return subtree;
+    return ColorFiltered(
+      colorFilter: ColorFilter.matrix(<double>[
+        gain, 0, 0, 0, 0, //
+        0, gain, 0, 0, 0, //
+        0, 0, gain, 0, 0, //
+        0, 0, 0, 1, 0, //
+      ]),
+      child: subtree,
+    );
+  }
+}
+
 /// `app.fushi/hdr_video_host` 通道：runner 侧 `HdrVideoHostWindow` 的 Dart 面。
 ///
 /// 非 Windows 平台一切调用都是 no-op（[create] 返回 0）。[channel] 可注入以便单测。
@@ -313,10 +394,12 @@ class HdrVideoHostChannel {
       final Object? cs = value['colorSpace'];
       final Object? lum = value['maxLuminance'];
       final Object? bits = value['bitsPerColor'];
+      final Object? white = value['sdrWhiteNits'];
       return HdrDisplayInfo(
         colorSpace: cs is int ? cs : -1,
         maxLuminance: lum is num ? lum.toDouble() : 0,
         bitsPerColor: bits is int ? bits : 0,
+        sdrWhiteNits: white is num ? white.toDouble() : 0,
       );
     } on PlatformException {
       return HdrDisplayInfo.unknown;

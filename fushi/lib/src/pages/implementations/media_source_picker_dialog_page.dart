@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// The content of the dialog used for picking a source for a media type.
@@ -79,7 +80,7 @@ class _MediaSourcePickerDialogPageState
     return KeyedSubtree(
       key: ValueKey(mediaSource.uniqueKey),
       child: FushiListItem(
-        leading: Icon(
+        leading: FushiIcon(
           mediaSource.icon,
           color: theme.appBarTheme.foregroundColor,
         ),

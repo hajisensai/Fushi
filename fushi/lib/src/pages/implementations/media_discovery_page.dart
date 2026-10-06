@@ -2,6 +2,7 @@ import 'dart:async' show unawaited;
 import 'package:collection/collection.dart' show mergeSort;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
@@ -9,12 +10,14 @@ import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 
@@ -690,7 +693,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   ///
   /// 几组可能同时存在（书+游戏合用一页时）。此前每组各占一行、三种控件外观
   /// （带勾的分段按钮 / FilterChip / ChoiceChip）纵向叠三层，搜索框被挤到很下面；
-  /// 现在排进**同一条** [Wrap]：组间一道竖分隔线，窄屏装不下再自然折行。
+  /// 现在排进**同一条**单行 [Row]：组间一道竖分隔线，放不下由共享头部的筛选行
+  /// 横滑（四个域的发现页同一口径）。
   Widget? _buildHeaderLeading() {
     final List<List<Widget>> groups = <List<Widget>>[
       if (widget.kinds.length > 1)
@@ -724,19 +728,25 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       ..._buildTorrentFilterGroups(),
     ];
     if (groups.isEmpty) return null;
-    return Wrap(
+    // 共享头部把这一组放进第二行的单行横滑区：这里是一条 Row（不折行），组间
+    // 一道竖分隔线，放不下由外层横滑。
+    return Row(
       key: const ValueKey<String>('discovery_filter_bar'),
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         for (int i = 0; i < groups.length; i++) ...<Widget>[
           if (i > 0)
-            const SizedBox(
-              height: 24,
-              child: VerticalDivider(width: 1),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: SizedBox(
+                height: 24,
+                child: FushiVerticalDivider(width: 1),
+              ),
             ),
-          ...groups[i],
+          for (int j = 0; j < groups[i].length; j++) ...<Widget>[
+            if (j > 0) const SizedBox(width: 8),
+            groups[i][j],
+          ],
         ],
       ],
     );
@@ -756,7 +766,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     ].join(' · ');
     return FushiListItem(
       key: const ValueKey<String>('discovery_hidden_reveal'),
-      leading: const Icon(Icons.visibility_off_outlined),
+      leading: const FushiIcon(Icons.visibility_off_outlined),
       title: Text(text),
       trailing: Text(t.discovery_hidden_show),
       onTap: () => setState(() => _revealHidden = true),
@@ -767,7 +777,6 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   Widget _buildResourceTitle(BuildContext context, DiscoveryResourceItem item) {
     final Widget title = Text(item.title);
     if (!item.trusted && !item.remake) return title;
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -776,15 +785,18 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           FushiTag(
             key: const ValueKey<String>('discovery_badge_remake'),
             text: t.discovery_badge_remake,
-            backgroundColor: colors.error,
-            foregroundColor: colors.onError,
+            // 与「可信」同一中性徽标底，语义只在错误色文字上。
+            backgroundColor: fushiNeutralTagColors(context).background,
+            foregroundColor: fushiStatusColor(context, FushiStatusTone.error),
           )
         else
           FushiTag(
             key: const ValueKey<String>('discovery_badge_trusted'),
             text: t.discovery_badge_trusted,
-            backgroundColor: Colors.green.shade700,
-            foregroundColor: Colors.white,
+            // 中性徽标底 + 成功色文字：硬编码 green.shade700 实底在深色下
+            // 刺眼，也不跟 Apple 系统色。
+            backgroundColor: fushiNeutralTagColors(context).background,
+            foregroundColor: fushiStatusColor(context, FushiStatusTone.success),
           ),
       ],
     );
@@ -821,87 +833,150 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     );
   }
 
-  /// 「全部来源」+ 空查询的引导态：把候选来源摆出来让用户点，而不是把某个
-  /// 恰好支持浏览的源的根目录冒充成聚合结果。
+  /// 「全部来源」+ 空查询的引导态（「发现首页」）：把候选来源摆出来让用户点，
+  /// 而不是把某个恰好支持浏览的源的根目录冒充成聚合结果。
   ///
-  /// 来源排成自适应卡片网格（宽屏多列、窄屏单列），每张卡标出「可浏览目录」
-  /// 还是「仅支持搜索」——用户点之前就知道点进去是目录还是要先输关键词。
+  /// 版式与视频 / 漫画发现首屏同一套信息架构：页首一块大圆角引导横幅（本域没有
+  /// 封面可当 Hero，用域名 + 单色大图标 + 引导文案），下面按能力分两区——
+  /// 「可浏览目录」与「仅支持搜索」——各自一组自适应卡片网格（宽屏多列、窄屏
+  /// 单列）。卡片仍标出能力：用户点之前就知道点进去是目录还是要先输关键词。
   Widget _buildSourcePicker(
     BuildContext context,
     MediaDiscoveryService service,
   ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
     final List<MediaDiscoverySource> sources = service.sourcesFor(_kind);
+    final List<MediaDiscoverySource> browsable = <MediaDiscoverySource>[
+      for (final MediaDiscoverySource source in sources)
+        if (source.capabilities.supportsBrowse) source,
+    ];
+    final List<MediaDiscoverySource> searchOnly = <MediaDiscoverySource>[
+      for (final MediaDiscoverySource source in sources)
+        if (!source.capabilities.supportsBrowse) source,
+    ];
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double gap = tokens.spacing.gap;
         final double page = tokens.spacing.page;
         final double available = constraints.maxWidth - page * 2;
-        final int columns =
-            ((available + gap) / (_kSourceCardMinWidth + gap)).floor().clamp(
-                  1,
-                  sources.isEmpty ? 1 : sources.length,
-                );
-        final double cardWidth = (available - gap * (columns - 1)) / columns;
+        Widget grid(List<MediaDiscoverySource> group) {
+          final int columns =
+              ((available + gap) / (_kSourceCardMinWidth + gap)).floor().clamp(
+                    1,
+                    group.isEmpty ? 1 : group.length,
+                  );
+          final double cardWidth = (available - gap * (columns - 1)) / columns;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: <Widget>[
+              for (final MediaDiscoverySource source in group)
+                SizedBox(
+                  width: cardWidth,
+                  child: _buildSourceCard(context, source),
+                ),
+            ],
+          );
+        }
+
         return ListView(
-          padding: EdgeInsets.all(page),
+          padding: EdgeInsets.fromLTRB(page, gap, page, tokens.spacing.section),
           children: <Widget>[
-            Padding(
-              padding: EdgeInsets.only(bottom: gap),
-              child: Row(
-                children: <Widget>[
-                  Icon(
-                    Icons.travel_explore_outlined,
-                    size: 18,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  SizedBox(width: gap),
-                  Expanded(
-                    child: Text(
-                      t.discovery_source_pick_hint,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Wrap(
-              spacing: gap,
-              runSpacing: gap,
-              children: <Widget>[
-                for (final MediaDiscoverySource source in sources)
-                  SizedBox(
-                    width: cardWidth,
-                    child: _buildSourceCard(context, source),
-                  ),
-              ],
-            ),
+            _buildPickerBanner(context, compact: available < 520),
+            if (browsable.isNotEmpty) ...<Widget>[
+              FushiSectionTitle(t.discovery_source_capability_browsable),
+              grid(browsable),
+            ],
+            if (searchOnly.isNotEmpty) ...<Widget>[
+              FushiSectionTitle(t.discovery_source_capability_search_only),
+              grid(searchOnly),
+            ],
           ],
         );
       },
     );
   }
 
+  /// 引导横幅：MD3 Expressive 的大圆角 tonal 色块（secondaryContainer，28 圆角）
+  /// / Apple 实色分组卡（secondaryGroupedBackground，24 / 桌面 16 圆角，不铺彩色
+  /// 容器）。单色大图标 + 域名大标题 + 引导文案；不可点（真正的入口是下面的
+  /// 来源卡）。[compact]（手机宽度）收紧内边距与图标。
+  Widget _buildPickerBanner(BuildContext context, {required bool compact}) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ThemeData theme = Theme.of(context);
+    final bool apple = isGlassDesign(context);
+    final Color? foreground =
+        apple ? null : theme.colorScheme.onSecondaryContainer;
+    final Color secondary = apple
+        ? appleColorsOf(context).secondaryLabel
+        : theme.colorScheme.onSecondaryContainer.withValues(alpha: 0.78);
+    return FushiCard(
+      key: const ValueKey<String>('discovery_pick_banner'),
+      color: apple ? null : theme.colorScheme.secondaryContainer,
+      borderRadius: discoveryHeroRadius(context),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? tokens.spacing.card + 4 : tokens.spacing.section,
+        vertical: compact ? tokens.spacing.card + 4 : tokens.spacing.section,
+      ),
+      child: Row(
+        children: <Widget>[
+          FushiNeutralIconBadge(
+            icon: _kind == DiscoveryMediaKind.game
+                ? Icons.sports_esports_outlined
+                : Icons.travel_explore_outlined,
+            size: compact ? 48 : 64,
+            iconSize: compact ? 26 : 32,
+          ),
+          SizedBox(width: compact ? tokens.spacing.card : tokens.spacing.section),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  _kindLabel(_kind),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: (compact
+                          ? theme.textTheme.titleLarge
+                          : theme.textTheme.headlineSmall)
+                      ?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: apple ? -0.3 : null,
+                    color: foreground,
+                  ),
+                ),
+                SizedBox(height: tokens.spacing.gap / 2),
+                Text(
+                  t.discovery_source_pick_hint,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: secondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSourceCard(BuildContext context, MediaDiscoverySource source) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final bool browsable = source.capabilities.supportsBrowse;
+    final Color secondary = isGlassDesign(context)
+        ? appleColorsOf(context).secondaryLabel
+        : tokens.surfaces.onVariant;
     return FushiCard(
       key: ValueKey<String>('discovery_source_pick_${source.id}'),
+      focusId: FushiFocusId('discovery-source-pick-${source.id}'),
       onTap: () => _selectSource(source.id),
       child: Row(
         children: <Widget>[
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: colors.secondaryContainer,
-            foregroundColor: colors.onSecondaryContainer,
-            child: Icon(
-              browsable ? Icons.folder_open_outlined : Icons.search,
-              size: 20,
-            ),
+          // 中性圆底单色图标（不再是 secondaryContainer 彩色圆）。
+          FushiNeutralIconBadge(
+            icon: browsable ? Icons.folder_open_outlined : Icons.search,
+            iconSize: 20,
           ),
           SizedBox(width: tokens.spacing.rowHorizontal),
           Expanded(
@@ -921,14 +996,12 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                       : t.discovery_source_capability_search_only,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: tokens.type.listSubtitle.copyWith(
-                    color: tokens.surfaces.onVariant,
-                  ),
+                  style: tokens.type.listSubtitle.copyWith(color: secondary),
                 ),
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: tokens.surfaces.onVariant),
+          FushiIcon(Icons.chevron_right, color: secondary),
         ],
       ),
     );
@@ -936,29 +1009,23 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   Widget _buildBody(BuildContext context) {
     final AppModel? appModel = _appModel;
-    final ThemeData theme = Theme.of(context);
     if (appModel == null) {
-      return Center(
-        child: Text(
-          t.discovery_enter_query_hint,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
+      return FushiPlaceholderMessage(
+        icon: Icons.search_rounded,
+        message: t.discovery_enter_query_hint,
       );
     }
     final MediaDiscoveryService service = appModel.mediaDiscoveryService;
     final DiscoveryDownloadQueue queue = appModel.discoveryDownloadQueue;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     switch (_idleMode(appModel)) {
       case _DiscoveryIdle.pickSource:
         return _buildSourcePicker(context, service);
       case _DiscoveryIdle.queryRequired:
-        return Center(
-          child: Text(
-            t.discovery_source_query_required,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-          ),
+        return FushiPlaceholderMessage(
+          icon: Icons.search_rounded,
+          message: t.discovery_source_query_required,
         );
       case _DiscoveryIdle.none:
         break;
@@ -973,7 +1040,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       );
     }
     if (_loading && _entries.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
+      return const FushiLoadingView();
     }
     final DiscoveryAggregateResult? result = _result;
     if (_entries.isEmpty) {
@@ -1030,110 +1097,89 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                       _sourceDisplayName(service, id),
                 ),
               ),
-            SliverPadding(
-              padding: const EdgeInsets.all(16),
-              sliver: SliverList.list(
-                children: <Widget>[
-                  if (visible.hiddenZeroSeeders + visible.hiddenManga > 0)
+            if (_resultsTitle(service) case final String title)
+              SliverToBoxAdapter(
+                child: FushiSectionTitle(
+                  title,
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.card,
+                    tokens.spacing.page,
+                    tokens.spacing.gap,
+                  ),
+                ),
+              ),
+            if (visible.hiddenZeroSeeders + visible.hiddenManga > 0)
+              SliverToBoxAdapter(
+                child: FushiGroupedList(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    0,
+                    tokens.spacing.page,
+                    tokens.spacing.card,
+                  ),
+                  children: <Widget>[
                     _buildHiddenNotice(
                       context,
                       visible.hiddenZeroSeeders,
                       visible.hiddenManga,
                     ),
-                  for (final DiscoveryEntry entry in visible.entries)
-                    switch (entry) {
-                      DiscoveryFolder() => FushiListItem(
-                          leading: const Icon(Icons.folder_outlined),
-                          title: Text(entry.title),
-                          // 目录条目不带来源名，用户看不出这是哪个站的目录。
-                          subtitle: Text(
-                            <String>[
-                              service.sourceById(entry.sourceId)?.displayName ??
-                                  entry.sourceId,
-                              if (entry.note?.trim().isNotEmpty == true)
-                                entry.note!,
-                              if (entry.itemCount != null)
-                                t.media_source_count_manga(n: entry.itemCount!),
-                            ].join(' · '),
+                  ],
+                ),
+              ),
+            // 结果是一组 inset grouped 实色分组（MD3 分段卡 / Apple
+            // secondaryGroupedBackground 圆角组 + 从文字起点开始的细分隔线），
+            // 与视频 / 漫画发现页的内容层同一口径；长列表懒建。
+            SliverFushiGroupedList(
+              itemCount: visible.entries.length,
+              itemMargin:
+                  EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              separatorIndent: 56,
+              itemBuilder: (BuildContext context, int index) =>
+                  _buildEntryRow(
+                context,
+                visible.entries[index],
+                service,
+                queue,
+              ),
+            ),
+            // 玻璃设计下首页 extendBody，悬浮导航胶囊的高度并进了 MediaQuery 底部
+            // padding：页尾垫到胶囊之上，否则最后几行与「加载更多 / 重试」被胶囊盖住。
+            SliverSafeArea(
+              top: false,
+              sliver: SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
+                  ),
+                  child: _loadMoreFailed
+                      ? Center(
+                          child: FushiTextButton.icon(
+                            key: const ValueKey<String>(
+                                'discovery_load_more_retry'),
+                            onPressed: _retryLoadMore,
+                            icon: const FushiIcon(Icons.refresh_rounded),
+                            label: Text(t.retry),
                           ),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _openFolder(entry),
-                        ),
-                      // 未隐藏时 0 做种条目灰显：死种能看到，但一眼分得出。
-                      DiscoveryResourceItem() => Opacity(
-                          key: ValueKey<String>(
-                            'discovery_item_${entry.sourceId}_${entry.id}',
-                          ),
-                          opacity: entry.seeders == 0 ? 0.5 : 1,
-                          child: FushiListItem(
-                            leading: Icon(
-                              entry.payloadKind == DiscoveryPayloadKind.torrent
-                                  ? Icons.link
-                                  : Icons.insert_drive_file_outlined,
-                            ),
-                            title: _buildResourceTitle(context, entry),
-                            // 不限行：同系列书名只在末尾差卷号（OPDS 的「…惰眠を
-                            // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
-                            // 切掉，用户分不出哪一卷。
-                            titleMaxLines: null,
-                            subtitle: Text(_subtitleFor(entry, service)),
-                            trailing: _resolvingTorrentIds.contains(
-                                      '${entry.sourceId}\u0000${entry.id}',
-                                    ) ||
-                                    queue.isPending(entry)
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : entry.isDownloadable
-                                    ? FushiIconButton(
-                                        icon: Icons.download_outlined,
-                                        tooltip:
-                                            t.anime_download_generic_download,
-                                        label:
-                                            t.anime_download_generic_download,
-                                        onTap: () =>
-                                            unawaited(_download(entry)),
-                                      )
-                                    : null,
-                            onTap: entry.isDownloadable
-                                ? () => unawaited(_download(entry))
-                                : null,
-                          ),
-                        ),
-                    },
-                  if (_loadMoreFailed)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Center(
-                        child: TextButton.icon(
-                          key: const ValueKey<String>(
-                              'discovery_load_more_retry'),
-                          onPressed: _retryLoadMore,
-                          icon: const Icon(Icons.refresh_rounded),
-                          label: Text(t.retry),
-                        ),
-                      ),
-                    )
-                  else if (result != null && result.hasMore)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Center(
-                        // 自动翻页之外的兜底：键盘 / 手柄焦点走到页尾、或首页不满一屏
-                        // 没有滚动事件可等时，仍能手动拉下一页。
-                        child: _loading
-                            ? adaptiveIndicator(context: context)
-                            : TextButton(
-                                key: const ValueKey<String>(
-                                    'discovery_load_more'),
-                                onPressed: _loadMore,
-                                child: Text(t.discovery_load_more),
-                              ),
-                      ),
-                    ),
-                ],
+                        )
+                      : result != null && result.hasMore
+                          ? Center(
+                              // 自动翻页之外的兜底：键盘 / 手柄焦点走到页尾、或首页
+                              // 不满一屏没有滚动事件可等时，仍能手动拉下一页。
+                              child: _loading
+                                  ? const FushiLoadingView(compact: true)
+                                  : FushiTextButton(
+                                      key: const ValueKey<String>(
+                                          'discovery_load_more'),
+                                      onPressed: _loadMore,
+                                      child: Text(t.discovery_load_more),
+                                    ),
+                            )
+                          : const SizedBox.shrink(),
+                ),
               ),
             ),
           ],
@@ -1142,13 +1188,117 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     );
   }
 
+  /// 结果区标题：有关键词 = 「搜索结果」；单源浏览 = 来源名；其余不出标题。
+  String? _resultsTitle(MediaDiscoveryService service) {
+    if (_query.isNotEmpty) return t.video_discovery_search_results;
+    if (_sourceId != kDiscoveryAllSourcesId) {
+      return _sourceDisplayName(service, _sourceId);
+    }
+    return null;
+  }
+
+  /// 资源行行首：源给了封面（OPDS / 游戏站）就放一张 2:3 小封面（与视频 / 漫画
+  /// 发现卡同一圆角与占位），否则是单色类型图标（种子 / 文件）。
+  Widget _buildResourceLeading(
+    BuildContext context,
+    DiscoveryResourceItem entry,
+  ) {
+    final String cover = entry.coverUrl?.trim() ?? '';
+    if (cover.isEmpty) {
+      return FushiIcon(
+        entry.payloadKind == DiscoveryPayloadKind.torrent
+            ? Icons.link
+            : Icons.insert_drive_file_outlined,
+      );
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: 36,
+        height: 54,
+        child: DiscoveryImageCover(
+          image: AppCachedHttpImage(cover),
+          placeholderIcon: Icons.insert_drive_file_outlined,
+        ),
+      ),
+    );
+  }
+
+  /// 一行结果：目录（可下钻）或资源（可下载）。
+  Widget _buildEntryRow(
+    BuildContext context,
+    DiscoveryEntry entry,
+    MediaDiscoveryService service,
+    DiscoveryDownloadQueue queue,
+  ) {
+    return switch (entry) {
+      DiscoveryFolder() => FushiListItem(
+          leading: const FushiIcon(Icons.folder_outlined),
+          title: Text(entry.title),
+          // 目录条目不带来源名，用户看不出这是哪个站的目录。
+          subtitle: Text(
+            <String>[
+              service.sourceById(entry.sourceId)?.displayName ??
+                  entry.sourceId,
+              if (entry.note?.trim().isNotEmpty == true)
+                entry.note!,
+              if (entry.itemCount != null)
+                t.media_source_count_manga(n: entry.itemCount!),
+            ].join(' · '),
+          ),
+          trailing: const FushiIcon(Icons.chevron_right),
+          onTap: () => _openFolder(entry),
+        ),
+      // 未隐藏时 0 做种条目灰显：死种能看到，但一眼分得出。
+      DiscoveryResourceItem() => Opacity(
+          key: ValueKey<String>(
+            'discovery_item_${entry.sourceId}_${entry.id}',
+          ),
+          opacity: entry.seeders == 0 ? 0.5 : 1,
+          child: FushiListItem(
+            leading: _buildResourceLeading(context, entry),
+            title: _buildResourceTitle(context, entry),
+            // 不限行：同系列书名只在末尾差卷号（OPDS 的「…惰眠を
+            // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
+            // 切掉，用户分不出哪一卷。
+            titleMaxLines: null,
+            subtitle: Text(_subtitleFor(entry, service)),
+            trailing: _resolvingTorrentIds.contains(
+                      '${entry.sourceId}\u0000${entry.id}',
+                    ) ||
+                    queue.isPending(entry)
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: FushiCircularProgressIndicator(
+                        strokeWidth: 2),
+                  )
+                : entry.isDownloadable
+                    ? FushiIconButton(
+                        icon: Icons.download_outlined,
+                        tooltip:
+                            t.anime_download_generic_download,
+                        label:
+                            t.anime_download_generic_download,
+                        onTap: () =>
+                            unawaited(_download(entry)),
+                      )
+                    : null,
+            onTap: entry.isDownloadable
+                ? () => unawaited(_download(entry))
+                : null,
+          ),
+        ),
+    };
+  }
+
   String _sourceDisplayName(MediaDiscoveryService service, String sourceId) =>
       service.sourceById(sourceId)?.displayName ?? sourceId;
 
-  Widget _retryButton() => FilledButton.icon(
+  Widget _retryButton() => FushiFilledButton.icon(
         key: const ValueKey<String>('discovery_retry'),
         onPressed: () => unawaited(_load()),
-        icon: const Icon(Icons.refresh_rounded),
+        icon: const FushiIcon(Icons.refresh_rounded),
         label: Text(t.retry),
       );
 

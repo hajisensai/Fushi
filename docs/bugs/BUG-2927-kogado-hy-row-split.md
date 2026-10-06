@@ -1,0 +1,23 @@
+## BUG-2927 · Symphonic Rain（工画堂 Hy 引擎）一句台词按画面行被拆成多条
+- **报告**：2026-10-04（用户：mizore520）
+- **真实性**：✅ 真 bug。这款游戏没有引擎适配，工作台只能选 LunaHook 的通用 `TextOutA` 线程。引擎的脚本是**预先按宽度折好行**的：一页是若干条行字符串，用脚本里的 `\n` 分隔、`\p` 收尾。消息窗口逐行显示，后一行要等前一行打字效果走完才创建（实测间隔约 1.3 s）。每一行是一次整行的 `TextOutA`，画进离屏缓冲 `(0,0)`。LunaHook 的 `flushDelay=200ms`（`native/galgame_hook/injector/injector_main.cpp:1281`）因此把一页切成逐行的若干条。Fushi 的渐进折叠（`fushi/lib/src/sync/texthooker_service.dart:904`）只合并前缀/后缀关系的重绘，两行互不包含，不会合并。
+- **[x] ① 已修复**（`fd517b075`）— 新增引擎级适配器 `kogado_hy`（`native/galgame_hook/hook/adapters/kogado_hy_*`）。
+  - 身份判据：主程序导出工画堂 Hy 运行库（`THyRGBText::SetText` / `THyAlpha::BoxFill` / `THyAlpha::Draw`）。
+  - 挂点：消息窗口的行渲染函数。从磁盘原始镜像按结构识别，全部满足才算命中：先 BoxFill、再 `mov eax,[eax+T]; call SetText`、再 Draw；每个调用点都由「对象行计数器 × 行跨度 + 行数组基址」的分页缓冲喂入。歌词窗口的行号来自参数，因此被排除。
+  - 点击单位：脚本的「等待点击」方法同样按结构识别——它是一个短方法，用填行函数调用方读的同一个窗口字段和模式字节，在两种窗口模式下各点亮一次等待光标。一个单位从等待之后渲染的第一行（或清页后的第 0 行）开始。冒险窗口一页就是一个单位；全屏窗口（16 行）一页里有多个段落，每个段落是一个单位。
+  - 输出：把单位首行到当前行拼起来，去掉【名字】行和续行的引号缩进，作为 `ENGINE:KOGADO_HY:message_page` 精确通道渐进发布；同一单位的多行由宿主现有的渐进折叠合并成一条。
+- **[x] ② 已加自动化测试**（`fd517b075`）— `native/galgame_hook/tests/kogado_hy_adapter_test.cpp`（合成镜像：解析命中、缺导出拒绝、歌词窗口排除、两个消息渲染函数判多义；等待点击：命中、缺 SHOWMSG、只有远离入口的恢复路径不算、两个判多义；拼页：去名字行、去续行缩进、全屏窗口按单位起始行、空行、只有名字行不发布、坏 CP932 / 缺结尾拒绝），`fushi/test/mining/galgame_audio_test.dart`（source kind 11 → `kogado:` 线程命名空间）。
+- **备注**：
+  - 只有一个样本（2004 シンフォニック=レイン）。离线负向样本：本机 37 个其它引擎的 x86 exe（RealLive / Siglus / BGI / CMVS / Leaf 等引擎）全部判为无 Hy 导出。
+  - native 实机（2026-10-04，SR.exe sha256 `04b4c08b…ce4c`，原始路径 Locale Emulator 启动）：运行时解析出与离线相同的站点（render `+0x31d70`、文字对象 `0x84`、跨度 53、4 个调用点、2 个行数组、等待点击 `+0x37a10`）。等待点击与脚本等待指令 1:1 触发（13/13）。冒险窗口按页、全屏窗口按段落逐行渐进发布，名字行已去除。Fushi 宿主 text_ready 尚未实测，状态保持 `implemented_unverified`。
+  - 若该游戏在 Fushi 里已记住手选的 `TextOutA` 线程，需要手动改选「Kogado Hy exact」一次；只有没有记忆时才会自动选中。
+  - Fushi 宿主实测（2026-10-04，本分支本地构建，从工作台按原路径启动）：「Kogado Hy exact」线程把每个点击单位合成一条，带配音的台词配上了引擎 PCM。
+  - 内嵌查词（provider 24，`kogado_hy_lookup.inc`）同日实测：
+    - 鼠标：在冒险窗口（第 1、2 行）和全屏窗口（第 3 行）点字都能弹出对应的查词卡，不推进；点卡外关卡，不推进；无卡时点击照常推进。
+    - 触摸：点字弹卡不推进；卡内点词后再点卡外两层都关闭，不推进；卡上横滑关卡，不推进；无卡时滑动推进、长按弹出游戏右键菜单（与鼠标一致）。
+    - 全程游戏保持前台。
+    - 没有写真卡（未跑假 AnkiConnect），不是 accept4 运行。
+  - 实测中修正的两个问题（`404263c0c`、`2c98d48a3`）：
+    - VCL 的游戏窗口由 `TApplication` 拥有，`GetParent()` 返回所有者，原来的窗口查找因此漏掉了它；
+    - 游戏窗口属于 VCL 主线程，而不是渲染行的脚本线程，所以 `SetWindowSubclass` 装不上，改为替换窗口过程并用 `CallWindowProc` 链回原过程。
+  - 语音仍只走通用 DirectSound PCM 按时间配对。

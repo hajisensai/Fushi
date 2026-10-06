@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 import 'package:fushi/src/media/manga/manga_cover_failure.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// Aidoku 源封面：浏览器 UA（+ 源站 Referer）经应用代理出口取图。
@@ -24,8 +25,6 @@ class _AidokuCoverImageState extends State<AidokuCoverImage> {
   /// url+headers 判等，同值的新实例不会触发 `Image.didUpdateWidget` 重新加载。
   int _attempt = 0;
 
-  static const Color _placeholderColor = Color(0x11000000);
-
   AppCachedHttpImage _provider(String url) => AppCachedHttpImage(
         url,
         headers: <String, String>{
@@ -45,9 +44,16 @@ class _AidokuCoverImageState extends State<AidokuCoverImage> {
   Widget build(BuildContext context) {
     final String value = widget.url?.trim() ?? '';
     if (value.isEmpty) {
-      return const ColoredBox(
-        color: _placeholderColor,
-        child: Center(child: Icon(Icons.image_not_supported_outlined)),
+      // 占位底跟随主题中性色：此前的黑 7% 在深色主题下等于没有底。
+      final ColorScheme cs = Theme.of(context).colorScheme;
+      return ColoredBox(
+        color: cs.surfaceContainerHighest,
+        child: Center(
+          child: FushiIcon(
+            Icons.image_not_supported_outlined,
+            color: cs.onSurfaceVariant,
+          ),
+        ),
       );
     }
     return Image(
@@ -57,7 +63,6 @@ class _AidokuCoverImageState extends State<AidokuCoverImage> {
       errorBuilder: (BuildContext _, Object error, StackTrace? __) =>
           MangaCoverFailure(
         error: error,
-        backgroundColor: _placeholderColor,
         onRetry: () => _retry(value),
       ),
     );

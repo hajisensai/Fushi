@@ -19,6 +19,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
+import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -1426,6 +1427,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 播放器底栏时间显示「剩余时长」（`-12:34 / 24:00`）而不是已播时长。
+  /// 默认 false；点按底栏时间切换并记住。
+  bool get videoTimeDisplayRemaining =>
+      getPref('video_time_display_remaining', defaultValue: false) as bool;
+
+  Future<void> setVideoTimeDisplayRemaining(bool value) async {
+    await setPref('video_time_display_remaining', value);
+    notifyListeners();
+  }
+
   /// 旧本地封面补齐开关。现只控制 sidecar / 本地封面 sweep，不会发起元数据
   /// 网络请求；保留该偏好用于兼容已有设备设置。在线刮削统一由
   /// `VideoSourceScrapeCoordinator` 管理。
@@ -1597,6 +1608,35 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setDiscoveryAListSites(Iterable<AListSiteConfig> sites) async {
     await setPref('discovery_alist_sites', encodeAListSiteConfigs(sites));
+    notifyListeners();
+  }
+
+  /// 用户自配的 Audiobookshelf 服务器清单（设备本地；含 base64 令牌）。
+  /// 逐条容错同 [discoveryOpdsServers]。
+  List<AudiobookshelfServerConfig> get discoveryAudiobookshelfServers {
+    final String raw =
+        getPref('discovery_audiobookshelf_servers', defaultValue: '')
+            as String;
+    if (raw.trim().isEmpty) return const <AudiobookshelfServerConfig>[];
+    try {
+      return decodeAudiobookshelfServerConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.discoveryAudiobookshelfServers.decode',
+        error,
+        stack,
+      );
+      return const <AudiobookshelfServerConfig>[];
+    }
+  }
+
+  Future<void> setDiscoveryAudiobookshelfServers(
+    Iterable<AudiobookshelfServerConfig> servers,
+  ) async {
+    await setPref(
+      'discovery_audiobookshelf_servers',
+      encodeAudiobookshelfServerConfigs(servers),
+    );
     notifyListeners();
   }
 
@@ -3563,6 +3603,15 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAsrTranscribeLanguage(String value) async {
     await setPref('asr_transcribe_language', value);
+    notifyListeners();
+  }
+
+  /// 只有音频的有声书下载完成后是否自动转录入库（默认开）。
+  bool get audiobookAutoTranscribe =>
+      getPref('audiobook_auto_transcribe', defaultValue: true) as bool;
+
+  Future<void> setAudiobookAutoTranscribe({required bool value}) async {
+    await setPref('audiobook_auto_transcribe', value);
     notifyListeners();
   }
 

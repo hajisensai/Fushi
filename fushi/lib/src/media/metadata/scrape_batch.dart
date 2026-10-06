@@ -123,7 +123,7 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
     final double value = progress == null || progress.total == 0
         ? 0
         : progress.current / progress.total;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.scrape_all_title(kind: widget.mediaLabel)),
       content: SizedBox(
         width: 440,
@@ -141,7 +141,7 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      LinearProgressIndicator(value: value),
+                      FushiLinearProgressIndicator(value: value),
                       const SizedBox(height: 12),
                       Text(
                         t.scrape_all_running(
@@ -172,7 +172,7 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
         // 超时，一条请求挂死就永远回不到 `_running = false`。iOS 上没有系统返回键、
         // 对话框路由也没有侧滑返回，用户只能杀进程。关闭只解绑 UI，刮削继续在后台
         // 跑完（`_start` 里每处 setState 都有 mounted 守卫）。
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(summary),
           child: Text(
             _running
@@ -181,7 +181,7 @@ class _ScrapeBatchDialogState extends State<ScrapeBatchDialog> {
           ),
         ),
         if (!_running && summary == null && widget.itemCount > 0)
-          FilledButton(
+          FushiFilledButton(
             onPressed: _start,
             child: Text(t.scrape_all_start),
           ),

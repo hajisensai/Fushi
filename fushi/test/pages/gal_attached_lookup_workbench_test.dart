@@ -8,6 +8,7 @@ import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import '../helpers/glass_unwrap.dart';
 
 const String _sha =
     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -317,11 +318,9 @@ void main() {
       );
       expect(
         tester
-            .widget<FilledButton>(
-              find.byKey(
+            .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(
                 const ValueKey<String>('game-attached-calibration-commit'),
-              ),
-            )
+              )),)
             .onPressed,
         isNull,
       );
@@ -334,7 +333,7 @@ void main() {
       expect(probeCheckboxes, findsNWidgets(3));
       expect(
         tester
-            .widgetList<Checkbox>(probeCheckboxes)
+            .widgetList<Checkbox>(glassUnwrapAll<Checkbox>(probeCheckboxes))
             .every((Checkbox checkbox) => checkbox.onChanged != null),
         isTrue,
       );
@@ -354,17 +353,15 @@ void main() {
       expect(find.text(t.game_lookup_attached_probes_hint), findsNothing);
       expect(
         tester
-            .widgetList<Checkbox>(probeCheckboxes)
+            .widgetList<Checkbox>(glassUnwrapAll<Checkbox>(probeCheckboxes))
             .every((Checkbox checkbox) => checkbox.onChanged == null),
         isTrue,
       );
       expect(
         tester
-            .widget<FilledButton>(
-              find.byKey(
+            .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(
                 const ValueKey<String>('game-attached-calibration-commit'),
-              ),
-            )
+              )),)
             .onPressed,
         isNull,
       );
@@ -383,11 +380,9 @@ void main() {
       emit('targetBackground');
       await tester.pump();
       tester
-          .widget<TextButton>(
-            find.byKey(
+          .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(
               const ValueKey<String>('game-attached-calibration-cancel'),
-            ),
-          )
+            )),)
           .onPressed!();
       await tester.pumpAndSettle();
       expect(port.cancelCalls, 1);

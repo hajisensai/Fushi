@@ -215,11 +215,15 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     final Widget bar = SizedBox(
       height: height,
       child: DecoratedBox(
-        decoration: const BoxDecoration(
+        // Apple：只留很淡的顶部暗化（退出钮自带玻璃，不靠重渐变保证可读）。
+        decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: <Color>[Color(0x73000000), Color(0x00000000)],
+            colors: <Color>[
+              _appleChrome ? const Color(0x33000000) : const Color(0x73000000),
+              const Color(0x00000000),
+            ],
           ),
         ),
         child: Row(
@@ -408,8 +412,21 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     required String tooltip,
     required VoidCallback onPressed,
   }) {
-    return IconButton(
-      icon: Icon(icon),
+    // Apple：小窗右上角的退出钮是一枚小号玻璃圆钮（与居中三键同材质）。
+    if (_appleChrome) {
+      return Padding(
+        padding: EdgeInsets.all(2 * _videoUiScale),
+        child: VideoGlassCircleButton(
+          icon: icon,
+          tooltip: tooltip,
+          onPressed: onPressed,
+          size: 28 * _videoUiScale,
+          iconSize: 14 * _videoUiScale,
+        ),
+      );
+    }
+    return FushiIconButtonControl(
+      icon: FushiIcon(icon),
       iconSize: 18 * _videoUiScale,
       color: videoChromeNeutralForeground,
       tooltip: tooltip,
@@ -427,7 +444,18 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     bool primary = false,
   }) {
     final double size = (primary ? 56 : 40) * _videoUiScale;
-    return Tooltip(
+    // Apple：系统画中画 / AVKit 居中三键——无填充色的透明液态玻璃圆钮，SF 实心
+    // 字形（FushiIcon 换形），主播放键更大。
+    if (_appleChrome) {
+      return VideoGlassCircleButton(
+        icon: icon,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        size: size,
+        iconSize: size * (primary ? 0.42 : 0.4),
+      );
+    }
+    return FushiTooltip(
       message: tooltip,
       child: Material(
         color: _osdSurfaceColor(colorScheme),
@@ -438,7 +466,7 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           child: SizedBox(
             width: size,
             height: size,
-            child: Icon(
+            child: FushiIcon(
               icon,
               size: size * 0.5,
               color: videoChromeNeutralForeground,

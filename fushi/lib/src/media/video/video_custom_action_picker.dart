@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_labels.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 「快捷键 N」动作选择的结果。
@@ -33,15 +34,15 @@ Future<VideoCustomActionPick?> showVideoCustomActionPicker({
   required int slotNumber,
   required ShortcutAction? current,
 }) {
-  return showDialog<VideoCustomActionPick>(
+  return showAppDialog<VideoCustomActionPick>(
     context: context,
-    builder: (BuildContext dialogContext) => SimpleDialog(
+    builder: (BuildContext dialogContext) => FushiSimpleDialog(
       title: Text(t.video_control_custom_action(index: slotNumber)),
       children: <Widget>[
         // 「不绑定」置顶：解绑是唯一「把按钮变回空槽」的路径，排在几十条动作末尾会找不到。
         FushiListItem(
           title: Text(t.video_control_custom_action_none),
-          leading: const Icon(Icons.block),
+          leading: const FushiIcon(Icons.block),
           selected: current == null,
           onTap: () => Navigator.of(dialogContext).pop(
             const VideoCustomActionPick(null),
@@ -50,7 +51,7 @@ Future<VideoCustomActionPick?> showVideoCustomActionPicker({
         for (final ShortcutAction action in kVideoAssignableActions)
           FushiListItem(
             title: Text(action.label),
-            leading: Icon(action.buttonIcon ?? Icons.bolt_outlined),
+            leading: FushiIcon(action.buttonIcon ?? Icons.bolt_outlined),
             selected: current == action,
             onTap: () => Navigator.of(dialogContext).pop(
               VideoCustomActionPick(action),

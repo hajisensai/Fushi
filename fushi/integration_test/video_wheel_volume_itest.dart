@@ -36,6 +36,7 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
 import 'test_helpers.dart';
+import '../test/helpers/glass_unwrap.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -109,7 +110,7 @@ void main() {
         final Finder hud = find.byKey(videoVolumeHudProgressKey);
         if (hud.evaluate().isEmpty) return null;
         final LinearProgressIndicator w =
-            tester.widget<LinearProgressIndicator>(hud);
+            tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(hud));
         final double? v = w.value;
         return v == null ? null : v * 100.0;
       }

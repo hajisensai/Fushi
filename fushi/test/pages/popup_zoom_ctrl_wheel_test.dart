@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 
 import '../widgets/widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-1353 guard: Ctrl+滚轮在查词弹窗内缩放内容（改词典字号，持久化）。
 ///
@@ -145,7 +146,7 @@ void main() {
       // 可见提示：两个按钮都包着 [Tooltip]；flutter test 宿主必为桌面平台，消息
       // 必须附带「Ctrl+滚轮也可缩放」提示（dictionary_font_size_zoom_hint）。
       final Iterable<String> tooltipMessages = tester
-          .widgetList<Tooltip>(find.byType(Tooltip))
+          .widgetList<Tooltip>(glassUnwrapAll<Tooltip>(find.byType(Tooltip)))
           .map((Tooltip w) => w.message)
           .whereType<String>();
       expect(
@@ -251,7 +252,7 @@ void main() {
 
       // 每个按钮恰好一层 Tooltip：两层嵌套时内层先吃 hover，外层的 hint 永远显示不出来。
       final List<String> zoomMessages = tester
-          .widgetList<Tooltip>(find.byType(Tooltip))
+          .widgetList<Tooltip>(glassUnwrapAll<Tooltip>(find.byType(Tooltip)))
           .map((Tooltip w) => w.message)
           .whereType<String>()
           .where((String m) =>

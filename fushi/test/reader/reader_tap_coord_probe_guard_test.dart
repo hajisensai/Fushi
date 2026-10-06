@@ -52,8 +52,12 @@ void main() {
       final String body = src.substring(start, end);
 
       // 必须经 WebView 的 RenderBox 把全局指针位置映成局部坐标。
-      expect(body, contains('_webViewKey'),
-          reason: 'barrier-hover 必须用 WebView 的 GlobalKey 拿 RenderBox 换算坐标。');
+      // 歌词覆盖层在场时可交互文档是歌词 WebView：经 [_surfaceWebViewKey]
+      // （正文 _webViewKey / 歌词 _lyricsWebViewKey 二选一）拿 RenderBox。
+      expect(body, contains('_surfaceWebViewKey'),
+          reason: 'barrier-hover 必须用当前可交互 WebView 的 GlobalKey 拿 RenderBox 换算坐标。');
+      expect(src, contains('_lyricsMode ? _lyricsWebViewKey : _webViewKey'),
+          reason: '_surfaceWebViewKey 必须仍落到真实 WebView 的 GlobalKey。');
       expect(body, contains('globalToLocal(event.position)'),
           reason: 'barrier-hover 必须用 globalToLocal(event.position) 映成 '
               'WebView 局部坐标，而非相对 barrier 的 event.localPosition 直传。');

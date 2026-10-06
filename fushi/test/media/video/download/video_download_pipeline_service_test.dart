@@ -2596,6 +2596,72 @@ void main() {
     expect(await environment.database.getVideoDownloadJob(jobId), isNull);
   });
 
+  // BUG-2949：一个任务的多集入库行走一次批量删除，全部消失、库外的行不受牵连。
+  test('deleting a multi-episode job removes every imported library row',
+      () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    final Directory savePath =
+        Directory(p.join(environment.root.path, 'downloads'));
+    await savePath.create(recursive: true);
+
+    const String jobId = 'multi-episode-delete-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.download,
+      observedSavePath: savePath.path,
+    );
+    final List<String> episodeUids = <String>[];
+    for (int episode = 1; episode <= 3; episode++) {
+      final String name = 'Show S01E0$episode.mkv';
+      final File file = File(p.join(savePath.path, name));
+      await file.writeAsString('episode $episode');
+      await environment.insertBackendFile(jobId: jobId, name: name);
+      final String uid = 'video/show-s01e0$episode';
+      episodeUids.add(uid);
+      await environment.database.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(uid),
+          title: Value<String>('Show S01E0$episode'),
+          videoPath: Value<String>(file.path),
+        ),
+      );
+    }
+    final File unrelated = File(p.join(environment.root.path, 'Other.mkv'));
+    await unrelated.writeAsString('other');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/other'),
+        title: const Value<String>('Other'),
+        videoPath: Value<String>(unrelated.path),
+      ),
+    );
+
+    final VideoDownloadJobRow job =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    await deletePersistedVideoDownloadJob(
+      database: environment.database,
+      job: job,
+      deleteFiles: true,
+    );
+
+    for (final String uid in episodeUids) {
+      expect(
+        await environment.database.getVideoBookByBookUid(uid),
+        isNull,
+        reason: '$uid must be removed with its downloaded file',
+      );
+    }
+    expect(
+      await environment.database.getVideoBookByBookUid('video/other'),
+      isNotNull,
+    );
+    expect(await unrelated.exists(), isTrue);
+    expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+  });
+
   test('a locked file leaves the durable job deleted and is reported',
       () async {
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(

@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 enum GalCalibrationEditMode { region, points, pan }
 
@@ -849,21 +851,21 @@ class _GalLookupCalibrationCanvasState
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.game_lookup_samples_zoom_out,
-                    icon: const Icon(Icons.zoom_out),
+                    icon: const FushiIcon(Icons.zoom_out),
                     onPressed: () =>
                         _zoom(_transform.value.getMaxScaleOnAxis() / 1.5),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.game_lookup_samples_zoom_in,
-                    icon: const Icon(Icons.zoom_in),
+                    icon: const FushiIcon(Icons.zoom_in),
                     onPressed: () =>
                         _zoom(_transform.value.getMaxScaleOnAxis() * 1.5),
                   ),
-                  IconButton(
+                  FushiIconButtonControl(
                     tooltip: t.game_lookup_samples_zoom_reset,
-                    icon: const Icon(Icons.fit_screen),
+                    icon: const FushiIcon(Icons.fit_screen),
                     onPressed: () => _zoom(1),
                   ),
                 ],

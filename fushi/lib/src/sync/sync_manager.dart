@@ -139,9 +139,10 @@ class SyncManager {
   bool get _fileBoxIsClientOwned =>
       _scope == SyncChannelScope.forBackendType(SyncBackendType.fushiServer);
 
-  /// Reports content-file (EPUB/audio) transfer progress as a fraction 0..1.
+  /// Reports content-file (EPUB/audio) transfer progress as a fraction 0..1,
+  /// plus the bytes done when the transport counts them.
   /// Only fires when content sync is enabled and a file is being transferred.
-  final void Function(double fraction)? onContentProgress;
+  final SyncTransferProgress? onContentProgress;
 
   /// 同步单本书。返回同步结果。
   Future<SyncBookResult> syncBook({

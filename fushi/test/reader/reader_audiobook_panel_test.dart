@@ -6,6 +6,7 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/utils.dart';
+import '../helpers/glass_unwrap.dart';
 
 Widget _host(Widget child) => MaterialApp(
       home: Scaffold(body: SizedBox(height: 700, child: child)),
@@ -141,7 +142,7 @@ void main() {
     expect(find.byType(SegmentedButton<String>), findsNothing);
     final Finder bar = find.byType(TabBar);
     expect(bar, findsOneWidget);
-    TabController controller() => tester.widget<TabBar>(bar).controller!;
+    TabController controller() => tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller!;
     expect(controller().length, kReaderAudiobookPanelTabs.length);
     // 默认章节页。
     expect(controller().index, kReaderAudiobookPanelTabs.indexOf('chapters'));
@@ -175,7 +176,7 @@ void main() {
     )));
     await tester.pump();
     expect(
-      tester.widget<TabBar>(find.byType(TabBar)).controller!.index,
+      tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).controller!.index,
       kReaderAudiobookPanelTabs.indexOf('settings'),
     );
     expect(find.text('SETTINGS_TAB'), findsOneWidget);

@@ -12,6 +12,7 @@ import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/media/video/subtitle_style_preview.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
@@ -46,9 +47,13 @@ SettingsDestination buildVideoDestination() {
       c.appModel.moduleVisibility,
     ),
     title: t.settings_destination_video,
-    summary: t.video_settings_title,
+    summary: t.video_settings_summary,
     icon: Icons.movie_outlined,
     sections: <SettingsSection>[
+      // 分组顺序（2026-10 重排）：播放 → 显示与画质（下接四个折叠的 mpv 进阶组）→
+      // 字幕外观 → 字幕行为与来源 → 音频 → 控制与手势 → 截图与片段 → 弹幕 → 媒体库 →
+      // 高级（Lua 脚本）→ 播放中专属。只调全局设置页的归属与顺序；播放页快捷面板按
+      // 各条目的 VideoPlacement 投影，与这里的 section 无关、像素不变。
       SettingsSection(
         id: 'video.section.playback',
         presentation: SettingsSectionPresentation.alwaysExpanded,
@@ -68,22 +73,6 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
           ),
-          // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
-          // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
-          // 细线会把这个意图撤回一半；要的人在这里开。
-          // 小窗档不受它管（那里完整进度条已被收起，细线是唯一进度指示），判据统一在
-          // `videoSlimProgressBarVisible`。播放页面板不单列（无 VideoPlacement）。
-          SettingsSwitchItem(
-            id: 'video.playback.slim_progress_bar',
-            title: t.video_setting_slim_progress_bar,
-            subtitle: t.video_setting_slim_progress_bar_hint,
-            icon: Icons.linear_scale_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSlimProgressBar,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setVideoSlimProgressBar(value);
-            },
-          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。
@@ -98,6 +87,29 @@ SettingsDestination buildVideoDestination() {
             ),
             read: (VideoMpvConfig c) => c.loopFile,
             write: (VideoMpvConfig c, bool v) => c.copyWith(loopFile: v),
+          ),
+          // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选
+          // ≤目标 的最高档（画质菜单同语义），4K 档在 YouTube 侧只有 vp9/av01——无硬解
+          // 设备可能软解掉帧，故默认仍是「自动」。长标签多档 → dropdown 渲染。
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.youtube_quality',
+            title: t.video_setting_youtube_quality,
+            subtitle: t.video_setting_youtube_quality_hint,
+            icon: Icons.high_quality_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 15),
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(value: 0, label: t.video_quality_auto),
+              for (final int height in <int>[480, 720, 1080, 1440, 2160])
+                SettingsSegmentOption<int>(value: height, label: '${height}p'),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.youtubeQualityTargetHeight,
+            onChanged: (SettingsContext settingsContext, int height) async {
+              await settingsContext.appModel.setYoutubeQualityTargetHeight(
+                height,
+              );
+            },
           ),
           // 沉浸/画面缩放都是长标签四态：dropdown 渲染（TODO-209，分段条在窄 pane
           // 只能横向滚动裁断）。
@@ -125,90 +137,29 @@ SettingsDestination buildVideoDestination() {
                   await setVideoImmersiveModeDual(settingsContext, mode);
                 },
           ),
-          // 截图去向（两个截图快捷键共用这一个偏好）：默认「每次询问」＝历史行为，
-          // 老用户升级后按键手感不变。
-          SettingsSegmentedItem<VideoScreenshotDestination>(
-            id: 'video.playback.screenshot_destination',
-            title: t.video_setting_screenshot_destination,
-            subtitle: t.video_setting_screenshot_destination_hint,
-            icon: Icons.photo_camera_outlined,
-            dropdown: true,
-            video: VideoPlacement(group: VideoGroup.playback, order: 110),
-            options: <SettingsSegmentOption<VideoScreenshotDestination>>[
-              for (final VideoScreenshotDestination destination
-                  in VideoScreenshotDestination.values)
-                SettingsSegmentOption<VideoScreenshotDestination>(
-                  value: destination,
-                  label: _videoScreenshotDestinationLabel(destination),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoScreenshotDestination,
-            onChanged:
-                (
-                  SettingsContext settingsContext,
-                  VideoScreenshotDestination destination,
-                ) async {
-                  await settingsContext.appModel
-                      .setVideoScreenshotDestination(destination);
-                  settingsContext.refresh();
-                },
-          ),
-          // 目录行常驻可见（不按去向 gate）：用户通常先把目录选好、再把去向切到
-          // 「保存到目录」，gate 掉会逼出「先切去向才能设目录」的鸡生蛋。
-          SettingsActionItem(
-            id: 'video.playback.screenshot_directory',
-            title: t.video_setting_screenshot_directory,
-            subtitleBuilder: (SettingsContext settingsContext) {
-              final String dir =
-                  settingsContext.appModel.videoScreenshotDirectory.trim();
-              return dir.isEmpty ? t.video_screenshot_directory_not_set : dir;
-            },
-            icon: Icons.folder_open_outlined,
-            onTap: (SettingsContext settingsContext) async {
-              // 截图目录长期承载写入，必须是真实文件系统路径（安卓上
-              // getDirectoryPath() 只给 SAF tree URI，dart:io 读不了）——走统一入口。
-              final String? picked = await pickRealDirectoryPath(
-                context: settingsContext.context,
-                appModel: settingsContext.appModel,
-                dialogTitle: t.video_setting_screenshot_directory,
-                initialDirectory:
-                    settingsContext.appModel.videoScreenshotDirectory.trim()
-                        .isEmpty
-                    ? null
-                    : settingsContext.appModel.videoScreenshotDirectory.trim(),
-              );
-              if (picked == null || picked.isEmpty) return;
-              await settingsContext.appModel
-                  .setVideoScreenshotDirectory(picked);
-              settingsContext.refresh();
-            },
-          ),
-          // 片段导出的视频码率：0 = 跟随源（默认，能 copy 就 copy、不为改码率而重编
-          // 码），其它值把视频重编码到该码率。给一个自由输入框而不是预设档位：用户的
-          // 诉求是「发到 IM / 上传站点前把体积压到某个上限」，上限各家不同，档位永远
-          // 对不上。放进播放页快捷面板（VideoPlacement）是因为码率通常在按下导出前
-          // 临时调，不该为此退出播放去翻全局设置。
-          SettingsNumberItem(
-            id: 'video.playback.clip_export_video_bitrate',
-            title: t.video_setting_clip_export_video_bitrate,
-            subtitle: t.video_setting_clip_export_video_bitrate_hint,
-            icon: Icons.movie_creation_outlined,
-            integer: true,
-            min: kVideoClipExportVideoBitrateFollowSource,
-            max: kVideoClipExportVideoBitrateMaxKbps,
-            suffixText: t.unit_kbps,
-            video: VideoPlacement(group: VideoGroup.playback, order: 111),
+          // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
+          // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
+          // 细线会把这个意图撤回一半；要的人在这里开。
+          // 小窗档不受它管（那里完整进度条已被收起，细线是唯一进度指示），判据统一在
+          // `videoSlimProgressBarVisible`。播放页面板不单列（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.playback.slim_progress_bar',
+            title: t.video_setting_slim_progress_bar,
+            subtitle: t.video_setting_slim_progress_bar_hint,
+            icon: Icons.linear_scale_outlined,
             value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoClipExportVideoBitrateKbps,
-            resetValue: (SettingsContext settingsContext) =>
-                kVideoClipExportVideoBitrateFollowSource,
-            onChanged: (SettingsContext settingsContext, num value) async {
-              await settingsContext.appModel
-                  .setVideoClipExportVideoBitrateKbps(value.toInt());
-              settingsContext.refresh();
+                settingsContext.appModel.videoSlimProgressBar,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoSlimProgressBar(value);
             },
           ),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.display',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_display,
+        items: <SettingsItem>[
           SettingsSegmentedItem<VideoFitMode>(
             id: 'video.playback.picture_fit',
             title: t.video_setting_picture_fit,
@@ -236,6 +187,18 @@ SettingsDestination buildVideoDestination() {
                 (SettingsContext settingsContext, VideoFitMode mode) async {
                   await setVideoFitModeDual(settingsContext, mode);
                 },
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.lock_window_aspect',
+            title: t.video_setting_lock_window_aspect,
+            icon: Icons.aspect_ratio_outlined,
+            visible: (_) => isDesktopPlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 40),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoLockWindowAspectRatio,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoLockWindowAspectRatioDual(settingsContext, value);
+            },
           ),
           // Windows HDR 直通 / 10-bit 输出（docs/plans/2026-08-30-video-hdr-passthrough.md）：
           // auto = 显示器 HDR 开着且片源 HDR 才走宿主窗直通；always = 只要在 Windows
@@ -272,218 +235,410 @@ SettingsDestination buildVideoDestination() {
                   await setVideoHdrOutputModeDual(settingsContext, mode);
                 },
           ),
-          // YouTube 显式画质目标（0=自动=默认策略：编码优先、≤1080p）。非 0 起播即选
-          // ≤目标 的最高档（画质菜单同语义），4K 档在 YouTube 侧只有 vp9/av01——无硬解
-          // 设备可能软解掉帧，故默认仍是「自动」。长标签多档 → dropdown 渲染。
-          SettingsSegmentedItem<int>(
-            id: 'video.playback.youtube_quality',
-            title: t.video_setting_youtube_quality,
-            subtitle: t.video_setting_youtube_quality_hint,
-            icon: Icons.high_quality_outlined,
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.quality',
+        presentation: SettingsSectionPresentation.collapsed,
+        title: t.video_setting_mpv_group_quality,
+        items: <SettingsItem>[
+          // 画质增强（mpv 内置高质量缩放开关）+ 解码 / 去色带 / 循环：这些 mpv 配置项
+          // 都序列化进 videoMpvConfig，无 host 时下次打开视频 applyMpvConfigToPlayer
+          // 应用，host 在场即改即生效。着色器档位选择需下载 + 文件系统，仍只在播放页
+          // 「画质增强」分类里调（本开关在面板里由着色器管理视图承载，无 placement）。
+          SettingsSwitchItem(
+            id: 'video.quality.enhancement',
+            title: t.video_shader_quality_tier,
+            subtitle: t.video_quality_enhancement_hint,
+            icon: Icons.auto_fix_high_outlined,
+            value: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).highQuality,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(highQuality: value),
+              );
+            },
+          ),
+          // S 形上采样（sigmoid-upscaling）：与「画质增强/着色器等级」并列的一档可选画质
+          // 开关（TODO-1120/BUG-538）。默认关（性能占用偏大，见 VideoMpvConfig.defaults）。
+          _videoMpvSwitchItem(
+            id: 'video.quality.sigmoid',
+            title: t.video_setting_mpv_sigmoid,
+            subtitle: t.video_setting_mpv_sigmoid_hint,
+            icon: Icons.show_chart_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 60,
+              section: t.video_setting_mpv_group_quality,
+            ),
+            read: (VideoMpvConfig c) => c.sigmoidUpscaling,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(sigmoidUpscaling: v),
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.quality.hwdec',
+            title: t.video_setting_mpv_hwdec,
+            icon: Icons.memory_outlined,
             dropdown: true,
-            video: VideoPlacement(group: VideoGroup.playback, order: 15),
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(value: 0, label: t.video_quality_auto),
-              for (final int height in <int>[480, 720, 1080, 1440, 2160])
-                SettingsSegmentOption<int>(value: height, label: '${height}p'),
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 10,
+              section: t.video_setting_mpv_group_decode,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'no',
+                label: t.video_setting_mpv_hwdec_off,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'auto-safe',
+                label: t.video_setting_mpv_hwdec_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'auto-copy',
+                label: t.video_setting_mpv_hwdec_copy,
+              ),
             ],
             selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.youtubeQualityTargetHeight,
-            onChanged: (SettingsContext settingsContext, int height) async {
-              await settingsContext.appModel.setYoutubeQualityTargetHeight(
-                height,
+                currentVideoMpvConfig(settingsContext).hwdec,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hwdec: value),
               );
             },
           ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.deband',
+            title: t.video_setting_mpv_deband,
+            icon: Icons.gradient_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 20,
+              section: t.video_setting_mpv_group_quality,
+            ),
+            read: (VideoMpvConfig c) => c.deband,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(deband: v),
+          ),
+          // TODO-1247：把播放页内 mpv 画质组里的其余布尔项平移到首页（纯 pref），与播放
+          // 页内设置同源，消除「首页改不了」。（「单文件循环」已移到「播放」分区。）
+          _videoMpvSwitchItem(
+            id: 'video.quality.dither',
+            title: t.video_setting_mpv_dither,
+            icon: Icons.grain_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 30,
+              section: t.video_setting_mpv_group_quality,
+            ),
+            read: (VideoMpvConfig c) => c.dither,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(dither: v),
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.interpolation',
+            title: t.video_setting_mpv_interpolation,
+            icon: Icons.animation_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 40,
+              section: t.video_setting_mpv_group_quality,
+            ),
+            read: (VideoMpvConfig c) => c.interpolation,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(interpolation: v),
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.deinterlace',
+            title: t.video_setting_mpv_deinterlace,
+            icon: Icons.view_stream_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 50,
+              section: t.video_setting_mpv_group_quality,
+            ),
+            read: (VideoMpvConfig c) => c.deinterlace,
+            write: (VideoMpvConfig c, bool v) => c.copyWith(deinterlace: v),
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.quality.correct_downscale',
+            title: t.video_setting_mpv_correct_downscale,
+            icon: Icons.photo_size_select_small_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 70,
+              section: t.video_setting_mpv_group_quality,
+            ),
+            read: (VideoMpvConfig c) => c.correctDownscaling,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(correctDownscaling: v),
+          ),
+          // 已知问题说明（TODO-1116/1119 / BUG-545）：Windows 渲染链在高显卡占用时
+          // 可能黑屏闪烁；hwdec 真修属 device-gated 后续项，本轮先在画质组内明示，
+          // 并指向上面真实存在的画质控件降低 GPU 负载。仅 Windows 展示。
+          SettingsCustomItem(
+            id: 'video.quality.windows_black_flash_notice',
+            visible: (SettingsContext settingsContext) => isWindowsPlatform,
+            builder: _buildWindowsBlackFlashNotice,
+          ),
+        ],
+      ),
+      // HDR：这一节控制的是「HDR 片源压到 SDR 屏幕上」那一次不可避免的映射做得好不好，
+      // **不是 HDR 直通**。Windows 侧走 vo=libmpv → ANGLE → Flutter 外部纹理，共享纹理
+      // 格式写死 8-bit BGRA；Android 侧还额外强制 vf=format=yuv420p 降位（BUG-465）。
+      // 直通要动 vendored 的原生 surface 与 Flutter 合成，不在本节范围内。
+      SettingsSection(
+        id: 'video.section.hdr',
+        presentation: SettingsSectionPresentation.collapsed,
+        title: t.video_setting_mpv_group_hdr,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.tone_mapping',
+            title: t.video_setting_hdr_tone_mapping,
+            subtitle: t.video_setting_hdr_tone_mapping_hint,
+            icon: Icons.hdr_auto_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              // 72/74 而不是 70/71：mpv 组的扁平 order 已被占用（画质小节止于
+              // 70 = video.quality.correct_downscale，几何小节起于 80），而
+              // buildVideoGroupDestination 是把**相邻**同名 section 合并成小节。
+              // 撞号会让播放器快捷面板里出现「画质 → HDR → 画质 → 几何」这种
+              // 标题重复，且撞号两者的相对次序取决于不稳定的 List.sort。
+              // 全量设置页看不出来（那边 HDR 是独立声明的 section）。
+              group: VideoGroup.mpv,
+              order: 72,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              // 曲线名直接用 mpv 的标识符：这些是行业术语（BT.2390 等），翻译反而
+              // 让人对不上 mpv 文档和别处的教程。
+              //
+              // **从白名单派生，不要在这里再抄一份**：另一份清单意味着「UI 多列
+              // 一条、decode 白名单没有」这种分叉随时可能发生，而那条分叉是静默的
+              // （选了就被 decode 打回默认值，用户只看到「选了没保存」）。
+              // `Set` 字面量在 Dart 里是插入序，所以显示顺序仍由白名单那份决定。
+              for (final String curve in kHdrToneMappingValues.where(
+                (String c) => c != 'auto',
+              ))
+                SettingsSegmentOption<String>(value: curve, label: curve),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrToneMapping,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrToneMapping: value),
+              );
+            },
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.hdr.compute_peak',
+            title: t.video_setting_hdr_compute_peak,
+            subtitle: t.video_setting_hdr_compute_peak_hint,
+            icon: Icons.brightness_7_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 74,
+              section: t.video_setting_mpv_group_hdr,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto',
+                label: t.video_setting_hdr_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'yes',
+                label: t.video_setting_hdr_on,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'no',
+                label: t.video_setting_hdr_off,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).hdrComputePeak,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(hdrComputePeak: value),
+              );
+            },
+          ),
+        ],
+      ),
+      // TODO-1247：播放页内 mpv「画面几何 / 色彩均衡 / 音频」详情与首页同源（同一
+      // videoMpvConfig；无 host 下次开视频应用，host 在场即改即生效）。
+      SettingsSection(
+        id: 'video.section.geometry',
+        presentation: SettingsSectionPresentation.collapsed,
+        title: t.video_setting_mpv_group_geometry,
+        items: <SettingsItem>[
           SettingsSegmentedItem<int>(
-            id: 'video.playback.double_tap',
-            title: t.video_setting_double_tap,
-            subtitle: t.video_setting_double_tap_hint,
-            icon: Icons.touch_app_outlined,
-            video: VideoPlacement(group: VideoGroup.playback, order: 90),
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.video_setting_double_tap_off,
-              ),
-              for (final int seconds in <int>[3, 5, 10])
-                SettingsSegmentOption<int>(
-                  value: seconds,
-                  label: '${seconds}s',
-                ),
-              SettingsSegmentOption<int>(
-                value: VideoAsbplayerConfig.kDoubleTapSubtitle,
-                label: t.video_setting_double_tap_subtitle,
-              ),
+            id: 'video.geometry.rotate',
+            title: t.video_setting_mpv_rotate,
+            icon: Icons.screen_rotation_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 80,
+              section: t.video_setting_mpv_group_geometry,
+            ),
+            options: const <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(value: 0, label: '0°'),
+              SettingsSegmentOption<int>(value: 90, label: '90°'),
+              SettingsSegmentOption<int>(value: 180, label: '180°'),
+              SettingsSegmentOption<int>(value: 270, label: '270°'),
             ],
             selected: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).doubleTapSeekSeconds,
+                currentVideoMpvConfig(settingsContext).videoRotate,
             onChanged: (SettingsContext settingsContext, int value) async {
-              await commitVideoAsbConfig(
+              await commitVideoMpvConfig(
                 settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(doubleTapSeekSeconds: value),
+                (VideoMpvConfig c) => c.copyWith(videoRotate: value),
               );
             },
           ),
-          // 点击画面是否切换播放/暂停（默认开 = 旧行为）。桌面对应控制条主题的
-          // `playAndPauseOnTap`（单击画面），移动端对应双击中带的暂停 fallback
-          // （BUG-221）——两端同一开关、语义一致，故全平台可见，不是假开关。
-          // 关掉后点画面只唤醒/收起控制条；空格键、控制条按钮、右键菜单的播放/暂停
-          // 是独立入口，不受影响。
-          SettingsSwitchItem(
-            id: 'video.playback.tap_toggles_playback',
-            title: t.video_setting_tap_toggles_playback,
-            subtitle: t.video_setting_tap_toggles_playback_hint,
-            icon: Icons.touch_app_outlined,
-            video: VideoPlacement(group: VideoGroup.playback, order: 14),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).tapTogglesPlayback,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(tapTogglesPlayback: value),
-              );
-            },
-          ),
-          // BUG-1485：触屏横滑调进度的灵敏度。旧实现把「每像素跨多少时间」按视频总
-          // 时长比例换算，长片一拽就起飞；换算模型改成「拖过整屏 = 固定一段时长」
-          // （[VideoHorizontalSeekGesture]），这里让用户在三档之间选。仅移动端可见
-          // ——桌面无横滑手势（鼠标拖进度条 + 键盘 seek 键），显出来是假开关。
-          SettingsSegmentedItem<VideoSeekSensitivity>(
-            id: 'video.playback.drag_seek_sensitivity',
-            title: t.video_setting_drag_seek_sensitivity,
-            subtitle: t.video_setting_drag_seek_sensitivity_hint,
-            icon: Icons.swipe_outlined,
-            visible: (_) => isMobilePlatform,
-            video: VideoPlacement(group: VideoGroup.playback, order: 95),
-            options: <SettingsSegmentOption<VideoSeekSensitivity>>[
-              for (final VideoSeekSensitivity value
-                  in VideoSeekSensitivity.values)
-                SettingsSegmentOption<VideoSeekSensitivity>(
-                  value: value,
-                  label: _videoDragSeekSensitivityLabel(value),
-                ),
+          SettingsSegmentedItem<String>(
+            id: 'video.geometry.aspect',
+            title: t.video_setting_mpv_aspect,
+            icon: Icons.aspect_ratio_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 90,
+              section: t.video_setting_mpv_group_geometry,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '-1',
+                label: t.video_setting_mpv_aspect_auto,
+              ),
+              const SettingsSegmentOption<String>(value: '16:9', label: '16:9'),
+              const SettingsSegmentOption<String>(value: '4:3', label: '4:3'),
+              const SettingsSegmentOption<String>(
+                value: '2.35:1',
+                label: '2.35:1',
+              ),
+              const SettingsSegmentOption<String>(value: '1:1', label: '1:1'),
             ],
             selected: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).dragSeekSensitivity,
-            onChanged:
-                (
-                  SettingsContext settingsContext,
-                  VideoSeekSensitivity value,
-                ) async {
-                  await commitVideoAsbConfig(
-                    settingsContext,
-                    (VideoAsbplayerConfig c) =>
-                        c.copyWith(dragSeekSensitivity: value),
-                  );
-                },
-          ),
-          // issue #1525：移动端左半区竖滑调亮度 / 右半区竖滑调音量各自可关（默认开 =
-          // 旧行为），常误触的用户改用系统亮度条与实体音量键。仅移动端可见——桌面控制条
-          // 本无这两个手势，显出来是假开关。播放页在场时经 host 回调即时生效。
-          SettingsSwitchItem(
-            id: 'video.playback.brightness_swipe_gesture',
-            title: t.video_setting_brightness_swipe_gesture,
-            subtitle: t.video_setting_brightness_swipe_gesture_hint,
-            icon: Icons.brightness_6_outlined,
-            visible: (_) => isMobilePlatform,
-            video: VideoPlacement(group: VideoGroup.playback, order: 96),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).brightnessSwipeGesture,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
+                currentVideoMpvConfig(settingsContext).aspectOverride,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
                 settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(brightnessSwipeGesture: value),
+                (VideoMpvConfig c) => c.copyWith(aspectOverride: value),
               );
             },
           ),
-          SettingsSwitchItem(
-            id: 'video.playback.volume_swipe_gesture',
-            title: t.video_setting_volume_swipe_gesture,
-            subtitle: t.video_setting_volume_swipe_gesture_hint,
-            icon: Icons.volume_up_outlined,
-            visible: (_) => isMobilePlatform,
-            video: VideoPlacement(group: VideoGroup.playback, order: 97),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).volumeSwipeGesture,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) => c.copyWith(volumeSwipeGesture: value),
-              );
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'video.playback.lock_window_aspect',
-            title: t.video_setting_lock_window_aspect,
-            icon: Icons.aspect_ratio_outlined,
-            visible: (_) => isDesktopPlatform,
-            video: VideoPlacement(group: VideoGroup.playback, order: 40),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoLockWindowAspectRatio,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoLockWindowAspectRatioDual(settingsContext, value);
-            },
-          ),
-          // 长按倍速 / 跳转步长 / 句末暂停都落在 videoAsbplayerConfig；无 host 时是
-          // 全局默认（下次播放生效），host 在场经页面回调即时生效（与播放页内调一致）。
           SettingsSliderItem(
-            id: 'video.playback.long_press_speed',
-            title: t.video_setting_long_press_speed,
-            subtitle: t.video_setting_long_press_speed_hint,
-            icon: Icons.touch_app_outlined,
-            video: VideoPlacement(group: VideoGroup.playback, order: 60),
-            min: 1.0,
-            max: 4.0,
-            divisions: 30,
-            step: 0.1,
-            label: (double v) => '${v.toStringAsFixed(1)}x',
+            id: 'video.geometry.zoom',
+            title: t.video_setting_mpv_zoom,
+            icon: Icons.zoom_out_map_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 100,
+              section: t.video_setting_mpv_group_geometry,
+            ),
+            min: -2,
+            max: 2,
+            divisions: 40,
+            label: (double v) => v.toStringAsFixed(2),
             value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).longPressSpeed,
-            // 拖动只本地预览、松手一次性落盘（旧面板语义）。该值仅在下次长按手势
-            // 时消费，拖动中写穿毫无实时收益，反而每 0.1x 档触发播放页全页
-            // rebuild 掉帧（BUG-963 同款抖动）。
-            commitOnRelease: true,
+                currentVideoMpvConfig(settingsContext).videoZoom.clamp(-2, 2),
+            // 播放中拖动逐 tick 写穿实时生效（旧面板行为）；全局设置页松手才落盘。
             onChanged: (SettingsContext settingsContext, double v) async {
-              await commitVideoAsbConfig(
+              if (!videoHostVisible(settingsContext)) return;
+              await commitVideoMpvConfig(
                 settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(longPressSpeed: snapVideoLongPressSpeed(v)),
+                (VideoMpvConfig c) => c.copyWith(videoZoom: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(videoZoom: v),
               );
             },
           ),
-          SettingsStepperItem(
-            id: 'video.playback.seek_seconds',
-            title: t.video_setting_seek_seconds,
-            icon: Icons.keyboard_double_arrow_right_outlined,
-            video: VideoPlacement(group: VideoGroup.playback, order: 80),
+          SettingsSliderItem(
+            id: 'video.geometry.panscan',
+            title: t.video_setting_mpv_panscan,
+            icon: Icons.crop_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 110,
+              section: t.video_setting_mpv_group_geometry,
+            ),
+            min: 0,
+            max: 1,
+            divisions: 20,
+            label: (double v) => v.toStringAsFixed(2),
             value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).seekSeconds.toDouble(),
-            step: 1,
-            min: 1,
-            max: 30,
-            format: (double v) => '${v.round()}s',
+                currentVideoMpvConfig(settingsContext).panscan.clamp(0, 1),
             onChanged: (SettingsContext settingsContext, double v) async {
-              await commitVideoAsbConfig(
+              if (!videoHostVisible(settingsContext)) return;
+              await commitVideoMpvConfig(
                 settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(seekSeconds: v.round().clamp(1, 30)),
+                (VideoMpvConfig c) => c.copyWith(panscan: v),
+              );
+            },
+            onChangeEnd: (SettingsContext settingsContext, double v) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(panscan: v),
               );
             },
           ),
-          // 「重置控件布局」原独占一个「控件」section（仅此一项）；单项撑一个分区
-          // 是欠填充结构，并入「播放」尾部。面板里归「控制」分类、排在拖拽编辑器后。
-          SettingsActionItem(
-            id: 'video.controls.reset_layout',
-            title: t.video_control_reset_layout,
-            icon: Icons.restart_alt_outlined,
-            video: VideoPlacement(group: VideoGroup.controls, order: 20),
-            onTap: (SettingsContext settingsContext) async {
-              await resetVideoControlLayoutDual(settingsContext);
-            },
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.color',
+        presentation: SettingsSectionPresentation.collapsed,
+        title: t.video_setting_mpv_group_color,
+        items: <SettingsItem>[
+          _videoMpvColorSliderItem(
+            id: 'video.color.brightness',
+            title: t.video_setting_mpv_brightness,
+            icon: Icons.brightness_6_outlined,
+            order: 120,
+            read: (VideoMpvConfig c) => c.brightness,
+            write: (VideoMpvConfig c, int v) => c.copyWith(brightness: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.contrast',
+            title: t.video_setting_mpv_contrast,
+            icon: Icons.contrast_outlined,
+            order: 130,
+            read: (VideoMpvConfig c) => c.contrast,
+            write: (VideoMpvConfig c, int v) => c.copyWith(contrast: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.saturation',
+            title: t.video_setting_mpv_saturation,
+            icon: Icons.invert_colors_outlined,
+            order: 140,
+            read: (VideoMpvConfig c) => c.saturation,
+            write: (VideoMpvConfig c, int v) => c.copyWith(saturation: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.gamma',
+            title: t.video_setting_mpv_gamma,
+            icon: Icons.tonality_outlined,
+            order: 150,
+            read: (VideoMpvConfig c) => c.gamma,
+            write: (VideoMpvConfig c, int v) => c.copyWith(gamma: v),
+          ),
+          _videoMpvColorSliderItem(
+            id: 'video.color.hue',
+            title: t.video_setting_mpv_hue,
+            icon: Icons.colorize_outlined,
+            order: 160,
+            read: (VideoMpvConfig c) => c.hue,
+            write: (VideoMpvConfig c, int v) => c.copyWith(hue: v),
           ),
         ],
       ),
@@ -491,131 +646,16 @@ SettingsDestination buildVideoDestination() {
         id: 'video.section.subtitles',
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.section_video_subtitles,
+        footer: t.section_video_subtitles_footer,
         items: <SettingsItem>[
-          // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
-          // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
-          // 位置照旧，仅调全局设置页所属 SettingsSection。
-          SettingsSwitchItem(
-            id: 'video.playback.pause_at_subtitle_end',
-            title: t.playback_auto_pause,
-            icon: Icons.pause_circle_outline,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
-            value: (SettingsContext settingsContext) =>
-                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoAsbConfig(
-                settingsContext,
-                (VideoAsbplayerConfig c) =>
-                    c.copyWith(pauseAtSubtitleEnd: value),
-              );
-            },
-          ),
-          // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
-          // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
-          SettingsSwitchItem(
-            id: 'video.subtitle.reference_sync',
-            title: t.video_setting_subtitle_reference_sync,
-            subtitle: t.video_setting_subtitle_reference_sync_hint,
-            icon: Icons.sync_alt_outlined,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.subtitleReferenceSyncEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.setSubtitleReferenceSyncEnabled(
-                value,
-              );
-            },
-          ),
-          // TODO-840 Part B：遮蔽模式三态选择器——不遮蔽 / 模糊（听力沉浸）/ 隐藏。
-          // 持久化是 preferences 层 lazy 投影（见
-          // [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。
-          SettingsSegmentedItem<VideoSubtitleObscureMode>(
-            id: 'video.subtitle.obscure',
-            title: t.video_setting_subtitle_obscure,
-            subtitle: t.video_setting_subtitle_obscure_hint,
-            icon: Icons.blur_on_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 40),
-            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
-              for (final VideoSubtitleObscureMode mode
-                  in VideoSubtitleObscureMode.values)
-                SettingsSegmentOption<VideoSubtitleObscureMode>(
-                  value: mode,
-                  label: _videoSubtitleObscureModeLabel(mode),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSubtitleObscureMode,
-            onChanged:
-                (
-                  SettingsContext settingsContext,
-                  VideoSubtitleObscureMode mode,
-                ) async {
-                  await setVideoSubtitleObscureModeDual(settingsContext, mode);
-                },
-          ),
-          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
-          // Shift+H 隐藏。
-          SettingsSegmentedItem<VideoSubtitleObscureMode>(
-            id: 'video.secondary_subtitle.obscure',
-            title: t.video_setting_secondary_subtitle_obscure,
-            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
-            icon: Icons.blur_on_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 50),
-            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
-              for (final VideoSubtitleObscureMode mode
-                  in VideoSubtitleObscureMode.values)
-                SettingsSegmentOption<VideoSubtitleObscureMode>(
-                  value: mode,
-                  label: _videoSubtitleObscureModeLabel(mode),
-                ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSecondarySubtitleObscureMode,
-            onChanged:
-                (
-                  SettingsContext settingsContext,
-                  VideoSubtitleObscureMode mode,
-                ) async {
-                  await setVideoSecondarySubtitleObscureModeDual(
-                    settingsContext,
-                    mode,
-                  );
-                },
-          ),
-          // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
-          // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
-          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
-          // 行为」的总闸，不是逐层设置）。
-          SettingsSwitchItem(
-            id: 'video.subtitle.obscure_reveal',
-            title: t.video_setting_subtitle_obscure_reveal,
-            subtitle: t.video_setting_subtitle_obscure_reveal_hint,
-            icon: Icons.visibility_outlined,
-            video: VideoPlacement(group: VideoGroup.subtitle, order: 55),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoSubtitleObscureReveal,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoSubtitleObscureRevealDual(settingsContext, value);
-              settingsContext.refresh();
-            },
-          ),
-          // TODO-1105：尊重 .ass 自带样式开关。开时字幕优先用 .ass 的字体/主色/描边/
-          // 阴影，缺失回退统一外观；关时全走统一外观。默认开。
-          SettingsSwitchItem(
-            id: 'video.subtitle.respect_ass_style',
-            title: t.video_setting_subtitle_respect_ass,
-            subtitle: t.video_setting_subtitle_respect_ass_hint,
-            icon: Icons.style_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.subtitle,
-              order: 60,
-              section: t.video_setting_subtitle_appearance,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoRespectAssStyle,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoRespectAssStyleDual(settingsContext, value);
-              settingsContext.refresh();
-            },
+          // 字幕样式预览（分组顶部）：16:9 模拟画面按当前生效的字幕设置画一行
+          // 示例台词，下面每个外观滑条拖动时实时跟着变（拖动预览态见
+          // videoSubtitleStyleDraft）。纯展示，不进播放页面板（无 VideoPlacement）
+          // ——播放中背后就是真字幕。
+          SettingsCustomItem(
+            id: 'video.subtitle.preview',
+            searchTitle: t.video_subtitle_preview_label,
+            builder: _buildSubtitleStylePreviewRow,
           ),
           // 字幕字体：以视频字幕作用域打开字体库（新加的字体挂到字幕、预览区默认显示
           // 字幕样张）。只在全局设置里出现——播放中的快捷设置面板不适合跳整页。
@@ -640,8 +680,8 @@ SettingsDestination buildVideoDestination() {
             },
           ),
           // 字幕外观（字号/字重/阴影/背景不透明度/位置）全序列化进 videoSubtitleStyle。
-          // 全局设置页无实时预览（没有 overlay），落盘后下次播放生效；播放中拖动经
-          // host 实时预览、松手落盘。字重/阴影粗细在 style 里以 null=「跟随界面缩放」
+          // 全局设置页拖动时由分组顶部的字幕样式预览实时呈现（拖动预览态，不落盘），
+          // 松手落盘、下次播放生效；播放中拖动经 host 实时预览、松手落盘。字重/阴影粗细在 style 里以 null=「跟随界面缩放」
           // 存储，这里只在用户显式拖动时写显式值，不主动把默认折成显式值。
           SettingsSliderItem(
             id: 'video.subtitle.font_size',
@@ -886,6 +926,138 @@ SettingsDestination buildVideoDestination() {
               )?.onEnterSubtitleDragAdjust?.call();
             },
           ),
+          // TODO-1105：尊重 .ass 自带样式开关。开时字幕优先用 .ass 的字体/主色/描边/
+          // 阴影，缺失回退统一外观；关时全走统一外观。默认开。
+          SettingsSwitchItem(
+            id: 'video.subtitle.respect_ass_style',
+            title: t.video_setting_subtitle_respect_ass,
+            subtitle: t.video_setting_subtitle_respect_ass_hint,
+            icon: Icons.style_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.subtitle,
+              order: 60,
+              section: t.video_setting_subtitle_appearance,
+            ),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoRespectAssStyle,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoRespectAssStyleDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.subtitle_behavior',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_subtitle_behavior,
+        items: <SettingsItem>[
+          // TODO-840 Part B：遮蔽模式三态选择器——不遮蔽 / 模糊（听力沉浸）/ 隐藏。
+          // 持久化是 preferences 层 lazy 投影（见
+          // [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.subtitle.obscure',
+            title: t.video_setting_subtitle_obscure,
+            subtitle: t.video_setting_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 40),
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleObscureMode,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleObscureMode mode,
+                ) async {
+                  await setVideoSubtitleObscureModeDual(settingsContext, mode);
+                },
+          ),
+          // TODO-1382：副字幕遮蔽三态（镜像主字幕，独立开关）。快捷键 Shift+G 循环、
+          // Shift+H 隐藏。
+          SettingsSegmentedItem<VideoSubtitleObscureMode>(
+            id: 'video.secondary_subtitle.obscure',
+            title: t.video_setting_secondary_subtitle_obscure,
+            subtitle: t.video_setting_secondary_subtitle_obscure_hint,
+            icon: Icons.blur_on_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 50),
+            options: <SettingsSegmentOption<VideoSubtitleObscureMode>>[
+              for (final VideoSubtitleObscureMode mode
+                  in VideoSubtitleObscureMode.values)
+                SettingsSegmentOption<VideoSubtitleObscureMode>(
+                  value: mode,
+                  label: _videoSubtitleObscureModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSecondarySubtitleObscureMode,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSubtitleObscureMode mode,
+                ) async {
+                  await setVideoSecondarySubtitleObscureModeDual(
+                    settingsContext,
+                    mode,
+                  );
+                },
+          ),
+          // 从遮蔽模式里拆出来的独立开关（默认开 = 历史行为）：遮蔽模式管「遮什么」
+          // （模糊 / 隐藏），本开关管「能不能临时看一眼」。关掉后遮蔽在整句期间恒定
+          // 生效，不被路过的鼠标或误触揭开。主 / 副字幕共用一个开关（是「显形这个
+          // 行为」的总闸，不是逐层设置）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.obscure_reveal',
+            title: t.video_setting_subtitle_obscure_reveal,
+            subtitle: t.video_setting_subtitle_obscure_reveal_hint,
+            icon: Icons.visibility_outlined,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 55),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleObscureReveal,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoSubtitleObscureRevealDual(settingsContext, value);
+              settingsContext.refresh();
+            },
+          ),
+          // 「字幕暂停播放模式」从「播放」分区移到「字幕」分区（句尾自动暂停按字幕 cue
+          // 边界暂停，语义归字幕）。VideoPlacement（subtitle order 30）不变——面板投影
+          // 位置照旧，仅调全局设置页所属 SettingsSection。
+          SettingsSwitchItem(
+            id: 'video.playback.pause_at_subtitle_end',
+            title: t.playback_auto_pause,
+            icon: Icons.pause_circle_outline,
+            video: VideoPlacement(group: VideoGroup.subtitle, order: 30),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).pauseAtSubtitleEnd,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(pauseAtSubtitleEnd: value),
+              );
+            },
+          ),
+          // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
+          // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.reference_sync',
+            title: t.video_setting_subtitle_reference_sync,
+            subtitle: t.video_setting_subtitle_reference_sync_hint,
+            icon: Icons.sync_alt_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.subtitleReferenceSyncEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setSubtitleReferenceSyncEnabled(
+                value,
+              );
+            },
+          ),
           // ── 自动获取字幕 ─────────────────────────────────────────────────
           // 这个开关的主要价值是**让用户知道这件事存在**（BUG-1698）。
           //
@@ -928,6 +1100,401 @@ SettingsDestination buildVideoDestination() {
           // 分区仍能一步到达，且「刮削后自动补字幕」的依赖（要配 Jimaku key）
           // 同屏可见。媒体服务器（Jellyfin/Emby）同理迁走。
           buildOpenServicesItem('video.subtitle.online_sources'),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.audio',
+        presentation: SettingsSectionPresentation.collapsed,
+        title: t.video_setting_mpv_group_audio,
+        items: <SettingsItem>[
+          _videoMpvSwitchItem(
+            id: 'video.audio.pitch',
+            title: t.video_setting_mpv_pitch,
+            icon: Icons.graphic_eq_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 170,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            read: (VideoMpvConfig c) => c.audioPitchCorrection,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(audioPitchCorrection: v),
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'video.audio.channels',
+            title: t.video_setting_mpv_channels,
+            icon: Icons.surround_sound_outlined,
+            dropdown: true,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 180,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: 'auto-safe',
+                label: t.video_setting_mpv_channels_auto,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'stereo',
+                label: t.video_setting_mpv_channels_stereo,
+              ),
+              SettingsSegmentOption<String>(
+                value: 'mono',
+                label: t.video_setting_mpv_channels_mono,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoMpvConfig(settingsContext).audioChannels,
+            onChanged: (SettingsContext settingsContext, String value) async {
+              await commitVideoMpvConfig(
+                settingsContext,
+                (VideoMpvConfig c) => c.copyWith(audioChannels: value),
+              );
+            },
+          ),
+          _videoMpvSwitchItem(
+            id: 'video.audio.normalize_downmix',
+            title: t.video_setting_mpv_normalize,
+            icon: Icons.volume_up_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 190,
+              section: t.video_setting_mpv_group_audio,
+            ),
+            read: (VideoMpvConfig c) => c.normalizeDownmix,
+            write: (VideoMpvConfig c, bool v) =>
+                c.copyWith(normalizeDownmix: v),
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.controls',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_controls,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<int>(
+            id: 'video.playback.double_tap',
+            title: t.video_setting_double_tap,
+            subtitle: t.video_setting_double_tap_hint,
+            icon: Icons.touch_app_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 90),
+            options: <SettingsSegmentOption<int>>[
+              SettingsSegmentOption<int>(
+                value: 0,
+                label: t.video_setting_double_tap_off,
+              ),
+              for (final int seconds in <int>[3, 5, 10])
+                SettingsSegmentOption<int>(
+                  value: seconds,
+                  label: '${seconds}s',
+                ),
+              SettingsSegmentOption<int>(
+                value: VideoAsbplayerConfig.kDoubleTapSubtitle,
+                label: t.video_setting_double_tap_subtitle,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).doubleTapSeekSeconds,
+            onChanged: (SettingsContext settingsContext, int value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(doubleTapSeekSeconds: value),
+              );
+            },
+          ),
+          // 点击画面是否切换播放/暂停（默认开 = 旧行为）。桌面对应控制条主题的
+          // `playAndPauseOnTap`（单击画面），移动端对应双击中带的暂停 fallback
+          // （BUG-221）——两端同一开关、语义一致，故全平台可见，不是假开关。
+          // 关掉后点画面只唤醒/收起控制条；空格键、控制条按钮、右键菜单的播放/暂停
+          // 是独立入口，不受影响。
+          SettingsSwitchItem(
+            id: 'video.playback.tap_toggles_playback',
+            title: t.video_setting_tap_toggles_playback,
+            subtitle: t.video_setting_tap_toggles_playback_hint,
+            icon: Icons.touch_app_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 14),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).tapTogglesPlayback,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(tapTogglesPlayback: value),
+              );
+            },
+          ),
+          // 长按倍速 / 跳转步长 / 句末暂停都落在 videoAsbplayerConfig；无 host 时是
+          // 全局默认（下次播放生效），host 在场经页面回调即时生效（与播放页内调一致）。
+          SettingsSliderItem(
+            id: 'video.playback.long_press_speed',
+            title: t.video_setting_long_press_speed,
+            subtitle: t.video_setting_long_press_speed_hint,
+            icon: Icons.touch_app_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 60),
+            min: 1.0,
+            max: 4.0,
+            divisions: 30,
+            step: 0.1,
+            label: (double v) => '${v.toStringAsFixed(1)}x',
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).longPressSpeed,
+            // 拖动只本地预览、松手一次性落盘（旧面板语义）。该值仅在下次长按手势
+            // 时消费，拖动中写穿毫无实时收益，反而每 0.1x 档触发播放页全页
+            // rebuild 掉帧（BUG-963 同款抖动）。
+            commitOnRelease: true,
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(longPressSpeed: snapVideoLongPressSpeed(v)),
+              );
+            },
+          ),
+          SettingsStepperItem(
+            id: 'video.playback.seek_seconds',
+            title: t.video_setting_seek_seconds,
+            icon: Icons.keyboard_double_arrow_right_outlined,
+            video: VideoPlacement(group: VideoGroup.playback, order: 80),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).seekSeconds.toDouble(),
+            step: 1,
+            min: 1,
+            max: 30,
+            format: (double v) => '${v.round()}s',
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(seekSeconds: v.round().clamp(1, 30)),
+              );
+            },
+          ),
+          // BUG-1485：触屏横滑调进度的灵敏度。旧实现把「每像素跨多少时间」按视频总
+          // 时长比例换算，长片一拽就起飞；换算模型改成「拖过整屏 = 固定一段时长」
+          // （[VideoHorizontalSeekGesture]），这里让用户在三档之间选。仅移动端可见
+          // ——桌面无横滑手势（鼠标拖进度条 + 键盘 seek 键），显出来是假开关。
+          SettingsSegmentedItem<VideoSeekSensitivity>(
+            id: 'video.playback.drag_seek_sensitivity',
+            title: t.video_setting_drag_seek_sensitivity,
+            subtitle: t.video_setting_drag_seek_sensitivity_hint,
+            icon: Icons.swipe_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 95),
+            options: <SettingsSegmentOption<VideoSeekSensitivity>>[
+              for (final VideoSeekSensitivity value
+                  in VideoSeekSensitivity.values)
+                SettingsSegmentOption<VideoSeekSensitivity>(
+                  value: value,
+                  label: _videoDragSeekSensitivityLabel(value),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).dragSeekSensitivity,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoSeekSensitivity value,
+                ) async {
+                  await commitVideoAsbConfig(
+                    settingsContext,
+                    (VideoAsbplayerConfig c) =>
+                        c.copyWith(dragSeekSensitivity: value),
+                  );
+                },
+          ),
+          // issue #1525：移动端左半区竖滑调亮度 / 右半区竖滑调音量各自可关（默认开 =
+          // 旧行为），常误触的用户改用系统亮度条与实体音量键。仅移动端可见——桌面控制条
+          // 本无这两个手势，显出来是假开关。播放页在场时经 host 回调即时生效。
+          SettingsSwitchItem(
+            id: 'video.playback.brightness_swipe_gesture',
+            title: t.video_setting_brightness_swipe_gesture,
+            subtitle: t.video_setting_brightness_swipe_gesture_hint,
+            icon: Icons.brightness_6_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 96),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).brightnessSwipeGesture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(brightnessSwipeGesture: value),
+              );
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.volume_swipe_gesture',
+            title: t.video_setting_volume_swipe_gesture,
+            subtitle: t.video_setting_volume_swipe_gesture_hint,
+            icon: Icons.volume_up_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 97),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).volumeSwipeGesture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) => c.copyWith(volumeSwipeGesture: value),
+              );
+            },
+          ),
+          // 「重置控件布局」原独占一个「控件」section（仅此一项）；单项撑一个分区
+          // 是欠填充结构，并入「控制与手势」尾部。面板里归「控制」分类、排在拖拽编辑器后。
+          SettingsActionItem(
+            id: 'video.controls.reset_layout',
+            title: t.video_control_reset_layout,
+            icon: Icons.restart_alt_outlined,
+            video: VideoPlacement(group: VideoGroup.controls, order: 20),
+            onTap: (SettingsContext settingsContext) async {
+              await resetVideoControlLayoutDual(settingsContext);
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.capture',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_capture,
+        items: <SettingsItem>[
+          // 截图去向（两个截图快捷键共用这一个偏好）：默认「每次询问」＝历史行为，
+          // 老用户升级后按键手感不变。
+          SettingsSegmentedItem<VideoScreenshotDestination>(
+            id: 'video.playback.screenshot_destination',
+            title: t.video_setting_screenshot_destination,
+            subtitle: t.video_setting_screenshot_destination_hint,
+            icon: Icons.photo_camera_outlined,
+            dropdown: true,
+            video: VideoPlacement(group: VideoGroup.playback, order: 110),
+            options: <SettingsSegmentOption<VideoScreenshotDestination>>[
+              for (final VideoScreenshotDestination destination
+                  in VideoScreenshotDestination.values)
+                SettingsSegmentOption<VideoScreenshotDestination>(
+                  value: destination,
+                  label: _videoScreenshotDestinationLabel(destination),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoScreenshotDestination,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  VideoScreenshotDestination destination,
+                ) async {
+                  await settingsContext.appModel
+                      .setVideoScreenshotDestination(destination);
+                  settingsContext.refresh();
+                },
+          ),
+          // 目录行常驻可见（不按去向 gate）：用户通常先把目录选好、再把去向切到
+          // 「保存到目录」，gate 掉会逼出「先切去向才能设目录」的鸡生蛋。
+          SettingsActionItem(
+            id: 'video.playback.screenshot_directory',
+            title: t.video_setting_screenshot_directory,
+            subtitleBuilder: (SettingsContext settingsContext) {
+              final String dir =
+                  settingsContext.appModel.videoScreenshotDirectory.trim();
+              return dir.isEmpty ? t.video_screenshot_directory_not_set : dir;
+            },
+            icon: Icons.folder_open_outlined,
+            onTap: (SettingsContext settingsContext) async {
+              // 截图目录长期承载写入，必须是真实文件系统路径（安卓上
+              // getDirectoryPath() 只给 SAF tree URI，dart:io 读不了）——走统一入口。
+              final String? picked = await pickRealDirectoryPath(
+                context: settingsContext.context,
+                appModel: settingsContext.appModel,
+                dialogTitle: t.video_setting_screenshot_directory,
+                initialDirectory:
+                    settingsContext.appModel.videoScreenshotDirectory.trim()
+                        .isEmpty
+                    ? null
+                    : settingsContext.appModel.videoScreenshotDirectory.trim(),
+              );
+              if (picked == null || picked.isEmpty) return;
+              await settingsContext.appModel
+                  .setVideoScreenshotDirectory(picked);
+              settingsContext.refresh();
+            },
+          ),
+          // 片段导出的视频码率：0 = 跟随源（默认，能 copy 就 copy、不为改码率而重编
+          // 码），其它值把视频重编码到该码率。给一个自由输入框而不是预设档位：用户的
+          // 诉求是「发到 IM / 上传站点前把体积压到某个上限」，上限各家不同，档位永远
+          // 对不上。放进播放页快捷面板（VideoPlacement）是因为码率通常在按下导出前
+          // 临时调，不该为此退出播放去翻全局设置。
+          SettingsNumberItem(
+            id: 'video.playback.clip_export_video_bitrate',
+            title: t.video_setting_clip_export_video_bitrate,
+            subtitle: t.video_setting_clip_export_video_bitrate_hint,
+            icon: Icons.movie_creation_outlined,
+            integer: true,
+            min: kVideoClipExportVideoBitrateFollowSource,
+            max: kVideoClipExportVideoBitrateMaxKbps,
+            suffixText: t.unit_kbps,
+            video: VideoPlacement(group: VideoGroup.playback, order: 111),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoClipExportVideoBitrateKbps,
+            resetValue: (SettingsContext settingsContext) =>
+                kVideoClipExportVideoBitrateFollowSource,
+            onChanged: (SettingsContext settingsContext, num value) async {
+              await settingsContext.appModel
+                  .setVideoClipExportVideoBitrateKbps(value.toInt());
+              settingsContext.refresh();
+            },
+          ),
+        ],
+      ),
+      SettingsSection(
+        id: 'video.section.danmaku',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.section_video_danmaku,
+        items: <SettingsItem>[
+          // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref，与播放页内弹幕设置语义一致；
+          // 无 host 下次播放生效，host 在场即时重载/清空弹幕层。
+          SettingsSwitchItem(
+            id: 'video.danmaku.enabled',
+            title: t.video_setting_danmaku_enabled,
+            subtitle: t.video_setting_danmaku_enabled_hint,
+            icon: Icons.forum_outlined,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 10),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoDanmakuEnabledDual(settingsContext, value);
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'video.danmaku.online',
+            visible: (SettingsContext c) => c.appModel.videoDanmakuEnabled,
+            title: t.video_setting_danmaku_online,
+            subtitle: t.video_setting_danmaku_online_hint,
+            icon: Icons.cloud_sync_outlined,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 20),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuOnlineEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await setVideoDanmakuOnlineEnabledDual(settingsContext, value);
+            },
+          ),
+          SettingsStepperItem(
+            id: 'video.danmaku.max_active',
+            visible: (SettingsContext c) => c.appModel.videoDanmakuEnabled,
+            title: t.video_setting_danmaku_max_active,
+            subtitle: t.video_setting_danmaku_max_active_hint,
+            icon: Icons.speed_outlined,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 40),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoDanmakuMaxActive.toDouble(),
+            step: 10,
+            min: 10,
+            max: kMaxVideoDanmakuActive.toDouble(),
+            format: (double v) => v.round().toString(),
+            onChanged: (SettingsContext settingsContext, double v) async {
+              await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
+            },
+          ),
+          // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
+          // （settings_schema_services.dart）；弹幕行为开关留在这里。
         ],
       ),
       SettingsSection(
@@ -1113,527 +1680,104 @@ SettingsDestination buildVideoDestination() {
           ),
         ],
       ),
+      // mpv Lua 脚本（不 host 门控，全局设置页也可管理）：原先混在下面「播放中专属」
+      // 的无标题分组里，在全局设置页显得来历不明；单独收进折叠的「高级」组。
       SettingsSection(
-        id: 'video.section.danmaku',
-        presentation: SettingsSectionPresentation.alwaysExpanded,
-        title: t.section_video_danmaku,
-        items: <SettingsItem>[
-          // 弹幕开关 / 在线匹配 / 同屏上限都是纯 pref，与播放页内弹幕设置语义一致；
-          // 无 host 下次播放生效，host 在场即时重载/清空弹幕层。
-          SettingsSwitchItem(
-            id: 'video.danmaku.enabled',
-            title: t.video_setting_danmaku_enabled,
-            subtitle: t.video_setting_danmaku_enabled_hint,
-            icon: Icons.forum_outlined,
-            video: VideoPlacement(group: VideoGroup.danmaku, order: 10),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoDanmakuEnabledDual(settingsContext, value);
-            },
-          ),
-          SettingsSwitchItem(
-            id: 'video.danmaku.online',
-            visible: (SettingsContext c) => c.appModel.videoDanmakuEnabled,
-            title: t.video_setting_danmaku_online,
-            subtitle: t.video_setting_danmaku_online_hint,
-            icon: Icons.cloud_sync_outlined,
-            video: VideoPlacement(group: VideoGroup.danmaku, order: 20),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuOnlineEnabled,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await setVideoDanmakuOnlineEnabledDual(settingsContext, value);
-            },
-          ),
-          SettingsStepperItem(
-            id: 'video.danmaku.max_active',
-            visible: (SettingsContext c) => c.appModel.videoDanmakuEnabled,
-            title: t.video_setting_danmaku_max_active,
-            subtitle: t.video_setting_danmaku_max_active_hint,
-            icon: Icons.speed_outlined,
-            video: VideoPlacement(group: VideoGroup.danmaku, order: 40),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoDanmakuMaxActive.toDouble(),
-            step: 10,
-            min: 10,
-            max: kMaxVideoDanmakuActive.toDouble(),
-            format: (double v) => v.round().toString(),
-            onChanged: (SettingsContext settingsContext, double v) async {
-              await setVideoDanmakuMaxActiveDual(settingsContext, v.round());
-            },
-          ),
-          // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
-          // （settings_schema_services.dart）；弹幕行为开关留在这里。
-        ],
-      ),
-      // HDR：这一节控制的是「HDR 片源压到 SDR 屏幕上」那一次不可避免的映射做得好不好，
-      // **不是 HDR 直通**。Windows 侧走 vo=libmpv → ANGLE → Flutter 外部纹理，共享纹理
-      // 格式写死 8-bit BGRA；Android 侧还额外强制 vf=format=yuv420p 降位（BUG-465）。
-      // 直通要动 vendored 的原生 surface 与 Flutter 合成，不在本节范围内。
-      SettingsSection(
-        id: 'video.section.hdr',
+        id: 'video.section.advanced',
         presentation: SettingsSectionPresentation.collapsed,
-        title: t.video_setting_mpv_group_hdr,
+        title: t.video_setting_mpv_group_advanced,
         items: <SettingsItem>[
-          SettingsSegmentedItem<String>(
-            id: 'video.hdr.tone_mapping',
-            title: t.video_setting_hdr_tone_mapping,
-            subtitle: t.video_setting_hdr_tone_mapping_hint,
-            icon: Icons.hdr_auto_outlined,
-            dropdown: true,
-            video: VideoPlacement(
-              // 72/74 而不是 70/71：mpv 组的扁平 order 已被占用（画质小节止于
-              // 70 = video.quality.correct_downscale，几何小节起于 80），而
-              // buildVideoGroupDestination 是把**相邻**同名 section 合并成小节。
-              // 撞号会让播放器快捷面板里出现「画质 → HDR → 画质 → 几何」这种
-              // 标题重复，且撞号两者的相对次序取决于不稳定的 List.sort。
-              // 全量设置页看不出来（那边 HDR 是独立声明的 section）。
-              group: VideoGroup.mpv,
-              order: 72,
-              section: t.video_setting_mpv_group_hdr,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'auto',
-                label: t.video_setting_hdr_auto,
-              ),
-              // 曲线名直接用 mpv 的标识符：这些是行业术语（BT.2390 等），翻译反而
-              // 让人对不上 mpv 文档和别处的教程。
-              //
-              // **从白名单派生，不要在这里再抄一份**：另一份清单意味着「UI 多列
-              // 一条、decode 白名单没有」这种分叉随时可能发生，而那条分叉是静默的
-              // （选了就被 decode 打回默认值，用户只看到「选了没保存」）。
-              // `Set` 字面量在 Dart 里是插入序，所以显示顺序仍由白名单那份决定。
-              for (final String curve in kHdrToneMappingValues.where(
-                (String c) => c != 'auto',
-              ))
-                SettingsSegmentOption<String>(value: curve, label: curve),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).hdrToneMapping,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(hdrToneMapping: value),
-              );
-            },
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'video.hdr.compute_peak',
-            title: t.video_setting_hdr_compute_peak,
-            subtitle: t.video_setting_hdr_compute_peak_hint,
-            icon: Icons.brightness_7_outlined,
-            dropdown: true,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 74,
-              section: t.video_setting_mpv_group_hdr,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'auto',
-                label: t.video_setting_hdr_auto,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'yes',
-                label: t.video_setting_hdr_on,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'no',
-                label: t.video_setting_hdr_off,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).hdrComputePeak,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(hdrComputePeak: value),
-              );
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        id: 'video.section.quality',
-        presentation: SettingsSectionPresentation.collapsed,
-        title: t.video_setting_mpv_group_quality,
-        items: <SettingsItem>[
-          // 画质增强（mpv 内置高质量缩放开关）+ 解码 / 去色带 / 循环：这些 mpv 配置项
-          // 都序列化进 videoMpvConfig，无 host 时下次打开视频 applyMpvConfigToPlayer
-          // 应用，host 在场即改即生效。着色器档位选择需下载 + 文件系统，仍只在播放页
-          // 「画质增强」分类里调（本开关在面板里由着色器管理视图承载，无 placement）。
+          // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载（对齐 mpv `scripts/`
+          // 目录语义，删文件即禁用）。host 在场开启即时装载（幂等）；mpv 无
+          // unload-script，关闭一律下次进入视频页生效（见 video_lua_script_manager.dart）。
+          // BUG-2032：随包 libmpv 没编 Lua 的平台（Android 实测 `-Dlua=disabled`）
+          // 只在副标题如实说明，不禁用开关——开关表达意图，能力是另一回事
+          // （settings_schema_widgets.dart `_switch` 的既定约定）。
           SettingsSwitchItem(
-            id: 'video.quality.enhancement',
-            title: t.video_shader_quality_tier,
-            subtitle: t.video_quality_enhancement_hint,
-            icon: Icons.auto_fix_high_outlined,
+            id: 'video.player.mpv_lua_scripts',
+            title: t.video_setting_mpv_lua_scripts,
+            subtitle: t.video_setting_mpv_lua_scripts_hint,
+            subtitleBuilder: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoMpvLuaCapability ==
+                    MpvLuaCapability.unavailable
+                ? '${t.video_setting_mpv_lua_scripts_unavailable}\n'
+                      '${t.video_setting_mpv_lua_scripts_hint}'
+                : t.video_setting_mpv_lua_scripts_hint,
+            icon: Icons.data_object_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 212,
+              section: t.video_setting_mpv_group_advanced,
+            ),
             value: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).highQuality,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(highQuality: value),
+                settingsContext.appModel.videoMpvLuaScriptsEnabled,
+            onChanged: _setVideoLuaScriptsEnabled,
+          ),
+          SettingsActionItem(
+            id: 'video.player.mpv_lua_scripts_import',
+            title: t.video_setting_mpv_lua_scripts_import,
+            icon: Icons.note_add_outlined,
+            video: VideoPlacement(
+              group: VideoGroup.mpv,
+              order: 214,
+              section: t.video_setting_mpv_group_advanced,
+            ),
+            onTap: (SettingsContext settingsContext) async {
+              final FilePickerResult? result = await pickFilesByExtensions(
+                context: settingsContext.context,
+                allowedExtensions: const <String>['lua'],
+                allowMultiple: true,
               );
+              if (result == null) return;
+              bool imported = false;
+              for (final PlatformFile f in result.files) {
+                final String? path = f.path;
+                if (path == null) continue;
+                await importLuaScriptFile(path);
+                imported = true;
+              }
+              if (!imported) return;
+              // BUG-2032：导入即启用。导入动作本身就是「我要跑这些脚本」，此前
+              // 导入完开关还是关的、提示只说"已导入"，用户播视频什么都不发生。
+              // 与开关走同一条写穿：host 在场把目录（含刚导入的）即时装进活播放器。
+              await _setVideoLuaScriptsEnabled(settingsContext, true);
+              _showVideoSettingsSnackBar(
+                settingsContext,
+                t.video_setting_mpv_lua_scripts_imported,
+              );
+              settingsContext.refresh();
             },
           ),
-          // S 形上采样（sigmoid-upscaling）：与「画质增强/着色器等级」并列的一档可选画质
-          // 开关（TODO-1120/BUG-538）。默认关（性能占用偏大，见 VideoMpvConfig.defaults）。
-          _videoMpvSwitchItem(
-            id: 'video.quality.sigmoid',
-            title: t.video_setting_mpv_sigmoid,
-            subtitle: t.video_setting_mpv_sigmoid_hint,
-            icon: Icons.show_chart_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 60,
-              section: t.video_setting_mpv_group_quality,
-            ),
-            read: (VideoMpvConfig c) => c.sigmoidUpscaling,
-            write: (VideoMpvConfig c, bool v) =>
-                c.copyWith(sigmoidUpscaling: v),
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'video.quality.hwdec',
-            title: t.video_setting_mpv_hwdec,
-            icon: Icons.memory_outlined,
-            dropdown: true,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 10,
-              section: t.video_setting_mpv_group_decode,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'no',
-                label: t.video_setting_mpv_hwdec_off,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'auto-safe',
-                label: t.video_setting_mpv_hwdec_auto,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'auto-copy',
-                label: t.video_setting_mpv_hwdec_copy,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).hwdec,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(hwdec: value),
-              );
-            },
-          ),
-          _videoMpvSwitchItem(
-            id: 'video.quality.deband',
-            title: t.video_setting_mpv_deband,
-            icon: Icons.gradient_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 20,
-              section: t.video_setting_mpv_group_quality,
-            ),
-            read: (VideoMpvConfig c) => c.deband,
-            write: (VideoMpvConfig c, bool v) => c.copyWith(deband: v),
-          ),
-          // TODO-1247：把播放页内 mpv 画质组里的其余布尔项平移到首页（纯 pref），与播放
-          // 页内设置同源，消除「首页改不了」。（「单文件循环」已移到「播放」分区。）
-          _videoMpvSwitchItem(
-            id: 'video.quality.dither',
-            title: t.video_setting_mpv_dither,
-            icon: Icons.grain_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 30,
-              section: t.video_setting_mpv_group_quality,
-            ),
-            read: (VideoMpvConfig c) => c.dither,
-            write: (VideoMpvConfig c, bool v) => c.copyWith(dither: v),
-          ),
-          _videoMpvSwitchItem(
-            id: 'video.quality.interpolation',
-            title: t.video_setting_mpv_interpolation,
-            icon: Icons.animation_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 40,
-              section: t.video_setting_mpv_group_quality,
-            ),
-            read: (VideoMpvConfig c) => c.interpolation,
-            write: (VideoMpvConfig c, bool v) => c.copyWith(interpolation: v),
-          ),
-          _videoMpvSwitchItem(
-            id: 'video.quality.deinterlace',
-            title: t.video_setting_mpv_deinterlace,
-            icon: Icons.view_stream_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 50,
-              section: t.video_setting_mpv_group_quality,
-            ),
-            read: (VideoMpvConfig c) => c.deinterlace,
-            write: (VideoMpvConfig c, bool v) => c.copyWith(deinterlace: v),
-          ),
-          _videoMpvSwitchItem(
-            id: 'video.quality.correct_downscale',
-            title: t.video_setting_mpv_correct_downscale,
-            icon: Icons.photo_size_select_small_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 70,
-              section: t.video_setting_mpv_group_quality,
-            ),
-            read: (VideoMpvConfig c) => c.correctDownscaling,
-            write: (VideoMpvConfig c, bool v) =>
-                c.copyWith(correctDownscaling: v),
-          ),
-          // 已知问题说明（TODO-1116/1119 / BUG-545）：Windows 渲染链在高显卡占用时
-          // 可能黑屏闪烁；hwdec 真修属 device-gated 后续项，本轮先在画质组内明示，
-          // 并指向上面真实存在的画质控件降低 GPU 负载。仅 Windows 展示。
+          // BUG-2032：脚本清单 + 每脚本运行态（播放中：已装载 / 报错原文；无播放器
+          // 只列文件名）+ 输入边界说明。"貌似用不了"在这里变成"哪个脚本报了什么"。
           SettingsCustomItem(
-            id: 'video.quality.windows_black_flash_notice',
-            visible: (SettingsContext settingsContext) => isWindowsPlatform,
-            builder: _buildWindowsBlackFlashNotice,
-          ),
-        ],
-      ),
-      // TODO-1247：播放页内 mpv「画面几何 / 色彩均衡 / 音频」详情与首页同源（同一
-      // videoMpvConfig；无 host 下次开视频应用，host 在场即改即生效）。
-      SettingsSection(
-        id: 'video.section.geometry',
-        presentation: SettingsSectionPresentation.collapsed,
-        title: t.video_setting_mpv_group_geometry,
-        items: <SettingsItem>[
-          SettingsSegmentedItem<int>(
-            id: 'video.geometry.rotate',
-            title: t.video_setting_mpv_rotate,
-            icon: Icons.screen_rotation_outlined,
-            dropdown: true,
+            id: 'video.player.mpv_lua_scripts_list',
             video: VideoPlacement(
               group: VideoGroup.mpv,
-              order: 80,
-              section: t.video_setting_mpv_group_geometry,
+              order: 215,
+              section: t.video_setting_mpv_group_advanced,
             ),
-            options: const <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(value: 0, label: '0°'),
-              SettingsSegmentOption<int>(value: 90, label: '90°'),
-              SettingsSegmentOption<int>(value: 180, label: '180°'),
-              SettingsSegmentOption<int>(value: 270, label: '270°'),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).videoRotate,
-            onChanged: (SettingsContext settingsContext, int value) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(videoRotate: value),
-              );
-            },
+            builder: buildVideoLuaScriptList,
           ),
-          SettingsSegmentedItem<String>(
-            id: 'video.geometry.aspect',
-            title: t.video_setting_mpv_aspect,
-            icon: Icons.aspect_ratio_outlined,
-            dropdown: true,
+          // 复制目录路径（全平台一致，不做平台分支的文件管理器跳转）：用户拿路径
+          // 自行增删/编辑脚本文件。
+          SettingsActionItem(
+            id: 'video.player.mpv_lua_scripts_dir',
+            title: t.video_setting_mpv_lua_scripts_dir_copy,
+            icon: Icons.folder_copy_outlined,
             video: VideoPlacement(
               group: VideoGroup.mpv,
-              order: 90,
-              section: t.video_setting_mpv_group_geometry,
+              order: 216,
+              section: t.video_setting_mpv_group_advanced,
             ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: '-1',
-                label: t.video_setting_mpv_aspect_auto,
-              ),
-              const SettingsSegmentOption<String>(value: '16:9', label: '16:9'),
-              const SettingsSegmentOption<String>(value: '4:3', label: '4:3'),
-              const SettingsSegmentOption<String>(
-                value: '2.35:1',
-                label: '2.35:1',
-              ),
-              const SettingsSegmentOption<String>(value: '1:1', label: '1:1'),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).aspectOverride,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await commitVideoMpvConfig(
+            onTap: (SettingsContext settingsContext) async {
+              final String dirPath = (await mpvLuaScriptDirectory()).path;
+              await Clipboard.setData(ClipboardData(text: dirPath));
+              _showVideoSettingsSnackBar(
                 settingsContext,
-                (VideoMpvConfig c) => c.copyWith(aspectOverride: value),
+                '${t.video_setting_mpv_lua_scripts_dir_copied}\n$dirPath',
               );
             },
-          ),
-          SettingsSliderItem(
-            id: 'video.geometry.zoom',
-            title: t.video_setting_mpv_zoom,
-            icon: Icons.zoom_out_map_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 100,
-              section: t.video_setting_mpv_group_geometry,
-            ),
-            min: -2,
-            max: 2,
-            divisions: 40,
-            label: (double v) => v.toStringAsFixed(2),
-            value: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).videoZoom.clamp(-2, 2),
-            // 播放中拖动逐 tick 写穿实时生效（旧面板行为）；全局设置页松手才落盘。
-            onChanged: (SettingsContext settingsContext, double v) async {
-              if (!videoHostVisible(settingsContext)) return;
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(videoZoom: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(videoZoom: v),
-              );
-            },
-          ),
-          SettingsSliderItem(
-            id: 'video.geometry.panscan',
-            title: t.video_setting_mpv_panscan,
-            icon: Icons.crop_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 110,
-              section: t.video_setting_mpv_group_geometry,
-            ),
-            min: 0,
-            max: 1,
-            divisions: 20,
-            label: (double v) => v.toStringAsFixed(2),
-            value: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).panscan.clamp(0, 1),
-            onChanged: (SettingsContext settingsContext, double v) async {
-              if (!videoHostVisible(settingsContext)) return;
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(panscan: v),
-              );
-            },
-            onChangeEnd: (SettingsContext settingsContext, double v) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(panscan: v),
-              );
-            },
-          ),
-        ],
-      ),
-      SettingsSection(
-        id: 'video.section.color',
-        presentation: SettingsSectionPresentation.collapsed,
-        title: t.video_setting_mpv_group_color,
-        items: <SettingsItem>[
-          _videoMpvColorSliderItem(
-            id: 'video.color.brightness',
-            title: t.video_setting_mpv_brightness,
-            icon: Icons.brightness_6_outlined,
-            order: 120,
-            read: (VideoMpvConfig c) => c.brightness,
-            write: (VideoMpvConfig c, int v) => c.copyWith(brightness: v),
-          ),
-          _videoMpvColorSliderItem(
-            id: 'video.color.contrast',
-            title: t.video_setting_mpv_contrast,
-            icon: Icons.contrast_outlined,
-            order: 130,
-            read: (VideoMpvConfig c) => c.contrast,
-            write: (VideoMpvConfig c, int v) => c.copyWith(contrast: v),
-          ),
-          _videoMpvColorSliderItem(
-            id: 'video.color.saturation',
-            title: t.video_setting_mpv_saturation,
-            icon: Icons.invert_colors_outlined,
-            order: 140,
-            read: (VideoMpvConfig c) => c.saturation,
-            write: (VideoMpvConfig c, int v) => c.copyWith(saturation: v),
-          ),
-          _videoMpvColorSliderItem(
-            id: 'video.color.gamma',
-            title: t.video_setting_mpv_gamma,
-            icon: Icons.tonality_outlined,
-            order: 150,
-            read: (VideoMpvConfig c) => c.gamma,
-            write: (VideoMpvConfig c, int v) => c.copyWith(gamma: v),
-          ),
-          _videoMpvColorSliderItem(
-            id: 'video.color.hue',
-            title: t.video_setting_mpv_hue,
-            icon: Icons.colorize_outlined,
-            order: 160,
-            read: (VideoMpvConfig c) => c.hue,
-            write: (VideoMpvConfig c, int v) => c.copyWith(hue: v),
-          ),
-        ],
-      ),
-      SettingsSection(
-        id: 'video.section.audio',
-        presentation: SettingsSectionPresentation.collapsed,
-        title: t.video_setting_mpv_group_audio,
-        items: <SettingsItem>[
-          _videoMpvSwitchItem(
-            id: 'video.audio.pitch',
-            title: t.video_setting_mpv_pitch,
-            icon: Icons.graphic_eq_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 170,
-              section: t.video_setting_mpv_group_audio,
-            ),
-            read: (VideoMpvConfig c) => c.audioPitchCorrection,
-            write: (VideoMpvConfig c, bool v) =>
-                c.copyWith(audioPitchCorrection: v),
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'video.audio.channels',
-            title: t.video_setting_mpv_channels,
-            icon: Icons.surround_sound_outlined,
-            dropdown: true,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 180,
-              section: t.video_setting_mpv_group_audio,
-            ),
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: 'auto-safe',
-                label: t.video_setting_mpv_channels_auto,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'stereo',
-                label: t.video_setting_mpv_channels_stereo,
-              ),
-              SettingsSegmentOption<String>(
-                value: 'mono',
-                label: t.video_setting_mpv_channels_mono,
-              ),
-            ],
-            selected: (SettingsContext settingsContext) =>
-                currentVideoMpvConfig(settingsContext).audioChannels,
-            onChanged: (SettingsContext settingsContext, String value) async {
-              await commitVideoMpvConfig(
-                settingsContext,
-                (VideoMpvConfig c) => c.copyWith(audioChannels: value),
-              );
-            },
-          ),
-          _videoMpvSwitchItem(
-            id: 'video.audio.normalize_downmix',
-            title: t.video_setting_mpv_normalize,
-            icon: Icons.volume_up_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 190,
-              section: t.video_setting_mpv_group_audio,
-            ),
-            read: (VideoMpvConfig c) => c.normalizeDownmix,
-            write: (VideoMpvConfig c, bool v) =>
-                c.copyWith(normalizeDownmix: v),
           ),
         ],
       ),
@@ -1820,98 +1964,6 @@ SettingsDestination buildVideoDestination() {
             ),
             builder: buildVideoMpvRawConfField,
           ),
-          // mpv Lua 脚本：`<documents>/mpv_scripts` 整目录装载（对齐 mpv `scripts/`
-          // 目录语义，删文件即禁用）。host 在场开启即时装载（幂等）；mpv 无
-          // unload-script，关闭一律下次进入视频页生效（见 video_lua_script_manager.dart）。
-          // BUG-2032：随包 libmpv 没编 Lua 的平台（Android 实测 `-Dlua=disabled`）
-          // 只在副标题如实说明，不禁用开关——开关表达意图，能力是另一回事
-          // （settings_schema_widgets.dart `_switch` 的既定约定）。
-          SettingsSwitchItem(
-            id: 'video.player.mpv_lua_scripts',
-            title: t.video_setting_mpv_lua_scripts,
-            subtitle: t.video_setting_mpv_lua_scripts_hint,
-            subtitleBuilder: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoMpvLuaCapability ==
-                    MpvLuaCapability.unavailable
-                ? '${t.video_setting_mpv_lua_scripts_unavailable}\n'
-                      '${t.video_setting_mpv_lua_scripts_hint}'
-                : t.video_setting_mpv_lua_scripts_hint,
-            icon: Icons.data_object_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 212,
-              section: t.video_setting_mpv_group_advanced,
-            ),
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.videoMpvLuaScriptsEnabled,
-            onChanged: _setVideoLuaScriptsEnabled,
-          ),
-          SettingsActionItem(
-            id: 'video.player.mpv_lua_scripts_import',
-            title: t.video_setting_mpv_lua_scripts_import,
-            icon: Icons.note_add_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 214,
-              section: t.video_setting_mpv_group_advanced,
-            ),
-            onTap: (SettingsContext settingsContext) async {
-              final FilePickerResult? result = await pickFilesByExtensions(
-                context: settingsContext.context,
-                allowedExtensions: const <String>['lua'],
-                allowMultiple: true,
-              );
-              if (result == null) return;
-              bool imported = false;
-              for (final PlatformFile f in result.files) {
-                final String? path = f.path;
-                if (path == null) continue;
-                await importLuaScriptFile(path);
-                imported = true;
-              }
-              if (!imported) return;
-              // BUG-2032：导入即启用。导入动作本身就是「我要跑这些脚本」，此前
-              // 导入完开关还是关的、提示只说"已导入"，用户播视频什么都不发生。
-              // 与开关走同一条写穿：host 在场把目录（含刚导入的）即时装进活播放器。
-              await _setVideoLuaScriptsEnabled(settingsContext, true);
-              _showVideoSettingsSnackBar(
-                settingsContext,
-                t.video_setting_mpv_lua_scripts_imported,
-              );
-              settingsContext.refresh();
-            },
-          ),
-          // BUG-2032：脚本清单 + 每脚本运行态（播放中：已装载 / 报错原文；无播放器
-          // 只列文件名）+ 输入边界说明。"貌似用不了"在这里变成"哪个脚本报了什么"。
-          SettingsCustomItem(
-            id: 'video.player.mpv_lua_scripts_list',
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 215,
-              section: t.video_setting_mpv_group_advanced,
-            ),
-            builder: buildVideoLuaScriptList,
-          ),
-          // 复制目录路径（全平台一致，不做平台分支的文件管理器跳转）：用户拿路径
-          // 自行增删/编辑脚本文件。
-          SettingsActionItem(
-            id: 'video.player.mpv_lua_scripts_dir',
-            title: t.video_setting_mpv_lua_scripts_dir_copy,
-            icon: Icons.folder_copy_outlined,
-            video: VideoPlacement(
-              group: VideoGroup.mpv,
-              order: 216,
-              section: t.video_setting_mpv_group_advanced,
-            ),
-            onTap: (SettingsContext settingsContext) async {
-              final String dirPath = (await mpvLuaScriptDirectory()).path;
-              await Clipboard.setData(ClipboardData(text: dirPath));
-              _showVideoSettingsSnackBar(
-                settingsContext,
-                '${t.video_setting_mpv_lua_scripts_dir_copied}\n$dirPath',
-              );
-            },
-          ),
           // 重置：全部回 mpv 默认（含清空原始 conf 框，经 pref 回填输入框）。
           SettingsActionItem(
             id: 'video.player.mpv_reset',
@@ -2029,7 +2081,7 @@ void _showVideoSettingsSnackBar(
 ) {
   final BuildContext ctx = settingsContext.context;
   if (!ctx.mounted) return;
-  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(message)));
+  ScaffoldMessenger.of(ctx).showSnackBar(FushiSnackBar(content: Text(message)));
 }
 
 /// BUG-2032：Lua 脚本开关的**唯一**写穿点（开关行 / 导入按钮共用）。host 在场走
@@ -2171,6 +2223,14 @@ Widget _buildWindowsBlackFlashNotice(SettingsContext settingsContext) {
   );
 }
 
+/// 「字幕」分组顶部的样式预览行：预览自带外框，这里只给与分组卡边缘的留白。
+Widget _buildSubtitleStylePreviewRow(SettingsContext settingsContext) {
+  return Padding(
+    padding: const EdgeInsets.all(8),
+    child: SubtitleStylePreview(appModel: settingsContext.appModel),
+  );
+}
+
 String _videoScreenshotDestinationLabel(
   VideoScreenshotDestination destination,
 ) {
@@ -2247,7 +2307,7 @@ String videoScrapeIdentifierWordsSubtitle(SettingsContext settingsContext) {
 Future<void> showVideoScrapeIdentifierWordsDialog(
   SettingsContext settingsContext,
 ) async {
-  final String? saved = await showDialog<String>(
+  final String? saved = await showAppDialog<String>(
     context: settingsContext.context,
     builder: (BuildContext dialogContext) => _IdentifierWordsDialog(
       initialText:
@@ -2296,7 +2356,7 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
     final ScrapeIdentifierWordParseResult parsed = ScrapeIdentifierWords.parse(
       _controller.text,
     );
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_metadata_identifier_words),
       content: SizedBox(
         width: 520,
@@ -2310,7 +2370,7 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 12),
-              TextField(
+              FushiTextFieldControl(
                 key: const ValueKey<String>(
                   'video.library.metadata_identifier_words.field',
                 ),
@@ -2340,14 +2400,14 @@ class _IdentifierWordsDialogState extends State<_IdentifierWordsDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>(
             'video.library.metadata_identifier_words.cancel',
           ),
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>(
             'video.library.metadata_identifier_words.save',
           ),

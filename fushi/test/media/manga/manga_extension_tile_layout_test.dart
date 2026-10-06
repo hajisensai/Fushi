@@ -14,6 +14,7 @@ void main() {
     WidgetTester tester, {
     required Widget subtitle,
     int subtitleMaxLines = 1,
+    double width = 600,
   }) async {
     await tester.pumpWidget(
       MaterialApp(
@@ -22,8 +23,10 @@ void main() {
           // 必须给不受限的竖向空间：行内 Column 是 mainAxisSize.max，放进定高
           // 容器会被拉满（`FushiListItem` 的 golden 注释同一坑）。真实调用点也
           // 都在可滚动列表里。
+          // 2026-10 体验优化：<480 宽时动作按钮会下移到副标题下方（行高随之
+          // 变高），量「紧凑行高」默认用宽屏 600；窄屏另有专测。
           body: SizedBox(
-            width: 390,
+            width: width,
             child: ListView(
               children: <Widget>[
                 MangaExtensionManagementTile(
@@ -44,14 +47,17 @@ void main() {
     return tester.getSize(find.byType(FushiListItem)).height;
   }
 
-  testWidgets('一行元信息的扩展行高不超过 72（旧的三行版是 ~89）', (WidgetTester tester) async {
+  testWidgets('一行元信息的扩展行高不超过 MD3 两行行下限（旧的三行版是 ~89）',
+      (WidgetTester tester) async {
     final double height = await pumpTile(
       tester,
       subtitle: Text(
         mangaSourceMetaLine(<String?>['EN', 'Version 19', 'asurascans.com']),
       ),
     );
-    expect(height, lessThanOrEqualTo(72));
+    // MD3 两行列表行（标题 + 一行副标题）的下限是 72，外加行恒画的 1px 透明
+    // 边框 ×2（几何不随选中态变）= 74；多一行副标题就会超出。
+    expect(height, lessThanOrEqualTo(74));
     // 触摸端命中区不能为了紧凑被牺牲。
     expect(height, greaterThanOrEqualTo(56));
   });
@@ -110,6 +116,78 @@ void main() {
     expect(widened.maxLines, 3);
     subtitle = tester.widget<Text>(find.text('EN · Version 19'));
     expect(subtitle.data, 'EN · Version 19');
+  });
+
+  // 2026-10 体验优化：trailing 的 Wrap 在 FushiListItem 的 Row 里拿到无界宽度、
+  // 永远不换行；窄屏上「预览 + 安装」+ 开关把标题挤没。
+  testWidgets('窄屏（<480）文字按钮下移到副标题下方，开关留在 trailing',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.light(useMaterial3: true),
+        home: Scaffold(
+          body: SizedBox(
+            width: 360,
+            child: ListView(
+              children: <Widget>[
+                MangaExtensionManagementTile(
+                  title: 'A very long extension name that needs room',
+                  subtitle: const Text('EN · Version 19'),
+                  enabled: true,
+                  onEnabledChanged: (_) {},
+                  secondaryLabel: 'Preview',
+                  onSecondary: () {},
+                  primaryLabel: 'Uninstall',
+                  onPrimary: () {},
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    final Finder compact = find.byKey(
+      const ValueKey<String>('manga_extension_tile_compact_actions'),
+    );
+    expect(compact, findsOneWidget);
+    expect(
+      find.descendant(of: compact, matching: find.text('Preview')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: compact, matching: find.text('Uninstall')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: compact, matching: find.byType(Switch)),
+      findsNothing,
+    );
+    // 按钮行在副标题下方。
+    expect(
+      tester.getTopLeft(find.text('Uninstall')).dy,
+      greaterThan(tester.getBottomLeft(find.text('EN · Version 19')).dy),
+    );
+    // 标题列留出了实宽（旧布局下只剩几个字宽）。
+    expect(
+      tester.getSize(find.textContaining('A very long')).width,
+      greaterThan(150),
+    );
+  });
+
+  testWidgets('宽屏（>=480）文字按钮仍在 trailing', (WidgetTester tester) async {
+    await pumpTile(tester, subtitle: const Text('EN · Version 19'));
+    expect(
+      find.byKey(
+        const ValueKey<String>('manga_extension_tile_compact_actions'),
+      ),
+      findsNothing,
+    );
+    expect(
+      tester.getTopLeft(find.text('Install')).dx,
+      greaterThan(tester.getTopRight(find.text('EN · Version 19')).dx),
+    );
   });
 
   group('mangaSourceMetaLine', () {

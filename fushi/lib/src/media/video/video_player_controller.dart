@@ -519,6 +519,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
   final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
 
+  /// 主窗所在显示器的最近一次 runner 回报（每次重判现读）。页面据它与
+  /// [hdrHostActive] 派生字幕 / 弹幕层的 HDR 亮度系数（[hdrGraphicsWhiteScale]）。
+  final ValueNotifier<HdrDisplayInfo> hdrDisplayInfo =
+      ValueNotifier<HdrDisplayInfo>(HdrDisplayInfo.unknown);
+
   /// 当前片源是 DV Profile 5 且本平台 / 设置下没有能正确还原颜色的渲染器
   /// （[dolbyVisionColorsUnsupported]）。页面据此提示用户，BUG-2691。
   final ValueNotifier<bool> dolbyVisionColorsUnsupportedNotifier =
@@ -1258,6 +1263,18 @@ class VideoPlayerController extends ChangeNotifier
   /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
   Future<Uint8List?> screenshot() async {
     return _player?.screenshot(format: 'image/jpeg');
+  }
+
+  /// 截取当前帧并合成 libmpv 自绘的字幕（mpv `screenshot-raw subtitles`），PNG 字节。
+  ///
+  /// 图形字幕（PGS / VobSub / DVB）只存在于 libmpv 的渲染里，Dart 侧没有 cue；图形
+  /// 字幕查词（`graphic_subtitle_ocr.dart`）靠这张合成帧做 OCR。PNG 无损——JPEG 的块
+  /// 效应正落在字幕描边上，会拉低识别率。未 [load] 返回 null。
+  Future<Uint8List?> captureFrameWithSubtitles() async {
+    return _player?.screenshot(
+      format: 'image/png',
+      includeLibassSubtitles: true,
+    );
   }
 
   /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件
@@ -3733,11 +3750,12 @@ class VideoPlayerController extends ChangeNotifier
     if (!Platform.isWindows) return;
     final Player? player = _player;
     if (player == null) return;
-    bool displayHdr = false;
-    if (_hdrOutputMode == VideoHdrOutputMode.auto) {
-      displayHdr = (await _hdrChannel.displayInfo()).isHdr;
-      if (!identical(_player, player)) return;
-    }
+    // 所有模式都现读：auto 用它判要不要直通，字幕层的 HDR 亮度归一（always 模式在
+    // HDR 显示器上同样需要）用它的 SDR 白电平。
+    final HdrDisplayInfo display = await _hdrChannel.displayInfo();
+    if (!identical(_player, player)) return;
+    hdrDisplayInfo.value = display;
+    final bool displayHdr = display.isHdr;
     final bool want = shouldUseHdrHostWindow(
       isWindows: true,
       mode: _hdrOutputMode,

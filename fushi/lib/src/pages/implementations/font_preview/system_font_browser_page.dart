@@ -5,9 +5,15 @@ import 'package:fushi/src/pages/implementations/font_preview/font_specimen.dart'
 import 'package:fushi/src/pages/implementations/font_preview/font_target_preview.dart';
 import 'package:fushi/src/pages/implementations/font_preview/system_font_catalog.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show FontTarget;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 按搜索词与日文筛选过滤系统字体。`supportsJapanese == null`（该平台判不出）
 /// 的字体不被日文筛选排除——判不出不等于不支持。
@@ -132,7 +138,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
             key: const ValueKey<String>('system-font-search'),
             controller: _searchController,
             hintText: t.custom_fonts_search_hint,
-            prefixIcon: const Icon(Icons.search),
+            prefixIcon: const FushiIcon(Icons.search),
             contentPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
@@ -144,7 +150,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
             key: const ValueKey<String>('system-font-sample'),
             controller: _sampleController,
             hintText: t.font_preview_sample_text,
-            prefixIcon: const Icon(Icons.text_fields),
+            prefixIcon: const FushiIcon(Icons.text_fields),
             contentPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
@@ -167,9 +173,11 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
           ],
           if (!_list.namesReliable) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
-            Text(
-              t.custom_fonts_system_names_approximate,
-              style: tokens.type.metadata.copyWith(color: scheme.error),
+            // 「名称是近似值」是提醒不是错误：走共享提示块（警告图标），
+            // 不再是整行红字。
+            FushiInlineNotice(
+              severity: FushiNoticeSeverity.warning,
+              message: t.custom_fonts_system_names_approximate,
             ),
           ],
           SizedBox(height: tokens.spacing.gap),
@@ -178,10 +186,13 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
     );
 
     final Widget list = _loading
-        ? const Center(child: CircularProgressIndicator())
+        ? const FushiLoadingView()
         : visible.isEmpty
         ? Center(
-            child: Text(t.custom_fonts_empty, style: tokens.type.listSubtitle),
+            child: FushiPlaceholderMessage(
+              icon: Icons.font_download_off_outlined,
+              message: t.custom_fonts_empty,
+            ),
           )
         : ListView.builder(
             key: const ValueKey<String>('system-font-list'),
@@ -210,8 +221,8 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                       )
                     : null,
                 trailing: added
-                    ? Icon(Icons.check, color: scheme.outline)
-                    : Checkbox(
+                    ? FushiIcon(Icons.check, color: scheme.outline)
+                    : FushiCheckbox(
                         value: selected,
                         onChanged: (_) => _toggle(font.family),
                       ),
@@ -220,9 +231,22 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
           );
 
     final String? previewFamily = _previewFamily;
+    // 底部预览面板：MD3 = group 底 + 2 级抬升；Apple = 无投影、顶部一条
+    // separator 发丝线（iOS 底部工具区的分隔方式）。只换参数，不增删包装层。
+    final bool glass = isGlassDesign(context);
     final Widget bottomPanel = Material(
-      color: tokens.surfaces.group,
-      elevation: 2,
+      color: glass
+          ? appleColorsOf(context).secondaryGroupedBackground
+          : tokens.surfaces.group,
+      elevation: glass ? 0 : 2,
+      shape: glass
+          ? Border(
+              top: BorderSide(
+                color: appleColorsOf(context).separator,
+                width: 0.5,
+              ),
+            )
+          : null,
       child: SafeArea(
         top: false,
         child: Padding(
@@ -242,7 +266,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  FilledButton.icon(
+                  FushiFilledButton.icon(
                     key: const ValueKey<String>('system-font-add'),
                     onPressed: _selected.isEmpty
                         ? null
@@ -250,7 +274,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                             context,
                             List<String>.of(_selected),
                           ),
-                    icon: const Icon(Icons.add),
+                    icon: const FushiIcon(Icons.add),
                     label: Text(
                       t.custom_fonts_system_add_count(count: _selected.length),
                     ),

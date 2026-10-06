@@ -1085,11 +1085,13 @@ void main() {
 
     test('engine exact text sources map to their own thread namespace', () {
       // native voice_hook_ipc.h: kTextSourceYuris = 9, kTextSourceFvp = 10,
-      // kTextSourceMalie = 15. An unmapped kind falls back to 'hook:' /
-      // 'Text hook', which hides the engine lane from thread selection.
+      // kTextSourceKogadoHy = 11, kTextSourceMalie = 15. An unmapped kind
+      // falls back to 'hook:' / 'Text hook', which hides the engine lane from
+      // thread selection.
       const Map<int, (String, String)> expected = <int, (String, String)>{
         9: ('yuris', 'YU-RIS exact'),
         10: ('fvp', 'FVP exact'),
+        11: ('kogado', 'Kogado Hy exact'),
         15: ('malie', 'Malie exact'),
       };
       for (final MapEntry<int, (String, String)> entry in expected.entries) {
@@ -1104,8 +1106,8 @@ void main() {
         expect(line.textThreadKey, '${entry.value.$1}:2a');
         expect(line.textThreadLabel, '${entry.value.$2} · 0x1000');
       }
-      // 11–14 are registered in voice_hook_ipc.h as reserved / unassigned.
-      for (int kind = 11; kind <= 14; kind++) {
+      // 12–14 are registered in voice_hook_ipc.h as reserved / unassigned.
+      for (int kind = 12; kind <= 14; kind++) {
         final GalHookedLine line = GalHookedLine(
           seq: 1,
           timestampMs: 2,

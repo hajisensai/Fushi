@@ -191,7 +191,8 @@ void main() {
     expect(delegateIdx, greaterThan(fullControlsGate),
         reason:
             'full-control gate must run before scheduling the context menu');
-    expect(showBody.contains('showMenu<VoidCallback>('), isTrue,
+    // 菜单走共享 showFushiMenu（玻璃重设计后的自绘菜单，showMenu 同签名）。
+    expect(showBody.contains('showFushiMenu<VoidCallback>('), isTrue,
         reason:
             'the gated delegate must remain the method that opens the menu');
   });

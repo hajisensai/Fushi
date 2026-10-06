@@ -147,14 +147,14 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
       await tester.pump();
       if (deleted.isNotEmpty &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }
 
     expect(deleted, <String>['keyA']);
     // 重扫必须自然结束（进度圈消失）——转不停就是 _scanning 永挂的产品 bug。
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(FushiCircularProgressIndicator), findsNothing);
   });
 
   testWidgets('BUG-1893：standalone 字幕书条目的删除走 deleteSrtBook，不走 deleteBook',
@@ -202,14 +202,14 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
       await tester.pump();
       if (deletedSrt.isNotEmpty &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }
 
     expect(deletedSrt, <String>['srt-uid-1']);
     expect(deletedBooks, isEmpty);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(FushiCircularProgressIndicator), findsNothing);
   });
 
   testWidgets('BUG-1870：数据库快照残留聚成一条带文件数的可删条目，确认后走注入原语并重扫',
@@ -260,7 +260,7 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
       await tester.pump();
       if (deleteCalls > 0 &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }
@@ -273,7 +273,7 @@ void main() {
     // 重扫后聚合条目消失（已无快照），活库条目仍在。
     expect(find.text(title), findsNothing);
     expect(find.text('support/fushi.db'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(FushiCircularProgressIndicator), findsNothing);
   });
 
   testWidgets('BUG-1870 审查：部分快照删不掉时报出失败原因，但成功的那些照样重扫掉',
@@ -312,7 +312,7 @@ void main() {
       await tester.pump();
       if (!File(p.join(support.path, 'fushi.db.corrupt-bak-1.db'))
               .existsSync() &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }
@@ -324,7 +324,7 @@ void main() {
     expect(File(stuckPath).existsSync(), isTrue);
     expect(find.text(t.storage_entry_database_snapshots_label(n: 1)),
         findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(FushiCircularProgressIndicator), findsNothing);
   });
 
   testWidgets('非书籍类目也能展开：明细列出磁盘子项，且不给删除按钮', (WidgetTester tester) async {
@@ -387,7 +387,7 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
       await tester.pump();
       if (deleteCalls > 0 &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }
@@ -440,7 +440,7 @@ void main() {
           () => Future<void>.delayed(const Duration(milliseconds: 20)));
       await tester.pump();
       if (deleted.isNotEmpty &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+          find.byType(FushiCircularProgressIndicator).evaluate().isEmpty) {
         break;
       }
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 删除目标的种类。删除确认框据此逐项披露「会删什么 / 会保留什么」，不再由各调用点
@@ -186,7 +187,7 @@ class DeleteScopeUnavailableNote extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Icon(Icons.devices_outlined, size: 16, color: colors.onSurfaceVariant),
+        FushiIcon(Icons.devices_outlined, size: 16, color: colors.onSurfaceVariant),
         SizedBox(width: tokens.spacing.gap / 2),
         Expanded(
           child: Text(
@@ -234,7 +235,7 @@ class DeleteConfirmCheckboxRow extends StatelessWidget {
       title: title,
       subtitle: subtitle,
       onTap: () => onChanged(!value),
-      trailing: Icon(
+      trailing: FushiIcon(
         value ? Icons.check_box : Icons.check_box_outline_blank,
         color: value
             ? (destructive ? colors.error : colors.primary)
@@ -347,7 +348,7 @@ class DeletionDisclosureView extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(icon, size: 16, color: color),
+              FushiIcon(icon, size: 16, color: color),
               SizedBox(width: tokens.spacing.gap / 2),
               Flexible(
                 child: Text(

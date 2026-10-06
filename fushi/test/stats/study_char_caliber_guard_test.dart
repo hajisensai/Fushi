@@ -97,6 +97,8 @@ void main() {
         // 从上面那个面板抽出来的共享整句渲染器：字素数是**键盘光标在句内左右移动
         // 的边界**（_handleKey 里 count == 0 就不接键），是导航不是记账。
         'lib/src/media/video/subtitle_transcript_text.dart': 1,
+        // 玻璃输入框的字数计数器（maxLength 显示），是表单 UI 不是记账。
+        'lib/src/utils/components/glass/fushi_glass_inputs.dart': 1,
         // BUG-442：词典查询输入长度上限保护，是校验不是记账。
         'lib/src/models/app_model.dart': 1,
         // galgame 文本线程记忆：按最近预览行码点长度的中位数（典型行长）区分同一

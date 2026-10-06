@@ -72,7 +72,9 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
-    expect(find.text(t.reader_settings_section), findsOneWidget);
+    // 弹窗标题必须可见。正文里阅读器按钮布局编辑器的「设置」芯片同文案，但在
+    // 360x420 的视口外（只在 ListView 缓存区里建出来），所以按可命中过滤。
+    expect(find.text(t.reader_settings_section).hitTestable(), findsOneWidget);
     expect(find.text(t.dialog_close), findsOneWidget);
   });
 }

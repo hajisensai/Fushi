@@ -1,5 +1,5 @@
 // TODO-1325 #6 制卡结果 MD3 toast 的 widget 守卫：FushiToast.showMine 按状态
-// （added 绿 / duplicate 橙 / failed 红 / pending 蓝）着色并配 Material 图标，走
+// 配 Material 图标并给图标上语义色（浮条底色恒为主题 inverseSurface），走
 // 应用 navigator overlay 的自绘路径。这正是本次新增的、区别于弹窗内 mine 按钮图标
 // 变化的、可见的桌面/移动统一制卡反馈通道。
 import 'package:flutter/material.dart';
@@ -17,7 +17,7 @@ Future<void> _pumpToastHost(WidgetTester tester) async {
   );
 }
 
-/// 找到 mine toast 那张着色卡片的 BoxDecoration 背景色。
+/// toast 浮条的底色：MD3 下恒为主题 inverseSurface，不再按状态整块着色。
 Color _toastBg(WidgetTester tester) {
   final Iterable<Container> containers =
       tester.widgetList<Container>(find.byType(Container));
@@ -27,8 +27,17 @@ Color _toastBg(WidgetTester tester) {
       return d.color!;
     }
   }
-  fail('未找到制卡 toast 的着色卡片');
+  fail('未找到制卡 toast 的浮条');
 }
+
+/// 状态图标的颜色（语义只落在前置图标上）。
+Color? _iconColor(WidgetTester tester, IconData icon) =>
+    tester.widget<Icon>(find.byIcon(icon)).color;
+
+/// 默认浅色主题下 inverseSurface 是深底，语义色取 MD3 tone 80 一档。
+Color _inverseSurface(WidgetTester tester) => Theme.of(
+      tester.element(find.byType(Scaffold)),
+    ).colorScheme.inverseSurface;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -59,7 +68,7 @@ void main() {
     }
   });
 
-  testWidgets('added：toast 渲染绿色卡片 + check 图标 + 文案',
+  testWidgets('added：toast 渲染绿色 check 图标 + 文案',
       (WidgetTester tester) async {
     await _pumpToastHost(tester);
     FushiToast.showMine(msg: '已添加到牌组', status: MineToastStatus.added);
@@ -68,34 +77,40 @@ void main() {
 
     expect(find.text('已添加到牌组'), findsOneWidget);
     expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
-    expect(_toastBg(tester), const Color(0xFF2E7D32));
+    expect(_toastBg(tester), _inverseSurface(tester),
+        reason: '底色是主题浮条色，不整块铺状态色');
+    expect(_iconColor(tester, Icons.check_circle_rounded),
+        const Color(0xFF7DDC8C));
 
     await tester.pump(const Duration(seconds: 3)); // 跑完自动消失计时器
   });
 
-  testWidgets('duplicate：橙色卡片 + 重复图标', (WidgetTester tester) async {
+  testWidgets('duplicate：橙色重复图标', (WidgetTester tester) async {
     await _pumpToastHost(tester);
     FushiToast.showMine(msg: '重复卡片', status: MineToastStatus.duplicate);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byIcon(Icons.library_add_check_rounded), findsOneWidget);
-    expect(_toastBg(tester), const Color(0xFFEF6C00));
+    expect(_toastBg(tester), _inverseSurface(tester));
+    expect(_iconColor(tester, Icons.library_add_check_rounded),
+        const Color(0xFFFFB870));
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('failed：红色卡片 + 错误图标', (WidgetTester tester) async {
+  testWidgets('failed：红色错误图标', (WidgetTester tester) async {
     await _pumpToastHost(tester);
     FushiToast.showMine(msg: '制卡失败', status: MineToastStatus.failed);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byIcon(Icons.error_rounded), findsOneWidget);
-    expect(_toastBg(tester), const Color(0xFFC62828));
+    expect(_toastBg(tester), _inverseSurface(tester));
+    expect(_iconColor(tester, Icons.error_rounded), const Color(0xFFFFB4AB));
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('pending：蓝色卡片 + 同步图标，随后被结果 toast 顶替',
+  testWidgets('pending：同步图标，随后被结果 toast 顶替',
       (WidgetTester tester) async {
     await _pumpToastHost(tester);
     FushiToast.showMine(msg: '制卡中…', status: MineToastStatus.pending);
@@ -103,7 +118,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.byIcon(Icons.sync_rounded), findsOneWidget);
-    expect(_toastBg(tester), const Color(0xFF1565C0));
+    expect(_toastBg(tester), _inverseSurface(tester));
 
     // 结果 toast 顶替 pending：只剩一张 added 绿卡片。
     FushiToast.showMine(msg: '已添加', status: MineToastStatus.added);
@@ -112,7 +127,8 @@ void main() {
     expect(find.byIcon(Icons.sync_rounded), findsNothing,
         reason: 'pending 应被结果 toast 顶替');
     expect(find.byIcon(Icons.check_circle_rounded), findsOneWidget);
-    expect(_toastBg(tester), const Color(0xFF2E7D32));
+    expect(_iconColor(tester, Icons.check_circle_rounded),
+        const Color(0xFF7DDC8C));
 
     await tester.pump(const Duration(seconds: 3));
   });

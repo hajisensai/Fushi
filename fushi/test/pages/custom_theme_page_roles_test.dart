@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 自定义主题编辑页重设计（2026-09）的行为测试：
 /// - 主题色默认所见即所得（保存时 primaryColor == seed == 所选色）；
@@ -292,7 +293,7 @@ void main() {
         _host(appModel, const CustomThemePage(themeId: 'ct-2')),
       );
       await tester.pumpAndSettle();
-      final Switch autoTone = tester.widget<Switch>(_settingsSwitch(1));
+      final Switch autoTone = tester.widget<Switch>(glassUnwrap<Switch>(_settingsSwitch(1)));
       expect(autoTone.value, isTrue);
 
       await _tapApply(tester);

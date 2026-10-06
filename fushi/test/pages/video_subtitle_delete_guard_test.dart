@@ -49,7 +49,8 @@ void main() {
             '与本地 `_menuSubtitleSources`，两处都要能长按 / 右键删除');
     // 两处各自的行体紧跟在包装之后（包装的是那一行，不是别的 widget）。
     expect(
-        RegExp(r'_withSubtitleFileMenu\(\s*context,\s*controller,\s*source,\s*ListTile\(')
+        // 行控件走共享 FushiListTileControl（ListTile 的设计系统分派版）。
+        RegExp(r'_withSubtitleFileMenu\(\s*context,\s*controller,\s*source,\s*FushiListTileControl\(')
             .allMatches(rows)
             .length,
         2,
@@ -116,7 +117,8 @@ void main() {
     expect(menu.contains('label: t.video_subtitle_delete,'), isTrue);
     expect(
         // `\s*\.\s*`：tall style 会在 `.` 之前换行（`await _focusOwnership\n    .guardOverlay(`）。
-        RegExp(r'_focusOwnership\s*\.\s*guardOverlay\(\s*\(\)\s*=>\s*showMenu<bool>\(')
+        // 菜单走共享 showFushiMenu（showMenu 同签名的自绘菜单）。
+        RegExp(r'_focusOwnership\s*\.\s*guardOverlay\(\s*\(\)\s*=>\s*showFushiMenu<bool>\(')
             .hasMatch(menu),
         isTrue,
         reason: '菜单是覆盖层、会夺焦；按 docs/agent/focus-ownership.md 用 '

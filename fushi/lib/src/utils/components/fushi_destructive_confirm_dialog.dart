@@ -4,6 +4,7 @@ import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// [FushiDestructiveConfirmDialog] 的返回值。
 ///
@@ -18,6 +19,7 @@ class FushiDestructiveConfirmResult {
     required this.checked,
     this.deleteLocalFiles = false,
     this.deleteStatistics = false,
+    this.deleteSubscriptions = false,
   });
 
   final bool checked;
@@ -28,6 +30,10 @@ class FushiDestructiveConfirmResult {
   /// 用户是否要求连这些媒体攒下的统计一起删（有主勾选时仅在 [checked] 为真时
   /// 可能为真）。
   final bool deleteStatistics;
+
+  /// 用户是否要求连归属的下载订阅一起删（没传
+  /// [FushiDestructiveConfirmDialog.deleteSubscriptionsLabel] 时恒为 false）。
+  final bool deleteSubscriptions;
 }
 
 /// 全 app 统一的「确认销毁」对话框。
@@ -51,6 +57,7 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
     this.localFilesSubtitle,
     this.statisticsSubtitle,
     this.checkedDisclosure,
+    this.deleteSubscriptionsLabel,
     this.checkboxKey,
     this.requireCheckboxToConfirm = false,
     super.key,
@@ -104,6 +111,13 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 在勾选状态上，正文才不会再和实际行为说反话。
   final DeletionDisclosure? checkedDisclosure;
 
+  /// 非 null 时在正文下方渲染独立勾选行「同时删除 N 个下载订阅」（删合集用）。
+  ///
+  /// 与主勾选**正交**：订阅删不删与成员本体删不删无关——只解散合集也该能把
+  /// 往这个合集里追更的订阅停掉。默认勾上：合集都不要了，订阅还在后台按身份
+  /// 继续下载，是用户最不想要的结果；null = 这个合集没有归属订阅，不摆这一行。
+  final String? deleteSubscriptionsLabel;
+
   /// 勾选行的 key（供测试 / 集成测试焦点驱动定位）。
   final Key? checkboxKey;
 
@@ -127,6 +141,7 @@ class _FushiDestructiveConfirmDialogState
   // 统计删除**永远**从未勾开始，也不进「记住这些选择」：删条目是常事，把看它花掉
   // 的那些小时从图表里抹掉是另一件事，而且按身份立碑后其他设备也跟着删、没有撤销。
   bool _deleteStatistics = false;
+  bool _deleteSubscriptions = true;
 
   /// 统计勾选此刻是否可见：有主勾选时跟随主勾选，没有主勾选时恒可见。
   bool get _statisticsOffered =>
@@ -190,7 +205,7 @@ class _FushiDestructiveConfirmDialogState
                 // 焦点遍历（单站点契约，行即唯一停靠点）。
                 leading: ExcludeFocus(
                   child: IgnorePointer(
-                    child: Checkbox(
+                    child: FushiCheckbox(
                       value: _checked,
                       onChanged: (_) {},
                     ),
@@ -228,6 +243,29 @@ class _FushiDestructiveConfirmDialogState
                 ),
               ],
             ],
+            if (widget.deleteSubscriptionsLabel != null) ...[
+              SizedBox(height: tokens.spacing.gap),
+              FushiListItem(
+                key: const ValueKey<String>(
+                  'destructive-confirm-delete-subscriptions',
+                ),
+                density: FushiListDensity.compact,
+                padding: EdgeInsets.zero,
+                titleMaxLines: 3,
+                title: Text(widget.deleteSubscriptionsLabel!),
+                leading: ExcludeFocus(
+                  child: IgnorePointer(
+                    child: FushiCheckbox(
+                      value: _deleteSubscriptions,
+                      onChanged: (_) {},
+                    ),
+                  ),
+                ),
+                onTap: () => setState(
+                  () => _deleteSubscriptions = !_deleteSubscriptions,
+                ),
+              ),
+            ],
             if (widget.checkboxLabel == null && _statisticsOffered) ...[
               SizedBox(height: tokens.spacing.gap),
               DeleteStatisticsRow(
@@ -263,6 +301,9 @@ class _FushiDestructiveConfirmDialogState
                               _deleteLocalFiles,
                           deleteStatistics:
                               _statisticsOffered && _deleteStatistics,
+                          deleteSubscriptions:
+                              widget.deleteSubscriptionsLabel != null &&
+                                  _deleteSubscriptions,
                         ),
                       ),
               child: Text(widget.confirmLabel ?? t.dialog_delete),

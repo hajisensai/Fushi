@@ -253,7 +253,15 @@ class HeadlessHost {
       // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
       ..hostId = identity.deviceId
       ..publicUrlsProvider = (() async => config.publicUrls);
-    await server.start();
+    try {
+      await server.start();
+    } catch (_) {
+      // 绑端口失败（端口被占等）：先起的下载管线 / 订阅检查已经在跑，不收回就会
+      // 在调用方关库之后撞上已关的连接崩掉进程，把真正的错误（端口被占）吞掉
+      // （BUG-2959）。与 [stop] 同一条拆卸路径。
+      await _stopPipelines();
+      rethrow;
+    }
     _server = server;
     // P2P 挂不上只留痕（[_serializeP2p] 吞错并记 lastError）：server 已经起来了，
     // 这里抛出去会让它没有拥有者（泄漏一个在跑的 server，审查问题 12）。
@@ -434,13 +442,19 @@ class HeadlessHost {
     // 排在所有在飞的 P2P 动作之后卸下（之前的挂载先落地、再被这次拆掉）。
     if (server != null) await _detachP2p(server);
     await server?.stop();
+    await _stopPipelines();
+    await pairingEvents.close();
+  }
+
+  /// 停下载管线（含订阅检查，等在途的一轮落地）再关刮削：正常停机与启动半途失败
+  /// 共用。
+  Future<void> _stopPipelines() async {
     final ServerDownloadHost? downloads = _downloads;
     _downloads = null;
     await downloads?.stop();
     // 下载管线借用它，管线停了再关。
     _videoScrape?.close();
     _videoScrape = null;
-    await pairingEvents.close();
   }
 
   // ── 配对回调 ──────────────────────────────────────────────────────────

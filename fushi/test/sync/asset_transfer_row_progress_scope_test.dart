@@ -12,6 +12,8 @@ import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator, FushiLinearProgressIndicator;
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-2645：互联页没开「上传词典」，点立即同步时「词典 · 传输」那一行却在转圈、
@@ -75,8 +77,8 @@ void main() {
       simulateFullSweep();
       await pumpRow(tester, row);
 
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.byType(FushiCircularProgressIndicator), findsNothing);
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
       expect(find.text(t.sync_asset_transfer_hint), findsOneWidget);
       expect(find.text(t.sync_asset_transfer_menu), findsOneWidget,
           reason: '别的同步在飞时菜单照常可见，点了由 busy guard 提示');
@@ -88,7 +90,7 @@ void main() {
           SyncAssetKind.dictionary, SyncAssetChannelScope.cloud);
       await pumpRow(tester, row);
 
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(FushiCircularProgressIndicator), findsNothing);
     });
 
     testWidgets('本行自己的传输在飞时转圈并显示进度', (WidgetTester tester) async {
@@ -100,8 +102,8 @@ void main() {
           SyncAssetKind.dictionary, SyncAssetChannelScope.interconnect);
       await pumpRow(tester, row);
 
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
       expect(find.text(t.sync_asset_transfer_hint), findsNothing);
     });
   });
@@ -115,10 +117,10 @@ void main() {
           SyncAssetKind.localAudio, SyncAssetChannelScope.cloud);
 
       await pumpRow(tester, customItem(dest, 'sync.dictionary_transfer'));
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(FushiCircularProgressIndicator), findsNothing);
 
       await pumpRow(tester, customItem(dest, 'sync.local_audio_transfer'));
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
     });
   });
 

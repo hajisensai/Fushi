@@ -4,8 +4,64 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
+import 'package:fushi/utils.dart';
+
+AidokuInstalledPackage _fixturePackage() => AidokuInstalledPackage(
+      id: 'ja.fixture',
+      name: 'Aidoku fixture',
+      version: 1,
+      languages: const <String>['ja'],
+      requiresWebView: false,
+      packagePath: '/fixture.aix',
+      installedAt: DateTime.utc(2026),
+    );
 
 void main() {
+  setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  // 2026-10 体验优化：Aidoku 的 buildVerifyAction 原先把错误文字再画一遍，同一
+  // 句话在页面上出现两次；且原文带 `Exception:` 前缀。
+  testWidgets('浏览失败时错误只显示一次，且去掉 Exception: 前缀',
+      (WidgetTester tester) async {
+    final _BrowseRuntime runtime =
+        _BrowseRuntime(browseError: Exception('Source said no'));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AidokuSourceBrowsePage(
+          package: _fixturePackage(),
+          runtime: runtime,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Source said no'), findsOneWidget);
+    expect(find.textContaining('Exception:'), findsNothing);
+    expect(find.text(t.retry), findsOneWidget);
+  });
+
+  testWidgets('Cloudflare 拦截给专门文案且只出现一次', (WidgetTester tester) async {
+    final _BrowseRuntime runtime = _BrowseRuntime(
+      browseError: const AidokuRuntimeException(
+        kAidokuCloudflareChallengeCode,
+        'challenge',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AidokuSourceBrowsePage(
+          package: _fixturePackage(),
+          runtime: runtime,
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(t.manga_source_cloudflare_blocked), findsOneWidget);
+  });
+
   testWidgets('uses the source listing and renders the Mihon-shaped grid',
       (WidgetTester tester) async {
     final _BrowseRuntime runtime = _BrowseRuntime();
@@ -54,6 +110,9 @@ void main() {
 }
 
 class _BrowseRuntime extends Fake implements AidokuRuntime {
+  _BrowseRuntime({this.browseError});
+
+  final Exception? browseError;
   int browseCalls = 0;
   int searchCalls = 0;
 
@@ -83,6 +142,8 @@ class _BrowseRuntime extends Fake implements AidokuRuntime {
     int page = 1,
   }) async {
     browseCalls++;
+    final Exception? error = browseError;
+    if (error != null) throw error;
     return <String, Object?>{
       'entries': <Object?>[
         <String, Object?>{

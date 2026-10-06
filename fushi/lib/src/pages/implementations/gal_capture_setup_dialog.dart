@@ -8,6 +8,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/utils.dart';
 
@@ -154,7 +155,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     // 窗口宽 < 980 时那个 900 会被父约束挤压，两栏跟着变窄、线程标题被吃掉。
     // 按可用宽度收口：想要 900，但绝不超过实际能给的宽度。
     final double dialogWidth = (screen.width - 80).clamp(320.0, 900.0);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.game_capture_setup_title),
       content: SizedBox(
         width: dialogWidth,
@@ -216,7 +217,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => _dismissOnce(yieldingToRiskConsent: false),
           child: Text(t.dialog_close),
         ),
@@ -239,10 +240,17 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: threads.isEmpty
-                ? Center(child: Text(t.game_waiting_for_text))
+                ? Center(
+                    child: Text(
+                      t.game_waiting_for_text,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: fushiNeutralSecondaryForeground(context),
+                      ),
+                    ),
+                  )
                 : ListView.builder(
                     padding: const EdgeInsets.all(8),
                     itemCount: threads.length,
@@ -250,7 +258,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                       final TexthookerTextThread thread = threads[index];
                       final bool selecting = _selectingThreadKey == thread.key;
                       return FushiListItem(
-                        leading: const Icon(Icons.forum_outlined),
+                        leading: const FushiIcon(Icons.forum_outlined),
                         // BUG-1474：线程 label 形如 `TextRender · 0x459f50 · #1a2b`，
                         // 默认单行必被切。这里父容器（ListView 行）高度自由，
                         // 按 BUG-1184 的规矩逐调用点放宽是安全的。
@@ -281,11 +289,11 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                         trailing: selecting
                             ? const SizedBox.square(
                                 dimension: 20,
-                                child: CircularProgressIndicator(
+                                child: FushiCircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.chevron_right),
+                            : const FushiIcon(Icons.chevron_right),
                         onTap: selecting
                             ? null
                             : () => unawaited(_selectThread(thread)),
@@ -318,7 +326,7 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(14),
@@ -362,7 +370,7 @@ class _AudioSourceSummary extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        const Icon(Icons.graphic_eq_outlined),
+        const FushiIcon(Icons.graphic_eq_outlined),
         const SizedBox(width: 10),
         Expanded(
           child: Column(

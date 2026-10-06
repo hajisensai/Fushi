@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
 import '../helpers/fake_inappwebview_platform.dart';
@@ -153,10 +154,11 @@ Widget _wrap(AppModel appModel, GlobalKey<_PlaceholderHostPageState> key) {
   );
 }
 
-/// 占位卡「正在画」的判据：外层 [Positioned] 槽位内还有那条进度条。
+/// 占位卡「正在画」的判据：外层 [Positioned] 槽位内还有那块延迟加载层
+/// （[FushiDeferredLoading]，指示器 150ms 后才露出，判「在画」看加载层本身）。
 Finder get _placeholderProgress => find.descendant(
       of: find.byKey(kLookupSearchPlaceholderKey),
-      matching: find.byType(LinearProgressIndicator),
+      matching: find.byType(FushiDeferredLoading),
     );
 
 void main() {

@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_download_progress.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -231,9 +232,9 @@ void main() {
     await tester.pump();
     expect(
       tester
-          .widget<CircularProgressIndicator>(find.descendant(
+          .widget<FushiDownloadProgressRing>(find.descendant(
             of: badge,
-            matching: find.byType(CircularProgressIndicator),
+            matching: find.byType(FushiDownloadProgressRing),
           ))
           .value,
       0.5,

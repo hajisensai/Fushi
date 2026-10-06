@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
@@ -844,7 +845,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       padding: EdgeInsets.only(bottom: tokens.spacing.gap),
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          FushiIcon(icon, size: 18, color: scheme.onSurfaceVariant),
           SizedBox(width: tokens.spacing.gap),
           Expanded(
             child: Text(
@@ -938,8 +939,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       lines: <StatSummaryLine>[
         StatSummaryLine(value: formatStatChars(chars)),
         // 速度（字/时）紧跟字数：用户 2026-09-12 要求顶部方框直接给出每小时字数。
-        if (cph != null)
-          StatSummaryLine(label: t.stat_reading_speed, value: cph),
+        StatSummaryLine(
+          label: t.stat_reading_speed,
+          value: cph ?? kStatEmptyValue,
+        ),
         StatSummaryLine(label: t.stat_lookup, value: '$lookup'),
         StatSummaryLine(label: t.stat_mined, value: '$mined'),
         StatSummaryLine(label: t.stat_favorited, value: '$favorited'),
@@ -1064,7 +1067,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final ColorScheme colorScheme = Theme.of(context).colorScheme;
     final double? fraction = goalProgressFraction(read, goal);
     final bool reached = goalReached(read, goal);
-    final Color barColor = reached ? colorScheme.tertiary : colorScheme.primary;
+    final StatChartColors chartColors = statChartColorsOf(context);
+    final Color barColor = reached ? chartColors.reached : chartColors.series;
     final TextStyle? subStyle = Theme.of(
       context,
     ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant);
@@ -1086,7 +1090,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               Text(
                 t.stat_goal_reached,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: colorScheme.tertiary,
+                  color: chartColors.reached,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -1098,10 +1102,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             Expanded(
               child: ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 8,
-                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  // Apple 走进度条自带的 systemFill 轨道。
+                  backgroundColor: isGlassDesign(context)
+                      ? null
+                      : colorScheme.surfaceContainerHighest,
                   color: barColor,
                 ),
               ),
@@ -1141,6 +1148,11 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     // BUG-1107：今日速度同样过最小样本门槛（[computeCph] 内建，不足 1 分钟返回
     // null）——今日只有几十秒的记录时显示占位符，不外推爆表数字。
     final double? todayCph = computeCph(_todayChars, _todayMs);
+    final StatChartColors chartColors = statChartColorsOf(context);
+    // Apple：环的底轨是 systemFill（「健康」活动环的空轨），不是更亮一档的面色。
+    final Color ringTrack = isGlassDesign(context)
+        ? appleColorsOf(context).fill
+        : scheme.surfaceContainerHighest;
 
     return _card(
       title: t.stat_today,
@@ -1158,16 +1170,16 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             children: <Widget>[
               StatRing(
                 fraction: charFrac,
-                color: scheme.primary,
-                trackColor: scheme.surfaceContainerHighest,
+                color: chartColors.series,
+                trackColor: ringTrack,
                 value: '${(charFrac * 100).round()}%',
                 detail: '$_todayStudyChars/$charGoal',
                 caption: t.stat_goal,
               ),
               StatRing(
                 fraction: timeFrac,
-                color: scheme.tertiary,
-                trackColor: scheme.surfaceContainerHighest,
+                color: chartColors.compare,
+                trackColor: ringTrack,
                 value: '${(timeFrac * 100).round()}%',
                 detail: formatStatTime(_todayMs),
                 caption: t.stat_metric_time,
@@ -1256,13 +1268,13 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       StatSummaryTile(label: label, value: value, valueColor: valueColor);
 
   Widget _deltaTile(double? delta) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     if (delta == null) {
       return _summaryTile(t.stat_vs_prev, '-');
     }
     final bool up = delta >= 0;
     final String sign = up ? '+' : '';
-    final Color color = up ? scheme.primary : scheme.error;
+    final StatChartColors chartColors = statChartColorsOf(context);
+    final Color color = up ? chartColors.up : chartColors.down;
     return _summaryTile(
       t.stat_vs_prev,
       '$sign${delta.toStringAsFixed(0)}%',
@@ -1306,6 +1318,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       color: scheme.onSurfaceVariant,
     );
     final StatTrendMetric metric = _trendMetric;
+    final StatChartColors chartColors = statChartColorsOf(context);
 
     return _card(
       title: t.stat_range_and_trend,
@@ -1333,14 +1346,18 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
                 .toList(),
           ),
           SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap,
-            children: <Widget>[
-              _granChip(t.stat_trend_daily, StatTrendGranularity.daily),
-              _granChip(t.stat_trend_weekly, StatTrendGranularity.weekly),
-              _granChip(t.stat_trend_monthly, StatTrendGranularity.monthly),
+          // 日 / 周 / 月是互斥的一组粒度，用分段控件而不是三颗 chip（MD3
+          // 连接按钮组 / Apple 液态玻璃分段，「健康」App 的 D·W·M 同形）。
+          FushiSegmentedButton<StatTrendGranularity>(
+            showSelectedIcon: false,
+            segments: <ButtonSegment<StatTrendGranularity>>[
+              _granSegment(t.stat_trend_daily, StatTrendGranularity.daily),
+              _granSegment(t.stat_trend_weekly, StatTrendGranularity.weekly),
+              _granSegment(t.stat_trend_monthly, StatTrendGranularity.monthly),
             ],
+            selected: <StatTrendGranularity>{_trendGranularity},
+            onSelectionChanged: (Set<StatTrendGranularity> v) =>
+                setState(() => _trendGranularity = v.first),
           ),
           SizedBox(height: tokens.spacing.card),
           SizedBox(
@@ -1349,17 +1366,17 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
               size: Size.infinite,
               painter: StatLineChartPainter(
                 series: <StatLineSeries>[
-                  StatLineSeries(values: values, color: scheme.primary),
+                  StatLineSeries(values: values, color: chartColors.series),
                   StatLineSeries(
                     values: avgValues,
-                    color: scheme.tertiary,
+                    color: chartColors.compare,
                     strokeWidth: 1.5,
                     dashed: true,
                   ),
                 ],
                 xLabels: xLabels,
                 anomalies: anomalies,
-                anomalyColor: scheme.error,
+                anomalyColor: chartColors.down,
                 labelColor: scheme.onSurfaceVariant,
                 labelStyle: labelStyle,
                 labelFormatter: (double v) => trendMetricAxisLabel(v, metric),
@@ -1374,16 +1391,14 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     );
   }
 
-  Widget _granChip(String label, StatTrendGranularity g) {
-    return FushiSelectableChip(
-      label: label,
-      selected: _trendGranularity == g,
-      onSelected: (_) => setState(() => _trendGranularity = g),
-    );
-  }
+  ButtonSegment<StatTrendGranularity> _granSegment(
+    String label,
+    StatTrendGranularity g,
+  ) => ButtonSegment<StatTrendGranularity>(value: g, label: Text(label));
 
   Widget _trendLegend() {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final StatChartColors chartColors = statChartColorsOf(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextStyle? style = Theme.of(
       context,
@@ -1392,10 +1407,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       spacing: tokens.spacing.card,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
-        _legendItem(scheme.primary, _metricLabel(_trendMetric), style),
-        _legendItem(scheme.tertiary, t.stat_speed_avg, style),
+        _legendItem(chartColors.series, _metricLabel(_trendMetric), style),
+        _legendItem(chartColors.compare, t.stat_speed_avg, style),
         if (_trendMetric == StatTrendMetric.speed)
-          _legendItem(scheme.error, t.stat_speed_anomaly, style),
+          _legendItem(chartColors.down, t.stat_speed_anomaly, style),
       ],
     );
   }
@@ -1665,7 +1680,11 @@ class StatMiniTile extends StatelessWidget {
         vertical: tokens.spacing.gap + tokens.spacing.gap / 2,
       ),
       decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
+        // Apple：卡里再嵌一层用 tertiarySystemGroupedBackground，比卡底高一档
+        // 而不是跳到最亮的面色。
+        color: isGlassDesign(context)
+            ? appleColorsOf(context).tertiaryGroupedBackground
+            : scheme.surfaceContainerHighest,
         borderRadius: tokens.radii.cardRadius,
       ),
       child: Column(

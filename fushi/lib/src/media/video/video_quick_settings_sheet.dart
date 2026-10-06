@@ -2,11 +2,14 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/src/media/video/subtitle_style_preview.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_settings_actions.dart'
+    show videoQuickSettingsHostOf;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_renderer.dart';
@@ -174,7 +177,11 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
                 padding: wideCategoryPadding,
                 child: _buildTopCategoryBar(selectedId),
               ),
-              Divider(height: 1, thickness: 1, color: dividerColor),
+              // 分类条与详情之间不压硬分隔线：Apple（iOS 26 / macOS 26 浮层）与
+              // MD3 Expressive（侧边面板的分类与内容同坐一张表面，靠留白分区）
+              // 都靠留白；只有墨水屏（表面层次塌成同色）保留一条细线。
+              if (isEinkTheme(context))
+                FushiDividerControl(height: 1, thickness: 1, color: dividerColor),
               Expanded(
                 child: KeyedSubtree(
                   key: ValueKey<String>(selectedId),
@@ -243,7 +250,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
       case VideoGroup.shaders:
         return t.video_settings_cat_shaders;
       case VideoGroup.mpv:
-        return t.video_settings_cat_mpv;
+        // 分组 id 仍是 `mpv`（键与测试不变），面向用户的名字是「画面」：这里装的
+        // 是解码 / 画质 / HDR / 几何 / 色彩，「mpv」是实现细节不是用户语言。
+        return t.video_settings_cat_picture;
       case VideoGroup.danmaku:
         return t.video_settings_cat_danmaku;
       case VideoGroup.controls:
@@ -251,38 +260,37 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     }
   }
 
-  /// 宽窗顶部分类条（TODO-556 / TODO-1351 / BUG：末位分类被裁）：大分类用 chip 行，固定
-  /// 在 sheet 顶部、不随下方详情滚动；选中 chip 高亮，点击切下方详情。
+  /// 宽窗顶部分类条（TODO-556 / TODO-1351 / BUG：末位分类被裁 / 2026-10-04 改标签栏）：
+  /// 固定在 sheet 顶部、不随下方详情滚动；点哪个分类切下方详情。
   ///
-  /// **放不下时换行堆叠**（[Wrap]）而非横向滚动裁断（用户报「弹幕 / 控制 分类被截在视口
-  /// 外、看不全」）。所有 chip 恒可见：一行放不下就自动折到第二行，宽度越窄行数越多，
-  /// 永不裁断（[spacing] 行内间距、[runSpacing] 行间距均走 token，无裸值）。
+  /// 形态（用户 2026-10-04「整个设置页都丑，上面那排标签也改」）：不再是一排带
+  /// 对勾的淡绿 chip，而是标签栏——MD3 = Expressive primary tabs（图标 + 文字，
+  /// 选中项 primary 色 + 内容宽的 3dp 下划线），Apple = iOS 26 / macOS 26 设置
+  /// sheet 的文字标签（选中项落一块系统灰胶囊 + label 色 semibold，非选中
+  /// secondaryLabel），见 [_VideoSettingsCategoryTab]。
   ///
-  /// TODO-1351（用户复诉）：分类 tab 是「图标 + 完整文字」（参考「检查器」式 tab），不得
-  /// 截成省略号、也不得压成纯图标 + tooltip。标签经
-  /// [FushiSelectableChip.allowLabelOverflow] 按固有宽度完整渲染（无 ellipsis）；换行由
-  /// [Wrap] 承载，单个标签永不截断。
+  /// **放不下时换行堆叠**（[Wrap]）而非横向滚动裁断（用户报「弹幕 / 控制 分类被截在
+  /// 视口外、看不全」）：所有分类恒可见，窄了就折到下一行；左对齐，与下方详情标题、
+  /// 设置分组同一左缘。标签按固有宽度完整渲染（TextOverflow.visible，TODO-1351
+  /// 不许省略号 / 纯图标）。
   Widget _buildTopCategoryBar(String selectedId) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Wrap(
-      // 大分类 chip 行整体居中（用户诉求）：一行放不下换行时每行也居中，视觉更聚焦，
-      // 不再左对齐贴边。
-      alignment: WrapAlignment.center,
-      runAlignment: WrapAlignment.center,
-      spacing: tokens.spacing.gap,
+      alignment: WrapAlignment.start,
+      runAlignment: WrapAlignment.start,
+      // MD3 Expressive 连接按钮组：段间 4dp 缝；Apple 胶囊标签间半个 gap。
+      spacing: isGlassDesign(context) ? tokens.spacing.gap / 2 : 4,
       runSpacing: tokens.spacing.gap / 2,
       children: <Widget>[
         for (final ({String id, IconData icon, String label}) cat
             in _categories())
-          FushiSelectableChip(
+          _VideoSettingsCategoryTab(
             // 稳定 key：测试 / 焦点驱动靠 id key 命中分类（不依赖标签文案）。
             key: ValueKey<String>('video-settings-cat-${cat.id}'),
             label: cat.label,
-            leadingIcon: cat.icon,
+            icon: cat.icon,
             selected: cat.id == selectedId,
-            // TODO-1351：标签完整渲染、不省略；空间不够由 Wrap 换行兜底（不裁断）。
-            allowLabelOverflow: true,
-            onSelected: (_) => _selectSubPage(cat.id),
+            onTap: () => _selectSubPage(cat.id),
           ),
       ],
     );
@@ -293,12 +301,56 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   /// 侧栏面板标题语义一致，但无返回箭头（宽窗顶栏不走 push）。
   Widget _buildWideDetailTitle(String selectedId) {
     final ThemeData theme = Theme.of(context);
-    return Text(
-      _subPageTitle(selectedId),
-      style: theme.textTheme.titleMedium?.copyWith(
-        fontWeight: FontWeight.w600,
-      ),
+    final bool glass = isGlassDesign(context);
+    final VideoGroup? group = _groupFor(selectedId);
+    final String hint = group == null ? '' : _groupHint(group);
+    // Apple：macOS 26 检查器 / iOS 26 sheet 的分区大标题（22 / 20 号粗体）+ 一行
+    // footnote 灰字说明；MD3（Expressive）：titleLarge + bodyMedium onSurfaceVariant。
+    final TextStyle? titleStyle = glass
+        ? TextStyle(
+            fontSize: fushiAppleCompact(context) ? 20 : 22,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
+            color: appleColorsOf(context).label,
+          )
+        : theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600);
+    final TextStyle? hintStyle = glass
+        ? FushiAppleMetrics.of(context).footnoteStyle(context)
+        : theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(_subPageTitle(selectedId), style: titleStyle),
+        if (hint.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(hint, style: hintStyle),
+          ),
+      ],
     );
+  }
+
+  /// 分类的一行说明（详情页头下方）：告诉用户这一页管什么——尤其「画质增强」
+  /// 与「画面」两页，名字相近、职责不同（着色器 vs. 解码 / 缩放 / 色彩）。
+  String _groupHint(VideoGroup group) {
+    switch (group) {
+      case VideoGroup.playback:
+        return t.video_settings_cat_playback_hint;
+      case VideoGroup.audio:
+        return t.video_settings_cat_audio_hint;
+      case VideoGroup.subtitle:
+        return t.video_settings_cat_subtitle_hint;
+      case VideoGroup.shaders:
+        return t.video_settings_cat_shaders_hint;
+      case VideoGroup.mpv:
+        return t.video_settings_cat_picture_hint;
+      case VideoGroup.danmaku:
+        return t.video_settings_cat_danmaku_hint;
+      case VideoGroup.controls:
+        return t.video_settings_cat_controls_hint;
+    }
   }
 
   /// 窄窗主页：分类导航行（push 子页）。面板顶部 [VideoTranslucentSidePanel] 已有
@@ -315,6 +367,9 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
                 in _categories())
               AdaptiveSettingsNavigationRow(
                 title: cat.label,
+                // 窄窗主页每个分类带一行说明（与宽窗详情页头同一句），不点进去
+                // 也知道「画质增强」和「画面」各管什么。
+                subtitle: _groupHint(_groupFor(cat.id)!),
                 icon: cat.icon,
                 onTap: () => _selectSubPage(cat.id),
               ),
@@ -359,15 +414,15 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
     final VideoGroup? group = _groupFor(page);
     if (group == null) return const SizedBox.shrink();
     final SettingsContext settingsContext = _settingsContext();
-    final SettingsDestination destination = buildVideoGroupDestination(
+    final SettingsDestination destination = _panelDestination(
       settingsContext,
       group,
       _subPageTitle(page),
     );
-    final bool cupertino = isCupertinoPlatform(context);
-    final SettingsRenderer renderer = cupertino
-        ? const CupertinoSettingsRenderer()
-        : const MaterialSettingsRenderer();
+    // 按设计系统选渲染器：Apple → GlassSettingsRenderer（macOS / iOS 26 分组
+    // 卡 + 液态玻璃控件），MD3 → MaterialSettingsRenderer（Android 16 分段分组），
+    // Cupertino（隐藏内部能力）照旧。与设置主页同一个判据，面板与全局设置一致。
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     return renderer.buildDetailContent(
       settingsContext: settingsContext,
       destination: destination,
@@ -375,6 +430,119 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
       // 本面板已在外层滚动视图提供横向 padding（widePrimaryPadding / narrowPadding）；
       // 让渲染器别再自带横向缩进，否则投影子页会双重缩进（与阅读器面板同约定）。
       insetHorizontally: false,
+    );
+  }
+
+  /// 面板某分类的 destination：[buildVideoGroupDestination] 的 schema 投影，再按
+  /// 面板的信息架构做两处整理（只动「放在哪页」，不动条目本身与持久化）：
+  ///
+  /// - mpv 配置里的「音频」小节（保持音高 / 声道 / 响度归一）挪到「音频」页、
+  ///   「播放」小节（单文件循环）挪到「播放」页——用户找音频处理会去音频页，
+  ///   而不是一个叫「画面」的页；「画面」页只留解码 / 画质 / HDR / 几何 / 色彩 /
+  ///   高级。
+  /// - 「字幕」页的「字幕外观」小节顶上插一块实时样式预览。
+  SettingsDestination _panelDestination(
+    SettingsContext settingsContext,
+    VideoGroup group,
+    String title,
+  ) {
+    final SettingsDestination base = buildVideoGroupDestination(
+      settingsContext,
+      group,
+      title,
+    );
+    final String mpvAudio = t.video_setting_mpv_group_audio;
+    final String mpvPlayback = t.video_setting_mpv_group_playback;
+    List<SettingsSection> mpvSections(String sectionTitle) {
+      return buildVideoGroupDestination(
+        settingsContext,
+        VideoGroup.mpv,
+        '',
+      ).sections
+          .where((SettingsSection s) => s.title == sectionTitle)
+          .toList(growable: false);
+    }
+
+    final List<SettingsSection> sections;
+    switch (group) {
+      case VideoGroup.mpv:
+        sections = base.sections
+            .where(
+              (SettingsSection s) =>
+                  s.title != mpvAudio && s.title != mpvPlayback,
+            )
+            .toList(growable: false);
+      case VideoGroup.audio:
+        sections = <SettingsSection>[
+          ...base.sections.where((SettingsSection s) => s.items.isNotEmpty),
+          ...mpvSections(mpvAudio),
+        ];
+      case VideoGroup.playback:
+        sections = <SettingsSection>[
+          ...base.sections.where((SettingsSection s) => s.items.isNotEmpty),
+          // 「播放」页里再挂一个「播放」小标题是重复，挪过来时去掉标题。
+          for (final SettingsSection s in mpvSections(mpvPlayback))
+            SettingsSection(items: s.items),
+        ];
+      case VideoGroup.subtitle:
+        final String appearance = t.video_setting_subtitle_appearance;
+        sections = <SettingsSection>[
+          for (final SettingsSection s in base.sections)
+            // schema 若已自带预览行（全局设置 › 视频那边加了 VideoPlacement），
+            // 就不再插第二块。
+            if (s.title == appearance &&
+                !s.items.any(
+                  (SettingsItem item) =>
+                      item.id.contains('subtitle_style_preview'),
+                ))
+              SettingsSection(
+                id: s.id,
+                title: s.title,
+                footer: s.footer,
+                visible: s.visible,
+                presentation: s.presentation,
+                summaryBuilder: s.summaryBuilder,
+                items: <SettingsItem>[_subtitlePreviewItem, ...s.items],
+              )
+            else
+              s,
+        ];
+      case VideoGroup.shaders:
+      case VideoGroup.danmaku:
+      case VideoGroup.controls:
+        sections = base.sections;
+    }
+    return SettingsDestination(
+      id: base.id,
+      title: base.title,
+      icon: base.icon,
+      sections: sections.isEmpty
+          ? <SettingsSection>[const SettingsSection(items: <SettingsItem>[])]
+          : sections,
+    );
+  }
+
+  /// 「字幕外观」小节顶部的实时样式预览行：16:9 模拟画面上按当前样式渲染一行
+  /// 日文示例字幕（共享组件，与全局设置 › 视频同一份，样式函数与播放页同源）。
+  static final SettingsItem _subtitlePreviewItem = SettingsCustomItem(
+    id: 'video.player.subtitle_style_preview',
+    builder: _buildSubtitlePreview,
+  );
+
+  static Widget _buildSubtitlePreview(SettingsContext settingsContext) {
+    // 面板里限宽 400（≈ 225 高）：够看清字号 / 描边 / 背景，又不把下面的滑条
+    // 挤出首屏。预览自带外框（卡片同色）与 12 圆角模拟画面，这里只留行内边距。
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 400),
+          child: SubtitleStylePreview(
+            appModel: settingsContext.appModel,
+            uiScale: videoQuickSettingsHostOf(settingsContext)?.uiScale,
+          ),
+        ),
+      ),
     );
   }
 
@@ -388,5 +556,119 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
   String _subPageTitle(String page) {
     final VideoGroup? group = _groupFor(page);
     return group == null ? '' : _groupTitle(group);
+  }
+}
+
+/// 视频设置面板顶部的一个分类标签（见 `_buildTopCategoryBar`）。
+///
+/// 结构两套设计系统恒定（Semantics → InkWell → 内容），只换颜色与指示器：
+/// - MD3：Expressive primary tab——图标 + 文字，选中 primary（墨水屏 onSurface）
+///   + 底部 3dp 内容宽下划线（上圆角），非选中 onSurfaceVariant；按压 / 悬停走
+///   InkWell 的标准状态层。
+/// - Apple：iOS 26 / macOS 26 设置 sheet 的文字标签——选中项一块 secondaryFill
+///   胶囊 + label 色 semibold，非选中 secondaryLabel；无水波（悬停只淡淡一层
+///   tertiaryFill）。
+///
+/// InkWell 自带焦点节点：Tab / 方向键可达，Enter / 手柄 A 经 ActivateIntent 触发。
+class _VideoSettingsCategoryTab extends StatelessWidget {
+  const _VideoSettingsCategoryTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = theme.colorScheme;
+    final bool glass = isGlassDesign(context);
+    final bool eink = isEinkTheme(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    // MD3 Expressive（2026-10-05 播放器 UI 重做）：分类条改成连接按钮组——选中段
+    // secondaryContainer 实底 + 弹成全胶囊，其余段 surfaceContainerHigh 小圆角；
+    // 墨水屏实色描边。
+    final Color selectedColor = glass
+        ? apple.label
+        : (eink ? cs.surface : cs.onSecondaryContainer);
+    final Color idleColor = glass ? apple.secondaryLabel : cs.onSurfaceVariant;
+    final Color foreground = selected ? selectedColor : idleColor;
+    final TextStyle? labelStyle = glass
+        ? FushiAppleMetrics.of(context).subtitleStyle(context).copyWith(
+              color: foreground,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+            )
+        : theme.textTheme.titleSmall?.copyWith(
+            color: foreground,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          );
+    final BorderRadius radius = glass || selected
+        ? BorderRadius.circular(999)
+        : BorderRadius.circular(10);
+    final Widget content = Padding(
+      padding: glass
+          ? const EdgeInsets.symmetric(horizontal: 12, vertical: 7)
+          : const EdgeInsets.fromLTRB(16, 10, 18, 10),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIcon(icon, size: glass ? 16 : 18, color: foreground),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            maxLines: 1,
+            softWrap: false,
+            // TODO-1351：标签完整渲染、不省略；放不下由外层 Wrap 换行兜底。
+            overflow: TextOverflow.visible,
+            style: labelStyle,
+          ),
+        ],
+      ),
+    );
+    // MD3：连接按钮组的一段，选中与否在圆角 / 底色间做状态过渡（墨水屏与减弱
+    // 动效下瞬间到位）。Apple 选中态是系统灰胶囊底。
+    final Widget body = glass
+        ? DecoratedBox(
+            decoration: BoxDecoration(
+              color: selected ? apple.secondaryFill : Colors.transparent,
+              borderRadius: radius,
+            ),
+            child: content,
+          )
+        : AnimatedContainer(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            decoration: BoxDecoration(
+              color: eink
+                  ? (selected ? cs.onSurface : cs.surface)
+                  : selected
+                  ? cs.secondaryContainer
+                  : cs.surfaceContainerHigh,
+              borderRadius: radius,
+              border: eink ? Border.all(color: cs.onSurface) : null,
+            ),
+            child: content,
+          );
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: radius,
+          splashFactory: glass ? NoSplash.splashFactory : null,
+          hoverColor: glass ? apple.tertiaryFill : null,
+          highlightColor: glass ? apple.tertiaryFill : null,
+          child: body,
+        ),
+      ),
+    );
   }
 }

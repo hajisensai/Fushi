@@ -97,8 +97,7 @@ void main() {
     provider.close();
   });
 
-  test('MAL 标题按资料语言选：en 取英文名，其它语言 MAL 无译名落原文，三种都在别名池',
-      () async {
+  test('MAL 标题按资料语言选：en 取英文名，其它语言 MAL 无译名落原文，三种都在别名池', () async {
     Future<VideoMetadataWork> fetch(String language) async {
       final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
           language: language,
@@ -134,8 +133,7 @@ void main() {
         chinese.aliases,
         containsAll(
             <String>['Sousou no Frieren', "Frieren: Beyond Journey's End"]));
-    expect(chinese.aliases, isNot(contains('葬送のフリーレン')),
-        reason: '选中的标题不重复进别名');
+    expect(chinese.aliases, isNot(contains('葬送のフリーレン')), reason: '选中的标题不重复进别名');
 
     final VideoMetadataWork japanese = await fetch('ja');
     expect(japanese.title, '葬送のフリーレン');
@@ -226,6 +224,57 @@ void main() {
     expect(starts[1].difference(starts[0]), const Duration(milliseconds: 1100));
     values.first['data'] = 'mutated';
     expect((await gate.get('a', load))['data'], isEmpty);
+  });
+
+  test(
+      'BUG-2962 unreachable upstream: after one request exhausts its retries, '
+      'later requests fail fast until the cooldown ends', () async {
+    DateTime now = DateTime.utc(2026);
+    final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
+        interval: Duration.zero,
+        now: () => now,
+        sleep: (Duration duration) async {
+          now = now.add(duration);
+        });
+    int calls = 0;
+    bool down = true;
+    Future<VideoMetadataHttpResponse> load() async {
+      calls++;
+      if (down) throw const VideoMetadataNetworkException('MAL timed out');
+      return const VideoMetadataHttpResponse(
+          statusCode: 200, body: '{"data":[]}', headers: <String, String>{});
+    }
+
+    await expectLater(
+        gate.get('a', load), throwsA(isA<VideoMetadataNetworkException>()));
+    expect(calls, 3, reason: '首发 + 2 次有界重试');
+
+    // 冷却内：不碰网络、立刻失败（不再每条都吃满 3 次超时）。
+    await expectLater(
+        gate.get('b', load), throwsA(isA<VideoMetadataNetworkException>()));
+    expect(calls, 3);
+
+    // 冷却期满：重新尝试，上游恢复就照常返回。
+    now = now.add(gate.unreachableCooldown);
+    down = false;
+    expect((await gate.get('c', load))['data'], isEmpty);
+    expect(calls, 4);
+  });
+
+  test('BUG-2962 5xx answers do not mark the upstream unreachable', () async {
+    final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
+        interval: Duration.zero, sleep: (Duration _) async {});
+    int calls = 0;
+    Future<VideoMetadataHttpResponse> load() async {
+      calls++;
+      throw const VideoMetadataNetworkException('bad gateway', statusCode: 504);
+    }
+
+    await expectLater(
+        gate.get('a', load), throwsA(isA<VideoMetadataNetworkException>()));
+    await expectLater(
+        gate.get('b', load), throwsA(isA<VideoMetadataNetworkException>()));
+    expect(calls, 6, reason: '每条都照常首发 + 2 次重试');
   });
 
   test(

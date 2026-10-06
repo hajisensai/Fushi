@@ -263,6 +263,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     if (old != null) {
       // 旧引用是 session 控制器：先 detach（不 dispose）。reader 字段清掉等下面重接。
       session.detachReader(this);
+      // 歌词层在场时本页给旧控制器挂的强制跟随随解绑一起撤（会话可能比本页活得
+      // 久）；新控制器接上后由 [_reapplyLyricsFollowOverride] 补挂。
+      if (_lyricsMode) old.setReaderFollowOverride(false);
       _audiobookController = null;
       _syncChromePlaybackListener();
       _audiobookBookKey = null;
@@ -303,6 +306,13 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     }
   }
 
+  /// 歌词层在场时换接了控制器（重导入强制重载等）：把覆盖层期间的正文强制跟随
+  /// 挂到新控制器上，与 [_toggleLyricsMode] 进入分支同一不变式——歌词层在场 ⇔
+  /// 当前控制器带强制跟随。
+  void _reapplyLyricsFollowOverride() {
+    if (_lyricsMode) _audiobookController?.setReaderFollowOverride(true);
+  }
+
   /// 复用 session 已持有的控制器：装 reader WebView 侧回调 + 监听 cue（经 session 转发）。
   Future<void> _attachExistingSession(AudiobookSession session) async {
     final AudiobookPlayerController? controller = session.controller;
@@ -322,6 +332,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
+    _reapplyLyricsFollowOverride();
     // 同步一次当前 cue 到 WebView（暂停态也即时高亮）。
     _onCueChanged();
   }
@@ -421,6 +432,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       _audiobookController = controller;
       _syncChromePlaybackListener();
     });
+    _reapplyLyricsFollowOverride();
   }
 
   /// 独立 SRT 书的正文语言：`SrtBooks.language`（用户在卡菜单里指定）> 全局默认。
@@ -695,50 +707,16 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
     // cue 会再来叫醒这里。
     _noteAudiobookPlayingForStudyClock(controller.isPlaying);
 
+    // 歌词覆盖层（2026-10-04）：歌词层只跟着换高亮 / 滚动，**不 return**——正文在
+    // 下面照常走完下面的跟随路径（翻页 / 高亮 / 跨章 / 进度采样），阅读统计由正文
+    // 承担，歌词层不写任何统计（旧的 `_arriveLyricsCueUnit` 歌词单元入账已删）。
+    // BUG-757 的 force-reveal 一次性旗只消费一次，歌词层与正文共用这一次的值。
+    bool lyricsForceReveal = false;
     if (_lyricsMode) {
-      // BUG-757: 消费 force-reveal 一次性旗（snapReaderToAudio 在 followAudio OFF→ON
-      // 时置位并 notify）。必须**无条件**消费（哪怕本帧未就绪 / idx 越界也读一次），
-      // 否则这枚挂在共享 controller 上的进程级一次性旗会泄漏到之后退回正文的
-      // _onCueChanged，被那边 consumeForceReveal 读成过期 true → 凭空多滚一次。
-      final bool forceReveal = controller.consumeForceReveal();
-      if (_lyricsPageReady) {
-        final int sourceIdx = _lyricsCueWindowUsesAllBookCues
-            ? controller.allBookCueIdx
-            : controller.currentCueIdx;
-        // BUG-767: sourceIdx < 0 = 当前 cue 暂不可解析（cue 间隙 / setChapterCues 把
-        // _currentCue 瞬时清空后 notify / 尚未匹配）。此时**保位不跳、绝不重载**。
-        // 旧码在 `idx < 0` 分支无条件重开歌词页：重载又以 allBookCueIdx(-1) 回退到过期
-        // `_lyricsEntryCueIndex`（≈0）生成 currentIndex → 高亮跳回第一句；且重载 onLoadStop
-        // 落定那帧 sourceIdx 仍 -1 → 再次重载 → 无限重载 = 进歌词模式一直闪烁且恒高亮
-        // 第一句（不是正在听的那句）。守卫在 sourceIdx>=0 才动作，从根上消除这个特殊分支
-        // 制造的死循环。
-        if (sourceIdx >= 0) {
-          final int idx = sourceIdx - _lyricsCueIndexOffset;
-          if (idx >= 0 && idx < _lyricsCueList.length) {
-            // followAudio OFF → scroll=false：只换当前行高亮、不自动滚（用户可自由滚动
-            // 歌词）。forceReveal（切「跟随音频」ON 触发的 snap 回中）也放行滚动。
-            final bool scroll = controller.followAudio.value || forceReveal;
-            _controller!.evaluateJavascript(
-              source:
-                  'if(window.__lyricsSetCue)'
-                  'window.__lyricsSetCue($idx, $scroll);'
-                  // BUG-757: snap 那一刻 cue 往往没变，__lyricsSetCue 的
-                  // `index===_currentIdx` 早退会吞掉这次回中 → 打开跟随画面不动。
-                  // forceReveal 下再显式 __lyricsScrollToCue 强制把当前句居中，绕过早退。
-                  '${forceReveal ? 'if(window.__lyricsScrollToCue)'
-                            'window.__lyricsScrollToCue($idx);' : ''}',
-            );
-          } else if (_lyricsCueWindowUsesAllBookCues) {
-            // cue 真的移出已载窗口（sourceIdx>=0 但落在窗外）→ 重开窗口居中当前 cue。
-            // 这是唯一合法的重载：currentIndex 用真实 sourceIdx，不会回退到第一句。
-            unawaited(_loadLyricsPage());
-          }
-        }
-      }
-      _syncPositionFromCurrentCue();
-      _arriveLyricsCueUnit(controller);
-      return;
+      lyricsForceReveal = controller.consumeForceReveal();
+      _syncLyricsOverlayCue(controller, forceReveal: lyricsForceReveal);
     }
+
 
     final AudioCue? cue = controller.currentCue;
     if (cue != null) {
@@ -797,12 +775,14 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         // highlight 收尾（保位只高亮、不归零）。
       }
     }
-    final bool forceReveal = controller.consumeForceReveal();
+    final bool forceReveal =
+        lyricsForceReveal || controller.consumeForceReveal();
     final bool reveal = forceReveal || controller.shouldRevealCurrentCue;
     // TODO-724：仅当图片暂停开启（imagePauseSec>0）时，cue 推进跨过插图才把视口
     // 滚到插图（配合 Dart 的 triggerImagePause 暂停让用户看见）。imagePauseSec=0
     // 时图片暂停关闭，绝不滚图，否则视口会无预兆跳到不知哪张图（用户报告症状）。
-    final bool pauseEnabled = controller.imagePauseSec.value > 0;
+    final bool pauseEnabled =
+        !_lyricsMode && controller.imagePauseSec.value > 0;
     // TODO-825：cue 权威驱动视口跟随时（reveal=true）AudiobookBridge.highlight 会经 JS
     // scrollToTarget 用 behavior:'smooth' 平滑滚动到当前句。这条程序化跟随滚动必须武装 B-3
     // settle 保护窗（与 恢复/缩放/换样式 三条 reanchor commit 同机制，见 eaa151581）：smooth
@@ -836,10 +816,7 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
   }
 
   Future<void> _handleCueCrossChapter(int newSection) async {
-    if (_lyricsMode) {
-      _audiobookController?.cancelChapterTransition();
-      return;
-    }
+    // 覆盖层架构：歌词模式下正文照常跨章跟随（统计靠正文翻页入账），不再取消。
     if (_restoreInFlight ||
         _book == null ||
         newSection < 0 ||
@@ -1007,75 +984,6 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
       return;
     }
     await controller.skipToCue(targetCues.first);
-  }
-
-  /// BUG-2597：歌词模式的字数入账。正文模式「读过」的单元来自滚动回传
-  /// （[_refreshProgress] → `_readLedger.arrive(页首字, 页尾字+1)`），歌词模式没有
-  /// 滚动回传、那条路三处早返回，账本在整段听书里一步不推进——退出歌词时
-  /// `_beginNavigation` 的 `leave()` 结算的还是进歌词前站着的那页，听一小时字数 0、
-  /// 「字/时」一路下跌。歌词模式的阅读单元就是**当前句**：cue 推进 = 翻走上一句
-  /// （翻走即计、会话并集去重，与正文口径同一本账）。区间取该 cue 经
-  /// [_studyRangeForAudioFragment] 映射的学习单位范围（音频 UTF-16 坐标不能直接当
-  /// 学习单位用，BUG-2333），映射不出（无 fragment 的 SRT 书 / 章计数未就绪）不 arrive
-  /// ——宁可不计。只在播放态 arrive：暂停后重开 / 手动跳句时的被动高亮不是「读到」；
-  /// 显式跳句已经 `leave()`（BUG-1107），跳过的句子从未成为当前单元。
-  void _arriveLyricsCueUnit(AudiobookPlayerController controller) {
-    if (!controller.isPlaying) return;
-    final AudioCue? cue = controller.currentCue;
-    if (cue == null) return;
-    final ({int chapter, int offset, int length})? unit =
-        _studyUnitForLyricsCue(cue);
-    if (unit == null || unit.length <= 0) return;
-    final int start = absoluteCharOffsetOf(
-      chapterCumulativeChars: _chapterCumulativeChars,
-      chapterCharCounts: _chapterCharCounts,
-      chapter: unit.chapter,
-      charOffset: unit.offset,
-    );
-    final int end = absoluteCharOffsetOf(
-      chapterCumulativeChars: _chapterCumulativeChars,
-      chapterCharCounts: _chapterCharCounts,
-      chapter: unit.chapter,
-      charOffset: unit.offset + unit.length,
-    );
-    if (start < 0 || end <= start) return;
-    _traceArrive(start, end);
-    _readLedger.arrive(start, end);
-  }
-
-  /// 一句 cue 在正文里的学习单位区间（章号 + 章内偏移 + 长度）。
-  /// - `fushi-cue://`：持久化的 matchable 坐标经 [_studyRangeForAudioFragment] 映射；
-  /// - 独立 SRT 书 / SMIL：章号取 [_srtCueChapterMap] 分桶（与恢复路径同口径）或
-  ///   cue 自带 `chapterHref`，区间按句文本在该章**唯一**命中取
-  ///   （[ReaderAudioPositionIndex.studyRangeForUniqueText]，多处命中不猜）。
-  /// 两条都解不出 → null（不计）。
-  ({int chapter, int offset, int length})? _studyUnitForLyricsCue(
-    AudioCue cue,
-  ) {
-    final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
-      cue.textFragmentId,
-    );
-    if (frag != null) {
-      final ({int offset, int length})? range = _studyRangeForAudioFragment(
-        frag,
-      );
-      if (range == null) return null;
-      return (
-        chapter: frag.sectionIndex,
-        offset: range.offset,
-        length: range.length,
-      );
-    }
-    final EpubBook? book = _book;
-    if (book == null) return null;
-    int chapter = _srtCueChapterMap?[cue.sentenceIndex] ?? -1;
-    if (chapter < 0) chapter = _chapterIndexForCue(cue);
-    if (chapter < 0 || chapter >= book.chapters.length) return null;
-    final ({int offset, int length})? range = _audioPositionIndexFor(
-      chapter,
-    ).studyRangeForUniqueText(cue.text);
-    if (range == null) return null;
-    return (chapter: chapter, offset: range.offset, length: range.length);
   }
 
   /// BUG-1107（断点 B·幻象字数）：显式跳句（[AudiobookPlayerController.skipToCue]
@@ -1866,6 +1774,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
               imagePath: imageFile.path,
               audioPath: audioClip.path,
               outputPath: videoFile.path,
+              // BUG-2940：时长取裁音频用的同一对毫秒值，不靠 `-shortest`。
+              durationMs: clipEndMs - clipStartMs,
               width: layout.width,
               height: layout.height,
               // TODO-2357：全平台 libx264，色度统一 yuv420p（编码器参数内定）。
@@ -2104,6 +2014,8 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
           framesDir: framesDir.path,
           audioPath: audioClip.path,
           outputPath: videoFile.path,
+          // BUG-2940：帧计划与音频裁剪是同一对毫秒值（见 _runAudiobookClipPipeline）。
+          durationMs: plan.globalEndMs - plan.globalStartMs,
           width: layout.width,
           height: layout.height,
           fps: fps,
@@ -2210,7 +2122,9 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
         msg: t.srt_book_reimport_body_rebuilt,
         severity: ToastSeverity.info,
       );
-      Navigator.of(context).maybePop();
+      // 经 [_exitReaderBook]：歌词模式下 PopScope 不得把它截成「关歌词层」，
+      // 否则会留在解析树已作废的阅读器里。
+      unawaited(_exitReaderBook());
       return;
     }
 

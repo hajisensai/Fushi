@@ -29,13 +29,47 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2693 条。点号进各自文件。
+> 共 2727 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2932](bugs/BUG-2932-asr-truncated-audio-finished.md) | ✅ | ✅ | ASR 转录把解不完的音频当文件末尾，残卷标成完成 |
+| [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
+| [BUG-2965](bugs/BUG-2965-movie-pack-numbered-files-become-extras.md) | ✅ | ✅ | 剧场版合集包Movie 01…25被误判带集号，只入库一部其余进Extras |
+| [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |
+| [BUG-2963](bugs/BUG-2963-ai-acquire-anime-movie-category-movie.md) | ✅ | ✅ | 全部哆啦A梦剧场版被解析成category=movie，作品搜索只剩TMDB直接失败 |
+| [BUG-2962](bugs/BUG-2962-mal-unreachable-every-request-full-retries.md) | ✅ | ✅ | Jikan停摆时每条MAL请求都吃满3次超时，整套下载核对卡一两个小时 |
+| [BUG-2960](bugs/BUG-2960-franchise-web-fallback-anchor-title.md) | ✅ | ✅ | 整套下载资料源不可用时联网补全拿单部剧场版标题搜维基列不出系列 |
+| [BUG-2959](bugs/BUG-2959-server-port-conflict-masked.md) | ✅ | ✅ | 服务端端口被占时只报drift Bad state No element |
+| [BUG-2958](bugs/BUG-2958-ai-acquire-alt-version-details.md) | ✅ | ✅ | AI下视频备选版本chip缺做种来源集数编码 |
+| [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
+| [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
+| [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
+| [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
+| [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
+| [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |
+| [BUG-2950](bugs/BUG-2950-torrent-fakeip-udp.md) | ✅ | ✅ | 内置 torrent 在 Clash TUN fake-ip 下 DHT 零节点、UDP tracker 不通，任务永远 0 peer 且无任何提示 |
+| [BUG-2949](bugs/BUG-2949-download-delete-slow.md) | ✅ | ✅ | 下载任务删除文件极慢 |
+| [BUG-2948](bugs/BUG-2948-macos-shortcut-key-identity.md) | ✅ | ✅ | macOS 上 Shift+符号键与系统保留默认键导致快捷键无法识别 |
+| [BUG-2947](bugs/BUG-2947-mobile-ffmpeg-kit-av1-hwaccel-only.md) | ✅ | ✅ | 移动端 AV1 视频制卡截帧/动图失败：ffmpeg-kit 缺 libdav1d |
+| [BUG-2946](bugs/BUG-2946-youtube-watchpage-spof.md) | ✅ | ✅ | YouTube 制卡/播放：watch 页被降级时 5 个 client 全部报「视频不可用」 |
+| [BUG-2945](bugs/BUG-2945-host-delete-book-no-tombstone.md) | ✅ | ✅ | 互联「从所有设备删除」对书/有声书不生效：host 删除不写墓碑 |
+| [BUG-2944](bugs/BUG-2944-interconnect-download-progress-jank.md) | ✅ | ✅ | 下载互联书时 iOS 掉帧：进度回报每次整页重建书架/媒体库 |
+| [BUG-2943](bugs/BUG-2943-reader-lock-inset-page-hint.md) | ✅ | ✅ | 阅读器 inset 往返重锚丢失原字符锚 |
+| [BUG-2942](bugs/BUG-2942-collection-delete-orphans-subscriptions.md) | ✅ | ✅ | 删除合集后下载订阅仍启用并继续下载；任务页无法整组删除 |
+| [BUG-2941](bugs/BUG-2941-download-collection-sync-order.md) | ✅ | ✅ | 下载合集选集乱序：同步平手取远端冲掉按集号排序 |
+| [BUG-2940](bugs/BUG-2940-synced-clip-silent-audio.md) | ✅ | ✅ | 同步片段导出放过 0 音频包的 webm（#1951） |
+| [BUG-2939](bugs/BUG-2939-mobile-libmpv-no-muxer.md) | ✅ | ✅ | Android/iOS/macOS 随包 libmpv 无 muxer，dump-cache 恒失败（#1953） |
+| [BUG-2937](bugs/BUG-2937-franchise-walk-batched.md) | ✅ | ✅ | AI下视频整套：系列查不完时按预算截断交半张清单·应分批续查到走完 |
+| [BUG-2936](bugs/BUG-2936-franchise-movies-silent-truncation.md) | ✅ | ✅ | AI下视频「全部哆啦A梦大电影」MAL系列遍历静默截断丢新剧场版·失败时静默降级成下单部TV·短片混进剧场版 |
+| [BUG-2935](bugs/BUG-2935-mal-franchise-silent-truncation.md) | ✅ | ✅ | 「整套下载」MAL 关联链走到上限静默截断，哆啦A梦等长寿系列可能漏收作品 |
+| [BUG-2934](bugs/BUG-2934-coreaudio-release-date-hidden.md) | ✅ | ✅ | CoreAudio 发现页把纸书初版日期当有声书日期展示 |
+| [BUG-2933](bugs/BUG-2933-ai-acquire-which-is-best.md) | ✅ | ✅ | AI下视频问「哪个最好」被判没听懂（意图缺候选上下文） |
+| [BUG-2932](bugs/BUG-2932-cmvs-voice-sfx-paired-as-voice.md) | ✅ | ✅ | CMVS 语音只走通用 PCM：点击音效被配成台词语音、真实语音丢失 |
 | [BUG-2931](bugs/BUG-2931-catsystem2-2016-voice-sites.md) | ✅ | ✅ | CatSystem2 2016 版语音站点因编译形态不同而全部未解析 |
 | [BUG-2930](bugs/BUG-2930-catsystem2-bootmenu-launcher-handoff.md) | ✅ | ✅ | CatSystem2 体验版启动器（WCBOOTMENU）被当成游戏，data\cs2.exe 不被跟随 |
+| [BUG-2929](bugs/BUG-2929-linebreak-strict-pushes-char.md) | ✅ | ✅ | 正文 line-break strict 让「たった」「コート」把前一个字推到下一列 |
+| [BUG-2928](bugs/BUG-2928-vn-ruby-small-kana-skip.md) | ✅ | ✅ | 有声书 VN 模式跳过三段正文：ruby 並字读音让 cue 匹配越过中间句子 |
+| [BUG-2927](bugs/BUG-2927-kogado-hy-row-split.md) | ✅ | ✅ | Symphonic Rain（工画堂 Hy 引擎）一句台词按画面行被拆成多条 |
 | [BUG-2926](bugs/BUG-2926-leaderboard-sync-timeout-local-network.md) | ✅ | ✅ | 排行榜后台同步 GET /v1/me 30 秒超时（本机网络间歇丢新 TCP 连接） |
 | [BUG-2925](bugs/BUG-2925-android-video-exit-system-bars.md) | ✅ | ✅ | Android 视频退出后沉浸模式残留，启动状态栏被隐藏 |
 | [BUG-2924](bugs/BUG-2924-sync-compare-dict-local-presence.md) | ✅ | ✅ | 同步对比词典行不显示本地是否存在 |
@@ -93,7 +127,7 @@
 | [BUG-2859](bugs/BUG-2859-lookup-bridge-reply-dropped.md) | ✅ | ✅ | 查词卡路由作废后丢弃晚到的 bridge 应答，该词条整个会话无法制卡 |
 | [BUG-2858](bugs/BUG-2858-gal-thread-history-order.md) | ✅ | ✅ | 选定线程后的历史回捞与轮询抢先后，当前台词变成旧句 |
 | [BUG-2857](bugs/BUG-2857-artemis-hover-tooltip-joins-line.md) | ✅ | ✅ | Artemis hover tooltip text is appended to the current line |
-| [BUG-2856](bugs/BUG-2856-artemis-touch-tap-ignored.md) | 🚧 | 🚧 | Artemis 触屏点按：引擎不认触摸提升的单击，游戏内点字查词与推进都不响应 |
+| [BUG-2856](bugs/BUG-2856-artemis-touch-tap-ignored.md) | ✅ | ✅ | Artemis 触屏点按：引擎不认触摸提升的单击，游戏内点字查词与推进都不响应 |
 | [BUG-2855](bugs/BUG-2855-update-prerelease-r2-candidate-always-404.md) | ✅ | ✅ | 预发布自动更新每次先撞 fushi.moe 404 再换 GitHub |
 | [BUG-2854](bugs/BUG-2854-ai-acquire-latin-aliases.md) | ✅ | ✅ | AI 下视频只用搜索列表项身份搜资源，漏掉详情里的罗马字/英文名致 Nyaa 0 条 |
 | [BUG-2853](bugs/BUG-2853-en-yomitan-redirect-phrase.md) | ✅ | ✅ | 英语短语（instead of / in fact / brush off）命中词典重定向记录后不跟随，弹窗只剩单词 |

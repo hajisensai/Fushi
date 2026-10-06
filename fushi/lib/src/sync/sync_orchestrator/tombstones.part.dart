@@ -65,7 +65,8 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
   ///
   /// 1. 推送（client→host，[_pushDeletionTombstonesLive]）：把本机「从所有设备删除」
   ///    产生的墓碑真的删到对端 host 上。host 自己的 delete 会写它自己的墓碑，于是
-  ///    第三台设备下轮照常收到确认提示——链路闭合。
+  ///    第三台设备下轮照常收到确认提示——链路闭合（书 / 有声书 / 字幕书的 host
+  ///    删除此前漏写墓碑，链路在 host 断掉，BUG-2945）。
   /// 2. 消费（host→client）：GET host 墓碑（老 host 404 → null 优雅跳过）→ 与本地在库键
   ///    求交 deleteLocal 候选 → 过基线守卫 → 塞 report，UI 弹逐条确认。
   ///

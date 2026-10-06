@@ -268,7 +268,11 @@ void main() {
     // 手柄实时录键上线后，下拉菜单降级为「从列表选择」兜底入口。
     await tester.tap(find.text(t.shortcut_gamepad_pick_list));
     await tester.pumpAndSettle();
-    await tester.tap(find.text(GamepadButton.dpadRight.label).last);
+    // 自绘菜单锚在触发器下方、超出可用高度时在面板内滚动：先把目标项滚进可见区。
+    final Finder dpadItem = find.text(GamepadButton.dpadRight.label).last;
+    await tester.ensureVisible(dpadItem);
+    await tester.pumpAndSettle();
+    await tester.tap(dpadItem);
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK').last);
     await tester.pumpAndSettle();

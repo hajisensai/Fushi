@@ -45,7 +45,16 @@ class EpubParser {
   /// 书是什么语言」的轻量场景（转录弹层的语言初值）。不是 EPUB / 缺 container.xml
   /// / 缺 OPF / 没写语言一律返回 null；zip 或 XML 本身坏了照常抛，由调用方决定
   /// 记日志还是忽略（不在这里吞）。
-  static String? readLanguageSync(String filePath) {
+  static String? readLanguageSync(String filePath) =>
+      _readOpfMetadataSync(filePath, 'language');
+
+  /// 只读 OPF 元数据里的 `dc:title`（同 [readLanguageSync] 的轻量读法与失败语义）。
+  /// 给「导入前就要知道这本书会不会撞上库里的同名书」用——有声书自动转录在
+  /// 排几个小时的转录之前先查重。
+  static String? readTitleSync(String filePath) =>
+      _readOpfMetadataSync(filePath, 'title');
+
+  static String? _readOpfMetadataSync(String filePath, String name) {
     final Uint8List bytes = File(filePath).readAsBytesSync();
     final Archive archive = ZipDecoder().decodeBytes(bytes, verify: true);
     final ArchiveFile? container = _findArchiveFile(
@@ -61,7 +70,7 @@ class EpubParser {
     if (opf == null) return null;
     final XmlDocument opfXml =
         XmlDocument.parse(decodeEpubText(opf.content as List<int>));
-    return _parseMetadata(opfXml, 'language');
+    return _parseMetadata(opfXml, name);
   }
 
   /// 按 zip 内路径找条目：先精确匹配，再大小写不敏感（与 [_findContainerXml] 对

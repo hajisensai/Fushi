@@ -17,7 +17,7 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
 import 'package:fushi/utils.dart'
-    show FushiDestructiveConfirmDialog, FushiSelectableChip;
+    show FushiDestructiveConfirmDialog, FushiLoadingView, FushiSelectableChip;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -25,6 +25,7 @@ import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import '../helpers/glass_unwrap.dart';
 
 const String _selfId = 'SelfAccount001';
 const String _otherId = 'OtherAccount01';
@@ -451,12 +452,12 @@ void main() {
     await settle(tester);
     expect(byKey('leaderboard-signin-error'), findsNothing);
     expect(
-      tester.widget<FilledButton>(byKey('leaderboard-signin-send')).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
       isNull,
       reason: '冷却中不能重发',
     );
     FilledButton submit() =>
-        tester.widget<FilledButton>(byKey('leaderboard-signin-submit'));
+        tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')));
     expect(submit().onPressed, isNull);
 
     await tester.enterText(field('leaderboard-signin-code'), '123456');
@@ -487,7 +488,7 @@ void main() {
     // 走完冷却，让周期 Timer 自己停掉。
     await tester.pump(const Duration(seconds: 61));
     expect(
-      tester.widget<FilledButton>(byKey('leaderboard-signin-send')).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
       isNotNull,
     );
   });
@@ -582,9 +583,7 @@ void main() {
     );
     expect(
       tester
-          .widget<TextButton>(
-            find.byKey(const ValueKey<String>('leaderboard-sync-now')),
-          )
+          .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(const ValueKey<String>('leaderboard-sync-now'))),)
           .onPressed,
       isNull,
       reason: '被挡住时「立即同步」必然 409，直接禁用',
@@ -1027,7 +1026,7 @@ void main() {
     await tester.tap(chip(t.leaderboard_window_week));
     await settle(tester);
     expect(weekGates, hasLength(1));
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLoadingView), findsOneWidget);
     expect(shareActionEnabled(tester, 'leaderboard-share-image'), isFalse);
 
     // 周失败：只在周这一格显示错误，分享不可点；总那一格照旧是卡片。
@@ -1105,7 +1104,7 @@ void main() {
     final Finder share = find.byKey(
       const ValueKey<String>('leaderboard-header-share'),
     );
-    expect(tester.widget<OutlinedButton>(share).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(share)).onPressed, isNotNull);
     await tester.tap(share);
     await settle(tester);
 
@@ -1152,9 +1151,7 @@ void main() {
     await settle(tester);
     await tester.enterText(editable('leaderboard-signin-code'), '123456');
     await tester.pump();
-    final FilledButton submit = tester.widget<FilledButton>(
-      byKey('leaderboard-signin-submit'),
-    );
+    final FilledButton submit = tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-submit')),);
     expect(submit.onPressed, isNotNull, reason: '登录不强制勾同意');
     await tester.tap(byKey('leaderboard-signin-submit'));
     // 账户先落盘再激活（`_adopt`）：状态翻成 active 时文件已写完。
@@ -1227,7 +1224,7 @@ void main() {
     expect(byKey('leaderboard-signin-nickname'), findsOneWidget);
     expect(email(), 'a@b.cd');
     expect(
-      tester.widget<FilledButton>(byKey('leaderboard-signin-send')).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(byKey('leaderboard-signin-send'))).onPressed,
       isNotNull,
       reason: '登录码不能拿来注册：切换后可以立刻发注册码',
     );

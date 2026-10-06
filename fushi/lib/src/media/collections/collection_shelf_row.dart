@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -239,7 +240,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
               // 折叠是鼠标/触屏轻交互，不进焦点遍历序。
               else if (widget.onToggleCollapsed != null)
                 ExcludeFocus(
-                  child: IconButton(
+                  child: FushiIconButtonControl(
                     onPressed: widget.onToggleCollapsed,
                     tooltip: widget.collapsed
                         ? t.collection_expand
@@ -250,7 +251,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                     icon: AnimatedRotation(
                       turns: widget.collapsed ? -0.25 : 0,
                       duration: const Duration(milliseconds: 150),
-                      child: Icon(
+                      child: FushiIcon(
                         Icons.expand_more,
                         size: 20,
                         color: tokens.surfaces.onVariant,
@@ -282,7 +283,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
               // 多选态隐藏「查看全部」尾随件（行头点击整选而非导航）。
               if (!selectionMode) ...<Widget>[
                 Text(t.collection_view_all, style: tokens.type.metadata),
-                Icon(
+                FushiIcon(
                   Icons.chevron_right,
                   size: 18,
                   color: tokens.surfaces.onVariant,
@@ -366,7 +367,13 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                 child: IgnorePointer(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: eink ? null : hoverColor.withValues(alpha: 0.18),
+                      // 与 CollectionDropTarget 同一口径：MD3 primary 12%、
+                      // Apple 中性 systemFill 灰罩 + 强调色描边。
+                      color: eink
+                          ? null
+                          : isGlassDesign(context)
+                              ? appleColorsOf(context).fill
+                              : hoverColor.withValues(alpha: 0.12),
                       borderRadius: tokens.radii.controlRadius,
                       border: Border.all(
                         color: hoverColor,
@@ -379,7 +386,7 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
                         padding: EdgeInsets.symmetric(
                           horizontal: tokens.spacing.gap,
                         ),
-                        child: Icon(
+                        child: FushiIcon(
                           Icons.new_label_outlined,
                           color: hoverColor,
                           size: 20,

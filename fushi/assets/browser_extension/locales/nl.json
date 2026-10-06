@@ -6,6 +6,9 @@
   "opt_extensionTheme_option_auto": "Systeem volgen",
   "opt_extensionTheme_option_light": "Licht",
   "opt_extensionTheme_option_dark": "Donker",
+  "opt_page_subtitle": "Instellingen worden alleen in deze browser bewaard; de meeste wijzigingen gelden direct.",
+  "opt_section_nav_aria_label": "Instellingsonderdelen",
+  "opt_connection_section_heading": "Verbinding en diagnose",
   "opt_palette_title": "Kleurthema",
   "opt_palette_desc": "Hetzelfde themamodel als Fushi zelf: volg de huidige kleuren van Fushi, een ingebouwde voorinstelling of een eigen thema (één accentkleur leidt het lichte en donkere palet af). Geldt voor de instellingenpagina, het ondertitelzijpaneel, het werkbalkmenu, de ondertitellade, het ondertitelvak op de video en de opzoekpop-up.",
   "opt_extensionBrightness_title": "Licht / donker",
@@ -297,7 +300,6 @@
   "ctx_confirm": "Kaart maken",
   "ctx_cancel": "Annuleren",
   "gen_youtube_queue_empty": "De YouTube-wachtrij is leeg: schakel ondertitels in → zweef met Shift over een woord → druk in het venster op “kaart maken” om het in de wachtrij te zetten en genereer daarna",
-  "gen_ext_updated_refresh": "De extensie is bijgewerkt; vernieuw de pagina (F5) en probeer het opnieuw",
   "gen_progress": "Genereren… {done}/{total}",
   "gen_partial_anki_unconfigured": "Gedeeltelijk gegenereerd: Anki is niet geconfigureerd — stel Anki in Fushi in en probeer het opnieuw (verwerkt {done}, bewaard {kept})",
   "gen_partial_anki_unconfigured_kept": "Gedeeltelijk gegenereerd: Anki is niet geconfigureerd — stel Anki in Fushi in en probeer het opnieuw (bewaard {kept})",
@@ -368,7 +370,7 @@
   "ap_gen_unsupported_hint": "De kaarten in de wachtrij komen van sites zonder batchgeneratie; verwijder ze een voor een of wis de wachtrij",
   "ap_gen_start_record_n": "Opnemen en genereren starten ({n} kaarten)",
   "ap_gen_start_n": "Genereren starten ({n} kaarten)",
-  "ap_gen_other_youtube_hint": "Nog {n} op YouTube — ga naar een YouTube-pagina om ze te genereren",
+  "ap_gen_other_youtube_hint": "Nog {n} van YouTube — open dit menu op een andere pagina dan Netflix om ze te maken",
   "ap_gen_other_netflix_hint": "Nog {n} op Netflix — ga naar een Netflix-afspeelpagina om ze te genereren",
   "ap_gen_site_count": "{site} {n} kaarten",
   "ap_gen_wrong_site_hint": "In afwachting: {pending} — klik op een wachtrij-item om naar de videopagina te springen en genereer daarna",
@@ -385,7 +387,6 @@
   "ap_queue_clear_confirm": "Alles wissen?",
   "ap_queue_open_video_hint": "Klik om de videopagina te openen",
   "ap_queue_remove_title": "Uit de wachtrij verwijderen",
-  "np_fushi_nested_close_aria_label": "Deze opzoeklaag sluiten",
   "theme_palette_app": "Fushi volgen",
   "theme_palette_app_pending": "De kleuren van Fushi komen bij de eerste opzoeking terwijl Fushi draait",
   "theme_preset_fushi": "Fushi-groen",
@@ -426,5 +427,5 @@
   "pc_style_more": "Alle instellingen",
   "pc_hint_site_track": "Deze video speelt het ondertitelspoor van de site zelf af, dus de Fushi-laag blijft verborgen. Tik om in plaats daarvan Fushi-ondertitels te tonen.",
   "opt_playerControls_title": "Ondertitelknop in de speler",
-  "opt_playerControls_desc": "Zet een Fushi-knop in de bedieningsbalk van de speler (YouTube en Netflix; op andere sites verschijnt een ronde knop rechtsonder in de video zolang de aanwijzer erboven staat). Het menu schakelt dezelfde instellingen als deze pagina — Fushi-ondertitels, de ondertitels van de site vervangen, verbergen, de tijdverschuiving en het uiterlijk — zonder de video te verlaten."
+  "opt_playerControls_desc": "Zet een Fushi-knop in de bedieningsbalk van de speler (YouTube en Netflix; op andere sites verschijnt een ronde knop rechtsboven in de video zolang de aanwijzer erboven staat). Het menu schakelt dezelfde instellingen als deze pagina — Fushi-ondertitels, de ondertitels van de site vervangen, verbergen, de tijdverschuiving en het uiterlijk — zonder de video te verlaten."
 }

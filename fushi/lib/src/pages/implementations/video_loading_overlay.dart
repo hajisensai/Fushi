@@ -1,7 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 
 /// TODO-1213：视频加载态覆盖层（有上下文的加载反馈，替代裸 `CircularProgressIndicator`）。
 ///
@@ -51,8 +55,8 @@ class VideoLoadingOverlay extends StatelessWidget {
         children: <Widget>[
           Align(
             alignment: AlignmentDirectional.topStart,
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back),
+            child: FushiIconButtonControl(
+              icon: const FushiIcon(Icons.arrow_back),
               tooltip: MaterialLocalizations.of(context).backButtonTooltip,
               color: cs.onSurface,
               onPressed: onBack,
@@ -77,7 +81,7 @@ class VideoLoadingOverlay extends StatelessWidget {
                   SizedBox(
                     width: 44,
                     height: 44,
-                    child: CircularProgressIndicator(value: p),
+                    child: FushiCircularProgressIndicator(value: p),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -129,7 +133,7 @@ class VideoReadSpeedLabel extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.arrow_downward, size: 14, color: color),
+            FushiIcon(Icons.arrow_downward, size: 14, color: color),
             const SizedBox(width: 4),
             Text(
               FushiByteFormat.speed(bytesPerSecond),
@@ -158,11 +162,26 @@ class VideoBufferingIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     const Color color = Color(0xFFFFFFFF);
     final ValueListenable<double?>? speed = readSpeed;
-    if (speed == null) return const CircularProgressIndicator(color: color);
+    // MD3（非墨水屏）：M3 Expressive 形变加载指示（深色容器 + 主色形状，压在画面
+    // 上始终可见）；Apple / 墨水屏保持原转圈。
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final ColorScheme chrome = ColorScheme.fromSeed(
+      seedColor: cs.primary,
+      brightness: Brightness.dark,
+    );
+    final Widget spinner = isGlassDesign(context) || isEinkTheme(context)
+        ? const FushiCircularProgressIndicator(color: color)
+        : FushiExpressiveLoadingIndicator(
+            size: 64,
+            contained: true,
+            color: chrome.onPrimaryContainer,
+            containerColor: chrome.primaryContainer.withValues(alpha: 0.85),
+          );
+    if (speed == null) return spinner;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        const CircularProgressIndicator(color: color),
+        spinner,
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: VideoReadSpeedLabel(readSpeed: speed, color: color),

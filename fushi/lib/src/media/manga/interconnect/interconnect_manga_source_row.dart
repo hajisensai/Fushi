@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_browse_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// 「Fushi 互联」在漫画「来源」一节里的一行（与 [MokuroMoeSourceRow] 同构、同级）。
@@ -60,14 +61,14 @@ class _InterconnectMangaSourceRowState
       padding: EdgeInsets.zero,
       child: FushiListItem(
         key: const ValueKey<String>('manga_source_interconnect'),
-        leading: const Icon(Icons.devices_outlined),
+        leading: const FushiIcon(Icons.devices_outlined),
         title: Text(t.audio_source_fushi_interconnect),
         subtitle: Text(
           enabled
               ? t.manga_source_interconnect_subtitle
               : t.manga_source_interconnect_disabled,
         ),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: const FushiIcon(Icons.chevron_right),
         onTap: enabled
             ? () => Navigator.of(context).push(
                   adaptivePageRoute<void>(

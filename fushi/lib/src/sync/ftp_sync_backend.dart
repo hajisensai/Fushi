@@ -380,7 +380,7 @@ class FtpSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
@@ -390,7 +390,8 @@ class FtpSyncBackend extends SyncBackend
             file,
             sRemoteName: fileName,
             onProgress: onProgress != null
-                ? (percent, received, total) => onProgress(percent / 100.0)
+                ? (percent, received, total) =>
+                    onProgress(percent / 100.0, received)
                 : null,
           );
         } catch (e) {
@@ -405,7 +406,7 @@ class FtpSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _opLock.withLock(() async {
         await _ensureConnected();
@@ -417,7 +418,8 @@ class FtpSyncBackend extends SyncBackend
             name,
             destination,
             onProgress: onProgress != null
-                ? (percent, received, total) => onProgress(percent / 100.0)
+                ? (percent, received, total) =>
+                    onProgress(percent / 100.0, received)
                 : null,
           );
         } catch (e) {

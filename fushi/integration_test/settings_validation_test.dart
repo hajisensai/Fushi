@@ -9,6 +9,7 @@ import 'package:fushi/src/models/app_model.dart';
 
 import 'helpers/focus_driver.dart';
 import 'test_helpers.dart';
+import '../test/helpers/glass_unwrap.dart';
 
 /// M2: Settings Validation tests.
 ///
@@ -140,7 +141,7 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
       // ensureVisible can fail if not under a Scrollable; focus-drive anyway.
     }
 
-    final Switch before = tester.widget<Switch>(sw);
+    final Switch before = tester.widget<Switch>(glassUnwrap<Switch>(sw));
     if (before.onChanged == null) {
       debugPrint('[M2] switch[$i] disabled — skipped');
       continue;
@@ -154,7 +155,7 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
       continue;
     }
 
-    final bool v1 = tester.widget<Switch>(find.byType(Switch).at(i)).value;
+    final bool v1 = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i))).value;
     if (v1 == v0) {
       debugPrint('[M2] ✗ switch[$i] value did not change (stayed $v0)');
       failed++;
@@ -167,7 +168,7 @@ Future<({int toggled, int failed})> _exerciseAllSwitches(
       failed++;
       continue;
     }
-    final bool v2 = tester.widget<Switch>(find.byType(Switch).at(i)).value;
+    final bool v2 = tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i))).value;
     if (v2 != v0) {
       debugPrint('[M2] ✗ switch[$i] did not restore (want $v0, got $v2)');
       failed++;
@@ -201,7 +202,7 @@ Future<_Persist> _verifyPersistence(WidgetTester tester, String page) async {
   final int count = find.byType(Switch).evaluate().length;
   int idx = -1;
   for (int i = 0; i < count; i++) {
-    if (tester.widget<Switch>(find.byType(Switch).at(i)).onChanged != null) {
+    if (tester.widget<Switch>(glassUnwrap<Switch>(find.byType(Switch).at(i))).onChanged != null) {
       idx = i;
       break;
     }

@@ -105,7 +105,10 @@ void main() {
       expect(end, greaterThan(start));
 
       final String dialogSource = online.substring(start, end);
-      expect(dialogSource, contains('=> AlertDialog('));
+      // 2026 设计系统重做：Material 对话框统一走设计系统分派版 FushiAlertDialog
+      // （MD3 下即 Material AlertDialog），仍不得用 `.adaptive`（会在 Apple 平台
+      // 换成 Cupertino 对话框）。
+      expect(dialogSource, contains('=> FushiAlertDialog('));
       expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
     });
 

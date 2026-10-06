@@ -209,7 +209,10 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
+      // MD3 Expressive 波浪进度条确定态也持续流动（repeat ticker），
+      // pumpAndSettle 永不收敛：先让 loadBookTotals 落地，再推过 250ms 的值补间。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
     }
 
     // 计时 ticker 是 Timer.periodic：不卸载会留 pending timer 把测试判红。

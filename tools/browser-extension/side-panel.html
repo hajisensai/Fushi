@@ -6,6 +6,7 @@
   <title data-i18n="sp_root_title">Fushi 字幕</title>
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="side-panel.css">
+  <link rel="stylesheet" href="glass.css">
 </head>
 <body>
   <header class="panel-header">
@@ -24,7 +25,7 @@
       </div>
     </div>
     <input id="subtitle-file" type="file" accept=".srt,.ass,.ssa,.vtt" multiple hidden>
-    <select id="track" aria-label="字幕轨" data-i18n-aria-label="sp_track_aria_label" hidden></select>
+    <select id="track" class="track-select" aria-label="字幕轨" data-i18n-aria-label="sp_track_aria_label" hidden></select>
     <div id="subs-row" class="subs-row" hidden>
       <input id="subs-query" type="search" placeholder="搜在线字幕（日文原名命中率最高）" data-i18n-placeholder="sp_subs_query_placeholder" aria-label="字幕搜索词" data-i18n-aria-label="sp_subs_query_aria_label">
       <input id="subs-ep" type="number" min="1" placeholder="集" data-i18n-placeholder="sp_subs_ep_placeholder" title="集数（可选）" data-i18n-title="sp_subs_ep_title" aria-label="集数" data-i18n-aria-label="sp_subs_ep_aria_label">
@@ -49,6 +50,7 @@
   <script src="i18n.js"></script>
   <script src="theme-palette.js"></script>
   <script src="theme.js"></script>
+  <script src="glass-select.js"></script>
   <script src="popup-size.js"></script>
   <script src="vendor/selection.js"></script>
   <script src="vendor/dict-media.js"></script>

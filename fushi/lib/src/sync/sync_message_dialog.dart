@@ -14,7 +14,7 @@ void showSyncMessage(BuildContext context, String message) {
 
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(content: Text(message)));
+    ..showSnackBar(FushiSnackBar(content: Text(message)));
 }
 
 @visibleForTesting

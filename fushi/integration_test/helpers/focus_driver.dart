@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
+import '../../test/helpers/glass_unwrap.dart';
 
 /// 打开实验「键盘/手柄焦点导航」总开关，并等树按新开关重建。
 ///
@@ -307,13 +308,13 @@ class FocusDriver {
     final Tab tabWidget = tester.widget<Tab>(tab);
     final Finder bar =
         find.ancestor(of: tab, matching: find.byType(TabBar)).first;
-    final TabBar tabBar = tester.widget<TabBar>(bar);
+    final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(bar));
     final int target = tabBar.tabs.indexOf(tabWidget);
     if (target < 0 || tabBar.controller == null) return false;
     if (!await focusWidget(tab)) return false;
-    await adjust(steps: target - tester.widget<TabBar>(bar).controller!.index);
+    await adjust(steps: target - tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller!.index);
     for (int i = 0; i < maxSettleFrames; i++) {
-      final TabController? controller = tester.widget<TabBar>(bar).controller;
+      final TabController? controller = tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller;
       if (controller != null &&
           controller.index == target &&
           !controller.indexIsChanging) {
@@ -321,7 +322,7 @@ class FocusDriver {
       }
       await tester.pump(_settle);
     }
-    return tester.widget<TabBar>(bar).controller?.index == target;
+    return tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller?.index == target;
   }
 
   /// 全局返回一层。

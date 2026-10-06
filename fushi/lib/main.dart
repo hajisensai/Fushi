@@ -8,7 +8,9 @@ import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
 import 'package:macos_ui/macos_ui.dart'
     show MacosTheme, MacosWindow, WindowManipulator;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
@@ -54,6 +56,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/shortcuts/global_navigation.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/lookup_deep_link.dart';
+import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
@@ -75,6 +78,7 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
+import 'package:fushi/src/anki/anki_desktop_auto_launch.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
@@ -115,6 +119,7 @@ import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_challenge.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
 
 Color? _savedSplashColor;
 
@@ -249,6 +254,8 @@ void main([List<String> args = const <String>[]]) {
     // 词典），写在 main 里哪个入口都不会漏。
     installEngineHostBindings();
     installAsrHostBindings();
+    // 系统「降低透明度」信号（Windows / macOS / iOS），玻璃设计系统据此回退实心。
+    unawaited(SystemTransparency.initialize());
     // 用户的模型选择 / 自带模型包住在数据根下，必须在装完数据根解析器之后读。
     // 不 await 的话第一次转录会按内置表规划，用户的选择要等下一次才生效。
     await loadAsrModelCatalog();
@@ -304,18 +311,15 @@ void main([List<String> args = const <String>[]]) {
           // just flips NSWindow properties). The app frame is therefore
           // unconditional on both hosts once the plugin is initialised.
           //
-          // macOS 走同一条路（用户拍板：两端同一个 MD3 顶栏）：`hidden` 在 macOS
-          // 上是 `titleVisibility=.hidden` + `titlebarAppearsTransparent` +
-          // `fullSizeContentView`，`windowButtonVisibility: false` 则把红黄绿三个
-          // 交通灯 `standardWindowButton(_).isHidden = true`。于是 macOS 不再有
-          // 系统交通灯，最小化/缩放/关闭全部由 [FushiDesktopTitleBar] 的 MD3 按钮
-          // 提供（AppKit 仍然自己拥有窗口四边的 resize 边框，不需要 app 代劳）。
-          // 这也一并根除了「交通灯浮在 Flutter 内容左上角」派生的一整串让位补丁
-          // （BUG-869 的 SafeArea 保留带、BUG-973 视频页临时隐藏、BUG-1343 阅读器
-          // 自绘拖拽带）。
+          // macOS 也用自绘顶栏：`hidden` 在 macOS 上是 `titleVisibility=.hidden` +
+          // `titlebarAppearsTransparent` + `fullSizeContentView`（AppKit 仍拥有
+          // 四边 resize 边框）。窗口按钮按平台：
+          // 2026-10-04 用户改主意：macOS 无论设计系统一律用系统原生红绿灯（自绘
+          // 顶栏左侧给它们留位，内容全屏时由 FushiDesktopTitleBar 隐藏），
+          // Windows / Linux 仍是 MD3 按钮。
           await windowManager.setTitleBarStyle(
             TitleBarStyle.hidden,
-            windowButtonVisibility: false,
+            windowButtonVisibility: Platform.isMacOS,
           );
           FushiDesktopTitleBar.markEnabled();
         }
@@ -377,6 +381,10 @@ void main([List<String> args = const <String>[]]) {
     JustAudioMediaKit.pitch = false;
     JustAudioMediaKit.ensureInitialized();
     MediaKit.ensureInitialized();
+    // 液态玻璃材质的着色器预热：只把 FragmentProgram 读进内存，免得第一次打开
+    // 弹层时闪一帧占位。纯 IO、与启动无依赖，后台跑不挡首帧；没开 liquid 档的
+    // 用户也只是多读几个着色器文件。
+    unawaited(LiquidGlassWidgets.initialize(enablePerformanceMonitor: false));
 
     // BUG-1015 的查词播放器冷启动静音预热**不在启动路径**（BUG-1690）：预热要在真实
     // 音频输出设备上开渲染流，启动即预热会打断其他 app 正在播的音乐（iOS 激活音频会话
@@ -488,6 +496,11 @@ void main([List<String> args = const <String>[]]) {
     /// 必须在 runApp 之前挂上：install 会立刻同步一次，冷启动第一帧起就生效。
     WindowsImeGuard.install();
 
+    /// BUG-2953：查词浮层自带导航层里开着菜单时，系统返回键只关菜单。observer 按注册
+    /// 顺序被询问，必须排在 runApp 里 WidgetsApp 注册的那个之前，否则返回先被根
+    /// Navigator 交给页面 PopScope、把浮层连同菜单一起关掉。
+    LookupOverlayNavigator.installSystemBackInterceptor();
+
     /// Start the application immediately so the user sees the loading page
     /// rather than a blank white screen while initialisation is in progress.
     runApp(
@@ -556,6 +569,11 @@ void main([List<String> args = const <String>[]]) {
         .autoApplyBinding(mediaType: ProfileMediaKind.browser);
     appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
+    // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect
+    // 没在监听时拉起 Anki 桌面版；不等它就绪，不阻塞启动。
+    unawaited(
+      autoLaunchAnkiDesktopOnStartup(container.read(ankiRepositoryProvider)),
+    );
     // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
     // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
     installInterconnectP2pClient(SyncRepository(appModel.database));
@@ -1893,7 +1911,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.system_update, size: 48, color: cs.primary),
+                    FushiIcon(Icons.system_update, size: 48, color: cs.primary),
                     const SizedBox(height: 16),
                     Text(
                       t.db_downgrade_title,
@@ -1950,7 +1968,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
+                    FushiIcon(
                         cannotOpen
                             ? Icons.folder_off_outlined
                             : Icons.broken_image_outlined,
@@ -2020,7 +2038,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.folder_off_outlined,
+                    FushiIcon(Icons.folder_off_outlined,
                         size: 48, color: cs.primary),
                     const SizedBox(height: 16),
                     Text(
@@ -2046,13 +2064,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       runSpacing: 8,
                       alignment: WrapAlignment.center,
                       children: [
-                        FilledButton.icon(
-                          icon: const Icon(Icons.refresh, size: 18),
+                        FushiFilledButton.icon(
+                          icon: const FushiIcon(Icons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.folder_open, size: 18),
+                        FushiOutlinedButton.icon(
+                          icon: const FushiIcon(Icons.folder_open, size: 18),
                           label: Text(t.data_root_use_default_button),
                           onPressed: () =>
                               appModel.retryInitialiseWithDefaultRoot(),
@@ -2084,7 +2102,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.error_outline, size: 48, color: cs.error),
+                    FushiIcon(Icons.error_outline, size: 48, color: cs.error),
                     const SizedBox(height: 16),
                     Text(
                       t.initialization_failed,
@@ -2113,13 +2131,13 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       runSpacing: 8,
                       alignment: WrapAlignment.center,
                       children: [
-                        FilledButton.icon(
-                          icon: const Icon(Icons.refresh, size: 18),
+                        FushiFilledButton.icon(
+                          icon: const FushiIcon(Icons.refresh, size: 18),
                           label: Text(t.retry),
                           onPressed: () => appModel.retryInitialise(),
                         ),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.copy, size: 18),
+                        FushiOutlinedButton.icon(
+                          icon: const FushiIcon(Icons.copy, size: 18),
                           label: Text(t.copy_error),
                           onPressed: () {
                             Clipboard.setData(
@@ -2332,6 +2350,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
               caption: cs.surface,
               text: cs.onSurface,
             );
+            // Glass design system: ask for the system window material (Windows
+            // 11 Mica via the runner, macOS NSVisualEffectView vibrancy). The
+            // home shell only turns translucent once the platform reports
+            // success (`systemBackdropActive`), so Win10 / others stay solid.
+            WindowCaptionChannel.setSystemBackdrop(
+              mica: glassMaterialOf(context) != FushiGlassMaterial.off,
+              dark: Theme.of(context).brightness == Brightness.dark,
+            );
             // Drive the status/navigation bar icon brightness from the *live*
             // theme so switching themes repaints the system bars. The builder
             // reruns on every theme change, so the AnnotatedRegion re-emits the
@@ -2346,6 +2372,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                 child: CupertinoTheme(
                   data: fushiCupertinoTheme(cs,
                       fontFamily: appModel.appFontFamily),
+                  // 玻璃设计系统的组件配色 / 渲染档位作用域（结构恒定，
+                  // 见 FushiGlassScope 类注释）。
+                  child: FushiGlassScope(
                   child: LayoutBuilder(
                     builder:
                         (BuildContext context, BoxConstraints constraints) {
@@ -2452,9 +2481,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           valueListenable: appModel.mediaOpenNotifier,
                           builder: (BuildContext context, bool mediaOpen,
                               Widget? child) {
+                            final WindowSizeClass sizeClass =
+                                windowSizeClassForWidth(viewport.width);
                             final bool railVisible = !mediaOpen &&
-                                windowSizeClassForWidth(viewport.width) !=
-                                    WindowSizeClass.compact;
+                                sizeClass != WindowSizeClass.compact;
+                            // expanded 档是展开侧栏（玻璃 224 悬浮侧栏 / MD3
+                            // 240 展开 rail，adaptiveNavRail extended），标题
+                            // 跟着它缩进。
+                            final double railWidth = adaptiveNavRailWidthFor(
+                              context,
+                              extended: sizeClass == WindowSizeClass.expanded,
+                            );
                             return FushiDesktopTitleBar(
                               // The native-sized frame sits outside app UI
                               // zoom; align its title with the visually scaled
@@ -2463,7 +2500,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                               // size class / adaptiveNavRail), so they cannot
                               // drift apart behind a copied literal.
                               leadingInset: railVisible
-                                  ? kAdaptiveNavRailWidth * uiScale
+                                  ? railWidth * uiScale
                                   : 0,
                               title: ValueListenableBuilder<HomeTab>(
                                 valueListenable: homeShellTabNotifier,
@@ -2480,6 +2517,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                       }
                       return navigation;
                     },
+                  ),
                   ),
                 ),
               ),

@@ -164,8 +164,9 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.filter_alt_outlined));
     await tester.pumpAndSettle();
-    await tester
-        .tap(find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)));
+    // 卡片封面上的状态角标也写着「在玩」：筛选面板在最上层，取最后一个。
+    await tester.tap(
+        find.text(galgamePlayStatusLabel(GalgamePlayStatus.playing)).last);
     await tester.pumpAndSettle();
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
@@ -177,5 +178,48 @@ void main() {
     final GalgameLibraryView saved =
         GalgameLibraryView.decode(appModel.galgameLibraryView);
     expect(saved.status, GalgamePlayStatus.playing);
+  });
+
+  // 2026-10 体验优化：窄屏工具条两行（搜索独占一行），刮削 / 排序收进溢出菜单。
+  testWidgets('窄屏：搜索框独占一行，排序经溢出菜单仍可切换',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpPage(tester, await buildModel());
+
+    expect(
+      find.byKey(const ValueKey<String>('games_toolbar_compact')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('games_filter_play_status')),
+      findsOneWidget,
+    );
+    // 搜索框拿到近整行宽（旧单行布局里被挤到只剩百余像素）。
+    expect(tester.getSize(find.byType(TextField)).width, greaterThan(340));
+    // 排序 / 刮削不再平铺在工具条上。
+    expect(find.byIcon(Icons.sort), findsNothing);
+
+    Future<void> pickSortFromOverflow() async {
+      await tester
+          .tap(find.byKey(const ValueKey<String>('games_toolbar_overflow')));
+      await tester.pumpAndSettle();
+      expect(find.text(t.scrape_all), findsOneWidget);
+      await tester.tap(find.text(t.game_sort_name).last);
+      await tester.pumpAndSettle();
+    }
+
+    await pickSortFromOverflow();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getTopLeft(cardTitle('alpha')).dx,
+      lessThan(tester.getTopLeft(cardTitle('贝塔物语')).dx),
+    );
+    await pickSortFromOverflow();
+    expect(
+      tester.getTopLeft(cardTitle('alpha')).dx,
+      greaterThan(tester.getTopLeft(cardTitle('贝塔物语')).dx),
+    );
   });
 }

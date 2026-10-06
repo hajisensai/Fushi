@@ -18,6 +18,7 @@ Anki 集成模块：定义 Anki 服务抽象接口，提供 AnkiDroid（Android 
 - `AnkiRepository` (`ankidroid/`) -- AnkiDroid Content Provider 实现（Android 专用）。
 - `AnkiConnectRepository` + `AnkiConnectService` (`ankiconnect/`) -- AnkiConnect HTTP 实现（桌面/远程）。
 - `AnkiConnectInstaller` (`ankiconnect/ankiconnect_installer.dart`) -- 代装 AnkiConnect 插件（仅 Windows）：从 AnkiWeb 下裸包、**补上包内没有的 `manifest.json`** 后重新打包，再把 `.ankiaddon` 交给正在运行的 `anki.exe`，由 Anki 自己弹确认框并完成安装。下载出站走包内工厂钩子 `ankiAddonDownloadHttpClientFactory`（app 侧接线，经应用代理）——与打 localhost 必须直连的 `AnkiConnectService` 方向相反。
+- `AnkiDesktopLauncher` (`ankiconnect/anki_desktop_launcher.dart`) -- 拉起 Anki 桌面版（issue #1949；设置 `autoLaunchAnkiDesktop` / `ankiDesktopExecutable`，app 在 `main()` 启动后调 `autoLaunchOnStartup` 一次）：本机 AnkiConnect 已在监听就不重复启动；Windows 必须有用户配置的路径（不猜注册表），macOS / Linux 回退 `open -a Anki` / PATH 上的 `anki`。没配路径时只从 `findRunningAnkiExecutable` 学入口 exe——新 launcher 架构下监听 8765 的是 venv `pythonw.exe`，它认不出就返回 null，宁可不学也不学错。
 - `BaseAnkiRepository` -- 共享基类。
 - `AnkiModels` -- Anki 数据模型。
 - `LapisPreset` -- 预设卡片模板。

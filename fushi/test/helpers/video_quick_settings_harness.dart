@@ -55,6 +55,27 @@ class VideoSheetHarness {
   }
 }
 
+/// 编辑器测试的固定布局夹具：2026-10-05 M3E 重排之前的出厂布局（设置在右侧栏、
+/// 播放键在底栏正中、字幕轨在右上……）。这些测试钉的是**编辑器行为**（拖动 / 移除 /
+/// 溢出 / 触屏门控），不是出厂默认；用固定夹具，出厂默认再怎么调都不会让它们串位。
+/// 出厂默认本身由 video_control_layout_test / video_m3e_chrome_test 钉。
+final VideoControlLayout videoLegacyChromeLayoutFixture =
+    VideoControlLayout.decode(
+  '{"version":3,"slots":{'
+  '"topLeft":["back"],"topCenter":["title"],'
+  '"topRight":["episodeList","screenshot","clipExport","subtitleTrack",'
+  '"audioTrack","chapterList"],'
+  '"screenLeft":["immersiveLock"],'
+  '"bottomCenter":["seekBackward","frameBackward","previousCue","playPause",'
+  '"nextCue","frameForward","seekForward"],'
+  '"bottomLeft":["positionIndicator"],'
+  '"bottomRight":["volume","fullscreen","speed","customAction1",'
+  '"customAction2","customAction3","customAction4"],'
+  '"screenRight":["subtitleList","favoriteSentence","settings"]},'
+  '"removed":["previousEpisode","nextEpisode","previousChapter",'
+  '"nextChapter","replayCue"]}',
+);
+
 /// 测试版能力槽：页面权威值（倍速/延迟/字幕样式/弹幕样式/控件布局）以可变字段模拟，
 /// preview/commit 回调先更新本地值再转发测试传入的探针回调——与真实视频页
 /// `_setSpeed` / `onSubtitleStylePreview` 等「更新 State → 面板 getter 重读」同构。
@@ -67,7 +88,7 @@ class TestVideoHostState {
     VideoControlLayout? controlLayout,
   })  : subtitleStyle = subtitleStyle ?? VideoSubtitleStyle.defaults,
         danmakuStyle = danmakuStyle ?? VideoDanmakuStyle.defaults,
-        controlLayout = controlLayout ?? VideoControlLayout.currentChrome;
+        controlLayout = controlLayout ?? videoLegacyChromeLayoutFixture;
 
   int delayMs;
   double speed;
