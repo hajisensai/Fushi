@@ -29,6 +29,8 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, deriveSurfaceRolesFrom;
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/fushi_reader_palette.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
+    show DictionaryPopupToolGroup;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -5016,11 +5018,11 @@ $liveConfigJs
             // 但音频行是固定尺寸按钮，窄宽下会溢出该有界区被裁切；用 [FittedBox]
             // (`scaleDown`) 把整行等比缩小到刚好放下——绝不横向溢出/裁切，也不重叠。
             // `mainAxisSize: min` 让行取按钮总宽（有限内在宽），FittedBox 才能量到并缩放。
+            // M3E：收藏 + 有声书动作落进一枚 tonal 胶囊按钮组（与左侧字号组、右侧
+            // 关闭圆钮同一口径，见 [DictionaryPopupToolGroup]）。
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: DictionaryPopupToolGroup(
                 children: [
                   FushiIconButton(
                     icon: _currentSentenceIsFavorited

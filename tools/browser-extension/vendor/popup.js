@@ -648,6 +648,8 @@ const ICON_PATHS = {
     // open_in_new（TODO-1360：已制卡的词旁「在 Anki 中打开卡片」按钮，直接跳去
     // Anki 定位该词的已存在卡；仅 data-mined 时显示）
     openInAnki: 'M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z',
+    // search_off（查完为空的 M3E 空态色块图标；取代旧的彩色 emoji 放大镜）
+    searchOff: 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3 6.08 3 3.28 5.64 3.03 9h2.02C5.3 6.75 7.18 5 9.5 5 11.99 5 14 7.01 14 9.5S11.99 14 9.5 14c-.17 0-.33-.03-.5-.05v2.02c.17.02.33.03.5.03 1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zM6.47 10.82L4 13.29 1.53 10.82l-.71.71L3.29 14 .82 16.47l.71.71L4 14.71l2.47 2.47.71-.71L4.71 14l2.47-2.47z',
 };
 
 function iconSvg(name) {
@@ -6743,9 +6745,14 @@ window.renderPopup = function() {
     }
 
     if ((!entries || !entries.length) && !kanjiSection) {
+        // M3E 空态：主题色 tonal 色块里的 search_off 矢量图标 + 标题 + 可选建议，
+        // 整块在容器里水平垂直居中（.no-results 跨满所有分栏，见 popup.css）。旧版
+        // 是一枚彩色 emoji 放大镜，各平台字形不同、不随主题变色。
+        const hint = window._noResultsHint;
         container.innerHTML = '<div class="no-results">'
-            + '<div class="no-results-icon">&#x1F50D;</div>'
-            + '<div>' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + '<div class="no-results-icon">' + iconSvg('searchOff') + '</div>'
+            + '<div class="no-results-title">' + (window._noResultsMessage || 'No results found.') + '</div>'
+            + (hint ? '<div class="no-results-hint">' + hint + '</div>' : '')
             + '</div>';
         window._renderedGlossaryCounts = [];
         _firePopupRendered();

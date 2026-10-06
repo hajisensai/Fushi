@@ -5978,8 +5978,12 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
         transparencyAllowed &&
         !(MediaQuery.maybeHighContrastOf(context) ?? false) &&
         !isEinkTheme(context);
+    // MD3（M3E）查词面板：内容区要读作实底（用户 2026-10-06：88% / 90% 下背后竖排
+    // 正文透出来「很乱」，且 Windows Skia 下模糊并不总生效，透出的就是清晰的字）。
+    // 提到 97%：背后正文已不可读，仍保留一丝材质与 20 模糊。Apple 玻璃维持原参数。
+    final double panelAlpha = md3 ? 0.97 : (dark ? 0.88 : 0.9);
     final Color fill =
-        realBlur ? opaque.withValues(alpha: dark ? 0.88 : 0.9) : opaque;
+        realBlur ? opaque.withValues(alpha: panelAlpha) : opaque;
     // 玻璃设计系统的「毛玻璃」档（frosted）与 MD3 同走 BackdropFilter，才能进同一个
     // 背景快照组；液态玻璃着色器（liquid_glass_widgets）每个 GlassContainer 自带
     // 私有 BackdropGroup，进不了跨层的组。

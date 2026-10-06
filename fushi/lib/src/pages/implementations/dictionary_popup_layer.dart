@@ -13,6 +13,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart';
 import 'package:fushi/utils.dart';
 
@@ -860,6 +861,47 @@ double dictionaryPopupTopActionExtent({required bool mobile}) =>
 /// 「⋯」溢出菜单（2026-10 体验优化），优先保住居中 header 与关闭按钮的宽度。
 const double kDictionaryPopupTopBarCompactWidth = 360;
 
+/// 顶栏按钮组之间的间距、顶栏四周留白（M3E button group 口径）。
+const double _kTopBarGroupGap = 6;
+const double _kTopBarInset = 6;
+
+/// 查词弹窗顶栏按钮组 / 关闭圆钮的 tonal 底色；玻璃设计系统与墨水屏不铺色（null）。
+Color? dictionaryPopupToolGroupColor(BuildContext context) {
+  if (isGlassDesign(context) || isEinkTheme(context)) return null;
+  return Theme.of(context).colorScheme.surfaceContainerHigh;
+}
+
+/// 查词弹窗顶栏的 M3E 按钮组：一枚 surfaceContainerHigh 全圆角胶囊托住一组小号
+/// 图标按钮（字号组 / 导航组 / 阅读器的收藏 + 有声书动作组），组间留白分开语义，
+/// 取代旧的「一排裸图标挤在一起」。按钮自身的按压 / 悬停 / 焦点状态层不变（仍是
+/// [FushiIconButton]）。玻璃设计系统沿用原生玻璃按钮、不再套一层底；墨水屏改
+/// 1px 描边胶囊（灰阶抖动下色块读不出来）。
+class DictionaryPopupToolGroup extends StatelessWidget {
+  const DictionaryPopupToolGroup({required this.children, super.key});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget row = Row(mainAxisSize: MainAxisSize.min, children: children);
+    if (isGlassDesign(context)) return row;
+    final bool eink = isEinkTheme(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: ShapeDecoration(
+        color: dictionaryPopupToolGroupColor(context),
+        shape: StadiumBorder(
+          side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: row,
+      ),
+    );
+  }
+}
+
 /// 顶栏溢出菜单里的动作。
 enum _PopupTopBarOverflowAction { zoomOut, zoomIn, aiPick }
 
@@ -1428,58 +1470,70 @@ class DictionaryPopupLayer extends StatelessWidget {
     final DictionaryPopupHistoryNav? nav = historyNav;
 
     // 左簇：返回（可选）+ 历史 ← →（可选）+ A−/A+ 字号按钮（TODO-1353）。定宽，钉在行首。
+    // M3E：导航与字号各自落进一枚 tonal 胶囊按钮组（[DictionaryPopupToolGroup]），
+    // 组与组之间留 6，不再是一排挤在一起的裸图标。
+    final List<Widget> navButtons = <Widget>[
+      if (onBack != null)
+        FushiIconButton(
+          icon: Icons.arrow_back,
+          size: 20,
+          tooltip: backTooltip,
+          constraints: _topActionConstraints,
+          padding: EdgeInsets.zero,
+          onTap: onBack,
+        ),
+      if (nav != null) ...<Widget>[
+        FushiIconButton(
+          key: const ValueKey<String>('popup_history_back'),
+          icon: Icons.arrow_back,
+          size: 20,
+          tooltip: t.popup_history_back,
+          constraints: _topActionConstraints,
+          padding: EdgeInsets.zero,
+          enabled: nav.canGoBack,
+          onTap: nav.onBack,
+        ),
+        FushiIconButton(
+          key: const ValueKey<String>('popup_history_forward'),
+          icon: Icons.arrow_forward,
+          size: 20,
+          tooltip: t.popup_history_forward,
+          constraints: _topActionConstraints,
+          padding: EdgeInsets.zero,
+          enabled: nav.canGoForward,
+          onTap: nav.onForward,
+        ),
+      ],
+    ];
+    final List<Widget> textButtons = compact
+        ? <Widget>[_buildOverflowMenuButton(context)]
+        : <Widget>[
+            _buildZoomFontButton(context, zoomIn: false),
+            _buildZoomFontButton(context, zoomIn: true),
+            if (aiPick != null) _buildAiPickButton(context, aiPick!),
+          ];
     final Widget leftCluster = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (onBack != null)
-          FushiIconButton(
-            icon: Icons.arrow_back,
-            size: 20,
-            tooltip: backTooltip,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            onTap: onBack,
-          ),
-        if (nav != null) ...<Widget>[
-          FushiIconButton(
-            key: const ValueKey<String>('popup_history_back'),
-            icon: Icons.arrow_back,
-            size: 20,
-            tooltip: t.popup_history_back,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            enabled: nav.canGoBack,
-            onTap: nav.onBack,
-          ),
-          FushiIconButton(
-            key: const ValueKey<String>('popup_history_forward'),
-            icon: Icons.arrow_forward,
-            size: 20,
-            tooltip: t.popup_history_forward,
-            constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
-            enabled: nav.canGoForward,
-            onTap: nav.onForward,
-          ),
+        if (navButtons.isNotEmpty) ...<Widget>[
+          DictionaryPopupToolGroup(children: navButtons),
+          const SizedBox(width: _kTopBarGroupGap),
         ],
-        if (compact)
-          _buildOverflowMenuButton(context)
-        else ...<Widget>[
-          _buildZoomFontButton(context, zoomIn: false),
-          _buildZoomFontButton(context, zoomIn: true),
-          if (aiPick != null) _buildAiPickButton(context, aiPick!),
-        ],
+        DictionaryPopupToolGroup(children: textButtons),
       ],
     );
 
     // 右簇：关闭按钮（可选）。定宽，钉在行尾。缺省时用 0 宽占位保持 Row 结构一致。
+    // M3E：关闭是独立的一颗 tonal 圆钮（与按钮组胶囊同色同高），不和动作混在一组。
     final Widget rightCluster = onClose != null
         ? FushiIconButton(
             icon: Icons.close,
             size: 20,
+            backgroundColor: dictionaryPopupToolGroupColor(context),
             tooltip: t.dialog_close,
             constraints: _topActionConstraints,
-            padding: EdgeInsets.zero,
+            // 底色画在 padding 盒上：内边距补到整个命中区，tonal 圆与命中区同大。
+            padding: EdgeInsets.all((_topActionExtent - 20) / 2),
             onTap: onClose,
           )
         : const SizedBox.shrink();
@@ -1490,16 +1544,28 @@ class DictionaryPopupLayer extends StatelessWidget {
         ? const Spacer()
         : Expanded(child: Center(child: headerWidget!));
 
-    final Widget bar = Row(
-      children: <Widget>[leftCluster, middle, rightCluster],
+    final Widget bar = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: _kTopBarInset,
+        vertical: _kTopBarInset / 2,
+      ),
+      child: Row(
+        children: <Widget>[
+          leftCluster,
+          const SizedBox(width: _kTopBarGroupGap),
+          middle,
+          const SizedBox(width: _kTopBarGroupGap),
+          rightCluster,
+        ],
+      ),
     );
 
     // 无 header 的层（app 外覆盖窗/嵌套返回层）顶栏高度贴住 36×36 的
-    // [_topActionConstraints] 按钮（design-2026-08 讨论区反馈：压缩顶栏与词头间距，命中区零缩水，
-    // 旧值 40 只是给按钮上下各 2px 装饰性余量）；有 header 时高度由 header 自身
-    // （[ReaderChromeScaler] 跟随 UI 缩放）决定。
+    // [_topActionConstraints] 按钮 + 上下各 [_kTopBarInset]/2 的留白（M3E 按钮组胶囊
+    // 不贴弹窗边）；有 header 时高度由 header 自身（[ReaderChromeScaler] 跟随 UI 缩放）
+    // 决定。
     return headerWidget == null
-        ? SizedBox(height: _topActionExtent, child: bar)
+        ? SizedBox(height: _topActionExtent + _kTopBarInset, child: bar)
         : bar;
   }
 
@@ -1751,16 +1817,16 @@ class DictionaryPopupLayer extends StatelessWidget {
     BuildContext context,
     FushiDesignTokens tokens,
   ) {
+    // M3E 空态：主题色 tonal 色块里的 search_off + 标题 + 一句建议，整体居中
+    // （[FushiPlaceholderMessage] 同一实现，带弹入动效）。宿主把空结果层收成
+    // `kLookupPopupEmptyHeight`（见 DictionaryPopupEntry.layoutAutoFitHeight），不再
+    // 是一整块最大高度的空面板。
     return Center(
       child: SingleChildScrollView(
-        padding: EdgeInsets.all(tokens.spacing.gap),
         child: FushiPlaceholderMessage(
-          icon: Icons.search_off,
+          icon: FushiIcons.searchOff,
           message: t.no_search_results,
-          iconSize: 20,
-          messageStyle: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          detail: t.settings_search_empty_hint,
         ),
       ),
     );

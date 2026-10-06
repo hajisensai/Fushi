@@ -1176,11 +1176,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     required bool isTop,
   }) {
     final item = stack[index];
+    // 真实空结果收成「未找到」空态的高度，否则按内容测量（见 layoutAutoFitHeight）。
+    final double emptyHeight = kLookupPopupEmptyHeight * appModel.appUiScale;
+    final double? fitHeight = item.layoutAutoFitHeight(emptyHeight: emptyHeight);
     final pos = _calculatePopupPosition(
       item.selectionRect,
       screen,
       verticalWriting: _layerVerticalWriting(index),
+      autoFitHeight: fitHeight,
     );
+    // 自适应高度只收外壳，WebView 仍按最大高度布局、超出部分裁掉
+    // （[DictionaryPopupLayer.webViewOverflowHeight]，与 mixin 家族同一手法）：内容增减
+    // 不改原生表面尺寸，避免 Windows 上旧尺寸帧被拉伸。
+    final double fullPopupHeight = fitHeight == null ||
+            popupBottomDocked ||
+            _popupResizePreview != null
+        ? pos.height
+        : _calculatePopupPosition(
+            item.selectionRect,
+            screen,
+            verticalWriting: _layerVerticalWriting(index),
+          ).height;
+    final double webViewOverflowHeight =
+        fullPopupHeight > pos.height ? fullPopupHeight - pos.height : 0.0;
     // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onPopupResizeStart] 冻结其左上角。
     if (isTop) {
       _topPopupSelectionRect = item.selectionRect;
@@ -1220,6 +1238,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               stack[j].selectionRect,
               screen,
               verticalWriting: _layerVerticalWriting(j),
+              autoFitHeight: stack[j].layoutAutoFitHeight(
+                emptyHeight: emptyHeight,
+              ),
             ),
       ],
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
@@ -1262,6 +1283,29 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 保留本层 + 祖先（不关母代）。点顶层（无后代）= no-op 栈不变。
         onTapOutside: () => dismissDescendantsOf(index),
         onRendered: () => _onPopupLayerRendered(index, item),
+        webViewOverflowHeight: webViewOverflowHeight,
+        // 阅读器弹窗此前从不收缩：永远按「最大宽高」偏好铺满（默认约 1000×700），
+        // 一个词条 / 空结果也是一大块面板。按 WebView 上报的内容高度收外壳（mixin
+        // 家族 [buildNestedPopupLayer] 同一算法）。
+        onContentMetrics: (double contentHeight, double viewportHeight) {
+          if (!mounted ||
+              !_popup.entries.contains(item) ||
+              popupBottomDocked ||
+              _popupResizePreview != null) {
+            return;
+          }
+          final double nextHeight = resolveAutoFitPopupHeight(
+            currentPopupHeight: fullPopupHeight,
+            contentHeight: contentHeight,
+            viewportHeight: viewportHeight,
+            minHeight: kLookupPopupMinHeight * appModel.appUiScale,
+            maxHeight: popupMaxHeight,
+          );
+          if ((nextHeight - (item.autoFitHeight ?? pos.height)).abs() < 1) {
+            return;
+          }
+          setState(() => item.autoFitHeight = nextHeight);
+        },
         // TODO-058 fail-safe：弹窗 WebView 加载失败也走同一翻可见入口（加载失败
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
@@ -1639,6 +1683,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     Rect sel,
     Size screen, {
     bool verticalWriting = false,
+    double? autoFitHeight,
   }) {
     // TODO-108：查词弹窗位置计算的单一收口点（reader/有声书/独立查词页家族共用），
     // 底部固定模式忽略选区放屏幕底部全宽面板。video 家族在 dictionary_page_mixin
@@ -1649,7 +1694,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       screen: screen,
       bottomDocked: popupBottomDocked,
       maxWidth: popupMaxWidth,
-      maxHeight: popupMaxHeight,
+      // 查词弹窗按内容收缩（与 mixin 家族 [_calcMixinPopupPosition] 同口径）：
+      // [autoFitHeight] 来自 WebView 上报的内容高度，只收不放（夹在偏好最大高度内）；
+      // 拖尺寸把手期间以预览态为准，不收缩。
+      maxHeight: _popupResizePreview != null || autoFitHeight == null
+          ? popupMaxHeight
+          : autoFitHeight.clamp(0.0, popupMaxHeight).toDouble(),
       padding: popupPadding,
       bottomReserve: popupBottomReserve,
       topReserve: popupTopReserve,

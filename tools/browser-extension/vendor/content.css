@@ -1919,7 +1919,10 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 48px 16px;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 160px;
+    padding: 32px 16px;
     color: var(--on-surface-variant, #44483F);
     font-size: 14px;
     opacity: 0.7;
@@ -1928,8 +1931,38 @@
 }
 
 .no-results-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 32px;
+    line-height: 1;
     opacity: 0.5;
+}
+
+/* 空态图标是 search_off 矢量（popup.js iconSvg），不是 emoji：跟随 currentColor。 */
+.no-results-icon > svg {
+    display: block;
+    width: 1em;
+    height: 1em;
+    fill: currentColor;
+}
+
+.no-results-hint {
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+/* M3E 空态色块的弹入：spatial 过冲（与 Flutter 侧 FushiPlaceholderMessage 同一条
+   cubic-bezier(0.42, 1.67, 0.21, 0.90)）。 */
+@keyframes fushi-no-results-pop {
+    from {
+        transform: scale(0.6);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
 }
 
 /* 查询中的加载态（popup.js renderPopupLoading，只在宿主声明 window.lookupPending
@@ -2888,12 +2921,29 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 56px;
-    height: 56px;
-    font-size: 26px;
+    width: 72px;
+    height: 72px;
+    font-size: 32px;
     opacity: 1;
-    border-radius: var(--md-sys-shape-corner-large-increased);
+    border-radius: 24px;
+    color: var(--md-sys-color-on-secondary-container);
     background: var(--md-sys-color-secondary-container);
+    margin-bottom: 4px;
+    animation: fushi-no-results-pop 0.5s cubic-bezier(0.42, 1.67, 0.21, 0.9) both;
+}
+
+:where(#entries-container).fushi-m3e .no-results-title {
+    color: var(--md-sys-color-on-surface);
+    font-size: var(--md-sys-typescale-title-medium-size);
+    line-height: var(--md-sys-typescale-title-medium-line-height);
+    font-weight: var(--md-sys-typescale-weight-emphasized);
+}
+
+:where(#entries-container).fushi-m3e .no-results-hint {
+    opacity: 1;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: var(--md-sys-typescale-body-medium-size);
+    line-height: var(--md-sys-typescale-body-medium-line-height);
 }
 
 /* ── 加载指示器：形状落在 primaryContainer 圆底上（M3E contained loading indicator）── */
@@ -2982,6 +3032,10 @@
 
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group {
     transition: none;
+}
+
+:where(#entries-container).fushi-m3e.fushi-reduced-motion .no-results-icon {
+    animation: none;
 }
 
 :where(#entries-container).fushi-m3e.fushi-reduced-motion .glossary-group::details-content {
@@ -3115,6 +3169,7 @@
 :where(#entries-container).eink .pitch-transcription-tag,
 :where(#entries-container).eink .no-results,
 :where(#entries-container).eink .no-results-icon,
+:where(#entries-container).eink .no-results-hint,
 :where(#entries-container).eink .kanji-card-dict,
 :where(#entries-container).eink .ctx-adjust-button,
 :where(#entries-container).eink .mined-action-subtitle {

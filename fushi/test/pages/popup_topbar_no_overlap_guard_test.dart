@@ -177,8 +177,11 @@ void main() {
       isTrue,
       reason: 'FittedBox 须 scaleDown：够宽不放大、太窄才缩（BUG-826）。',
     );
+    // M3E（2026-10-06）：音频行落进 [DictionaryPopupToolGroup] 胶囊，其内部 Row 即
+    // mainAxisSize.min（有限内在宽），FittedBox 照样量得到。
     expect(
-      fn.contains('mainAxisSize: MainAxisSize.min'),
+      fn.contains('mainAxisSize: MainAxisSize.min') ||
+          fn.contains('DictionaryPopupToolGroup('),
       isTrue,
       reason: '音频行须 mainAxisSize.min，FittedBox 才能量到有限内在宽（BUG-826）。',
     );
