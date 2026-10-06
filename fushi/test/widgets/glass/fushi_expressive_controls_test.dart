@@ -260,6 +260,52 @@ void main() {
     });
   });
 
+  group('按住时移出树（BUG-3048）', () {
+    // 子树卸载时 InkWell 的手势识别器在 dispose 里补发 tap cancel，经共享的
+    // statesController 回调到形变层；停用元素上再查 Theme 会断言。
+    for (final (String name, Widget Function() build)
+        in <(String, Widget Function())>[
+          (
+            'FushiFilledButton（FushiPressMorph）',
+            () => FushiFilledButton(
+              size: FushiButtonSize.l,
+              onPressed: () {},
+              child: const Text('Go'),
+            ),
+          ),
+          (
+            'FushiSplitButton',
+            () => FushiSplitButton(
+              label: const Text('Go'),
+              onPressed: () {},
+              menuChildren: <Widget>[
+                MenuItemButton(onPressed: () {}, child: const Text('CSV')),
+              ],
+            ),
+          ),
+        ]) {
+      testWidgets(name, (WidgetTester tester) async {
+        bool show = true;
+        late StateSetter outer;
+        await pumpHost(tester, (StateSetter setState) {
+          outer = setState;
+          return show ? build() : const SizedBox();
+        });
+        final TestGesture g = await tester.startGesture(
+          tester.getCenter(find.text('Go')),
+        );
+        await advance(tester, 100);
+        outer(() => show = false);
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+        expect(find.text('Go'), findsNothing);
+        await g.up();
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
   group('FushiToggleButton', () {
     testWidgets('点击 / Enter 切换，选中变方 + primary 底，带 toggled 语义', (
       WidgetTester tester,

@@ -374,6 +374,24 @@ class _FushiPressMorphState extends State<FushiPressMorph>
     if (!widget.enabled) _setPressed(false);
   }
 
+  // 停用（移出树 / GlobalKey 换父）期间不听按钮状态：子树卸载时 InkWell 的
+  // 手势识别器在 dispose 里补发 tap cancel，会经共享的 statesController 回调到
+  // 这里，而停用元素上再查 Theme 等祖先会断言（BUG-3048）。重新激活时挂回并
+  // 按当前状态对齐一次。
+  @override
+  void deactivate() {
+    _listened?.removeListener(_onStates);
+    _listened = null;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _relisten();
+    _onStates();
+  }
+
   void _onStates() {
     final WidgetStatesController? c = _listened;
     if (c == null) return;
