@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2792 条。点号进各自文件。
+> 共 2793 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3051](bugs/BUG-3051-collection-menu-binding.md) | ✅ | ✅ | 合集详情非拖排网格和列表右键菜单绕过快捷键绑定 |
 | [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-3041](bugs/BUG-3041-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
