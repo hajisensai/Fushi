@@ -5,6 +5,8 @@ import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/profile/profile_document.dart'
+    show kProfileSettingCategoryPref;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_prefs.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -2055,6 +2057,37 @@ class PreferencesRepository extends ChangeNotifier
   Future<void> setReaderToolbarStyle(String style) async {
     await setPref('reader_toolbar_style', style == 'docked' ? 'docked' : 'floating');
     notifyListeners();
+  }
+
+  /// 「工具栏样式强制悬浮」一次性迁移的已跑标记（bool）。本键不随 Profile 走
+  /// （`ProfileKeys` 排除）：描述的是本安装是否迁过，进快照的话切到老 Profile
+  /// 会把它删掉、迁移重跑，用户事后手动选的贴边又被改回悬浮。
+  static const String readerToolbarStyleFloatingMigratedKey =
+      'reader_toolbar_style_floating_migrated';
+
+  /// 启动时（`AppModel.initialise()`）跑一次：所有者 2026-10-06「工具栏样式默认
+  /// 悬浮，老用户更新也强制先悬浮」。把 live 偏好**和每个 Profile 快照里**的
+  /// `reader_toolbar_style` 一起改成 `floating`——只改 live 的话，切一次 Profile
+  /// 快照就把旧的 `docked` 带回来。标记与新值同一次 [setPrefs] 落盘；此后用户
+  /// 再手动选贴边，标记已在，不会被改回。快照先改、标记后写：中途中断下次重跑
+  /// 也只是把同一个值再写一遍。
+  Future<void> settleReaderToolbarStyleFloating() async {
+    if (getPref(readerToolbarStyleFloatingMigratedKey, defaultValue: false) ==
+        true) {
+      return;
+    }
+    await _db.customStatement(
+      'UPDATE profile_settings SET value = ? WHERE category = ? AND key = ?',
+      <Object>[
+        PrefCodec.encode('floating'),
+        kProfileSettingCategoryPref,
+        'reader_toolbar_style',
+      ],
+    );
+    await setPrefs(<String, dynamic>{
+      'reader_toolbar_style': 'floating',
+      readerToolbarStyleFloatingMigratedKey: true,
+    });
   }
 
   /// 视频「快捷键 1..4」自定义动作按钮的绑定（用户请求）：槽位序号 → 视频动作。

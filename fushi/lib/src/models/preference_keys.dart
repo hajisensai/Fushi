@@ -315,6 +315,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'reader_settings_panel_side',
   // String 'floating' | 'docked'：阅读器工具栏样式（M3E 悬浮工具栏 / 贴边实体条）。
   'reader_toolbar_style',
+  // bool：「工具栏样式强制悬浮」一次性迁移已跑（2026-10-06，非 Profile 键）。
+  'reader_toolbar_style_floating_migrated',
   'reading_goal_daily_chars',
   'reading_goal_weekly_chars',
   'remote_lookup_enabled',

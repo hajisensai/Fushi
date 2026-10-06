@@ -64,6 +64,9 @@ class ProfileKeys {
     // 封面模式迁到片段默认的一次性标记：同族。进快照的话，切 Profile 会把旧值 gif
     // 带回来，下次启动迁移重跑，把用户此后自己选的 GIF 又改成片段。
     'mining_image_mode_install_default',
+    // 「工具栏样式强制悬浮」一次性迁移标记：同族（迁移本身会改写各 Profile 快照
+    // 里的 reader_toolbar_style，标记只描述本安装）。
+    PreferencesRepository.readerToolbarStyleFloatingMigratedKey,
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
     // 宽屏导航 rail 的展开 / 收起记的是本机窗口布局，与 current_home_tab_index
