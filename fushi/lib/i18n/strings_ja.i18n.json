@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "ダイレクトタッチに切り替え",
   "game_stream_touch_trackpad": "トラックパッドに切り替え",
   "game_stream_remote_launch_title": "リモート起動を許可",
-  "game_stream_remote_launch_hint": "ペアリング済みの Android デバイスから、この PC のライブラリにあるゲームを起動して配信できます",
+  "game_stream_remote_launch_hint": "ペアリング済みのデバイスから、この PC のライブラリにあるゲームを起動して配信できます",
   "manga_reader_ocr_volume": "この巻を認識",
   "manga_reader_ocr_queued": "待機中",
   "manga_reader_ocr_unavailable_short": "使える OCR エンジンがありません · OCR 設定でモデルをダウンロードするかエンジンを変更してください",

@@ -177,6 +177,11 @@ class _GameStreamPageState extends State<GameStreamPage>
   GameStreamMouseInterpreter? _mouse;
   ({Rect bounds, Rect content})? _mouseGeometry;
   bool _mouseMoveInFlight = false;
+
+  /// After a forced release the user's finger may still be on the button. The
+  /// rest of that press is dropped until every button is up; otherwise the
+  /// next drag event would look like a fresh press and click the game.
+  bool _mouseAwaitingRelease = false;
   Offset? _queuedMouseMove;
   ({Rect bounds, Rect content})? _pointerGeometry;
   GameStreamInputComposer? _pointerComposer;
@@ -317,16 +322,19 @@ class _GameStreamPageState extends State<GameStreamPage>
   }
 
   Future<void> _releasePointer() async {
-    await _releaseMouse();
-    final GameStreamTouchInterpreter? touch = _touch;
-    final GameStreamInputComposer? composer = _pointerComposer;
-    if (touch == null || composer == null) return;
     // Clear synchronously: cancellation, metrics and disposal can arrive in the
     // same frame and must emit exactly one release to the original session.
+    final GameStreamTouchInterpreter? touch = _touch;
+    final GameStreamInputComposer? composer = _pointerComposer;
     _touch = null;
     _pointerComposer = null;
     _pointerGeometry = null;
-    await _dispatchPointer(touch.cancel(), composer);
+    // _releaseMouse also detaches its state before its first await.
+    final Future<void> mouse = _releaseMouse();
+    if (touch != null && composer != null) {
+      await _dispatchPointer(touch.cancel(), composer);
+    }
+    await mouse;
   }
 
   Future<void> _sendPointer(
@@ -433,6 +441,10 @@ class _GameStreamPageState extends State<GameStreamPage>
 
   /// Desktop mouse press / release / drag / hover: buttons map to themselves.
   Future<void> _sendMouse(PointerEvent event) async {
+    if (_mouseAwaitingRelease) {
+      if (event.buttons == 0) _mouseAwaitingRelease = false;
+      return;
+    }
     final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
     if (geometry == null) return;
     // A held button whose video moved under it cannot be continued.
@@ -445,17 +457,36 @@ class _GameStreamPageState extends State<GameStreamPage>
     await _dispatchMouse(_mouseFor(geometry).update(normalized, event.buttons));
   }
 
-  Future<void> _scrollMouse(PointerEvent event, Offset delta) async {
+  /// Logical pixels one physical wheel detent arrives as. The desktop
+  /// embedders disagree: Windows reports WHEEL_DELTA as 100 physical pixels,
+  /// macOS one line as 40, Linux 53. Counting detents per platform keeps one
+  /// detent = one host notch (a VN advances or backs up one line), while a
+  /// high-resolution wheel's small deltas still add up instead of each
+  /// becoming a whole notch.
+  double _wheelDetentPixels() => switch (defaultTargetPlatform) {
+    TargetPlatform.windows => 100 / MediaQuery.devicePixelRatioOf(context),
+    TargetPlatform.macOS => 40,
+    _ => 53,
+  };
+
+  Future<void> _scrollMouse(
+    PointerEvent event,
+    Offset delta, {
+    double step = GameStreamMouseInterpreter.scrollStep,
+  }) async {
     final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
     if (geometry == null) return;
     final Offset? normalized = _normalizeMouse(event, geometry);
     if (normalized == null) return;
-    await _dispatchMouse(_mouseFor(geometry).scroll(normalized, delta));
+    await _dispatchMouse(
+      _mouseFor(geometry).scroll(normalized, delta, step: step),
+    );
   }
 
   Future<void> _releaseMouse() async {
     final GameStreamMouseInterpreter? mouse = _mouse;
     if (mouse == null) return;
+    if (mouse.active) _mouseAwaitingRelease = true;
     _mouse = null;
     _mouseGeometry = null;
     _queuedMouseMove = null;
@@ -1104,7 +1135,11 @@ class _GameStreamPageState extends State<GameStreamPage>
         GestureBinding.instance.pointerSignalResolver.register(
           event,
           (PointerSignalEvent event) => unawaited(
-            _scrollMouse(event, (event as PointerScrollEvent).scrollDelta),
+            _scrollMouse(
+              event,
+              (event as PointerScrollEvent).scrollDelta,
+              step: _wheelDetentPixels(),
+            ),
           ),
         );
       },

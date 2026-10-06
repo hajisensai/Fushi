@@ -246,6 +246,24 @@ void main() {
       ]);
     });
 
+    test('a platform detent size turns each detent into one notch', () {
+      final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter(
+        wheelSupported: true,
+      );
+      // Windows at 100%: one detent = 100 logical px.
+      expect(
+        mouse.scroll(a, const Offset(0, 100), step: 100),
+        <GameStreamPointerCommand>[
+          const GameStreamPointerCommand.wheel(a, dy: 1),
+        ],
+      );
+      // A high-resolution wheel's small deltas add up instead of each
+      // becoming a whole notch.
+      expect(mouse.scroll(a, const Offset(0, 30), step: 100), isEmpty);
+      expect(mouse.scroll(a, const Offset(0, 30), step: 100), isEmpty);
+      expect(mouse.scroll(a, const Offset(0, 40), step: 100), hasLength(1));
+    });
+
     test('no wheel without host support', () {
       final GameStreamMouseInterpreter mouse = GameStreamMouseInterpreter();
       expect(mouse.scroll(a, const Offset(0, 500)), isEmpty);

@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "직접 터치로 전환",
   "game_stream_touch_trackpad": "트랙패드로 전환",
   "game_stream_remote_launch_title": "원격 실행 허용",
-  "game_stream_remote_launch_hint": "페어링된 Android 기기가 이 PC의 라이브러리에서 게임을 시작하고 스트리밍할 수 있습니다",
+  "game_stream_remote_launch_hint": "페어링된 기기가 이 PC의 라이브러리에서 게임을 시작하고 스트리밍할 수 있습니다",
   "manga_reader_ocr_volume": "이 권 인식",
   "manga_reader_ocr_queued": "대기 중",
   "manga_reader_ocr_unavailable_short": "사용 가능한 OCR 엔진 없음 · OCR 설정에서 모델을 다운로드하거나 엔진을 바꾸세요",

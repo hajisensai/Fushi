@@ -283,7 +283,8 @@ void main() {
     expect(audio['androidAudioAttributesUsageType'], 'media');
     expect(audio['androidAudioMode'], 'normal');
     expect(audio['androidAudioStreamType'], 'music');
-    expect(options['bypassVoiceProcessing'], isTrue);
+    // The test host is not iOS: Android keeps its low-latency playout.
+    expect(options.containsKey('bypassVoiceProcessing'), isFalse);
   });
 
   test('iOS plays the stream as media, not as a call', () {
@@ -293,8 +294,10 @@ void main() {
     expect(session['appleAudioMode'], 'moviePlayback');
     expect(
       session['appleAudioCategoryOptions'],
-      isNot(contains('defaultToSpeaker')),
-      reason: 'defaultToSpeaker only exists to undo PlayAndRecord earpiece',
+      isEmpty,
+      reason:
+          'call options are invalid with playback and would make iOS '
+          'reject the category; an absent key would keep the old options',
     );
   });
 

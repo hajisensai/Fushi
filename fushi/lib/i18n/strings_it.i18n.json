@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Passa al tocco diretto",
   "game_stream_touch_trackpad": "Passa al trackpad",
   "game_stream_remote_launch_title": "Consenti avvio remoto",
-  "game_stream_remote_launch_hint": "I dispositivi Android abbinati possono avviare giochi dalla libreria di questo PC e trasmetterli in streaming",
+  "game_stream_remote_launch_hint": "I dispositivi abbinati possono avviare giochi dalla libreria di questo PC e trasmetterli in streaming",
   "manga_reader_ocr_volume": "Riconosci questo volume",
   "manga_reader_ocr_queued": "In coda",
   "manga_reader_ocr_unavailable_short": "Nessun motore OCR · scarica un modello o cambia motore nelle impostazioni OCR",

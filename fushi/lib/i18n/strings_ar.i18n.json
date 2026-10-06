@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "التبديل إلى اللمس المباشر",
   "game_stream_touch_trackpad": "التبديل إلى لوحة اللمس",
   "game_stream_remote_launch_title": "السماح بالتشغيل عن بُعد",
-  "game_stream_remote_launch_hint": "يمكن للأجهزة المقترنة التي تعمل بـ Android بدء الألعاب من مكتبة هذا الحاسوب وبثّها",
+  "game_stream_remote_launch_hint": "يمكن للأجهزة المقترنة بدء الألعاب من مكتبة هذا الحاسوب وبثّها",
   "manga_reader_ocr_volume": "التعرّف على هذا المجلد",
   "manga_reader_ocr_queued": "في قائمة الانتظار",
   "manga_reader_ocr_unavailable_short": "لا يوجد محرك OCR · نزّل نموذجًا أو غيّر المحرك في إعدادات OCR",

@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Zu direkter Berührung wechseln",
   "game_stream_touch_trackpad": "Zum Trackpad wechseln",
   "game_stream_remote_launch_title": "Remote-Start erlauben",
-  "game_stream_remote_launch_hint": "Gekoppelte Android-Geräte können Spiele aus der Bibliothek dieses PCs starten und streamen",
+  "game_stream_remote_launch_hint": "Gekoppelte Geräte können Spiele aus der Bibliothek dieses PCs starten und streamen",
   "manga_reader_ocr_volume": "Diesen Band erkennen",
   "manga_reader_ocr_queued": "In Warteschlange",
   "manga_reader_ocr_unavailable_short": "Keine OCR-Engine · Modell in den OCR-Einstellungen laden oder Engine wechseln",

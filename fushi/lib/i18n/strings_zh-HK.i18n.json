@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "切換為直接點擊",
   "game_stream_touch_trackpad": "切換為觸控板",
   "game_stream_remote_launch_title": "允許遠程啟動",
-  "game_stream_remote_launch_hint": "已配對的安卓裝置可從本機遊戲庫啟動遊戲並直接串流",
+  "game_stream_remote_launch_hint": "已配對的裝置可從本機遊戲庫啟動遊戲並直接串流",
   "manga_reader_ocr_volume": "識別本卷",
   "manga_reader_ocr_queued": "排隊中",
   "manga_reader_ocr_unavailable_short": "沒有可用的 OCR 引擎 · 請在 OCR 設定中下載模型或更換引擎",

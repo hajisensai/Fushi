@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Cambiar a toque directo",
   "game_stream_touch_trackpad": "Cambiar a trackpad",
   "game_stream_remote_launch_title": "Permitir inicio remoto",
-  "game_stream_remote_launch_hint": "Los dispositivos Android emparejados pueden iniciar juegos de la biblioteca de este PC y transmitirlos",
+  "game_stream_remote_launch_hint": "Los dispositivos emparejados pueden iniciar juegos de la biblioteca de este PC y transmitirlos",
   "manga_reader_ocr_volume": "Reconocer este volumen",
   "manga_reader_ocr_queued": "En cola",
   "manga_reader_ocr_unavailable_short": "Sin motor de OCR · descarga un modelo o cambia de motor en los ajustes de OCR",

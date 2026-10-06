@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "สลับเป็นการสัมผัสโดยตรง",
   "game_stream_touch_trackpad": "สลับเป็นแทร็กแพด",
   "game_stream_remote_launch_title": "อนุญาตการเปิดจากระยะไกล",
-  "game_stream_remote_launch_hint": "อุปกรณ์ Android ที่จับคู่สามารถเริ่มเกมจากคลังของพีซีเครื่องนี้และสตรีมได้",
+  "game_stream_remote_launch_hint": "อุปกรณ์ที่จับคู่สามารถเริ่มเกมจากคลังของพีซีเครื่องนี้และสตรีมได้",
   "manga_reader_ocr_volume": "จดจำเล่มนี้",
   "manga_reader_ocr_queued": "อยู่ในคิว",
   "manga_reader_ocr_unavailable_short": "ไม่มีเอนจิน OCR · ดาวน์โหลดโมเดลหรือเปลี่ยนเอนจินในการตั้งค่า OCR",

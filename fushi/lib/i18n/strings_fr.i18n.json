@@ -5414,7 +5414,7 @@
   "game_stream_touch_direct": "Passer au toucher direct",
   "game_stream_touch_trackpad": "Passer au pavé tactile",
   "game_stream_remote_launch_title": "Autoriser le lancement à distance",
-  "game_stream_remote_launch_hint": "Les appareils Android appairés peuvent lancer des jeux de la bibliothèque de ce PC et les diffuser",
+  "game_stream_remote_launch_hint": "Les appareils appairés peuvent lancer des jeux de la bibliothèque de ce PC et les diffuser",
   "manga_reader_ocr_volume": "Reconnaître ce volume",
   "manga_reader_ocr_queued": "En attente",
   "manga_reader_ocr_unavailable_short": "Aucun moteur OCR · téléchargez un modèle ou changez de moteur dans les réglages OCR",
