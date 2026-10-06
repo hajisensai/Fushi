@@ -1283,24 +1283,32 @@ class MihonManager extends ChangeNotifier {
     }
   }
 
+  /// 一次排序意图 = 一个 Drift 事务（HBK-AUDIT-031）：中途任何一行写失败整体
+  /// 回滚，库里不会留下前几行已改、后几行未改的半截顺序（重复 sortOrder）。
+  /// 无论成败都 reload，让显示快照与存储一致。
   Future<void> _writeSourceOrder(List<MangaOnlineSourceRow> ordered) async {
-    final Map<(String, String), int> stored = <(String, String), int>{
-      for (final MangaOnlineSourceRow row
-          in await database.getMangaOnlineSources(mediaKind: kind.dbValue))
-        (row.extensionPackage, row.sourceId): row.sortOrder,
-    };
-    for (int index = 0; index < ordered.length; index++) {
-      final MangaOnlineSourceRow row = ordered[index];
-      if (stored[(row.extensionPackage, row.sourceId)] == index) {
-        continue;
-      }
-      await database.updateMangaOnlineSourceSettings(
-        extensionPackage: row.extensionPackage,
-        sourceId: row.sourceId,
-        sortOrder: index,
-      );
+    try {
+      await database.transaction(() async {
+        final Map<(String, String), int> stored = <(String, String), int>{
+          for (final MangaOnlineSourceRow row
+              in await database.getMangaOnlineSources(mediaKind: kind.dbValue))
+            (row.extensionPackage, row.sourceId): row.sortOrder,
+        };
+        for (int index = 0; index < ordered.length; index++) {
+          final MangaOnlineSourceRow row = ordered[index];
+          if (stored[(row.extensionPackage, row.sourceId)] == index) {
+            continue;
+          }
+          await database.updateMangaOnlineSourceSettings(
+            extensionPackage: row.extensionPackage,
+            sourceId: row.sourceId,
+            sortOrder: index,
+          );
+        }
+      });
+    } finally {
+      await reload();
     }
-    await reload();
   }
 
   Future<List<MihonPreference>> getPreferences(
