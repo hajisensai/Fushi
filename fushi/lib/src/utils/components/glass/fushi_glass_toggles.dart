@@ -1185,6 +1185,11 @@ class FushiSlider extends StatelessWidget {
         child: slider,
       );
     }
+    // 竖直：Material Slider 在有界高度下会吃满父级给的最大高度，旋转后就成了
+    // 横向吃满父级宽度的一大块（命中区与布局都按整宽算）。按 Slider 自己的固有
+    // 高度（轨道 / 把手 / 光晕里最高的那个）定厚度，旋转后才是一根竖条
+    // （BUG-3047）。Apple 分支自带定高，不需要。
+    if (axis == Axis.vertical) slider = IntrinsicHeight(child: slider);
     return slider;
   }
 
