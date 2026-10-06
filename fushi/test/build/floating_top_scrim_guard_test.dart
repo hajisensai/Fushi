@@ -259,7 +259,7 @@ void main() {
         // 且必须在调用处写明理由；新增退回要先加进这里（只许减不许加）。
         const Map<String, int> allowed = <String, int>{
           // Mokuro 目录（固定搜索行 + 网格 + 底部动作行的竖排）与 OPDS 目录
-        // （正文 MediaDiscoveryPage 自带浮动工具区，脚手架不下发作用域）。
+          // （正文 MediaDiscoveryPage 自带浮动工具区，脚手架不下发作用域）。
           'lib/src/media/manga/discovery/manga_discovery_page.dart': 2,
           // Mokuro 目录（同上）。
           'lib/src/media/manga/manga_online_sources_view.dart': 1,
@@ -294,6 +294,34 @@ void main() {
         }
       },
     );
+
+    test('SettingsKitScaffold pages scroll under the floating header', () {
+      // 设置子页独立脚手架默认竖排（bodyConsumesTopPadding: false），页头收起
+      // 后顶部留一段实色空白。每个调用点都必须显式 true；只有正文是定高卡片
+      // + 自带滚动（FushiLogPanel）的日志页例外。
+      const Set<String> allowedFalse = <String>{
+        'lib/src/pages/implementations/debug_log_page.dart',
+        'lib/src/pages/implementations/error_log_page.dart',
+      };
+      final List<String> offenders = <String>[];
+      for (final FileSystemEntity entity in Directory(
+        'lib',
+      ).listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String path = entity.path.replaceAll(r'\', '/');
+        if (path.endsWith('/settings/settings_kit.dart')) continue;
+        final String source = entity.readAsStringSync();
+        final int calls = 'SettingsKitScaffold('.allMatches(source).length;
+        if (calls == 0) continue;
+        final int consuming = 'bodyConsumesTopPadding: true'
+            .allMatches(source)
+            .length;
+        if (consuming < calls && !allowedFalse.contains(path)) {
+          offenders.add(path);
+        }
+      }
+      expect(offenders, isEmpty);
+    });
 
     test('desktop title bar floats over the page', () {
       // 曾经是 Column[标题行, Expanded(页面)]：标题行是一条独立带子，页面背景
