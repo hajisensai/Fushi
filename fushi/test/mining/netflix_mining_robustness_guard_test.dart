@@ -344,7 +344,7 @@ void main() {
           // 非 sticky：5000ms 后自动淡出（短暂、不常驻）。
           expect(
             RegExp(
-              r"if\s*\(!sticky\)\s*\{\s*fushiToastTimer\s*=\s*setTimeout\(\(\)\s*=>\s*\{"
+              r'if\s*\(!sticky\)\s*\{\s*fushiToastTimer\s*=\s*setTimeout\(\(\)\s*=>\s*\{'
               r"\s*if\s*\(!t\)\s*return;\s*t\.style\.opacity\s*=\s*'0';"
               r"\s*if\s*\(typeof t\.setAttribute\s*===\s*'function'\)\s*"
               r"t\.setAttribute\('data-visible',\s*'0'\);\s*\},\s*5000\);\s*\}",
