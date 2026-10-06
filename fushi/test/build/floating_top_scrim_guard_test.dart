@@ -251,6 +251,49 @@ void main() {
       expect(offenders, isEmpty);
     });
 
+    test(
+      'FushiPageScaffold opt-outs from the floating header are reviewed',
+      () {
+        // FushiPageScaffold 默认把页头叠在正文上（bc65b9dc94c），正文滚到页头
+        // 底下、无实色带。只有确实无法让内容滚到页头底下的页面才能退回竖排，
+        // 且必须在调用处写明理由；新增退回要先加进这里（只许减不许加）。
+        const Map<String, int> allowed = <String, int>{
+          // Mokuro 卷列表 ×2：push 出去的子页正文是定高网格 + 自带分页条。
+          'lib/src/media/manga/discovery/manga_discovery_page.dart': 2,
+          // OPDS 目录：正文是带自己浮动工具区的 MediaDiscoveryPage。
+          'lib/src/media/manga/manga_online_sources_view.dart': 1,
+          // Mihon 登录：整页 WebView。
+          'lib/src/media/manga/mihon/mihon_web_login_page.dart': 1,
+          // 字幕工作台：定高面板，顶部控件行固定、列表区各自滚动。
+          'lib/src/pages/implementations/subtitle_workbench_page.dart': 1,
+          // 标签选择：与弹层共用的面板，固定标题行 + 底部动作行。
+          'lib/src/pages/implementations/tag_picker_page.dart': 1,
+          // 配对扫码：相机取景定高画布。
+          'lib/src/sync/sync_settings_schema/interconnect_link.part.dart': 1,
+        };
+        final Map<String, int> found = <String, int>{};
+        for (final FileSystemEntity entity in Directory(
+          'lib',
+        ).listSync(recursive: true)) {
+          if (entity is! File || !entity.path.endsWith('.dart')) continue;
+          final String path = entity.path.replaceAll(r'\', '/');
+          final int count = 'extendBodyBehindHeader: false'
+              .allMatches(entity.readAsStringSync())
+              .length;
+          if (count > 0) found[path] = count;
+        }
+        for (final MapEntry<String, int> entry in found.entries) {
+          expect(
+            entry.value,
+            lessThanOrEqualTo(allowed[entry.key] ?? 0),
+            reason:
+                '${entry.key}: 新的竖排退回；让正文消费 '
+                'MediaQuery.paddingOf(context).top，或在此登记理由',
+          );
+        }
+      },
+    );
+
     test('desktop title bar floats over the page', () {
       // 曾经是 Column[标题行, Expanded(页面)]：标题行是一条独立带子，页面背景
       // 在 y = 32 被切开。
