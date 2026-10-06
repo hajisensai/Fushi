@@ -20,6 +20,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/tags/tag_chips.dart';
+import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
@@ -347,10 +349,12 @@ void main() {
       );
 
   Future<void> dragTopTagToVideoCard(WidgetTester tester) async {
+    // 顶部筛选条的标签是 M3E 彩色 filter chip [FushiTagToggleChip]（127d7722029
+    // 起；卡片上的标签层仍是 [FushiTagChip]）。
     final Finder tagChip = find
         .descendant(
           of: find.byType(FushiTagFilterBar),
-          matching: find.widgetWithText(FushiTagChip, 'Anime'),
+          matching: find.widgetWithText(FushiTagToggleChip, 'Anime'),
         )
         .first;
     final Finder card =
@@ -1162,24 +1166,22 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.batch_selected_count(n: 2)), findsOneWidget);
 
-    // 点批量打标签按钮（批量栏的 sell_outlined）→ 打开三态 picker。dialog 打开前
-    // 页面上只有批量栏一个 sell_outlined（卡片标签层用 FushiTagChip，不是该图标）。
-    await tester.tap(find.byIcon(Icons.sell_outlined).last);
+    // 点批量栏的打标签按钮 → 打开共享三态标签选择器（1de93012a32 起取代旧的
+    // 批量打标签对话框 + SegmentedButton 三段）。
+    await tester.tap(
+        find.byKey(const ValueKey<String>('home_video_batch_tag')));
     await tester.pumpAndSettle();
-    expect(find.text(t.batch_tag_title), findsOneWidget);
+    expect(find.byType(TagPickerPanel), findsOneWidget);
 
-    // 把「Anime」设为「添加」（segmented 的 + 段）：在 SegmentedButton 内定位 + 图标，
-    // 避开页头导入按钮（也是 Icons.add，TODO-064 起恒渲染）。
-    final Finder segmentedButton = find.byWidgetPredicate(
-      (Widget w) => w is SegmentedButton,
-    );
-    expect(segmentedButton, findsWidgets);
-    await tester.tap(find.descendant(
-      of: segmentedButton.first,
-      matching: find.byIcon(Icons.add),
-    ));
+    // 两条都还没挂「Anime」：选择器里该标签是「无」，点一下 → 全加；多目标不即时
+    // 落库，按「应用」才写。
+    final Finder chip = find.byKey(ValueKey<String>('tag_picker_chip_$tagId'));
+    expect(tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.none);
+    await tester.tap(chip);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(t.batch_tag_apply));
+    expect(tester.widget<FushiTagToggleChip>(chip).state, TagCheckState.all);
+    expect(await db.getTagsForVideoBook('video/1'), isEmpty);
+    await tester.tap(find.byKey(const ValueKey<String>('tag_picker_apply')));
     await tester.pumpAndSettle();
 
     expect(
