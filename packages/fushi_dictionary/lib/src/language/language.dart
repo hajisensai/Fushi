@@ -537,6 +537,7 @@ DictionarySearchResult buildResultFromLookup({
   required List<FushiLookupResult> results,
   required int maximumTerms,
   List<String> dictionaryOrder = const <String>[],
+  Set<String> hiddenDictionaries = const <String>{},
 }) {
   int bestLength = 0;
   // BUG-1472：预算的单位是**词头**（表记 + 读音），不是 glossary 注释行。
@@ -558,6 +559,17 @@ DictionarySearchResult buildResultFromLookup({
   final Map<String, String> soleReadings = soleExplicitReadings(results);
   outer:
   for (final r in results) {
+    // 与 [buildPopupJsonFromLookup] 同一道源头过滤：被用户关掉的词典不进 entries。
+    // 此前只有 popupJson 过滤、entries 不过滤——只命中已隐藏词典的词，宿主据
+    // entries 判「有结果」去等 WebView 渲染，页面拿到的 popupJson 却是 `[]`，画出
+    // 页面自己的「No results」（emoji 放大镜）并按最大宽高铺成一大块空面板。只有
+    // 隐藏词典释义的词头不占 maximumTerms 预算、也不贡献高亮长度。
+    final List<FushiGlossaryEntry> glossaries = hiddenDictionaries.isEmpty
+        ? r.term.glossaries
+        : r.term.glossaries
+            .where((g) => !hiddenDictionaries.contains(g.dictName))
+            .toList();
+    if (glossaries.isEmpty) continue;
     if (r.matched.length > bestLength) {
       bestLength = r.matched.length;
     }
@@ -571,7 +583,7 @@ DictionarySearchResult buildResultFromLookup({
     }
     final int headwordIndex =
         headwords.putIfAbsent(headword, () => headwords.length);
-    for (final g in r.term.glossaries) {
+    for (final g in glossaries) {
       collected.add((
         entry: DictionaryEntry(
           dictionaryName: g.dictName,
