@@ -94,6 +94,9 @@ void main() {
 
     // 初始：冲突 2（默认远端更新→用远端）+ 本地更新 + 远端更新 = 4 项可应用。
     expect(find.text(t.sync_compare_apply(count: 4)), findsOneWidget);
+    // M3E 双栏对比卡（2c0e01a）更高，「其它书」段落在懒列表首屏之外：先滚到。
+    await tester.scrollUntilVisible(find.text('Local newer'), 300,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('Local newer'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('JMdict'), 300,
         scrollable: find.byType(Scrollable).first);
@@ -119,6 +122,8 @@ void main() {
 
     await tester.tap(chip);
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Local newer'), 300,
+        scrollable: find.byType(Scrollable).first);
     expect(find.text('Local newer'), findsOneWidget);
     expect(find.text(t.sync_compare_apply(count: 4)), findsOneWidget);
   });

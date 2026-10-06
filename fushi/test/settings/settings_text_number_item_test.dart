@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -238,7 +239,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: secretRow,
-        matching: find.byIcon(Icons.visibility_outlined),
+        matching: find.byIcon(FushiIcons.visibility),
       ),
     );
     await tester.pump();
@@ -247,7 +248,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: secretRow,
-        matching: find.byIcon(Icons.visibility_off_outlined),
+        matching: find.byIcon(FushiIcons.visibilityOff),
       ),
     );
     await tester.pump();

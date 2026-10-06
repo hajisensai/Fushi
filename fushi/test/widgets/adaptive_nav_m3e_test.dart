@@ -79,8 +79,10 @@ void main() {
       tester.getSize(find.byKey(fushiMaterialNavKey)).width -
       kMaterialNavRailFloatingInset;
 
+  // 只认能点到的那份：MD3 悬浮底栏常驻挂着一枚透明 + IgnorePointer 的
+  // 「最小化小胶囊」，里面是当前项的图标与标签（690c4905896），不是可见目的地。
   bool labelPainted(WidgetTester tester, String label) {
-    final Finder text = find.text(label);
+    final Finder text = find.text(label).hitTestable();
     if (text.evaluate().length != 1) return false;
     final Size size = tester.getSize(text);
     return size.width > 0 && size.height > 0;
@@ -298,7 +300,7 @@ void main() {
     Rect stateLayerRect(WidgetTester tester, String label) {
       final Finder ink = find
           .ancestor(
-            of: find.text(label),
+            of: find.text(label).hitTestable(),
             matching: find.byWidgetPredicate((Widget w) => w is InkWell),
           )
           .first;
@@ -311,17 +313,29 @@ void main() {
 
     testWidgets('手机宽：竖排目的地、64 高、全部标签可见', (WidgetTester tester) async {
       await pumpBar(tester, width: 420);
-      expect(
-        tester.getSize(find.byKey(fushiMaterialNavKey)).height,
-        kAdaptiveNavBarFloatingTopGap +
-            kAdaptiveNavBarContentHeight +
-            kAdaptiveNavFloatingMargin,
-      );
+      // 胶囊高 = max(64, 药丸 32 + 缝 4 + 标签实际行高 + 上下留白)（fb665edc33a：
+      // 按标签行高撑开，免得标签下半截被圆角裁掉），不再是恒 64。
+      final Rect bar = tester.getRect(find.byKey(fushiMaterialNavKey));
+      final double capsule =
+          bar.height -
+          kAdaptiveNavBarFloatingTopGap -
+          kAdaptiveNavFloatingMargin;
+      expect(capsule, greaterThanOrEqualTo(kAdaptiveNavBarContentHeight));
       for (final AdaptiveNavItem item in items) {
         expect(labelPainted(tester, item.label), isTrue, reason: item.label);
-        final Rect icon = tester.getRect(find.byIcon(item.icon));
-        final Rect label = tester.getRect(find.text(item.label));
+        final Rect icon = tester.getRect(find.byIcon(item.icon).hitTestable());
+        final Rect label = tester.getRect(find.text(item.label).hitTestable());
         expect(icon.bottom, lessThanOrEqualTo(label.top), reason: '图标在上');
+        expect(
+          icon.top,
+          greaterThanOrEqualTo(bar.top + kAdaptiveNavBarFloatingTopGap),
+          reason: '${item.label} 图标落在胶囊里',
+        );
+        expect(
+          label.bottom,
+          lessThanOrEqualTo(bar.bottom - kAdaptiveNavFloatingMargin),
+          reason: '${item.label} 标签完整落在胶囊里',
+        );
       }
       // 悬停 / 按压状态层与活动指示器同框（56×32 全圆角药丸）。
       for (final AdaptiveNavItem item in items) {

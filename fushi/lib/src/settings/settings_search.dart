@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -368,7 +369,7 @@ class SettingsSearchReveal {
 ///
 /// 不改变行外观，所以实现 [SettingsRowIconProbe]：分组判 Apple 分隔线缩进时
 /// 看穿本落点包装。
-class SettingsSearchTarget extends StatelessWidget
+class SettingsSearchTarget extends StatefulWidget
     implements SettingsRowIconProbe {
   const SettingsSearchTarget({
     super.key,
@@ -383,13 +384,28 @@ class SettingsSearchTarget extends StatelessWidget
   bool get settingsRowHasIcon => settingsRowHasLeadingIcon(child);
 
   @override
+  State<SettingsSearchTarget> createState() => _SettingsSearchTargetState();
+}
+
+class _SettingsSearchTargetState extends State<SettingsSearchTarget> {
+  /// 本落点消费到的那次跳转请求的代号；非空期间一直包着 [SettingsRevealTarget]。
+  ///
+  /// BUG-3027：挂点消费即清，但宿主页面紧接着会整树重建（M3E 浮动页头在首帧后
+  /// 回报实测高度 → SettingsKitScaffold setState → 正文 bodyBuilder 重新构建）。
+  /// 若每次 build 只看挂点，第二次 build 就把包装拆掉：定位与高亮都随之丢失。
+  int? _revealGeneration;
+
+  @override
   Widget build(BuildContext context) {
-    if (SettingsSearchReveal.pendingItemId != id) return child;
-    final int generation = SettingsSearchReveal.generation;
-    SettingsSearchReveal.pendingItemId = null;
+    if (SettingsSearchReveal.pendingItemId == widget.id) {
+      _revealGeneration = SettingsSearchReveal.generation;
+      SettingsSearchReveal.pendingItemId = null;
+    }
+    final int? generation = _revealGeneration;
+    if (generation == null) return widget.child;
     return SettingsRevealTarget(
-      key: ValueKey<String>('settings-reveal.$id.$generation'),
-      child: child,
+      key: ValueKey<String>('settings-reveal.${widget.id}.$generation'),
+      child: widget.child,
     );
   }
 }
@@ -398,6 +414,11 @@ class SettingsSearchTarget extends StatelessWidget
 /// 焦点架构守卫禁止 lib/src 各处自持 ensureVisible 实现；非懒详情容器里恒可用，
 /// 见 material renderer 的 SingleChildScrollView 契约），并用主题色短暂闪烁一次
 /// 帮助用户锁定视线。
+///
+/// BUG-3027：叠放的 M3E 页头 / 跳转条在首帧之后才回报实测高度，正文顶部让位
+/// （`MediaQuery.paddingOf(context).top`）随之变大、内容整体下移——首帧算好的
+/// 定位就落空了（靠近页尾的行被推出视口底部）。所以让位变化时重新定位，直到
+/// 用户亲手滚动（userScrollDirection 离开 idle）为止。
 class SettingsRevealTarget extends StatefulWidget {
   const SettingsRevealTarget({super.key, required this.child});
 
@@ -408,17 +429,60 @@ class SettingsRevealTarget extends StatefulWidget {
 }
 
 class _SettingsRevealTargetState extends State<SettingsRevealTarget> {
+  double? _topInset;
+  ScrollPosition? _position;
+  bool _following = true;
+
   @override
   void initState() {
     super.initState();
+    _scheduleReveal();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ScrollPosition? position = Scrollable.maybeOf(context)?.position;
+    if (!identical(position, _position)) {
+      _position?.removeListener(_onScroll);
+      _position = _following ? position : null;
+      _position?.addListener(_onScroll);
+    }
+    final double topInset = MediaQuery.paddingOf(context).top;
+    final double? previous = _topInset;
+    _topInset = topInset;
+    if (previous != null && previous != topInset && _following) {
+      _scheduleReveal();
+    }
+  }
+
+  void _onScroll() {
+    final ScrollPosition? position = _position;
+    if (position == null ||
+        position.userScrollDirection == ScrollDirection.idle) {
+      return;
+    }
+    // 用户接手滚动：此后让位再变也不把他拽回来。
+    _following = false;
+    position.removeListener(_onScroll);
+    _position = null;
+  }
+
+  void _scheduleReveal() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || !_following) return;
       // eink 下滚动动画归零（连续重绘=残影），直接跳到目标位置。
       FushiFocusScroll.ensureVisible(
         context,
         duration: einkSafeDuration(context, const Duration(milliseconds: 250)),
       );
     });
+  }
+
+  @override
+  void dispose() {
+    _position?.removeListener(_onScroll);
+    super.dispose();
   }
 
   @override

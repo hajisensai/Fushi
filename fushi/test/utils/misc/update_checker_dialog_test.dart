@@ -1,7 +1,11 @@
+// flutter_markdown 仍渲染 SDK 旧 Material 的 SelectableText（未随 446e7b6 迁到
+// material_ui），按旧类型找。
+import 'package:flutter/material.dart' as legacy show SelectableText;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
@@ -12,7 +16,15 @@ void main() {
   });
 
   Widget buildApp(Widget child) {
-    return TranslationProvider(child: MaterialApp(home: Scaffold(body: child)));
+    // 与生产 main.dart 同构：根上挂 LegacyDesignCompatibility，把 material_ui
+    // 主题/本地化桥给 MarkdownBody 等仍用 SDK 旧 Material 的第三方组件。
+    return TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? navigator) =>
+            LegacyDesignCompatibility(child: navigator!),
+        home: Scaffold(body: child),
+      ),
+    );
   }
 
   testWidgets('update available dialog fits a compact desktop window', (
@@ -64,7 +76,7 @@ void main() {
       ),
     );
 
-    final Finder selectable = find.byType(SelectableText);
+    final Finder selectable = find.byType(legacy.SelectableText);
     expect(selectable, findsWidgets,
         reason: 'MarkdownBody(selectable: true) 应渲染出可选文本');
 

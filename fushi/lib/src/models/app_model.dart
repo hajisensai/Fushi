@@ -3692,6 +3692,22 @@ class AppModel with ChangeNotifier {
   Future<void> selectCustomTheme(String id) =>
       themeNotifier.selectCustomTheme(id);
 
+  /// 自定义条目在当前系统取色 / 纯黑 / 墨水屏下的配色（编辑页预览与设置色卡）。
+  /// 走 [theme_notifier.buildCustomThemeEntryColorScheme] 同一条解析链，
+  /// 全局状态取本门面的 getter——UI 只跟 AppModel 说话，不穿透到
+  /// [themeNotifier]。
+  ColorScheme buildCustomThemeColorScheme(
+    CustomThemeEntry entry,
+    Brightness brightness,
+  ) =>
+      theme_notifier.buildCustomThemeEntryColorScheme(
+        entry,
+        brightness,
+        einkMode: einkMode,
+        pureBlack: pureBlackDark,
+        systemPrimaryColor: systemPrimaryColor,
+      );
+
   String get brightnessMode => themeNotifier.brightnessMode;
   Future<void> setBrightnessMode(String mode) =>
       themeNotifier.setBrightnessMode(mode);

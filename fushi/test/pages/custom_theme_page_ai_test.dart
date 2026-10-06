@@ -15,6 +15,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show kCustomThemeDefaultSeed;
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
@@ -63,6 +64,10 @@ class _RecordingAppModel extends AppModel {
   @override
   bool get einkMode => false;
 
+  // 4c32e76e6e4：编辑页把「纯黑深色背景」开关计入配色缓存键。
+  @override
+  bool get pureBlackDark => false;
+
   @override
   Color? get systemPrimaryColor => null;
 }
@@ -93,6 +98,10 @@ Widget _host(_RecordingAppModel appModel, Widget home) {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        // 与生产根同构：取色器（flutter_colorpicker）的 hex 输入框仍是 SDK 旧
+        // Material TextField，靠根上的 LegacyDesignCompatibility（446e7b695a2）。
+        builder: (BuildContext context, Widget? child) =>
+            LegacyDesignCompatibility(child: child!),
         theme: ThemeData.light(useMaterial3: true),
         home: home,
       ),
@@ -125,19 +134,35 @@ Future<void> _pumpAndRunAi(
 
   final Finder request =
       find.byKey(const ValueKey<String>('custom-theme-ai-request'));
-  await tester.scrollUntilVisible(request, 120,
-      scrollable: _verticalScrollable);
-  await tester.pumpAndSettle();
+  await _revealUnobscured(tester, request);
   await tester.enterText(request, '暖色纸张，主题色深绿');
-  await tester
-      .tap(find.byKey(const ValueKey<String>('custom-theme-ai-generate')));
+  final Finder generate =
+      find.byKey(const ValueKey<String>('custom-theme-ai-generate'));
+  await _revealUnobscured(tester, generate);
+  await tester.tap(generate);
+  await tester.pumpAndSettle();
+}
+
+/// c981bcf1533 起编辑列表滚到浮动页头与（窄屏）吸顶预览底下：
+/// `scrollUntilVisible` 只保证进了视口，目标可能正被页头 / 预览压着，
+/// 点下去落在叠放层上。再把它对到视口中下部、露出叠放层之外再点。
+Future<void> _revealUnobscured(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    120,
+    scrollable: _verticalScrollable,
+  );
+  await tester.pumpAndSettle();
+  await Scrollable.ensureVisible(
+    tester.element(target.first),
+    alignment: 0.7,
+  );
   await tester.pumpAndSettle();
 }
 
 Future<void> _tapApply(WidgetTester tester) async {
   final Finder apply = find.byKey(const ValueKey<String>('custom-theme-apply'));
-  await tester.scrollUntilVisible(apply, 200, scrollable: _verticalScrollable);
-  await tester.pumpAndSettle();
+  await _revealUnobscured(tester, apply);
   await tester.tap(apply);
   await tester.pumpAndSettle();
 }
@@ -199,7 +224,11 @@ void main() {
     );
     // 名字进了 hero 标题；主题列表在按「应用」前一条都没写。
     // hero 在列表最上面（2026-10 M3E 重设计），滚回顶部再看。
-    await tester.drag(_verticalScrollable, const Offset(0, 2000));
+    // 直接回到顶：视口中心正压在吸顶预览上，拖拽会落在预览而不是列表上。
+    tester
+        .state<ScrollableState>(_verticalScrollable)
+        .position
+        .jumpTo(0);
     await tester.pumpAndSettle();
     expect(
       find.descendant(
@@ -239,8 +268,10 @@ void main() {
     );
     expect(appModel.audioHighlightWrites.last, const Color(0x40FFEB3B));
 
-    await tester
-        .tap(find.byKey(const ValueKey<String>('custom-theme-ai-undo')));
+    final Finder undo =
+        find.byKey(const ValueKey<String>('custom-theme-ai-undo'));
+    await _revealUnobscured(tester, undo);
+    await tester.tap(undo);
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey<String>('custom-theme-ai-undo')),

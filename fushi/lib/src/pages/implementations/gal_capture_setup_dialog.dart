@@ -252,9 +252,23 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
           Expanded(
             child: threads.isEmpty
                 // 还没有候选线程：M3E 空态（色块图标弹入），不是一行孤零零的灰字。
-                ? FushiPlaceholderMessage(
-                    icon: FushiIcons.pending,
-                    message: t.game_waiting_for_text,
+                // BUG-3026：线程栏在常见桌面窗口（1400×900）里只剩百来像素高，
+                // 72px 色块 + 标题的空态放不下会溢出；放得下时照常居中，放不下
+                // 时改为可滚动，不裁、不溢出。
+                ? LayoutBuilder(
+                    builder:
+                        (BuildContext context, BoxConstraints constraints) =>
+                            SingleChildScrollView(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: FushiPlaceholderMessage(
+                                  icon: FushiIcons.pending,
+                                  message: t.game_waiting_for_text,
+                                ),
+                              ),
+                            ),
                   )
                 : FushiEntranceScope(
                     child: ListView.builder(

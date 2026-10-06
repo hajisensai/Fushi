@@ -8,7 +8,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+
+/// 与生产根（main.dart）同构：取色器 `ColorPicker`（flutter_colorpicker）的
+/// hex 输入框仍是 SDK 旧 Material 的 TextField，靠根上的
+/// [LegacyDesignCompatibility] 拿到旧 Material 祖先与旧主题（446e7b695a2）。
+Widget lapisLegacyBridgeBuilder(BuildContext context, Widget? child) =>
+    LegacyDesignCompatibility(child: child!);
 
 void useWideWindow(WidgetTester tester) {
   tester.view.physicalSize = const Size(1600, 1400);
@@ -50,6 +57,7 @@ Future<EditorSession> pumpEditor(
   late BuildContext hostContext;
   await tester.pumpWidget(
     MaterialApp(
+      builder: lapisLegacyBridgeBuilder,
       home: Builder(
         builder: (BuildContext context) {
           hostContext = context;

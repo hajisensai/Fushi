@@ -19,6 +19,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_home_page.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -910,7 +911,19 @@ void main() {
     expect(row.readout, '100%');
     expect(row.label, '100%');
 
+    // 27a62a0（commitOnRelease）：拖动只跟手预览，不逐 tick 写穿——否则每帧写库
+    // + 推正文 WebView 重注样式；松手 onChangeEnd 才一次性提交。
     row.onChanged(35);
+    await tester.pump();
+    expect(
+      ReaderFushiSource.instance.lookupAudioVolume,
+      100,
+      reason: '拖动期间不得写穿查词音量',
+    );
+    row = tester.widget<AdaptiveSettingsSliderRow>(sliderFinder());
+    expect(row.value, 35, reason: '滑条显示跟手到本地拖动值');
+
+    row.onChangeEnd!(35);
     await tester.pump();
 
     expect(ReaderFushiSource.instance.lookupAudioVolume, 35);
@@ -1250,8 +1263,12 @@ void main() {
           lessThan(kToolbarHeight),
           reason: '标题就在页头这一行，上方没有空行',
         );
+        // 浮动页头的返回钮走语义图标 FushiIcons.back（765b65f 页头图标迁移）。
         expect(
-          find.byIcon(Icons.arrow_back),
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('settings_home_header')),
+            matching: find.byIcon(FushiIcons.back),
+          ),
           root ? findsNothing : findsOneWidget,
         );
       },

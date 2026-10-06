@@ -514,6 +514,7 @@ void main() {
       useWideWindow(tester);
       await tester.pumpWidget(
         MaterialApp(
+          builder: lapisLegacyBridgeBuilder,
           home: LapisStyleEditorPage(
             initialCustomCss: '',
             fontScalePercent: 100,

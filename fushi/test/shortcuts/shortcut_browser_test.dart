@@ -75,8 +75,16 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 行可能在视口之外（video 域动作多，「截图」排在第一屏以下）：先像用户一样
+  /// 把它滚进来再点（居中，免得躲到吸顶分组标题下），否则 tap 打在屏外坐标上什么也不触发。
+  Future<void> revealRow(WidgetTester tester, ShortcutAction action) async {
+    await Scrollable.ensureVisible(tester.element(row(action)), alignment: 0.5);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> startRecording(
       WidgetTester tester, ShortcutAction action) async {
+    await revealRow(tester, action);
     await tester.tap(
       find.descendant(of: row(action), matching: find.text(action.label)),
     );
@@ -150,6 +158,21 @@ void main() {
   testWidgets('inline recording replaces the binding and saves immediately',
       (WidgetTester tester) async {
     final FushiShortcutRegistry registry = buildRegistry();
+    const InputBinding f12 = InputBinding(key: LogicalKeyboardKey.f12);
+    // F12 默认在「全屏」上（TODO-302）：同 scope 撞键会走冲突条而不是直接写入。
+    // 这条只测无冲突的替换，先把 F12 从 video 组里摘掉，让它确实是空闲键。
+    for (final ShortcutAction action
+        in ShortcutAction.actionsForScope(ShortcutScope.video)) {
+      setKeyboard(
+        registry,
+        action,
+        registry
+            .bindingsFor(action)
+            .keyboardBindings
+            .where((InputBinding b) => b != f12)
+            .toList(),
+      );
+    }
     setKeyboard(registry, ShortcutAction.videoScreenshot, const <InputBinding>[
       InputBinding(key: LogicalKeyboardKey.keyW),
     ]);
@@ -257,6 +280,7 @@ void main() {
       ValueKey<String>('shortcut-reset-${ShortcutAction.videoScreenshot.name}'),
     );
     expect(reset, findsOneWidget);
+    await revealRow(tester, ShortcutAction.videoScreenshot);
     await tester.tap(reset);
     await tester.pumpAndSettle();
 

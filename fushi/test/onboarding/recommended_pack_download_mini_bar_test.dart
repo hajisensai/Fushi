@@ -44,6 +44,14 @@ void main() {
     );
   }
 
+  // 迷你条出现走 M3E 弹簧（f0412a8）：占位 AnimatedSize 从 0 高展开 + 交错入场，
+  // 只 pump 一帧时条仍被裁在 0 高里点不到。下载中带不定态进度条（永远在动），
+  // 不能 pumpAndSettle——把假时钟推过整段入场再交互。
+  Future<void> pumpEntrance(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+  }
+
   RecommendedPackDownloadController newController() {
     return RecommendedPackDownloadController(
       packDirectory: () => packDir,
@@ -116,7 +124,7 @@ void main() {
     );
     controller.stage.value = RecommendedPackDownloadStage.paused;
     controller.receivedBytes.value = 3 * 1024 * 1024 * 1024;
-    await tester.pump();
+    await pumpEntrance(tester);
 
     await tester.tap(find.text(t.onboarding_pack_download_discard));
     await tester.pump();
@@ -146,7 +154,7 @@ void main() {
 
     await tester.pumpWidget(host(controller, () => imports += 1));
     controller.stage.value = RecommendedPackDownloadStage.downloaded;
-    await tester.pump();
+    await pumpEntrance(tester);
 
     expect(find.text(t.onboarding_pack_status_ready), findsOneWidget);
     await tester.tap(find.text(t.onboarding_pack_import_now));
@@ -161,7 +169,7 @@ void main() {
     await tester.pumpWidget(host(controller, () {}));
     controller.stage.value = RecommendedPackDownloadStage.downloading;
     controller.receivedBytes.value = 1024;
-    await tester.pump();
+    await pumpEntrance(tester);
     expect(find.text(t.onboarding_pack_status_downloading), findsOneWidget);
 
     await tester.tap(find.byIcon(FushiIcons.close));
@@ -182,7 +190,7 @@ void main() {
 
     await tester.pumpWidget(host(controller, () {}));
     controller.stage.value = RecommendedPackDownloadStage.downloading;
-    await tester.pump();
+    await pumpEntrance(tester);
     await tester.tap(find.byIcon(FushiIcons.close));
     await tester.pump();
     expect(find.text(t.onboarding_pack_status_downloading), findsNothing);

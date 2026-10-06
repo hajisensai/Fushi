@@ -56,6 +56,8 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  // 标签按 hitTestable 取：悬浮底栏常驻一枚透明 + IgnorePointer 的「最小化小
+  // 胶囊」，里面也有当前项的标签，那份不是可见目的地。
   // 胶囊高按「药丸 + 标签实际行高 + 上下留白」算（≥ 64），标签不会被圆角
   // 裁掉（2026-10-06 用户截图：Windows 上标签下半截被裁）。
   testWidgets('floating capsule fits icon + label, 12dp off the bottom edge', (
@@ -72,7 +74,7 @@ void main() {
             kAdaptiveNavFloatingMargin,
       ),
     );
-    final Rect label = tester.getRect(find.text('Books'));
+    final Rect label = tester.getRect(find.text('Books').hitTestable());
     expect(
       label.bottom,
       lessThanOrEqualTo(bar.bottom - kAdaptiveNavFloatingMargin),
@@ -96,7 +98,7 @@ void main() {
     );
 
     // 标签完整落在胶囊里（胶囊离底 = 手势区）。
-    final Rect label = tester.getRect(find.text('Books'));
+    final Rect label = tester.getRect(find.text('Books').hitTestable());
     expect(label.bottom, lessThanOrEqualTo(bar.bottom - inset));
   });
 

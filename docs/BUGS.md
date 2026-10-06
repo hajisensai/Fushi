@@ -29,12 +29,20 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2794 条。点号进各自文件。
+> 共 2806 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3055](bugs/BUG-3055-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
+| [BUG-3054](bugs/BUG-3054-search-capsule-symbol-icon.md) | ✅ | ✅ | 搜索框图标迁到 FushiIcons.search 后不再被认成搜索框：MD3 丢全胶囊、Apple 丢 36 高胶囊 |
+| [BUG-3053](bugs/BUG-3053-theme-compact-preview-too-tall.md) | ✅ | ✅ | MD3 窄屏自定义主题吸顶预览超过视口三分之一（示意开关挤成三行） |
+| [BUG-3052](bugs/BUG-3052-theme-role-picker-sheet-overflow.md) | ✅ | ✅ | 自定义主题角色选色 sheet 在矮窗口底部溢出、推荐色点不到 |
 | [BUG-3051](bugs/BUG-3051-collection-menu-binding.md) | ✅ | ✅ | 合集详情非拖排网格和列表右键菜单绕过快捷键绑定 |
+| [BUG-3050](bugs/BUG-3050-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
+| [BUG-3049](bugs/BUG-3049-fab-menu-keyboard-focus.md) | ✅ | ✅ | FushiFabMenu 键盘展开后焦点留在 FAB：首帧菜单项不在树里，后帧回调 requestFocus 落空 |
+| [BUG-3048](bugs/BUG-3048-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
+| [BUG-3047](bugs/BUG-3047-vertical-slider-fills-width.md) | ✅ | ✅ | 竖直 FushiSlider（MD3）横向吃满父级宽度：Slider 在有界高度下撑满、旋转后成一大块 |
+| [BUG-3046](bugs/BUG-3046-fushi-spring-no-snap.md) | ✅ | ✅ | FushiSpring 弹簧落定不吸附终值：浮动工具条停在离目标约 1e-3 处（亚像素偏移） |
 | [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-3041](bugs/BUG-3041-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
@@ -47,7 +55,10 @@
 | [BUG-3033](bugs/BUG-3033-pending-ai-outcome-scroll.md) | ✅ | ✅ | AI识别长结论在待确认清空或刷新时溢出 |
 | [BUG-3032](bugs/BUG-3032-control-layout-chip-overflow.md) | ✅ | ✅ | 阅读器按钮布局编辑器长文案胶囊撑破窄槽 |
 | [BUG-3031](bugs/BUG-3031-manual-download-reduced-motion.md) | ✅ | ✅ | 手动下载切换输入时零时长尺寸动画在布局中触发重入 |
+| [BUG-3029](bugs/BUG-3029-settings-search-reveal-floating-header.md) | ✅ | ✅ | 设置搜索跳转定位被浮动页头首帧后让位推偏、高亮被重建拆掉 |
 | [BUG-3028](bugs/BUG-3028-delete-confirm-footer-scrolls.md) | ✅ | ✅ | 删除确认框的「删除」按钮在矮窗口里被滚出可视区 |
+| [BUG-3027](bugs/BUG-3027-indexedstack-keyboard-scroll-hidden-pane.md) | ✅ | ✅ | 键盘翻页滚到 IndexedStack 隐藏子区（Flutter 3.47 IndexedStack 不再包 Visibility） |
+| [BUG-3026](bugs/BUG-3026-gal-capture-empty-state-overflow.md) | ✅ | ✅ | 采集设置线程栏 M3E 空态在 1400x900 窗口溢出 |
 | [BUG-3025](bugs/BUG-3025-manga-settings-zero-duration-animated-size.md) | ✅ | ✅ | 漫画阅读设置面板减弱动效下切换作用域断言 RenderAnimatedSize |
 | [BUG-3024](bugs/BUG-3024-settings-reset-narrow-row.md) | ✅ | ✅ | 设置恢复默认按钮挤压窄面板标题导致溢出 |
 | [BUG-3023](bugs/BUG-3023-audio-missing-notice-squeezed.md) | ✅ | ✅ | 音频来源弹窗：丢失文件提示把说明挤成一列字、重新选择按钮被推出视口 |

@@ -125,7 +125,7 @@ void main() {
       return tester.widget<Container>(
         find
             .ancestor(
-              of: find.byIcon(Icons.home),
+              of: find.byIcon(Icons.home).hitTestable(),
               matching: find.byWidgetPredicate(
                 (Widget w) => w is Container && w.decoration is BoxDecoration,
               ),
@@ -154,7 +154,9 @@ void main() {
           selectedPill(tester).decoration! as BoxDecoration;
       expect(pill.color, colors.onSurface, reason: '药丸必须是实心前景色');
       expect(
-        tester.widget<Icon>(find.byIcon(Icons.home)).color,
+        // 只认能点到的那份：悬浮底栏常驻一枚透明 + IgnorePointer 的「最小化小
+        // 胶囊」，里面也有当前项图标，那份不是这里要钉的药丸。
+        tester.widget<Icon>(find.byIcon(Icons.home).hitTestable()).color,
         colors.surface,
         reason: '反色药丸里的图标用底色',
       );

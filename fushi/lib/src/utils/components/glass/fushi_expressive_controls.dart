@@ -521,6 +521,29 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
   );
   bool _menuOpen = false;
 
+  /// 元素已停用（移出树 / 换父途中）。两个 statesController 归本 State 所有，
+  /// 子树卸载时 InkWell 补发的 tap cancel / 失焦仍会回调过来，停用元素上不能
+  /// 再查 Theme 等祖先（BUG-3048）。
+  bool _deactivated = false;
+
+  @override
+  void deactivate() {
+    _deactivated = true;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _deactivated = false;
+    // 停用期间漏掉的开合回调在这里对齐（重新激活后紧接着就是 build）。
+    final bool open = _menu.isOpen;
+    if (_menuOpen != open) {
+      _menuOpen = open;
+      _open.animateTo(open ? 1 : 0, animate: false);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -532,7 +555,7 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
   }
 
   void _onStates(WidgetStatesController c, FushiSpring spring) {
-    if (!mounted) return;
+    if (!mounted || _deactivated) return;
     final bool active =
         c.value.contains(WidgetState.pressed) ||
         c.value.contains(WidgetState.hovered) ||
@@ -544,7 +567,7 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
   }
 
   void _setOpen(bool open) {
-    if (!mounted || _menuOpen == open) return;
+    if (!mounted || _deactivated || _menuOpen == open) return;
     setState(() => _menuOpen = open);
     _open.animateTo(
       open ? 1 : 0,
@@ -1215,7 +1238,10 @@ class FushiFabMenuState extends State<FushiFabMenu>
             1.2,
           );
           final double visible = t.clamp(0.0, 1.0);
-          if (visible <= 0.001) return const SizedBox.shrink();
+          // 收起时完全摘掉；展开途中（含弹簧首帧 visible 仍为 0）必须留在树里：
+          // 键盘 / 手柄展开后焦点在后帧回调里移进最近的菜单项，菜单项此刻不在
+          // 树里，requestFocus 落在未挂载的节点上，焦点就留在 FAB（BUG-3049）。
+          if (visible <= 0.001 && !_open) return const SizedBox.shrink();
           return Opacity(
             opacity: visible,
             child: Transform.translate(

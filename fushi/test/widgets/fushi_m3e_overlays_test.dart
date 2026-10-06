@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -210,7 +212,11 @@ void main() {
       title: '导入中',
       initialProgress: 0.25,
     );
-    await tester.pumpAndSettle();
+    // MD3 下确定态进度条是 M3E 波浪条（FushiWavyLinearProgress），波形按设计
+    // 持续向前流动，对话框开着时永远不会 settle：按进场动效时长泵帧。
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
     expect(find.text('导入中'), findsOneWidget);
     expect(find.text('25%'), findsOneWidget);
     handle.progress.value = 0.5;

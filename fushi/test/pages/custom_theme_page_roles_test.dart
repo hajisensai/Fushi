@@ -8,6 +8,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
 import 'package:fushi/src/pages/implementations/custom_theme_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 
 import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
@@ -98,6 +99,10 @@ class _RecordingAppModel extends AppModel {
   @override
   bool get einkMode => false;
 
+  // 4c32e76e6e4：编辑页把「纯黑深色背景」开关计入配色缓存键。
+  @override
+  bool get pureBlackDark => false;
+
   @override
   Color? get systemPrimaryColor => const Color(0xFF1F4959);
 }
@@ -107,6 +112,10 @@ Widget _host(_RecordingAppModel appModel, Widget home) {
     overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
+        // 与生产根同构：取色器（flutter_colorpicker）的 hex 输入框仍是 SDK 旧
+        // Material TextField，靠根上的 LegacyDesignCompatibility（446e7b695a2）。
+        builder: (BuildContext context, Widget? child) =>
+            LegacyDesignCompatibility(child: child!),
         theme: ThemeData.light(useMaterial3: true),
         home: home,
       ),
@@ -120,18 +129,33 @@ final Finder _verticalScrollable = find
     )
     .first;
 
+/// c981bcf1533 起编辑列表滚到浮动页头与（窄屏）吸顶预览底下：
+/// `scrollUntilVisible` 只保证进了视口，目标可能正被页头 / 预览压着，
+/// 点下去落在叠放层上。再把它对到视口中下部、露出叠放层之外再点。
+Future<void> _revealUnobscured(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    120,
+    scrollable: _verticalScrollable,
+  );
+  await tester.pumpAndSettle();
+  await Scrollable.ensureVisible(
+    tester.element(target.first),
+    alignment: 0.7,
+  );
+  await tester.pumpAndSettle();
+}
+
 Future<void> _tapApply(WidgetTester tester) async {
   final Finder apply = find.byKey(const ValueKey<String>('custom-theme-apply'));
-  await tester.scrollUntilVisible(apply, 200, scrollable: _verticalScrollable);
-  await tester.pumpAndSettle();
+  await _revealUnobscured(tester, apply);
   await tester.tap(apply);
   await tester.pumpAndSettle();
 }
 
 Future<void> _tapRow(WidgetTester tester, String title) async {
   final Finder row = find.text(title);
-  await tester.scrollUntilVisible(row, 120, scrollable: _verticalScrollable);
-  await tester.pumpAndSettle();
+  await _revealUnobscured(tester, row);
   await tester.tap(row);
   await tester.pumpAndSettle();
 }
@@ -158,8 +182,7 @@ Future<void> _scrollToSwitches(WidgetTester tester) async {
 Future<void> _tapSettingsSwitch(WidgetTester tester, int index) async {
   await _scrollToSwitches(tester);
   final Finder toggle = _settingsSwitch(index);
-  await tester.scrollUntilVisible(toggle, 120, scrollable: _verticalScrollable);
-  await tester.pumpAndSettle();
+  await _revealUnobscured(tester, toggle);
   await tester.tap(toggle);
   await tester.pumpAndSettle();
 }
@@ -255,6 +278,9 @@ void main() {
       final Finder white = find.byKey(
         const ValueKey<String>('custom-theme-swatch-ffffffff'),
       );
+      // 选色 sheet 正文可滚动（矮窗口里推荐色在折线以下），先滚到再点。
+      await tester.ensureVisible(white.first);
+      await tester.pumpAndSettle();
       await tester.tap(white.first);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.dialog_done));
@@ -368,12 +394,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final Finder reset = find.byTooltip(t.theme_role_reset);
-      await tester.scrollUntilVisible(
-        reset,
-        120,
-        scrollable: _verticalScrollable,
-      );
-      await tester.pumpAndSettle();
+      await _revealUnobscured(tester, reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
       expect(find.byTooltip(t.theme_role_reset), findsNothing);
@@ -395,12 +416,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final Finder reset = find.byTooltip(t.theme_role_reset);
-      await tester.scrollUntilVisible(
-        reset,
-        120,
-        scrollable: _verticalScrollable,
-      );
-      await tester.pumpAndSettle();
+      await _revealUnobscured(tester, reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
       expect(appModel.audioHighlightWrites.last, isNull);

@@ -122,14 +122,16 @@ class FushiSpring {
       _controller.value = target;
       return;
     }
+    // snapToEnd：模拟按容差（1e-3）判定结束时把值吸到目标上。不吸附的话控制器
+    // 停在离目标约千分之一处，位移 / 尺寸永久带亚像素残差（浮动工具条收起后
+    // 底边仍探进叠放区、展开后不贴顶，BUG-3046）。与
+    // [FushiSpringSpec.simulation] 同口径。
     _controller.animateWith(
       SpringSimulation(
         _spring,
         _controller.value,
         target,
         _controller.velocity,
-        // 收敛（落入容差）时把值钉在目标上：不钉的话停在 ±1e-3 内某处（如收起的
-        // 浮动工具栏残留 0.001px 位移），`value == target` 的提前返回也随之失准。
         snapToEnd: true,
       ),
     );
@@ -370,6 +372,24 @@ class _FushiPressMorphState extends State<FushiPressMorph>
       );
     }
     if (!widget.enabled) _setPressed(false);
+  }
+
+  // 停用（移出树 / GlobalKey 换父）期间不听按钮状态：子树卸载时 InkWell 的
+  // 手势识别器在 dispose 里补发 tap cancel，会经共享的 statesController 回调到
+  // 这里，而停用元素上再查 Theme 等祖先会断言（BUG-3048）。重新激活时挂回并
+  // 按当前状态对齐一次。
+  @override
+  void deactivate() {
+    _listened?.removeListener(_onStates);
+    _listened = null;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _relisten();
+    _onStates();
   }
 
   void _onStates() {
@@ -1286,15 +1306,23 @@ class _FushiButtonGroupState extends State<FushiButtonGroup>
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) {
-      return Row(
-        mainAxisSize: widget.expanded ? MainAxisSize.max : MainAxisSize.min,
-        spacing: widget.spacing,
-        children: widget.expanded
-            ? <Widget>[
-                for (final Widget child in widget.children)
-                  Expanded(child: child),
-              ]
-            : widget.children,
+      if (widget.expanded) {
+        return Row(
+          spacing: widget.spacing,
+          children: <Widget>[
+            for (final Widget child in widget.children) Expanded(child: child),
+          ],
+        );
+      }
+      // 不挤压，但和 MD3 一样「放不下就按固有宽等比收窄」：裸 Row 在窄屏
+      // （如 420 宽的自定义主题 hero：导入 / 分享 / 更多）会横向溢出。
+      return _FushiSqueezeRow(
+        press: List<double>.filled(widget.children.length, 0),
+        growFactor: 0,
+        gap: widget.spacing,
+        equalExtents: false,
+        expand: false,
+        children: widget.children,
       );
     }
     final int n = widget.children.length;

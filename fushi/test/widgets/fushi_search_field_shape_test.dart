@@ -112,7 +112,7 @@ void main() {
     expect(decoration.filled, isTrue, reason: '填充胶囊形态');
 
     final FushiIcon prefix = decoration.prefixIcon! as FushiIcon;
-    expect(prefix.icon, Icons.search);
+    expect(prefix.icon, FushiIcons.search);
     expect(prefix.size, _libraryPageIconSize);
     expect(kFushiSearchFieldIconSize, _libraryPageIconSize);
   });

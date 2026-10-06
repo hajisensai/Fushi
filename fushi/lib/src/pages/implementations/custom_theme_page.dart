@@ -282,7 +282,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   ColorScheme _buildSchemeFor(Brightness brightness) {
-    return appModelNoUpdate.themeNotifier.buildCustomThemeColorScheme(
+    return appModelNoUpdate.buildCustomThemeColorScheme(
       _buildEntry(),
       brightness,
     );
@@ -1998,6 +1998,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           title: _roleTitle(role),
           subtitle: _roleDescription(role),
           leadingIcon: _roleIcon(role),
+          // 选色器（HSV 面板 + 色条 + 十六进制 + 推荐色 + 最近使用）固有高
+          // 约 300；矮窗口（横屏手机 / 600 高桌面窗）里 sheet 正文给不到，
+          // 不滚动就底部溢出、推荐色点不到。内容放得下时不产生滚动手势。
+          scrollable: true,
           bodyPadding: EdgeInsets.fromLTRB(
             tokens.spacing.card,
             0,
@@ -2201,12 +2205,18 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         ),
       ),
     );
+    final Widget previewSwitch = FushiPreviewSwitch(
+      trackColor: cs.primaryContainer,
+      thumbColor: cs.primary,
+    );
     final Widget toggle = _spot(
       _ThemeRole.container,
-      FushiPreviewSwitch(
-        trackColor: cs.primaryContainer,
-        thumbColor: cs.primary,
-      ),
+      // 紧凑（窄屏吸顶）预览里示意开关按 28 高等比缩小：原尺寸（MD3 开关
+      // 约 66×46）在约 130 宽的 app 截面里把「按钮 / 标签 / 开关」挤成三行，
+      // 吸顶预览超过视口高度的三分之一。
+      compact
+          ? SizedBox(height: 28, child: FittedBox(child: previewSwitch))
+          : previewSwitch,
     );
     final Widget progress = _spot(
       _ThemeRole.tertiary,
