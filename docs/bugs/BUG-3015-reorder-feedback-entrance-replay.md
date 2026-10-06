@@ -4,3 +4,5 @@
 - **[x] ① 已修复** — 共享 `FushiReorderDragProxy` 对副本使用关闭的 `FushiEntranceScope`，只禁止子行重复进场，保留代理自身抬起动效；scope 的 enabled 开关默认 true，切换时更新 generation，关闭即到终态、开启可重新进场。
 - **[x] ② 已增加自动化测试** — `fushi_reorderable_handle_lifecycle_test.dart` 覆盖两种模式早期起拖不回退透明度、把手取消不提交、快速纵滑由父容器滚动；`fushi_motion_redesign_test.dart` 覆盖 scope 初始关闭及双向切换。
 - **备注**：设备视觉复测未执行；自动化修复后复测结果见外部 `outputs/verify-1006-last.md`，不以源码审查替代实际通过数。
+
+- **PR #1984 本轮验证边界**：本机定向测试因 SDK 编译与租约排队过慢，按 integration owner 指令取消并交 CI 验证；本轮实际执行 0 项，无通过结论。未进行设备端布局复测。
