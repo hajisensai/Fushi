@@ -36,7 +36,6 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
@@ -1464,6 +1463,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) return;
       final bool hoverAutoLookup = _readHoverAutoLookup();
       final GalHookToolbarPalette palette = _toolbarPalette();
+      final GalHookCaptionColors captionColors = _captionColors;
       _visible = await GalHookTextOverlayChannel.show(
         rect: _savedRect,
         fontSize: _fontSize,
@@ -1497,6 +1497,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
         toolbarLabels: _readToolbarLabels(),
       );
       _pushedHoverAutoLookup = hoverAutoLookup;
+      // HBK-AUDIT-047：show 往返期间 applyTheme 因 _visible=false 只记下了主题。
+      // 记账「真正下发成功的配色」，与此刻的期望配色不同就补发一次。
+      if (_visible) {
+        _sentToolbarPalette = palette;
+        _sentCaptionColors = captionColors;
+        if (_toolbarPalette() != palette || _captionColors != captionColors) {
+          await _pushStyle();
+        }
+      }
       // native 在 show 里把语音控件复位（见 flutter_window.cpp），本地镜像跟着复位，
       // 否则下一次 _syncVoiceState 会认为「已经推过了」而不再推。
       _pushedReplaying = false;
@@ -1587,17 +1596,27 @@ class GalHookTextOverlayController extends ChangeNotifier {
 
   /// 主题变化入口（主窗口 [GalHookOverlayThemeSync] 在 build 里调用）：算出的
   /// 配色变了且浮窗在屏上就整份重推样式，工具条与查词高亮当场换色。
+  ///
+  /// 去重比对的是**最近一次成功下发给 native 的配色**（[_sentToolbarPalette] /
+  /// [_sentCaptionColors]），不是上一次请求的主题：浮窗不可见时（含 show 往返
+  /// 中）只记主题，等 show 成功后由 show 路径补发（HBK-AUDIT-047）。
   void applyTheme(ThemeData theme) {
-    final GalHookToolbarPalette before = _toolbarPalette();
-    final GalHookCaptionColors captionBefore = _captionColors;
     _theme = theme;
     if (!_started || !_visible) return;
-    if (_toolbarPalette() == before && _captionColors == captionBefore) return;
+    if (_toolbarPalette() == _sentToolbarPalette &&
+        _captionColors == _sentCaptionColors) {
+      return;
+    }
     unawaited(_pushStyle());
   }
 
+  /// 最近一次成功下发给 native（show / updateStyle）的工具条配色与台词三色。
+  GalHookToolbarPalette? _sentToolbarPalette;
+  GalHookCaptionColors? _sentCaptionColors;
+
   Future<void> _pushStyle() async {
     final GalHookToolbarPalette palette = _toolbarPalette();
+    final GalHookCaptionColors captionColors = _captionColors;
     await GalHookTextOverlayChannel.updateStyle(
       bgColor: _backgroundColor,
       fontSize: _fontSize,
@@ -1618,6 +1637,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
       activeColor: palette.activeColor,
       themeArgs: galHookToolbarThemeArgs(palette),
     );
+    _sentToolbarPalette = palette;
+    _sentCaptionColors = captionColors;
     final GalLookupReferenceClientV1? client = _attachedText.currentClient;
     if (client != null) {
       await _attachedText.updateActiveStyle(_attachedLayoutFor(client));
