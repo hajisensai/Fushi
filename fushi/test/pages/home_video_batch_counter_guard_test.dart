@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import '../helpers/source_guard.dart';
 
 /// BUG-766 source guard: the video home page must not reuse the book-worded
 /// batch strings (`batch_delete_confirm` / `batch_delete_success` /
@@ -21,8 +22,6 @@ void main() {
       const List<String> requiredKeys = <String>[
         't.batch_delete_confirm_video(',
         't.batch_delete_success_video(',
-        't.batch_tag_added_video(',
-        't.batch_tag_removed_video(',
       ];
       for (final String key in requiredKeys) {
         expect(
@@ -32,6 +31,26 @@ void main() {
         );
       }
 
+      final String batch = methodBody(
+        source,
+        'Future<void> _batchShowTagPicker(',
+      );
+      expect(batch, contains('showTagPicker('));
+      expect(batch, contains('MediaKind.video'));
+      final String picker = File(
+        'lib/src/media/tags/tag_picker_sheet.dart',
+      ).readAsStringSync();
+      final String apply = methodBody(picker, 'Future<void> _apply(');
+      expect(apply, contains('tagBatchFeedback('));
+      expect(
+        'changedKinds.add(host.media?.kind)'.allMatches(apply),
+        hasLength(2),
+      );
+      final String feedback = methodBody(picker, 'String tagBatchFeedback(');
+      expect(feedback, contains('kind == MediaKind.video'));
+      expect(feedback, contains('t.batch_tag_added_video('));
+      expect(feedback, contains('t.batch_tag_removed_video('));
+
       // The book-worded variants must not leak back into the video page.
       final RegExp bookKey = RegExp(
         r't\.batch_(delete_confirm|delete_success|tag_added|tag_removed)\(',
@@ -39,15 +58,18 @@ void main() {
       expect(
         bookKey.hasMatch(source),
         isFalse,
-        reason: 'video page must not reuse the book-worded batch strings; '
+        reason:
+            'video page must not reuse the book-worded batch strings; '
             'use the *_video variants (BUG-766).',
       );
     });
 
     test('zh-CN video batch strings say 视频, never 本书', () {
-      final Map<String, dynamic> zhCn = jsonDecode(
-        File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync(),
-      ) as Map<String, dynamic>;
+      final Map<String, dynamic> zhCn =
+          jsonDecode(
+                File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
 
       const List<String> videoKeys = <String>[
         'batch_delete_confirm_video',

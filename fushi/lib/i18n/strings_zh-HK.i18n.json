@@ -6746,5 +6746,7 @@
   "gal_hook_toolbar_labels_hint": "Show a short caption under each overlay toolbar button; falls back to icons with hover tips when the overlay is too narrow",
   "video_control_danmaku": "彈幕開關",
   "video_control_danmaku_show": "顯示彈幕",
-  "video_control_danmaku_hide": "隱藏彈幕"
+  "video_control_danmaku_hide": "隱藏彈幕",
+  "batch_tag_added_items": "Added tag $name to $n items.",
+  "batch_tag_removed_items": "Removed tag $name from $n items."
 }

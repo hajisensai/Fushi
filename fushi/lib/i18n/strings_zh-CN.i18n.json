@@ -6746,5 +6746,7 @@
   "gal_hook_toolbar_labels_hint": "在浮窗工具条每个按钮下方显示简短文字；浮窗太窄时只显示图标，悬停仍有提示",
   "video_control_danmaku": "弹幕开关",
   "video_control_danmaku_show": "显示弹幕",
-  "video_control_danmaku_hide": "隐藏弹幕"
+  "video_control_danmaku_hide": "隐藏弹幕",
+  "batch_tag_added_items": "已为 $n 项添加标签「$name」。",
+  "batch_tag_removed_items": "已从 $n 项移除标签「$name」。"
 }

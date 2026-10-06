@@ -47,6 +47,32 @@ class TagTargets {
   bool get isEmpty => count == 0;
 }
 
+/// 批量反馈按实际写入的宿主选量词；null 表示合集本身。
+String tagBatchFeedback({
+  required String name,
+  required List<MediaKind?> changedKinds,
+  required bool added,
+}) {
+  final int n = changedKinds.length;
+  if (changedKinds.isNotEmpty &&
+      changedKinds.every((MediaKind? kind) => kind == MediaKind.video)) {
+    return added
+        ? t.batch_tag_added_video(name: name, n: n)
+        : t.batch_tag_removed_video(name: name, n: n);
+  }
+  if (changedKinds.isNotEmpty &&
+      changedKinds.every(
+        (MediaKind? kind) => kind == MediaKind.epub || kind == MediaKind.srt,
+      )) {
+    return added
+        ? t.batch_tag_added(name: name, n: n)
+        : t.batch_tag_removed(name: name, n: n);
+  }
+  return added
+      ? t.batch_tag_added_items(name: name, n: n)
+      : t.batch_tag_removed_items(name: name, n: n);
+}
+
 /// 「含合集的目标」把标签打到哪儿。
 enum TagCollectionScope { collection, members }
 
@@ -346,9 +372,10 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
     final TagCheckState next = switch (current) {
       TagCheckState.partial => TagCheckState.all,
       TagCheckState.all => TagCheckState.none,
-      TagCheckState.none => initial == TagCheckState.partial
-          ? TagCheckState.partial
-          : TagCheckState.all,
+      TagCheckState.none =>
+        initial == TagCheckState.partial
+            ? TagCheckState.partial
+            : TagCheckState.all,
     };
     setState(() {
       if (next == initial) {
@@ -370,25 +397,29 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
     final FushiDatabase db = _db;
     final List<String> messages = <String>[];
     for (final MapEntry<int, TagCheckState> e in _intents.entries) {
-      final BookTagRow? tag =
-          _allTags?.where((BookTagRow t) => t.id == e.key).firstOrNull;
-      int touched = 0;
+      final BookTagRow? tag = _allTags
+          ?.where((BookTagRow t) => t.id == e.key)
+          .firstOrNull;
+      final List<MediaKind?> changedKinds = <MediaKind?>[];
       for (final _TagHost host in _hosts) {
-        final bool has =
-            (await host.tags(db)).any((BookTagRow t) => t.id == e.key);
+        final bool has = (await host.tags(
+          db,
+        )).any((BookTagRow t) => t.id == e.key);
         if (e.value == TagCheckState.all && !has) {
           await host.add(db, e.key);
-          touched++;
+          changedKinds.add(host.media?.kind);
         } else if (e.value == TagCheckState.none && has) {
           await host.remove(db, e.key);
-          touched++;
+          changedKinds.add(host.media?.kind);
         }
       }
-      if (tag != null && touched > 0) {
+      if (tag != null && changedKinds.isNotEmpty) {
         messages.add(
-          e.value == TagCheckState.all
-              ? t.batch_tag_added(name: tag.name, n: touched)
-              : t.batch_tag_removed(name: tag.name, n: touched),
+          tagBatchFeedback(
+            name: tag.name,
+            changedKinds: changedKinds,
+            added: e.value == TagCheckState.all,
+          ),
         );
       }
     }
@@ -424,7 +455,9 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         FushiToast.show(
-            msg: t.tag_name_duplicate, severity: ToastSeverity.warning);
+          msg: t.tag_name_duplicate,
+          severity: ToastSeverity.warning,
+        );
         return;
       }
       rethrow;
@@ -436,8 +469,9 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
       _allTags = refreshed;
       _search.clear();
     });
-    final BookTagRow? created =
-        refreshed.where((BookTagRow t) => t.id == id).firstOrNull;
+    final BookTagRow? created = refreshed
+        .where((BookTagRow t) => t.id == id)
+        .firstOrNull;
     if (created != null) await _toggle(created);
   }
 
@@ -475,10 +509,13 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
             query,
             (BookTagRow tag) => <String>[tag.name],
           );
-    final bool exact = all != null &&
-        all.any((BookTagRow tag) =>
-            normalizeMediaSearchText(tag.name) ==
-            normalizeMediaSearchText(query));
+    final bool exact =
+        all != null &&
+        all.any(
+          (BookTagRow tag) =>
+              normalizeMediaSearchText(tag.name) ==
+              normalizeMediaSearchText(query),
+        );
     final List<BookTagRow> selected = all == null
         ? const <BookTagRow>[]
         : <BookTagRow>[
@@ -491,10 +528,7 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (_hasCollections) ...<Widget>[
-          _ScopeSelector(
-            scope: _scope,
-            onChanged: _setScope,
-          ),
+          _ScopeSelector(scope: _scope, onChanged: _setScope),
           SizedBox(height: tokens.spacing.gap),
         ],
         FushiSearchField(
@@ -532,7 +566,8 @@ class TagPickerPanelState extends ConsumerState<TagPickerPanel> {
                           for (final BookTagRow tag in selected)
                             FushiTagInputChip(
                               key: ValueKey<String>(
-                                  'tag_picker_selected_${tag.id}'),
+                                'tag_picker_selected_${tag.id}',
+                              ),
                               label: stateOf(tag.id) == TagCheckState.partial
                                   ? '${tag.name} · ${t.tag_picker_partial_state}'
                                   : tag.name,
@@ -811,9 +846,10 @@ class _CreateChip extends StatelessWidget {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: (Theme.of(context).textTheme.labelLarge ??
-                              const TextStyle())
-                          .copyWith(color: fg, fontWeight: FontWeight.w600),
+                      style:
+                          (Theme.of(context).textTheme.labelLarge ??
+                                  const TextStyle())
+                              .copyWith(color: fg, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
