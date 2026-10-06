@@ -1,5 +1,7 @@
 // M3 Expressive 动效 token（2026-10-05）：弹簧数值、归一化曲线、兼容常量与
 // 弹簧落定时长一致、设计系统映射、两档降级。
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -147,9 +149,28 @@ void main() {
       expect(FushiMotion.standard, FushiSpringCurve.effects);
     });
 
-    test('spatial 过冲量：ζ0.8 ≈ 1.5%、ζ0.6 ≈ 9.5%', () {
-      expect(_peak(FushiSpringCurve.spatial), closeTo(1.015, 0.006));
-      expect(_peak(FushiSpringCurve.spatialFast), closeTo(1.095, 0.01));
+    test('spatial 过冲量：裸弹簧 ζ0.8 ≈ 1.5%、ζ0.6 ≈ 9.5%，归一化曲线扣掉落定残差', () {
+      // 欠阻尼弹簧的理论过冲 = exp(-πζ/√(1-ζ²))。曲线在落定点（残差 ≤ 1%，
+      // [FushiSpringSpec.settleTolerance]）截断，残差按 t 线性抹平，所以曲线
+      // 峰值落在 [1 + 理论过冲 − 容差, 1 + 理论过冲] 之间：仍有可见回弹，但
+      // 不会超过物理弹簧。
+      for (final (FushiSpringCurve curve, double zeta, double overshoot)
+          in <(FushiSpringCurve, double, double)>[
+            (FushiSpringCurve.spatial, 0.8, 0.015),
+            (FushiSpringCurve.spatialFast, 0.6, 0.095),
+          ]) {
+        final double theory = math.exp(
+          -math.pi * zeta / math.sqrt(1 - zeta * zeta),
+        );
+        expect(theory, closeTo(overshoot, 0.001), reason: 'ζ=$zeta');
+        final double peak = _peak(curve);
+        expect(
+          peak,
+          greaterThanOrEqualTo(1 + theory - FushiSpringSpec.settleTolerance),
+          reason: 'ζ=$zeta 曲线峰值 $peak',
+        );
+        expect(peak, lessThanOrEqualTo(1 + theory), reason: 'ζ=$zeta');
+      }
     });
 
     test('exit 是 enter 的时间反演：慢起步、快离场', () {
