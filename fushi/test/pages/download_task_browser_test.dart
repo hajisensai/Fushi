@@ -76,6 +76,13 @@ Future<void> _pumpPastTransitions(WidgetTester tester) async {
   await tester.pump(const Duration(seconds: 1));
 }
 
+/// 批量栏里的「全选」。M3E 任务中心的状态分段第一项「All」与它同文案，
+/// 按文本找会歧义，限定在 [BatchActionBar] 内。
+final Finder _batchSelectAll = find.descendant(
+  of: find.byType(BatchActionBar),
+  matching: find.text(t.batch_select_all),
+);
+
 void _viewport(WidgetTester tester, Size size) {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -570,7 +577,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       await tester.tap(
@@ -601,7 +608,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       expect(
@@ -652,7 +659,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-clear')),
@@ -681,7 +688,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
@@ -741,7 +748,7 @@ void main() {
       expect(find.byKey(const ValueKey<String>('hidden-1')), findsNothing);
 
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-clear')),
@@ -772,7 +779,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-delete')),
@@ -803,7 +810,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-delete')),
@@ -832,7 +839,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey<String>('download-batch-delete')),
@@ -867,7 +874,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       await tester.tap(
@@ -942,7 +949,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await enterSelection(tester);
-      await tester.tap(find.text(t.batch_select_all));
+      await tester.tap(_batchSelectAll);
       await tester.pumpAndSettle();
 
       expect(find.byType(BatchActionBar), findsOneWidget);
