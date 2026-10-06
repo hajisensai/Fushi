@@ -1283,15 +1283,23 @@ class _FushiButtonGroupState extends State<FushiButtonGroup>
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) {
-      return Row(
-        mainAxisSize: widget.expanded ? MainAxisSize.max : MainAxisSize.min,
-        spacing: widget.spacing,
-        children: widget.expanded
-            ? <Widget>[
-                for (final Widget child in widget.children)
-                  Expanded(child: child),
-              ]
-            : widget.children,
+      if (widget.expanded) {
+        return Row(
+          spacing: widget.spacing,
+          children: <Widget>[
+            for (final Widget child in widget.children) Expanded(child: child),
+          ],
+        );
+      }
+      // 不挤压，但和 MD3 一样「放不下就按固有宽等比收窄」：裸 Row 在窄屏
+      // （如 420 宽的自定义主题 hero：导入 / 分享 / 更多）会横向溢出。
+      return _FushiSqueezeRow(
+        press: List<double>.filled(widget.children.length, 0),
+        growFactor: 0,
+        gap: widget.spacing,
+        equalExtents: false,
+        expand: false,
+        children: widget.children,
       );
     }
     final int n = widget.children.length;
