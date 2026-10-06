@@ -2505,7 +2505,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     // 面板从底部升起，宽窗贴边（readerPanelPresentationFor）。
     _sideSheetOpen = true;
     try {
-      // BUG-3049: DOM grips and the host action bar share this route boundary.
+      // BUG-3059: DOM grips and the host action bar share this route boundary.
       await _clearReaderAppSelection();
       if (!mounted) return;
       await _focusOwnership.guardOverlay<void>(() async {

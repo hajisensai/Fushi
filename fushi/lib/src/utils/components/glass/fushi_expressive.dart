@@ -124,7 +124,7 @@ class FushiSpring {
     }
     // snapToEnd：模拟按容差（1e-3）判定结束时把值吸到目标上。不吸附的话控制器
     // 停在离目标约千分之一处，位移 / 尺寸永久带亚像素残差（浮动工具条收起后
-    // 底边仍探进叠放区、展开后不贴顶，BUG-3046）。与
+    // 底边仍探进叠放区、展开后不贴顶，BUG-3056）。与
     // [FushiSpringSpec.simulation] 同口径。
     _controller.animateWith(
       SpringSimulation(
@@ -376,7 +376,7 @@ class _FushiPressMorphState extends State<FushiPressMorph>
 
   // 停用（移出树 / GlobalKey 换父）期间不听按钮状态：子树卸载时 InkWell 的
   // 手势识别器在 dispose 里补发 tap cancel，会经共享的 statesController 回调到
-  // 这里，而停用元素上再查 Theme 等祖先会断言（BUG-3048）。重新激活时挂回并
+  // 这里，而停用元素上再查 Theme 等祖先会断言（BUG-3058）。重新激活时挂回并
   // 按当前状态对齐一次。
   @override
   void deactivate() {

@@ -33,21 +33,21 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3060](bugs/BUG-3060-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
+| [BUG-3059](bugs/BUG-3059-fab-menu-keyboard-focus.md) | ✅ | ✅ | FushiFabMenu 键盘展开后焦点留在 FAB：首帧菜单项不在树里，后帧回调 requestFocus 落空 |
+| [BUG-3058](bugs/BUG-3058-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
+| [BUG-3057](bugs/BUG-3057-vertical-slider-fills-width.md) | ✅ | ✅ | 竖直 FushiSlider（MD3）横向吃满父级宽度：Slider 在有界高度下撑满、旋转后成一大块 |
+| [BUG-3056](bugs/BUG-3056-fushi-spring-no-snap.md) | ✅ | ✅ | FushiSpring 弹簧落定不吸附终值：浮动工具条停在离目标约 1e-3 处（亚像素偏移） |
 | [BUG-3055](bugs/BUG-3055-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |
 | [BUG-3054](bugs/BUG-3054-search-capsule-symbol-icon.md) | ✅ | ✅ | 搜索框图标迁到 FushiIcons.search 后不再被认成搜索框：MD3 丢全胶囊、Apple 丢 36 高胶囊 |
 | [BUG-3053](bugs/BUG-3053-theme-compact-preview-too-tall.md) | ✅ | ✅ | MD3 窄屏自定义主题吸顶预览超过视口三分之一（示意开关挤成三行） |
 | [BUG-3052](bugs/BUG-3052-theme-role-picker-sheet-overflow.md) | ✅ | ✅ | 自定义主题角色选色 sheet 在矮窗口底部溢出、推荐色点不到 |
 | [BUG-3051](bugs/BUG-3051-collection-menu-binding.md) | ✅ | ✅ | 合集详情非拖排网格和列表右键菜单绕过快捷键绑定 |
 | [BUG-3050](bugs/BUG-3050-reader-selection-toolbar-grip-overlap.md) | ✅ | ✅ | 竖排选择操作条遮挡选择球，视口边缘手柄难以抓取 |
-| [BUG-3050](bugs/BUG-3050-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
 | [BUG-3049](bugs/BUG-3049-reader-selection-overlay-lifecycle.md) | ✅ | ✅ | 阅读器选中时打开导航、插图、统计或有声书，选择控件残留在覆盖页面上 |
-| [BUG-3049](bugs/BUG-3049-fab-menu-keyboard-focus.md) | ✅ | ✅ | FushiFabMenu 键盘展开后焦点留在 FAB：首帧菜单项不在树里，后帧回调 requestFocus 落空 |
 | [BUG-3048](bugs/BUG-3048-reader-selection-persists-across-page-turn.md) | ✅ | ✅ | 移动端划词后翻页，选择高亮与两端手柄留在新页面上 |
-| [BUG-3048](bugs/BUG-3048-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
-| [BUG-3047](bugs/BUG-3047-vertical-slider-fills-width.md) | ✅ | ✅ | 竖直 FushiSlider（MD3）横向吃满父级宽度：Slider 在有界高度下撑满、旋转后成一大块 |
 | [BUG-3047](bugs/BUG-3047-reader-selection-drag-gap-freeze.md) | ✅ | ✅ | 移动端 EPUB 拖选/拖手柄落到字缝·行尾·行距·段间空白就卡住 |
 | [BUG-3046](bugs/BUG-3046-reader-selection-handle-covers-glyph.md) | 🚧 | 🚧 | 页边缘选择手柄避让回归：触控盒和选择球遮挡选中字 |
-| [BUG-3046](bugs/BUG-3046-fushi-spring-no-snap.md) | ✅ | ✅ | FushiSpring 弹簧落定不吸附终值：浮动工具条停在离目标约 1e-3 处（亚像素偏移） |
 | [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-3041](bugs/BUG-3041-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |

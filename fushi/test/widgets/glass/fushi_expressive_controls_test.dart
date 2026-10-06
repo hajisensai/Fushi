@@ -80,7 +80,7 @@ void main() {
 
   /// 精确终值必须等模拟真正落定：固定推进 600ms 仍可能有余振；
   /// FushiSpring 的 snapToEnd 在 isDone 时才吸附目标。先启动 ticker 再等待，
-  /// 保留原始圆角参数，不能靠取整隐藏落定后的残差（BUG-3046）。
+  /// 保留原始圆角参数，不能靠取整隐藏落定后的残差（BUG-3056）。
   Future<void> settleSpring(WidgetTester tester) async {
     await tester.pump();
     await tester.pumpAndSettle();
@@ -269,7 +269,7 @@ void main() {
     });
   });
 
-  group('按住时移出树（BUG-3048）', () {
+  group('按住时移出树（BUG-3058）', () {
     // 子树卸载时 InkWell 的手势识别器在 dispose 里补发 tap cancel，经共享的
     // statesController 回调到形变层；停用元素上再查 Theme 会断言。
     for (final (String name, Widget Function() build)
