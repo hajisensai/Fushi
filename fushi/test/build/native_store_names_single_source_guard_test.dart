@@ -151,6 +151,20 @@ void main() {
     expect(offenders, isEmpty, reason: offenders.join('\n'));
   });
 
+  test('名字哈希不吃 Markdown：改 README 不得让各端原生件全部重编', () {
+    final String script = namesScript.readAsStringSync();
+    expect(
+      script,
+      contains(
+        r"git ls-tree -r --full-tree HEAD -- "
+        '"\$@"'
+        r" | grep -viE '\.md$'",
+      ),
+      reason:
+          'tree_hash 必须在哈希前滤掉 .md（2026-10-07 一次 README 改动让四端 libtorrent 冷编）',
+    );
+  });
+
   test('fushi_p2p 的 Rust 钉版只在 names.sh 一处（进名字的哈希）', () {
     final List<String> offenders = <String>[];
     for (final _Job job in storeJobs) {
