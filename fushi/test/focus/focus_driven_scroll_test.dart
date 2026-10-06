@@ -43,10 +43,19 @@ void main() {
     );
     expect(controller.offset, 80);
 
+    // Sliver 的缓存子项已挂载，但默认 finder 只遍历可绘制子项。
+    // reveal 必须拿到离屏目标，不能先滚动把目标放进可见区再验证。
+    final Finder target = find.text('Row 8', skipOffstage: false);
+    expect(target, findsOneWidget);
+    expect(find.text('Row 8'), findsNothing);
+    expect(
+      tester.getRect(target).top,
+      greaterThan(tester.getRect(find.byType(ListView)).bottom),
+    );
     bool completed = false;
     final Future<void> reveal =
         FushiFocusScroll.ensureVisible(
-          tester.element(find.text('Row 8')),
+          tester.element(target),
           duration: const Duration(milliseconds: 200),
           curve: Curves.linear,
           alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
