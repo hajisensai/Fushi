@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2759 条。点号进各自文件。
+> 共 2761 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2997](bugs/BUG-2997-lookup-hidden-dict-empty-popup.md) | ✅ | ✅ | 查词只命中已隐藏词典时弹窗画页面自己的 emoji「未找到」并铺满最大尺寸 |
+| [BUG-2995](bugs/BUG-2995-yomitan-nested-root-empty-zip.md) | ✅ | ✅ | 整合包父目录与嵌套 Yomitan 根同时存在时子词典被重打包为空 |
 | [BUG-2994](bugs/BUG-2994-import-dialog-busy-dismiss.md) | ✅ | ✅ | 漫画/视频导入进行中对话框可被返回键/点遮罩关闭 |
 | [BUG-2993](bugs/BUG-2993-download-menu-stale-index.md) | ✅ | ✅ | 下载任务菜单实时刷新后旧「删除」被重映射成「补对齐」 |
 | [BUG-2992](bugs/BUG-2992-lyrics-more-settings-tab.md) | ✅ | ✅ | 歌词更多设置入口被上次标签页记忆覆盖 |
@@ -74,8 +76,8 @@
 | [BUG-2956](bugs/BUG-2956-jimaku-key-not-found.md) | ✅ | ✅ | Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕 |
 | [BUG-2955](bugs/BUG-2955-video-cover-online-search.md) | ✅ | ✅ | 视频设置封面只能选本地文件，在线搜索封面入口丢失 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
-| [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
 | [BUG-2954](bugs/BUG-2954-reader-live-hooks-cleared.md) | ✅ | ✅ | 阅读器按钮布局等实时设置在切卷/叠开阅读器后改了不生效，须退出重进 |
+| [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
 | [BUG-2953](bugs/BUG-2953-video-context-menu-behind-popup.md) | ✅ | ✅ | 视频页右键菜单被查词弹窗遮挡 |
 | [BUG-2952](bugs/BUG-2952-dict-import-native-crash.md) | ✅ | ✅ | 词典导入导致 native 崩溃（磁盘写满 SIGBUS / 汉字词典 / 整合包） |
 | [BUG-2951](bugs/BUG-2951-hdr-subtitle-white.md) | ✅ | ✅ | HDR直通下字幕比画面白更亮颜色发怪 |
