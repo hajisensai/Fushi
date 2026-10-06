@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-3043](bugs/BUG-3043-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
+| [BUG-3044](bugs/BUG-3044-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-3042](bugs/BUG-3042-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-3041](bugs/BUG-3041-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
 | [BUG-3040](bugs/BUG-3040-reader-shortcut-hint-raw-token.md) | ✅ | ✅ | 阅读器工具栏/溢出菜单快捷键提示显示原始键名 Ctrl+KeyF，触屏也显示 |
