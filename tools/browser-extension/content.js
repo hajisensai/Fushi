@@ -1902,8 +1902,12 @@ function fushiEnsureContainer() {
     // BUG-688：尺寸盒 + zoom 落在 host（视口坐标系，确定宽度），弹窗内容尺寸不再受
     // 「CSS zoom × 100vw × shadow shrink-to-fit」相互作用干扰。host 宽/高/zoom 由 fushiRender
     // 按查词响应下发的 --fushi-popup-* 设置；#entries-container 在 shadow 内中和为 width:100%。
+    // 新宿主一出生就 visibility:hidden，由 fushiRender 的 reveal 与内容同帧放出来（见
+    // fushiSetPopupShown）：玻璃（宿主自己的 backdrop-filter）/ M3E 投影都画在宿主上，宿主先上屏
+    // 就是一块没有内容的空模糊底板。
     fushiHost.style.cssText =
-        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;';
+        'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;' +
+        'visibility:hidden;';
     fushiInstallSwipeClose(fushiHost); // 水平拖关手势（是否生效由 fushiSwipeCloseEnabled 门控）
     // 悬停查词离开即续播：指针在弹窗上 = 正在读词条，绝不关。host 会把 mousemove 截在自己这里
     // （见下方 stopPropagation 列表），document 侧收不到「进了弹窗」，只能由 host 自己回报。
@@ -2881,7 +2885,9 @@ function fushiEnsureResizeGrip() {
       FUSHI_RESIZE_GRIP_SIZE + 'px;z-index:2147483647;cursor:nwse-resize;' +
       'pointer-events:auto;touch-action:none;' +
       'background:linear-gradient(135deg,transparent 0 46%,rgba(128,128,128,0.75) 46% 54%,' +
-      'transparent 54% 66%,rgba(128,128,128,0.75) 66% 74%,transparent 74%);';
+      'transparent 54% 66%,rgba(128,128,128,0.75) 66% 74%,transparent 74%);' +
+      // 与弹窗同显隐（fushiSetPopupShown）：弹窗还藏着时新建的把手不能先露出来。
+      'visibility:' + (fushiHost && fushiHost.style.visibility === 'hidden' ? 'hidden' : 'visible') + ';';
     fushiInstallResizeDrag(g);
     fushiResizeGrip = g;
   }
@@ -3103,7 +3109,10 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   const freshOpen = c.style.visibility !== 'visible';
   // 先隐藏放到左上角渲染，量出真实尺寸后再夹取到视口内显示——否则词在屏幕底/右时，
   // 弹窗直接放词处会溢出到浏览器窗口外/被裁（用户报「弹窗进到浏览器外面」）。
-  c.style.visibility = 'hidden';
+  // 外框（宿主：玻璃模糊 / 投影 / 描边）与内容一起藏、一起放——只藏内容的话，等落点与尾批
+  // （rAF + 最多 FUSHI_REVEAL_WAIT_MS + 首查的样式门）期间宿主照样上屏，用户先看到一块空的
+  // 毛玻璃底板，内容过一会儿才出来。
+  fushiSetPopupShown(c, false);
   if (fushiHost) { fushiHost.style.left = '0px'; fushiHost.style.top = '0px'; }
   // BUG-1726：新一次查词重置落点会话——锚点重记、手动尺寸标记清零（applyBox 刚把宽高从
   // theme 重写，上一窗的手动尺寸本就随新查词失效，自动复算恢复接管）。
@@ -3115,7 +3124,9 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   const reveal = () => {
     // BUG-2773：显示即锁边——此后尾批长高只在这一侧夹高/伸展，不再上下翻。
     fushiPlaceSide = fushiPlacedSide;
-    c.style.visibility = 'visible';
+    // 外框与内容同一任务里放出，入场动画加在同一个宿主上：模糊层与内容同帧出现、同一条
+    // opacity/transform 曲线进场。
+    fushiSetPopupShown(c, true);
     if (freshOpen) fushiPlayPopupEnter(fushiHost, fushiPlaceSide);
     fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
   };
@@ -3133,6 +3144,16 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
     if (!(gate && gate.add(revealWhenComplete))) revealWhenComplete();
   };
   requestAnimationFrame(place);
+}
+
+// 查词弹窗整体显隐：内容根 c、shadow 宿主（玻璃 backdrop-filter / M3E 投影 / 描边都画在它上面）
+// 与右下角拖拽把手一起切。visibility 不影响布局，落点测量照常；隐藏期间三者都不画。
+// 只藏 c 不藏宿主 = 先露一块空模糊底板（嵌套子层 nested-popup-host.js 一直是整框一起藏）。
+function fushiSetPopupShown(c, shown) {
+  const v = shown ? 'visible' : 'hidden';
+  if (c) c.style.visibility = v;
+  if (fushiHost) fushiHost.style.visibility = v;
+  if (fushiResizeGrip) fushiResizeGrip.style.visibility = v;
 }
 
 // 2026-10-04 22:56 录屏（子层同款，见 nested-popup-host.js reveal）：popup.js 首词条同步渲染、
