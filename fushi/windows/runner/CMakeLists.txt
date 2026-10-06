@@ -198,6 +198,23 @@ add_custom_target(fushi_windows_child_resize_gate_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_child_resize_gate_gate)
 
+# BUG-2964: the main window's DWM frame margins / surface fill are derived from
+# one state (Mica, HDR passthrough). The 1 px hidden-title-bar shadow margin
+# drew an opaque caption-coloured line over the HDR picture; keep the decision
+# table executable on each Windows runner build.
+add_executable(fushi_windows_main_surface_composition_test
+  "tests/main_surface_composition_test.cpp"
+)
+apply_standard_settings(fushi_windows_main_surface_composition_test)
+target_compile_definitions(fushi_windows_main_surface_composition_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_main_surface_composition_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_main_surface_composition_test>"
+  DEPENDS fushi_windows_main_surface_composition_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_main_surface_composition_gate)
+
 # Capture suppression is authorized by an exact epoch/token, while text may
 # advance behind the hidden surface. Keep that release contract executable so
 # a sentence change cannot strand the invisible catch window forever or let an

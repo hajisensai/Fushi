@@ -349,11 +349,30 @@ void main() {
     await backend.getRemoteDictionary(
       'JMdict',
       dest,
-      onProgress: progressValues.add,
+      onProgress: (double f, [int? _]) => progressValues.add(f),
     );
 
     // 内容很小（PKG:JMdict 字节），Content-Length 若 >0 则会报告一次 1.0。
     // 不强断具体值，只断下载成功即可（progress 回调是 best-effort）。
     expect(dest.readAsStringSync(), 'PKG:JMdict');
+  });
+
+  test('getRemoteDictionary reports bytes done for the sync rate', () async {
+    final InterconnectSyncBackend backend =
+        await _buildBackend(base: base, token: token);
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_bytes');
+    final File dest = File('${tmp.path}/JMdict.fushidict');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+
+    final List<int?> bytes = <int?>[];
+    await backend.getRemoteDictionary(
+      'JMdict',
+      dest,
+      onProgress: (double f, [int? done]) => bytes.add(done),
+    );
+
+    // 速率显示靠这个字节数；丢了它进度行就永远没有速率。
+    expect(bytes, isNotEmpty);
+    expect(bytes.last, dest.lengthSync());
   });
 }

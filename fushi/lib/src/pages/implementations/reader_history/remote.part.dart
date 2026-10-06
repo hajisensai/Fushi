@@ -1031,7 +1031,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           audioTmp,
           // 原始 0..1；整书任务里由调用方映射到后半段（0.5..1.0），只补有声书的
           // 任务（BUG-2505）则整条进度就是它。
-          onProgress: onProgress,
+          onProgress: syncTransferFractionOnly(onProgress),
         );
       }
 
@@ -1421,7 +1421,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
             await client.getRemoteAudiobook(
               book.identity,
               target,
-              onProgress: onProgress,
+              onProgress: syncTransferFractionOnly(onProgress),
             );
             await SyncAssetPackageService(db: appModel.database)
                 .importAudioDatabasePackage(

@@ -4,6 +4,7 @@
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
+#include <utility>
 #include <vector>
 
 #include "window_activation_policy.h"
@@ -39,9 +40,16 @@ BOOL CALLBACK ResizeChildProc(HWND child, LPARAM lparam) {
 
 }  // namespace
 
-HdrVideoHostWindow::HdrVideoHostWindow(HWND main) : main_(main) {}
+HdrVideoHostWindow::HdrVideoHostWindow(
+    HWND main,
+    std::function<void(bool)> on_main_passthrough)
+    : main_(main), on_main_passthrough_(std::move(on_main_passthrough)) {}
 
-HdrVideoHostWindow::~HdrVideoHostWindow() { Destroy(); }
+HdrVideoHostWindow::~HdrVideoHostWindow() {
+  // The owner may already be mid-destruction; only tear our own window down.
+  on_main_passthrough_ = nullptr;
+  Destroy();
+}
 
 LRESULT CALLBACK HdrVideoHostWindow::WndProc(HWND hwnd, UINT message,
                                              WPARAM wparam, LPARAM lparam) {
@@ -134,6 +142,9 @@ void HdrVideoHostWindow::SetMainTransparency(bool enable) {
   DwmEnableBlurBehindWindow(main_, &bb);
   if (empty != nullptr) {
     DeleteObject(empty);
+  }
+  if (on_main_passthrough_) {
+    on_main_passthrough_(enable);
   }
 }
 

@@ -600,7 +600,15 @@ bool FlutterWindow::OnCreate() {
             }
           }
           const bool was_fullscreen = IsFullscreen();
+          if (!enter) {
+            // BUG-2964: give the frame its normal DWM rendering back while it
+            // still hangs off-screen, before the geometry restores it.
+            fushi::MainSurfaceState leaving = main_surface_state();
+            leaving.fullscreen = false;
+            ApplyMainSurfaceComposition(leaving);
+          }
           SetFullscreen(enter);
+          ApplyMainSurfaceComposition();
           // A fullscreen/maximized transition can preserve the client size,
           // so WM_SIZE alone does not guarantee a fresh Flutter presentation.
           // Request it AFTER geometry restoration and snapshot release, while
@@ -4318,8 +4326,9 @@ void FlutterWindow::RegisterHdrVideoHostChannel() {
         const std::string& method = call.method_name();
         if (method == "create") {
           if (!hdr_video_host_) {
-            hdr_video_host_ =
-                std::make_unique<fushi::HdrVideoHostWindow>(GetHandle());
+            hdr_video_host_ = std::make_unique<fushi::HdrVideoHostWindow>(
+                GetHandle(),
+                [this](bool enabled) { SetMainVideoPassthrough(enabled); });
           }
           const HWND host = hdr_video_host_->Create();
           result->Success(flutter::EncodableValue(
@@ -4599,25 +4608,44 @@ bool FlutterWindow::ApplySystemBackdrop(bool mica, bool dark) {
       return false;
     }
     // The backdrop only shows through client pixels DWM treats as glass:
-    // extend the frame over the whole client area (transparent Flutter
+    // the frame is extended over the whole client area (transparent Flutter
     // pixels and the black surface fill then reveal Mica).
-    const MARGINS glass_margins{-1, -1, -1, -1};
-    DwmExtendFrameIntoClientArea(hwnd, &glass_margins);
     SetSystemBackdrop(true);
+    ApplyMainSurfaceComposition();
     return true;
   }
   const int backdrop_none = 1;  // DWMSBT_NONE
   DwmSetWindowAttribute(hwnd, 38, &backdrop_none, sizeof(backdrop_none));
   const BOOL mica_off = FALSE;
   DwmSetWindowAttribute(hwnd, 1029, &mica_off, sizeof(mica_off));
-  // Back to window_manager's hidden-title-bar shadow margins
-  // (TitleBarStyle.hidden with a shadow extends 1px at the top), not zero:
-  // zero would drop the shadow, -1 would keep pure black (AMOLED themes)
-  // rendering as see-through glass.
-  const MARGINS shadow_margins{0, 0, 1, 0};
-  DwmExtendFrameIntoClientArea(hwnd, &shadow_margins);
+  // Back to window_manager's hidden-title-bar shadow margins.
   SetSystemBackdrop(false);
+  ApplyMainSurfaceComposition();
   return false;
+}
+
+void FlutterWindow::ApplyMainSurfaceComposition(
+    const fushi::MainSurfaceState& state) {
+  HWND hwnd = GetHandle();
+  if (hwnd == nullptr) {
+    return;
+  }
+  const MARGINS margins = fushi::MainFrameMargins(state);
+  DwmExtendFrameIntoClientArea(hwnd, &margins);
+  const DWMNCRENDERINGPOLICY policy =
+      fushi::MainSurfaceNcRenderingDisabled(state) ? DWMNCRP_DISABLED
+                                                   : DWMNCRP_USEWINDOWSTYLE;
+  DwmSetWindowAttribute(hwnd, DWMWA_NCRENDERING_POLICY, &policy,
+                        sizeof(policy));
+}
+
+void FlutterWindow::ApplyMainSurfaceComposition() {
+  ApplyMainSurfaceComposition(main_surface_state());
+}
+
+void FlutterWindow::SetMainVideoPassthrough(bool enabled) {
+  SetVideoPassthrough(enabled);
+  ApplyMainSurfaceComposition();
 }
 
 bool FlutterWindow::ApplyWindowIcon(const std::wstring& path) {

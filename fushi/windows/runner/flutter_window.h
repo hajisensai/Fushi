@@ -230,6 +230,17 @@ class FlutterWindow : public Win32Window {
   // something behind it (Windows 10 / older Windows 11 builds return false).
   bool ApplySystemBackdrop(bool mica, bool dark);
 
+  // BUG-2964: the single writer of the main window's DWM composition
+  // (DwmExtendFrameIntoClientArea margins + non-client rendering policy),
+  // derived from a MainSurfaceState (see main_surface_composition.h). Mica,
+  // the HDR passthrough and fullscreen all go through here instead of each
+  // writing DWM state of their own.
+  void ApplyMainSurfaceComposition(const fushi::MainSurfaceState& state);
+  void ApplyMainSurfaceComposition();
+
+  // Called by HdrVideoHostWindow when the passthrough host goes live / away.
+  void SetMainVideoPassthrough(bool enabled);
+
   // TODO-1092: notify Dart (system_theme_channel_) that the OS accent/theme
   // color changed so ThemeNotifier.refreshSystemPalette() re-reads it live.
   // Safe to call before the channel exists (null-guarded no-op).

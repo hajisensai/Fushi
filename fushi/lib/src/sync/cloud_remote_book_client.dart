@@ -171,7 +171,8 @@ class CloudRemoteBookClient implements RemoteBookClient {
         'remote book folder has no .epub content: $folderId',
       );
     }
-    await backend.getAsset(epub.id, destination, onProgress: onProgress);
+    await backend.getAsset(epub.id, destination,
+        onProgress: syncTransferFractionOnly(onProgress));
   }
 
   /// 云盘备份没有 host 实时 reader_positions DB，进度走 WebDAV 文件箱

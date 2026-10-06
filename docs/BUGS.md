@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2776 条。点号进各自文件。
+> 共 2777 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -83,6 +83,7 @@
 | [BUG-2966](bugs/BUG-2966-home-ja-untranslated.md) | ✅ | ✅ | 日文 UI 首页 Daily Goal / Set Goal / Nothing to continue yet 漏翻译 |
 | [BUG-2965](bugs/BUG-2965-video-cover-black-frame.md) | ✅ | ✅ | 视频自动抽帧封面落在黑场，首页「继续」卡显示纯黑块 |
 | [BUG-2964](bugs/BUG-2964-home-first-load-slow.md) | ✅ | ✅ | 首页首屏加载慢：合集成员表全表物化 + 串行读 |
+| [BUG-2964](bugs/BUG-2964-hdr-passthrough-top-line.md) | ✅ | ✅ | HDR 直通全屏顶部一条主题色横线 + 底色叠加到视频上 |
 | [BUG-2963](bugs/BUG-2963-library-blur-scroll-jank.md) | ✅ | ✅ | 游戏库/视频库滚动掉帧：卡片封面背景渲染期实时模糊 |
 | [BUG-2962](bugs/BUG-2962-manga-page-full-decode-per-request.md) | ✅ | ✅ | 漫画阅读器每次页图请求都整张解码取宽高，大图页拖慢阅读与查词 |
 | [BUG-2961](bugs/BUG-2961-glass-menu-over-webview.md) | ✅ | ✅ | 有声书歌词模式「⋯」菜单玻璃背景压在 WebView 上成灰块与白斑 |

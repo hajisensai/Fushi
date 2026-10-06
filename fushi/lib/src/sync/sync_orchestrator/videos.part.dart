@@ -286,11 +286,12 @@ extension _SyncOrchestratorVideos on SyncOrchestrator {
             v.bookUid,
             item.file,
             title: v.title,
-            onProgress: (double f) => _emit(SyncPhase.videos,
+            onProgress: (double f, [int? b]) => _emit(SyncPhase.videos,
                 itemIndex: index,
                 itemTotal: total,
                 title: v.title,
-                fileFraction: f),
+                fileFraction: f,
+                fileBytes: b),
           );
           report.videosExported++;
           videoOk = true;
