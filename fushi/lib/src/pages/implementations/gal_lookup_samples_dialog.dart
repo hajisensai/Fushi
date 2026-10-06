@@ -12,6 +12,7 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -1030,53 +1031,42 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
 
   Widget _statusBanner() {
     final TextTheme text = Theme.of(context).textTheme;
-    // M3E 饱和信息卡：失败 = errorContainer、其余 secondaryContainer；前景取色块
-    // 的 on 色（主题字阶自带 onSurface，要显式覆盖）。
-    final FushiCardTone tone = _failed
-        ? FushiCardTone.error
-        : FushiCardTone.secondary;
-    final Color? foreground = fushiCardToneColors(context, tone)?.onContainer;
-    return FushiCard(
-      tone: tone,
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          FushiIcon(
-            _failed ? FushiIcons.error : FushiIcons.info,
-            size: 20,
-            color: foreground ??
-                (_failed
-                    ? fushiStatusColor(context, FushiStatusTone.error)
-                    : null),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  _message ??
-                      (_canPreview
-                          ? t.game_lookup_samples_auto_hint
-                          : t.game_lookup_samples_auto_pending),
-                  style: text.bodyMedium?.copyWith(color: foreground),
-                ),
-                if (_failed && _diagnosticDetail != null) ...<Widget>[
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    t.game_lookup_samples_diagnostic(
-                      reason: _diagnosticDetail!,
-                      detail: '',
-                    ),
-                    style: text.bodySmall?.copyWith(color: foreground),
-                  ),
-                ],
-              ],
+    // M3E 饱和信息卡走共享提示横幅：失败 = error 色块、其余 info 色块，前景
+    // 统一取色块的 on- 色（FushiInlineNotice 负责 Apple / 墨水屏分支）。
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: FushiInlineNotice(
+        severity: _failed
+            ? FushiNoticeSeverity.error
+            : FushiNoticeSeverity.info,
+        icon: _failed ? FushiIcons.error : FushiIcons.info,
+        message: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              _message ??
+                  (_canPreview
+                      ? t.game_lookup_samples_auto_hint
+                      : t.game_lookup_samples_auto_pending),
             ),
-          ),
-        ],
+            if (_failed && _diagnosticDetail != null) ...<Widget>[
+              const SizedBox(height: 4),
+              // bodySmall 自带 onSurface 色，要显式取色块的前景（横幅给正文挂的
+              // DefaultTextStyle）。
+              Builder(
+                builder: (BuildContext context) => SelectableText(
+                  t.game_lookup_samples_diagnostic(
+                    reason: _diagnosticDetail!,
+                    detail: '',
+                  ),
+                  style: text.bodySmall?.copyWith(
+                    color: DefaultTextStyle.of(context).style.color,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
