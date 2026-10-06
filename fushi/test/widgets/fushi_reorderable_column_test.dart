@@ -557,7 +557,7 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
-  for (final double scale in <double>[0.5, 1.5]) {
+  for (final double scale in <double>[0.5, 0.8, 1.5]) {
     testWidgets('handle mouse drag stays local under $scale UI scale', (
       WidgetTester tester,
     ) async {
