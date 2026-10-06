@@ -16,8 +16,6 @@ import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dar
     show MangaPanelInfoButton;
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiGroupedListItem;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';

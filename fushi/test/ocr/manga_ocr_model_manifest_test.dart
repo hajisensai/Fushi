@@ -43,7 +43,7 @@ void main() {
 
   group('kPpOcrLineModelManifest', () {
     test('PP-OCRv6 三文件钉 HF revision sha，不用可变的 main', () {
-      final List<MangaOcrModelFile> pp = kPpOcrLineModelManifest;
+      const List<MangaOcrModelFile> pp = kPpOcrLineModelManifest;
       expect(pp, hasLength(3));
       for (final MangaOcrModelFile m in pp) {
         expect(m.url, isNot(contains('/resolve/main/')), reason: m.url);

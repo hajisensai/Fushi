@@ -202,7 +202,6 @@ class _ReleaseCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
     final Object? tagName = release['tag_name'];
     final String title =
         tagName is String && tagName.isNotEmpty ? tagName : '—';
