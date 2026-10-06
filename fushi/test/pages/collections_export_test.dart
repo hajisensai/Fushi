@@ -11,6 +11,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -87,7 +88,7 @@ void main() {
   // 巡检 PR-3：分享图标从 iOS 专属 ios_share_outlined 统一为 Material share_outlined。
   Finder exportButton() => find.widgetWithIcon(
         FushiIconButton,
-        Icons.share_outlined,
+        FushiIcons.share,
       );
 
   testWidgets('export button hidden when there are no favorite sentences',

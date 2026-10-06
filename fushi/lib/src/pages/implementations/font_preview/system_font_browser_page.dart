@@ -12,9 +12,11 @@ import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 按搜索词与日文筛选过滤系统字体。`supportsJapanese == null`（该平台判不出）
 /// 的字体不被日文筛选排除——判不出不等于不支持。
@@ -146,7 +148,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
             key: const ValueKey<String>('system-font-sample'),
             controller: _sampleController,
             hintText: t.font_preview_sample_text,
-            prefixIcon: const FushiIcon(Icons.text_fields),
+            prefixIcon: const FushiIcon(FushiIcons.textFields),
             contentPadding: EdgeInsets.symmetric(
               horizontal: tokens.spacing.rowHorizontal,
               vertical: tokens.spacing.rowVertical,
@@ -160,7 +162,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
               child: FushiSelectableChip(
                 key: const ValueKey<String>('system-font-japanese-only'),
                 label: t.custom_fonts_system_japanese_only,
-                leadingIcon: Icons.translate,
+                leadingIcon: FushiIcons.language,
                 selected: _japaneseOnly,
                 onSelected: (bool value) =>
                     setState(() => _japaneseOnly = value),
@@ -186,44 +188,54 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
         : visible.isEmpty
         ? Center(
             child: FushiPlaceholderMessage(
-              icon: Icons.font_download_off_outlined,
+              icon: FushiIcons.font,
               message: t.custom_fonts_empty,
             ),
           )
-        : ListView.builder(
-            key: const ValueKey<String>('system-font-list'),
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            itemCount: visible.length,
-            itemBuilder: (BuildContext context, int index) {
-              final SystemFontFamily font = visible[index];
-              final bool added = _isAdded(font.family);
-              final bool selected = _selected.contains(font.family);
-              return FushiListItem(
-                key: ValueKey<String>('system-font-${font.family}'),
-                selected: selected || _previewFamily == font.family,
-                onTap: added ? null : () => _toggle(font.family),
-                title: FontSpecimenLine(
-                  label: font.family,
-                  family: font.family,
-                  glyphs: glyphs,
-                  selected: selected,
-                ),
-                subtitle: font.supportsJapanese == true
-                    ? Text(
-                        t.custom_fonts_system_supports_japanese,
-                        style: tokens.type.metadata.copyWith(
-                          color: scheme.primary,
-                        ),
-                      )
-                    : null,
-                trailing: added
-                    ? FushiIcon(Icons.check, color: scheme.outline)
-                    : FushiCheckbox(
-                        value: selected,
-                        onChanged: (_) => _toggle(font.family),
+        // M3E 分段卡片列表（首尾大圆角、行间 2）+ 首屏错峰进场。
+        : FushiEntranceScope(
+            child: ListView.builder(
+              key: const ValueKey<String>('system-font-list'),
+              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+              itemCount: visible.length,
+              itemBuilder: (BuildContext context, int index) {
+                final SystemFontFamily font = visible[index];
+                final bool added = _isAdded(font.family);
+                final bool selected = _selected.contains(font.family);
+                return FushiStaggeredEntrance(
+                  index: index,
+                  child: FushiGroupedListItem(
+                    index: index,
+                    count: visible.length,
+                    child: FushiListItem(
+                      key: ValueKey<String>('system-font-${font.family}'),
+                      selected: selected || _previewFamily == font.family,
+                      onTap: added ? null : () => _toggle(font.family),
+                      title: FontSpecimenLine(
+                        label: font.family,
+                        family: font.family,
+                        glyphs: glyphs,
+                        selected: selected,
                       ),
-              );
-            },
+                      subtitle: font.supportsJapanese == true
+                          ? Text(
+                              t.custom_fonts_system_supports_japanese,
+                              style: tokens.type.metadata.copyWith(
+                                color: scheme.primary,
+                              ),
+                            )
+                          : null,
+                      trailing: added
+                          ? FushiIcon(FushiIcons.check, color: scheme.outline)
+                          : FushiCheckbox(
+                              value: selected,
+                              onChanged: (_) => _toggle(font.family),
+                            ),
+                    ),
+                  ),
+                );
+              },
+            ),
           );
 
     final String? previewFamily = _previewFamily;
@@ -235,6 +247,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
           ? appleColorsOf(context).secondaryGroupedBackground
           : tokens.surfaces.group,
       elevation: glass ? 0 : 2,
+      // M3E 底部面板：上两角 28（与底部弹层同一大容器形状）。
       shape: glass
           ? Border(
               top: BorderSide(
@@ -242,7 +255,9 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                 width: 0.5,
               ),
             )
-          : null,
+          : const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
       child: SafeArea(
         top: false,
         child: Padding(
@@ -270,7 +285,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
                             context,
                             List<String>.of(_selected),
                           ),
-                    icon: const FushiIcon(Icons.add),
+                    icon: const FushiIcon(FushiIcons.add),
                     label: Text(
                       t.custom_fonts_system_add_count(count: _selected.length),
                     ),
@@ -301,7 +316,7 @@ class _SystemFontBrowserPageState extends State<SystemFontBrowserPage> {
       actions: <Widget>[
         if (_selected.isNotEmpty)
           FushiIconButton(
-            icon: Icons.clear_all,
+            icon: FushiIcons.deleteSweep,
             tooltip: t.dialog_cancel,
             onTap: () => setState(_selected.clear),
           ),

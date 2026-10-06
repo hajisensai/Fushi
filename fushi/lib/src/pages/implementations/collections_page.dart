@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
@@ -1512,8 +1514,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             FushiTextButton.icon(
               icon: FushiIcon(
                 _playingItemKey == _itemKey(item)
-                    ? Icons.hourglass_top
-                    : Icons.volume_up_outlined,
+                    ? FushiIcons.pending
+                    : FushiIcons.volumeUp,
                 size: 18,
               ),
               label: Text(t.dialog_play),
@@ -1527,7 +1529,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             ),
           if (item.text != null)
             FushiTextButton.icon(
-              icon: const FushiIcon(Icons.copy_outlined, size: 18),
+              icon: const FushiIcon(FushiIcons.copy, size: 18),
               label: Text(t.copy),
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: item.text!));
@@ -1536,7 +1538,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             ),
           if (canMine)
             FushiTextButton.icon(
-              icon: const FushiIcon(Icons.style_outlined, size: 18),
+              icon: const FushiIcon(FushiIcons.ankiCard, size: 18),
               label: Text(t.collection_mine_card),
               onPressed: () {
                 Navigator.pop(ctx);
@@ -1546,7 +1548,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               },
             ),
           FushiTextButton.icon(
-            icon: FushiIcon(Icons.delete_outline, size: 18, color: cs.error),
+            icon: FushiIcon(FushiIcons.delete, size: 18, color: cs.error),
             label: Text(t.dialog_delete, style: TextStyle(color: cs.error)),
             onPressed: () {
               Navigator.pop(ctx);
@@ -1557,10 +1559,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             FushiFilledButton.icon(
               icon: FushiIcon(
                 switch (kind) {
-                  SentenceSourceKind.video => Icons.movie_outlined,
-                  SentenceSourceKind.audiobook => Icons.headphones_outlined,
-                  SentenceSourceKind.lyrics => Icons.lyrics_outlined,
-                  SentenceSourceKind.book => Icons.menu_book_outlined,
+                  SentenceSourceKind.video => FushiIcons.video,
+                  SentenceSourceKind.audiobook => FushiIcons.audio,
+                  SentenceSourceKind.lyrics => FushiIcons.lyrics,
+                  SentenceSourceKind.book => FushiIcons.books,
                 },
                 size: 18,
               ),
@@ -1594,14 +1596,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           FushiIconButton(
             tooltip: t.dialog_export,
             // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3）。
-            icon: Icons.share_outlined,
+            icon: FushiIcons.share,
             onTap: _openExportSheet,
           ),
         // 批量制卡：收藏词 / 记着查词对象的收藏句可一键制卡（含视频 / 有声书音频）。
         if (!_loading && _cardCreationEnabled && _mineableItems.isNotEmpty)
           FushiIconButton(
             tooltip: t.collection_batch_mine,
-            icon: Icons.style_outlined,
+            icon: FushiIcons.ankiCard,
             onTap: _openBatchMineSheet,
           ),
         // 只要列表非空就显示「清空」；点开可选范围面板（书签/收藏句/制卡句/收藏词），
@@ -1609,7 +1611,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         if (!_loading && _items.isNotEmpty)
           FushiIconButton(
             tooltip: t.dialog_clear,
-            icon: Icons.delete_sweep_outlined,
+            icon: FushiIcons.deleteSweep,
             onTap: _openClearSheet,
           ),
       ],
@@ -1634,7 +1636,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           : _items.isEmpty
               ? Center(
                   child: FushiPlaceholderMessage(
-                    icon: Icons.collections_bookmark_outlined,
+                    icon: FushiIcons.collection,
                     message: t.no_collections,
                   ),
                 )
@@ -1645,7 +1647,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                       child: _visibleItems.isEmpty
                           ? Center(
                               child: FushiPlaceholderMessage(
-                                icon: Icons.collections_bookmark_outlined,
+                                icon: FushiIcons.collection,
                                 message: t.no_collections,
                               ),
                             )
@@ -1692,12 +1694,29 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         runStart = -1;
       }
     }
+    // M3E 错峰进场：首屏的节头与收藏行按序弹入，滚动带出的行瞬间出现。
+    return FushiEntranceScope(
+      child: ListView.builder(
+        padding: EdgeInsets.only(bottom: tokens.spacing.card),
+        itemCount: rows.length,
+        itemBuilder: (BuildContext context, int index) =>
+            FushiStaggeredEntrance(
+          index: index,
+          child: _buildGroupedRow(rows, index, groupIndex, groupCount),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupedRow(
+    List<CollectionGroupRow<_CollectionItem>> rows,
+    int index,
+    List<int> groupIndex,
+    List<int> groupCount,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
-    return ListView.builder(
-      padding: EdgeInsets.only(bottom: tokens.spacing.card),
-      itemCount: rows.length,
-      itemBuilder: (BuildContext context, int index) {
-        final CollectionGroupRow<_CollectionItem> row = rows[index];
+    final CollectionGroupRow<_CollectionItem> row = rows[index];
         switch (row.kind) {
           case CollectionGroupRowKind.collectionHeader:
             final String name = row.collectionId == null
@@ -1737,8 +1756,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               child: _buildItem(item),
             );
         }
-      },
-    );
   }
 
   /// 收藏行副标题：可截断的[metadata]（书名/章节/来源前缀）+ **恒可见**的收藏日期。
@@ -1936,10 +1953,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final bool isMined = item.type == _CollectionType.mined;
     final bool isWord = item.type == _CollectionType.word;
     final IconData icon = isMined
-        ? Icons.style_outlined
+        ? FushiIcons.ankiCard
         : isWord
-            ? Icons.star_outline
-            : Icons.format_quote_outlined;
+            ? FushiIcons.star
+            : FushiIcons.quote;
     final String typeLabel = isMined
         ? t.collection_mined
         : isWord
@@ -1998,7 +2015,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       direction: DismissDirection.endToStart,
       // M3E 滑动删除底：errorContainer 圆角块（与行高亮同形），Apple 系统红。
       background: const FushiSwipeActionBackground(
-        icon: Icons.delete_outline,
+        icon: FushiIcons.delete,
         destructive: true,
         borderRadius: FushiM3eShape.smallRadius,
       ),
@@ -2073,7 +2090,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                           )
                         : FushiIconButton(
                             tooltip: t.dialog_play,
-                            icon: Icons.volume_up_outlined,
+                            icon: FushiIcons.volumeUp,
                             size: 18,
                             padding: EdgeInsets.all(tokens.spacing.gap / 2),
                             onTap: () => _playItemAudio(item),
@@ -2081,7 +2098,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                   if (item.text != null)
                     FushiIconButton(
                       tooltip: t.copy,
-                      icon: Icons.copy_outlined,
+                      icon: FushiIcons.copy,
                       size: 18,
                       padding: EdgeInsets.all(tokens.spacing.gap / 2),
                       onTap: () {
@@ -2092,7 +2109,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                     // Apple 行尾 chevron：小号 tertiaryLabel（iOS disclosure
                     // indicator 观感）；MD3 维持 24 号 onSurfaceVariant。
                     FushiIcon(
-                      Icons.chevron_right,
+                      FushiIcons.chevronRight,
                       size: isGlassDesign(context) ? 16 : null,
                       color: isGlassDesign(context)
                           ? appleColorsOf(context).tertiaryLabel
@@ -2225,7 +2242,7 @@ class CollectionDeleteDialog extends StatelessWidget {
           children: <Widget>[
             // 中性方底 + 错误色单色图标（不再是 errorContainer 彩色方块）。
             FushiNeutralIconBadge(
-              icon: Icons.delete_outline,
+              icon: FushiIcons.delete,
               size: 20 + tokens.spacing.gap * 2,
               iconSize: 20,
               circle: false,
@@ -2240,16 +2257,14 @@ class CollectionDeleteDialog extends StatelessWidget {
           spacing: tokens.spacing.gap,
           runSpacing: tokens.spacing.gap,
           children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_close,
               onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_close),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
+            FushiDialogAction(
+              label: t.dialog_delete,
+              kind: FushiDialogActionKind.destructive,
               onPressed: onConfirm,
-              child: Text(t.dialog_delete),
             ),
           ],
         ),
@@ -2521,15 +2536,15 @@ class _ExportDialogState extends State<_ExportDialog> {
               ),
               _exportSourceRow(
                 label: t.collection_export_all_sources,
-                icon: Icons.select_all_outlined,
+                icon: FushiIcons.selectAll,
                 option: null,
               ),
               for (final _ExportSourceOption option in widget.sources)
                 _exportSourceRow(
                   label: option.label,
                   icon: option.isCollection
-                      ? Icons.collections_bookmark_outlined
-                      : Icons.article_outlined,
+                      ? FushiIcons.collection
+                      : FushiIcons.file,
                   option: option,
                 ),
             ],
@@ -2577,7 +2592,7 @@ class _ExportDialogState extends State<_ExportDialog> {
         footer: Align(
           alignment: Alignment.centerRight,
           child: FushiFilledButton.icon(
-            icon: const FushiIcon(Icons.share_outlined, size: 18),
+            icon: const FushiIcon(FushiIcons.share, size: 18),
             label: Text(t.dialog_export),
             onPressed: _canExport ? _confirm : null,
           ),
@@ -2681,7 +2696,7 @@ class _ClearSheetState extends State<_ClearSheet> {
             backgroundColor: colors.error,
             foregroundColor: colors.onError,
           ),
-          icon: const FushiIcon(Icons.delete_sweep_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.deleteSweep, size: 18),
           label: Text(t.dialog_clear),
           onPressed: _canClear
               ? () => Navigator.pop(context, Set<_CollectionType>.of(_selected))
@@ -2785,7 +2800,7 @@ class _BatchMineSheetState extends State<_BatchMineSheet> {
       footer: Align(
         alignment: Alignment.centerRight,
         child: FushiFilledButton.icon(
-          icon: const FushiIcon(Icons.style_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.ankiCard, size: 18),
           label: Text(t.collection_batch_mine_start(n: _selected.length)),
           onPressed: _selected.isEmpty
               ? null

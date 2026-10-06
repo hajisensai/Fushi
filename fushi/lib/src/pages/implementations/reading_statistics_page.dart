@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_source_totals.dart';
 import 'package:fushi/src/pages/implementations/stat_summary.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
@@ -504,19 +505,19 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       // (_buildGoalPanel -> SizedBox.shrink)，卡内 edit 图标随之消失，
       // 否则从未设过目标的用户没有任何 UI 能首次设置目标。
       FushiIconButton(
-        icon: Icons.flag_outlined,
+        icon: FushiIcons.flag,
         tooltip: t.stat_goal_set,
         enabled: !_loading,
         onTap: _editGoals,
       ),
       FushiIconButton(
-        icon: Icons.refresh,
+        icon: FushiIcons.refresh,
         tooltip: t.stat_refresh,
         enabled: !_loading,
         onTap: _syncAndLoad,
       ),
       FushiIconButton(
-        icon: Icons.delete_sweep_outlined,
+        icon: FushiIcons.deleteSweep,
         tooltip: t.stat_clear_all,
         enabled: !_loading,
         onTap: _confirmAndClearAll,
@@ -720,7 +721,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
           label: t.stat_streak,
         ),
         StatKpiItem(
-          icon: Icons.today_outlined,
+          icon: FushiIcons.calendar,
           value: formatStatChars(_todayChars),
           label: t.stat_today,
         ),
@@ -800,10 +801,10 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final (IconData icon, String label) = switch (source) {
-      StatBreakdownSource.book => (Icons.menu_book, t.home_filter_read),
-      StatBreakdownSource.manga => (Icons.photo_library, t.manga_library),
-      StatBreakdownSource.video => (Icons.movie, t.home_filter_watch),
-      StatBreakdownSource.game => (Icons.videogame_asset, t.home_filter_game),
+      StatBreakdownSource.book => (FushiIcons.books, t.home_filter_read),
+      StatBreakdownSource.manga => (FushiIcons.manga, t.manga_library),
+      StatBreakdownSource.video => (FushiIcons.video, t.home_filter_watch),
+      StatBreakdownSource.game => (FushiIcons.game, t.home_filter_game),
     };
     final List<String> metrics = <String>[
       formatStatChars(totals.chars),
@@ -1463,7 +1464,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     final MediaItem? item = bookKey == null ? null : _bookItemsByKey[bookKey];
     return buildStatMediaRow(
       context,
-      icon: Icons.menu_book,
+      icon: FushiIcons.books,
       cover: item == null
           ? null
           : resolveMediaCoverImage(
@@ -1519,6 +1520,14 @@ class StatMiniTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // M3E：饱和 tonal 色块（secondaryContainer + onSecondaryContainer）；墨水屏
+    // 回落中性最高层，Apple 保持 tertiaryGrouped 嵌套底。
+    final bool apple = isGlassDesign(context);
+    final bool tonal = !apple && !isEinkTheme(context);
+    final Color valueColor =
+        tonal ? scheme.onSecondaryContainer : scheme.onSurface;
+    final Color labelColor =
+        tonal ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
     return Container(
       margin: EdgeInsets.only(right: tokens.spacing.gap),
       padding: EdgeInsets.symmetric(
@@ -1528,8 +1537,10 @@ class StatMiniTile extends StatelessWidget {
       decoration: BoxDecoration(
         // Apple：卡里再嵌一层用 tertiarySystemGroupedBackground，比卡底高一档
         // 而不是跳到最亮的面色。
-        color: isGlassDesign(context)
+        color: apple
             ? appleColorsOf(context).tertiaryGroupedBackground
+            : tonal
+            ? scheme.secondaryContainer
             : scheme.surfaceContainerHighest,
         borderRadius: tokens.radii.cardRadius,
       ),
@@ -1541,9 +1552,8 @@ class StatMiniTile extends StatelessWidget {
             maxLines: 2,
             softWrap: true,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.onSurface,
-              fontWeight: FontWeight.bold,
+            style: context.fushiType.titleMediumEmphasized.tabular.copyWith(
+              color: valueColor,
             ),
           ),
           SizedBox(height: tokens.spacing.gap / 2),
@@ -1554,7 +1564,7 @@ class StatMiniTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: Theme.of(
               context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ).textTheme.bodySmall?.copyWith(color: labelColor),
           ),
         ],
       ),

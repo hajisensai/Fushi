@@ -7,6 +7,7 @@ import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
@@ -113,7 +114,7 @@ class _MangaOcrModelsStorageSectionState
       message:
           '${localModelLabel(row.model)}\n\n'
           '${t.manga_ocr_delete_confirm_message}',
-      icon: Icons.delete_outline,
+      icon: FushiIcons.delete,
       confirmLabel: t.manga_ocr_delete,
       destructive: true,
     );
@@ -205,7 +206,7 @@ class _MangaOcrModelsStorageSectionState
               height: 16,
               child: FushiCircularProgressIndicator(strokeWidth: 2),
             )
-          : const FushiIcon(Icons.delete_outline, size: 18),
+          : const FushiIcon(FushiIcons.delete, size: 18),
       label: Text(t.manga_ocr_delete),
     );
     if (status.allReady) return delete;
@@ -217,7 +218,7 @@ class _MangaOcrModelsStorageSectionState
         FushiFilledButton.icon(
           key: ValueKey<String>('ocr-models-download-${row.model.key}'),
           onPressed: row.deleting ? null : () => _startDownload(row),
-          icon: const FushiIcon(Icons.download_outlined, size: 18),
+          icon: const FushiIcon(FushiIcons.download, size: 18),
           label: Text(
             status.hasResumableDownload
                 ? t.manga_ocr_download_resume
@@ -243,8 +244,8 @@ class _MangaOcrModelsStorageSectionState
           title: localModelLabel(row.model),
           subtitle: _subtitle(row),
           icon: (row.status?.allReady ?? false)
-              ? Icons.check_circle_outline
-              : Icons.download_outlined,
+              ? FushiIcons.filled(FushiIcons.success)
+              : FushiIcons.download,
           showIcon: true,
           controlBelow: true,
           trailing: Align(

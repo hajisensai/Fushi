@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
@@ -161,7 +162,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                   border: const OutlineInputBorder(),
                   suffixIcon: FushiIconButtonControl(
                     tooltip: t.media_tracking_access_token_hint,
-                    icon: const FushiIcon(Icons.open_in_new),
+                    icon: const FushiIcon(FushiIcons.openInNew),
                     onPressed: () => launchUrl(
                       Uri.parse(BangumiApiClient.accessTokenUrl),
                       mode: LaunchMode.externalApplication,
@@ -195,7 +196,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                     )
                   : FushiFilledButton.tonalIcon(
                       onPressed: _connect,
-                      icon: const FushiIcon(Icons.link),
+                      icon: const FushiIcon(FushiIcons.link),
                       label: Text(t.media_tracking_connect),
                     ),
             ),
@@ -222,14 +223,14 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               AdaptiveSettingsRow(
                 title: t.media_tracking_unauthorized,
                 titleMaxLines: 4,
-                icon: Icons.error_outline,
+                icon: FushiIcons.error,
                 showIcon: true,
               ),
             AdaptiveSettingsRow(
               title: t.media_tracking_sync_now,
               trailing: FushiFilledButton.tonalIcon(
                 onPressed: _busy ? null : _sync,
-                icon: const FushiIcon(Icons.sync),
+                icon: const FushiIcon(FushiIcons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
             ),
@@ -237,7 +238,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
               title: t.media_tracking_add_mapping,
               trailing: FushiFilledButton.icon(
                 onPressed: _busy ? null : () => _addMapping(),
-                icon: const FushiIcon(Icons.add_link),
+                icon: const FushiIcon(FushiIcons.link),
                 label: Text(t.media_tracking_add_mapping),
               ),
             ),
@@ -249,7 +250,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 subtitle: t.media_tracking_manual_required_hint,
                 titleMaxLines: 3,
                 subtitleMaxLines: 4,
-                icon: Icons.link_off,
+                icon: FushiIcons.linkOff,
                 showIcon: true,
               ),
               for (final MediaTrackingUnlinkedItem item in status.unlinked)
@@ -261,7 +262,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                   subtitleMaxLines: 2,
                   trailing: FushiTextButton.icon(
                     onPressed: _busy ? null : () => _addMapping(initial: item),
-                    icon: const FushiIcon(Icons.add_link),
+                    icon: const FushiIcon(FushiIcons.link),
                     label: Text(t.media_tracking_add_mapping),
                   ),
                 ),
@@ -285,7 +286,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                 ].join('\n'),
                 subtitleMaxLines: 4,
                 titleMaxLines: 3,
-                icon: Icons.sync_problem_outlined,
+                icon: FushiIcons.warning,
                 showIcon: failureByMappingId.containsKey(mapping.id),
                 trailing: FushiIconButtonControl(
                   tooltip: t.media_tracking_delete_mapping,
@@ -293,7 +294,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
                     await _repository.deleteMapping(mapping.id);
                     await _reload();
                   },
-                  icon: const FushiIcon(Icons.link_off),
+                  icon: const FushiIcon(FushiIcons.linkOff),
                 ),
               ),
           ],
@@ -502,6 +503,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
   @override
   Widget build(BuildContext context) {
     return FushiAlertDialog(
+      icon: const FushiIcon(FushiIcons.tracking),
       title: Text(t.media_tracking_add_mapping),
       content: SizedBox(
         width: 620,
@@ -621,7 +623,7 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                   labelText: t.media_tracking_search,
                   suffixIcon: FushiIconButtonControl(
                     onPressed: _busy ? null : _search,
-                    icon: const FushiIcon(Icons.search),
+                    icon: const FushiIcon(FushiIcons.search),
                   ),
                 ),
               ),
@@ -633,11 +635,9 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
               if (!_busy && _error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),
-                  child: Text(
-                    _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                  child: FushiInlineNotice(
+                    severity: FushiNoticeSeverity.error,
+                    message: _error!,
                   ),
                 ),
               if (!_busy && _results.isNotEmpty) ...<Widget>[
@@ -649,30 +649,41 @@ class _AddMappingDialogState extends State<_AddMappingDialog> {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
-                for (final BangumiSubject subject in _results)
-                  FushiListItem(
-                    density: FushiListDensity.compact,
-                    padding: EdgeInsets.zero,
-                    leading: subject.coverUrl == null
-                        ? const FushiIcon(Icons.auto_stories_outlined)
-                        : Image(
-                          image: AppHttpImage(subject.coverUrl!),
-                            width: 42,
-                            height: 56,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                const FushiIcon(Icons.broken_image_outlined),
-                          ),
-                    title: Text(subject.displayName),
-                    subtitle: Text(
-                      <String>[
-                        if (subject.secondaryName.isNotEmpty)
-                          subject.secondaryName,
-                        '#${subject.id}',
-                      ].join(' · '),
-                    ),
-                    onTap: () => _save(subject),
-                  ),
+                const SizedBox(height: 8),
+                // M3E 分段卡片（首尾大圆角、行间 2）。
+                FushiGroupedList(
+                  children: <Widget>[
+                    for (final BangumiSubject subject in _results)
+                      FushiListItem(
+                        density: FushiListDensity.compact,
+                        leading: subject.coverUrl == null
+                            ? const FushiListLeadingIcon(
+                                FushiIcons.books,
+                                shape: FushiLeadingShape.square,
+                              )
+                            : ClipRRect(
+                                borderRadius: FushiM3eShape.smallRadius,
+                                child: Image(
+                                  image: AppHttpImage(subject.coverUrl!),
+                                  width: 42,
+                                  height: 56,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      const FushiIcon(FushiIcons.brokenImage),
+                                ),
+                              ),
+                        title: Text(subject.displayName),
+                        subtitle: Text(
+                          <String>[
+                            if (subject.secondaryName.isNotEmpty)
+                              subject.secondaryName,
+                            '#${subject.id}',
+                          ].join(' · '),
+                        ),
+                        onTap: () => _save(subject),
+                      ),
+                  ],
+                ),
               ],
             ],
           ),

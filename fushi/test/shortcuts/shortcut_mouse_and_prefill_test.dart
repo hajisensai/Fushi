@@ -7,6 +7,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// TODO-1050b (mouse binding small-glyph rendering) + TODO-1060② (prefill from a
 /// visual empty slot) behavioural coverage on the public ShortcutBindingEditDialog.
@@ -65,7 +66,7 @@ void main() {
     );
 
     // The middle-click glyph (outlined mouse) and its localized label both show.
-    expect(find.byIcon(Icons.mouse_outlined), findsOneWidget);
+    expect(find.byIcon(FushiIcons.mouse), findsOneWidget);
     expect(find.text(t.shortcut_mouse_middle), findsWidgets);
   });
 

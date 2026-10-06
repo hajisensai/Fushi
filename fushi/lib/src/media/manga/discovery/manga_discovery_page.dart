@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
@@ -244,7 +245,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         key: const ValueKey<String>('manga_discovery_refresh'),
         tooltip: t.refresh,
         onPressed: _refresh,
-        icon: const FushiIcon(Icons.refresh),
+        icon: const FushiIcon(FushiIcons.refresh),
       );
 
   void _openMokuro() {
@@ -284,15 +285,15 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 只是同一条链路的另一个 `DiscoveryMediaKind`。
   ///
   /// 单域传入 → 那页不出媒体类型分段条；`initialSourceId` 让它直接落在这台
-  /// 服务器上，跳过「先挑来源」的引导态。外面套 Scaffold 是因为该页设计为
+  /// 服务器上，跳过「先挑来源」的引导态。外面套 FushiPageScaffold（M3E 浮动页头）是因为该页设计为
   /// 嵌在库页壳里（`navigation == null` 时它自己不出 header），pushed route
   /// 需要一个返回入口。
   void _openOpdsServer(OpdsServerConfig server) {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
-        builder: (BuildContext context) => Scaffold(
-          appBar: FushiAppBar(title: Text(server.displayName)),
+        builder: (BuildContext context) => FushiPageScaffold(
+          title: server.displayName,
           body: MediaDiscoveryPage(
             kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.manga],
             initialSourceId: opdsSourceIdFor(server.id),
@@ -515,7 +516,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           SliverToBoxAdapter(
             child: FushiPlaceholderMessage(
               key: const ValueKey<String>('manga_discovery_feeds_failed'),
-              icon: Icons.cloud_off_outlined,
+              icon: FushiIcons.cloudOff,
+              tone: FushiPlaceholderTone.error,
               message: t.manga_discovery_load_failed,
               detail: feeds
                   .map((MangaDiscoverySourceFeed feed) => feed.displayName)
@@ -523,7 +525,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
               action: FushiFilledButton.icon(
                 key: const ValueKey<String>('manga_discovery_retry_all'),
                 onPressed: _refresh,
-                icon: const FushiIcon(Icons.refresh_rounded),
+                icon: const FushiIcon(FushiIcons.refresh),
                 label: Text(t.retry),
               ),
             ),
@@ -565,7 +567,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           hasScrollBody: false,
           child: FushiPlaceholderMessage(
             key: const ValueKey<String>('manga_discovery_empty'),
-            icon: Icons.travel_explore_outlined,
+            icon: FushiIcons.travelExplore,
             message: t.manga_discovery_empty_title,
             detail:
                 MihonRuntimeFactory.isSupported ? t.mihon_source_empty : null,
@@ -576,7 +578,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
                     onPressed: openSources,
                     // 2026-10 体验优化：与全局搜索空态同一「导入」图标；拼图块
                     // 暗示「扩展」入口，而库页里没有叫「扩展」的按钮。
-                    icon: const FushiIcon(Icons.library_add_outlined),
+                    icon: const FushiIcon(FushiIcons.libraryAdd),
                     label: Text(t.manga_discovery_empty_action),
                   ),
           ),
@@ -897,13 +899,14 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
     if (_failed) {
       body = SliverToBoxAdapter(
         child: FushiPlaceholderMessage(
-          icon: Icons.cloud_off_outlined,
+          icon: FushiIcons.cloudOff,
+          tone: FushiPlaceholderTone.error,
           message: t.manga_discovery_load_failed,
           // 2026-10 体验优化：重试按钮统一 FilledButton.icon(refresh_rounded)。
           action: FushiFilledButton.icon(
             key: const ValueKey<String>('manga_discovery_retry'),
             onPressed: () => unawaited(_loadFirst()),
-            icon: const FushiIcon(Icons.refresh_rounded),
+            icon: const FushiIcon(FushiIcons.refresh),
             label: Text(t.retry),
           ),
         ),
@@ -920,7 +923,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
       body = SliverToBoxAdapter(
         child: FushiPlaceholderMessage(
           key: const ValueKey<String>('manga_discovery_grid_empty'),
-          icon: Icons.search_off_rounded,
+          icon: FushiIcons.searchOff,
           message: t.discovery_empty,
         ),
       );
@@ -944,7 +947,7 @@ class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid> {
         child: FushiTextButton.icon(
           key: const ValueKey<String>('manga_discovery_load_more_retry'),
           onPressed: _retryLoadMore,
-          icon: const FushiIcon(Icons.refresh_rounded),
+          icon: const FushiIcon(FushiIcons.refresh),
           label: Text(t.retry),
         ),
       );

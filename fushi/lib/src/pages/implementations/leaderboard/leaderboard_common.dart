@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
@@ -150,7 +151,7 @@ class LeaderboardPublicDataList extends StatelessWidget {
           t.leaderboard_intro_public_works,
           t.leaderboard_intro_public_work_stats,
           t.leaderboard_intro_public_chars,
-        ], Icons.public),
+        ], FushiIcons.globe),
         SizedBox(height: tokens.spacing.gap),
         Text(t.leaderboard_intro_email_note, style: tokens.type.metadata),
       ],
@@ -197,7 +198,7 @@ Future<bool> showLeaderboardUploadConsentDialog(BuildContext context) async =>
         return FushiDialogFrame(
           child: FushiModalSheetFrame(
             title: t.leaderboard_upload_consent_title,
-            leadingIcon: Icons.public,
+            leadingIcon: FushiIcons.globe,
             bodyPadding: EdgeInsets.fromLTRB(
               tokens.spacing.card,
               0,
@@ -209,18 +210,16 @@ Future<bool> showLeaderboardUploadConsentDialog(BuildContext context) async =>
               alignment: WrapAlignment.end,
               spacing: tokens.spacing.gap,
               children: <Widget>[
-                adaptiveDialogAction(
-                  context: dialogContext,
+                FushiDialogAction(
+                  label: t.dialog_cancel,
                   onPressed: () => Navigator.pop(dialogContext, false),
-                  child: Text(t.dialog_cancel),
                 ),
                 KeyedSubtree(
                   key: const ValueKey<String>('leaderboard-upload-consent-ok'),
-                  child: adaptiveDialogAction(
-                    context: dialogContext,
-                    isDefaultAction: true,
+                  child: FushiDialogAction(
+                    label: t.leaderboard_upload_consent_action,
+                    kind: FushiDialogActionKind.primary,
                     onPressed: () => Navigator.pop(dialogContext, true),
-                    child: Text(t.leaderboard_upload_consent_action),
                   ),
                 ),
               ],
@@ -392,10 +391,10 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
   bool _revealed = false;
 
   IconData get _kindIcon => switch (widget.work.kind) {
-    LeaderboardKind.book => Icons.menu_book_outlined,
-    LeaderboardKind.manga => Icons.auto_stories_outlined,
-    LeaderboardKind.video => Icons.movie_outlined,
-    LeaderboardKind.game => Icons.sports_esports_outlined,
+    LeaderboardKind.book => FushiIcons.books,
+    LeaderboardKind.manga => FushiIcons.books,
+    LeaderboardKind.video => FushiIcons.video,
+    LeaderboardKind.game => FushiIcons.game,
   };
 
   @override
@@ -436,7 +435,7 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
             child: image,
           ),
           Center(
-            child: FushiIcon(Icons.visibility_off_outlined, color: colors.onSurface),
+            child: FushiIcon(FushiIcons.visibilityOff, color: colors.onSurface),
           ),
         ],
       );
@@ -482,7 +481,7 @@ class LeaderboardLoadMore extends StatelessWidget {
             ? const FushiCircularProgressIndicator()
             : FushiOutlinedButton.icon(
                 onPressed: onLoadMore,
-                icon: const FushiIcon(Icons.expand_more),
+                icon: const FushiIcon(FushiIcons.expandMore),
                 label: Text(t.leaderboard_load_more),
               ),
       ),
@@ -504,7 +503,7 @@ class LeaderboardErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FushiPlaceholderMessage(
-      icon: Icons.cloud_off_outlined,
+      icon: FushiIcons.cloudOff,
       message: leaderboardErrorText(error),
       action: FushiFilledButton.tonal(
         onPressed: onRetry,
@@ -614,7 +613,7 @@ class _ReportDialogState extends State<_ReportDialog> {
     return FushiDialogFrame(
       child: FushiModalSheetFrame(
         title: t.leaderboard_report_title,
-        leadingIcon: Icons.flag_outlined,
+        leadingIcon: FushiIcons.flag,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -643,14 +642,13 @@ class _ReportDialogState extends State<_ReportDialog> {
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,
           children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_cancel,
               onPressed: () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
+            FushiDialogAction(
+              label: t.leaderboard_report_submit,
+              kind: FushiDialogActionKind.primary,
               onPressed: () {
                 final String reason = _reason.text.trim();
                 Navigator.pop(
@@ -658,7 +656,6 @@ class _ReportDialogState extends State<_ReportDialog> {
                   reason.length > 500 ? reason.substring(0, 500) : reason,
                 );
               },
-              child: Text(t.leaderboard_report_submit),
             ),
           ],
         ),
@@ -724,7 +721,7 @@ class _RecoveryImportDialogState extends ConsumerState<_RecoveryImportDialog> {
     return FushiDialogFrame(
       child: FushiModalSheetFrame(
         title: t.leaderboard_recovery_import_title,
-        leadingIcon: Icons.key_outlined,
+        leadingIcon: FushiIcons.key,
         bodyPadding: EdgeInsets.fromLTRB(
           tokens.spacing.card,
           0,
@@ -769,16 +766,14 @@ class _RecoveryImportDialogState extends ConsumerState<_RecoveryImportDialog> {
           alignment: WrapAlignment.end,
           spacing: tokens.spacing.gap,
           children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
+            FushiDialogAction(
+              label: t.dialog_cancel,
               onPressed: _busy ? null : () => Navigator.pop(context, false),
-              child: Text(t.dialog_cancel),
             ),
-            adaptiveDialogAction(
-              context: context,
-              isDefaultAction: true,
+            FushiDialogAction(
+              label: t.leaderboard_recovery_import_action,
+              kind: FushiDialogActionKind.primary,
               onPressed: _busy ? null : () => unawaited(_submit()),
-              child: Text(t.leaderboard_recovery_import_action),
             ),
           ],
         ),

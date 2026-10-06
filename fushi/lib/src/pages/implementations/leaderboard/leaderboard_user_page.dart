@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 
@@ -202,7 +203,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
             title: t.leaderboard_user_block_title,
             message: t.leaderboard_user_block_message(user: card.account.tag),
             confirmLabel: t.leaderboard_user_block,
-            leadingIcon: Icons.block,
+            leadingIcon: FushiIcons.block,
           ),
         );
     if (ok == null || !mounted) return;
@@ -273,7 +274,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       title: card?.account.tag ?? t.leaderboard_user_title,
       actions: <Widget>[
         FushiIconButton(
-          icon: Icons.ios_share,
+          icon: FushiIcons.share,
           tooltip: t.leaderboard_share,
           onTap: _share,
         ),
@@ -421,12 +422,12 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       buttons.addAll(<Widget>[
         FushiOutlinedButton.icon(
           onPressed: () => unawaited(_block()),
-          icon: const FushiIcon(Icons.block),
+          icon: const FushiIcon(FushiIcons.block),
           label: Text(t.leaderboard_user_block),
         ),
         FushiOutlinedButton.icon(
           onPressed: () => unawaited(_report()),
-          icon: const FushiIcon(Icons.flag_outlined),
+          icon: const FushiIcon(FushiIcons.flag),
           label: Text(t.leaderboard_report),
         ),
       ]);
@@ -434,7 +435,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     buttons.add(
       FushiOutlinedButton.icon(
         onPressed: () => unawaited(_share()),
-        icon: const FushiIcon(Icons.ios_share),
+        icon: const FushiIcon(FushiIcons.share),
         label: Text(t.leaderboard_share),
       ),
     );
@@ -478,7 +479,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
       out.add(
         FushiPlaceholderMessage(
           key: const ValueKey<String>('leaderboard-shelf-private'),
-          icon: Icons.lock_outline,
+          icon: FushiIcons.lock,
           message: t.leaderboard_user_shelf_private,
         ),
       );
@@ -496,7 +497,7 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     if (!_shelfLoading && _rows.isEmpty) {
       out.add(
         FushiPlaceholderMessage(
-          icon: Icons.menu_book_outlined,
+          icon: FushiIcons.books,
           message: t.leaderboard_shelf_empty,
         ),
       );
