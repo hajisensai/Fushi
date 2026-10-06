@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2777 条。点号进各自文件。
+> 共 2778 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -41,6 +41,7 @@
 | [BUG-3048](bugs/BUG-3048-press-morph-deactivated-lookup.md) | ✅ | ✅ | FushiPressMorph 停用后仍响应按钮状态回调，在已停用元素上查 Theme 断言 |
 | [BUG-3047](bugs/BUG-3047-vertical-slider-fills-width.md) | ✅ | ✅ | 竖直 FushiSlider（MD3）横向吃满父级宽度：Slider 在有界高度下撑满、旋转后成一大块 |
 | [BUG-3046](bugs/BUG-3046-fushi-spring-no-snap.md) | ✅ | ✅ | FushiSpring 弹簧落定不吸附终值：浮动工具条停在离目标约 1e-3 处（亚像素偏移） |
+| [BUG-3029](bugs/BUG-3029-settings-search-reveal-floating-header.md) | ✅ | ✅ | 设置搜索跳转定位被浮动页头首帧后让位推偏、高亮被重建拆掉 |
 | [BUG-3027](bugs/BUG-3027-indexedstack-keyboard-scroll-hidden-pane.md) | ✅ | ✅ | 键盘翻页滚到 IndexedStack 隐藏子区（Flutter 3.47 IndexedStack 不再包 Visibility） |
 | [BUG-3026](bugs/BUG-3026-gal-capture-empty-state-overflow.md) | ✅ | ✅ | 采集设置线程栏 M3E 空态在 1400x900 窗口溢出 |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
