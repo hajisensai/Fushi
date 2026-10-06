@@ -14,7 +14,8 @@ String _read(String relative) {
   final File f = File(relative);
   if (!f.existsSync()) {
     throw StateError(
-        'missing source: $relative (cwd=${Directory.current.path})');
+      'missing source: $relative (cwd=${Directory.current.path})',
+    );
   }
   return f.readAsStringSync();
 }
@@ -24,33 +25,50 @@ void main() {
     // TODO-586：实验视频开关若存在只会落在 video 或 system 领域文件，拼两份扫描。
     final String schemaSrc =
         _read('lib/src/settings/settings_schema_video.dart') +
-            _read('lib/src/settings/settings_schema_system.dart');
+        _read('lib/src/settings/settings_schema_system.dart');
 
     test('设置 schema 不再有实验视频开关项', () {
-      expect(schemaSrc.contains('system.experimental_video'), isFalse,
-          reason: '实验视频开关应已从设置中删除（视频改为常驻）');
-      expect(schemaSrc.contains('setExperimentalVideoEnabled'), isFalse,
-          reason: '不应再调用已删除的 setExperimentalVideoEnabled');
-      expect(schemaSrc.contains('t.section_experimental'), isFalse,
-          reason: '「实验性功能」设置区块应已删除');
+      expect(
+        schemaSrc.contains('system.experimental_video'),
+        isFalse,
+        reason: '实验视频开关应已从设置中删除（视频改为常驻）',
+      );
+      expect(
+        schemaSrc.contains('setExperimentalVideoEnabled'),
+        isFalse,
+        reason: '不应再调用已删除的 setExperimentalVideoEnabled',
+      );
+      expect(
+        schemaSrc.contains('t.section_experimental'),
+        isFalse,
+        reason: '「实验性功能」设置区块应已删除',
+      );
     });
   });
 
   group('底栏视频 tab 实验性徽标', () {
-    final String navSrc =
-        _read('lib/src/utils/adaptive/adaptive_navigation.dart');
-    final String homeSrc =
-        _read('lib/src/pages/implementations/home_page.dart');
+    final String navSrc = _read(
+      'lib/src/utils/adaptive/adaptive_navigation.dart',
+    );
+    final String homeSrc = _read(
+      'lib/src/pages/implementations/home_page.dart',
+    );
 
     test('AdaptiveNavItem 暴露 experimentalBadge 字段', () {
       expect(navSrc.contains('this.experimentalBadge'), isTrue);
     });
 
-    test('实验性目的地用 MD3 Badge 叠加图标', () {
-      // 无 label 的 Badge 即小圆点。Material 与 Cupertino 两路都经 _maybeBadge。
-      expect(navSrc.contains('Badge(child: child)'), isTrue,
-          reason: '_maybeBadge 应用无 label 的 Badge 渲染小圆点');
-      expect(navSrc.contains('_maybeBadge('), isTrue);
+    test('实验性目的地用共享 Badge 叠加图标', () {
+      // 01b40f7d304 收口到共享控件；无 label 仍是小圆点。
+      // 锚定方法本体，别让其它导航分支的徽标调用代偿这里的回归。
+      final int start = navSrc.indexOf('Widget _maybeBadge({');
+      expect(start, greaterThanOrEqualTo(0));
+      final int end = navSrc.indexOf('\n}', start);
+      expect(end, greaterThan(start));
+      final String body = navSrc.substring(start, end);
+      expect(body, contains('if (!item.experimentalBadge)'));
+      expect(body, contains('FushiBadgeControl(child: child)'));
+      expect(body, isNot(contains('label:')));
     });
 
     test('视频 tab 导航项不再带实验性小圆点徽标（底栏小红点已移除）', () {
@@ -60,44 +78,72 @@ void main() {
       expect(videoAt, greaterThan(0), reason: '应有 HomeTab.video 导航项');
       final int nextCaseAt = homeSrc.indexOf('case HomeTab.', videoAt + 10);
       final String videoCase = homeSrc.substring(
-          videoAt, nextCaseAt > 0 ? nextCaseAt : homeSrc.length);
-      expect(videoCase.contains('experimentalBadge'), isFalse,
-          reason: '视频 tab 不应再带实验性徽标（底栏小红点已移除）');
+        videoAt,
+        nextCaseAt > 0 ? nextCaseAt : homeSrc.length,
+      );
+      expect(
+        videoCase.contains('experimentalBadge'),
+        isFalse,
+        reason: '视频 tab 不应再带实验性徽标（底栏小红点已移除）',
+      );
     });
   });
 
   group('视频页不再有实验性提示横幅', () {
-    final String videoSrc =
-        _read('lib/src/pages/implementations/home_video_page.dart');
+    final String videoSrc = _read(
+      'lib/src/pages/implementations/home_video_page.dart',
+    );
     final String baseI18n = _read('lib/i18n/strings.i18n.json');
     final String zhI18n = _read('lib/i18n/strings_zh-CN.i18n.json');
 
     test('视频页不再渲染实验性横幅（方法与调用均已删除）', () {
-      expect(videoSrc.contains('_buildExperimentalBanner'), isFalse,
-          reason: '视频已是常驻功能，实验性横幅方法/调用应已删除');
-      expect(videoSrc.contains('video_experimental_banner'), isFalse,
-          reason: '视频页不应再引用 video_experimental_banner 文案');
-      expect(videoSrc.contains('Icons.science_outlined'), isFalse,
-          reason: '实验性烧瓶图标应随横幅一并删除');
+      expect(
+        videoSrc.contains('_buildExperimentalBanner'),
+        isFalse,
+        reason: '视频已是常驻功能，实验性横幅方法/调用应已删除',
+      );
+      expect(
+        videoSrc.contains('video_experimental_banner'),
+        isFalse,
+        reason: '视频页不应再引用 video_experimental_banner 文案',
+      );
+      expect(
+        videoSrc.contains('Icons.science_outlined'),
+        isFalse,
+        reason: '实验性烧瓶图标应随横幅一并删除',
+      );
     });
 
     test('i18n key video_experimental_banner 已从源文件删除', () {
-      expect(baseI18n.contains('video_experimental_banner'), isFalse,
-          reason: '英文源文件不应再有该 key');
-      expect(zhI18n.contains('video_experimental_banner'), isFalse,
-          reason: '中文源文件不应再有该 key');
+      expect(
+        baseI18n.contains('video_experimental_banner'),
+        isFalse,
+        reason: '英文源文件不应再有该 key',
+      );
+      expect(
+        zhI18n.contains('video_experimental_banner'),
+        isFalse,
+        reason: '中文源文件不应再有该 key',
+      );
     });
   });
 
   group('视频页页头与书架/词典统一', () {
-    final String videoSrc =
-        _read('lib/src/pages/implementations/home_video_page.dart');
+    final String videoSrc = _read(
+      'lib/src/pages/implementations/home_video_page.dart',
+    );
 
     test('改用 FushiPageHeader 大标题，不再用 adaptiveAppBar 小标题', () {
-      expect(videoSrc.contains('FushiPageHeader('), isTrue,
-          reason: '标题字号要与书架/词典统一，须用 FushiPageHeader');
-      expect(videoSrc.contains('appBar: adaptiveAppBar('), isFalse,
-          reason: '不应再用独立 Scaffold + adaptiveAppBar（小标题）');
+      expect(
+        videoSrc.contains('FushiPageHeader('),
+        isTrue,
+        reason: '标题字号要与书架/词典统一，须用 FushiPageHeader',
+      );
+      expect(
+        videoSrc.contains('appBar: adaptiveAppBar('),
+        isFalse,
+        reason: '不应再用独立 Scaffold + adaptiveAppBar（小标题）',
+      );
     });
 
     test('动作按钮用 FushiIconButton（与书架按钮位置/样式统一）', () {
@@ -107,26 +153,40 @@ void main() {
       // 只删正锚会让反锚 `onPressed: _openStatistics` 变成对不存在符号的恒真断言，
       // 整条不变式零覆盖。锚点迁到仍在页头的收藏夹钮。
       expect(videoSrc.contains('onTap: _openCollections'), isTrue);
-      expect(videoSrc.contains('onPressed: _openCollections'), isFalse,
-          reason: '不应再用裸 Material IconButton(onPressed:) 作页头动作');
-      expect(videoSrc.contains('_openStatistics'), isFalse,
-          reason: '视频页头统计入口已收敛到首页 dashboard');
-      expect(videoSrc.contains('onTap: _openImport'), isFalse,
-          reason: '常规单视频导入按钮已从视频媒体库删除');
+      expect(
+        videoSrc.contains('onPressed: _openCollections'),
+        isFalse,
+        reason: '不应再用裸 Material IconButton(onPressed:) 作页头动作',
+      );
+      expect(
+        videoSrc.contains('_openStatistics'),
+        isFalse,
+        reason: '视频页头统计入口已收敛到首页 dashboard',
+      );
+      expect(
+        videoSrc.contains('onTap: _openImport'),
+        isFalse,
+        reason: '常规单视频导入按钮已从视频媒体库删除',
+      );
       expect(videoSrc.contains('onPressed: _openImport'), isFalse);
     });
 
     test('用 DesktopContentLayout 约束宽度（与书架 readerShelf 一致）', () {
       expect(videoSrc.contains('DesktopContentLayout('), isTrue);
-      expect(videoSrc.contains('DesktopContentKind.readerShelf'), isTrue,
-          reason: '桌面内容宽度应与书架统一');
+      expect(
+        videoSrc.contains('DesktopContentKind.readerShelf'),
+        isTrue,
+        reason: '桌面内容宽度应与书架统一',
+      );
     });
 
     test('页头仅在非 Cupertino 渲染（与书架/词典同门控）', () {
       expect(
-          videoSrc
-              .contains('if (!isCupertinoPlatform(context)) _buildPageHeader('),
-          isTrue);
+        videoSrc.contains(
+          'if (!isCupertinoPlatform(context)) _buildPageHeader(',
+        ),
+        isTrue,
+      );
     });
   });
 }
