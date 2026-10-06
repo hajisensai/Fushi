@@ -9,6 +9,8 @@ import 'package:fushi/pages.dart';
 import 'package:fushi/src/settings/settings_kit.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiRichTooltip;
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiHeightReporter;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -149,6 +151,15 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   /// 行该切右栏还是弹窗」的唯一真相；不用 MediaQuery——它与实际给到本页的约束可能
   /// 不一致，例如被上层缩放/分栏包裹时）。
   bool _wideLayout = false;
+
+  /// 窄屏吸顶预览（含下方 gap）的实测高度：预览浮在正文上，编辑列表的顶部
+  /// 内边距按它让位（键盘弹出时预览收起，高度随 AnimatedSize 一路报到 0）。
+  double _pinnedPreviewHeight = 0;
+
+  void _onPinnedPreviewHeight(double height) {
+    if (!mounted || height == _pinnedPreviewHeight) return;
+    setState(() => _pinnedPreviewHeight = height);
+  }
 
   // TODO-930: the entry being edited. Resolved in initState from widget.themeId
   // (a fresh id when null). Name is optional.
@@ -951,15 +962,19 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
           title: t.custom_theme,
           leadingIcon: FushiIcons.appearance,
           leadingTone: SettingsIconTone.purple,
+          // 正文滚到叠放的页头底下：编辑列表 / 宽屏预览栏的顶部内边距加上壳的
+          // 页头让位；窄屏吸顶预览浮在页头下方，编辑列表再让开它的高度。
+          bodyConsumesTopPadding: true,
           bodyBuilder: (
             BuildContext context,
             ScrollController controller,
             SettingsSectionSpy spy,
           ) {
             final List<Widget> editor = _buildEditorColumn();
+            final double headerInset = MediaQuery.paddingOf(context).top;
             final EdgeInsets listPadding = EdgeInsets.fromLTRB(
               page,
-              gap / 2,
+              gap / 2 + headerInset + (wide ? 0 : _pinnedPreviewHeight),
               page,
               page * 2 + mediaPadding.bottom + bottomInset,
             );
@@ -980,28 +995,37 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             );
             if (!wide) {
               // 键盘弹出（在改名称 / AI 描述）时收起吸顶预览，把高度让给输入框。
+              // 预览浮在页头下方（与页头同为叠放层），编辑列表铺满整页、按预览
+              // 实测高度让位，往下滚时内容滚到预览与页头底下。
               final bool keyboardOpen = bottomInset > 0;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              return Stack(
                 children: <Widget>[
-                  AnimatedSize(
-                    duration: motion.spatialDefault.duration,
-                    curve: motion.spatialDefault.curve,
-                    alignment: Alignment.topCenter,
-                    child: keyboardOpen
-                        ? const SizedBox(width: double.infinity)
-                        : Padding(
-                            key: const ValueKey<String>(
-                              'custom-theme-pinned-preview',
-                            ),
-                            padding: EdgeInsets.fromLTRB(page, 0, page, gap),
-                            child: FushiStaggeredEntrance(
-                              index: 0,
-                              child: _buildPreviewCard(compact: true),
-                            ),
-                          ),
+                  Positioned.fill(child: editorList),
+                  Positioned(
+                    top: headerInset,
+                    left: 0,
+                    right: 0,
+                    child: FushiHeightReporter(
+                      onHeight: _onPinnedPreviewHeight,
+                      child: AnimatedSize(
+                        duration: motion.spatialDefault.duration,
+                        curve: motion.spatialDefault.curve,
+                        alignment: Alignment.topCenter,
+                        child: keyboardOpen
+                            ? const SizedBox(width: double.infinity)
+                            : Padding(
+                                key: const ValueKey<String>(
+                                  'custom-theme-pinned-preview',
+                                ),
+                                padding: EdgeInsets.fromLTRB(page, 0, page, gap),
+                                child: FushiStaggeredEntrance(
+                                  index: 0,
+                                  child: _buildPreviewCard(compact: true),
+                                ),
+                              ),
+                      ),
+                    ),
                   ),
-                  Expanded(child: editorList),
                 ],
               );
             }
@@ -1016,7 +1040,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                       primary: false,
                       padding: EdgeInsets.fromLTRB(
                         page,
-                        gap / 2,
+                        gap / 2 + headerInset,
                         gap,
                         page + mediaPadding.bottom,
                       ),
