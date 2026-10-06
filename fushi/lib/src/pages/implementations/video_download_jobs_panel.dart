@@ -1453,24 +1453,28 @@ class _VideoDownloadJobCard extends StatelessWidget {
     return <DownloadTaskMenuAction>[
       if (onOpenLocation != null)
         DownloadTaskMenuAction(
+          id: 'open-location',
           icon: FushiIcons.folderOpen,
           label: t.download_task_open_location,
           onSelected: onOpenLocation!,
         ),
       if (onOpenDetails != null)
         DownloadTaskMenuAction(
+          id: 'details',
           icon: FushiIcons.info,
           label: t.download_task_details,
           onSelected: onOpenDetails!,
         ),
       if (onPairAudiobook != null)
         DownloadTaskMenuAction(
+          id: 'pair-audiobook',
           icon: FushiIcons.libraryAdd,
           label: t.download_task_audiobook_pair,
           onSelected: onPairAudiobook!,
         ),
       if (onDelete != null)
         DownloadTaskMenuAction(
+          id: 'delete',
           icon: FushiIcons.delete,
           label: t.download_task_delete,
           onSelected: onDelete!,

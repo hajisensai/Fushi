@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2757 条。点号进各自文件。
+> 共 2758 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2993](bugs/BUG-2993-download-menu-stale-index.md) | ✅ | ✅ | 下载任务菜单实时刷新后旧「删除」被重映射成「补对齐」 |
 | [BUG-2992](bugs/BUG-2992-lyrics-more-settings-tab.md) | ✅ | ✅ | 歌词更多设置入口被上次标签页记忆覆盖 |
 | [BUG-2991](bugs/BUG-2991-navigation-semantics-tap.md) | ✅ | ✅ | 自适应导航按钮未提供读屏激活动作 |
 | [BUG-2990](bugs/BUG-2990-audiobook-mini-follow-action.md) | ✅ | ✅ | MD3 迷你播放条缺失跟随音频入口 |

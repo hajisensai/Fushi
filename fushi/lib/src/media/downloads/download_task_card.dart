@@ -33,14 +33,22 @@ class DownloadTaskQuickAction {
 }
 
 /// 「⋯」菜单里的一项。[destructive] 的项用 error 色。
+///
+/// [id] 是这一项的稳定动作身份：菜单弹出后任务状态仍会实时刷新，[menuActions]
+/// 可能整组换掉（多了「补对齐」、busy 时清空……）。菜单值只带 [id]，选中时回到
+/// **当前**的 [DownloadTaskCard.menuActions] 里按 [id] 找动作——找不到（能力已
+/// 消失 / 任务正忙）就什么都不做，绝不按旧下标映射到新列表里的别的动作
+/// （HBK-AUDIT-036：旧「删除」被重映射成「补对齐」）。
 class DownloadTaskMenuAction {
   const DownloadTaskMenuAction({
+    required this.id,
     required this.icon,
     required this.label,
     required this.onSelected,
     this.destructive = false,
   });
 
+  final String id;
   final IconData icon;
   final String label;
   final VoidCallback onSelected;
@@ -213,6 +221,18 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     );
   }
 
+  /// 按稳定 [DownloadTaskMenuAction.id] 在**当前**动作表里派发；动作已不可用
+  /// （能力消失、任务进入 busy 时整表清空）就丢弃这次选择。
+  void _dispatchMenuAction(String id) {
+    if (!mounted) return;
+    for (final DownloadTaskMenuAction action in widget.menuActions) {
+      if (action.id == id) {
+        action.onSelected();
+        return;
+      }
+    }
+  }
+
   Widget? _buildTrailing(BuildContext context) {
     final DownloadTaskQuickAction? quick = widget.quickAction;
     final List<Widget> children = <Widget>[
@@ -224,18 +244,18 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
           icon: FushiIcon(quick.icon),
         ),
       if (widget.menuActions.isNotEmpty)
-        FushiOverflowMenu<int>(
+        FushiOverflowMenu<String>(
           key: ValueKey<String>('download-task-menu-${widget.taskId}'),
           tooltip: t.common_more_actions,
           iconWidget: const FushiIcon(FushiIcons.more),
-          onSelected: (int index) => widget.menuActions[index].onSelected(),
-          items: <PopupMenuEntry<int>>[
-            for (int i = 0; i < widget.menuActions.length; i++)
-              FushiPopupMenuItem<int>(
-                value: i,
-                icon: widget.menuActions[i].icon,
-                label: widget.menuActions[i].label,
-                color: widget.menuActions[i].destructive
+          onSelected: _dispatchMenuAction,
+          items: <PopupMenuEntry<String>>[
+            for (final DownloadTaskMenuAction action in widget.menuActions)
+              FushiPopupMenuItem<String>(
+                value: action.id,
+                icon: action.icon,
+                label: action.label,
+                color: action.destructive
                     ? Theme.of(context).colorScheme.error
                     : null,
               ),
