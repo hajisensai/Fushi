@@ -29,6 +29,8 @@ import android.hardware.display.DisplayManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+import android.text.TextUtils;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -67,10 +69,12 @@ import io.flutter.FlutterInjector;
 /**
  * 全局悬浮球的 Android 系统常驻形态（{@code floating_ball.mode = system}）。
  *
- * <p>观感与交互对齐应用内球（{@code lib/src/reader/reader_floating_ball.dart}，BUG-2793）：
- * 收起时是停靠在左/右边缘、外缩约 1/3 的半透明圆球（球面 = 与应用内同一张 Fushi 图标）；
- * 点一下球点亮（主题色描边 + 阴影）并滑回屏内，圆形图标按钮从球心错峰飞出、在球正上方
- * 竖排（屏幕太矮时向中央续列）；再点一下收起。拖动沿边上下挪或换边，松手吸附到最近边。
+ * <p>观感与交互对齐应用内球（{@code lib/src/reader/reader_floating_ball.dart} 的 M3E FAB
+ * menu，BUG-2793）：收起时是停靠在左/右边缘、外缩约 1/3 的半透明圆角方块（primaryContainer
+ * 底 + 与应用内同一只吉祥物）；点一下滑回屏内、阴影加深，并变形成 primary 正圆 + onPrimary
+ * ×（关闭钮）；tonal 圆钮从球心错峰飞出、在球正上方竖排（屏幕太矮时向中央续列），单列时
+ * 每颗朝屏幕中央一侧带标签胶囊（点胶囊 = 点按钮），命中区 48dp；再点一下收起。拖动沿边
+ * 上下挪或换边，松手吸附到最近边。系统「动画时长缩放」为 0（减弱动态效果）时不做动画。
  * 几何全部在 {@link FloatingBallGeometry}（与 Dart 同一套公式）。
  *
  * <p>按钮：Dart 下发的动作（{@code lookup} / {@code popup_lookup} / {@code clipboard} /
@@ -142,6 +146,9 @@ public class FloatingBallService extends BaseFloatingService {
     static final String COLOR_ON_BUTTON_CONTAINER = "onButtonContainer";
     /** 描边：只有墨水屏不透明（描边无填色），其余全透明 = 不画环。 */
     static final String COLOR_OUTLINE = "outline";
+    /** 展开态球（FAB menu 的关闭钮）底色与 × 色（primary / onPrimary；墨水屏 surface / onSurface）。 */
+    static final String COLOR_BALL_OPEN = "ballOpen";
+    static final String COLOR_ON_BALL_OPEN = "onBallOpen";
 
     private static final String PREF_ACTIONS = "ball_actions";
     private static final String PREF_LABELS = "ball_labels";
@@ -167,6 +174,19 @@ public class FloatingBallService extends BaseFloatingService {
     /** 按钮窗四周给阴影留的边：小于按钮与球的间距，按钮窗不会压到球上抢点击。 */
     private static final int MENU_SHADOW_PAD_DP = 4;
     private static final int ICON_DP = 22;
+
+    // M3E FAB menu（与 Dart kReaderFloatingBall* 同值，dp / sp；守卫钉同值）。
+    /** 收起态球面的圆角（展开随进度变成正圆）。 */
+    static final int BALL_COLLAPSED_RADIUS_DP = 14;
+    /** 标签胶囊与圆钮的间距、高、最大宽（含内边距）、左右内边距。 */
+    static final int LABEL_GAP_DP = 8;
+    static final int LABEL_HEIGHT_DP = 32;
+    static final int LABEL_MAX_WIDTH_DP = 200;
+    static final int LABEL_PADDING_DP = 12;
+    /** 标签字号：M3E label large（14sp，Medium 字重）。 */
+    private static final int LABEL_TEXT_SP = 14;
+    /** 圆钮画 40dp，命中区按 48dp 算（kReaderFloatingBallMinTouchTarget）。 */
+    static final int MIN_TOUCH_DP = 48;
 
     /** 与应用内球同一只吉祥物（透明底前景，Flutter 资源），叠在主题色球面上。 */
     private static final String BALL_IMAGE_ASSET = "assets/meta/splash_foreground.png";
@@ -304,6 +324,8 @@ public class FloatingBallService extends BaseFloatingService {
     private int colorButtonContainer = DEFAULT_SURFACE;
     private int colorOnButtonContainer = DEFAULT_ON_SURFACE;
     private int colorOutline = Color.TRANSPARENT;
+    private int colorBallOpen = DEFAULT_PRIMARY;
+    private int colorOnBallOpen = Color.WHITE;
     private String ocrLanguage = DEFAULT_OCR_LANGUAGE;
 
     /** 停靠边 + 球在活动范围里的纵向比例（持久化值，不存 px）。 */
@@ -319,6 +341,10 @@ public class FloatingBallService extends BaseFloatingService {
     @Nullable private FrameLayout menuRoot;
     @Nullable private WindowManager.LayoutParams menuParams;
     private final List<View> menuButtons = new ArrayList<>();
+    /** 与 menuButtons 一一对应的标签胶囊；null = 这次展开不带标签（多列 / 太窄）。 */
+    private final List<TextView> menuLabels = new ArrayList<>();
+    /** 标签胶囊在按钮右侧（左停靠）还是左侧（右停靠）：缩放从靠按钮那一侧弹出。 */
+    private boolean menuLabelsTowardRight;
     /** 按钮窗坐标系里：各按钮中心与展开态球心。 */
     private int[][] menuButtonCenters = new int[0][];
     private int menuBallCx;
@@ -583,7 +609,10 @@ public class FloatingBallService extends BaseFloatingService {
         return ids;
     }
 
-    /** 按最终几何一次建好按钮窗（按钮全透明），之后只做动画。 */
+    /**
+     * 按最终几何一次建好按钮窗（按钮与标签全透明），之后只做动画。窗口包住每颗按钮的
+     * 48dp 命中区与阴影边，单列时再包住朝屏幕中央一侧的标签胶囊。
+     */
     private void ensureMenuWindow() {
         if (menuRoot != null) return;
         FloatingBallGeometry g = geometry();
@@ -591,29 +620,57 @@ public class FloatingBallService extends BaseFloatingService {
         int n = ids.size();
         int cx = g.expandedBallLeft() + g.ball / 2;
         int cy = g.expandedBallTop() + g.ball / 2;
-        int half = g.button / 2;
+        int hit = Math.max(g.button, dp(MIN_TOUCH_DP));
         int pad = dp(MENU_SHADOW_PAD_DP);
+        // 命中区（48dp）与「圆钮 + 阴影边」取大者：两者都在 24dp 上下，窗口底边仍停在
+        // 球顶之上，按钮窗不会压到球上抢点击。
+        int extent = Math.max(hit / 2, g.button / 2 + pad);
+        List<TextView> labels = buildMenuLabels(g, ids);
+        boolean towardRight = g.dockLeft;
+        int labelHeight = dp(LABEL_HEIGHT_DP);
+        int labelNear = g.button / 2 + dp(LABEL_GAP_DP);
         int[][] centers = new int[n][];
+        int[] labelLefts = new int[n];
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE;
         for (int i = 0; i < n; i++) {
             int[] off = g.buttonOffset(i);
             centers[i] = new int[] {cx + off[0], cy + off[1]};
-            minX = Math.min(minX, centers[i][0] - half - pad);
-            minY = Math.min(minY, centers[i][1] - half - pad);
-            maxX = Math.max(maxX, centers[i][0] + half + pad);
-            maxY = Math.max(maxY, centers[i][1] + half + pad);
+            minX = Math.min(minX, centers[i][0] - extent);
+            minY = Math.min(minY, centers[i][1] - extent);
+            maxX = Math.max(maxX, centers[i][0] + extent);
+            maxY = Math.max(maxY, centers[i][1] + extent);
+            TextView label = labels.get(i);
+            if (label == null) continue;
+            int width = label.getLayoutParams().width;
+            labelLefts[i] = towardRight
+                    ? centers[i][0] + labelNear
+                    : centers[i][0] - labelNear - width;
+            minX = Math.min(minX, labelLefts[i] - pad);
+            maxX = Math.max(maxX, labelLefts[i] + width + pad);
+            minY = Math.min(minY, centers[i][1] - labelHeight / 2 - pad);
+            maxY = Math.max(maxY, centers[i][1] + labelHeight / 2 + pad);
         }
         FrameLayout root = new FrameLayout(this);
         root.setClipChildren(false);
         menuButtons.clear();
+        menuLabels.clear();
+        menuLabelsTowardRight = towardRight;
         menuButtonCenters = new int[n][];
         for (int i = 0; i < n; i++) {
-            View button = buildButton(ids.get(i), g.button);
             menuButtonCenters[i] = new int[] {centers[i][0] - minX, centers[i][1] - minY};
-            FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(g.button, g.button);
-            p.leftMargin = menuButtonCenters[i][0] - half;
-            p.topMargin = menuButtonCenters[i][1] - half;
+            TextView label = labels.get(i);
+            if (label != null) {
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) label.getLayoutParams();
+                lp.leftMargin = labelLefts[i] - minX;
+                lp.topMargin = menuButtonCenters[i][1] - labelHeight / 2;
+                root.addView(label, lp);
+            }
+            menuLabels.add(label);
+            View button = buildButton(ids.get(i), g.button);
+            FrameLayout.LayoutParams p = new FrameLayout.LayoutParams(hit, hit);
+            p.leftMargin = menuButtonCenters[i][0] - hit / 2;
+            p.topMargin = menuButtonCenters[i][1] - hit / 2;
             root.addView(button, p);
             menuButtons.add(button);
         }
@@ -641,6 +698,7 @@ public class FloatingBallService extends BaseFloatingService {
         menuRoot = null;
         menuParams = null;
         menuButtons.clear();
+        menuLabels.clear();
         if (root != null && root.getParent() != null) {
             try {
                 windowManager.removeView(root);
@@ -650,11 +708,80 @@ public class FloatingBallService extends BaseFloatingService {
         }
     }
 
+    /**
+     * 单列时每颗按钮的标签胶囊（宽度已量好、写进 LayoutParams）；多列 / 视口太窄时全是
+     * null——与应用内 {@code _measureLabels} 同一套判据：多列时标签会压到相邻列，
+     * 连一颗短标签都放不下就只留圆钮。
+     */
+    private List<TextView> buildMenuLabels(FloatingBallGeometry g, List<String> ids) {
+        List<TextView> out = new ArrayList<>();
+        int available = g.viewport.width() - 2 * g.margin - g.button - dp(LABEL_GAP_DP);
+        int cap = Math.min(dp(LABEL_MAX_WIDTH_DP), available);
+        int padding = dp(LABEL_PADDING_DP);
+        boolean show = !ids.isEmpty() && g.columnCount() == 1 && cap >= 2 * padding + dp(24);
+        for (String id : ids) {
+            out.add(show ? buildLabel(id, cap, padding) : null);
+        }
+        return out;
+    }
+
+    /**
+     * 标签胶囊（应用内 {@code _LabelCapsule}）：与圆钮同一套 secondaryContainer 底 /
+     * onSecondaryContainer 字 / level 1 阴影 / 按下状态层，全圆角；墨水屏 surface 底 +
+     * 描边、无阴影。文案是 Dart 下发的本地化 labels。点胶囊 = 点同一颗按钮；无障碍名
+     * 已由圆钮给出，胶囊不再报一次。
+     */
+    private TextView buildLabel(final String id, int cap, int padding) {
+        boolean outlined = Color.alpha(colorOutline) > 0;
+        int height = dp(LABEL_HEIGHT_DP);
+        String text = labelFor(id);
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        label.setGravity(Gravity.CENTER);
+        label.setIncludeFontPadding(false);
+        label.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, LABEL_TEXT_SP);
+        label.setTextColor(colorOnButtonContainer);
+        label.setPadding(padding, 0, padding, 0);
+        int width = Math.min(cap,
+                (int) Math.ceil(label.getPaint().measureText(text) + 2 * padding));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.RECTANGLE);
+        bg.setCornerRadius(height / 2f);
+        bg.setColor(colorButtonContainer);
+        if (outlined) bg.setStroke(Math.max(1, dp(1.5f)), colorOutline);
+        label.setBackground(bg);
+        GradientDrawable mask = new GradientDrawable();
+        mask.setShape(GradientDrawable.RECTANGLE);
+        mask.setCornerRadius(height / 2f);
+        mask.setColor(Color.WHITE);
+        label.setForeground(new RippleDrawable(
+                ColorStateList.valueOf(withAlpha(colorOnButtonContainer, 0.10f)), null, mask));
+        label.setOutlineProvider(ViewOutlineProvider.BACKGROUND);
+        label.setClipToOutline(true);
+        label.setElevation(outlined ? 0 : dp(1));
+        label.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        label.setClickable(true);
+        label.setOnClickListener(v -> runAction(id));
+        label.setLayoutParams(new FrameLayout.LayoutParams(width, height));
+        return label;
+    }
+
+    /**
+     * 一颗按钮：外层是 48dp 透明命中区（点它 = 点按钮，应用内 HBK026），里面居中画
+     * 40dp 的 M3E tonal 小圆钮（应用内 _ColumnButton 同一配方）：secondaryContainer 底 +
+     * onSecondaryContainer 图标、level 1 阴影、按下 10% 状态层；墨水屏 surface 底 +
+     * 描边、无阴影。
+     */
     private View buildButton(final String id, int size) {
+        FrameLayout target = new FrameLayout(this);
+        target.setClipChildren(false);
+        target.setClipToPadding(false);
         FrameLayout button = new FrameLayout(this);
-        // M3E tonal 小圆钮（应用内 _ColumnButton 同一配方）：secondaryContainer 底 +
-        // onSecondaryContainer 图标、level 1 阴影、按下 10% 状态层；墨水屏 surface 底 +
-        // 描边、无阴影。
+        // 按下态跟着命中区走：点在命中环上，圆钮照样出状态层。
+        button.setDuplicateParentStateEnabled(true);
         boolean outlined = Color.alpha(colorOutline) > 0;
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
@@ -687,11 +814,12 @@ public class FloatingBallService extends BaseFloatingService {
             glyph.setText(label.isEmpty() ? "?" : label.substring(0, label.offsetByCodePoints(0, 1)));
         }
         button.addView(glyph, new FrameLayout.LayoutParams(size, size));
-        button.setContentDescription(label);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) button.setTooltipText(label);
-        button.setClickable(true);
-        button.setOnClickListener(v -> runAction(id));
-        return button;
+        target.addView(button, new FrameLayout.LayoutParams(size, size, Gravity.CENTER));
+        target.setContentDescription(label);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) target.setTooltipText(label);
+        target.setClickable(true);
+        target.setOnClickListener(v -> runAction(id));
+        return target;
     }
 
     @Nullable
@@ -740,6 +868,12 @@ public class FloatingBallService extends BaseFloatingService {
 
     private void animateProgress(final float target, long fullDuration) {
         if (expandAnimator != null) expandAnimator.cancel();
+        if (!motionEnabled()) {
+            // 减弱动态效果：直接落到终态（应用内 fushiMotionEnabled 为假时零时长）。
+            setProgress(target);
+            if (target == 0f) removeMenuWindow();
+            return;
+        }
         ValueAnimator anim = ValueAnimator.ofFloat(progress, target);
         // 中途反向时按剩余路程缩短（与 AnimationController 反向同感）。
         anim.setDuration(Math.max(1L, Math.round(fullDuration * Math.abs(target - progress))));
@@ -763,6 +897,16 @@ public class FloatingBallService extends BaseFloatingService {
         });
         expandAnimator = anim;
         anim.start();
+    }
+
+    /**
+     * 系统「动画时长缩放」（开发者选项 / 无障碍「移除动画」）为 0 时不做任何过渡——
+     * 与应用内球读 MediaQuery.disableAnimations 同一个系统开关。
+     */
+    private boolean motionEnabled() {
+        float scale = Settings.Global.getFloat(
+                getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f);
+        return scale != 0f;
     }
 
     /** 收起到 t=0、不做动画（拖动开始 / 被隐藏 / 屏幕变化）。 */
@@ -816,6 +960,18 @@ public class FloatingBallService extends BaseFloatingService {
             b.setScaleX(scale);
             b.setScaleY(scale);
             b.setAlpha(Math.max(0f, Math.min(1f, k)));
+            // 标签胶囊与按钮同一个错峰进度：跟着按钮走，从靠按钮那一侧横向弹出
+            // （应用内 _buildLabel）。
+            TextView label = i < menuLabels.size() ? menuLabels.get(i) : null;
+            if (label == null) continue;
+            label.setTranslationX(b.getTranslationX());
+            label.setTranslationY(b.getTranslationY());
+            label.setPivotX(menuLabelsTowardRight ? 0f : label.getLayoutParams().width);
+            label.setPivotY(label.getLayoutParams().height / 2f);
+            float labelScale = 0.6f + 0.4f * Math.min(Math.max(k, 0f), 1.2f);
+            label.setScaleX(labelScale);
+            label.setScaleY(labelScale);
+            label.setAlpha(Math.max(0f, Math.min(1f, k)));
         }
     }
 
@@ -892,6 +1048,10 @@ public class FloatingBallService extends BaseFloatingService {
         final int fromTop = dragBallTop;
         final int toLeft = settled.collapsedBallLeft();
         final int toTop = settled.ballTop();
+        if (!motionEnabled()) {
+            moveBallWindowTo(toLeft, toTop);
+            return;
+        }
         ValueAnimator anim = ValueAnimator.ofFloat(0f, 1f);
         anim.setDuration(SNAP_MS);
         anim.setInterpolator(EASE_OUT_CUBIC);
@@ -1049,6 +1209,8 @@ public class FloatingBallService extends BaseFloatingService {
                 blend(withAlpha(colorOnSurface, 0.06f), colorSurface));
         colorOnButtonContainer = colorOr(colors, COLOR_ON_BUTTON_CONTAINER, colorOnSurface);
         colorOutline = colorOr(colors, COLOR_OUTLINE, Color.TRANSPARENT);
+        colorBallOpen = colorOr(colors, COLOR_BALL_OPEN, colorPrimary);
+        colorOnBallOpen = colorOr(colors, COLOR_ON_BALL_OPEN, Color.WHITE);
         ocrLanguage = prefs.getString(PREF_OCR_LANGUAGE, DEFAULT_OCR_LANGUAGE);
     }
 
@@ -1131,18 +1293,31 @@ public class FloatingBallService extends BaseFloatingService {
         return Color.argb(Color.alpha(bg), r, g, b);
     }
 
+    /** 两个 ARGB 颜色按 t 线性插值（Color.lerp）。 */
+    private static int lerpColor(int a, int b, float t) {
+        float f = Math.max(0f, Math.min(1f, t));
+        return Color.argb(
+                Math.round(Color.alpha(a) + (Color.alpha(b) - Color.alpha(a)) * f),
+                Math.round(Color.red(a) + (Color.red(b) - Color.red(a)) * f),
+                Math.round(Color.green(a) + (Color.green(b) - Color.green(a)) * f),
+                Math.round(Color.blue(a) + (Color.blue(b) - Color.blue(a)) * f));
+    }
+
     /**
-     * 球：M3E FAB 球面（主题 primaryContainer + 吉祥物，按圆裁切）。收起态半透明；
-     * 随展开进度不透明、阴影加深；拖动中不透明（应用内 {@code _buildBall}）。墨水屏
-     * 只画描边环、不投影。原生球不做应用内的方块 → 圆形变。
+     * 球：M3E FAB menu 的开合钮（应用内 {@code _BallFace}）。收起是 primaryContainer
+     * 圆角方块（{@link #BALL_COLLAPSED_RADIUS_DP}）+ 吉祥物、半透明；随展开进度变形成
+     * 正圆、底色过渡到 primary（{@code ballOpen}），吉祥物旋出淡出、onPrimary ×
+     * （{@code onBallOpen}）旋入；阴影 M3E elevation level 1 → 3，拖动中 level 3、不透明。
+     * 墨水屏 surface 底 + 描边、不投影。
      */
     private final class BallView extends View {
         private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint glyphPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF mascot = new RectF();
         private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path clip = new Path();
-        private final RectF oval = new RectF();
+        private final RectF face = new RectF();
         private final Rect src = new Rect();
         @Nullable private final Bitmap image;
         @Nullable private final Drawable fallback;
@@ -1154,7 +1329,7 @@ public class FloatingBallService extends BaseFloatingService {
             Bitmap bitmap = null;
             try (InputStream in = context.getAssets().open(flutterAssetKey(BALL_IMAGE_ASSET))) {
                 BitmapFactory.Options opts = new BitmapFactory.Options();
-                // 432² 原图放大 1.55 倍后只在 48dp 圆里露脸：缩到 216 解码足够
+                // 432² 原图放大 1.55 倍后只在 48dp 球里露脸：缩到 216 解码足够
                 // （应用内 cacheWidth 同理）。
                 opts.inSampleSize = 2;
                 bitmap = BitmapFactory.decodeStream(in, null, opts);
@@ -1164,7 +1339,16 @@ public class FloatingBallService extends BaseFloatingService {
             image = bitmap;
             fallback = bitmap == null ? context.getDrawable(R.mipmap.launcher_icon) : null;
             ringPaint.setStyle(Paint.Style.STROKE);
-            setOutlineProvider(OVAL_OUTLINE);
+            glyphPaint.setTextAlign(Paint.Align.CENTER);
+            // 阴影跟着球面形状走：圆角方块 → 正圆。
+            setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View view, Outline outline) {
+                    int w = view.getWidth();
+                    int h = view.getHeight();
+                    outline.setRoundRect(0, 0, w, h, faceRadius(w, h));
+                }
+            });
             setClickable(true);
         }
 
@@ -1178,13 +1362,29 @@ public class FloatingBallService extends BaseFloatingService {
             refresh();
         }
 
+        /** 展开进度截到 0..1（颜色 / 透明度 / 形变都用它）。 */
+        private float morph() {
+            return Math.max(0f, Math.min(1f, t));
+        }
+
+        /** 当前球面圆角：收起 14dp → 展开正圆。 */
+        private float faceRadius(float w, float h) {
+            float half = Math.min(w, h) / 2f;
+            float corner = Math.min(half, dp(BALL_COLLAPSED_RADIUS_DP));
+            return corner + (half - corner) * morph();
+        }
+
         private void refresh() {
+            float c = morph();
             float opacity = dragging ? 1f
                     : FloatingBallGeometry.IDLE_OPACITY
-                            + (1f - FloatingBallGeometry.IDLE_OPACITY) * t;
+                            + (1f - FloatingBallGeometry.IDLE_OPACITY) * c;
             setAlpha(opacity);
-            // M3E elevation level 1 → 3；墨水屏（有描边）不投影。
-            setElevation(Color.alpha(colorOutline) > 0 ? 0 : dp(1f + 5f * t));
+            // M3E elevation：收起 level 1、展开 / 拖动 level 3（应用内 1 + 5c / 6）；
+            // 墨水屏（有描边）不投影。
+            boolean outlined = Color.alpha(colorOutline) > 0;
+            setElevation(outlined ? 0 : dp(dragging ? 6f : 1f + 5f * c));
+            invalidateOutline();
             invalidate();
         }
 
@@ -1206,37 +1406,80 @@ public class FloatingBallService extends BaseFloatingService {
         protected void onDraw(Canvas canvas) {
             float w = getWidth();
             float h = getHeight();
-            oval.set(0, 0, w, h);
+            float c = morph();
+            float radius = faceRadius(w, h);
+            float cx = w / 2f;
+            float cy = h / 2f;
+            face.set(0, 0, w, h);
             clip.reset();
-            clip.addOval(oval, Path.Direction.CW);
+            clip.addRoundRect(face, radius, radius, Path.Direction.CW);
             canvas.save();
             canvas.clipPath(clip);
-            if (image != null) {
-                // M3E FAB 球面：主题 primaryContainer 底 + 居中放大的吉祥物（应用内
-                // _BallFace 同一配方；墨水屏底色是 surface）。
-                fillPaint.setColor(colorBallContainer);
-                canvas.drawRect(oval, fillPaint);
-                int side = Math.min(image.getWidth(), image.getHeight());
-                int l = (image.getWidth() - side) / 2;
-                int tp = (image.getHeight() - side) / 2;
-                src.set(l, tp, l + side, tp + side);
-                float extent = Math.min(w, h) * MASCOT_SCALE;
-                mascot.set((w - extent) / 2f, (h - extent) / 2f,
-                        (w + extent) / 2f, (h + extent) / 2f);
-                canvas.drawBitmap(image, src, mascot, imagePaint);
-            } else if (fallback != null) {
-                fallback.setBounds(0, 0, (int) w, (int) h);
-                fallback.draw(canvas);
+            // 底色：primaryContainer → primary（墨水屏两者都是 surface）。
+            fillPaint.setColor(lerpColor(colorBallContainer, colorBallOpen, c));
+            canvas.drawRect(face, fillPaint);
+            // 吉祥物：收起态的球面；展开时旋出淡出。
+            if (c < 1f) {
+                canvas.save();
+                canvas.rotate(c * 90f, cx, cy);
+                if (image != null) {
+                    int side = Math.min(image.getWidth(), image.getHeight());
+                    int l = (image.getWidth() - side) / 2;
+                    int tp = (image.getHeight() - side) / 2;
+                    src.set(l, tp, l + side, tp + side);
+                    float extent = Math.min(w, h) * MASCOT_SCALE;
+                    mascot.set((w - extent) / 2f, (h - extent) / 2f,
+                            (w + extent) / 2f, (h + extent) / 2f);
+                    imagePaint.setAlpha(Math.round(255 * (1f - c)));
+                    canvas.drawBitmap(image, src, mascot, imagePaint);
+                } else if (fallback != null) {
+                    fallback.setBounds(0, 0, (int) w, (int) h);
+                    fallback.setAlpha(Math.round(255 * (1f - c)));
+                    fallback.draw(canvas);
+                }
+                canvas.restore();
+            }
+            // 关闭 ×：展开时旋入淡入（与按钮同一套 FushiSymbols 码位，取 close）。
+            if (c > 0f) {
+                canvas.save();
+                canvas.rotate((c - 1f) * 90f, cx, cy);
+                drawCloseGlyph(canvas, cx, cy, c);
+                canvas.restore();
             }
             canvas.restore();
-            // 只有墨水屏画描边环（描边无填色）；其余靠 elevation 区分，M3E FAB 无环。
+            // 只有墨水屏画描边（描边无填色）；其余靠 elevation 区分，M3E FAB 无环。
             if (Color.alpha(colorOutline) > 0) {
                 float stroke = dp(1.5f);
                 ringPaint.setStrokeWidth(stroke);
                 ringPaint.setColor(colorOutline);
                 float inset = stroke / 2f;
-                canvas.drawOval(inset, inset, w - inset, h - inset, ringPaint);
+                float inner = Math.max(0f, radius - inset);
+                canvas.drawRoundRect(inset, inset, w - inset, h - inset, inner, inner, ringPaint);
             }
+        }
+
+        private void drawCloseGlyph(Canvas canvas, float cx, float cy, float c) {
+            int color = withAlpha(colorOnBallOpen, c);
+            Integer codePoint = icons.get(ACTION_CLOSE);
+            Typeface font = iconFont();
+            if (font != null && codePoint != null && codePoint > 0) {
+                glyphPaint.setStyle(Paint.Style.FILL);
+                glyphPaint.setTypeface(font);
+                glyphPaint.setTextSize(dp(ICON_DP));
+                glyphPaint.setColor(color);
+                Paint.FontMetrics fm = glyphPaint.getFontMetrics();
+                float baseline = cy - (fm.ascent + fm.descent) / 2f;
+                canvas.drawText(new String(Character.toChars(codePoint)), cx, baseline, glyphPaint);
+                return;
+            }
+            // 没有图标字体（旧 Dart / 资源缺失）：两笔画一个 ×，尺寸对齐 22dp 图标的字形。
+            float half = dp(7);
+            glyphPaint.setStyle(Paint.Style.STROKE);
+            glyphPaint.setStrokeWidth(dp(2));
+            glyphPaint.setStrokeCap(Paint.Cap.ROUND);
+            glyphPaint.setColor(color);
+            canvas.drawLine(cx - half, cy - half, cx + half, cy + half, glyphPaint);
+            canvas.drawLine(cx - half, cy + half, cx + half, cy - half, glyphPaint);
         }
 
         @Override
