@@ -1184,8 +1184,6 @@ void main() {
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_icon_button.dart':
           kSharedComponentImplementation,
-      'lib/src/utils/components/fushi_inline_notice.dart':
-          kSharedComponentImplementation,
       'lib/src/utils/components/fushi_loading_view.dart':
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_placeholder_message.dart':
@@ -1653,9 +1651,6 @@ void main() {
       },
       'lib/src/utils/components/fushi_icon_button.dart': <String>{
         'fontSize:',
-      },
-      'lib/src/utils/components/fushi_inline_notice.dart': <String>{
-        'surfaceContainerHigh',
       },
       'lib/src/utils/components/fushi_loading_view.dart': <String>{
         'fontSize:',

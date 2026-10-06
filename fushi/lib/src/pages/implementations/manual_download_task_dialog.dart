@@ -788,33 +788,11 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
   }
 
   Widget _buildError(BuildContext context, String message) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiCardColors? colors = fushiCardToneColors(
-      context,
-      FushiCardTone.error,
-    );
-    return Container(
+    return FushiInlineNotice(
       key: const ValueKey<String>('manual-task-error'),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: colors?.container ?? cs.surfaceContainerHigh,
-        borderRadius: FushiM3eShape.smallRadius,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          FushiIcon(FushiIcons.error, size: 18, color: cs.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: context.fushiType.bodySmall.copyWith(
-                color: colors?.onContainer ?? cs.error,
-              ),
-            ),
-          ),
-        ],
-      ),
+      severity: FushiNoticeSeverity.error,
+      icon: FushiIcons.error,
+      message: message,
     );
   }
 
