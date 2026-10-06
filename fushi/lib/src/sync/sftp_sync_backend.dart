@@ -263,7 +263,7 @@ class SftpSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _guarded(() async {
         final sftp = await _ensureConnected();
@@ -282,7 +282,7 @@ class SftpSyncBackend extends SyncBackend
             final bytes = Uint8List.fromList(chunk);
             await handle.writeBytes(bytes, offset: offset);
             offset += bytes.length;
-            if (length > 0) onProgress?.call(offset / length);
+            if (length > 0) onProgress?.call(offset / length, offset);
           }
         } finally {
           await handle.close();
@@ -293,7 +293,7 @@ class SftpSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _guarded(() async {
         final sftp = await _ensureConnected();

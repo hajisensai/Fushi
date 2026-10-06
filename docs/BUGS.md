@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2719 条。点号进各自文件。
+> 共 2720 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
 | [BUG-2956](bugs/BUG-2956-game-stream-rejection-shown-as-outdated.md) | ✅ | ✅ | 串流主机拒绝原因一律显示成主机版本过旧 |
 | [BUG-2955](bugs/BUG-2955-game-stream-library-lost-after-restart.md) | ✅ | ✅ | 主机重启互联服务后串流显示主机版本过旧并且离开报未能通知主机 |
 | [BUG-2954](bugs/BUG-2954-game-stream-call-audio-channel.md) | ✅ | ✅ | 串流音频走通话通道而不是媒体通道 |
@@ -46,7 +47,7 @@
 | [BUG-2946](bugs/BUG-2946-youtube-watchpage-spof.md) | ✅ | ✅ | YouTube 制卡/播放：watch 页被降级时 5 个 client 全部报「视频不可用」 |
 | [BUG-2945](bugs/BUG-2945-host-delete-book-no-tombstone.md) | ✅ | ✅ | 互联「从所有设备删除」对书/有声书不生效：host 删除不写墓碑 |
 | [BUG-2944](bugs/BUG-2944-interconnect-download-progress-jank.md) | ✅ | ✅ | 下载互联书时 iOS 掉帧：进度回报每次整页重建书架/媒体库 |
-| [BUG-2943](bugs/BUG-2943-reader-lock-inset-page-hint.md) | ✅ | ✅ | 阅读器锁屏解锁改变页距后重锚 hint 退回上一页 |
+| [BUG-2943](bugs/BUG-2943-reader-lock-inset-page-hint.md) | ✅ | ✅ | 阅读器 inset 往返重锚丢失原字符锚 |
 | [BUG-2942](bugs/BUG-2942-collection-delete-orphans-subscriptions.md) | ✅ | ✅ | 删除合集后下载订阅仍启用并继续下载；任务页无法整组删除 |
 | [BUG-2941](bugs/BUG-2941-download-collection-sync-order.md) | ✅ | ✅ | 下载合集选集乱序：同步平手取远端冲掉按集号排序 |
 | [BUG-2940](bugs/BUG-2940-synced-clip-silent-audio.md) | ✅ | ✅ | 同步片段导出放过 0 音频包的 webm（#1951） |

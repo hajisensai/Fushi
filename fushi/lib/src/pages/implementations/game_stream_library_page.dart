@@ -565,6 +565,8 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     _HostPhase.rejected => switch (host.rejection) {
       'http_rejected' => Icons.system_update_alt,
       GameStreamRejection.httpsRequired => Icons.lock_open,
+      // 没有游戏库时已有会话仍可加入，不用「禁止」暗示整台主机不可用。
+      GameStreamRejection.libraryOff => Icons.videogame_asset_off_outlined,
       _ => Icons.block,
     },
   };
