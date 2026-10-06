@@ -43,9 +43,9 @@ void main() {
       await playing.close();
     });
 
-    test('play Future 正常完成 → 激活结束', () async {
-      final StreamController<bool> playing = StreamController<bool>();
-      playing.add(true);
+    test('play Future 正常完成（仍在播放）→ 激活结束', () async {
+      // broadcast：无人监听时 close() 也立即完成，teardown 不依赖被测实现是否订阅。
+      final StreamController<bool> playing = StreamController<bool>.broadcast();
       await expectLater(
         playActivationSettled(Future<void>.value(), playing.stream),
         completes,
