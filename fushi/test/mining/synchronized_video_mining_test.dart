@@ -671,6 +671,9 @@ void main() {
       synchronizedVideoExtractor: (
           {required String videoPath,
           required String audioPath,
+          int audioStartMs = 0,
+          int audioStreamIndex = 0,
+          int audioChannels = 2,
           required int startMs,
           required int endMs,
           required String outputPath,
@@ -703,6 +706,9 @@ void main() {
       synchronizedVideoExtractor: (
           {required String videoPath,
           required String audioPath,
+          int audioStartMs = 0,
+          int audioStreamIndex = 0,
+          int audioChannels = 2,
           required int startMs,
           required int endMs,
           required String outputPath,
