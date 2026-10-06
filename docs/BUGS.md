@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2766 条。点号进各自文件。
+> 共 2767 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,7 @@
 | [BUG-3001](bugs/BUG-3001-reader-live-hooks-cleared.md) | ✅ | ✅ | 阅读器按钮布局等实时设置在切卷/叠开阅读器后改了不生效，须退出重进 |
 | [BUG-3000](bugs/BUG-3000-jimaku-key-not-found.md) | ✅ | ✅ | Jimaku 字幕搜索：已填 key 仍报未填、取文件失败被显示成找不到字幕 |
 | [BUG-2999](bugs/BUG-2999-video-cover-online-search.md) | ✅ | ✅ | 视频设置封面只能选本地文件，在线搜索封面入口丢失 |
+| [BUG-2998](bugs/BUG-2998-popup-dictionary-disclosure-reflow.md) | ✅ | ✅ | 查词同词条展开收起辞典后不按当前空间重新分列 |
 | [BUG-2997](bugs/BUG-2997-lookup-hidden-dict-empty-popup.md) | ✅ | ✅ | 查词只命中已隐藏词典时弹窗画页面自己的 emoji「未找到」并铺满最大尺寸 |
 | [BUG-2996](bugs/BUG-2996-pending-mines-load-error-skeleton.md) | ✅ | ✅ | 待发卡片页首次读表失败时骨架屏永不结束且无重试 |
 | [BUG-2995](bugs/BUG-2995-yomitan-nested-root-empty-zip.md) | ✅ | ✅ | 整合包父目录与嵌套 Yomitan 根同时存在时子词典被重打包为空 |

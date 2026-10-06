@@ -6311,7 +6311,7 @@ function setStyleIfChanged(el, prop, value) {
 // offsetHeight」，一次重铺 = 卡片数次强制同步布局；叠加「每追加一块就全量重铺」就是
 // O((词条×词典)²) 次回流：50 块的查词尾巴要 0.8s 才铺完，期间卡片逐帧跳位、弹窗高度反复变。
 // 现在整轮只有两次强制布局（相 1 读 clientWidth、相 3 读 offsetHeight），与卡片数无关。
-// 列分配逻辑（最短列打包 + 粘着列）与单列/空 body 回落逐字不变。
+// 列分配沿用最短列打包；仅尺寸未变时复用列号，单列/空 body 仍回落 CSS。
 // [targetBodies] 缺省 = 全部词典义项容器；scheduleMasonry 只传脏 body。
 function layoutMasonry(targetBodies) {
     const configured = dictColumns();
@@ -6360,28 +6360,28 @@ function layoutMasonry(targetBodies) {
     });
     // 相 4（写）：分列 + 摆位 + 容器高度。
     plans.forEach(({ body, items, cols, columnWidth, itemHeights }) => {
-        // 粘着列分配（修用户「开关方框时按上下高度左右重排，实际只应上下动」）：只要列数没变、
-        // 且每张卡片都已记录合法列号，就复用既有列分配——展开/收起改高度时只在各自列内重算纵向
-        // 位置，卡片只上下动、绝不换列左右跳。仅列数变（窗口宽/设置）或有新卡片（增量加载，某卡
-        // 无记录）时，才用「最短列」从头打包并记录列号。
+        // BUG-2998：按当前需求恢复原最短列算法的自适应行为。辞典展开/收起、图片或字体
+        // 改变任一卡片实测高度时，旧列分配已不适合当前空间，整组重新打包。只在列数、
+        // 高度和列号都未变时复用；保留同高 RO 通知过滤与批处理，避免无变化时反复移动。
         const prevCols = Number.parseInt(body.dataset.masonryCols, 10);
         const canReuse = prevCols === cols &&
-            items.every(item => {
+            items.every((item, index) => {
                 const c = Number.parseInt(item.dataset.masonryCol, 10);
-                return Number.isFinite(c) && c >= 0 && c < cols;
+                return Number.isFinite(c) && c >= 0 && c < cols &&
+                    item.__fushiMasonryHeight === itemHeights[index];
             });
 
         const heights = new Array(cols).fill(0);
         items.forEach((item, index) => {
             let c;
             if (canReuse) {
-                c = Number.parseInt(item.dataset.masonryCol, 10); // 复用粘着列，不重新分列
+                c = Number.parseInt(item.dataset.masonryCol, 10); // 尺寸未变，保留当前列
             } else {
                 c = 0;
                 for (let i = 1; i < cols; i++) {
-                    if (heights[i] < heights[c]) c = i; // 首次：最短列打包
+                    if (heights[i] < heights[c]) c = i; // 按当前实测高度选最短列
                 }
-                item.dataset.masonryCol = String(c); // 记住列号，之后开关都粘着此列
+                item.dataset.masonryCol = String(c); // 供尺寸未变的后续测量复用
             }
             const transform = `translate(${c * (columnWidth + gap)}px, ${heights[c]}px)`;
             setStyleIfChanged(item, 'transform', transform);
