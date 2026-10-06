@@ -1,6 +1,6 @@
 ## BUG-2958 · AI下视频备选版本chip缺做种来源集数编码
-- **报告**：2026-10-06（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
-- **备注**：
+- **报告**：2026-10-06（用户：「详细信息少了感觉，我选不出来差别」，附截图——当前版本卡是「Judas · 1080p · nyaa · 整季合集 · 做种 74」，旁边的候选 chip 只有「Erai-raws · 1080p · WEB-DL · 953 MiB」「SubsPlease · 1080p · 1.3 GiB」）
+- **真实性**：✅ 真 bug。同一件事（一个版本）有两套说法：当前版本卡由 `_presentPlan`（`packages/fushi_engine/lib/media/video/acquisition/video_acquisition_reducer.dart`）把站点 / 集数 / 合集 / 做种作为 summary 参数发给页面，而候选版本选项 `alt:<i>` 只有 id，chip 文字取自引擎投影的 `videoAcquisitionVersionLabel`（`video_acquisition_view.dart`，只有「组 · 分辨率 · 片源 · 每集体积」）。第三份同类事实还在 AI 候选上下文 `_candidateOf` 里各写一遍。另外标题里能确定的编码 / 位深 / HDR 三处都不显示。
+- **[x] ① 已修复** — `120931fa4f`：抽出唯一的 `videoAcquisitionVersionArgs(plan)`（`video_acquisition_resource_picker.dart`），summary 发言、候选选项（`VideoAcquisitionOption.args`，新增、过线可选字段）与 AI 候选上下文共用；新增字面量 `videoResourceTraitsTag`（`HEVC 10bit HDR`）进 args 与版本标签。页面抽出 `_versionBody(args)`，版本卡与候选 chip 同一个函数出文案；旧 host 的选项没有 args 时退回原字面量标签（新 app + 旧 host、旧 app + 新 host 都不坏）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/acquisition/video_acquisition_reducer_test.dart`「BUG-2958 候选版本选项带与当前版本卡同一份事实（含编码）」（变异实测：去掉 alt 选项的 args 即红）；`video_acquisition_view_test.dart`「选项 args 原样过线」；`fushi/test/pages/ai_video_acquisition_remote_page_test.dart` 两条 BUG-2958 chip 文案。
+- **备注**：AI 候选上下文里「集数」的键由 `episodes` 改为与 summary 一致的 `count`（提示词未引用该键）。
