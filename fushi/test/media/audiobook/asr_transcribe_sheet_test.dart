@@ -768,6 +768,15 @@ void main() {
           directoryPicker: directoryPicker,
         );
 
+    /// M3E 分段选项卡让弹层 body 变高，800x600 测试窗下模型行落在 body 可滚
+    /// 视口之外（下面紧挨固定 footer 的「开始转录」）；先滚到控件再点，同用户操作。
+    Future<void> tapScrolledIntoView(WidgetTester tester, String key) async {
+      final Finder target = find.byKey(ValueKey<String>(key));
+      await tester.ensureVisible(target);
+      await tester.pump();
+      await tester.tap(target);
+    }
+
     testWidgets('默认显示该语言的内置模型，并列出可切换的备选', (WidgetTester tester) async {
       final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
       await tester.pumpWidget(wrapWithCatalog(service));
@@ -776,8 +785,7 @@ void main() {
 
       expect(find.text(kAsrJapanesePack.displayName), findsWidgets);
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model');
       await tester.pumpAndSettle();
       expect(find.text(kAsrOmnilingualPack.displayName), findsWidgets);
     });
@@ -789,8 +797,7 @@ void main() {
       await tester.pumpAndSettle();
       final int plansBefore = service.planLanguages.length;
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model');
       await tester.pumpAndSettle();
       final Finder entry = find.text(kAsrOmnilingualPack.displayName).last;
       await tester.ensureVisible(entry);
@@ -823,8 +830,7 @@ void main() {
         }
       }
 
-      await tester
-          .tap(find.byKey(const ValueKey<String>('asr-transcribe-model-add')));
+      await tapScrolledIntoView(tester, 'asr-transcribe-model-add');
       await settle();
       expect(
         find.byKey(const ValueKey<String>('asr-local-model-pick')),
