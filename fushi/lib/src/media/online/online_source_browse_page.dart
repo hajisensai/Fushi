@@ -339,43 +339,48 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
         : const <OnlineBrowseListing>[];
     return FushiPageScaffold(
       title: _catalog.title,
-      headerBottom: Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Row(
-          children: <Widget>[
-            // 共享 M3E 搜索栏（焦点登记 / 回车兜底 / Esc 清空 / 移动端收键盘与
-            // 其它搜索框一致）。仍是「提交才搜」，不挂 onQueryChanged。
-            Expanded(
-              child: FushiSearchBar(
-                fieldKey: ValueKey<String>('${prefix}_search_field'),
-                focusId: FushiFocusId('$prefix-online-browse-search'),
-                controller: _searchController,
-                focusNode: _searchFocus,
-                hintText: _catalog.searchHint,
-                onSubmitted: _search,
-                onClear: () {
-                  _searchController.clear();
-                  _search('');
-                },
-              ),
-            ),
-            if (_prepared && _catalog.hasFilters) ...<Widget>[
-              const SizedBox(width: 8),
-              FushiIconButtonControl.filledTonal(
-                key: ValueKey<String>('${prefix}_filters'),
-                tooltip: _catalog.filtersTooltip,
-                onPressed: _showFilters,
-                icon: const FushiIcon(FushiIcons.filter),
-              ),
-            ],
-          ],
-        ),
-      ),
-      body: Column(
+      // 列表分段条与验证入口原本固定在正文顶部：页头浮在正文上之后（脚手架默认
+      // extendBodyBehindHeader）会被胶囊盖住，所以随页头一起进 headerBottom，
+      // 按「搜索 → 分段 → 验证」纵向堆叠；网格自己让开顶部。
+      headerBottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              children: <Widget>[
+                // 共享 M3E 搜索栏（焦点登记 / 回车兜底 / Esc 清空 / 移动端收键盘与
+                // 其它搜索框一致）。仍是「提交才搜」，不挂 onQueryChanged。
+                Expanded(
+                  child: FushiSearchBar(
+                    fieldKey: ValueKey<String>('${prefix}_search_field'),
+                    focusId: FushiFocusId('$prefix-online-browse-search'),
+                    controller: _searchController,
+                    focusNode: _searchFocus,
+                    hintText: _catalog.searchHint,
+                    onSubmitted: _search,
+                    onClear: () {
+                      _searchController.clear();
+                      _search('');
+                    },
+                  ),
+                ),
+                if (_prepared && _catalog.hasFilters) ...<Widget>[
+                  const SizedBox(width: 8),
+                  FushiIconButtonControl.filledTonal(
+                    key: ValueKey<String>('${prefix}_filters'),
+                    tooltip: _catalog.filtersTooltip,
+                    onPressed: _showFilters,
+                    icon: const FushiIcon(FushiIcons.filter),
+                  ),
+                ],
+              ],
+            ),
+          ),
           if (listings.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              padding: const EdgeInsets.only(top: 8),
               child: FushiSegmentedStrip<String>(
                 key: ValueKey<String>('${prefix}_listing'),
                 segments: <ButtonSegment<String>>[
@@ -397,24 +402,31 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
               error: _error,
               onVerified: () => _load(reset: false),
             ),
-          // BUG-2440：有 footer 时底部安全区归 footer 自己的 SafeArea 认领，先从
-          // 网格的 MediaQuery 里摘掉，免得两边各补一次。
-          Expanded(
-            child: widget.footer == null
-                ? _buildResults()
-                : MediaQuery.removePadding(
-                    context: context,
-                    removeBottom: true,
-                    child: _buildResults(),
-                  ),
-          ),
-          if (widget.footer != null) widget.footer!,
         ],
       ),
+      // 正文用 body 子树里的 context 构建，才读得到脚手架下发的顶部让位。
+      body: widget.footer == null
+          ? Builder(builder: _buildResults)
+          : Column(
+              children: <Widget>[
+                // BUG-2440：有 footer 时底部安全区归 footer 自己的 SafeArea 认领，
+                // 先从网格的 MediaQuery 里摘掉，免得两边各补一次。
+                Expanded(
+                  child: Builder(
+                    builder: (BuildContext context) => MediaQuery.removePadding(
+                      context: context,
+                      removeBottom: true,
+                      child: Builder(builder: _buildResults),
+                    ),
+                  ),
+                ),
+                widget.footer!,
+              ],
+            ),
     );
   }
 
-  Widget _buildResults() {
+  Widget _buildResults(BuildContext context) {
     // 加载 = 与封面网格同轮廓的骨架；错误 / 空态统一 FushiPlaceholderMessage
     // （错误走 errorContainer 色块）。
     if (_loading && _items.isEmpty) {
@@ -422,40 +434,46 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
     }
     final Object? error = _error;
     if (error != null && _items.isEmpty) {
-      return FushiPlaceholderMessage(
-        key: ValueKey<String>('${_catalog.keyPrefix}_error'),
-        icon: FushiIcons.error,
-        tone: FushiPlaceholderTone.error,
-        message: _catalog.describeError(error),
-        action: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            FushiFilledButton.tonalIcon(
-              onPressed: () => unawaited(_retry()),
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(t.retry),
-            ),
-            const SizedBox(height: 8),
-            _catalog.buildVerifyAction(
-              context,
-              error: error,
-              onVerified: _retry,
-            ),
-          ],
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          key: ValueKey<String>('${_catalog.keyPrefix}_error'),
+          icon: FushiIcons.error,
+          tone: FushiPlaceholderTone.error,
+          message: _catalog.describeError(error),
+          action: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              FushiFilledButton.tonalIcon(
+                onPressed: () => unawaited(_retry()),
+                icon: const FushiIcon(FushiIcons.refresh),
+                label: Text(t.retry),
+              ),
+              const SizedBox(height: 8),
+              _catalog.buildVerifyAction(
+                context,
+                error: error,
+                onVerified: _retry,
+              ),
+            ],
+          ),
         ),
       );
     }
     if (_items.isEmpty) {
-      return FushiPlaceholderMessage(
-        icon: FushiIcons.searchOff,
-        message: _catalog.emptyText,
-        action: _catalog.verifyOnEmpty
-            ? _catalog.buildVerifyAction(
-                context,
-                error: null,
-                onVerified: _retry,
-              )
-            : null,
+      return SafeArea(
+        bottom: false,
+        child: FushiPlaceholderMessage(
+          icon: FushiIcons.searchOff,
+          message: _catalog.emptyText,
+          action: _catalog.verifyOnEmpty
+              ? _catalog.buildVerifyAction(
+                  context,
+                  error: null,
+                  onVerified: _retry,
+                )
+              : null,
+        ),
       );
     }
     final String prefix = _catalog.keyPrefix;
@@ -469,7 +487,15 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
             child: GridView.builder(
               // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
               // 补出手势条那一段；有 footer 时上面已摘掉，这里自动退回纯 16。
-              padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
+              padding: withBottomSafeInset(
+                context,
+                EdgeInsets.fromLTRB(
+                  16,
+                  16 + MediaQuery.paddingOf(context).top,
+                  16,
+                  16,
+                ),
+              ),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
                 childAspectRatio: 0.62,
@@ -536,7 +562,12 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
             key: ValueKey<String>('${_catalog.keyPrefix}_skeleton'),
             primary: false,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16 + MediaQuery.paddingOf(context).top,
+              16,
+              16,
+            ),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
               childAspectRatio: 0.62,
