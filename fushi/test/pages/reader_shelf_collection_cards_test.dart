@@ -169,8 +169,18 @@ void main() {
     return pa.dx.compareTo(pb.dx);
   }
 
-  testWidgets('默认整行展开：合集是横排行，没有合集格子', (WidgetTester tester) async {
+  testWidgets('默认单个格子：合集是叠层格子，没有横排行（a55fc1382bb）',
+      (WidgetTester tester) async {
     final int cid = await seedLibrary();
+    await pumpPage(tester);
+    expect(prefs.shelfCollectionLayoutName, 'cards');
+    expect(find.byType(CollectionShelfRow), findsNothing);
+    expect(collectionCard(cid), findsOneWidget);
+  });
+
+  testWidgets('整行展开：合集是横排行，没有合集格子', (WidgetTester tester) async {
+    final int cid = await seedLibrary();
+    await prefs.setShelfCollectionLayoutName('rows');
     await pumpPage(tester);
     expect(find.byType(CollectionShelfRow), findsOneWidget);
     expect(collectionCard(cid), findsNothing);
@@ -249,6 +259,7 @@ void main() {
     await seedLibrary();
     final int tagId = await db.createTag('fav', 0xFF2196F3);
     await db.addTagToBook('zeta1Key', tagId);
+    await prefs.setShelfCollectionLayoutName('rows');
 
     await pumpPage(tester, selectedTags: <int>{tagId});
 

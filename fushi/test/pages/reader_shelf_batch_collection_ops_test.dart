@@ -238,6 +238,8 @@ void main() {
     // v83：成员行 entryKey = uid（书架页按 uid 折叠合集行，bookKey 行折不进去）。
     final String memberUid = (await db.resolveEpubBookUid('memberKey'))!;
     await db.addToCollection(cid, MediaKind.epub, memberUid);
+    // 默认已是「单个格子」（a55fc1382bb）；本用例验横排行的行头整选。
+    await prefs.setShelfCollectionLayoutName('rows');
 
     await pumpPage(tester);
     final Finder row =
@@ -275,6 +277,8 @@ void main() {
     // v83：成员行 entryKey = uid（同上，bookKey 行折不进合集横排行）。
     await db.addToCollection(
         cid, MediaKind.epub, (await db.resolveEpubBookUid('bodyKey'))!);
+    // 默认已是「单个格子」（a55fc1382bb）；本用例验横排行的行头整选。
+    await prefs.setShelfCollectionLayoutName('rows');
 
     await pumpPage(tester);
     final Finder row =
