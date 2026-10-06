@@ -106,8 +106,18 @@ void main() {
         findsNothing,
         reason: '预览不能在可滚动的编辑列表里，否则一滚就看不见改色效果',
       );
+      // c981bcf1533：编辑列表铺满整页、内容滚到吸顶预览与浮动页头底下；
+      // 预览按实测高度给列表让出顶部内边距——未滚动时第一张卡（页头卡）
+      // 必须完整落在预览下方，不能一开页就被预览压住。
+      final Finder header = find.byKey(
+        const ValueKey<String>('custom-theme-header'),
+      );
       final Rect before = tester.getRect(preview);
-      expect(before.bottom, lessThanOrEqualTo(tester.getRect(_editorList).top));
+      expect(
+        tester.getRect(header).top,
+        greaterThanOrEqualTo(before.bottom),
+        reason: '列表顶部内边距必须让开吸顶预览',
+      );
       // 紧凑：不超过 420×900 视口高度的三分之一。
       expect(before.height, lessThan(900 / 3));
 
@@ -117,7 +127,7 @@ void main() {
       final Rect after = tester.getRect(preview);
       expect(after.height, before.height);
       expect((after.top - before.top).abs(), lessThan(48));
-      expect(after.bottom, lessThanOrEqualTo(tester.getRect(_editorList).top));
+      expect(preview, findsOneWidget);
     });
 
     testWidgets('$ds · 宽屏 1600×900：左栏 sticky 预览，右栏编辑列表', (
