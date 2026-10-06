@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2767 条。点号进各自文件。
+> 共 2770 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3053](bugs/BUG-3053-theme-compact-preview-too-tall.md) | ✅ | ✅ | MD3 窄屏自定义主题吸顶预览超过视口三分之一（示意开关挤成三行） |
+| [BUG-3052](bugs/BUG-3052-theme-role-picker-sheet-overflow.md) | ✅ | ✅ | 自定义主题角色选色 sheet 在矮窗口底部溢出、推荐色点不到 |
+| [BUG-3050](bugs/BUG-3050-apple-button-group-overflow.md) | ✅ | ✅ | Apple 设计下标准按钮组窄屏横向溢出（自定义主题 hero） |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
 | [BUG-3005](bugs/BUG-3005-nav-more-spring-range.md) | ✅ | ✅ | 导航底栏更多菜单弹簧过冲导致打开时断言 |
