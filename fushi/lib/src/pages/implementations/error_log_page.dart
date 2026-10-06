@@ -110,6 +110,11 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           },
         ),
       ],
+      // 保留 false（壳替正文整体让开页头）：日志正文是 FushiLogPanel——定高圆角卡
+      // 内自带滚动的 ListView（自持选区滚动控制器，BUG-119 / BUG-1582 防线），
+      // 不接壳的滚动控制器；卡片外框是固定版面，内容滚不到页头底下，强行顶到
+      // 页头下只会让卡片上沿被浮动页头盖住。
+      bodyConsumesTopPadding: false,
       bodyBuilder:
           (
             BuildContext context,
