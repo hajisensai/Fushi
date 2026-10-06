@@ -220,11 +220,41 @@ bool aiFranchiseWorkMatches(AiFranchiseWork work, VideoDiscoveryItem item) {
   );
 }
 
+/// 联网补全最多发几个查询（每个查询每站各抓一页）。
+const int kAiFranchiseMaxWebQueries = 3;
+
+/// 联网补全的查询词，按「最像系列名」排序、按归一化标题去重，最多
+/// [kAiFranchiseMaxWebQueries] 个；首个即交给 AI 的系列名。
+///
+/// 资料源给出的系列名最可信；其次是用户说的作品名（AI 补的原名 / 罗马字）。锚点
+/// 自己的标题垫底：锚点是单部剧场版时，它只搜得到那一部的条目，列不出系列
+/// （BUG-2960：「全部哆啦A梦剧场版」拿《のび太の月面探査記》去搜，三站都只回
+/// 那一部的页面；用 `Doraemon` 搜到的 ANN 条目才列着全部剧场版）。
+List<String> aiFranchiseWebQueries({
+  required VideoMediaReference anchor,
+  required List<String> seriesNames,
+  String? knownName,
+}) {
+  final Map<String, String> byKey = <String, String>{};
+  for (final String? raw in <String?>[
+    knownName,
+    ...seriesNames,
+    anchor.title,
+    anchor.originalTitle,
+  ]) {
+    final String name = raw?.trim() ?? '';
+    if (name.isEmpty) continue;
+    byKey.putIfAbsent(TitleNormalizer.normalize(name), () => name);
+  }
+  return byKey.values.take(kAiFranchiseMaxWebQueries).toList();
+}
+
 /// 联网补全：抓正文 → AI 列作品 → 只核对 [known] 里还没有的 → 核对上的并进去。
 ///
 /// 任何一步失败都退回 [known]（记诊断）：联网补全是加法，不能让已有的清单失效。
 Future<VideoFranchise?> expandVideoFranchiseFromWeb({
   required VideoDiscoveryItem anchor,
+  List<String> seriesNames = const <String>[],
   required VideoFranchise? known,
   required WebKnowledgeClient web,
   required Future<List<AiFranchiseWork>> Function(
@@ -237,14 +267,16 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
 }) async {
   if (!web.isEnabled) return known;
   final VideoMediaReference reference = anchor.reference;
-  final String franchise = known?.name ?? reference.title;
+  final List<String> queries = aiFranchiseWebQueries(
+    anchor: reference,
+    seriesNames: seriesNames,
+    knownName: known?.name,
+  );
+  final String franchise = queries.first;
   try {
     final List<WebKnowledgePage> fetched = <WebKnowledgePage>[];
-    // 系列名 + 原名两个查询、每站一页：只用得上 3 页，别抓十几页。
-    for (final String query in <String>{
-      franchise,
-      if (reference.originalTitle != null) reference.originalTitle!,
-    }.take(2)) {
+    // 每个查询每站一页：只用得上 3 页，别抓十几页。
+    for (final String query in queries) {
       fetched.addAll(
         await web.search(query, maxCharsPerPage: kAiFranchiseMaxCharsPerPage),
       );
@@ -304,7 +336,7 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
 /// 生产装配：「整套下载」的系列加载 = 资料源（TMDB collection + MAL 关联）+ 联网
 /// 补全。AI 下视频未指派提供商时只走资料源（不发 AI 请求）；联网资料来源全关时
 /// [expandVideoFranchiseFromWeb] 直接返回资料源结果。
-Future<VideoFranchise?> Function(VideoDiscoveryItem item)
+Future<VideoFranchise?> Function(VideoFranchiseQuery query)
 createPreferencesVideoFranchiseLoader(
   AiSettingsSource prefs, {
   required Future<VideoFranchise?> Function(VideoDiscoveryItem item) base,
@@ -314,7 +346,8 @@ createPreferencesVideoFranchiseLoader(
   searchWorks,
   AiClientFactory? clientFactory,
   WebKnowledgeClient Function()? webFactory,
-}) => (VideoDiscoveryItem item) async {
+}) => (VideoFranchiseQuery query) async {
+  final VideoDiscoveryItem item = query.item;
   final VideoFranchise? known = await base(item);
   final AiProviderConfig? provider = resolveVideoAcquireAiProvider(prefs);
   if (provider == null) return known;
@@ -327,6 +360,7 @@ createPreferencesVideoFranchiseLoader(
   try {
     return await expandVideoFranchiseFromWeb(
       anchor: item,
+      seriesNames: query.seriesNames,
       known: known,
       web: web,
       listWorks: (String franchise, List<WebKnowledgePage> pages) =>

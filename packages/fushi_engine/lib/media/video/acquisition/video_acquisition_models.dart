@@ -1280,11 +1280,11 @@ class VideoAcquisitionSubmitSubscriptionEffect extends VideoAcquisitionEffect {
   final bool installSubtitles;
 }
 
-/// 找 [item] 所在的系列。
+/// 找锚点作品所在的系列。
 class VideoAcquisitionLoadFranchiseEffect extends VideoAcquisitionEffect {
-  const VideoAcquisitionLoadFranchiseEffect(this.item);
+  const VideoAcquisitionLoadFranchiseEffect(this.query);
 
-  final VideoDiscoveryItem item;
+  final VideoFranchiseQuery query;
 }
 
 /// 系列还没查完：调 [more]（上一批 [VideoFranchise.more]）接着查下一批，结果照样

@@ -1996,7 +1996,11 @@ VideoAcquisitionReduction _startFranchise(VideoAcquisitionState state) {
       );
   return (
     next,
-    <VideoAcquisitionEffect>[VideoAcquisitionLoadFranchiseEffect(item)],
+    <VideoAcquisitionEffect>[
+      VideoAcquisitionLoadFranchiseEffect(
+        VideoFranchiseQuery(item, seriesNames: state.slots.workQueries),
+      ),
+    ],
   );
 }
 
