@@ -3827,6 +3827,22 @@ class AppModel with ChangeNotifier {
       '--md-inverse-surface': vars['--md-inverse-surface']!,
       '--md-inverse-on-surface': vars['--md-inverse-on-surface']!,
       '--md-error': vars['--md-error']!,
+      // 扩展「跟随 Fushi」镜像完整 ColorScheme（表面阶梯 / 反色 / 错误容器）以及生成它的种子、
+      // 变体、纯黑开关：扩展页面与 app 逐色一致，另一明暗按同一算法派生（theme-palette.js）。
+      // 只给扩展：in-app 弹窗不读这些键。
+      '--md-surface': cssRgb(s.surface),
+      '--md-surface-container-lowest': cssRgb(s.surfaceContainerLowest),
+      '--md-inverse-primary': cssRgb(s.inversePrimary),
+      '--md-secondary': cssRgb(s.secondary),
+      '--md-on-secondary': cssRgb(s.onSecondary),
+      '--md-on-error': cssRgb(s.onError),
+      '--md-error-container': cssRgb(s.errorContainer),
+      '--md-on-error-container': cssRgb(s.onErrorContainer),
+      '--fushi-theme-seed': cssRgb(themeNotifier.activeSeedColor),
+      '--fushi-theme-variant': themeNotifier.activeSchemeVariant.name,
+      '--fushi-theme-neutral':
+          themeNotifier.activeCustomThemeNeutralDerived ? '1' : '0',
+      '--fushi-pure-black': themeNotifier.pureBlackDark ? '1' : '0',
       // BUG-736：卡片圆角。漏发时 popup.css 回落到硬编码 10px，与 app 内用户设定的圆角
       // （FushiRadii.cardValue，经 buildPopupThemeCssVars）不一致。与两个 in-app 注入器同源。
       '--fushi-radius-card': vars['--fushi-radius-card']!,

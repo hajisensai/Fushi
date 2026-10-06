@@ -502,13 +502,20 @@
             <label class="setting-row" for="extensionTheme">
               <span class="setting-copy">
                 <strong data-i18n="opt_extensionBrightness_title">明暗</strong>
-                <small data-i18n="opt_extensionBrightness_desc">选择自带明暗的预设会一并切换。</small>
+                <small data-i18n="opt_extensionBrightness_desc">切换配色主题不会改变明暗。</small>
               </span>
               <select class="select-input" id="extensionTheme">
                 <option value="auto" data-i18n="opt_extensionTheme_option_auto">跟随系统</option>
                 <option value="light" data-i18n="opt_extensionTheme_option_light">浅色</option>
                 <option value="dark" data-i18n="opt_extensionTheme_option_dark">深色</option>
               </select>
+            </label>
+            <label class="setting-row" for="extensionPureBlack">
+              <span class="setting-copy">
+                <strong data-i18n="theme_pure_black">纯黑深色背景</strong>
+                <small data-i18n="theme_pure_black_hint">深色模式下页面底为纯黑，适合 OLED 屏</small>
+              </span>
+              <span class="switch"><input id="extensionPureBlack" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="extensionLanguage">
               <span class="setting-copy">
@@ -701,6 +708,7 @@
   <div class="save-toast" id="status" role="status" aria-live="polite"></div>
   <script src="locales/en.js"></script>
   <script src="i18n.js"></script>
+  <script src="material-color.js"></script>
   <script src="theme-palette.js"></script>
   <script src="theme.js"></script>
   <script src="icons.js"></script>

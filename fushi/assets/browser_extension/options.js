@@ -42,6 +42,8 @@ const settingDefaults = Object.freeze({
   // （与系统长按选词菜单天然打架）。两者都只在真触屏手势上生效，桌面零影响。
   touchLookupTap: true,
   touchLookupHold: false,
+  // 深色下页面底为真黑（与 app「纯黑深色背景」同义）；只作用于预设 / 自定义调色板。
+  extensionPureBlack: false,
   // 安卓没有 chrome.sidePanel：触屏设备视频页边缘的「字幕列表」抽屉（mobile-drawer.js）。
   mobileSubtitleDrawer: true,
   // 播放器控制栏里的 Fushi 字幕按钮（player-controls.js）。关掉后视频页一个节点都不挂。
@@ -77,6 +79,7 @@ const toggleIds = Object.freeze({
   subtitleHidden: 'subtitleHidden',
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
+  extensionPureBlack: 'extensionPureBlack',
   mobileSubtitleDrawer: 'mobileSubtitleDrawer',
   playerControls: 'playerControls',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
@@ -169,7 +172,7 @@ async function loadSettings() {
   // 旧 subtitleHoverPause / videoShortcutsEnabled 只作一次向后兼容读取：
   // 新键已有显式值时永远优先；旧键不再由 UI 写入。
   const keys = ['host', 'port', 'token', 'subtitleHoverPause', 'videoShortcutsEnabled',
-    'popupSizeFromApp'].concat(Object.values(toggleIds))
+    'popupSizeFromApp', 'extensionPalette'].concat(Object.values(toggleIds))
     .concat(Object.values(selectSettings).map((s) => s.key));
   const saved = await chrome.storage.local.get(keys);
   if (saved.host != null && saved.host !== '') $('host').value = saved.host;
@@ -185,6 +188,10 @@ async function loadSettings() {
     }
     if (typeof value !== 'boolean' && shortcutKeys.includes(key)) {
       value = saved.videoShortcutsEnabled;
+    }
+    // 纯黑没写过：旧「纯黑」预设用户缺省开（与 theme.js pureBlackFrom 同律，显示与生效一致）。
+    if (typeof value !== 'boolean' && key === 'extensionPureBlack') {
+      value = saved.extensionPalette === 'black-theme';
     }
     input.checked = typeof value === 'boolean' ? value : settingDefaults[key];
     input.addEventListener('change', async () => {
@@ -375,6 +382,9 @@ async function refreshUpdateCard() {
   titleEl.textContent = tr('opt_updTitle_title') + ' · ' + s.title;
   if (detailEl) detailEl.textContent = s.detail;
   if (buildEl) buildEl.textContent = s.build ? 'build ' + s.build : '';
+  // 语义色块（material.css「语义 tonal 色块」）：warn = 自更新失效，其余（ok / neutral）是中性卡。
+  const card = $('updateCard');
+  if (card) card.dataset.tone = s.tone || 'neutral';
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -382,9 +392,6 @@ chrome.storage.onChanged.addListener((changes, area) => {
   for (const [id, key] of Object.entries(toggleIds)) {
     if (!changes[key]) continue;
     const input = $(id);
-  // 语义色块（material.css「语义 tonal 色块」）：warn = 自更新失效，其余（ok / neutral）是中性卡。
-  const card = $('updateCard');
-  if (card) card.dataset.tone = s.tone || 'neutral';
     if (input) input.checked = changes[key].newValue === true;
   }
   for (const [id, spec] of Object.entries(selectSettings)) {
@@ -427,18 +434,16 @@ function swatchColors(id) {
   const scheme = THEME.resolve();
   let tokens = null;
   if (id === 'app') {
-    tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme]);
+    tokens = PALETTE.tokensFromAppTheme(paletteState.appMirror && paletteState.appMirror[scheme], scheme);
     if (!tokens) return null;
-  } else if (id === 'fushi') {
-    // 扩展绿按预设派生（与弹窗覆盖同一份）；不能读页面计算样式——当前若是别的调色板，根上已是那套色。
-    tokens = PALETTE.derive(PALETTE.specFor('fushi'), scheme);
   } else {
+    // 预设 / 自定义按当前明暗与「纯黑深色背景」派生（与生效主题同一份算法），所见即所得。
     const spec = PALETTE.specFor(id, paletteState.customThemes);
-    tokens = spec ? PALETTE.derive(spec, scheme) : null;
+    tokens = spec ? PALETTE.derive(spec, scheme, { pureBlack: !!(THEME && THEME.pureBlack) }) : null;
   }
   const pick = (name) => {
     if (tokens && tokens[name]) return tokens[name];
-    // 默认绿：theme.css 的值经计算样式取，预览与页面同源。
+    // 派生不可用（material-color.js 缺席）：theme.css 的值经计算样式取，预览与页面同源。
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   };
   return {
@@ -535,7 +540,8 @@ function renderPaletteGrid() {
   // 选中会触发 storage → 整格重建；记住焦点所在的卡，重建后还给它（否则键盘焦点掉回 body）。
   const active = document.activeElement;
   const refocus = active && grid.contains(active) ? (active.dataset.palette || active.id || '') : '';
-  const ids = ['app', 'fushi'].concat(PALETTE.PRESETS.filter((p) => p.key !== 'fushi').map((p) => p.key))
+  // 跟随 Fushi + 与 app 同一组 M3 经典预设 + 自定义。
+  const ids = ['app'].concat(PALETTE.PRESETS.map((p) => p.key))
     .concat(paletteState.customThemes.map((t) => 'custom:' + t.id));
   grid.textContent = '';
   if (!grid.__fushiKeys) {
@@ -594,8 +600,8 @@ function renderPaletteGrid() {
 
 async function selectPalette(id) {
   if (!PALETTE) return;
-  // 只写调色板，绝不碰 extensionTheme：明暗由明暗设置单独决定（以前选「深邃 / 纯黑 / 灰暗」会把
-  // 明暗强改成深色、选「米色 / 水色…」强改成浅色）。
+  // 只写调色板，绝不碰明暗设置：明暗由明暗设置单独决定（以前选「深邃 / 纯黑 / 灰暗」会把明暗强改成
+  // 深色、选「米色 / 水色…」强改成浅色）。
   const patch = { extensionPalette: PALETTE.normalizePaletteId(id) };
   await chrome.storage.local.set(patch);
   toast(tr('opt_toast_updated', { name: paletteLabel(patch.extensionPalette) }));
@@ -662,7 +668,7 @@ function renderCustomThemePreview(entry) {
   const wrap = $('customThemePreview');
   if (!wrap || !PALETTE) return;
   for (const box of wrap.querySelectorAll('.theme-preview')) {
-    const tokens = PALETTE.derive(entry, box.dataset.scheme);
+    const tokens = PALETTE.derive(entry, box.dataset.scheme, { pureBlack: !!(THEME && THEME.pureBlack) });
     for (const k in tokens) box.style.setProperty(k, tokens[k]);
   }
 }
