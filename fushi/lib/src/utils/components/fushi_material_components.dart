@@ -4274,8 +4274,9 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   }
 
   bool _trackScrolledUnder(Notification notification) {
+    // 只看竖向轴、不限深度：正文常是横向 TabBarView 套各页竖向列表（统计
+    // 中心），竖向滚动的 depth 是 1。
     if (notification is ScrollUpdateNotification &&
-        notification.depth == 0 &&
         notification.metrics.axis == Axis.vertical) {
       _scrolledUnder.value = notification.metrics.extentBefore > 0;
     }
