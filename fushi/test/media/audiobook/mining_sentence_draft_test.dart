@@ -582,7 +582,7 @@ void main() {
           s('後二。', file: 0, start: 600, end: 900),
         ],
       );
-      final AudioPlaybackRange current = const AudioPlaybackRange(
+      const AudioPlaybackRange current = AudioPlaybackRange(
         audioFileIndex: 0,
         startMs: 250,
         endMs: 350,
