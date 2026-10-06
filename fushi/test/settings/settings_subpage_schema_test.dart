@@ -79,7 +79,7 @@ void main() {
   SettingsNavigationItem navTo(SettingsDestination Function() child) =>
       SettingsNavigationItem(id: 'p.sub', title: '进入子页', child: child);
 
-  testWidgets('Android game receiver belongs to interconnect settings',
+  testWidgets('game receiver belongs to interconnect settings',
       (WidgetTester tester) async {
     await pumpContext(tester);
     final SettingsDestination destination = buildInterconnectDestination();
@@ -89,7 +89,8 @@ void main() {
         .toList();
     expect(entries, hasLength(1));
     expect(entries.single, isA<SettingsActionItem>());
-    expect(entries.single.isVisible(sctx), Platform.isAndroid);
+    // Every platform can receive a stream, so the entry has no platform gate.
+    expect(entries.single.isVisible(sctx), isTrue);
   });
 
   SettingsDestination parentPage(SettingsNavigationItem nav) =>

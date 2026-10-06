@@ -7636,12 +7636,10 @@ class AppModel with ChangeNotifier {
         isAndroid: platformServices.isAndroid,
       );
 
-  /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端），`null` = 本平台
-  /// 没有 games 模块。平台判据同样取自 [PlatformServices]，理由同上。
-  GamesModuleForm? get gamesModuleForm => GamesModuleForm.on(
-        isWindows: platformServices.isWindows,
-        isAndroid: platformServices.isAndroid,
-      );
+  /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端）。平台判据同样
+  /// 取自 [PlatformServices]，理由同上。
+  GamesModuleForm get gamesModuleForm =>
+      GamesModuleForm.on(isWindows: platformServices.isWindows);
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;

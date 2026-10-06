@@ -5303,7 +5303,6 @@
   "game_stream_line": "當前台詞",
   "game_stream_line_empty": "尚無 Hook 台詞",
   "game_stream_lookup_hint": "選中台詞或釋義中的文字查詞",
-  "game_stream_android_only": "遊戲串流接收端僅支持 Android。",
   "game_stream_unreachable": "無法連接主機",
   "game_stream_none": "沒有已開啟串流的已配對主機。請先在 Windows 遊戲頁開始串流。",
   "game_stream_join_failed": "無法加入串流",
@@ -5415,7 +5414,7 @@
   "game_stream_touch_direct": "切換為直接點擊",
   "game_stream_touch_trackpad": "切換為觸控板",
   "game_stream_remote_launch_title": "允許遠程啟動",
-  "game_stream_remote_launch_hint": "已配對的安卓裝置可從本機遊戲庫啟動遊戲並直接串流",
+  "game_stream_remote_launch_hint": "已配對的裝置可從本機遊戲庫啟動遊戲並直接串流",
   "manga_reader_ocr_volume": "識別本卷",
   "manga_reader_ocr_queued": "排隊中",
   "manga_reader_ocr_unavailable_short": "沒有可用的 OCR 引擎 · 請在 OCR 設定中下載模型或更換引擎",
@@ -6383,5 +6382,6 @@
   "game_stream_host_https_required": "The host has HTTPS turned off. Turn on encrypted connections in the interconnect settings of Fushi on Windows.",
   "game_stream_host_stream_off": "This host does not offer game streaming.",
   "game_stream_host_library_off": "The host has no game library. Turn on the Games module in Fushi on Windows, then restart it.",
-  "game_stream_host_unauthorized": "The host rejected this device. Pair them again."
+  "game_stream_host_unauthorized": "The host rejected this device. Pair them again.",
+  "game_stream_tab": "Stream"
 }
