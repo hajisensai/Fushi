@@ -17,10 +17,14 @@ class FushiEntranceScope extends StatefulWidget {
     required this.child,
     super.key,
     this.replayKey,
+    this.enabled = true,
     this.window = const Duration(milliseconds: 600),
   });
 
   final Widget child;
+
+  /// 是否开放本 scope 的进场窗口。拖拽反馈等已可见内容的副本应直接显示。
+  final bool enabled;
 
   /// 变化时重开进场窗口。
   final Object? replayKey;
@@ -42,7 +46,8 @@ class _FushiEntranceScopeState extends State<FushiEntranceScope> {
   @override
   void didUpdateWidget(covariant FushiEntranceScope oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.replayKey != widget.replayKey) {
+    if (oldWidget.replayKey != widget.replayKey ||
+        oldWidget.enabled != widget.enabled) {
       _openedAt = _now();
       _generation++;
     }
@@ -54,6 +59,7 @@ class _FushiEntranceScopeState extends State<FushiEntranceScope> {
       openedAt: _openedAt,
       window: widget.window,
       generation: _generation,
+      enabled: widget.enabled,
       child: widget.child,
     );
   }
@@ -64,16 +70,19 @@ class _FushiEntranceWindow extends InheritedWidget {
     required this.openedAt,
     required this.window,
     required this.generation,
+    required this.enabled,
     required super.child,
   });
 
   final Duration openedAt;
   final Duration window;
   final int generation;
+  final bool enabled;
 
   bool get isOpen =>
+      enabled &&
       SchedulerBinding.instance.currentSystemFrameTimeStamp - openedAt <=
-      window;
+          window;
 
   @override
   bool updateShouldNotify(_FushiEntranceWindow oldWidget) =>

@@ -117,6 +117,42 @@ void main() {
   });
 
   group('FushiStaggeredEntrance', () {
+    testWidgets('禁用窗口首挂载即显示，切换启用状态立即生效', (WidgetTester tester) async {
+      const Key item = ValueKey<String>('scope-enabled-item');
+      final ValueNotifier<bool> enabled = ValueNotifier<bool>(false);
+      addTearDown(enabled.dispose);
+      await tester.pumpWidget(
+        _wrap(
+          ValueListenableBuilder<bool>(
+            valueListenable: enabled,
+            builder: (BuildContext context, bool value, Widget? child) =>
+                FushiEntranceScope(enabled: value, child: child!),
+            child: const FushiStaggeredEntrance(
+              index: 0,
+              child: SizedBox(key: item, width: 10, height: 10),
+            ),
+          ),
+        ),
+      );
+      expect(_opacityOf(tester, item), 1);
+      enabled.value = true;
+      await tester.pump();
+      expect(_opacityOf(tester, item), 0);
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(_opacityOf(tester, item), greaterThan(0));
+      expect(_opacityOf(tester, item), lessThan(1));
+      enabled.value = false;
+      await tester.pump();
+      expect(_opacityOf(tester, item), 1);
+      await tester.pump(const Duration(milliseconds: 800));
+      expect(_opacityOf(tester, item), 1);
+      enabled.value = true;
+      await tester.pump();
+      expect(_opacityOf(tester, item), 0, reason: '重新启用应重开窗口');
+      await tester.pumpAndSettle();
+      expect(_opacityOf(tester, item), 1);
+    });
+
     testWidgets('窗口内首挂载：从透明淡入，后面的项起播更晚', (WidgetTester tester) async {
       const Key first = ValueKey<String>('first');
       const Key late = ValueKey<String>('late');

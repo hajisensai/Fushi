@@ -5,6 +5,7 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 /// 拖拽重排中「被抬起的那一项」的统一浮层（[FushiReorderableColumn] /
@@ -89,7 +90,8 @@ class FushiReorderDragProxy extends StatelessWidget {
           side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
         ),
         clipBehavior: Clip.antiAlias,
-        child: child,
+        // 浮层复制已可见的行，不重播子行的进场；proxy 自身的 lift 仍保留。
+        child: FushiEntranceScope(enabled: false, child: child),
       ),
     );
   }
