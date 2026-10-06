@@ -1981,6 +1981,10 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
               title: _roleTitle(role),
               subtitle: _roleDescription(role),
               leadingIcon: _roleIcon(role),
+              // 选色器（HSV 面板 + 色条 + 十六进制 + 推荐色 + 最近使用）固有高
+              // 约 300；矮窗口（横屏手机 / 600 高桌面窗）里 sheet 正文给不到，
+              // 不滚动就底部溢出、推荐色点不到。内容放得下时不产生滚动手势。
+              scrollable: true,
               bodyPadding: EdgeInsets.fromLTRB(
                 tokens.spacing.card,
                 0,

@@ -278,6 +278,9 @@ void main() {
       final Finder white = find.byKey(
         const ValueKey<String>('custom-theme-swatch-ffffffff'),
       );
+      // 选色 sheet 正文可滚动（矮窗口里推荐色在折线以下），先滚到再点。
+      await tester.ensureVisible(white.first);
+      await tester.pumpAndSettle();
       await tester.tap(white.first);
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.dialog_done));
