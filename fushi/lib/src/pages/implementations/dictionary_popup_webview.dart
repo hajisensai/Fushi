@@ -495,8 +495,52 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// resolution, avoiding a stale last-writer static.
   Future<dynamic> debugEval(String source) async =>
       _controller?.evaluateJavascript(source: source);
+
+  /// Captures native WebView pixels, which Flutter layer screenshots omit.
+  @visibleForTesting
+  Future<List<int>?> debugCaptureWebView() async => _controller?.takeScreenshot();
+
+  /// Replaces the document through the same native API as initial inline data.
+  @visibleForTesting
+  Future<void> debugLoadDocument(String html) async {
+    await _controller?.loadData(data: html);
+  }
+
   bool _ready = false;
   bool _refreshWhenReady = false;
+  int _documentGeneration = 0;
+
+  /// BUG-3002: the result cache belongs to a document, not to this State.
+  /// Navigation and native controller replacement both discard the JS realm.
+  void _invalidatePopupDocument() {
+    _documentGeneration++;
+    _renderToken++;
+    _ready = false;
+    _refreshWhenReady = true;
+    _lastSearchTerm = null;
+    _lastEntryCount = 0;
+    _lastPushedResult = null;
+    _lastRenderedResult = null;
+    _lastPushedPending = false;
+    _lastRenderedPending = false;
+    _lastSentStaticRevision = null;
+    _lastSentInAppExtrasKey = null;
+    _lastThemeVarsJs = null;
+  }
+
+  // The plugin creates separate Dart wrappers for onWebViewCreated and load
+  // callbacks. Their platform controller, rather than the wrapper, is identity.
+  bool _isCurrentPopupController(InAppWebViewController controller) =>
+      identical(_controller?.platform, controller.platform);
+
+  bool _isCurrentPopupDocument(
+    InAppWebViewController controller,
+    int generation,
+  ) =>
+      mounted &&
+      _isCurrentPopupController(controller) &&
+      _documentGeneration == generation;
+
   double? _layoutWidth;
   double? _layoutHeight;
 
@@ -566,18 +610,26 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     }
   }
 
-  Future<void> _completePopupLoad(InAppWebViewController controller) async {
+  Future<void> _completePopupLoad(
+    InAppWebViewController controller,
+    int generation,
+  ) async {
+    if (!_isCurrentPopupDocument(controller, generation)) return;
     try {
       await controller.evaluateJavascript(source: ReaderCaretScripts.source());
-      if (!mounted) return;
+      if (!_isCurrentPopupDocument(controller, generation)) return;
       await _applyPopupViewportSize();
     } catch (e, stack) {
-      if (mounted) {
-        ErrorLogService.instance
-            .log('DictPopupWebview.loadBootstrap', e, stack);
+      if (_isCurrentPopupDocument(controller, generation)) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.loadBootstrap',
+          e,
+          stack,
+        );
       }
     }
-    if (!mounted) return;
+    if (!_isCurrentPopupDocument(controller, generation)) return;
+    _ready = true;
     unawaited(_pushInstantScrollPreference());
     if (_refreshWhenReady || _lastSearchTerm == null) {
       _pushResults();
@@ -599,13 +651,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
     surface: 'dictionary_popup',
     flushBeforeRebuild: () async {
       _controller = null;
-      _ready = false;
-      _lastPushedResult = null;
-      _lastRenderedResult = null;
-      _lastSentStaticRevision = null;
-      _lastSentInAppExtrasKey = null;
-      // 新 WebView 的 onLoadStop 据此立刻补推当前结果。
-      _refreshWhenReady = true;
+      _invalidatePopupDocument();
     },
     afterRebuild: () {
       if (mounted) setState(() {});
@@ -2211,6 +2257,7 @@ JSON.stringify((function(){
       },
       onWebViewCreated: (controller) {
         _controller = controller;
+        _invalidatePopupDocument();
 
         // TODO-1392：查词弹窗 JS 渲染路径（renderPopup / __fushiContainer 等）抛异常，此前
         // 只 console.error → onConsoleMessage → debugPrint（永不进错误日志），uncaught 更彻底
@@ -2412,6 +2459,9 @@ JSON.stringify((function(){
               null,
               ErrorLogService.instance,
               () {
+                if (!_ready || !_isCurrentPopupController(controller)) {
+                  return null;
+                }
                 final Object? rawContent = args.isNotEmpty ? args[0] : null;
                 final double? contentHeight = rawContent is num
                     ? rawContent.toDouble()
@@ -2447,6 +2497,9 @@ JSON.stringify((function(){
               null,
               ErrorLogService.instance,
               () {
+                if (!_ready || !_isCurrentPopupController(controller)) {
+                  return null;
+                }
                 final Object? rawToken = args.length > 1 ? args[1] : null;
                 final int? token = rawToken is num
                     ? rawToken.toInt()
@@ -3013,12 +3066,17 @@ JSON.stringify((function(){
         // with the browser extension and every desktop surface — see
         // resolveWordAudioWebViewUrl). The old `playWordAudio` handler is gone.
       },
+      onLoadStart: (controller, url) {
+        if (!mounted || !_isCurrentPopupController(controller)) return;
+        _invalidatePopupDocument();
+      },
       onLoadStop: (controller, url) {
-        _ready = true;
-        // BUG-712 ③：页面（重）加载后 window.* 状态清零，静态设置负载与 in-app
-        // 固定块必须随下一次推送整体重发——重置版本比对基线。
-        _lastSentStaticRevision = null;
-        _lastSentInAppExtrasKey = null;
+        if (!mounted || !_isCurrentPopupController(controller)) return;
+        // Also handle platforms that finish a fresh document without a start
+        // callback. Results arriving during bootstrap remain queued; only this
+        // controller/document pair may mark the surface ready afterwards.
+        _invalidatePopupDocument();
+        final int generation = _documentGeneration;
         debugPrint('[popup-perf] webview loadStop $url');
         // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
         // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
@@ -3042,7 +3100,7 @@ JSON.stringify((function(){
                 : widget.inputSpec,
           ),
         );
-        unawaited(_completePopupLoad(controller));
+        unawaited(_completePopupLoad(controller, generation));
       },
       onReceivedError: (controller, request, error) {
         // TODO-058 fail-safe：主框架加载失败（弹窗 WebView 进程异常 / 资源拦截
