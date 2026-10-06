@@ -199,7 +199,6 @@ Fushi builds on the following projects and ecosystem:
 | [Mihon](https://github.com/mihonapp/mihon) | Manga source extension ecosystem |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | Anime source extension ecosystem (extensions-lib 14–16 hosted by the same runtime) |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | Manga extension runtime for desktop |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | Manga source runtime ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | Streaming subtitle bridge reference for the browser extension |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | Anime identification and scraping architecture reference |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | Galgame library information architecture reference |

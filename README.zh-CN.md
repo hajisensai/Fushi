@@ -193,7 +193,6 @@ Fushi 基于以下项目与生态：
 | [Mihon](https://github.com/mihonapp/mihon) | 漫画源扩展生态 |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | 动画源扩展生态（extensions-lib 14–16，与漫画共用同一运行时） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | 桌面端漫画扩展运行时 |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | 漫画源运行时 ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | 浏览器扩展流媒体字幕桥接参考 |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | 动画识别与刮削架构参考 |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | galgame 库信息架构参考 |

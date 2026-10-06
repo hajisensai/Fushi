@@ -151,7 +151,6 @@ Fushi は以下のプロジェクトとエコシステムを基盤としてい�
 | [Mihon](https://github.com/mihonapp/mihon) | マンガソース拡張のエコシステム |
 | [Aniyomi](https://github.com/aniyomiorg/aniyomi) | アニメソース拡張のエコシステム（extensions-lib 14–16、同一ランタイム） |
 | [M-Extension-Server](https://github.com/kodjodevf/M-Extension-Server) | デスクトップ向けマンガ拡張ランタイム |
-| [aidoku-rs](https://github.com/Aidoku/aidoku-rs) | マンガソースランタイムの ABI |
 | [asbplayer](https://github.com/asbplayer/asbplayer) | ブラウザ拡張のストリーミング字幕ブリッジの参考 |
 | [Shoko Server](https://github.com/ShokoAnime/ShokoServer) | アニメ識別とスクレイピング設計の参考 |
 | [ReinaManager](https://github.com/huoshen80/ReinaManager) | ギャルゲーライブラリの情報設計の参考 |
