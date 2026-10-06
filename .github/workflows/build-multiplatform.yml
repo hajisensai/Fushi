@@ -1000,7 +1000,24 @@ jobs:
           name: ${{ steps.native_store.outputs.torrent }}
           path: native/fushi_torrent/prebuilt/macos
       - name: Run macOS comprehensive automation contract
+        id: macos_smoke
         run: bash ci/comprehensive-test.sh --platform=macos --only=appSmoke
+      # The runner captures child output in report files. Print failure tails in
+      # Actions logs so secret masking applies; the failed smoke step stays red.
+      - name: Show macOS appSmoke failure logs
+        if: ${{ failure() && steps.macos_smoke.outcome == 'failure' }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          logs=(.codex-test/comprehensive/*/macos_appSmoke*_{stdout,stderr}.log)
+          if [ "${#logs[@]}" -eq 0 ]; then
+            echo "No macOS appSmoke child logs were produced."
+          fi
+          for log in "${logs[@]}"; do
+            echo "::group::$log (last 200 lines)"
+            tail -n 200 "$log"
+            echo "::endgroup::"
+          done
 
   # iOS runs on a macOS runner and uses a no-codesign device build so CI links
   # the real iOS plugin slices without requiring an Apple developer account.
@@ -1523,4 +1540,19 @@ jobs:
           name: ${{ steps.native_store.outputs.anki_sync_debug }}
           path: native\fushi_anki_sync\target\debug\fushi-anki-sync.exe
       - name: Run Windows comprehensive automation contract
+        id: windows_smoke
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke
+      # Keep diagnostic output in Actions logs for secret masking, as on macOS.
+      - name: Show Windows appSmoke failure logs
+        if: ${{ failure() && steps.windows_smoke.outcome == 'failure' }}
+        shell: pwsh
+        run: |
+          $logs = @(Get-ChildItem -Path '.codex-test/comprehensive/*/windows_appSmoke*_stdout.log', '.codex-test/comprehensive/*/windows_appSmoke*_stderr.log' -File -ErrorAction SilentlyContinue)
+          if ($logs.Count -eq 0) {
+            Write-Output 'No Windows appSmoke child logs were produced.'
+          }
+          foreach ($log in $logs) {
+            Write-Output "::group::$($log.Name) (last 200 lines)"
+            Get-Content -LiteralPath $log.FullName -Tail 200
+            Write-Output '::endgroup::'
+          }

@@ -44,10 +44,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 标签真的画出来了：Text 在树里、没有被 Visibility / Opacity 0 藏起来，且
+  // 展开栏与收起的小胶囊常驻同一 Stack；隐藏分支由 IgnorePointer 禁止命中，
+  // 仍在树里的当前项标题 / Tooltip 不属于屏幕上的导航目的地。
+  Finder activeLabel(String label) => find.text(label).hitTestable();
+
+  /// 标签真的画出来了：Text 可命中、没有被 Visibility / Opacity 0 藏起来，且
   /// 占了正的宽高。
   bool labelVisible(WidgetTester tester, String label) {
-    final Finder text = find.text(label);
+    final Finder text = activeLabel(label);
     if (text.evaluate().length != 1) return false;
     final Iterable<Visibility> hiders = tester.widgetList<Visibility>(
       find.ancestor(of: text, matching: find.byType(Visibility)),
@@ -63,7 +67,7 @@ void main() {
 
   double labelFontSize(WidgetTester tester, String label) {
     final RenderParagraph p = tester.renderObject<RenderParagraph>(
-      find.text(label),
+      activeLabel(label),
     );
     return p.text.style!.fontSize!;
   }
@@ -102,7 +106,7 @@ void main() {
   /// 标签完整画出（没有被省略号截断）。
   bool labelUntruncated(WidgetTester tester, String label) {
     final RenderParagraph p = tester.renderObject<RenderParagraph>(
-      find.text(label),
+      activeLabel(label),
     );
     return !p.didExceedMaxLines;
   }
@@ -136,7 +140,7 @@ void main() {
 
     final List<int> shown = <int>[
       for (int i = 0; i < 8; i++)
-        if (find.text('Tab$i').evaluate().isNotEmpty) i,
+        if (activeLabel('Tab$i').evaluate().isNotEmpty) i,
     ];
     expect(shown, isNotEmpty);
     expect(find.text('More'), findsOneWidget, reason: '放不下时出现「更多」');
@@ -196,7 +200,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     for (int i = 0; i < 8; i++) {
-      final Finder label = find.text('Browser extension $i');
+      final Finder label = activeLabel('Browser extension $i');
       if (label.evaluate().isEmpty) continue;
       expect(labelUntruncated(tester, 'Browser extension $i'), isTrue);
     }
@@ -209,7 +213,7 @@ void main() {
     for (int i = 0; i < 3; i++) {
       expect(labelVisible(tester, 'Tab$i'), isTrue);
       expect(labelFontSize(tester, 'Tab$i'), 12);
-      expect(find.byTooltip('Tab$i'), findsNothing);
+      expect(find.byTooltip('Tab$i').hitTestable(), findsNothing);
     }
   });
 }
