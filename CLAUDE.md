@@ -131,7 +131,7 @@
   - **适用所有任务**：
     - 测试攒齐了一次交：同一轮要跑的测试文件放进**同一条** `flutter test a.dart b.dart … --no-pub`，别逐个文件各排一次队。
     - 迭代中途只 analyze 改动文件，全量 `flutter analyze` 留到推送前跑一次。
-    - 不产 PNG 截图、不依赖 Windows 的测试和 analyze 走 `bash ~/.claude/scripts/mac-offload.sh -C <worktree> [--mac] -- <命令>` 分流到 Mac（Mac 按 `.fvmrc` 选 Flutter；每个会话同时最多 1 个 Mac 任务，Mac 盘紧）。
+    - 不产 PNG 截图、不依赖 Windows 的测试和 analyze 走 `bash ~/.claude/scripts/mac-offload.sh -C <worktree> [--mac] -- <命令>` 分流到 Mac（Mac 按 `.fvmrc` 选 Flutter；不限每个会话挂几个，脚本按两端空闲槽准入、满了自动排队）。
     - 新 worktree 尽量复用：同一域的连续修复用同一个 worktree，别一个子代理开一个。
   - **只适用于「多个代理汇总进同一条批量 PR」（如 M3E 波次）**：
     - 子代理只跑自己改动直接覆盖的测试，不各自跑全量 analyze。
