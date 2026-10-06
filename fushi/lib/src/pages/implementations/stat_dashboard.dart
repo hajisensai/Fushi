@@ -6,6 +6,7 @@ import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 
@@ -298,13 +299,13 @@ List<Widget> buildStatKpiTiles(BuildContext context, StatKpis kpis) {
   return <Widget>[
     StatKpiTile(
       key: const ValueKey<String>('stat-kpi-today-time'),
-      icon: Icons.today_outlined,
+      icon: FushiIcons.calendar,
       label: t.stat_overview_today_time,
       value: formatStatTime(kpis.todayMs),
     ),
     StatKpiTile(
       key: const ValueKey<String>('stat-kpi-week-time'),
-      icon: Icons.date_range_outlined,
+      icon: FushiIcons.calendar,
       label: t.stat_overview_week_time,
       value: formatStatTime(kpis.weekMs),
       caption: t.stat_overview_vs_last_week(delta: weekDelta),
@@ -312,7 +313,7 @@ List<Widget> buildStatKpiTiles(BuildContext context, StatKpis kpis) {
     ),
     StatKpiTile(
       key: const ValueKey<String>('stat-kpi-today-chars'),
-      icon: Icons.translate_outlined,
+      icon: FushiIcons.language,
       label: t.stat_overview_today_chars,
       value: formatStatChars(kpis.todayChars),
       caption: t.stat_overview_week_chars(
@@ -482,10 +483,10 @@ class StatKpiTile extends StatelessWidget {
                   value,
                   maxLines: 1,
                   softWrap: false,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: scheme.onSurface,
-                  ),
+                  // M3E Display 大数字：Emphasized 字重 + 等宽数字（换筛选时
+                  // 数值切换宽度不跳）。
+                  style: context.fushiType.headlineMediumEmphasized.tabular
+                      .copyWith(color: scheme.onSurface),
                 ),
               ),
             ),
@@ -508,7 +509,8 @@ class StatKpiTile extends StatelessWidget {
   }
 }
 
-/// 指标卡左上角的色调图标徽章（MD3 = 主色 14% 圆底；Apple 同一做法用强调色）。
+/// 指标卡左上角的色调图标徽章：M3E = primaryContainer 饱和色块 + 四瓣饼干形
+/// （墨水屏描边无底）；Apple 保持强调色 14% 圆底。
 class StatIconBadge extends StatelessWidget {
   const StatIconBadge({required this.icon, required this.color, super.key});
 
@@ -517,6 +519,15 @@ class StatIconBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!isGlassDesign(context)) {
+      return FushiListLeadingIcon(
+        icon,
+        shape: FushiLeadingShape.cookie,
+        tone: FushiCardTone.primary,
+        size: 32,
+        iconSize: 18,
+      );
+    }
     return Container(
       width: 32,
       height: 32,
@@ -570,7 +581,7 @@ class StatGoalPanel extends StatelessWidget {
       body = Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          StatIconBadge(icon: Icons.flag_outlined, color: colors.series),
+          StatIconBadge(icon: FushiIcons.flag, color: colors.series),
           SizedBox(width: tokens.spacing.card),
           Flexible(
             child: Column(
@@ -751,7 +762,7 @@ class StatDashboardEmpty extends StatelessWidget {
           vertical: tokens.spacing.card * 2,
         ),
         child: FushiPlaceholderMessage(
-          icon: Icons.insights_outlined,
+          icon: FushiIcons.statistics,
           message: message,
         ),
       ),

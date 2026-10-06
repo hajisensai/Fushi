@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
 /// TODO-1204 后续：统计页 per-book / per-video 行长按删除该项统计的确认弹窗。
@@ -25,47 +26,35 @@ class StatDeleteConfirmDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiDialogFrame(
-      maxWidth: 420,
-      maxHeightFactor: 0.74,
-      child: FushiModalSheetFrame(
-        title: t.stat_delete_title,
-        leadingIcon: Icons.delete_outline,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Text(
-          '$itemTitle\n\n${message ?? t.stat_delete_message}',
-          style: tokens.type.listSubtitle,
-        ),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.dialog_delete),
-            ),
-          ],
+    // M3E 破坏性确认：28 圆角 + errorContainer 饼干徽标 + error 填充确认键；
+    // Apple 下由 FushiAlertDialog 分派成系统 alert（红色确认）。
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.delete,
+        tone: FushiHeroTone.destructive,
+      ),
+      title: Text(t.stat_delete_title),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Text(
+            '$itemTitle\n\n${message ?? t.stat_delete_message}',
+            style: tokens.type.listSubtitle,
+          ),
         ),
       ),
+      actions: <Widget>[
+        FushiDialogAction(
+          label: t.dialog_cancel,
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        FushiDialogAction(
+          label: t.dialog_delete,
+          kind: FushiDialogActionKind.destructive,
+          autofocus: true,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
     );
   }
 }
@@ -99,44 +88,35 @@ class StatClearAllConfirmDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiDialogFrame(
-      maxWidth: 420,
-      maxHeightFactor: 0.74,
-      child: FushiModalSheetFrame(
-        title: t.stat_clear_all_title,
-        leadingIcon: Icons.delete_sweep_outlined,
-        bodyPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          0,
-          tokens.spacing.card,
-          tokens.spacing.gap,
-        ),
-        footerPadding: EdgeInsets.fromLTRB(
-          tokens.spacing.card,
-          tokens.spacing.gap,
-          tokens.spacing.card,
-          tokens.spacing.card,
-        ),
-        body: Text(message, style: tokens.type.listSubtitle),
-        footer: Wrap(
-          alignment: WrapAlignment.end,
-          spacing: tokens.spacing.gap,
-          runSpacing: tokens.spacing.gap,
-          children: <Widget>[
-            adaptiveDialogAction(
-              context: context,
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(t.dialog_cancel),
-            ),
-            adaptiveDialogAction(
-              context: context,
-              isDestructiveAction: true,
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(t.stat_clear_all_confirm),
-            ),
-          ],
+    // M3E 破坏性确认：28 圆角 + errorContainer 饼干徽标 + error 填充确认键；
+    // Apple 下由 FushiAlertDialog 分派成系统 alert（红色确认）。
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.deleteSweep,
+        tone: FushiHeroTone.destructive,
+      ),
+      title: Text(t.stat_clear_all_title),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Text(
+            message,
+            style: tokens.type.listSubtitle,
+          ),
         ),
       ),
+      actions: <Widget>[
+        FushiDialogAction(
+          label: t.dialog_cancel,
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        FushiDialogAction(
+          label: t.stat_clear_all_confirm,
+          kind: FushiDialogActionKind.destructive,
+          autofocus: true,
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
     );
   }
 }
@@ -179,7 +159,7 @@ class StatClearSessionsConfirmDialog extends StatelessWidget {
   Widget build(BuildContext context) => FushiDestructiveConfirmDialog(
         title: t.stat_sessions_clear_all_title,
         message: t.stat_sessions_clear_all_message(n: count),
-        leadingIcon: Icons.playlist_remove,
+        leadingIcon: FushiIcons.deleteSweep,
         confirmLabel: t.stat_clear_all_confirm,
         checkboxLabel: t.stat_sessions_clear_all_ack(n: count),
         checkboxKey: ackKey,
