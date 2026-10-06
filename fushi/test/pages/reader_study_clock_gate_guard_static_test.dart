@@ -283,7 +283,20 @@ void main() {
         corpus,
         'Widget _buildReaderPanelContent(',
       );
-      expect(content, contains('onTogglePause: _toggleStudyClockManualPause,'));
+      expect(
+        compactCode(content),
+        contains('case_kReaderPanelStatistics:return_buildStatisticsSheet();'),
+      );
+      final String statistics = methodBody(
+        corpus,
+        'Widget _buildStatisticsSheet(',
+      );
+      expect(statistics, contains('return ReaderStatisticsSheet('));
+      expect(
+        statistics,
+        contains('onTogglePause: _toggleStudyClockManualPause,'),
+      );
+      expect(statistics, isNot(contains('_withStudyClockPaused(')));
       final String hold = compactCode(
         methodBody(corpus, 'void _syncPanelClockHold('),
       );
