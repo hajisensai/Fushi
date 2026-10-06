@@ -15,6 +15,7 @@ import 'dart:io';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/credential_http_proxy.dart';
 import 'package:fushi_server/src/server_paths.dart';
 import 'package:path/path.dart' as p;
 
@@ -39,7 +40,9 @@ class AdminClient {
     required this.token,
     HttpClient? httpClient,
     this.timeout = const Duration(seconds: 30),
-  }) : _http = httpClient ?? HttpClient();
+  }) : _http = withCredentialProxyPolicy(httpClient ?? HttpClient());
+  // 每个请求都带 admin_token：回环 / 明文目标恒直连，绝不交给环境代理
+  // （见 credential_http_proxy.dart）。
 
   /// 由服务端配置推出地址与凭据。
   ///

@@ -27,6 +27,7 @@ import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_v2_client.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/credential_http_proxy.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
@@ -167,9 +168,13 @@ abstract class AggregateRemote {
 class HttpAggregateRemote implements AggregateRemote {
   HttpAggregateRemote({required this.baseUrl, required String token, String? fingerprint})
     : _auth = 'Basic ${base64Encode(utf8.encode('$_interconnectUser:$token'))}',
-      _client = fingerprint == null
-          ? (HttpClient()..connectionTimeout = const Duration(seconds: 15))
-          : createPinnedHttpClient(expectedFingerprint: fingerprint, connectionTimeout: const Duration(seconds: 15));
+      // 每个请求都带 host token：明文 / 回环目标恒直连，https 才跟随环境代理（CONNECT
+      // 隧道 + 指纹钉扎，代理读不到 token），见 credential_http_proxy.dart。
+      _client = withCredentialProxyPolicy(
+        fingerprint == null
+            ? (HttpClient()..connectionTimeout = const Duration(seconds: 15))
+            : createPinnedHttpClient(expectedFingerprint: fingerprint, connectionTimeout: const Duration(seconds: 15)),
+      );
 
   final Uri baseUrl;
   final String _auth;
