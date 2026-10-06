@@ -93,4 +93,114 @@ void main() {
         .first;
     expect(toolbarClip.clipBehavior, Clip.none);
   });
+  // HBK-AUDIT-007：标题 + 副标题都跟随系统字体缩放，1.3 倍时两行合计超过定高
+  // 胶囊。胶囊不能长高（BUG-2977），副标题降级为 tooltip；标题封顶到单行不溢出。
+  for (final double scale in <double>[1.0, 1.3, 2.0]) {
+    testWidgets('HBK-AUDIT-007 字体 ${scale}x：双行标题胶囊定高且不溢出', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+            child: const Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 360,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FushiPageChromeTitle(
+                      title: Text('统计中心'),
+                      subtitle: Text('当前档案：默认'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(find.byType(FushiPageChromeTitle)).height,
+        kFushiPageChromeExtent,
+      );
+      expect(find.text('统计中心'), findsOneWidget);
+      if (scale == 1.0) {
+        expect(find.text('当前档案：默认'), findsOneWidget);
+      } else {
+        expect(find.text('当前档案：默认'), findsNothing);
+        final Tooltip tooltip = tester.widget<Tooltip>(
+          find.descendant(
+            of: find.byType(FushiPageChromeTitle),
+            matching: find.byType(Tooltip),
+          ),
+        );
+        expect(tooltip.message, '当前档案：默认');
+      }
+    });
+
+    testWidgets('HBK-AUDIT-007 字体 ${scale}x：AppBar 槽位里标题胶囊不被裁', (
+      WidgetTester tester,
+    ) async {
+      tester.view.padding = const FakeViewPadding(top: 72);
+      addTearDown(tester.view.resetPadding);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          builder: (BuildContext context, Widget? child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: child!,
+          ),
+          home: Scaffold(
+            appBar: FushiAppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {},
+              ),
+              title: const Text('AI 下视频'),
+            ),
+            body: const SizedBox.expand(),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      final Rect capsuleRect = tester.getRect(
+        find.byType(FushiPageChromeTitle),
+      );
+      final Rect barRect = tester.getRect(find.byType(AppBar));
+      expect(capsuleRect.height, kFushiPageChromeExtent);
+      // 安全区（状态栏）之下、栏底之上。
+      expect(capsuleRect.top, greaterThanOrEqualTo(barRect.top + 24));
+      expect(capsuleRect.bottom, lessThanOrEqualTo(barRect.bottom));
+    });
+  }
+
+  test('HBK-AUDIT-007 副标题容量判据：1.0 放得下、1.3 放不下', () {
+    expect(
+      FushiPageChromeTitle.subtitleFits(
+        textScaler: TextScaler.noScaling,
+        titleFontSize: 22,
+        subtitleFontSize: 12,
+      ),
+      isTrue,
+    );
+    expect(
+      FushiPageChromeTitle.subtitleFits(
+        textScaler: const TextScaler.linear(1.3),
+        titleFontSize: 22,
+        subtitleFontSize: 12,
+      ),
+      isFalse,
+    );
+    expect(
+      FushiPageChromeTitle.maxTitleScaleFactor(22) * 22 * 1.2,
+      lessThanOrEqualTo(kFushiPageChromeExtent),
+    );
+  });
 }

@@ -183,7 +183,6 @@ Fushi 基于以下项目与生态：
 | [ReazonSpeech k2-v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | 日语语音识别模型 |
 | [Omnilingual ASR](https://github.com/facebookresearch/omnilingual-asr) | 多语言 CTC 语音识别模型 |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | 人声活动检测模型 |
-| [manga-ocr](https://github.com/kha-white/manga-ocr) / [manga-ocr-onnx](https://huggingface.co/mayocream/manga-ocr-onnx) | 漫画 OCR 模型 |
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | 漫画文本与对话气泡检测模型 |
 
 ### 内容源与集成

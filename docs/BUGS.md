@@ -29,11 +29,23 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2745 条。点号进各自文件。
+> 共 2757 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2992](bugs/BUG-2992-lyrics-more-settings-tab.md) | ✅ | ✅ | 歌词更多设置入口被上次标签页记忆覆盖 |
+| [BUG-2991](bugs/BUG-2991-navigation-semantics-tap.md) | ✅ | ✅ | 自适应导航按钮未提供读屏激活动作 |
+| [BUG-2990](bugs/BUG-2990-audiobook-mini-follow-action.md) | ✅ | ✅ | MD3 迷你播放条缺失跟随音频入口 |
+| [BUG-2989](bugs/BUG-2989-reader-panel-session-lifetime.md) | ✅ | ✅ | 阅读器设置面板换侧及宽窄切换销毁会话 |
+| [BUG-2988](bugs/BUG-2988-custom-theme-preview-consistency.md) | ✅ | ✅ | 自定义主题色卡及编辑预览与实际应用配色不一致 |
+| [BUG-2987](bugs/BUG-2987-custom-theme-system-accent-notify.md) | ✅ | ✅ | 自定义主题跟随系统强调色后不通知界面 |
+| [BUG-2986](bugs/BUG-2986-md3-search-autofocus.md) | ✅ | ✅ | MD3 默认尺寸搜索框忽略自动聚焦 |
+| [BUG-2985](bugs/BUG-2985-apple-search-leading-action.md) | ✅ | ✅ | Apple 搜索框丢弃显式前缀操作按钮 |
+| [BUG-2984](bugs/BUG-2984-apple-menu-route-order.md) | ✅ | ✅ | Apple 菜单回调打开的新路由被随后关闭 |
 | [BUG-2983](bugs/BUG-2983-ext-popup-empty-glass-first.md) | ✅ | ✅ | 浏览器扩展查词先露空毛玻璃底板、内容晚到 |
+| [BUG-2982](bugs/BUG-2982-style-redesign-contracts.md) | ✅ | ✅ | 漫画章节列表以下载状态作身份导致重复 sibling key |
+| [BUG-2981](bugs/BUG-2981-settings-search-local-width.md) | ✅ | ✅ | 设置搜索回车使用全窗宽度导致窄内容区无法打开结果 |
+| [BUG-2980](bugs/BUG-2980-scroll-away-first-drag.md) | ✅ | ✅ | 悬浮页头从顶部连续拖动越过阈值仍不收起 |
 | [BUG-2979](bugs/BUG-2979-video-moved-file-duplicate-row.md) | ✅ | 🚧 | 视频文件搬家后重扫来源再建一行致分集重复 |
 | [BUG-2978](bugs/BUG-2978-collection-episode-local-remote-duplicate.md) | ✅ | ✅ | 视频作品详情页同一集本地与远端成员各出一张卡 |
 | [BUG-2977](bugs/BUG-2977-floating-title-capsule-clipped.md) | ✅ | ✅ | M3E 浮动页头标题胶囊下半截被裁、返回圆底部被切 |

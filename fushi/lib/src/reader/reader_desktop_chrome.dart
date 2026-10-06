@@ -900,6 +900,8 @@ class _ReaderSidePanel extends StatelessWidget {
         ? const BorderRadius.only(topRight: corner, bottomRight: corner)
         : const BorderRadius.only(topLeft: corner, bottomLeft: corner);
     Widget panel = SizedBox(
+      // 换停靠边时会与 rail 对调；保留整个设置会话（含 notifier 的所有者）。
+      key: const ValueKey<String>('reader_side_panel_content'),
       width: width,
       height: double.infinity,
       child: Material(
@@ -927,6 +929,7 @@ class _ReaderSidePanel extends StatelessWidget {
     final ReaderPanelSwitcher? sw = switcher;
     if (sw != null && sw.items.length > 1) {
       final Widget rail = SafeArea(
+        key: const ValueKey<String>('reader_side_panel_rail'),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 76, 12, 12),
           child: Align(

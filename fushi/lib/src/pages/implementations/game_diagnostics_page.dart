@@ -10,6 +10,8 @@ import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/settings/settings_kit.dart'
     show SettingsEmptyState, SettingsSectionJumpBar;
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeOverlay, FushiFloatingChromeScrollInset;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
@@ -152,14 +154,18 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
           return Column(
             children: <Widget>[
               FushiPageHeader.customTitle(
-                title: GameSectionTabs(
-                  selected: GameSection.settings,
-                  focusIdPrefix: 'game-diagnostics-tab',
-                  onSelectLibrary: widget.onShowLibrary,
-                  onSelectMonitor: widget.onShowCapture,
-                  onSelectSettings: () =>
-                      gameSectionNotifier.value = GameSection.settings,
-                ),
+                // 在游戏外壳里页签由浮动工具栏画：主位给零尺寸占位，页头整行
+                // 零高度（动作登记进外壳动作组），不留一条钉死的空白带。
+                title: GameSectionTabsHostScope.hostedOf(context)
+                    ? const SizedBox.shrink()
+                    : GameSectionTabs(
+                        selected: GameSection.settings,
+                        focusIdPrefix: 'game-diagnostics-tab',
+                        onSelectLibrary: widget.onShowLibrary,
+                        onSelectMonitor: widget.onShowCapture,
+                        onSelectSettings: () =>
+                            gameSectionNotifier.value = GameSection.settings,
+                      ),
                 actions: <Widget>[
                   FushiIconButton(
                     key: const ValueKey<String>(
@@ -179,37 +185,68 @@ class _GameDiagnosticsPageState extends State<GameDiagnosticsPage> {
                   ),
                 ],
               ),
-              // settings kit 的分组跳转条：分段卡片经 [SettingsSectionAnchor]
-              // 自动登记，滚动时当前分组的胶囊弹簧变宽填色。
-              ListenableBuilder(
-                listenable: _spy,
-                builder: (BuildContext context, Widget? _) {
-                  if (_spy.sections.length < 3) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: SettingsSectionJumpBar(
-                      sections: _spy.sections,
-                      activeId: _spy.activeId,
-                      onSelected: (String id) => _spy.jumpTo(
-                        id,
-                        duration: context.fushiMotion.spatialDefault.duration,
-                      ),
-                    ),
-                  );
-                },
-              ),
               Expanded(
-                child: SettingsSectionSpyScope(
-                  spy: _spy,
-                  // 本页由 HomeGamePage 的 IndexedStack 急切构建：切到诊断子区时
-                  // 重开进场窗口，错峰进场才落在用户眼前。
-                  child: FushiEntranceScope(
-                    replayKey:
-                        gameSectionNotifier.value == GameSection.diagnostics,
-                    child: SingleChildScrollView(
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      child: _buildBody(context, state, events),
+                // 分组跳转条叠进库页外壳的浮动工具区（嵌套
+                // [FushiFloatingChromeOverlay]，与书架搜索行同构）：往下滚跟外壳
+                // 页签一起收起，正文滚到它底下；正文滚动视图经
+                // [FushiFloatingChromeScrollInset] 拿到 MediaQuery 顶部 padding
+                // 自己让位，工具区收起后顶部不留空白。不在外壳里时退化成「跳转条
+                // + 正文」竖排。
+                child: FushiFloatingChromeOverlay(
+                  // settings kit 的分组跳转条：分段卡片经 [SettingsSectionAnchor]
+                  // 自动登记，滚动时当前分组的胶囊弹簧变宽填色。
+                  chrome: ListenableBuilder(
+                    listenable: _spy,
+                    builder: (BuildContext context, Widget? _) {
+                      if (_spy.sections.length < 3) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: SettingsSectionJumpBar(
+                          sections: _spy.sections,
+                          activeId: _spy.activeId,
+                          onSelected: (String id) => _spy.jumpTo(
+                            id,
+                            duration:
+                                context.fushiMotion.spatialDefault.duration,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  child: FushiFloatingChromeScrollInset(
+                    child: SettingsSectionSpyScope(
+                      spy: _spy,
+                      // 本页由 HomeGamePage 的 IndexedStack 急切构建：切到诊断
+                      // 子区时重开进场窗口，错峰进场才落在用户眼前。
+                      child: FushiEntranceScope(
+                        replayKey: gameSectionNotifier.value ==
+                            GameSection.diagnostics,
+                        // 必须在 Builder 里读让位：外层 builder 的 context 在
+                        // [FushiFloatingChromeScrollInset] 之上。吃掉后从子树
+                        // 摘掉，卡片里的列表不再让一遍。
+                        child: Builder(
+                          builder: (BuildContext context) {
+                            final double chromeTop =
+                                MediaQuery.paddingOf(context).top;
+                            return MediaQuery.removePadding(
+                              context: context,
+                              removeTop: true,
+                              child: SingleChildScrollView(
+                                controller: _scroll,
+                                padding: EdgeInsets.fromLTRB(
+                                  16,
+                                  8 + chromeTop,
+                                  16,
+                                  24,
+                                ),
+                                child: _buildBody(context, state, events),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
                 ),

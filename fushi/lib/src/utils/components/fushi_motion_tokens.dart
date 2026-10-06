@@ -476,3 +476,18 @@ bool fushiMotionEnabled(BuildContext context) {
 Duration fushiMotionDuration(BuildContext context, Duration duration) {
   return fushiMotionEnabled(context) ? duration : Duration.zero;
 }
+
+/// 把可能**过冲**的动画（弹簧曲线 [FushiSpringCurve.spatial] /
+/// [FushiMotion.release] 等阻尼比 < 1 的 spatial 曲线，值会短暂越过 1）夹到
+/// [0, 1] 再喂给透明度 / 颜色：`Opacity` 与下游曲线只认 0..1，越界会触发
+/// `curves.dart` 的 `t >= 0.0 && t <= 1.0` 断言（2026-10-06 日志）。位移 /
+/// 缩放照用原动画，保留回弹。
+Animation<double> fushiUnitClamped(Animation<double> animation) =>
+    animation.drive(const _FushiUnitClamp());
+
+class _FushiUnitClamp extends Animatable<double> {
+  const _FushiUnitClamp();
+
+  @override
+  double transform(double t) => t.clamp(0.0, 1.0).toDouble();
+}

@@ -1841,7 +1841,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  test('HomeToolbarScrollState：只认主列表纵向滚动，带回差切换显隐', () {
+  testWidgets('HomeToolbarScrollState：只认主列表纵向滚动，带回差切换显隐', (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+    final BuildContext scrollContext = tester.element(find.byType(Scaffold));
     final HomeToolbarScrollState state = HomeToolbarScrollState();
     addTearDown(state.dispose);
     ScrollUpdateNotification update({
@@ -1860,7 +1862,7 @@ void main() {
                 : AxisDirection.right,
             devicePixelRatio: 1,
           ),
-          context: null,
+          context: scrollContext,
           scrollDelta: delta,
         );
 

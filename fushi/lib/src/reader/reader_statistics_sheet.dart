@@ -53,8 +53,6 @@ import 'package:fushi_engine/stats/stat_facts.dart'
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
-    show FushiMorphBorder;
 import 'package:fushi/utils.dart';
 
 /// 本书某个统计日的阅读量（迷你柱状图的一根柱子）。

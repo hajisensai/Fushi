@@ -1,6 +1,8 @@
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeVisibleExtent, fushiRevealBelowFloatingChrome;
 
 /// 设置页内的分组锚点登记 + 滚动高亮（scroll spy）。
 ///
@@ -111,7 +113,11 @@ class SettingsSectionSpy extends ChangeNotifier {
       if (anchor == null) continue;
       final double? top = _topOf(anchor);
       if (top == null) continue;
-      if (top <= activationOffset) {
+      // 浮动工具区盖着视口顶的那一段：「到顶」判据跟着工具区可见下沿下移。
+      final double chrome = anchor.mounted
+          ? FushiFloatingChromeVisibleExtent.valueOf(anchor.context)
+          : 0;
+      if (top <= activationOffset + chrome) {
         active = id;
       } else {
         break;
@@ -132,16 +138,19 @@ class SettingsSectionSpy extends ChangeNotifier {
     }
   }
 
-  /// 把分组 [id] 滚到视口顶（经 [FushiFocusScroll]；eink / 减弱动态效果下
+  /// 把分组 [id] 滚到视口顶 / 浮动工具区可见下沿之下（经 [FushiFocusScroll]；eink / 减弱动态效果下
   /// 由调用方传零时长）。
   void jumpTo(String id, {required Duration duration}) {
     final _SettingsSectionAnchorState? anchor = _anchors[id];
     if (anchor == null || !anchor.mounted) return;
-    FushiFocusScroll.ensureVisible(
-      anchor.context,
-      alignment: 0,
-      duration: duration,
-    );
+    // 在浮动工具区下：落到工具区可见下沿之下，而不是被胶囊挡住的视口顶。
+    if (!fushiRevealBelowFloatingChrome(anchor.context, duration: duration)) {
+      FushiFocusScroll.ensureVisible(
+        anchor.context,
+        alignment: 0,
+        duration: duration,
+      );
+    }
     _activeId = id;
     notifyListeners();
   }

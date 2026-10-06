@@ -900,7 +900,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 搜索框的放大镜换成 SF 风格的 CupertinoIcons.search（iOS 搜索栏的
     // magnifyingglass），其余前缀图标原样。
     final Widget? prefixIcon = iconSlot(
-      search ? const FushiIcon(CupertinoIcons.search) : decoration.prefixIcon,
+      search && decoration.prefixIcon is! FushiSearchLeading
+          ? const FushiIcon(CupertinoIcons.search)
+          : decoration.prefixIcon,
     );
     // 搜索胶囊定高 36：调用方常把标准图标按钮（40–48 高）塞进 suffixIcon 当
     // 清除钮，它会把输入行撑高、在定高父级里溢出，文字随之偏离竖直中线（用户

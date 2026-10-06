@@ -119,6 +119,7 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
     this.onOpenStatistics,
     this.autofocusSearch = false,
     this.initialSideSheetTab = '',
+    this.requestedSideSheetTab,
     this.onSideSheetTabChanged,
     this.expandedTocParents,
     this.volumeSwitch,
@@ -213,6 +214,9 @@ class ReaderQuickSettingsSheet extends StatefulWidget {
   /// 设置侧板初始分页（页面记忆上次打开的 tab id；空串 / 未知 id 按
   /// [readerSettingsInitialTab] 落默认页）。
   final String initialSideSheetTab;
+
+  /// 定向入口请求的分页（如 Aa → 更多歌词设置），优先于上次记忆；普通入口为 null。
+  final String? requestedSideSheetTab;
   final ValueChanged<String>? onSideSheetTabChanged;
 
   /// 目录折叠状态的会话记忆（页面持有的可变集合；null 则本面板自持）。
@@ -766,6 +770,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
       tabs,
       remembered: _sideSheetTab,
       lyricsMode: widget.lyricsMode,
+      requested: widget.requestedSideSheetTab,
     );
     final TabController controller = TabController(
       length: tabs.length,

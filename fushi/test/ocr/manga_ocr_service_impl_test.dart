@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
-import 'package:fushi_engine/ocr/manga_ocr_model_downloader.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
@@ -16,8 +14,9 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';
 
-/// 与真实清单同名同形（detector + encoder/decoder/vocab + PP-OCRv6 det/rec/yml），尺寸缩成几字节，
-/// 让 modelStatus/_resolveModelPaths 的路径逻辑全程走真实分支。
+/// 与默认模型（逐列 CTC）清单同名同形（detector + 漫画 CTC rec + PP-OCRv6
+/// det/rec/yml），尺寸缩成几字节，让 modelStatus/_resolveModelPaths 的路径逻辑
+/// 全程走真实分支。
 const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
   MangaOcrModelFile(
     fileName: 'detector-v4-s_int8.onnx',
@@ -26,21 +25,9 @@ const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
     role: MangaOcrModelRole.detector,
   ),
   MangaOcrModelFile(
-    fileName: 'encoder_model.onnx',
-    url: 'http://unused.invalid/encoder_model.onnx',
+    fileName: kMangaCtcRecFileName,
+    url: 'http://unused.invalid/$kMangaCtcRecFileName',
     expectedBytes: 5,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'decoder_model.onnx',
-    url: 'http://unused.invalid/decoder_model.onnx',
-    expectedBytes: 6,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: 'vocab.txt',
-    url: 'http://unused.invalid/vocab.txt',
-    expectedBytes: 7,
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
@@ -216,73 +203,6 @@ class _RecordingSessionFactory implements OcrSessionFactory {
   Future<int?> deviceMemoryBudgetBytes() async => null;
 }
 
-/// 与 [kMangaOcrKvAcceleratorManifest] 同名的两件提速组件，尺寸缩成几字节。
-const List<MangaOcrModelFile> _tinyAccelerator = <MangaOcrModelFile>[
-  MangaOcrModelFile(
-    fileName: kMangaOcrKvCrossFileName,
-    url: 'http://unused.invalid/$kMangaOcrKvCrossFileName',
-    expectedBytes: 11,
-    role: MangaOcrModelRole.recognizer,
-  ),
-  MangaOcrModelFile(
-    fileName: kMangaOcrKvDecoderFileName,
-    url: 'http://unused.invalid/$kMangaOcrKvDecoderFileName',
-    expectedBytes: 12,
-    role: MangaOcrModelRole.recognizer,
-  ),
-];
-
-/// 不连网的下载器：把清单里的文件直接写进目标目录，记录每次调用下了哪些文件。
-/// [unreachable] 里的文件模拟源站不通。
-class _ScriptedDownloader extends MangaOcrModelDownloader {
-  _ScriptedDownloader({this.unreachable = const <String>{}});
-
-  final Set<String> unreachable;
-  final List<List<String>> calls = <List<String>>[];
-
-  @override
-  Stream<MangaOcrDownloadEvent> downloadAll({
-    required List<MangaOcrModelFile> files,
-    required Directory targetDir,
-  }) async* {
-    calls.add(<String>[
-      for (final MangaOcrModelFile file in files) file.fileName,
-    ]);
-    targetDir.createSync(recursive: true);
-    for (final MangaOcrModelFile file in files) {
-      if (unreachable.contains(file.fileName)) {
-        throw HttpException('unreachable: ${file.fileName}');
-      }
-      File(
-        p.join(targetDir.path, file.fileName),
-      ).writeAsBytesSync(List<int>.filled(file.expectedBytes, 1));
-      yield MangaOcrDownloadEvent(
-        fileName: file.fileName,
-        receivedBytes: file.expectedBytes,
-        totalBytes: file.expectedBytes,
-      );
-    }
-  }
-}
-
-/// [_tinyAccelerator] 钉上 sha256：[digestOf] 给出每个文件应有的摘要。
-List<MangaOcrModelFile> _pinnedAccelerator(
-  String Function(MangaOcrModelFile file) digestOf,
-) => <MangaOcrModelFile>[
-  for (final MangaOcrModelFile model in _tinyAccelerator)
-    MangaOcrModelFile(
-      fileName: model.fileName,
-      url: model.url,
-      expectedBytes: model.expectedBytes,
-      role: model.role,
-      sha256: digestOf(model),
-    ),
-];
-
-/// [_ScriptedDownloader] 写出的内容（全 1）的真实摘要。
-String _scriptedDigest(MangaOcrModelFile file) =>
-    sha256.convert(List<int>.filled(file.expectedBytes, 1)).toString();
-
 void main() {
   late Directory modelsDir;
 
@@ -371,7 +291,7 @@ void main() {
           paths.baberu!.stepPath,
           p.join(fastDir.path, 'decoder_step_int8.onnx'),
         );
-        expect(paths.encoderPath, isEmpty);
+        expect(paths.ctcRecPath, isEmpty);
         final Future<List<MangaOcrVolumeEvent>> output = fast
             .ocrFolder(imageDirPath: 'D:/vol')
             .toList();
@@ -381,13 +301,13 @@ void main() {
         await output;
         await pageSession.close();
         writeAllModels();
-        final String classicCache = await service(
+        final String defaultCache = await service(
           _FakeRunner(),
         ).resolvePageCacheDirPath(imageDirPath: 'D:/vol');
-        expect(cachePath, isNot(classicCache));
+        expect(cachePath, isNot(defaultCache));
         await fast.deleteModels();
         expect(
-          File(p.join(modelsDir.path, 'encoder_model.onnx')).existsSync(),
+          File(p.join(modelsDir.path, kMangaCtcRecFileName)).existsSync(),
           isTrue,
         );
       },
@@ -400,7 +320,7 @@ void main() {
       expect(status.recognizerReady, isFalse);
       expect(status.allReady, isFalse);
       expect(status.diskBytes, 0);
-      expect(status.totalBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10);
+      expect(status.totalBytes, 4 + 5 + 8 + 9 + 10);
     });
 
     test('只有检测器就绪：detectorReady 单独为真', () async {
@@ -422,7 +342,7 @@ void main() {
         p.join(modelsDir.path, 'detector-v4-s_int8.onnx'),
       ).writeAsBytesSync(<int>[1, 2, 3, 4]);
       File(
-        p.join(modelsDir.path, 'encoder_model.onnx.part'),
+        p.join(modelsDir.path, '$kMangaCtcRecFileName.part'),
       ).writeAsBytesSync(<int>[1, 2, 3]);
 
       final MangaOcrModelStatus status = await service(
@@ -483,7 +403,7 @@ void main() {
     test('清单外的残留档一样计入占用，并计入删除释放量', () async {
       writeAllModels();
       File(
-        p.join(modelsDir.path, 'encoder_model.onnx.part'),
+        p.join(modelsDir.path, '$kMangaCtcRecFileName.part'),
       ).writeAsBytesSync(List<int>.filled(1000, 1));
       File(
         p.join(modelsDir.path, 'legacy-detector-fp32.onnx'),
@@ -492,20 +412,17 @@ void main() {
 
       final MangaOcrModelStatus status = await impl.modelStatus();
       expect(status.allReady, isTrue);
-      expect(status.totalBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10);
-      expect(status.diskBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10 + 1000 + 500);
+      expect(status.totalBytes, 4 + 5 + 8 + 9 + 10);
+      expect(status.diskBytes, 4 + 5 + 8 + 9 + 10 + 1000 + 500);
       expect(status.hasAnyFiles, isTrue);
 
-      expect(
-        await impl.deleteModels(),
-        4 + 5 + 6 + 7 + 8 + 9 + 10 + 1000 + 500,
-      );
+      expect(await impl.deleteModels(), 4 + 5 + 8 + 9 + 10 + 1000 + 500);
       expect(modelsDir.existsSync(), isFalse);
     });
 
     test('模型不全但残留占着磁盘：hasAnyFiles 为真，可被删除释放', () async {
       File(
-        p.join(modelsDir.path, 'encoder_model.onnx.part'),
+        p.join(modelsDir.path, '$kMangaCtcRecFileName.part'),
       ).writeAsBytesSync(List<int>.filled(2048, 1));
       final MangaOcrServiceImpl impl = service(_FakeRunner());
 
@@ -522,189 +439,8 @@ void main() {
     });
   });
 
-  group('提速组件（KV cache decoder）', () {
-    MangaOcrServiceImpl accelerated({
-      MangaOcrModelDownloader? downloader,
-      List<MangaOcrModelFile> accelerator = _tinyAccelerator,
-      MangaOcrPageSessionRunner? pageSessionRunner,
-    }) => MangaOcrServiceImpl(
-      modelsDirProvider: () async => modelsDir,
-      downloader: downloader,
-      manifest: _tinyManifest,
-      accelerator: accelerator,
-      jobRunner: _FakeRunner(),
-      pageSessionRunner: pageSessionRunner,
-      platformSupport: () => true,
-    );
-
-    void writeAccelerator() {
-      for (final MangaOcrModelFile model in _tinyAccelerator) {
-        File(
-          p.join(modelsDir.path, model.fileName),
-        ).writeAsBytesSync(List<int>.filled(model.expectedBytes, 1));
-      }
-    }
-
-    test('只有经典 manga-ocr 带组件', () {
-      expect(
-        MangaOcrLocalModel.mangaOcr.accelerator,
-        kMangaOcrKvAcceleratorManifest,
-      );
-      expect(MangaOcrLocalModel.baberu.accelerator, isEmpty);
-    });
-
-    test('调用方换了清单：默认不带组件（组件只对得上默认那份权重）', () async {
-      writeAllModels();
-      final MangaOcrModelStatus status = await service(
-        _FakeRunner(),
-      ).modelStatus();
-      expect(status.acceleratorMissingBytes, 0);
-      expect(status.acceleratorMissing, isFalse);
-    });
-
-    test('缺组件：模型照样就绪，只报缺多少；总量把组件算进去', () async {
-      writeAllModels();
-      final MangaOcrModelStatus status = await accelerated().modelStatus();
-      expect(status.allReady, isTrue);
-      expect(status.hasResumableDownload, isFalse);
-      expect(status.acceleratorMissing, isTrue);
-      expect(status.acceleratorMissingBytes, 11 + 12);
-      expect(status.totalBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12);
-      expect(status.obtainedBytes, 4 + 5 + 6 + 7 + 8 + 9 + 10);
-    });
-
-    test('只有组件、必需文件缺：仍不就绪（组件替代不了必需文件）', () async {
-      writeAccelerator();
-      final MangaOcrModelStatus status = await accelerated().modelStatus();
-      expect(status.allReady, isFalse);
-      expect(status.acceleratorMissingBytes, 0);
-      expect(status.acceleratorMissing, isFalse);
-    });
-
-    test('组件齐全才走 KV；缺一个就照旧用经典 decoder', () async {
-      writeAllModels();
-      final _FakePageSessionRunner pages = _FakePageSessionRunner();
-      final MangaOcrServiceImpl impl = accelerated(pageSessionRunner: pages);
-
-      await impl.openPageSession(imageDirPath: 'D:/vol1');
-      expect(pages.sessions.last.request.modelPaths.kv, isNull);
-
-      File(
-        p.join(modelsDir.path, kMangaOcrKvCrossFileName),
-      ).writeAsBytesSync(<int>[1]);
-      await impl.openPageSession(imageDirPath: 'D:/vol1');
-      expect(
-        pages.sessions.last.request.modelPaths.kv,
-        isNull,
-        reason: 'decoder_kv 还没下好',
-      );
-
-      writeAccelerator();
-      await impl.openPageSession(imageDirPath: 'D:/vol1');
-      final MangaOcrModelPaths paths = pages.sessions.last.request.modelPaths;
-      expect(
-        paths.kv?.crossPath,
-        p.join(modelsDir.path, kMangaOcrKvCrossFileName),
-      );
-      expect(
-        paths.kv?.decoderPath,
-        p.join(modelsDir.path, kMangaOcrKvDecoderFileName),
-      );
-      expect(paths.encoderPath, p.join(modelsDir.path, 'encoder_model.onnx'));
-    });
-
-    test('组件不进模型指纹：装上组件后缓存目录不变，已识别的卷不重认', () async {
-      writeAllModels();
-      final MangaOcrServiceImpl impl = accelerated();
-      final String before = await impl.resolvePageCacheDirPath(
-        imageDirPath: 'D:/vol1',
-      );
-      writeAccelerator();
-      expect(
-        await impl.resolvePageCacheDirPath(imageDirPath: 'D:/vol1'),
-        before,
-      );
-      expect(
-        await service(
-          _FakeRunner(),
-        ).resolvePageCacheDirPath(imageDirPath: 'D:/vol1'),
-        before,
-      );
-    });
-
-    test('下载：先下必需文件、再下组件并校验 sha256', () async {
-      final _ScriptedDownloader downloader = _ScriptedDownloader();
-      final List<MangaOcrModelFile> pinned = _pinnedAccelerator(
-        _scriptedDigest,
-      );
-      final List<MangaOcrDownloadEvent> events = await accelerated(
-        downloader: downloader,
-        accelerator: pinned,
-      ).downloadModels().toList();
-
-      expect(downloader.calls, <List<String>>[
-        <String>[
-          for (final MangaOcrModelFile model in _tinyManifest) model.fileName,
-        ],
-        <String>[kMangaOcrKvCrossFileName, kMangaOcrKvDecoderFileName],
-      ]);
-      expect(
-        events.map((MangaOcrDownloadEvent event) => event.fileName),
-        contains(kMangaOcrKvDecoderFileName),
-      );
-      final MangaOcrModelStatus status = await accelerated(
-        accelerator: pinned,
-      ).modelStatus();
-      expect(status.allReady, isTrue);
-      expect(status.acceleratorMissing, isFalse);
-    });
-
-    test('组件下不下来：必需文件已就位、模型可用，错误照常报给界面', () async {
-      await expectLater(
-        accelerated(
-          downloader: _ScriptedDownloader(
-            unreachable: <String>{kMangaOcrKvDecoderFileName},
-          ),
-        ).downloadModels().toList(),
-        throwsA(isA<HttpException>()),
-      );
-      final MangaOcrModelStatus status = await accelerated().modelStatus();
-      expect(status.allReady, isTrue);
-      expect(status.acceleratorMissing, isTrue);
-      expect(status.acceleratorMissingBytes, 12);
-    });
-
-    test('组件 sha256 不符：删掉并报错，不留给下次装配', () async {
-      final List<MangaOcrModelFile> pinned = _pinnedAccelerator(
-        (MangaOcrModelFile file) => file.fileName == kMangaOcrKvDecoderFileName
-            ? List<String>.filled(64, '0').join()
-            : _scriptedDigest(file),
-      );
-      await expectLater(
-        accelerated(
-          downloader: _ScriptedDownloader(),
-          accelerator: pinned,
-        ).downloadModels().toList(),
-        throwsA(isA<StateError>()),
-      );
-      expect(
-        File(p.join(modelsDir.path, kMangaOcrKvDecoderFileName)).existsSync(),
-        isFalse,
-      );
-      expect(
-        File(p.join(modelsDir.path, kMangaOcrKvCrossFileName)).existsSync(),
-        isTrue,
-      );
-      final MangaOcrModelStatus status = await accelerated(
-        accelerator: pinned,
-      ).modelStatus();
-      expect(status.allReady, isTrue);
-      expect(status.acceleratorMissingBytes, 12);
-    });
-  });
-
   group('逐列 CTC 模型（manga_ctc）', () {
-    test('漫画 rec 同时读竖列与横行，不要 manga-ocr 的三件套；缓存自成一套', () async {
+    test('漫画 rec 同时读竖列与横行；缓存自成一套', () async {
       final List<MangaOcrModelFile> tinyCtc = <MangaOcrModelFile>[
         for (final MangaOcrModelFile model
             in MangaOcrLocalModel.mangaCtc.manifest)
@@ -729,7 +465,6 @@ void main() {
       );
       final MangaOcrModelStatus status = await ctc.modelStatus();
       expect(status.allReady, isTrue);
-      expect(status.acceleratorMissing, isFalse);
 
       await ctc.openPageSession(imageDirPath: 'D:/vol');
       final MangaOcrModelPaths paths = pages.sessions.single.request.modelPaths;
@@ -740,9 +475,6 @@ void main() {
         paths.ppRecDictPath,
         p.join(modelsDir.path, kPpOcrRecDictFileName),
       );
-      expect(paths.encoderPath, isEmpty);
-      expect(paths.decoderPath, isEmpty);
-      expect(paths.kv, isNull);
       expect(paths.baberu, isNull);
 
       final String cache = await ctc.resolvePageCacheDirPath(
@@ -755,7 +487,7 @@ void main() {
       expect(
         relayoutableMangaOcrEngineSignatures(p.basename(cache)),
         isEmpty,
-        reason: 'CTC 不能把 manga-ocr 的 v4 旧缓存当成自己的结果补几何',
+        reason: 'CTC 不能把已删除的 manga-ocr 留下的 v4 旧缓存当成自己的结果补几何',
       );
     });
 
@@ -836,7 +568,7 @@ void main() {
       );
       expect(
         pages.sessions.single.request.engineSignature,
-        startsWith('$kLocalMangaOcrEngineSignature-'),
+        startsWith('${kDefaultMangaOcrLocalModel.cacheSignature}-'),
         reason: '模型齐全时签名要带已安装模型指纹（BUG-1173）',
       );
     });
@@ -923,12 +655,10 @@ void main() {
         imageDirPath: 'D:/vol1',
         modelPaths: MangaOcrModelPaths(
           detectorPath: 'd.onnx',
-          encoderPath: 'e.onnx',
-          decoderPath: 'dec.onnx',
-          vocabPath: 'v.txt',
           ppDetPath: 'pd.onnx',
-          ppRecPath: 'pr.onnx',
+          ppRecPath: 'cr.onnx',
           ppRecDictPath: 'pr.yml',
+          ctcRecPath: 'cr.onnx',
         ),
         engineSignature: kLocalMangaOcrEngineSignature,
       );
@@ -1087,14 +817,13 @@ void main() {
       expect(runner.requests.single.volumeTitle, '第1卷');
       // 阅读器的当前页起点必须一路传进整卷任务（isolate 按它旋转处理）。
       expect(runner.requests.single.startPage, 1);
-      // 模型路径接线：detector/encoder/decoder/vocab 各归其位。
+      // 模型路径接线（默认逐列 CTC）：detector / CTC rec / PP det / 字典各归其位，
+      // 横行与竖列共用漫画 CTC rec。
       final MangaOcrModelPaths paths = runner.requests.single.modelPaths;
       expect(p.basename(paths.detectorPath), 'detector-v4-s_int8.onnx');
-      expect(p.basename(paths.encoderPath), 'encoder_model.onnx');
-      expect(p.basename(paths.decoderPath), 'decoder_model.onnx');
-      expect(p.basename(paths.vocabPath), 'vocab.txt');
+      expect(p.basename(paths.ctcRecPath), kMangaCtcRecFileName);
+      expect(p.basename(paths.ppRecPath), kMangaCtcRecFileName);
       expect(p.basename(paths.ppDetPath), kPpOcrDetFileName);
-      expect(p.basename(paths.ppRecPath), kPpOcrRecFileName);
       expect(p.basename(paths.ppRecDictPath), kPpOcrRecDictFileName);
 
       runner.lastOnProgress!(1, 2, 1);
@@ -1654,8 +1383,7 @@ void main() {
       final String helper = topLevelBody(helperSignature);
       for (final String modelPath in <String>[
         'detectorPath',
-        'encoderPath',
-        'decoderPath',
+        'ctcRecPath',
         'ppDetPath',
         'ppRecPath',
       ]) {

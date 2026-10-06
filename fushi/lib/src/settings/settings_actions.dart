@@ -368,21 +368,15 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           (MapEntry<int, CustomThemeEntry> indexed) {
             final CustomThemeEntry e = indexed.value;
             final String key = 'custom-theme:${e.id}';
-            final Color seed = Color(e.primaryColor ?? e.seed);
+            final Color seed = e.followSystemAccent
+                ? (appModel.systemPrimaryColor ?? Color(e.primaryColor ?? e.seed))
+                : Color(e.primaryColor ?? e.seed);
             return FushiThemePresetCard(
               key: ValueKey<String>('theme-preset-$key'),
               seed: seed,
-              scheme: buildFushiColorScheme(
-                seedColor: Color(e.seed),
-                brightness: brightness,
-                pureBlack: pureBlack,
-                primary: e.primaryColor != null ? Color(e.primaryColor!) : null,
-                secondary:
-                    e.secondaryColor != null ? Color(e.secondaryColor!) : null,
-                tertiary:
-                    e.tertiaryColor != null ? Color(e.tertiaryColor!) : null,
-                primaryContainer:
-                    e.containerColor != null ? Color(e.containerColor!) : null,
+              scheme: appModel.themeNotifier.buildCustomThemeColorScheme(
+                e,
+                brightness,
               ),
               label: e.name.trim().isNotEmpty
                   ? e.name.trim()

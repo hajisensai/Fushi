@@ -852,7 +852,11 @@ class ThemeNotifier extends ChangeNotifier {
     _systemPalette = palette;
     _systemAccentColor = accent;
     if (unchanged) return;
-    if (appThemeKey == 'system-theme') notifyListeners();
+    // 自定义主题也可以显式跟随系统强调色，与系统主题消费同一份取色结果。
+    if (appThemeKey == 'system-theme' ||
+        (activeCustomThemeEntry?.followSystemAccent ?? false)) {
+      notifyListeners();
+    }
   }
 
   void loadFromPrefsSnapshot(Map<String, String> snapshot) {
@@ -1497,6 +1501,8 @@ class ThemeNotifier extends ChangeNotifier {
           ? applyFushiPureBlackSurfaceLadder(system)
           : applyFushiSurfaceLadder(system);
     }
+    final CustomThemeEntry? custom = activeCustomThemeEntry;
+    if (custom != null) return buildCustomThemeColorScheme(custom, brightness);
     return buildFushiColorScheme(
       seedColor: _seedColor,
       brightness: brightness,
@@ -1516,6 +1522,30 @@ class ThemeNotifier extends ChangeNotifier {
       ),
       surface: activeCustomThemeSurfaceColor,
       neutralDerived: activeCustomThemeNeutralDerived,
+      pureBlack: pureBlackDark,
+    );
+  }
+
+  /// 自定义条目在当前系统取色 / 纯黑 / 墨水屏设置下的配色。
+  /// 活跃主题、设置色卡与编辑草稿共用此入口，不要求条目已经保存或选中。
+  ColorScheme buildCustomThemeColorScheme(
+    CustomThemeEntry entry,
+    Brightness brightness,
+  ) {
+    if (einkMode) return buildEinkColorScheme(brightness);
+    Color? role(int? value) => value == null ? null : Color(value);
+    final Color? systemAccent = _followedSystemAccent(entry);
+    return buildFushiColorScheme(
+      seedColor: systemAccent ?? Color(entry.seed),
+      brightness: brightness,
+      primary: entry.primaryColor == null
+          ? null
+          : (systemAccent ?? Color(entry.primaryColor!)),
+      secondary: role(entry.secondaryColor),
+      tertiary: role(entry.tertiaryColor),
+      primaryContainer: role(entry.containerColor),
+      surface: role(entry.surfaceColor),
+      neutralDerived: entry.neutralDerived,
       pureBlack: pureBlackDark,
     );
   }

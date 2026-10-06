@@ -374,12 +374,11 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
 class _FushiSearchSpringCurve extends Curve {
   _FushiSearchSpringCurve({
     SpringDescription? spring,
-    this.duration = _defaultDuration,
   }) : _simulation = SpringSimulation(spring ?? fushiSearchViewSpring, 0, 1, 0);
 
   static const Duration _defaultDuration = Duration(milliseconds: 500);
 
-  final Duration duration;
+  final Duration duration = _defaultDuration;
   final SpringSimulation _simulation;
 
   @override

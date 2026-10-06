@@ -2280,7 +2280,10 @@ extension _ReaderChrome on _ReaderFushiPageState {
     return _book!.chapterIndexForHref(href);
   }
 
-  Future<void> _showAppearanceSheet({String? initialSubPage}) async {
+  Future<void> _showAppearanceSheet({
+    String? initialSubPage,
+    String? initialSettingsTab,
+  }) async {
     // 2026-10 整合：导航 / 有声书 / 阅读设置 / 统计四类侧板同一时刻只开一个，
     // 统一走 [_openReaderPanel]（面板开着时只原地换内容，见 [ReaderPanelSwitcher]）。
     final String kind = switch (initialSubPage) {
@@ -2288,7 +2291,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
       'audiobook' when _audiobookController != null => _kReaderPanelAudiobook,
       _ => _kReaderPanelSettings,
     };
-    await _openReaderPanel(kind);
+    await _openReaderPanel(kind, initialSettingsTab: initialSettingsTab);
   }
 
   /// 打开（或原地切换到）[kind] 面板。
@@ -2300,7 +2303,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 停表：导航 / 有声书 / 设置压着正文期间停表（BUG-2208），统计侧板不停表
   /// （它自己画实时秒表）——按当前种类实时增减 [_studyClockModalDepth] 的一层
   /// （[_syncPanelClockHold]），切换种类时跟着变。
-  Future<void> _openReaderPanel(String kind) async {
+  Future<void> _openReaderPanel(String kind, {String? initialSettingsTab}) async {
     if (_settings == null || _controller == null || _book == null) return;
     final ValueNotifier<String>? live = _panelKind;
     if (live != null) {
@@ -2355,6 +2358,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
                   current,
                   favorites: favorites,
                   favRepo: favRepo,
+                  initialSettingsTab: initialSettingsTab,
                 ),
               ),
             );
@@ -2425,6 +2429,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     String kind, {
     required List<FavoriteSentence> favorites,
     required FavoriteSentenceRepository favRepo,
+    String? initialSettingsTab,
   }) {
     switch (kind) {
       case _kReaderPanelStatistics:
@@ -2448,6 +2453,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
           favorites: favorites,
           favRepo: favRepo,
           presentation: ReaderQuickSettingsPresentation.sideSheetAppearance,
+          initialSettingsTab: initialSettingsTab,
         );
     }
   }
@@ -2523,6 +2529,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     required FavoriteSentenceRepository favRepo,
     required ReaderQuickSettingsPresentation presentation,
     String? initialSubPage,
+    String? initialSettingsTab,
   }) {
     final List<TtuTocEntry> toc = _buildTtuToc();
     final String? extractDir = _extractDir;
@@ -2661,6 +2668,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
         desktop: isDesktopPlatform,
       ),
       initialSideSheetTab: _chrome.lastSettingsTab,
+      requestedSideSheetTab: initialSettingsTab,
       onSideSheetTabChanged: (String id) => _chrome.lastSettingsTab = id,
       expandedTocParents: _chrome.expandedTocParents,
       volumeSwitch: _tocVolumeSwitch(),

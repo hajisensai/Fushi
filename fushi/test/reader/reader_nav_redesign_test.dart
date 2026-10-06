@@ -112,7 +112,7 @@ void main() {
       await tester.pumpWidget(
         _host(
           Column(
-            children: <Widget>[
+            children: const <Widget>[
               ReaderTocRow(title: '已读', state: ReaderTocRowState.read),
               ReaderTocRow(title: '未读'),
             ],

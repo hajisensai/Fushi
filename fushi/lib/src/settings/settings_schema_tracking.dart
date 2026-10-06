@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/media/tracking/media_tracking_settings_body.dart';
 import 'package:fushi/src/models/module_registry.dart';

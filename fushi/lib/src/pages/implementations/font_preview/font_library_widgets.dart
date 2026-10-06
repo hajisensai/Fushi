@@ -103,8 +103,9 @@ class FontLibraryEntryView {
     if (range != null) {
       return t.font_library_weights_variable(min: range.$1, max: range.$2);
     }
-    if (meta.faceCount > 1)
+    if (meta.faceCount > 1) {
       return t.font_library_faces_count(n: meta.faceCount);
+    }
     return t.font_library_weights_count(n: meta.weightCount);
   }
 

@@ -22,6 +22,7 @@ import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi/reader_panel_kit.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
 
@@ -237,8 +238,10 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       return ReaderPanelCard(
         tone: tone,
         child: ReaderPanelEmpty(
-          icon: Icons.headphones_outlined,
-          message: widget.title,
+          icon: FushiIcons.audiobook,
+          message: widget.title.isEmpty
+              ? t.reader_audiobook_empty_hint
+              : '${widget.title}\n${t.reader_audiobook_empty_hint}',
           actionLabel: widget.onAudioImport == null ? null : t.audio_import,
           onAction: widget.onAudioImport == null
               ? null
@@ -307,6 +310,20 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
+                    if ((widget.chapterLabel ?? '').trim().isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          widget.chapterLabel!.trim(),
+                          key: const ValueKey<String>(
+                              'fushi_audiobook_hero_chapter'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: fg.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 4),
                     AnimatedSwitcher(
                       duration: fushiMotionDuration(context, FushiMotion.short),
@@ -453,14 +470,32 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
                 color: fg,
               ),
               const Spacer(),
-              Text(
-                _formatDuration(dur),
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: fg.withValues(alpha: 0.7),
-                  fontFeatures: const <FontFeature>[
-                    FontFeature.tabularFigures(),
-                  ],
-                ),
+              // 右端：剩余（-m:ss，按原速）在上、总时长在下。
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    '-${_formatDuration(dur > pos ? dur - pos : Duration.zero)}',
+                    key: const ValueKey<String>('fushi_audiobook_remaining'),
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: fg,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    _formatDuration(dur),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: fg.withValues(alpha: 0.7),
+                      fontFeatures: const <FontFeature>[
+                        FontFeature.tabularFigures(),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -567,15 +602,14 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       primary: false,
       children: <Widget>[
         widget.settingsBuilder(context),
-        ReaderPanelSectionLabel(t.reader_audiobook_section_tools),
-        _buildFilesTab(theme, ctrl),
       ],
     );
   }
 
-  /// 资源分组：音频文件列表 + 对齐文件（当前文件名）+ 转录生成字幕 + 导入音频。
-  Widget _buildFilesTab(ThemeData theme, AudiobookPlayerController? ctrl) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  /// 「对齐与转录」卡：对齐文件（当前文件名 / 未选）+ 音频文件数，下面一排 tonal
+  /// 按钮是低频的资源操作（重新选对齐文件 / 设备转录 / 导入音频），多文件时再列出
+  /// 各文件名。只读控制器已有的数据，操作都是调用方原有的回调。
+  Widget _buildSourceCard(ThemeData theme, AudiobookPlayerController? ctrl) {
     final List<File> files = ctrl?.audioFiles ?? const <File>[];
     final String? alignmentPath = ctrl?.audiobook?.alignmentPath;
     final String? alignmentName = alignmentPath == null || alignmentPath.isEmpty
@@ -586,53 +620,173 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       action();
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        AdaptiveSettingsSection(
-          children: <Widget>[
-            if (widget.onPickAlignment != null)
-              AdaptiveSettingsRow(
-                key: const ValueKey<String>('fushi_audiobook_panel_alignment'),
-                title: t.audiobook_pick_alignment,
-                subtitle: alignmentName,
-                icon: Icons.align_horizontal_left,
-                showIcon: true,
-                onTap: () => closeThen(widget.onPickAlignment!),
-              ),
-            if (widget.onTranscribe != null)
-              AdaptiveSettingsRow(
-                key: const ValueKey<String>('fushi_audiobook_panel_transcribe'),
-                title: t.audiobook_transcribe_action,
-                icon: Icons.record_voice_over_outlined,
-                showIcon: true,
-                onTap: () => closeThen(widget.onTranscribe!),
-              ),
-            if (widget.onAudioImport != null)
-              AdaptiveSettingsRow(
-                key: const ValueKey<String>('fushi_audiobook_panel_import'),
-                title: t.audio_import,
-                icon: Icons.headphones_outlined,
-                showIcon: true,
-                onTap: () => closeThen(widget.onAudioImport!),
-              ),
-          ],
+    final Color fg =
+        ReaderPanelCard.foregroundFor(context, ReaderPanelCardTone.neutral);
+    final List<Widget> actions = <Widget>[
+      if (widget.onPickAlignment != null)
+        FushiFilledButton.tonalIcon(
+          key: const ValueKey<String>('fushi_audiobook_panel_alignment'),
+          size: FushiButtonSize.xs,
+          onPressed: () => closeThen(widget.onPickAlignment!),
+          icon: const FushiIcon(FushiIcons.alignLeft, size: 18),
+          label: Text(t.audiobook_pick_alignment),
         ),
-        if (files.isNotEmpty) ...<Widget>[
-          SizedBox(height: tokens.spacing.gap),
-          AdaptiveSettingsSection(
+      if (widget.onTranscribe != null)
+        FushiFilledButton.tonalIcon(
+          key: const ValueKey<String>('fushi_audiobook_panel_transcribe'),
+          size: FushiButtonSize.xs,
+          onPressed: () => closeThen(widget.onTranscribe!),
+          icon: const FushiIcon(FushiIcons.voice, size: 18),
+          label: Text(t.audiobook_transcribe_action),
+        ),
+      if (widget.onAudioImport != null)
+        FushiFilledButton.tonalIcon(
+          key: const ValueKey<String>('fushi_audiobook_panel_import'),
+          size: FushiButtonSize.xs,
+          onPressed: () => closeThen(widget.onAudioImport!),
+          icon: const FushiIcon(FushiIcons.importFile, size: 18),
+          label: Text(t.audio_import),
+        ),
+    ];
+    return ReaderPanelCard(
+      key: const ValueKey<String>('fushi_audiobook_source_card'),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
             children: <Widget>[
-              for (int i = 0; i < files.length; i++)
-                AdaptiveSettingsRow(
-                  title: p.basename(files[i].path),
-                  subtitle: '${i + 1} / ${files.length}',
-                  icon: Icons.audio_file_outlined,
-                  showIcon: true,
+              const ReaderPanelIconBadge(icon: FushiIcons.audio),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      alignmentName ?? t.reader_audiobook_source_no_alignment,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: fg,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (files.isNotEmpty)
+                      Text(
+                        t.reader_audiobook_source_audio_files(n: files.length),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: fg.withValues(alpha: 0.7),
+                        ),
+                      ),
+                  ],
                 ),
+              ),
             ],
           ),
+          if (files.length > 1) ...<Widget>[
+            const SizedBox(height: 10),
+            for (int i = 0; i < files.length; i++)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: 28,
+                      child: Text(
+                        '${i + 1}',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: fg.withValues(alpha: 0.6),
+                          fontFeatures: const <FontFeature>[
+                            FontFeature.tabularFigures(),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        p.basename(files[i].path),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(color: fg),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          if (actions.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: actions),
+          ],
         ],
-      ],
+      ),
+    );
+  }
+
+  /// 「收听概览」卡：已听百分比 / 按当前倍速的剩余时长 / 本章剩余，并排的大号
+  /// 数字（窄于 360 时两列换行）。全部由控制器的全书位置、总时长、倍速与各章
+  /// 起点推出来，不新增数据。
+  Widget _buildOverviewCard(
+    ThemeData theme,
+    AudiobookPlayerController ctrl, {
+    required int? chapterEndMs,
+  }) {
+    final int posMs = ctrl.globalPosition.inMilliseconds;
+    final int durMs = ctrl.totalDuration.inMilliseconds;
+    final double speed = ctrl.speed > 0 ? ctrl.speed : 1.0;
+    final int leftMs = durMs > posMs ? ((durMs - posMs) / speed).round() : 0;
+    final int? chapterLeftMs = chapterEndMs != null && chapterEndMs > posMs
+        ? ((chapterEndMs - posMs) / speed).round()
+        : null;
+    final List<Widget> stats = <Widget>[
+      _OverviewStat(
+        key: const ValueKey<String>('fushi_audiobook_overview_listened'),
+        icon: FushiIcons.history,
+        value: durMs > 0
+            ? '${(posMs / durMs * 100).clamp(0, 100).toStringAsFixed(1)}%'
+            : '—',
+        label: t.reader_audiobook_overview_listened,
+      ),
+      _OverviewStat(
+        key: const ValueKey<String>('fushi_audiobook_overview_left'),
+        icon: FushiIcons.timer,
+        value: _formatDuration(Duration(milliseconds: leftMs)),
+        label: '${t.reader_audiobook_overview_left} · '
+            '${AudiobookSpeedSlider.format(speed)}',
+      ),
+      if (chapterLeftMs != null)
+        _OverviewStat(
+          key: const ValueKey<String>('fushi_audiobook_overview_chapter_left'),
+          icon: FushiIcons.bulletList,
+          value: _formatDuration(Duration(milliseconds: chapterLeftMs)),
+          label: t.reader_audiobook_overview_chapter_left,
+        ),
+    ];
+    return ReaderPanelCard(
+      key: const ValueKey<String>('fushi_audiobook_overview_card'),
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          if (constraints.maxWidth >= 360) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                for (final Widget w in stats) Expanded(child: w),
+              ],
+            );
+          }
+          final double cell = (constraints.maxWidth - 8) / 2;
+          return Wrap(
+            spacing: 8,
+            runSpacing: 14,
+            children: <Widget>[
+              for (final Widget w in stats) SizedBox(width: cell, child: w),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -660,11 +814,48 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel> {
       return totalMs > start ? totalMs - start : null;
     }
 
+    // 当前章的音频终点（下一章起点 / 全书末）：概览卡的「本章剩余」。
+    final int? currentStart = currentEntry >= 0 && currentEntry < starts.length
+        ? starts[currentEntry]
+        : null;
+    final int? currentDur =
+        currentStart == null ? null : durationFor(currentEntry);
+    final int? chapterEndMs = currentStart == null || currentDur == null
+        ? null
+        : currentStart + currentDur;
+    // 章节列表之前是「收听概览」与「音频来源」两张卡（句子列表砍掉后面板显空，
+    // 2026-10-06 用户）。它们和章节在同一条滚动里，钉住的只有「正在播放」卡。
+    final List<Widget> lead = <Widget>[
+      if (ctrl != null) ...<Widget>[
+        ReaderPanelSectionLabel(
+          t.reader_audiobook_section_overview,
+          padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+        ),
+        _buildOverviewCard(theme, ctrl, chapterEndMs: chapterEndMs),
+      ],
+      if (ctrl != null ||
+          widget.onPickAlignment != null ||
+          widget.onTranscribe != null ||
+          widget.onAudioImport != null) ...<Widget>[
+        ReaderPanelSectionLabel(t.reader_audiobook_section_tools),
+        _buildSourceCard(theme, ctrl),
+      ],
+      if (widget.toc.isNotEmpty)
+        ReaderPanelSectionLabel(
+          t.reader_audiobook_tab_chapters,
+          trailing: Text(
+            '${widget.toc.length}',
+            style: theme.textTheme.labelMedium,
+          ),
+        ),
+    ];
     return ListView.builder(
       key: const ValueKey<String>('fushi_audiobook_chapters'),
       primary: false,
-      itemCount: widget.toc.length,
-      itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+      itemCount: lead.length + widget.toc.length,
+      itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int index) {
+        if (index < lead.length) return lead[index];
+        final int i = index - lead.length;
         final TtuTocEntry entry = widget.toc[i];
         final int? startMs = starts[i];
         final int? dms = durationFor(i);
@@ -788,6 +979,66 @@ class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
         paint,
       );
     }
+  }
+}
+
+/// 概览卡里的一格：小图标 + 大号等宽数字（放不下时缩小）+ 说明文字。
+class _OverviewStat extends StatelessWidget {
+  const _OverviewStat({
+    super.key,
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final IconData icon;
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final Color fg =
+        ReaderPanelCard.foregroundFor(context, ReaderPanelCardTone.neutral);
+    final Color accent = isGlassDesign(context)
+        ? appleColorsOf(context).secondaryLabel
+        : theme.colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          FushiIcon(icon, size: 18, color: accent),
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+                fontFeatures: const <FontFeature>[
+                  FontFeature.tabularFigures(),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: fg.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

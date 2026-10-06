@@ -199,6 +199,7 @@ class MangaChapterList extends StatelessWidget {
       ),
     );
   }
+
   Widget _buildEmptyChapters(BuildContext context) {
     final OnlineMangaSourceLanguageScope? scope = languageScope;
     if (scope == null) return _buildEmpty(context, t.manga_series_no_chapters);
@@ -271,12 +272,13 @@ class MangaChapterList extends StatelessWidget {
     final _ChapterDownloadState download = _downloadStateOf(chapter);
     final MangaDownloadJobRow? job = jobsByChapterKey[chapter.key];
     final int pagesTotal = job?.pagesTotal ?? 0;
-    // 下载状态位的 key 挂在整行外层：图标由分段行自己画（状态位一眼能扫到，
-    // 文字在副标题里），测试 / 探针按 key 数各状态的行数。
-    return KeyedSubtree(
-      key: ValueKey<String>('manga_chapter_download_${download.name}'),
-      child: FushiStaggeredEntrance(
-        index: index,
+    // 相邻章节常有相同下载状态，列表身份必须取章节 key；状态探针放在每章内部，
+    // 避免重复 sibling key，且排序 / 下载状态变化时保留该章的进场状态。
+    return FushiStaggeredEntrance(
+      key: ValueKey<String>('manga_chapter_${chapter.key}'),
+      index: index,
+      child: KeyedSubtree(
+        key: ValueKey<String>('manga_chapter_download_${download.name}'),
         child: MediaDetailItemRow(
           index: index,
           count: count,
@@ -339,8 +341,9 @@ class MangaChapterList extends StatelessWidget {
           t.manga_chapter_download_status_downloaded,
         // 失败原因原样露出来：扩展抛的 `Log in via WebView ...` 之类正是用户要
         // 知道的下一步；只写「下载失败」等于把答案藏起来（BUG-2479）。
-        _ChapterDownloadState.failed =>
-          mangaChapterDownloadFailedLabel(job?.lastError),
+        _ChapterDownloadState.failed => mangaChapterDownloadFailedLabel(
+          job?.lastError,
+        ),
         _ChapterDownloadState.notDownloaded => t.manga_chapter_not_downloaded,
       },
       if (chapter.key == ocrRunningChapterKey)
@@ -397,8 +400,7 @@ class MangaChapterList extends StatelessWidget {
             value: 'download',
             label: t.manga_chapter_download_action,
           ),
-        if (onRetryDownload != null &&
-            download == _ChapterDownloadState.failed)
+        if (onRetryDownload != null && download == _ChapterDownloadState.failed)
           FushiPopupMenuItem<String>(
             value: 'retry-download',
             label: t.manga_chapter_download_retry_action,

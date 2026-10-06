@@ -30,6 +30,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
         kMangaCoverCacheMaxDays,
         kMangaCoverCacheMinDays;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
+    show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
@@ -3684,8 +3686,14 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 本机 OCR 模型 key。经典 manga-ocr（`'manga_ocr'`）已删除：存着它的旧偏好
+  /// 由 [MangaOcrLocalModel.fromKey] 统一映射到默认模型，偏好键与存量值都不改写。
   String get mangaOcrLocalModel =>
-      getPref('manga_ocr_local_model', defaultValue: 'manga_ocr') as String;
+      getPref(
+            'manga_ocr_local_model',
+            defaultValue: kDefaultMangaOcrLocalModel.key,
+          )
+          as String;
 
   Future<void> setMangaOcrLocalModel(String value) async {
     await setPref('manga_ocr_local_model', value);

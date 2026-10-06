@@ -451,7 +451,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   /// 设置搜索栏（M3E 胶囊 / Apple 液态玻璃胶囊，见 [SettingsSearchBar]）。回车
   /// 打开第一条结果，↓ 把焦点交给结果列表。
-  Widget _buildKitSearchBar() {
+  Widget _buildKitSearchBar({required bool wide}) {
     return SettingsSearchBar(
       controller: _searchController,
       focusNode: _searchFocusNode,
@@ -460,7 +460,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         if (_results.isEmpty) return;
         _openSearchResult(
           _results.first,
-          wide: MediaQuery.sizeOf(context).width >= 720,
+          // 与实际布局共用窄 / 宽判据；嵌入页的可用宽度可能小于整窗宽度。
+          wide: wide,
         );
       },
       onArrowDown: () => FocusManager.instance.primaryFocus?.focusInDirection(
@@ -530,7 +531,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           children: <Widget>[
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-              child: _buildKitSearchBar(),
+              child: _buildKitSearchBar(wide: true),
             ),
             // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
             // 占满右侧详情窗格。
@@ -605,7 +606,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
             ),
           Padding(
             padding: const EdgeInsets.only(bottom: 18),
-            child: _buildKitSearchBar(),
+            child: _buildKitSearchBar(wide: false),
           ),
           if (_searchQuery.trim().isEmpty)
             renderer.buildDestinationGroups(
@@ -660,7 +661,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                 tokens.spacing.gap + 4,
                 tokens.spacing.gap,
               ),
-              child: _buildKitSearchBar(),
+              child: _buildKitSearchBar(wide: true),
             ),
             // 搜索时左栏保持分类列表，结果占满右侧详情窗格（此前结果挤在 240
             // 宽的左栏里，标题两行就截断，右侧详情却空着）。
@@ -709,8 +710,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     const MaterialSettingsRenderer renderer = MaterialSettingsRenderer();
-    final bool showHeader =
-        !widget.embedded || !FushiDesktopTitleBar.isEnabled;
+    final bool showHeader = !widget.embedded || !FushiDesktopTitleBar.isEnabled;
     final bool searching = _searchQuery.trim().isNotEmpty;
     final Widget body = searching
         ? _buildKitSearchResults(
@@ -738,7 +738,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         children: <Widget>[
           Padding(
             padding: EdgeInsets.only(bottom: tokens.spacing.card),
-            child: _buildKitSearchBar(),
+            child: _buildKitSearchBar(wide: false),
           ),
           body,
         ],
