@@ -1254,9 +1254,8 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
   /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
-  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；`glass_material` 偏好
-  /// 只在 frosted / liquid 两档间选，缺省 liquid（引擎不支持时
-  /// [glassMaterialOf] 再降级为 frosted）。
+  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；当前固定毛玻璃
+  /// （见 [glassMaterialTier]），液态档暂时关闭。
   FushiGlassMaterial get glassMaterial {
     if (designSystem != 'glass') return FushiGlassMaterial.off;
     // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
@@ -1268,13 +1267,13 @@ class ThemeNotifier extends ChangeNotifier {
   }
 
   /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
-  FushiGlassMaterial get glassMaterialTier =>
-      FushiGlassMaterial.fromPrefValue(
-                _get('glass_material', defaultValue: 'liquid') as String?,
-              ) ==
-              FushiGlassMaterial.frosted
-          ? FushiGlassMaterial.frosted
-          : FushiGlassMaterial.liquid;
+  ///
+  /// 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃先关——这里恒为
+  /// frosted，**不读也不改写** `glass_material` 偏好：已存 `liquid` 的用户读取时
+  /// 直接降级为毛玻璃，存储值原样保留（入口在设置页同步隐藏，见
+  /// settings_schema_appearance.dart 的 `appearance.glass_material`）。恢复液态
+  /// 档时还原为：偏好 == frosted ? frosted : liquid（缺省 liquid）。
+  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.frosted;
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
     await _set('glass_material', value.name);

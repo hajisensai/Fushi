@@ -413,8 +413,6 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/VPAL (vertical alt)': 'test/reader/reader_content_styles_test.dart',
   'appearance/Design system': 'test/models/theme_notifier_test.dart',
   'appearance/UI size': 'test/models/theme_notifier_test.dart',
-  'appearance/Glass material':
-      'test/widgets/fushi_glass_material_test.dart',
   'reading/Spread mode': 'test/epub/epub_spread_map_test.dart',
   // 阶段 G 重排后，「模式」分区（含 view_mode）在设置页排在「排版」分区（含
   // page_columns）之前，覆盖 harness 焦点遍历会先把 view_mode 从 paginated 切走，

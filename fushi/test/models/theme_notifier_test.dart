@@ -539,13 +539,24 @@ void main() {
         );
       });
 
-      test('glass tier defaults to liquid and never resolves to off', () async {
+      // 2026-10-06：Apple 设计系统固定毛玻璃，液态档关闭——已存 liquid 的偏好
+      // 读取时降级为 frosted，存储值不改写。
+      test('glass tier is pinned to frosted, even with a stored liquid pref',
+          () async {
         await notifier.setDesignSystem('glass');
-        expect(notifier.glassMaterialTier, FushiGlassMaterial.liquid);
-        expect(notifier.glassMaterial, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.frosted);
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
+
+        await notifier.setGlassMaterial(FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.frosted);
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
+        expect(
+          notifier.theme.extension<FushiGlassTheme>()?.material,
+          FushiGlassMaterial.frosted,
+        );
 
         await notifier.setGlassMaterial(FushiGlassMaterial.off);
-        expect(notifier.glassMaterialTier, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterialTier, FushiGlassMaterial.frosted);
       });
 
       test('system reduce-transparency turns glass off and rebuilds', () async {
@@ -558,7 +569,7 @@ void main() {
         expect(notifier.glassMaterial, FushiGlassMaterial.off);
 
         SystemTransparency.reduceTransparency.value = false;
-        expect(notifier.glassMaterial, FushiGlassMaterial.liquid);
+        expect(notifier.glassMaterial, FushiGlassMaterial.frosted);
       });
     });
   });

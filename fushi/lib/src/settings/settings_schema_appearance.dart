@@ -170,13 +170,18 @@ SettingsDestination buildAppearanceDestination() {
           // 这里只在毛玻璃 / 液态之间选）。正文、视频画面不变；墨水屏、系统增强
           // 对比度 / 降低透明度下自动回退实心，liquid 在引擎不支持着色器
           // ImageFilter 时降级为 frosted。随 Profile 走。
+          //
+          // 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃入口先关掉
+          // ——本行恒不可见（设置页与设置搜索都走 visible 谓词，一并消失），
+          // 生效值由 ThemeNotifier.glassMaterialTier 钉成 frosted。schema 项、
+          // 偏好键 `glass_material` 与液态渲染代码都保留，恢复时把 visible 改回
+          // `designSystem == 'glass'` 并撤掉 glassMaterialTier 的钉死即可。
           SettingsSegmentedItem<FushiGlassMaterial>(
             id: 'appearance.glass_material',
             title: t.glass_material,
             subtitle: t.glass_material_hint,
             icon: Icons.blur_on_outlined,
-            visible: (SettingsContext settingsContext) =>
-                settingsContext.appModel.themeNotifier.designSystem == 'glass',
+            visible: (SettingsContext settingsContext) => false,
             options: <SettingsSegmentOption<FushiGlassMaterial>>[
               SettingsSegmentOption<FushiGlassMaterial>(
                 value: FushiGlassMaterial.frosted,
@@ -192,7 +197,7 @@ SettingsDestination buildAppearanceDestination() {
             onChanged:
                 (SettingsContext settingsContext, FushiGlassMaterial value) =>
                     settingsContext.appModel.setGlassMaterial(value),
-            defaultValue: FushiGlassMaterial.liquid,
+            defaultValue: FushiGlassMaterial.frosted,
           ),
           // 「界面大小」滑条：commitOnRelease——本滑条位于受 FushiAppUiScale 的
           // Transform.scale 缩放的子树内，拖动逐帧提交会让整树立刻按新比例重排、
