@@ -127,6 +127,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_model
     show AudiobookshelfTokens;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
@@ -150,6 +151,7 @@ import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -623,6 +625,12 @@ class AppModel with ChangeNotifier {
   /// （弹窗词典 / 悬浮词典入口没有 HomePage）→ host 报「不支持远程刮削」。
   Future<VideoSourceScrapeTaskController?> Function()?
       videoScrapeControllerResolver;
+
+  /// 视频刮削运行时（协调器 + 任务控制器 + 补刮调度器）。归 HomePage 持有，
+  /// initState 登记、dispose 清除——与 [videoScrapeControllerResolver] 同一生命周期；
+  /// 桌面控制通道（`fushi_cli video …`）经它拿待确认作品清单与控制器。null = 没有
+  /// HomePage（弹窗词典 / 悬浮词典入口）。
+  VideoScrapeRuntime? videoScrapeRuntime;
 
   /// App 级 Hibiki LAN 同步服务端宿主：生命周期归 AppModel（整个会话），
   /// 不再绑在设置页 widget 上——否则切出「同步与备份」页就把服务端关了（BUG-085）。
@@ -1290,7 +1298,7 @@ class AppModel with ChangeNotifier {
       }());
     },
     controlStreams: AudioControlStreams(
-      playStream: audioCtrl.playStream,
+      playIntentStream: audioCtrl.playIntentStream,
       seekStream: audioCtrl.seekStream,
       skipNextStream: audioCtrl.skipNextStream,
       skipPreviousStream: audioCtrl.skipPreviousStream,
@@ -6008,6 +6016,9 @@ class AppModel with ChangeNotifier {
     if (existing != null) return existing;
     final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
       resolvePayload: (DiscoveryResourceItem item) {
+        // 直链条目（控制通道 `dl add <url>`）没有发现源，payload 入队时已物化。
+        final DiscoveryHttpPayload? direct = directLinkPayloadOf(item);
+        if (direct != null) return Future<DiscoveryPayload>.value(direct);
         final MediaDiscoverySource? source =
             mediaDiscoveryService.sourceById(item.sourceId);
         if (source == null) {
@@ -6377,7 +6388,7 @@ class AppModel with ChangeNotifier {
               completedCount++;
               continue;
             }
-            await _autoRedownloadAndReimport(dictionary, remote, job);
+            await redownloadAndReimportDictionary(dictionary, remote, job);
             completedCount++;
           } catch (e, stack) {
             if (DictionaryDownloadController.isCancellation(e)) break;
@@ -6408,7 +6419,10 @@ class AppModel with ChangeNotifier {
   ///
   /// BUG-2707：下载地址与回写来源都取自 [remote]（远端 index 声明的新版地址），
   /// 本地记录的旧 downloadUrl 可能钉在旧版本目录，拿它下载等于重导旧包。
-  Future<void> _autoRedownloadAndReimport(
+  ///
+  /// 公开给桌面 CLI 的 `dict update`（`ctl_dictionary_routes.dart`）复用，与启动期
+  /// 自动更新同一条「下载 → 显式替换目标重导」链路，不另写一套。
+  Future<void> redownloadAndReimportDictionary(
     Dictionary dictionary,
     DictionaryRemoteIndexResult remote,
     DictionaryDownloadJob job,
@@ -7319,7 +7333,8 @@ class AppModel with ChangeNotifier {
 
   // ── player streams & audio handler (delegated to AudioController) ───
 
-  Stream<void> get playStream => audioCtrl.playStream;
+  Stream<MediaPlayIntent> get playIntentStream =>
+      audioCtrl.playIntentStream;
   Stream<Duration> get seekStream => audioCtrl.seekStream;
   Stream<void> get rewindStream => audioCtrl.rewindStream;
   Stream<void> get fastForwardStream => audioCtrl.fastForwardStream;

@@ -1,3 +1,4 @@
+import 'anki_video_template.dart';
 import 'anki_models.dart';
 import 'anki_note_type_definition.dart';
 
@@ -16,26 +17,76 @@ import 'anki_note_type_definition.dart';
 /// 判据：映射里消费卡片图片的任一字段，在任一卡片模板（正面或背面）里以裸 `{{字段}}`
 /// 出现在 `<template>` / `<script>` / HTML 注释之外。`{{text:字段}}` 等过滤器会剥掉
 /// HTML，`{{#字段}}` / `{{/字段}}` / `{{^字段}}` 只是条件段，都不算渲染。
+/// 脚本模板把字段声明为 `data-field` 数据源时，静态副本也不能证明最终渲染能力：
+/// Kiku 发行版的 SSR 会先原样插入 Picture，hydration 后却只保留其中的 `<img>`。
+/// 因此该字段交给脚本消费时按标准图片路径处理，不按模板名称或版本猜测能力。
 bool noteTypeRendersSynchronizedClip({
   required AnkiNoteTypeDefinition definition,
   required Map<String, String> fieldMappings,
 }) {
+  final AnkiVideoTemplateOptions? videoOptions = readAnkiVideoTemplateOptions(
+    definition,
+  );
+  if (fieldMappings.values.any(
+    (String value) => value.contains('{card-video}'),
+  )) {
+    final String? audioField = AnkiHandlebarOptions.singleSentenceAudioField(
+      fieldMappings,
+    );
+    return videoOptions != null &&
+        audioField != null &&
+        audioField != videoOptions.field &&
+        definition.fields.contains(audioField) &&
+        fieldMappings[videoOptions.field] == '{card-video}';
+  }
   final List<String> imageFields = AnkiHandlebarOptions.cardImageFieldNames(
     fieldMappings,
   );
   if (imageFields.isEmpty) return false;
-  final List<String> visibleSides = <String>[
+  final List<String> sides = <String>[
     for (final AnkiCardTemplate t in definition.templates) ...<String>[
-      _visibleTemplateMarkup(t.front),
-      _visibleTemplateMarkup(t.back),
+      t.front,
+      t.back,
     ],
   ];
+  final List<String> visibleSides = sides.map(_visibleTemplateMarkup).toList();
   return imageFields.any(
-    (String field) => visibleSides.any(
-      (String side) => _bareFieldReference(field).hasMatch(side),
-    ),
+    (String field) =>
+        !sides.any((String side) => _hasScriptedFieldSource(side, field)) &&
+        visibleSides.any(
+          (String side) => _bareFieldReference(field).hasMatch(side),
+        ),
   );
 }
+
+/// `data-field="字段"` 包装的裸字段是脚本输入，不是最终媒体容器。兼容旧版
+/// 隐藏 div 和新版 template；只认真实标签及其字段内容，忽略注释/脚本文字。
+bool _hasScriptedFieldSource(String html, String field) {
+  final String withoutComments = html.replaceAll(_htmlComment, '');
+  if (!_scriptTag.hasMatch(withoutComments)) return false;
+  final String markup = withoutComments.replaceAll(_inertBlock, '');
+  final RegExp reference = _bareFieldReference(field);
+  return _fieldSourceElement.allMatches(markup).any((RegExpMatch element) {
+    final RegExpMatch? attribute = _dataFieldAttribute.firstMatch(
+      element.group(2)!,
+    );
+    final String? declaredField =
+        attribute?.group(1) ?? attribute?.group(2) ?? attribute?.group(3);
+    return declaredField == field && reference.hasMatch(element.group(3)!);
+  });
+}
+
+final RegExp _htmlComment = RegExp(r'<!--.*?-->', dotAll: true);
+final RegExp _scriptTag = RegExp(r'<script\b', caseSensitive: false);
+final RegExp _fieldSourceElement = RegExp(
+  r'<([a-z][a-z0-9-]*)(\s[^>]*\bdata-field\s*=[^>]*)>'
+  r'(\s*\{\{[^{}]+\}\}\s*)</\1\s*>',
+  caseSensitive: false,
+);
+final RegExp _dataFieldAttribute = RegExp(
+  r'''\sdata-field\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''',
+  caseSensitive: false,
+);
 
 RegExp _bareFieldReference(String field) =>
     RegExp(r'\{\{\s*' + RegExp.escape(field.trim()) + r'\s*\}\}');

@@ -636,23 +636,47 @@ mixin AnkiNoteComposer {
     // 内嵌片段（WebM）反过来：画面本身就在 Picture 的 `<video>` 里播，句子音频字段只放
     // 重播按钮 + 隐藏 <audio>（[inlineVideoSentenceAudioHtml]），不再有任何 `[sound:]`——否则 Anki 原生
     // 队列会把同一段声音再放一遍。
+    final bool managedVideo = settings.fieldMappings.values.any(
+      (String value) => value.contains('{card-video}'),
+    );
+    if (context.synchronizedVideo && managedVideo) {
+      final String? audioField = AnkiHandlebarOptions.singleSentenceAudioField(
+        settings.fieldMappings,
+      );
+      if (audioField == null ||
+          settings.fieldMappings[audioField]!.contains('{card-video}')) {
+        throw StateError(
+          'Video adaptation requires exactly one sentence-audio token in one separate field. Check the Anki field mappings.',
+        );
+      }
+    }
     final String? inlineVideoName = _inlineVideoMediaName(coverRef);
     if (context.synchronizedVideo &&
         inlineVideoName != null &&
         isAnkiInlineVideoCover(context.coverPath)) {
-      sentenceAudioRef =
-          AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
-            settings.fieldMappings,
-          )
-          ? inlineVideoSentenceAudioHtml(inlineVideoName)
-          : null;
+      if (managedVideo) {
+        coverRef =
+            '<video class="fushi-video-source" '
+            'src="${const HtmlEscape().convert(inlineVideoName)}" '
+            'hidden preload="none" playsinline></video>';
+        sentenceAudioRef = null;
+      } else {
+        sentenceAudioRef =
+            AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+              settings.fieldMappings,
+            )
+            ? inlineVideoSentenceAudioHtml(inlineVideoName)
+            : null;
+      }
     } else if (context.synchronizedVideo && coverRef != null) {
       if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
         settings.fieldMappings,
       )) {
         sentenceAudioRef =
             '<span class="fushi-synced-sentence-media">$coverRef</span>';
-        coverRef = synchronizedVideoReplayHtml;
+        coverRef = managedVideo
+            ? '<span data-fushi-native-video="1"></span>'
+            : synchronizedVideoReplayHtml;
       } else {
         // Custom templates without sentence audio retain a playable Picture.
         sentenceAudioRef = null;

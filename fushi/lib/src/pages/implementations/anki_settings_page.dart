@@ -23,6 +23,7 @@ import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/anki_video_template_entry.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
@@ -100,6 +101,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   /// 导入快照当前条数；null = 还没从账本读出来。
   int? _ankiBackupImportedCount;
+
+  /// 「当前笔记类型能否播放同步视频片段」的探测结果，按 [_clipSupportProbeFor]
+  /// （设置对象身份）缓存：换笔记类型 / 改映射 / 适配回来都会产生新设置对象而重探，
+  /// 普通重建不重复打 Anki。
+  Future<bool?>? _clipSupportProbe;
+  AnkiSettings? _clipSupportProbeFor;
 
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这个开关。
   /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：iOS 的 AnkiMobile
@@ -658,13 +665,91 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildFieldsPanel(AnkiUiState uiState, AnkiViewModel vm) {
     final AnkiSettings settings = uiState.settings;
-    return SettingsSearchTarget(
-      id: 'card_creation.anki.field_mappings',
-      child: AdaptiveSettingsSection(
-        title: t.anki_field_mappings,
-        children: _buildFieldMappings(settings, vm),
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsSection(
+          children: <Widget>[
+            SettingsSearchTarget(
+              id: 'card_creation.anki.video_template',
+              child: FutureBuilder<bool?>(
+                future: _clipSupportProbeOf(settings, vm),
+                builder: (BuildContext context, AsyncSnapshot<bool?> probe) =>
+                    _buildVideoTemplateRow(
+                      settings,
+                      vm,
+                      notAdapted: probe.data == false,
+                    ),
+              ),
+            ),
+            _buildVideoMiningImageModePicker(),
+            if (appModel.videoMiningImageMode.isVideoClip)
+              _buildVideoMiningClipFormatPicker(),
+          ],
+        ),
+        SettingsSearchTarget(
+          id: 'card_creation.anki.field_mappings',
+          child: AdaptiveSettingsSection(
+            title: t.anki_field_mappings,
+            children: _buildFieldMappings(settings, vm),
+          ),
+        ),
+      ],
     );
+  }
+
+  /// 视频制卡选了「同步片段」而当前笔记类型确定渲染不了时（[notAdapted]），这一行
+  /// 直接说明制卡会改用 GIF + 音频并引导去适配；无法判定时不打扰，保持原说明。
+  Widget _buildVideoTemplateRow(
+    AnkiSettings settings,
+    AnkiViewModel vm, {
+    required bool notAdapted,
+  }) {
+    final bool editable = vm.videoTemplateService.supportsEditing;
+    return AdaptiveSettingsRow(
+      title: t.anki_video_template_title,
+      subtitle: !editable
+          ? t.anki_video_template_unsupported
+          : notAdapted
+          ? t.anki_video_template_needed_hint
+          : t.anki_video_template_media_hint,
+      icon: notAdapted
+          ? Icons.warning_amber_outlined
+          : Icons.video_settings_outlined,
+      showIcon: true,
+      trailing: editable ? const Icon(Icons.chevron_right) : null,
+      onTap: editable ? () => _openVideoTemplate(settings, vm) : null,
+    );
+  }
+
+  /// 只有选了同步片段、且后端能读写模板时才探测；其它情况恒「无提示」。
+  Future<bool?>? _clipSupportProbeOf(AnkiSettings settings, AnkiViewModel vm) {
+    if (!appModel.videoMiningImageMode.isVideoClip ||
+        !vm.videoTemplateService.supportsEditing) {
+      return null;
+    }
+    if (_clipSupportProbe == null ||
+        !identical(_clipSupportProbeFor, settings)) {
+      _clipSupportProbeFor = settings;
+      _clipSupportProbe = vm.rendersSynchronizedClip();
+    }
+    return _clipSupportProbe;
+  }
+
+  void _resetClipSupportProbe() {
+    _clipSupportProbe = null;
+    _clipSupportProbeFor = null;
+  }
+
+  Future<void> _openVideoTemplate(
+    AnkiSettings settings,
+    AnkiViewModel vm,
+  ) async {
+    await openAnkiVideoTemplate(context, vm: vm, settings: settings);
+    if (!mounted) return;
+    // 适配可能没改设置对象（只改了模板），身份缓存挡不住旧结论，显式重探。
+    setState(_resetClipSupportProbe);
+    await vm.refreshSettingsFromStore();
   }
 
   Widget _buildMediaPanel(AnkiUiState uiState, AnkiViewModel vm) {
@@ -884,7 +969,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       ],
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
-        setState(() {});
+        setState(_resetClipSupportProbe);
       },
     );
   }
@@ -2144,6 +2229,8 @@ String ankiHandlebarLabel(String option) {
 /// [ankiHandlebarLabel] 的裸标签部分（不含「已弃用」标注）。
 String _ankiHandlebarBaseLabel(String option) {
   switch (option) {
+    case '{card-video}':
+      return t.anki_video_template_title;
     case '{expression}':
       return t.handlebar_expression;
     case '{reading}':

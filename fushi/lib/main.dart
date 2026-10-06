@@ -79,6 +79,7 @@ import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_desktop_auto_launch.dart';
+import 'package:fushi/src/anki/anki_video_template_entry.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
@@ -87,6 +88,10 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
+import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_context.dart';
+import 'package:fushi/src/platform/desktop/ctl/desktop_ctl_routes.dart';
+import 'package:fushi_cli/fushi_cli.dart' show CtlOpenResult, CtlServer;
 import 'package:fushi/src/platform/app_shortcuts.dart';
 import 'package:fushi/src/platform/app_shortcut_router.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
@@ -810,6 +815,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 见 [initState]）。持有以便 [dispose] 注销。
   AppLifecycleListener? _exitRequestListener;
 
+  /// 桌面本机控制通道（`fushi_cli` 的服务端，见 [_startCtlServer]）。
+  CtlServer? _ctlServer;
+
   /// 退出总预算。窗口在 flush 开始前就已隐藏，这个上界只决定「进程最多在后台多待
   /// 多久」，不影响用户看到的关闭速度。取 6s：足够覆盖最坏情况下的 Mihon sidecar
   /// 关停（~1.8s）与关书同步 drain（5s 上界，实际多为 0），外加 checkpoint 余量。
@@ -914,7 +922,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (Platform.isWindows) {
       _systemThemeChannel.setMethodCallHandler(_handleSystemThemeChannel);
     }
+    if (_isDesktop) {
+      unawaited(_startCtlServer());
+    }
     FushiToast.navigatorKey = ref.read(appProvider).navigatorKey;
+    installAnkiVideoTemplateFallbackNotice(
+      navigatorKey: ref.read(appProvider).navigatorKey,
+      prefs: () => ref.read(appProvider).prefsRepo,
+    );
     // BUG-1876：Aidoku 源被 Cloudflare 拦下时在 WebView 里解题再重试。
     // 只在有 Aidoku 宿主的构建里装（iOS 按 App Store 合规、macOS 随 Rust CLI 一并
     // 移除后当前没有宿主）：没有源却装个解题器等于给一个不存在的源留后门。
@@ -1120,6 +1135,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _guardedExitStep('exit flush', () async {
         await ExitFlushRegistry.instance.flushAll();
       }),
+      // 删掉 CLI 发现文件：exit(0) 之后不会再有 dispose，不删就留下一份残留
+      // （CLI 能认出残留，但少一次连不上的探测）。
+      _guardedExitStep('ctl channel stop', () async {
+        await _ctlServer?.stop().timeout(const Duration(milliseconds: 500));
+      }),
     ]);
     // ②' TODO-132 诉求B：有界 drain 退出书 fire-and-forget 触发的、仍在飞的 app-scope
     //    关书同步（[BookExitSyncScope]）。退出书 export 与页面生命周期解耦后会继续
@@ -1222,6 +1242,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     _systemColorRefreshDebounce?.cancel();
     _loadingWatchdog?.cancel();
     _exitRequestListener?.dispose();
+    unawaited(_ctlServer?.stop());
+    _ctlServer = null;
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
@@ -1578,6 +1600,71 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return null;
   }
 
+  /// 启动桌面本机控制通道：`fushi_cli` 经 127.0.0.1 + token 驱动本 app。
+  ///
+  /// 在 initState 就开（不等初始化完成）：CLI 拉起 app 后靠它判断「进程已起、还在
+  /// 初始化」，`status` 回 `initialised:false`，open / lookup 回 409 让 CLI 继续等。
+  Future<void> _startCtlServer() async {
+    final CtlServer? server = await startDesktopCtlServer(
+      DesktopCtlHost(
+        isReady: () {
+          final AppModel model = ref.read(appProvider);
+          return model.isInitialised &&
+              model.navigatorKey.currentState != null;
+        },
+        appVersion: () => ref.read(appProvider).packageInfo.version,
+        openTarget: _handleCtlOpen,
+        lookupWord: (String word) async {
+          await _focusMainWindowForCtl();
+          DesktopLookupService.instance.triggerLookup(word);
+        },
+        quitApp: _flushAndExitForWindowClose,
+        routes: buildDesktopCtlRoutes(
+          DesktopCtlContext(
+            ref: ref,
+            focusMainWindow: _focusMainWindowForCtl,
+            ingestExternalVideo: _ingestExternalVideo,
+          ),
+        ),
+      ),
+    );
+    if (!mounted) {
+      await server?.stop();
+      return;
+    }
+    _ctlServer = server;
+  }
+
+  /// `fushi_cli open`：先按 argv 同一组候选裁决（拒绝要回给终端），接受的目标交给
+  /// 单实例转交的同一个出口 [_handleExternalVideoChannel] 落地。
+  ///
+  /// 不 await 落地：视频分支会 await 播放页 push，那要等用户关掉播放页才返回，
+  /// CLI 不该挂到那时候。
+  Future<CtlOpenResult> _handleCtlOpen(String target) async {
+    final CtlOpenResult verdict = classifyCtlOpenTarget(
+      target,
+      videoModuleEnabled:
+          ref.read(appProvider).moduleVisibility.isEnabled(ModuleId.video),
+    );
+    if (!verdict.accepted) return verdict;
+    await _focusMainWindowForCtl();
+    unawaited(
+      _handleExternalVideoChannel(MethodCall('openExternalVideo', target)),
+    );
+    return verdict;
+  }
+
+  /// 单实例转交时 C++ 侧会前置主窗；CLI 走网络通道到这里，没人替我们做，自己前置。
+  Future<void> _focusMainWindowForCtl() async {
+    try {
+      if (await windowManager.isMinimized()) await windowManager.restore();
+      await windowManager.show();
+      await windowManager.focus();
+    } catch (e) {
+      debugPrint('[Fushi] ctl focus main window failed: $e');
+    }
+  }
+
   /// TODO-1092: Windows runner 报告「系统强调色/主题色已变」。经短去抖合并同一次
   /// 变更连发的多条广播，然后调 [AppModel.refreshSystemPalette] 让 `system-theme`
   /// 动态取色实时更新——修复「必须最小化/恢复/失焦触发生命周期 resumed 才刷新」。
@@ -1607,6 +1694,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final NavigatorState? navigator = appModel.navigatorKey.currentState;
     if (navigator == null) return;
 
+    final String? bookUid = await _ingestExternalVideo(videoPath);
+    if (bookUid == null) return;
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+
+    if (!mounted) return;
+    // This process-level launch path owns a NavigatorState but has no themed
+    // descendant BuildContext, so its route contract is explicitly Material.
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
+      ),
+    );
+  }
+
+  /// 外部视频入库（不打开）：模块门 → 存在性 → 按路径去重建/取 VideoBook。
+  /// 失败（模块关 / 文件不存在 / 入库异常）已给 toast 并返回 null。
+  /// [_openExternalVideo] 与 `fushi_cli library import` 共用这一个入口。
+  Future<String?> _ingestExternalVideo(String videoPath) async {
     // ⓪ 模块门：视频模块关掉时「看不见也到不了」——文件关联 / 命令行 argv /
     // 单实例转发 / 拖拽四条外部路径都汇到这里，是唯一能读到偏好的落地点（冷启动
     // argv 分支跑在 AppModel.initialise 之前，那时 prefs 还在 Drift 里读不到）。
@@ -1619,7 +1725,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         msg: t.module_disabled_hint,
         severity: ToastSeverity.info,
       );
-      return;
+      return null;
     }
 
     // ③ 存在性校验：冷启动 argv 路径虽在 main() 已 existsSync 过，但从那次检查到
@@ -1630,7 +1736,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         msg: t.video_file_not_found,
         severity: ToastSeverity.error,
       );
-      return;
+      return null;
     }
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
@@ -1700,19 +1806,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       );
     } catch (e) {
       debugPrint('[Fushi] external video upsert failed: $e');
-      return;
+      return null;
     }
-
-    if (!mounted) return;
-    // This process-level launch path owns a NavigatorState but has no themed
-    // descendant BuildContext, so its route contract is explicitly Material.
-    await navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
-            VideoFushiPage.neutralized(bookUid: bookUid, repo: repo),
-      ),
-    );
+    return bookUid;
   }
+
 
   void _scheduleWindowsUpdateHandoffReconcile() {
     if (_windowsUpdateHandoffScheduled || _windowsUpdateHandoffChecked) {

@@ -72,20 +72,15 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
-import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
-import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
-import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
-import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/ai/ai_video_acquisition_assistant.dart';
-import 'package:fushi_engine/ai/ai_video_identity_assistant.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
-import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
@@ -415,10 +410,15 @@ class _HomePageState extends BasePageState<HomePage>
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
   final Map<HomeTab, ScrollController> _tabScrollControllers =
       <HomeTab, ScrollController>{};
-  VideoSourceScrapeCoordinator? _videoSourceScrapeCoordinator;
-  VideoSourceScrapeTaskController? _videoSourceScrapeTaskController;
-  String? _videoSourceScrapeConfigFingerprint;
-  VideoLibraryScrapeSweep? _videoScrapeSweep;
+  /// 刮削协调器 / 任务控制器 / 补刮调度器的持有者（见 [VideoScrapeRuntime]）。
+  /// 本页是它唯一的生命周期主人，并把它登记到 [AppModel.videoScrapeRuntime]。
+  late final VideoScrapeRuntime _videoScrapeRuntime = VideoScrapeRuntime.forApp(
+    appModelNoUpdate,
+    onTaskChanged: _onVideoSourceScrapeTaskChanged,
+    onLibraryChanged: () {
+      if (mounted) _notifyVideoLibraryChanged();
+    },
+  );
   bool _videoSourceScrapePanelOpen = false;
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
@@ -447,6 +447,7 @@ class _HomePageState extends BasePageState<HomePage>
     // 当前偏好惰性建，所以解析器每次都返回配置正确的那一个。
     appModelNoUpdate.videoScrapeControllerResolver =
         () async => _videoSourceScrapeController;
+    appModelNoUpdate.videoScrapeRuntime = _videoScrapeRuntime;
 
     _currentTab = homeInitialTab(
       startupDefaultDictionaryTab: appModelNoUpdate.startupDefaultDictionaryTab,
@@ -784,13 +785,16 @@ class _HomePageState extends BasePageState<HomePage>
     _largeTitle.dispose();
     _shellActions.dispose();
     appModelNoUpdate.videoScrapeControllerResolver = null;
+    if (identical(appModelNoUpdate.videoScrapeRuntime, _videoScrapeRuntime)) {
+      appModelNoUpdate.videoScrapeRuntime = null;
+    }
     assert(() {
       HomePage.debugSelectTab = null;
       HomePage.debugVideoDiscoveryActions = null;
       return true;
     }());
     _periodicSyncTimer?.cancel();
-    _shutdownVideoSourceScrape();
+    _videoScrapeRuntime.shutdown();
     _videoDiscoveryService?.close();
     _videoDiscoveryService = null;
     _videoDiscoveryController = null;
@@ -823,7 +827,7 @@ class _HomePageState extends BasePageState<HomePage>
       // autofocus 抢回。对齐视频页 [_reclaimVideoFocusIfOwned] 的 resumed 回收范式。
       _reclaimHomeFocusIfOwned();
     } else if (AppLifecycleState.detached == state) {
-      _videoSourceScrapeTaskController?.markInterrupted();
+      _videoScrapeRuntime.currentController?.markInterrupted();
     } else if (AppLifecycleState.paused == state) {
       if (appModel.lowMemoryMode) {
         PaintingBinding.instance.imageCache.clear();
@@ -2816,77 +2820,11 @@ class _HomePageState extends BasePageState<HomePage>
     _videoLibraryRefreshSignal.value++;
   }
 
-  VideoSourceScrapeTaskController get _videoSourceScrapeController {
-    final VideoSourceScrapeTaskController? existing =
-        _videoSourceScrapeTaskController;
-    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    final VideoSourceScrapeGlobalConfig config =
-        VideoSourceScrapeGlobalConfig.fromPreferences(
-      appModelNoUpdate.prefsRepo,
-      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
-      uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
-    );
-    // BUG-2581：指纹统一取 [VideoSourceScrapeGlobalConfig.runtimeFingerprint]，
-    // 别再手抄字段——这里曾漏掉哈希开关与 AniDB 账号，填好账号后仍复用旧协调器。
-    final String fingerprint = config.runtimeFingerprint;
-    if (existing != null &&
-        (existing.isBusy ||
-            _videoSourceScrapeConfigFingerprint == fingerprint)) {
-      return existing;
-    }
-    existing?.removeListener(_onVideoSourceScrapeTaskChanged);
-    existing?.dispose();
-    _videoSourceScrapeCoordinator?.close();
-    // 顾问每次现取偏好里的指派，所以 AI 指派不进上面的配置指纹：用户改了指派
-    // 立即生效，不需要重建协调器；判定缓存与补刮账本按它现算的能力键作废。
-    final PreferencesAiVideoIdentityAdvisor aiIdentityAdvisor =
-        PreferencesAiVideoIdentityAdvisor(appModelNoUpdate.prefsRepo);
-    final VideoSourceScrapeCoordinator coordinator =
-        VideoSourceScrapeCoordinator(
-      database: appModel.database,
-      config: config,
-      // 生产装配点显式打开离线标题索引（AniDB 标题包 + Fribb 映射）；默认关是
-      // 为了单测不联网。
-      enableOfflineTitleIndex: true,
-      aiIdentityAdvisor: aiIdentityAdvisor,
-    );
-    _videoSourceScrapeCoordinator = coordinator;
-    _videoSourceScrapeConfigFingerprint = fingerprint;
-    final VideoSourceScrapeTaskController controller =
-        VideoSourceScrapeTaskController(coordinator)
-          ..addListener(_onVideoSourceScrapeTaskChanged);
-    _videoSourceScrapeTaskController = controller;
-    // 补刮调度器跟随 controller 重建，绝不持有已 dispose 的旧 controller。
-    _videoScrapeSweep = VideoLibraryScrapeSweep(
-      database: appModel.database,
-      controller: controller,
-      isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
-      // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
-      isHashReady: () => config.anidbHashReady,
-      // 「自动试过 / 刷新过」落盘跨进程：否则每次启动都把查无/歧义作品重刮一轮、
-      // 把哈希查询失败的文件整份重读（用户感知为「每次打开都在重新加载资料」）。
-      ledger: VideoScrapeSweepLedger.inSupportDirectory(),
-      configFingerprint: fingerprint,
-      // 配上 / 换掉 AI 后，之前「试过没认出」的作品立即重新进补刮。
-      aiCapabilityKey: () => aiIdentityAdvisor.capabilityKey,
-      // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
-      tmdbChangedTvIds: ({required DateTime since}) {
-        final VideoMetadataProvider? tmdb =
-            coordinator.registry.provider(VideoMetadataProviderKind.tmdb);
-        return tmdb is TmdbVideoMetadataProvider && tmdb.isAvailable
-            ? tmdb.changedTvShowIds(since: since)
-            : Future<Set<int>>.value(const <int>{});
-      },
-    );
-    return controller;
-  }
+  VideoSourceScrapeTaskController get _videoSourceScrapeController =>
+      _videoScrapeRuntime.controller;
 
-  VideoLibraryScrapeSweep get _videoLibraryScrapeSweep {
-    // 确保 controller/sweep 已按当前配置构建。
-    final VideoSourceScrapeTaskController _ = _videoSourceScrapeController;
-    return _videoScrapeSweep!;
-  }
+  VideoLibraryScrapeSweep get _videoLibraryScrapeSweep =>
+      _videoScrapeRuntime.sweep;
 
   /// 外壳只画「后台任务」浮钮（忙 / 有待确认两态），视频页角标读同两个量；
   /// 进度本身由任务面板自己监听。controller 每条进度都会通知（哈希期间每 MiB
@@ -2896,7 +2834,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   void _onVideoSourceScrapeTaskChanged() {
     final VideoSourceScrapeTaskController? controller =
-        _videoSourceScrapeTaskController;
+        _videoScrapeRuntime.currentController;
     if (!mounted || controller == null) return;
     final (bool, bool) next =
         (controller.isBusy, controller.pendingConfirmation != null);
@@ -2933,18 +2871,8 @@ class _HomePageState extends BasePageState<HomePage>
 
   Future<SourceScrapeReport> _observeVideoSourceScrape(
     Future<SourceScrapeReport> task,
-  ) {
-    unawaited(task.then<void>((SourceScrapeReport _) {
-      if (mounted) _notifyVideoLibraryChanged();
-    }, onError: (Object error, StackTrace stackTrace) {
-      ErrorLogService.instance.log(
-        'HomePage.videoSourceScrape',
-        error,
-        stackTrace,
-      );
-    }));
-    return task;
-  }
+  ) =>
+      _videoScrapeRuntime.observe(task);
 
   Future<void> _scrapeVideoSource(SourceLibraryRow source) async {
     final ({bool proceed, bool grant}) overwrite =
@@ -3044,40 +2972,6 @@ class _HomePageState extends BasePageState<HomePage>
     return (proceed: confirmed == true, grant: confirmed == true);
   }
 
-  /// Widget dispose 不能 await；先标记中断并让在途 Future 到下一取消边界，再关闭
-  /// HTTP client/ChangeNotifier，避免已释放 notifier 或已关闭 client 被异步任务继续用。
-  void _shutdownVideoSourceScrape() {
-    final VideoSourceScrapeTaskController? controller =
-        _videoSourceScrapeTaskController;
-    final VideoSourceScrapeCoordinator? coordinator =
-        _videoSourceScrapeCoordinator;
-    _videoSourceScrapeTaskController = null;
-    _videoSourceScrapeCoordinator = null;
-    _videoSourceScrapeConfigFingerprint = null;
-    _videoScrapeSweep = null;
-    if (controller == null) {
-      coordinator?.close();
-      return;
-    }
-    controller.removeListener(_onVideoSourceScrapeTaskChanged);
-    controller.markInterrupted();
-    final Future<SourceScrapeReport>? active = controller.activeTask;
-    if (active == null) {
-      controller.dispose();
-      coordinator?.close();
-      return;
-    }
-    unawaited(active
-        .then<void>(
-      (_) {},
-      onError: (Object _, StackTrace __) {},
-    )
-        .whenComplete(() {
-      controller.dispose();
-      coordinator?.close();
-    }));
-  }
-
   Future<void> _onVideoSourceScanCompleted(
     SourceLibraryRow source,
     SourceScanSummary summary,
@@ -3143,7 +3037,7 @@ class _HomePageState extends BasePageState<HomePage>
             key: ValueKey<HomeTab>(visible),
             child: _buildTabContent(visible),
           ),
-        if (_videoSourceScrapeTaskController case final controller?)
+        if (_videoScrapeRuntime.currentController case final controller?)
           if (controller.isBusy)
             Positioned(
               right: 20,

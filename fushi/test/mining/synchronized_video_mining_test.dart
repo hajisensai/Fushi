@@ -645,58 +645,66 @@ void main() {
   // 用户报告（Kiku 模板）：同步片段卡 Picture 是 <video>、句子音频是重播按钮，Kiku 只认
   // <img> / [sound:]，卡上动图和音频都不见了。目标模板不原样渲染图片字段时，片段模式
   // 必须按动图模式出卡：动图封面 + 独立句子音频，且根本不去导出同步片段。
-  test('template that does not render Picture raw gets animated cover + audio',
-      () async {
-    final _TemplateRepo kiku = _TemplateRepo(_kikuLikeBack);
-    final List<String> gifCalls = <String>[];
-    int syncCalls = 0;
-    final ImmersionMiningResult result = await ImmersionMiningEngine(
-      gifExtractor: ({
-        required String inputPath,
-        required int startMs,
-        required int endMs,
-        required String outputPath,
-        int fps = 8,
-        int width = 320,
-        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
-        bool diagnosticOnly = false,
-        FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256,
-        Map<String, String> httpHeaders = const <String, String>{},
-      }) async {
-        gifCalls.add(outputPath);
-        await File(outputPath).writeAsBytes(<int>[0x47, 0x49, 0x46, 0x38]);
-        return outputPath;
-      },
-      synchronizedVideoExtractor: (
-          {required String videoPath,
-          required String audioPath,
-          int audioStartMs = 0,
-          int audioStreamIndex = 0,
-          int audioChannels = 2,
+  for (final String template in <String>[
+    _kikuLikeBack,
+    File('../packages/fushi_anki/test/fixtures/kiku/release-back.html')
+        .readAsStringSync(),
+    File('../packages/fushi_anki/test/fixtures/kiku/v1-back.html')
+        .readAsStringSync(),
+  ]) {
+    test('scripted template ${template.length} gets animated cover + audio',
+        () async {
+      final _TemplateRepo kiku = _TemplateRepo(template);
+      final List<String> gifCalls = <String>[];
+      int syncCalls = 0;
+      final ImmersionMiningResult result = await ImmersionMiningEngine(
+        gifExtractor: ({
+          required String inputPath,
           required int startMs,
           required int endMs,
           required String outputPath,
-          required String? tlsPinSha256,
-          required Map<String, String> httpHeaders,
-          required MiningClipFormat format}) async {
-        syncCalls++;
-        await File(outputPath).writeAsBytes(<int>[9, 8, 7]);
-        return VideoClipExportResult.success(outputPath);
-      },
-    ).mine(request(),
-        compression: MiningMediaCompression.compressed,
-        tempDir: temp.path,
-        repo: kiku);
-    expect(result.aborted, false);
-    expect(kiku.definitionReads, 1);
-    expect(syncCalls, 0);
-    expect(gifCalls, hasLength(1));
-    expect(kiku.context!.synchronizedVideo, false);
-    expect(kiku.context!.coverPath, endsWith('.gif'));
-    expect(kiku.context!.sentenceAudioPath, isNotNull);
-    expect(kiku.context!.sentenceAudioPath, isNot(kiku.context!.coverPath));
-  });
+          int fps = 8,
+          int width = 320,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+          bool diagnosticOnly = false,
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256,
+          Map<String, String> httpHeaders = const <String, String>{},
+        }) async {
+          gifCalls.add(outputPath);
+          await File(outputPath).writeAsBytes(<int>[0x47, 0x49, 0x46, 0x38]);
+          return outputPath;
+        },
+        synchronizedVideoExtractor: (
+            {required String videoPath,
+            required String audioPath,
+            int audioStartMs = 0,
+            int audioStreamIndex = 0,
+            int audioChannels = 2,
+            required int startMs,
+            required int endMs,
+            required String outputPath,
+            required String? tlsPinSha256,
+            required Map<String, String> httpHeaders,
+            required MiningClipFormat format}) async {
+          syncCalls++;
+          await File(outputPath).writeAsBytes(<int>[9, 8, 7]);
+          return VideoClipExportResult.success(outputPath);
+        },
+      ).mine(request(),
+          compression: MiningMediaCompression.compressed,
+          tempDir: temp.path,
+          repo: kiku);
+      expect(result.aborted, false);
+      expect(kiku.definitionReads, 1);
+      expect(syncCalls, 0);
+      expect(gifCalls, hasLength(1));
+      expect(kiku.context!.synchronizedVideo, false);
+      expect(kiku.context!.coverPath, endsWith('.gif'));
+      expect(kiku.context!.sentenceAudioPath, isNotNull);
+      expect(kiku.context!.sentenceAudioPath, isNot(kiku.context!.coverPath));
+    });
+  }
 
   test('template that renders Picture raw keeps the synchronized clip',
       () async {
