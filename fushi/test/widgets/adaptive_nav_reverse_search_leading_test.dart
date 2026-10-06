@@ -33,6 +33,7 @@ void main() {
     WidgetTester tester, {
     required bool reversed,
     bool glassDesign = false,
+    bool minimized = false,
   }) async {
     tester.view.physicalSize = const Size(390, 800);
     tester.view.devicePixelRatio = 1;
@@ -68,6 +69,8 @@ void main() {
                     glassSearchIndex: search,
                     showLabels: false,
                     searchLeading: reversed,
+                    glassMinimized: minimized,
+                    onGlassExpand: () {},
                   ),
                 ),
               ),
@@ -214,6 +217,28 @@ void main() {
     });
   });
 
+  group('MD3 悬浮底栏随滚动收起', () {
+    // 收起小胶囊与 FAB 分居两端：关闭反转时小胶囊在最左、FAB 在最右；开启反转
+    // 时整条镜像——FAB 在最左、小胶囊缩到最右。
+    testWidgets('反转关：小胶囊在左，FAB 在右', (WidgetTester tester) async {
+      await pumpBar(tester, reversed: false, minimized: true);
+      final Finder mini = target('nav-mini-bar');
+      expect(mini, findsOneWidget);
+      expect(centerX(tester, mini), lessThan(195));
+      expect(centerX(tester, target('nav-bar-fab')), greaterThan(195));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('反转开：FAB 在左，小胶囊缩到右', (WidgetTester tester) async {
+      await pumpBar(tester, reversed: true, minimized: true);
+      final Finder mini = target('nav-mini-bar');
+      expect(mini, findsOneWidget);
+      expect(centerX(tester, target('nav-bar-fab')), lessThan(195));
+      expect(centerX(tester, mini), greaterThan(195));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('MD3 悬浮底栏放不下时的「更多」', () {
     // 手机常见的 7 个 tab（首页 / 书架 / 漫画 / 视频 / 浏览 / 查词 / 设置），
     // 纯图标在 320 宽（最窄手机）放不下：关闭反转时首页一侧全显示、末尾收进
@@ -292,6 +317,56 @@ void main() {
         if (cell.evaluate().isEmpty) continue;
         expect(centerX(tester, cell), greaterThan(moreX), reason: 'nav-bar-$i');
       }
+    });
+
+    /// 胶囊里实际显示的目的地标签（按原始顺序，不含「更多」与 FAB）。
+    Set<String> shownLabels(WidgetTester tester, {required bool reversed}) =>
+        <String>{
+          for (int v = 0; v < seven.length; v++)
+            if (target('nav-bar-$v').evaluate().isNotEmpty)
+              (reversed ? seven.reversed.toList() : seven)[v].label,
+        };
+
+    Future<List<String>> moreMenuLabels(WidgetTester tester) async {
+      await tester.tap(target('nav-bar-more'));
+      await tester.pumpAndSettle();
+      final List<String> labels = <String>[
+        for (final Element e
+            in find
+                .byWidgetPredicate((Widget w) => w is PopupMenuItem<int>)
+                .evaluate())
+          for (final Text text
+              in find
+                  .descendant(
+                    of: find.byWidget(e.widget),
+                    matching: find.byType(Text),
+                  )
+                  .evaluate()
+                  .map((Element t) => t.widget as Text))
+            text.data!,
+      ];
+      // 关掉菜单，免得下一次 pump 复用同一个 Navigator 时菜单还挂着。
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      return labels;
+    }
+
+    testWidgets('反转开关两种状态显示同一批目的地，「更多」菜单都按用户顺序列出', (WidgetTester tester) async {
+      await pumpSeven(tester, reversed: false);
+      final Set<String> shownOff = shownLabels(tester, reversed: false);
+      final List<String> menuOff = await moreMenuLabels(tester);
+      await pumpSeven(tester, reversed: true);
+      final Set<String> shownOn = shownLabels(tester, reversed: true);
+      final List<String> menuOn = await moreMenuLabels(tester);
+      expect(menuOff, isNotEmpty);
+      expect(shownOn, shownOff);
+      expect(menuOn, menuOff);
+      // 菜单是用户顺序（[seven] 的子序列）。
+      final List<String> userOrder = <String>[
+        for (final AdaptiveNavItem item in seven)
+          if (menuOff.contains(item.label)) item.label,
+      ];
+      expect(menuOff, userOrder);
     });
   });
 
