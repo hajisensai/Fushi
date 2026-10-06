@@ -269,6 +269,12 @@ inline double ButtonScale(double k) {
 }
 inline double ButtonOpacity(double k) { return std::clamp(k, 0.0, 1.0); }
 
+// 绘制与命中共用：40 DIP 的圆钮扩到 48 DIP，仍跟随动画的实际半径。
+// 分层窗口必须同时给这块区域非零 alpha，仅扩大 ButtonAt 不会收到 OS 事件。
+inline double ButtonHitRadius(double visual_radius) {
+  return visual_radius * kMinTouchDip / kButtonDip;
+}
+
 // 球的不透明度：收起 0.42 → 展开 1；拖动中恒 1。
 inline double BallOpacity(double t, bool dragging) {
   return dragging ? 1.0 : kIdleOpacity + (1.0 - kIdleOpacity) * t;

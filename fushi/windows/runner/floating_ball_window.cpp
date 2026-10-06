@@ -34,6 +34,8 @@ constexpr UINT_PTR kAnimationTimerId = 1;
 // 填 16 会被取整成两拍 = 31ms（约 32fps），填 10 取整成一拍 ≈ 64fps。动画进度
 // 按 QPC 实际经过时间算，节拍抖动不影响时长。
 constexpr UINT kAnimationTimerMs = 10;
+// 尚未显现的进场按钮不能提前截获桌面点击；绘制命中垫与 ButtonAt 同门控。
+constexpr double kMenuMinHitOpacity = 0.05;
 
 constexpr char kActionOpenApp[] = "open_app";
 constexpr char kActionClose[] = "close";
@@ -576,11 +578,11 @@ bool FloatingBallWindow::ButtonCircle(int index, double* cx, double* cy,
 int FloatingBallWindow::ButtonAt(double x, double y) const {
   for (int i = static_cast<int>(menu_centers_.size()) - 1; i >= 0; --i) {
     double cx, cy, r, o;
-    if (!ButtonCircle(i, &cx, &cy, &r, &o) || o < 0.05) {
+    if (!ButtonCircle(i, &cx, &cy, &r, &o) || o < kMenuMinHitOpacity) {
       continue;
     }
     // 圆钮画 40，命中区按 48 算（应用内 kReaderFloatingBallMinTouchTarget）。
-    const double hit = r * fb::kMinTouchDip / fb::kButtonDip;
+    const double hit = fb::ButtonHitRadius(r);
     const double dx = x - cx;
     const double dy = y - cy;
     if (dx * dx + dy * dy <= hit * hit) {
@@ -589,7 +591,7 @@ int FloatingBallWindow::ButtonAt(double x, double y) const {
     // 点标签胶囊 = 点这颗按钮。
     D2D1_RECT_F label;
     double lo;
-    if (LabelRect(i, &label, &lo) && lo >= 0.05 && x >= label.left &&
+    if (LabelRect(i, &label, &lo) && lo >= kMenuMinHitOpacity && x >= label.left &&
         x <= label.right && y >= label.top && y <= label.bottom) {
       return i;
     }
@@ -1092,6 +1094,20 @@ void FloatingBallWindow::RenderMenu() {
       const float cy = static_cast<float>(dcy);
       const float r = static_cast<float>(dr);
       const float opacity = static_cast<float>(dop);
+      // UpdateLayeredWindow 的 alpha=0 像素会在 OS 命中阶段直接穿透，根本到不了
+      // ButtonAt。只在这颗按钮实际的 48 DIP 圆形触区铺 8-bit alpha 的最小非零值，
+      // 再画原有 40 DIP 圆盘；窗口其余空白保持全透明，不拦截下面的应用。
+      // 命中垫不用抗锯齿，避免边缘的 1/255 再乘覆盖率后量化回 0；普通图形恢复
+      // 原来的抗锯齿模式。墨水屏无阴影时也必须保留这块输入区。
+      if (dop >= kMenuMinHitOpacity) {
+        const D2D1_ANTIALIAS_MODE antialias = rt->GetAntialiasMode();
+        rt->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+        brush->SetColor(D2D1::ColorF(0, 0, 0, 1.0f / 255.0f));
+        const float hit = static_cast<float>(fb::ButtonHitRadius(dr));
+        rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), hit, hit),
+                        brush.Get());
+        rt->SetAntialiasMode(antialias);
+      }
       // 标签胶囊（单列才有）：与圆钮同一套 secondaryContainer / 状态层 / 描边，
       // 文字 onSecondaryContainer（应用内 _LabelCapsule）。
       D2D1_RECT_F label;
