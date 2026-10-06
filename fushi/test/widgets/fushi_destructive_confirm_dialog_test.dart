@@ -68,12 +68,62 @@ void main() {
 
     await tester.tap(find.text('连同本体删除'));
     await tester.pumpAndSettle();
-    final Checkbox checkbox = tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox)));
+    final Checkbox checkbox =
+        tester.widget<Checkbox>(glassUnwrap<Checkbox>(find.byType(Checkbox)));
     expect(checkbox.value, isTrue);
 
     await tester.tap(find.text('DELETE'));
     await tester.pumpAndSettle();
     expect((await dialogResult)!.checked, isTrue);
+  });
+
+  testWidgets(
+      '800x600: expanded deletion disclosure scrolls while confirm '
+      'stays reachable and returns the checked decision', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    addTearDown(tester.view.reset);
+    await openDialog(
+      tester,
+      checkboxLabel: '连同其中的书一起删除',
+      statisticsSubtitle: '统计口径',
+      checkedDisclosure: buildDeletionDisclosure(
+        target: DeletionDisclosureTarget.shelfBook,
+      ),
+    );
+    await tester.tap(find.text('连同其中的书一起删除'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DeletionDisclosureView), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final Finder confirm = find.text('DELETE');
+    expect(confirm.hitTestable(), findsOneWidget,
+        reason: '展开披露后，不滚正文也必须能点到确认，不能点中遮罩');
+    final Rect before = tester.getRect(confirm);
+    final Finder scrollable = find
+        .descendant(
+          of: find.byType(FushiDestructiveConfirmDialog),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final ScrollableState state = tester.state<ScrollableState>(scrollable);
+    expect(state.position.maxScrollExtent, greaterThan(0),
+        reason: '正文确实超过视口，才能守住 footer 独立固定的契约');
+    await tester.drag(scrollable, const Offset(0, -160));
+    await tester.pumpAndSettle();
+    expect(state.position.pixels, greaterThan(0));
+    expect(tester.getRect(confirm), before, reason: '滚动正文时确认按钮的位置必须不变');
+    expect(confirm.hitTestable(), findsOneWidget);
+    await tester.tap(confirm);
+    await tester.pumpAndSettle();
+    final FushiDestructiveConfirmResult? value = await dialogResult;
+    expect(value, isNotNull);
+    expect(value!.checked, isTrue);
+    expect(value.deleteLocalFiles, isFalse);
+    expect(value.deleteStatistics, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   // BUG-1291：勾选文案是整句解释而非标题短语，被 [FushiListItem] 默认的
@@ -165,14 +215,20 @@ void main() {
     ) async {
       await open(tester, gate: true);
       expect(
-        tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm())).onPressed,
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(confirm()))
+            .onPressed,
         isNull,
         reason: '不是「点了没反应」，是按钮本身禁用',
       );
 
       await tester.tap(find.text('我确认删除这 37 条记录'));
       await tester.pumpAndSettle();
-      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm())).onPressed, isNotNull);
+      expect(
+          tester
+              .widget<FilledButton>(glassUnwrap<FilledButton>(confirm()))
+              .onPressed,
+          isNotNull);
 
       await tester.tap(confirm());
       await tester.pumpAndSettle();
@@ -184,7 +240,9 @@ void main() {
     ) async {
       await open(tester, gate: false);
       expect(
-        tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm())).onPressed,
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(confirm()))
+            .onPressed,
         isNotNull,
         reason: '可选项决定删多少，不决定能不能删',
       );

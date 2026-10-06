@@ -170,7 +170,10 @@ class _FushiDestructiveConfirmDialogState
     return FushiDialogFrame(
       maxWidth: 420,
       maxHeightFactor: 0.74,
+      // 勾选后披露正文会长于矮窗口：仅正文滚动，确认/取消始终留在面板内。
+      scrollable: false,
       child: FushiModalSheetFrame(
+        scrollable: true,
         title: widget.title,
         leadingIcon: widget.leadingIcon,
         bodyPadding: EdgeInsets.fromLTRB(
@@ -200,8 +203,8 @@ class _FushiDestructiveConfirmDialogState
                 // 原始视频文件）」），不是列表里的标题短语。[FushiListItem] 的
                 // titleMaxLines 默认 1 + ellipsis，在 420 宽的对话框里会把括号
                 // 里的免责说明整段吃掉，用户读到的是「…保留你的原始视…」——恰好
-                // 是最需要看清的那半句。此处父容器高度自由（外层
-                // [FushiDialogFrame] 默认 scrollable），放开行数不会像
+                // 是最需要看清的那半句。此处正文在 [FushiModalSheetFrame] 内滚动，
+                // 高度自由，放开行数不会像
                 // BUG-1184 的固定高容器那样撑破布局。
                 titleMaxLines: 3,
                 title: Text(widget.checkboxLabel!),
