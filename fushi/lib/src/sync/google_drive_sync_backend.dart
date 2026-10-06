@@ -208,7 +208,7 @@ class GoogleDriveSyncBackend extends SyncBackend
     required String folderId,
     required String fileName,
     required File file,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _wrapVoidErrors(() => _drive.uploadContentFile(
             folderId: folderId,
@@ -221,7 +221,7 @@ class GoogleDriveSyncBackend extends SyncBackend
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _wrapVoidErrors(() => _drive.downloadContentFile(
             fileId: fileId,
@@ -290,7 +290,7 @@ class GoogleDriveSyncBackend extends SyncBackend
     String namespaceId,
     String name,
     File file, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _wrapVoidErrors(() => _drive.uploadContentFile(
             folderId: namespaceId,
@@ -303,7 +303,7 @@ class GoogleDriveSyncBackend extends SyncBackend
   Future<void> getAsset(
     String assetId,
     File destination, {
-    void Function(double progress)? onProgress,
+    SyncTransferProgress? onProgress,
   }) =>
       _wrapVoidErrors(() => _drive.downloadContentFile(
             fileId: assetId,

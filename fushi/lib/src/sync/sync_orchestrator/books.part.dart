@@ -109,11 +109,12 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
           tmp,
           displayTitle: override?.title,
           displayTitleAt: override?.updatedAt ?? 0,
-          onProgress: (double f) => _emit(SyncPhase.books,
+          onProgress: (double f, [int? b]) => _emit(SyncPhase.books,
               itemIndex: index,
               itemTotal: total,
               title: title,
-              fileFraction: f),
+              fileFraction: f,
+              fileBytes: b),
         );
       } catch (e) {
         report.noteError('live push book "$title"', e);

@@ -213,8 +213,9 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         await backend.putRemoteAudiobook(
           key,
           tmp,
-          onProgress: (double f) => _emit(SyncPhase.audiobooks,
-              itemIndex: index, itemTotal: total, title: key, fileFraction: f),
+          onProgress: (double f, [int? b]) => _emit(SyncPhase.audiobooks,
+              itemIndex: index, itemTotal: total, title: key,
+              fileFraction: f, fileBytes: b),
         );
         report.audiobooksExported++;
       } catch (e) {
@@ -235,8 +236,9 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
         await backend.getRemoteAudiobook(
           key,
           tmp,
-          onProgress: (double f) => _emit(SyncPhase.audiobooks,
-              itemIndex: index, itemTotal: total, title: key, fileFraction: f),
+          onProgress: (double f, [int? b]) => _emit(SyncPhase.audiobooks,
+              itemIndex: index, itemTotal: total, title: key,
+              fileFraction: f, fileBytes: b),
         );
         // 用本地 EPUB 的 bookKey 作 override：远端 key 已等于本地 EPUB 的 bookKey
         // （toPull 已由 localBookKeys 筛过），显式 override 保写入行与 EPUB 可配对。
