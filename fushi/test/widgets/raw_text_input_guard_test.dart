@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 // 输入框 / 搜索框统一成 M3E（用户 2026-10-05）之后的回退守卫：lib/ 下新代码
 // 不得再直接构造框架 / 第三方的原始输入控件，一律走共享层——
 //   * 搜索：FushiSearchBar / FushiSearchAnchor / showFushiSearchView
@@ -50,12 +52,6 @@ const Map<String, Map<String, int>> _legacy = <String, Map<String, int>>{
   },
 };
 
-/// 去掉 `//` 注释（含 `///` 文档注释）后的代码行。
-String _stripLineComment(String line) {
-  final int index = line.indexOf('//');
-  return index < 0 ? line : line.substring(0, index);
-}
-
 Map<String, Map<String, int>> _scan() {
   final Map<String, Map<String, int>> hits = <String, Map<String, int>>{};
   final List<FileSystemEntity> entries = Directory(
@@ -66,8 +62,8 @@ Map<String, Map<String, int>> _scan() {
     final String path = entity.path.replaceAll(r'\', '/');
     if (path.endsWith('.g.dart')) continue;
     if (_componentFiles.contains(path)) continue;
-    for (final String line in entity.readAsLinesSync()) {
-      final String code = _stripLineComment(line);
+    final String source = maskCommentsAndStrings(entity.readAsStringSync());
+    for (final String code in source.split('\n')) {
       for (final RegExpMatch m in _raw.allMatches(code)) {
         final String name = m.group(1)!;
         (hits[path] ??= <String, int>{}).update(
@@ -117,7 +113,7 @@ void main() {
   });
 
   test('守卫的匹配本身：认原始控件、不认共享组件', () {
-    bool matches(String code) => _raw.hasMatch(code);
+    bool matches(String code) => _raw.hasMatch(maskCommentsAndStrings(code));
     expect(matches('child: TextField('), isTrue);
     expect(matches('return TextFormField('), isTrue);
     expect(matches('CupertinoTextField.borderless('), isTrue);
@@ -127,5 +123,9 @@ void main() {
     expect(matches('FushiTextFieldControl('), isFalse);
     expect(matches('PopupDictionarySearchBar('), isFalse);
     expect(matches('find.byType(TextField)'), isFalse);
+    expect(matches('// TextField('), isFalse);
+    expect(matches('/* ignored\nTextField( */'), isFalse);
+    expect(matches("final hint = 'TextField(';"), isFalse);
+    expect(matches("final url = 'https://example.test'; TextField();"), isTrue);
   });
 }

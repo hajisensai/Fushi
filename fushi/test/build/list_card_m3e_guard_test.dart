@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 // 列表与卡片统一为 M3E（2026-10-05）的守卫：lib/ 下禁止新增裸 Material
 // `ListTile(` / `Card(` / `Card.filled(` / `Card.outlined(`。
 //
@@ -33,15 +35,13 @@ void main() {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String rel = entity.path.replaceAll(r'\', '/');
       if (rel.endsWith('.g.dart') || _allowlist.containsKey(rel)) continue;
-      final List<String> lines = entity.readAsLinesSync();
+      final String source = entity.readAsStringSync();
+      final List<String> lines = source.split('\n');
+      final List<String> codeLines = maskCommentsAndStrings(source).split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String line = lines[i];
-        final String code = line.trimLeft();
-        if (code.startsWith('//') || code.startsWith('*')) continue;
-        // 去掉行尾注释与字符串里的文字再匹配（粗略：截掉 `//` 之后）。
-        final int comment = line.indexOf('//');
-        final String scan = comment >= 0 ? line.substring(0, comment) : line;
-        if (_raw.hasMatch(scan)) offenders.add('$rel:${i + 1}: ${code.trim()}');
+        if (_raw.hasMatch(codeLines[i])) {
+          offenders.add('$rel:${i + 1}: ${lines[i].trim()}');
+        }
       }
     }
     expect(
@@ -54,12 +54,30 @@ void main() {
     );
   });
 
+  test('扫描只认真实构造，保留 URL 后面的代码与原行号', () {
+    const String source = """// Card(
+/* ListTile(
+Card.filled( */
+final hint = 'Card.outlined(';
+final url = 'https://example.test'; Card();
+ListTile(); // Card(
+""";
+    final List<String> lines = maskCommentsAndStrings(source).split('\n');
+    expect(
+      <int>[
+        for (int i = 0; i < lines.length; i++)
+          if (_raw.hasMatch(lines[i])) i + 1,
+      ],
+      <int>[5, 6],
+    );
+  });
+
   test('白名单里的文件都还存在且确实用到裸控件（防过期）', () {
     for (final String path in _allowlist.keys) {
       final File f = File(path);
       expect(f.existsSync(), isTrue, reason: '$path 已不存在，删掉白名单条目');
       expect(
-        _raw.hasMatch(f.readAsStringSync()),
+        _raw.hasMatch(maskCommentsAndStrings(f.readAsStringSync())),
         isTrue,
         reason: '$path 已不再构造裸 ListTile / Card，删掉白名单条目',
       );

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 浮层统一（用户 2026-10-05「对话框和底部弹窗也统一成 m3e」）的反向锁：
 /// `lib/` 下不得新增裸 Material / Cupertino 浮层入口。对话框一律走
 /// `showAppDialog` + `FushiAlertDialog` / `FushiSimpleDialog` / `FushiDialog`
@@ -76,18 +78,15 @@ void main() {
           .replaceAll(r'\', '/')
           .substring('lib/'.length);
       final Set<String> allowed = allowlist[rel] ?? const <String>{};
-      final List<String> lines = entity.readAsLinesSync();
+      final String source = entity.readAsStringSync();
+      final List<String> lines = source.split('\n');
+      final List<String> codeLines = maskCommentsAndStrings(source).split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String line = lines[i];
-        final String trimmed = line.trimLeft();
-        if (trimmed.startsWith('//')) continue;
-        // 去掉行尾注释（不处理字符串里的 //，误报时改写法即可）。
-        final int comment = line.indexOf('//');
-        final String code = comment >= 0 ? line.substring(0, comment) : line;
+        final String code = codeLines[i];
         patterns.forEach((String name, RegExp re) {
           if (allowed.contains(name)) return;
           if (re.hasMatch(code)) {
-            violations.add('$rel:${i + 1}: 裸 $name → ${line.trim()}');
+            violations.add('$rel:${i + 1}: 裸 $name → ${lines[i].trim()}');
           }
         });
       }
@@ -100,6 +99,24 @@ void main() {
           '（showFushiConfirmDialog 等）、adaptiveModalSheet、showFushiMenu / '
           'FushiPopupMenuButton。确需保留时在本守卫白名单登记并写明原因。\n'
           '${violations.join('\n')}',
+    );
+  });
+
+  test('浮层扫描忽略注释与字符串，保留 URL 后面的真实入口', () {
+    const String source = """// showDialog(
+/* AlertDialog(
+showMenu( */
+final hint = 'SimpleDialog(';
+final url = 'https://example.test'; showGeneralDialog();
+Dialog.fullscreen();
+""";
+    final String code = maskCommentsAndStrings(source);
+    expect(
+      <String>[
+        for (final MapEntry<String, RegExp> pattern in patterns.entries)
+          if (pattern.value.hasMatch(code)) pattern.key,
+      ],
+      <String>['showGeneralDialog', 'Dialog'],
     );
   });
 
