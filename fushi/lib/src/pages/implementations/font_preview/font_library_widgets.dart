@@ -157,8 +157,49 @@ class FontSpecimenText extends StatelessWidget {
   final double fontSize;
   final int maxLines;
 
+  /// 样张行高倍数（与 [_specimenStyle] 的默认 height 同值）。
+  static const double _lineHeight = 1.35;
+
+  /// 样张区固定高度 = [maxLines] 行 × 行高（随系统字号缩放）。
+  ///
+  /// 切换样例文种（日文 / 中文 / 西文）或自定义样字时，句子在一款字体里可能
+  /// 折 1 行、在另一款里折 2 行；不预留高度的话，列表卡片随之忽高忽低，整列
+  /// 一起上下跳。高度只由字号与行数决定，与字体、文字内容、加载状态都无关。
+  static double reservedHeight(
+    BuildContext context, {
+    required double fontSize,
+    required int maxLines,
+  }) =>
+      MediaQuery.textScalerOf(context).scale(fontSize) * _lineHeight * maxLines;
+
   @override
   Widget build(BuildContext context) {
+    return SizedBox(
+      height: reservedHeight(context, fontSize: fontSize, maxLines: maxLines),
+      child: ClipRect(
+        child: AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          switchInCurve: FushiMotion.enter,
+          switchOutCurve: FushiMotion.exit,
+          // 新旧样张叠在左上角交叉淡化，不按两者中较大的尺寸重排。
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            alignment: AlignmentDirectional.topStart,
+            children: <Widget>[...previous, if (current != null) current],
+          ),
+          child: KeyedSubtree(
+            key: ValueKey<Object>(
+              entry.state == FontSpecimenState.ready
+                  ? 'ready|${entry.family}|$text'
+                  : entry.state,
+            ),
+            child: _buildState(context),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildState(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     switch (entry.state) {
       case FontSpecimenState.loading:
@@ -183,6 +224,8 @@ class FontSpecimenText extends StatelessWidget {
             Expanded(
               child: Text(
                 t.font_preview_font_unavailable,
+                maxLines: maxLines,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: scheme.error),
@@ -191,14 +234,24 @@ class FontSpecimenText extends StatelessWidget {
           ],
         );
       case FontSpecimenState.ready:
+        // 强制 strut：缺字形的字回退到别的字体时，回退字体的 ascent / descent
+        // 比例与本字体不同，行盒会被撑高；钉死行高后每行恒为 fontSize × 1.35，
+        // 换文种 / 换字体都不改变行距与基线位置。
         return Text(
           text,
           maxLines: maxLines,
           overflow: TextOverflow.ellipsis,
+          strutStyle: StrutStyle(
+            fontFamily: entry.family,
+            fontSize: fontSize,
+            height: _lineHeight,
+            forceStrutHeight: true,
+          ),
           style: _specimenStyle(
             context,
             family: entry.family,
             fontSize: fontSize,
+            height: _lineHeight,
           ),
         );
     }
@@ -862,38 +915,49 @@ class _FontLibraryDetailPanelState extends State<FontLibraryDetailPanel> {
             ],
           ),
           const SizedBox(height: 8),
-          AnimatedSwitcher(
+          // 切换文种时日文样张带振假名、中文 / 西文不带，高度不同：新旧样张叠在
+          // 左上角交叉淡化，容器高度用弹簧补间过去，下面的字重列表不会瞬间跳位。
+          AnimatedSize(
             duration: fushiMotionDuration(context, FushiMotion.medium),
-            switchInCurve: FushiMotion.enter,
-            switchOutCurve: FushiMotion.exit,
-            child: !ready
-                ? FontSpecimenText(
-                    key: const ValueKey<String>('pending'),
-                    entry: entry,
-                    text: '',
-                    fontSize: 22,
-                  )
-                : _vertical
-                ? SizedBox(
-                    key: const ValueKey<String>('vertical'),
-                    height: (_fontSize * 1.15 * 9)
-                        .clamp(200.0, 420.0)
-                        .toDouble(),
-                    child: FontVerticalSpecimen(
-                      segments: segments,
-                      style: body,
-                      rubyStyle: ruby,
+            curve: FushiMotion.standard,
+            alignment: AlignmentDirectional.topStart,
+            child: AnimatedSwitcher(
+              duration: fushiMotionDuration(context, FushiMotion.medium),
+              switchInCurve: FushiMotion.enter,
+              switchOutCurve: FushiMotion.exit,
+              layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+                alignment: AlignmentDirectional.topStart,
+                children: <Widget>[...previous, if (current != null) current],
+              ),
+              child: !ready
+                  ? FontSpecimenText(
+                      key: const ValueKey<String>('pending'),
+                      entry: entry,
+                      text: '',
+                      fontSize: 22,
+                    )
+                  : _vertical
+                  ? SizedBox(
+                      key: ValueKey<String>('vertical|${widget.script.name}'),
+                      height: (_fontSize * 1.15 * 9)
+                          .clamp(200.0, 420.0)
+                          .toDouble(),
+                      child: FontVerticalSpecimen(
+                        segments: segments,
+                        style: body,
+                        rubyStyle: ruby,
+                      ),
+                    )
+                  : Padding(
+                      key: ValueKey<String>('horizontal|${widget.script.name}'),
+                      padding: EdgeInsets.only(top: _fontSize * 0.3),
+                      child: FontHorizontalRubySpecimen(
+                        segments: segments,
+                        style: body,
+                        rubyStyle: ruby,
+                      ),
                     ),
-                  )
-                : Padding(
-                    key: const ValueKey<String>('horizontal'),
-                    padding: EdgeInsets.only(top: _fontSize * 0.3),
-                    child: FontHorizontalRubySpecimen(
-                      segments: segments,
-                      style: body,
-                      rubyStyle: ruby,
-                    ),
-                  ),
+            ),
           ),
         ],
       ),
