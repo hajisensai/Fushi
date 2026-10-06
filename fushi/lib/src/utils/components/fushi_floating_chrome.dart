@@ -208,6 +208,36 @@ class FushiFloatingChromeInset extends InheritedWidget {
       top != oldWidget.top;
 }
 
+/// 库页浮动工具区下的**唯一页面入口**（2026-10-06 结构收口）：把叠放工具区的
+/// 让位高度 [FushiFloatingChromeInset] 换成 `MediaQuery` 顶部 padding 交给
+/// [child]，子树里的 inset 归零。
+///
+/// 这样页面的主滚动视图按 Flutter 的通用约定自己吃掉这段让位——
+/// `ListView` / `GridView`（`padding` 为 null 时）、`SafeArea` / `SliverSafeArea`、
+/// 或显式读 `MediaQuery.paddingOf(context).top` 加进内容内边距——内容从工具区
+/// 下方开始、往下滚时**滚到工具区胶囊底下**，工具区收起后顶部不留空白。
+///
+/// 与 [FushiFloatingChromeInsetPadding] 的区别：那个是整体 `Padding` 下移，
+/// 让出的那段永远是空的页面底色，工具区一收起就是顶部一整块白（游戏 / 设置
+/// 等页 2026-10-06 用户截图）。它只留给**不滚动**的占位 / 加载 / 错误态。
+class FushiFloatingChromeScrollInset extends StatelessWidget {
+  const FushiFloatingChromeScrollInset({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double top = FushiFloatingChromeInset.of(context);
+    final MediaQueryData media = MediaQuery.of(context);
+    return MediaQuery(
+      data: media.copyWith(
+        padding: media.padding.copyWith(top: media.padding.top + top),
+      ),
+      child: FushiFloatingChromeInset(top: 0, child: child),
+    );
+  }
+}
+
 /// 高度 = 所在位置的 [FushiFloatingChromeInset] 的空白：主滚动视图的第一个
 /// sliver / 子项用它让出叠放在上面的浮动工具区。自己读 inset（用它自己的
 /// context），所以页面在 State 方法里构建正文时也能拿到嵌套工具区的值——直接
