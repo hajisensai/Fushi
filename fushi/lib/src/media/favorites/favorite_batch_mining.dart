@@ -301,78 +301,106 @@ class _FavoriteBatchMiningPageState
               label: Text(t.dialog_done),
             ),
         ],
-        body: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 12),
-              child: _FavoriteBatchProgressCard(
-                done: _done,
-                total: total,
-                finished: _finished,
-                label: _finished
-                    ? _summaryText(FavoriteBatchSummary.of(_results))
-                    : t.favorites_batch_mine_progress(
-                        done: _done,
-                        total: total,
-                      ),
-              ),
-            ),
-            // 查词弹窗预览：结构恒定的尺寸动画外壳，结束后弹窗卸掉、外壳收起。
-            AnimatedSize(
-              duration: context.fushiMotion.spatialDefault.duration,
-              curve: context.fushiMotion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: popupResult == null
-                  ? const SizedBox(width: double.infinity)
-                  : Padding(
-                      padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
-                      child: FushiCard(
-                        variant: FushiCardVariant.outlined,
-                        padding: const EdgeInsets.all(4),
-                        child: SizedBox(
-                          height: _kPopupPreviewHeight,
-                          // 只展示、不交互：批量流程自己取字段落卡，用户在这里点
-                          // 「+」会与批量抢同一张卡。
-                          child: IgnorePointer(
-                            child: FushiAppUiScaleNeutralizer(
-                              child: DictionaryPopupWebView(
-                                key: _popupKey,
-                                result: popupResult,
-                                onRendered: _onPopupRendered,
-                                onRenderError: _onPopupRenderError,
-                              ),
-                            ),
+        // 进度主卡原本固定在正文顶部：页头浮在正文上之后会被胶囊盖住，所以随
+        // 页头一起进 headerBottom（页头 → 进度卡纵向堆叠、一起收起）；页头已有
+        // 左右内边距，不再叠 gutter。
+        headerBottom: Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: _FavoriteBatchProgressCard(
+            done: _done,
+            total: total,
+            finished: _finished,
+            label: _finished
+                ? _summaryText(FavoriteBatchSummary.of(_results))
+                : t.favorites_batch_mine_progress(done: _done, total: total),
+          ),
+        ),
+        // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
+        // 页头含进度卡）。
+        body: Builder(
+          builder: (BuildContext context) => _buildBody(
+            context,
+            total: total,
+            popupResult: popupResult,
+            gutter: gutter,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context, {
+    required int total,
+    required DictionarySearchResult? popupResult,
+    required double gutter,
+  }) {
+    final double inset = MediaQuery.paddingOf(context).top;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 查词弹窗预览：结构恒定的尺寸动画外壳，结束后弹窗卸掉、外壳收起。
+        AnimatedSize(
+          duration: context.fushiMotion.spatialDefault.duration,
+          curve: context.fushiMotion.spatialDefault.curve,
+          alignment: Alignment.topCenter,
+          child: popupResult == null
+              ? const SizedBox(width: double.infinity)
+              : Padding(
+                  // 预览是固定不滚的 WebView（放进列表会被回收、打断批量
+                  // 渲染等待），只能停在页头下方：顶部让出页头。
+                  padding: EdgeInsets.fromLTRB(gutter, inset, gutter, 12),
+                  child: FushiCard(
+                    variant: FushiCardVariant.outlined,
+                    padding: const EdgeInsets.all(4),
+                    child: SizedBox(
+                      height: _kPopupPreviewHeight,
+                      // 只展示、不交互：批量流程自己取字段落卡，用户在这里点
+                      // 「+」会与批量抢同一张卡。
+                      child: IgnorePointer(
+                        child: FushiAppUiScaleNeutralizer(
+                          child: DictionaryPopupWebView(
+                            key: _popupKey,
+                            result: popupResult,
+                            onRendered: _onPopupRendered,
+                            onRenderError: _onPopupRenderError,
                           ),
                         ),
                       ),
                     ),
-            ),
-            Expanded(
-              // 分段卡片列表：首尾大圆角、行间 2px；首屏错峰进场。
-              child: FushiEntranceScope(
-                child: ListView.builder(
-                  padding: withBottomSafeInset(
-                    context,
-                    EdgeInsets.fromLTRB(gutter, 0, gutter, 16),
                   ),
-                  itemCount: total,
-                  itemBuilder: fushiStaggeredItemBuilder(
-                    (BuildContext context, int index) => FushiGroupedListItem(
-                      index: index,
-                      count: total,
-                      child: _FavoriteBatchItemTile(
-                        item: widget.items[index],
-                        result: _results[index],
-                      ),
-                    ),
+                ),
+        ),
+        Expanded(
+          // 分段卡片列表：首尾大圆角、行间 2px；首屏错峰进场。
+          child: FushiEntranceScope(
+            child: ListView.builder(
+              padding: withBottomSafeInset(
+                context,
+                // 无预览时列表滚到浮动页头底下（顶部让出页头）；有预览时
+                // 预览已让过，列表紧接其下。
+                EdgeInsets.fromLTRB(
+                  gutter,
+                  popupResult == null ? inset : 0,
+                  gutter,
+                  16,
+                ),
+              ),
+              itemCount: total,
+              itemBuilder: fushiStaggeredItemBuilder(
+                (BuildContext context, int index) => FushiGroupedListItem(
+                  index: index,
+                  count: total,
+                  child: _FavoriteBatchItemTile(
+                    item: widget.items[index],
+                    result: _results[index],
                   ),
                 ),
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
