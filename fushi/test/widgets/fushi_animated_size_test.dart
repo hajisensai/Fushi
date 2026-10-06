@@ -18,6 +18,54 @@ Widget _host(Duration duration, Widget child, {VoidCallback? onEnd}) {
 }
 
 void main() {
+  testWidgets('disabled motion forwards tight child constraints unchanged', (
+    WidgetTester tester,
+  ) async {
+    final List<BoxConstraints> received = <BoxConstraints>[];
+    for (final Duration duration in <Duration>[
+      const Duration(milliseconds: 200),
+      Duration.zero,
+    ]) {
+      BoxConstraints? observed;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 240,
+                height: 120,
+                child: FushiAnimatedSize(
+                  duration: duration,
+                  curve: Curves.linear,
+                  child: ColoredBox(
+                    key: const ValueKey<String>('size-probe'),
+                    color: Colors.blue,
+                    child: LayoutBuilder(
+                      builder:
+                          (BuildContext context, BoxConstraints constraints) {
+                            observed = constraints;
+                            return const SizedBox.shrink();
+                          },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(observed, const BoxConstraints.tightFor(width: 240, height: 120));
+      received.add(observed!);
+      expect(
+        tester.getSize(find.byKey(const ValueKey<String>('size-probe'))),
+        const Size(240, 120),
+      );
+      expect(tester.takeException(), isNull);
+    }
+    expect(received, hasLength(2));
+    expect(received.last, received.first);
+  });
+
   testWidgets('zero duration expands and shrinks in the current layout', (
     WidgetTester tester,
   ) async {
