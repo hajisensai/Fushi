@@ -29,7 +29,12 @@ class CtlClient {
   CtlClient(this.endpoint, {HttpClient? httpClient})
     : _http =
           httpClient ??
-          (HttpClient()..connectionTimeout = const Duration(seconds: 3)),
+          (HttpClient()
+            ..connectionTimeout = const Duration(seconds: 3)
+            // 控制通道只在 127.0.0.1：永远直连。默认的 findProxy 读
+            // HTTP_PROXY / HTTPS_PROXY，用户开着全局代理又没配 NO_PROXY 时，
+            // 请求（连同 Bearer token）会被送进代理，回来的是代理的 502。
+            ..findProxy = (Uri _) => 'DIRECT'),
       _ownsHttp = httpClient == null;
 
   final CtlEndpoint endpoint;

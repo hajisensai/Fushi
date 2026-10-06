@@ -152,6 +152,35 @@ void main() {
     expect(handler.quits, 1);
   });
 
+  test('环境里配了 HTTP 代理时 CLI 仍直连，token 不进代理', () async {
+    final HttpServer proxy = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    addTearDown(() => proxy.close(force: true));
+    final List<String> proxied = <String>[];
+    proxy.listen((HttpRequest request) {
+      proxied.add('${request.method} ${request.uri}');
+      request.response
+        ..statusCode = HttpStatus.badGateway
+        ..close();
+    });
+    final CtlAppStatus status = await HttpOverrides.runZoned(
+      () async {
+        final CtlClient client = CtlClient(endpoint);
+        try {
+          return await client.status();
+        } finally {
+          client.close();
+        }
+      },
+      findProxyFromEnvironment: (Uri uri, Map<String, String>? environment) =>
+          'PROXY 127.0.0.1:${proxy.port}',
+    );
+    expect(status.initialised, isTrue);
+    expect(proxied, isEmpty);
+  });
+
   test('app 拒绝的目标 → 422 rejected', () async {
     final CtlClient client = CtlClient(endpoint);
     addTearDown(client.close);
