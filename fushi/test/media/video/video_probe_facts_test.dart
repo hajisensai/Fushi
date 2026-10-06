@@ -5,6 +5,11 @@ import 'package:fushi_engine/media/video/video_dynamic_range.dart';
 
 /// 固定退出码 / 输出的 ffprobe 替身。
 class _StubBackend implements FfmpegBackend {
+  /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
   _StubBackend({required this.returnCode, this.output = ''});
 
   final int? returnCode;

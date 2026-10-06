@@ -40,13 +40,16 @@ void main() {
         reason: '引擎 ffmpeg_backend.dart 不得 import ffmpeg_kit 插件');
   });
 
-  test('顶层进程 runner 各自一处 drain/超时（ffmpeg + ffprobe）', () {
-    // ffmpeg 工作输出写 stderr、ffprobe JSON 写 stdout，两者收集/drain 的流相反，
-    // 故各有一个顶层 runner（runFfmpegProcess / runFfprobeProcess），各自一处
-    // sigkill 超时逻辑（TODO-1045 新增 ffprobe 路径）。钉死两处、不允许再散落第三处。
+  test('顶层进程 runner 共用唯一一处 drain/超时（ffmpeg + 查询 + ffprobe）', () {
+    // ffmpeg 工作输出写 stderr、ffprobe JSON 写 stdout、ffmpeg 查询表（-filters 等，
+    // BUG-2938）写 stdout，三者收集/drain 的流各不相同，故各有一个顶层 runner
+    // （runFfmpegProcess / runFfmpegQueryProcess / runFfprobeProcess），但都委托同一个
+    // _runToolProcess——sigkill 超时逻辑只许有这一处，不允许再散落第二处。
     expect(src, contains('Future<FfmpegRunResult> runFfmpegProcess('));
+    expect(src, contains('Future<FfmpegRunResult> runFfmpegQueryProcess('));
     expect(src, contains('Future<FfmpegRunResult> runFfprobeProcess('));
-    expect('ProcessSignal.sigkill'.allMatches(src).length, 2);
+    expect(src, contains('Future<FfmpegRunResult> _runToolProcess('));
+    expect('ProcessSignal.sigkill'.allMatches(src).length, 1);
   });
 
   test('Android/iOS 路由到 KitFfmpegBackend，桌面仍 CLI', () {

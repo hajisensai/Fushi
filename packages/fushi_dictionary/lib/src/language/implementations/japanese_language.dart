@@ -2,14 +2,13 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/material.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:kana_kit/kana_kit.dart';
 import 'package:fushi_dictionary/src/language/ruby_text.dart';
 
 import '../../engine/fushidicts.dart';
 import '../../formats/yomichan_dictionary_format.dart';
 import '../../models/dictionary_entry.dart';
-import '../language.dart';
+import '../language_base.dart';
 import '../language_utils.dart';
 import '../../models/fushi_text_selection.dart';
 

@@ -30,6 +30,10 @@ class _RecordingFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       throw UnimplementedError();
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
 }
 
 /// 直接起入库的精简 ffmpeg 进程。
@@ -52,6 +56,10 @@ class _BinaryFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
       throw UnimplementedError();
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
 }
 
 /// 一个 PGS 段（不带 `PG` 头）：类型 + 长度 + 段体。
