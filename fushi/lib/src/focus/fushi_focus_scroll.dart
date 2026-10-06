@@ -162,6 +162,7 @@ class FushiFocusScroll {
     final BuildContext? context = position.context.notificationContext;
     if (context == null || !context.mounted) return false;
     if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    if (!Visibility.of(context)) return false;
     bool hidden = false;
     context.visitAncestorElements((Element ancestor) {
       if (_hidesSubtree(ancestor.widget)) {
@@ -174,10 +175,13 @@ class FushiFocusScroll {
   }
 
   /// [widget] 是否把整棵子树藏起来了：`Offstage(offstage: true)`，或不可见的
-  /// [Visibility]（它的 maintainSize 形态仍有几何，光看 Offstage 抓不到；而
-  /// [IndexedStack] 的非当前 child 正是用它包的——SDK 里 IndexedStack 只是把每个
-  /// child 裹一层 `Visibility(visible: i == index, maintainState/Size: true)`，
-  /// 所以不需要也不能对 IndexedStack 自己做「按 index 挑子元素」的特例）。
+  /// [Visibility]（它的 maintainSize 形态仍有几何，光看 Offstage 抓不到）。
+  ///
+  /// [IndexedStack] 的非当前 child 从 Flutter 3.47 起**不再**包 `Visibility`
+  /// widget，而是直接包私有的 `_VisibilityScope`（+ `ExcludeFocus`），按 widget
+  /// 类型认不出来；那一路由调用方对 Scrollable 的 context 查 [Visibility.of]
+  /// （SDK 公开的「这里是否可见」判据，`Visibility` 与 IndexedStack 都经它上报），
+  /// 仍不对 IndexedStack 做「按 index 挑子元素」的特例。
   static bool _hidesSubtree(Widget widget) =>
       (widget is Offstage && widget.offstage) ||
       (widget is Visibility && !widget.visible);
@@ -199,7 +203,8 @@ class FushiFocusScroll {
   ///   4. **零登记兜底**：从 [navigator] 当前可见路由的子树里按 element 树顺序找
   ///      第一个纵向 Scrollable。跳过非当前路由（被整页 / 对话框盖住的页面不能被
   ///      滚）、`Offstage`（首页各 tab 靠它隐藏未选中者）、不可见的 `Visibility`
-  ///      （[IndexedStack] 用它包非当前 child），并要求 viewport 真的与 Navigator
+  ///      与 [Visibility.of] 为假的位置（[IndexedStack] 的非当前 child），并要求
+  ///      viewport 真的与 Navigator
   ///      可见区域相交（排除 [PageView] / [TabBarView] 里已布局但滑到屏幕外的
   ///      相邻页）。
   ///
@@ -268,6 +273,7 @@ class FushiFocusScroll {
         final ScrollPosition position = scrollable.position;
         if (position.axis == Axis.vertical &&
             canScrollToward(position, towardEnd: towardEnd) &&
+            Visibility.of(scrollable.context) &&
             _viewportIsOnStage(scrollable.context, stage)) {
           found = position;
           return;
