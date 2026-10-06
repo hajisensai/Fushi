@@ -264,6 +264,9 @@ class _InterconnectPairScanPageState extends State<_InterconnectPairScanPage> {
     // M3E 页面壳：浮动页头 + 相机取景；相机不可用时出 error tonal 占位。
     return FushiPageScaffold(
       title: t.sync_pair_scan,
+      // 相机取景是定高画布、没有可滚到页头底下的内容；页头标题直接写在页面上，
+      // 叠在实时取景画面上读不清，所以页头与取景上下排。
+      extendBodyBehindHeader: false,
       body: MobileScanner(
         onDetect: _onDetect,
         errorBuilder: (BuildContext ctx, MobileScannerException error) =>
