@@ -6,6 +6,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
@@ -637,18 +638,65 @@ void main() {
             )
           : _withoutSharedComponentNames(fileSource);
       for (final String banned in entry.value) {
-        // `re:` 前缀 = 正则判据（只禁数字字面量这类需要边界的形态）。
-        final Matcher matcher = banned.startsWith('re:')
-            ? isNot(matches(RegExp(banned.substring(3))))
-            : isNot(contains(banned));
+        // scrolled-under 是专用状态装饰；仅豁免该类唯一一处 BoxDecoration，
+        // 其它类与其它裸原语仍受同一门约束（对应 popup_header_divider 守卫）。
+        final String checkedSource =
+            entry.key.endsWith('dictionary_popup_layer.dart') &&
+                banned == 'BoxDecoration('
+            ? _withoutPopupScrolledUnderDecoration(source)
+            : source;
         expect(
-          source,
-          matcher,
+          _containsMigratedBan(checkedSource, banned),
+          isFalse,
           reason: '${entry.key} still contains $banned',
         );
       }
     }
   });
+
+  test('migrated primitive bans respect identifiers and generic calls', () {
+    expect(_containsMigratedBan('Container(child: x)', 'Container('), isTrue);
+    expect(
+      _containsMigratedBan('AnimatedContainer(child: x)', 'Container('),
+      isFalse,
+    );
+    expect(
+      _containsMigratedBan(
+        "// Container()\nfinal label = 'Container()';",
+        'Container(',
+      ),
+      isFalse,
+    );
+    expect(
+      _containsMigratedBan('showDialog<void>(context: c)', 'showDialog<'),
+      isTrue,
+    );
+    expect(
+      _containsMigratedBan('showDialog(context: c)', 'showDialog<'),
+      isTrue,
+    );
+    expect(
+      _containsMigratedBan('myshowDialog<void>(context: c)', 'showDialog<'),
+      isFalse,
+    );
+  });
+
+  test(
+    'popup scrolled-under decoration exemption cannot cover other classes',
+    () {
+      const String source = '''
+class _PopupScrolledUnderBar {
+  Widget build() => AnimatedContainer(decoration: BoxDecoration());
+}
+class AnotherPopupPart {
+  Widget build() => Container(decoration: BoxDecoration());
+}
+''';
+      final String checked = _withoutPopupScrolledUnderDecoration(source);
+      expect(identifierCall('BoxDecoration').allMatches(checked), hasLength(1));
+      expect(_containsMigratedBan(checked, 'Container('), isTrue);
+    },
+  );
 
   test('ordinary page chrome does not reopen local M3E decisions', () {
     const List<String> forbidden = <String>[
@@ -685,8 +733,7 @@ void main() {
     const Map<String, String> allowedFiles = <String, String>{
       'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
-      'lib/src/utils/components/fushi_material_components.dart':
-          'Shared MD3 component implementation may map tokens to framework widgets.',
+      'lib/src/utils/components/fushi_material_components.dart': 'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls '
           '(including the Apple pop-up button capsule radius).',
@@ -760,8 +807,7 @@ void main() {
       // 同一份「书架内容 chrome」豁免理由随之延伸到各 part 文件（仅拆分搬运，零行为变化）。
       'lib/src/pages/implementations/reader_history/remote.part.dart':
           'Remote book download control density is reader-shelf content.',
-      'lib/src/pages/implementations/reader_fushi_page.dart':
-          'Hoshi reader content and reader chrome have separate migration rules.',
+      'lib/src/pages/implementations/reader_fushi_page.dart': 'Hoshi reader content and reader chrome have separate migration rules.',
       // TODO-589 batch1: reader_fushi_page.dart 拆成主壳 + reader_fushi/*.part.dart；
       // 同一份「reader content / 悬浮歌词数据」豁免随搬运延伸到 part 文件（零行为变化）。
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart':
@@ -1166,12 +1212,10 @@ void main() {
           kSharedComponentImplementation,
       'lib/src/utils/components/fushi_placeholder_message.dart':
           kSharedComponentImplementation,
-      'lib/src/utils/components/fushi_tag.dart':
-          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_tag.dart': kSharedComponentImplementation,
       'lib/src/utils/components/library_section_tabs.dart':
           kSharedComponentImplementation,
-      'lib/src/utils/misc/fushi_toast.dart':
-          kSharedComponentImplementation,
+      'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
       //    Apple 分支的 HIG 尺寸——FushiTypeRoles 暂无 Apple 字阶）。
       'lib/src/lookup/lookup_popup_size_preview.dart':
@@ -1281,9 +1325,7 @@ void main() {
         'fontSize:',
       },
       'lib/src/media/video/video_episode_panel.dart': <String>{'fontSize:'},
-      'lib/src/media/video/video_episode_rail.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/media/video/video_episode_rail.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_m3e_chrome.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1330,7 +1372,6 @@ void main() {
         'fontSize:',
       },
       'lib/src/models/fushi_m3e_misc_themes.dart': <String>{
-        'fontSize:',
         'surfaceContainerHigh',
         'surfaceContainerHighest',
       },
@@ -1386,12 +1427,8 @@ void main() {
         'fontSize:',
       },
       'lib/src/reader/illustration_zoom_viewer.dart': <String>{'fontSize:'},
-      'lib/src/reader/reader_desktop_chrome.dart': <String>{
-        'fontSize:',
-      },
-      'lib/src/reader/reader_status_footer.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
+      'lib/src/reader/reader_status_footer.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_panel_kit.dart': <String>{
         'BorderRadius.circular(',
       },
@@ -1424,10 +1461,7 @@ void main() {
         'fontSize:',
       },
       'lib/src/pages/implementations/video_fushi/flicker_notice.part.dart':
-          <String>{
-            'BorderRadius.circular(',
-            'VisualDensity.compact',
-          },
+          <String>{'BorderRadius.circular(', 'VisualDensity.compact'},
       'lib/src/pages/implementations/video_fushi/layout.part.dart': <String>{
         'fontSize:',
       },
@@ -1436,9 +1470,7 @@ void main() {
         'fontSize:',
       },
       'lib/src/pages/implementations/video_fushi/volume_osd.part.dart':
-          <String>{
-            'fontSize:',
-          },
+          <String>{'fontSize:'},
       'lib/src/pages/implementations/video_fushi_page.dart': <String>{
         'fontSize:',
       },
@@ -1466,18 +1498,15 @@ void main() {
       'lib/src/lookup/lookup_popup_size_preview.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart': <String>{
-        'surfaceContainerHighest',
-      },
+      'lib/src/media/manga/interconnect/interconnect_manga_browse_page.dart':
+          <String>{'surfaceContainerHighest'},
       'lib/src/media/manga/library/manga_series_page.dart': <String>{
         'surfaceContainerHighest',
       },
       'lib/src/media/manga/manga_cover_failure.dart': <String>{
         'surfaceContainerHighest',
       },
-      'lib/src/media/video/video_side_panel.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/media/video/video_side_panel.dart': <String>{'fontSize:'},
       'lib/src/onboarding/recommended_pack_download_mini_bar.dart': <String>{
         'BorderRadius.circular(',
       },
@@ -1490,19 +1519,14 @@ void main() {
       'lib/src/pages/implementations/media_discovery_page.dart': <String>{
         'BorderRadius.circular(',
       },
-      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart':
+          <String>{'fontSize:'},
       'lib/src/settings/glass_settings_renderer.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
       },
-      'lib/src/settings/settings_kit.dart': <String>{
-        'fontSize:',
-      },
-      'lib/src/settings/settings_home_page.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/settings/settings_kit.dart': <String>{'fontSize:'},
+      'lib/src/settings/settings_home_page.dart': <String>{'fontSize:'},
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1514,21 +1538,13 @@ void main() {
         'BorderRadius.circular(',
         'fontSize:',
       },
-      'lib/src/utils/components/fushi_dropdown.dart': <String>{
-        'fontSize:',
-      },
-      'lib/src/utils/components/fushi_icon_button.dart': <String>{
-        'fontSize:',
-      },
-      'lib/src/utils/components/fushi_loading_view.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/utils/components/fushi_dropdown.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_icon_button.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_loading_view.dart': <String>{'fontSize:'},
       'lib/src/utils/components/fushi_placeholder_message.dart': <String>{
         'fontSize:',
       },
-      'lib/src/utils/components/fushi_tag.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/utils/components/fushi_tag.dart': <String>{'fontSize:'},
       'lib/src/utils/components/glass/fushi_glass_bars.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1562,9 +1578,7 @@ void main() {
       'lib/src/utils/components/library_section_tabs.dart': <String>{
         'fontSize:',
       },
-      'lib/src/utils/misc/fushi_toast.dart': <String>{
-        'fontSize:',
-      },
+      'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
     };
 
     expect(
@@ -1787,13 +1801,9 @@ void main() {
         .where((String line) => line.contains('fontSize:'))
         .map((String line) => line.trim())
         .toList(growable: false);
-    expect(
-      fontSizeLines,
-      <String>[
-        'return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);',
-      ],
-      reason: 'the allowlisted hit must stay the single popup-parity size',
-    );
+    expect(fontSizeLines, <String>[
+      'return base.copyWith(fontSize: kPopupHeadwordFontSize * safeScale);',
+    ], reason: 'the allowlisted hit must stay the single popup-parity size');
   });
 
   // BUG-1414：上面 allowlist 里 manga_json_writeback.dart 的豁免理由是「纯数据层、
@@ -1887,9 +1897,8 @@ void main() {
   });
 
   test('manga.json writeback stays a pure data layer', () {
-    final String source = File(
-      'lib/src/media/manga/manga_json_writeback.dart',
-    ).readAsStringSync();
+    final String source = File('lib/src/media/manga/manga_json_writeback.dart')
+        .readAsStringSync();
     final String code = maskComments(source);
 
     // 无 Flutter import ⇒ 这个文件里不可能存在页面 chrome。
@@ -1985,9 +1994,8 @@ void main() {
     // 不在标签栏里私拼一枚。
     expect(tagBar, contains('FushiTagActionChip('));
     expect(tagBar, isNot(contains('class _TagBarActionChip')));
-    final String tagChips = File(
-      'lib/src/media/tags/tag_chips.dart',
-    ).readAsStringSync();
+    final String tagChips = File('lib/src/media/tags/tag_chips.dart')
+        .readAsStringSync();
     final String actionChip = _sectionSource(
       tagChips,
       'class FushiTagActionChip',
@@ -2117,7 +2125,10 @@ void main() {
       expect(frame, contains('_buildMd3SegmentGrid('));
       expect(frame, contains('kSettingsSegmentOuterRadius'));
       expect(frame, contains('SizedBox(height: kSettingsSegmentGap)'));
-      expect(frame, contains('DialogDangerAction(muted: false) => colors.error'));
+      expect(
+        frame,
+        contains('DialogDangerAction(muted: false) => colors.error'),
+      );
       expect(frame, contains('final bool showLaunchAction;'));
       expect(frame, contains('showLaunchAction &&'));
       expect(frame, contains('launchLabel != null'));
@@ -2147,9 +2158,8 @@ void main() {
 
   test('settings renderer rows use shared M3E row primitives', () {
     // schema 行渲染已从两个渲染器收口到共享 settings_schema_widgets.SettingsSchemaItem。
-    final String source = File(
-      'lib/src/settings/settings_schema_widgets.dart',
-    ).readAsStringSync();
+    final String source = File('lib/src/settings/settings_schema_widgets.dart')
+        .readAsStringSync();
     final String itemSource = _sectionSource(
       source,
       'class SettingsSchemaItem',
@@ -2201,7 +2211,10 @@ void main() {
       sharedSelection,
       contains('ShelfSelectionCheck(selected: selection.selected)'),
     );
-    expect(sharedSelection, contains('const Positioned.fill(child: ShelfSelectedOverlay())'));
+    expect(
+      sharedSelection,
+      contains('const Positioned.fill(child: ShelfSelectedOverlay())'),
+    );
     expect(sharedSelection, isNot(contains('theme.colorScheme.outline')));
   });
 
@@ -2560,9 +2573,8 @@ void main() {
   });
 
   test('sentenceAudioHighlight rematch controls use shared M3E tokens', () {
-    final String source = File(
-      'lib/src/media/audiobook/subtitle_rematch.dart',
-    ).readAsStringSync();
+    final String source = File('lib/src/media/audiobook/subtitle_rematch.dart')
+        .readAsStringSync();
     final String rematchSheet = _functionSource(
       source,
       'Widget buildSheetBody(BuildContext sheetCtx, StateSetter setSheet)',
@@ -2625,9 +2637,8 @@ void main() {
   });
 
   test('anki integration dialogs use shared M3E dialog chrome', () {
-    final String source = File(
-      'lib/src/models/anki_integration.dart',
-    ).readAsStringSync();
+    final String source = File('lib/src/models/anki_integration.dart')
+        .readAsStringSync();
     final String apiFlow = _functionSource(
       source,
       'Future<void> showApiMessage(BuildContext? ctx) async',
@@ -2652,9 +2663,8 @@ void main() {
     final String releaseSource = File(
       'lib/src/utils/misc/update_checker_release.dart',
     ).readAsStringSync();
-    final String uiSource = File(
-      'lib/src/utils/misc/update_checker_ui.dart',
-    ).readAsStringSync();
+    final String uiSource = File('lib/src/utils/misc/update_checker_ui.dart')
+        .readAsStringSync();
     final String updateFlow = _functionSource(
       releaseSource,
       'static Future<void> _showUpdateDialog(',
@@ -2685,12 +2695,10 @@ void main() {
   });
 
   test('sync feedback dialogs use shared M3E dialog chrome', () {
-    final String messageSource = File(
-      'lib/src/sync/sync_message_dialog.dart',
-    ).readAsStringSync();
-    final String compareSource = File(
-      'lib/src/sync/sync_compare_dialog.dart',
-    ).readAsStringSync();
+    final String messageSource = File('lib/src/sync/sync_message_dialog.dart')
+        .readAsStringSync();
+    final String compareSource = File('lib/src/sync/sync_compare_dialog.dart')
+        .readAsStringSync();
     // TODO-585: schema 拆成主库 + 5 个 part；读合并语料，正向 showSyncMessage(
     // 与负向 alert 禁令都覆盖全部 part。
     final String settingsSource = readSyncSettingsSchemaSource();
@@ -2706,9 +2714,8 @@ void main() {
   });
 
   test('settings action dialogs use shared M3E inset tokens', () {
-    final String source = File(
-      'lib/src/settings/settings_actions.dart',
-    ).readAsStringSync();
+    final String source = File('lib/src/settings/settings_actions.dart')
+        .readAsStringSync();
     final String confirmationDialog = _functionSource(
       source,
       'Future<bool> showSettingsConfirmationDialog(',
@@ -2762,9 +2769,8 @@ void main() {
     expect(sharedMenu, contains('tokens.radii.menuRadius'));
     expect(sharedMenu, contains('PopupMenuPosition.under'));
 
-    final String dropdown = File(
-      'lib/src/utils/components/fushi_dropdown.dart',
-    ).readAsStringSync();
+    final String dropdown = File('lib/src/utils/components/fushi_dropdown.dart')
+        .readAsStringSync();
     expect(dropdown, contains('MenuAnchor('));
     expect(dropdown, contains('tokens.radii.menuRadius'));
     expect(dropdown, contains('tokens.surfaces.overlay'));
@@ -2811,21 +2817,17 @@ void main() {
     expect(motion, contains('Easing.emphasizedDecelerate'));
     expect(motion, contains('Easing.emphasizedAccelerate'));
 
-    final String dialog = File(
-      'lib/src/utils/misc/show_app_dialog.dart',
-    ).readAsStringSync();
-    final String sheet = File(
-      'lib/src/utils/adaptive/adaptive_widgets.dart',
-    ).readAsStringSync();
+    final String dialog = File('lib/src/utils/misc/show_app_dialog.dart')
+        .readAsStringSync();
+    final String sheet = File('lib/src/utils/adaptive/adaptive_widgets.dart')
+        .readAsStringSync();
     final String menu = File(
       'lib/src/utils/components/fushi_material_components.dart',
     ).readAsStringSync();
-    final String home = File(
-      'lib/src/pages/implementations/home_page.dart',
-    ).readAsStringSync();
-    final String sync = File(
-      'lib/src/sync/sync_compare_dialog.dart',
-    ).readAsStringSync();
+    final String home = File('lib/src/pages/implementations/home_page.dart')
+        .readAsStringSync();
+    final String sync = File('lib/src/sync/sync_compare_dialog.dart')
+        .readAsStringSync();
 
     // 2026-10-05 浮层统一成 M3E：三个浮层动效换成弹簧 token（定义在
     // fushi_m3e_overlays.dart），旧 fushiMd3*AnimationStyle 仍留在 motion 文件里。
@@ -2986,9 +2988,8 @@ void main() {
     expect(managerTile, contains('FushiGroupedListItem('));
     expect(containsIdentifierCall(managerTile, 'Card'), isFalse);
     final String groupedListItem = _functionSource(
-      File(
-        'lib/src/utils/components/glass/fushi_glass_lists.dart',
-      ).readAsStringSync(),
+      File('lib/src/utils/components/glass/fushi_glass_lists.dart')
+          .readAsStringSync(),
       'class FushiGroupedListItem extends StatelessWidget {',
       'class FushiGroupedList extends StatelessWidget {',
     );
@@ -3017,9 +3018,8 @@ void main() {
     expect(managerPopupItem, isNot(contains('const SizedBox(width: 8)')));
     expect(managerMenu, isNot(contains('const SizedBox(width: 8)')));
 
-    final String sourcePage = File(
-      'lib/src/pages/base_source_page.dart',
-    ).readAsStringSync();
+    final String sourcePage = File('lib/src/pages/base_source_page.dart')
+        .readAsStringSync();
     final String dictionaryLoading = _functionSource(
       sourcePage,
       'Widget buildDictionaryLoading()',
@@ -3152,9 +3152,8 @@ void main() {
   });
 
   test('theme selector uses shared M3E swatches', () {
-    final String source = File(
-      'lib/src/settings/settings_actions.dart',
-    ).readAsStringSync();
+    final String source = File('lib/src/settings/settings_actions.dart')
+        .readAsStringSync();
     final String themeSelector = _functionSource(
       source,
       'Widget buildThemeSelector(SettingsContext settingsContext)',
@@ -3840,9 +3839,8 @@ void main() {
   });
 
   test('M3E review report does not reopen completed app chrome scope', () {
-    final String report = File(
-      '../docs/reviews/2026-05-26-project-review.md',
-    ).readAsStringSync();
+    final String report = File('../docs/reviews/2026-05-26-project-review.md')
+        .readAsStringSync();
     final String finalJudgment = _sectionSource(
       report,
       '### Overall Judgment',
@@ -3861,6 +3859,43 @@ void main() {
     expect(finalNextScope, contains('native popup dictionary'));
     expect(finalNextScope, contains('reader history cards'));
   });
+}
+
+/// Constructor bans are identifier calls, not suffix text: AnimatedContainer
+/// must not count as Container. Generic prefixes retain their whole-call scope.
+bool _containsMigratedBan(String source, String banned) {
+  if (banned.startsWith('re:')) {
+    return RegExp(banned.substring(3)).hasMatch(source);
+  }
+  final RegExpMatch? call = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)[<(]$')
+      .firstMatch(banned);
+  if (call != null) {
+    return containsIdentifierCall(
+      maskCommentsAndStrings(source),
+      call.group(1)!,
+    );
+  }
+  return source.contains(banned);
+}
+
+String _withoutPopupScrolledUnderDecoration(String source) {
+  final String code = maskCommentsAndStrings(source);
+  final String owner = methodBody(code, 'class _PopupScrolledUnderBar');
+  final List<RegExpMatch> decorations = identifierCall('BoxDecoration')
+      .allMatches(owner)
+      .toList();
+  expect(
+    decorations,
+    hasLength(1),
+    reason: 'scrolled-under owns exactly one state decoration',
+  );
+  final RegExpMatch decoration = decorations.single;
+  final int ownerStart = code.indexOf(owner);
+  return source.replaceRange(
+    ownerStart + decoration.start,
+    ownerStart + decoration.end,
+    'PopupScrolledUnderDecoration(',
+  );
 }
 
 String _withoutSharedComponentNames(String source) {
