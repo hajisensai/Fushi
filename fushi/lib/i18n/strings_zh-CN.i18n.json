@@ -6379,5 +6379,9 @@
   "video_skip_opening": "跳过片头",
   "video_skip_ending": "跳过片尾",
   "download_network_fake_ip_udp_blocked": "当前代理（fake-ip / TUN 模式）不转发 UDP：DHT 与 UDP tracker 找不到 peer，任务可能一直 0 连接。请在代理里换支持 UDP 的节点，或让 Fushi 走直连（DIRECT 规则）。",
-  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。"
+  "download_network_dht_unreachable": "DHT 一直连不上任何节点：本机出站 UDP 可能被防火墙或网络拦截，只能靠 HTTP tracker 找 peer。",
+  "game_stream_host_https_required": "主机未开启 HTTPS。请在 Windows 端 Fushi 的互联设置里开启加密连接。",
+  "game_stream_host_stream_off": "该主机未提供游戏串流。",
+  "game_stream_host_library_off": "主机没有开启游戏库。请在 Windows 端 Fushi 启用「游戏」模块后重启。",
+  "game_stream_host_unauthorized": "主机拒绝了本设备，请重新配对。"
 }

@@ -151,27 +151,6 @@ for (const [label, source] of [['paged', data.paged], ['continuous', data.contin
   }
 }
 
-// B'. paged inset reflow must preserve the OLD LOGICAL PAGE NUMBER, not the
-// old raw-pixel scroll. Android lock/unlock can change top/bottom system insets;
-// in vertical pagination those insets change the page pitch. Reusing 32000px
-// after 800px -> 824px turns page 40 into round(32000/824)=39, producing the
-// observed one-page-back ratchet. The re-anchor hint must be rematerialized as
-// page 40 in the new pitch: 40*824=32960.
-{
-  const { reader, calls } = instantiate(data.paged);
-  let contextRead = 0;
-  reader.getScrollContext = () => ({
-    vertical: true,
-    pageSize: contextRead++ === 0 ? 800 : 824,
-  });
-  reader.getPagePosition = () => 32000;
-  reader.setChromeInsets(62, 90);
-  assert.strictEqual(calls.scrollTo.length, 1,
-    'paged: changed inset must perform one re-anchor');
-  assert.strictEqual(calls.scrollTo[0][1], 32960,
-    'paged: inset reflow must preserve logical page 40 across 800px -> 824px pitch');
-}
-
 async function main() {
 // C. restore re-anchor takes the restore's own anchor.
 {

@@ -1232,7 +1232,7 @@ class AppModel with ChangeNotifier {
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
       'hajisensai/Fushi/$_mediaTrackingAppVersion '
-      '(https://github.com/hajisensai/fushi)';
+      '(https://fushi.moe)';
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
@@ -8412,7 +8412,7 @@ class AppModel with ChangeNotifier {
       FushiGameStreamLibraryHost(
         loadGames: () => galgameRepo.load(),
         isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
-        service: syncServerController.gameStreamService,
+        service: () => syncServerController.gameStreamService,
         startStream: syncServerController.startLaunchedGameStream,
       ),
       miningFactory: createGameStreamMiningAdapter,

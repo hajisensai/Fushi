@@ -8,7 +8,11 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
   ) async {
     final FushiRemoteGameStreamService? service = _gameStreamService;
     if (service == null) {
-      return shelf.Response.notFound('Game stream off');
+      return gameStreamErrorResponse(
+        404,
+        'Game stream off',
+        code: GameStreamRejection.streamOff,
+      );
     }
     // HTTPS is not optional here. WebRTC's DTLS-SRTP confidentiality rests
     // entirely on the integrity of the signalling channel: over plaintext HTTP
@@ -20,17 +24,21 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
     // LAN hosts default to plaintext (`applyFirstHostingTlsDefault` only opts in
     // brand-new devices), so this gate is what those users actually hit.
     if (_securityContext == null) {
-      return shelf.Response.forbidden('HTTPS required for game stream');
+      return gameStreamErrorResponse(
+        403,
+        'HTTPS required for game stream',
+        code: GameStreamRejection.httpsRequired,
+      );
     }
     final String authorization = request.headers['authorization'] ?? '';
     // Control access requires a currently paired device credential; legacy
     // shared WebDAV passwords do not identify the sole authorised controller.
-    if (!await _validatePeerAuth(authorization)) return shelf.Response(403);
+    if (!await _validatePeerAuth(authorization)) return _gameStreamUnpaired();
     // `_validatePeerAuth` only succeeds once it has decoded a password, but that
     // is a cross-file invariant; decode explicitly rather than assert non-null.
     // NOTE: this digest is a deterministic hash of a live credential -- never log it.
     final String? peerPassword = _basicPassword(authorization);
-    if (peerPassword == null) return shelf.Response(403);
+    if (peerPassword == null) return _gameStreamUnpaired();
     final String peerIdentity = sha256
         .convert(utf8.encode(peerPassword))
         .toString();
@@ -52,6 +60,12 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
       peerIdentity: peerIdentity,
     );
   }
+
+  shelf.Response _gameStreamUnpaired() => gameStreamErrorResponse(
+    403,
+    'Unknown game-stream peer',
+    code: GameStreamRejection.unauthorizedPeer,
+  );
 
   /// The receiver's popup resolves word audio on the phone: a pinned host
   /// token materialized into a phone-local file, a host token URL, or an

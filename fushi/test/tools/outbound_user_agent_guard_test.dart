@@ -95,7 +95,7 @@ void main() {
   test('fushiUserAgent 形状稳定（对外身份不能随手改）', () {
     expect(
       fushiUserAgent('shader-downloader'),
-      'fushi/shader-downloader (https://github.com/hajisensai/fushi)',
+      'fushi/shader-downloader (https://fushi.moe)',
     );
     expect(fushiUserAgent('  custom-fonts  '), contains('fushi/custom-fonts '));
   });

@@ -161,7 +161,7 @@ class GameStreamLibraryPage extends StatefulWidget {
   State<GameStreamLibraryPage> createState() => _GameStreamLibraryPageState();
 }
 
-enum _HostPhase { loading, ready, outdated, unreachable, rejected }
+enum _HostPhase { loading, ready, unreachable, rejected }
 
 class _StreamHost {
   _StreamHost({required this.key, required this.peers}) : peer = peers.first;
@@ -173,6 +173,10 @@ class _StreamHost {
   FushiClientUrl peer;
   FushiGameStreamClient? client;
   _HostPhase phase = _HostPhase.loading;
+
+  /// Host's reason code when [phase] is [_HostPhase.rejected]; null when the
+  /// refusal carried none we understand.
+  String? rejection;
   GameStreamLibrary? library;
   List<GameStreamSession> sessions = const <GameStreamSession>[];
 
@@ -255,6 +259,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
 
   Future<void> _loadHost(_StreamHost host, int generation) async {
     _HostPhase phase = _HostPhase.unreachable;
+    String? rejection;
     for (final FushiClientUrl peer in host.peers) {
       final FushiGameStreamClient client = _services.createClient(peer);
       List<GameStreamSession> sessions;
@@ -266,9 +271,8 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
         host
           ..peer = peer
           ..client = client;
-        phase = error.code == 'http_rejected'
-            ? _HostPhase.outdated
-            : _HostPhase.rejected;
+        phase = _HostPhase.rejected;
+        rejection = error.code;
         break;
       } catch (_) {
         host
@@ -287,17 +291,21 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
       } on GameStreamUnreachableError {
         phase = _HostPhase.unreachable;
       } on GameStreamRequestError catch (error) {
-        // 旧主机没有游戏库路由：404 → http_rejected。已有的串流会话仍可加入。
-        phase = error.code == 'http_rejected'
-            ? _HostPhase.outdated
-            : _HostPhase.rejected;
+        // 没有游戏库（旧主机 404 → http_rejected，或主机回 library_off）时
+        // 已有的串流会话仍可加入。
+        phase = _HostPhase.rejected;
+        rejection = error.code;
       } catch (_) {
         phase = _HostPhase.rejected;
       }
       break;
     }
     if (!mounted || generation != _generation) return;
-    setState(() => host.phase = phase);
+    setState(() {
+      host
+        ..phase = phase
+        ..rejection = rejection;
+    });
   }
 
   static List<GameStreamSession> _joinable(List<GameStreamSession> sessions) =>
@@ -527,7 +535,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
           for (final _StreamHost host in _hosts)
             FushiSelectableChip(
               label: host.name,
-              leadingIcon: _phaseIcon(host.phase),
+              leadingIcon: _phaseIcon(host),
               selected: host.key == _selectedHost?.key,
               focusId: FushiFocusId('game-stream-host-${host.key}'),
               onSelected: (bool _) => setState(() => _selectedKey = host.key),
@@ -537,12 +545,17 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     );
   }
 
-  static IconData _phaseIcon(_HostPhase phase) => switch (phase) {
+  static IconData _phaseIcon(_StreamHost host) => switch (host.phase) {
     _HostPhase.loading => Icons.more_horiz,
     _HostPhase.ready => Icons.computer,
-    _HostPhase.outdated => Icons.system_update_alt,
     _HostPhase.unreachable => Icons.cloud_off_outlined,
-    _HostPhase.rejected => Icons.block,
+    _HostPhase.rejected => switch (host.rejection) {
+      'http_rejected' => Icons.system_update_alt,
+      GameStreamRejection.httpsRequired => Icons.lock_open,
+      // 没有游戏库时已有会话仍可加入，不用「禁止」暗示整台主机不可用。
+      GameStreamRejection.libraryOff => Icons.videogame_asset_off_outlined,
+      _ => Icons.block,
+    },
   };
 
   String _phaseLabel(_StreamHost host) => switch (host.phase) {
@@ -550,9 +563,9 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
     _HostPhase.ready => t.game_stream_host_online(
       n: host.library?.games.length ?? 0,
     ),
-    _HostPhase.outdated => t.game_stream_host_outdated,
     _HostPhase.unreachable => t.game_stream_unreachable,
-    _HostPhase.rejected => t.game_stream_host_rejected,
+    _HostPhase.rejected =>
+      gameStreamRejectionMessage(host.rejection) ?? t.game_stream_host_rejected,
   };
 
   Widget _buildHostHeader(BuildContext context, _StreamHost host) {
@@ -598,7 +611,7 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
                     const SizedBox(height: 2),
                     Row(
                       children: <Widget>[
-                        FushiIcon(_phaseIcon(host.phase), size: 14, color: accent),
+                        FushiIcon(_phaseIcon(host), size: 14, color: accent),
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
@@ -970,6 +983,17 @@ String gameStreamLaunchFailureMessage(String? code) => switch (code) {
   GameStreamLaunchFailure.streamFailed => t.game_stream_launch_stream_failed,
   GameStreamLaunchFailure.unknownGame => t.game_stream_launch_unknown_game,
   GameStreamLaunchFailure.superseded => t.game_stream_launch_superseded,
+  _ => gameStreamRejectionMessage(code) ?? t.game_stream_launch_failed,
+};
+
+/// 主机在会话 / 游戏库逻辑之前就拒绝的原因 → 告诉主人该改哪里。不认识的码返回
+/// null，由调用方给自己的通用文案。`http_rejected` 是不带原因码的裸非 2xx：
+/// 只有旧主机才这样回，所以仍提示更新。
+String? gameStreamRejectionMessage(String? code) => switch (code) {
   'http_rejected' => t.game_stream_host_outdated,
-  _ => t.game_stream_launch_failed,
+  GameStreamRejection.httpsRequired => t.game_stream_host_https_required,
+  GameStreamRejection.streamOff => t.game_stream_host_stream_off,
+  GameStreamRejection.libraryOff => t.game_stream_host_library_off,
+  GameStreamRejection.unauthorizedPeer => t.game_stream_host_unauthorized,
+  _ => null,
 };
