@@ -26,9 +26,15 @@ void main() {
         File('test/fixtures/video_adapter_runtime.cjs'),
         File('../packages/fushi_anki/test/fixtures/video_adapter_runtime.cjs'),
       ].firstWhere((File file) => file.existsSync());
+      final Directory temp = await Directory.systemTemp.createTemp(
+        'fushi_video_player_',
+      );
+      addTearDown(() => temp.delete(recursive: true));
+      final File scriptFile = File('${temp.path}/player.js')
+        ..writeAsStringSync(script);
       final ProcessResult result = await Process.run('node', <String>[
         fixture.absolute.path,
-        script,
+        scriptFile.path,
       ]);
       expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
     },
