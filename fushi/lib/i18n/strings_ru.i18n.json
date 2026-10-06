@@ -5274,7 +5274,6 @@
   "game_stream_line": "Текущая реплика",
   "game_stream_line_empty": "Текста Hook пока нет",
   "game_stream_lookup_hint": "Выделите текст для поиска",
-  "game_stream_android_only": "Приём трансляции игры доступен только на Android.",
   "game_stream_unreachable": "Не удалось подключиться к хосту",
   "game_stream_none": "Ни один сопряжённый хост не ведёт трансляцию. Сначала начните трансляцию на странице игры в Windows.",
   "game_stream_join_failed": "Не удалось присоединиться к трансляции",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "Переключить на прямое касание",
   "game_stream_touch_trackpad": "Переключить на трекпад",
   "game_stream_remote_launch_title": "Разрешить удалённый запуск",
-  "game_stream_remote_launch_hint": "Сопряжённые устройства Android могут запускать игры из библиотеки этого ПК и транслировать их",
+  "game_stream_remote_launch_hint": "Сопряжённые устройства могут запускать игры из библиотеки этого ПК и транслировать их",
   "manga_reader_ocr_volume": "Распознать том",
   "manga_reader_ocr_queued": "В очереди",
   "manga_reader_ocr_unavailable_short": "Нет движка OCR · загрузите модель или смените движок в настройках OCR",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

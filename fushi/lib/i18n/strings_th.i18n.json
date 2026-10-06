@@ -5274,7 +5274,6 @@
   "game_stream_line": "บรรทัดปัจจุบัน",
   "game_stream_line_empty": "ยังไม่มีข้อความ Hook",
   "game_stream_lookup_hint": "เลือกข้อความเพื่อค้นหา",
-  "game_stream_android_only": "การรับสตรีมเกมใช้ได้บน Android เท่านั้น",
   "game_stream_unreachable": "เชื่อมต่อโฮสต์ไม่ได้",
   "game_stream_none": "ไม่มีโฮสต์ที่จับคู่กำลังสตรีม เริ่มสตรีมจากหน้าเกมบน Windows ก่อน",
   "game_stream_join_failed": "เข้าร่วมสตรีมไม่ได้",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "สลับเป็นการสัมผัสโดยตรง",
   "game_stream_touch_trackpad": "สลับเป็นแทร็กแพด",
   "game_stream_remote_launch_title": "อนุญาตการเปิดจากระยะไกล",
-  "game_stream_remote_launch_hint": "อุปกรณ์ Android ที่จับคู่สามารถเริ่มเกมจากคลังของพีซีเครื่องนี้และสตรีมได้",
+  "game_stream_remote_launch_hint": "อุปกรณ์ที่จับคู่สามารถเริ่มเกมจากคลังของพีซีเครื่องนี้และสตรีมได้",
   "manga_reader_ocr_volume": "จดจำเล่มนี้",
   "manga_reader_ocr_queued": "อยู่ในคิว",
   "manga_reader_ocr_unavailable_short": "ไม่มีเอนจิน OCR · ดาวน์โหลดโมเดลหรือเปลี่ยนเอนจินในการตั้งค่า OCR",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

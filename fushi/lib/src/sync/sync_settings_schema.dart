@@ -570,7 +570,6 @@ SettingsDestination buildInterconnectDestination() {
             id: 'interconnect.game_stream',
             title: t.game_stream_join,
             icon: FushiIcons.cast,
-            visible: (SettingsContext ctx) => !kIsWeb && Platform.isAndroid,
             onTap: (SettingsContext ctx) => pushSettingsPage(
               ctx,
               (BuildContext context) => GameStreamJoinPage(
@@ -1072,9 +1071,9 @@ class _SyncSettingsState {
   }
 
   Future<void> _reloadPeerCount() async {
-    final int count =
-        interconnectPeerRepresentatives(await _repo.getFushiClientUrls())
-            .length;
+    final int count = interconnectPeerRepresentatives(
+      await _repo.getFushiClientUrls(),
+    ).length;
     if (peerCount == count) return;
     peerCount = count;
     _settingsContext.refresh();

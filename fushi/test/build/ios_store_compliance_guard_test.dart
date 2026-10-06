@@ -73,13 +73,9 @@ void main() {
       );
     });
 
-    test('iOS 与 Android 的模块集合只差下载中心（外加 games 这一条技术例外）', () {
+    test('iOS 与 Android 的模块集合只差下载中心', () {
       for (final ModuleId module in ModuleId.values) {
         if (module == ModuleId.browse) continue;
-        // games 是**技术**例外，不是合规边界：Android 的 games 模块是串流接收端
-        // （WebRTC 接收入口只接了 Android），iOS 没有这个接收端，所以两端结论
-        // 不同。它不属于 StoreRestrictedCapability，别据此把它登记进合规边界。
-        if (module == ModuleId.games) continue;
         expect(
           module.availableOn(
             isWindows: false,
@@ -96,25 +92,11 @@ void main() {
           reason: '${module.name} 的可用性不该随 iOS 与否改变。',
         );
       }
+      // 串流接收（从自己的电脑串流游戏，同类如 Steam Link / Moonlight）不在
+      // 合规边界里：iOS 与 Android 的 games 同为串流接收端。
       expect(
-        ModuleId.games.availableOn(
-          isWindows: false,
-          isDesktop: false,
-          isIOS: true,
-          isAndroid: false,
-        ),
-        isFalse,
-        reason: 'iOS 没有串流接收端，也没有 galgame hook。',
-      );
-      expect(
-        ModuleId.games.availableOn(
-          isWindows: false,
-          isDesktop: false,
-          isIOS: false,
-          isAndroid: true,
-        ),
-        isTrue,
-        reason: 'Android 的 games 是串流接收端的远端游戏库。',
+        GamesModuleForm.on(isWindows: false),
+        GamesModuleForm.streamClient,
       );
     });
 
@@ -266,7 +248,7 @@ void main() {
       expectAllGated(
         video,
         'LibrarySectionTab<VideoLibrarySection>('
-            'value:VideoLibrarySection.discover,',
+        'value:VideoLibrarySection.discover,',
         discoverGate,
       );
       for (final String kind in <String>['onlineSources', 'extensions']) {
@@ -355,10 +337,11 @@ void main() {
         final int calls = 'VideoDiscoveryService.production('
             .allMatches(wiring)
             .length;
-        final int gated = 'discoveryAvailable:'
-                'StoreRestrictedCapability.externalDiscovery.isAvailable,'
-            .allMatches(wiring)
-            .length;
+        final int gated =
+            'discoveryAvailable:'
+                    'StoreRestrictedCapability.externalDiscovery.isAvailable,'
+                .allMatches(wiring)
+                .length;
         expect(calls, greaterThan(0), reason: caller);
         expect(gated, calls, reason: '$caller 的每个发现服务装配点都要过门');
       }
@@ -710,7 +693,8 @@ void main() {
           expect(
             job.value,
             contains('native/fushi_p2p'),
-            reason: '$path 的 job ${job.key} 装了 Apple Rust target，却不是在构建 '
+            reason:
+                '$path 的 job ${job.key} 装了 Apple Rust target，却不是在构建 '
                 'fushi_p2p——Apple 上唯一允许的 Rust 构建就是它。',
           );
         }

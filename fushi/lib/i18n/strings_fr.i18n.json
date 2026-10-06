@@ -5274,7 +5274,6 @@
   "game_stream_line": "Ligne actuelle",
   "game_stream_line_empty": "Pas encore de texte Hook",
   "game_stream_lookup_hint": "Sélectionnez du texte pour le rechercher",
-  "game_stream_android_only": "La réception de la diffusion de jeu n'est disponible que sur Android.",
   "game_stream_unreachable": "Impossible de se connecter à l'hôte",
   "game_stream_none": "Aucun hôte appairé ne diffuse. Démarrez d'abord la diffusion depuis la page du jeu sous Windows.",
   "game_stream_join_failed": "Impossible de rejoindre la diffusion",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "Passer au toucher direct",
   "game_stream_touch_trackpad": "Passer au pavé tactile",
   "game_stream_remote_launch_title": "Autoriser le lancement à distance",
-  "game_stream_remote_launch_hint": "Les appareils Android appairés peuvent lancer des jeux de la bibliothèque de ce PC et les diffuser",
+  "game_stream_remote_launch_hint": "Les appareils appairés peuvent lancer des jeux de la bibliothèque de ce PC et les diffuser",
   "manga_reader_ocr_volume": "Reconnaître ce volume",
   "manga_reader_ocr_queued": "En attente",
   "manga_reader_ocr_unavailable_short": "Aucun moteur OCR · téléchargez un modèle ou changez de moteur dans les réglages OCR",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

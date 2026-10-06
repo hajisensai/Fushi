@@ -18,6 +18,7 @@ import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart
 import 'package:fushi/src/pages/implementations/galgame_home_page.dart';
 import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
+import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
@@ -33,33 +34,31 @@ import 'package:fushi/utils.dart';
 export 'package:fushi/src/pages/implementations/game_shared.dart'
     show GameSection, gameSectionNotifier;
 
-typedef GameMonitorBuilder = Widget Function(
-  BuildContext context,
-  VoidCallback onShowLibrary,
-);
-typedef GameLibraryBuilder = Widget Function(
-  BuildContext context,
-  GalHookSessionController controller,
-  VoidCallback onLaunched,
-);
+typedef GameMonitorBuilder =
+    Widget Function(BuildContext context, VoidCallback onShowLibrary);
+typedef GameLibraryBuilder =
+    Widget Function(
+      BuildContext context,
+      GalHookSessionController controller,
+      VoidCallback onLaunched,
+    );
 
 /// 游戏首页（仪表盘）子页构造器；测试可注入桩，绕开 [GalgameHomePage] 对
 /// `appProvider`（Drift DB / 仓储）的依赖。
-typedef GameDashboardBuilder = Widget Function(
-  BuildContext context,
-  VoidCallback onShowLibrary,
-);
-typedef GameSettingsBuilder = Widget Function(
-  BuildContext context,
-  Widget navigation,
-);
+typedef GameDashboardBuilder =
+    Widget Function(BuildContext context, VoidCallback onShowLibrary);
+typedef GameSettingsBuilder =
+    Widget Function(BuildContext context, Widget navigation);
 
 /// 「发现」子区构造器；测试可注入桩，绕开 [MediaDiscoveryPage] 对 `appProvider`
 /// （发现服务 / 偏好）的依赖。
-typedef GameDiscoverBuilder = Widget Function(
-  BuildContext context,
-  Widget navigation,
-);
+typedef GameDiscoverBuilder =
+    Widget Function(BuildContext context, Widget navigation);
+
+/// 「串流」子区构造器；测试可注入桩，绕开 [GameStreamLibraryPage] 对已配对
+/// 主机与网络的依赖。
+typedef GameStreamSectionBuilder =
+    Widget Function(BuildContext context, Widget navigation);
 
 /// 首页一级「游戏」模块。
 ///
@@ -74,6 +73,7 @@ class HomeGamePage extends StatefulWidget {
     this.dashboardBuilder,
     this.settingsBuilder,
     this.discoverBuilder,
+    this.streamBuilder,
     this.controller,
   });
 
@@ -82,6 +82,7 @@ class HomeGamePage extends StatefulWidget {
   final GameDashboardBuilder? dashboardBuilder;
   final GameSettingsBuilder? settingsBuilder;
   final GameDiscoverBuilder? discoverBuilder;
+  final GameStreamSectionBuilder? streamBuilder;
   final GalHookSessionController? controller;
 
   static const Key dashboardKey = ValueKey<String>('game-dashboard');
@@ -91,6 +92,7 @@ class HomeGamePage extends StatefulWidget {
   static const Key settingsKey = ValueKey<String>('game-settings');
   static const Key importKey = ValueKey<String>('game-import');
   static const Key discoverKey = ValueKey<String>('game-discover');
+  static const Key streamKey = ValueKey<String>('game-stream');
 
   /// 库页顶部会话状态带（原两张总览大卡的收敛替身），整条可点进入捕获工作台。
   static const Key captureStatusKey = ValueKey<String>('game-capture-status');
@@ -105,6 +107,9 @@ class _HomeGamePageState extends State<HomeGamePage> {
   /// 「发现」子区访问过才构建：[IndexedStack] 会急切构建全部子区，而发现页一挂载
   /// 就向资源站发请求——不能因为打开游戏 tab 就联网。
   late bool _discoverVisited = _section == GameSection.discover;
+
+  /// 「串流」子区同理：一挂载就去连已配对主机，访问过才构建。
+  late bool _streamVisited = _section == GameSection.stream;
   late final GalHookSessionController _controller =
       widget.controller ?? GalHookSessionController.instance;
 
@@ -145,6 +150,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     setState(() {
       _section = requested;
       if (requested == GameSection.discover) _discoverVisited = true;
+      if (requested == GameSection.stream) _streamVisited = true;
     });
   }
 
@@ -193,21 +199,23 @@ class _HomeGamePageState extends State<HomeGamePage> {
 
   @override
   Widget build(BuildContext context) {
-    final GameMonitorBuilder monitorBuilder = widget.monitorBuilder ??
+    final GameMonitorBuilder monitorBuilder =
+        widget.monitorBuilder ??
         (BuildContext context, VoidCallback onShowLibrary) => TexthookerPage(
-              embedded: true,
-              captureSetupEnabled: _section == GameSection.monitor,
-              onShowLibrary: onShowLibrary,
-              onShowDiagnostics: _showDiagnostics,
-            );
-    final GameDashboardBuilder dashboardBuilder = widget.dashboardBuilder ??
+          embedded: true,
+          captureSetupEnabled: _section == GameSection.monitor,
+          onShowLibrary: onShowLibrary,
+          onShowDiagnostics: _showDiagnostics,
+        );
+    final GameDashboardBuilder dashboardBuilder =
+        widget.dashboardBuilder ??
         (BuildContext context, VoidCallback onShowLibrary) => GalgameHomePage(
-              sessionController: _controller,
-              onShowLibrary: onShowLibrary,
-              onShowMonitor: _showMonitor,
-              onShowDiagnostics: _showDiagnostics,
-              onLaunched: _showMonitor,
-            );
+          sessionController: _controller,
+          onShowLibrary: onShowLibrary,
+          onShowMonitor: _showMonitor,
+          onShowDiagnostics: _showDiagnostics,
+          onLaunched: _showMonitor,
+        );
     // 子区内容按 [GameSection] 建表，再按 `GameSection.values` 顺序展开：既把
     // 「IndexedStack 索引 == 枚举序」这条隐式约定变成结构约束（`index:` 用的就是
     // `_section.index`），也保证**每个**子区必然经过下面同一处拖放作用域包裹，
@@ -261,9 +269,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
       ),
       GameSection.discover: KeyedSubtree(
         key: HomeGamePage.discoverKey,
-        child: _discoverVisited
-            ? _buildDiscover()
-            : const SizedBox.shrink(),
+        child: _discoverVisited ? _buildDiscover() : const SizedBox.shrink(),
+      ),
+      GameSection.stream: KeyedSubtree(
+        key: HomeGamePage.streamKey,
+        child: _streamVisited ? _buildStream() : const SizedBox.shrink(),
       ),
     };
     // 顶部与视频 / 书 / 漫画库同一套 M3E 浮动工具栏（2026-10-06「库页顶部结构
@@ -282,6 +292,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
         GameSection.importGames => 'game-import-tab',
         GameSection.settings => 'game-settings-tab',
         GameSection.diagnostics => 'game-diagnostics-tab',
+        GameSection.stream => 'game-stream-tab',
       },
       floating: true,
       onSelectDashboard: _showDashboard,
@@ -290,7 +301,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
       onSelectSettings: _showSettings,
     );
     final Widget body = LibrarySectionFollowScope(
-        current: gameSectionNotifier,
+      current: gameSectionNotifier,
       // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
       // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
       child: SectionSwipeNavigator<GameSection>(
@@ -298,29 +309,26 @@ class _HomeGamePageState extends State<HomeGamePage> {
         selected: _section,
         onSelect: _showSection,
         child: IndexedStack(
-        index: _section.index,
-        children: <Widget>[
-          for (final GameSection section in GameSection.values)
-            // [IndexedStack] 比 [Offstage] 更狠：它**急切构建全部子区**并以完整约束
-            // 布局，而 desktop_drop 是进程级全局广播、只按各 drop target 的
-            // `RenderBox.paintBounds` 过滤 —— 于是六个子区的 drop target 会全部命中
-            // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
-            // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
-            // `_section`，且写成回调、在 drop 落地那一刻求值。
-            // 每个子区自己的主滚动控制器：六个子区同时挂在 IndexedStack 里，
-            // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
-            DropSurfaceScope(
-              isActive: () => _section == section,
-              // 子区让出浮动工具栏的高度（工具栏叠在内容上，见下方
-              // [FushiFloatingChromeOverlay]），见 [_chromeInsetFor]。
-              child: SectionPrimaryScrollScope(
-                child: _chromeInsetFor(
-                  section,
-                  child: sections[section]!,
+          index: _section.index,
+          children: <Widget>[
+            for (final GameSection section in GameSection.values)
+              // [IndexedStack] 比 [Offstage] 更狠：它**急切构建全部子区**并以完整约束
+              // 布局，而 desktop_drop 是进程级全局广播、只按各 drop target 的
+              // `RenderBox.paintBounds` 过滤 —— 于是六个子区的 drop target 会全部命中
+              // 同一次 OS drop。外层 home-shell 的作用域只回答「游戏 tab 可见吗」，
+              // 用户停在诊断/设置子区时答案照样是 true。判据与 `index:` 用的是同一个
+              // `_section`，且写成回调、在 drop 落地那一刻求值。
+              // 每个子区自己的主滚动控制器：六个子区同时挂在 IndexedStack 里，
+              // 共用 tab 外壳那一个会让多个主滚动视图附着同一控制器、Scrollbar 断言。
+              DropSurfaceScope(
+                isActive: () => _section == section,
+                // 子区让出浮动工具栏的高度（工具栏叠在内容上，见下方
+                // [FushiFloatingChromeOverlay]），见 [_chromeInsetFor]。
+                child: SectionPrimaryScrollScope(
+                  child: _chromeInsetFor(section, child: sections[section]!),
                 ),
               ),
-            ),
-        ],
+          ],
         ),
       ),
     );
@@ -333,7 +341,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
           controller: _chrome,
           // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
           child: FushiFloatingChromeOverlay(
-            chrome: FushiFloatingChromeBar(tabs: navigation, slot: _actionsSlot),
+            chrome: FushiFloatingChromeBar(
+              tabs: navigation,
+              slot: _actionsSlot,
+            ),
             child: NotificationListener<ScrollNotification>(
               onNotification: _onScroll,
               child: GameSectionTabsHostScope(child: body),
@@ -360,17 +371,36 @@ class _HomeGamePageState extends State<HomeGamePage> {
       switch (section) {
         GameSection.dashboard ||
         GameSection.importGames ||
-        GameSection.settings =>
-          FushiFloatingChromeScrollInset(child: child),
+        GameSection.settings => FushiFloatingChromeScrollInset(child: child),
         GameSection.library ||
         GameSection.diagnostics ||
-        GameSection.discover =>
-          child,
-        // 捕获工作台是定高版面（会话卡 + 自带滚动的台词面板），没有整页滚动
-        // 视图可让位：顶部按工具区**此刻的可见下沿**让位，随收起动画缩到 0，
-        // 收起后版面跟着上移、不留空白。
-        GameSection.monitor => FushiFloatingChromeVisiblePadding(child: child),
+        GameSection.discover => child,
+        // 捕获工作台没有整页滚动，串流列表也不消费 MediaQuery 顶部 padding；
+        // 两者按工具区此刻的可见下沿让位，收起后不留空白。
+        GameSection.monitor ||
+        GameSection.stream => FushiFloatingChromeVisiblePadding(child: child),
       };
+
+  /// 「串流」视图复用串流游戏库页，页签和动作统一由外壳浮动工具栏绘制。
+  Widget _buildStream() {
+    // 显式零尺寸主位让 FushiPageHeader 连同空行内边距一起收起。
+    const Widget navigation = SizedBox.shrink();
+    final GameStreamSectionBuilder? builder = widget.streamBuilder;
+    if (builder != null) {
+      return Builder(
+        builder: (BuildContext context) => builder(context, navigation),
+      );
+    }
+    return Consumer(
+      builder: (BuildContext context, WidgetRef ref, Widget? _) =>
+          GameStreamLibraryPage(
+            services: GameStreamLibraryServices.interconnect(
+              appModel: ref.read(appProvider),
+            ),
+            navigation: navigation,
+          ),
+    );
+  }
 
   /// 游戏「发现」视图：与「浏览 › 发现 › 游戏」同一个生产发现页，页头主位放本模块
   /// 的分段页签。
@@ -392,15 +422,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
     return Consumer(
       builder: (BuildContext context, WidgetRef ref, Widget? _) =>
           MediaDiscoveryPage(
-        kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
-        navigation: navigation,
-        onAiAcquire: discoveryAiAcquireAction(
-          context: context,
-          readAppModel: () => ref.read(appProvider),
-          domain: AiMediaAcquisitionDomain.game,
-          domainLabel: t.nav_game,
-        ),
-      ),
+            kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+            navigation: navigation,
+            onAiAcquire: discoveryAiAcquireAction(
+              context: context,
+              readAppModel: () => ref.read(appProvider),
+              domain: AiMediaAcquisitionDomain.game,
+              domainLabel: t.nav_game,
+            ),
+          ),
     );
   }
 
@@ -421,9 +451,10 @@ class _HomeGamePageState extends State<HomeGamePage> {
       // `_trackImport` 只在前后点亮 / 熄灭进度，future 与异常原样交回。
       onDrop: (List<String> paths, Offset position) => _trackImport(
         () => addGamesFromPaths(
-          ProviderScope.containerOf(context, listen: false)
-              .read(appProvider)
-              .galgameRepo,
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appProvider).galgameRepo,
           paths,
           onImported: _showLibrary,
         ),
@@ -449,48 +480,49 @@ class _HomeGamePageState extends State<HomeGamePage> {
                 // 那层之上。
                 child: Builder(
                   builder: (BuildContext context) => SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    8 + MediaQuery.paddingOf(context).top,
-                    tokens.spacing.page,
-                    24,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      FushiStaggeredEntrance(
-                        index: 0,
-                        child: Text(
-                          t.quick_import_title,
-                          style: context.fushiType.titleLargeEmphasized,
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      8 + MediaQuery.paddingOf(context).top,
+                      tokens.spacing.page,
+                      24,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        FushiStaggeredEntrance(
+                          index: 0,
+                          child: Text(
+                            t.quick_import_title,
+                            style: context.fushiType.titleLargeEmphasized,
+                          ),
                         ),
-                      ),
-                      SizedBox(height: tokens.spacing.gap),
-                      FushiStaggeredEntrance(
-                        index: 1,
-                        child: _GameImportDropZone(
-                          busy: _importBusy,
-                          dragHovering: _importDragHovering,
-                          // IndexedStack 急切构建全部子区，本视图在无
-                          // ProviderScope 的 widget 测试里也会被 build——
-                          // 容器只在点按时解析，构建期零 provider 依赖。
-                          // 导入成功后跳到游戏库：新游戏落在**另一个** section
-                          // 里，停在导入页的话屏幕上什么都不变，成功与失败在
-                          // 观感上一模一样（用户「导成功没反应我还以为失败了
-                          // 重试了好几次」）。
-                          onAdd: () => _trackImport(
-                            () => addGameViaFilePicker(
-                              ProviderScope.containerOf(context, listen: false)
-                                  .read(appProvider)
-                                  .galgameRepo,
-                              onImported: _showLibrary,
+                        SizedBox(height: tokens.spacing.gap),
+                        FushiStaggeredEntrance(
+                          index: 1,
+                          child: _GameImportDropZone(
+                            busy: _importBusy,
+                            dragHovering: _importDragHovering,
+                            // IndexedStack 急切构建全部子区，本视图在无
+                            // ProviderScope 的 widget 测试里也会被 build——
+                            // 容器只在点按时解析，构建期零 provider 依赖。
+                            // 导入成功后跳到游戏库：新游戏落在**另一个** section
+                            // 里，停在导入页的话屏幕上什么都不变，成功与失败在
+                            // 观感上一模一样（用户「导成功没反应我还以为失败了
+                            // 重试了好几次」）。
+                            onAdd: () => _trackImport(
+                              () => addGameViaFilePicker(
+                                ProviderScope.containerOf(
+                                  context,
+                                  listen: false,
+                                ).read(appProvider).galgameRepo,
+                                onImported: _showLibrary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
                 ),
               ),
             ),
@@ -608,8 +640,9 @@ class _GameImportDropZone extends StatelessWidget {
     final FushiMotionScheme motion = context.fushiMotion;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context);
-    final double radius =
-        apple ? FushiM3eShape.small : FushiM3eShape.containerLarge;
+    final double radius = apple
+        ? FushiM3eShape.small
+        : FushiM3eShape.containerLarge;
     return FushiHoverLift(
       scale: 1.01,
       forceLifted: dragHovering,
@@ -617,13 +650,13 @@ class _GameImportDropZone extends StatelessWidget {
         final Color fill = eink
             ? colors.surface
             : hovering
-                ? colors.primaryContainer
-                : colors.surfaceContainerLow;
+            ? colors.primaryContainer
+            : colors.surfaceContainerLow;
         final Color border = eink
             ? colors.outline
             : hovering
-                ? colors.primary
-                : colors.outlineVariant;
+            ? colors.primary
+            : colors.outlineVariant;
         return AnimatedContainer(
           duration: motion.effectsDefault.duration,
           curve: motion.effectsDefault.curve,
@@ -786,8 +819,8 @@ class _CaptureStatusStrip extends StatelessWidget {
 
     final Widget detail = active
         ? readiness == GalWorkbenchReadiness.waitingForThread
-            ? _buildWaitingForThreadDetail(context, secondary, onCard)
-            : _buildActiveDetail(context, secondary, onCard)
+              ? _buildWaitingForThreadDetail(context, secondary, onCard)
+              : _buildActiveDetail(context, secondary, onCard)
         : Text(
             '${t.game_session_idle}  ·  ${t.game_open_capture_workspace}',
             maxLines: 1,
@@ -813,8 +846,9 @@ class _CaptureStatusStrip extends StatelessWidget {
             child: FushiListLeadingIcon(
               active ? FushiIcons.filled(FushiIcons.audio) : FushiIcons.game,
               key: ValueKey<bool>(active),
-              shape:
-                  active ? FushiLeadingShape.cookie : FushiLeadingShape.circle,
+              shape: active
+                  ? FushiLeadingShape.cookie
+                  : FushiLeadingShape.circle,
               // 活动态在 primary 色块上：行首取 tertiary 拉开对比。
               tone: active ? FushiCardTone.tertiary : FushiCardTone.secondary,
             ),

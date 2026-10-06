@@ -5274,7 +5274,6 @@
   "game_stream_line": "Geçerli satır",
   "game_stream_line_empty": "Henüz Hook metni yok",
   "game_stream_lookup_hint": "Aramak için metni seçin",
-  "game_stream_android_only": "Oyun akışı alma yalnızca Android'de kullanılabilir.",
   "game_stream_unreachable": "Ana makineye bağlanılamadı",
   "game_stream_none": "Akış yapan eşleştirilmiş ana makine yok. Önce Windows oyun sayfasından akışı başlatın.",
   "game_stream_join_failed": "Akışa katılınamadı",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "Doğrudan dokunmaya geç",
   "game_stream_touch_trackpad": "İzleme dörtgenine geç",
   "game_stream_remote_launch_title": "Uzaktan başlatmaya izin ver",
-  "game_stream_remote_launch_hint": "Eşleştirilmiş Android cihazlar bu bilgisayarın kitaplığından oyun başlatıp akıtabilir",
+  "game_stream_remote_launch_hint": "Eşleştirilmiş cihazlar bu bilgisayarın kitaplığından oyun başlatıp akıtabilir",
   "manga_reader_ocr_volume": "Bu cildi tanı",
   "manga_reader_ocr_queued": "Sırada",
   "manga_reader_ocr_unavailable_short": "OCR motoru yok · OCR ayarlarından model indirin veya motoru değiştirin",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

@@ -5274,7 +5274,6 @@
   "game_stream_line": "Current line",
   "game_stream_line_empty": "No Hook text yet",
   "game_stream_lookup_hint": "Select text to look up",
-  "game_stream_android_only": "Game stream receiving is available on Android only.",
   "game_stream_unreachable": "Could not connect to host",
   "game_stream_none": "No paired host is streaming. Start streaming from the Windows game page first.",
   "game_stream_join_failed": "Could not join the stream",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "game_stream_remote_launch_hint": "Paired devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "Recognize this volume",
   "manga_reader_ocr_queued": "Queued",
   "manga_reader_ocr_unavailable_short": "No OCR engine · download a model or switch engines in OCR settings",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

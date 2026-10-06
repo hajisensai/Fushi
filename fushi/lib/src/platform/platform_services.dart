@@ -76,8 +76,8 @@ class PlatformServices {
 
   /// 本进程跑在 Android 上吗。同上，默认取真实平台。
   ///
-  /// 只服务于 games 模块的串流形态（`GamesModuleForm.streamClient`）：串流接收端
-  /// 只在 Android 上有入口。
+  /// 目前没有模块按它区分（串流接收端已覆盖全部平台）；保留它让模块判据始终
+  /// 拿到完整的平台元组。
   final bool isAndroid;
 
   PlatformServices({

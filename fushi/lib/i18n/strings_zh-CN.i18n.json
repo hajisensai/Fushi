@@ -5274,7 +5274,6 @@
   "game_stream_line": "当前台词",
   "game_stream_line_empty": "尚无 Hook 台词",
   "game_stream_lookup_hint": "选中台词或释义中的文字查词",
-  "game_stream_android_only": "游戏串流接收端仅支持 Android。",
   "game_stream_unreachable": "无法连接主机",
   "game_stream_none": "没有已开启串流的已配对主机。请先在 Windows 游戏页开始串流。",
   "game_stream_join_failed": "无法加入串流",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "切换为直接点击",
   "game_stream_touch_trackpad": "切换为触控板",
   "game_stream_remote_launch_title": "允许远程启动",
-  "game_stream_remote_launch_hint": "已配对的安卓设备可从本机游戏库启动游戏并直接串流",
+  "game_stream_remote_launch_hint": "已配对的设备可从本机游戏库启动游戏并直接串流",
   "manga_reader_ocr_volume": "识别本卷",
   "manga_reader_ocr_queued": "排队中",
   "manga_reader_ocr_unavailable_short": "没有可用的 OCR 引擎 · 请在 OCR 设置中下载模型或换引擎",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "显示弹幕",
   "video_control_danmaku_hide": "隐藏弹幕",
   "batch_tag_added_items": "已为 $n 项添加标签「$name」。",
-  "batch_tag_removed_items": "已从 $n 项移除标签「$name」。"
+  "batch_tag_removed_items": "已从 $n 项移除标签「$name」。",
+  "game_stream_tab": "串流"
 }

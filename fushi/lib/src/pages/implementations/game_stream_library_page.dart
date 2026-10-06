@@ -77,10 +77,12 @@ class GameStreamLibraryServices {
     final PreferencesRepository prefs = appModel.prefsRepo;
     return GameStreamLibraryServices(
       // 每台 host 一次：同一台机器的多条地址只取组内最先可达的那条。
-      loadPeers: () async => resolveInterconnectPeerConnections(<FushiClientUrl>[
-        for (final FushiClientUrl peer in await repository.getFushiClientUrls())
-          if (peer.enabled) peer,
-      ]),
+      loadPeers: () async =>
+          resolveInterconnectPeerConnections(<FushiClientUrl>[
+            for (final FushiClientUrl peer
+                in await repository.getFushiClientUrls())
+              if (peer.enabled) peer,
+          ]),
       createClient: (FushiClientUrl peer) => FushiGameStreamClient(
         transport: InterconnectGameStreamTransport(repo: repository),
       )..bindPeer(peer),
@@ -144,9 +146,17 @@ class GameStreamLibraryServices {
 /// 海报卡（[GalgamePosterCard]），但排版为串流服务：主机页头带连接状态、
 /// 「正在串流」行可直接加入，点游戏 = 让主机启动并直接开始串流。
 class GameStreamLibraryPage extends StatefulWidget {
-  const GameStreamLibraryPage({required this.services, super.key});
+  const GameStreamLibraryPage({
+    required this.services,
+    this.navigation,
+    super.key,
+  });
 
   final GameStreamLibraryServices services;
+
+  /// Section tabs of the page that embeds this one (Windows games module).
+  /// Null where this page is the whole games module.
+  final Widget? navigation;
 
   static const Key interconnectButtonKey = ValueKey<String>(
     'game-stream-open-interconnect',
@@ -418,28 +428,33 @@ class _GameStreamLibraryPageState extends State<GameStreamLibraryPage> {
   Widget build(BuildContext context) {
     final bool loading = _loadingPeers;
     final FushiMotionScheme motion = context.fushiMotion;
+    final List<Widget> actions = <Widget>[
+      FushiIconButton(
+        key: GameStreamLibraryPage.refreshKey,
+        icon: FushiIcons.refresh,
+        tooltip: t.refresh,
+        onTap: loading || _busy ? null : () => unawaited(_reload()),
+      ),
+      FushiIconButton(
+        key: GameStreamLibraryPage.settingsKey,
+        icon: FushiIcons.settings,
+        tooltip: t.game_stream_settings_title,
+        onTap: _busy ? null : () => unawaited(_openSettings()),
+      ),
+    ];
+    final Widget? navigation = widget.navigation;
     return Scaffold(
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          FushiPageHeader(
-            title: t.nav_game,
-            subtitle: t.game_stream_library_subtitle,
-            actions: <Widget>[
-              FushiIconButton(
-                key: GameStreamLibraryPage.refreshKey,
-                icon: FushiIcons.refresh,
-                tooltip: t.refresh,
-                onTap: loading || _busy ? null : () => unawaited(_reload()),
-              ),
-              FushiIconButton(
-                key: GameStreamLibraryPage.settingsKey,
-                icon: FushiIcons.settings,
-                tooltip: t.game_stream_settings_title,
-                onTap: _busy ? null : () => unawaited(_openSettings()),
-              ),
-            ],
-          ),
+          if (navigation == null)
+            FushiPageHeader(
+              title: t.nav_game,
+              subtitle: t.game_stream_library_subtitle,
+              actions: actions,
+            )
+          else
+            FushiPageHeader.customTitle(title: navigation, actions: actions),
           Expanded(
             // 骨架 → 内容交叉淡入（effects 弹簧，不过冲；减弱动态效果下瞬切）。
             child: AnimatedSwitcher(

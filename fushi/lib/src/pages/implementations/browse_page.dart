@@ -1356,8 +1356,8 @@ ModuleId _moduleOfResourceDomain(_DownloadsResourceDomain domain) =>
 
 /// 此刻可见的资源域，顺序即标签顺序（枚举声明序）。
 ///
-/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；Android 的
-/// games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
+/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；非 Windows
+/// 的 games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
 List<_DownloadsResourceDomain> _visibleResourceDomains(
   ModuleVisibility visibility, {
   required GamesModuleForm? gamesForm,

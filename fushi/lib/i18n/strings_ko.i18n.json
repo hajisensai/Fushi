@@ -5274,7 +5274,6 @@
   "game_stream_line": "현재 줄",
   "game_stream_line_empty": "아직 후크 텍스트가 없습니다",
   "game_stream_lookup_hint": "검색할 텍스트를 선택하세요",
-  "game_stream_android_only": "게임 스트림 수신은 Android에서만 사용할 수 있습니다.",
   "game_stream_unreachable": "호스트에 연결할 수 없습니다",
   "game_stream_none": "스트리밍 중인 페어링된 호스트가 없습니다. 먼저 Windows 게임 페이지에서 스트리밍을 시작하세요.",
   "game_stream_join_failed": "스트림에 참여할 수 없습니다",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "직접 터치로 전환",
   "game_stream_touch_trackpad": "트랙패드로 전환",
   "game_stream_remote_launch_title": "원격 실행 허용",
-  "game_stream_remote_launch_hint": "페어링된 Android 기기가 이 PC의 라이브러리에서 게임을 시작하고 스트리밍할 수 있습니다",
+  "game_stream_remote_launch_hint": "페어링된 기기가 이 PC의 라이브러리에서 게임을 시작하고 스트리밍할 수 있습니다",
   "manga_reader_ocr_volume": "이 권 인식",
   "manga_reader_ocr_queued": "대기 중",
   "manga_reader_ocr_unavailable_short": "사용 가능한 OCR 엔진 없음 · OCR 설정에서 모델을 다운로드하거나 엔진을 바꾸세요",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

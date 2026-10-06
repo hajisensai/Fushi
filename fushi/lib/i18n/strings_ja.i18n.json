@@ -5274,7 +5274,6 @@
   "game_stream_line": "現在の行",
   "game_stream_line_empty": "Hook テキストはまだありません",
   "game_stream_lookup_hint": "テキストを選択して検索",
-  "game_stream_android_only": "ゲーム配信の受信は Android でのみ利用できます。",
   "game_stream_unreachable": "ホストに接続できませんでした",
   "game_stream_none": "配信中のペアリング済みホストはありません。先に Windows のゲームページから配信を開始してください。",
   "game_stream_join_failed": "配信に参加できませんでした",
@@ -5386,7 +5385,7 @@
   "game_stream_touch_direct": "ダイレクトタッチに切り替え",
   "game_stream_touch_trackpad": "トラックパッドに切り替え",
   "game_stream_remote_launch_title": "リモート起動を許可",
-  "game_stream_remote_launch_hint": "ペアリング済みの Android デバイスから、この PC のライブラリにあるゲームを起動して配信できます",
+  "game_stream_remote_launch_hint": "ペアリング済みのデバイスから、この PC のライブラリにあるゲームを起動して配信できます",
   "manga_reader_ocr_volume": "この巻を認識",
   "manga_reader_ocr_queued": "待機中",
   "manga_reader_ocr_unavailable_short": "使える OCR エンジンがありません · OCR 設定でモデルをダウンロードするかエンジンを変更してください",
@@ -6748,5 +6747,6 @@
   "video_control_danmaku_show": "Show danmaku",
   "video_control_danmaku_hide": "Hide danmaku",
   "batch_tag_added_items": "Added tag $name to $n items.",
-  "batch_tag_removed_items": "Removed tag $name from $n items."
+  "batch_tag_removed_items": "Removed tag $name from $n items.",
+  "game_stream_tab": "Stream"
 }

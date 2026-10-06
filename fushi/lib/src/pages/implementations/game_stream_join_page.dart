@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
@@ -53,15 +52,6 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   }
 
   Future<void> _loadHosts() async {
-    if (!Platform.isAndroid) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = t.game_stream_android_only;
-        });
-      }
-      return;
-    }
     setState(() {
       _loading = true;
       _error = null;
@@ -110,7 +100,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   }
 
   Future<void> _join(_GameStreamHost host, GameStreamSession session) async {
-    if (_joining || !Platform.isAndroid) return;
+    if (_joining) return;
     setState(() {
       _joining = true;
       _error = null;

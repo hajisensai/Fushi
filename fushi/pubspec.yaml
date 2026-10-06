@@ -107,7 +107,7 @@ dependencies:
   # （Windows 走 flutter_local_notifications_windows 的 WinRT toast）。
   flutter_local_notifications: ^20.1.0
   flutter_riverpod: ^2.3.6
-  # WebRTC 游戏串流（Windows 主机 + Android 接收端）。
+  # WebRTC 游戏串流（Windows 主机；五端都可当接收端）。
   # 钉精确版本，不用 caret：WGC 客户区采集的入口只在
   # ci/patches/hosted/flutter_webrtc-1.6.2+hotfix.3/ 那份补丁里，而补丁目录按
   # 精确版本命名、apply-patches.sh 对目标缺失只打一行 WARNING 不判红。约束一旦

@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Size;
 
+import 'package:flutter/gestures.dart'
+    show kMiddleMouseButton, kPrimaryMouseButton, kSecondaryMouseButton;
+
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 /// How touches on the video become host mouse input (Moonlight's two modes).
@@ -269,4 +272,104 @@ class GameStreamTouchInterpreter {
     normalizedDelta.dx * scale.width,
     normalizedDelta.dy * scale.height,
   ).distance;
+}
+
+/// Desktop mouse for the stream surface. A mouse already is a pointer, so
+/// unlike [GameStreamTouchInterpreter] there are no gestures: each button
+/// presses and releases as itself, motion moves the host cursor whether or not
+/// a button is held (hover-highlighted menus need it), and the wheel or a
+/// trackpad's two-finger pan scrolls.
+///
+/// Right/middle buttons and the wheel are emitted only when the host
+/// advertises them; an unsupported button is swallowed rather than sent as a
+/// left click.
+class GameStreamMouseInterpreter {
+  GameStreamMouseInterpreter({
+    this.extraButtonsSupported = false,
+    this.wheelSupported = false,
+  });
+
+  final bool extraButtonsSupported;
+  final bool wheelSupported;
+
+  /// Logical pixels of trackpad pan per host wheel notch. A mouse wheel passes
+  /// its platform's detent size to [scroll] instead.
+  static const double scrollStep = 50;
+
+  static const List<(int, String)> _buttons = <(int, String)>[
+    (kPrimaryMouseButton, 'left'),
+    (kSecondaryMouseButton, 'right'),
+    (kMiddleMouseButton, 'middle'),
+  ];
+
+  int _held = 0;
+  Offset _position = const Offset(.5, .5);
+  double _scrollRemainderX = 0;
+  double _scrollRemainderY = 0;
+
+  /// Whether any button is currently pressed on the host.
+  bool get active => _held != 0;
+
+  /// The pointer is at [position] with Flutter's [buttons] bitmask held.
+  /// Buttons that changed press or release; with no change it is a move.
+  List<GameStreamPointerCommand> update(Offset position, int buttons) {
+    _position = position;
+    final List<GameStreamPointerCommand> out = <GameStreamPointerCommand>[];
+    for (final (int mask, String name) in _buttons) {
+      if (mask != kPrimaryMouseButton && !extraButtonsSupported) continue;
+      final bool was = _held & mask != 0;
+      final bool now = buttons & mask != 0;
+      if (was == now) continue;
+      if (now) {
+        _held |= mask;
+        out.add(GameStreamPointerCommand.down(position, button: name));
+      } else {
+        _held &= ~mask;
+        out.add(GameStreamPointerCommand.up(position, button: name));
+      }
+    }
+    if (out.isEmpty) out.add(GameStreamPointerCommand.move(position));
+    return out;
+  }
+
+  /// A wheel / trackpad scroll of [delta] logical pixels at [position], one
+  /// host notch per [step] pixels; positive is down/right, as Flutter reports
+  /// it and the host expects.
+  List<GameStreamPointerCommand> scroll(
+    Offset position,
+    Offset delta, {
+    double step = scrollStep,
+  }) {
+    if (!wheelSupported) return const <GameStreamPointerCommand>[];
+    _position = position;
+    _scrollRemainderX += delta.dx;
+    _scrollRemainderY += delta.dy;
+    final int notchesX = (_scrollRemainderX / step).truncate();
+    final int notchesY = (_scrollRemainderY / step).truncate();
+    if (notchesX == 0 && notchesY == 0) {
+      return const <GameStreamPointerCommand>[];
+    }
+    _scrollRemainderX -= notchesX * step;
+    _scrollRemainderY -= notchesY * step;
+    return <GameStreamPointerCommand>[
+      GameStreamPointerCommand.wheel(
+        position,
+        dx: notchesX == 0 ? null : notchesX.toDouble().clamp(-20, 20),
+        dy: notchesY == 0 ? null : notchesY.toDouble().clamp(-20, 20),
+      ),
+    ];
+  }
+
+  /// Releases every held button (focus loss, layout change, disposal).
+  List<GameStreamPointerCommand> cancel() {
+    final List<GameStreamPointerCommand> out = <GameStreamPointerCommand>[
+      for (final (int mask, String name) in _buttons)
+        if (_held & mask != 0)
+          GameStreamPointerCommand.up(_position, button: name),
+    ];
+    _held = 0;
+    _scrollRemainderX = 0;
+    _scrollRemainderY = 0;
+    return out;
+  }
 }
