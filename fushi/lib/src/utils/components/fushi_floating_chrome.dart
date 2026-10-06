@@ -471,7 +471,8 @@ class FushiFloatingChromeInsetPadding extends StatelessWidget {
 ///
 /// [child] 恒占满整个区域，工具区浮在它顶部；[child] 经
 /// [FushiFloatingChromeInset] 拿到「顶部要让出多少」（外层 inset + 本工具区
-/// 实测高度）。收起 = 工具区向上滑出画面 + 淡出（M3E default spatial 弹簧），
+/// 实测高度）。收起 = 工具区向上滑出画面（M3E default spatial 弹簧）+ 淡出
+/// （default effects 弹簧：透明度不过冲，不借空间弹簧的轨迹），
 /// 不改任何版面。嵌套时内层工具区排在外层工具区下方，收起时一起滑出。
 ///
 /// 收起后键盘 / 手柄焦点走进来（Tab 遍历到页签或按钮）立刻弹回：收起只是让出
@@ -492,13 +493,18 @@ class FushiFloatingChromeOverlay extends StatefulWidget {
 }
 
 class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// 工具区的实测高度（展开态的版面高度；收起不改它）。
   double _chromeHeight = 0;
 
   /// 1 = 完全显示，0 = 收起。M3E default spatial 弹簧，重定向带着速度续上。
   /// 只在挂着作用域时创建（首次 [didChangeDependencies] 里按当时的显隐定初值）。
   FushiSpring? _shown;
+
+  /// 工具区透明度：1 = 不透明。M3E default **effects** 弹簧（临界阻尼，不过冲）
+  /// ——透明度是 effects 属性，不跟位移共用 spatial 弹簧（HBK-AUDIT-023）。
+  /// 与 [_shown] 同时创建、同目标、同一降级开关。
+  FushiSpring? _fade;
 
   FushiFloatingChromeController? _controller;
 
@@ -533,11 +539,15 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
       );
       created.animation.addListener(_syncVisibleBottom);
       _shown = created;
-    } else {
-      spring.animateTo(
-        controller.visible ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context),
+      _fade = FushiSpring(
+        vsync: this,
+        initial: controller.visible ? 1 : 0,
+        spring: FushiSprings.effectsDefault.description,
       );
+    } else {
+      final bool animate = fushiExpressiveMotionEnabled(context);
+      spring.animateTo(controller.visible ? 1 : 0, animate: animate);
+      _fade?.animateTo(controller.visible ? 1 : 0, animate: animate);
     }
   }
 
@@ -545,6 +555,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
   void dispose() {
     _shown?.animation.removeListener(_syncVisibleBottom);
     _shown?.dispose();
+    _fade?.dispose();
     _visibleBottom.dispose();
     super.dispose();
   }
@@ -558,7 +569,8 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
   Widget build(BuildContext context) {
     final FushiFloatingChromeController? controller = _controller;
     final FushiSpring? spring = _shown;
-    if (controller == null || spring == null) {
+    final FushiSpring? fade = _fade;
+    if (controller == null || spring == null || fade == null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -613,12 +625,17 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
         // 再往下渐隐一段，收起后只剩顶边一条柔和淡出——不再有整块实色底带把
         // 内容齐刷刷切掉。胶囊自己有表面色与投影，不靠底色遮挡内容。
         AnimatedBuilder(
-          animation: spring.animation,
+          animation: Listenable.merge(<Listenable>[
+            spring.animation,
+            fade.animation,
+          ]),
           child: chrome,
           builder: (BuildContext context, Widget? chrome) {
             final double value = spring.value;
             final double shown = value.clamp(0.0, 1.0);
-            final bool hidden = shown <= 0.001;
+            // effects 弹簧临界阻尼不过冲；clamp 只吸收收敛容差。
+            final double opacity = fade.value.clamp(0.0, 1.0);
+            final bool hidden = opacity <= 0.001 && shown <= 0.001;
             return Stack(
               children: <Widget>[
                 // 遮罩在内容之上、所有 chrome（外壳标题、页签、按钮组、搜索行）
@@ -660,7 +677,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                       // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
                       ignoring: hidden || !controller.visible,
                       child: Opacity(
-                        opacity: hidden ? 0 : shown,
+                        opacity: hidden ? 0 : opacity,
                         child: Transform.translate(
                           // 用未截断的弹簧值：轻微回弹体现在位置上。
                           offset: Offset(0, -(1 - value) * travel),
@@ -839,7 +856,8 @@ class _RenderFushiHeightReporter extends RenderProxyBox {
 /// 弹簧驱动的显隐：[visible] 由 false 变 true 时内容从 [edge] 那一侧滑出、
 /// 高度展开、淡入；反之收回、高度归零。
 ///
-/// 弹簧取 M3 Expressive「default spatial」（刚度 700、阻尼比 0.9，轻微回弹）。
+/// 高度与位移取 M3 Expressive「default spatial」弹簧（轻微回弹），透明度取
+/// 「default effects」弹簧（临界阻尼、不过冲；HBK-AUDIT-023）。
 /// 重定向带着当前速度续上，滚动方向来回切也不会跳帧。墨水屏 / 减弱动态效果
 /// 下直接切换。收起后 [child] 默认不卸载（State 与焦点注册都保留），只是零高度、
 /// 不可点、不可读（[ExcludeSemantics]）；再次显示时原样回来。收起途中就不再
@@ -869,27 +887,34 @@ class FushiSpringReveal extends StatefulWidget {
 }
 
 class _FushiSpringRevealState extends State<FushiSpringReveal>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final FushiSpring _spring = FushiSpring(
     vsync: this,
     initial: widget.visible ? 1 : 0,
     spring: fushiExpressiveDefaultSpatial,
   );
 
+  /// 透明度：effects 弹簧，与 [_spring] 同目标、同一降级开关。
+  late final FushiSpring _fade = FushiSpring(
+    vsync: this,
+    initial: widget.visible ? 1 : 0,
+    spring: FushiSprings.effectsDefault.description,
+  );
+
   @override
   void didUpdateWidget(covariant FushiSpringReveal oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.visible != widget.visible) {
-      _spring.animateTo(
-        widget.visible ? 1 : 0,
-        animate: fushiExpressiveMotionEnabled(context),
-      );
+      final bool animate = fushiExpressiveMotionEnabled(context);
+      _spring.animateTo(widget.visible ? 1 : 0, animate: animate);
+      _fade.animateTo(widget.visible ? 1 : 0, animate: animate);
     }
   }
 
   @override
   void dispose() {
     _spring.dispose();
+    _fade.dispose();
     super.dispose();
   }
 
@@ -897,14 +922,20 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
   Widget build(BuildContext context) {
     final bool fromTop = widget.edge == VerticalDirection.up;
     return AnimatedBuilder(
-      animation: _spring.animation,
+      animation: Listenable.merge(<Listenable>[
+        _spring.animation,
+        _fade.animation,
+      ]),
       child: widget.child,
       builder: (BuildContext context, Widget? child) {
         final double value = _spring.value;
+        final double opacity = _fade.value.clamp(0.0, 1.0);
         // 弹簧按容差收敛，静止值离目标还差 1e-4 量级：两端吸附，免得「收起」
         // 留下一丝几何、「展开」一直走裁剪分支。
         double extent = value.clamp(0.0, 1.0);
-        if (extent >= 0.999 && widget.visible) return child!;
+        if (extent >= 0.999 && opacity >= 0.999 && widget.visible) {
+          return child!;
+        }
         final bool hidden = extent <= 0.001;
         if (hidden) extent = 0;
         if (hidden && !widget.visible && !widget.maintainState) {
@@ -923,7 +954,7 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
                     : Alignment.topCenter,
                 heightFactor: extent,
                 child: Opacity(
-                  opacity: extent,
+                  opacity: hidden ? 0 : opacity,
                   child: Transform.translate(
                     offset: Offset(0, slide),
                     child: child,
@@ -1036,8 +1067,10 @@ class FushiFloatingActionsPill extends StatelessWidget {
             reverseDuration: motion
                 ? const Duration(milliseconds: 160)
                 : Duration.zero,
-            switchInCurve: const FushiSpringCurve(),
-            switchOutCurve: Curves.easeIn,
+            // 曲线放进 transitionBuilder 里分属性施加（缩放 spatial、透明度
+            // effects），这里交出线性进度。
+            switchInCurve: Curves.linear,
+            switchOutCurve: Curves.linear,
             layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
               alignment: AlignmentDirectional.centerEnd,
               clipBehavior: Clip.none,
@@ -1045,10 +1078,15 @@ class FushiFloatingActionsPill extends StatelessWidget {
             ),
             transitionBuilder: (Widget child, Animation<double> animation) =>
                 FadeTransition(
-                  // 弹簧过冲的值不进透明度（只认 0..1）；缩放保留回弹。
-                  opacity: fushiUnitClamped(animation),
+                  // 透明度走 effects 弹簧形状（临界阻尼、不过冲，HBK-AUDIT-023）；
+                  // 缩放走 spatial 弹簧，保留回弹。
+                  opacity: animation.drive(
+                    CurveTween(curve: FushiMotion.enter),
+                  ),
                   child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.8, end: 1).animate(animation),
+                    scale: animation
+                        .drive(CurveTween(curve: const FushiSpringCurve()))
+                        .drive(Tween<double>(begin: 0.8, end: 1)),
                     alignment: AlignmentDirectional.centerEnd.resolve(
                       Directionality.of(context),
                     ),

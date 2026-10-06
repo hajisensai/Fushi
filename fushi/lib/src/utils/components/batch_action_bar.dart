@@ -144,11 +144,13 @@ class BatchActionBar extends StatelessWidget {
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
       duration: fushiMotionDuration(context, FushiMotion.long),
-      curve: FushiMotion.release,
+      // 线性进度分属性上曲线：位移走 spatial 弹簧形状（[FushiMotion.release]，
+      // 带回弹），透明度走 effects 形状（[FushiMotion.enter]，临界阻尼、不过冲）
+      // ——透明度不跟位移共用 spatial 轨迹（HBK-AUDIT-023）。
       builder: (BuildContext context, double t, Widget? child) => Opacity(
-        opacity: t.clamp(0.0, 1.0),
+        opacity: FushiMotion.enter.transform(t).clamp(0.0, 1.0),
         child: Transform.translate(
-          offset: Offset(0, (1 - t) * 24),
+          offset: Offset(0, (1 - FushiMotion.release.transform(t)) * 24),
           child: child,
         ),
       ),

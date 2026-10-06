@@ -382,7 +382,7 @@ class FushiScrollAwayChrome extends StatefulWidget {
 }
 
 class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   // 1 = 完全可见，0 = 收起。出现带一点回弹落位（default spatial 偏软），收起
   // 同一弹簧。
   late final FushiSpring _shown = FushiSpring(
@@ -393,6 +393,15 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
       stiffness: 520,
       ratio: 0.86,
     ),
+  );
+
+  /// 透明度：M3E default effects 弹簧（临界阻尼、不过冲）。透明度是 effects
+  /// 属性，不跟位移共用上面的 spatial 弹簧（HBK-AUDIT-023）；同目标、同一
+  /// 降级开关。
+  late final FushiSpring _fade = FushiSpring(
+    vsync: this,
+    initial: widget.controller.hidden ? 0 : 1,
+    spring: FushiSprings.effectsDefault.description,
   );
 
   @override
@@ -413,17 +422,18 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
 
   void _sync() {
     if (!mounted) return;
-    _shown.animateTo(
-      widget.controller.hidden ? 0 : 1,
-      animate:
-          fushiExpressiveMotionEnabled(context) && fushiMotionEnabled(context),
-    );
+    final bool animate =
+        fushiExpressiveMotionEnabled(context) && fushiMotionEnabled(context);
+    final double target = widget.controller.hidden ? 0 : 1;
+    _shown.animateTo(target, animate: animate);
+    _fade.animateTo(target, animate: animate);
   }
 
   @override
   void dispose() {
     widget.controller.removeListener(_sync);
     _shown.dispose();
+    _fade.dispose();
     super.dispose();
   }
 
@@ -436,11 +446,17 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
         if (focused) widget.controller.show();
       },
       child: AnimatedBuilder(
-        animation: _shown.animation,
+        animation: Listenable.merge(<Listenable>[
+          _shown.animation,
+          _fade.animation,
+        ]),
         child: widget.child,
         builder: (BuildContext context, Widget? child) {
           final double v = widget.enabled ? _shown.value : 1;
           final double factor = v.clamp(0.0, 1.0);
+          final double opacity = widget.enabled
+              ? _fade.value.clamp(0.0, 1.0)
+              : 1;
           final bool hidden = factor < 0.5;
           // 只做位移 + 淡出，**版面高度恒定**：曾经用 heightFactor 把高度收到 0，
           // 页头在 [FushiPageScaffold] 里与正文竖排，收起 / 弹回改变正文视口
@@ -451,7 +467,7 @@ class _FushiScrollAwayChromeState extends State<FushiScrollAwayChrome>
             child: IgnorePointer(
               ignoring: hidden,
               child: Opacity(
-                opacity: factor,
+                opacity: opacity,
                 child: Transform.translate(
                   offset: Offset(0, (1 - v) * -12),
                   child: child,
