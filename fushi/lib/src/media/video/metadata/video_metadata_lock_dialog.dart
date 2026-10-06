@@ -67,7 +67,7 @@ class _VideoMetadataLockDialogState extends State<_VideoMetadataLockDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_work_locked_fields),
       content: SizedBox(
         width: 420,

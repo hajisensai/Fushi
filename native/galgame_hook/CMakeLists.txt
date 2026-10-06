@@ -100,6 +100,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/yuris_profile.h"
   "hook/adapters/yuris_voice.inc"
   "hook/adapters/yuris_voice_core.h"
+  "hook/adapters/kogado_hy_adapter.inc"
+  "hook/adapters/kogado_hy_core.h"
+  "hook/adapters/kogado_hy_lookup.inc"
+  "hook/adapters/kogado_hy_profile.h"
+  "hook/adapters/kogado_hy_text.inc"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -1196,3 +1201,6 @@ include(tests/siglus_legacy_owner_publication_test.cmake)
 add_executable(fushi_yuris_adapter_test "tests/yuris_adapter_test.cpp")
 target_include_directories(fushi_yuris_adapter_test PRIVATE "hook")
 add_test(NAME fushi_yuris_adapter_test COMMAND fushi_yuris_adapter_test)
+add_executable(fushi_kogado_hy_adapter_test "tests/kogado_hy_adapter_test.cpp")
+target_include_directories(fushi_kogado_hy_adapter_test PRIVATE "hook")
+add_test(NAME fushi_kogado_hy_adapter_test COMMAND fushi_kogado_hy_adapter_test)

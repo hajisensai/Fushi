@@ -740,6 +740,14 @@
           type: 'lookupAudio', expression: audio.expression || '', reading: audio.reading || '',
         }).then(function (response) { return response && response.ok ? response.url || null : null; });
       }
+      if (name === 'listWordAudioSources') {
+        var listReq = args[0] || {};
+        return sendRuntime({
+          type: 'lookupAudioList', expression: listReq.expression || '', reading: listReq.reading || '',
+        }).then(function (response) {
+          return response && response.ok && Array.isArray(response.audioSources) ? response.audioSources : [];
+        });
+      }
       if (name === 'mineEntry') {
         return sendToTab({
           type: 'fushiSubtitleSidePanelMine', fields: args[0] || {}, cue: currentLookupCue,

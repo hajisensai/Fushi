@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 
@@ -123,7 +124,7 @@ class ExtensionCatalogActions extends StatelessWidget {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        DropdownButton<int>(
+        FushiDropdownButton<int>(
           key: ValueKey<String>('${keyPrefix}_min_downloads'),
           value: minDownloads,
           onChanged: (int? value) => onMinDownloadsChanged(value ?? 0),
@@ -140,16 +141,16 @@ class ExtensionCatalogActions extends StatelessWidget {
               ),
           ],
         ),
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           key: ValueKey<String>('${keyPrefix}_bulk_install'),
           onPressed: onBulkInstall,
-          icon: const Icon(Icons.playlist_add_check),
+          icon: const FushiIcon(Icons.playlist_add_check),
           label: Text(t.mihon_extension_bulk_install),
         ),
-        OutlinedButton.icon(
+        FushiOutlinedButton.icon(
           key: ValueKey<String>('${keyPrefix}_update_all'),
           onPressed: onUpdateAll,
-          icon: const Icon(Icons.system_update_alt),
+          icon: const FushiIcon(Icons.system_update_alt),
           label: Text(t.mihon_extension_update_all),
         ),
       ],
@@ -164,7 +165,7 @@ Future<void> showExtensionBulkNothing(
   required String message,
 }) => showAppDialog<void>(
   context: context,
-  builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+  builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
     title: Text(title),
     content: Text(message),
     actions: <Widget>[
@@ -189,7 +190,7 @@ Future<bool> confirmExtensionBulk(
 }) async =>
     await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+      builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
         title: Text(title),
         content: Text(message),
         actions: <Widget>[
@@ -238,7 +239,7 @@ Future<R?> runExtensionBulkWithProgress<R>(
     barrierDismissible: false,
     builder: (BuildContext dialogContext) {
       progressContext = dialogContext;
-      return AlertDialog.adaptive(
+      return FushiAlertDialog.adaptive(
         title: Text(title),
         content: ValueListenableBuilder<(int, int, String)>(
           valueListenable: progress,
@@ -249,7 +250,7 @@ Future<R?> runExtensionBulkWithProgress<R>(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                LinearProgressIndicator(
+                FushiLinearProgressIndicator(
                   value: total == 0 ? null : done / total,
                 ),
                 const SizedBox(height: 12),
@@ -305,7 +306,7 @@ Future<void> showExtensionBulkReport(
   Map<String, String> failures = const <String, String>{},
 }) => showAppDialog<void>(
   context: context,
-  builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+  builder: (BuildContext dialogContext) => FushiAlertDialog.adaptive(
     title: Text(title),
     content: SingleChildScrollView(
       child: SelectableText(

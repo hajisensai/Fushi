@@ -10,6 +10,9 @@
   opt_extensionTheme_option_auto: 'Follow system',
   opt_extensionTheme_option_light: 'Light',
   opt_extensionTheme_option_dark: 'Dark',
+  opt_page_subtitle: 'Settings are stored in this browser only; most changes apply immediately.',
+  opt_section_nav_aria_label: 'Settings sections',
+  opt_connection_section_heading: 'Connection and diagnostics',
   opt_palette_title: 'Color theme',
   opt_palette_desc: 'The same theme model as Fushi itself: follow Fushi’s current colors, a built-in preset, or a custom theme (one accent color derives both the light and dark palettes). Applied to the settings page, subtitle side panel, toolbar menu, subtitle drawer, the on-video subtitle box and the lookup popup.',
   opt_extensionBrightness_title: 'Light / dark',
@@ -404,7 +407,6 @@
   ap_queue_remove_title: 'Remove from queue',
 
   // ── nested-popup.html ──
-  np_fushi_nested_close_aria_label: 'Close this lookup layer',
 
   // ── theme-palette.js / options.js 配色主题 ──
   theme_palette_app: 'Follow Fushi',

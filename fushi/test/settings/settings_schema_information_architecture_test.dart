@@ -42,21 +42,38 @@ void main() {
     expect(ids.toSet(), hasLength(ids.length));
   });
 
-  test('video exposes subtitles before library and advanced processing', () {
+  test('video groups follow playback, picture, subtitles, audio, controls', () {
+    // 2026-10 重排：播放 → 显示（下接四个折叠的 mpv 画面进阶组）→ 字幕外观 →
+    // 字幕行为与来源 → 音频 → 控制与手势 → 截图与片段 → 弹幕 → 媒体库 →
+    // 高级（Lua）→ 播放中专属。
     expect(
       buildVideoDestination().sections.map((SettingsSection s) => s.id),
       <String>[
         'video.section.playback',
-        'video.section.subtitles',
-        'video.section.library',
-        'video.section.danmaku',
-        'video.section.hdr',
+        'video.section.display',
         'video.section.quality',
+        'video.section.hdr',
         'video.section.geometry',
         'video.section.color',
+        'video.section.subtitles',
+        'video.section.subtitle_behavior',
         'video.section.audio',
+        'video.section.controls',
+        'video.section.capture',
+        'video.section.danmaku',
+        'video.section.library',
+        'video.section.advanced',
         'video.section.session',
       ],
+    );
+    expect(
+      buildVideoDestination().sections
+          .singleWhere((SettingsSection s) => s.id == 'video.section.subtitles')
+          .items
+          .first
+          .id,
+      'video.subtitle.preview',
+      reason: 'The subtitle style preview leads the subtitle group.',
     );
     for (final SettingsSection section in buildVideoDestination().sections) {
       final bool advanced = <String>{
@@ -65,6 +82,7 @@ void main() {
         'video.section.geometry',
         'video.section.color',
         'video.section.audio',
+        'video.section.advanced',
       }.contains(section.id);
       expect(
         section.presentation,

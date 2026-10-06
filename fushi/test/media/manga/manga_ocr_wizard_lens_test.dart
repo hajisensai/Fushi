@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import '../../helpers/glass_unwrap.dart';
 
 class _UnavailableLocalService implements MangaOcrService {
   @override
@@ -134,9 +135,7 @@ void main() {
     expect(lens.requests, 0);
     expect(
       tester
-          .widget<FilledButton>(
-            find.widgetWithText(FilledButton, t.manga_ocr_wizard_run),
-          )
+          .widget<FilledButton>(glassUnwrap<FilledButton>(find.widgetWithText(FilledButton, t.manga_ocr_wizard_run)),)
           .onPressed,
       isNotNull,
     );

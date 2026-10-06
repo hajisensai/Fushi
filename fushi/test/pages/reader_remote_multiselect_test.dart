@@ -23,6 +23,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -150,8 +151,8 @@ void main() {
     );
     expect(
       tester
-          .widget<IconButton>(find.byKey(
-              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}')))
+          .widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
+              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}'))))
           .onPressed,
       isNull,
       reason: '多选态卡内右上角下载按钮必须禁用，否则点到它仍直接下载',
@@ -201,8 +202,8 @@ void main() {
     // 按钮回到可用——用另一张未勾选的卡核对壳与按钮都活着。
     expect(
       tester
-          .widget<IconButton>(find.byKey(
-              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}')))
+          .widget<IconButton>(glassUnwrap<IconButton>(find.byKey(
+              ValueKey<String>('remote_book_download_${safeKey('Cloud Two')}'))))
           .onPressed,
       isNotNull,
     );

@@ -10,6 +10,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
@@ -114,7 +115,7 @@ class _VideoSourceScrapeRunDetailDialogState
     final SourceLibraryRow? source = widget.source;
     final List<(SourceScrapeIssue, bool)> issues = _issues;
     final String? lastError = run.lastError?.trim();
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_source_scrape_run_detail_title),
       content: SizedBox(
         width: 560,
@@ -155,12 +156,12 @@ class _VideoSourceScrapeRunDetailDialogState
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(_changed),
           child: Text(t.dialog_close),
         ),
         if (source != null && widget.onRescrapeSource != null)
-          TextButton(
+          FushiTextButton(
             key: const ValueKey<String>('video-source-run-rescrape'),
             onPressed:
                 !_rescrapingSource && !(widget.controller?.isBusy ?? false)
@@ -184,7 +185,7 @@ class _VideoSourceScrapeRunDetailDialogState
       key: ValueKey<String>('video-source-run-issue-${issue.workTitle}'),
       density: FushiListDensity.compact,
       padding: EdgeInsets.zero,
-      leading: Icon(
+      leading: FushiIcon(
         isError ? Icons.error_outline : Icons.info_outline,
         color: isError
             ? Theme.of(context).colorScheme.error
@@ -202,12 +203,12 @@ class _VideoSourceScrapeRunDetailDialogState
           : busy
               ? const SizedBox.square(
                   dimension: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : IconButton(
+              : FushiIconButtonControl(
                   tooltip: t.video_source_scrape_manual_search_title,
                   onPressed: () => unawaited(_bindManually(issue)),
-                  icon: const Icon(Icons.search),
+                  icon: const FushiIcon(Icons.search),
                 ),
     );
   }
@@ -383,7 +384,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
   @override
   Widget build(BuildContext context) {
     final List<VideoSourceScrapeConfirmationCandidate>? results = _results;
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.video_source_scrape_manual_search_title),
       content: SizedBox(
         width: 560,
@@ -400,7 +401,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                   subtitle: Text(t.video_source_scrape_manual_current_work),
                 ),
                 const SizedBox(height: 12),
-                SegmentedButton<bool>(
+                FushiSegmentedButton<bool>(
                   segments: <ButtonSegment<bool>>[
                     ButtonSegment<bool>(
                         value: false,
@@ -423,7 +424,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 ),
                 const SizedBox(height: 12),
                 if (_byId) ...<Widget>[
-                  DropdownButtonFormField<VideoManualIdentitySource>(
+                  FushiDropdownButtonFormField<VideoManualIdentitySource>(
                     key:
                         const ValueKey<String>('video-source-manual-id-source'),
                     initialValue: _idSource,
@@ -456,7 +457,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 ],
                 Text(t.video_source_scrape_manual_query_hint),
                 const SizedBox(height: 12),
-                TextField(
+                FushiTextFieldControl(
                   key: const ValueKey<String>('video-source-manual-query'),
                   controller: _query,
                   enabled: !_searching,
@@ -475,7 +476,7 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
                 ),
                 const SizedBox(height: 12),
                 if (_searching)
-                  const Center(child: CircularProgressIndicator.adaptive())
+                  const FushiLoadingView()
                 else if (results != null && results.isEmpty)
                   Text(t.video_source_scrape_manual_search_empty)
                 else if (results != null)
@@ -498,11 +499,11 @@ class _ManualBindingDialogState extends State<_ManualBindingDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_cancel),
         ),
-        TextButton(
+        FushiTextButton(
           key: const ValueKey<String>('video-source-manual-search'),
           onPressed: _searching ? null : () => unawaited(_search()),
           child: Text(t.video_source_scrape_manual_search_action),

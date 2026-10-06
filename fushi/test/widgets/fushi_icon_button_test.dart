@@ -6,6 +6,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 
 import 'widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   group('FushiIconButton', () {
@@ -108,7 +109,7 @@ void main() {
         ),
       ));
 
-      final Tooltip tip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final Tooltip tip = tester.widget<Tooltip>(glassUnwrap<Tooltip>(find.byType(Tooltip)));
       expect(tip.message, 'Combine');
     });
 
@@ -122,7 +123,7 @@ void main() {
         ),
       ));
 
-      final Tooltip tip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final Tooltip tip = tester.widget<Tooltip>(glassUnwrap<Tooltip>(find.byType(Tooltip)));
       expect(tip.message, 'Settings');
     });
 

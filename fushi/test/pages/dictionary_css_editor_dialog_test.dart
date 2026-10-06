@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 final Provider<ProfileDraftCoordinator> _testProfileDraftCoordinatorProvider =
     Provider<ProfileDraftCoordinator>(
@@ -1150,7 +1151,7 @@ void main() {
 
     // 手写框：原有 CSS 之后空一行追加，body{} 被白名单丢掉。
     await _switchToCodeTab(tester);
-    final TextField field = tester.widget<TextField>(_cssEditorField());
+    final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(_cssEditorField()));
     expect(field.controller!.text, startsWith(savedGlobalCss));
     expect(field.controller!.text, contains('\n\n.glossary-content {'));
     expect(field.controller!.text, contains('line-height: 1.6;'));

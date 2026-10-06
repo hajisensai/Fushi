@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
@@ -47,6 +48,10 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
 
   /// 每次重置分页（换排序 / 换搜索词 / 重试）都 +1；旧请求回来时与它比对，过期就丢。
   int _generation = 0;
+
+  /// 每次第一页落地 +1：进场窗口的 replayKey。换排序 / 换搜索词 / 重试后的新
+  /// 一屏重新错峰淡入；追加页不动它（滚出来的卡瞬间出现）。
+  int _listEpoch = 0;
   MediaServerSort _sort = MediaServerSort.name;
   List<MediaServerItem> _items = const <MediaServerItem>[];
   int _nextStartIndex = 0;
@@ -138,6 +143,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         _nextStartIndex = page.nextStartIndex;
         _hasMore = page.hasMore;
         _loading = false;
+        _listEpoch += 1;
       });
       // 首页没铺满视口时不会有滚动事件，主动再问一页（大字体 / 高窗口）。
       _fillViewportAfterPage();
@@ -253,21 +259,34 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
           final bool compactSort = box.maxWidth < 480;
+          final Widget search = FushiSearchField(
+            fieldKey: const ValueKey<String>('media-server-grid-search'),
+            clearButtonKey: const ValueKey<String>(
+              'media-server-grid-search-clear',
+            ),
+            focusId: FushiFocusId('$prefix-grid-search'),
+            controller: _searchController,
+            focusNode: _searchFocusNode,
+            hintText: t.media_server_search_hint,
+            onChanged: _scheduleSearch,
+            onSubmitted: _submitSearch,
+            onClear: _clearSearch,
+          );
+          // 与库页工具行（LibraryToolbar）同一形态：宽屏搜索框限宽 240–460 靠左、
+          // 排序贴右；窄屏搜索撑满、排序收成图标菜单。
+          // 结构恒定（宽窄只换约束值），跨断点缩放窗口时搜索框不重挂、不丢焦点。
+          final double searchMax = box.maxWidth >= 640
+              ? (box.maxWidth * 0.36).clamp(240.0, 460.0)
+              : double.infinity;
           return Row(
             children: <Widget>[
               Expanded(
-                child: FushiSearchField(
-                  fieldKey: const ValueKey<String>('media-server-grid-search'),
-                  clearButtonKey: const ValueKey<String>(
-                    'media-server-grid-search-clear',
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: searchMax),
+                    child: search,
                   ),
-                  focusId: FushiFocusId('$prefix-grid-search'),
-                  controller: _searchController,
-                  focusNode: _searchFocusNode,
-                  hintText: t.media_server_search_hint,
-                  onChanged: _scheduleSearch,
-                  onSubmitted: _submitSearch,
-                  onClear: _clearSearch,
                 ),
               ),
               SizedBox(width: tokens.spacing.gap),
@@ -279,6 +298,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
                 SizedBox(
                   width: 180,
                   child: FushiDropdown<MediaServerSort>(
+                    inline: true,
                     key: const ValueKey<String>('media-server-grid-sort'),
                     options: MediaServerSort.values,
                     initialOption: _sort,
@@ -297,11 +317,11 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
 
   /// 窄屏的排序入口：图标菜单，当前项打勾。搜索态同样禁用。
   Widget _buildCompactSortButton() {
-    return PopupMenuButton<MediaServerSort>(
+    return FushiPopupMenuButton<MediaServerSort>(
       key: const ValueKey<String>('media-server-grid-sort-compact'),
       tooltip: t.sort_by,
       enabled: !_searchMode,
-      icon: const Icon(Icons.sort_rounded),
+      icon: const FushiIcon(Icons.sort_rounded),
       initialValue: _sort,
       onSelected: _changeSort,
       itemBuilder: (BuildContext context) => <PopupMenuEntry<MediaServerSort>>[
@@ -317,18 +337,16 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
 
   Widget _buildBody() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (_loading && _items.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
-    }
+    if (_loading && _items.isEmpty) return const FushiLoadingView();
     if (_firstPageError != null && _items.isEmpty) {
       return FushiPlaceholderMessage(
         icon: Icons.cloud_off_outlined,
         message: t.media_server_items_load_failed,
         detail: '$_firstPageError',
-        action: FilledButton.icon(
+        action: FushiFilledButton.icon(
           key: const ValueKey<String>('media-server-grid-retry'),
           onPressed: () => unawaited(_reload()),
-          icon: const Icon(Icons.refresh_rounded),
+          icon: const FushiIcon(Icons.refresh_rounded),
           label: Text(t.retry),
         ),
       );
@@ -336,7 +354,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     if (_items.isEmpty && (_hasMore || _loadingMore)) {
       // 首页 0 条但服务器还有后续页（搜索把关后常见）：续扫期间显示进度而不是
       // 先闪一下「无结果」。
-      return Center(child: adaptiveIndicator(context: context));
+      return const FushiLoadingView();
     }
     if (_items.isEmpty) {
       return FushiPlaceholderMessage(
@@ -350,7 +368,9 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     }
     final String prefix = widget.session.serverId;
     // 2026-10 动效重做：首屏卡片错峰淡入；翻页补进来的卡在窗口外，瞬间出现。
+    final double cardGap = tokens.spacing.card;
     return FushiEntranceScope(
+      replayKey: _listEpoch,
       child: CustomScrollView(
         key: PageStorageKey<String>(
           '$prefix-grid-${widget.parentId ?? 'root'}',
@@ -358,14 +378,22 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         controller: _scrollController,
         slivers: <Widget>[
           SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+            // 顶部留出悬停抬升的余量：第一排卡放大 5% 时不被视口上沿裁掉。
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.gap / 2,
+              tokens.spacing.page,
+              0,
+            ),
             sliver: SliverLayoutBuilder(
               builder: (BuildContext context, SliverConstraints constraints) {
                 // 行高按「实际列宽 × 3/2（2:3 海报）+ 文字块」精确给：发现页那种
                 // `childAspectRatio: 0.50` 是把文字区按列宽的一半留，桌面 210 列宽下
                 // 文字块只要 ~60，卡片底部空出一截（像素预览实测）。列数与
                 // [SliverGridDelegateWithMaxCrossAxisExtent] 同一算法（ceil）。
-                final double gap = tokens.spacing.gap;
+                // 封面即卡片没有卡底：列间 / 行间都用卡片级间距，标题与下一排
+                // 封面之间留得开。
+                final double gap = cardGap;
                 final double maxExtent = readerShelfGridExtentForWidth(
                   MediaQuery.sizeOf(context).width,
                 );
@@ -379,7 +407,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
                 return SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
-                    mainAxisSpacing: gap,
+                    mainAxisSpacing: gap + tokens.spacing.gap / 2,
                     crossAxisSpacing: gap,
                     mainAxisExtent:
                         cardWidth * 3 / 2 + mediaServerCardTextBlock(context),
@@ -393,7 +421,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: EdgeInsets.all(tokens.spacing.card),
-                child: Center(child: adaptiveIndicator(context: context)),
+                child: const FushiLoadingView(compact: true),
               ),
             )
           else if (_loadMoreFailed)
@@ -401,10 +429,10 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
               child: Padding(
                 padding: EdgeInsets.all(tokens.spacing.card),
                 child: Center(
-                  child: TextButton.icon(
+                  child: FushiTextButton.icon(
                     key: const ValueKey<String>('media-server-grid-retry-more'),
                     onPressed: _retryLoadMore,
-                    icon: const Icon(Icons.refresh_rounded),
+                    icon: const FushiIcon(Icons.refresh_rounded),
                     label: Text(t.retry),
                   ),
                 ),

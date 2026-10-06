@@ -57,7 +57,7 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
 #video-status { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
 .toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
 
-#track {
+.track-select {
   width: 100%;
   height: 36px;
   margin-top: 10px;
@@ -283,7 +283,7 @@ html.fushi-embed #video-status {
    换行；可收缩后 flex-wrap 才拿得到受限宽度——装得下一行，超出自然折行。 */
 html.fushi-embed .toolbar { flex: 0 1 auto; min-width: 0; margin-top: 0; gap: 3px; }
 
-html.fushi-embed #track { margin-top: 6px; height: 32px; min-height: 32px; font-size: 13px; }
+html.fushi-embed .track-select { margin-top: 6px; height: 32px; min-height: 32px; font-size: 13px; }
 html.fushi-embed .offset-row { margin-top: 6px; }
 html.fushi-embed .subs-row input { min-height: 32px; }
 
@@ -349,7 +349,7 @@ html.fushi-embed .toolbar button {
   padding: 0;
 }
 
-html.fushi-embed body.hdr-folded #track,
+html.fushi-embed body.hdr-folded .track-select,
 html.fushi-embed body.hdr-folded #offset,
 html.fushi-embed body.hdr-folded #subs-row,
 html.fushi-embed body.hdr-folded #subs-results { display: none !important; }

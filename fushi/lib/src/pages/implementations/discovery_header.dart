@@ -28,7 +28,12 @@ class DiscoverySourceOption {
   final String label;
 }
 
-/// 发现页头部：来源下拉 + 搜索框（可选前置行，如媒体域分段）。
+/// 发现页头部（四个域统一）：
+///
+/// - 宽屏：来源下拉 + 搜索胶囊（MD3 填充 / Apple 玻璃，[FushiSearchField]）
+///   + 行尾动作（✨ AI 下载、刷新…）同一行；
+/// - 窄屏（[isCompactWidth]）：搜索框独占整行，来源下拉 + 行尾动作排下一行；
+/// - 最后一行：筛选（[leading]，媒体域分段 / 筛选 chip）左对齐**单行**，放不下横滑。
 class DiscoveryHeaderControls extends StatelessWidget {
   const DiscoveryHeaderControls({
     required this.sources,
@@ -65,7 +70,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
   /// （统一发现页 / 漫画发现页）可能同时挂在树上，各自传独立 id 才不会互顶。
   final FushiFocusId searchFocusId;
 
-  /// 控件行之上的附加行（如媒体域分段按钮）。
+  /// 筛选行内容（如媒体域分段按钮 + 筛选 chip）：排在第二行、单行横滑。
   final Widget? leading;
 
   /// 搜索框之后、同一行的附加按钮（页头不渲染时页头动作挪到这里，如刷新）。
@@ -80,23 +85,35 @@ class DiscoveryHeaderControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Widget? leadingRow = leading;
+    final Widget? filterRow = leading;
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
+      padding: EdgeInsets.fromLTRB(
+        tokens.spacing.page,
+        0,
+        tokens.spacing.page,
+        tokens.spacing.gap,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (leadingRow != null)
-            Padding(
-              padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-              child: leadingRow,
-            ),
           LayoutBuilder(
             builder: (BuildContext context, BoxConstraints constraints) =>
                 isCompactWidth(context, constraints.maxWidth)
                 ? _buildCompact(context, tokens)
                 : _buildWide(context, tokens),
           ),
+          // 筛选行：左对齐单行，放不下就横滑（不再折行把搜索框以下的内容一层层
+          // 往下推）。
+          if (filterRow != null) ...<Widget>[
+            SizedBox(height: tokens.spacing.gap),
+            HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: filterRow,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -168,7 +185,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
     // 强制重建，否则下拉会一直停在旧值上骗用户。
     return KeyedSubtree(
       key: ValueKey<String>('discovery_source_$selectedSourceId'),
-      child: DropdownMenu<String>(
+      child: FushiDropdownMenu<String>(
         key: const ValueKey<String>('discovery_source_menu'),
         initialSelection: selectedSourceId,
         requestFocusOnTap: false,

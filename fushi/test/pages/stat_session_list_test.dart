@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 统计页会话流（用户 2026-09-08：每个域都要会话级统计，能删误点的会话）的行为守卫：
 ///  * 每行显示 标题 · 起止 · 量纲；空串标题回退 mediaKey；
@@ -137,7 +138,9 @@ void main() {
   });
 
   testWidgets('BUG-2417：长标题排到第二行而不是单行省略', (WidgetTester tester) async {
-    const String long = 'Re：从零开始的异世界生活 第三期 第七话 暗中行动する者たち';
+    // MD3 列表行重做（2026-10：行内缩 4 + 行首间距 16）后文本列比旧实现窄约
+    // 20dp；用一个在 400dp 下仍需两行、且两行装得下的长标题钉同一契约。
+    const String long = 'Re：从零开始的异世界生活 第七话 暗中行动する者たち';
     // 手机宽度：用户实报的截图就是这个宽度下的单行截断。
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -397,7 +400,7 @@ void main() {
     final Finder confirm =
         find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
     expect(
-      tester.widget<FilledButton>(confirm).onPressed,
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirm)).onPressed,
       isNull,
       reason: '防呆：没勾确认项之前不许清',
     );

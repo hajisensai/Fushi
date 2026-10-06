@@ -553,11 +553,20 @@ void main() {
 
       await openCardMenu(tester, videoCard('video/liz'));
 
+      // MD3 管理菜单的列表行现在是分段行（_Md3SegmentRow，取代 FushiListItem）；
+      // 快捷动作是 _QuickActionButton。两者都是私有类，按类型名区分。
+      Finder ancestorNamed(String typeName) => find.ancestor(
+            of: find.text(t.collection_rescrape),
+            matching: find.byWidgetPredicate(
+              (Widget w) => w.runtimeType.toString() == typeName,
+            ),
+          );
       expect(
-        find.widgetWithText(FushiListItem, t.collection_rescrape),
+        ancestorNamed('_Md3SegmentRow'),
         findsOneWidget,
         reason: '做成列表行而不是快捷 chip：最长的标签不该压少整格 chip 的列数',
       );
+      expect(ancestorNamed('_QuickActionButton'), findsNothing);
     });
 
     testWidgets('没有刮削 controller 时不画重刮入口', (WidgetTester tester) async {
@@ -675,6 +684,9 @@ void main() {
     expect(find.text(t.video_watch_progress_clear), findsOneWidget);
 
     await tester.tap(find.text(t.video_watch_progress_clear));
+    await tester.pumpAndSettle();
+    // 先过确认框（学习记录两条勾选默认都不勾 = 统计不动）。
+    await tester.tap(find.text(t.library_progress_reset_confirm));
     await tester.pumpAndSettle();
 
     final VideoBookRow row = (await db.getVideoBookByBookUid('video/1'))!;
@@ -839,6 +851,9 @@ void main() {
 
     await openCardMenu(
         tester, find.byKey(const ValueKey<String>('home_video_video/1')));
+    // 管理菜单在 800x600 默认视口里可滚动，危险区的「删除」落在折线下，先滚到可见。
+    await tester.ensureVisible(find.text(t.dialog_delete).last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.dialog_delete).last);

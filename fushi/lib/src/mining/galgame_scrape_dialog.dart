@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show GalgameSourceRow;
 
 import 'package:fushi/src/mining/galgame_cover_download.dart';
@@ -13,6 +14,7 @@ import 'package:fushi/src/mining/metadata/galgame_metadata_adapter.dart';
 import 'package:fushi/src/mining/metadata/galgame_metadata_draft.dart';
 import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 
 /// 游戏「刮削元数据」统一弹窗。
 ///
@@ -377,18 +379,21 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
     return Row(
       children: <Widget>[
         Expanded(
-          child: TextField(
+          child: FushiTextFieldControl(
             controller: _queryCtrl,
+            // 前置放大镜让共享输入层把它认成搜索框：MD3 = 填充式全圆角胶囊，
+            // Apple = 搜索胶囊；不再是灰色细描边方框。
             decoration: InputDecoration(
               isDense: true,
               hintText: t.game_scrape_query,
+              prefixIcon: const FushiIcon(Icons.search),
               border: const OutlineInputBorder(),
             ),
             onSubmitted: (_) => _search(),
           ),
         ),
         const SizedBox(width: 8),
-        FilledButton(
+        FushiFilledButton(
           onPressed: _searching ? null : _search,
           child: Text(t.game_scrape_search),
         ),
@@ -398,36 +403,38 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
 
   Widget _buildResults(ThemeData theme, FushiDesignTokens tokens) {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator());
+      return const FushiLoadingView(compact: true);
     }
     if (_searchFailed) {
       // 搜索失败错误行：可见反馈 + 重试指引（搜索按钮此时已恢复可点）。
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.error_outline, color: theme.colorScheme.error),
-            const SizedBox(height: 8),
-            Text(
-              t.game_scrape_search_failed,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(color: theme.colorScheme.error),
-            ),
-          ],
-        ),
+      // 与下方「无结果」同走共享空状态件，只把图标与文案染成错误语义色
+      // （MD3 error / Apple systemRed / 墨水屏 onSurface）。
+      return FushiPlaceholderMessage(
+        icon: Icons.error_outline,
+        message: t.game_scrape_search_failed,
+        color: fushiStatusColor(context, FushiStatusTone.error),
       );
     }
     if (_searched && _candidates.isEmpty) {
       // 空态收进弹窗内（旧实现 toast 完就散场，用户无处改词重试）。
-      return Center(child: Text(t.game_scrape_no_result));
+      return FushiPlaceholderMessage(
+        icon: Icons.search_off,
+        message: t.game_scrape_no_result,
+      );
     }
-    return ListView.separated(
-      shrinkWrap: true,
-      itemCount: _candidates.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (BuildContext context, int index) =>
-          _buildCandidateTile(theme, tokens, _candidates[index]),
+    // 每次搜索出新结果都重开进场窗口（replayKey = 本次结果列表），候选行
+    // 错峰淡入；墨水屏 / 减弱动效下瞬间到位。
+    return FushiEntranceScope(
+      replayKey: _candidates,
+      child: ListView.separated(
+        shrinkWrap: true,
+        itemCount: _candidates.length,
+        separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
+        itemBuilder: fushiStaggeredItemBuilder(
+          (BuildContext context, int index) =>
+              _buildCandidateTile(theme, tokens, _candidates[index]),
+        ),
+      ),
     );
   }
 
@@ -457,6 +464,9 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
                   candidate.displayName,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
@@ -473,14 +483,14 @@ class _GalgameScrapeDialogState extends State<GalgameScrapeDialog> {
             ),
           ),
           const SizedBox(width: 8),
-          FilledButton.tonal(
+          FushiFilledButton.tonal(
             onPressed:
                 _applyingCandidate != null ? null : () => _use(candidate),
             child: identical(_applyingCandidate, candidate)
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(t.game_scrape_use),
           ),

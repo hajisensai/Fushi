@@ -57,13 +57,35 @@ void main() {
     );
   }
 
-  double maxScrollOf(WidgetTester tester) =>
-      (tester.state(find.byType(Scrollable).first) as ScrollableState)
-          .position
-          .maxScrollExtent;
+  // 2026-10 MD3 Expressive 刷新（Android 16 设置）：多选一行只问
+  // [settingsChoiceUsesSegments] 一条判据——少而短、且估宽不超过行宽 55% 的选项是
+  // 行右侧紧凑的分段按钮；否则退回「当前值写进说明行、点整行弹出菜单」的
+  // [SettingsChoiceMenuRow]。BUG-008 / 溢出两条回归的契约因此变成：任何宽度下都
+  // 不溢出，且每个选项都可达（要么整条分段可见，要么全部出现在菜单里）。
+  //
+  // 选中项写在说明行（「当前值\n说明」同一个 Text），菜单里逐项核对其余选项。
+  Future<void> expectOptionsReachable(
+    WidgetTester tester, {
+    required String selectedLabel,
+    required List<String> otherLabels,
+  }) async {
+    expect(find.byType(SettingsChoiceMenuRow), findsOneWidget,
+        reason: 'a strip that cannot fit falls back to the choice menu row');
+    expect(find.byType(SegmentedButton<String>), findsNothing,
+        reason: 'no clipped / half-visible strip is left on the row');
+    expect(find.textContaining(selectedLabel), findsOneWidget,
+        reason: 'the selected option is shown on the row itself');
+    await tester.tap(find.byType(SettingsChoiceMenuRow));
+    await tester.pumpAndSettle();
+    for (final String label in otherLabels) {
+      expect(find.text(label), findsOneWidget,
+          reason: 'every option stays reachable from the menu: $label');
+    }
+    expect(tester.takeException(), isNull);
+  }
 
   testWidgets(
-    'inline segmented row shrink-and-scrolls in a narrow pane without overflow',
+    'inline segmented row in a narrow pane falls back to a menu without overflow',
     (WidgetTester tester) async {
       await tester
           .pumpWidget(buildTestApp(row(width: 240, controlBelow: false)));
@@ -71,67 +93,38 @@ void main() {
 
       expect(tester.takeException(), isNull,
           reason: 'no RenderFlex overflow on a narrow pane');
-
-      // The strip is genuinely scrollable now (bounded width → it scrolls
-      // instead of clipping/overflowing).
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
-      expect(maxScrollOf(tester), greaterThan(0.0),
-          reason: 'the segmented strip exceeds the bounded width and scrolls');
+      await expectOptionsReachable(
+        tester,
+        selectedLabel: 'Material Design 3',
+        otherLabels: <String>['Automatic', 'iOS (Cupertino)'],
+      );
     },
   );
 
-  testWidgets(
-    'BUG-008: default segmented row lays the strip below the label so the '
-    'whole strip is visible where the inline split would clip it',
-    (WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(1200, 800));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
+  for (final bool? controlBelow in <bool?>[false, null]) {
+    testWidgets(
+      'BUG-008: a long-label segmented row never clips trailing options in a '
+      'wide pane (controlBelow: $controlBelow)',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      const double pane = 1100;
-
-      // Inline at this pane: the ≈50/50 split caps the strip at ~half (well
-      // under its intrinsic width), so it must scroll — segments are clipped.
-      await tester
-          .pumpWidget(buildTestApp(row(width: pane, controlBelow: false)));
-      await tester.pump();
-      expect(tester.takeException(), isNull);
-      final double inlineScroll = maxScrollOf(tester);
-      expect(inlineScroll, greaterThan(0.0),
-          reason: 'inline split squeezes the strip below its width → scrolls');
-
-      // Default (controlBelow:true): same pane, but the strip owns a full-width
-      // row below the label, so it fits and STRETCHES to fill the row (no
-      // scroll). The strip fitting means it is no longer wrapped in a scroll
-      // view at all (TODO-647 full-width-when-it-fits).
-      await tester
-          .pumpWidget(buildTestApp(row(width: pane, controlBelow: null)));
-      await tester.pump();
-      expect(tester.takeException(), isNull,
-          reason: 'no overflow when the strip owns its own row');
-
-      final Rect label = tester.getRect(find.text('Design system'));
-      final Rect strip = tester.getRect(find.byType(SegmentedButton<String>));
-
-      // Structural proof: the strip is on its own row BELOW the label, not
-      // squeezed beside it.
-      expect(strip.top, greaterThanOrEqualTo(label.bottom - 0.5),
-          reason: 'the segmented strip sits below the label (controlBelow)');
-
-      // TODO-647: a fitting strip is laid out full-width, so it is NOT wrapped
-      // in a horizontal scroll view (no Scrollable at all here).
-      expect(find.byType(SingleChildScrollView), findsNothing,
-          reason: 'a fitting strip stretches full-width, not scroll-hosted');
-
-      // Symptom guard: the full strip — including the last "iOS" segment — fits
-      // and nothing is clipped.
-      final Rect lastSegment = tester.getRect(find.text('iOS (Cupertino)'));
-      expect(lastSegment.right, lessThanOrEqualTo(strip.right + 0.5),
-          reason: 'the last segment is within the strip bounds');
-    },
-  );
+        await tester.pumpWidget(
+          buildTestApp(row(width: 1100, controlBelow: controlBelow)),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull, reason: 'no overflow');
+        await expectOptionsReachable(
+          tester,
+          selectedLabel: 'Material Design 3',
+          otherLabels: <String>['Automatic', 'iOS (Cupertino)'],
+        );
+      },
+    );
+  }
 
   testWidgets(
-    'default segmented row scrolls long CJK labels at 2x scale without overflow',
+    'long CJK labels at 2x scale fall back to a menu without overflow',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 640));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -180,19 +173,22 @@ void main() {
       expect(
         tester.takeException(),
         isNull,
-        reason: 'long segmented labels at 2x must scroll, not overflow',
+        reason: 'long segmented labels at 2x must not overflow',
       );
-      expect(maxScrollOf(tester), greaterThan(0.0));
+      await expectOptionsReachable(
+        tester,
+        selectedLabel: '自動判定',
+        otherLabels: <String>['縦書き優先', '見開きページ表示'],
+      );
     },
   );
   testWidgets(
-    'TODO-647: a fitting default strip stretches full-width with equal segments',
+    'TODO-647: a fitting short strip sits whole on the label row with equal '
+    'segments',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(900, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      // A 3-segment strip with short labels in a roomy pane: it fits, so it must
-      // stretch to fill the row (not shrink to its natural width on the left).
       const List<ButtonSegment<String>> shortSegments = <ButtonSegment<String>>[
         ButtonSegment<String>(value: 'off', label: Text('Off')),
         ButtonSegment<String>(value: 'on', label: Text('On')),
@@ -200,11 +196,13 @@ void main() {
       ];
 
       const double pane = 600;
+      const Key paneKey = ValueKey<String>('pane');
       await tester.pumpWidget(
         buildTestApp(
           Align(
             alignment: Alignment.topCenter,
             child: SizedBox(
+              key: paneKey,
               width: pane,
               child: AdaptiveSettingsSegmentedRow<String>(
                 title: 'Spread mode',
@@ -220,34 +218,44 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
 
-      // Fits → no scroll host at all.
+      // Fits → shown as a real strip: not a menu, not scroll-hosted.
+      expect(find.byType(SettingsChoiceMenuRow), findsNothing);
       expect(find.byType(SingleChildScrollView), findsNothing,
-          reason: 'a fitting strip is laid out full-width, not scroll-hosted');
+          reason: 'a fitting strip is laid out whole, not scroll-hosted');
 
-      // The strip stretches to (almost) the full row width — well beyond the
-      // natural width of three short labels (~200px). Allow for row padding.
       final Rect strip = tester.getRect(find.byType(SegmentedButton<String>));
-      expect(strip.width, greaterThan(pane - 40),
-          reason: 'a fitting strip stretches to fill its full-width row');
+      final Rect label = tester.getRect(find.text('Spread mode'));
+      final Rect row = tester.getRect(find.byKey(paneKey));
+      // Compact trailing control on the label row (Android 16 settings),
+      // right-aligned to the row content edge, within its 55% share.
+      expect(strip.top, lessThan(label.bottom),
+          reason: 'the strip sits on the label row, not below it');
+      expect(strip.left, greaterThan(label.right),
+          reason: 'the strip trails the label');
+      expect(row.right - strip.right, lessThan(40),
+          reason: 'the strip is right-aligned to the row content edge');
+      expect(strip.width, lessThanOrEqualTo(pane * 0.55));
+      // Every segment is fully inside the strip (nothing clipped).
+      for (final String text in <String>['Off', 'On', 'Auto']) {
+        final Rect r = tester.getRect(find.text(text));
+        expect(r.left, greaterThanOrEqualTo(strip.left - 0.5));
+        expect(r.right, lessThanOrEqualTo(strip.right + 0.5));
+      }
 
-      // Equal-width segments: the three labels are roughly evenly spaced across
-      // the stretched strip, so the centre label sits near the strip centre.
+      // Equal-width segments: the centre label sits near the strip centre.
       final double onCentre = tester.getCenter(find.text('On')).dx;
       expect((onCentre - strip.center.dx).abs(), lessThan(strip.width / 6),
-          reason: 'segments share the stretched width equally');
+          reason: 'segments share the strip width equally');
     },
   );
 
   testWidgets(
-    'TODO-647: a narrow pane with many/long segments falls back to scroll '
+    'TODO-647: a narrow pane with many/long segments falls back to a menu '
     '(BUG-008 segments stay reachable)',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(320, 640));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      // Five verbose segments in a narrow pane: cannot fit full-width, so the
-      // host must fall back to the horizontal scroll view so every segment
-      // (including the last) stays reachable.
       const List<ButtonSegment<String>> manySegments = <ButtonSegment<String>>[
         ButtonSegment<String>(value: 'a', label: Text('Automatic detect')),
         ButtonSegment<String>(value: 'b', label: Text('Vertical writing')),
@@ -275,13 +283,18 @@ void main() {
       );
       await tester.pump();
       expect(tester.takeException(), isNull,
-          reason: 'a too-wide strip must scroll, not overflow');
+          reason: 'a too-wide strip must not overflow');
 
-      // Fell back to the scroll view, and it genuinely scrolls (the strip is
-      // wider than the pane), so trailing segments are reachable.
-      expect(find.byType(SingleChildScrollView), findsOneWidget);
-      expect(maxScrollOf(tester), greaterThan(0.0),
-          reason: 'narrow pane → strip scrolls, last segment reachable');
+      await expectOptionsReachable(
+        tester,
+        selectedLabel: 'Automatic detect',
+        otherLabels: <String>[
+          'Vertical writing',
+          'Horizontal writing',
+          'Two-page spread',
+          'Continuous scroll',
+        ],
+      );
     },
   );
 }

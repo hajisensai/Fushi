@@ -7,6 +7,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:fushi/src/media/video/video_control_customization.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// 视频控制条（底栏 / 顶栏按钮组）在**空间不够**时的唯一处置：按钮永远原尺寸，
 /// 放不下的按优先级收进末尾的「⋯」菜单（BUG-2832）。
@@ -78,6 +80,7 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.seekForward:
       return 80;
     case VideoControlItem.previousCue:
+    case VideoControlItem.replayCue:
     case VideoControlItem.nextCue:
       return 75;
     case VideoControlItem.volume:
@@ -120,6 +123,7 @@ VideoBarHideGroup? videoControlItemBarHideGroup(VideoControlItem item) {
     case VideoControlItem.seekForward:
       return VideoBarHideGroup.seek;
     case VideoControlItem.previousCue:
+    case VideoControlItem.replayCue:
     case VideoControlItem.nextCue:
       return VideoBarHideGroup.cue;
     case VideoControlItem.frameBackward:
@@ -419,7 +423,7 @@ class _VideoControlBarState extends State<VideoControlBar> {
         ancestor: overlay,
       ),
     );
-    final VideoBarMenuAction? chosen = await showMenu<VideoBarMenuAction>(
+    final VideoBarMenuAction? chosen = await showFushiMenu<VideoBarMenuAction>(
       context: context,
       position: RelativeRect.fromRect(anchor, Offset.zero & overlay.size),
       items: <PopupMenuEntry<VideoBarMenuAction>>[
@@ -428,7 +432,7 @@ class _VideoControlBarState extends State<VideoControlBar> {
             value: action,
             child: Row(
               children: <Widget>[
-                Icon(action.icon, size: 20),
+                FushiIcon(action.icon, size: 20),
                 const SizedBox(width: 12),
                 Flexible(child: Text(action.label)),
               ],

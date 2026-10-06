@@ -1098,16 +1098,21 @@ void main() {
             layout.itemsIn(VideoControlSlot.bottomCenter);
         expect(center, contains(VideoControlItem.frameBackward));
         expect(center, contains(VideoControlItem.frameForward));
-        // Symmetric layout: frameBackward left of playPause, frameForward right.
+        // Symmetric layout around the cluster pivot: play in [defaults]; the
+        // replay-current-line key in [currentChrome] (2026-10-05 M3E rework
+        // moved play to the bottom-left episode group).
+        final VideoControlItem pivot = center.contains(VideoControlItem.playPause)
+            ? VideoControlItem.playPause
+            : VideoControlItem.replayCue;
         expect(
           center.indexOf(VideoControlItem.frameBackward),
-          lessThan(center.indexOf(VideoControlItem.playPause)),
-          reason: 'frameBackward must sit before play in ${layout.hashCode}',
+          lessThan(center.indexOf(pivot)),
+          reason: 'frameBackward must sit before $pivot in ${layout.hashCode}',
         );
         expect(
           center.indexOf(VideoControlItem.frameForward),
-          greaterThan(center.indexOf(VideoControlItem.playPause)),
-          reason: 'frameForward must sit after play in ${layout.hashCode}',
+          greaterThan(center.indexOf(pivot)),
+          reason: 'frameForward must sit after $pivot in ${layout.hashCode}',
         );
       }
     });

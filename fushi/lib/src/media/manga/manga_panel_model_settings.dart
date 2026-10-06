@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
 
@@ -52,7 +53,7 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
         setState(() => _busy = false);
         final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
         messenger.showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(t.manga_panel_model_download_failed(error: '$error')),
           ),
         );
@@ -100,12 +101,12 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (verified)
-                IconButton(
+                FushiIconButtonControl(
                   tooltip: t.manga_panel_model_delete,
                   onPressed: _busy ? null : _deleteModel,
-                  icon: const Icon(Icons.delete_outline),
+                  icon: const FushiIcon(Icons.delete_outline),
                 ),
-              FilledButton(
+              FushiFilledButton(
                 onPressed: _busy || verified ? null : _downloadModel,
                 child: Text(
                   _busy
@@ -119,7 +120,7 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
         if (_busy)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: LinearProgressIndicator(
+            child: FushiLinearProgressIndicator(
               value:
                   kMangaPanelModelBytes == null || kMangaPanelModelBytes! <= 0
                   ? null

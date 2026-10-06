@@ -24,6 +24,7 @@ import 'package:fushi/src/pages/implementations/opds_server_settings_section.dar
 import 'package:fushi/utils.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 void main() {
   final TestWidgetsFlutterBinding binding =
@@ -275,11 +276,11 @@ void main() {
     await tester.ensureVisible(test0);
     await tester.pumpAndSettle();
     // 空地址 → 不可点（而不是点了再报一个通用错误）。
-    expect(tester.widget<OutlinedButton>(test0).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(test0)).onPressed, isNull);
 
     await enter(tester, 'opds-server-0-url', 'https://books.example.com/opds');
     await tester.pumpAndSettle();
-    expect(tester.widget<OutlinedButton>(test0).onPressed, isNotNull);
+    expect(tester.widget<OutlinedButton>(glassUnwrap<OutlinedButton>(test0)).onPressed, isNotNull);
 
     // 让防抖落盘跑完再结束：拆 harness 会连 ProviderScope 一起 dispose，
     // 在途的异步写会撞上已释放的 PreferencesRepository（harness 假象）。

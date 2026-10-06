@@ -62,7 +62,6 @@ import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
 import 'package:fushi/src/models/browser_extension_font_catalog.dart';
-import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
@@ -113,6 +112,10 @@ import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/tracker_subscription.dart';
+import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
+import 'package:fushi_engine/media/torrent/public_trackers.dart';
+import 'package:fushi_engine/utils/net/fake_ip_dns.dart';
+import 'package:fushi_torrent/fushi_torrent.dart' show FtSessionStatus;
 import 'package:fushi/src/media/torrent/builtin_video_resource_sources.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -1229,7 +1232,7 @@ class AppModel with ChangeNotifier {
   String _mediaTrackingAppVersion = 'unknown';
   String get _mediaTrackingUserAgent =>
       'hajisensai/Fushi/$_mediaTrackingAppVersion '
-      '(https://github.com/hajisensai/fushi)';
+      '(https://fushi.moe)';
 
   /// Dictionary metadata, history, and search caches.
   late DictionaryRepository dictRepo;
@@ -3150,7 +3153,6 @@ class AppModel with ChangeNotifier {
       await Future.wait(<Future<void>>[
         JapaneseLanguage.instance.initialise(),
         injectAssetLicenses(),
-        _seedBuiltInTags(),
         _prepareLocalAudioForPlayback(),
       ]);
 
@@ -3611,18 +3613,6 @@ class AppModel with ChangeNotifier {
   Future<void> _setPref(String key, dynamic value) =>
       prefsRepo.setPref(key, value);
 
-  // TODO-1166：新装时把内置默认标签播种为 5 档星级评分（1⭐..5⭐）。
-  // 仍是「一次性、仅空池」播种：`builtInTagsSeeded` 标志种过即不再动，空池才种，
-  // 保证既有用户的标签池不被覆盖（老用户改星级走标签管理页的一键补齐入口）。
-  Future<void> _seedBuiltInTags() async {
-    if (prefsRepo.containsKey('builtInTagsSeeded')) return;
-    final existing = await _database.getAllTags();
-    if (existing.isEmpty) {
-      await seedStarRatingTags(_database);
-    }
-    await _setPref('builtInTagsSeeded', 'true');
-  }
-
   // _bindLocalAudioDbForNativeHandler moved to LocalAudioManager.bindForNativeHandler
 
   // _rowToDictionary, _dictionaryToCompanion, _persistDictionary
@@ -3667,6 +3657,11 @@ class AppModel with ChangeNotifier {
   /// 墨水屏模式（E-ink）：全局纯黑白主题 + 关动画 + 阅读器/弹窗高对比。
   bool get einkMode => themeNotifier.einkMode;
   Future<void> setEinkMode(bool value) => themeNotifier.setEinkMode(value);
+
+  /// 功能层表面材质（导航 / 底部弹层 / 对话框的毛玻璃），与颜色主题正交。
+  FushiGlassMaterial get glassMaterial => themeNotifier.glassMaterial;
+  Future<void> setGlassMaterial(FushiGlassMaterial value) =>
+      themeNotifier.setGlassMaterial(value);
 
   /// BUG-1718：查词弹窗「CSS 尾段」供给器——词典包自带 CSS（`FushiDicts.dictionaryStyles`，
   /// mdx 导入落成的词典目录 `styles.css`）+ 用户全局/单典自定义 CSS，随查词响应按 revision
@@ -3816,6 +3811,10 @@ class AppModel with ChangeNotifier {
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
       // → 浏览器里的音调去重永远是关的。走 theme 通道与 --fushi-instant-scroll 同法。
       '--fushi-dedup-pitch': deduplicatePitchAccents ? '1' : '0',
+      // 浏览器扩展的唯一材质是液态玻璃（不再跟随 app 设计系统，用户 2026-10-04 拍板）；
+      // 这条只剩墨水屏开关：墨水屏下发 '0'，content.js 让浮动弹窗保持不透明（非 CSS 变量、
+      // 仅 content.js 消费）。
+      '--fushi-glass': einkMode ? '0' : '1',
     };
   }
 
@@ -4138,6 +4137,12 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
+
+  /// 播放器底栏时间显示剩余时长（默认关，点按底栏时间切换）。
+  bool get videoTimeDisplayRemaining => prefsRepo.videoTimeDisplayRemaining;
+
+  Future<void> setVideoTimeDisplayRemaining(bool value) =>
+      prefsRepo.setVideoTimeDisplayRemaining(value);
 
   /// 自动下载的外挂字幕按视频内嵌字幕轨对时间轴（默认开）。
   bool get subtitleReferenceSyncEnabled =>
@@ -4827,6 +4832,11 @@ class AppModel with ChangeNotifier {
   EmbeddedTorrentHost? _embeddedTorrentHost;
   EmbeddedTorrentHost? get embeddedTorrentHost => _embeddedTorrentHost;
 
+  /// BUG-2950：内置引擎会话级网络诊断（fake-ip 掐断 UDP / DHT 不可达）。
+  /// 下载页横幅与种子详情的网络行照此展示；host 未建时恒为 none。
+  final ValueNotifier<TorrentNetworkIssue> torrentNetworkIssue =
+      ValueNotifier<TorrentNetworkIssue>(TorrentNetworkIssue.none);
+
   TrackerSubscriptionService? _trackerSubscriptionService;
   TrackerSubscriptionService get _trackers =>
       _trackerSubscriptionService ??= TrackerSubscriptionService(
@@ -4896,7 +4906,108 @@ class AppModel with ChangeNotifier {
     _embeddedTorrentHost = host;
     // 建好即把已保存的资源限制/会话设置铺上（不必等用户改设置）。
     _applyEmbeddedTorrentLimits(prefsRepo.qbConnectionConfig);
+    _startTorrentNetworkMonitor();
     return host;
+  }
+
+  // ── BUG-2950：fake-ip 绕行 + 会话级网络诊断 ──────────────────────────────
+  //
+  // DHT 每次从停到跑（host 按有无下载/做种任务启停 DHT）时：重新判一次系统 DNS
+  // 是否 fake-ip；是就经 DoH 拿 DHT 引导点与公共 UDP tracker 的真实 IP，节点灌进
+  // 路由表、tracker 追加到所有任务。诊断按 DHT 实际运行状态算，DHT 闲置时不报。
+
+  Timer? _torrentNetworkTimer;
+  bool _torrentFakeIpDetected = false;
+  FakeIpTorrentBypass _torrentFakeIpBypass = FakeIpTorrentBypass.empty;
+  DateTime? _torrentDhtRunningSince;
+  bool _torrentBypassFed = false;
+  bool _torrentFakeIpProbing = false;
+
+  static const Duration _kTorrentNetworkTick = Duration(seconds: 20);
+
+  void _startTorrentNetworkMonitor() {
+    _torrentNetworkTimer?.cancel();
+    _torrentNetworkTimer = Timer.periodic(
+      _kTorrentNetworkTick,
+      (_) => unawaited(_torrentNetworkTick()),
+    );
+    unawaited(_torrentNetworkTick());
+  }
+
+  void _stopTorrentNetworkMonitor() {
+    _torrentNetworkTimer?.cancel();
+    _torrentNetworkTimer = null;
+    _torrentDhtRunningSince = null;
+    _torrentBypassFed = false;
+    torrentNetworkIssue.value = TorrentNetworkIssue.none;
+  }
+
+  Future<void> _torrentNetworkTick() async {
+    final EmbeddedTorrentHost? host = _embeddedTorrentHost;
+    if (host == null) {
+      torrentNetworkIssue.value = TorrentNetworkIssue.none;
+      return;
+    }
+    final FtSessionStatus? status = host.sessionStatus();
+    if (status == null) return;
+    if (!status.dhtRunning) {
+      _torrentDhtRunningSince = null;
+      _torrentBypassFed = false;
+    } else if (_torrentDhtRunningSince == null) {
+      _torrentDhtRunningSince = DateTime.now();
+      await _refreshTorrentFakeIpBypass(host);
+      // DoH 探测期间 AppModel 可能已 dispose（host 置 null、notifier 已释放）
+      // 或 host 被换掉：此时 host 与通知器都不再归本轮所有，不得再写。
+      if (!identical(host, _embeddedTorrentHost)) return;
+    }
+    if (status.dhtRunning &&
+        !_torrentBypassFed &&
+        _torrentFakeIpBypass.dhtNodes.isNotEmpty) {
+      host.addDhtNodes(_torrentFakeIpBypass.dhtNodes);
+      _torrentBypassFed = true;
+    }
+    final DateTime? since = _torrentDhtRunningSince;
+    torrentNetworkIssue.value = diagnoseTorrentNetwork(
+      dhtEnabled: status.dhtRunning,
+      dhtNodes: status.dhtNodes,
+      sessionAge:
+          since == null ? Duration.zero : DateTime.now().difference(since),
+      fakeIpDetected: _torrentFakeIpDetected,
+    );
+  }
+
+  Future<void> _refreshTorrentFakeIpBypass(EmbeddedTorrentHost host) async {
+    if (_torrentFakeIpProbing) return;
+    _torrentFakeIpProbing = true;
+    try {
+      _torrentFakeIpDetected = await isFakeIpDnsActive();
+      if (!_torrentFakeIpDetected) {
+        _torrentFakeIpBypass = FakeIpTorrentBypass.empty;
+        return;
+      }
+      final http.Client client = createAppHttpIoClient();
+      try {
+        _torrentFakeIpBypass = await resolveFakeIpTorrentBypass(
+          doh: DohResolver(client: client),
+          udpTrackers: kPublicTrackers,
+        );
+      } finally {
+        client.close();
+      }
+      _torrentBypassFed = false;
+      if (identical(host, _embeddedTorrentHost)) {
+        host.setExtraTrackers(_torrentFakeIpBypass.trackers);
+      }
+      debugPrint(
+        '[torrent] fake-ip DNS detected; real-IP bypass: '
+        '${_torrentFakeIpBypass.dhtNodes.length} DHT nodes, '
+        '${_torrentFakeIpBypass.trackers.length} UDP trackers',
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.torrentFakeIpBypass', e, stack);
+    } finally {
+      _torrentFakeIpProbing = false;
+    }
   }
 
   /// 默认下载根（未解析完成前为空串）。
@@ -7525,12 +7636,10 @@ class AppModel with ChangeNotifier {
         isAndroid: platformServices.isAndroid,
       );
 
-  /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端），`null` = 本平台
-  /// 没有 games 模块。平台判据同样取自 [PlatformServices]，理由同上。
-  GamesModuleForm? get gamesModuleForm => GamesModuleForm.on(
-        isWindows: platformServices.isWindows,
-        isAndroid: platformServices.isAndroid,
-      );
+  /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端）。平台判据同样
+  /// 取自 [PlatformServices]，理由同上。
+  GamesModuleForm get gamesModuleForm =>
+      GamesModuleForm.on(isWindows: platformServices.isWindows);
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
@@ -7736,8 +7845,10 @@ class AppModel with ChangeNotifier {
     // 用最近一次 tick 缓存的计划 id 集合剪枝 —— dispose 是同步的，不能在这里
     // await 一次 `store.loadAll()`；缓存最多落后一个 tick（20s），代价只是某个
     // 刚删掉的计划多留一轮 resume 文件，下次启动的剪枝会立刻清掉它。
+    _stopTorrentNetworkMonitor();
     _embeddedTorrentHost?.dispose(keepIds: _animeDownloadPlanIds);
     _embeddedTorrentHost = null;
+    torrentNetworkIssue.dispose();
     super.dispose();
   }
 
@@ -8299,7 +8410,7 @@ class AppModel with ChangeNotifier {
       FushiGameStreamLibraryHost(
         loadGames: () => galgameRepo.load(),
         isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
-        service: syncServerController.gameStreamService,
+        service: () => syncServerController.gameStreamService,
         startStream: syncServerController.startLaunchedGameStream,
       ),
       miningFactory: createGameStreamMiningAdapter,
@@ -9171,6 +9282,7 @@ RemoteMineResult remoteMineError(
 class _AppModelRemoteLookupService
     implements
         FushiRemoteLookupService,
+        FushiRemoteAudioListService,
         FushiRemoteTimedPopupLookupService,
         FushiRemoteMiningService,
         FushiRemoteSourceNoteService,
@@ -9900,6 +10012,43 @@ class _AppModelRemoteLookupService
         return audioFile.readAsBytes();
       },
     );
+  }
+
+  /// 「选择音频源」菜单（浏览器扩展 / 远端弹窗经 `/api/lookup/audio/list`）：与
+  /// app 内弹窗同一份 [listLookupAudioCandidates]，每项再按 [lookupAudio] 的同一
+  /// 归一化取回字节（本机短命 token 播放）。并发下载、上限 12 项——远端列表型源
+  /// 一个词可能给出几十条录音，菜单只需要够挑。取不回字节的候选直接略过。
+  @override
+  Future<List<RemoteAudioChoice>> listAudio({
+    required String expression,
+    required String reading,
+  }) async {
+    final List<WordAudioCandidate> candidates =
+        (await listLookupAudioCandidates(_appModel, expression, reading))
+            .take(12)
+            .toList(growable: false);
+    final List<RemoteAudioLookup?> audios =
+        await Future.wait(<Future<RemoteAudioLookup?>>[
+      for (final WordAudioCandidate c in candidates)
+        remoteAudioLookupFromResolvedUrl(
+          c.ref,
+          downloadRemote: _downloadRemoteAudioBytes,
+          loadLocalFile: (String filePath) async {
+            final File audioFile = File(filePath);
+            if (!audioFile.existsSync()) return null;
+            return audioFile.readAsBytes();
+          },
+        ),
+    ]);
+    return <RemoteAudioChoice>[
+      for (int i = 0; i < candidates.length; i++)
+        if (audios[i] != null)
+          RemoteAudioChoice(
+            name: lookupAudioSourceDisplayName(candidates[i].source),
+            variant: candidates[i].variant,
+            audio: audios[i]!,
+          ),
+    ];
   }
 
   /// TODO-1335 ②：服务端下载远程发音源字节（Forvo/jpod/fushiRemote 解析出的 http(s)

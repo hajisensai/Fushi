@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -103,20 +104,20 @@ class _AddToCollectionDialog extends StatelessWidget {
           children: <Widget>[
             FushiListItem(
               key: const ValueKey<String>('add_to_collection_create_new'),
-              leading: const Icon(Icons.add),
+              leading: const FushiIcon(Icons.add),
               title: Text(t.create_series),
               onTap: () => Navigator.pop(context, createNewSentinel),
             ),
             for (final MediaCollectionRow collection in collections)
               FushiListItem(
                 key: ValueKey<String>('add_to_collection_${collection.id}'),
-                leading: const Icon(Icons.collections_bookmark_outlined),
+                leading: const FushiIcon(Icons.collections_bookmark_outlined),
                 title: Text(collection.name),
                 subtitle: Text(
                   t.series_item_count(n: memberCounts[collection.id] ?? 0),
                 ),
                 trailing: alreadyIn.contains(collection.id)
-                    ? const Icon(Icons.check)
+                    ? const FushiIcon(Icons.check)
                     : null,
                 // 已含本条目的合集不可重复加入（置灰不可点）。
                 onTap: alreadyIn.contains(collection.id)

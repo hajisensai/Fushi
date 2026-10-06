@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_dict_style_assistant.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -169,14 +170,14 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                   SizedBox(height: tokens.spacing.gap),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
+                    child: FushiTextButton.icon(
                       icon: _importing
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: FushiCircularProgressIndicator(strokeWidth: 2),
                             )
-                          : const Icon(Icons.library_add_outlined, size: 18),
+                          : const FushiIcon(Icons.library_add_outlined, size: 18),
                       label: Text(t.local_audio_add_db),
                       onPressed: _importing ? null : _addLocalDb,
                     ),
@@ -272,9 +273,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               Text(t.local_audio_file_unavailable,
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
               if (widget.onReplaceLocalDb != null)
-                TextButton.icon(
+                FushiTextButton.icon(
                   onPressed: _importing ? null : () => _replaceLocalDb(dbPath),
-                  icon: const Icon(Icons.file_open_outlined),
+                  icon: const FushiIcon(Icons.file_open_outlined),
                   label: Text(t.local_audio_file_reselect),
                 ),
             ],
@@ -336,7 +337,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               onTap: () => _beginEditRemoteUrl(source),
             ),
-          Switch.adaptive(
+          FushiSwitch.adaptive(
             value: source.enabled,
             onChanged: (bool enabled) => setState(() {
               _sources[index] = source.copyWith(enabled: enabled);
@@ -601,7 +602,7 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
 
   void _showSnack(String message) {
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 }
 
@@ -836,7 +837,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
 
   void _showSnack(String message) {
     ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(SnackBar(content: Text(message)));
+        ?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 「让 AI 帮忙」区：一行输入 + 生成按钮，结果状态在下面一行。放在两个 tab 共用
@@ -860,16 +861,16 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               key: const ValueKey<String>('dict-style-ai-generate'),
               onPressed: _aiBusy || _isSaving ? null : () => unawaited(_runAi()),
               icon: _aiBusy
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: FushiCircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.auto_awesome_outlined),
+                  : const FushiIcon(Icons.auto_awesome_outlined),
               label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
             ),
           ],
@@ -1029,17 +1030,17 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SegmentedButton<int>(
+              FushiSegmentedButton<int>(
                 showSelectedIcon: false,
                 segments: <ButtonSegment<int>>[
                   ButtonSegment<int>(
                     value: 0,
-                    icon: const Icon(Icons.palette_outlined, size: 18),
+                    icon: const FushiIcon(Icons.palette_outlined, size: 18),
                     label: Text(t.dict_style_tab_visual),
                   ),
                   ButtonSegment<int>(
                     value: 1,
-                    icon: const Icon(Icons.code_outlined, size: 18),
+                    icon: const FushiIcon(Icons.code_outlined, size: 18),
                     label: Text(t.dict_style_tab_code),
                   ),
                 ],
@@ -1099,14 +1100,25 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
           _scopeCssToDictionary(buildPerDictionaryStyleCss(rules, name), name),
       ].join('\n'),
     );
+    // 预览框：MD3 = 页面底 + outline 细边框；Apple = 分组圆角 + 物理 1px
+    // separator 细线（Apple 内容层不画 MD3 那种实描边框，只用分隔线色勾边界）。
+    final bool glass = isGlassDesign(context);
+    final BorderRadius previewRadius = glass
+        ? FushiAppleMetrics.of(context).groupBorderRadius
+        : tokens.radii.cardRadius;
     final Widget preview = DecoratedBox(
       decoration: BoxDecoration(
         color: tokens.surfaces.page,
-        borderRadius: tokens.radii.cardRadius,
-        border: Border.all(color: tokens.surfaces.outline),
+        borderRadius: previewRadius,
+        border: Border.all(
+          color: glass
+              ? appleColorsOf(context).separator
+              : tokens.surfaces.outline,
+          width: glass ? fushiHairline(context) : 1,
+        ),
       ),
       child: ClipRRect(
-        borderRadius: tokens.radii.cardRadius,
+        borderRadius: previewRadius,
         child: widget.previewBuilder?.call(
               context,
               previewCss,

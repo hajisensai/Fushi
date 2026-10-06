@@ -14,6 +14,10 @@ import Flutter
   private var challengeBrowser: FushiChallengeBrowser?
   /// 强引用：channel handler 只弱持有它，且它自己是文档选择器的 delegate（UIKit 弱引用）。
   private var directoryImport: FushiDirectoryImport?
+  /// 系统「降低透明度」订阅（`app.fushi/system_transparency`）。强引用 channel 与
+  /// observer token，进程内只装一次。
+  private var systemTransparencyChannel: FlutterMethodChannel?
+  private var systemTransparencyObserver: NSObjectProtocol?
 
   // TODO-057: brightness override applied during a video session. We snapshot
   // the user's brightness the first time the player asks (getBrightness) and
@@ -28,6 +32,11 @@ import Flutter
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // 查词浮层的真模糊背衬：WebView 下方的 UIVisualEffectView 平台视图
+    // （apple/FushiNativeMaterialView.swift，Dart 侧 fushi_native_material.dart）。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "FushiNativeMaterial") {
+      FushiNativeMaterial.register(with: registrar)
+    }
     installChannels(binaryMessenger: engineBridge.applicationRegistrar.messenger())
   }
 
@@ -248,6 +257,36 @@ import Flutter
       default:
         result(FlutterMethodNotImplemented)
       }
+    }
+
+    installSystemTransparencyChannel(binaryMessenger: binaryMessenger)
+  }
+
+  /// 系统设置「辅助功能 → 显示与文字大小 → 降低透明度」：Dart 侧 `SystemTransparency`
+  /// 经 `getReduceTransparency` 读一次，之后由这里在状态变化时推
+  /// `reduceTransparencyChanged`（与 Windows / macOS 同一契约）。
+  private func installSystemTransparencyChannel(binaryMessenger: FlutterBinaryMessenger) {
+    guard systemTransparencyChannel == nil else { return }
+    let channel = FlutterMethodChannel(
+      name: "app.fushi/system_transparency",
+      binaryMessenger: binaryMessenger)
+    channel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "getReduceTransparency":
+        result(UIAccessibility.isReduceTransparencyEnabled)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    systemTransparencyChannel = channel
+    systemTransparencyObserver = NotificationCenter.default.addObserver(
+      forName: UIAccessibility.reduceTransparencyStatusDidChangeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      self?.systemTransparencyChannel?.invokeMethod(
+        "reduceTransparencyChanged",
+        arguments: UIAccessibility.isReduceTransparencyEnabled)
     }
   }
 

@@ -11,6 +11,25 @@ import 'dart:convert';
 /// not require a bump because decoders ignore fields they do not understand.
 const int kGameStreamWireVersion = 1;
 
+/// Why a reachable host refused a game-stream request before any session or
+/// library logic ran. Sent as the versioned `code` of a JSON error body so a
+/// receiver can tell the owner what to change; a host that predates these
+/// codes answers bare text, which receivers still read as "update the host".
+abstract final class GameStreamRejection {
+  /// The host's server runs without the game-stream service.
+  static const String streamOff = 'game_stream_off';
+
+  /// The host serves plaintext HTTP; signalling requires HTTPS.
+  static const String httpsRequired = 'https_required';
+
+  /// The request did not carry a currently paired device credential.
+  static const String unauthorizedPeer = 'unauthorized_peer';
+
+  /// The host has no game library attached (not Windows, or its Games module
+  /// was off when it started).
+  static const String libraryOff = 'library_off';
+}
+
 /// Encodes one protocol value for a JSON HTTP body.
 String encodeGameStreamJson(Object value) => jsonEncode(value);
 

@@ -101,7 +101,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
             trailing: busy
                 ? const SizedBox.square(
                     dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
                 : null,
           ),
@@ -280,14 +280,14 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   Future<bool> _confirmDiscard(int count) async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         content: Text(t.anki_sync_client_discard_confirm(count: count)),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(t.anki_sync_client_discard_action),
           ),
@@ -300,15 +300,15 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   Future<bool> _confirmAnkiWeb() async {
     final bool? ok = await showAppDialog<bool>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog(
+      builder: (BuildContext ctx) => FushiAlertDialog(
         title: Text(t.anki_sync_client_ankiweb_title),
         content: Text(t.anki_sync_client_ankiweb_body),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(t.cancel),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(t.anki_sync_client_ankiweb_confirm),
           ),
@@ -320,6 +320,6 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(FushiSnackBar(content: Text(msg)));
   }
 }

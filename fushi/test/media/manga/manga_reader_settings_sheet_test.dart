@@ -214,8 +214,19 @@ void main() {
           .first,
     );
     expect(tester.takeException(), isNull);
-    // 标题带读数：越界的 0 显示成夹取后的下限 1。
-    expect(find.text('Reader hide threshold (px) (1)'), findsOneWidget);
+    // 读数：越界的 0 显示成夹取后的下限 1（MD3 下读数常驻在滑条右侧，
+    // 不再拼进标题）。
+    final Finder row = find.byWidgetPredicate(
+      (Widget w) =>
+          w is AdaptiveSettingsSliderRow &&
+          w.title == 'Reader hide threshold (px)',
+    );
+    expect(row, findsOneWidget);
+    final AdaptiveSettingsSliderRow slider =
+        tester.widget<AdaptiveSettingsSliderRow>(row);
+    expect(slider.value, 1);
+    expect(slider.readout, '1');
+    expect(find.descendant(of: row, matching: find.text('1')), findsOneWidget);
   });
 
   testWidgets('failed reset restores overrides and reports failure', (

@@ -47,14 +47,17 @@ void main() {
     return tester.getSize(find.byType(FushiListItem)).height;
   }
 
-  testWidgets('一行元信息的扩展行高不超过 72（旧的三行版是 ~89）', (WidgetTester tester) async {
+  testWidgets('一行元信息的扩展行高不超过 MD3 两行行下限（旧的三行版是 ~89）',
+      (WidgetTester tester) async {
     final double height = await pumpTile(
       tester,
       subtitle: Text(
         mangaSourceMetaLine(<String?>['EN', 'Version 19', 'asurascans.com']),
       ),
     );
-    expect(height, lessThanOrEqualTo(72));
+    // MD3 两行列表行（标题 + 一行副标题）的下限是 72，外加行恒画的 1px 透明
+    // 边框 ×2（几何不随选中态变）= 74；多一行副标题就会超出。
+    expect(height, lessThanOrEqualTo(74));
     // 触摸端命中区不能为了紧凑被牺牲。
     expect(height, greaterThanOrEqualTo(56));
   });

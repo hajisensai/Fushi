@@ -1,6 +1,7 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
@@ -133,7 +134,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
     } on SqliteException catch (e) {
       if (e.extendedResultCode == 2067 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.tag_name_duplicate)),
+          FushiSnackBar(content: Text(t.tag_name_duplicate)),
         );
       }
     }
@@ -145,10 +146,12 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
 
     return FushiPageScaffold(
       title: t.tag_label,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _quickCreateTag,
-        icon: const Icon(Icons.add),
-        label: Text(t.tag_new),
+      floatingActionButton: FushiGlassFab(
+        child: FloatingActionButton.extended(
+          onPressed: _quickCreateTag,
+          icon: const FushiIcon(Icons.add),
+          label: Text(t.tag_new),
+        ),
       ),
       body: _allTags.isEmpty
           ? Center(
@@ -186,7 +189,7 @@ class _TagPickerPageState extends ConsumerState<TagPickerPage> {
                       radius: 14,
                     ),
                     title: Text(tag.name),
-                    trailing: Checkbox(
+                    trailing: FushiCheckbox(
                       value: selected,
                       onChanged: (bool? value) =>
                           _toggle(tag.id, value ?? false),

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/media/video/video_apple_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 /// TODO-1154：长按倍速跟随徽章。视频画面长按临时加速时，在指针（手指/光标）上方弹一枚
 /// 「Nx」圆角气泡并跟手移动（B 站/YouTube 长按倍速观感），取代旧的钉死左上角 OSD。
@@ -30,37 +32,54 @@ class VideoLongPressSpeedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple：深色液态玻璃药丸 + 白字（与其余播放器 OSD 同材质）。
+    final bool apple = videoAppleChrome(context);
+    final Widget content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIcon(
+          Icons.fast_forward,
+          size: 18,
+          color: apple ? Colors.white : textColor,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '${speed.toStringAsFixed(1)}x',
+          style: TextStyle(
+            color: apple ? Colors.white : textColor,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            height: 1.0,
+            fontFeatures: apple
+                ? const <FontFeature>[FontFeature.tabularFigures()]
+                : null,
+          ),
+        ),
+      ],
+    );
     return Positioned(
       left: position.dx,
       top: position.dy,
       child: FractionalTranslation(
         // 水平居中于指针（-0.5），竖直整体上移 1.8 身位避开手指/光标。
         translation: const Offset(-0.5, -1.8),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: surfaceColor,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(Icons.fast_forward, size: 18, color: textColor),
-                const SizedBox(width: 6),
-                Text(
-                  '${speed.toStringAsFixed(1)}x',
-                  style: TextStyle(
-                    color: textColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    height: 1.0,
-                  ),
+        child: apple
+            ? VideoGlassHud(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                child: content,
+              )
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  color: surfaceColor,
+                  borderRadius: BorderRadius.circular(8),
                 ),
-              ],
-            ),
-          ),
-        ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  child: content,
+                ),
+              ),
       ),
     );
   }

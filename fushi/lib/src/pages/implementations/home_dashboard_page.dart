@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
@@ -227,10 +228,10 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Row(
         children: <Widget>[
-          const Icon(Icons.visibility_outlined),
+          const FushiIcon(Icons.visibility_outlined),
           const SizedBox(width: 12),
           Expanded(child: Text(t.media_tracking_watched_title)),
         ],
@@ -244,27 +245,34 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
             BuildContext context,
             AsyncSnapshot<List<BangumiWatchedItem>> snapshot,
           ) {
+            // 加载 / 失败 / 空走统一占位件（MD3 中性块 / Apple 大图标灰字），
+            // 不再是裸菊花与裸文字。
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              return const FushiLoadingView();
             }
             if (snapshot.hasError) {
               return Center(
-                child: Text(
-                  t.media_tracking_watched_load_failed(
+                child: FushiPlaceholderMessage(
+                  icon: Icons.error_outline,
+                  message: t.media_tracking_watched_load_failed(
                     error: snapshot.error!,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               );
             }
             final List<BangumiWatchedItem> watched =
                 snapshot.data ?? const <BangumiWatchedItem>[];
             if (watched.isEmpty) {
-              return Center(child: Text(t.media_tracking_watched_empty));
+              return Center(
+                child: FushiPlaceholderMessage(
+                  icon: Icons.visibility_outlined,
+                  message: t.media_tracking_watched_empty,
+                ),
+              );
             }
             return ListView.separated(
               itemCount: watched.length,
-              separatorBuilder: (_, __) => const Divider(height: 1),
+              separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
               itemBuilder: (BuildContext context, int index) {
                 final BangumiWatchedItem item = watched[index];
                 final String? coverUrl = item.subject.coverUrl;
@@ -275,14 +283,14 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                     width: 42,
                     height: 56,
                     child: coverUrl == null
-                        ? const Icon(Icons.movie_outlined)
+                        ? const FushiIcon(Icons.movie_outlined)
                         : ClipRRect(
                             borderRadius: FushiBorderRadius.chip,
                             child: Image(
                               image: AppHttpImage(coverUrl),
                               fit: BoxFit.cover,
                               errorBuilder: (_, __, ___) =>
-                                  const Icon(Icons.broken_image_outlined),
+                                  const FushiIcon(Icons.broken_image_outlined),
                             ),
                           ),
                   ),
@@ -296,9 +304,9 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
                       n: item.episodeProgress,
                     ),
                   ),
-                  trailing: Tooltip(
+                  trailing: FushiTooltip(
                     message: t.media_tracking_open_subject,
-                    child: const Icon(Icons.open_in_new, size: 18),
+                    child: const FushiIcon(Icons.open_in_new, size: 18),
                   ),
                   onTap: () => unawaited(widget.onOpenSubject(item.subject.id)),
                 );
@@ -308,7 +316,7 @@ class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.dialog_close),
         ),
@@ -1589,7 +1597,6 @@ class _HomeDashboardPageState
     _ContinueEntry entry, {
     required bool landscape,
   }) {
-    final bool eink = isEinkTheme(context);
     final double coverWidth =
         landscape ? _kContinueCoverHeight * 16 / 9 : _kContinueCoverWidth;
     // BUG-1111：游戏没有阅读百分比（无完成度概念），状态段只标类型，不能套用
@@ -1637,20 +1644,8 @@ class _HomeDashboardPageState
                         left: 0,
                         right: 0,
                         bottom: 0,
-                        child: IgnorePointer(
-                          // eink：半透明黑轨道压在封面上是抖动灰，改实心页面底色
-                          // 轨道 + 前景色进度，黑白各自一段、无灰阶。
-                          child: LinearProgressIndicator(
-                            value: progress,
-                            minHeight: 3,
-                            backgroundColor: eink
-                                ? tokens.surfaces.page
-                                : Colors.black.withValues(alpha: 0.35),
-                            color: eink
-                                ? tokens.surfaces.onSurface
-                                : tokens.surfaces.primary,
-                          ),
-                        ),
+                        // 轨道 / 进度色（MD3 / Apple 白条 / 墨水屏实色）见共享组件。
+                        child: CoverProgressStrip(value: progress),
                       ),
                   ],
                 ),
@@ -1845,12 +1840,15 @@ class _HomeDashboardPageState
   Widget _coverPlaceholder(FushiDesignTokens tokens, IconData icon) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: tokens.surfaces.card,
+        // Apple：分区卡底与 surfaces.card 同色，占位会整块消失；换中性填充。
+        color: isGlassDesign(context)
+            ? fushiNeutralBlockColor(context)
+            : tokens.surfaces.card,
         border: isEinkTheme(context)
             ? Border.all(color: tokens.surfaces.outline)
             : null,
       ),
-      child: Center(child: Icon(icon, color: tokens.type.metadata.color)),
+      child: Center(child: FushiIcon(icon, color: tokens.type.metadata.color)),
     );
   }
 
@@ -1903,7 +1901,7 @@ class _HomeDashboardPageState
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(t.module_disabled_hint)));
+      ..showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
   }
 
   /// 本地书条目所属模块：漫画行（[MangaFushiSource]）归 manga，其余（EPUB / PDF /
@@ -2015,8 +2013,9 @@ class _HomeDashboardPageState
               // GitHub 式浅格子。BUG-1276：黑色/自定义主题仍可能把 surface 色阶
               // 压得过近，因此再用 outlineVariant 描边兜底；即使填充与卡底同色，
               // 53 周空格也不会重新融进背景。
-              emptyColor: tokens.surfaces.overlay,
-              emptyBorderColor: tokens.surfaces.outline,
+              // Apple 下换成无边 systemFill 灰格（见 [statHeatmapEmptyColors]）。
+              emptyColor: statHeatmapEmptyColors(context).$1,
+              emptyBorderColor: statHeatmapEmptyColors(context).$2,
               // 气泡 = 日期 · 字数 · 学习时长（时长为 0 的旧数据/纯导入日不显示
               // 时长段），字数与时长都跟随当前来源筛选。
               valueLabel: (String dateKey, int chars) {
@@ -2097,7 +2096,7 @@ class _HomeDashboardPageState
         padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
         child: Row(
           children: <Widget>[
-            Icon(
+            FushiIcon(
               Icons.flag_outlined,
               size: 18,
               color: tokens.type.metadata.color,
@@ -2112,7 +2111,7 @@ class _HomeDashboardPageState
               ),
             ),
             SizedBox(width: tokens.spacing.gap),
-            TextButton(
+            FushiTextButton(
               onPressed: () => unawaited(_editDailyGoal()),
               child: Text(t.stat_goal_set),
             ),
@@ -2145,10 +2144,15 @@ class _HomeDashboardPageState
                 ),
                 child: ClipRRect(
                   borderRadius: tokens.radii.chipRadius,
-                  child: LinearProgressIndicator(
+                  child: FushiLinearProgressIndicator(
                     value: fraction,
                     minHeight: 6,
-                    backgroundColor: tokens.surfaces.card,
+                    // 非墨水屏不传 surfaces.card：它与分区卡底（group）只差一档
+                    // （Apple 下两者同色），轨道整条隐形；交给进度条默认轨道
+                    // （MD3 secondaryContainer / Apple systemFill）。
+                    backgroundColor: isEinkTheme(context)
+                        ? tokens.surfaces.card
+                        : null,
                     color: tokens.surfaces.primary,
                   ),
                 ),
@@ -2409,11 +2413,11 @@ class _HomeDashboardPageState
                     _visibleActivityEntryCount)
                   Align(
                     alignment: AlignmentDirectional.center,
-                    child: TextButton.icon(
+                    child: FushiTextButton.icon(
                       onPressed: () => setState(() {
                         _visibleActivityEntryCount += _kActivityPageSize;
                       }),
-                      icon: const Icon(Icons.expand_more),
+                      icon: const FushiIcon(Icons.expand_more),
                       label: Text(t.discovery_load_more),
                     ),
                   ),
@@ -2670,7 +2674,7 @@ class _HomeDashboardPageState
     }
     return Padding(
       padding: const EdgeInsets.only(top: 2),
-      child: Icon(
+      child: FushiIcon(
         _activityIcon(entry.eventType),
         size: 20,
         color: tokens.surfaces.primary,
@@ -2796,9 +2800,9 @@ class _HomeDashboardPageState
             SizedBox(height: tokens.spacing.gap),
             Align(
               alignment: AlignmentDirectional.centerStart,
-              child: FilledButton.tonalIcon(
+              child: FushiFilledButton.tonalIcon(
                 onPressed: _openTrackingSettings,
-                icon: const Icon(Icons.link),
+                icon: const FushiIcon(Icons.link),
                 label: Text(t.media_tracking_connect),
               ),
             ),
@@ -2823,7 +2827,7 @@ class _HomeDashboardPageState
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Tooltip(
+          FushiTooltip(
             message: t.media_tracking_watched_show,
             child: InkWell(
               onTap: () => unawaited(_showBangumiWatched()),
@@ -2834,7 +2838,7 @@ class _HomeDashboardPageState
                 ),
                 child: Row(
                   children: <Widget>[
-                    Icon(
+                    FushiIcon(
                       Icons.person_outline,
                       size: 18,
                       color: scheme.primary,
@@ -2856,7 +2860,7 @@ class _HomeDashboardPageState
                       ),
                     ),
                     SizedBox(width: tokens.spacing.gap / 4),
-                    Icon(
+                    FushiIcon(
                       Icons.chevron_right,
                       size: 18,
                       color: scheme.primary,
@@ -2876,7 +2880,7 @@ class _HomeDashboardPageState
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Icon(Icons.error_outline, size: 18, color: scheme.error),
+                FushiIcon(Icons.error_outline, size: 18, color: scheme.error),
                 SizedBox(width: tokens.spacing.gap / 2),
                 Expanded(
                   child: Text(
@@ -2907,7 +2911,7 @@ class _HomeDashboardPageState
                 in status.unlinked.take(_kTrackingUnlinkedLimit))
               _buildTrackingUnlinkedRow(tokens, item),
             if (status.unlinked.length > _kTrackingUnlinkedLimit)
-              TextButton(
+              FushiTextButton(
                 onPressed: _openTrackingSettings,
                 child: Text(
                   t.media_tracking_more_manual_required(
@@ -2942,25 +2946,25 @@ class _HomeDashboardPageState
             spacing: tokens.spacing.gap,
             runSpacing: tokens.spacing.gap / 2,
             children: <Widget>[
-              FilledButton.tonalIcon(
+              FushiFilledButton.tonalIcon(
                 onPressed: _trackingSyncBusy ? null : _syncTrackingNow,
                 icon: _trackingSyncBusy
                     ? const SizedBox.square(
                         dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.sync),
+                    : const FushiIcon(Icons.sync),
                 label: Text(t.media_tracking_sync_now),
               ),
               if (status.automaticMappingMissCount > 0)
-                FilledButton.tonalIcon(
+                FushiFilledButton.tonalIcon(
                   onPressed: _trackingSyncBusy ? null : _retryTrackingMappings,
-                  icon: const Icon(Icons.refresh),
+                  icon: const FushiIcon(Icons.refresh),
                   label: Text(t.media_tracking_retry_mapping),
                 ),
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: _openTrackingSettings,
-                icon: const Icon(Icons.tune),
+                icon: const FushiIcon(Icons.tune),
                 label: Text(t.media_tracking_manage_links),
               ),
             ],
@@ -2983,7 +2987,7 @@ class _HomeDashboardPageState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            Icon(Icons.link_off, size: 18, color: scheme.error),
+            FushiIcon(Icons.link_off, size: 18, color: scheme.error),
             SizedBox(width: tokens.spacing.gap / 2),
             Expanded(
               child: Column(
@@ -3004,7 +3008,7 @@ class _HomeDashboardPageState
               ),
             ),
             SizedBox(width: tokens.spacing.gap / 2),
-            const Icon(Icons.chevron_right, size: 18),
+            const FushiIcon(Icons.chevron_right, size: 18),
           ],
         ),
       ),
@@ -3031,7 +3035,7 @@ class _HomeDashboardPageState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             if (failure != null) ...<Widget>[
-              Icon(Icons.sync_problem_outlined, size: 18, color: scheme.error),
+              FushiIcon(Icons.sync_problem_outlined, size: 18, color: scheme.error),
               SizedBox(width: tokens.spacing.gap / 2),
             ],
             Expanded(
@@ -3063,9 +3067,9 @@ class _HomeDashboardPageState
               ),
             ),
             SizedBox(width: tokens.spacing.gap / 2),
-            Tooltip(
+            FushiTooltip(
               message: t.media_tracking_open_subject,
-              child: const Icon(Icons.open_in_new, size: 16),
+              child: const FushiIcon(Icons.open_in_new, size: 16),
             ),
           ],
         ),
@@ -3081,7 +3085,7 @@ class _HomeDashboardPageState
   }
 
   Future<void> _showBangumiWatched() async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => _BangumiWatchedDialog(
         service: ref.read(appProvider).mediaTrackingService,
@@ -3110,7 +3114,7 @@ class _HomeDashboardPageState
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(result.isSuccess
                 ? t.media_tracking_sync_success
                 : t.media_tracking_sync_failed),
@@ -3136,7 +3140,7 @@ class _HomeDashboardPageState
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          SnackBar(
+          FushiSnackBar(
             content: Text(
               !result.matchedAny
                   ? t.media_tracking_retry_no_match
@@ -3156,7 +3160,7 @@ class _HomeDashboardPageState
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(
-            SnackBar(content: Text(t.media_tracking_sync_failed)),
+            FushiSnackBar(content: Text(t.media_tracking_sync_failed)),
           );
       }
     } finally {
@@ -3180,11 +3184,18 @@ class _HomeDashboardPageState
     // eink：group 面层塌缩成页面底色，四张分区卡（学习活动 / 继续 / 最近添加 /
     // 动态）的边界全没了，整页读成一根连续的列；补 1px 描边（FushiCard 同款）。
     final bool eink = isEinkTheme(context);
+    // Apple：内容层是实色——分区卡用 secondarySystemGroupedBackground（不是半透明
+    // 的 group 令牌）+ inset grouped 圆角（iOS ≈ 24 / 桌面 12），与 FushiCard 同口径。
+    final bool apple = isGlassDesign(context);
     return DecoratedBox(
       decoration: ShapeDecoration(
-        color: tokens.surfaces.group,
+        color: apple
+            ? appleColorsOf(context).secondaryGroupedBackground
+            : tokens.surfaces.group,
         shape: RoundedRectangleBorder(
-          borderRadius: FushiBorderRadius.card,
+          borderRadius: apple
+              ? FushiAppleMetrics.of(context).groupBorderRadius
+              : FushiBorderRadius.card,
           side: eink
               ? BorderSide(color: tokens.surfaces.outline)
               : BorderSide.none,
@@ -3290,34 +3301,22 @@ class _MigrationReadonlyBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FushiCard(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(t.migration_readonly_note),
-            const SizedBox(height: 8),
-            Row(
-              children: <Widget>[
-                FilledButton.tonal(
-                  onPressed: () => _channel.launchFushi(),
-                  child: Text(t.migration_open_fushi),
-                ),
-                const SizedBox(width: 8),
-                TextButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => MigrationPage(appModel: appModel),
-                    ),
-                  ),
-                  child: Text(t.migration_reexport),
-                ),
-              ],
-            ),
-          ],
+    return FushiInlineNotice(
+      message: t.migration_readonly_note,
+      actions: <Widget>[
+        FushiFilledButton.tonal(
+          onPressed: () => _channel.launchFushi(),
+          child: Text(t.migration_open_fushi),
         ),
-      ),
+        FushiTextButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => MigrationPage(appModel: appModel),
+            ),
+          ),
+          child: Text(t.migration_reexport),
+        ),
+      ],
     );
   }
 }
@@ -3403,12 +3402,10 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
     // 在数据早已导完、无事可做的情况下一直被问「检测到迁移数据，现在导入？」。
     if (!_importDone &&
         (_hasTransferData || (_legacyInstalled && !_storageGranted))) {
-      inner = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(t.migration_import_detected),
-          const SizedBox(height: 8),
-          FilledButton.tonal(
+      inner = FushiInlineNotice(
+        message: t.migration_import_detected,
+        actions: <Widget>[
+          FushiFilledButton.tonal(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => MigrationImportPage(appModel: widget.appModel),
@@ -3419,12 +3416,10 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
         ],
       );
     } else if (_importDone && _legacyInstalled) {
-      inner = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(t.migration_uninstall_prompt),
-          const SizedBox(height: 8),
-          FilledButton.tonal(
+      inner = FushiInlineNotice(
+        message: t.migration_uninstall_prompt,
+        actions: <Widget>[
+          FushiFilledButton.tonal(
             onPressed: () async {
               await _channel.requestUninstall(kHibikiPackageName);
               // resumed 回调会复查；这里再主动刷一次兜底。
@@ -3438,9 +3433,7 @@ class _FushiMigrationBannerState extends State<_FushiMigrationBanner>
     if (inner == null) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.only(bottom: tokens.spacing.card),
-      child: FushiCard(
-        child: Padding(padding: const EdgeInsets.all(12), child: inner),
-      ),
+      child: inner,
     );
   }
 }

@@ -69,7 +69,7 @@ void main() {
 
     expect(find.text(t.onboarding_pack_status_downloading), findsOneWidget);
     expect(find.text('3.0 GB (34%)'), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.byType(FushiLinearProgressIndicator), findsOneWidget);
 
     // 取消入口存在且指向 controller（真下载时它会置位 CancelToken）。
     await tester.tap(find.text(t.dialog_cancel));

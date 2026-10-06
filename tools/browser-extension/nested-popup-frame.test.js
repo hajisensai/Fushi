@@ -15,11 +15,10 @@ function world() {
     };
   }
   const root = element(), host = element();
-  const closeButton = element();
   host.attachShadow = () => root;
   const document = {
     documentElement: element(),
-    getElementById: id => id === 'fushi-nested-root' ? host : id === 'fushi-nested-close' ? closeButton : null,
+    getElementById: id => id === 'fushi-nested-root' ? host : null,
     createElement: element,
     addEventListener(name, handler) { documentListeners[name] = handler; },
   };
@@ -48,7 +47,7 @@ function world() {
     if (!port.onmessage) connect();
     port.onmessage({ data: { __fushiPopupFrame: true, ...data } });
   }
-  return { window, document, root, host, sent, parent, port, connect, windowReceive, receive, documentListeners, closeButton,
+  return { window, document, root, host, sent, parent, port, connect, windowReceive, receive, documentListeners,
     get renders() { return renders; }, get cssData() { return cssData; },
     get mediaRoot() { return mediaRoot; }, get autoReadOptions() { return autoReadOptions; },
     get minedIndex() { return minedIndex; }, get highlighted() { return highlighted; } };
@@ -160,11 +159,21 @@ test('frame activation, Escape and modal mine dispatch do not rerender the dicti
   assert.equal(w.renders, 0);
 });
 
-test('close button only closes its layer and parent highlight uses shared selection state', () => {
+// 用户 2026-10-04：查词弹窗不要右上角的关闭钮。本层只靠 Esc / 点本层外 / 鼠标离开逐层关闭。
+test('nested layer has no visible close button; Escape and tap-outside still close only this layer', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'nested-popup.html'), 'utf8');
+  assert.doesNotMatch(html, /fushi-nested-close|<button/);
   const w = world();
   w.connect();
-  w.closeButton.listeners.click();
+  w.window.__fushiOnTapOutside();
   assert.equal(w.sent.at(-1).data.type, 'close');
+  w.documentListeners.keydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
+  assert.equal(w.sent.at(-1).data.type, 'close');
+});
+
+test('parent highlight uses shared selection state', () => {
+  const w = world();
+  w.connect();
   w.receive({ type: 'highlight', length: 2 });
   assert.equal(w.highlighted, 2);
   w.receive({ type: 'highlight', length: -1 });
@@ -172,4 +181,54 @@ test('close button only closes its layer and parent highlight uses shared select
   w.receive({ type: 'highlight', length: 5 }, {});
   assert.equal(w.highlighted, 2);
   assert.equal(w.renders, 0);
+});
+
+// 2026-10-04 录屏：子层「半透明却不模糊」。半透明填充只在宿主握手确认外框正在模糊时才挂。
+test('translucent glass fill only when the host confirms its backdrop blur', () => {
+  const container = (w) => w.root.children[2];
+  const classes = (w) => {
+    const set = new Set();
+    container(w).classList = { toggle(name, on) { if (on) set.add(name); else set.delete(name); } };
+    return set;
+  };
+  const theme = { '--fushi-color-scheme': 'light' };
+  const confirmed = world(), cs1 = classes(confirmed);
+  confirmed.receive({ type: 'render', data: { popupJson: '[]', theme, glassBackdrop: true } });
+  assert.equal(cs1.has('fushi-glass'), true);
+  const legacy = world(), cs2 = classes(legacy);
+  legacy.receive({ type: 'render', data: { popupJson: '[]', theme } });
+  assert.equal(cs2.has('fushi-glass'), false, '旧宿主不给模糊握手：保持不透明');
+  const eink = world(), cs3 = classes(eink);
+  eink.receive({ type: 'render', data: { popupJson: '[]', theme: { ...theme, '--fushi-glass': '0' }, glassBackdrop: true } });
+  assert.equal(cs3.has('fushi-glass'), false);
+});
+
+// 嵌套层的有效填充必须与第一层完全一致：iframe 文档里只有 #entries-container.fushi-glass 那一层
+// 填充（与第一层 shadow 同一份 vendor/content.css），html / body / 宿主根一律透明，没有第二层底色
+// 叠在 0.72 填充之上（用户 2026-10-05：「每一层都和第一层一样」）。
+test('nested frame document adds no background of its own: the only fill is the first layer content.css rule', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'nested-popup.html'), 'utf8');
+  const inline = [...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n');
+  assert.match(inline, /html,body\{[^}]*background:transparent/);
+  const backgrounds = [...inline.matchAll(/background(?:-color)?\s*:\s*([^;}]+)/g)].map(m => m[1].trim());
+  assert.deepEqual(backgrounds, ['transparent'], 'iframe 文档内联样式只允许透明底');
+  const sheets = [...html.matchAll(/<link[^>]+href="([^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(sheets, ['theme.css']);
+  const themeCss = fs.readFileSync(path.join(__dirname, 'theme.css'), 'utf8');
+  let rootBlocks = 0;
+  for (const block of themeCss.matchAll(/(^|\})\s*([^{}@]*?)\{([^{}]*)\}/g)) {
+    const selector = block[2];
+    if (/(^|[\s,])(:root|html|body)\b/.test(selector)) {
+      rootBlocks++;
+      assert.doesNotMatch(block[3], /(^|;|\s)background(-color)?\s*:/, 'theme.css 不给 iframe 根画底：' + selector.trim());
+    }
+  }
+  assert.ok(rootBlocks >= 2, '扫到了 theme.css 的 :root 规则');
+  // iframe 里的弹窗与第一层吃同一份 content.css（同一条 0.72 / 0.62 填充规则）。
+  const nestedJs = fs.readFileSync(path.join(__dirname, 'nested-popup.js'), 'utf8');
+  assert.match(nestedJs, /stylesheet\.href = 'vendor\/content\.css'/);
+  const w = world();
+  w.receive({ type: 'render', data: { popupJson: '[]', theme: { '--fushi-color-scheme': 'light' }, glassBackdrop: true } });
+  assert.equal(w.document.documentElement.style.values['background'], undefined);
+  assert.equal(w.document.documentElement.style.values['background-color'], undefined);
 });

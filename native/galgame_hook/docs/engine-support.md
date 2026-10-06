@@ -31,6 +31,7 @@
 | `unity_mono` | Unity (Mono runtime) | `implemented_unverified` | luna_hook (implemented_unverified)；unity_mono_managed_text_events (implemented_unverified)；unity_mono_fungus_say_events (implemented_unverified) | unity_audioclip_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `yuris` | YU-RIS | `implemented_unverified` | yuris_message_text (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | yuris_decoder_input_voice_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `fvp` | FVP (Favorite View Point) | `implemented_unverified` | fvp_text_print_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | fvp_decoder_input_ogg_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `kogado_hy` | Kogado Hy engine | `implemented_unverified` | kogado_hy_message_page_hook (implemented_unverified)；luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -58,6 +59,7 @@
 | `unity_mono` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `yuris` | engine_exact_layout | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `fvp` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `kogado_hy` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 
 证据边界：
 
@@ -121,6 +123,9 @@
 - `fvp` geometry：Engine-exact text-buffer provider (kLookupGeometryProviderIdFvp). Sites resolve only from structure (fvp_lookup_core.h ResolveSites): the syscall registration blocks of `TextPrint` (argc 2) and `PrimSetText` (argc 4) calling one registration function give their handlers; the TextPrint handler's bounded buffer load (`cmp eax,0x1f` + `mov edx,[G]; mov ebp,[edx+eax*4+A]`), length bound (`cmp eax,0x200`) and `push esi; mov ecx,ebp; call` give the VM global, the text-buffer array and the text object's Print; Print's `push 1/0/0; call` gives the layout whose repeated callee with the PutGlyph prologue gives the pen x/y and glyph-advance fields and the base-glyph ruby rule (format+2 size, +4 ruby size, +0x14 == 2, +0x24 gap); PrimSetText's `mov [eax+K],dx` gives the prim's buffer-index field, and the render walk's text case using that same field, VM global and array gives DrawSprite and the drawn surface offset; DrawSprite's own translation, scale-identity (1000), rotation, UV/WH/3D flag and alpha code, and its 3D-centre load of the design size, are all required. At Print return the detour has the glyph records PutGlyph saw (pen before each glyph); a print is mapped only when the records pair one-to-one with its displayed units (`[ruby|base]` ruby glyphs flagged), and a glyph is offered only while the text object is still the buffer's object with an unmoved pen and its surface was drawn within the engine's recent draw count (clamp(2 x the observed draw period, 64, 1024) draws, no wall clock) as a plain visible translation (no rotation/scale/UV/WH/3D, alpha > 0, zero surface origin); design pixels = draw origin (ox + prim.x, oy + prim.y) + glyph cell, projected to physical client pixels under the design aspect. A claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the main window procedure (the only visible ANSI top-level window whose procedure lies in the game image); refused when the same buffer printed again, the text object or draw origin changed, the host's native-input admission is missing or a card shields the game. Offline: resolver on the 2011 World.exe and the 2019 HoshimemoEH_HD.exe (原版备份) both resolve the same field offsets; nine other-engine executables (CMVS, Malie, YU-RIS x2, Softpal, QLIE, the FVP disc launcher and a Chinese-patch launcher) refuse at the registration step; fushi_fvp_lookup_test. One Fushi-host accept4 run is recorded (gal_realgame_driver_itest, いろとりどりのセカイ World.exe, x86, 1024x640, commit c9fb999a06): text, audio, lookup, no advance on lookup (mouse only; touch not measured), dismiss and re-lookup PASS (before the 2026-10-03 rework of the freshness gate, voice gating and window rebinding, which has not been re-run on the device); card=FAIL because the host had no dictionary installed at the time (to be re-run). The geometry acceptance gate has not run; single host sample.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
+- `kogado_hy` geometry：Engine-exact message-window provider (kLookupGeometryProviderIdKogadoHy, 24). Sites resolve only from structure (kogado_hy_core.h ResolveLookupSites): the row renderer of the text lane gives the row pitch (`shl r,imm8; lea r,[r+r*s]`), the row band (`push WIDTH; push HEIGHT` before THyAlpha::Draw) and, at every row-array call site that shows a row, the row array's panel (`mov eax,[ebx+P]; call THyRGBPanel::SetModify`); the exported THyRGBPanel::ClientToScreen gives the panel's x/y/parent fields and THyRGBPanel::SetVisible its shown flag. A CP932 byte is half the row height wide (MS Gothic). The glyphs of the published click unit are placed at the panel chain's live origin (every panel of the chain shown) plus (byte * width, row * pitch), the same skips as the text lane (speaker row, quote indent), and projected to physical client pixels under the design aspect (the window's logical client is the design screen). The engine reads clicks only as window messages (a press swallowed in the game window's procedure does not advance; no key-state polling): a claimed WM_LBUTTONDOWN/DBLCLK is swallowed with its WM_LBUTTONUP in the game window's procedure (replaced for each bound window, chained with CallWindowProc and restored at shutdown while still the head of the chain; the window thread is not the script thread that renders the rows; the window is the only visible non-child top-level window whose class the game image registered), for mouse and promoted touch alike; refused when the unit or its last row changed, the panel moved or hid, the client size changed, the host's native-input admission is missing, a card shields the game or the game is not foreground. Offline: resolver on the 2004 Symphonic Rain SR.exe (row 24/520x20, panel fields 0x70/0x74/0x38/0x31, arrays 0x118->0x60 and 0x248->0xb4); fushi_kogado_hy_adapter_test. Fushi host run 2026-10-04 (local build of this branch, original launch path: SR.exe SHA-256 04b4c08b...ce4c started from the workbench under Locale Emulator, DPI-unaware 640x480 window stretched to a 1120x840 client): mouse click on a glyph opened the card for the clicked word in the adventure window (row 1 and row 2) and in the full-screen window (row 3), without advancing; a click outside closed the card without advancing; with no card a click advanced. Touch (InjectTouchInput PT_TOUCH): a tap on a glyph opened the card without advancing; a tap inside the card (nested lookup) then outside closed both without advancing; a horizontal swipe on the card closed it without advancing; with no card a swipe advanced and a 0.9 s long press opened the game's right-click menu, as the mouse does; the game window stayed foreground throughout. No card was written (no fake AnkiConnect run); not an accept4 run; single sample.
+  - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
+  - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate); no measured real-build click-leak rate is recorded.
 
 ## 识别与能力明细
 
@@ -1139,6 +1144,49 @@ Tests：`tests/yuris_adapter_test.cpp`
 Fixtures：尚无（P5 补齐）
 
 Tests：`tests/fvp_format_test.cpp`、`tests/fvp_lookup_test.cpp`
+
+### Kogado Hy engine (`kogado_hy`)
+
+- 状态：`implemented_unverified`
+- 别名：工画堂スタジオ、Kogado Studio、Hy library
+- 家族：`kogado_hy`（Kogado Studio in-house Borland C++Builder engine on its exported "Hy" runtime library; no verified sibling）
+- 当前 adapter：`hook/adapters/kogado_hy_adapter.inc`
+- 进程策略：launch=`create_suspended_early_injection`，attach=`supported`，follow-child=`false`
+
+识别签名（所有非空项均带真实样本或运行时观察证据）：
+
+- `executable_names`：SR.exe；证据：real_sample — Catalogue only: 2004 シンフォニック=レイン (SR.exe). The adapter never matches on names; identity is the exported Hy runtime library (THyRGBText::SetText, THyAlpha::BoxFill, THyAlpha::Draw).
+- `pe_architectures`：x86；证据：real_sample — SR.exe is PE32 machine 0x14c
+- `directory_files_all`：Script.pak、Voice/*.PAK；证据：real_sample — Catalogue only: Script.pak, Ev*.pak and Voice\srev%03d.pak next to SR.exe
+- `pe_imports`：GDI32.DLL、DSOUND.DLL、DDRAW.DLL、USER32.DLL；证据：real_sample — SR.exe import table: TextOutA is the only text API (THyRGBText renders rows into an offscreen buffer), DirectSound plays, DirectDraw presents; mouse input arrives as VCL window messages
+- `resource_extensions`：.pak；证据：real_sample — Voice\srev%03d.pak archives addressed by voice id / 1000000; script text is pre-wrapped rows separated by the script newline marker and closed by its page marker
+- `hashes`：SR.exe sha256:04b4c08bb976c2a311d6a720433e5c20f38c24c1008464a773634c333479ce4c；证据：real_sample — Catalogue only; the adapter does not hash-pin
+
+文本能力：
+
+- `kogado_hy_message_page_hook`：`implemented_unverified` — Native exact text lane (source kind 11, hook 'Kogado Hy exact', ENGINE:KOGADO_HY:message_page; Fushi host run 2026-10-04: the lane is listed, folds each click unit into one line and pairs engine PCM voice with voiced lines): the message window's row renderer (the one function that renders a row through THyRGBText::SetText between THyAlpha::BoxFill and THyAlpha::Draw and whose every call site is fed by a counter-indexed page buffer) and the script's click wait (the one short game method that shows the window's wait cursor in both window modes, through the window field and mode byte the row fillers' caller reads) are detoured. A click unit runs from the row after a click wait (or row 0 of a cleared page) to the current row; the detour copies the page rows (bounded, 16 rows) and the worker drops the unit's speaker row (【name】), joins the rows, strips a continuation row's quote indent, converts from CP932 and republishes the unit so far at every row, so the host folds the rows of one unit into one line. Native run 2026-10-04 on the original path: adventure-window pages and full-screen-window paragraphs published as whole click units, speaker rows removed. No Fushi-host text_ready run is recorded yet.
+- `luna_auto_or_pc_hooks`：`implemented_unverified` — LunaHook attaches only generic GDI hooks (TextOutA); each TextOutA call is one pre-wrapped row drawn seconds after the previous one, so that lane splits a page into rows. It is not used as the selected thread.
+- `ingame_lookup_geometry`：`implemented_unverified` — Engine-exact message-window provider kLookupGeometryProviderIdKogadoHy (24), see lookup_support.geometry.
+- codepage：932
+- 线程提示：Select the 'Kogado Hy exact' lane; the TextOutA LunaHook lane splits every page into its rows.
+
+音频优先级：
+
+1. `directsound_pcm` — `implemented_unverified`；格式：generic DirectSound fallback；clean voice：engine_dependent
+2. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+
+真实样本证据：
+
+
+已知限制：
+
+- Single sample: the resolver is proven offline on one executable (2004 Symphonic Rain); other Hy-engine titles may refuse and then install nothing. 37 x86 executables of RealLive, Siglus, BGI, CMVS, Leaf and other engines resolve to no Hy exports.
+- The unit is the script's click unit (text between two click waits): one page of the 4-row adventure window, one paragraph of the 16-row full-screen window. If the click wait does not resolve, the adapter falls back to the page (correct for the adventure window, whole pages for the full-screen window) and logs the result.
+- Voice reaches the host only through the generic DirectSound PCM capture, paired by time.
+
+Fixtures：`tests/fixtures/kogado_hy_replay.json`
+
+Tests：`tests/kogado_hy_adapter_test.cpp`
 
 ## 状态定义
 

@@ -7,6 +7,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -23,9 +24,8 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
     show resolveCurrentTocEntry;
-import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
+import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/master_detail_settings_sheet.dart';
-import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -588,7 +588,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               ),
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
         ],
       ),
       child: TabBarView(
@@ -848,10 +848,9 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     SettingsContext settingsContext,
     SettingsDestination destination,
   ) {
-    final bool cupertino = isCupertinoPlatform(context);
-    final SettingsRenderer renderer = cupertino
-        ? const CupertinoSettingsRenderer()
-        : const MaterialSettingsRenderer();
+    // 按设计系统选渲染器（Apple → GlassSettingsRenderer、MD3 →
+    // MaterialSettingsRenderer、Cupertino 照旧），与设置主页 / 视频面板同一判据。
+    final SettingsRenderer renderer = resolveSettingsRenderer(context);
     return renderer.buildDetailContent(
       settingsContext: settingsContext,
       destination: destination,
@@ -1070,7 +1069,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               SizedBox(height: tokens.spacing.gap / 2),
               ClipRRect(
                 borderRadius: tokens.radii.chipRadius,
-                child: LinearProgressIndicator(
+                child: FushiLinearProgressIndicator(
                   value: fraction,
                   minHeight: 3,
                 ),
@@ -1336,7 +1335,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.gap / 2),
           itemCount: volumes.labels.length,
           separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.gap),
-          itemBuilder: (BuildContext context, int i) => ChoiceChip(
+          itemBuilder: (BuildContext context, int i) => FushiChoiceChip(
             key: ValueKey<String>('reader-toc-volume-chip-$i'),
             label: Text(
               volumes.labels[i],
@@ -1344,7 +1343,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
               overflow: TextOverflow.ellipsis,
             ),
             avatar: i == volumes.currentIndex
-                ? const Icon(Icons.menu_book_outlined, size: 16)
+                ? const FushiIcon(Icons.menu_book_outlined, size: 16)
                 : null,
             selected: i == _viewedVolume,
             onSelected: (bool _) {
@@ -1403,7 +1402,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
                 child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
             ),
@@ -2121,7 +2120,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: theme.colorScheme.onSurface),
+            FushiIcon(icon, size: 20, color: theme.colorScheme.onSurface),
             SizedBox(height: tokens.spacing.gap / 2),
             Text(
               label,
@@ -2212,20 +2211,20 @@ class _InBookTocRow extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             if (selected)
-              Icon(
+              FushiIcon(
                 cupertino ? CupertinoIcons.check_mark : Icons.check,
                 size: 18,
                 color: selectedColor,
               ),
             if (foldable)
-              IconButton(
+              FushiIconButtonControl(
                 key: ValueKey<String>('fushi_toc_fold_${entry.label}'),
                 visualDensity: VisualDensity.compact,
                 iconSize: 20,
                 tooltip: expanded
                     ? MaterialLocalizations.of(context).collapsedIconTapHint
                     : MaterialLocalizations.of(context).expandedIconTapHint,
-                icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                icon: FushiIcon(expanded ? Icons.expand_less : Icons.expand_more),
                 onPressed: onToggleExpanded,
               ),
           ],
@@ -2269,7 +2268,7 @@ class _InBookSearchResultRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
+          FushiIcon(
             cupertino ? CupertinoIcons.search : Icons.search,
             size: 18,
             color: primary,
@@ -2484,7 +2483,7 @@ class _InBookIconButton extends StatelessWidget {
         child: Semantics(
           button: true,
           label: tooltip,
-          child: Icon(cupertinoIcon, size: 18, color: color),
+          child: FushiIcon(cupertinoIcon, size: 18, color: color),
         ),
       );
     }

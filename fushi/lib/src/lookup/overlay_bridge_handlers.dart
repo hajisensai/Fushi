@@ -67,6 +67,9 @@ bool maybeHandleOverlayDeferredBridge({
       unawaited(_handleAudioBridge(
           model, handler! as String, message, resolveBridge));
       return true;
+    case 'listWordAudioSources':
+      unawaited(_handleAudioListBridge(model, message, resolveBridge));
+      return true;
     case 'favoriteEntry':
     case 'favoriteCheck':
       unawaited(_handleFavoriteBridge(
@@ -234,6 +237,30 @@ Future<void> _handleAudioBridge(
     glog('audio: $handler -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
+}
+
+/// 「选择音频源」菜单（♪ 长按 / 右键）：回每个启用源各自解析出的全部候选
+/// `[{name, variant, url}]`（与 in-app 弹窗的 `listWordAudioSources` 同一实现
+/// [listWordAudioWebViewChoices]）。失败 / 无模型一律回空列表，popup.js 据此显示
+/// 「暂无发音」，绝不让桥悬空。
+Future<void> _handleAudioListBridge(
+  AppModel? model,
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+) async {
+  final int? id = _bridgeIdOf(message);
+  Object? reply = const <Map<String, String>>[];
+  try {
+    final Map<Object?, Object?> data = _firstMapArg(message);
+    final String expression = data['expression']?.toString() ?? '';
+    final String reading = data['reading']?.toString() ?? '';
+    if (model != null && expression.isNotEmpty) {
+      reply = await listWordAudioWebViewChoices(model, expression, reading);
+    }
+  } catch (e, st) {
+    glog('audio list: EXCEPTION $e $st');
+  }
+  if (id != null) unawaited(resolveBridge(id, reply));
 }
 
 /// TODO-1188 — resolves a DEFERRED favorite bridge call (favoriteEntry toggles

@@ -1,5 +1,7 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:io';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -40,6 +42,8 @@ import 'package:fushi/src/media/video/scraper/episode_rename.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi/src/media/library_progress_reset.dart';
+import 'package:fushi/src/pages/implementations/library_progress_reset_dialog.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/collection_detail_shared.dart';
 import 'package:fushi/src/pages/implementations/collection_relations_section.dart';
@@ -1036,7 +1040,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 「相关作品 → 去下载」：预填关系边标题打开番剧下载对话框（搜番段）。
   void _downloadRelation(CollectionRelationRow relation) {
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => AnimeDownloadDialog(
         showTasks: false,
@@ -1093,7 +1097,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   void _openDownloadDialog({required int? episodeNumber}) {
     final MediaCollectionRow collection = _collectionRow ?? widget.collection;
     final int? anilistId = collection.anilistId;
-    showDialog<void>(
+    showAppDialog<void>(
       context: context,
       builder: (_) => AnimeDownloadDialog(
         showTasks: false,
@@ -1275,6 +1279,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // [FushiDestructiveConfirmDialog]（经 [confirmDetailCollectionDelete]）。
     final bool canDeleteMembers =
         widget.onDeleteMembersMedia != null && _members.isNotEmpty;
+    final CollectionOwnedSubscriptions subscriptions =
+        await CollectionOwnedSubscriptions.load(
+      widget.database,
+      <int>[widget.collection.id],
+    );
+    if (!mounted) return;
     final FushiDestructiveConfirmResult? result =
         await confirmDetailCollectionDelete(
       checkboxLabel: canDeleteMembers ? t.delete_collection_also_videos : null,
@@ -1286,8 +1296,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               : null,
       statisticsSubtitle:
           canDeleteMembers ? widget.deleteMembersStatisticsSubtitle : null,
+      deleteSubscriptionsLabel: subscriptions.deleteLabel,
     );
     if (result == null || !mounted) return;
+    // 订阅先于合集删：合集一没，后台下一轮轮询就可能按身份把它重建出来。
+    if (result.deleteSubscriptions) {
+      await subscriptions.delete(widget.database);
+    }
     // 先删各集视频本体（DB 行 + 封面/字幕副本），再解散容器。删视频会连带清各合集
     // 引用行并自删空合集，故随后的解散多为幂等收尾（写合集级墓碑）。解散必须走
     // [deleteMediaCollectionWithAssets]：裸 deleteMediaCollection 只删 DB 行，合集
@@ -1617,7 +1632,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                 const ColoredBox(color: Color(0x1FFFFFFF)),
                               const Center(
                                 child: CircleAvatar(
-                                  child: Icon(Icons.play_arrow_rounded),
+                                  child: FushiIcon(Icons.play_arrow_rounded),
                                 ),
                               ),
                             ],
@@ -1845,6 +1860,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         return RemoteDownloadProgressBadge(
           key: ValueKey<String>('collection_episode_downloading_${task.id}'),
           progress: task.progress,
+          receivedBytes: task.receivedBytes,
+          totalBytes: task.totalBytes,
           tooltip: t.remote_video_downloading,
         );
       case InterconnectDownloadStatus.failed:
@@ -1871,7 +1888,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         Overlay.of(context).context.findRenderObject();
     if (overlay is! RenderBox) return;
     final Offset anchor = overlay.globalToLocal(globalPosition);
-    final _EpisodeMenuAction? action = await showMenu<_EpisodeMenuAction>(
+    final _EpisodeMenuAction? action = await showFushiMenu<_EpisodeMenuAction>(
       context: context,
       position: RelativeRect.fromRect(
         Rect.fromPoints(anchor, anchor),
@@ -1964,7 +1981,32 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _clearEpisodeWatchProgress(CollectionEpisodeSlot episode) async {
     final VideoBookRow? local = episode.local;
     if (local == null) return;
-    await VideoBookRepository(widget.database).clearWatchProgress(local.bookUid);
+    // 与视频库卡菜单同一确认框 / 同一落地（可选撤最近一次会话或清全部统计）。
+    final StudyRecordResetScope? records = await showLibraryProgressResetDialog(
+      context,
+      title: t.video_watch_progress_clear,
+      message: t.library_progress_reset_video_message,
+      itemTitle: local.title,
+    );
+    if (records == null || !mounted) return;
+    try {
+      await resetVideoWatchState(
+        db: widget.database,
+        repo: VideoBookRepository(widget.database),
+        bookUid: local.bookUid,
+        title: local.title,
+        records: records,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CollectionDetail.clearWatch', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.library_progress_reset_failed,
+        severity: ToastSeverity.error,
+      );
+      await _reload();
+      return;
+    }
     if (!mounted) return;
     widget.onChanged();
     FushiToast.show(
@@ -1981,9 +2023,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Future<void> _showEpisodeMediaInfo(CollectionEpisodeSlot episode) async {
     final String? path = episode.local?.videoPath;
     if (path == null || path.isEmpty) return;
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
-      builder: (BuildContext context) => AlertDialog(
+      builder: (BuildContext context) => FushiAlertDialog(
         title: Text(_episodeDisplayTitle(episode)),
         content: SingleChildScrollView(
           child: VideoSpecsPanel(
@@ -1993,7 +2035,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
         ),
         actions: <Widget>[
-          TextButton(
+          FushiTextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: Text(t.dialog_close),
           ),
@@ -2099,7 +2141,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Widget _menuItemRow(IconData icon, String label) {
     return Row(
       children: <Widget>[
-        Icon(icon, size: 20),
+        FushiIcon(icon, size: 20),
         const SizedBox(width: 12),
         Flexible(
           child: Text(
@@ -2112,8 +2154,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  AppBar _buildAppBar() {
-    return AppBar(
+  PreferredSizeWidget _buildAppBar() {
+    return FushiAppBar(
       title: Text(
         t.video_work_details,
         maxLines: 1,
@@ -2123,8 +2165,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       elevation: 0,
       actions: <Widget>[
         _buildSortMenu(),
-        PopupMenuButton<_CollectionManageAction>(
-          icon: const Icon(Icons.more_horiz),
+        FushiPopupMenuButton<_CollectionManageAction>(
+          icon: const FushiIcon(Icons.more_horiz),
           onSelected: (_CollectionManageAction action) =>
               unawaited(_handleManageAction(action)),
           itemBuilder: (BuildContext context) =>

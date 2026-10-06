@@ -202,8 +202,9 @@ void main() {
         File('lib/src/media/audiobook/audiobook_play_bar.dart')
             .readAsStringSync();
 
-    // 播放/暂停键是 filled-tonal 圆框。
-    expect(source, contains('IconButton.filledTonal('));
+    // 播放/暂停键是 filled-tonal 圆框。经设计系统分派包装：MD3 下渲染的
+    // 正是原生 IconButton.filledTonal，玻璃设计系统下换成玻璃圆钮。
+    expect(source, contains('FushiIconButtonControl.filledTonal('));
     // 不再用扁平的共享 FushiIconButton 渲染播放条按钮。
     expect(source, isNot(contains('FushiIconButton(')));
   });

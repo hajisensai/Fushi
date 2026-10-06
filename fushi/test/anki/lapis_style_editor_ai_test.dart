@@ -16,6 +16,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'lapis_style_editor_harness.dart';
+import '../helpers/glass_unwrap.dart';
 
 AiProviderConfig _usableProvider() => AiProviderConfig(
   id: 'p1',
@@ -111,12 +112,10 @@ void main() {
       t.ai_assist_no_provider,
     );
     // 什么都没改，保存按钮保持灰。
-    final FilledButton saveButton = tester.widget<FilledButton>(
-      find.ancestor(
+    final FilledButton saveButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
         of: find.byIcon(Icons.save_outlined),
         matching: find.byType(FilledButton),
-      ),
-    );
+      )),);
     expect(saveButton.onPressed, isNull);
   });
 

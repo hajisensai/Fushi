@@ -8,6 +8,7 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/stat_kpi_strip.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/utils.dart';
 
@@ -387,11 +388,11 @@ class _EndpointCard extends StatelessWidget {
     return FushiCard(
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
+        child: FushiExpansionTile(
           tilePadding: EdgeInsets.zero,
           childrenPadding: EdgeInsets.zero,
           initiallyExpanded: false,
-          leading: const Icon(Icons.hub_outlined, size: 20),
+          leading: const FushiIcon(Icons.hub_outlined, size: 20),
           title: Text(
             t.game_text_endpoints,
             style: Theme.of(context).textTheme.titleMedium,
@@ -419,23 +420,26 @@ class _EndpointRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final bool connected = endpoint.phase == TexthookerEndpointPhase.connected;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             connected ? Icons.check_circle_outline : Icons.sync_outlined,
             size: 18,
-            color: connected ? colors.primary : colors.onSurfaceVariant,
+            // 已连接 = 健康语义色（MD3 harmonize 绿 / Apple systemGreen），
+            // 与流水线行的「就绪」同一口径；未连接保持中性。
+            color: connected
+                ? fushiStatusColor(context, FushiStatusTone.success)
+                : fushiNeutralSecondaryForeground(context),
           ),
           const SizedBox(width: 8),
           Expanded(child: Text(endpoint.url)),
           const SizedBox(width: 12),
           Flexible(
-            child: Tooltip(
+            child: FushiTooltip(
               message: endpoint.lastError ??
                   texthookerEndpointPhaseLabel(endpoint.phase),
               child: Text(
@@ -530,7 +534,12 @@ class _EventsCard extends StatelessWidget {
       child: newest.isEmpty
           ? Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Text(t.game_no_events),
+              child: Text(
+                t.game_no_events,
+                style: TextStyle(
+                  color: fushiNeutralSecondaryForeground(context),
+                ),
+              ),
             )
           : Column(
               children: <Widget>[
@@ -549,16 +558,21 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
+    // 严重度圆点走语义状态色（info 中性灰 / 成功绿 / 警告橙 / 错误红），
+    // 不再借 secondary / primary / tertiary 色槽——那三个在 MD3 里是同一色相族的
+    // tonal 变体、在 Apple 下都塌成单色强调，四档读不出区别。
     final Color color = switch (event.severity) {
-      GalHookEventSeverity.info => colors.secondary,
-      GalHookEventSeverity.success => colors.primary,
-      GalHookEventSeverity.warning => colors.tertiary,
-      GalHookEventSeverity.error => colors.error,
+      GalHookEventSeverity.info => fushiNeutralSecondaryForeground(context),
+      GalHookEventSeverity.success =>
+        fushiStatusColor(context, FushiStatusTone.success),
+      GalHookEventSeverity.warning =>
+        fushiStatusColor(context, FushiStatusTone.warning),
+      GalHookEventSeverity.error =>
+        fushiStatusColor(context, FushiStatusTone.error),
     };
     // eink 下彩色圆点塌缩成同一灰阶（巡检 G5）：改成形状可辨的语义图标区分严重度。
     final Widget leading = isEinkTheme(context)
-        ? Icon(
+        ? FushiIcon(
             switch (event.severity) {
               GalHookEventSeverity.info => Icons.info_outline,
               GalHookEventSeverity.success => Icons.check_circle_outline,
@@ -567,8 +581,8 @@ class _EventTile extends StatelessWidget {
             },
             size: 18,
           )
-        : Icon(Icons.circle, size: 10, color: color);
-    return ListTile(
+        : FushiIcon(Icons.circle, size: 10, color: color);
+    return FushiListTileControl(
       dense: true,
       contentPadding: EdgeInsets.zero,
       leading: leading,
@@ -603,7 +617,7 @@ class _SectionCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              Icon(icon, size: 20),
+              FushiIcon(icon, size: 20),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -635,22 +649,25 @@ class _DiagnosticRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(
+          FushiIcon(
             ok ? Icons.check_circle_outline : Icons.schedule_outlined,
             size: 18,
-            color: ok ? colors.primary : colors.onSurfaceVariant,
+            // 就绪走成功语义色而非主色：主色在 Apple 下是单色强调（黑 / 白），
+            // 与「等待」的灰图标几乎分不开；绿勾一眼读出健康。
+            color: ok
+                ? fushiStatusColor(context, FushiStatusTone.success)
+                : fushiNeutralSecondaryForeground(context),
           ),
           const SizedBox(width: 8),
           Expanded(child: Text(label)),
           const SizedBox(width: 12),
           Flexible(
-            child: Tooltip(
+            child: FushiTooltip(
               message: value,
               child: Text(
                 value,
@@ -677,21 +694,21 @@ class _DetailBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color background =
-        error ? colors.errorContainer : colors.secondaryContainer;
-    final Color foreground =
-        error ? colors.onErrorContainer : colors.onSecondaryContainer;
+    // 中性信息块；错误语义只上在单色图标上（不再整块 error / secondary 容器色）。
+    final Color foreground = fushiNeutralBlockForeground(context);
     return Container(
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(10),
-      ),
+      decoration: fushiNeutralBlockDecoration(context),
       child: Row(
         children: <Widget>[
-          Icon(icon, color: foreground, size: 18),
+          FushiIcon(
+            icon,
+            color: error
+                ? fushiStatusColor(context, FushiStatusTone.error)
+                : fushiNeutralSecondaryForeground(context),
+            size: 18,
+          ),
           const SizedBox(width: 8),
           Expanded(child: Text(text, style: TextStyle(color: foreground))),
         ],

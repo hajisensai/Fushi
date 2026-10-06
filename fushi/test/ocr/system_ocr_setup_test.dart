@@ -8,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 
 class _FakeSetup implements SystemOcrModelSetup {
   _FakeSetup(this.statuses);
@@ -191,7 +193,7 @@ void main() {
       await tester.pump();
       expect(setup.installed, <String>['ja']);
       expect(message(t.ocr_system_model_downloading), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
 
       setup.installGate!.complete();
       await tester.pumpAndSettle();

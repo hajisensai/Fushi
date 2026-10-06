@@ -124,14 +124,24 @@ void main() {
 
     // 窄宽：菜单里能找到 A−/A+ 两项（WebView 未挂载时点了安全 no-op）。
     await pumpLayer(tester, kLookupPopupMinWidth);
+    // result=null 的层现在画的是「加载中」（FushiDeferredLoading 的无限动画，
+    // 不再是假空态「未找到」），pumpAndSettle 永远等不到静止；用有界 pump 走完
+    // 菜单的开/关过渡即可。
+    Future<void> pumpMenuTransition() async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
     await tester.tap(
       find.byKey(const ValueKey<String>('popup_topbar_overflow')),
     );
-    await tester.pumpAndSettle();
+    await pumpMenuTransition();
     expect(find.byIcon(Icons.text_decrease), findsOneWidget);
     expect(find.byIcon(Icons.text_increase), findsOneWidget);
     await tester.tap(find.byIcon(Icons.text_increase));
-    await tester.pumpAndSettle();
+    await pumpMenuTransition();
+    // 选中后菜单关闭（不是点了没反应）。
+    expect(find.byIcon(Icons.text_increase), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

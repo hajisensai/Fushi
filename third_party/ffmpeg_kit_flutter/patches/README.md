@@ -7,8 +7,12 @@
 
 ## 重编 ffmpeg-kit（TODO-2357 起：必须带 x264）
 
-当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus`**
-（后两个 2026-09-28 加入：制卡音画同步片段默认 WebM(VP9 + Opus)，卡片内 `<video>` 播放）。
+当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d`**
+（libvpx/opus 2026-09-28 加入：制卡音画同步片段默认 WebM(VP9 + Opus)，卡片内 `<video>` 播放；
+dav1d 2026-10-05 加入，BUG-2947：FFmpeg 原生 `av1` 解码器只是 hwaccel 壳，而移动端配方
+`--disable-mediacodec` / `--disable-videotoolbox` 后一个 hwaccel 都没有，AV1 视频制卡截帧/动图
+每帧都报 `Your platform doesn't support hardware accelerated AV1 decoding`。dav1d 走 meson + ninja，
+构建机需先装好这两个工具）。
 
 **首选重编方式：CI**（`.github/workflows/ffmpeg-kit-mobile.yml`，`workflow_dispatch`，或 push 到
 `ci/ffmpeg-kit-mobile` 分支）。它 clone arthenica ffmpeg-kit v6.0、用 `prepare_ffmpeg_src.sh` 预取
@@ -38,9 +42,9 @@ FFmpeg n6.0 并打本目录的 cert-pin 补丁（ffmpeg-kit 对非空 `src/ffmpe
 现成脚本（构建机 `~/ffmpegkit-build/`，内容与本目录下入库副本一致）：
 
 ```bash
-./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus \
+./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d \
                           #   --disable-x86 --disable-x86-64 --api-level=24
-./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --xcframework
+./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --enable-dav1d --xcframework
 ```
 
 ⚠️ **iOS 需要 `nasm`**：x86_64 模拟器切片的 x264 用 x86 SIMD 汇编，缺 nasm 会在

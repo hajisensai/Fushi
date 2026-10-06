@@ -41,6 +41,11 @@
     callHandler(name, ...args) {
       if (typeof name !== 'string') return Promise.reject(new TypeError('Invalid bridge handler'));
       if (!parentPort) return Promise.reject(new Error('Dictionary bridge is not connected'));
+      // popupRendered 双发（首词条 / 终高）：把「尾批仍在途」一并告诉宿主，宿主据此按最终
+      // 可能的高度选边、显示即锁边，不再先落词下方再翻上去（nested-popup-host.js place）。
+      if (name === 'popupRendered') {
+        args = [args[0], args[1], args[2], window._renderInProgress === true];
+      }
       const id = ++nextId;
       return new Promise((resolve, reject) => {
         pending.set(id, { resolve, reject, name, args });
@@ -54,8 +59,7 @@
     },
   };
   window.__fushiOnTapOutside = function () { send({ type: 'close' }); };
-  const closeButton = document.getElementById('fushi-nested-close');
-  if (closeButton) closeButton.addEventListener('click', function () { send({ type: 'close' }); });
+  // 本层不放可见的关闭钮：Esc（下方 keydown）、点本层外（tapOutside）与鼠标离开即逐层关闭。
 
   function render(data) {
     if (!data || typeof data.popupJson !== 'string') return;
@@ -95,7 +99,21 @@
     if (window.fushiTheme && typeof window.fushiTheme.resolve === 'function') {
       scheme = window.fushiTheme.resolve(scheme);
     }
-    if (scheme === 'light' || scheme === 'dark') container.setAttribute('data-theme', scheme);
+    if (scheme === 'light' || scheme === 'dark') {
+      container.setAttribute('data-theme', scheme);
+      // 本层文档的滚动条跟弹窗同一明暗；color-scheme 与 iframe 元素上那份
+      // （nested-popup-host.js fushiNestedLayerSkin）一致，Chrome 才不给 iframe 垫不透明画布底。
+      document.documentElement.setAttribute('data-theme', scheme);
+      if (document.documentElement.style) document.documentElement.style.colorScheme = scheme;
+    }
+    // 与第一层同一套玻璃（content.js fushiApplyGlass）：弹窗根挂 .fushi-glass = 半透明填充；
+    // 模糊 / 圆角 / 描边在宿主页的外框上（nested-popup-host.js，iframe 里的 backdrop-filter
+    // 采样不到网页）。半透明填充**只在宿主明确告知外框正在模糊（glassBackdrop === true）时**
+    // 才挂：本文件是 web_accessible_resource，每次从磁盘现读；宿主脚本却可能是扩展加载时缓存
+    // 的旧版（磁盘被覆盖更新、扩展未重载），旧宿主不给模糊——此时若照样半透明，背后的网页和
+    // 父层文字会清清楚楚透出来（2026-10-04 录屏）。没收到握手一律不透明。
+    const glass = data.glassBackdrop === true && theme['--fushi-glass'] !== '0';
+    if (container.classList) container.classList.toggle('fushi-glass', glass);
     // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
     if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
       window.fushiTheme.applyPopupPalette(container, scheme);
@@ -155,6 +173,8 @@
   document.addEventListener('pointerdown', function () { send({ type: 'activate' }); }, true);
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
+    // 子层里的音频源菜单 / 制卡面板开着：Esc 归它们先关最内层，不能连整层一起关。
+    if ((window.__fushiPopupModalDepth || 0) > 0) return;
     event.preventDefault();
     event.stopPropagation();
     send({ type: 'close' });

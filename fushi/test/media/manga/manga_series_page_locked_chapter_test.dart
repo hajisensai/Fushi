@@ -22,6 +22,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:path/path.dart' as p;
 
 import '../../helpers/test_platform_services.dart';
+import '../../helpers/glass_unwrap.dart';
 
 /// BUG-2479：锁定章（源站要登录并购买）点了不能默默入队然后必败——先弹引导。
 ///
@@ -301,7 +302,7 @@ void main() {
       await openPage(tester, _LoginAdapter());
       expect(find.byKey(appBarLoginKey), findsOneWidget);
       expect(
-        tester.widget<IconButton>(find.byKey(appBarLoginKey)).onPressed,
+        tester.widget<IconButton>(glassUnwrap<IconButton>(find.byKey(appBarLoginKey))).onPressed,
         isNotNull,
       );
     });

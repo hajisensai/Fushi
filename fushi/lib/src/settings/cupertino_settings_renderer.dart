@@ -7,6 +7,7 @@ import 'package:fushi/src/settings/settings_renderer.dart';
 import 'package:fushi/src/settings/settings_navigation_groups.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 
 class CupertinoSettingsRenderer implements SettingsRenderer {
   const CupertinoSettingsRenderer();
@@ -75,7 +76,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
                 for (final SettingsDestination destination
                     in group.destinations)
                   CupertinoListTile(
-                    leading: Icon(destination.icon, color: primaryColor),
+                    leading: FushiIcon(destination.icon, color: primaryColor),
                     title: Text(destination.title, maxLines: 2),
                     subtitle: destination.summary != null
                         ? Text(destination.summary!)

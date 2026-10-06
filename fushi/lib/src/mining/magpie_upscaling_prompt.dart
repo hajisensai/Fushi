@@ -69,7 +69,7 @@ class MagpieUpscalingModeDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.game_upscaling_pick_title(name: gameName)),
       content: SizedBox(
         width: 460,
@@ -86,7 +86,7 @@ class MagpieUpscalingModeDialog extends StatelessWidget {
                 ),
               ),
               for (final MagpieUpscalingMode mode in MagpieUpscalingMode.values)
-                RadioListTile<MagpieUpscalingMode>(
+                FushiRadioListTile<MagpieUpscalingMode>(
                   key: ValueKey<String>(
                     'magpie-upscaling-mode-${magpieUpscalingModeToKey(mode)}',
                   ),

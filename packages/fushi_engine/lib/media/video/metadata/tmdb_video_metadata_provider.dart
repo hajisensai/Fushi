@@ -169,7 +169,9 @@ class TmdbVideoMetadataProvider
                 '${lookup.mediaKind == VideoMetadataMediaKind.tv ? ',aggregate_credits' : ''}',
         'include_image_language': _languages.tmdbIncludeImageLanguage,
       },
-      cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}',
+      // 响应文本按 [language] 投影：语言进缓存键，切资料语言不会读到旧语言。
+      cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}:'
+          '$language',
     );
     if (payload == null) return null;
     VideoMetadataWork work = _mapDetailedWork(payload, lookup.mediaKind);
@@ -692,7 +694,7 @@ class TmdbVideoMetadataProvider
       englishTitle: _englishTitle(item, kind),
       year: metadataYear(premiered),
       premiered: premiered,
-      plot: metadataString(item['overview']),
+      plot: metadataString(item['overview']) ?? _translatedOverview(item),
       rating: _positiveDouble(item['vote_average']),
       ratingVotes: _positiveInt(item['vote_count']),
       runtimeMinutes: kind == VideoMetadataMediaKind.movie
@@ -728,6 +730,45 @@ class TmdbVideoMetadataProvider
       seasons: seasons,
       rawPayload: item,
     );
+  }
+
+  /// 资料语言的 `overview` 为空时（TMDB 常见：作品没有 zh-CN 译介），从同一份
+  /// 响应里 `append_to_response=translations` 的各语言译本取简介，免一次额外
+  /// 请求：同语言同地区 → 同语言其它地区（zh-CN 缺时 zh-TW 仍比英文可读）→
+  /// en-US → 其它英文。都没有返回 null，交给合并层的补充源，不显示空串。
+  String? _translatedOverview(Map<String, Object?> item) {
+    final Map<String, Object?> translations =
+        metadataObject(item['translations']) ?? const <String, Object?>{};
+    final String own = _languages.primarySubtag;
+    final List<String> tagParts = _languages.normalizedLocale
+        .split(RegExp(r'[-_]+'))
+        .where((String part) => part.isNotEmpty)
+        .toList();
+    final String? ownRegion =
+        tagParts.length > 1 ? tagParts.last.toUpperCase() : null;
+    int? rank(String language, String region) {
+      if (language == own) return region == ownRegion ? 0 : 1;
+      if (language == 'en') return region == 'US' ? 2 : 3;
+      return null;
+    }
+
+    String? best;
+    int bestRank = 1 << 30;
+    for (final Object? node in metadataList(translations['translations'])) {
+      final Map<String, Object?>? entry = metadataObject(node);
+      final String? overview =
+          metadataString(metadataObject(entry?['data'])?['overview']);
+      if (entry == null || overview == null) continue;
+      final int? value = rank(
+        metadataString(entry['iso_639_1'])?.toLowerCase() ?? '',
+        metadataString(entry['iso_3166_1'])?.toUpperCase() ?? '',
+      );
+      if (value != null && value < bestRank) {
+        best = overview;
+        bestRank = value;
+      }
+    }
+    return best;
   }
 
   List<String> _alternativeTitles(

@@ -6,6 +6,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 import 'widget_test_helpers.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// BUG-1184 回归守卫：窄屏 / 小窗口下内容被「显示不全」的几条根因。
 ///
@@ -207,7 +208,7 @@ void main() {
       );
       await tester.pump();
 
-      final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+      final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
       expect(
         dialog.insetPadding!.horizontal,
         32,
@@ -227,7 +228,7 @@ void main() {
       );
       await tester.pump();
 
-      final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+      final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
       expect(dialog.insetPadding!.horizontal, 80);
     });
 
@@ -245,7 +246,7 @@ void main() {
       );
       await tester.pump();
 
-      final Dialog dialog = tester.widget<Dialog>(find.byType(Dialog));
+      final Dialog dialog = tester.widget<Dialog>(glassUnwrap<Dialog>(find.byType(Dialog)));
       expect(dialog.insetPadding!.horizontal, 8);
     });
   });

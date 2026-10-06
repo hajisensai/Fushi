@@ -16,3 +16,4 @@
     smash_fzmedia_.shutdown();
     yuris_.shutdown();
     fvp_.shutdown();
+    kogado_hy_.shutdown();

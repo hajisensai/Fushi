@@ -18,6 +18,9 @@ import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:fushi/src/utils/system_transparency.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 
 Color _readableOnColor(Color color) {
   return ThemeData.estimateBrightnessForColor(color) == Brightness.dark
@@ -732,7 +735,16 @@ class ThemeNotifier extends ChangeNotifier {
     this._textThemeBuilder, {
     String Function()? customThemeIdGenerator,
   }) : _customThemeIdGenerator =
-            customThemeIdGenerator ?? _defaultCustomThemeIdGenerator;
+            customThemeIdGenerator ?? _defaultCustomThemeIdGenerator {
+    // 系统「降低透明度」切换时玻璃要立刻回退 / 恢复：重建主题即可。
+    SystemTransparency.reduceTransparency.addListener(notifyListeners);
+  }
+
+  @override
+  void dispose() {
+    SystemTransparency.reduceTransparency.removeListener(notifyListeners);
+    super.dispose();
+  }
 
   // Stable, testable id source. Defaults to epoch-millis + a monotonic counter
   // so two entries created in the same millisecond never collide. Tests can
@@ -1095,6 +1107,35 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
+  /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
+  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；`glass_material` 偏好
+  /// 只在 frosted / liquid 两档间选，缺省 liquid（引擎不支持时
+  /// [glassMaterialOf] 再降级为 frosted）。
+  FushiGlassMaterial get glassMaterial {
+    if (designSystem != 'glass') return FushiGlassMaterial.off;
+    // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
+    // 色阶与 BackdropFilter 一起关），窗口材质也随之关闭。
+    if (SystemTransparency.reduceTransparency.value) {
+      return FushiGlassMaterial.off;
+    }
+    return glassMaterialTier;
+  }
+
+  /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
+  FushiGlassMaterial get glassMaterialTier =>
+      FushiGlassMaterial.fromPrefValue(
+                _get('glass_material', defaultValue: 'liquid') as String?,
+              ) ==
+              FushiGlassMaterial.frosted
+          ? FushiGlassMaterial.frosted
+          : FushiGlassMaterial.liquid;
+
+  Future<void> setGlassMaterial(FushiGlassMaterial value) async {
+    await _set('glass_material', value.name);
+    notifyListeners();
+  }
+
   String get brightnessMode {
     final String mode = _get('brightness_mode', defaultValue: '');
     if (mode.isNotEmpty) return mode;
@@ -1110,8 +1151,11 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Design system override ────────────────────────────────────────
 
+  /// 对外开放的设计系统值：auto / material（MD3）/ glass（玻璃）。玻璃是 MD3
+  /// 组件之上的一层材质皮肤，渲染器仍走 Material（见 [designSystemTheme]）。
   static String normalizeDesignSystemPreference(Object? value) {
-    return value == 'material' ? 'material' : 'auto';
+    if (value == 'material' || value == 'glass') return value! as String;
+    return 'auto';
   }
 
   _DesignSystemPreferenceMigration? _normalizeHiddenDesignSystemInMemory() {
@@ -1137,6 +1181,7 @@ class ThemeNotifier extends ChangeNotifier {
   FushiDesignSystem get designSystemTheme {
     switch (designSystem) {
       case 'material':
+      case 'glass':
         return FushiDesignSystem.material;
       case 'cupertino':
         return FushiDesignSystem.cupertino;
@@ -1409,6 +1454,10 @@ class ThemeNotifier extends ChangeNotifier {
         textTheme: _textThemeBuilder(),
         eink: einkMode,
         designSystem: designSystemTheme,
+        glass: glassMaterial,
+        glassDesign: designSystem == 'glass',
+        // 默认主题（系统取色）在玻璃设计系统下是单色：白底黑字 / 黑底白字。
+        monochromeAccent: appThemeKey == 'system-theme',
       );
 
   // ── Custom theme prefs ─────────────────────────────────────────────
@@ -1751,6 +1800,66 @@ final themeProvider = ChangeNotifierProvider<ThemeNotifier>((ref) {
   return appModel.themeNotifier;
 });
 
+/// 全局输入框主题（用户 2026-10-04：「所有输入框都很丑」的根因层）。
+///
+/// 凡是没经 `fushiMd3FieldDecoration` / `FushiTextFieldControl` 包装的输入
+/// （裸 TextField、DropdownMenu、调用点手写 `OutlineInputBorder()` 的装饰——
+/// 主题的 enabledBorder 会顶掉它们的 border）都落到这里，所以这里与
+/// `fushiMd3FieldDecoration` 同口径：
+/// - MD3：surfaceContainerHigh 柔和填充、圆角 12、静止无描边，聚焦 2px
+///   primary，错误 error；
+/// - Apple：tertiaryFill 实色、圆角 10、无描边（iOS roundedRect 文本框），
+///   聚焦一圈半透明强调色（键盘 / 手柄导航落到框上时的焦点指示）；
+/// - 墨水屏：保留描边方框——填充色在墨水屏上是抖动灰噪点，边界只能靠描边。
+InputDecorationTheme _fushiInputDecorationTheme(
+  ColorScheme cs, {
+  required bool eink,
+  required FushiAppleColors? apple,
+}) {
+  if (eink) {
+    return InputDecorationTheme(
+      border: OutlineInputBorder(
+        borderRadius: FushiBorderRadius.control,
+        borderSide: BorderSide(color: cs.outline),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: FushiBorderRadius.control,
+        borderSide: BorderSide(color: cs.outline),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: FushiBorderRadius.control,
+        borderSide: BorderSide(color: cs.primary, width: 2),
+      ),
+    );
+  }
+  final BorderRadius radius = BorderRadius.circular(apple != null ? 10 : 12);
+  OutlineInputBorder outline([Color? color, double width = 0]) =>
+      OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: color == null
+            ? BorderSide.none
+            : BorderSide(color: color, width: width),
+      );
+  final Color focus = apple == null
+      ? cs.primary
+      : apple.accent.withValues(alpha: 0.5);
+  final Color error = apple?.destructive ?? cs.error;
+  return InputDecorationTheme(
+    filled: true,
+    fillColor: apple?.tertiaryFill ?? cs.surfaceContainerHigh,
+    hoverColor: Colors.transparent,
+    hintStyle: TextStyle(color: apple?.secondaryLabel ?? cs.onSurfaceVariant),
+    prefixIconColor: apple?.secondaryLabel ?? cs.onSurfaceVariant,
+    suffixIconColor: apple?.secondaryLabel ?? cs.onSurfaceVariant,
+    border: outline(),
+    enabledBorder: outline(),
+    disabledBorder: outline(),
+    focusedBorder: outline(focus, 2),
+    errorBorder: outline(error, 1.5),
+    focusedErrorBorder: outline(error, 2),
+  );
+}
+
 /// 全应用唯一的「ColorScheme → ThemeData」工厂。
 ///
 /// 主 app（[ThemeNotifier.theme] / [ThemeNotifier.darkTheme]）、书内查词弹窗
@@ -1762,9 +1871,95 @@ ThemeData buildFushiThemeData({
   required TextTheme textTheme,
   bool eink = false,
   FushiDesignSystem designSystem = FushiDesignSystem.auto,
+  FushiGlassMaterial glass = FushiGlassMaterial.off,
+  bool glassDesign = false,
+  bool monochromeAccent = false,
 }) {
-  final ColorScheme cs = scheme;
-  final TextTheme tt = textTheme;
+  // 玻璃设计系统 = Apple 26 设计语言：表面 / 文字 / 描边换成 Apple 系统色，
+  // 强调色取主题色相按 iOS 系统色重建（见 fushi_apple_palette.dart）。MD3 不受影响。
+  final bool appleDesign = glassDesign && !eink;
+  final ColorScheme cs = appleDesign
+      ? appleColorScheme(scheme, monochrome: monochromeAccent)
+      : scheme;
+  final TextTheme tt = appleDesign ? appleTextTheme(textTheme) : textTheme;
+  final FushiAppleColors? appleColors = appleDesign
+      ? FushiAppleColors.of(cs.brightness, cs.primary)
+      : null;
+  // 玻璃设计系统：Flutter 自己构建 Material 的那些表面（对话框、菜单、下拉、
+  // 提示条、tooltip、卡片、抽屉、裸 showModalBottomSheet、AppBar）在主题层统一
+  // 染成半透明，全平台、全调用点一次生效。能挂 BackdropFilter 的表面（导航、
+  // adaptiveModalSheet、FushiDialogFrame、悬浮按钮）由 FushiGlassSurface 另外加
+  // 模糊；对话框背后的模糊由 showAppDialog 统一铺。墨水屏下恒实心。
+  final bool glassy = glass != FushiGlassMaterial.off && !eink;
+  Color? glassTint(Color color, double Function(Brightness) opacity) =>
+      glassy ? color.withValues(alpha: opacity(cs.brightness)) : null;
+  final Color? glassMenuColor = glassTint(
+    cs.surfaceContainer,
+    fushiGlassOverlayOpacity,
+  );
+  // MD3 菜单面板（2026-10-04 菜单统一）：surfaceContainer、圆角 12、轻阴影
+  // （elevation 3）、无 tint；面板四周内缩 6，菜单行的圆角高亮块因此离面板
+  // 边缘 6px。毛玻璃下面板半透明（glassMenuColor）。墨水屏补实描边。Apple
+  // 设计系统的 MenuAnchor / 下拉由 fushi_glass_overlays.dart 自绘，覆盖这些值。
+  final MenuStyle menuPanelStyle = MenuStyle(
+    backgroundColor: WidgetStatePropertyAll<Color>(
+      glassMenuColor ?? cs.surfaceContainer,
+    ),
+    surfaceTintColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+    elevation: const WidgetStatePropertyAll<double>(3),
+    shadowColor: WidgetStatePropertyAll<Color>(cs.shadow),
+    padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+      EdgeInsets.all(6),
+    ),
+    shape: WidgetStatePropertyAll<OutlinedBorder>(
+      RoundedRectangleBorder(
+        borderRadius: FushiBorderRadius.menu,
+        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+      ),
+    ),
+  );
+  // MD3 菜单行（MenuItemButton）：行高 44、左右 12、14 号 onSurface 字、
+  // 20 号 onSurfaceVariant 图标；悬停 / 焦点 = secondaryContainer 圆角（8）块。
+  final ButtonStyle menuRowStyle = ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll<Size>(Size(188, 44)),
+    padding: const WidgetStatePropertyAll<EdgeInsetsGeometry>(
+      EdgeInsets.symmetric(horizontal: 12),
+    ),
+    shape: const WidgetStatePropertyAll<OutlinedBorder>(
+      RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
+    ),
+    backgroundColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+      if (states.contains(WidgetState.disabled)) return Colors.transparent;
+      if (states.contains(WidgetState.hovered) ||
+          states.contains(WidgetState.focused) ||
+          states.contains(WidgetState.pressed)) {
+        return cs.secondaryContainer;
+      }
+      return Colors.transparent;
+    }),
+    foregroundColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+      if (states.contains(WidgetState.disabled)) {
+        return cs.onSurface.withValues(alpha: 0.38);
+      }
+      if (states.contains(WidgetState.hovered) ||
+          states.contains(WidgetState.focused) ||
+          states.contains(WidgetState.pressed)) {
+        return cs.onSecondaryContainer;
+      }
+      return cs.onSurface;
+    }),
+    iconColor: WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+      if (states.contains(WidgetState.disabled)) {
+        return cs.onSurface.withValues(alpha: 0.38);
+      }
+      return cs.onSurfaceVariant;
+    }),
+    iconSize: const WidgetStatePropertyAll<double>(20),
+    overlayColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+    textStyle: WidgetStatePropertyAll<TextStyle?>(
+      tt.bodyMedium?.copyWith(fontSize: 14),
+    ),
+  );
   return ThemeData(
     useMaterial3: true,
     colorScheme: cs,
@@ -1806,22 +2001,102 @@ ThemeData buildFushiThemeData({
               TargetPlatform.fuchsia: FushiSharedAxisPageTransitionsBuilder(),
             },
           ),
-    splashFactory: eink ? NoSplash.splashFactory : null,
+    // Apple 设计系统同样不要水波：iOS / macOS 的按压反馈是整块变暗 / 变淡，
+    // 不是从触点扩散的墨水圈。一处主题改动把页面里残留的 InkWell（自绘卡片、
+    // 行）一起收掉；按下的 highlight 改成极淡的 Apple 中性填充（tertiaryFill
+    // 的一半），不再是 MD3 的 12% 前景色叠层。
+    splashFactory: eink || appleDesign ? NoSplash.splashFactory : null,
     // E-ink：NoSplash 只去掉扩散水波，InkWell 的 hover（4% alpha）/ 按下
     // highlight（12% alpha）叠层照画——都是墨水屏上的抖动灰，且每次 hover
     // 进出都是一次局部刷新。按下反馈交给各组件自己的反色/描边，这里归零。
     // focusColor 不动：焦点环由 FushiFocusTarget 自绘。
     hoverColor: eink ? Colors.transparent : null,
-    highlightColor: eink ? Colors.transparent : null,
+    highlightColor: eink
+        ? Colors.transparent
+        : appleColors?.tertiaryFill.withValues(
+            alpha: appleColors.tertiaryFill.a / 2,
+          ),
     extensions: <ThemeExtension<dynamic>>[
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
+      FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
+      if (appleColors != null) appleColors,
     ],
-    appBarTheme: const AppBarTheme(
+    // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
+    // vibrancy）或页面底色，不再自带一条实心色带。
+    // MD3（2026-10 顶栏统一，M3 Expressive）：静止时透明（alpha 0 的
+    // surface——状态栏图标明暗仍按 surface 估算，不会被纯透明色判成深色），
+    // 内容滚到栏下面后换成 surfaceContainer 色块；不画阴影线、不叠 tint。
+    // 标题 titleLarge（22 w400）onSurface，返回 / 抽屉图标 24 onSurface，
+    // actions 图标 24 onSurfaceVariant。墨水屏 surfaceContainer 塌成页面底色，
+    // 滚动前后观感不变。Apple 设计系统的顶栏由 FushiAppBar 自己给参数，这里
+    // 的字阶 / 图标色不套给它。
+    appBarTheme: AppBarTheme(
       elevation: 0,
       scrolledUnderElevation: 0,
       centerTitle: false,
+      backgroundColor: glassy
+          ? Colors.transparent
+          : WidgetStateColor.resolveWith(
+              (Set<WidgetState> states) =>
+                  states.contains(WidgetState.scrolledUnder)
+                  ? cs.surfaceContainer
+                  : cs.surface.withValues(alpha: 0),
+            ),
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      titleTextStyle: appleDesign
+          ? null
+          : tt.titleLarge?.copyWith(color: cs.onSurface),
+      iconTheme: appleDesign
+          ? null
+          : IconThemeData(color: cs.onSurface, size: 24),
+      actionsIconTheme: appleDesign
+          ? null
+          : IconThemeData(color: cs.onSurfaceVariant, size: 24),
     ),
+    drawerTheme: DrawerThemeData(
+      backgroundColor: glassTint(
+        cs.surfaceContainerLow,
+        fushiGlassOverlayOpacity,
+      ),
+    ),
+    // MD3 Expressive rail（自绘 rail 已按此画；这里给仍用框架
+    // NavigationRail 的地方同一套）：全圆角 secondaryContainer 药丸、
+    // 24 图标、12 号 w500 标签；墨水屏反色药丸。
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: glassTint(cs.surface, fushiGlassFillOpacity),
+      indicatorColor: eink ? cs.onSurface : cs.secondaryContainer,
+      indicatorShape: const StadiumBorder(),
+      selectedIconTheme: IconThemeData(
+        color: eink ? cs.surface : cs.onSecondaryContainer,
+        size: 24,
+      ),
+      unselectedIconTheme: IconThemeData(color: cs.onSurfaceVariant, size: 24),
+      selectedLabelTextStyle: tt.labelMedium?.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        color: cs.onSurface,
+      ),
+      unselectedLabelTextStyle: tt.labelMedium?.copyWith(
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+        color: cs.onSurfaceVariant,
+      ),
+    ),
+    menuTheme: MenuThemeData(style: menuPanelStyle),
+    menuButtonTheme: MenuButtonThemeData(style: menuRowStyle),
+    menuBarTheme: MenuBarThemeData(
+      style: glassMenuColor == null
+          ? null
+          : MenuStyle(
+              backgroundColor: WidgetStatePropertyAll<Color>(glassMenuColor),
+              surfaceTintColor: const WidgetStatePropertyAll<Color>(
+                Colors.transparent,
+              ),
+            ),
+    ),
+    dropdownMenuTheme: DropdownMenuThemeData(menuStyle: menuPanelStyle),
     // 滑块 / 轨道配色交回 M3 默认（选中：轨道 primary、滑块 onPrimary、勾
     // onPrimaryContainer；未选中：轨道 surfaceContainerHighest、滑块 outline）。
     // 以前覆写成「轨道 primaryContainer + 滑块 primary」是 M2 的配法，而 M3 的
@@ -1841,42 +2116,135 @@ ThemeData buildFushiThemeData({
         // E-ink: keep a solid outline on both states so the switch body
         // never depends on a fill the panel may dither.
         if (eink) return cs.outline;
-        return states.contains(WidgetState.selected)
-            ? Colors.transparent
-            : cs.outline;
+        // 2026-10 开关统一：未选中也不描灰边——M3 默认那圈 outline 让关态开关
+        // 像个空心输入框；轨道 surfaceContainerHighest + 滑块 outline（M3 默认
+        // 角色色）已足够表达关态。
+        return Colors.transparent;
       }),
+      // 悬停 / 按下 / 焦点状态层压淡：M3 默认 8%–10% 的整圆状态层在成片的设置
+      // 列表里一路扫过去很跳。墨水屏交回默认（与以前一致）。
+      overlayColor: eink ? null : _fushiSoftStateLayer(cs),
     ),
+    // 2026-10 复选 / 单选统一（与开关同一套柔和状态层）：复选框 18 见方、圆角 4
+    // （M3 默认 2 太方）；未选中 2px onSurfaceVariant 边、选中 primary 底 +
+    // onPrimary 勾都是 M3 默认角色色，不覆写。单选 20（外环 2px），选中圆点
+    // 10（默认 9 在外环里显得空）。墨水屏全部交回默认（与以前一致）。
+    checkboxTheme: eink
+        ? null
+        : CheckboxThemeData(
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(4)),
+            ),
+            overlayColor: _fushiSoftStateLayer(cs),
+          ),
+    radioTheme: eink
+        ? null
+        : RadioThemeData(
+            innerRadius: const WidgetStatePropertyAll<double?>(5),
+            overlayColor: _fushiSoftStateLayer(cs),
+          ),
+    // MD3 Expressive 导航栏（与自绘底栏同一套）：64 高、全圆角药丸、
+    // 12 号 w500 标签（选中加粗一档、onSurface，未选中 onSurfaceVariant）。
     navigationBarTheme: NavigationBarThemeData(
       elevation: 0,
-      indicatorShape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.control,
+      height: 64,
+      indicatorColor: eink ? cs.onSurface : cs.secondaryContainer,
+      indicatorShape: const StadiumBorder(),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (Set<WidgetState> states) => tt.labelMedium?.copyWith(
+          fontSize: 12,
+          fontWeight: states.contains(WidgetState.selected)
+              ? FontWeight.w600
+              : FontWeight.w500,
+          color: states.contains(WidgetState.selected)
+              ? cs.onSurface
+              : cs.onSurfaceVariant,
+        ),
       ),
-      labelTextStyle: WidgetStateProperty.all(tt.labelSmall),
+      backgroundColor: glassTint(cs.surfaceContainer, fushiGlassFillOpacity),
     ),
+    // MD3 弹出菜单：与 MenuAnchor 同一块面板（surfaceContainer、圆角 12、
+    // elevation 3、无 tint、上下 6），14 号 onSurface 文字。
     popupMenuTheme: PopupMenuThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.menu,
+        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
+      color: glassMenuColor ?? cs.surfaceContainer,
+      surfaceTintColor: Colors.transparent,
+      elevation: 3,
+      shadowColor: cs.shadow,
+      menuPadding: const EdgeInsets.symmetric(vertical: 6),
+      labelTextStyle: WidgetStateProperty.resolveWith((
+        Set<WidgetState> states,
+      ) {
+        return tt.bodyMedium?.copyWith(
+          fontSize: 14,
+          color: states.contains(WidgetState.disabled)
+              ? cs.onSurface.withValues(alpha: 0.38)
+              : cs.onSurface,
+        );
+      }),
     ),
+    // MD3 对话框（2026-10-04 对话框统一）：surfaceContainerHigh 面板、圆角 28、
+    // 无 tint 无阴影；标题 22 w600 onSurface、正文 14/1.5 onSurfaceVariant、
+    // 动作区 24 内边距右对齐。墨水屏补实描边。毛玻璃下本体半透明，背后由
+    // showAppDialog 铺整屏模糊。Apple 设计系统的对话框不走 Material
+    // 表面（fushi_glass_overlays.dart 自绘），文字样式留空交给它自己。
     dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(
         borderRadius: FushiBorderRadius.dialog,
+        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
+      backgroundColor:
+          glassTint(cs.surfaceContainerHigh, fushiGlassFillOpacity) ??
+          cs.surfaceContainerHigh,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      iconColor: appleDesign ? null : cs.secondary,
+      titleTextStyle: appleDesign
+          ? null
+          : (tt.headlineSmall ?? const TextStyle()).copyWith(
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
+              height: 1.27,
+              color: cs.onSurface,
+            ),
+      contentTextStyle: appleDesign
+          ? null
+          : (tt.bodyMedium ?? const TextStyle()).copyWith(
+              fontSize: 14,
+              height: 1.5,
+              color: cs.onSurfaceVariant,
+            ),
+      actionsPadding: appleDesign
+          ? null
+          : const EdgeInsets.fromLTRB(24, 0, 24, 24),
     ),
-    listTileTheme: const ListTileThemeData(),
-    inputDecorationTheme: InputDecorationTheme(
-      border: OutlineInputBorder(
-        borderRadius: FushiBorderRadius.control,
-        borderSide: BorderSide(color: cs.outline),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: FushiBorderRadius.control,
-        borderSide: BorderSide(color: cs.outline),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: FushiBorderRadius.control,
-        borderSide: BorderSide(color: cs.primary, width: 2),
-      ),
+    // MD3 列表行（2026-10-04 卡片 / 列表统一）：左右 16；悬停 / 按下状态层与
+    // 选中底都是 12 圆角块（FushiListTileControl 再把行左右内缩 4，不顶到容器
+    // 边），选中 = secondaryContainer 底 + onSecondaryContainer 前景（不再是
+    // primary 彩字）。标题 bodyLarge onSurface、副标题 bodyMedium
+    // onSurfaceVariant、行首图标 onSurfaceVariant 都是 M3 默认，不覆写。Apple
+    // 设计系统的行自己画（_GlassListTileHost）；墨水屏 secondaryContainer 塌缩成
+    // 背景色、选中底不可见，交回默认（与以前一致）。
+    listTileTheme: appleDesign || eink
+        ? const ListTileThemeData()
+        : ListTileThemeData(
+            contentPadding: const EdgeInsetsDirectional.symmetric(
+              horizontal: 16,
+            ),
+            shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(12)),
+            ),
+            selectedColor: cs.onSecondaryContainer,
+            selectedTileColor: cs.secondaryContainer,
+          ),
+    inputDecorationTheme: _fushiInputDecorationTheme(
+      cs,
+      eink: eink,
+      apple: appleColors,
     ),
     // BUG-1997：两个亮度用同一个粗细。原来深色是 `null`（退回 Material 默认 8），
     // 而全局 `thumbVisibility: true` + 桌面端自动包 Scrollbar 意味着那 8+2px 是
@@ -1886,11 +2254,37 @@ ThemeData buildFushiThemeData({
       thickness: WidgetStateProperty.all(kFushiScrollbarThickness),
       thumbVisibility: WidgetStateProperty.all(true),
     ),
-    sliderTheme: SliderThemeData(
-      thumbColor: cs.primary,
-      activeTrackColor: cs.primary,
-      inactiveTrackColor: cs.outlineVariant,
-    ),
+    // 2026-10：M3 2024 版滑块（16 粗轨道 + 竖条拇指 + 拇指两侧留缝 + 尾端停止
+    // 点），与下面的 2024 版进度条同一代视觉；RangeSlider 吃同一份主题。墨水屏
+    // 保留 2023 版细轨圆钮与原配色（缝与停止点在低分辨率面板上会糊成灰点）。
+    // 自带 SliderTheme 覆写 thumbShape / trackShape 的紧凑滑块（视频音量浮层、
+    // 有声书面板）照旧用它们自己的形状。
+    sliderTheme: eink
+        ? SliderThemeData(
+            thumbColor: cs.primary,
+            activeTrackColor: cs.primary,
+            inactiveTrackColor: cs.outlineVariant,
+          )
+        : SliderThemeData(
+            // year2023 被标为 deprecated 只是为了提示「将来默认 false」；显式传
+            // false 正是官方给的启用方式。
+            // ignore: deprecated_member_use
+            year2023: false,
+            // 离散刻度（停止点）克制：默认是 onPrimary / onSecondaryContainer
+            // 实色点，分格多时像一串珠子，压成半透明。
+            activeTickMarkColor: cs.onPrimary.withValues(alpha: 0.6),
+            inactiveTickMarkColor: cs.onSecondaryContainer.withValues(
+              alpha: 0.38,
+            ),
+            // 数值气泡：M3 圆角矩形（2024 版默认就是它，钉住免得默认再变）。
+            valueIndicatorShape: const RoundedRectSliderValueIndicatorShape(),
+            rangeValueIndicatorShape:
+                const RoundedRectRangeSliderValueIndicatorShape(),
+            valueIndicatorColor: cs.inverseSurface,
+            valueIndicatorTextStyle: tt.labelMedium?.copyWith(
+              color: cs.onInverseSurface,
+            ),
+          ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(
@@ -1898,6 +2292,12 @@ ThemeData buildFushiThemeData({
       ),
       insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       actionTextColor: eink ? cs.onInverseSurface : cs.inversePrimary,
+      // 玻璃设计系统：FushiSnackBar 自己把内容画进玻璃胶囊，SnackBar 本体
+      // 必须透明无阴影，否则胶囊外再多一层底。
+      backgroundColor: glassDesign && !eink
+          ? Colors.transparent
+          : glassTint(cs.inverseSurface, fushiGlassOverlayOpacity),
+      elevation: glassDesign && !eink ? 0 : null,
     ),
     // 2026-10 交互重做：tooltip 与 snackbar 同一套「反色小浮层」语言——反色底、
     // 小圆角、略大的内边距；悬停 400ms 才出（默认 0 会在鼠标划过工具栏时一路
@@ -1907,7 +2307,8 @@ ThemeData buildFushiThemeData({
       exitDuration: const Duration(milliseconds: 100),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: cs.inverseSurface,
+        color: glassTint(cs.inverseSurface, fushiGlassOverlayOpacity) ??
+            cs.inverseSurface,
         borderRadius: FushiBorderRadius.chip,
       ),
       textStyle: (tt.labelMedium ?? const TextStyle()).copyWith(
@@ -1917,42 +2318,83 @@ ThemeData buildFushiThemeData({
     // 2026-10：M3 2024 版进度条——圆头、轨道与指示器之间留缝、确定态尾端有
     // 停止点，读数比 2023 版的一整条色带清楚。墨水屏保留 2023 版（缝与停止点在
     // 低分辨率面板上会糊成灰点）。
+    // 2026-10 进度统一：Fushi*ProgressIndicator 包装在 MD3 下画 Material 3
+    // Expressive 的波浪进度（自绘，见 fushi_expressive_progress.dart），尺寸 /
+    // 线宽 / 缝 / 配色都从这里读；绕过包装的原生控件吃 2024 版（圆头、缝、
+    // 停止点）。两者同一套参数：线宽 4、缝 4、轨道 secondaryContainer、已填段
+    // primary。墨水屏保留 2023 版（缝与停止点在低分辨率面板上会糊成灰点，包装
+    // 在墨水屏下也退回原控件）。
     progressIndicatorTheme: ProgressIndicatorThemeData(
       // year2023 被标为 deprecated 只是为了提示「将来默认 false」；显式传 false
       // 正是官方给的启用方式。
       // ignore: deprecated_member_use
       year2023: eink,
       linearTrackColor: eink ? null : cs.secondaryContainer,
+      linearMinHeight: eink ? null : 4,
+      trackGap: eink ? null : 4,
       borderRadius: const BorderRadius.all(Radius.circular(4)),
     ),
+    // MD3 卡片（2026-10-04 卡片 / 列表统一）：surfaceContainerLow 填充分层、
+    // 16 圆角、无阴影无 surface tint（elevation 0 之外再钉死两色，调用点传了
+    // elevation 也不会冒出灰影 / 粉调）。
     cardTheme: CardThemeData(
       elevation: 0,
-      color: cs.surfaceContainerLow,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      color: glassTint(cs.surfaceContainerLow, fushiGlassContainerOpacity) ??
+          cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.card,
+        borderRadius: const BorderRadius.all(Radius.circular(16)),
         // E-ink: surfaceContainerLow == the page background, so cards need a
         // solid outline to keep their boundary readable in pure black/white.
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
     ),
-    bottomSheetTheme: const BottomSheetThemeData(
+    // 裸 showModalBottomSheet 的底色；adaptiveModalSheet 自己挂玻璃表面、底色
+    // 透明，不吃这里。没有模糊，所以用浮层档的不透明度。
+    // MD3 底部弹层（2026-10-04 弹层统一）：surfaceContainerLow、上两角 28、
+    // 拖动条 32×4 onSurfaceVariant@0.4、无 tint、遮罩 scrim@0.32；宽屏居中、
+    // 最宽 640（MD3 规范）。墨水屏补实描边、遮罩不透明度交回默认。
+    bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
       shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.sheet,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
+      dragHandleColor: cs.onSurfaceVariant.withValues(alpha: 0.4),
+      dragHandleSize: const Size(32, 4),
+      constraints: const BoxConstraints(maxWidth: 640),
+      modalBarrierColor: eink ? null : cs.scrim.withValues(alpha: 0.32),
       surfaceTintColor: Colors.transparent,
+      backgroundColor: glassTint(
+        cs.surfaceContainerLow,
+        fushiGlassOverlayOpacity,
+      ),
+      modalBackgroundColor: glassTint(
+        cs.surfaceContainerLow,
+        fushiGlassOverlayOpacity,
+      ),
     ),
+    // 玻璃下悬浮按钮底色让位给外包的 FushiGlassFab（液态档折射、毛玻璃档模糊）。
     floatingActionButtonTheme: FloatingActionButtonThemeData(
       elevation: 0,
       highlightElevation: 0,
-      backgroundColor: cs.primaryContainer,
-      foregroundColor: cs.onPrimaryContainer,
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.control,
-        // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
-        // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
-        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-      ),
+      // Apple（iOS 26）：悬浮按钮是中性玻璃胶囊 / 圆钮 + 强调色图标，不是 MD3
+      // 的 primaryContainer 圆角方块；降低透明度时回落二级分组实色底。
+      backgroundColor: glassy
+          ? Colors.transparent
+          : appleDesign
+              ? cs.surfaceContainerHigh
+              : cs.primaryContainer,
+      foregroundColor: appleDesign ? cs.primary : cs.onPrimaryContainer,
+      shape: appleDesign
+          ? const StadiumBorder()
+          : RoundedRectangleBorder(
+              borderRadius: FushiBorderRadius.control,
+              // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
+              // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
+              side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+            ),
     ),
     // E-ink：M3 只用 `secondaryContainer` 填充表达选中段，而墨水屏方案把它
     // 塌缩成了页面底色——选中段与相邻段逐像素相同，全仓调用点又一律
@@ -1992,11 +2434,13 @@ ThemeData buildFushiThemeData({
             ),
           )
         : const SegmentedButtonThemeData(),
+    // chip 统一（2026-10-04）：与全胶囊按钮、填充输入框同一语言——全胶囊、
+    // 未选中 surfaceContainerHigh 柔和填充、无描边（以前是 r6 + outlineVariant
+    // 描边，在胶囊按钮旁边又方又旧）。墨水屏填充色是抖动灰，保留描边表达边界。
     chipTheme: ChipThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.chip,
-      ),
-      side: BorderSide(color: cs.outlineVariant),
+      shape: const StadiumBorder(),
+      side: eink ? BorderSide(color: cs.outlineVariant) : BorderSide.none,
+      backgroundColor: eink ? null : cs.surfaceContainerHigh,
       // E-ink：同一个塌缩——`secondaryContainer` 等于页面底色，`showCheckmark`
       // 又关掉了 M3 唯一的形状信号，选中与未选中的 chip 逐像素相同（字体库那
       // 排「用途」FilterChip 就栽在这）。反色填充 + 配对 label 色补回信号；
@@ -2012,12 +2456,38 @@ ThemeData buildFushiThemeData({
                         : cs.onSurface,
               ),
             )
-          : null,
+          // MD3：14 号 w500，未选中 onSurfaceVariant、选中
+          // onSecondaryContainer（与选中底 secondaryContainer 配对）。
+          : (tt.labelLarge ?? const TextStyle()).copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: WidgetStateColor.resolveWith(
+                (Set<WidgetState> states) =>
+                    states.contains(WidgetState.selected)
+                        ? cs.onSecondaryContainer
+                        : cs.onSurfaceVariant,
+              ),
+            ),
+      checkmarkColor: eink ? null : cs.onSecondaryContainer,
+      deleteIconColor: eink ? null : cs.onSurfaceVariant,
+      // 全局不画对勾：ChoiceChip 是单选、靠填充表达选中；多选的 FilterChip
+      // 由 FushiFilterChip 包装显式打开对勾（MD3 filter chip 规范）。
       showCheckmark: false,
     ),
+    // 按钮统一（用户 2026-10-04：「按钮也很丑，统一优化」）：全族同高 40、
+    // 全胶囊、左右 20 留白、14 号 semibold、18 号图标；描边按钮用更柔和的
+    // outlineVariant。墨水屏保留原有的描边补偿。
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         shape: const StadiumBorder(),
+        minimumSize: const Size(64, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        textStyle: tt.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        iconSize: 18,
+        elevation: 0,
         // E-ink：`FilledButton.tonal*` 的填充是 secondaryContainer == 页面底色，
         // 没有边就退化成一行裸文字、与旁边的 TextButton 无法区分；描边补回
         // 按钮体。实心 FilledButton 的填充本就是前景色，多一圈同色边无害。
@@ -2027,14 +2497,58 @@ ThemeData buildFushiThemeData({
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         shape: const StadiumBorder(),
-        side: BorderSide(color: cs.outline),
+        minimumSize: const Size(64, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        textStyle: tt.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        iconSize: 18,
+        foregroundColor: eink ? null : cs.onSurface,
+        side: BorderSide(color: eink ? cs.outline : cs.outlineVariant),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
       style: TextButton.styleFrom(
         shape: const StadiumBorder(),
+        minimumSize: const Size(48, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        textStyle: tt.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        iconSize: 18,
       ),
     ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+        shape: const StadiumBorder(),
+        minimumSize: const Size(64, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        textStyle: tt.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        iconSize: 18,
+        elevation: 0,
+        backgroundColor: eink ? null : cs.surfaceContainerHigh,
+      ),
+    ),
+    // Apple 文本选区（用户 2026-10-04：黑白主题下选中文字被黑色选区盖住）：
+    // 单色强调色不能直接当选区色；改用 macOS 默认的蓝灰选区，彩色强调色取淡色。
+    textSelectionTheme: appleDesign
+        ? TextSelectionThemeData(
+            cursorColor: cs.primary,
+            selectionColor: monochromeAccent
+                ? (cs.brightness == Brightness.dark
+                      ? const Color(0xFF3F638B)
+                      : const Color(0xFFB4D5FE))
+                : cs.primary.withValues(alpha: 0.28),
+            selectionHandleColor: monochromeAccent
+                ? const Color(0xFF0A84FF)
+                : cs.primary,
+          )
+        : null,
     dividerTheme: DividerThemeData(
       color: cs.outlineVariant,
       // E-ink panels can't render a crisp half-pixel hairline; use a full
@@ -2054,3 +2568,22 @@ ThemeData buildFushiFallbackTheme(Brightness brightness) => buildFushiThemeData(
       ),
       textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
     );
+
+/// 选择类控件（开关 / 复选 / 单选）的柔和状态层：M3 默认 8%–10% 的整圆状态层
+/// 在成片的设置列表里一路扫过去很跳，悬停压到 5%，按下 / 焦点保留 10%（焦点
+/// 环另由 FushiFocusTarget 画）。选中态用 primary、未选中用 onSurface，与 M3
+/// 同角色。
+WidgetStateProperty<Color?> _fushiSoftStateLayer(ColorScheme cs) {
+  return WidgetStateProperty.resolveWith((Set<WidgetState> states) {
+    final Color base =
+        states.contains(WidgetState.selected) ? cs.primary : cs.onSurface;
+    if (states.contains(WidgetState.pressed) ||
+        states.contains(WidgetState.focused)) {
+      return base.withValues(alpha: 0.10);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return base.withValues(alpha: 0.05);
+    }
+    return null;
+  });
+}

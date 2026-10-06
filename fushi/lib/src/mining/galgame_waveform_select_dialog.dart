@@ -184,51 +184,57 @@ class _GalWaveformSelectDialogState extends State<_GalWaveformSelectDialog> {
               height: 140,
               child: ClipRRect(
                 borderRadius: tokens.radii.controlRadius,
-                child: LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    final double width = constraints.maxWidth.isFinite
-                        ? constraints.maxWidth
-                        : 480.0;
-                    _lastWidth = width;
-                    final int targetBuckets = math.max(1, width ~/ 2);
-                    final List<double> buckets = _bucketsFor(targetBuckets);
-                    return GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onHorizontalDragStart: _onDragStart,
-                      onHorizontalDragUpdate: _onDragUpdate,
-                      onHorizontalDragEnd: _onDragEnd,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: <Widget>[
-                          RepaintBoundary(
-                            child: CustomPaint(
-                              painter: SubtitleWaveformPainter(
-                                buckets: buckets,
-                                windowStartMs: 0,
-                                windowEndMs: _totalMs,
-                                cueBoundariesMs: const <int>[],
-                                previewDelayMs: 0,
-                                currentPositionMs: 0,
-                                waveColor: cs.primary.withValues(alpha: 0.55),
-                                cueLineColor: cs.secondary,
-                                playheadColor: cs.tertiary,
-                                centerLineColor: cs.outlineVariant,
+                // 波形铺在一块中性信息底上（MD3 surfaceContainerHigh / Apple
+                // tertiaryFill）：原先直接画在对话框底上，选区与可拖范围没有边界，
+                // 看不出波形窗口从哪到哪。
+                child: ColoredBox(
+                  color: fushiNeutralBlockColor(context),
+                  child: LayoutBuilder(
+                    builder: (BuildContext context, BoxConstraints constraints) {
+                      final double width = constraints.maxWidth.isFinite
+                          ? constraints.maxWidth
+                          : 480.0;
+                      _lastWidth = width;
+                      final int targetBuckets = math.max(1, width ~/ 2);
+                      final List<double> buckets = _bucketsFor(targetBuckets);
+                      return GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: _onDragStart,
+                        onHorizontalDragUpdate: _onDragUpdate,
+                        onHorizontalDragEnd: _onDragEnd,
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: <Widget>[
+                            RepaintBoundary(
+                              child: CustomPaint(
+                                painter: SubtitleWaveformPainter(
+                                  buckets: buckets,
+                                  windowStartMs: 0,
+                                  windowEndMs: _totalMs,
+                                  cueBoundariesMs: const <int>[],
+                                  previewDelayMs: 0,
+                                  currentPositionMs: 0,
+                                  waveColor: cs.primary.withValues(alpha: 0.55),
+                                  cueLineColor: cs.secondary,
+                                  playheadColor: cs.tertiary,
+                                  centerLineColor: cs.outlineVariant,
+                                ),
                               ),
                             ),
-                          ),
-                          CustomPaint(
-                            painter: _GalSelectionOverlayPainter(
-                              startMs: _range.startMs,
-                              endMs: _range.endMs,
-                              totalMs: _totalMs,
-                              fillColor: cs.primary.withValues(alpha: 0.16),
-                              edgeColor: cs.primary,
+                            CustomPaint(
+                              painter: _GalSelectionOverlayPainter(
+                                startMs: _range.startMs,
+                                endMs: _range.endMs,
+                                totalMs: _totalMs,
+                                fillColor: cs.primary.withValues(alpha: 0.16),
+                                edgeColor: cs.primary,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

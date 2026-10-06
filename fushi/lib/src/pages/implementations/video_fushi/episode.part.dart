@@ -468,7 +468,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                     SizedBox(
                       width: 32 * scale,
                       height: 32 * scale,
-                      child: CircularProgressIndicator(color: textColor),
+                      child: FushiCircularProgressIndicator(color: textColor),
                     ),
                     SizedBox(height: 12 * scale),
                     Text(
@@ -507,11 +507,12 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 吃系统 inset，缩放 >1 或手势导航高 inset 时压进进度条 / 按钮条。
     final ({double bottom, double height}) band = videoSeekBarTrackBand(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight,
+      // Apple 底栏胶囊的抬升（MD3 恒 0），见 [_appleBottomLift]。
+      buttonBarHeight: _videoButtonBarHeight + _videoGeometryButtonBarLift,
       seekBarButtonGap: _videoSeekBarButtonGap,
       seekBarContainerHeight: _videoSeekBarContainerHeight,
       seekBarTrackHeight: _videoSeekBarTrackHeight,
-      bottomChromeBaseline: _VideoFushiPageState._videoBottomChromeBaseline,
+      bottomChromeBaseline: _videoGeometryBottomBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
       tickHeight: _videoSeekBarTrackHeight,
     );
@@ -536,7 +537,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(
+                      FushiIcon(
                         Icons.playlist_play_outlined,
                         size: 18,
                         color: _osdTextColor(cs),
@@ -551,7 +552,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      TextButton(
+                      FushiTextButton(
                         onPressed: _cancelAutoAdvanceCountdown,
                         style: TextButton.styleFrom(
                           foregroundColor: _osdTextColor(cs),

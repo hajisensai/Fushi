@@ -4,6 +4,7 @@ import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
 import 'package:fushi/src/pages/implementations/stat_trends.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -95,7 +96,7 @@ Widget buildStatMediaRow(
           ),
         if (onTap != null) ...<Widget>[
           SizedBox(width: tokens.spacing.gap / 2),
-          Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+          FushiIcon(Icons.chevron_right, color: colors.onSurfaceVariant),
         ],
       ],
     ),
@@ -133,11 +134,13 @@ Widget buildStatCoverSlot(
   double width = kStatMediaCoverWidth,
 }) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  // 无封面占位：中性填充 + 次级前景色的单色图标（与排行榜封面占位同口径），
+  // 不用主色图标——一列里一半行亮着强调色会抢掉右侧主值的视线。
   final Widget placeholder = Center(
-    child: Icon(
+    child: FushiIcon(
       icon,
       size: width * 0.6,
-      color: Theme.of(context).colorScheme.primary,
+      color: fushiNeutralSecondaryForeground(context),
     ),
   );
   return ClipRRect(
@@ -145,7 +148,7 @@ Widget buildStatCoverSlot(
     child: Container(
       width: width,
       height: width * 1.4,
-      color: tokens.surfaces.overlay,
+      color: fushiNeutralBlockColor(context),
       child: cover == null
           ? placeholder
           : Image(
@@ -203,7 +206,7 @@ class _StatAnalysisFoldState extends State<StatAnalysisFold> {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                     ),
-                    Icon(
+                    FushiIcon(
                       _expanded ? Icons.expand_less : Icons.expand_more,
                       color: colors.onSurfaceVariant,
                     ),
@@ -395,7 +398,7 @@ Widget buildStatAdaptiveScrollView(
               slivers: paneSlivers(StatPane.overview),
             ),
           ),
-          VerticalDivider(
+          FushiVerticalDivider(
             width: 1,
             thickness: 1,
             color: Theme.of(context).colorScheme.outlineVariant,
@@ -902,7 +905,7 @@ Widget buildStatCollectionLabel(
   return Row(
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
-      Icon(
+      FushiIcon(
         Icons.folder_outlined,
         size: 13,
         color: colorScheme.onSurfaceVariant,
@@ -969,7 +972,7 @@ Future<bool> showStatGoalEditDialog(
   AppModel appModel, {
   int recentDailyAverage = 0,
 }) async {
-  final StatGoalEditResult? result = await showDialog<StatGoalEditResult>(
+  final StatGoalEditResult? result = await showAppDialog<StatGoalEditResult>(
     context: context,
     builder: (BuildContext _) => StatGoalEditDialog(
       initialDailyChars: appModel.readingGoalDailyChars,
@@ -1066,7 +1069,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.stat_goal_set),
       // 内容可能变高：横屏/小窗下用滚动兜底，不再顶到溢出。
       content: SingleChildScrollView(
@@ -1076,7 +1079,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
           children: <Widget>[
             // BUG-1075：单位后缀。口径说明行已按用户要求删除——统计口径由实际
             // 计入的来源（阅读/漫画/视频字幕/游戏文本）自解释。
-            TextField(
+            FushiTextFieldControl(
               key: const ValueKey<String>('stat-goal-daily-field'),
               controller: _daily,
               keyboardType: TextInputType.number,
@@ -1100,14 +1103,14 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
               runSpacing: tokens.spacing.gap / 2,
               children: <Widget>[
                 for (final int preset in StatGoalEditDialog.presets)
-                  ActionChip(
+                  FushiActionChipControl(
                     label: Text(preset.toString()),
                     onPressed: () => _applyPreset(preset),
                   ),
               ],
             ),
             SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-            TextField(
+            FushiTextFieldControl(
               key: const ValueKey<String>('stat-goal-weekly-field'),
               controller: _weekly,
               keyboardType: TextInputType.number,
@@ -1120,11 +1123,11 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
         ),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(t.cancel),
         ),
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
             (daily: _parse(_daily), weekly: _parse(_weekly)),
           ),
@@ -1209,11 +1212,11 @@ String formatStatHeatmapDay(String dateKey) {
 /// 「今日按小时」单色柱状图区块（视频统计用：观看时长没有阅读面之分，只有一带）。
 /// [hourlyMs] 为 0-23 每小时的毫秒值。
 Widget buildStatHourlyChartSection(BuildContext context, List<int> hourlyMs) {
-  final colorScheme = Theme.of(context).colorScheme;
+  final StatChartColors chartColors = statChartColorsOf(context);
   return _buildStatHourlyChartSection(
     context,
     bands: <StatHourlyBand>[
-      StatHourlyBand(values: hourlyMs, color: colorScheme.tertiary),
+      StatHourlyBand(values: hourlyMs, color: chartColors.compare),
     ],
     legendBands: const <StatHourlyFormatBand>[],
     showUnattributedNote: false,
@@ -1229,7 +1232,7 @@ Widget buildStatHourlyFormatChartSection(
   BuildContext context,
   StatHourlyBreakdown breakdown,
 ) {
-  final colorScheme = Theme.of(context).colorScheme;
+  final StatChartColors chartColors = statChartColorsOf(context);
   final List<StatHourlyFormatBand> active = breakdown.activeBands;
   return _buildStatHourlyChartSection(
     context,
@@ -1237,7 +1240,7 @@ Widget buildStatHourlyFormatChartSection(
       for (final StatHourlyFormatBand band in active)
         StatHourlyBand(
           values: breakdown.valuesOf(band),
-          color: statHourlyBandColor(band, colorScheme),
+          color: statHourlyBandColor(band, chartColors),
         ),
     ],
     legendBands: statHourlyLegendBands(active),
@@ -1245,16 +1248,103 @@ Widget buildStatHourlyFormatChartSection(
   );
 }
 
+/// 统计图表的系列配色：两套设计系统各取各的语义色，图表代码只问角色不问色值。
+///
+/// 为什么不直接读 [ColorScheme]：Apple 设计系统下 `primary` 与 `secondary` 都是
+/// 强调色（默认单色主题是黑 / 白）、`tertiary` 是 systemOrange——按 MD3 的
+/// primary / secondary / tertiary 分三类，PDF 与漫画两带会画成同一个颜色。
+/// Apple 这边按「健康 / 屏幕使用时间」的做法：主系列用强调色，其余类别用
+/// 系统色（orange / teal），升降与达标用 systemGreen / systemRed。
+@immutable
+class StatChartColors {
+  const StatChartColors({
+    required this.series,
+    required this.compare,
+    required this.third,
+    required this.neutral,
+    required this.up,
+    required this.down,
+    required this.reached,
+  });
+
+  /// MD3：colorScheme 色阶（primary / tertiary / secondary）。
+  factory StatChartColors.material(ColorScheme scheme) => StatChartColors(
+    series: scheme.primary,
+    compare: scheme.tertiary,
+    third: scheme.secondary,
+    neutral: scheme.outlineVariant,
+    up: scheme.primary,
+    down: scheme.error,
+    reached: scheme.tertiary,
+  );
+
+  /// Apple：强调色 + 系统色（HIG UIKit 动态色 light / dark 两档）。
+  factory StatChartColors.apple(FushiAppleColors apple, Brightness brightness) {
+    final bool dark = brightness == Brightness.dark;
+    return StatChartColors(
+      series: apple.accent,
+      compare: apple.warning,
+      // systemTeal：与 orange、强调色（单色 / 蓝紫系）都拉得开。
+      third: dark ? const Color(0xFF40C8E0) : const Color(0xFF30B0C7),
+      neutral: apple.opaqueSeparator,
+      up: apple.success,
+      down: apple.destructive,
+      reached: apple.success,
+    );
+  }
+
+  /// 主系列（柱 / 主线 / 第一类）。
+  final Color series;
+
+  /// 对比系列（均值线、第二类）。
+  final Color compare;
+
+  /// 第三类。
+  final Color third;
+
+  /// 不归任何一类的中性带（未区分历史）。
+  final Color neutral;
+
+  /// 环比上升。
+  final Color up;
+
+  /// 环比下降 / 异常点。
+  final Color down;
+
+  /// 目标已达成。
+  final Color reached;
+}
+
+/// 当前设计系统的统计图表配色。
+StatChartColors statChartColorsOf(BuildContext context) {
+  final ThemeData theme = Theme.of(context);
+  return isGlassDesign(context)
+      ? StatChartColors.apple(appleColorsOf(context), theme.brightness)
+      : StatChartColors.material(theme.colorScheme);
+}
+
+/// 热力图空格的（填充, 描边）。
+///
+/// MD3：overlay 面色 + outline 描边兜底（BUG-1276：自定义主题会把 surface 色阶
+/// 压得与卡底过近）。Apple：卡底恒是实色 secondarySystemGroupedBackground，空格用
+/// systemFill 就和卡底拉得开，不再描边——Apple 的格子图（「健身」月历、屏幕
+/// 使用时间）都是无边灰格。
+(Color, Color?) statHeatmapEmptyColors(BuildContext context) {
+  if (isGlassDesign(context)) return (appleColorsOf(context).fill, null);
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  return (tokens.surfaces.overlay, tokens.surfaces.outline);
+}
+
 /// 分带填充色。
 ///
-/// 未区分历史刻意用中性的 [ColorScheme.outlineVariant]，而不是第四个品类色：它不是
-/// 一种书，配一个和 EPUB / PDF / 漫画平级的彩色只会让人以为它也是某一类。
-Color statHourlyBandColor(StatHourlyFormatBand band, ColorScheme scheme) =>
+/// 未区分历史刻意用中性色，而不是第四个品类色：它不是一种书，配一个和
+/// EPUB / PDF / 漫画平级的彩色只会让人以为它也是某一类。
+Color statHourlyBandColor(StatHourlyFormatBand band, StatChartColors colors) =>
     switch (band) {
-      StatHourlyFormatBand.epub => scheme.tertiary,
-      StatHourlyFormatBand.pdf => scheme.primary,
-      StatHourlyFormatBand.manga => scheme.secondary,
-      StatHourlyFormatBand.unattributed => scheme.outlineVariant,
+      StatHourlyFormatBand.epub => colors.compare,
+      StatHourlyFormatBand.pdf => colors.series,
+      StatHourlyFormatBand.manga => colors.third,
+      StatHourlyFormatBand.unattributed => colors.neutral,
     };
 
 /// 分带图例文案。
@@ -1352,7 +1442,7 @@ class _StatHourlyLegendChip extends StatelessWidget {
           width: tokens.spacing.gap,
           height: tokens.spacing.gap,
           decoration: BoxDecoration(
-            color: statHourlyBandColor(band, colorScheme),
+            color: statHourlyBandColor(band, statChartColorsOf(context)),
             borderRadius: BorderRadius.all(tokens.radii.chipCorner),
           ),
         ),
@@ -1389,11 +1479,11 @@ Future<void> showStatDetailSurface(
           statSheetHeightCap(sheetContext, child: builder(sheetContext)),
     );
   }
-  return showDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (BuildContext dialogContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
-      return Dialog(
+      return FushiDialog(
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
           constraints: BoxConstraints(

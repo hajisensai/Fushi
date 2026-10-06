@@ -29,6 +29,7 @@ import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -206,13 +207,25 @@ class DesktopSystemBallActionTarget {
   /// 在覆盖窗里查 [text]；参数与 [GlobalLookupController.lookupText] 同义。
   Future<bool> lookupText(
     String text, {
+    String sentence = '',
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
   }) => GlobalLookupController.instance.lookupText(
     text,
+    sentence: sentence,
     anchorScreenRect: anchorScreenRect,
     physicalPlacement: physicalPlacement,
   );
+
+  /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
+  Future<void> dismissLookup() => GlobalLookupChannel.hide();
+
+  /// 系统 OCR 识别一张截图（macOS Vision / Windows.Media.Ocr）。
+  Future<SystemOcrPageResult> recognize(Uint8List png) =>
+      const MethodChannelSystemOcr().recognize(
+        png,
+        language: kFloatingBallOcrLanguage,
+      );
 
   Future<void> bringMainWindowToFront() =>
       DesktopLookupService.instance.bringMainWindowToFront();
@@ -227,6 +240,19 @@ Future<void>? debugLatestSystemBallSync;
 /// Future。测试 await 它确认写库真的完成，再断言 / 拆库。
 @visibleForTesting
 Future<void>? debugLatestClosedBallSettle;
+
+/// 桌面截屏识字此刻开着的冻结层（宿主只有一个，见 [_AppFloatingBallHostState]）。
+_DesktopScreenOcrSession? _activeDesktopScreenOcr;
+
+/// 集成测试用：此刻冻结层截的显示器（屏幕物理像素）与识别出的行（截图像素）；
+/// 没开冻结层或还在识别时为 null。真机测试据此算出点哪个字。
+@visibleForTesting
+({Rect screen, List<SystemOcrTextLine> lines})? get debugDesktopScreenOcrState {
+  final _DesktopScreenOcrSession? session = _activeDesktopScreenOcr;
+  final List<SystemOcrTextLine>? lines = session?.lines;
+  if (session == null || lines == null) return null;
+  return (screen: session.screen, lines: lines);
+}
 
 /// 桌面系统球动作的执行面（测试替换）。
 @visibleForTesting
@@ -262,6 +288,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
 
   /// 截屏期间把球藏起来，别把自己拍进去。
   bool _capturing = false;
+
+  /// 桌面截屏识字此刻开着的冻结层（null = 没开）。
+  _DesktopScreenOcrSession? get _desktopOcr => _activeDesktopScreenOcr;
+  set _desktopOcr(_DesktopScreenOcrSession? session) =>
+      _activeDesktopScreenOcr = session;
 
   bool _foreground = true;
 
@@ -327,6 +358,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
           onSystemBallAction: _onDesktopSystemBallAction,
           onSystemBallPositionChanged: _onDesktopSystemBallMoved,
+          onScreenOcrTap: _onDesktopScreenOcrTap,
+          onScreenOcrDismissed: _onDesktopScreenOcrDismissed,
           onSensorHousingEdgeChanged: _onSensorHousingEdge,
         ),
       );
@@ -623,6 +656,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           await target.bringMainWindowToFront();
           FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
         }
+      case 'screen_ocr':
+        await _desktopScreenOcr(anchor);
       case 'sync':
         // 同步的结果、冲突裁决与重新登录提示都在主窗里给：先把主窗唤到前台。
         await target.bringMainWindowToFront();
@@ -630,6 +665,112 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       case 'open_app':
         await target.bringMainWindowToFront();
     }
+  }
+
+  /// 桌面应用外球的截屏识字：原生截球所在的显示器并盖上冻结层 → 系统 OCR →
+  /// 原生画行框 → 点字（[_onDesktopScreenOcrTap]）用全局查词卡查。按钮只在查词
+  /// 模块开着时下发（结果要用覆盖窗，见 [FloatingBallGlobalAction.availableIn]）。
+  Future<void> _desktopScreenOcr(Rect? anchor) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    if (!target.overlayLookupAvailable) {
+      ErrorLogService.instance.log(
+        'floating_ball.screen_ocr',
+        StateError('global lookup overlay is not started'),
+        StackTrace.current,
+      );
+      return;
+    }
+    // 上一次的冻结层还开着（原生没关就又点了球）：作废它。
+    _desktopOcr = null;
+    // 冻结层的行框与提示条跟球同一套主题色（球还没起过时取当前主题）。
+    final Map<String, int> colors = _systemBallColors.isEmpty
+        ? floatingBallNativeColors(Theme.of(context).colorScheme)
+        : _systemBallColors;
+    // 开着的查词卡会被截进图里，而且它挡着的字点不到。
+    await target.dismissLookup();
+    final DesktopScreenOcrCapture capture =
+        await FloatingBallChannel.startScreenOcrCapture(
+          anchor: anchor,
+          labels: <String, String>{
+            'recognizing': t.floating_ball_ocr_recognizing,
+            'hint': t.floating_ball_ocr_pick_hint,
+            'close': t.floating_ball_ocr_close,
+          },
+          colors: colors,
+        );
+    final Uint8List? png = capture.png;
+    final Rect? screen = capture.screen;
+    if (png == null || screen == null) {
+      // 没截到图就没有冻结层可写字：提示只能在主窗里给。
+      await target.bringMainWindowToFront();
+      _toast(
+        capture.error == DesktopScreenOcrCapture.permissionDenied
+            ? t.floating_ball_ocr_screen_permission
+            : t.floating_ball_ocr_failed,
+      );
+      return;
+    }
+    final _DesktopScreenOcrSession session = _DesktopScreenOcrSession(screen);
+    _desktopOcr = session;
+    String? message;
+    List<SystemOcrTextLine> lines = const <SystemOcrTextLine>[];
+    try {
+      final SystemOcrPageResult result = await target.recognize(png);
+      lines = result.lines;
+      if (result.isEmpty) message = t.floating_ball_ocr_empty;
+    } on SystemOcrUnavailableException catch (error) {
+      message = error.reason == kSystemOcrLanguageUnavailableReason
+          ? t.floating_ball_ocr_language_missing
+          : t.floating_ball_ocr_failed;
+    } catch (error, stack) {
+      ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
+      message = t.floating_ball_ocr_failed;
+    }
+    // 识别途中用户已经关掉冻结层（或又点了一次）：结果作废。
+    if (!identical(_desktopOcr, session)) return;
+    session.lines = lines;
+    await FloatingBallChannel.updateScreenOcrOverlay(
+      lines: <Rect>[for (final SystemOcrTextLine line in lines) line.rect],
+      message: message,
+    );
+  }
+
+  /// 冻结层上点了一下（截图像素）：点在字上 → 查从这个字起的后缀，卡锚在这个字
+  /// 旁边（物理像素通道）；点在字外 / 识别失败后点任意处 → 退出。识别还没回来时
+  /// 的点击不理。
+  void _onDesktopScreenOcrTap(Offset point) {
+    final _DesktopScreenOcrSession? session = _desktopOcr;
+    final List<SystemOcrTextLine>? lines = session?.lines;
+    if (session == null || lines == null) return;
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrHit? hit = screenOcrHitTest(
+      lines: lines,
+      point: point,
+      scale: 1,
+    );
+    if (hit == null) {
+      _desktopOcr = null;
+      unawaited(FloatingBallChannel.stopScreenOcr());
+      unawaited(target.dismissLookup());
+      return;
+    }
+    final String text = hit.line.text;
+    unawaited(
+      target.lookupText(
+        text.substring(hit.charIndex),
+        sentence: text,
+        physicalPlacement: GlobalLookupPhysicalPlacement(
+          anchorScreenRect: hit.charRect.shift(session.screen.topLeft),
+        ),
+      ),
+    );
+  }
+
+  /// 冻结层被 Esc / 右键 / 关闭钮关掉（原生已关层、已恢复球）。
+  void _onDesktopScreenOcrDismissed() {
+    if (_desktopOcr == null) return;
+    _desktopOcr = null;
+    unawaited(desktopSystemBallActionTarget.dismissLookup());
   }
 
   /// 桌面系统球拖动吸附后：落库（位置由 Dart 持久化，下次起球带回去）。
@@ -723,13 +864,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (ctx == null) return;
     ScaffoldMessenger.maybeOf(
       ctx,
-    )?.showSnackBar(SnackBar(content: Text(message)));
+    )?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _manualLookup() async {
     final BuildContext? ctx = _navigatorContext;
     if (ctx == null) return;
-    final String? word = await showDialog<String>(
+    final String? word = await showAppDialog<String>(
       context: ctx,
       builder: (BuildContext context) => const _ManualLookupDialog(),
     );
@@ -1053,9 +1194,9 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
   @override
   Widget build(BuildContext context) {
     final MaterialLocalizations l10n = MaterialLocalizations.of(context);
-    return AlertDialog(
+    return FushiAlertDialog(
       title: Text(t.floating_ball_action_lookup),
-      content: TextField(
+      content: FushiTextFieldControl(
         key: const ValueKey<String>('floating_ball_lookup_field'),
         controller: _controller,
         autofocus: true,
@@ -1064,12 +1205,22 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
         onSubmitted: (_) => _submit(),
       ),
       actions: <Widget>[
-        TextButton(
+        FushiTextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: Text(l10n.cancelButtonLabel),
         ),
-        FilledButton(onPressed: _submit, child: Text(l10n.searchFieldLabel)),
+        FushiFilledButton(onPressed: _submit, child: Text(l10n.searchFieldLabel)),
       ],
     );
   }
+}
+
+/// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。
+class _DesktopScreenOcrSession {
+  _DesktopScreenOcrSession(this.screen);
+
+  /// 那块显示器的屏幕矩形（物理像素、左上原点）；截图像素 + 它的左上 = 屏幕坐标。
+  final Rect screen;
+
+  List<SystemOcrTextLine>? lines;
 }

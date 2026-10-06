@@ -312,6 +312,16 @@ class MaterialVideoControlsThemeData {
   /// [Alignment] of seek bar inside the seek bar container.
   final Alignment seekBarAlignment;
 
+  /// Hibiki patch (glass design system): corner radius of the seek bar track
+  /// (and its buffer / position fills). `0` (default) keeps the upstream
+  /// square-ended track pixel-for-pixel.
+  final double seekBarRadius;
+
+  /// Hibiki patch (glass design system): track height while the seek bar is
+  /// pressed / dragged (iOS 26 thickens the scrubber under the finger). `null`
+  /// (default) keeps the upstream constant [seekBarHeight].
+  final double? seekBarActiveHeight;
+
   // SUBTITLE
 
   /// Whether to shift the subtitles upwards when the controls are visible.
@@ -373,6 +383,11 @@ class MaterialVideoControlsThemeData {
   /// early. Null (upstream default) = no callback, behaviour identical to
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Future<void> seek)? onSeekDispatched;
+
+  /// Hibiki patch (M3 Expressive chrome): host-painted seek-bar track. Null
+  /// (upstream default) = upstream track. Gestures stay in the fork. See
+  /// PATCHES.md.
+  final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
 
   /// Hibiki patch (BUG-2731 follow-up): the base position that **relative**
   /// seeks (horizontal swipe, double-tap ±N s) are measured from. On a remote
@@ -449,6 +464,8 @@ class MaterialVideoControlsThemeData {
     this.seekBarThumbSize = 12.8,
     this.seekBarThumbColor = const Color(0xFFFF0000),
     this.seekBarAlignment = Alignment.bottomCenter,
+    this.seekBarRadius = 0.0,
+    this.seekBarActiveHeight,
     this.shiftSubtitlesOnControlsVisibilityChange = false,
     this.visibilityNotifier,
     this.restartHideTimerSignal,
@@ -456,6 +473,7 @@ class MaterialVideoControlsThemeData {
     this.onSeekEnd,
     this.onSeekDispatched,
     this.relativeSeekBasePosition,
+    this.seekBarTrackBuilder,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -509,6 +527,8 @@ class MaterialVideoControlsThemeData {
     double? seekBarThumbSize,
     Color? seekBarThumbColor,
     Alignment? seekBarAlignment,
+    double? seekBarRadius,
+    double? seekBarActiveHeight,
     bool? shiftSubtitlesOnControlsVisibilityChange,
     ValueNotifier<bool>? visibilityNotifier,
     Listenable? restartHideTimerSignal,
@@ -516,6 +536,7 @@ class MaterialVideoControlsThemeData {
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
     Duration Function()? relativeSeekBasePosition,
+    VideoSeekBarTrackBuilder? seekBarTrackBuilder,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -589,6 +610,8 @@ class MaterialVideoControlsThemeData {
       seekBarThumbSize: seekBarThumbSize ?? this.seekBarThumbSize,
       seekBarThumbColor: seekBarThumbColor ?? this.seekBarThumbColor,
       seekBarAlignment: seekBarAlignment ?? this.seekBarAlignment,
+      seekBarRadius: seekBarRadius ?? this.seekBarRadius,
+      seekBarActiveHeight: seekBarActiveHeight ?? this.seekBarActiveHeight,
       shiftSubtitlesOnControlsVisibilityChange:
           shiftSubtitlesOnControlsVisibilityChange ??
               this.shiftSubtitlesOnControlsVisibilityChange,
@@ -600,6 +623,7 @@ class MaterialVideoControlsThemeData {
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       relativeSeekBasePosition:
           relativeSeekBasePosition ?? this.relativeSeekBasePosition,
+      seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
     );
   }
 }
@@ -2031,15 +2055,53 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
                 width: constraints.maxWidth,
                 alignment: _theme(context).seekBarAlignment,
                 height: _theme(context).seekBarContainerHeight,
-                child: Stack(
+                // Hibiki patch (M3 Expressive chrome): host-painted track.
+                child: _theme(context).seekBarTrackBuilder != null
+                    ? SizedBox(
+                        width: constraints.maxWidth,
+                        height: _theme(context).seekBarContainerHeight,
+                        child: _theme(context).seekBarTrackBuilder!(
+                          context,
+                          VideoSeekBarVisual(
+                            position: tapped ? slider : positionPercent,
+                            buffer: bufferPercent,
+                            hover: tapped ? slider : null,
+                            hovering: false,
+                            dragging: tapped,
+                            playing: playing,
+                            duration: duration,
+                            alignment: _theme(context).seekBarAlignment,
+                          ),
+                        ),
+                      )
+                    : Stack(
                   clipBehavior: Clip.none,
                   alignment: Alignment.bottomCenter,
                   children: [
                     Container(
                       width: constraints.maxWidth,
-                      height: _theme(context).seekBarHeight,
+                      // Hibiki patch (glass design system): optional thicker
+                      // track while pressed + rounded track; defaults keep the
+                      // upstream constant-height square track.
+                      height: tapped &&
+                              _theme(context).seekBarActiveHeight != null
+                          ? _theme(context).seekBarActiveHeight
+                          : _theme(context).seekBarHeight,
                       alignment: Alignment.bottomLeft,
-                      color: _theme(context).seekBarColor,
+                      color: _theme(context).seekBarRadius > 0
+                          ? null
+                          : _theme(context).seekBarColor,
+                      decoration: _theme(context).seekBarRadius > 0
+                          ? BoxDecoration(
+                              color: _theme(context).seekBarColor,
+                              borderRadius: BorderRadius.circular(
+                                _theme(context).seekBarRadius,
+                              ),
+                            )
+                          : null,
+                      clipBehavior: _theme(context).seekBarRadius > 0
+                          ? Clip.antiAlias
+                          : Clip.none,
                       child: Stack(
                         clipBehavior: Clip.none,
                         alignment: Alignment.bottomLeft,

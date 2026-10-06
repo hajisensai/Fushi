@@ -113,36 +113,54 @@ class _InputIconChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color fg = theme.colorScheme.onSurface;
+    // Apple：与 FushiTagChip 的纯展示标签同一枚 systemFill 灰胶囊（高约 22、
+    // 12 号 w500 secondaryLabel 字），和旁边的文字 chip 并排时形状一致。
+    final bool glass = isGlassDesign(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Color fg = glass ? apple.secondaryLabel : theme.colorScheme.onSurface;
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.gap * 0.75,
-        vertical: tokens.spacing.gap * 0.375,
-      ),
+      constraints: glass ? const BoxConstraints(minHeight: 22) : null,
+      padding: glass
+          ? const EdgeInsets.symmetric(horizontal: 8, vertical: 3)
+          : EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap * 0.75,
+              vertical: tokens.spacing.gap * 0.375,
+            ),
+      // Apple：纯展示的绑定标签不铺 systemFill 灰底，只留发丝分隔线描边
+      // （与 FushiTagChip 纯展示形态一致）。
       decoration: BoxDecoration(
-        color: tokens.surfaces.overlay,
-        borderRadius: tokens.radii.chipRadius,
+        color: glass ? null : tokens.surfaces.overlay,
+        border: glass ? Border.all(color: apple.separator, width: 0.8) : null,
+        borderRadius: glass
+            ? const BorderRadius.all(Radius.circular(999))
+            : tokens.radii.chipRadius,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(icon, size: 14, color: fg),
-          SizedBox(width: tokens.spacing.gap * 0.375),
+          FushiIcon(icon, size: glass ? 12 : 14, color: fg),
+          SizedBox(width: glass ? 4 : tokens.spacing.gap * 0.375),
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: tokens.type.metadata.copyWith(
-              color: fg,
-              fontWeight: FontWeight.w600,
-            ),
+            style: glass
+                ? (theme.textTheme.labelMedium ?? const TextStyle()).copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: fg,
+                  )
+                : tokens.type.metadata.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w600,
+                  ),
           ),
           if (onDeleted != null) ...<Widget>[
             SizedBox(width: tokens.spacing.gap * 0.375),
             InkWell(
               onTap: onDeleted,
               customBorder: const CircleBorder(),
-              child: Icon(Icons.close, size: 14, color: fg),
+              child: FushiIcon(Icons.close, size: 14, color: fg),
             ),
           ],
         ],

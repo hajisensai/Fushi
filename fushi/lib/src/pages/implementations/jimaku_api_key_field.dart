@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/utils.dart';
 
 /// Jimaku API key 输入框——三个 Jimaku 界面（视频字幕对话框 / 番剧下载对话框 /
@@ -30,7 +31,7 @@ class JimakuApiKeyField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    return FushiTextFieldControl(
       controller: controller,
       onChanged: onChanged,
       obscureText: true,
@@ -40,7 +41,7 @@ class JimakuApiKeyField extends StatelessWidget {
             '${t.video_jimaku_api_key_settings_hint}',
         helperMaxLines: 3,
         isDense: dense,
-        prefixIcon: showKeyIcon ? const Icon(Icons.vpn_key, size: 18) : null,
+        prefixIcon: showKeyIcon ? const FushiIcon(Icons.vpn_key, size: 18) : null,
       ),
     );
   }

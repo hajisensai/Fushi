@@ -55,6 +55,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/extension/status',
   '/api/lookup/dictionary',
   '/api/lookup/audio',
+  '/api/lookup/audio/list',
   '/api/mine',
   '/api/duplicate',
   '/api/anki/open',
@@ -385,6 +386,8 @@ class YomitanApiServer {
         return _handleDictionaryLookup(request);
       case '/api/lookup/audio':
         return _lookupRoutes.handleAudioLookup(request);
+      case '/api/lookup/audio/list':
+        return _lookupRoutes.handleAudioList(request);
       case '/api/mine':
         return _lookupRoutes.handleMine(request);
       case '/api/mine/forward':

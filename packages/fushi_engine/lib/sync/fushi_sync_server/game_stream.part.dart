@@ -8,10 +8,11 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
   ) async {
     final FushiRemoteGameStreamService? service = _gameStreamService;
     if (service == null) {
-      // 不是「旧 host 没这个端点」，是这台 host 明确不提供（无头服务端没有桌面
-      // 与游戏窗口）。回 501 + 机器可读的原因，与 capabilities 的 `gameStream: false`
-      // 同一个真相；client 对任何非 2xx 都按「不可用」处理，旧 client 行为不变。
-      return gameStreamUnsupportedResponse();
+      return gameStreamErrorResponse(
+        404,
+        'Game stream off',
+        code: GameStreamRejection.streamOff,
+      );
     }
     // HTTPS is not optional here. WebRTC's DTLS-SRTP confidentiality rests
     // entirely on the integrity of the signalling channel: over plaintext HTTP
@@ -23,17 +24,21 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
     // LAN hosts default to plaintext (`applyFirstHostingTlsDefault` only opts in
     // brand-new devices), so this gate is what those users actually hit.
     if (_securityContext == null) {
-      return shelf.Response.forbidden('HTTPS required for game stream');
+      return gameStreamErrorResponse(
+        403,
+        'HTTPS required for game stream',
+        code: GameStreamRejection.httpsRequired,
+      );
     }
     final String authorization = request.headers['authorization'] ?? '';
     // Control access requires a currently paired device credential; legacy
     // shared WebDAV passwords do not identify the sole authorised controller.
-    if (!await _validatePeerAuth(authorization)) return shelf.Response(403);
+    if (!await _validatePeerAuth(authorization)) return _gameStreamUnpaired();
     // `_validatePeerAuth` only succeeds once it has decoded a password, but that
     // is a cross-file invariant; decode explicitly rather than assert non-null.
     // NOTE: this digest is a deterministic hash of a live credential -- never log it.
     final String? peerPassword = _basicPassword(authorization);
-    if (peerPassword == null) return shelf.Response(403);
+    if (peerPassword == null) return _gameStreamUnpaired();
     final String peerIdentity = sha256
         .convert(utf8.encode(peerPassword))
         .toString();
@@ -55,6 +60,12 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
       peerIdentity: peerIdentity,
     );
   }
+
+  shelf.Response _gameStreamUnpaired() => gameStreamErrorResponse(
+    403,
+    'Unknown game-stream peer',
+    code: GameStreamRejection.unauthorizedPeer,
+  );
 
   /// The receiver's popup resolves word audio on the phone: a pinned host
   /// token materialized into a phone-local file, a host token URL, or an
@@ -119,18 +130,3 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
     return request.change(body: jsonEncode(body));
   }
 }
-
-/// 这台 host 不提供游戏串流时 `/api/game-stream/*` 的统一响应：501 + JSON
-/// `{error: 'unsupported', feature: 'gameStream'}`（区别于「旧 host 没有该端点」的 404）。
-shelf.Response gameStreamUnsupportedResponse() => shelf.Response(
-      501,
-      body: jsonEncode(<String, String>{
-        'error': 'unsupported',
-        'feature': 'gameStream',
-        'message': 'This host does not provide game streaming '
-            '(it needs the Windows desktop app running the game).',
-      }),
-      headers: const <String, String>{
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-    );

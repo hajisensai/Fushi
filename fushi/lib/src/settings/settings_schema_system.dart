@@ -371,7 +371,7 @@ SettingsDestination buildSystemDestination() {
                 final BuildContext ctx = settingsContext.context;
                 if (!ctx.mounted) return;
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  SnackBar(content: Text(t.network_proxy_invalid)),
+                  FushiSnackBar(content: Text(t.network_proxy_invalid)),
                 );
               }
             },

@@ -70,6 +70,13 @@ void main() {
     );
   }
 
+  /// 推过滑动关闭的 200ms 位移动画（或回弹）。不用 pumpAndSettle：result==null
+  /// 的 body 是延迟加载层（加载指示器常驻动画），永远等不到静止。
+  Future<void> pumpPastSwipeAnimation(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+  }
+
   Future<void> dragHorizontally(
     WidgetTester tester,
     Offset start, {
@@ -83,7 +90,7 @@ void main() {
       await tester.pump();
     }
     await gesture.up();
-    await tester.pumpAndSettle();
+    await pumpPastSwipeAnimation(tester);
   }
 
   Future<void> panZoomHorizontally(WidgetTester tester, Offset start) async {
@@ -99,7 +106,7 @@ void main() {
       await tester.pump();
     }
     tester.binding.handlePointerEvent(pointer.panZoomEnd());
-    await tester.pumpAndSettle();
+    await pumpPastSwipeAnimation(tester);
   }
 
   final TargetPlatformVariant windows = TargetPlatformVariant.only(

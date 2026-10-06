@@ -5,7 +5,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/video/download/downloaded_collection_order.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
@@ -293,25 +293,24 @@ class VideoBookRepository {
   Future<void> reorderDownloadedCollectionEpisodes(int collectionId) async {
     final List<MediaCollectionItemRow> items =
         await _db.getCollectionItems(collectionId);
-    final List<VideoBookRow> members = <VideoBookRow>[];
+    if (items.length < 2) return;
+    final Map<String, String> videoPathByUid = <String, String>{};
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
       final VideoBookRow? book = await _db.getVideoBookByBookUid(item.entryKey);
-      if (book != null) members.add(book);
+      if (book != null) videoPathByUid[book.bookUid] = book.videoPath;
     }
-    if (members.length < 2) return;
-    final CollectionSeasonRegroup<VideoBookRow> regroup =
-        regroupMembersBySeason<VideoBookRow>(
-      members: members,
-      filenameOf: (VideoBookRow row) => row.videoPath,
-      titleOf: (VideoBookRow row) => row.title,
-    );
+    // 与合集同步对 episodeOrdered 条目的合并同一个函数（BUG-2941）：两处口径
+    // 不同，同步就会每轮判「本地与合并结果不一致」来回改写。
     await _db.reorderCollectionItemsAutomatically(
       collectionId,
-      <CollectionMemberKey>[
-        for (final VideoBookRow row in regroup.ordered)
-          (mediaType: MediaKind.video.dbValue, entryKey: row.bookUid),
-      ],
+      orderDownloadedCollectionMembers(
+        <CollectionMemberKey>[
+          for (final MediaCollectionItemRow item in items)
+            (mediaType: item.mediaType, entryKey: item.entryKey),
+        ],
+        videoPathByUid: videoPathByUid,
+      ),
     );
   }
 

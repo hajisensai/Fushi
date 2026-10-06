@@ -150,31 +150,14 @@ class SeriesShelfCard extends StatelessWidget {
     return card;
   }
 
+  /// 封面右上角的成员数角标：走共享 [CoverBadge]（2026-10-04 角标统一——
+  /// MD3 inverseSurface@0.85 / Apple 磨砂黑，圆角 6），不再是 secondaryContainer
+  /// 彩色小块。
   Widget _countBadge(ThemeData theme, FushiDesignTokens tokens) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.secondaryContainer,
-        borderRadius: tokens.radii.chipRadius,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(
-            Icons.collections_bookmark_outlined,
-            size: 13,
-            color: theme.colorScheme.onSecondaryContainer,
-          ),
-          const SizedBox(width: 3),
-          Text(
-            t.series_item_count(n: itemCount),
-            style: tokens.type.metadata.copyWith(
-              color: theme.colorScheme.onSecondaryContainer,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
+    return CoverBadge(
+      icon: Icons.collections_bookmark_outlined,
+      iconSize: 13,
+      label: t.series_item_count(n: itemCount),
     );
   }
 }
@@ -209,39 +192,49 @@ class SeriesFolderCover extends StatelessWidget {
     final double gap = tokens.spacing.gap / 2;
     final double pad = tokens.spacing.gap / 2;
     // 文件夹底：微着色圆角容器 + 内边距，内嵌 2x2 成员封面网格。
+    // Apple：文件夹底是叠在卡面上的系统灰 secondaryFill（iOS 桌面文件夹
+    // 观感），不用 MD3 色阶里最重的 surfaceContainerHighest。
+    final bool glass = isGlassDesign(context);
+    // 空槽：成员不足 4 本时补齐网格的占位底（更浅一档，视觉平衡）；Apple 下
+    // 是再浅一档的 tertiaryFill（与文件夹底同属系统灰阶）。
+    final Color emptyFill = glass
+        ? appleColorsOf(context).tertiaryFill
+        : theme.colorScheme.surfaceContainer;
     return DecoratedBox(
-      decoration:
-          BoxDecoration(color: theme.colorScheme.surfaceContainerHighest),
+      decoration: BoxDecoration(
+        color: glass
+            ? appleColorsOf(context).secondaryFill
+            : theme.colorScheme.surfaceContainerHighest,
+      ),
       child: Padding(
         padding: EdgeInsets.all(pad),
         child: Column(
           children: <Widget>[
-            Expanded(child: _mosaicRow(theme, gap, 0, 1)),
+            Expanded(child: _mosaicRow(emptyFill, gap, 0, 1)),
             SizedBox(height: gap),
-            Expanded(child: _mosaicRow(theme, gap, 2, 3)),
+            Expanded(child: _mosaicRow(emptyFill, gap, 2, 3)),
           ],
         ),
       ),
     );
   }
 
-  Widget _mosaicRow(ThemeData theme, double gap, int a, int b) {
+  Widget _mosaicRow(Color emptyFill, double gap, int a, int b) {
     return Row(
       children: <Widget>[
-        Expanded(child: _mosaicCell(theme, a)),
+        Expanded(child: _mosaicCell(emptyFill, a)),
         SizedBox(width: gap),
-        Expanded(child: _mosaicCell(theme, b)),
+        Expanded(child: _mosaicCell(emptyFill, b)),
       ],
     );
   }
 
-  Widget _mosaicCell(ThemeData theme, int i) {
+  Widget _mosaicCell(Color emptyFill, int i) {
     final BorderRadius radius = BorderRadius.circular(cellRadius);
     if (i >= covers.length) {
-      // 空槽：成员不足 4 本时补齐网格的占位底（更浅一档，视觉平衡）。
       return DecoratedBox(
         decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainer,
+          color: emptyFill,
           borderRadius: radius,
         ),
       );

@@ -218,6 +218,12 @@ add_fushi_test(mdx_streaming_blocks_test mdx_streaming_blocks_test.cpp
 # fushidicts_src/.
 add_fushi_test(import_breadcrumb_test import_breadcrumb_test.cpp
     "${FUSHI_SRC}")
+# BUG-2952: the importer must end with an ImportResult, never a dead process
+# (map_rw block reservation vs SIGBUS on a full disk, exception boundary,
+# per-entry kanji tolerance). Includes hash/ and memory/ rooted at fushidicts_src/.
+add_fushi_test(import_failure_boundary_test import_failure_boundary_test.cpp
+    "${FUSHI_SRC}"
+    "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
 # Source-scan guard: walk fushidicts_src/ and require a null check after every
 # libdeflate_alloc_decompressor(). The source root is passed on argv so the
 # test does not depend on the runtime cwd.

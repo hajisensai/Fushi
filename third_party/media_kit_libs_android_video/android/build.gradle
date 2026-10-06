@@ -88,14 +88,24 @@ task downloadDependencies(type: Exec) {
         // sources (shouldForceSoftwareDecodeForDolbyVision). Same patch, same
         // result as the darwin build that was checked on a real Mac.
         //
+        // BUG-2939 (#1953): the full flavor disables every muxer, so mpv's
+        // `dump-cache` (online-video mining copies the buffered sentence out of
+        // the player instead of fetching it again) always failed with "Output
+        // format not found". These jars add `--enable-muxer=matroska` on top of
+        // the dovi patch (hajisensai/libmpv-android-video-build @
+        // hibiki/mkv-muxer); ff_matroska_muxer is present in all four .so and
+        // nothing else changed (same 354 demuxers, n6.1.6, truehd, DV patch).
+        // fushi/test/build/libmpv_mkv_muxer_guard_test.dart pins the `mkvmux`
+        // name.
+        //
         // Verified from the built artifacts: all four libmpv.so report
         // "FFmpeg version n6.1.6" and contain the truehd/mlp decoders.
         // MD5s recomputed from the uploaded jars.
         def filesToDownload = [
-            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-arm64-v8a-ffmpeg6.1.6-dovi.jar", "md5": "787350dfa246d201a5687e7ac5294004", "destination": file("$buildDir/ffmpeg6.1.6-dovi/full-arm64-v8a.jar")],
-            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-armeabi-v7a-ffmpeg6.1.6-dovi.jar", "md5": "8bbd4ad5d8a2ed97fcfce33e21f0f26b", "destination": file("$buildDir/ffmpeg6.1.6-dovi/full-armeabi-v7a.jar")],
-            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-x86_64-ffmpeg6.1.6-dovi.jar", "md5": "8bece1e49b609c30da330f8f3deed3e0", "destination": file("$buildDir/ffmpeg6.1.6-dovi/full-x86_64.jar")],
-            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-x86-ffmpeg6.1.6-dovi.jar", "md5": "289c82b7438ec75f8808d2c1443c9ffe", "destination": file("$buildDir/ffmpeg6.1.6-dovi/full-x86.jar")]
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-arm64-v8a-ffmpeg6.1.6-mkvmux-dovi.jar", "md5": "1503ce1fd1cf25a5b7c680b70bef8be1", "destination": file("$buildDir/ffmpeg6.1.6-mkvmux-dovi/full-arm64-v8a.jar")],
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-armeabi-v7a-ffmpeg6.1.6-mkvmux-dovi.jar", "md5": "6fc0fc7df1af5fdcc6fe170772dd1201", "destination": file("$buildDir/ffmpeg6.1.6-mkvmux-dovi/full-armeabi-v7a.jar")],
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-x86_64-ffmpeg6.1.6-mkvmux-dovi.jar", "md5": "2bde9b47c37f1f01ace6a00285a15fe0", "destination": file("$buildDir/ffmpeg6.1.6-mkvmux-dovi/full-x86_64.jar")],
+            ["url": "https://github.com/hajisensai/hibiki/releases/download/vendor-libmpv/libmpv-android-full-x86-ffmpeg6.1.6-mkvmux-dovi.jar", "md5": "cc6fcd58e078cf0100ff5ad3d40d7dd8", "destination": file("$buildDir/ffmpeg6.1.6-mkvmux-dovi/full-x86.jar")]
         ]
 
         filesToDownload.each { fileInfo ->

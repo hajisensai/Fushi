@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/utils.dart';
@@ -69,9 +70,9 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
         padding: EdgeInsets.zero,
         margin: EdgeInsets.zero,
         child: FushiListItem(
-          leading: Badge(
+          leading: FushiBadgeControl(
             label: Text('$total'),
-            child: Icon(
+            child: FushiIcon(
               Icons.notifications_active_outlined,
               color: theme.colorScheme.primary,
             ),
@@ -79,7 +80,7 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
           title: Text(t.updates_center_title),
           subtitle: Text(_summary()),
           subtitleMaxLines: 1,
-          trailing: const Icon(Icons.chevron_right),
+          trailing: const FushiIcon(Icons.chevron_right),
           onTap: _openCenter,
           padding: EdgeInsets.all(tokens.spacing.gap),
         ),

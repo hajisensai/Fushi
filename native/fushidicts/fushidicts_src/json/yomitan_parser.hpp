@@ -87,5 +87,10 @@ bool parse_tag_bank(std::string_view content, std::vector<Tag>& out);
 bool parse_frequency(std::string_view content, ParsedFrequency& out);
 bool parse_pitch(std::string_view content, ParsedPitch& out);
 bool parse_ipa(std::string_view content, ParsedPitch& out);
-bool parse_kanji_bank(std::string_view content, std::vector<Kanji>& out);
+// Entries are parsed one by one (BUG-2952): a single malformed record -- a
+// number where a string belongs, a non-array meanings list -- used to fail the
+// whole bank and silently drop every other kanji in it. Malformed entries are
+// skipped and counted in [skipped]; false only when the bank itself is not a
+// JSON array.
+bool parse_kanji_bank(std::string_view content, std::vector<Kanji>& out, size_t* skipped = nullptr);
 };

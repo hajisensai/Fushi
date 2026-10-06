@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// TODO-2490：库页卡片标题「显示不全」——两行省略号之外必须有看全名的途径。
 ///
@@ -42,7 +43,7 @@ void main() {
           ),
         ),
       );
-      final Tooltip tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final Tooltip tooltip = tester.widget<Tooltip>(glassUnwrap<Tooltip>(find.byType(Tooltip)));
       expect(tooltip.message, longTitle, reason: '悬停气泡必须给出完整标题，不是截断后的那份');
       expect(tooltip.triggerMode, TooltipTriggerMode.manual,
           reason: '不得注册点按/长按识别器与卡片手势抢竞技场');
@@ -88,7 +89,7 @@ void main() {
 
       expect(find.text(longTitle), findsNWidgets(2),
           reason: '悬停后 overlay 必须多出一份完整标题的气泡，否则桌面「看全名」是死的');
-      final Tooltip tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final Tooltip tooltip = tester.widget<Tooltip>(glassUnwrap<Tooltip>(find.byType(Tooltip)));
       expect(tooltip.message, longTitle);
 
       await gesture.moveTo(Offset.zero);
@@ -129,7 +130,7 @@ void main() {
           ),
         ),
       );
-      final Tooltip tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final Tooltip tooltip = tester.widget<Tooltip>(glassUnwrap<Tooltip>(find.byType(Tooltip)));
       expect(tooltip.message, longTitle);
     });
 
@@ -146,7 +147,7 @@ void main() {
           ),
         ),
       );
-      final Tooltip tooltip = tester.widget<Tooltip>(find.byType(Tooltip));
+      final Tooltip tooltip = tester.widget<Tooltip>(glassUnwrap<Tooltip>(find.byType(Tooltip)));
       expect(tooltip.message, longTitle);
       // triggerMode=manual 不注册长按识别器：标题区长按仍走卡片长按菜单。
       await tester.longPress(find.byType(Tooltip), warnIfMissed: false);

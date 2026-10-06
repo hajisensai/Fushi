@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/settings/settings_schema_widgets.dart'
+    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -176,7 +178,7 @@ class _TorrentSettingsSectionState
     }
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   Future<void> _refreshTrackers() async {
@@ -228,7 +230,7 @@ class _TorrentSettingsSectionState
       if (issue != null) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(_saveRootIssueMessage(issue))));
+        ).showSnackBar(FushiSnackBar(content: Text(_saveRootIssueMessage(issue))));
       }
     } finally {
       if (mounted) setState(() => _pickingFolder = false);
@@ -252,52 +254,54 @@ class _TorrentSettingsSectionState
     }
   }
 
-  /// 下载目录行（当前路径 + 更改 / 恢复默认）＋ 启动回退警告。
+  /// 下载目录分组（当前路径 + 更改 / 恢复默认 + 启动回退警告）。
   /// 只在内置引擎分支渲染：外接 qb 的落盘目录由 qb 自己管，改不到。
-  List<Widget> _downloadFolderRows(ThemeData theme, AppModel appModel) {
+  ///
+  /// 路径条目按系统设置的写法：标题 + 副标题显示当前路径 + 行尾「更改」按钮，
+  /// 整行也可点；「恢复默认」只在确实改过时作为单独一行出现（灰着的按钮在设置
+  /// 分组里只是噪音）。
+  Widget _downloadFolderGroup(AppModel appModel) {
     final DownloadSaveRootIssue? issue = appModel.downloadSaveRootIssue;
-    return <Widget>[
-      AdaptiveSettingsRow(
-        title: t.download_save_root_title,
-        subtitle: '${appModel.downloadSaveRoot}\n${t.download_save_root_hint}',
-        icon: Icons.folder_open_outlined,
-        showIcon: true,
-        controlBelow: true,
-        // 嵌入设置详情时外层已经统一缩进 16，这里不能再叠一层（否则本行 32、
-        // 同卡片其它内容 16）。
-        horizontalPadding: 0,
-        onTap: _pickingFolder ? null : _changeDownloadFolder,
-        trailing: Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: <Widget>[
-            FilledButton.tonal(
+    return _group(
+      key: 'downloads.group.save_root',
+      footer: t.download_save_root_hint,
+      rows: <Widget>[
+        SettingsSearchTarget(
+          key: const ValueKey<String>('downloads.save_root'),
+          id: 'downloads.save_root',
+          child: AdaptiveSettingsRow(
+            title: t.download_save_root_title,
+            subtitle: appModel.downloadSaveRoot,
+            onTap: _changeDownloadFolder,
+            trailing: FushiFilledButton.tonal(
               onPressed: _pickingFolder ? null : _changeDownloadFolder,
               child: Text(t.download_save_root_change),
             ),
-            TextButton(
-              onPressed: _pickingFolder || appModel.downloadSaveRootIsDefault
-                  ? null
-                  : _resetDownloadFolder,
-              child: Text(t.download_save_root_reset),
-            ),
-          ],
-        ),
-      ),
-      if (issue != null)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(2, 0, 2, 10),
-          child: Text(
-            '${t.download_save_root_fallback_warning}'
-            '\n${appModel.downloadSaveRootRejectedPath ?? ''} — '
-            '${_saveRootIssueMessage(issue)}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.error,
-            ),
           ),
         ),
-      const Divider(height: 24),
-    ];
+        if (!appModel.downloadSaveRootIsDefault)
+          AdaptiveSettingsRow(
+            key: const ValueKey<String>('downloads.save_root_reset'),
+            title: t.download_save_root_reset,
+            onTap: _resetDownloadFolder,
+          ),
+        if (issue != null)
+          Padding(
+            key: const ValueKey<String>('downloads.save_root_issue'),
+            padding: EdgeInsets.symmetric(
+              horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
+              vertical: 10,
+            ),
+            child: FushiInlineNotice(
+              severity: FushiNoticeSeverity.warning,
+              message:
+                  '${t.download_save_root_fallback_warning}'
+                  '\n${appModel.downloadSaveRootRejectedPath ?? ''} — '
+                  '${_saveRootIssueMessage(issue)}',
+            ),
+          ),
+      ],
+    );
   }
 
   static int _nonNegInt(String v) {
@@ -310,21 +314,45 @@ class _TorrentSettingsSectionState
     return (n.isFinite && n > 0) ? n : 0;
   }
 
-  /// [helper] 是常驻说明（`helperText`），与输入后即消失的占位 [hint]
-  /// （`hintText`）不同：用来讲清输入框自身讲不完的生效边界。
+  /// 一个真正的设置分组：[AdaptiveSettingsSection]（MD3 分段卡 / Apple inset
+  /// grouped）+ 可选组外标题 + 可选脚注。空分组整块不渲染。
   ///
-  /// 宽度不在这里管：见 [SettingsFormField] 的宽度契约——字段吃满小节内容宽度。
-  Widget _text({
+  /// [key] 锚定分组身份：上传 / 反吸血开关会让后面的行与分组增删，没有 key 时
+  /// 同类型相邻分组会按位置错配旧 State（输入框残留上一组的文字）。
+  Widget _group({
+    required String key,
+    required List<Widget> rows,
+    String? title,
+    String? footer,
+  }) {
+    if (rows.isEmpty) return SizedBox.shrink(key: ValueKey<String>(key));
+    return Column(
+      key: ValueKey<String>(key),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsSection(title: title, children: rows),
+        if (footer != null) SettingsSectionFooter(footer),
+      ],
+    );
+  }
+
+  /// 输入行：标题 + 说明在上、输入框在下撑满行宽（与 schema 的
+  /// `SettingsTextItem` / `SettingsNumberItem` 同一种行，BUG-1858 的「输入框吃满
+  /// 内容区」宽度规则由行自己承接）。
+  ///
+  /// [subtitle] 是常驻说明（讲清输入框自身讲不完的生效边界）；[hint] 是输入后即
+  /// 消失的占位提示（「0 = 不限」这类短句）。
+  Widget _inputRow({
     required String id,
     required String label,
     String? initial,
     String? hint,
-    String? helper,
+    String? subtitle,
     bool obscure = false,
-    TextInputType? keyboard,
+    TextInputType keyboard = TextInputType.text,
     TextEditingController? controller,
     FocusNode? focusNode,
-    String? errorText,
     required ValueChanged<String> onChanged,
   }) {
     assert(
@@ -332,40 +360,40 @@ class _TorrentSettingsSectionState
       'initial 与 controller 二选一',
     );
     return SettingsSearchTarget(
+      key: ValueKey<String>(id),
       id: id,
-      child: SettingsFormField(
-        label: label,
-        initialValue: initial,
-        controller: controller,
-        focusNode: focusNode,
-        obscureText: obscure,
-        keyboardType: keyboard,
-        hintText: hint,
-        helperText: helper,
-        errorText: errorText,
-        onChanged: onChanged,
+      child: AdaptiveSettingsRow(
+        title: label,
+        subtitle: subtitle,
+        controlBelow: true,
+        trailing: AdaptiveSettingsTextField(
+          controller: controller,
+          focusNode: focusNode,
+          initialValue: initial,
+          obscureText: obscure,
+          keyboardType: keyboard,
+          hintText: hint,
+          onChanged: onChanged,
+        ),
       ),
     );
   }
 
-  Widget _numField({
+  Widget _numRow({
     required String id,
     required String label,
     required int value,
     String? hint,
-    String? helper,
-    bool decimal = false,
+    String? subtitle,
     required ValueChanged<String> onChanged,
   }) {
-    return _text(
+    return _inputRow(
       id: id,
       label: label,
       initial: value == 0 ? '' : '$value',
       hint: hint,
-      helper: helper,
-      keyboard: decimal
-          ? const TextInputType.numberWithOptions(decimal: true)
-          : TextInputType.number,
+      subtitle: subtitle,
+      keyboard: TextInputType.number,
       onChanged: onChanged,
     );
   }
@@ -378,14 +406,39 @@ class _TorrentSettingsSectionState
     required ValueChanged<bool> onChanged,
   }) {
     return SettingsSearchTarget(
+      key: ValueKey<String>(id),
       id: id,
       child: AdaptiveSettingsSwitchRow(
         title: label,
         subtitle: subtitle,
         value: value,
         onChanged: onChanged,
-        horizontalPadding: 0,
       ),
+    );
+  }
+
+  /// 动作行（测试连接 / 拉取 tracker）：整行是一个焦点停靠点，进行中行尾转圈。
+  /// 进行中不摘掉 onTap——摘掉会让行从焦点注册表里消失，手柄焦点当场丢失；
+  /// 防重入由动作本身的 in-flight 守卫负责。
+  Widget _actionRow({
+    required String id,
+    required String title,
+    String? subtitle,
+    required bool busy,
+    required VoidCallback onTap,
+  }) {
+    return AdaptiveSettingsRow(
+      key: ValueKey<String>(id),
+      title: title,
+      subtitle: subtitle,
+      onTap: onTap,
+      trailing: busy
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: FushiCircularProgressIndicator(strokeWidth: 2),
+            )
+          : null,
     );
   }
 
@@ -396,13 +449,103 @@ class _TorrentSettingsSectionState
       ? t.download_rate_limit_lan_included
       : t.download_rate_limit_lan_exempt;
 
-  Widget _sectionLabel(ThemeData theme, String text) {
+  /// tracker 动作行的状态句（失败原因 / 未拉取 / 拉到几条）。
+  String get _trackerStatus => _trackerFetchError != null
+      ? t.download_tracker_fetch_failed(message: _trackerFetchError!)
+      : _trackerPreview.isEmpty
+      ? t.download_tracker_preview_empty
+      : t.download_tracker_preview_count(count: _trackerPreview.length);
+
+  /// 后端二选一。标签是 `External qBittorrent` / `Built-in engine` 这类不可断行
+  /// 的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184），所以走
+  /// [FushiSegmentedStrip]（装不下就横向滚动）；它独占分组里的一行，所选后端的
+  /// 一句话说明落在分组脚注里。
+  ///
+  /// 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），也是
+  /// 开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
+  Widget _backendRow(String backend) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return SettingsSearchTarget(
+      key: const ValueKey<String>('downloads.backend'),
+      id: 'downloads.backend',
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.rowHorizontal,
+          vertical: 10,
+        ),
+        child: FushiSegmentedStrip<String>(
+          segments: <ButtonSegment<String>>[
+            ButtonSegment<String>(
+              value: QbConnectionConfig.backendEmbedded,
+              label: Text(t.video_setting_torrent_backend_embedded),
+            ),
+            ButtonSegment<String>(
+              value: QbConnectionConfig.backendQbittorrent,
+              label: Text(t.video_setting_torrent_backend_qb),
+            ),
+          ],
+          selected: backend,
+          onChanged: (String value) =>
+              _commit((QbConnectionConfig c) => c.copyWith(backend: value)),
+        ),
+      ),
+    );
+  }
+
+  /// 「下载执行设备」：新任务默认投给哪台已配对的互联 host（设计 §3.3，手机让
+  /// 电脑下）。这一层在「后端」之上——手机不需要知道电脑用的是内置引擎还是外接
+  /// qb。没配对任何 host 时不渲染：只剩「本机」一个选项。
+  Widget _executionHostRow(AppModel appModel) {
+    return SettingsSearchTarget(
+      key: const ValueKey<String>('downloads.execution_host'),
+      id: 'downloads.execution_host',
+      child: AdaptiveSettingsPickerRow<String>(
+        key: const ValueKey<String>('downloads-execution-host'),
+        title: t.download_execution_host_title,
+        subtitle: t.download_execution_host_hint,
+        selected: _executionHostValue(appModel),
+        options: <AdaptiveSettingsPickerOption<String>>[
+          AdaptiveSettingsPickerOption<String>(
+            value: '',
+            label: t.download_target_local,
+          ),
+          for (final FushiClientUrl host in _pairedHosts)
+            AdaptiveSettingsPickerOption<String>(
+              value: host.url,
+              label: t.download_target_remote(
+                device: host.deviceName ?? host.url,
+              ),
+            ),
+        ],
+        onChanged: (String value) async {
+          await appModel.prefsRepo.setDownloadExecutionHostUrl(value);
+          if (mounted) setState(() {});
+        },
+      ),
+    );
+  }
+
+  /// 拉取到的 tracker 清单：分组里的一行，限高可滚、可选中复制。
+  Widget _trackerListRow(ThemeData theme) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(
-        text,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
+      key: const ValueKey<String>('downloads.tracker_list'),
+      padding: EdgeInsets.symmetric(
+        horizontal: tokens.spacing.rowHorizontal,
+        vertical: 10,
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 160),
+        child: SingleChildScrollView(
+          child: SizedBox(
+            width: double.infinity,
+            child: SelectableText(
+              _trackerPreview.join('\n'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -431,245 +574,100 @@ class _TorrentSettingsSectionState
     final bool trackers =
         widget.scope == TorrentSettingsScope.all ||
         widget.scope == TorrentSettingsScope.trackers;
-    final Widget content = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        // 代理不再在这里配：全应用只有系统设置里的一个代理项，下载发现链路
-        // 与其它公网出站共用同一个出口（见 download_timeouts.dart 头注释）。
-        // 后端二选一。标签是 `External qBittorrent` / `Built-in engine` 这类
-        // 不可断行的长词，窄屏裸 SegmentedButton 会直接裁字（BUG-1184）。
-        //
+
+    // 代理不再在这里配：全应用只有系统设置里的一个代理项，下载发现链路与其它
+    // 公网出站共用同一个出口（见 download_timeouts.dart 头注释）。
+    //
+    // 每一块都是一个真正的设置分组（[_group]），不再是「一整块表单塞进一个
+    // 分组行、靠自绘小节标题和内部分割线分段」。
+    final List<Widget> groups = <Widget>[
+      if (common) ...<Widget>[
+        if (_pairedHosts.isNotEmpty)
+          _group(
+            key: 'downloads.group.execution_host',
+            rows: <Widget>[_executionHostRow(appModel)],
+          ),
         // BUG-1207：无内置引擎的平台（现在只剩 iOS）不渲染选择器——选择器里放一个
         // 够不着的档位，选中后 resolveBackend 会把它规约回 qb，段选状态原地弹回，
-        // 比没有选项更糟。改为一行说明交代本平台只有外接 qb。
-        if (common) ...<Widget>[
-          if (_supportsEmbedded) ...<Widget>[
-            SettingsSearchTarget(
-              id: 'downloads.backend',
-              child: FushiSegmentedStrip<String>(
-                // 内置引擎排在第一段：它才是本平台的默认（`backendAuto` 解析结果），
-                // 也是开箱即用的那一个。qb 需要用户另装并配好 WebUI 才能用，排第二。
-                segments: <ButtonSegment<String>>[
-                  ButtonSegment<String>(
-                    value: QbConnectionConfig.backendEmbedded,
-                    label: Text(t.video_setting_torrent_backend_embedded),
-                  ),
-                  ButtonSegment<String>(
-                    value: QbConnectionConfig.backendQbittorrent,
-                    label: Text(t.video_setting_torrent_backend_qb),
-                  ),
-                ],
-                selected: backend,
-                onChanged: (String value) => _commit(
-                  (QbConnectionConfig c) => c.copyWith(backend: value),
-                ),
+        // 比没有选项更糟。改为一句说明交代本平台只有外接 qb。
+        if (_supportsEmbedded)
+          _group(
+            key: 'downloads.group.backend',
+            footer: isEmbedded
+                ? t.download_backend_embedded_hint
+                : t.download_backend_qb_hint,
+            rows: <Widget>[_backendRow(backend)],
+          )
+        else
+          SettingsSectionFooter(
+            t.download_backend_unsupported_note,
+            key: const ValueKey<String>('downloads.backend_unsupported'),
+          ),
+      ],
+
+      // 外接 qb 连接。
+      if (isQb && connection)
+        _group(
+          key: 'downloads.group.connection',
+          rows: <Widget>[
+            _inputRow(
+              id: 'downloads.video_setting_qb_url',
+              label: t.video_setting_qb_url,
+              initial: c.baseUrl,
+              hint: t.video_setting_qb_url_hint,
+              keyboard: TextInputType.url,
+              onChanged: (String v) => _commit(
+                (QbConnectionConfig c) => c.copyWith(baseUrl: v.trim()),
               ),
             ),
-          ] else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(2, 0, 2, 4),
-              child: Text(
-                t.download_backend_unsupported_note,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
+            _inputRow(
+              id: 'downloads.video_setting_qb_username',
+              label: t.video_setting_qb_username,
+              initial: c.username,
+              onChanged: (String v) => _commit(
+                (QbConnectionConfig c) => c.copyWith(username: v.trim()),
               ),
             ),
-          const SizedBox(height: 12),
-          // 「下载执行设备」：新任务默认投给哪台已配对的互联 host（设计 §3.3，
-          // 手机让电脑下）。这一层在「后端」之上——手机不需要知道电脑用的是内置
-          // 引擎还是外接 qb。没配对任何 host 时不渲染：只剩「本机」一个选项。
-          if (_pairedHosts.isNotEmpty) ...<Widget>[
-            SettingsSearchTarget(
-              id: 'downloads.execution_host',
-              child: DropdownButtonFormField<String>(
-                key: const ValueKey<String>('downloads-execution-host'),
-                initialValue: _executionHostValue(appModel),
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: t.download_execution_host_title,
-                  helperText: t.download_execution_host_hint,
-                  helperMaxLines: 3,
-                ),
-                items: <DropdownMenuItem<String>>[
-                  DropdownMenuItem<String>(
-                    value: '',
-                    child: Text(t.download_target_local),
-                  ),
-                  for (final FushiClientUrl host in _pairedHosts)
-                    DropdownMenuItem<String>(
-                      value: host.url,
-                      child: Text(
-                        t.download_target_remote(
-                          device: host.deviceName ?? host.url,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
-                onChanged: (String? value) => unawaited(
-                  appModel.prefsRepo.setDownloadExecutionHostUrl(value ?? ''),
-                ),
-              ),
+            _inputRow(
+              id: 'downloads.video_setting_qb_password',
+              label: t.video_setting_qb_password,
+              initial: c.password,
+              obscure: true,
+              onChanged: (String v) =>
+                  _commit((QbConnectionConfig c) => c.copyWith(password: v)),
             ),
-            const SizedBox(height: 12),
+            // 测试连接：probeConnection 早已存在，给用户一个即时验证入口
+            // （成功显示 WebUI 版本，失败提示查地址/账号），不必推一次种子试错。
+            _actionRow(
+              id: 'downloads.test_connection',
+              title: t.download_test_connection,
+              busy: _probing,
+              onTap: _probeConnection,
+            ),
           ],
-        ],
-        // 外接 qb 连接字段。
-        if (isQb && connection) ...<Widget>[
-          _text(
-            id: 'downloads.video_setting_qb_url',
-            label: t.video_setting_qb_url,
-            initial: c.baseUrl,
-            hint: t.video_setting_qb_url_hint,
-            keyboard: TextInputType.url,
-            onChanged: (String v) => _commit(
-              (QbConnectionConfig c) => c.copyWith(baseUrl: v.trim()),
-            ),
-          ),
-          _text(
-            id: 'downloads.video_setting_qb_username',
-            label: t.video_setting_qb_username,
-            initial: c.username,
-            onChanged: (String v) => _commit(
-              (QbConnectionConfig c) => c.copyWith(username: v.trim()),
-            ),
-          ),
-          _text(
-            id: 'downloads.video_setting_qb_password',
-            label: t.video_setting_qb_password,
-            initial: c.password,
-            obscure: true,
-            onChanged: (String v) =>
-                _commit((QbConnectionConfig c) => c.copyWith(password: v)),
-          ),
-          // 测试连接：probeConnection 早已存在，给用户一个即时验证入口
-          // （成功显示 WebUI 版本，失败提示查地址/账号），不必推一次种子试错。
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _probing ? null : _probeConnection,
-                icon: _probing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.network_check, size: 18),
-                label: Text(t.download_test_connection),
-              ),
-            ),
-          ),
-        ],
+        ),
 
-        // 分类（两后端通用）。清空时存储侧兜底 'fushi'，失焦回填生效值
-        // （见 [_onCategoryFocusChanged]），所见即所得。
-        if (advanced)
-          _text(
-            id: 'downloads.video_setting_qb_category',
-            label: t.video_setting_qb_category,
-            controller: _categoryCtrl,
-            focusNode: _categoryFocus,
-            hint: t.video_setting_qb_category_hint,
-            onChanged: (String v) => _commit(
-              (QbConnectionConfig c) =>
-                  c.copyWith(category: v.trim().isEmpty ? 'fushi' : v.trim()),
-            ),
-          ),
-
-        if (trackers) ...<Widget>[
-          _sectionLabel(theme, t.download_tracker_section),
-          _switch(
-            id: 'downloads.download_tracker_auto_add',
-            label: t.download_tracker_auto_add,
-            subtitle: t.download_tracker_auto_add_hint,
-            value: c.autoAddTrackerSubscription,
-            onChanged: (bool value) => _commit(
-              (QbConnectionConfig c) =>
-                  c.copyWith(autoAddTrackerSubscription: value),
-            ),
-          ),
-          _text(
-            id: 'downloads.download_tracker_url',
-            label: t.download_tracker_url,
-            controller: _trackerUrlCtrl,
-            keyboard: TextInputType.url,
-            onChanged: (String value) => _commit(
-              (QbConnectionConfig c) =>
-                  c.copyWith(trackerSubscriptionUrl: value.trim()),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: _fetchingTrackers ? null : _refreshTrackers,
-                icon: _fetchingTrackers
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh, size: 18),
-                label: Text(t.download_tracker_refresh),
-              ),
-            ),
-          ),
-          // 预览框走共享卡片组件，不手搓 Container+BoxDecoration：eink 主题把所有
-          // surface container 塌缩成背景色（theme_notifier 的 eink scheme），手搓的
-          // 这只盒子在那儿会直接隐形，而 FushiCard 自己补描边。圆角/底色也一并交给
-          // 设计 token，不在这里重开一次本地决策。
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 160),
-            child: FushiCard(
-              padding: const EdgeInsets.all(10),
-              margin: const EdgeInsets.only(bottom: 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: SingleChildScrollView(
-                  child: SelectableText(
-                    _trackerFetchError != null
-                        ? t.download_tracker_fetch_failed(
-                            message: _trackerFetchError!,
-                          )
-                        : _trackerPreview.isEmpty
-                        ? t.download_tracker_preview_empty
-                        : '${t.download_tracker_preview_count(count: _trackerPreview.length)}\n\n'
-                              '${_trackerPreview.join('\n')}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-        // 内置引擎资源限制。
-        if (isEmbedded) ...<Widget>[
-          // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
-          if (common)
-            SettingsSearchTarget(
-              id: 'downloads.save_root',
-              child: Column(children: _downloadFolderRows(theme, appModel)),
-            ),
-          if (common) ...<Widget>[
-            // 限速默认只约束 session 全局速率：libtorrent 把局域网 peer 归入独立的
-            // local peer class，该 class 不受全局上限约束（官方文档明写的默认行为，
-            // 家里两台机器互传不该被限）。下面的 limitLocalPeers 开关（默认关）可以
-            // 把同一组上限也套到 local peer class。
-            // 完整决策记录见 docs/bugs/BUG-1114-local-rig-rate-limit-flake.md。
-            //
-            // helper 必须随开关走：开着时"不作用于局域网"就是**假话**，界面不能写
-            // 一句和实际行为相反的说明。
-            _numField(
+      // 内置引擎：下载目录 / 限速 / 上传与做种。
+      if (isEmbedded && common) ...<Widget>[
+        // TODO-1961：下载目录（只影响新增任务，旧任务留在原目录）。
+        _downloadFolderGroup(appModel),
+        // 限速默认只约束 session 全局速率：libtorrent 把局域网 peer 归入独立的
+        // local peer class，该 class 不受全局上限约束（官方文档明写的默认行为，
+        // 家里两台机器互传不该被限）。下面的 limitLocalPeers 开关（默认关）可以
+        // 把同一组上限也套到 local peer class。
+        // 完整决策记录见 docs/bugs/BUG-1114-local-rig-rate-limit-flake.md。
+        //
+        // 说明必须随开关走：开着时"不作用于局域网"就是**假话**，界面不能写
+        // 一句和实际行为相反的说明。
+        _group(
+          key: 'downloads.group.limits',
+          rows: <Widget>[
+            _numRow(
               id: 'downloads.video_setting_torrent_download_limit',
               label: t.video_setting_torrent_download_limit,
               value: c.downloadLimitKbps,
               hint: t.video_setting_torrent_limit_hint,
-              helper: _lanLimitHelper(c),
+              subtitle: _lanLimitHelper(c),
               onChanged: (String v) => _commit(
                 (QbConnectionConfig c) =>
                     c.copyWith(downloadLimitKbps: _nonNegInt(v)),
@@ -684,6 +682,11 @@ class _TorrentSettingsSectionState
                 (QbConnectionConfig c) => c.copyWith(limitLocalPeers: v),
               ),
             ),
+          ],
+        ),
+        _group(
+          key: 'downloads.group.upload',
+          rows: <Widget>[
             _switch(
               id: 'downloads.video_setting_torrent_upload_enabled',
               label: t.video_setting_torrent_upload_enabled,
@@ -694,32 +697,32 @@ class _TorrentSettingsSectionState
               ),
             ),
             if (c.uploadEnabled) ...<Widget>[
-              _numField(
+              _numRow(
                 id: 'downloads.video_setting_torrent_upload_limit',
                 label: t.video_setting_torrent_upload_limit,
                 value: c.uploadLimitKbps,
                 hint: t.video_setting_torrent_limit_hint,
-                helper: _lanLimitHelper(c),
+                subtitle: _lanLimitHelper(c),
                 onChanged: (String v) => _commit(
                   (QbConnectionConfig c) =>
                       c.copyWith(uploadLimitKbps: _nonNegInt(v)),
                 ),
               ),
-              _numField(
+              _numRow(
                 id: 'downloads.video_setting_torrent_seed_time_limit',
                 label: t.video_setting_torrent_seed_time_limit,
                 value: c.seedTimeLimitMinutes,
-                hint: t.video_setting_torrent_seed_time_hint,
+                subtitle: t.video_setting_torrent_seed_time_hint,
                 onChanged: (String v) => _commit(
                   (QbConnectionConfig c) =>
                       c.copyWith(seedTimeLimitMinutes: _nonNegInt(v)),
                 ),
               ),
-              _text(
+              _inputRow(
                 id: 'downloads.video_setting_torrent_seed_ratio_limit',
                 label: t.video_setting_torrent_seed_ratio_limit,
                 initial: c.seedRatioLimit == 0 ? '' : '${c.seedRatioLimit}',
-                hint: t.video_setting_torrent_seed_ratio_hint,
+                subtitle: t.video_setting_torrent_seed_ratio_hint,
                 keyboard: const TextInputType.numberWithOptions(decimal: true),
                 onChanged: (String v) => _commit(
                   (QbConnectionConfig c) =>
@@ -728,82 +731,149 @@ class _TorrentSettingsSectionState
               ),
             ],
           ],
-          if (advanced) ...<Widget>[
-            _numField(
-              id: 'downloads.video_setting_torrent_max_connections',
-              label: t.video_setting_torrent_max_connections,
-              value: c.maxConnections,
-              hint: t.video_setting_torrent_connections_hint,
-              onChanged: (String v) => _commit(
-                (QbConnectionConfig c) =>
-                    c.copyWith(maxConnections: _nonNegInt(v)),
-              ),
-            ),
-            _numField(
-              id: 'downloads.video_setting_torrent_memory_limit',
-              label: t.video_setting_torrent_memory_limit,
-              value: c.memoryLimitMb,
-              hint: t.video_setting_torrent_memory_hint,
-              onChanged: (String v) => _commit(
-                (QbConnectionConfig c) =>
-                    c.copyWith(memoryLimitMb: _nonNegInt(v)),
-              ),
-            ),
+        ),
+      ],
 
-            // ---- 会话设置（抄 qB 关键项）----
-            _sectionLabel(theme, t.video_setting_torrent_section_session),
-            _numField(
-              id: 'downloads.video_setting_torrent_listen_port',
-              label: t.video_setting_torrent_listen_port,
-              value: c.listenPort,
-              hint: t.video_setting_torrent_listen_port_hint,
+      if (trackers)
+        _group(
+          key: 'downloads.group.trackers',
+          title: t.download_tracker_section,
+          footer: t.download_tracker_auto_add_hint,
+          rows: <Widget>[
+            _switch(
+              id: 'downloads.download_tracker_auto_add',
+              label: t.download_tracker_auto_add,
+              value: c.autoAddTrackerSubscription,
+              onChanged: (bool value) => _commit(
+                (QbConnectionConfig c) =>
+                    c.copyWith(autoAddTrackerSubscription: value),
+              ),
+            ),
+            _inputRow(
+              id: 'downloads.download_tracker_url',
+              label: t.download_tracker_url,
+              controller: _trackerUrlCtrl,
+              keyboard: TextInputType.url,
+              onChanged: (String value) => _commit(
+                (QbConnectionConfig c) =>
+                    c.copyWith(trackerSubscriptionUrl: value.trim()),
+              ),
+            ),
+            _actionRow(
+              id: 'downloads.tracker_refresh',
+              title: t.download_tracker_refresh,
+              subtitle: _trackerStatus,
+              busy: _fetchingTrackers,
+              onTap: _refreshTrackers,
+            ),
+            if (_trackerFetchError == null && _trackerPreview.isNotEmpty)
+              _trackerListRow(theme),
+          ],
+        ),
+
+      if (advanced) ...<Widget>[
+        // 分类（两后端通用）。清空时存储侧兜底 'fushi'，失焦回填生效值
+        // （见 [_onCategoryFocusChanged]），所见即所得。
+        _group(
+          key: 'downloads.group.engine',
+          rows: <Widget>[
+            _inputRow(
+              id: 'downloads.video_setting_qb_category',
+              label: t.video_setting_qb_category,
+              subtitle: t.video_setting_qb_category_hint,
+              controller: _categoryCtrl,
+              focusNode: _categoryFocus,
               onChanged: (String v) => _commit(
-                (QbConnectionConfig c) => c.copyWith(listenPort: _nonNegInt(v)),
+                (QbConnectionConfig c) =>
+                    c.copyWith(category: v.trim().isEmpty ? 'fushi' : v.trim()),
               ),
             ),
-            _switch(
-              id: 'downloads.video_setting_torrent_dht',
-              label: t.video_setting_torrent_dht,
-              value: c.enableDht,
-              onChanged: (bool v) =>
-                  _commit((QbConnectionConfig c) => c.copyWith(enableDht: v)),
-            ),
-            _switch(
-              id: 'downloads.video_setting_torrent_lsd',
-              label: t.video_setting_torrent_lsd,
-              value: c.enableLsd,
-              onChanged: (bool v) =>
-                  _commit((QbConnectionConfig c) => c.copyWith(enableLsd: v)),
-            ),
-            _switch(
-              id: 'downloads.video_setting_torrent_upnp',
-              label: t.video_setting_torrent_upnp,
-              value: c.enableUpnp,
-              onChanged: (bool v) =>
-                  _commit((QbConnectionConfig c) => c.copyWith(enableUpnp: v)),
-            ),
-            _switch(
-              id: 'downloads.video_setting_torrent_natpmp',
-              label: t.video_setting_torrent_natpmp,
-              value: c.enableNatpmp,
-              onChanged: (bool v) => _commit(
-                (QbConnectionConfig c) => c.copyWith(enableNatpmp: v),
+            if (isEmbedded) ...<Widget>[
+              _numRow(
+                id: 'downloads.video_setting_torrent_max_connections',
+                label: t.video_setting_torrent_max_connections,
+                value: c.maxConnections,
+                hint: t.video_setting_torrent_connections_hint,
+                onChanged: (String v) => _commit(
+                  (QbConnectionConfig c) =>
+                      c.copyWith(maxConnections: _nonNegInt(v)),
+                ),
               ),
-            ),
-            _switch(
-              id: 'downloads.video_setting_torrent_anonymous',
-              label: t.video_setting_torrent_anonymous,
-              value: c.anonymousMode,
-              onChanged: (bool v) => _commit(
-                (QbConnectionConfig c) => c.copyWith(anonymousMode: v),
+              _numRow(
+                id: 'downloads.video_setting_torrent_memory_limit',
+                label: t.video_setting_torrent_memory_limit,
+                value: c.memoryLimitMb,
+                subtitle: t.video_setting_torrent_memory_hint,
+                onChanged: (String v) => _commit(
+                  (QbConnectionConfig c) =>
+                      c.copyWith(memoryLimitMb: _nonNegInt(v)),
+                ),
               ),
-            ),
-            _sectionLabel(theme, t.settings_downloads_encryption_title),
-            Padding(
-              padding: const EdgeInsets.only(top: 4, bottom: 8),
-              child: SettingsSearchTarget(
+            ],
+          ],
+        ),
+        if (isEmbedded) ...<Widget>[
+          // ---- 会话设置（抄 qB 关键项）----
+          _group(
+            key: 'downloads.group.session',
+            title: t.video_setting_torrent_section_session,
+            rows: <Widget>[
+              _numRow(
+                id: 'downloads.video_setting_torrent_listen_port',
+                label: t.video_setting_torrent_listen_port,
+                value: c.listenPort,
+                hint: t.video_setting_torrent_listen_port_hint,
+                onChanged: (String v) => _commit(
+                  (QbConnectionConfig c) =>
+                      c.copyWith(listenPort: _nonNegInt(v)),
+                ),
+              ),
+              _switch(
+                id: 'downloads.video_setting_torrent_dht',
+                label: t.video_setting_torrent_dht,
+                value: c.enableDht,
+                onChanged: (bool v) =>
+                    _commit((QbConnectionConfig c) => c.copyWith(enableDht: v)),
+              ),
+              _switch(
+                id: 'downloads.video_setting_torrent_lsd',
+                label: t.video_setting_torrent_lsd,
+                value: c.enableLsd,
+                onChanged: (bool v) =>
+                    _commit((QbConnectionConfig c) => c.copyWith(enableLsd: v)),
+              ),
+              _switch(
+                id: 'downloads.video_setting_torrent_upnp',
+                label: t.video_setting_torrent_upnp,
+                value: c.enableUpnp,
+                onChanged: (bool v) => _commit(
+                  (QbConnectionConfig c) => c.copyWith(enableUpnp: v),
+                ),
+              ),
+              _switch(
+                id: 'downloads.video_setting_torrent_natpmp',
+                label: t.video_setting_torrent_natpmp,
+                value: c.enableNatpmp,
+                onChanged: (bool v) => _commit(
+                  (QbConnectionConfig c) => c.copyWith(enableNatpmp: v),
+                ),
+              ),
+              _switch(
+                id: 'downloads.video_setting_torrent_anonymous',
+                label: t.video_setting_torrent_anonymous,
+                value: c.anonymousMode,
+                onChanged: (bool v) => _commit(
+                  (QbConnectionConfig c) => c.copyWith(anonymousMode: v),
+                ),
+              ),
+              // 三个短选项：分段控件（MD3 行右侧紧凑分段 / Apple 液态玻璃分段），
+              // 放不下时共享判据自动退回弹出菜单。
+              SettingsSearchTarget(
+                key: const ValueKey<String>('downloads.encryption'),
                 id: 'downloads.encryption',
-                child: FushiSegmentedStrip<int>(
+                child: AdaptiveSettingsSegmentedRow<int>(
+                  title: t.settings_downloads_encryption_title,
+                  controlBelow: false,
                   segments: <ButtonSegment<int>>[
                     ButtonSegment<int>(
                       value: QbConnectionConfig.encryptionPrefer,
@@ -824,106 +894,109 @@ class _TorrentSettingsSectionState
                   ),
                 ),
               ),
-            ),
-            _numField(
-              id: 'downloads.video_setting_torrent_active_downloads',
-              label: t.video_setting_torrent_active_downloads,
-              value: c.maxActiveDownloads,
-              hint: t.video_setting_torrent_zero_default,
-              onChanged: (String v) => _commit(
-                (QbConnectionConfig c) =>
-                    c.copyWith(maxActiveDownloads: _nonNegInt(v)),
-              ),
-            ),
-            _numField(
-              id: 'downloads.video_setting_torrent_active_seeds',
-              label: t.video_setting_torrent_active_seeds,
-              value: c.maxActiveSeeds,
-              hint: t.video_setting_torrent_zero_default,
-              onChanged: (String v) => _commit(
-                (QbConnectionConfig c) =>
-                    c.copyWith(maxActiveSeeds: _nonNegInt(v)),
-              ),
-            ),
-            _numField(
-              id: 'downloads.video_setting_torrent_upload_slots',
-              label: t.video_setting_torrent_upload_slots,
-              value: c.maxUploadSlots,
-              hint: t.video_setting_torrent_zero_default,
-              onChanged: (String v) => _commit(
-                (QbConnectionConfig c) =>
-                    c.copyWith(maxUploadSlots: _nonNegInt(v)),
-              ),
-            ),
-
-            // ---- 反吸血（抄 qBittorrent-ClientBlocker）----
-            _sectionLabel(theme, t.video_setting_torrent_section_antileech),
-            _switch(
-              id: 'downloads.video_setting_torrent_antileech',
-              label: t.video_setting_torrent_antileech,
-              value: c.antiLeechEnabled,
-              onChanged: (bool v) => _commit(
-                (QbConnectionConfig c) => c.copyWith(antiLeechEnabled: v),
-              ),
-            ),
-            if (c.antiLeechEnabled) ...<Widget>[
-              _switch(
-                id: 'downloads.video_setting_torrent_ban_progress_cheat',
-                label: t.video_setting_torrent_ban_progress_cheat,
-                value: c.banProgressCheat,
-                onChanged: (bool v) => _commit(
-                  (QbConnectionConfig c) => c.copyWith(banProgressCheat: v),
-                ),
-              ),
-              _switch(
-                id: 'downloads.video_setting_torrent_ban_relative_cheat',
-                label: t.video_setting_torrent_ban_relative_cheat,
-                value: c.banRelativeProgressCheat,
-                onChanged: (bool v) => _commit(
-                  (QbConnectionConfig c) =>
-                      c.copyWith(banRelativeProgressCheat: v),
-                ),
-              ),
-              _numField(
-                id: 'downloads.video_setting_torrent_max_ip_ports',
-                label: t.video_setting_torrent_max_ip_ports,
-                value: c.maxIpPortCount,
-                hint: t.video_setting_torrent_zero_off,
+            ],
+          ),
+          // ---- 队列（同时活动的任务 / 上传槽）----
+          _group(
+            key: 'downloads.group.queue',
+            footer: t.video_setting_torrent_zero_default,
+            rows: <Widget>[
+              _numRow(
+                id: 'downloads.video_setting_torrent_active_downloads',
+                label: t.video_setting_torrent_active_downloads,
+                value: c.maxActiveDownloads,
                 onChanged: (String v) => _commit(
                   (QbConnectionConfig c) =>
-                      c.copyWith(maxIpPortCount: _nonNegInt(v)),
+                      c.copyWith(maxActiveDownloads: _nonNegInt(v)),
                 ),
               ),
-              _numField(
-                id: 'downloads.video_setting_torrent_ban_time',
-                label: t.video_setting_torrent_ban_time,
-                value: c.banTimeMinutes,
-                hint: t.video_setting_torrent_ban_time_hint,
+              _numRow(
+                id: 'downloads.video_setting_torrent_active_seeds',
+                label: t.video_setting_torrent_active_seeds,
+                value: c.maxActiveSeeds,
                 onChanged: (String v) => _commit(
                   (QbConnectionConfig c) =>
-                      c.copyWith(banTimeMinutes: _nonNegInt(v)),
+                      c.copyWith(maxActiveSeeds: _nonNegInt(v)),
+                ),
+              ),
+              _numRow(
+                id: 'downloads.video_setting_torrent_upload_slots',
+                label: t.video_setting_torrent_upload_slots,
+                value: c.maxUploadSlots,
+                onChanged: (String v) => _commit(
+                  (QbConnectionConfig c) =>
+                      c.copyWith(maxUploadSlots: _nonNegInt(v)),
                 ),
               ),
             ],
-          ],
+          ),
+          // ---- 反吸血（抄 qBittorrent-ClientBlocker）----
+          _group(
+            key: 'downloads.group.antileech',
+            title: t.video_setting_torrent_section_antileech,
+            rows: <Widget>[
+              _switch(
+                id: 'downloads.video_setting_torrent_antileech',
+                label: t.video_setting_torrent_antileech,
+                value: c.antiLeechEnabled,
+                onChanged: (bool v) => _commit(
+                  (QbConnectionConfig c) => c.copyWith(antiLeechEnabled: v),
+                ),
+              ),
+              if (c.antiLeechEnabled) ...<Widget>[
+                _switch(
+                  id: 'downloads.video_setting_torrent_ban_progress_cheat',
+                  label: t.video_setting_torrent_ban_progress_cheat,
+                  value: c.banProgressCheat,
+                  onChanged: (bool v) => _commit(
+                    (QbConnectionConfig c) => c.copyWith(banProgressCheat: v),
+                  ),
+                ),
+                _switch(
+                  id: 'downloads.video_setting_torrent_ban_relative_cheat',
+                  label: t.video_setting_torrent_ban_relative_cheat,
+                  value: c.banRelativeProgressCheat,
+                  onChanged: (bool v) => _commit(
+                    (QbConnectionConfig c) =>
+                        c.copyWith(banRelativeProgressCheat: v),
+                  ),
+                ),
+                _numRow(
+                  id: 'downloads.video_setting_torrent_max_ip_ports',
+                  label: t.video_setting_torrent_max_ip_ports,
+                  value: c.maxIpPortCount,
+                  hint: t.video_setting_torrent_zero_off,
+                  onChanged: (String v) => _commit(
+                    (QbConnectionConfig c) =>
+                        c.copyWith(maxIpPortCount: _nonNegInt(v)),
+                  ),
+                ),
+                _numRow(
+                  id: 'downloads.video_setting_torrent_ban_time',
+                  label: t.video_setting_torrent_ban_time,
+                  value: c.banTimeMinutes,
+                  hint: t.video_setting_torrent_ban_time_hint,
+                  onChanged: (String v) => _commit(
+                    (QbConnectionConfig c) =>
+                        c.copyWith(banTimeMinutes: _nonNegInt(v)),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ],
       ],
-    );
-    // 唯一的宽度规则（BUG-1858，用户 2026-08-25 拍板）：本段与普通设置行共用同一条
-    // 16px 左右基线，正文吃满剩下的宽度。
-    //
-    // 此前这里有两层额外限宽：整段收进 560（下载页居中 / 详情 pane 左对齐），输入框
-    // 再自己缩到 480。于是同一个设置分区里同时存在三种输入框宽度——本段 480、在线
-    // 服务段 560、其余分类的设置行撑满 pane（用户实报「这里和别的输入框宽度不
-    // 一样」）。限宽整层删掉后，全 app 设置输入框只剩「撑满内容区」这一条规则。
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: FushiDesignTokens.of(context).spacing.rowHorizontal,
-      ),
-      child: SizedBox(
-        key: const ValueKey<String>('torrent-settings-content'),
-        width: double.infinity,
-        child: content,
+    ];
+    // 宽度规则（BUG-1858，用户 2026-08-25 拍板）：分组吃满宿主给的内容宽度，
+    // 行与输入框的左右基线由分组行自己承接（与其它设置分类同一条），本组件不再
+    // 额外缩进或限宽。宿主（设置详情页 / 浏览 › 下载设置页）负责页边距。
+    return SizedBox(
+      key: const ValueKey<String>('torrent-settings-content'),
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: groups,
       ),
     );
   }

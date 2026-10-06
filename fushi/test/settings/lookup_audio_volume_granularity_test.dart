@@ -21,6 +21,7 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/glass_unwrap.dart';
 
 /// 查词音量滑条粒度（飞书 row57「查词音量的滑条也改成和有声书音量一样的」）：
 /// 旧实现 divisions: 20（0–100% 共 20 档）= 拖动和方向键都是 5% 一跳，标题无读数。
@@ -118,7 +119,7 @@ void main() {
       await tester.pumpWidget(buildHarness(AppModel(testPlatformServices())));
       await tester.pump();
 
-      final Slider slider = tester.widget<Slider>(find.byType(Slider));
+      final Slider slider = tester.widget<Slider>(glassUnwrap<Slider>(find.byType(Slider)));
       expect(slider.min, 0);
       expect(slider.max, 100);
       expect(slider.divisions, 100,
@@ -144,8 +145,12 @@ void main() {
       await tester.pumpWidget(buildHarness(AppModel(testPlatformServices())));
       await tester.pump();
 
-      expect(find.text('${t.lookup_audio_volume} (100%)'), findsOneWidget,
-          reason: '标题带实时百分比读数（与有声书音量行同款）');
+      // MD3 重设计：读数不再拼进标题「标题 (100%)」，而是常驻在滑条右侧的
+      // 读数槽里（AdaptiveSettingsSliderRow._buildMd3）；契约不变——行内有
+      // 实时百分比读数。
+      expect(find.text(t.lookup_audio_volume), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget,
+          reason: '行内带实时百分比读数（与有声书音量行同款）');
 
       final FushiFocusController controller = FushiFocusRoot.controllerOf(
         tester.element(find.byType(Slider)),
@@ -162,8 +167,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(ReaderFushiSource.instance.lookupAudioVolume, 95,
           reason: '左方向键 = -5%（键步经 step 与 1% 拖动档位解耦）');
-      expect(find.text('${t.lookup_audio_volume} (95%)'), findsOneWidget,
-          reason: '标题实时读数跟随（没有读数细步进等于白调）');
+      expect(find.text('95%'), findsOneWidget,
+          reason: '实时读数跟随（没有读数细步进等于白调）');
 
       // clamp 在 100% 不过冲。
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);

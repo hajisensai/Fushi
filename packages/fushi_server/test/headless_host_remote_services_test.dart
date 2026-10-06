@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
+import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart' show GameStreamRejection, kGameStreamWireVersion;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
@@ -17,7 +18,7 @@ import 'dictionary_host_test.dart' show importTestDictionary;
 
 /// 整个 [HeadlessHost] 起来之后，互联的查词 / 历史 / 游戏串流路由与 capabilities
 /// 是否如实：查词随词典引擎可用性接线（有 libfushidicts_ffi 时真查一次），游戏串流
-/// 恒回 501 unsupported 而不是笼统 404。
+/// 恒回带版本号的 `game_stream_off` 拒绝（client 据 code 显示「该主机未提供游戏串流」）。
 void main() {
   final String? libPath = resolveFushiDictsLibraryPath();
   final bool haveLib = libPath != null && File(libPath).existsSync();
@@ -83,12 +84,12 @@ void main() {
   Future<Map<String, dynamic>> json(HttpClientResponse res) async =>
       Map<String, dynamic>.from(jsonDecode(await utf8.decodeStream(res)) as Map);
 
-  test('游戏串流：路由回 501 unsupported，capabilities 报 gameStream: false', () async {
+  test('游戏串流：路由回 game_stream_off，capabilities 报 gameStream: false', () async {
     final HttpClientResponse res = await send('POST', '/api/game-stream/sessions', <String, String>{'clientId': 'c'});
-    expect(res.statusCode, 501);
+    expect(res.statusCode, 404);
     final Map<String, dynamic> body = await json(res);
-    expect(body['error'], 'unsupported');
-    expect(body['feature'], 'gameStream');
+    expect(body['version'], kGameStreamWireVersion);
+    expect(body['code'], GameStreamRejection.streamOff);
     final Map<String, dynamic> caps = await json(await send('GET', '/api/capabilities'));
     expect(caps['gameStream'], isFalse);
   });

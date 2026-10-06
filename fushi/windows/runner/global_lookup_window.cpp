@@ -3385,6 +3385,7 @@ void GlobalLookupWindow::ConfigureWebView() {
               // data: URL fed to playAudioRef classifies as a local file).
               const bool deferred =
                   body.find("\"resolveWordAudio\"") != std::string::npos ||
+                  body.find("\"listWordAudioSources\"") != std::string::npos ||
                   body.find("\"queryLocalAudio\"") != std::string::npos ||
                   body.find("\"favoriteEntry\"") != std::string::npos ||
                   body.find("\"favoriteCheck\"") != std::string::npos ||

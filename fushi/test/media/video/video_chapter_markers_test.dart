@@ -324,9 +324,18 @@ void main() {
       // 竖直锚定走纯函数 videoSeekBarTrackBand（与 seek bar 同源几何）。
       expect(body.contains('videoSeekBarTrackBand('), isTrue,
           reason: '刻度竖直位置必须用 videoSeekBarTrackBand 对齐 seek bar 轨道');
-      // 水平内缩 16 对齐 seekBarMargin。
-      expect(body.contains('left: 16') && body.contains('right: 16'), isTrue,
-          reason: '刻度水平范围必须左右各内缩 16 对齐 seekBarMargin');
+      // 水平内缩对齐 seekBarMargin：两边读同一个 [_videoSeekBarSideInset]（MD3 = 16，
+      // Apple 设计系统下轨道收进玻璃胶囊、内缩更大）。
+      expect(
+          body.contains('left: _videoSeekBarSideInset') &&
+              body.contains('right: _videoSeekBarSideInset'),
+          isTrue,
+          reason: '刻度水平范围必须与 seekBarMargin 同源内缩');
+      expect(
+          src.contains(
+              'double get _videoSeekBarSideInset =>\n      _appleChrome ? kVideoAppleChromeEdgeInset + 16 : 16;'),
+          isTrue,
+          reason: 'MD3 下内缩仍是 media_kit 默认的 16');
       // 随控制条可见性显隐，与 seek bar 同步。
       expect(body.contains('_videoControlsVisible'), isTrue,
           reason: '刻度必须随控制条显隐，与 seek bar 同步');

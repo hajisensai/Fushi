@@ -1209,6 +1209,28 @@ class EmbeddedTorrentSession {
     return FtSessionStatus._fromJson(json);
   }
 
+  /// 已加载的库是否支持运行期补 DHT 节点（[addDhtNodes]）。
+  bool get supportsAddDhtNodes => _b.hasAddDhtNodes;
+
+  /// BUG-2950：运行期向 DHT 补节点（每项 "host:port"，IPv6 写 "[addr]:port"）。
+  /// 返回 native 成功添加的条数；库不支持 / session 已关 / 列表为空 / native
+  /// 失败一律返回 -1。
+  int addDhtNodes(List<String> hostPorts) {
+    if (isClosed || !_b.hasAddDhtNodes) return -1;
+    final String joined = hostPorts
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .join('\n');
+    if (joined.isEmpty) return -1;
+    final Pointer<Char> nodes = joined.toNativeUtf8().cast<Char>();
+    try {
+      return _b.ht_add_dht_nodes(_session, nodes);
+    } finally {
+      malloc.free(nodes);
+    }
+  }
+
   /// 用 CIDR 列表整体重建 session 的 ip_filter（空列表 = 清空）。已连接的
   /// 命中 peer 会被断开，新连接直接拒绝。
   bool applyIpFilter(Iterable<String> cidrs) {

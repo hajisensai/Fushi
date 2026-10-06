@@ -210,7 +210,7 @@ Future<VideoMediaReference> confirmAniDbDiscoveryIdentity({
       final VideoSourceScrapeConfirmationCandidate? selected =
           await showAppDialog<VideoSourceScrapeConfirmationCandidate>(
         context: context,
-        builder: (BuildContext context) => AlertDialog(
+        builder: (BuildContext context) => FushiAlertDialog(
           title: Text(t.video_discovery_anidb_identity_confirm_title),
           content: SizedBox(
             width: 560,
@@ -226,7 +226,7 @@ Future<VideoMediaReference> confirmAniDbDiscoveryIdentity({
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: result.candidates.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
                       itemBuilder: (BuildContext context, int index) =>
                           VideoSourceScrapeCandidateTile(
                         candidate: result.candidates[index],
@@ -242,7 +242,7 @@ Future<VideoMediaReference> confirmAniDbDiscoveryIdentity({
             ),
           ),
           actions: <Widget>[
-            TextButton(
+            FushiTextButton(
               key: const ValueKey<String>('discovery-anidb-identity-skip'),
               onPressed: () => Navigator.of(context).pop(),
               child: Text(t.video_source_scrape_confirmation_skip),

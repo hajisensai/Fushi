@@ -14,6 +14,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
@@ -1044,7 +1045,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_apiKeyCollapsed && _apiKeyCtrl.text.trim().isNotEmpty) {
       return Row(
         children: <Widget>[
-          const Icon(Icons.vpn_key, size: 18),
+          const FushiIcon(Icons.vpn_key, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1053,7 +1054,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
-          TextButton(
+          FushiTextButton(
             onPressed: () => setState(() => _apiKeyCollapsed = false),
             child: Text(t.dialog_edit),
           ),
@@ -1101,7 +1102,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           ),
         ),
         for (final AniListMedia media in _seriesMatches)
-          ListTile(
+          FushiListTileControl(
             dense: true,
             visualDensity: VisualDensity.compact,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1151,13 +1152,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     final List<String> langs = availableLanguages(_candidates);
     if (langs.isEmpty) return const SizedBox.shrink();
     return _chipSection(t.video_jimaku_language, <Widget>[
-      ChoiceChip(
+      FushiChoiceChip(
         label: Text(t.video_jimaku_language_all),
         selected: _selectedLanguage == null,
         onSelected: (_) => _selectLanguage(null),
       ),
       for (final String lang in langs)
-        ChoiceChip(
+        FushiChoiceChip(
           label: Text(jimakuLanguageLabel(lang)),
           selected: _selectedLanguage == lang,
           onSelected: (_) => _selectLanguage(lang),
@@ -1171,13 +1172,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     final List<String> formats = availableFormats(_candidates);
     if (formats.length < 2) return const SizedBox.shrink();
     return _chipSection(t.video_jimaku_format, <Widget>[
-      ChoiceChip(
+      FushiChoiceChip(
         label: Text(t.video_jimaku_format_all),
         selected: _selectedFormat == null,
         onSelected: (_) => _selectFormat(null),
       ),
       for (final String format in formats)
-        ChoiceChip(
+        FushiChoiceChip(
           // 类型名是文件扩展名本身（ASS / SRT），不进 i18n：它是格式标识不是可译词。
           label: Text(format.toUpperCase()),
           selected: _selectedFormat == format,
@@ -1204,7 +1205,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         children: <Widget>[
           _buildApiKeySection(),
           const SizedBox(height: 8),
-          TextField(
+          FushiTextFieldControl(
             controller: _queryCtrl,
             decoration: InputDecoration(labelText: t.video_jimaku_query),
             onSubmitted: (_) => _search(),
@@ -1212,14 +1213,14 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           const SizedBox(height: 8),
           // 集数输入：默认空 → 列全部（现状）；填数字 → 只搜该集（Jimaku 服务端
           // 启发式）。hint（而非 helperText）内联在框里，不额外占一行垂直空间。
-          TextField(
+          FushiTextFieldControl(
             controller: _episodeCtrl,
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
               labelText: t.video_jimaku_episode,
               hintText: t.video_jimaku_episode_hint,
               isDense: true,
-              prefixIcon: const Icon(Icons.tag, size: 18),
+              prefixIcon: const FushiIcon(Icons.tag, size: 18),
             ),
             onSubmitted: (_) => _search(),
           ),
@@ -1230,11 +1231,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             const SizedBox(height: 12),
             _buildLanguageChips(),
             _buildFormatChips(),
-            TextField(
+            FushiTextFieldControl(
               decoration: InputDecoration(
                 labelText: t.video_jimaku_filter,
                 isDense: true,
-                prefixIcon: const Icon(Icons.filter_list, size: 18),
+                prefixIcon: const FushiIcon(Icons.filter_list, size: 18),
               ),
               onChanged: (String v) => setState(() => _filter = v),
             ),
@@ -1245,7 +1246,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
-                child: FilterChip(
+                child: FushiFilterChip(
                   key: const ValueKey<String>('jimaku-file-view-toggle'),
                   label: Text(t.subtitle_version_view_files),
                   selected: _showFileView,
@@ -1319,28 +1320,33 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
+      // 中性信息块，错误语义只上在单色图标上（不再整块 errorContainer）。
       child: Material(
         key: kSubtitleNoticeBannerKey,
-        color: theme.colorScheme.errorContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: fushiNeutralBlockColor(context),
+        borderRadius: fushiNeutralBlockRadius(context),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon, size: 18, color: theme.colorScheme.onErrorContainer),
+              FushiIcon(
+                icon,
+                size: 18,
+                color: fushiStatusColor(context, FushiStatusTone.error),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   message,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onErrorContainer,
+                    color: fushiNeutralBlockForeground(context),
                   ),
                 ),
               ),
               if (onRetry != null) ...<Widget>[
                 const SizedBox(width: 8),
-                TextButton(
+                FushiTextButton(
                   onPressed: _searching ? null : onRetry,
                   child: Text(t.retry),
                 ),
@@ -1369,9 +1375,9 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             // 「显示全部集」逃生口（清集数框重搜）。
             if (_searchedWithEpisode) ...<Widget>[
               const SizedBox(height: 8),
-              TextButton.icon(
+              FushiTextButton.icon(
                 onPressed: _showAllEpisodes,
-                icon: const Icon(Icons.list, size: 18),
+                icon: const FushiIcon(Icons.list, size: 18),
                 label: Text(t.video_jimaku_show_all_episodes),
               ),
             ],
@@ -1382,7 +1388,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     if (_candidates.isEmpty) {
       // 未搜索的初始态（宽屏右栏占位）：淡图标示意结果将显示在这里，不引入新文案。
       return Center(
-        child: Icon(
+        child: FushiIcon(
           Icons.subtitles_outlined,
           size: 48,
           color: theme.colorScheme.outlineVariant,
@@ -1444,7 +1450,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             SizedBox(width: filterPaneWidth, child: _buildFilterPane(theme)),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
-              child: VerticalDivider(width: 1),
+              child: FushiVerticalDivider(width: 1),
             ),
             Expanded(child: _buildResultsArea(theme)),
           ],
@@ -1551,13 +1557,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           overflowSpacing: 4,
           children: <Widget>[
             if (widget.onCancel != null)
-              TextButton(
+              FushiTextButton(
                 onPressed: widget.onCancel,
                 child: Text(t.dialog_cancel),
               ),
-            FilledButton.icon(
+            FushiFilledButton.icon(
               onPressed: _searching ? null : _search,
-              icon: const Icon(Icons.search),
+              icon: const FushiIcon(Icons.search),
               label: Text(t.video_jimaku_search),
             ),
           ],
@@ -1614,10 +1620,10 @@ class JimakuCandidateList extends StatelessWidget {
         // 文件名（含集数，如 第01話/E01）整段可见才能区分是第几集：换行而非单行截断
         // （TODO-673：番名都一样，区分集数的部分原本被省略号吃掉）。文件名给多行
         // 软换行，仍给一个上限避免极长名把单条撑满整个列表区，超限再 fade 兜底。
-        return ListTile(
+        return FushiListTileControl(
           contentPadding: const EdgeInsets.symmetric(vertical: 4),
           isThreeLine: true,
-          leading: const Icon(Icons.subtitles_outlined),
+          leading: const FushiIcon(Icons.subtitles_outlined),
           title: Text(
             c.name,
             maxLines: 3,
@@ -1634,9 +1640,9 @@ class JimakuCandidateList extends StatelessWidget {
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: FushiCircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.download),
+              : const FushiIcon(Icons.download),
           onTap: onDownload == null ? null : () => onDownload!(c),
         );
       },

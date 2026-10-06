@@ -136,11 +136,13 @@ void main() {
         '  Widget? _buildAudiobookBarTrailing() {',
         '  /// 小说页的窗口全屏切换',
       );
-      // 2026-10 起播放条自带传输键，底栏槽位里与之重复的那几颗要滤掉，
-      // 所以这里直接遍历可渲染项再按 _isDuplicatedByAudiobookPlayBar 过滤。
+      // 底栏槽位按钮仍由布局槽位驱动并进播放条右端；与播放条自带传输键重复的
+      // 那几颗被滤掉（6213bc5a59：同一行不出两份上一句 / 播放 / 下一句）。
       expect(trailing, contains('_renderableControlsIn(slot)'));
       expect(trailing, contains('!_isDuplicatedByAudiobookPlayBar(item)'),
           reason: '与播放条传输键重复的槽位按钮不得再并进来');
+      expect(trailing,
+          contains('_readerControlButton(_readerControlAction(item))'));
       expect(
           trailing, contains('_playbackStatusInline ? _buildBarStatusText()'),
           reason: '状态读数仍是播放条右端的落点');
