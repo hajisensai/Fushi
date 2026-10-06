@@ -199,6 +199,8 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^7.4.2
 dev_dependencies:
+  # BUG-3003: native hot-restart regression waits for worker IsolateExit events.
+  vm_service: ^15.1.0
   build_runner: ^2.3.3
   just_audio_platform_interface: ^4.6.0
   # TODO-817 M1c scanner test overrides CharsetDetectorPlatform with a Dart
