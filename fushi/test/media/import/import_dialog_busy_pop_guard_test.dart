@@ -5,16 +5,19 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/srt_book_reimport_dialog.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi_audio/fushi_audio.dart' show SrtBook, SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 // HBK-AUDIT-037 / BUG-2994：导入进行中（ImportFlowMixin.importing）对话框不能被
 // 返回键 / 点遮罩关掉——没有取消通道，关掉只会让用户以为导入停了。导入结束后
-// 恢复可关闭。真实对话框 + 真实 mixin，动作用受控 Completer 挂起，不碰文件/网络。
+// 恢复可关闭。真实漫画/视频/IPTV/字幕书重导对话框 + 真实 mixin，动作用受控
+// Completer 挂起，不碰文件/网络。
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
@@ -25,6 +28,16 @@ void main() {
             VideoImportDialog(repo: VideoBookRepository(db)),
         'iptv': (FushiDatabase db) =>
             IptvPlaylistImportDialog(repo: VideoBookRepository(db)),
+        // 字幕书重导：只需一本内存里的书行（standalone，正文由 cue 生成）。
+        'srt-reimport': (FushiDatabase db) => SrtBookReimportDialog(
+          book: SrtBook()
+            ..uid = 'srtbook_1'
+            ..title = 'Busy guard'
+            ..srtPath = ''
+            ..importedAt = 0,
+          db: db,
+          repo: SrtBookRepository(db),
+        ),
       };
 
   for (final MapEntry<String, Widget Function(FushiDatabase db)> entry
