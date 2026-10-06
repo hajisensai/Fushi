@@ -1999,25 +1999,38 @@ class AppModel with ChangeNotifier {
           const int hasTerm = 0x1;
           const int hasKanji = 0x2;
 
-          final Map<String, String> meta = Map<String, String>.from(d.metadata);
-          meta[kDictTypeProbeKey] = kDictTypeProbeVersion;
           final bool mixed = mask & hasTerm != 0;
-          if (mixed && mask & hasKanji != 0) {
-            meta['hasKanji'] = 'true';
-          } else if (mixed) {
-            meta.remove('hasKanji');
-          }
           // 纯 kanji 词典（mask 里没有 term）保持 kanji 类型不动，但**同样**要把
           // 标记写下去——这正是旧实现漏掉的那一半，也是每次启动全表重扫的来源。
           //
           // copyWith 而不是 new：构造器漏填的用户设置列会被
           // _dictionaryToCompanion 显式写成 NULL（不是 absent），这里只想换
           // type/metadata，逐字段重建会把用户手动指定的内容语言和改名一起抹掉。
-          final updated = d.copyWith(
-            type: mixed ? DictionaryType.term : d.type,
-            metadata: meta,
+          unawaited(
+            dictRepo
+                .updateDictionaryMetadata({
+                  d.name: (current) {
+                    final meta = Map<String, String>.of(current.metadata)
+                      ..[kDictTypeProbeKey] = kDictTypeProbeVersion;
+                    if (mixed && mask & hasKanji != 0) {
+                      meta['hasKanji'] = 'true';
+                    } else if (mixed) {
+                      meta.remove('hasKanji');
+                    }
+                    return current.copyWith(
+                      type: mixed ? DictionaryType.term : current.type,
+                      metadata: meta,
+                    );
+                  },
+                })
+                .catchError((Object error, StackTrace stack) {
+                  ErrorLogService.instance.log(
+                    'AppModel.dictKanjiReclassify',
+                    error,
+                    stack,
+                  );
+                }),
           );
-          dictRepo.persistDictionary(updated);
           if (mixed) {
             debugPrint(
                 '[Fushi] reclassified kanji→term (mixed dict): ${d.name}');
@@ -2061,11 +2074,26 @@ class AppModel with ChangeNotifier {
       }
 
       // 与 kanji 分支同理：探过就落标记，哪怕结论是「类型没错，不用改」。
-      final Map<String, String> meta = Map<String, String>.from(d.metadata);
-      meta[kDictTypeProbeKey] = kDictTypeProbeVersion;
       // 同上：copyWith 而不是逐字段 new（见 Dictionary.copyWith 的说明）。
-      final updated = d.copyWith(type: detected ?? d.type, metadata: meta);
-      dictRepo.persistDictionary(updated);
+      unawaited(
+        dictRepo
+            .updateDictionaryMetadata({
+              d.name: (current) => current.copyWith(
+                type: detected ?? current.type,
+                metadata: <String, String>{
+                  ...current.metadata,
+                  kDictTypeProbeKey: kDictTypeProbeVersion,
+                },
+              ),
+            })
+            .catchError((Object error, StackTrace stack) {
+              ErrorLogService.instance.log(
+                'AppModel.dictTypeMigration',
+                error,
+                stack,
+              );
+            }),
+      );
       if (detected != null) {
         debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
       }
@@ -2097,20 +2125,18 @@ class AppModel with ChangeNotifier {
       }
     }
     if (fromIndex.isEmpty) return;
-    final List<Dictionary> updated = <Dictionary>[
-      for (final Dictionary d in dictRepo.dictionaries)
-        if (fromIndex.containsKey(d.name) &&
-            needsSourceMetadataBackfill(d.metadata))
-          d.copyWith(
-            metadata: mergeBackfilledSourceMetadata(
-                d.metadata, fromIndex[d.name]!),
-          ),
-    ];
-    if (updated.isEmpty) return;
     // 调用方是 unawaited：落库失败不能漏成未捕获的 zone 错误。不打标记即下次
     // 启动再试。
     try {
-      await dictRepo.persistDictionaries(updated);
+      await dictRepo.updateDictionaryMetadata({
+        for (final entry in fromIndex.entries)
+          entry.key: (current) => needsSourceMetadataBackfill(current.metadata)
+              ? current.copyWith(
+                  metadata: mergeBackfilledSourceMetadata(
+                    current.metadata, entry.value),
+                )
+              : null,
+      });
     } catch (e, stack) {
       ErrorLogService.instance.log('AppModel.dictSourceBackfill', e, stack);
     }
@@ -2570,14 +2596,14 @@ class AppModel with ChangeNotifier {
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
-  void updateDictionaryOrder(List<Dictionary> newDictionaries) {
+  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
     // dictRepo.updateDictionaryOrder persists the new order, fires
     // _onCacheRebuild (_rebuildDictPathsCache → engine reload) and drops the
     // search result caches so the next lookup re-merges in the new order. We
     // still have to nudge any already-open lookup page to re-query — otherwise
     // its current result keeps the old order until it is reopened or the app
     // restarts. Mirrors the delete paths (BUG-355).
-    dictRepo.updateDictionaryOrder(newDictionaries);
+    await dictRepo.updateDictionaryOrder(newDictionaries);
     dictionarySearchAgainNotifier.notifyListeners();
   }
 
@@ -3868,6 +3894,10 @@ class AppModel with ChangeNotifier {
       // 系统取色：方案直接由强调色 fromSeed 生成，不走自定义 / 预设的无彩度中性派生。
       '--fushi-theme-system':
           themeNotifier.appThemeKey == 'system-theme' ? '1' : '0',
+      // Android 完整壁纸调色板不能从单一主色派生另一明暗；只按同源 identity
+      // 复用已下发的准确镜像，换壁纸后淘汰另一明暗的旧缓存（HBK-AUDIT-030）。
+      if (themeNotifier.activeSystemPaletteIdentity != null)
+        '--fushi-theme-palette-id': themeNotifier.activeSystemPaletteIdentity!,
       '--fushi-theme-neutral':
           themeNotifier.activeCustomThemeNeutralDerived ? '1' : '0',
       '--fushi-pure-black': themeNotifier.pureBlackDark ? '1' : '0',
@@ -6573,20 +6603,31 @@ class AppModel with ChangeNotifier {
   }
 
   /// 用户手动指定词典内容语言（BCP-47），null = 恢复自动（读 index.json 声明）。
-  void setDictionaryLanguageOverride(Dictionary dictionary, String? language) =>
+  Future<void> setDictionaryLanguageOverride(
+      Dictionary dictionary, String? language) =>
       dictRepo.setDictionaryLanguageOverride(dictionary, language);
 
-  void setDictionaryDisplayName(Dictionary dictionary, String? displayName) =>
+  Future<void> setDictionaryDisplayName(
+      Dictionary dictionary, String? displayName) =>
       dictRepo.setDictionaryDisplayName(dictionary, displayName);
 
   /// BUG-2158：折叠三态循环（继承 → 显式展开 → 显式折叠 → 继承）。
   /// 旧的 `toggleDictionaryCollapsed` 双态入口已删除，不与本方法并存。
-  void cycleDictionaryCollapseState(Dictionary dictionary) =>
+  Future<void> cycleDictionaryCollapseState(Dictionary dictionary) =>
       dictRepo.cycleDictionaryCollapseState(
           dictionary, JapaneseLanguage.instance.languageCode);
 
-  void toggleDictionaryHidden(Dictionary dictionary) {
-    dictRepo.toggleDictionaryHidden(
+  Future<void> setDictionaryCollapseState(
+          Dictionary dictionary, DictionaryCollapseState state) =>
+      dictRepo.setDictionaryCollapseState(
+          dictionary, JapaneseLanguage.instance.languageCode, state);
+
+  Future<void> setDictionaryHidden(Dictionary dictionary, bool hidden) =>
+      dictRepo.setDictionaryHidden(
+          dictionary, JapaneseLanguage.instance.languageCode, hidden);
+
+  Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
+    await dictRepo.toggleDictionaryHidden(
         dictionary, JapaneseLanguage.instance.languageCode);
     // toggleDictionaryHidden persists the dict, which fires _onCacheRebuild
     // (_rebuildDictPathsCache) and reloads the engine WITHOUT the now-hidden
@@ -6599,19 +6640,11 @@ class AppModel with ChangeNotifier {
   Future<void> deleteDictionaries() async {
     try {
       await clearDictionaryHistory();
-      await _database.clearAllDictionaryMeta();
 
-      // Reload the native FFI engine off the now-empty dictionary set so every
-      // previously loaded index is dropped; otherwise queries keep hitting the
-      // deleted dictionaries until the app restarts (BUG-171). With no
-      // dictionaries left this rebuilds into an empty engine that
-      // searchDictionary already degrades to empty results.
-      //
-      // 必须在删目录**之前**：引擎还攥着每本词典的 mmap view 时，Windows 上删
-      // 资源根一律 ERROR_USER_MAPPED_FILE（BUG-1756）。
-      dictRepo.clearDictionariesCache();
-      dictRepo.clearDictionaryResultsCache();
-      _rebuildDictPathsCache();
+      // Commit the deletion before publishing an empty dictionary set and
+      // rebuilding the engine. This must precede directory removal so native
+      // mmap views are released first (BUG-171 / BUG-1756).
+      await dictRepo.clearDictionaryMetadata();
 
       // 逐个条目删而不是删掉资源根本身：隔离区（删不掉时的落脚点）建在被删目录的
       // 父级，只有这样它才落在资源根下、被启动清理扫到。根目录保留，省掉 recreate。

@@ -52,7 +52,7 @@ class _FakeAppModel extends AppModel {
   DateTime? get lastDictionaryUpdateAt => null;
 
   @override
-  void toggleDictionaryHidden(Dictionary dictionary) {
+  Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
     const String code = 'ja';
     dictionary.hiddenLanguages = dictionary.hiddenLanguages.contains(code)
         ? (List<String>.of(dictionary.hiddenLanguages)..remove(code))
@@ -60,7 +60,25 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
-  void cycleDictionaryCollapseState(Dictionary dictionary) {
+  Future<void> setDictionaryHidden(Dictionary dictionary, bool hidden) async {
+    dictionary.hiddenLanguages = <String>[
+      for (final String code in dictionary.hiddenLanguages)
+        if (code != 'ja') code,
+      if (hidden) 'ja',
+    ];
+  }
+
+  @override
+  Future<void> setDictionaryCollapseState(
+      Dictionary dictionary, DictionaryCollapseState state) async {
+    dictionary.expandedLanguages =
+        state == DictionaryCollapseState.expanded ? <String>['ja'] : <String>[];
+    dictionary.collapsedLanguages =
+        state == DictionaryCollapseState.collapsed ? <String>['ja'] : <String>[];
+  }
+
+  @override
+  Future<void> cycleDictionaryCollapseState(Dictionary dictionary) async {
     const String code = 'ja';
     switch (dictionary.collapseStateFor(JapaneseLanguage.instance)) {
       case DictionaryCollapseState.inherit:
@@ -76,8 +94,12 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
-  void updateDictionaryOrder(List<Dictionary> newDictionaries) {
+  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
     orderWrites++;
+    for (final Dictionary updated in newDictionaries) {
+      store.firstWhere((Dictionary d) => d.name == updated.name).order =
+          updated.order;
+    }
   }
 
   @override

@@ -340,7 +340,7 @@ class DictionaryImportManager {
         }
 
         final detectedType = _parseType(result.detectedType);
-        _dictRepo.persistDictionary(Dictionary(
+        await _dictRepo.persistDictionary(Dictionary(
           order: order,
           name: name,
           formatKey: 'yomichan',
@@ -672,7 +672,7 @@ class DictionaryImportManager {
         readSourceMetadataFromIndex(finalDir),
         sourceOverride,
       );
-      _dictRepo.persistDictionary(Dictionary(
+      await _dictRepo.persistDictionary(Dictionary(
         order: order,
         name: name,
         formatKey: 'yomichan',

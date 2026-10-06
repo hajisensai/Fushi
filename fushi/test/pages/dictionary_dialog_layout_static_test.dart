@@ -155,8 +155,13 @@ void main() {
             .readAsStringSync();
 
     expect(source, contains('BatchActionBar('));
-    expect(source, contains('void _batchSetEnabled(bool enabled)'));
-    expect(source, contains('appModel.toggleDictionaryHidden(dictionary)'));
+    expect(source, contains('Future<bool> _batchSetEnabled(bool enabled)'));
+    expect(source, contains('await appModel.setDictionaryHidden(dictionary, !enabled)'));
+    expect(source, isNot(contains('appModel.toggleDictionaryHidden(dictionary)')),
+        reason: '启停是幂等的目标状态操作，不能靠旧 snapshot 再翻转一次');
+    expect(source, contains('appModel.setDictionaryCollapseState(dictionary, target)'));
+    expect(source, isNot(contains('step < DictionaryCollapseState.values.length')),
+        reason: '详情选择目标态必须只写一次，异步循环会与下一次选择交错');
     final int start = source.indexOf('  Future<void> _batchDelete() {');
     expect(start, isNonNegative);
     final String batchDelete =
@@ -356,7 +361,15 @@ void main() {
     final String btnSource = source.substring(btnStart, btnEnd);
     expect(btnSource,
         contains('appModel.cycleDictionaryCollapseState(dictionary)'));
-    expect(btnSource, contains('setState(() {})'));
+    expect(btnSource, contains('_saveDictionaryChange('));
+    final int saveStart = source.indexOf('Future<bool> _saveDictionaryChange(');
+    final int saveEnd = source.indexOf('Future<void> showDictionaryDeleteDialog(', saveStart);
+    expect(saveStart, isNonNegative);
+    expect(saveEnd, greaterThan(saveStart));
+    final String saveSource = source.substring(saveStart, saveEnd);
+    expect(saveSource, contains('await save()'));
+    expect(saveSource, contains('if (mounted) setState(() {})'));
+    expect(saveSource, contains('showErrorDetails('));
 
     // ③ 图标随**三态**切换，状态可一览（BUG-2158）。少一个分支就意味着两个态
     // 共用一个图标 —— 那正是修复前「显式展开」和「继承」长得一模一样的老毛病。

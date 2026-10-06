@@ -483,6 +483,11 @@
   function specFromAppTheme(mirror) {
     if (!mirror || typeof mirror !== 'object') return null;
     var seed = normalizeHexOrNull(mirror['--fushi-theme-seed']);
+    // HBK-AUDIT-030: Android supplies a complete OS palette, not a seed. The
+    // producer deliberately omits seed in that case. A primary color cannot
+    // reconstruct its other scheme, so leave missing data to the CSS fallback.
+    // Old non-system mirrors retain their explicitly approximate legacy path.
+    if (!seed && mirror['--fushi-theme-system'] === '1') return null;
     var fromPrimary = false;
     if (!seed) { seed = normalizeHexOrNull(mirror['--md-primary']); fromPrimary = true; }
     if (!seed) return null;
