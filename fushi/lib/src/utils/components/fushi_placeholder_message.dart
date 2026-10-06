@@ -138,7 +138,7 @@ class FushiPlaceholderMessage extends StatelessWidget {
       const Duration(milliseconds: 500),
     );
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.all(tokens.spacing.page),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 420),
@@ -183,7 +183,7 @@ class FushiPlaceholderMessage extends StatelessWidget {
     final TextTheme tt = Theme.of(context).textTheme;
     final Color foreground = color ?? apple.secondaryLabel;
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),

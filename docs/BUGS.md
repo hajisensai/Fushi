@@ -29,14 +29,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2772 条。点号进各自文件。
+> 共 2774 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3020](bugs/BUG-3020-placeholder-short-viewport.md) | ✅ | ✅ | 紧凑错误状态图标与说明高度超过可用视口 |
 | [BUG-3019](bugs/BUG-3019-settings-stepper-touch-width.md) | ✅ | ✅ | 设置步进器迁移后声明宽度少算触控区导致标题挤压 |
 | [BUG-3018](bugs/BUG-3018-smoke-navigation-destinations.md) | ✅ | ✅ | 桌面 smoke 把侧栏菜单图标算成首个导航目的地 |
 | [BUG-3015](bugs/BUG-3015-reorder-feedback-entrance-replay.md) | ✅ | ✅ | 开页进场期间拖动列表行时反馈副本重新变透明 |
 | [BUG-3011](bugs/BUG-3011-horizontal-filter-mouse-drag.md) | ✅ | ✅ | 新增横向筛选与导航区未启用桌面鼠标拖动 |
+| [BUG-3010](bugs/BUG-3010-tag-reorder-scaled-handle.md) | ✅ | ✅ | 标签管理重排使用SDK浮层导致非默认界面缩放下拖拽错位 |
 | [BUG-3009](bugs/BUG-3009-raw-component-guard-empty-scan.md) | ✅ | ✅ | 组件棘轮守卫路径替换空串导致零文件扫描并静默通过 |
 | [BUG-3007](bugs/BUG-3007-jimaku-archive-language.md) | ✅ | ✅ | Jimaku 混合语言字幕包忽略请求语言与批量语言偏好 |
 | [BUG-3006](bugs/BUG-3006-jimaku-single-archive-episode.md) | ✅ | ✅ | Jimaku 单文件字幕包忽略明确集号冲突，给其他集安装错误字幕 |
