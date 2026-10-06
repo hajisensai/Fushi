@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 「外观 → 显示底栏标签」的**生效**测试（settings_schema_coverage 的
@@ -162,6 +163,9 @@ void main() {
     final String home = File(
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
-    expect(home, contains('showLabels: appModel.navBarLabelsVisible'));
+    expect(
+      compactCode(methodBody(home, 'Widget _buildMobileLayout(')),
+      contains('showLabels:appModel.navBarLabelsVisible'),
+    );
   });
 }

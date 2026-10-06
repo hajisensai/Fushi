@@ -1467,6 +1467,25 @@ void main() {
         }
       }
 
+      // 两条会在窄行渲染成菜单的分段项必须真的被驱动；只数总行数无法发现
+      // 菜单按键串错行后遍历缩水（此前57行仍能越过>40门）。
+      for (final String id in <String>[
+        'reading/Page / scroll',
+        'reading/Hide furigana',
+      ]) {
+        final List<ItemVerdict> rows = verdicts
+            .where((ItemVerdict v) => v.id == id)
+            .toList();
+        expect(rows, hasLength(1), reason: '$id 必须在真实焦点遍历中可达');
+        expect(rows.single.changed, isTrue, reason: '$id 必须真正改值');
+        expect(rows.single.persisted, isTrue, reason: '$id 必须写穿DB');
+        expect(
+          rows.single.effectVerified,
+          isTrue,
+          reason: '$id 必须改变reader CSS渲染输入',
+        );
+      }
+
       // 全局还原：改过的 key 写回初值，测试新增的 key 删除，再校验快照一致。
       final Map<String, String> afterAll = Map<String, String>.from(
         await db.getAllPrefs(),

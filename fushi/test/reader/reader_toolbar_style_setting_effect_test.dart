@@ -14,6 +14,7 @@ import 'package:fushi/src/settings/settings_schema_reading.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
 
@@ -180,21 +181,24 @@ void main() {
   test('reader page derives its chrome form from readerToolbarsFloating', () {
     final String page = readReaderPageSource();
     expect(
-      page,
+      compactCode(methodBody(page, 'bool get _floatingToolbars')),
       contains(
-        'bool get _floatingToolbars =>\n'
-        '      readerToolbarsFloating(appModel.readerToolbarStyle);',
+        'boolget_floatingToolbars=>'
+        'readerToolbarsFloating(appModel.readerToolbarStyle);',
       ),
     );
     // 结论真的被用在状态行、顶栏与底栏三处形态分叉上。
-    expect(page, contains('floating: _floatingToolbars,'));
     expect(
-      page,
-      contains('if (_floatingToolbars) return _buildFloatingHeader();'),
+      compactCode(methodBody(page, 'Widget _buildStatusFooterRow(')),
+      contains('floating:_floatingToolbars,'),
     );
     expect(
-      page,
-      contains('if (_floatingToolbars) return _buildFloatingBottomChrome();'),
+      compactCode(methodBody(page, 'Widget _buildDesktopHeader(')),
+      contains('if(_floatingToolbars)return_buildFloatingHeader();'),
+    );
+    expect(
+      compactCode(methodBody(page, 'Widget _buildBottomChrome(')),
+      contains('if(_floatingToolbars)return_buildFloatingBottomChrome();'),
     );
   });
 }
