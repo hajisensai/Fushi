@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 词典样式统一（M3E，默认开）：导入词典的 styles.css / 结构化内容 inline style 自带的
 /// 颜色按语义换成当前 ColorScheme 令牌；开关关掉退回词典原样式。
 ///
@@ -293,7 +295,7 @@ void main() {
 
 /// popup.css 里「词典样式统一」区块（`.fushi-dict-unified` 相关）的全部规则。
 List<({String selector, String body})> _unifiedRules(String css) {
-  final String masked = css.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+  final String masked = maskCssComments(css);
   final List<({String selector, String body})> out =
       <({String selector, String body})>[];
   for (final RegExpMatch m in RegExp(

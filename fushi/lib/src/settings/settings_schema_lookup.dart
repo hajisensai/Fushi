@@ -29,6 +29,7 @@ import 'package:fushi/src/sync/port_process_terminator.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart'
     show kYomitanApiDefaultPort;
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
 
@@ -648,7 +649,7 @@ SettingsDestination buildLookupDestination() {
             id: 'lookup.dictionary_unified_style',
             title: t.lookup_dictionary_unified_style,
             subtitle: t.lookup_dictionary_unified_style_hint,
-            icon: Icons.palette_outlined,
+            icon: FushiIcons.appearance,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.dictionaryUnifiedStyle,
             onChanged: (SettingsContext settingsContext, bool value) {

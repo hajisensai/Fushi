@@ -359,7 +359,7 @@ SettingsDestination buildAppearanceDestination() {
             id: 'appearance.follow_app_icon_accent',
             title: t.theme_icon_accent_follow,
             subtitle: t.theme_icon_accent_hint,
-            icon: Icons.color_lens_outlined,
+            icon: FushiIcons.appearance,
             visible: (_) => currentAppIconSelection.value.usesCustomFile,
             value: (SettingsContext settingsContext) =>
                 settingsContext.appModel.themeNotifier.followAppIconAccent,
