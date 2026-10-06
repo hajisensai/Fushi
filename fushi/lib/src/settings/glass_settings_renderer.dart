@@ -225,6 +225,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
     ScrollController? scrollController,
     bool shrinkWrap = false,
     bool insetHorizontally = true,
+    bool consumeTopPadding = false,
   }) {
     // 宽屏主从右窗格：与 push 出来的子页同一个 kit 壳（不画返回钮）。
     if (showDetailHeader && !shrinkWrap && scrollController == null) {
@@ -238,6 +239,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
       inlineHeader: showDetailHeader,
       shrinkWrap: shrinkWrap,
       insetHorizontally: insetHorizontally,
+      consumeTopPadding: consumeTopPadding,
     );
   }
 
@@ -249,6 +251,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
     required bool inlineHeader,
     required bool shrinkWrap,
     required bool insetHorizontally,
+    bool consumeTopPadding = false,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiAppleColors apple = appleColorsOf(context);
@@ -261,7 +264,8 @@ class GlassSettingsRenderer implements SettingsRenderer {
         : 0;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal,
-      inlineHeader ? (metrics.desktop ? 22 : 12) : 12,
+      (inlineHeader ? (metrics.desktop ? 22 : 12) : 12) +
+          (consumeTopPadding ? MediaQuery.paddingOf(context).top : 0),
       horizontal,
       24 + MediaQuery.of(context).padding.bottom,
     );

@@ -148,6 +148,7 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
     // no-op：Cupertino 详情正文本就无横向内边距（靠 CupertinoListSection /
     // 外层容器提供留白），故 [insetHorizontally] 对其无影响，仅为满足接口签名。
     bool insetHorizontally = true,
+    bool consumeTopPadding = false,
   }) {
     final List<SettingsSection> sections = destination.visibleSections(
       settingsContext,
@@ -156,7 +157,10 @@ class CupertinoSettingsRenderer implements SettingsRenderer {
       settingsContext.context,
     ).padding;
     // 底部留安全区，自滚到底时最后一项不贴边（对齐 Material 渲染器）。
-    final EdgeInsets padding = EdgeInsets.only(bottom: mediaPadding.bottom);
+    final EdgeInsets padding = EdgeInsets.only(
+      top: consumeTopPadding ? mediaPadding.top : 0,
+      bottom: mediaPadding.bottom,
+    );
 
     Widget section(int index) => SettingsSchemaSection(
       key: ValueKey<String>('${destination.id.name}.${sections[index].id}'),

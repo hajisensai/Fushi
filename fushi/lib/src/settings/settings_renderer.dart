@@ -30,12 +30,19 @@ abstract class SettingsRenderer {
   /// 让渲染器只保留纵向内边距、把横向留白交给外层——否则会双重缩进，使 schema 投影
   /// 子页比同面板里 bespoke 的「导航 / 有声书」子页更窄（TODO-1321）。Cupertino 渲染
   /// 器本就无横向内边距，此参数对其为 no-op。
+  ///
+  /// [consumeTopPadding] — 自滚动正文是否把 `MediaQuery` 顶部 padding 加进自己的
+  /// 顶部内边距（与底部安全区同一约定）。库页外壳的「设置」分区传 true：外壳经
+  /// `FushiFloatingChromeScrollInset` 把浮动工具区的让位高度交成 MediaQuery 顶部
+  /// padding，正文从工具区下方开始、往下滚时滚到工具区底下，工具区收起后顶部不留
+  /// 空白。默认 false，其它宿主行为不变。
   Widget buildDetailContent({
     required SettingsContext settingsContext,
     required SettingsDestination destination,
     ScrollController? scrollController,
     bool shrinkWrap = false,
     bool insetHorizontally = true,
+    bool consumeTopPadding = false,
   });
 
   /// 把一个 [SettingsSection] 的可见项渲染成「裸行」列表（不含卡片容器、不含

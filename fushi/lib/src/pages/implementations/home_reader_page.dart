@@ -14,7 +14,7 @@ import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeInsetPadding;
+    show FushiFloatingChromeInsetPadding, FushiFloatingChromeScrollInset;
 import 'package:fushi/utils.dart';
 
 /// The body content for the Reader tab in the main menu.
@@ -118,11 +118,15 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
         ),
         MediaLibraryViewSpec(
           kind: MediaLibraryViewKind.settings,
+          // 设置正文的滚动视图自己吃掉工具区让位（MediaQuery 顶部 padding）。
+          handlesChromeInset: true,
           label: t.settings,
           builder: (BuildContext context, Widget navigation) =>
-              ModuleSettingsView(
-            destinationId: SettingsDestinationId.reading,
-            navigation: navigation,
+              FushiFloatingChromeScrollInset(
+            child: ModuleSettingsView(
+              destinationId: SettingsDestinationId.reading,
+              navigation: navigation,
+            ),
           ),
         ),
       ],

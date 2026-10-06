@@ -232,6 +232,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     ScrollController? scrollController,
     bool shrinkWrap = false,
     bool insetHorizontally = true,
+    bool consumeTopPadding = false,
   }) {
     // 宽屏主从右窗格：与 push 出来的子页同一个 kit 壳（不画返回钮）。
     if (showDetailHeader && !shrinkWrap && scrollController == null) {
@@ -245,6 +246,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
       inlineHeader: showDetailHeader,
       shrinkWrap: shrinkWrap,
       insetHorizontally: insetHorizontally,
+      consumeTopPadding: consumeTopPadding,
     );
   }
 
@@ -256,6 +258,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
     required bool inlineHeader,
     required bool shrinkWrap,
     required bool insetHorizontally,
+    bool consumeTopPadding = false,
   }) {
     final BuildContext context = settingsContext.context;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -280,7 +283,7 @@ class MaterialSettingsRenderer implements SettingsRenderer {
         : EdgeInsets.zero;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal.left,
-      tokens.spacing.gap,
+      tokens.spacing.gap + (consumeTopPadding ? mediaPadding.top : 0),
       horizontal.right,
       tokens.spacing.page + mediaPadding.bottom,
     );

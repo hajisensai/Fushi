@@ -403,7 +403,9 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                 enabled: _section == VideoLibrarySection.settings,
                 child: _dropScoped(
                   () => _section == VideoLibrarySection.settings,
-                  FushiFloatingChromeInsetPadding(
+                  // 设置正文的滚动视图自己吃掉工具区让位（MediaQuery 顶部
+                  // padding），内容滚到工具区底下，收起后顶部不留空白。
+                  FushiFloatingChromeScrollInset(
                   child: ModuleSettingsView(
                     destinationId: SettingsDestinationId.video,
                     navigation: _navigationFor(
